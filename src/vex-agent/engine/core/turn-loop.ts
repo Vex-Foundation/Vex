@@ -79,6 +79,10 @@ import { applyIterationEntryOutcome } from "./turn-loop/iteration-entry-outcome.
 import { applyToolBatchOutcome } from "./turn-loop/tool-batch-step.js";
 import { handleTextResponse } from "./turn-loop-text-response.js";
 import {
+  beginPresentationScope,
+  endPresentationScope,
+} from "./board-presentation.js";
+import {
   armPostCompactBridge,
   createBandObserverWithLog,
 } from "./turn-loop-state-init.js";
@@ -130,6 +134,12 @@ export async function runTurnLoop(
 
   const liveMessages = [...messages];
   let lastSeenOperatorMessageId = maxOperatorInstructionId(messages);
+
+  // Board presentation scope: staging is possible only while this is open, and
+  // closing it discards anything still pending. Opening it here (and closing it
+  // at every exit below) is the whole clearing mechanism for stop, cancel,
+  // exhaustion, parking, and a failed turn.
+  beginPresentationScope(context.sessionId);
 
   let postCompactBridgeRemaining = await armPostCompactBridge({
     sessionId: context.sessionId,
@@ -457,6 +467,10 @@ export async function runTurnLoop(
         mergeOperatorInstructions,
       });
       if (batchStep.kind === "return") {
+        // Every one of these exits (approval park, user-form park, wake pause,
+        // engine stop) ends the turn without a final prose row, so a staged
+        // board has nothing left to attach to.
+        endPresentationScope(context.sessionId);
         return batchStep.result;
       }
       continue;
@@ -478,6 +492,13 @@ export async function runTurnLoop(
       break;
     }
   }
+
+  // Close the board scope for every remaining exit: a stop, a cancellation, a
+  // deadline, a stalled run, iteration exhaustion, and the clean text break
+  // (whose board was already consumed by the row that committed it). A throw
+  // out of the loop leaves the scope open until the session's next
+  // `beginPresentationScope`, which discards it before anything can read it.
+  endPresentationScope(context.sessionId);
 
   // If the for-loop exhausted maxIterations without either an explicit stop OR
   // a natural text-break (agent/setup), surface it as `iteration_limit` so every

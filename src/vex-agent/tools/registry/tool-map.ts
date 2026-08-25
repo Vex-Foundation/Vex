@@ -86,6 +86,12 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   // no longer implies a mission-run-scheduling niche.
   { label: "Waiting — park the loop until an event you cannot make happen sooner", toolNames: ["LoopDefer"] },
   { label: "Plan mode (session-scoped — author the action plan)", toolNames: ["PlanWrite"] },
+  // Last, because it ENDS a turn: once a board is staged the runtime refuses
+  // every further tool call until the reply is written.
+  {
+    label: "Presentation - show market analysis as a board attached to your final reply (terminal: call it alone, then reply)",
+    toolNames: ["BoardCompose"],
+  },
 ];
 
 /**

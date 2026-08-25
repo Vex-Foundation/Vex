@@ -62,17 +62,18 @@ function format(list: readonly ManifestLintIssue[]): string {
 describe("G2 - internal tool description lint", () => {
   it("lints every registered internal tool, including the 14 the basic rule sees", () => {
     // 34 → 32: the ToolSearch merge deleted the `describe_tools` and
-    // `execute_tool` ToolDefs (`registry/protocol.ts`).
-    expect(SUBJECTS).toHaveLength(32);
+    // `execute_tool` ToolDefs (`registry/protocol.ts`). 32 → 33: `BoardCompose`
+    // (`registry/board.ts`).
+    expect(SUBJECTS).toHaveLength(33);
     expect(BASIC_LANE.size, "basic-lane coverage changed").toBe(14);
 
-    // The 18 the basic rule never saw, and the 14 it sees without an
-    // ActionKind, are ALL in this lane.
+    // The 19 the basic rule never saw (18 + `BoardCompose`), and the 14 it
+    // sees without an ActionKind, are ALL in this lane.
     const linted = new Set(SUBJECTS.map((tool) => tool.name));
     for (const name of BASIC_LANE) {
       expect(linted.has(name), `${name} is outside the ActionKind lane`).toBe(true);
     }
-    expect([...linted].filter((name) => !BASIC_LANE.has(name))).toHaveLength(18);
+    expect([...linted].filter((name) => !BASIC_LANE.has(name))).toHaveLength(19);
   });
 
   // The blast radius of the split: without the overlap, no committed rule can

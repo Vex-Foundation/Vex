@@ -79,6 +79,9 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Plan mode — author/refine the session's action plan (gated by requiresPlanMode)
   PlanWrite: async () => (await import("../internal/plan/write.js")).handlePlanWrite,
 
+  // Board presentation - terminal tool, staged and consumed by the turn loop
+  BoardCompose: async () => (await import("../internal/board/index.js")).handleBoardCompose,
+
   // EVM on-chain forensics — receipts + ERC-721 mint detection
   ChainRead: async () => (await import("../internal/chain-read.js")).handleChainRead,
 

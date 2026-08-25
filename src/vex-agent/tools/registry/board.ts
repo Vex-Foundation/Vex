@@ -1,0 +1,179 @@
+/**
+ * Board presentation tool - one terminal tool, no siblings.
+ *
+ * `BoardCompose` is the agent's way of SHOWING market analysis instead of
+ * describing it in prose. It is deliberately alone in this domain: a "board
+ * update" or "board clear" tool would turn a presentation attached to one
+ * message into mutable state with no owner.
+ *
+ * Classification and the reason for each choice are recorded on the handler
+ * (`../internal/board/compose.ts`); the description below is the model-visible
+ * contract and states the two rules the engine enforces before dispatch, so a
+ * model never learns them by being refused.
+ */
+
+import type { ToolDef } from "../types.js";
+import { BOARD_CHART_RESOLUTIONS } from "../../../lib/board/index.js";
+import { BOARD_COMPOSE_TOOL_NAME } from "@vex-agent/engine/core/turn-loop-tool-batch/presentation-gate.js";
+
+/** The one name three modules must agree on. */
+const BOARD_COMPOSE = "BoardCompose";
+
+export const BOARD_TOOLS: readonly ToolDef[] = [
+  {
+    name: BOARD_COMPOSE,
+    kind: "internal",
+    mutating: false,
+    pressureSafety: "safe_at_barrier",
+    actionKind: "local_write",
+    description:
+      "Present market analysis as a VISUAL BOARD attached to your final reply: pool cards with live "
+      + "figures, your own notes, and optionally one annotated price chart. "
+      + "TWO RULES, both enforced before dispatch. (1) BoardCompose must be the ONLY tool call in its "
+      + "batch. (2) Once it returns \"staged\", every further tool call in this turn is refused: the very "
+      + "next thing you write must be your final reply, as plain prose. The board is attached to that "
+      + "message, so write the reply as the analysis it accompanies rather than as a caption for it. "
+      + "You supply ONLY your analysis: the board title, which pools to show (chain plus the pool "
+      + "address as the provider spells it), an optional caption per pool, up to 6 notes, and for the "
+      + "chart the resolution plus up to 12 annotations you drew yourself (a price level, a price zone, "
+      + "or a time marker, each with a label). "
+      + "You do NOT supply market data: prices, liquidity, volume, trade counts, token names and candles "
+      + "are fetched by the runtime when you call this, and are stamped with the moment they were read. "
+      + "Prices and times in annotations are YOUR analytical coordinates, taken from earlier tool "
+      + "results; they are drawn as your marks, never as measurements. "
+      + "There is no field for a URL, HTML, markdown, a colour, a chart option, a fee or a destination, "
+      + "and an unknown field is refused by name. Text is checked and refused, never silently altered. "
+      + "A board that would exceed 48 KiB serialized is refused with its size named; nothing is cut to "
+      + "make one fit. Call it once, when your analysis is finished. "
+      + "Your reply must STAND ALONE: a reader who never sees the board (a markdown export, an "
+      + "older client, a row whose board failed to load) must still get the finding from your prose. "
+      + "The board shows the figures; the prose says what they mean.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: "Board heading, 1-80 characters, single line.",
+        },
+        pools: {
+          type: "array",
+          description: "1 to 8 pools, in the order they should be displayed.",
+          items: {
+            type: "object",
+            properties: {
+              chain: {
+                type: "string",
+                description: "DexScreener chain slug, lowercase, e.g. solana, base, arbitrum.",
+              },
+              pairAddress: {
+                type: "string",
+                description:
+                  "Pool address exactly as the provider spells it. Case matters on Solana; the "
+                  + "checksummed spelling is the one that resolves on EVM chains.",
+              },
+              caption: {
+                type: "string",
+                description:
+                  "Your note about this pool, 1-140 characters, single line. Optional.",
+              },
+            },
+            required: ["chain", "pairAddress"],
+            additionalProperties: false,
+          },
+        },
+        chart: {
+          type: "object",
+          description:
+            "One annotated candle chart. Optional; a board without it is still a board.",
+          properties: {
+            poolIndex: {
+              type: "number",
+              description: "Zero-based index into `pools` naming the pool to chart.",
+            },
+            resolution: {
+              type: "string",
+              enum: [...BOARD_CHART_RESOLUTIONS],
+              description: "Candle resolution. The runtime fetches up to 200 of these candles.",
+            },
+            annotations: {
+              type: "array",
+              description:
+                "Up to 12 marks you drew: kind \"level\" (price, label), kind \"zone\" "
+                + "(priceFrom below priceTo, label) or kind \"marker\" (atMs epoch milliseconds, "
+                + "label). Prices are decimal strings, never numbers, so a sub-cent price keeps "
+                + "every digit.",
+              items: {
+                type: "object",
+                properties: {
+                  kind: {
+                    type: "string",
+                    enum: ["level", "zone", "marker"],
+                    description: "Which mark this is.",
+                  },
+                  price: {
+                    type: "string",
+                    description: "level only: the price, as a decimal string.",
+                  },
+                  priceFrom: {
+                    type: "string",
+                    description: "zone only: lower bound, as a decimal string.",
+                  },
+                  priceTo: {
+                    type: "string",
+                    description: "zone only: upper bound, strictly above priceFrom.",
+                  },
+                  atMs: {
+                    type: "number",
+                    description: "marker only: the moment, in epoch MILLISECONDS.",
+                  },
+                  label: {
+                    type: "string",
+                    description: "What the mark means, 1-60 characters, single line.",
+                  },
+                },
+                required: ["kind", "label"],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: ["poolIndex", "resolution"],
+          additionalProperties: false,
+        },
+        notes: {
+          type: "array",
+          description:
+            "Up to 6 analysis notes, each 1-280 characters. Line breaks are allowed here.",
+          items: { type: "string" },
+        },
+      },
+      required: ["title", "pools"],
+      additionalProperties: false,
+    },
+  },
+];
+
+/*
+ * REGISTRATION-TIME STRICTNESS.
+ *
+ * A presentation gate keyed on a name the registry no longer uses is INERT:
+ * the sole-call rule and the terminal rule silently stop applying, and the
+ * board's whole safety story goes with them. Nothing else in the repository
+ * would fail, so the disagreement is checked HERE, when the registry loads,
+ * and a wrong build cannot start.
+ *
+ * The pattern is deepseek-harness's `register()` throwing a `TypeError` when a
+ * tool declares no projector (`packages/core/tools/src/index.ts:1036-1043`).
+ * Ours is a static array rather than a call, so the equivalent is this
+ * load-time assertion.
+ *
+ * The sibling invariant - every internal tool has a dispatch route - is NOT
+ * asserted here even though it is the other half of the same idea. The
+ * registry must not depend on the dispatcher (the direction is dispatcher ->
+ * registry), and `registry-completeness.test.ts` already proves it for every
+ * internal tool at once, over the real unmocked table.
+ */
+if (BOARD_COMPOSE_TOOL_NAME !== BOARD_COMPOSE) {
+  throw new TypeError(
+    `The board presentation gate guards "${BOARD_COMPOSE_TOOL_NAME}" while the registry declares "${BOARD_COMPOSE}"; the sole-call and terminal rules would not apply`,
+  );
+}

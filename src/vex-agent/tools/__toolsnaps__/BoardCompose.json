@@ -1,0 +1,155 @@
+{
+  "definition": {
+    "function": {
+      "description": "Present market analysis as a VISUAL BOARD attached to your final reply: pool cards with live figures, your own notes, and optionally one annotated price chart. TWO RULES, both enforced before dispatch. (1) BoardCompose must be the ONLY tool call in its batch. (2) Once it returns \"staged\", every further tool call in this turn is refused: the very next thing you write must be your final reply, as plain prose. The board is attached to that message, so write the reply as the analysis it accompanies rather than as a caption for it. You supply ONLY your analysis: the board title, which pools to show (chain plus the pool address as the provider spells it), an optional caption per pool, up to 6 notes, and for the chart the resolution plus up to 12 annotations you drew yourself (a price level, a price zone, or a time marker, each with a label). You do NOT supply market data: prices, liquidity, volume, trade counts, token names and candles are fetched by the runtime when you call this, and are stamped with the moment they were read. Prices and times in annotations are YOUR analytical coordinates, taken from earlier tool results; they are drawn as your marks, never as measurements. There is no field for a URL, HTML, markdown, a colour, a chart option, a fee or a destination, and an unknown field is refused by name. Text is checked and refused, never silently altered. A board that would exceed 48 KiB serialized is refused with its size named; nothing is cut to make one fit. Call it once, when your analysis is finished. Your reply must STAND ALONE: a reader who never sees the board (a markdown export, an older client, a row whose board failed to load) must still get the finding from your prose. The board shows the figures; the prose says what they mean.",
+      "name": "BoardCompose",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chart": {
+            "additionalProperties": false,
+            "description": "One annotated candle chart. Optional; a board without it is still a board.",
+            "properties": {
+              "annotations": {
+                "description": "Up to 12 marks you drew: kind \"level\" (price, label), kind \"zone\" (priceFrom below priceTo, label) or kind \"marker\" (atMs epoch milliseconds, label). Prices are decimal strings, never numbers, so a sub-cent price keeps every digit.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "atMs": {
+                      "description": "marker only: the moment, in epoch MILLISECONDS.",
+                      "type": "number"
+                    },
+                    "kind": {
+                      "description": "Which mark this is.",
+                      "enum": [
+                        "level",
+                        "zone",
+                        "marker"
+                      ],
+                      "type": "string"
+                    },
+                    "label": {
+                      "description": "What the mark means, 1-60 characters, single line.",
+                      "type": "string"
+                    },
+                    "price": {
+                      "description": "level only: the price, as a decimal string.",
+                      "type": "string"
+                    },
+                    "priceFrom": {
+                      "description": "zone only: lower bound, as a decimal string.",
+                      "type": "string"
+                    },
+                    "priceTo": {
+                      "description": "zone only: upper bound, strictly above priceFrom.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "label"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "poolIndex": {
+                "description": "Zero-based index into `pools` naming the pool to chart.",
+                "type": "number"
+              },
+              "resolution": {
+                "description": "Candle resolution. The runtime fetches up to 200 of these candles.",
+                "enum": [
+                  "1s",
+                  "5s",
+                  "15s",
+                  "30s",
+                  "1m",
+                  "3m",
+                  "5m",
+                  "15m",
+                  "30m",
+                  "1h",
+                  "2h",
+                  "4h",
+                  "8h",
+                  "12h",
+                  "1d",
+                  "3d",
+                  "1w",
+                  "1mo"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "poolIndex",
+              "resolution"
+            ],
+            "type": "object"
+          },
+          "notes": {
+            "description": "Up to 6 analysis notes, each 1-280 characters. Line breaks are allowed here.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pools": {
+            "description": "1 to 8 pools, in the order they should be displayed.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "caption": {
+                  "description": "Your note about this pool, 1-140 characters, single line. Optional.",
+                  "type": "string"
+                },
+                "chain": {
+                  "description": "DexScreener chain slug, lowercase, e.g. solana, base, arbitrum.",
+                  "type": "string"
+                },
+                "pairAddress": {
+                  "description": "Pool address exactly as the provider spells it. Case matters on Solana; the checksummed spelling is the one that resolves on EVM chains.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "chain",
+                "pairAddress"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "Board heading, 1-80 characters, single line.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "pools"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "local_write",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "safe_at_barrier",
+    "withheld": false
+  }
+}

@@ -99,8 +99,9 @@ describe("tool contract snapshots", () => {
     // The INTERNAL count is pinned literally, because the internal registry is
     // small, hand-authored, and a change to it is always a reviewed contract
     // change. 34 -> 32: the ToolSearch merge deleted the `describe_tools` and
-    // `execute_tool` ToolDefs (`registry/protocol.ts`).
-    expect(internal).toHaveLength(32);
+    // `execute_tool` ToolDefs (`registry/protocol.ts`). 32 -> 33: `BoardCompose`
+    // (`registry/board.ts`), the terminal presentation tool.
+    expect(internal).toHaveLength(33);
 
     // The TOTAL is asserted STRUCTURALLY - every registered tool and every
     // manifest gets exactly one contract, and nothing else does. A literal was
@@ -125,8 +126,10 @@ describe("tool contract snapshots", () => {
     // surface, so the visible count drops by exactly one: the merged
     // `describe_tools`. 32 registered, minus `MissionDraftUpdate`, which the
     // baseline's ACTIVE RUN cannot hold at the same time as mission setup.
-    expect(internalVisibleOrder).toHaveLength(31);
-    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(71);
+    // 31 -> 32, worst case 71 -> 72: `BoardCompose` declares no visibility
+    // gate, so it is offered in every session the baseline can represent.
+    expect(internalVisibleOrder).toHaveLength(32);
+    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(72);
   });
 
   it("derives its env gates from the live catalogs", () => {

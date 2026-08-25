@@ -28,6 +28,7 @@ import { COMPACT_TOOLS } from "./compact.js";
 import { SESSION_MEMORY_TOOLS } from "./session-memory.js";
 import { LONG_MEMORY_TOOLS } from "./long-memory.js";
 import { PLAN_TOOLS } from "./plan.js";
+import { BOARD_TOOLS } from "./board.js";
 
 // Order matters — the LLM sees tools in this order, which can subtly bias
 // proactive selection. Protocol discovery comes first because it is the
@@ -48,6 +49,8 @@ export const TOOLS: readonly ToolDef[] = [
   ...SESSION_MEMORY_TOOLS,
   ...LONG_MEMORY_TOOLS,
   ...PLAN_TOOLS,
+  // Presentation, last: it ENDS a turn, so offering it late matches when it is used.
+  ...BOARD_TOOLS,
 ];
 
 // ── Registry API ─────────────────────────────────────────────────
