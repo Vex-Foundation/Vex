@@ -1023,10 +1023,17 @@ a state diagram and real-client proof.
   writing a user-global file from a project is invasive and is not done).
 - `AGENTS.md` managed block (`<!-- vex:studio:begin hash=... -->`) rendered
   from the prompt layers minus in-app-only layers, plus the project's
-  permission and wallets; compact; rich declarations in
-  `.vex/protocols.md`. `CLAUDE.md` created with `@AGENTS.md` or the import
-  appended. Regeneration on project update, Vex version change, Repair.
-  Drift reported with a badge, never overwritten silently.
+  permission and wallets WITH their as-of dates (project creation, last
+  scope update), a bounded hash-covered CHANGE-NOTE section (Vex version +
+  date + what changed, newest first) appended on every regeneration that
+  changed anything, and the closing bug-report note (agent may ASK the
+  user to report a Vex bug as a PR on github.com/Vex-Foundation/Vex;
+  bounty in USDC or VEX token via Discord with the PR link; the agent
+  never reports on its own) - all per owner decisions 2026-08-25, detailed
+  in A5b item 7b; compact; rich declarations in `.vex/protocols.md`.
+  `CLAUDE.md` created with `@AGENTS.md` or the import appended.
+  Regeneration on project update, Vex version change, Repair. Drift
+  reported with a badge, never overwritten silently.
 
 ### 2.7 Studio UI
 
@@ -2380,12 +2387,11 @@ serialization, drift, IPC.
    and ambiguous `.json`+`.jsonc` twins; same-directory exclusive
    temp files, permission preservation, containment revalidation
    after resolution, optimistic source-hash verification before
-   replacement. Tests: symlink, malformed input, collision, size,
-   plus FAULT INJECTION on reconciliation: a run that fails after the
-   Nth successful artifact replacement leaves per-file provenance
-   already committed, and Repair completes the remainder from it -
-   proven, not assumed;
-   bound, concurrent external edit.
+   replacement. Tests: symlink, malformed input, collision, size
+   bound, concurrent external edit, plus FAULT INJECTION on
+   reconciliation: a run that fails after the Nth successful artifact
+   replacement leaves per-file provenance already committed, and
+   Repair completes the remainder from it - proven, not assumed.
 6. TRIGGERS, SERIALIZED PER PROJECT: render jobs queue per project and
    RELOAD THE LATEST COMMITTED SCOPE at execution (two updates
    committing in order can never render in reverse order); durable
@@ -2401,6 +2407,36 @@ serialization, drift, IPC.
    channel (deletion is deferred). Strict schemas, sender validation,
    the full positive/invalid/unauthorized/cancellation set per the
    stage-P pattern.
+7b. MANAGED CONTENT (owner decisions 2026-08-25; picks up the A5a
+   named gap - both need the project DTO this stage owns). The
+   `AGENTS.md` managed block is COMPLETED with the project-dependent
+   half the A5a renderer deliberately left out, all inside the
+   hash-covered markers:
+   - what Vex MCP IS and how it runs (server alive while the app
+     runs, per-project bridge, approval flow), the hot always-loaded
+     surface plus the LIVE count of tools discoverable through
+     `vex_ToolSearch` (from the inventory, never a pinned number),
+     and what the agent may build with them;
+   - the project's PERMISSION and WALLETS with their AS-OF DATES:
+     the project's creation date and the date of the last scope
+     update - a reader can see not only what was granted but WHEN;
+   - CHANGE NOTES: a bounded, hash-covered section of tagged entries
+     ("changed X and Y", Vex version + date, newest first, bounded
+     count with older entries dropped by the bound) appended on every
+     regeneration that changed anything - a Vex update or a project
+     settings edit is VISIBLE in the file, never a silent rewrite;
+   - the BUG-REPORT NOTE at the end: on hitting a Vex bug the agent
+     MAY ASK THE USER whether to report it - a PR or issue on
+     github.com/Vex-Foundation/Vex - and mentions the bounty for
+     real, reproducible reports (USDC or VEX token), claimed on
+     Discord with the PR link. The agent asks first and NEVER
+     reports on its own: nothing leaves the machine without the
+     user's word.
+   The `CLAUDE.md` renderer (create with `@AGENTS.md`, or append the
+   import to an existing file through the same merge discipline) ships
+   here too. Goldens regenerate; drift semantics are unchanged (the
+   change-note section lives inside the markers, so tampering with it
+   is drift like any other byte).
 8. TESTS: matrix-vs-registry exhaustive (every id has a row and a
    renderer or an explicit UNSUPPORTED mark); golden triple per agent;
    provenance (foreign entry refused, ours rewritten, changed-ours
