@@ -13,9 +13,10 @@ const MARKET_LIST: LighterTradingMarketList = {
   retrievedAt: 1_720_000_000_000,
   markets: [
     market(1, "BTC", "perp"),
-    market(7, "ETH", "perp"),
-    market(8, "ETH/USDC", "spot"),
+    market(0, "ETH", "perp"),
+    market(2048, "ETH/USDG", "spot", 1, 3),
     market(10, "AAPL", "perp"),
+    market(2049, "AAPL/USDG", "spot", 4, 3),
   ],
 };
 
@@ -129,7 +130,7 @@ describe("Light it up dialog", () => {
     };
   });
 
-  it("shows Perps and Spot while disabling unclassified Stocks", async () => {
+  it("partitions provider markets into enabled Perps, Stocks, and Spot sections", async () => {
     renderDialog();
 
     const perps = await screen.findByRole("button", { name: "Perps" });
@@ -137,12 +138,41 @@ describe("Light it up dialog", () => {
     const spot = screen.getByRole("button", { name: "Spot" });
 
     expect(perps.getAttribute("aria-pressed")).toBe("true");
-    expect((stocks as HTMLButtonElement).disabled).toBe(true);
-    expect(stocks.getAttribute("title")).toBe("Provider classification unavailable");
+    expect((stocks as HTMLButtonElement).disabled).toBe(false);
     expect((spot as HTMLButtonElement).disabled).toBe(false);
 
-    fireEvent.click(spot);
-    await waitFor(() => expect(spot.getAttribute("aria-pressed")).toBe("true"));
+    fireEvent.click(stocks);
+    await waitFor(() => expect(stocks.getAttribute("aria-pressed")).toBe("true"));
+    const summary = screen.getByRole("region", { name: "Selected market summary" });
+    expect(summary.getAttribute("data-market-section")).toBe("stocks");
+    expect(summary.getAttribute("data-market-type")).toBe("perp");
+    expect(within(summary).getByText("Stock · Perpetual", { exact: false })).toBeTruthy();
+  });
+
+  it("keeps a tokenized equity under Stocks while preserving its spot execution", async () => {
+    renderDialog();
+
+    fireEvent.click(await screen.findByRole("button", { name: /BTC.*Perpetual.*active/i }));
+    const pickerTabs = within(screen.getByRole("navigation", { name: "Market type" }));
+    fireEvent.click(pickerTabs.getByRole("button", { name: "Stocks" }));
+
+    expect(screen.queryByRole("option", { name: /BTC/ })).toBeNull();
+    const stockSpot = screen.getByRole("option", {
+      name: /AAPL.*AAPL\/USDG.*Stock token.*Spot.*active/i,
+    });
+    fireEvent.click(stockSpot);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Stocks" }).getAttribute("aria-pressed"))
+        .toBe("true");
+    });
+    const summary = screen.getByRole("region", { name: "Selected market summary" });
+    expect(summary.getAttribute("data-market-section")).toBe("stocks");
+    expect(summary.getAttribute("data-market-type")).toBe("spot");
+    expect(within(summary).getByText("AAPL")).toBeTruthy();
+    expect(within(summary).getByText(/AAPL\/USDG.*Stock token.*Spot.*active/i)).toBeTruthy();
+    expect(screen.getByText("24h volume (USDG)")).toBeTruthy();
+    expect(screen.queryByText("Funding (current)")).toBeNull();
   });
 
   it("binds the workspace treatment to the selected Lighter environment", async () => {
@@ -206,13 +236,13 @@ describe("Light it up dialog", () => {
     renderDialog();
 
     fireEvent.click(await screen.findByRole("button", { name: "Spot" }));
-    await waitFor(() => expect(screen.getByText("24h volume (USDC)")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("24h volume (USDG)")).toBeTruthy());
     expect(screen.getByRole("region", { name: "Selected market summary" }).getAttribute("data-market-type"))
       .toBe("spot");
     expect(screen.queryByText("Open interest (USD)")).toBeNull();
     expect(screen.queryByText("Funding (current)")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /ETH\/USDC.*spot.*active/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ETH\/USDG.*Spot.*active/i }));
     expect(screen.getAllByText("0.0003%").length).toBeGreaterThan(0);
     expect(screen.queryByText("0.03%")).toBeNull();
   });
@@ -242,14 +272,14 @@ describe("Light it up dialog", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /BTC.*perp.*active/i }));
     const search = screen.getByRole("combobox", { name: "Search Lighter markets" });
-    fireEvent.change(search, { target: { value: "USDC" } });
+    fireEvent.change(search, { target: { value: "USDG" } });
 
-    const option = screen.getByRole("option", { name: /ETH\/USDC.*Spot.*active/i });
+    const option = screen.getByRole("option", { name: /ETH.*ETH\/USDG.*Spot.*active/i });
     fireEvent.click(option);
 
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "Search Lighter markets" })).toBeNull();
-      expect(screen.getByRole("button", { name: /ETH\/USDC.*spot.*active/i })).toBeTruthy();
+      expect(screen.getByRole("button", { name: /ETH.*ETH\/USDG.*Spot.*active/i })).toBeTruthy();
     });
   });
 
@@ -361,14 +391,16 @@ function market(
   marketId: number,
   symbol: string,
   marketType: "perp" | "spot",
+  baseAssetId = marketType === "perp" ? 0 : 1,
+  quoteAssetId = marketType === "perp" ? 0 : 3,
 ): LighterTradingMarketList["markets"][number] {
   return {
     marketId,
     symbol,
     marketType,
     status: "active",
-    baseAssetId: marketType === "perp" ? 0 : 1,
-    quoteAssetId: 3,
+    baseAssetId,
+    quoteAssetId,
     minBaseAmount: "0.001",
     minQuoteAmount: "10",
     orderQuoteLimit: "100000",

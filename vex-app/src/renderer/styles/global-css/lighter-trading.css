@@ -1222,6 +1222,19 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 }
 
 .lit-market-name { display: flex; min-width: 0; align-items: center; gap: 12px; }
+.lit-market-identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.lit-market-identity small {
+  overflow: hidden;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .lit-market-symbol {
   --lit-market-symbol-size: 34px;
   display: inline-flex;
