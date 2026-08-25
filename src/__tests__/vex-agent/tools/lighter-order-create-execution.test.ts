@@ -984,6 +984,50 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.client.sendTx).toHaveBeenCalledTimes(1);
   });
 
+  it("reports reconciliation-only ambiguity when acceptance persistence fails after submission", async () => {
+    const predictedExecutionTimeMs = 1_787_694_621_445;
+    const base = deps();
+    const d = deps({
+      client: {
+        ...base.client,
+        sendTx: vi.fn(async () => ({
+          code: 200,
+          message: PROVIDER_SUBMIT_MESSAGE,
+          tx_hash: TX_HASH,
+          predicted_execution_time_ms: predictedExecutionTimeMs,
+          volume_quota_remaining: 99,
+        })),
+      },
+      intents: {
+        ...base.intents,
+        markApiAccepted: vi.fn(async () => {
+          throw new Error(`value "${predictedExecutionTimeMs}" is out of range for type integer`);
+        }),
+      },
+    });
+
+    const result = await executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    });
+
+    expect(result).toMatchObject({
+      status: "ambiguous",
+      executionState: "ambiguous",
+      reason: "api_acceptance_persist_failed",
+      signerTxHash: TX_HASH,
+    });
+    expect(result.message).toContain("before any retry");
+    expect(d.client.sendTx).toHaveBeenCalledTimes(1);
+    expect(d.intents.markAmbiguous).toHaveBeenCalledWith({
+      intentId: PLAN.intentId,
+      sessionId: PLAN.sessionId,
+      environment: PLAN.environment,
+      reason: "api_acceptance_persist_failed",
+    });
+  });
+
   it("marks send-time uncertainty ambiguous without exposing signed payloads", async () => {
     const d = deps({
       client: {

@@ -243,17 +243,23 @@ export async function executeApprovedLighterCreateOrder(input: {
       return ambiguous(plan, PROVIDER_HASH_MISMATCH_AMBIGUOUS_REASON, signed.txHash);
     }
 
-    const accepted = await deps.intents.markApiAccepted({
-      intentId: plan.intentId,
-      sessionId: plan.sessionId,
-      environment: plan.environment,
-      signerTxHash: signed.txHash,
-      submittedTxHash: response.tx_hash,
-      submitCode: response.code,
-      submitMessage: response.message ?? null,
-      predictedExecutionTimeMs: response.predicted_execution_time_ms,
-      volumeQuotaRemaining: response.volume_quota_remaining ?? null,
-    });
+    let accepted: Awaited<ReturnType<typeof lighterOrderExecutionIntentsRepo.markApiAccepted>>;
+    try {
+      accepted = await deps.intents.markApiAccepted({
+        intentId: plan.intentId,
+        sessionId: plan.sessionId,
+        environment: plan.environment,
+        signerTxHash: signed.txHash,
+        submittedTxHash: response.tx_hash,
+        submitCode: response.code,
+        submitMessage: response.message ?? null,
+        predictedExecutionTimeMs: response.predicted_execution_time_ms,
+        volumeQuotaRemaining: response.volume_quota_remaining ?? null,
+      });
+    } catch {
+      await markAmbiguous(deps, plan, API_ACCEPTED_PERSIST_AMBIGUOUS_REASON);
+      return ambiguous(plan, API_ACCEPTED_PERSIST_AMBIGUOUS_REASON, signed.txHash);
+    }
     if (accepted === null) {
       await markAmbiguous(deps, plan, API_ACCEPTED_PERSIST_AMBIGUOUS_REASON);
       return ambiguous(plan, API_ACCEPTED_PERSIST_AMBIGUOUS_REASON, signed.txHash);

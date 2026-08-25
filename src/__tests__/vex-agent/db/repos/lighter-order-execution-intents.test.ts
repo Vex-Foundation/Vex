@@ -548,6 +548,7 @@ describe("lighter order execution intents repo", () => {
 
   it("marks a submitted intent as API accepted without treating it as final execution", async () => {
     const submitMessage = '{"status":"accepted","detail":"queued by Lighter"}';
+    const predictedExecutionTimeMs = 1_787_694_621_445;
     mockQueryOne.mockResolvedValueOnce(dbRow({
       approval_status: "approved",
       execution_state: "api_accepted",
@@ -556,7 +557,7 @@ describe("lighter order execution intents repo", () => {
       submitted_tx_hash: "0xabc123",
       submit_code: 200,
       submit_message: submitMessage,
-      predicted_execution_time_ms: 250,
+      predicted_execution_time_ms: predictedExecutionTimeMs,
       volume_quota_remaining: "10780",
       signed_at: new Date("2026-08-12T00:02:00.000Z"),
       submitted_at: new Date("2026-08-12T00:02:01.000Z"),
@@ -571,7 +572,7 @@ describe("lighter order execution intents repo", () => {
       submittedTxHash: "0xabc123",
       submitCode: 200,
       submitMessage,
-      predictedExecutionTimeMs: 250,
+      predictedExecutionTimeMs,
       volumeQuotaRemaining: 10780,
     });
 
@@ -587,7 +588,7 @@ describe("lighter order execution intents repo", () => {
       "0xabc123",
       200,
       submitMessage,
-      250,
+      predictedExecutionTimeMs,
       10780,
     ]);
     expect(accepted).toMatchObject({
@@ -595,7 +596,7 @@ describe("lighter order execution intents repo", () => {
       submittedTxHash: "0xabc123",
       submitCode: 200,
       submitMessage,
-      predictedExecutionTimeMs: 250,
+      predictedExecutionTimeMs,
       volumeQuotaRemaining: "10780",
       apiAcceptedAt: "2026-08-12T00:02:02.000Z",
     });
