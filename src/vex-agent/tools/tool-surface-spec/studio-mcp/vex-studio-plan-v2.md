@@ -968,8 +968,10 @@ a state diagram and real-client proof.
   `.gemini/settings.json` (plus `context.fileName: ["AGENTS.md"]`),
   `.qwen/settings.json`, `.cursor/mcp.json`, `.amp/settings.json`,
   `.factory/mcp.json`, `.kiro/settings/mcp.json`, `opencode.json`,
-  `.vibe/config.toml`, `.cline/mcp.json`. Never written: `.crushrc`,
-  Gemini `trust: true`, Kiro `autoApprove`, Warp.
+  `.vibe/config.toml`. Never written: `.crushrc`, Gemini `trust: true`,
+  Kiro `autoApprove`, Grok `[permission]`, and no file at all for the
+  unsupported ids (cline and the Warp CLI read user-global config only;
+  writing a user-global file from a project is invasive and is not done).
 - `AGENTS.md` managed block (`<!-- vex:studio:begin hash=... -->`) rendered
   from the prompt layers minus in-app-only layers, plus the project's
   permission and wallets; compact; rich declarations in
@@ -2186,10 +2188,14 @@ not a merged manifest.
 Files: `src/vex-agent/studio/agents.ts`, `src/vex-agent/studio/installer/
 {writers,merge,managed-block,render}.ts`, `src/vex-agent/studio/
 instructions/*`, `vex-app/src/main/studio/installer.ts`, `CH.projects.
-{update,delete,repairFiles}`. Dependency: `jsonc-parser`.
+{update,repairFiles}` (NO delete channel here: A5 never deletes files,
+and deletion authority is deferred with the project-deletion stage).
+Dependency: `jsonc-parser`.
 Verification: golden files per agent, merge-not-clobber with pre-existing
 content and comments, managed-block idempotency and drift, a real run of
-each selected agent in a generated project.
+each selected PROJECT- and LAUNCH-integrated agent in a generated project
+(an unsupported selection produces no artifact to run and is verified
+through its explicit outcome instead).
 
 #### Detailed spec (v2 after Codex plan review turn 1; split A5a/A5b)
 
@@ -2215,10 +2221,25 @@ serialization, drift, IPC.
    2026-08-24 is SUPERSEDED by the 2026-08-25 re-verification: its
    premise (an `oz`-style mcp flag) does not exist on the current
    `warp` binary, which reads global config only and manages MCP
-   in-session; the Warp APP does read a project `.warp/.mcp.json`
-   behind explicit in-app manual approval - adding that app-scoped
-   writer is a pending OWNER CALL, recorded in the matrix, not built
-   by default. OWNER DECISION 2026-08-24 on the residual:
+   in-session. OWNER DECISION 2026-08-25: Warp ships UNSUPPORTED in
+   A5 - the still-functioning deprecated `oz --mcp` launch was
+   EXPLICITLY DECLINED (a bridge built on a binary the vendor is
+   removing), and the Warp APP's project `.warp/.mcp.json` (readable
+   behind explicit in-app manual approval) is NOT built. Support
+   returns when the `warp` CLI gains a project or launch mechanism.
+   SELECTION CONTRACT for unsupported ids (turn-3 decision): every
+   canonical id remains SELECTABLE and is STORED - a selection is the
+   user's durable intent, and support can arrive in a later version
+   without a migration of stored scopes. Reconciliation returns a
+   PER-AGENT DISCRIMINATED OUTCOME: a `project` or `launch` id
+   produces its artifact (or its named failure), an `unsupported` id
+   produces NO artifact and an explicit `unsupported` outcome that the
+   UI and the DTO show as such - never silence, never a fake success.
+   The registry models config mode as a DISCRIMINATED UNION
+   (`project` | `launch` | `unsupported`) so writer presence, launch
+   instructions, timeout emission and the unsupported outcome are
+   exhaustive by type. Tests pin the stored-selection round trip AND
+   the unsupported outcome shape. OWNER DECISION 2026-08-24 on the residual:
    Copilot and Grok also reading Claude's `.mcp.json` is ACCEPTED and
    described in the trust copy ("Who cares? Moze tak byc"). The
    IDLE-TIMER finding governs: the host's progress notifications are
@@ -2244,7 +2265,9 @@ serialization, drift, IPC.
    binary has NO mcp flag and reads global config only ("project-scoped
    MCP config files in repositories are not detected"), and the only
    project-scoped Warp surface is the APP's `.warp/.mcp.json` behind
-   explicit in-app manual approval (owner call, off by default);
+   explicit in-app manual approval (owner decision 2026-08-25: NOT
+   built - Warp ships unsupported, deprecated `oz` explicitly
+   declined);
    OpenCode "V2" is REFUTED (npm latest 1.18.23, no v2 line) - config
    `opencode.json[c]` key `mcp`, `additionalProperties: false`,
    `type: "local"` REQUIRED, `command` as an ARRAY, `environment` (not
@@ -2256,15 +2279,20 @@ serialization, drift, IPC.
    UNSUPPORTED (user-global only; an omitted `type` defaults to legacy
    SSE, the inverse of claude - writers never emit `type` in cline
    dialect); COPILOT gets `.github/mcp.json` with an EXPLICIT
-   `timeout: 3900000` (the vendor default is 180000 ms, far below the
-   approval wait, and a closed vendor bug reverted per-server timeouts
-   after `tools/list_changed` - re-verified at the installed version),
+   `timeout: 3900000` (the vendor default is VERSION-DEPENDENT - the
+   current CLI reference states 30000 ms while vendor issue #1378
+   measured 180000 ms at v0.0.406; either is far below the approval
+   wait, so the explicit write governs and the default never does; a
+   closed vendor bug also reverted per-server timeouts after
+   `tools/list_changed` - re-verified at the installed version),
    loading only after folder trust and silently skipped in untrusted
    dirs; GROK gets `.grok/config.toml` (`tool_timeout_sec` default
    6000 s confirmed) whose project file can ALSO carry `[permission]` -
-   the writers NEVER emit `[permission]` or any allow rule, and the
-   drift detector treats a foreign `[permission]` beside our entry as
-   reportable; the RESIDUAL - Copilot and Grok also read Claude's
+   the writers NEVER emit `[permission]` or any allow rule, a FOREIGN
+   `[permission]` beside our entry is surfaced as a SECURITY WARNING
+   distinct from Vex-owned drift, and Repair PRESERVES it (it is the
+   user's or another tool's statement, never ours to remove); the
+   RESIDUAL - Copilot and Grok also read Claude's
    `.mcp.json`, so a project with Claude selected is discoverable by
    unselected Copilot/Grok - is ACCEPTED by owner decision 2026-08-24
    and described in the trust copy; Claude's wall-clock timeout is the
@@ -2303,7 +2331,11 @@ serialization, drift, IPC.
    and ambiguous `.json`+`.jsonc` twins; same-directory exclusive
    temp files, permission preservation, containment revalidation
    after resolution, optimistic source-hash verification before
-   replacement. Tests: symlink, malformed input, collision, size
+   replacement. Tests: symlink, malformed input, collision, size,
+   plus FAULT INJECTION on reconciliation: a run that fails after the
+   Nth successful artifact replacement leaves per-file provenance
+   already committed, and Repair completes the remainder from it -
+   proven, not assumed;
    bound, concurrent external edit.
 6. TRIGGERS, SERIALIZED PER PROJECT: render jobs queue per project and
    RELOAD THE LATEST COMMITTED SCOPE at execution (two updates

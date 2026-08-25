@@ -134,9 +134,12 @@ with a row above, THE ADDENDUM WINS.
   `tool_timeout_sec: float = 60.0`, `startup_timeout_sec: float = 10.0`
   (seconds, float) -> SET tool_timeout_sec 3900. The path probe owed
   above is settled; the trust gate joins the honest-DTO rule.
-- copilot - timeout VERIFIED: per-server `timeout` in MILLISECONDS,
-  default 180000 (180 s - far below the 65-minute approval wait), so
-  the writer MUST set `timeout: 3900000` explicitly. Vendor tracker
+- copilot - timeout VERIFIED as per-server `timeout` in MILLISECONDS;
+  the DEFAULT is version-dependent (the current CLI reference states
+  30000 ms; vendor issue #1378 measured 180000 ms at v0.0.406) and
+  either is far below the 65-minute approval wait, so the writer MUST
+  set `timeout: 3900000` explicitly - the explicit write governs and
+  the default never does. Vendor tracker
   (copilot-cli#1378, closed): a per-server timeout was lost after a
   `notifications/tools/list_changed` and reverted to 180 s - re-verify
   at the installed version if our server ever emits that notification.
