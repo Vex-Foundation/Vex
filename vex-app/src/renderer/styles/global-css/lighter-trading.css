@@ -7,8 +7,8 @@
   --lit-line: rgba(255, 255, 255, 0.1);
   --lit-line-strong: rgba(255, 255, 255, 0.18);
   --lit-ink: #f7f7f8;
-  --lit-ink-secondary: #b3b3bd;
-  --lit-ink-muted: #767683;
+  --lit-ink-secondary: #c8c8d0;
+  --lit-ink-muted: #9898a5;
   --lit-grid: rgba(179, 179, 189, 0.1);
   --lit-positive: #35c58a;
   --lit-positive-volume: rgba(53, 197, 138, 0.3);
@@ -41,8 +41,8 @@
   --lit-line: rgba(18, 18, 24, 0.1);
   --lit-line-strong: rgba(18, 18, 24, 0.18);
   --lit-ink: #121218;
-  --lit-ink-secondary: #53535f;
-  --lit-ink-muted: #858590;
+  --lit-ink-secondary: #44444f;
+  --lit-ink-muted: #686874;
   --lit-grid: rgba(18, 18, 24, 0.08);
   --lit-positive: #08794e;
   --lit-positive-volume: rgba(8, 121, 78, 0.22);
@@ -690,6 +690,137 @@
 }
 
 @keyframes lit-spin { to { transform: rotate(360deg); } }
+
+/* Large desktop windows need their own reading scale. The workspace often
+ * occupies a 3K/4K Mac window, where the former popup metrics make otherwise
+ * valid 11–14px labels appear miniature beside the chart. This breakpoint
+ * scales the information architecture itself—rows, controls, headings, and
+ * chart labels—not the window, so the canvas remains sharp and scroll/focus
+ * geometry stays native. */
+@media (min-width: 1500px) {
+  .lit-dialog {
+    --lit-chart-font-size: 16;
+    font-size: 17px;
+  }
+
+  .lit-header {
+    min-height: 92px;
+    grid-template-columns: minmax(260px, 1fr) auto minmax(260px, 1fr);
+    gap: 28px;
+    padding: 16px 24px 16px 28px;
+  }
+
+  .lit-brand { gap: 15px; }
+  .lit-brand img { width: 42px; height: 42px; }
+  .lit-brand b { font-size: 22px; }
+  .lit-brand small { margin-top: 5px; font-size: 14px; }
+
+  .lit-category-tabs { border-radius: 13px; padding: 4px; }
+  .lit-category-tabs button {
+    min-height: 46px;
+    border-radius: 9px;
+    padding-inline: 22px;
+    font-size: 16px;
+  }
+  .lit-category-tabs button small { font-size: 11px; }
+
+  .lit-header-actions { gap: 12px; }
+  .lit-environment select,
+  .lit-market-select select {
+    height: 48px;
+    border-radius: 11px;
+    padding-inline: 15px 40px;
+    font-size: 16px;
+  }
+  .lit-close { width: 48px; height: 48px; border-radius: 11px; font-size: 28px; }
+
+  .lit-market-bar {
+    min-height: 84px;
+    grid-template-columns: minmax(260px, 1.25fr) repeat(5, minmax(130px, 1fr)) auto;
+    gap: 20px;
+    padding: 14px 26px;
+  }
+  .lit-market-select select { font-size: 18px; }
+  .lit-market-metric {
+    min-height: 48px;
+    justify-content: center;
+    gap: 5px;
+    border-left: 1px solid var(--lit-line);
+    padding-left: 20px;
+  }
+  .lit-market-metric small { font-size: 13px; }
+  .lit-market-metric b { font-size: 17px; }
+  .lit-live-status { font-size: 13px; }
+  .lit-live-status i,
+  .lit-chat-live i { width: 8px; height: 8px; }
+
+  .lit-workspace {
+    grid-template-columns: minmax(720px, 6.1fr) minmax(300px, 2.2fr) minmax(520px, 4fr);
+    grid-template-rows: minmax(440px, 1fr) 224px;
+    gap: 16px;
+    padding: 16px;
+  }
+  .lit-panel { border-radius: 17px; }
+  .lit-panel-header {
+    min-height: 66px;
+    gap: 16px;
+    padding: 12px 18px;
+  }
+  .lit-panel-header h3 { font-size: 18px; }
+  .lit-panel-header > span,
+  .lit-panel-header small { font-size: 13px; }
+  .lit-chat-heading > span:first-child { gap: 4px; }
+  .lit-chat-live { gap: 7px; font-size: 13px; }
+
+  .lit-resolution-tabs { gap: 2px; }
+  .lit-resolution-tabs button {
+    min-width: 42px;
+    height: 38px;
+    padding-inline: 10px;
+    font-size: 13px;
+  }
+  .lit-chart-footer {
+    min-height: 42px;
+    padding-inline: 18px;
+    font-size: 13px;
+  }
+
+  .lit-book-side { padding-block: 7px; }
+  .lit-book-row {
+    height: 38px;
+    padding-inline: 16px;
+    font-size: 15px;
+  }
+  .lit-book-spread {
+    min-height: 48px;
+    padding-inline: 16px;
+    font-size: 13px;
+  }
+  .lit-book-spread strong { font-size: 15px; }
+  .lit-book-empty { font-size: 14px; }
+
+  .lit-trades-list > div {
+    min-height: 42px;
+    grid-template-columns: 80px 1fr 1fr 112px;
+    padding-inline: 18px;
+    font-size: 14px;
+  }
+
+  .lit-chat-shell [data-vex-session-content] { padding-block-start: 16px; }
+  .lit-chat-shell [data-vex-area="session-header"] { height: 36px; }
+  .lit-chat-shell .vex-chat-prose { font-size: 19px; line-height: 1.68; }
+  .lit-chat-shell .vex-chat-prose table { font-size: 16px; }
+  .lit-chat-shell .vex-reasoning-prose { font-size: 16px; line-height: 1.6; }
+  .lit-chat-shell [data-vex-message-role="user"] > div:first-child {
+    font-size: 19px;
+    line-height: 1.6;
+  }
+
+  .lit-chat-empty { gap: 13px; padding: 48px; }
+  .lit-chat-empty img { width: 54px; height: 54px; }
+  .lit-chat-empty b { font-size: 19px; }
+  .lit-chat-empty span { max-width: 460px; font-size: 16px; line-height: 1.6; }
+}
 
 @media (max-width: 1279px) {
   .lit-workspace {
