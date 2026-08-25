@@ -16,6 +16,7 @@ type MarketIdentity = Pick<
 export interface LighterMarketClassification {
   readonly assetClass: LighterMarketAssetClass;
   readonly executionType: LighterTradingMarketType;
+  readonly section: LighterMarketSection;
   readonly ticker: string;
 }
 
@@ -23,9 +24,9 @@ export interface LighterMarketClassification {
  * Exact Lighter listing identities whose provider metadata is `RWA + STOCK`.
  *
  * Reviewed on 2026-08-25 by joining Lighter's official Core and Robinhood
- * Chain `orderBooks?filter=all` responses to each environment's `/tokenlist`.
- * Both symbol and execution market must match exactly; ticker parsing is never
- * used as classification evidence.
+ * Chain `orderBooks?filter=all` responses to `assetDetails`, then to the token
+ * catalog used by lighter.exchange. Spot rows are joined by `base_asset_id`;
+ * ticker parsing is never used as classification evidence.
  *
  * Unknown or changed identities deliberately fall back to their provider
  * execution type. This keeps a new or drifted listing out of Stocks until its
@@ -148,6 +149,7 @@ export function classifyLighterMarket(
     return {
       assetClass: "stock",
       executionType: market.marketType,
+      section: "stocks",
       ticker: verifiedTicker,
     };
   }
@@ -155,19 +157,16 @@ export function classifyLighterMarket(
   return {
     assetClass: "unclassified",
     executionType: market.marketType,
+    section: market.marketType,
     ticker: marketSymbols(market.symbol, market.marketType).base,
   };
 }
 
-export function marketMatchesSection(
+export function marketSectionFor(
   environment: LighterTradingEnvironment,
   market: MarketIdentity,
-  section: LighterMarketSection,
-): boolean {
-  if (section === "stocks") {
-    return classifyLighterMarket(environment, market).assetClass === "stock";
-  }
-  return market.marketType === section;
+): LighterMarketSection {
+  return classifyLighterMarket(environment, market).section;
 }
 
 export function marketProductLabel(

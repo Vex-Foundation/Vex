@@ -39,8 +39,8 @@ import { TradingBottomPanel } from "./AccountPanel.js";
 import { MarketSymbol } from "./MarketSymbol.js";
 import {
   classifyLighterMarket,
-  marketMatchesSection,
   marketProductLabel,
+  marketSectionFor,
   type LighterMarketSection,
 } from "./market-classification.js";
 import { useLighterCandleStream } from "./useLighterCandleStream.js";
@@ -75,7 +75,7 @@ export function LighterTradingDialog({
 }: LighterTradingDialogProps): JSX.Element {
   const theme = useUiStore((state) => state.theme);
   const [environment, setEnvironment] = useState<LighterTradingEnvironment>("rhc");
-  const [marketView, setMarketView] = useState<LighterMarketSection>("perp");
+  const [category, setCategory] = useState<LighterMarketSection>("perp");
   const [marketId, setMarketId] = useState<number | null>(null);
   const [resolution, setResolution] = useState<LighterTradingLiveResolution>("5m");
   const [marketPickerOpen, setMarketPickerOpen] = useState(false);
@@ -84,9 +84,9 @@ export function LighterTradingDialog({
   const filteredMarkets = useMemo(() => {
     if (marketList === null) return [];
     return marketList.markets.filter((market) => (
-      marketMatchesSection(environment, market, marketView)
+      marketSectionFor(environment, market) === category
     ));
-  }, [environment, marketList, marketView]);
+  }, [category, environment, marketList]);
 
   useEffect(() => {
     const selectedExists = filteredMarkets.some((market) => market.marketId === marketId);
@@ -105,7 +105,7 @@ export function LighterTradingDialog({
     environment,
     marketId,
     resolution,
-    open,
+    open && category !== "stocks",
   );
   const snapshot = snapshotQuery.data?.ok === true ? snapshotQuery.data.data : null;
   const candleStream = useLighterCandleStream({
@@ -169,15 +169,15 @@ export function LighterTradingDialog({
           </div>
 
           <nav className="lit-category-tabs" aria-label="Lighter market category">
-            <button type="button" aria-pressed={marketView === "perp"} onClick={() => setMarketView("perp")}>Perps</button>
+            <button type="button" aria-pressed={category === "perp"} onClick={() => setCategory("perp")}>Perps</button>
             <button
               type="button"
-              aria-pressed={marketView === "stocks"}
-              onClick={() => setMarketView("stocks")}
+              aria-pressed={category === "stocks"}
+              onClick={() => setCategory("stocks")}
             >
               Stocks
             </button>
-            <button type="button" aria-pressed={marketView === "spot"} onClick={() => setMarketView("spot")}>Spot</button>
+            <button type="button" aria-pressed={category === "spot"} onClick={() => setCategory("spot")}>Spot</button>
           </nav>
 
           <div className="lit-header-actions">
@@ -212,7 +212,7 @@ export function LighterTradingDialog({
         ) : marketsQuery.isLoading || marketList === null ? (
           <WorkspaceLoading label="Loading live Lighter markets…" />
         ) : filteredMarkets.length === 0 ? (
-          <WorkspaceError title="No markets available" message={`Lighter returned no ${marketView} markets for this environment.`} />
+          <WorkspaceError title="No markets available" message={`Lighter returned no ${category} markets for this environment.`} />
         ) : (
           <>
             <div className="lit-market-bar-shell">
@@ -230,15 +230,10 @@ export function LighterTradingDialog({
                 <MarketPicker
                   environment={environment}
                   markets={marketList.markets}
-                  activeView={marketView}
                   selectedMarketId={marketId}
                   onClose={() => setMarketPickerOpen(false)}
-                  onSelect={(nextMarket, sourceSection) => {
-                    setMarketView(sourceSection === "all"
-                      ? marketMatchesSection(environment, nextMarket, marketView)
-                        ? marketView
-                        : nextMarket.marketType
-                      : sourceSection);
+                  onSelect={(nextMarket) => {
+                    setCategory(marketSectionFor(environment, nextMarket));
                     setMarketId(nextMarket.marketId);
                     setMarketPickerOpen(false);
                   }}
@@ -490,7 +485,7 @@ function MarketBar({
     <section
       className="lit-market-bar"
       data-market-type={market?.marketType}
-      data-market-asset-class={classification?.assetClass}
+      data-market-section={classification?.section}
       aria-label="Selected market summary"
     >
       <button
@@ -583,43 +578,36 @@ function streamStatusLabel(status: LighterTradingCandleConnectionStatus): string
 function MarketPicker({
   environment,
   markets,
-  activeView,
   selectedMarketId,
   onClose,
   onSelect,
 }: {
   readonly environment: LighterTradingEnvironment;
   readonly markets: readonly LighterTradingMarket[];
-  readonly activeView: LighterMarketSection;
   readonly selectedMarketId: number | null;
   readonly onClose: () => void;
-  readonly onSelect: (
-    market: LighterTradingMarket,
-    sourceSection: "all" | LighterMarketSection,
-  ) => void;
+  readonly onSelect: (market: LighterTradingMarket) => void;
 }): JSX.Element {
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"all" | LighterMarketSection>(activeView);
+  const [tab, setTab] = useState<"all" | LighterMarketSection>("all");
   const [highlightedMarketId, setHighlightedMarketId] = useState<number | null>(selectedMarketId);
   const pickerRef = useRef<HTMLElement | null>(null);
   const highlightedOptionRef = useRef<HTMLButtonElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(
     document.activeElement instanceof HTMLElement ? document.activeElement : null,
   );
-  const tabMarkets = useMemo(() => (
-    tab === "all"
-      ? markets
-      : markets.filter((market) => marketMatchesSection(environment, market, tab))
-  ), [environment, markets, tab]);
   const shown = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
-    return tabMarkets.filter((market) => {
+    return markets.filter((market) => {
       const classification = classifyLighterMarket(environment, market);
-      return normalized.length === 0
-        || market.symbol.toLocaleLowerCase().includes(normalized)
-        || classification.ticker.toLocaleLowerCase().includes(normalized);
+      return (tab === "all" || classification.section === tab)
+        && (
+          normalized.length === 0
+          || market.symbol.toLocaleLowerCase().includes(normalized)
+          || classification.ticker.toLocaleLowerCase().includes(normalized)
+        );
     });
-  }, [environment, query, tabMarkets]);
+  }, [environment, markets, query, tab]);
 
   useEffect(() => {
     const selectedIsShown = shown.some((market) => market.marketId === selectedMarketId);
@@ -692,7 +680,7 @@ function MarketPicker({
       const highlighted = shown.find((market) => market.marketId === highlightedMarketId);
       if (highlighted !== undefined) {
         event.preventDefault();
-        onSelect(highlighted, tab);
+        onSelect(highlighted);
       }
     }
   };
@@ -727,11 +715,7 @@ function MarketPicker({
           />
           <button type="button" onClick={onClose} aria-label="Close market search"><IconClose size={20} /></button>
         </div>
-        <nav
-          className="lit-market-picker-tabs"
-          aria-label="Market filter"
-          aria-describedby="lit-market-filter-note"
-        >
+        <nav className="lit-market-picker-tabs" aria-label="Market type">
           {(["all", "stocks", "perp", "spot"] as const).map((item) => (
             <button
               type="button"
@@ -748,15 +732,8 @@ function MarketPicker({
                     : "Spot"}
             </button>
           ))}
-          <span role="status" aria-live="polite">
-            {shown.length === tabMarkets.length
-              ? `${tabMarkets.length} markets`
-              : `${shown.length} of ${tabMarkets.length} markets`}
-          </span>
+          <span>{shown.length} markets</span>
         </nav>
-        <p id="lit-market-filter-note" className="sr-only">
-          Stocks also appear under their Spot or Perpetual execution type.
-        </p>
         <div className="lit-market-table-head" aria-hidden="true">
           <span>Market</span><span>Type</span><span>Status</span><span>Base / quote minimum</span><span>Taker fee</span>
         </div>
@@ -781,7 +758,7 @@ function MarketPicker({
               data-highlighted={market.marketId === highlightedMarketId || undefined}
               ref={market.marketId === highlightedMarketId ? highlightedOptionRef : undefined}
               onMouseEnter={() => setHighlightedMarketId(market.marketId)}
-              onClick={() => onSelect(market, tab)}
+              onClick={() => onSelect(market)}
             >
               <span className="lit-market-name">
                 <MarketSymbol environment={environment} market={market} />
