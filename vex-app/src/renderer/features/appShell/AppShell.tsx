@@ -74,7 +74,7 @@ export function AppShell(): JSX.Element {
 
       <ShellFrame
         activeSessionId={activeSessionId}
-        onCreate={() => openCreateSession()}
+        onCreate={(initialMessage) => openCreateSession(initialMessage ?? null)}
       />
 
       {/* Full-app overlay screens (Memory / Sessions / How Vex works) —
@@ -104,7 +104,7 @@ function ShellFrame({
   onCreate,
 }: {
   readonly activeSessionId: string | null;
-  readonly onCreate: () => void;
+  readonly onCreate: (initialMessage?: string) => void;
 }): JSX.Element {
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
@@ -260,6 +260,7 @@ function ShellFrame({
               activeSessionId={activeSessionId}
               open={lighterTradingOpen}
               onOpenChange={setLighterTradingOpen}
+              onCreateSession={onCreate}
             />
             <GlobalApprovals />
             <SessionExportControl activeSessionId={activeSessionId} />

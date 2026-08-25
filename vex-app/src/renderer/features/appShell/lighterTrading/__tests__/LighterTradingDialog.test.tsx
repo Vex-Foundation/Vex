@@ -6,12 +6,13 @@ import type {
 } from "@shared/schemas/lighter-trading.js";
 import { LighterTradingDialog } from "../LighterTradingDialog.js";
 
-const mocks = vi.hoisted(() => ({ onOpenChange: vi.fn() }));
+const mocks = vi.hoisted(() => ({ onOpenChange: vi.fn(), onCreateSession: vi.fn() }));
 
 const MARKET_LIST: LighterTradingMarketList = {
   environment: "rhc",
   retrievedAt: 1_720_000_000_000,
   markets: [
+    market(1, "BTC", "perp"),
     market(7, "ETH", "perp"),
     market(8, "ETH/USDC", "spot"),
   ],
@@ -123,6 +124,7 @@ describe("Light it up dialog", () => {
         open={false}
         activeSessionId="session-1"
         onOpenChange={mocks.onOpenChange}
+        onCreateSession={mocks.onCreateSession}
       />,
     );
     expect(screen.queryByTestId("active-session-chat")).toBeNull();
@@ -131,15 +133,34 @@ describe("Light it up dialog", () => {
   it("starts on Lighter's live 5m interval and does not expose unsupported weekly streaming", async () => {
     renderDialog();
 
+    expect(await screen.findByRole("button", { name: /BTC.*perp.*active/i })).toBeTruthy();
     expect((await screen.findByRole("button", { name: "5m" })).getAttribute("aria-pressed"))
       .toBe("true");
     expect(screen.queryByRole("button", { name: "1w" })).toBeNull();
   });
 
+  it("turns the sessionless agent column into an actionable analysis start surface", async () => {
+    render(
+      <LighterTradingDialog
+        open
+        activeSessionId={null}
+        onOpenChange={mocks.onOpenChange}
+        onCreateSession={mocks.onCreateSession}
+      />,
+    );
+
+    expect(await screen.findByText("Analyze BTC without leaving the live tape.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Read the chart/i }));
+    expect(mocks.onCreateSession).toHaveBeenCalledWith(expect.stringContaining("current BTC Lighter chart"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Start a Vex session" }));
+    expect(mocks.onCreateSession).toHaveBeenLastCalledWith();
+  });
+
   it("searches and selects a real provider market from the Lighter-style picker", async () => {
     renderDialog();
 
-    fireEvent.click(await screen.findByRole("button", { name: /ETH.*perp.*active/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /BTC.*perp.*active/i }));
     const search = screen.getByRole("textbox", { name: "Search Lighter markets" });
     fireEvent.change(search, { target: { value: "USDC" } });
 
@@ -159,6 +180,7 @@ function renderDialog(): ReturnType<typeof render> {
       open
       activeSessionId="session-1"
       onOpenChange={mocks.onOpenChange}
+      onCreateSession={mocks.onCreateSession}
     />,
   );
 }

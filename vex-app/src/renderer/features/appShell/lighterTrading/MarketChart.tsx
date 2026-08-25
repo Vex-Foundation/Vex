@@ -5,6 +5,7 @@ import {
   createChart,
   HistogramSeries,
   LineStyle,
+  TickMarkType,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
@@ -76,15 +77,30 @@ export function formatLocalChartTime(time: Time): string {
   }).format(date);
 }
 
-function formatLocalChartTick(time: Time): string {
+export function formatLocalChartTick(time: Time, tickMarkType: TickMarkType): string {
   const date = timestampToLocalDate(time);
   if (date === null) return "";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  switch (tickMarkType) {
+    case TickMarkType.Year:
+      return new Intl.DateTimeFormat(undefined, { year: "numeric" }).format(date);
+    case TickMarkType.Month:
+      return new Intl.DateTimeFormat(undefined, { month: "short" }).format(date);
+    case TickMarkType.DayOfMonth:
+      return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
+    case TickMarkType.TimeWithSeconds:
+      return new Intl.DateTimeFormat(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+      }).format(date);
+    case TickMarkType.Time:
+      return new Intl.DateTimeFormat(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      }).format(date);
+  }
 }
 
 function resolvePriceFormat(
@@ -190,6 +206,30 @@ export function MarketChart({
   const [legend, setLegend] = useState<ChartLegendValues | null>(null);
   const identity = `${environment ?? "unknown"}:${marketId ?? symbol}:${resolution ?? "unknown"}`;
   const precision = resolvePriceFormat(pricePrecision, priceMinMove).precision;
+
+  const zoomVisibleRange = (factor: number): void => {
+    const chart = chartRef.current;
+    const applied = appliedDataRef.current;
+    if (chart === null || applied === null || applied.candles.length === 0) return;
+    const timeScale = chart.timeScale();
+    const visible = timeScale.getVisibleLogicalRange();
+    if (visible === null) return;
+    const currentWidth = Math.max(1, visible.to - visible.from);
+    const maximumWidth = Math.max(16, applied.candles.length + LIVE_RIGHT_OFFSET * 2);
+    const nextWidth = Math.min(maximumWidth, Math.max(12, currentWidth * factor));
+    const center = (visible.from + visible.to) / 2;
+    timeScale.setVisibleLogicalRange({
+      from: center - nextWidth / 2,
+      to: center + nextWidth / 2,
+    });
+  };
+
+  const resetVisibleRange = (): void => {
+    const chart = chartRef.current;
+    const applied = appliedDataRef.current;
+    if (chart === null || applied === null || applied.candles.length === 0) return;
+    chart.timeScale().setVisibleLogicalRange(initialVisibleRange(applied.candles.length));
+  };
 
   useEffect(() => {
     const host = hostRef.current;
@@ -448,6 +488,14 @@ export function MarketChart({
         aria-label={`${symbol} candlestick chart with volume`}
         data-testid="lighter-market-chart"
       />
+      {candles.length > 0 ? (
+        <div className="lit-chart-tools" aria-label="Chart controls">
+          <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => zoomVisibleRange(0.75)}>+</button>
+          <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => zoomVisibleRange(1.35)}>−</button>
+          <button type="button" aria-label="Reset chart view" title="Reset chart view" onClick={resetVisibleRange}>↺</button>
+          <button type="button" aria-label="Return to live candles" title="Return to live candles" onClick={resetVisibleRange}>●</button>
+        </div>
+      ) : null}
       {legend !== null ? (
         <div className="lit-chart-legend" aria-label={`${symbol} chart values`}>
           <span><b>O</b> {legend.open.toFixed(precision)}</span>

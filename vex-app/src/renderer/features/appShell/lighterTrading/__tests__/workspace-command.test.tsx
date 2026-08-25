@@ -27,6 +27,7 @@ describe("Light it up conversational activation", () => {
         activeSessionId="session-1"
         open={false}
         onOpenChange={onOpenChange}
+        onCreateSession={vi.fn()}
       />,
     );
 

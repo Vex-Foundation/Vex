@@ -42,12 +42,14 @@ export interface LighterTradingDialogProps {
   readonly open: boolean;
   readonly activeSessionId: string | null;
   readonly onOpenChange: (open: boolean) => void;
+  readonly onCreateSession: (initialMessage?: string) => void;
 }
 
 export function LighterTradingDialog({
   open,
   activeSessionId,
   onOpenChange,
+  onCreateSession,
 }: LighterTradingDialogProps): JSX.Element {
   const theme = useUiStore((state) => state.theme);
   const [environment, setEnvironment] = useState<LighterTradingEnvironment>("rhc");
@@ -65,7 +67,10 @@ export function LighterTradingDialog({
   useEffect(() => {
     const selectedExists = filteredMarkets.some((market) => market.marketId === marketId);
     if (selectedExists) return;
-    const next = filteredMarkets.find((market) => market.status === "active")
+    const next = filteredMarkets.find((market) => (
+      market.status === "active" && market.symbol.toLocaleUpperCase() === "BTC"
+    ))
+      ?? filteredMarkets.find((market) => market.status === "active")
       ?? filteredMarkets[0]
       ?? null;
     setMarketId(next?.marketId ?? null);
@@ -165,7 +170,7 @@ export function LighterTradingDialog({
                   : "Lighter has not returned market data yet."}
               />
             ) : (
-              <div className="lit-workspace">
+              <div className="lit-workspace" data-session-active={activeSessionId !== null || undefined}>
                 <section className="lit-panel lit-chart-panel" aria-labelledby="lit-chart-title">
                   <header className="lit-panel-header lit-chart-heading">
                     <span>
@@ -210,7 +215,12 @@ export function LighterTradingDialog({
                   </footer>
                 </section>
                 <OrderBook book={snapshot?.book ?? EMPTY_BOOK} />
-                <LighterConversation open={open} activeSessionId={activeSessionId} />
+                <LighterConversation
+                  open={open}
+                  activeSessionId={activeSessionId}
+                  marketSymbol={market.symbol}
+                  onCreateSession={onCreateSession}
+                />
                 <RecentTrades trades={snapshot?.trades ?? EMPTY_TRADES} />
               </div>
             )}
@@ -236,10 +246,32 @@ export function LighterTradingDialog({
 function LighterConversation({
   open,
   activeSessionId,
+  marketSymbol,
+  onCreateSession,
 }: {
   readonly open: boolean;
   readonly activeSessionId: string | null;
+  readonly marketSymbol: string;
+  readonly onCreateSession: (initialMessage?: string) => void;
 }): JSX.Element {
+  const prompts = [
+    {
+      label: "Read the chart",
+      detail: "Structure, momentum, and invalidation",
+      message: `Analyze the current ${marketSymbol} Lighter chart. Identify market structure, momentum, support, resistance, and clear invalidation levels. Do not execute anything.`,
+    },
+    {
+      label: "Explain the move",
+      detail: "Price action and order-book context",
+      message: `Explain the latest ${marketSymbol} price action using the live Lighter chart and order book. Separate observed facts from inference.`,
+    },
+    {
+      label: "Build a trade plan",
+      detail: "Entry, risk, targets, and stop",
+      message: `Help me build a risk-managed ${marketSymbol} trade plan from the live Lighter market. Include entry logic, invalidation, stop, targets, and position-risk considerations. Do not execute anything.`,
+    },
+  ] as const;
+
   return (
     <section
       className="lit-panel lit-chat-panel"
@@ -258,17 +290,40 @@ function LighterConversation({
           className="lit-chat-live"
           data-active={activeSessionId !== null || undefined}
         >
-          <i aria-hidden="true" /> {activeSessionId === null ? "Offline" : "Live"}
+          <i aria-hidden="true" /> {activeSessionId === null ? "Start session" : "Live"}
         </span>
       </header>
       {!open ? null : activeSessionId === null ? (
-        <div className="lit-chat-empty" role="status">
-          <img src="./protocols/lighter.svg" alt="" width="42" height="42" />
-          <b>Open a session to trade with Vex</b>
-          <span>
-            The live chart remains available. Close this workspace, start or
-            select a session, then return to analyze and chat side by side.
-          </span>
+        <div className="lit-chat-empty">
+          <div className="lit-chat-empty-content">
+            <div className="lit-chat-empty-mark" aria-hidden="true">
+              <img src="./protocols/lighter.svg" alt="" width="44" height="44" />
+            </div>
+            <small>VEX MARKET COPILOT</small>
+            <b>Analyze {marketSymbol} without leaving the live tape.</b>
+            <p>
+              Start a session here and the chart, depth, conversation, and any
+              approval card stay together in this workspace.
+            </p>
+            <div className="lit-chat-starters" aria-label="Suggested market analysis prompts">
+              {prompts.map((prompt) => (
+                <button
+                  type="button"
+                  key={prompt.label}
+                  onClick={() => onCreateSession(prompt.message)}
+                >
+                  <span><b>{prompt.label}</b><small>{prompt.detail}</small></span>
+                  <span aria-hidden="true">↗</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="lit-chat-start-dock">
+            <button type="button" onClick={() => onCreateSession()}>
+              Start a Vex session
+            </button>
+            <small>Read-only until you separately review and approve a trade.</small>
+          </div>
         </div>
       ) : (
         <div className="lit-chat-shell">

@@ -304,9 +304,9 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
   grid-template-areas:
     "chart book chat"
     "trades trades chat";
-  gap: 12px;
+  gap: 10px;
   overflow: hidden;
-  padding: 12px;
+  padding: 10px;
 }
 
 .lit-panel {
@@ -314,7 +314,7 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--lit-line);
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--lit-panel);
 }
 
@@ -399,20 +399,119 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
 }
 
 .lit-chat-empty {
-  display: flex;
+  display: grid;
   min-height: 0;
   flex: 1 1 auto;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 8px;
-  padding: 32px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  background:
+    radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--lit-positive) 9%, transparent), transparent 30%),
+    var(--lit-panel);
   color: var(--lit-ink-secondary);
-  text-align: center;
 }
 
-.lit-chat-empty b { color: var(--lit-ink); font-size: 15px; }
-.lit-chat-empty span { max-width: 340px; color: var(--lit-ink-muted); font-size: 13px; line-height: 1.55; }
+.lit-chat-empty-content {
+  display: flex;
+  width: min(100%, 430px);
+  min-height: 0;
+  align-self: center;
+  justify-self: center;
+  flex-direction: column;
+  gap: 10px;
+  padding: 28px 24px;
+}
+
+.lit-chat-empty-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  margin-bottom: 4px;
+  border: 1px solid var(--lit-line-strong);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--lit-panel-raised) 88%, transparent);
+  box-shadow: 0 14px 36px color-mix(in srgb, var(--lit-positive) 10%, transparent);
+}
+
+.lit-chat-empty-mark img { width: 30px; height: 30px; }
+
+.lit-chat-empty-content > small {
+  color: var(--lit-positive);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+}
+
+.lit-chat-empty-content > b {
+  max-width: 380px;
+  color: var(--lit-ink);
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+
+.lit-chat-empty-content > p {
+  max-width: 390px;
+  color: var(--lit-ink-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.lit-chat-starters {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.lit-chat-starters > button {
+  display: flex;
+  width: 100%;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--lit-line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--lit-panel-raised) 52%, transparent);
+  padding: 10px 12px;
+  color: var(--lit-ink-secondary);
+  text-align: left;
+}
+
+.lit-chat-starters > button:hover {
+  border-color: var(--lit-line-strong);
+  background: var(--lit-panel-raised);
+}
+
+.lit-chat-starters > button > span:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lit-chat-starters b { color: var(--lit-ink); font-size: 13px; }
+.lit-chat-starters small { color: var(--lit-ink-muted); font-size: 11px; }
+.lit-chat-starters > button > span:last-child { color: var(--lit-positive); font-size: 15px; }
+
+.lit-chat-start-dock {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--lit-line);
+  background: color-mix(in srgb, var(--lit-panel-raised) 38%, var(--lit-panel));
+  padding: 14px 16px 16px;
+}
+
+.lit-chat-start-dock > button {
+  min-height: 44px;
+  border-radius: 9px;
+  background: var(--lit-action);
+  color: var(--lit-action-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.lit-chat-start-dock > button:hover { opacity: 0.9; }
+.lit-chat-start-dock > small { color: var(--lit-ink-muted); font-size: 10px; text-align: center; }
 
 .lit-chart-heading > span {
   display: flex;
@@ -447,6 +546,38 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
   inset: 0;
 }
 
+.lit-chart-tools {
+  position: absolute;
+  z-index: 3;
+  top: 50px;
+  left: 10px;
+  display: grid;
+  gap: 5px;
+}
+
+.lit-chart-tools button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--lit-line);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--lit-panel) 90%, transparent);
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.16);
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.lit-chart-tools button:hover {
+  border-color: var(--lit-line-strong);
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+}
+
+.lit-chart-tools button:last-child { color: var(--lit-positive); font-size: 11px; }
+
 .lit-chart-legend {
   position: absolute;
   z-index: 2;
@@ -466,6 +597,14 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
 
 .lit-chart-legend span { white-space: nowrap; }
 .lit-chart-legend b { color: var(--lit-ink-muted); font-weight: 600; }
+
+.lit-market-metric b,
+.lit-chart-legend,
+.lit-book-row,
+.lit-book-spread strong,
+.lit-trades-list {
+  font-family: var(--font-mono);
+}
 
 .lit-chart-empty {
   display: flex;
@@ -965,20 +1104,20 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
   }
 
   .lit-header {
-    min-height: 92px;
+    min-height: 78px;
     grid-template-columns: minmax(260px, 1fr) auto minmax(260px, 1fr);
-    gap: 28px;
-    padding: 16px 24px 16px 28px;
+    gap: 24px;
+    padding: 12px 20px 12px 24px;
   }
 
-  .lit-brand { gap: 15px; }
-  .lit-brand img { width: 42px; height: 42px; }
-  .lit-brand b { font-size: 22px; }
-  .lit-brand small { margin-top: 5px; font-size: 14px; }
+  .lit-brand { gap: 13px; }
+  .lit-brand img { width: 38px; height: 38px; }
+  .lit-brand b { font-size: 20px; }
+  .lit-brand small { margin-top: 4px; font-size: 12px; }
 
   .lit-category-tabs { border-radius: 13px; padding: 4px; }
   .lit-category-tabs button {
-    min-height: 46px;
+    min-height: 42px;
     border-radius: 9px;
     padding-inline: 22px;
     font-size: 16px;
@@ -988,18 +1127,18 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
   .lit-header-actions { gap: 12px; }
   .lit-environment select,
   .lit-market-select select {
-    height: 48px;
+    height: 44px;
     border-radius: 11px;
     padding-inline: 15px 40px;
     font-size: 16px;
   }
-  .lit-close { width: 48px; height: 48px; border-radius: 11px; font-size: 28px; }
+  .lit-close { width: 44px; height: 44px; border-radius: 11px; font-size: 26px; }
 
   .lit-market-bar {
-    min-height: 84px;
+    min-height: 74px;
     grid-template-columns: minmax(260px, 1.25fr) repeat(5, minmax(130px, 1fr)) auto;
     gap: 20px;
-    padding: 14px 26px;
+    padding: 10px 22px;
   }
   button.lit-market-select { min-height: 54px; border-radius: 12px; padding-inline: 14px; }
   button.lit-market-select img { width: 32px; height: 32px; }
@@ -1019,16 +1158,16 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
   .lit-chat-live i { width: 8px; height: 8px; }
 
   .lit-workspace {
-    grid-template-columns: minmax(620px, 6.1fr) minmax(280px, 2.2fr) minmax(430px, 4fr);
+    grid-template-columns: minmax(650px, 7fr) minmax(280px, 2.35fr) minmax(400px, 3.65fr);
     grid-template-rows: minmax(360px, 1fr) clamp(160px, 20vh, 220px);
-    gap: 16px;
-    padding: 16px;
+    gap: 10px;
+    padding: 10px;
   }
-  .lit-panel { border-radius: 17px; }
+  .lit-panel { border-radius: 10px; }
   .lit-panel-header {
-    min-height: 66px;
+    min-height: 56px;
     gap: 16px;
-    padding: 12px 18px;
+    padding: 10px 16px;
   }
   .lit-panel-header h3 { font-size: 18px; }
   .lit-panel-header > span,
@@ -1054,6 +1193,9 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
     gap: 6px 16px;
     font-size: 14px;
   }
+  .lit-chart-tools { top: 58px; left: 12px; gap: 6px; }
+  .lit-chart-tools button { width: 34px; height: 34px; font-size: 16px; }
+  .lit-chart-tools button:last-child { font-size: 12px; }
 
   .lit-book-side { padding-block: 7px; }
   .lit-book-columns { min-height: 36px; padding-inline: 16px; font-size: 12px; }
@@ -1107,10 +1249,19 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
     line-height: 1.6;
   }
 
-  .lit-chat-empty { gap: 13px; padding: 48px; }
-  .lit-chat-empty img { width: 54px; height: 54px; }
-  .lit-chat-empty b { font-size: 19px; }
-  .lit-chat-empty span { max-width: 460px; font-size: 16px; line-height: 1.6; }
+  .lit-chat-empty-content { width: min(100%, 500px); gap: 13px; padding: 36px 30px; }
+  .lit-chat-empty-mark { width: 58px; height: 58px; border-radius: 17px; }
+  .lit-chat-empty-mark img { width: 36px; height: 36px; }
+  .lit-chat-empty-content > small { font-size: 12px; }
+  .lit-chat-empty-content > b { font-size: 25px; }
+  .lit-chat-empty-content > p { font-size: 15px; }
+  .lit-chat-starters { gap: 9px; margin-top: 10px; }
+  .lit-chat-starters > button { min-height: 68px; border-radius: 11px; padding: 12px 14px; }
+  .lit-chat-starters b { font-size: 15px; }
+  .lit-chat-starters small { font-size: 12px; }
+  .lit-chat-start-dock { gap: 10px; padding: 16px 18px 18px; }
+  .lit-chat-start-dock > button { min-height: 50px; font-size: 15px; }
+  .lit-chat-start-dock > small { font-size: 11px; }
 }
 
 @media (max-width: 1279px) {

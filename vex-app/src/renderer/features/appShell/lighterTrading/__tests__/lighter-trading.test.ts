@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -11,7 +11,7 @@ import {
   toChartVolume,
   upsertChartCandles,
 } from "../chart-adapter.js";
-import { MarketChart } from "../MarketChart.js";
+import { formatLocalChartTick, MarketChart } from "../MarketChart.js";
 import { bestBookPrice, OrderBook } from "../OrderBook.js";
 import { buildLighterReviewMessage } from "../TradeTicket.js";
 
@@ -76,6 +76,7 @@ vi.mock("lightweight-charts", () => ({
   HistogramSeries: chartHarness.histogramToken,
   ColorType: { Solid: "solid" },
   LineStyle: { Dotted: 1 },
+  TickMarkType: { Year: 0, Month: 1, DayOfMonth: 2, Time: 3, TimeWithSeconds: 4 },
   createChart: chartHarness.createChart,
 }));
 
@@ -138,6 +139,12 @@ describe("Light it up chart adapter", () => {
     expect(chartRows).toHaveLength(2);
     expect(Number(chartRows[0]?.time)).toBe(1_720_000_000);
     expect(chartRows[1]).toMatchObject({ close: 104, high: 105 });
+  });
+
+  it("uses compact native-style intraday ticks instead of repeating full dates", () => {
+    const time = 1_720_000_000 as Parameters<typeof formatLocalChartTick>[0];
+    expect(formatLocalChartTick(time, 3)).toMatch(/^\d{2}:\d{2}$/);
+    expect(formatLocalChartTick(time, 2)).toMatch(/^[A-Z][a-z]{2} \d{1,2}$/);
   });
 
   it("upserts equal-time candles with lossless provider ids and rejects stale echoes", () => {
@@ -344,6 +351,27 @@ describe("Light it up chart adapter", () => {
     }));
     expect(chartHarness.candleSetData).toHaveBeenCalledTimes(2);
     expect(chartHarness.setVisibleLogicalRange).toHaveBeenLastCalledWith({ from: 0, to: 7 });
+  });
+
+  it("provides working zoom and return-to-live chart controls", () => {
+    const rows = Array.from({ length: 120 }, (_, index) => candle({
+      timestamp: 1_720_000_000_000 + index * 60_000,
+    }));
+    chartHarness.getVisibleLogicalRange.mockReturnValue({ from: 20, to: 120 });
+    render(createElement(MarketChart, {
+      candles: rows,
+      symbol: "ETH",
+      theme: "chronos",
+      environment: "core",
+      marketId: 7,
+      resolution: "1m",
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    expect(chartHarness.setVisibleLogicalRange).toHaveBeenLastCalledWith({ from: 32.5, to: 107.5 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Return to live candles" }));
+    expect(chartHarness.setVisibleLogicalRange).toHaveBeenLastCalledWith({ from: 20, to: 126 });
   });
 
   it("renders a DOM OHLC and volume legend from crosshair data with latest fallback", () => {

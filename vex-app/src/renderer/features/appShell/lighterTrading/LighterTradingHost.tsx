@@ -6,10 +6,12 @@ export function LighterTradingHost({
   activeSessionId,
   open,
   onOpenChange,
+  onCreateSession,
 }: {
   readonly activeSessionId: string | null;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
+  readonly onCreateSession: (initialMessage?: string) => void;
 }): JSX.Element {
   useEffect(
     () => subscribeLighterWorkspaceOpen(() => onOpenChange(true)),
@@ -21,6 +23,7 @@ export function LighterTradingHost({
       open={open}
       activeSessionId={activeSessionId}
       onOpenChange={onOpenChange}
+      onCreateSession={onCreateSession}
     />
   );
 }
