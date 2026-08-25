@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { CHAIN } from "../constants/chain.js";
 import { CONFIG_DIR, CONFIG_FILE } from "./paths.js";
@@ -88,6 +88,14 @@ export interface VexConfig {
     // fully off — dark until the AgentScan domain is decided; the deep-merge in
     // loadConfig() fills the key for existing installs when a default lands.
     agentscanApiUrl: string;
+    // pools.fun VEX-badge attestation base URL. Empty = the lane is fully dark
+    // - the partner endpoint is not live yet, so it ships with no default at
+    // all, exactly like agentscanApiUrl. The URL resolver in
+    // sync/pools-attribution-production-deps.ts refuses an empty, malformed or
+    // insecure value before any row is claimed, and the deep-merge in
+    // loadConfig() fills the key for existing installs when a real default
+    // lands (see dropEmptyPoolsFunAttestApiUrl).
+    poolsFunAttestApiUrl: string;
   };
   solana: {
     cluster: "mainnet-beta" | "devnet" | "testnet" | "custom";
@@ -113,6 +121,61 @@ export interface VexConfig {
   // Absent by default; the bundled default RPC (per the Pendle chain registry)
   // wins otherwise. Consumed by src/tools/pendle/evm-client.ts.
   pendleRpcUrls?: Record<string, string> | undefined;
+  // Optional override for the Vex Studio projects root (user-visible workspace,
+  // default `~/Vex/projects`). ABSOLUTE PATHS ONLY - a relative value is
+  // ignored, for the same reason `VEX_CONFIG_DIR` ignores one: a typo must
+  // never redirect project directories into the launcher's cwd. Absent by
+  // default. Consumed through `resolveProjectsRootPath` in
+  // `src/config/paths.ts` / `vex-app/src/main/paths/config-dir.ts`.
+  //
+  // Changing it after projects exist is REFUSED at the projects boundary
+  // (`projects.root_changed`): `projects.root_path` is relative to the root
+  // recorded in `studio_settings`, so a silent re-home would orphan every row.
+  projectsRoot?: string | undefined;
+  /**
+   * Master switch for the pools.fun VEX-badge attestation lane. `false` means
+   * the launch handler produces NO signature, writes NO attestation column,
+   * sends NO HTTP and logs NOTHING for this lane, and the sweep claims no rows.
+   *
+   * ON BY DEFAULT since 2026-08-24: the partner confirmed the contract in
+   * writing and the endpoint was probe-verified the same day, so a fresh
+   * install (and any config file that never stored this key) signs and
+   * delivers. The kill switch remains: a stored boolean `false` turns the
+   * lane fully off.
+   *
+   * FAIL CLOSED FOR PRESENT VALUES, STRICTLY. This is the only flag in this
+   * file that gates a SIGNING operation, so a key that IS in the file is
+   * parsed after the raw config spread and only a real JSON boolean decides:
+   * `true` enables, `false` disables, and a string `"true"`, a `1`, or any
+   * other non-boolean shape leaves it `false` - see
+   * `parsePoolsFunAttestationEnabled`. Only a truly ABSENT key falls back to
+   * the shipped default.
+   */
+  poolsFunAttestationEnabled: boolean;
+}
+
+/**
+ * Strict boolean parse for the one config flag that authorizes a signature.
+ * Judges PRESENT values only - `loadConfig` handles a truly absent key by
+ * falling back to the shipped default before this parse is consulted.
+ *
+ * `loadConfig` spreads the parsed file over the defaults, so WITHOUT this the
+ * disk value would reach the flag unvalidated and a hand-edited or migrated
+ * `"true"` string would read as truthy at every call site. The gate is
+ * therefore re-derived from the raw value AFTER the spread: anything that is
+ * not the boolean `true` is `false`.
+ */
+export function parsePoolsFunAttestationEnabled(raw: unknown): boolean {
+  return raw === true;
+}
+
+/**
+ * The runtime gate every pools-attestation call site asks. Lives HERE, next to
+ * the strict parse, so the signing leg and the delivery sweep cannot drift to
+ * different answers about whether the lane is on.
+ */
+export function poolsAttestationEnabled(): boolean {
+  return loadConfig().poolsFunAttestationEnabled === true;
 }
 
 export function getDefaultConfig(): VexConfig {
@@ -153,7 +216,18 @@ export function getDefaultConfig(): VexConfig {
       kyberswapTokenApiUrl: "https://token-api.kyberswap.com",
       kyberswapCommonServiceUrl: "https://common-service.kyberswap.com",
       agentscanApiUrl: "https://agentscan.projectvex.ai",
+      // LIVE since 2026-08-24: pools.fun confirmed the contract in writing and
+      // the endpoint at this host was probe-verified against the spec (all six
+      // closed-vocabulary responses, including launch_not_ready for an
+      // unindexed token). An empty override still turns delivery off.
+      poolsFunAttestApiUrl: "https://api.bankr.bot",
     },
+    // ON BY DEFAULT since 2026-08-24: pools.fun confirmed the contract in
+    // writing and the endpoint was probe-verified live the same day. Every
+    // launch from now on signs the attestation and claims the badge. The lane
+    // still signs with the launching wallet, so the kill switch stays: a
+    // stored boolean `false` turns it fully off (see the interface comment).
+    poolsFunAttestationEnabled: true,
   };
 }
 
@@ -188,11 +262,53 @@ function parseChainRpcUrls(raw: unknown): Record<string, string> | undefined {
 export function dropEmptyAgentscanApiUrl(
   services: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
+  return dropEmptyDarkServiceUrl(services, "agentscanApiUrl");
+}
+
+/**
+ * Every ships-dark service URL in this config obeys the same rule as
+ * `agentscanApiUrl` above, so the mechanism lives once and the named wrappers
+ * say which key each lane owns.
+ */
+function dropEmptyDarkServiceUrl(
+  services: Record<string, unknown> | undefined,
+  key: string,
+): Record<string, unknown> {
   if (!services) return {};
-  const raw = services.agentscanApiUrl;
+  const raw = services[key];
   if (typeof raw !== "string" || raw.trim().length > 0) return services;
-  const { agentscanApiUrl: _empty, ...rest } = services;
+  const { [key]: _empty, ...rest } = services;
   return rest;
+}
+
+/**
+ * The same rule for the pools.fun attestation base URL: the partner endpoint is
+ * not live yet, so an install that persisted `""` today must not be pinned dark
+ * once a real default ships.
+ */
+export function dropEmptyPoolsFunAttestApiUrl(
+  services: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  return dropEmptyDarkServiceUrl(services, "poolsFunAttestApiUrl");
+}
+
+/**
+ * Untrusted config input: accept the projects-root override only as a
+ * non-empty ABSOLUTE path. Anything else (missing, wrong type, empty,
+ * relative) resolves to `undefined` so the platform default wins.
+ */
+export function parseProjectsRoot(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const value = raw.trim();
+  if (value.length === 0 || !isAbsolute(value)) {
+    if (raw.length > 0) {
+      logger.warn(
+        "Ignoring config.projectsRoot: the value must be an absolute path",
+      );
+    }
+    return undefined;
+  }
+  return value;
 }
 
 function parseClaudeConfig(raw: unknown): VexConfig["claude"] | undefined {
@@ -318,11 +434,24 @@ export function loadConfig(): VexConfig {
       },
       services: {
         ...defaults.services,
-        ...dropEmptyAgentscanApiUrl(parsed.services as Record<string, unknown> | undefined),
+        ...dropEmptyPoolsFunAttestApiUrl(
+          dropEmptyAgentscanApiUrl(parsed.services as Record<string, unknown> | undefined),
+        ),
       },
+      // AFTER the `...parsedWithoutLegacy` spread above, and deliberately so:
+      // that spread would otherwise land the raw disk value on a flag that
+      // authorizes a signature. A truly ABSENT key means the shipped default
+      // (JSON cannot store `undefined`, so `undefined` here is absence); a
+      // PRESENT key is judged strictly - only a real boolean `true` enables
+      // the lane, and any non-boolean shape fails closed.
+      poolsFunAttestationEnabled:
+        parsed.poolsFunAttestationEnabled === undefined
+          ? defaults.poolsFunAttestationEnabled
+          : parsePoolsFunAttestationEnabled(parsed.poolsFunAttestationEnabled),
       ...(parseClaudeConfig(parsed.claude) ? { claude: parseClaudeConfig(parsed.claude) } : {}),
       ...(parseChainRpcUrls(parsed.localChainRpcUrls) ? { localChainRpcUrls: parseChainRpcUrls(parsed.localChainRpcUrls) } : {}),
       ...(parseChainRpcUrls(parsed.pendleRpcUrls) ? { pendleRpcUrls: parseChainRpcUrls(parsed.pendleRpcUrls) } : {}),
+      ...(parseProjectsRoot(parsed.projectsRoot) ? { projectsRoot: parseProjectsRoot(parsed.projectsRoot) } : {}),
     };
   } catch (err) {
     logger.error(`Failed to parse config: ${err}`);

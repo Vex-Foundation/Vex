@@ -10,12 +10,33 @@
  * when the CAS state transitions do.
  */
 
-import { queryOne, query } from "../../../client.js";
+import type { PoolClient } from "pg";
+
+import { queryOne, query, queryOneWith } from "../../../client.js";
 import { mapRow } from "../mappers.js";
 import type { AgentActivityEvent, BridgeChainFamily } from "../types.js";
 
 export async function getActivityEventById(id: number): Promise<AgentActivityEvent | null> {
   const row = await queryOne<Record<string, unknown>>(
+    "SELECT * FROM agent_activity WHERE id = $1",
+    [id],
+  );
+  return row ? mapRow(row) : null;
+}
+
+/**
+ * The same row read on the CALLER's client. A transaction that has already
+ * written to this row - or to a sibling row it must compare against - can only
+ * see its own uncommitted state through its own connection, so a terminal
+ * settlement running inside one transaction MUST read here and never through
+ * the pool-level twin above.
+ */
+export async function getActivityEventByIdWith(
+  client: PoolClient,
+  id: number,
+): Promise<AgentActivityEvent | null> {
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
     "SELECT * FROM agent_activity WHERE id = $1",
     [id],
   );

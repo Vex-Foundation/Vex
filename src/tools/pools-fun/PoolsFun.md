@@ -416,6 +416,53 @@ Note that `/token/…`, `/launch`, `/pool-party`, `/leaderboard` and `/search` a
 SPA routes, not API endpoints - calling them on `api.bankr.bot` is what produces
 the HTML 404 the error mapper handles.
 
+## The VEX badge: `POST /pools-fun/vex/attestations` (live, measured 2026-08-24)
+
+The endpoint pools.fun implemented from `attribution-server-spec.md` (in this
+folder) is LIVE at the proposed path, confirmed by the partner in writing and
+probe-verified against the spec on 2026-08-24. The contract there is an
+external commercial commitment: the request body, the signed message bytes
+(`VEX-attest:v1:pools.fun:4663:<lowercase token>`), the closed error
+vocabulary and the idempotency and backfill requirements are FROZEN; a change
+to the bytes is a new version, never a mutation.
+
+Measured conformance (six probes, garbage signatures only - no real
+attestation can be sent outside a launch window):
+
+| Probe | Answer | Spec verdict |
+|---|---|---|
+| empty body `{}` | 400 `validation_failed` | conforms |
+| malformed address | 400 `validation_failed` | conforms |
+| unrecoverable signature (bad `v`) | 400 `validation_failed` | conforms (cannot-recover = malformed) |
+| real indexed token + recoverable garbage signature | 401 `invalid_signature`, "recovered signer is not this launch's gateway launcher" | conforms - recovery and launcher compare are real |
+| UNKNOWN token address | 404 `launch_not_ready` | conforms - the critical retryable semantic; an unindexed launch is NOT `not_pools_launch` |
+| `chainId: 1` | 400 `chain_unsupported` | conforms |
+
+Every response carried the flat `code` field, `success: false`, and a
+human-readable `message` the Vex client ignores by design. No redirects.
+
+The one thing the spec exists to prevent held in practice: identity binds
+through `GatewayLaunch.launcher` (the 401 message names it), never
+`TokenLaunched.creator` - on the GATEWAY path `creator` and `.deployer` are
+the gateway contract, exactly as decoded in
+`src/vex-agent/sync/pools-settlement-decoder.ts`.
+
+Client state: `services.poolsFunAttestApiUrl` defaults to the live host;
+signing remains behind the strict-boolean `poolsFunAttestationEnabled` flag
+(the lane's kill switch - see `src/config/store.ts` for its current default
+and parse rules).
+
+The SUCCESS path is now measured too (first badged launch, 2026-08-24):
+"Desu Vex" `0x07aD15f1eBe1C112a0854c40fd6E5ce8BD4F796c`, launched through the
+gateway in tx
+`0x4a76405e80228cdd41c13211aa1108a742b99dbf97f5714e125deb804b85b513`, was
+attested in-process seconds after the confirm - one POST, HTTP 2xx with
+`success: true`, `pools_attributed_at` stamped, no retry needed. The provider
+then surfaced a NEW `/discover` row field for it: `vexAttested: true`
+(boolean, absent-or-false on unbadged rows). That field is not yet projected
+by `pools.tokens`/`pools.search` - it appeared with the first badge and
+surfacing it in the discover row shape is a named follow-up, not an accident.
+
 ## Money-path conditions (verbatim force - change any of these by owner decision only)
 
 These are the conditions the launch and claim paths were built under. They are

@@ -22,6 +22,18 @@ const PGVECTOR_IMAGE = "pgvector/pgvector:0.8.2-pg18-trixie";
 const FALLBACK_EMBED_MODEL = "ai/embeddinggemma:300M-Q8_0";
 
 export async function setup(): Promise<void> {
+  await startPostgres();
+  await assertEmbeddingsReachable();
+  await migratePostgres();
+}
+
+/** Studio's required CI lane needs PostgreSQL and migrations, not embeddings. */
+export async function setupPostgresWithoutEmbeddings(): Promise<void> {
+  await startPostgres();
+  await migratePostgres();
+}
+
+async function startPostgres(): Promise<void> {
   try {
     container = await new PostgreSqlContainer(PGVECTOR_IMAGE)
       .withDatabase("vex_test")
@@ -36,9 +48,9 @@ export async function setup(): Promise<void> {
   }
 
   process.env.VEX_DB_URL = container.getConnectionUri();
+}
 
-  await assertEmbeddingsReachable();
-
+async function migratePostgres(): Promise<void> {
   const { runMigrations } = await import("@vex-agent/db/migrate.js");
   await runMigrations();
 }

@@ -20,9 +20,28 @@
  * It is exactly computable before any quote exists, so it can be stated
  * truthfully on every surface. USD figures are always labelled ESTIMATES and
  * degrade to `null` rather than to a fabricated figure.
+ *
+ * ## DEPRECATION, with its removal condition (rule 03)
+ *
+ * `feeAmountEth` is DEPRECATED in favour of `feeAmountHuman` + `nativeSymbol` +
+ * `nativeDecimals`. Its name asserts ETH, and it was rendered with
+ * `formatEther`, so it was only ever correct on an 18-decimal ETH venue - which
+ * every venue on this lane happened to be until the generic signing lane joined
+ * it and brought arbitrary EVM natives with it. The replacement renders through
+ * the venue's OWN decimals and names the asset.
+ *
+ * It is RETAINED, not renamed, because this shape is MODEL-VISIBLE tool output:
+ * the Trench quote surface reads it and external agents consume it with no
+ * in-repo import to find. So the transition is additive - the field is emitted
+ * ONLY where it was ever true (an ETH venue with 18 decimals) and omitted
+ * everywhere else, rather than emitted with a wrong or misnamed number.
+ *
+ * REMOVAL CONDITION: `feeAmountEth` is removed only in a separately reviewed
+ * output-contract change, once no consumer reads it - not as a side effect of
+ * adding a venue.
  */
 
-import { formatEther } from "viem";
+import { formatUnits } from "viem";
 
 import type { NativeFeeVenue } from "./venue.js";
 
@@ -49,8 +68,19 @@ export type NativeFeeDisclosure<Basis extends string = string> =
       readonly chargedOn: string;
       /** Smallest units, exact - debited from the wallet and sent to the treasury. */
       readonly feeAmountWei: string;
-      /** Exact decimal rendering of `feeAmountWei`. */
-      readonly feeAmountEth: string;
+      /** Exact decimal rendering of `feeAmountWei` in the venue's OWN native units. */
+      readonly feeAmountHuman: string;
+      /** Display symbol of the native asset `feeAmountHuman` is denominated in. */
+      readonly nativeSymbol: string;
+      /** Decimals `feeAmountWei` was rendered with. Stated rather than assumed. */
+      readonly nativeDecimals: number;
+      /**
+       * DEPRECATED - use `feeAmountHuman` with `nativeSymbol`. Emitted ONLY on a
+       * venue whose native is ETH with 18 decimals, and ABSENT everywhere else:
+       * the name asserts ETH, so on any other native it could only be a lie.
+       * See the module header for the removal condition.
+       */
+      readonly feeAmountEth?: string;
       /**
        * What the venue is quoted for after the fee, where the fee reduces the
        * principal. `null` wherever it does not - on a sell the fee comes out of
@@ -95,7 +125,14 @@ export function buildNativeFeeDisclosure<Basis extends string>(
     basis: input.basis,
     chargedOn: venue.basisText[input.basis],
     feeAmountWei: input.feeWei.toString(),
-    feeAmountEth: formatEther(input.feeWei),
+    feeAmountHuman: formatUnits(input.feeWei, venue.nativeDecimals),
+    nativeSymbol: venue.nativeLabel,
+    nativeDecimals: venue.nativeDecimals,
+    // OMITTED, not set to null: an absent field cannot be read as a figure. The
+    // predicate is exactly the condition under which the old name was true.
+    ...(venue.nativeLabel === "ETH" && venue.nativeDecimals === 18
+      ? { feeAmountEth: formatUnits(input.feeWei, 18) }
+      : {}),
     netAmountWei: input.netApplies && input.netWei !== undefined ? input.netWei.toString() : null,
     feeUsdEstimate: input.feeUsdEstimate ?? null,
     receiver: venue.receiver,

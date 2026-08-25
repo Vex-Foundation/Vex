@@ -27,6 +27,10 @@ import {
   installAppProtocolHandler,
   registerAppProtocolPrivileges,
 } from "./protocol/app-protocol.js";
+import {
+  awaitStudioRuntimeReady,
+  disposeStudioWriteRepairOwner,
+} from "./agent/studio-settlement-bridge.js";
 import { registerAllIpcHandlers } from "./ipc/register-all.js";
 import {
   configureUpdater,
@@ -46,7 +50,11 @@ import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
 import { setupVexMarketService } from "./market/vex-market-service.js";
-import { lockSecretSession } from "./secrets/session.js";
+import { isSecretSessionUnlocked, lockSecretSession } from "./secrets/session.js";
+import { shutdownStudioMcpHost, startStudioMcpHost } from "./studio/mcp-host.js";
+import { disposeStudioApprovalBroker } from "./studio/approval-broker.js";
+import { refuseAllPendingStudioIntents } from "./studio/approval-refusals.js";
+import { disposeStudioDispatchPoisonRetry } from "./secrets/session.js";
 import { createMainWindow } from "./windows/main-window.js";
 import { installMinimalMenu } from "./menu.js";
 import {
@@ -128,10 +136,15 @@ app.on("before-quit", () => {
   // synchronous (runs before the first await), so it completes during this
   // listener; only the provider-cache reset resolves on a later microtask,
   // which is moot on a quitting process. lockSecretSession catches internally.
-  void lockSecretSession();
+  //
+  // The CAUSE is `vex_quit`, and it is threaded rather than defaulted. This
+  // listener's own durable refusal pass races the ordered quit cleanup's pass
+  // for the same rows; with the default they told two different stories about
+  // one event, and whichever CAS won decided which one a reader saw.
+  void lockSecretSession("vex_quit");
 });
 app.on("will-quit", () => {
-  void lockSecretSession();
+  void lockSecretSession("vex_quit");
 });
 
 async function initializeMainRuntime(): Promise<void> {
@@ -246,6 +259,31 @@ async function initializeMainRuntime(): Promise<void> {
   // runs once now to sweep orphaned transient secrets from a prior crash.
   globalCleanup.add(
     makeOrderedQuitCleanup(async () => {
+      // Vex Studio A3 - FIRST, and before Compose stops: every pending Studio
+      // approval is a blocked MCP call from an external coding agent, and a
+      // quit must leave a terminal row rather than a pending one nobody will
+      // ever decide. It runs inside the ordered task because `cleanupOnQuit`
+      // stops the local Postgres, and a refusal after that has no database to
+      // write to. A failure is logged by the owner and never blocks the quit.
+      // Vex Studio A4a - the LISTENER and its CONNECTIONS go first, in that
+      // order: stop admitting, then destroy the open sockets with the trusted
+      // cause `vex_quit`. Doing it before the refusal pass means each blocked
+      // call's abort names the same cause the durable refusal below records,
+      // so the two cannot settle one row with two stories. Bounded by the
+      // contract's 5 s deadline, so a peer that will not close cannot hold the
+      // quit open.
+      await shutdownStudioMcpHost();
+      await refuseAllPendingStudioIntents("vex_quit");
+      disposeStudioApprovalBroker();
+      // The Studio fence retry is one of two remaining Studio timers with an
+      // owner: it only exists while an advance is outstanding, and nothing it
+      // could still do is useful once Postgres is about to stop.
+      disposeStudioDispatchPoisonRetry();
+      // The other one is the engine's terminal-write repair owner. It is
+      // stopped HERE as well as in the bridge teardown because globalCleanup
+      // runs its tasks concurrently: only inside this ordered task is it
+      // guaranteed to stop before `cleanupOnQuit` takes Postgres away.
+      await disposeStudioWriteRepairOwner();
       const results = await Promise.allSettled([
         stopCompactWorker(),
         stopCompactionPreparationWorker(),
@@ -279,6 +317,29 @@ async function initializeMainRuntime(): Promise<void> {
   // 6c. Strip the default File/Edit/View/Window menu (or replace with
   // a minimal macOS template that preserves clipboard accelerators).
   installMinimalMenu();
+
+  // 6d. THE VEX STUDIO READINESS BARRIER, and its position is the point.
+  //
+  // Studio's abandoned-dispatch reconciler declares every row still marked
+  // `dispatching` indeterminate, on the premise that this process is the only
+  // writer that could own them and has just started. A dispatch that begins
+  // while it runs breaks that premise. The only thing in THIS process that can
+  // start one is the approvals IPC handler (`applyStudioApproveSideEffects`),
+  // and an IPC handler cannot be invoked before a renderer exists to invoke it.
+  // So awaiting here - after `registerAllIpcHandlers` installed the handlers,
+  // BEFORE `createMainWindow` creates the only thing that can call them - is
+  // what makes "no dispatch during reconciliation" an ordering fact rather than
+  // a hope. The bounded wait inside never leaves Studio open: a barrier that is
+  // still running when the deadline elapses keeps Studio UNREADY, and both the
+  // engine preflight and `runStudioCall` refuse on that.
+  await awaitStudioRuntimeReady();
+
+  // The MCP listener exists only while Vex is unlocked AND ready. An unlock
+  // that happened before the barrier opened (a restored session, a fast
+  // wizard) left the host refused with the barrier's own sentence, so this is
+  // the one place that retries it once the barrier is open. A locked Vex is
+  // left alone: the next unlock starts the listener.
+  if (isSecretSessionUnlocked()) void startStudioMcpHost();
 
   // 7. Main window
   await createMainWindow();

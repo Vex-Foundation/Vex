@@ -44,7 +44,19 @@ export type AgentActivityKind =
    * the display kind the deprecated `proj_activity` lane already derived for a
    * legacy send.
    */
-  | "transfer";
+  | "transfer"
+  /**
+   * A GENERIC SIGNED TRANSACTION (migration 087) - `WalletEvmTransactionPrepare`
+   * / `Confirm` and their Solana twins. Its own kind rather than a `transfer`
+   * role: the transfer arm carries exactly one input leg, and a proposal Vex did
+   * not build cannot honestly populate one. An approve moves nothing at all, a
+   * contract call moves whatever the contract decides, and an SPL instruction
+   * set may move several things at once - so a single-asset leg here would be a
+   * number nobody proved. The row records WHAT WAS SIGNED (the decoded effect,
+   * through its role) and the chain outcome, and nothing about amounts it cannot
+   * establish.
+   */
+  | "transaction";
 
 /**
  * Kinds valid through the GENERIC write path (`./swap-intent.js` +
@@ -150,7 +162,34 @@ export type AgentActivityEventRole =
    * second leg. An NFT send rides this same role with the CONTRACT address as
    * the token identity, `tokenDecimals: 0`, and the token id in the symbol.
    */
-  | "wallet_transfer";
+  | "wallet_transfer"
+  /**
+   * Migration 087 - the four roles of the generic signing path, one per DECODED
+   * EFFECT, so a feed can say what the transaction did without re-decoding
+   * calldata. They are PREFIXED because this enum is global: a bare `approve`
+   * would sit beside `allowance` and read as the same thing on another arm.
+   *
+   * None of them carries an asset leg. That is the point of the kind: the
+   * effect is decoded and displayed, and what it moved is only ever what the
+   * chain later proves.
+   */
+  | "tx_approve"
+  | "tx_contract_call"
+  | "tx_native_transfer"
+  | "tx_spl_instruction_set"
+  /**
+   * Migration 088 - Vex's 25 bps integrator fee on the GENERIC EVM signing
+   * lane, charged on the transaction's own native value as a separate treasury
+   * transfer that runs only after that transaction confirms.
+   *
+   * Its own role rather than `swap_fee` or `trench_fee`: both of those name a
+   * venue whose feeds and repair sweeps select on them, and neither is admitted
+   * on the `transaction` arm of the kind/role binding. It is EVM-ONLY, bound by
+   * `agent_activity_tx_vex_fee_eip155` - no Solana fee-leg runtime exists on
+   * this lane, and the database enforces the gap rather than trusting the
+   * writer to observe it.
+   */
+  | "tx_vex_fee";
 
 /** Chain family discriminator (045) — drives the nonce matrix + explorer-link resolution. */
 export type BridgeChainFamily = "eip155" | "solana";

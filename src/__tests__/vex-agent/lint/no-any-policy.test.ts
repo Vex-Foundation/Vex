@@ -28,8 +28,19 @@ import { execSync } from "node:child_process";
 
 const ROOT = resolve(process.cwd(), "src/vex-agent");
 
-/** Maximum number of `as any` / `as unknown as` occurrences allowed in runtime code. */
-const MAX_ALLOWED = 2;
+/**
+ * Maximum number of `as any` / `as unknown as` occurrences allowed in runtime code.
+ *
+ * 2026-08-24 (A4a/A4b review trail): 2 -> 4 for exactly the two SDK-boundary
+ * escapes in `src/vex-agent/mcp/server.ts`: Vex's own JsonSchema vocabulary
+ * handed to the SDK's `fromJsonSchema` parameter type, and the socket
+ * Transport handed to the SDK's nominal ServeStdioTransport. Both sit at a
+ * real package boundary, both carry documented invariants with backing tests
+ * (the dialect lint; the socket contract suite), and neither is removable
+ * without vendoring SDK types. Any further escape must remove one of the
+ * four counted today or carry its own reviewed note here.
+ */
+const MAX_ALLOWED = 4;
 
 /** Directories inside `src/vex-agent/` that are NOT counted as runtime code. */
 const EXCLUDED_SUBPATHS = [

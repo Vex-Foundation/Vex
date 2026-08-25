@@ -49,7 +49,35 @@ export type PreparedContinuation =
     })
   | (PreparedContinuationBase & {
       readonly kind: "chat_session";
-    });
+    })
+  | StudioContinuation;
+
+/**
+ * The Vex Studio arm. It carries NO LEASE, and that absence is the contract,
+ * not an omission.
+ *
+ * A lease exists to stop two resumed AGENT TURNS overlapping on one session.
+ * A Studio decision starts no turn: the approved call dispatches, its result is
+ * stored on the intent row, and an MCP request that was already blocked is
+ * released. There is nothing for a second runner to collide with, so claiming
+ * the backing session's lease would only mean that an in-app agent turn on the
+ * same session could make a Studio approval report `deferred_busy` - a state
+ * this arm cannot reach and must not.
+ *
+ * Exclusivity is still absolute; it just lives where it belongs, on the intent:
+ * the dispatch-slot CAS (`casClaimStudioDispatchSlotWith`) admits exactly one
+ * writer per approval.
+ *
+ * `sessionId` is the project's BACKING SESSION. It is what the session control
+ * lock keys on, and it is the field `decision.ts` reads to log the continuation
+ * it dispatches - which is why this arm needs no change there.
+ */
+export interface StudioContinuation {
+  readonly kind: "studio_mcp";
+  readonly approvalId: string;
+  readonly sessionId: string;
+  readonly projectId: string | null;
+}
 
 /**
  * Narrow a continuation to the mission-run id the desktop host uses for its
@@ -61,12 +89,26 @@ export function continuationMissionRunId(
   return cont.kind === "mission_run" ? cont.missionRunId : undefined;
 }
 
+/** `true` for the arms that hold a runner lease and must release it. */
+export function continuationHoldsLease(
+  cont: PreparedContinuation,
+): cont is Exclude<PreparedContinuation, StudioContinuation> {
+  return cont.kind !== "studio_mcp";
+}
+
 export type ApprovePrepareOutcome =
   | {
       readonly kind: "dispatched";
       readonly approvalId: string;
       readonly resolvedAt: string;
-      readonly executionStatus: "succeeded" | "failed";
+      /**
+       * `indeterminate` is reachable on the Vex Studio arm only, and it is what
+       * the row says too. A dispatch that threw, or whose settlement write
+       * failed after the call already ran, has an outcome nobody can prove; the
+       * reported status has to admit that, because a caller told `failed` would
+       * be entitled to ask for the action again.
+       */
+      readonly executionStatus: "succeeded" | "failed" | "indeterminate";
       readonly sessionId: string;
       readonly missionRunId: string | null;
       readonly continuation: PreparedContinuation | null;

@@ -30,6 +30,7 @@ import { describe, it, expect } from "vitest";
 
 import { ACTION_ALIAS_TOOLS } from "@vex-agent/tools/registry/action-aliases.js";
 import { WALLET_TOOLS } from "@vex-agent/tools/registry/wallet.js";
+import { WALLET_TRANSACTION_TOOLS } from "@vex-agent/tools/registry/wallet-transaction.js";
 import { getProtocolManifest } from "@vex-agent/tools/protocols/catalog.js";
 import {
   resolveRelaySlippageBps,
@@ -45,7 +46,9 @@ interface JsonSchemaParam {
 }
 
 function toolDefOf(toolName: string): ToolDef {
-  const tool = [...ACTION_ALIAS_TOOLS, ...WALLET_TOOLS].find((t) => t.name === toolName);
+  const tool = [...ACTION_ALIAS_TOOLS, ...WALLET_TOOLS, ...WALLET_TRANSACTION_TOOLS].find(
+    (t) => t.name === toolName,
+  );
   if (!tool) throw new Error(`no alias/wallet tool named ${toolName}`);
   return tool;
 }
@@ -268,7 +271,7 @@ describe("wallet tools speak the same param vocabulary as everything else", () =
   });
 
   it("no wallet tool declares a retired param spelling", () => {
-    for (const tool of WALLET_TOOLS) {
+    for (const tool of [...WALLET_TOOLS, ...WALLET_TRANSACTION_TOOLS]) {
       for (const key of Object.keys(schemaPropertiesOf(tool.name))) {
         expect(BANNED_PARAM_KEYS.has(key), `${tool.name} still declares banned key "${key}"`).toBe(
           false,

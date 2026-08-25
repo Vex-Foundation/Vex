@@ -24,6 +24,7 @@ const mockGetById = vi.fn();
 const mockConsumeIfPending = vi.fn();
 const mockMarkExecuted = vi.fn();
 const mockMarkFailed = vi.fn();
+const mockMarkBroadcastUnconfirmed = vi.fn();
 const mockMarkAuditFailed = vi.fn();
 
 vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
@@ -32,6 +33,7 @@ vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
   consumeIfPendingWith: (...a: unknown[]) => mockConsumeIfPending(...a),
   markExecutedWith: (...a: unknown[]) => mockMarkExecuted(...a),
   markFailedWith: (...a: unknown[]) => mockMarkFailed(...a),
+  markBroadcastUnconfirmedWith: (...a: unknown[]) => mockMarkBroadcastUnconfirmed(...a),
   markAuditFailedWith: (...a: unknown[]) => mockMarkAuditFailed(...a),
 }));
 
@@ -99,17 +101,22 @@ interface FixtureIntent {
   status:
     | "pending"
     | "consuming"
+    | "broadcast_unconfirmed"
     | "executed"
     | "failed"
+    | "superseded_unproven"
+    | "review_required"
     | "audit_failed"
     | "cancelled"
     | "expired";
   expiresAt: string;
+  activityId: string | null;
   consumedAt: string | null;
   cancelledAt: string | null;
   txHash: string | null;
   failureReason: string | null;
   idempotencyKey: string | null;
+  repairCheckedAt: string | null;
   createdAt: string;
   previewJson: Record<string, unknown>;
 }
@@ -125,12 +132,14 @@ function pendingIntent(overrides: Partial<FixtureIntent> = {}): FixtureIntent {
     amount: "1.5",
     token: null,
     status: "pending",
+    activityId: null,
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     consumedAt: null,
     cancelledAt: null,
     txHash: null,
     failureReason: null,
     idempotencyKey: "intent-test-1",
+    repairCheckedAt: null,
     createdAt: "2026-05-24T20:00:00.000Z",
     previewJson: { label: "test", criticalArgs: {} },
     ...overrides,
@@ -219,7 +228,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     expect(mockMarkExecuted).not.toHaveBeenCalled();
   });
 
-  it("PATH 'confirmation_unknown': markFailed with ConfirmationUnknown: prefix + tx_hash", async () => {
+  it("PATH 'confirmation_unknown': marks the linked hash broadcast_unconfirmed", async () => {
     mockExecuteEvm.mockResolvedValueOnce({
       kind: "confirmation_unknown",
       txHash: "0xtxUnk",
@@ -227,6 +236,9 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
       errorKind: "TimeoutError",
       errorHash: "deadbeef12345678",
     });
+    mockMarkBroadcastUnconfirmed.mockResolvedValueOnce(
+      pendingIntent({ status: "broadcast_unconfirmed", txHash: "0xtxUnk" }),
+    );
 
     const result = await handleWalletSendConfirm(
       { walletFamily: "eip155", intentId: "intent-test-1" },
@@ -240,13 +252,14 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     expect(result.data?._explorerRefs).toEqual([
       { chain: "Base", txRef: "0xtxUnk" },
     ]);
-    expect(mockMarkFailed).toHaveBeenCalledWith(
+    expect(mockMarkBroadcastUnconfirmed).toHaveBeenCalledWith(
       SENTINEL_CLIENT,
       "intent-test-1",
       SESSION_ID,
-      "ConfirmationUnknown:deadbeef12345678",
       "0xtxUnk",
+      "ConfirmationUnknown:deadbeef12345678",
     );
+    expect(mockMarkFailed).not.toHaveBeenCalled();
   });
 
   it("PATH 'pre_broadcast_failed': markFailed with txHash=null, structural output", async () => {
@@ -331,6 +344,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     // CAS miss — repo returned null because status was not 'consuming'
     // (concurrent cancel / race lost). Tx is real on-chain.
     mockMarkExecuted.mockResolvedValueOnce(null);
+    mockGetById.mockResolvedValueOnce(null);
     mockMarkAuditFailed.mockResolvedValueOnce(
       pendingIntent({ status: "audit_failed", txHash: "0xtxRaceLost" }),
     );
@@ -359,6 +373,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     // Both writes report CAS miss — the row is stuck in an unrecognised
     // status. Tx on-chain still real; ToolResult success preserved.
     mockMarkExecuted.mockResolvedValueOnce(null);
+    mockGetById.mockResolvedValueOnce(null);
     mockMarkAuditFailed.mockResolvedValueOnce(null);
 
     const result = await handleWalletSendConfirm(
@@ -380,6 +395,7 @@ describe("handleWalletSendConfirm — ExecuteOutcome routing", () => {
     });
     // markFailed CAS miss — status was already non-consuming (race).
     mockMarkFailed.mockResolvedValueOnce(null);
+    mockGetById.mockResolvedValueOnce(null);
 
     const result = await handleWalletSendConfirm(
       { walletFamily: "eip155", intentId: "intent-test-1" },

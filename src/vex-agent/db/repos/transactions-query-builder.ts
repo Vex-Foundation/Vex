@@ -60,7 +60,7 @@ const VEX_FEE_LATERALS = `
         FROM agent_activity fee
        WHERE fee.protocol_execution_id = agent_activity.protocol_execution_id
          AND fee.id        <> agent_activity.id
-         AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee')
+         AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee','tx_vex_fee')
          AND fee.status     = 'confirmed'
        ORDER BY fee.event_index ASC
        LIMIT 1
@@ -166,7 +166,7 @@ export function buildActivityHalf(
   // losses. The vocabulary-lockstep test beside this file now fails the build
   // when a migration adds a kind these feeds do not know.
   activityConds.push(
-    "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR kind = 'claim' OR kind = 'transfer' OR event_role = 'bridge_fill_expected')",
+    "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR kind = 'claim' OR kind = 'transfer' OR kind = 'transaction' OR event_role = 'bridge_fill_expected')",
   );
   // LEG roles are not feed rows. The kind↔role CHECK (migrations 050/063/066)
   // admits approval legs on the swap/yield/launch arms and Vex fee legs
@@ -175,8 +175,12 @@ export function buildActivityHalf(
   // a Trench/Uniswap fee transfer as a standalone "spot" trade. `bridge_fee`
   // needs no entry here: its whole `kind = 'bridge'` arm is already admitted
   // only through `event_role = 'bridge_fill_expected'`.
+  // `tx_vex_fee` (migration 088) joins them: the `transaction` kind IS admitted
+  // above, so without this exclusion the generic lane's fee transfer would
+  // render as a standalone signed transaction beside the one it charges for.
+  // The parent still reports the charge, through the fee lateral above.
   activityConds.push(
-    "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee', 'pools_fee')",
+    "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee', 'pools_fee', 'tx_vex_fee')",
   );
   // productType now maps to `kind`: 'spot' → swap rows (derive to the same
   // "spot" product the success half stores), 'bridge' → bridge logical rows,
@@ -194,6 +198,7 @@ export function buildActivityHalf(
   else if (productType === "launch") activityConds.push("kind = 'launch'");
   else if (productType === "claim") activityConds.push("kind = 'claim'");
   else if (productType === "transfer") activityConds.push("kind = 'transfer'");
+  else if (productType === "transaction") activityConds.push("kind = 'transaction'");
   else if (productType !== undefined) activityConds.push("FALSE");
   const activityKeyset = keysetPredicate(0, cursor, tsParam, rankParam, idParam);
 
@@ -220,6 +225,11 @@ export function buildActivityHalf(
         -- render it as a spot trade, stating a route, a price and a
         -- counterparty that moving your own funds to an address never had.
         WHEN kind = 'transfer' THEN 'transfer'
+        -- A GENERIC SIGNED TRANSACTION is its own product (migration 087). The
+        -- ELSE arm would render an approval or an arbitrary contract call as a
+        -- spot trade; the transfer arm would claim one asset leg left the
+        -- wallet, which is exactly what this path cannot prove.
+        WHEN kind = 'transaction' THEN 'transaction'
         WHEN kind = 'wrap' THEN 'wrap'
         -- Pendle (migration 053) is its OWN product. The ELSE arm would state
         -- a route, a price and a counterparty that a py.mint (1 -> 2) or a

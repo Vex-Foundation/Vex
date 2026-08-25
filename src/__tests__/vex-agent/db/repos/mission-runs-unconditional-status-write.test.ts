@@ -62,7 +62,11 @@ const SRC_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const ALLOWED_CALLERS: readonly string[] = [
   "vex-agent/engine/runtime/lease-and-status/apply-user-stop.ts",
   "vex-agent/engine/core/runner/mission-auto-retry.ts",
-  "vex-agent/engine/core/turn-loop-tool-batch/approval-stop.ts",
+  // Stage A3 moved the approval enqueue TRANSACTION out of
+  // `turn-loop-tool-batch/approval-stop.ts` into the seam the Vex Studio MCP
+  // surface shares with the turn loop. The `paused_approval` write moved with
+  // it, unchanged, so the allowlist entry moved too.
+  "vex-agent/engine/core/approval-runtime/enqueue.ts",
 ];
 
 /**

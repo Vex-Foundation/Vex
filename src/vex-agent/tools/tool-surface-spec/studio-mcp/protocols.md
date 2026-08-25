@@ -1,0 +1,264 @@
+# Vex protocols and tools
+
+GENERATED FILE. Do not edit by hand.
+
+Regenerate with `pnpm generate:studio-protocols-doc`; CI runs the same
+command with `--check` and fails when this file and the live inventory
+disagree. Vex copies these bytes into a project as `.vex/protocols.md`.
+
+## How to use this
+
+Every tool below is callable directly by the name in the `tool` column,
+through the `vex` MCP server. There is no activation step. Call
+`vex_ToolSearch` (read-only, runs nothing) when you know what you want to do
+but not which tool does it.
+
+`access` is the MCP `readOnlyHint`. `destructive` is the MCP
+`destructiveHint`: it marks the tools that broadcast a user-wallet
+transaction or otherwise cause an irreversible effect. In a restricted
+project those calls pause for the user's approval in Vex and can be declined
+or expire - read the result, and never retry a call that reports an unknown
+or indeterminate outcome.
+
+`requires env` names an environment variable the tool needs. It is metadata
+only: an unmet variable is answered at call time with a typed
+`configuration_unavailable` result naming the variable and the remedy.
+
+Argument contracts and units are on each tool's own description in
+`tools/list`, which is their single home. Units are PER FIELD - human
+decimals or raw smallest units - so read the field description and never
+guess.
+
+## Totals
+
+- tools: 165
+- Vex tools: 25
+- protocol tools: 140 across 11 protocols
+- destructive: 49
+
+## Vex tools
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| AgentScan | Review this wallet's recorded activity | read-only | no | - |
+| BridgeExecute | Execute a cross-chain bridge | mutating | yes | - |
+| BridgeExecuteRelay | Execute a Relay bridge | mutating | yes | - |
+| BridgeQuote | Quote a cross-chain bridge | read-only | no | - |
+| BridgeQuoteRelay | Quote a Relay bridge | read-only | no | - |
+| BridgeStatus | Check a bridge order's status | read-only | no | - |
+| ChainRead | Read raw EVM chain data | read-only | no | - |
+| SwapExecute | Execute a token swap | mutating | yes | - |
+| SwapExecuteUniswap | Execute a Uniswap swap | mutating | yes | - |
+| SwapQuote | Quote a token swap | read-only | no | - |
+| SwapQuoteUniswap | Quote a Uniswap swap | read-only | no | - |
+| TokenCheck | Check an EVM token for honeypot and tax | read-only | no | - |
+| TokenFind | Find a token's address and decimals | read-only | no | - |
+| TwitterAccount | Read Twitter accounts and posts | read-only | no | RETTIWT_API_KEY |
+| UnitsConvert | Convert token amounts and units | read-only | no | - |
+| WalletBalances | Read wallet balances across chains | read-only | no | - |
+| WalletEvmTransactionConfirm | Broadcast a prepared EVM transaction | mutating | yes | - |
+| WalletEvmTransactionPrepare | Prepare an EVM transaction | mutating | no | - |
+| WalletSendConfirm | Broadcast a prepared wallet transfer | mutating | yes | - |
+| WalletSendPrepare | Prepare a wallet transfer | mutating | no | - |
+| WalletSolanaTransactionConfirm | Broadcast a prepared Solana transaction | mutating | yes | - |
+| WalletSolanaTransactionPrepare | Prepare a Solana transaction | mutating | no | - |
+| WalletTrackToken | Track a token in the local wallet view | mutating | no | - |
+| WebResearch | Search and read the web | read-only | no | TAVILY_API_KEY |
+| vex_ToolSearch | Search the protocol tool catalog | read-only | no | - |
+
+## Protocols
+
+### dexscreener
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| dexscreener__candles_list | Read a pair's OHLCV candles | read-only | no | - |
+| dexscreener__chains_list | List DEX Screener chains | read-only | no | - |
+| dexscreener__gainers_list | List top-gaining DEX pairs | read-only | no | - |
+| dexscreener__launchpad_pairs_list | List launchpad pairs by stage | read-only | no | - |
+| dexscreener__losers_list | List top-losing DEX pairs | read-only | no | - |
+| dexscreener__narratives_list | List trending DEX Screener narratives | read-only | no | - |
+| dexscreener__pair_details_get | Read a pair's safety report | read-only | no | - |
+| dexscreener__pair_get | Read one pair's live state | read-only | no | - |
+| dexscreener__pairs_batch_get | Batch-read pairs or tokens | read-only | no | - |
+| dexscreener__pairs_new_list | List newest DEX pairs | read-only | no | - |
+| dexscreener__pairs_search | Search DEX pairs | read-only | no | - |
+| dexscreener__pairs_top_list | Rank DEX pairs by a metric | read-only | no | - |
+| dexscreener__pairs_trending_list | List trending DEX pairs | read-only | no | - |
+| dexscreener__spotlight_get | Read the DEX Screener spotlight feeds | read-only | no | - |
+| dexscreener__token_pairs_list | List a token's DEX pools | read-only | no | - |
+| dexscreener__tokens_screen | Screen tokens across chains | read-only | no | - |
+| dexscreener__top_traders_list | Rank a pair's top wallets | read-only | no | - |
+| dexscreener__trades_list | List a pair's trades | read-only | no | - |
+
+### khalani
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| khalani__bridge_execute | Execute a Khalani bridge | mutating | yes | - |
+| khalani__bridge_quote_get | Quote a Khalani bridge | read-only | no | - |
+| khalani__chains_list | List Khalani bridge chains | read-only | no | - |
+| khalani__order_get | Read one Khalani bridge order | read-only | no | - |
+| khalani__orders_list | List Khalani bridge orders | read-only | no | - |
+| khalani__token_balances_get | Read Khalani-chain wallet balances | read-only | no | - |
+| khalani__tokens_autocomplete | Parse a token phrase into Khalani tokens | read-only | no | - |
+| khalani__tokens_search | Search Khalani tokens | read-only | no | - |
+| khalani__tokens_top_list | List top bridged tokens on Khalani | read-only | no | - |
+
+### kyberswap
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| kyberswap__chains_list | List KyberSwap chains | read-only | no | - |
+| kyberswap__swap_execute | Execute a KyberSwap swap | mutating | yes | - |
+| kyberswap__swap_quote | Quote a KyberSwap swap | read-only | no | - |
+| kyberswap__token_safety_check | Audit an EVM token with KyberSwap | read-only | no | - |
+
+### morpho
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| morpho__market_borrow | Borrow from a Morpho market | mutating | yes | - |
+| morpho__market_get | Read one Morpho Blue market | read-only | no | - |
+| morpho__market_quote | Quote a Morpho Blue market operation | read-only | no | - |
+| morpho__market_repay | Repay debt on a Morpho market | mutating | yes | - |
+| morpho__market_supply | Supply the loan asset to a Morpho market | mutating | yes | - |
+| morpho__market_supply_collateral | Supply collateral to a Morpho market | mutating | yes | - |
+| morpho__market_withdraw | Withdraw a supply from a Morpho market | mutating | yes | - |
+| morpho__market_withdraw_collateral | Withdraw collateral from a Morpho market | mutating | yes | - |
+| morpho__markets_activity_list | Read Morpho market activity | read-only | no | - |
+| morpho__markets_discover | Screen Morpho Blue lending markets | read-only | no | - |
+| morpho__positions_get | Read a wallet's Morpho positions | read-only | no | - |
+| morpho__rewards_claim | Claim earned Morpho rewards | mutating | yes | - |
+| morpho__rewards_get | Read claimable Morpho rewards | read-only | no | - |
+| morpho__vault_deposit | Deposit into a Morpho vault | mutating | yes | - |
+| morpho__vault_get | Read one Morpho vault | read-only | no | - |
+| morpho__vault_quote | Quote a Morpho vault deposit or withdrawal | read-only | no | - |
+| morpho__vault_withdraw | Withdraw from a Morpho vault | mutating | yes | - |
+| morpho__vaults_discover | Screen Morpho vaults | read-only | no | - |
+| morpho__wallet_balance_get | Read on-chain balances for Morpho tokens | read-only | no | - |
+
+### pendle
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| pendle__asset_prices_get | Read Pendle asset prices | read-only | no | - |
+| pendle__lp_add | Add single-token Pendle liquidity | mutating | yes | - |
+| pendle__lp_add_keep_yt | Add Pendle liquidity and keep the YT | mutating | yes | - |
+| pendle__lp_quote | Quote a Pendle liquidity add or remove | read-only | no | - |
+| pendle__lp_remove | Remove Pendle liquidity to one token | mutating | yes | - |
+| pendle__lp_remove_dual | Remove Pendle liquidity to two tokens | mutating | yes | - |
+| pendle__lp_to_pt | Convert Pendle liquidity into PT | mutating | yes | - |
+| pendle__lp_transfer | Move Pendle liquidity between markets | mutating | yes | - |
+| pendle__market_candles_get | Read Pendle asset price candles | read-only | no | - |
+| pendle__market_get | Read one Pendle market | read-only | no | - |
+| pendle__market_history_get | Read a Pendle market's history | read-only | no | - |
+| pendle__market_orderbook_get | Read Pendle limit-order depth | read-only | no | - |
+| pendle__markets_discover | Screen Pendle yield markets | read-only | no | - |
+| pendle__merkle_rewards_list | List claimable Pendle merkle rewards | read-only | no | - |
+| pendle__positions_get | Value this wallet's Pendle positions | read-only | no | - |
+| pendle__pt_buy | Buy a Pendle principal token | mutating | yes | - |
+| pendle__pt_quote | Quote a Pendle PT trade | read-only | no | - |
+| pendle__pt_redeem | Redeem a matured Pendle principal token | mutating | yes | - |
+| pendle__pt_rollover | Roll a Pendle PT into a later expiry | mutating | yes | - |
+| pendle__pt_sell | Sell a Pendle principal token | mutating | yes | - |
+| pendle__py_mint | Mint a Pendle PT and YT pair | mutating | yes | - |
+| pendle__py_quote | Quote a Pendle PT/YT mint or redeem | read-only | no | - |
+| pendle__py_redeem | Redeem a Pendle PT and YT pair early | mutating | yes | - |
+| pendle__rewards_claim | Claim accrued Pendle rewards | mutating | yes | - |
+| pendle__sy_mint | Wrap a token into Pendle SY | mutating | yes | - |
+| pendle__sy_redeem | Unwrap Pendle SY back to a token | mutating | yes | - |
+| pendle__yt_buy | Buy a Pendle yield token | mutating | yes | - |
+| pendle__yt_quote | Quote a Pendle YT trade | read-only | no | - |
+| pendle__yt_sell | Sell a Pendle yield token | mutating | yes | - |
+
+### pools
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| pools__fees_claim | Claim pools.fun creator fees | mutating | yes | - |
+| pools__launch_execute | Launch a token on pools.fun | mutating | yes | - |
+| pools__launch_preview | Price a pools.fun launch | mutating | no | - |
+| pools__launch_request_form | Ask the user to confirm a pools.fun launch | mutating | no | - |
+| pools__my_launches_list | List this wallet's pools.fun launches | read-only | no | - |
+| pools__token_candles_list | Read pools.fun token candles | read-only | no | - |
+| pools__token_get | Read one pools.fun token | read-only | no | - |
+| pools__tokens_discover | Screen pools.fun tokens | read-only | no | - |
+| pools__tokens_search | Search pools.fun tokens | read-only | no | - |
+
+### relay
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| relay__bridge_execute | Execute a Relay cross-chain bridge | mutating | yes | - |
+| relay__bridge_quote_get | Quote a Relay cross-chain bridge | read-only | no | - |
+
+### solana
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| solana__lend_borrow_operate | Adjust a Jupiter Lend borrow position | mutating | yes | JUPITER_API_KEY |
+| solana__lend_borrow_positions_list | List Jupiter Lend borrow positions | read-only | no | JUPITER_API_KEY |
+| solana__lend_borrow_vaults_list | Screen Jupiter Lend borrow vaults | read-only | no | JUPITER_API_KEY |
+| solana__lend_earn_deposit | Deposit into a Jupiter Lend earn vault | mutating | yes | JUPITER_API_KEY |
+| solana__lend_earn_positions_list | List Jupiter Lend earn positions | read-only | no | JUPITER_API_KEY |
+| solana__lend_earn_rates_list | Screen Jupiter Lend earn markets | read-only | no | JUPITER_API_KEY |
+| solana__lend_earn_withdraw | Withdraw from a Jupiter Lend earn vault | mutating | yes | JUPITER_API_KEY |
+| solana__predict_buy | Buy Jupiter prediction shares | mutating | yes | JUPITER_API_KEY |
+| solana__predict_claim | Claim a resolved Jupiter prediction payout | mutating | yes | JUPITER_API_KEY |
+| solana__predict_close_all | Close every Jupiter prediction position | mutating | yes | JUPITER_API_KEY |
+| solana__predict_event_get | Read one Jupiter prediction event | read-only | no | JUPITER_API_KEY |
+| solana__predict_events_discover | Browse Jupiter prediction events | read-only | no | JUPITER_API_KEY |
+| solana__predict_events_search | Search Jupiter prediction events | read-only | no | JUPITER_API_KEY |
+| solana__predict_leaderboard_list | Rank Jupiter prediction traders | read-only | no | JUPITER_API_KEY |
+| solana__predict_market_get | Read one Jupiter prediction market | read-only | no | JUPITER_API_KEY |
+| solana__predict_order_get | Read one live Jupiter prediction order | read-only | no | JUPITER_API_KEY |
+| solana__predict_order_status_get | Read a Jupiter prediction order's fill status | read-only | no | JUPITER_API_KEY |
+| solana__predict_orderbook_get | Read Jupiter prediction order-book depth | read-only | no | JUPITER_API_KEY |
+| solana__predict_orders_list | List Jupiter prediction orders | read-only | no | JUPITER_API_KEY |
+| solana__predict_pnl_history_get | Read Jupiter prediction realized-PnL history | read-only | no | JUPITER_API_KEY |
+| solana__predict_position_get | Read one Jupiter prediction position | read-only | no | JUPITER_API_KEY |
+| solana__predict_positions_list | List open Jupiter prediction positions | read-only | no | JUPITER_API_KEY |
+| solana__predict_profile_get | Read a Jupiter prediction trader profile | read-only | no | JUPITER_API_KEY |
+| solana__predict_sell | Sell a Jupiter prediction position | mutating | yes | JUPITER_API_KEY |
+| solana__predict_suggested_events_list | Suggest Jupiter prediction events for a wallet | read-only | no | JUPITER_API_KEY |
+| solana__predict_trade_history_list | Read Jupiter prediction trade history | read-only | no | JUPITER_API_KEY |
+| solana__predict_trades_list | Browse the global Jupiter prediction trade feed | read-only | no | JUPITER_API_KEY |
+| solana__predict_trading_status_get | Check Jupiter prediction trading status | read-only | no | JUPITER_API_KEY |
+| solana__predict_vault_get | Read the Jupiter prediction protocol vault | read-only | no | JUPITER_API_KEY |
+| solana__swap_execute | Execute a Jupiter swap | mutating | yes | JUPITER_API_KEY |
+| solana__swap_quote | Quote a Jupiter swap | read-only | no | JUPITER_API_KEY |
+| solana__token_prices_get | Read Solana token prices | read-only | no | JUPITER_API_KEY |
+| solana__tokens_discover | Discover new and trending Solana tokens | read-only | no | JUPITER_API_KEY |
+| solana__tokens_search | Search Solana tokens by name | read-only | no | JUPITER_API_KEY |
+
+### trench
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| trench__images_list | List Trench image-locker images | read-only | no | - |
+| trench__launch_execute | Launch a token on Trench Express | mutating | yes | - |
+| trench__launch_preview | Dry-run a Trench Express launch | read-only | no | - |
+| trench__launch_request_form | Ask the user to confirm a Trench launch | mutating | no | - |
+| trench__my_launches_list | List this wallet's Trench launches | read-only | no | - |
+| trench__token_trades_list | Read a Trench Express token's trade tape | read-only | no | - |
+| trench__tokens_discover | Screen Trench Express tokens | read-only | no | - |
+| trench__tokens_search | Search Trench Express tokens | read-only | no | - |
+| trench__trade_execute | Trade a Trench Express token | mutating | yes | - |
+| trench__trade_quote | Quote a Trench Express trade | read-only | no | - |
+
+### uniswap
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| uniswap__swap_execute | Execute a Uniswap V2/V3 swap | mutating | yes | - |
+| uniswap__swap_quote | Quote a Uniswap V2/V3 route | read-only | no | - |
+
+### virtuals
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| virtuals__agent_get | Read one Virtuals agent token | read-only | no | - |
+| virtuals__agents_discover | Screen Virtuals agent tokens | read-only | no | - |
+| virtuals__genesis_launches_list | Browse the Virtuals Genesis calendar | read-only | no | - |
+| virtuals__graduations_list | List recent Virtuals graduations | read-only | no | - |

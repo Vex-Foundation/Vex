@@ -53,6 +53,7 @@ export type {
 export {
   createPendingActivityEvent,
   createAgentActivityIntent,
+  createAgentActivityIntentWith,
   recordPreBroadcastFailure,
   createAgentActivityPreBroadcastFailure,
 } from "./agent-activity/swap-intent.js";
@@ -142,6 +143,7 @@ export {
   noteNonInclusionObserved,
   clearNonInclusionClock,
   markSupersededUnproven,
+  markSupersededUnprovenWith,
   mintClaimToken,
   // The phase decision as a VALUE, for the surfaces that must state the row's
   // current cadence rather than act on it (the progress push, the agent copy).
@@ -164,17 +166,49 @@ export type {
   PendingReasonContext,
   NotePendingReasonMiss,
 } from "./agent-activity/swap-lifecycle.js";
+
+// One durable nonce allocator for every local EVM signer. Staged activity
+// paths reserve on their existing row; the legacy Pendle allowance seam uses
+// migration 091's narrow reservation table.
+export type {
+  EvmNonceReservationRequest,
+  LegacyEvmNonceReservation,
+  ClaimedEvmNonceReservation,
+  ClaimDueEvmNonceReservationsResult,
+  EvmNonceRepairTerminalReason,
+  EvmNonceRepairInconclusiveReason,
+} from "./evm-nonce-reservations.js";
+export {
+  LEGACY_EVM_NONCE_RESERVATION_STALE_MS,
+  reserveActivityEvmNonce,
+  reserveLegacyEvmNonce,
+  stageLegacyEvmNonce,
+  markLegacyEvmNonceAccepted,
+  terminalizeLegacyEvmNonce,
+  EVM_NONCE_REPAIR_LIMIT,
+  EVM_NONCE_REPAIR_LEASE_MS,
+  EVM_NONCE_REPAIR_INTERVAL_MS,
+  claimDueEvmNonceReservations,
+  terminalizeClaimedEvmNonceReservation,
+  rotateInconclusiveEvmNonceReservation,
+} from "./evm-nonce-reservations.js";
 export {
   markActivityBroadcast,
   markActivitySolanaBroadcast,
   markBroadcastAccepted,
   confirmActivityEvent,
+  // Client-bound twins (same CAS, same fence, same {applied,row}) for a caller
+  // that terminalizes several coupled rows inside ONE transaction.
+  confirmActivityEventWith,
   // The repair sweeps' status-only finalizer — a terminal confirm that writes
   // no executed amounts, for rows whose settlement evidence could not be
   // decoded. Exported from the facade so the sweeps never reach into the
   // implementation module. See its doc in `./agent-activity/swap-lifecycle.ts`.
   confirmActivityEventStatusOnly,
+  confirmActivityEventStatusOnlyWith,
   failActivityEvent,
+  failActivityEventWith,
+  failHashlessActivityEventWith,
   abortPlannedEvents,
   touchLastChecked,
   clearVerificationStall,
@@ -183,6 +217,9 @@ export {
   // `./agent-activity/swap-lifecycle/verification-bookkeeping.ts`.
   notePendingReason,
   getActivityEventById,
+  // Client-bound twin: a caller settling several coupled rows in ONE
+  // transaction must read them through its own connection.
+  getActivityEventByIdWith,
   listPendingOlderThan,
   // Wave P: the fast lane's by-id candidate read, and the group-wide pending
   // predicate `fullBalanceSync` consults before it may take a snapshot.

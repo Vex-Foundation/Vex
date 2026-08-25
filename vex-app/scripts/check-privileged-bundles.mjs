@@ -191,6 +191,63 @@ export const privilegedBundleChecks = [
     },
   },
   {
+    // The MCP SDK is a ROOT dependency (`@modelcontextprotocol/server` +
+    // `/core`), imported by the engine's Studio server through the
+    // `@vex-agent` alias and reached from main via a dynamic import. It is NOT
+    // in `vite.main.config.ts`'s `external` list, so it must be BUNDLED into
+    // dist/main. If it is ever left as a runtime module import, the packaged
+    // app resolves it out of app.asar/node_modules - the same packaging drift
+    // that made v0.1.0 crash on macOS when `pg-types -> postgres-array` was
+    // missing there - and the Vex Studio host dies at the first connection
+    // instead of at build time.
+    // Fix if this trips: remove the package from `external`, or bundle it
+    // explicitly. Never "just add it to extraResources".
+    label: "main bundle — MCP SDK is bundled, not an unresolved @modelcontextprotocol import",
+    run(root) {
+      const jsFiles = mainChunkFiles(root);
+      if (jsFiles.length === 0) {
+        throw new Error(`no built main JS files in ${path.join(root, "dist", "main")}`);
+      }
+      // Static `from "@modelcontextprotocol/..."`, bare `import "..."`,
+      // dynamic `import("...")` and CJS `require("...")`.
+      //
+      // Scanned LINE BY LINE with whole-line comments skipped, exactly as the
+      // `__filename` gate does and for the same reason: `minify: false` keeps
+      // the bundled SDK's own JSDoc in the chunk, and its usage example spells
+      // `import { serveStdio } from '@modelcontextprotocol/server/stdio'` in
+      // prose. A file-wide regex reports that as a runtime import. Trailing
+      // comments after code are deliberately NOT recognised, so the worst case
+      // stays a loud false positive rather than a silent miss.
+      const patterns = [
+        /\bfrom\s*["']@modelcontextprotocol\/[^"']*["']/,
+        /\bimport\s*["']@modelcontextprotocol\/[^"']*["']/,
+        /\bimport\s*\(\s*["']@modelcontextprotocol\/[^"']*["']\s*\)/,
+        /\brequire\s*\(\s*["']@modelcontextprotocol\/[^"']*["']\s*\)/,
+      ];
+      const violations = [];
+      for (const file of jsFiles) {
+        const rel = path.relative(root, file);
+        const lines = readFileSync(file, "utf8").split("\n");
+        for (let i = 0; i < lines.length; i += 1) {
+          const trimmed = (lines[i] ?? "").trim();
+          if (COMMENT_LINE_RE.test(trimmed)) continue;
+          for (const pattern of patterns) {
+            if (pattern.test(trimmed)) {
+              violations.push(
+                `${rel}:${i + 1}: leaves @modelcontextprotocol/* as a runtime module import — ${trimmed.slice(0, 120)}`
+              );
+            }
+          }
+        }
+      }
+      if (violations.length > 0) {
+        throw new Error(
+          `The MCP SDK must be bundled into dist/main; a packaged app cannot resolve it from ASAR node_modules:\n    ${violations.join("\n    ")}`
+        );
+      }
+    },
+  },
+  {
     // The ESM main bundle must contain NO bare `__filename`. Rolldown inlines
     // CJS dependencies whose code reads it — `@solana/spl-token` →
     // `buffer-layout-utils` → `bigint-buffer` → `bindings` — and in an ESM

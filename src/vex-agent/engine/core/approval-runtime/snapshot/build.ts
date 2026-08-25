@@ -18,12 +18,12 @@
  * the ORDERING OWNER — every queue/intent CAS write happens here, in order.
  */
 
-import type { PoolClient } from "pg";
+import type { ClientBase } from "pg";
 
 import * as approvalsRepo from "../../../../db/repos/approvals.js";
 import * as approvalIntentsRepo from "../../../../db/repos/approval-intents.js";
 import * as missionRunsRepo from "../../../../db/repos/mission-runs.js";
-import { TERMINAL_RUN_STATUSES } from "../../../types.js";
+import { TERMINAL_RUN_STATUSES, type Permission } from "../../../types.js";
 import { ApprovalDecisionInconsistencyError } from "../types.js";
 import {
   isPermissionMoreRestrictive,
@@ -34,13 +34,15 @@ import {
 } from "../helpers.js";
 import { getDbNow, lockAndLoadSnapshot } from "./compare.js";
 import type {
+  ApprovalDriftKind,
   ApproveSnapshot,
   IntentSnapshotRow,
   RejectSnapshot,
 } from "./types.js";
+import type { ApprovalRefusalReason } from "../../../../db/repos/approval-intents.js";
 
 export async function buildApproveSnapshot(
-  client: PoolClient,
+  client: ClientBase,
   approvalId: string,
 ): Promise<ApproveSnapshot> {
   const row = await lockAndLoadSnapshot(client, approvalId);
@@ -114,7 +116,26 @@ export async function buildApproveSnapshot(
       row.queue_permission_at_enqueue,
     )
   ) {
-    return policyDriftRejectInTx(client, row, approvalId);
+    return policyDriftRejectInTx(client, row, approvalId, {
+      driftKind: "session_permission",
+      refusalReason: null,
+      livePermission: row.session_permission_live,
+    });
+  }
+
+  // A2/A3 - the Vex Studio commit-time check. A Studio approval is authorized
+  // by a PROJECT, not by the agent session's own columns, so the session
+  // mirror above is necessary and not sufficient: the project could have been
+  // deleted, its scope edited, or its permission tightened while the card sat
+  // on screen. The project row is locked LAST (`FOR UPDATE`), after the
+  // session control lock this transaction already holds and after the
+  // approval rows locked above, which is the documented global lock order and
+  // the same order `updateProjectScope` takes.
+  if (row.origin === "studio_mcp") {
+    const drift = await readProjectDrift(client, row);
+    if (drift !== null) {
+      return policyDriftRejectInTx(client, row, approvalId, drift);
+    }
   }
 
   // Happy path — CAS queue.approve + CAS intent.decision='approved' in tx.
@@ -144,7 +165,7 @@ export async function buildApproveSnapshot(
 }
 
 async function autoRejectInTx(
-  client: PoolClient,
+  client: ClientBase,
   row: IntentSnapshotRow,
   approvalId: string,
   expiresAt: Date,
@@ -161,6 +182,7 @@ async function autoRejectInTx(
     kind: "rejected",
     reason: TOOL_RESULT_EXPIRED_REASON,
     idempotencyKey: approvalId,
+    refusalReason: studioExpiryRefusalReason(row),
   });
   if (!ok) {
     throw new ApprovalDecisionInconsistencyError(
@@ -184,10 +206,76 @@ async function autoRejectInTx(
  * is a real inconsistency. No approved decision is ever written; the post-tx
  * side effects render a rejection tool-result, never an approved dispatch.
  */
+interface DriftVerdict {
+  readonly driftKind: ApprovalDriftKind;
+  readonly refusalReason: ApprovalRefusalReason | null;
+  readonly livePermission: Permission;
+}
+
+/**
+ * Lock the project row and decide whether the authority behind this Studio
+ * approval still holds. `null` means it does.
+ *
+ * A missing project is `project_deleted` and NOT a "not found": the intent row
+ * survives on purpose (migration 086 declares the reference with no cascade),
+ * because the record that an external agent asked Vex to act is exactly what
+ * must not vanish with the project.
+ */
+async function readProjectDrift(
+  client: ClientBase,
+  row: IntentSnapshotRow,
+): Promise<DriftVerdict | null> {
+  if (row.project_id === null) {
+    return {
+      driftKind: "project_deleted",
+      refusalReason: "project_deleted",
+      livePermission: row.session_permission_live,
+    };
+  }
+  const res = await client.query<{ scope_version: number; permission: Permission }>(
+    "SELECT scope_version, permission FROM projects WHERE id = $1 FOR UPDATE",
+    [row.project_id],
+  );
+  const project = res.rows[0];
+  if (project === undefined) {
+    return {
+      driftKind: "project_deleted",
+      refusalReason: "project_deleted",
+      livePermission: row.session_permission_live,
+    };
+  }
+  if (
+    row.scope_version_at_enqueue !== null
+    && Number(project.scope_version) !== Number(row.scope_version_at_enqueue)
+  ) {
+    return {
+      driftKind: "scope_changed",
+      refusalReason: "scope_changed",
+      livePermission: project.permission,
+    };
+  }
+  if (
+    isPermissionMoreRestrictive(
+      project.permission,
+      row.queue_permission_at_enqueue,
+    )
+  ) {
+    // Policy drift, not a refusal by an owner: nobody cancelled this action,
+    // the permission it was granted under simply no longer exists.
+    return {
+      driftKind: "project_permission",
+      refusalReason: null,
+      livePermission: project.permission,
+    };
+  }
+  return null;
+}
+
 async function policyDriftRejectInTx(
-  client: PoolClient,
+  client: ClientBase,
   row: IntentSnapshotRow,
   approvalId: string,
+  drift: DriftVerdict,
 ): Promise<ApproveSnapshot> {
   const queueRow = await approvalsRepo.rejectWith(client, approvalId);
   if (queueRow === null) {
@@ -201,6 +289,7 @@ async function policyDriftRejectInTx(
     kind: "rejected",
     reason: TOOL_RESULT_POLICY_DRIFT_REASON,
     idempotencyKey: approvalId,
+    refusalReason: drift.refusalReason,
   });
   if (!ok) {
     throw new ApprovalDecisionInconsistencyError(
@@ -214,12 +303,14 @@ async function policyDriftRejectInTx(
     queueResolvedAt: toIso(queueRow.resolvedAt ?? toIsoNow()),
     reason: TOOL_RESULT_POLICY_DRIFT_REASON,
     permissionAtEnqueue: row.queue_permission_at_enqueue,
-    livePermission: row.session_permission_live,
+    livePermission: drift.livePermission,
+    driftKind: drift.driftKind,
+    refusalReason: drift.refusalReason,
   };
 }
 
 export async function buildRejectSnapshot(
-  client: PoolClient,
+  client: ClientBase,
   approvalId: string,
   reason: string,
 ): Promise<RejectSnapshot> {
@@ -258,6 +349,10 @@ export async function buildRejectSnapshot(
     kind: "rejected",
     reason,
     idempotencyKey: approvalId,
+    refusalReason:
+      reason === TOOL_RESULT_EXPIRED_REASON
+        ? studioExpiryRefusalReason(row)
+        : null,
   });
   if (!ok) {
     throw new ApprovalDecisionInconsistencyError(
@@ -271,4 +366,19 @@ export async function buildRejectSnapshot(
     queueResolvedAt: toIso(queueRow.resolvedAt ?? toIsoNow()),
     reason,
   };
+}
+
+/**
+ * `'expired'` for a Studio row, `null` for every agent row.
+ *
+ * The machine fact belongs in `refusal_reason` because the alternative is
+ * pattern-matching `decision_reason` prose, which is a human sentence that may
+ * be reworded or localized at any time. An agent row keeps the column NULL:
+ * nothing reads it there, and writing it would change a shape the agent paths
+ * already agree on.
+ */
+function studioExpiryRefusalReason(
+  row: IntentSnapshotRow,
+): ApprovalRefusalReason | null {
+  return row.origin === "studio_mcp" ? "expired" : null;
 }

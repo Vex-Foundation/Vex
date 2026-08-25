@@ -11,10 +11,7 @@ export {
   readErc20Metadata,
   validateKyberSpender,
   verifyRouterAddress,
-  sendKyberTransactionWithReceipt,
 } from "./evm/erc20.js";
-
-export { ensureErc721Approval, ensureErc1155ApprovalForAll } from "./evm/nft.js";
 
 export { extractMintedNftId } from "./evm/receipt-logs.js";
 

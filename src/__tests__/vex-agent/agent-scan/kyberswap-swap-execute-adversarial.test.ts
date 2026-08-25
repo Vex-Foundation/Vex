@@ -133,6 +133,10 @@ vi.mock("@tools/kyberswap/aggregator/client.js", () => ({
 
 const mockCreateAgentActivityIntent = vi.fn();
 const mockCreateAgentActivityPreBroadcastFailure = vi.fn().mockResolvedValue({ executionId: 1, event: { id: 1 } });
+const mockReserveActivityEvmNonce = vi.fn(async (
+  _id: number,
+  request: { readonly nodePendingNonce: number },
+) => request.nodePendingNonce);
 const mockMarkActivityBroadcast = vi.fn();
 const mockMarkBroadcastAccepted = vi.fn().mockResolvedValue({ applied: true, row: {} });
 const mockConfirmActivityEvent = vi.fn().mockResolvedValue({ applied: true, row: {} });
@@ -141,6 +145,9 @@ const mockFailActivityEvent = vi.fn().mockResolvedValue({ applied: true, row: {}
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   createAgentActivityIntent: (...args: unknown[]) => mockCreateAgentActivityIntent(...args),
   createAgentActivityPreBroadcastFailure: (...args: unknown[]) => mockCreateAgentActivityPreBroadcastFailure(...args),
+  reserveActivityEvmNonce: (
+    ...args: Parameters<typeof mockReserveActivityEvmNonce>
+  ) => mockReserveActivityEvmNonce(...args),
   markActivityBroadcast: (...args: unknown[]) => mockMarkActivityBroadcast(...args),
   markBroadcastAccepted: (...args: unknown[]) => mockMarkBroadcastAccepted(...args),
   confirmActivityEvent: (...args: unknown[]) => mockConfirmActivityEvent(...args),
@@ -211,6 +218,7 @@ describe("kyberswap.swap.execute — adversarial (FIX2-W0)", () => {
     mockPlanKyberAllowance.mockReset().mockResolvedValue({ needsReset: false, needsApprove: false });
     mockEnsureErc20Balance.mockReset().mockResolvedValue(undefined);
     mockCreateAgentActivityIntent.mockReset().mockResolvedValue({ executionId: 1, events: [{ id: 1 }] });
+    mockReserveActivityEvmNonce.mockClear();
     mockDecodeKyberSwapSettlement.mockReset().mockReturnValue(null);
     mockMarkActivityBroadcast.mockReset().mockResolvedValue({ applied: true, row: {} });
     mockMarkBroadcastAccepted.mockReset().mockResolvedValue({ applied: true, row: {} });
@@ -240,6 +248,10 @@ describe("kyberswap.swap.execute — adversarial (FIX2-W0)", () => {
     sendRawTransaction.mockRejectedValue(new Error("timeout waiting for node"));
 
     const result = await executeCall();
+    expect(mockReserveActivityEvmNonce).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ nodePendingNonce: 1 }),
+    );
 
     expect(mockFailActivityEvent).not.toHaveBeenCalled();
     expect(result.success).toBe(false);

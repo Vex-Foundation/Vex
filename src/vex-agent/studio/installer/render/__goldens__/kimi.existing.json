@@ -1,0 +1,15 @@
+{
+  // The user wrote this comment. A merge must not delete it.
+  "$schema": "https://example.invalid/settings.schema.json",
+  "mcpServers": {
+    "other-server": {
+      "command": "/usr/bin/other",
+      "args": ["--serve"]
+    }
+  },
+  /* A block comment, and a key Vex has never heard of. */
+  "somethingVexDoesNotKnow": {
+    "keep": true,
+    "nested": ["a", "b"]
+  }
+}

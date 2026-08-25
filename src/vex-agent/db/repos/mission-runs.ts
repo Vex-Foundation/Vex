@@ -12,7 +12,7 @@ import {
   TERMINAL_RUN_STATUSES,
   ACTIVE_OR_PAUSED_RUN_STATUSES,
 } from "../../engine/types.js";
-import type { PoolClient } from "pg";
+import type { ClientBase, PoolClient } from "pg";
 
 import { queryOne, queryOneWith, execute, getPool } from "../client.js";
 import { nullableJsonb } from "../params.js";
@@ -161,10 +161,13 @@ export async function createRun(
  *      a transaction that already re-checked `TERMINAL_RUN_STATUSES` under
  *      `SELECT … FOR UPDATE` on the same row, behind the session control lock
  *      and `gateOnOperatorStopWithClient`.
- *   3. `engine/core/turn-loop-tool-batch/approval-stop.ts` — writes
- *      `paused_approval` inside a transaction holding the session control lock
- *      with `gateOnOperatorStopWithClient` already run (which locks the run row
- *      and applies any queued stop).
+ *   3. `engine/core/approval-runtime/enqueue.ts` - writes `paused_approval`
+ *      inside a transaction holding the session control lock with the caller's
+ *      pre-insert gate already run. For the turn loop that gate is
+ *      `gateOnOperatorStopWithClient` (which locks the run row and applies any
+ *      queued stop), exactly as it was when this write lived in
+ *      `turn-loop-tool-batch/approval-stop.ts`. The Vex Studio lane, the seam's
+ *      other caller, has no mission run at all and never reaches this write.
  *
  * `engine/core/runner/abort.ts` and `engine/core/runner/mission-finalize.ts`
  * were removed from this list: both now delegate the stop-for-edit transition
@@ -453,12 +456,12 @@ export async function getRun(
 
 export async function getRunBySession(
   sessionId: string,
-  client?: PoolClient,
+  client?: ClientBase,
 ): Promise<MissionRun | null> {
   const sql =
     "SELECT * FROM mission_runs WHERE session_id = $1 ORDER BY started_at DESC LIMIT 1";
   const row = client
-    ? await queryOneWith<Record<string, unknown>>(client, sql, [sessionId])
+    ? (await client.query<Record<string, unknown>>(sql, [sessionId])).rows[0] ?? null
     : await queryOne<Record<string, unknown>>(sql, [sessionId]);
   return row ? mapRow(row) : null;
 }

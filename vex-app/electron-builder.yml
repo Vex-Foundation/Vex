@@ -31,9 +31,30 @@ extraResources:
   - from: resources/migrations
     to: migrations
     filter: ["**/*.sql"]
+  # The Vex Studio MCP bridge, staged for THIS platform/arch by
+  # `scripts/stage-bridge.mjs` before electron-builder runs. Staged rather than
+  # read straight from `bridge/dist/<goos>-<goarch>/` because electron-builder's
+  # Go output is named in Go's vocabulary (amd64) while `${arch}` here speaks
+  # Electron's (x64); the mapping lives in one script that also verifies the
+  # bytes. The `${arch}` suffix is what makes the macOS job correct - it
+  # packages arm64 and x64 in ONE electron-builder invocation, so a single
+  # shared staging directory would put one architecture's bridge in the
+  # other's bundle. electron-builder 26 only WARNS on a
+  # missing source, so the preflight and the afterPack re-inspection are what
+  # actually make this fail closed.
+  - from: resources/bridge-${arch}
+    to: bridge
+    filter: ["**/*"]
 
 mac:
   category: public.app-category.finance
+  # The embedded Vex Studio bridge is a Mach-O executable inside the bundle, so
+  # it must carry its own signature or the hardened runtime refuses to launch it
+  # and notarization rejects the bundle. `binaries` is electron-builder's
+  # supported mechanism for exactly this; the path is relative to the .app and
+  # is resolved by app-builder-lib against the bundle root.
+  binaries:
+    - Contents/Resources/bridge/vex-mcp
   target:
     - target: dmg
       arch: [x64, arm64]

@@ -89,13 +89,17 @@ import {
   recoverStaleHashlessIntents,
   HASHLESS_INTENT_RECOVERY_LEASE_MS,
 } from "@vex-agent/db/repos/agent-activity.js";
+import * as walletIntentsRepo from "@vex-agent/db/repos/wallet-intents.js";
 
 import {
   isSolanaSweepCandidateDue,
   SOLANA_HASHLESS_RECOVERY_BATCH_LIMIT,
   SOLANA_SWEEP_BATCH_LIMIT,
 } from "./solana-activity-repair/candidate-schedule.js";
-import { resolveSolanaPendingRows } from "./solana-activity-repair/row-resolution.js";
+import {
+  resolveLegacySolanaTransfers,
+  resolveSolanaPendingRows,
+} from "./solana-activity-repair/row-resolution.js";
 import type { SolanaActivitySweepDeps, SolanaActivitySweepResult } from "./solana-activity-repair/sweep-port.js";
 
 export async function repairPendingSolanaActivity(
@@ -112,13 +116,17 @@ export async function repairPendingSolanaActivity(
   const notDue = candidates.length - due.length;
 
   const batch = await resolveSolanaPendingRows(due, deps, now);
+  const legacy = deps.includeLegacyTransferReview === true
+    ? await walletIntentsRepo.listLegacyReviewCandidates("solana", 10)
+    : [];
+  const legacyBatch = await resolveLegacySolanaTransfers(legacy, deps);
 
   return {
     recovered: recovered.length,
-    checked: due.length,
-    confirmed: batch.confirmed,
-    failed: batch.failed,
-    stillPending: notDue + batch.stillPending,
+    checked: due.length + legacy.length,
+    confirmed: batch.confirmed + legacyBatch.confirmed,
+    failed: batch.failed + legacyBatch.failed,
+    stillPending: notDue + batch.stillPending + legacyBatch.stillPending,
   };
 }
 
@@ -137,7 +145,10 @@ export {
   SOLANA_SWEEP_DUE_INTERVAL_MS,
   SOLANA_SWEEP_ESCALATION_AGE_MS,
 } from "./solana-activity-repair/candidate-schedule.js";
-export { resolveSolanaPendingRows } from "./solana-activity-repair/row-resolution.js";
+export {
+  resolveLegacySolanaTransfers,
+  resolveSolanaPendingRows,
+} from "./solana-activity-repair/row-resolution.js";
 export type {
   SolanaActivitySweepDeps,
   SolanaActivitySweepResult,

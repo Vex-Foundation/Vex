@@ -29,6 +29,8 @@ export type SolanaRpcLookup<T> =
   | { readonly outcome: "unavailable" };
 
 export interface SolanaActivitySweepDeps {
+  /** Production periodic sweeps also drain migration 093's pre-084 review queue. */
+  readonly includeLegacyTransferReview?: boolean;
   /**
    * BATCHED status lookup - `getSignatureStatuses` takes an array, so one sweep
    * run costs ONE RPC round trip for its whole due batch instead of one per

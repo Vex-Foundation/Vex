@@ -24,6 +24,7 @@ const { DexScreenerSiteErrorCodes } = await import(
 );
 type BridgeRuntime = import("../ws-bridge.js").BridgeRuntime;
 type BridgeWindow = import("../ws-bridge.js").BridgeWindow;
+type BridgeSession = import("../ws-bridge.js").BridgeSession;
 
 const SCREENER_URL =
   "wss://io.dexscreener.com/dex/screener/v7/pairs/h24/1?rankBy[key]=volume";
@@ -85,23 +86,25 @@ function makeFakes(): FakeState {
     | ((details: { url: string; statusCode: number }, cb: (r: unknown) => void) => void)
     | null = null;
   const runtime: BridgeRuntime = {
-    fromPartition: () =>
-      ({
-        setUserAgent: () => undefined,
-        webRequest: {
-          onBeforeSendHeaders: () => undefined,
-          onHeadersReceived: (
-            _filter: unknown,
-            listener?: (details: { url: string; statusCode: number }, cb: (r: unknown) => void) => void,
-          ) => {
-            headersListener = listener ?? null;
-          },
+    fromPartition: (): BridgeSession => ({
+      setUserAgent: () => undefined,
+      webRequest: {
+        onBeforeSendHeaders: () => undefined,
+        onHeadersReceived: (
+          _filterOrNull: { urls: string[] } | null,
+          listener?:
+            | ((details: { url: string; statusCode: number }, cb: (r: object) => void) => void)
+            | null,
+        ) => {
+          headersListener = listener ?? null;
         },
-        setPermissionCheckHandler: () => undefined,
-        setPermissionRequestHandler: () => undefined,
-        setDevicePermissionHandler: () => undefined,
-        protocol: { handle: () => undefined },
-      }) as unknown as Electron.Session,
+      },
+      setPermissionCheckHandler: () => undefined,
+      setPermissionRequestHandler: () => undefined,
+      setDevicePermissionHandler: () => undefined,
+      protocol: { handle: () => undefined, unhandle: () => undefined },
+      fetch: () => Promise.reject(new Error("the WS bridge tests never fetch over HTTP")),
+    }),
     createWindow: () => {
       const window = new FakeWindow({ openCalls });
       created.push(window);
@@ -261,7 +264,7 @@ describe("DexScreenerWsBridge", () => {
     // in flight resumes afterwards. Assigning then left a live BrowserWindow
     // and session on a disposed bridge that nothing would destroy again.
     const fakes = makeFakes();
-    let releaseLoad: (() => void) | null = null;
+    const releaseLoad: { current: (() => void) | null } = { current: null };
     const slowRuntime: BridgeRuntime = {
       ...fakes.runtime,
       createWindow: (session) => {
@@ -269,7 +272,7 @@ describe("DexScreenerWsBridge", () => {
         const original = window.load.bind(window);
         window.load = (url: string) =>
           new Promise<void>((resolve) => {
-            releaseLoad = () => {
+            releaseLoad.current = () => {
               void original(url);
               resolve();
             };
@@ -282,10 +285,10 @@ describe("DexScreenerWsBridge", () => {
     const pending = bridge
       .exchange(SCREENER_URL, { expect: EXPECT_ONE, timeoutMs: 5000 })
       .catch((error: unknown) => codeOf(error));
-    await until(() => releaseLoad !== null);
+    await until(() => releaseLoad.current !== null);
 
     bridge.dispose();
-    releaseLoad?.();
+    releaseLoad.current?.();
 
     await expect(pending).resolves.toBe(
       DexScreenerSiteErrorCodes.SITE_TRANSPORT_UNAVAILABLE
@@ -303,14 +306,13 @@ describe("DexScreenerWsBridge", () => {
     const fakes = makeFakes();
     const runtime: BridgeRuntime = {
       ...fakes.runtime,
-      fromPartition: (partition: string) => {
-        const session = fakes.runtime.fromPartition(partition);
-        (session as unknown as { protocol: Record<string, unknown> }).protocol = {
+      fromPartition: (partition: string): BridgeSession => ({
+        ...fakes.runtime.fromPartition(partition),
+        protocol: {
           handle: () => undefined,
           unhandle: (scheme: string) => unhandled.push(scheme),
-        };
-        return session;
-      },
+        },
+      }),
     };
     const bridge = new DexScreenerWsBridge(runtime);
     bridge.sessionForRequests();

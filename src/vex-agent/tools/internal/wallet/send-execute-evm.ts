@@ -128,6 +128,7 @@ export async function executeEvmTransfer(
       walletClient,
       txParams,
       {
+        onNonceReserved: (request) => activity.reserveEvmNonce(request),
         // Persist hash + sender + nonce BEFORE the signed bytes are sent. A CAS
         // miss THROWS out of here, and `signStageBroadcast` has not submitted
         // anything at that point - refusing to broadcast an untracked transfer.
@@ -140,11 +141,11 @@ export async function executeEvmTransfer(
     // prepare, sign, or the staging hook). "Definitely not attempted" is a
     // definitive outcome, so it finalizes the EXISTING row - never a second one.
     const sum = summarizeWalletError(cause);
+    await activity.completeExecution({ kind: "failed_before_broadcast" });
     await activity.fail({
       failureCode: "broadcast_error",
       failureReason: `PreBroadcast:${sum.errorKind}:${sum.errorHash}`,
     });
-    await activity.completeExecution({ kind: "failed_before_broadcast" });
     return preBroadcastFailed(cause);
   }
 
@@ -179,11 +180,11 @@ export async function executeEvmTransfer(
   }
 
   if (outcome.kind === "reverted") {
+    await activity.completeExecution({ kind: "reverted", txHash: outcome.txHash });
     await activity.fail({
       failureCode: "mined_revert",
       failureReason: "the transfer transaction reverted on-chain",
     });
-    await activity.completeExecution({ kind: "reverted", txHash: outcome.txHash });
     return {
       kind: "chain_failed",
       txHash: outcome.txHash,
@@ -204,14 +205,14 @@ export async function executeEvmTransfer(
   // is recorded as unproven, never as the requested amount.
   const provenAmountRaw = proveEvmTransferAmount(plan, txProof, outcome.receipt.logs);
   const blockTimeIso = await readBlockTimeIso(publicClient, outcome.receipt.blockNumber);
-  await activity.confirm({
-    txHash: outcome.txHash,
-    provenAmountRaw,
-    ...(blockTimeIso === null ? {} : { blockTimeIso }),
-  });
   await activity.completeExecution({
     kind: "confirmed",
     txHash: outcome.txHash,
+    ...(blockTimeIso === null ? {} : { blockTimeIso }),
+  });
+  await activity.confirm({
+    txHash: outcome.txHash,
+    provenAmountRaw,
     ...(blockTimeIso === null ? {} : { blockTimeIso }),
   });
 

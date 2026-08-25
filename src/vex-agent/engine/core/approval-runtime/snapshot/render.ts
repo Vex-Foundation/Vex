@@ -5,6 +5,12 @@
  * session join. The SELECT acquires `FOR UPDATE OF i, q, s` so the live
  * permission read is serialized, but it performs NO writes — the row shape is
  * pure projection consumed by the compare/build phases.
+ *
+ * The Studio columns (migration 086) ride along for the same reason the queue
+ * columns do: the post-tx side effects have to know WHICH KIND of approval this
+ * is before they can decide whether to append a transcript message or write a
+ * settlement, and a second query for that would be a second read of a row this
+ * transaction already locked.
  */
 
 export const SNAPSHOT_SELECT_SQL = `SELECT
@@ -13,11 +19,16 @@ export const SNAPSHOT_SELECT_SQL = `SELECT
     i.mission_run_id,
     i.tool_call_id,
     i.expires_at,
+    i.preview_json,
     i.decision,
     i.decision_reason,
     i.decided_at,
     i.execution_status,
     i.execution_result_hash,
+    i.origin,
+    i.project_id,
+    i.scope_version_at_enqueue,
+    i.request_digest,
     q.status            AS queue_status,
     q.resolved_at       AS queue_resolved_at,
     q.created_at        AS queue_created_at,

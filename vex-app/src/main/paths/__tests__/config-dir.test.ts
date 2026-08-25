@@ -1,10 +1,18 @@
 /**
- * Verifies the CONFIG_DIR resolver matches `/mnt/x/Vex/src/config/paths.ts`
- * exactly across the three supported platforms — drift would split the
- * shared user resources between vex-app and the local agent runtime.
+ * The CONFIG_DIR resolver, executed against the GOLDEN VECTORS.
+ *
+ * This is not a mirror-check between two TypeScript files any more. The Vex
+ * Studio endpoint discriminator is a SHA-256 over this directory, and three
+ * independent implementations derive it: this one, `src/config/paths.ts`, and
+ * the standalone Go bridge (`bridge/internal/configdir`). A drift of one
+ * separator between any two of them is a bridge that dials a path the app
+ * never bound, so all three run the same table from
+ * `studio-mcp/bridge-endpoint-vectors.json`.
  */
 
+import { readFileSync } from "node:fs";
 import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 import {
   ELECTRON_STATE_DIR,
@@ -16,99 +24,128 @@ import {
   resolveConfigDir,
 } from "../config-dir.js";
 
-describe("resolveConfigDir", () => {
-  it("resolves to %APPDATA%/vex on Windows", () => {
+interface ConfigDirCase {
+  readonly name: string;
+  readonly platform: NodeJS.Platform;
+  readonly homedir: string;
+  readonly env: Record<string, string>;
+  readonly expect: string;
+}
+
+interface Vectors {
+  readonly configDir: {
+    readonly appName: string;
+    readonly cases: readonly ConfigDirCase[];
+  };
+}
+
+const VECTORS_PATH = path.resolve(
+  __dirname,
+  "..", "..", "..", "..", "..",
+  "src", "vex-agent", "tools", "tool-surface-spec", "studio-mcp",
+  "bridge-endpoint-vectors.json",
+);
+
+const vectors = JSON.parse(readFileSync(VECTORS_PATH, "utf8")) as Vectors;
+
+describe("resolveConfigDir golden vectors", () => {
+  it("the fixture carries a resolver matrix at all", () => {
+    expect(vectors.configDir.cases.length).toBeGreaterThan(15);
+    expect(vectors.configDir.appName).toBe("vex");
+  });
+
+  it.each(vectors.configDir.cases)("$name", (testCase) => {
+    expect(
+      resolveConfigDir({
+        platform: testCase.platform,
+        homedir: testCase.homedir,
+        env: testCase.env,
+      }),
+    ).toBe(testCase.expect);
+  });
+
+  it("every documented environment name appears in the matrix", () => {
+    const covered = new Set<string>();
+    for (const testCase of vectors.configDir.cases) {
+      for (const name of Object.keys(testCase.env)) covered.add(name);
+    }
+    expect([...covered].sort()).toEqual(["APPDATA", "VEX_CONFIG_DIR", "XDG_CONFIG_HOME"]);
+  });
+});
+
+describe("the hardening: empty and relative directory variables are UNSET", () => {
+  // The defect this closed: `env["XDG_CONFIG_HOME"] ?? join(home, ".config")`
+  // accepted an empty string, so `join("", "vex")` produced the RELATIVE path
+  // "vex" and the config directory landed in whatever cwd the launcher had.
+  // The XDG Base Directory specification requires an empty value to be ignored.
+  it.each([
+    ["XDG_CONFIG_HOME", ""],
+    ["XDG_CONFIG_HOME", "relative/config"],
+    ["XDG_CONFIG_HOME", "."],
+  ])("linux %s=%j falls back to the home directory", (name, value) => {
+    const resolved = resolveConfigDir({
+      platform: "linux",
+      homedir: "/home/kuba",
+      env: { [name]: value },
+    });
+    expect(resolved).toBe("/home/kuba/.config/vex");
+    expect(path.posix.isAbsolute(resolved)).toBe(true);
+  });
+
+  it.each([
+    ["APPDATA", ""],
+    ["APPDATA", "AppData\\Roaming"],
+  ])("win32 %s=%j falls back to the home directory", (name, value) => {
     expect(
       resolveConfigDir({
         platform: "win32",
         homedir: "C:\\Users\\kuba",
-        env: { APPDATA: "C:\\Users\\kuba\\AppData\\Roaming" },
-      })
-    ).toBe(path.join("C:\\Users\\kuba\\AppData\\Roaming", "vex"));
+        env: { [name]: value },
+      }),
+    ).toBe("C:\\Users\\kuba\\AppData\\Roaming\\vex");
   });
 
-  it("falls back to ~/AppData/Roaming/vex on Windows when %APPDATA% is unset", () => {
-    expect(
-      resolveConfigDir({
-        platform: "win32",
-        homedir: "C:\\Users\\kuba",
-        env: {},
-      })
-    ).toBe(path.join("C:\\Users\\kuba", "AppData", "Roaming", "vex"));
+  it("never returns a relative path for any empty-variable combination", () => {
+    for (const platform of ["linux", "darwin", "win32"] as const) {
+      const home = platform === "win32" ? "C:\\Users\\kuba" : "/home/kuba";
+      const resolved = resolveConfigDir({
+        platform,
+        homedir: home,
+        env: { VEX_CONFIG_DIR: "", XDG_CONFIG_HOME: "", APPDATA: "" },
+      });
+      const target = platform === "win32" ? path.win32 : path.posix;
+      expect(target.isAbsolute(resolved)).toBe(true);
+      expect(resolved).not.toBe("vex");
+    }
   });
+});
 
-  it("resolves to ~/Library/Application Support/vex on macOS", () => {
-    expect(
-      resolveConfigDir({
-        platform: "darwin",
-        homedir: "/Users/kuba",
-        env: {},
-      })
-    ).toBe("/Users/kuba/Library/Application Support/vex");
-  });
-
-  it("resolves to $XDG_CONFIG_HOME/vex on Linux when set", () => {
-    expect(
-      resolveConfigDir({
-        platform: "linux",
-        homedir: "/home/kuba",
-        env: { XDG_CONFIG_HOME: "/home/kuba/.config-custom" },
-      })
-    ).toBe("/home/kuba/.config-custom/vex");
-  });
-
-  it("resolves to ~/.config/vex on Linux when XDG_CONFIG_HOME unset", () => {
-    expect(
-      resolveConfigDir({
-        platform: "linux",
-        homedir: "/home/kuba",
-        env: {},
-      })
-    ).toBe("/home/kuba/.config/vex");
-  });
-
-  it("honours an absolute VEX_CONFIG_DIR override (test/CI escape hatch)", () => {
+describe("the override contract", () => {
+  it("honours an absolute VEX_CONFIG_DIR (test/CI escape hatch)", () => {
     expect(
       resolveConfigDir({
         platform: "linux",
         homedir: "/home/kuba",
         env: { VEX_CONFIG_DIR: "/tmp/vex-e2e-abc123" },
-      })
+      }),
     ).toBe("/tmp/vex-e2e-abc123");
   });
 
-  it("ignores a relative VEX_CONFIG_DIR and falls back to the platform default", () => {
-    // Relative paths are unsafe — they'd resolve against the launcher's
-    // cwd, which Electron can change at any point. A typo must not
-    // redirect production state writes.
-    expect(
-      resolveConfigDir({
-        platform: "linux",
-        homedir: "/home/kuba",
-        env: { VEX_CONFIG_DIR: "vex-e2e-relative" },
-      })
-    ).toBe("/home/kuba/.config/vex");
+  it("returns an accepted override VERBATIM, trailing separator included", () => {
+    // A trailing separator is a different string, therefore a different hash,
+    // therefore a different endpoint. Tidying it on one side of the wire only
+    // is the exact drift the contract forbids.
+    for (const value of ["/srv/vexstate", "/srv/vexstate/", "/srv//vexstate/./"]) {
+      expect(
+        resolveConfigDir({ platform: "linux", homedir: "/home/kuba", env: { VEX_CONFIG_DIR: value } }),
+      ).toBe(value);
+    }
   });
 
-  it("ignores an empty VEX_CONFIG_DIR and falls back to the platform default", () => {
-    expect(
-      resolveConfigDir({
-        platform: "darwin",
-        homedir: "/Users/kuba",
-        env: { VEX_CONFIG_DIR: "" },
-      })
-    ).toBe("/Users/kuba/Library/Application Support/vex");
-  });
-
-  it("uses the same lowercase `vex` app name as the engine resolver (parity check)", () => {
-    // src/config/paths.ts declares APP_NAME = "vex". If vex-app drifted to
-    // "Vex" (capital) or "VexElectron" we'd silently split user state across
-    // two directories. This test pins the lowercase contract.
-    const dir = resolveConfigDir({
-      platform: "linux",
-      homedir: "/home/x",
-      env: {},
-    });
+  it("uses the same lowercase `vex` app name as the engine resolver", () => {
+    // src/config/paths.ts declares APP_NAME = "vex". A capitalised variant here
+    // would silently split user state across two directories.
+    const dir = resolveConfigDir({ platform: "linux", homedir: "/home/x", env: {} });
     expect(dir.endsWith("/vex")).toBe(true);
     expect(dir.endsWith("/Vex")).toBe(false);
   });

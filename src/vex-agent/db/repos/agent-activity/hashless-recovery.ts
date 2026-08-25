@@ -26,30 +26,22 @@
  * and its own submit path is never reached (submission aborts before it can
  * broadcast).
  *
- * NOT A SESSION-CONTROL-LOCK PARTICIPANT, deliberately — the one `agent_
- * activity` writer that is not. Every OTHER `pending` transition takes the lock
- * (see `./session-lock.ts`) so it is strictly ordered against the compaction
- * safe-moment gate. This one cannot, and does not need to:
+ * SESSION AND LINKED-ROW SAFETY: candidate discovery is global, but each
+ * terminal write is routed through the linked transaction coordinator under
+ * that row's session control lock. This is required for `wallet_transfer`,
+ * whose AA row is linked to a live `wallet_intents` row. A bulk AA-only UPDATE
+ * could remove the activity from every repair candidate while leaving its
+ * linked intent and protocol execution live forever.
  *
- *  - it is a GLOBAL sweep with no session scope. Its candidate set spans
- *    arbitrary sessions, so there is no single key to take. Making it
- *    participate would mean grouping candidates by session and issuing one
- *    locked transaction per session — turning one atomic statement into N, on a
- *    live money-path sweep, to buy nothing below.
- *  - it is REMOVAL-ONLY (`pending -> definitively_failed`). Only a writer that
- *    ADDS to the gate's set can make the gate wrongly answer `clear`; a writer
- *    that removes can at worst make it defer a cutover it could have taken,
- *    which is the safe direction. The gate's soundness therefore does not
- *    depend on this writer.
- *
- * If this sweep ever gains a transition INTO `pending`, that reasoning dies
- * with it and the per-session grouping becomes mandatory.
+ * The winning per-row CAS retains `tx_hash IS NULL`. Candidate discovery is
+ * not authority: if signing stages a hash after discovery, the terminal CAS
+ * misses and the staged row stays pending for its chain observer.
  */
 
 import { query } from "../../client.js";
 
-import { sanitizeFailureReason } from "./validation.js";
-import { mapRow } from "./mappers.js";
+import { settleLinkedActivityRows } from "./linked-transaction-settlement.js";
+import { failHashlessActivityEventWith } from "./swap-lifecycle/terminal-cas.js";
 import type { AgentActivityEvent, AgentActivityEventRole } from "./types.js";
 
 /**
@@ -167,6 +159,18 @@ const LOCALLY_SIGNABLE_ACTIVITY_ROLES: readonly AgentActivityEventRole[] = [
   // the network. A crash between intent creation and staging is reaped here
   // instead of pinning the session's money state open forever.
   "wallet_transfer",
+  // Migration 088 (the generic EVM signing lane's Vex fee). The same dependent
+  // fee leg once more: created `pending` and hashless inside the T2 claim, and
+  // signed only if the transaction it charges for confirms. Every arm on which
+  // it is never signed - the transaction reverted, was ambiguous, was refused at
+  // a fence, or the process died - finalizes it best-effort at return time, and
+  // this sweep is the backstop for the arm where that write itself did not land.
+  //
+  // Safe for the reason every other role here is: the CAS predicate
+  // (`status='pending' AND tx_hash IS NULL`) is the SAME one
+  // `markActivityBroadcast` needs, so a staged fee leg is invisible to this
+  // sweep and a reaped one can no longer be broadcast.
+  "tx_vex_fee",
 ];
 
 /**
@@ -184,8 +188,9 @@ const LOCALLY_SIGNABLE_ACTIVITY_ROLES: readonly AgentActivityEventRole[] = [
  *
  * Bounded by `limit` (mirrors `listPendingOlderThan`'s FIX-SPINE C11
  * discipline) so a large backlog cannot starve other sync work in the same
- * periodic tick. Returns every row it finalized, mapped — never throws for
- * "nothing qualified".
+ * periodic tick. Returns every row this invocation finalized, mapped. A row
+ * staged or terminalized after discovery is omitted rather than claimed by
+ * this sweep.
  *
  * Formerly `recoverStaleHashlessSolanaIntents` (Solana-only, K2/C1) — the
  * sole caller (`sync/solana-activity-repair.ts`) is renamed in the SAME
@@ -196,25 +201,34 @@ export async function recoverStaleHashlessIntents(
   leaseMs: number,
   limit: number,
 ): Promise<AgentActivityEvent[]> {
-  const rows = await query<Record<string, unknown>>(
-    `UPDATE agent_activity
-        SET status = 'definitively_failed', failure_code = 'unknown',
-            failure_reason = $1, updated_at = NOW()
-      WHERE id IN (
-        SELECT id FROM agent_activity
-         WHERE status = 'pending' AND tx_hash IS NULL
-           AND event_role = ANY($4::text[])
-           AND created_at < NOW() - make_interval(secs => $2::float8)
-         ORDER BY created_at ASC
-         LIMIT $3
-      )
-      RETURNING *`,
-    [
-      sanitizeFailureReason("not attempted: stale hashless intent — never signed within the recovery lease"),
-      leaseMs / 1000,
-      limit,
-      LOCALLY_SIGNABLE_ACTIVITY_ROLES,
-    ],
+  const candidates = await query<{ id: string | number; session_id: string | null }>(
+    `SELECT id, session_id
+       FROM agent_activity
+      WHERE status = 'pending' AND tx_hash IS NULL
+        AND event_role = ANY($3::text[])
+        AND created_at < NOW() - make_interval(secs => $1::float8)
+      ORDER BY created_at ASC
+      LIMIT $2`,
+    [leaseMs / 1000, limit, LOCALLY_SIGNABLE_ACTIVITY_ROLES],
   );
-  return rows.map(mapRow);
+
+  const finalized: AgentActivityEvent[] = [];
+  for (const candidate of candidates) {
+    const activityId = Number(candidate.id);
+    if (!Number.isSafeInteger(activityId)) {
+      throw new Error("agent_activity: stale hashless candidate id is not a safe integer");
+    }
+    const result = await settleLinkedActivityRows({
+      activityId,
+      sessionId: candidate.session_id,
+      intentOutcome: "crashed_before_broadcast",
+      activityTarget: { status: "definitively_failed", failureCode: "unknown" },
+      activityWrite: (client) => failHashlessActivityEventWith(client, activityId, {
+        failureCode: "unknown",
+        failureReason: "not attempted: stale hashless intent - never signed within the recovery lease",
+      }),
+    });
+    if (result.applied) finalized.push(result.row);
+  }
+  return finalized;
 }

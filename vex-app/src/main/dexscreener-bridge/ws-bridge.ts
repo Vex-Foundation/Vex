@@ -166,10 +166,56 @@ interface PageResult {
   readonly frames: string[];
 }
 
+/**
+ * The exact session surface the bridge and its HTTP half drive.
+ *
+ * Narrow on purpose: the test fake implements it directly and Electron's real
+ * `Session` satisfies it structurally, so no unsafe cast sits between a fake
+ * and this contract. Method syntax throughout - parameter bivariance is what
+ * lets Electron's richer listener detail types satisfy the narrower ones here.
+ */
+export interface BridgeSession {
+  setUserAgent(userAgent: string): void;
+  readonly webRequest: {
+    onBeforeSendHeaders(
+      filter: { urls: string[] },
+      listener:
+        | ((
+            details: { url: string; requestHeaders: Record<string, string> },
+            callback: (response: { requestHeaders?: Record<string, string> }) => void,
+          ) => void)
+        | null,
+    ): void;
+    onBeforeSendHeaders(listener: null): void;
+    onHeadersReceived(
+      filter: { urls: string[] },
+      listener:
+        | ((
+            details: { url: string; statusCode: number },
+            callback: (response: object) => void,
+          ) => void)
+        | null,
+    ): void;
+    onHeadersReceived(listener: null): void;
+  };
+  setPermissionCheckHandler(handler: (() => boolean) | null): void;
+  setPermissionRequestHandler(
+    handler:
+      | ((webContents: unknown, permission: string, callback: (granted: boolean) => void) => void)
+      | null,
+  ): void;
+  setDevicePermissionHandler(handler: (() => boolean) | null): void;
+  readonly protocol: {
+    handle(scheme: string, handler: (request: Request) => Response | Promise<Response>): void;
+    unhandle(scheme: string): void;
+  };
+  fetch(input: string, init?: RequestInit): Promise<Response>;
+}
+
 /** Minimal surface of `session` and `BrowserWindow` the bridge uses, for testing. */
-export interface BridgeRuntime {
-  fromPartition(partition: string): Electron.Session;
-  createWindow(session: Electron.Session): BridgeWindow;
+export interface BridgeRuntime<S extends BridgeSession = BridgeSession> {
+  fromPartition(partition: string): S;
+  createWindow(session: S): BridgeWindow;
 }
 
 /** The hidden window, reduced to what the bridge drives. */
@@ -180,7 +226,7 @@ export interface BridgeWindow {
   isUsable(): boolean;
 }
 
-const electronRuntime: BridgeRuntime = {
+const electronRuntime: BridgeRuntime<Electron.Session> = {
   fromPartition: (partition) => electronSession.fromPartition(partition),
   createWindow(session) {
     const window = new BrowserWindow({
@@ -218,7 +264,7 @@ const electronRuntime: BridgeRuntime = {
 };
 
 export class DexScreenerWsBridge {
-  private session: Electron.Session | null = null;
+  private session: BridgeSession | null = null;
   private window: BridgeWindow | null = null;
   private loading: Promise<BridgeWindow> | null = null;
   private readonly inFlight = new Map<string, Promise<Uint8Array[]>>();
@@ -241,7 +287,7 @@ export class DexScreenerWsBridge {
    */
   private readonly upgradeClaims = new Map<string, number>();
   /** The session holding this bridge's `app://` handler, until dispose. */
-  private protocolHandled: Electron.Session | null = null;
+  private protocolHandled: BridgeSession | null = null;
   private disposed = false;
 
   constructor(private readonly runtime: BridgeRuntime = electronRuntime) {}
@@ -370,7 +416,7 @@ export class DexScreenerWsBridge {
    * The HTTP half shares it, so both halves present one client identity and one
    * cookie jar to the site and the session has exactly one owner.
    */
-  sessionForRequests(): Electron.Session {
+  sessionForRequests(): BridgeSession {
     if (this.session === null) this.session = this.createSession();
     return this.session;
   }
@@ -594,7 +640,7 @@ export class DexScreenerWsBridge {
     return this.loading;
   }
 
-  private createSession(): Electron.Session {
+  private createSession(): BridgeSession {
     const session = this.runtime.fromPartition(BRIDGE_PARTITION);
     session.setUserAgent(CHROME_USER_AGENT);
     // The one privileged thing this bridge does: present the site's own Origin,
