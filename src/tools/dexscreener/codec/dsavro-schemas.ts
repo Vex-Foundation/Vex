@@ -41,8 +41,15 @@ import {
  * One candle. Prices are decimal strings; the `*Usd` companions are absent
  * (null) when the pair has no USD reference at that bar.
  *
- * `minBlockNumber`/`maxBlockNumber` are the block range the bar aggregates and
- * are what the backward walk uses as its cursor.
+ * `minBlockNumber` is the bar's FIRST block and is what the backward walk uses
+ * as its cursor.
+ *
+ * `maxBlockNumber` DOES NOT DELIMIT A RANGE, whatever its name suggests.
+ * Measured 383 of 383 bars, across both chains, three resolutions and both
+ * transports: it equals `minBlockNumber` on every single one, while consecutive
+ * daily bars sat 7,173 blocks apart - so it is the same anchor under a second
+ * name, not the bar's last block. The cursor logic is unaffected because it
+ * only ever reads the minimum; the naming is what was wrong.
  */
 export const PL_BAR = dsRecord({
   timestamp: dsDouble(),

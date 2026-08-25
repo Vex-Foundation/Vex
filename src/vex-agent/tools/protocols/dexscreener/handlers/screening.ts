@@ -31,6 +31,7 @@ import {
   type CatalogChain,
   type ChainsCatalog,
 } from "@tools/dexscreener/endpoints/chains-catalog.js";
+import { fetchNarrativeCatalog } from "@tools/dexscreener/endpoints/metas.js";
 import {
   fetchScreenerPage,
   type ScreenerPageResult,
@@ -44,6 +45,7 @@ import {
   type DexScreenerTransport,
 } from "@tools/dexscreener/transport.js";
 import {
+  buildPriceDivergenceBlock,
   buildScreenEnvelope,
   type ScreenRankApplied,
   planOffsetWindow,
@@ -60,7 +62,10 @@ import {
 import { projectProfile } from "@tools/dexscreener/screen-core/profile.js";
 import {
   projectMarketStats,
+  assessPriceDivergence,
+  PRICE_DIVERGENCE_RATIO,
   projectPairRow,
+  type PriceDivergenceInput,
   type ProjectedMarketStats,
   type ProjectedPairRow,
   type VolumeShareBasis,
@@ -346,6 +351,64 @@ async function resolveChains(
   return resolution.valid;
 }
 
+/**
+ * Resolve `metaIds` against the narrative catalog, or refuse by name.
+ *
+ * S10-40. THE SAME FAIL-OPEN THE CHAIN REFUSAL ABOVE EXISTS TO STOP, on a
+ * different vocabulary. The screener takes narrative IDs and NOT slugs, and it
+ * answers a slug the way it answers an unknown chain: zero rows, HTTP 200, no
+ * error. Measured, the plausible wrong value (the slug "cat" instead of its
+ * numeric id) returned a confident empty market - 0 rows, 0 matched, zeroed
+ * marketStats, the filter echoed back as though it had been selective - for a
+ * theme carrying 158 million USD across 798 pairs. An agent reading that
+ * concludes the narrative is dead.
+ *
+ * The repository documented the id-versus-slug hazard in three places as prose
+ * and enforced it nowhere. The catalog is 18 rows and about 3.2 KB behind an
+ * edge cache, so the check costs one cached read, and refusing is what the same
+ * family already does for the identical failure mode.
+ *
+ * A catalog that cannot be reached does NOT block the board: the filter goes
+ * through unvalidated rather than taking the whole call down, exactly as the
+ * batch vocabulary check degrades.
+ */
+async function assertNarrativeIds(
+  requested: readonly string[] | undefined,
+  transport: DexScreenerTransport,
+  signal: AbortSignal | undefined
+): Promise<void> {
+  if (requested === undefined || requested.length === 0) return;
+  let catalog: readonly { readonly id: string; readonly slug: string }[];
+  try {
+    catalog = await fetchNarrativeCatalog({
+      transport,
+      timeoutMs: CATALOG_TIMEOUT_MS,
+      ...(signal === undefined ? {} : { signal }),
+    });
+  } catch {
+    return;
+  }
+  if (catalog.length === 0) return;
+  const ids = new Set(catalog.map((row) => row.id));
+  const bySlug = new Map(catalog.map((row) => [row.slug.toLowerCase(), row]));
+  const unknown = requested.filter((value) => !ids.has(value.trim()));
+  if (unknown.length === 0) return;
+
+  const described = unknown
+    .map((value) => {
+      const asSlug = bySlug.get(value.trim().toLowerCase());
+      return asSlug === undefined
+        ? `"${value}": not an id in the narrative catalog`
+        : `"${value}": that is the SLUG of the "${asSlug.slug}" narrative, whose id is "${asSlug.id}"`;
+    })
+    .join("; ");
+  throw siteError(
+    DexScreenerSiteErrorCodes.SCREEN_FILTER_VALUE_INVALID,
+    `These metaIds are not narrative ids: ${described}.`,
+    `filters[metaIds] takes a narrative's id, never its slug, and the screener answers an unknown id with zero rows and no error, so a slug would have been reported to you as an empty market. Call dexscreener__narratives_trending for the ids; the catalog currently has ${ids.size}.`
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* The shared board pipeline                                           */
 /* ------------------------------------------------------------------ */
@@ -411,9 +474,10 @@ function renderFloor(
  * weakened liquidity floor still quoted the frozen 250,000 while the population
  * it screened had grown from 162 rows to 545.
  */
-function describeFloors(accounting: ScreenFloorAccounting): string {
-  if (accounting.floors.length === 0) return "no default quality floor";
-
+function describeFloors(
+  accounting: ScreenFloorAccounting,
+  query: ScreenQuery
+): string {
   const inForce = accounting.floors.filter(
     (record) =>
       record.disposition === "applied" || record.disposition === "tightened"
@@ -425,11 +489,44 @@ function describeFloors(accounting: ScreenFloorAccounting): string {
     (record) => record.disposition === "removed"
   );
 
-  const parts: string[] = [
-    inForce.length === 0
-      ? "no quality floor in force"
-      : `quality floor ${inForce.map((record) => renderFloor(record, record.effectiveValue)).join(", ")}`,
-  ];
+  /*
+   * S10-23. THE FILTERS THE CALLER SET ARE PART OF WHY THE BOARD IS EMPTY.
+   *
+   * This sentence used to describe the DECLARED preset floors only, so a board
+   * narrowed by minLaunchpadProgressPct, minVolumeUsd and minPairAgeSeconds -
+   * every one of them caller-set, every one of them row-excluding, none of them
+   * in the preset table - read as "about 0 matched" under "no default quality
+   * floor". An empty market and a market the caller filtered down to nothing
+   * are opposite findings and they rendered identically. `filtersApplied`
+   * always carried the truth; the sentence a reader stops at did not.
+   *
+   * The declared floors are excluded from this clause because the three lists
+   * above already speak for them, and nothing that merely scopes the board
+   * (chain, dex exclusion, the inactivity switch) narrows it row by row.
+   */
+  const declaredKeys = new Set(
+    accounting.floors
+      .map((record) => record.effectiveKey)
+      .filter((key): key is string => key !== null)
+  );
+  const callerNarrowing = query.filtersApplied.filter(
+    (entry) =>
+      entry.filter !== "chainIds"
+      && entry.filter !== "excludedDexIds"
+      && entry.filter !== "includePairsInactiveInTimeframe"
+      && !declaredKeys.has(entry.key)
+  );
+
+  const parts: string[] = [];
+  if (accounting.floors.length === 0) {
+    parts.push("no default quality floor");
+  } else {
+    parts.push(
+      inForce.length === 0
+        ? "no quality floor in force"
+        : `quality floor ${inForce.map((record) => renderFloor(record, record.effectiveValue)).join(", ")}`
+    );
+  }
   if (weakened.length > 0) {
     parts.push(
       `loosened below the default: ${weakened
@@ -441,9 +538,39 @@ function describeFloors(accounting: ScreenFloorAccounting): string {
     );
   }
   if (removed.length > 0) {
+    /*
+     * S10-39. "REMOVED" IS THE WRONG WORD WHEN THE FLOOR MOVED WINDOWS.
+     *
+     * Measured: a default minTxnCount 300 over h24 was re-anchored by the
+     * caller to m5, which went on the wire as filters[txns][m5][min]=300 and
+     * cut the population from 127 to 4 - STRICTER, not removed. The record's
+     * own `effectiveKey` says where it landed and this clause never read it,
+     * so the summary announced a loosening that was in fact a tightening.
+     */
+    const reanchored = removed.filter((record) => record.effectiveKey !== null);
+    const gone = removed.filter((record) => record.effectiveKey === null);
+    if (gone.length > 0) {
+      parts.push(
+        `removed at your request: ${gone
+          .map((record) => renderFloor(record, record.defaultValue))
+          .join(", ")}`
+      );
+    }
+    if (reanchored.length > 0) {
+      parts.push(
+        `re-anchored to another window at your request, which is a different filter and not a removal: ${reanchored
+          .map(
+            (record) =>
+              `${renderFloor(record, record.defaultValue)} now sent as ${record.effectiveKey ?? "an unnamed key"}`
+          )
+          .join(", ")}`
+      );
+    }
+  }
+  if (callerNarrowing.length > 0) {
     parts.push(
-      `removed at your request: ${removed
-        .map((record) => renderFloor(record, record.defaultValue))
+      `narrowed further by filters you set, which exclude rows and are part of why this count is what it is: ${callerNarrowing
+        .map((entry) => `${entry.key}=${entry.value}`)
         .join(", ")}`
     );
   }
@@ -497,6 +624,9 @@ async function runBoard(
   const offset = readOffset(params);
   const window = readWindow(params, "window", "h24") ?? "h24";
   const chainIds = await resolveChains(params, transport, signal);
+  // Same fail-closed reason as the chain slug above: an unknown value here
+  // returns an empty board rather than an error.
+  await assertNarrativeIds(readList(params, "metaIds", false), transport, signal);
 
   const base = readScreenRequest(params, spec.rankBy(window, params), window, chainIds);
   // A pinned field is a DEFAULT the board applies, never an override: an agent
@@ -566,7 +696,7 @@ async function runBoard(
       rows,
       totalApprox,
       offset,
-      floors: describeFloors(accounting),
+      floors: describeFloors(accounting, query),
       scope: describeScope(chainIds),
       rankApplied: query.rankApplied,
     }),
@@ -606,6 +736,16 @@ async function runBoard(
         ? `${row.chainId}:${row.baseTokenAddress}`
         : `${row.chainId}:${row.pairAddress}`
     ),
+    // S10-41: on a pair board the rows are pools, so how many TOKENS they
+    // represent is a separate number and it is the one a reader is usually
+    // after. The token board needs no second count: its rows are tokens.
+    ...(isTokens
+      ? {}
+      : {
+          tokenIdentities: rows.map(
+            (row) => `${row.chainId}:${row.baseTokenAddress}`
+          ),
+        }),
     lastPageWasFull: last.frame.rows.length >= PROVIDER_ROWS_PER_PAGE,
     marketStats: projectMarketStats(first.frame.stats, first.latestBlock),
     sourceObservation: observation(transport, first.fetchedAtMs),
@@ -631,6 +771,46 @@ async function runBoard(
     // The token channel's measured limits, verbatim from the client so the
     // wording of an honesty claim has one owner.
     ...(isTokens ? { honesty: TOKENS_CHANNEL_HONESTY } : {}),
+    // S10-31b. The population is every row the fetched pages carried, before
+    // the offset window was sliced out of them, so that `limit` and `offset`
+    // cannot move the median a flag is measured against. Assessing the emitted
+    // window let a slice that happened to be all-junk agree with itself and
+    // report nothing, and a slice where junk was the majority flag the honest
+    // rows instead.
+    ...buildPriceDivergenceBlock(
+      assessPriceDivergence(divergencePopulation(providerRows, window, nowMs)),
+      rows,
+      PRICE_DIVERGENCE_RATIO
+    ),
+  });
+}
+
+/**
+ * The identity and price of every provider row, for the divergence assessment.
+ *
+ * S10-31b. The assessment must see the FULL fetched population, not the offset
+ * window that is about to be emitted, so it cannot read the shaped rows: those
+ * exist only for the window. It projects the raw rows through `projectPairRow`,
+ * the same projection the emitted rows go through, rather than reaching into
+ * the raw shape a second time - a second reader of the provider's price field
+ * would be a second source of truth for exactly the number under test.
+ *
+ * The window argument only selects which timeframe's derived fields are
+ * computed; `priceUsd` and the identity are window-independent.
+ */
+function divergencePopulation(
+  providerRows: readonly unknown[],
+  window: ScreenWindow,
+  nowMs: number
+): readonly PriceDivergenceInput[] {
+  return providerRows.map((raw) => {
+    const row = projectPairRow(raw, { window, nowMs });
+    return {
+      chainId: row.chainId,
+      baseTokenAddress: row.baseToken.address,
+      pairAddress: row.pairAddress,
+      priceUsd: row.priceUsd,
+    };
   });
 }
 
@@ -794,7 +974,11 @@ const TOP_RANK_KEYS: Readonly<Record<string, ScreenRankKey>> = {
   buys: "buys",
   sells: "sells",
   liquidity: "liquidity",
-  marketCap: "marketCap",
+  // S10-50: `marketCap` is NOT in this map, and its absence is the enforcement
+  // rather than the enum alone. The provider accepts the key and answers with a
+  // board built out of mispriced pools - measured rank 1 at a market cap of
+  // 263.09 trillion USD beside an FDV of 332,916 on the same row. Same decision
+  // and same reason as its withdrawal from the tokens board.
   // Measured live 2026-08-24: rankBy=activeBoosts served 100 rows of a 54,051
   // population, so the provider ranks by paid visibility as a first-class key.
   boosts: "activeBoosts",
@@ -925,15 +1109,26 @@ const LAUNCHPAD: BoardSpec = {
   rankBy: (window, params) => {
     const requested = str(params, "sortBy");
     const stage = launchpadStage(params);
+    /*
+     * S10-5. THIS BOARD IGNORED sortDir ENTIRELY, so "newest bonding tokens"
+     * was inexpressible: the sibling boards take a direction and this one
+     * hardcoded one per key. The per-key default is kept exactly as it was
+     * (pairAge ascending, everything else descending) and an explicit
+     * direction now wins, which is the contract every other board states.
+     */
+    const chosen = readSortDirOrUndefined(params);
     if (requested === "trendingScore") {
-      return { key: trendingScoreRankKey(window), order: "desc" };
+      return { key: trendingScoreRankKey(window), order: chosen ?? "desc" };
     }
     if (requested === "priceChange") {
-      return { key: priceChangeRankKey(window), order: "desc" };
+      return { key: priceChangeRankKey(window), order: chosen ?? "desc" };
     }
     const mapped = LAUNCHPAD_RANK_KEYS[requested];
     if (mapped !== undefined) {
-      return { key: mapped, order: requested === "pairAge" ? "asc" : "desc" };
+      return {
+        key: mapped,
+        order: chosen ?? (requested === "pairAge" ? "asc" : "desc"),
+      };
     }
     // Progress ranks the bonding board (the near-graduation question); on the
     // graduated board every row is at 100 and would rank nothing, so the

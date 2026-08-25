@@ -81,6 +81,11 @@ export const SCREEN_SCOPE_PARAMS: readonly ProtocolParamDef[] = [
       + "(dexIds: pumpfun). On dexscreener__launchpad_pairs_list, pairing this with "
       + "stage: \"bonding\" is refused by name rather than answered with an empty board: it "
       + "returned 0 rows of a 0-row population while dexIds returned 53,478. "
+      + "KNOWN DEPTH GAP: no tool on this surface enumerates the launchpad vocabulary - "
+      + "dexscreener__chains_list carries dex ids only - so the five spellings above are the "
+      + "list, measured live, and an id outside them is not refused by name the way an "
+      + "unknown chain slug is. It returns an empty board instead, so check your spelling "
+      + "against those five before reading a zero as an absence of launches. "
       + STRING_OR_ARRAY_CLAUSE,
   },
   {

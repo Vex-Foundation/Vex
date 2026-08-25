@@ -73,7 +73,14 @@ export interface ProjectedDerivedMetrics {
   readonly sellsPerSeller: number | null;
   readonly buyVolumeSharePct: number | null;
   readonly turnoverRatio: number | null;
-  /** `(volume.m5 * 12) / volume.h1`. Above 1 means the last five minutes ran hotter than the trailing hour. */
+  /**
+   * `(volume.m5 * 12) / volume.h1`. Above 1 means the last five minutes ran
+   * hotter than the trailing hour.
+   *
+   * A ROW-LEVEL FIGURE WITH ONE FIXED FORMULA, not a per-window one. It is null
+   * on a pair younger than an hour, where h1 and m5 are the same trades and the
+   * ratio is 12 by construction rather than by measurement.
+   */
   readonly volumeAccelerationRatio: number | null;
   /**
    * This row's window volume as a percentage of ONE CHAIN's frame volume.
@@ -143,6 +150,14 @@ export interface ProjectedPairRow {
   readonly liquidityQuoteTokens: number | null;
   readonly marketCapUsd: number | null;
   readonly fdvUsd: number | null;
+  /**
+   * Present only when both valuations were withheld, naming why.
+   *
+   * A null market cap beside this field is a REFUSAL to publish an impossible
+   * number; a null without it is the provider simply not reporting one. The two
+   * are different facts and a reader must be able to tell them apart.
+   */
+  readonly valuationWithheldReason?: string;
   readonly pairAgeSeconds: number | null;
   readonly pairCreatedAtMs: number | null;
   /** uint64 counts, exact, as the provider rendered them. */
@@ -288,10 +303,22 @@ export function projectPairRow(
   // `liquidity` field, on every launchpad board captured. Keeping that in
   // `missingInputs` reads as "the provider did not tell us", which is the
   // opposite of what the provider said.
+  /*
+   * S10-22. THE TEST IS "HAS IT A POOL", NOT "IS IT UNDER 100 PERCENT".
+   *
+   * `progress < 100` looked like the bonding test and is not. A curve that
+   * reaches 100 and has not migrated yet - the dead curve row that keeps being
+   * served beside, or before, its new pool - reports progress 100 and still has
+   * no pool at all, so 6 of 15 measured rows announced
+   * missingInputs:["liquidityUsd"], which is the exact misreading
+   * `notApplicableInputs` was built to prevent. The provider states the real
+   * condition directly: a launchpad row with no `migrationDEX` has not become a
+   * pool, whatever its progress says.
+   */
   const bondingWithoutPool =
     liquidityUsd === null
     && launchpadRaw !== null
-    && (readDouble(launchpadRaw, "progress") ?? 0) < 100;
+    && emptyToNull(readString(launchpadRaw, "migrationDEX")) === null;
 
   const derived = deriveMetrics(
     {
@@ -334,8 +361,7 @@ export function projectPairRow(
     liquidityUsd,
     liquidityBaseTokens,
     liquidityQuoteTokens,
-    marketCapUsd: readDouble(source, "marketCap"),
-    fdvUsd: readDouble(source, "fdv"),
+    ...valuation(readDouble(source, "marketCap"), readDouble(source, "fdv")),
     pairAgeSeconds,
     pairCreatedAtMs,
     buys,
@@ -448,12 +474,28 @@ function deriveMetrics(
       need("volumeUsd", inputs.volumeUsd),
       need("liquidityUsd", inputs.liquidityUsd)
     ),
-    volumeAccelerationRatio: ratio(
-      need("volume.m5", inputs.volumeM5) === null
+    /*
+     * S10-24. THE RATIO IS MEANINGLESS ON A PAIR YOUNGER THAN ITS OWN DENOMINATOR.
+     *
+     * The formula is (m5 * 12) / h1. On a pair that has existed for under an
+     * hour, h1 IS m5 - the provider has no older trades to put in it - so the
+     * ratio degenerates to exactly 12 by construction and says nothing about
+     * acceleration. Measured: 26 of 47 rows on a newest-first pairs.new board
+     * were pinned at exactly 12, saturating the top of the very board where the
+     * metric would matter most. Below the pair-age floor it is null with the
+     * reason recorded, because a null a reader can see is worth more than a
+     * constant a reader will rank on.
+     */
+    volumeAccelerationRatio:
+      inputs.pairAgeSeconds !== null
+      && inputs.pairAgeSeconds < VOLUME_ACCELERATION_MIN_PAIR_AGE_SECONDS
         ? null
-        : (inputs.volumeM5 as number) * 12,
-      need("volume.h1", inputs.volumeH1)
-    ),
+        : ratio(
+            need("volume.m5", inputs.volumeM5) === null
+              ? null
+              : (inputs.volumeM5 as number) * 12,
+            need("volume.h1", inputs.volumeH1)
+          ),
     // A channel with no frame stats offers no volume share at all, so the key
     // is absent rather than a permanent null: the single-pair channel carries
     // no stats block by design, and reporting `frameVolumeUsd` as missing on
@@ -740,4 +782,246 @@ function describeShape(value: unknown): string {
   if (value === null) return "null";
   if (Array.isArray(value)) return "an array";
   return `a ${typeof value}`;
+}
+
+/**
+ * Market cap and fully diluted value, or nulls when they contradict each other.
+ *
+ * S10-50. THE LOCAL ARITHMETIC INVARIANT. Market cap counts circulating supply;
+ * FDV counts total supply; circulating supply cannot exceed total supply, so
+ * `marketCapUsd <= fdvUsd` holds for every honestly valued token and needs no
+ * second request to check. Measured on the pairs.top marketCap board: rank 1
+ * carried marketCapUsd 263.09e12 beside fdvUsd 332,916 ON THE SAME ROW, a
+ * factor of 790 million, and all ten rows of that board were the same class of
+ * junk. A number that violates this is not an imprecise valuation, it is a
+ * mispriced quote propagated into both columns, and publishing either half of
+ * it invites a ranking built on it.
+ *
+ * BOTH are nulled and not just the larger one: the pair of them came from one
+ * broken price, so there is no basis for trusting the half that happens to look
+ * plausible. A small tolerance is allowed for the provider's own rounding.
+ */
+function valuation(
+  marketCapUsd: number | null,
+  fdvUsd: number | null
+): { readonly marketCapUsd: number | null; readonly fdvUsd: number | null;
+     readonly valuationWithheldReason?: string } {
+  if (marketCapUsd === null || fdvUsd === null || fdvUsd <= 0) {
+    return { marketCapUsd, fdvUsd };
+  }
+  if (marketCapUsd <= fdvUsd * (1 + VALUATION_TOLERANCE)) {
+    return { marketCapUsd, fdvUsd };
+  }
+  return {
+    marketCapUsd: null,
+    fdvUsd: null,
+    valuationWithheldReason: `The provider reported a market cap of ${marketCapUsd} against a fully diluted value of ${fdvUsd} on this row. Market cap counts circulating supply and FDV counts total supply, so market cap cannot exceed FDV; a row where it does was priced through a broken quote and BOTH figures are withheld as null rather than published. The price, liquidity and volume columns on this row come from the same quote and should be treated with the same suspicion.`,
+  };
+}
+
+/** Rounding slack before a market cap above FDV is called impossible. */
+const VALUATION_TOLERANCE = 0.01;
+
+/**
+ * Below this pair age the acceleration ratio is 12 by construction.
+ *
+ * The denominator is the trailing hour, so a pair that has not existed for an
+ * hour cannot have one. Measured saturation at exactly 12 across 26 of 47 rows.
+ */
+const VOLUME_ACCELERATION_MIN_PAIR_AGE_SECONDS = 3600;
+
+/* ------------------------------------------------------------------ */
+/* Same-token price divergence                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * How far one pool's price may sit from the median of its own token's pools
+ * before the row is called out.
+ *
+ * MEASURED LIVE 2026-08-25, both ends, before this number was pinned:
+ *
+ *  - HEALTHY SPREAD. WETH on ethereum, 30 indexed pools: min 2456.94, median
+ *    2466.69, max 2469.15. That is 1.001x above and 0.996x below the median,
+ *    so real cross-pool spread on a deep asset is well under one percent.
+ *  - THE ARTEFACT. JUP on solana, 30 indexed pools, same call shape: median
+ *    0.2126 with one row at 1109.33, which is 5,218x the median. That row is a
+ *    junk pool priced through a broken quote, and rows of exactly this class
+ *    were measured reaching the pairs.top league table at ranks 2, 7 and 21
+ *    carrying a fabricated 238.8 million USD.
+ *
+ * 5x sits roughly three orders of magnitude above the healthy spread and three
+ * below the artefact, so it separates them without being tuned to either.
+ */
+export const PRICE_DIVERGENCE_RATIO = 5;
+
+/** One row whose price disagrees with the rest of its own token's rows. */
+export interface PriceDivergenceRow {
+  readonly chainId: string;
+  readonly baseTokenAddress: string;
+  readonly pairAddress: string;
+  readonly priceUsd: string;
+  readonly medianPriceUsd: string;
+  readonly ratioToMedian: number;
+}
+
+/**
+ * One token whose own pools do not agree on its price.
+ *
+ * S10-31b. The row list alone was not enough, and the reason is that this
+ * surface CANNOT SAY WHICH CLUSTER IS RIGHT. When a token's pools split into
+ * two price clusters thousands of times apart, calling the smaller cluster the
+ * liar is a majority vote dressed up as a measurement, and the vote flips with
+ * the population it is counted over. So the whole token is marked unusable for
+ * SELECTION - deepest pool, best pool, any "pick one of these" answer - while
+ * every row keeps its provider figures and its name.
+ */
+export interface PriceDivergenceToken {
+  readonly chainId: string;
+  readonly baseTokenAddress: string;
+  readonly medianPriceUsd: string;
+  /** Rows of this token in the population that carried a usable price. */
+  readonly pricedRowCount: number;
+  /** How many of those disagreed with the median beyond the threshold. */
+  readonly divergingRowCount: number;
+}
+
+/** What one population says about its own tokens' price agreement. */
+export interface PriceDivergenceAssessment {
+  /**
+   * How many rows the assessment actually saw.
+   *
+   * Reported because the whole defect class this replaces was an assessment
+   * quietly run over a SMALLER population than the answer implied, and a
+   * reader cannot tell the difference from the flags alone.
+   */
+  readonly populationRowCount: number;
+  readonly rows: readonly PriceDivergenceRow[];
+  readonly inconsistentTokens: readonly PriceDivergenceToken[];
+}
+
+/** The identity a token group is keyed and compared on, case-folded. */
+export function priceDivergenceTokenKey(
+  chainId: string,
+  baseTokenAddress: string
+): string {
+  return `${chainId.toLowerCase()}:${baseTokenAddress.toLowerCase()}`;
+}
+
+/** The row shape the assessment reads, and the only fields it needs. */
+export interface PriceDivergenceInput {
+  readonly chainId: string;
+  readonly baseTokenAddress: string;
+  readonly pairAddress: string;
+  readonly priceUsd: string | null;
+}
+
+/**
+ * Assess whether each token's own rows agree on that token's price.
+ *
+ * S10-31. THE EVIDENCE IS ALWAYS ALREADY IN THE PAYLOAD and nothing was reading
+ * it. A response that carries several pools of one token carries several
+ * opinions of that token's price, and when one of them is thousands of times
+ * the others it is a provider mispricing, not a trade. The repository had
+ * already measured this artefact class and mitigated it in exactly one place
+ * (the marketCap rank key on tokens.screen); every other board served it
+ * unflagged.
+ *
+ * THE ARGUMENT IS THE FULL PROVIDER POPULATION, NOT THE ROWS BEING EMITTED,
+ * and the parameter is named `population` to keep that impossible to misread.
+ * S10-31b: both callers used to assess the ALREADY-LIMITED list, which makes
+ * the reference population a function of `limit` and inverts the answer.
+ * Measured on a live JUP capture of 2026-08-25 (30 pools, 9 of them mispriced
+ * at roughly 5,000x, ordered by liquidity as the tool orders them):
+ *
+ *  - the full 30 rows put the median at 0.2150 and flag the 9 junk pools;
+ *  - `limit: 5` takes a slice that is ENTIRELY junk, whose members agree with
+ *    each other to within 1.05x, so the post-limit assessment flagged NOTHING
+ *    and the 173.79 million USD fabricated pool was still named deepestPair;
+ *  - `limit: 10` takes a slice where junk is the majority, so the post-limit
+ *    median lands at 1091.73 and the two HONEST pools are flagged instead.
+ *
+ * A detector whose verdict is decided by a display bound is not a detector.
+ *
+ * THE MEDIAN AND NOT THE MEAN, because one row at 5,000x drags a mean past
+ * every honest row and would flag the whole token. Fewer than three rows for a
+ * token is left alone: two rows disagreeing name no majority, and picking one
+ * as correct would invent an authority this surface does not have.
+ *
+ * Nothing is dropped or corrected here, and the flagged rows are NOT "the
+ * minority that is wrong". They are the rows on the far side of the median, and
+ * the accompanying `inconsistentTokens` entry is the load-bearing verdict: the
+ * whole token is unusable for selection while its pools disagree.
+ */
+export function assessPriceDivergence(
+  population: readonly PriceDivergenceInput[]
+): PriceDivergenceAssessment {
+  const byToken = new Map<string, PriceDivergenceInput[]>();
+  for (const row of population) {
+    if (row.priceUsd === null) continue;
+    const price = Number(row.priceUsd);
+    if (!Number.isFinite(price) || price <= 0) continue;
+    const key = priceDivergenceTokenKey(row.chainId, row.baseTokenAddress);
+    const bucket = byToken.get(key);
+    if (bucket === undefined) byToken.set(key, [row]);
+    else bucket.push(row);
+  }
+
+  const flagged: PriceDivergenceRow[] = [];
+  const inconsistentTokens: PriceDivergenceToken[] = [];
+  for (const bucket of byToken.values()) {
+    if (bucket.length < 3) continue;
+    const prices = bucket
+      .map((row) => Number(row.priceUsd))
+      .sort((a, b) => a - b);
+    const middle = prices[Math.floor(prices.length / 2)];
+    if (middle === undefined || middle <= 0) continue;
+    const first = bucket[0];
+    if (first === undefined) continue;
+    let divergingRowCount = 0;
+    for (const row of bucket) {
+      const price = Number(row.priceUsd);
+      const ratio = price / middle;
+      if (ratio < PRICE_DIVERGENCE_RATIO && ratio > 1 / PRICE_DIVERGENCE_RATIO) {
+        continue;
+      }
+      divergingRowCount += 1;
+      flagged.push({
+        chainId: row.chainId,
+        baseTokenAddress: row.baseTokenAddress,
+        pairAddress: row.pairAddress,
+        // The provider's own decimal string is carried through unparsed; the
+        // ratio above is a detector, never money arithmetic.
+        priceUsd: row.priceUsd ?? "",
+        medianPriceUsd: String(middle),
+        ratioToMedian: ratio,
+      });
+    }
+    if (divergingRowCount === 0) continue;
+    inconsistentTokens.push({
+      chainId: first.chainId,
+      baseTokenAddress: first.baseTokenAddress,
+      medianPriceUsd: String(middle),
+      pricedRowCount: bucket.length,
+      divergingRowCount,
+    });
+  }
+  return {
+    populationRowCount: population.length,
+    rows: flagged,
+    inconsistentTokens,
+  };
+}
+
+/**
+ * The flagged rows alone, for callers that only need the row-level reading.
+ *
+ * The same full-population contract applies: passing an already-limited or
+ * already-filtered list makes the median a function of the display bound, which
+ * is the S10-31b defect. See `assessPriceDivergence`, which owns the
+ * computation and carries the token-level verdict this projection drops.
+ */
+export function detectPriceDivergence(
+  population: readonly PriceDivergenceInput[]
+): readonly PriceDivergenceRow[] {
+  return assessPriceDivergence(population).rows;
 }

@@ -40,7 +40,11 @@
  * Deliberately NOT exposed, each for a measured reason:
  *
  *  - rankBy `fdv`: server defect, returns the `txns` ordering (100/100 rows
- *    identical). `marketCap` is the working substitute.
+ *    identical). `marketCap` was named here as the working substitute and is
+ *    NOT one: it was measured serving an equally degenerate board (a rank-1 row
+ *    with a market cap 790 million times its own FDV), and the pair and token
+ *    boards have both withdrawn it from their sort vocabulary. Filter with
+ *    minMarketCapUsd or maxMarketCapUsd and rank by liquidity or volume.
  *  - rankBy `moonshotProgress`: accepted, zero rows on every chain probed.
  *  - the audit/tax/holder filter family (`isHoneyPot`, `isRenounced`,
  *    `isOpenSource`, `buyTax`, `sellTax`, `holderCount`, `lpHolderCount`,

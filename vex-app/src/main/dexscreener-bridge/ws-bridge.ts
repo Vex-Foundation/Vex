@@ -37,7 +37,7 @@
  */
 
 import { BrowserWindow, session as electronSession } from "electron";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   DexScreenerSiteErrorCodes,
   isDexScreenerSiteError,
@@ -233,6 +233,15 @@ export class DexScreenerWsBridge {
    * `MAX_CONCURRENT_EXCHANGES` entries.
    */
   private readonly upgradeStatus = new Map<string, number>();
+  /**
+   * How many in-flight exchanges are using each `upgradeStatus` slot.
+   *
+   * Different commands can now share one URL (see the exchange key), so the
+   * slot outlives whichever exchange finishes first.
+   */
+  private readonly upgradeClaims = new Map<string, number>();
+  /** The session holding this bridge's `app://` handler, until dispose. */
+  private protocolHandled: Electron.Session | null = null;
   private disposed = false;
 
   constructor(private readonly runtime: BridgeRuntime = electronRuntime) {}
@@ -260,7 +269,27 @@ export class DexScreenerWsBridge {
         "Only the measured DexScreener WebSocket channels are reachable through the bridge."
       );
     }
-    const key = decision.url.toString();
+    const resolvedUrl = decision.url.toString();
+    /*
+     * S10-61. THE URL ALONE IS NOT THE IDENTITY OF AN EXCHANGE.
+     *
+     * The feed channel takes its query as a COMMAND FRAME, not as a query
+     * string, so several different requests share one URL:
+     * `feed/ws getHistoricalTransactions` and `getHistoricalBars` are the same
+     * endpoint with different bytes on the wire. Coalescing on the URL made two
+     * concurrent, genuinely different exchanges join, and the joiner was
+     * returned the FIRST caller's frames - an answer to a question it never
+     * asked, decoded against its own schema, with nothing anywhere marking it
+     * as someone else's data. That is the worst failure shape this bridge has:
+     * silently correct-looking wrong data.
+     *
+     * The key is therefore the URL plus a digest of everything that decides
+     * what comes back: the frames sent and the expectations the collector stops
+     * on. Two callers coalesce only when they would have sent identical bytes
+     * and accepted identical answers, which is the case single-flight exists
+     * for (the same snapshot fetched twice) and no other.
+     */
+    const key = `${resolvedUrl}\n${this.exchangeDigest(options)}`;
 
     // Single-flight: an identical concurrent request joins the running one
     // rather than opening a second socket for the same snapshot.
@@ -277,13 +306,62 @@ export class DexScreenerWsBridge {
 
     // Claim the status slot BEFORE the socket exists, so the handshake hook has
     // somewhere to write; released with the exchange on every exit path.
-    this.upgradeStatus.set(key, 0);
-    const exchange = this.runExchange(key, options).finally(() => {
+    //
+    // KEYED BY URL AND NOT BY `key`, because the header hook sees only the
+    // URL. Two different commands can now be in flight on one URL, so the slot
+    // is reference-counted: releasing on the first completion would delete a
+    // slot the other exchange is still writing into.
+    this.claimUpgradeSlot(resolvedUrl);
+    const exchange = this.runExchange(resolvedUrl, options).finally(() => {
       this.inFlight.delete(key);
-      this.upgradeStatus.delete(key);
+      this.releaseUpgradeSlot(resolvedUrl);
     });
     this.inFlight.set(key, exchange);
     return exchange;
+  }
+
+  /**
+   * A stable digest of everything that decides what an exchange returns.
+   *
+   * Not a security boundary and not a hash of secrets: it exists so that two
+   * DIFFERENT requests cannot be mistaken for one. Binary frames are digested
+   * as bytes, text frames as text, and the expectations are included because a
+   * caller asking for two frames must not be handed a one-frame result
+   * collected for somebody else.
+   */
+  private exchangeDigest(options: WsExchangeOptions): string {
+    const hash = createHash("sha256");
+    for (const frame of options.send ?? []) {
+      if (typeof frame === "string") {
+        hash.update("s:");
+        hash.update(frame, "utf8");
+      } else {
+        hash.update("b:");
+        hash.update(Buffer.from(frame));
+      }
+      hash.update("\u0000");
+    }
+    hash.update(
+      `expect:${options.expect.binaryFrames}:${options.expect.maxTotalBytes}`
+    );
+    return hash.digest("hex");
+  }
+
+  /** Open a handshake-status slot for `url`, counting concurrent claimants. */
+  private claimUpgradeSlot(url: string): void {
+    this.upgradeClaims.set(url, (this.upgradeClaims.get(url) ?? 0) + 1);
+    if (!this.upgradeStatus.has(url)) this.upgradeStatus.set(url, 0);
+  }
+
+  /** Release one claim, dropping the slot only when the last one leaves. */
+  private releaseUpgradeSlot(url: string): void {
+    const claims = (this.upgradeClaims.get(url) ?? 1) - 1;
+    if (claims <= 0) {
+      this.upgradeClaims.delete(url);
+      this.upgradeStatus.delete(url);
+      return;
+    }
+    this.upgradeClaims.set(url, claims);
   }
 
   /**
@@ -316,8 +394,23 @@ export class DexScreenerWsBridge {
     const session = this.session;
     this.session = null;
     this.upgradeStatus.clear();
+    this.upgradeClaims.clear();
     session?.webRequest.onBeforeSendHeaders(null);
     session?.webRequest.onHeadersReceived(null);
+    // Idempotent by construction: the reference is cleared before the call, so
+    // a second dispose finds nothing to unhandle. `unhandle` throws when the
+    // scheme is not registered, which a partially-constructed session can
+    // produce, and that must not stop the rest of teardown.
+    const handled = this.protocolHandled;
+    this.protocolHandled = null;
+    if (handled !== null) {
+      try {
+        handled.protocol.unhandle("app");
+      } catch {
+        // Already unregistered, or a session torn down beneath us. Either way
+        // the claim this dispose exists to release is gone.
+      }
+    }
   }
 
   private async runExchange(
@@ -473,6 +566,25 @@ export class DexScreenerWsBridge {
               "The hidden bridge document failed to load. No request was sent to the provider."
             );
       }
+      /*
+       * S10-62. DISPOSAL CAN LAND WHILE THIS AWAIT IS OUTSTANDING.
+       *
+       * `dispose()` sets `window = null` and `loading = null` and destroys what
+       * it has, but a creation already in flight resumes afterwards and used to
+       * assign its brand-new window onto a disposed bridge - resurrecting a
+       * live BrowserWindow and an Electron session that nothing would ever
+       * destroy again, because dispose is idempotent and had already run. The
+       * window this branch built is therefore checked against the disposal it
+       * may have raced, and is destroyed rather than published.
+       */
+      if (this.disposed) {
+        window.destroy();
+        throw siteError(
+          DexScreenerSiteErrorCodes.SITE_TRANSPORT_UNAVAILABLE,
+          "The DexScreener bridge was disposed while its window was being prepared",
+          "No request was sent to the provider. This happens when the app shuts down mid-call; nothing needs to be retried."
+        );
+      }
       this.window = window;
       return window;
     })().finally(() => {
@@ -532,6 +644,12 @@ export class DexScreenerWsBridge {
       }
       return new Response("Not found", { status: 404 });
     });
+    // S10-63: acquired here, released in dispose(). An Electron protocol
+    // handler is registered ON THE SESSION and outlives this object otherwise,
+    // so a disposed bridge left `app://` claimed on a partition a later bridge
+    // reuses, and the second `protocol.handle` for the same scheme is the one
+    // that throws.
+    this.protocolHandled = session;
     return session;
   }
 }

@@ -88,11 +88,11 @@ const ROW_FIELDS_PARAM: ProtocolParamDef = {
   type: "string",
   description:
     "Comma-separated row field GROUPS to return, not individual field names. Supported groups: "
-    + `${SCREEN_FIELD_GROUPS.join(", ")}. Defaults to core, which already carries identity, the `
+    + `${SCREEN_FIELD_GROUPS.join(", ")}. Defaults to core, which carries the chain, dex, pair address, base-token address and symbols, the `
     + "selected window's price, volume, liquidity, market cap, age, counts and every derived "
     + `ratio. The two heaviest are ${SCREEN_HEAVIEST_FIELD_GROUPS[0]} (unbounded issuer-authored `
     + `prose and links) and ${SCREEN_HEAVIEST_FIELD_GROUPS[1]} (four times the per-row metric `
-    + "payload). An unknown group name is refused with the full list rather than ignored.",
+    + "payload). The `identity` group is NOT part of core and is what adds ammId, quoteTokenAddress, both tokens' decimals, priceNative and pairCreatedAtMs - the fields that let you tell a real pool from a mispriced one, so ask for it when the dollar columns are what you are judging. An unknown group name is refused with the full list rather than ignored.",
 };
 
 /**

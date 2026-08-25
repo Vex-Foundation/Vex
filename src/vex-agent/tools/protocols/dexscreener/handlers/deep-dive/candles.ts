@@ -132,7 +132,7 @@ export async function runCandles(
   if (beforeBlock !== 0 && endAtMs !== undefined) {
     throw siteError(
       DexScreenerSiteErrorCodes.SCREEN_SHAPING_VALUE_INVALID,
-      '"beforeBlock" and "endAtMs" both decide where the walk starts, and this call gave both',
+      '"beforeBlock" and "endAtMs" both decide where the walk starts, and this call gave both.',
       "Continue an interrupted walk with beforeBlock alone, or start a fresh window with endAtMs alone. Honouring one of them silently would answer a different window than the one asked for."
     );
   }
@@ -271,8 +271,31 @@ export async function runCandles(
   const nextBeforeBlock =
     oldestEmitted?.minBlockNumber ?? walk.nextBeforeBlock;
 
+  const summaryBlock = buildSummary(windowed, {
+    resolution,
+    stepMs,
+    lastBarPartial,
+    requestedStartAtMs: startAtMs ?? null,
+    requestedEndAtMs: endAtMs ?? null,
+    walkStopReason: walk.stopReason,
+    rowsWithheldInRange: withheldInRange,
+  });
+
   return ok({
-    summary: summarize(subject.baseTokenSymbol, resolution, windowed, series),
+    // THE SUMMARY IS BUILT FROM THE SAME BLOCK THE ENVELOPE PUBLISHES, so it
+    // can no longer describe a 4-hour move as covering a 30-day ask, nor name
+    // the base token when the series was inverted.
+    summary: summarize({
+      baseSymbol: subject.baseTokenSymbol,
+      quoteSymbol: subject.quoteTokenSymbol,
+      inverted,
+      resolution,
+      bars: windowed,
+      series,
+      summaryBlock,
+      truncated,
+      barsWithheldByLimit: withheldInRange,
+    }),
     subject: subjectBlock(subject, { series, priceBasis, inverted }),
     resolution,
     columns,
@@ -280,15 +303,7 @@ export async function runCandles(
     returned: rows.length,
     columnsNote:
       "Rows are column-oriented: each row is an array of values in the order of `columns`. This costs about 40 percent of what an array of objects costs, which matters because 999 hourly bars are 271 KB of provider data. Every price is a DECIMAL STRING and must not be parsed into a float for money arithmetic.",
-    summaryBlock: buildSummary(windowed, {
-      resolution,
-      stepMs,
-      lastBarPartial,
-      requestedStartAtMs: startAtMs ?? null,
-      requestedEndAtMs: endAtMs ?? null,
-      walkStopReason: walk.stopReason,
-      rowsWithheldInRange: withheldInRange,
-    }),
+    summaryBlock,
     anchor:
       endAtMs === undefined
         ? {
@@ -347,6 +362,9 @@ export async function runCandles(
               ? `${withheldInRange} bar(s) inside the requested range were fetched but held back by the row bound of ${rowBound}. `
               : "")
             + "coveredRange states exactly what arrived; pass nextBeforeBlock back as the beforeBlock parameter to continue from the bar below the oldest one returned"
+            + (endAtMs === undefined
+              ? ""
+              : ", AND DROP endAtMs FROM THAT CALL: beforeBlock and endAtMs both decide where the walk starts, so this tool refuses a call carrying both, and this call carried endAtMs")
             + (boundHit ? ", or raise deadlineMs" : ", or raise limit")
             + `. ${DEEPER_ONLY_VIA_BEFORE_BLOCK} Nothing was dropped from what is shown, and nothing withheld is unreachable.`,
         }
@@ -371,7 +389,13 @@ export async function runCandles(
     },
     flowHandoff:
       "For the individual trades inside any bar, call dexscreener__trades_list with that bar's timestamp as startAtMs and the next bar's as endAtMs; the provider honours that window to the second.",
-    sourceObservation: observation(transport, walk.fetchedAtMs),
+    // S10-36: the walk's own HTTP headers decide cacheState. Absent on the
+    // WebSocket resolutions, where `not_cached` is the measured truth.
+    sourceObservation: observation(
+      transport,
+      walk.fetchedAtMs,
+      walk.responseHeaders
+    ),
   });
 }
 
@@ -499,10 +523,23 @@ function buildSummary(
     startAtMs: context.requestedStartAtMs,
     endAtMs: context.requestedEndAtMs,
   };
+  /*
+   * S10-46. A CALL THAT NAMED NO RANGE CANNOT FAIL TO COVER ONE.
+   *
+   * The provider serves a fixed 999-bar page whatever `limit` says, so any
+   * limit below 999 leaves fetched bars unshown and `rowsWithheldInRange`
+   * non-zero. On a call with no start and no end that is not a coverage gap at
+   * all: the newest N bars ARE the answer, which is exactly why `truncated` was
+   * already made to ignore it. This flag was left behind and reported false on
+   * 6 of 6 no-range calls while the same envelope said `truncated: false` and
+   * "nothing is missing". Same rule, same place, one condition.
+   */
+  const rangeWasRequested =
+    context.requestedStartAtMs !== null || context.requestedEndAtMs !== null;
   const rangeFullyCovered =
     context.walkStopReason !== "page_budget"
     && context.walkStopReason !== "deadline"
-    && context.rowsWithheldInRange === 0
+    && (!rangeWasRequested || context.rowsWithheldInRange === 0)
     && (context.requestedStartAtMs === null
       || (first !== undefined && first.timestampMs <= context.requestedStartAtMs + context.stepMs));
 
@@ -665,19 +702,65 @@ function gapCount(bars: readonly ProjectedBar[], stepMs: number): number {
   return gaps;
 }
 
-function summarize(
-  symbol: string | null,
-  resolution: BarResolution,
-  bars: readonly ProjectedBar[],
-  series: string
-): string {
-  const subject = symbol ?? "this pair";
-  if (bars.length === 0) {
-    return `No ${resolution} ${series} bars for ${subject} in the requested window. The provider answered; an empty window means it emitted no bar there, which at second-scale resolutions is normal.`;
+interface CandlesSummaryFacts {
+  readonly baseSymbol: string | null;
+  readonly quoteSymbol: string | null;
+  readonly inverted: boolean;
+  readonly resolution: BarResolution;
+  readonly bars: readonly ProjectedBar[];
+  readonly series: string;
+  readonly summaryBlock: Record<string, unknown>;
+  readonly truncated: boolean;
+  readonly barsWithheldByLimit: number;
+}
+
+/**
+ * Describe the bars in hand, in the units they are actually in, over the range
+ * they actually cover.
+ *
+ * TWO MEASURED DEFECTS ARE FIXED HERE AND BOTH WERE THE SAME MISTAKE: the
+ * sentence was written from the request instead of from the answer.
+ *
+ *  - THE WRONG TOKEN. `inverted` flips the series to quote-per-base, and the
+ *    old sentence still named `baseTokenSymbol`. Measured on VEX/VIRTUAL
+ *    inverted: the summary said "VEX, up 7.12 percent" where 7.12 was
+ *    VIRTUAL's USD move, VEX's own move over the same window was +48.97, and
+ *    the native series the caller actually asked for was -26.83. Three assets,
+ *    one sentence, and the only one it named was the one it did not describe.
+ *  - THE WRONG RANGE. `limit: 5` on a 30-day ask read "5 bars, up 5.48 percent
+ *    across the window" while the envelope correctly carried truncated:true,
+ *    barsWithheldByLimit:714 and rangeFullyCovered:false. Four hours of a
+ *    thirty-day question, presented as the answer to it.
+ */
+function summarize(facts: CandlesSummaryFacts): string {
+  // Under inversion the series is quote-per-base, so the token whose price is
+  // being quoted is the QUOTE token. Naming the base token here is what made
+  // the sentence describe an asset it had no data for.
+  const named = facts.inverted ? facts.quoteSymbol : facts.baseSymbol;
+  const subject =
+    named ?? (facts.inverted ? "the quote token" : "this pair");
+  const inversionClause = facts.inverted
+    ? ` The series is INVERTED, so these bars are ${facts.quoteSymbol ?? "the quote token"} priced in ${facts.baseSymbol ?? "the base token"} and this figure describes ${subject}, not ${facts.baseSymbol ?? "the base token"}.`
+    : "";
+
+  if (facts.bars.length === 0) {
+    return `No ${facts.resolution} ${facts.series} bars for ${subject} in the requested window. The provider answered; an empty window means it emitted no bar there, which at second-scale resolutions is normal.`;
   }
-  const change = changePct(bars);
-  return (
-    `${bars.length} ${resolution} ${series} bars for ${subject}`
-    + `${change === null ? "" : `, ${change >= 0 ? "up" : "down"} ${Math.abs(change).toFixed(2)} percent across the window`}.`
-  );
+
+  const basis = facts.summaryBlock["summaryPriceBasis"];
+  const change = facts.summaryBlock["changePct"];
+  const move =
+    typeof change === "number"
+      ? `, ${change >= 0 ? "up" : "down"} ${Math.abs(change).toFixed(2)} percent across the bars in hand${basis === "usd" ? " on the USD series" : " on the native (quote-token) series"}`
+      : "";
+
+  // COVERAGE FIRST, because a reader who stops after one clause must not stop
+  // holding a number that answers a different question than the one asked.
+  const covered = facts.summaryBlock["rangeFullyCovered"];
+  const coverage =
+    covered === false
+      ? ` THIS DOES NOT COVER THE RANGE YOU ASKED FOR${facts.barsWithheldByLimit > 0 ? `: ${facts.barsWithheldByLimit} further bar(s) inside it were fetched and held back by your limit` : ""}. coveredRange states exactly what arrived; do not read this move as the move over your requested window.`
+      : "";
+
+  return `${facts.bars.length} ${facts.resolution} ${facts.series} bars for ${subject}${move}.${inversionClause}${coverage}`;
 }

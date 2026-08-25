@@ -20,6 +20,7 @@ import {
   type DexScreenerTransport,
 } from "@tools/dexscreener/transport.js";
 import { loadFixture, loadJsonFixture } from "./_fixtures.js";
+import { makeProtocolContext } from "../vex-agent/tools/_test-context.js";
 
 const CHAIN = "ethereum";
 const PAIR = "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f";
@@ -32,6 +33,17 @@ const LISTINGS = loadJsonFixture("pair-details-solana-listings").bytes;
 const INJECTED = loadJsonFixture("pair-details-listings-injected").bytes;
 const POPULATED_HPI = loadJsonFixture("pair-details-populated-hpi").bytes;
 const UNSAFE_LEXEME = loadJsonFixture("pair-details-unsafe-number-lexeme").bytes;
+const POOL_HOLDER = loadJsonFixture("pair-details-solana-bonding-poolholder").bytes;
+/**
+ * The pair snapshot for the SAME pair as `POOL_HOLDER`.
+ *
+ * `mount` serves one pair frame for every call, and it is the ethereum one, so
+ * `subject.pairAddress` was the ethereum pool on every test in this file. The
+ * pool-row exclusion compares the holder row against exactly that field, so it
+ * could not be exercised until the two fixtures named one subject between them.
+ */
+const POOL_HOLDER_FRAME = loadFixture("pair-ws-solana-bonding-poolholder").bytes;
+const LP_DIVERGENCE = loadJsonFixture("pair-details-robinhood-vex-lpdivergence").bytes;
 
 /**
  * The exact provider lexeme the unsafe-number fixture carries.
@@ -48,7 +60,7 @@ afterEach(() => {
   release = null;
 });
 
-function mount(body: Uint8Array): void {
+function mount(body: Uint8Array, pairFrame: Uint8Array = PAIR_FRAME): void {
   const transport: DexScreenerTransport = {
     name: "site_bridge",
     capabilities: { site: true, publicApi: true },
@@ -61,7 +73,7 @@ function mount(body: Uint8Array): void {
         body: isCatalog ? CATALOG : body,
       });
     },
-    wsExchange: () => Promise.resolve([PAIR_FRAME]),
+    wsExchange: () => Promise.resolve([pairFrame]),
   };
   release = registerDexScreenerTransport(transport);
 }
@@ -70,7 +82,7 @@ async function call(params: Record<string, unknown>): Promise<Record<string, unk
   const handler = DEXSCREENER_HANDLERS["dexscreener.pair.details"];
   expect(handler).toBeDefined();
   if (handler === undefined) throw new Error("no handler");
-  const result = await handler(params, {} as never);
+  const result = await handler(params, makeProtocolContext());
   expect(result.success, result.output).toBe(true);
   return result.data as Record<string, unknown>;
 }
@@ -391,5 +403,93 @@ describe("holder coverage distinguishes the native block from GoPlus", () => {
     expect(present).toContain("holders.goplus");
     expect(absent).not.toContain("holders.goplus");
     expect(absent).toContain("holders.native");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* S10-1 and S10-15: derived figures against the raw columns beside them */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Both defects below shipped behind a green suite for the SAME reason, and it
+ * is the reason rule 10 point 3 exists: every pair-details fixture on disk
+ * happened to carry neither shape. One had no pool account among its holder
+ * rows and none had a percent column that disagreed with its own balance
+ * column, so the two code paths that matter most on a safety report were
+ * exercised by nothing. These two captures are the missing variants.
+ */
+describe("derived holder figures reconciled against the raw columns", () => {
+  it("does not count the pair's own pool account as a holder", async () => {
+    // S10-1. Holder row 0 of this capture IS the pair address in the request.
+    // Counting it inverted the ranking for this whole token class: measured on
+    // GOGH, top10 read 71.90 percent with the curve counted and 24.17 without.
+    mount(POOL_HOLDER, POOL_HOLDER_FRAME);
+    const data = await call({
+      chain: "solana",
+      pairAddress: "HCh4WNzkiBuWCLvZZ4TB5FrPoF6j7pJrPiQdQYMbLtEY",
+      fields: "holders",
+    });
+    const token = (data["holders"] as Record<string, unknown>)["token"] as Record<
+      string,
+      unknown
+    >;
+
+    // The fixture really does carry the shape this test is about.
+    expect(token["poolRowIncluded"]).toBe(true);
+    expect(String(token["poolRowAddress"]).toLowerCase()).toBe(
+      "hch4wnzkibuwclvzz4tb5frpof6j7pjrpiqdqymbltey"
+    );
+
+    // The raw number is still reported, because it is what the provider said.
+    const raw = token["top10Pct"] as number;
+    const exPool = token["top10PctExcludingPool"] as number;
+    expect(typeof raw).toBe("number");
+    expect(typeof exPool).toBe("number");
+    // And the ex-pool number is materially lower, which is the whole point:
+    // the pool row is the largest single holder in this capture.
+    expect(exPool).toBeLessThan(raw);
+    expect(raw - exPool).toBeGreaterThan(10);
+
+    // The sentence a reader actually acts on carries the ex-pool figure and
+    // says which basis it is on, rather than the reassuring raw one alone.
+    const summary = String(data["summary"]);
+    expect(summary).toContain("excluding this pair's own pool account");
+    expect(summary).toContain(exPool.toFixed(2));
+    expect(summary).not.toContain(raw.toFixed(2));
+  });
+
+  it("withholds LP percentages that contradict their own balance column", async () => {
+    // S10-15. GoPlus assigns 0.000000 percent to the holder of 654.52 of
+    // 654.82 LP supply (99.95 percent) and 88.41 percent to a 0.04 percent
+    // wallet. The tool published top1 88.41, contractHeldPct 100 and
+    // taggingComplete true off that column, on both provider cache routes.
+    mount(LP_DIVERGENCE);
+    const data = await call({
+      chain: "robinhood",
+      pairAddress: "0x817f16f5d8da83d1b089b082c0172af3923618da",
+      fields: "holders",
+    });
+    const lp = (data["holders"] as Record<string, unknown>)["lp"] as Record<
+      string,
+      unknown
+    >;
+
+    expect(lp["concentrationUnverified"]).toBe(true);
+    // Every figure derived from the disputed column is null, not "reported
+    // with a caveat": a caveat beside a number is not what a reader acts on.
+    expect(lp["top1Pct"]).toBeNull();
+    expect(lp["top10Pct"]).toBeNull();
+    expect(lp["contractHeldPct"]).toBeNull();
+    expect(lp["taggingComplete"]).toBe(false);
+    // The conflict is NAMED, with both sides of it, so the withholding is
+    // auditable rather than mysterious.
+    const note = String(lp["reconciliationNote"]);
+    expect(note).toContain("654.8172300202939");
+    expect(note).toContain("0x3eb3394f5d89");
+
+    // Nothing was corrected: the provider's raw rows are still there, because
+    // which of the two columns is the wrong one is not decidable here.
+    const rows = lp["rows"] as { balance: string | null }[];
+    expect(rows.some((one) => one.balance === "654.52121653453542188")).toBe(true);
   });
 });

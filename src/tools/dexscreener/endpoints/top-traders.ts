@@ -171,6 +171,18 @@ export interface TopTradersDocument {
   readonly url: string;
   readonly bytes: number;
   readonly fetchedAtMs: number;
+  /**
+   * The response headers of the HTTP read that produced this, when there was
+   * one.
+   *
+   * S10-36: `sourceObservation` hardcoded cacheState "not_cached" on this
+   * family, which asserts freshness for documents the edge may have held for
+   * up to 25 seconds. `cf-cache-status` and `age` are the only evidence either
+   * way, so they travel with the document instead of being dropped here.
+   * ABSENT on a WebSocket page, where no cache sits between a frame and its
+   * socket and `not_cached` really is the truth.
+   */
+  readonly responseHeaders?: ReadonlyMap<string, string>;
 }
 
 export interface TopTradersOptions {
@@ -246,6 +258,7 @@ export async function fetchTopTraders(
     url,
     bytes: response.body.byteLength,
     fetchedAtMs: Date.now(),
+    responseHeaders: response.headers,
   };
 }
 

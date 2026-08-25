@@ -41,6 +41,15 @@ import {
   siteError,
 } from "@tools/dexscreener/site-errors.js";
 import { num, ok, str } from "../../../handler-helpers.js";
+
+/**
+ * Pages an aggregate walks when the caller named no range.
+ *
+ * There is no start to walk towards, so the budget is a sample size rather than
+ * a coverage target. Measured: the full default budget cost 12.2 s where one
+ * page cost 1.5 s, for an answer no wider in meaning.
+ */
+const TRADES_UNRANGED_AGGREGATE_PAGES = 2;
 import {
   TRADER_PROFILE_DEPTHS,
   TRADE_LARGEST_COUNT,
@@ -161,8 +170,29 @@ export async function runTrades(
   let channel: "connect" | "feed_ws" = "connect";
   let nextCursor: TradeCursor | null = null;
   let boundHit: "page_budget" | "deadline" | null = null;
-  // Raw mode answers from one page; only an aggregate needs the range covered.
-  const pageBudget = mode === "raw" ? 1 : maxPages;
+  let lastResponseHeaders: ReadonlyMap<string, string> | undefined;
+  /*
+   * S10-2. AN AGGREGATE WITH NO RANGE HAS NOTHING TO WALK TOWARDS.
+   *
+   * Raw mode answers from one page; an aggregate walks until it has passed the
+   * requested start. When no `startAtMs` was given there IS no start to pass,
+   * so the walk simply spent the whole page budget every time: measured at 12.2
+   * seconds by default against 1.5 seconds at maxPages 1, for an answer whose
+   * coverage nobody had asked to extend. An UNRANGED aggregate therefore
+   * defaults to a small budget, and an explicit maxPages is always honoured -
+   * the caller who wants a deeper unranged sample says so and gets it.
+   */
+  const maxPagesGiven = num(params, "maxPages") !== undefined;
+  const unrangedAggregateBudget = Math.min(
+    maxPages,
+    TRADES_UNRANGED_AGGREGATE_PAGES
+  );
+  const pageBudget =
+    mode === "raw"
+      ? 1
+      : maxPagesGiven || filters.startAtMs !== undefined
+        ? maxPages
+        : unrangedAggregateBudget;
   let pageCursor = cursor;
 
   for (;;) {
@@ -187,6 +217,11 @@ export async function runTrades(
       ...(signal === undefined ? {} : { signal }),
     });
     pagesFetched += 1;
+    // S10-36: the freshest Connect read's cache headers. Stays undefined on a
+    // feed-WebSocket walk, where `not_cached` is the measured truth.
+    if (page.responseHeaders !== undefined) {
+      lastResponseHeaders = page.responseHeaders;
+    }
     bytes += page.bytes;
     channel = page.channel;
     collected.push(...page.trades);
@@ -230,10 +265,25 @@ export async function runTrades(
   const continuation = withheldRows > 0 ? emittedCursor : nextCursor;
   const hasMore = withheldRows > 0 || nextCursor !== null;
 
+  const aggregateBlockName = rangeFullyCovered ? "aggregate" : "pageAggregate";
+
   return ok({
-    summary: summarize(subject.baseTokenSymbol, collected, mode, eventType),
+    summary: summarize(subject.baseTokenSymbol, {
+      mode,
+      eventType,
+      rows,
+      population: collected,
+      aggregateBlockName,
+      rangeFullyCovered,
+      withheldRows,
+    }),
     subject: subjectBlock(subject),
     mode,
+    // S10-60: `mode` echoes what was ASKED FOR and stays that way, because a
+    // caller reconciling its own request needs its own word back. What the
+    // answer actually contains is `aggregateBlockName`, which is the key the
+    // aggregate is published under, and the summary above names that one.
+    ...(wantsAggregate ? { aggregateBlockName } : {}),
     filtersApplied: {
       eventType,
       minVolumeUsd: filters.volumeUsdMin ?? null,
@@ -256,7 +306,7 @@ export async function runTrades(
       : { returned: 0 }),
     ...(wantsAggregate
       ? {
-          [rangeFullyCovered ? "aggregate" : "pageAggregate"]: aggregate(
+          [aggregateBlockName]: aggregate(
             collected,
             rangeFullyCovered,
             filters
@@ -264,7 +314,7 @@ export async function runTrades(
         }
       : {}),
     traderSemantics:
-      "netCashFlowUsd is dollars OUT minus dollars IN on this pair and is NOT profit: cost basis, transfers and every other venue are invisible to this channel. retainedBoughtPct is the share of what the wallet BOUGHT here that it still holds, never a share of token supply. newOnPair means new on THIS pair, not a newly created wallet. No accumulating-versus-distributing label is emitted, because this data cannot support one.",
+      "netCashFlowUsd is dollars OUT minus dollars IN on this pair and is NOT profit: cost basis, transfers and every other venue are invisible to this channel. retainedBoughtPct is the share of what the wallet BOUGHT here that it still holds, never a share of token supply. newOnPair means new on THIS pair, not a newly created wallet. No accumulating-versus-distributing label is emitted, because this data cannot support one. THE WINDOW IS THE PROVIDER'S TRAILING 30 DAYS, not the range you filtered to and not the pair's whole life, and firstSwapAtMs is CLAMPED to that window floor: a wallet trading here before the window opened reports exact UTC midnight thirty days ago with a zero millisecond remainder, which means \"no later than\" and never \"first traded at\". dexscreener__top_traders_list ranks over its own declared window, so the two tools can answer the same wallet question with different numbers without either being wrong.",
     pagination: {
       mode: "exact_cursor",
       hasMore,
@@ -300,11 +350,26 @@ export async function runTrades(
       rowsWithMarketCapUsd: collected.filter(
         (trade) => trade.marketCapUsd !== null
       ).length,
+      // S10-58: the SAME accounting, for the block that was silently absent.
+      // Measured: 0 of 204 robinhood rows carried a traderProfile because the
+      // provider's bytes had no traderScreener block at all, and compact and
+      // none returned byte-identical rows with nothing to say so. A wallet
+      // study that finds no wallet data must be able to tell "no trader was
+      // new here" from "this channel sent no trader data".
+      rowsWithTraderProfile: collected.filter((trade) => trade.trader !== null)
+        .length,
+      traderProfileNote:
+        "rowsWithTraderProfile counts how many rows in THIS answer carried the provider's per-wallet block. The block is a whole-response feature of the channel, not a per-row one: a chain where the provider omits it returns zero here on every row, which is a provider gap and not a statement that the wallets are ordinary. Measured 0 of 204 rows on robinhood. When this is zero, traderProfileDepth has nothing to shape and compact, full and none all return the same rows.",
       marketCapNote:
         "marketCapUsd on a trade row comes from the provider's swap.latest block, which was measured NEVER populated on either channel: 0 of 300 live rows in wave 1, and 0 of 757 rows across majors in wave 2, including a pair with a 2.1 billion USD market cap, so the absence is not a small-pair artefact. rowsWithMarketCapUsd counts how many rows in THIS answer carried one. A null there is the provider sending nothing, not a trade without a market cap; derive market cap from dexscreener__candles_list with series marketCap instead.",
       serverSide: true,
       pagesFetched,
       maxPages: pageBudget,
+      ...(mode === "raw" || maxPagesGiven || filters.startAtMs !== undefined
+        ? {}
+        : {
+            maxPagesNote: `This aggregate named no startAtMs, so there is no range for the walk to cover and it stopped at ${TRADES_UNRANGED_AGGREGATE_PAGES} page(s) rather than spending the ${maxPages}-page budget on an open-ended sample. Measured, the open-ended walk cost 12.2 seconds against 1.5 for one page. Pass maxPages explicitly for a deeper sample, or startAtMs for a real range.`,
+          }),
       deadlineMs,
       pageBudgetHit: boundHit === "page_budget",
       deadlineHit: boundHit === "deadline",
@@ -312,7 +377,7 @@ export async function runTrades(
     },
     contextHandoff:
       "For the price action around a window call dexscreener__candles_list with the same range; for the wallets ranked across the whole pair rather than this window call dexscreener__top_traders_list.",
-    sourceObservation: observation(transport, Date.now()),
+    sourceObservation: observation(transport, Date.now(), lastResponseHeaders),
   });
 }
 
@@ -442,6 +507,8 @@ function aggregate(
     sellVolumeUsd: sellUsd,
     // Direction of pressure in dollars, on this pair, over the covered range.
     netFlowUsd: buyUsd - sellUsd,
+    netFlowNote:
+      "netFlowUsd here is buyVolumeUsd minus sellVolumeUsd: positive means dollars flowed INTO the token over this range. The per-row netCashFlowUsd on a trader profile uses the OPPOSITE convention on purpose - it is dollars out minus dollars in from the WALLET's side, so a wallet that bought reads negative there. One mode:\"both\" answer therefore shows the same activity as +1859.32 here and -1859.32 on the row, and neither is a sign error. Compare like with like before drawing a direction.",
     uniqueBuyers: buyers.size,
     uniqueSellers: sellers.size,
     uniqueMakers: makers.size,
@@ -657,17 +724,64 @@ function oldestTimestamp(trades: readonly ProjectedTrade[]): number | null {
   return oldest;
 }
 
-function summarize(
-  symbol: string | null,
-  trades: readonly ProjectedTrade[],
-  mode: TradeMode,
-  eventType: TradeEventType
-): string {
-  const subject = symbol ?? "this pair";
-  if (trades.length === 0) {
-    return `No ${eventType === "all" ? "" : `${eventType} `}trades matched on ${subject}. The provider answered, so this is an empty match on these filters rather than an unreachable pair.`;
-  }
+/** The coverage facts the summary is not allowed to contradict. */
+interface TradesSummaryFacts {
+  readonly mode: TradeMode;
+  readonly eventType: TradeEventType;
+  /** The rows actually emitted under `trades`. Empty when mode is aggregate. */
+  readonly rows: readonly ProjectedTrade[];
+  /** Every event fetched: the population the aggregate block is computed over. */
+  readonly population: readonly ProjectedTrade[];
+  /** The key the aggregate is published under: `aggregate` or `pageAggregate`. */
+  readonly aggregateBlockName: "aggregate" | "pageAggregate";
+  readonly rangeFullyCovered: boolean;
+  readonly withheldRows: number;
+}
+
+function flowOf(trades: readonly ProjectedTrade[]): string {
   const buys = trades.filter((trade) => trade.eventType === "buy").length;
   const sells = trades.filter((trade) => trade.eventType === "sell").length;
-  return `${trades.length} ${eventType === "all" ? "" : `${eventType} `}events on ${subject} (${buys} buys, ${sells} sells), returned as ${mode}.`;
+  return `${buys} buys, ${sells} sells`;
+}
+
+/**
+ * Describe what this answer actually contains, mode by mode and bound by bound.
+ *
+ * THE DEFECT THIS REPLACES INVERTED FLOW DIRECTION ON THE DEFAULT PATH. The old
+ * sentence counted `collected` - the whole fetched page - in every mode, so a
+ * default `limit: 25` call read "100 events (67 buys, 33 sells), returned as
+ * raw" while the 25 rows in hand were 11 buys and 14 sells. A reader acting on
+ * the summary saw buying pressure where the rows showed the opposite. It also
+ * said "returned as aggregate" when the page budget had been hit and the block
+ * was honestly published as `pageAggregate`, and counted 1000 events against 15
+ * returned rows.
+ *
+ * So: row counts come from the rows, population counts are NAMED as population,
+ * and the block name in the sentence is the block name in the envelope.
+ */
+function summarize(symbol: string | null, facts: TradesSummaryFacts): string {
+  const subject = symbol ?? "this pair";
+  const kind = facts.eventType === "all" ? "" : `${facts.eventType} `;
+  if (facts.population.length === 0) {
+    return `No ${kind}trades matched on ${subject}. The provider answered, so this is an empty match on these filters rather than an unreachable pair.`;
+  }
+
+  const coverage = facts.rangeFullyCovered
+    ? ""
+    : ` The requested range was NOT fully covered: the page budget stopped the walk, so this describes the newest part of the window only.`;
+
+  if (facts.mode === "aggregate") {
+    return `${facts.population.length} ${kind}events on ${subject} (${flowOf(facts.population)}) were fetched and summarised into the ${facts.aggregateBlockName} block; no individual rows were returned in this mode.${coverage}`;
+  }
+
+  const shown = `${facts.rows.length} ${kind}${facts.rows.length === 1 ? "event" : "events"} on ${subject} (${flowOf(facts.rows)})`;
+  const withheld =
+    facts.withheldRows === 0
+      ? ""
+      : ` ${facts.withheldRows} further fetched ${facts.withheldRows === 1 ? "event was" : "events were"} withheld by your limit and are reachable with the cursor in pagination.`;
+
+  if (facts.mode === "raw") {
+    return `${shown} are returned as raw rows.${withheld}${coverage}`;
+  }
+  return `${shown} are returned as raw rows, beside a ${facts.aggregateBlockName} block computed over the full fetched population of ${facts.population.length} ${kind}${facts.population.length === 1 ? "event" : "events"} (${flowOf(facts.population)}), which is a larger set than the rows.${withheld}${coverage}`;
 }

@@ -178,6 +178,18 @@ export const DexScreenerSiteErrorCodes = {
   /** The bars endpoint answered with something that is not a bars document. */
   BARS_INVALID: "DEXSCREENER_BARS_INVALID",
   /**
+   * The bars endpoint failed in a way that a later identical read may not.
+   *
+   * S10-49. A transient provider 5xx on an idempotent read was classified
+   * BARS_INVALID, whose remediation tells the caller to check the AMM id and
+   * quote token - fields the manifest states this tool resolves ITSELF, so the
+   * advice named nothing the caller could act on. Measured: one 500 followed
+   * seconds later by 8 probes all answering 200. A read that may simply
+   * succeed on retry is a different outcome from a malformed document and gets
+   * its own code, so the caller can tell "try again" from "stop".
+   */
+  BARS_PROVIDER_TRANSIENT: "DEXSCREENER_BARS_PROVIDER_TRANSIENT",
+  /**
    * A candle resolution the chosen transport does not serve.
    *
    * Named rather than silently re-routed: HTTP answers 400 for daily and above
@@ -240,7 +252,29 @@ export function siteError(
   message: string,
   hint?: string
 ): VexError {
-  return new VexError(code, message, hint);
+  return new VexError(code, terminated(message), hint);
+}
+
+/**
+ * End a refusal message with a full stop, so the hint that follows it starts a
+ * new sentence.
+ *
+ * S10-29/S10-43/S10-48. The presenter concatenates the message and the hint
+ * with a single space, and most of the messages on this surface are written as
+ * fragments ending in a value or a slug. The result reached agents as run-on
+ * text - "did you mean robinhood The screener answers an unknown chain...",
+ * "in the catalog The screener answers..." - three separate reports flagged it
+ * on three different tools.
+ *
+ * ONE OWNER RATHER THAN A SWEEP OF FIFTY LITERALS: a per-string sweep fixes
+ * today's messages and cannot stop tomorrow's, and a message that already ends
+ * in punctuation is left exactly as written. NOTHING IS EVER REMOVED here; the
+ * only edit possible is appending one character.
+ */
+function terminated(message: string): string {
+  const last = message.trimEnd().slice(-1);
+  if (last === "" || ".!?:;".includes(last)) return message;
+  return `${message}.`;
 }
 
 const SITE_CODES: ReadonlySet<string> = new Set(

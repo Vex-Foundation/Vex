@@ -38,11 +38,11 @@ import {
   type DexScreenerTransport,
 } from "../../../tools/dexscreener/transport.js";
 import {
-  decodeDexScreenerMessage,
+  decodeDexScreenerMessageToJson,
   getDexScreenerMessageDescriptor,
   type DexScreenerMessageName,
 } from "../../../tools/dexscreener/codec/protobuf.js";
-import { toBinary } from "@bufbuild/protobuf";
+import { fromJson, toBinary, type JsonValue } from "@bufbuild/protobuf";
 import { TOKENS_CHANNEL_HONESTY } from "../../../tools/dexscreener/endpoints/tokens-screener.js";
 import { loadFixture } from "../../dexscreener-site/_fixtures.js";
 import { makeProtocolContext } from "./_test-context.js";
@@ -162,20 +162,44 @@ function pageRepeatingTail(
   message: DexScreenerMessageName = "dex_screener.PairsChannelMessage"
 ): Uint8Array {
   const descriptor = getDexScreenerMessageDescriptor(message);
-  // Through `unknown`: the decoded value is a generated protobuf `Message`,
-  // whose static type shares no members with the oneof shape this helper walks.
-  // The narrowing is safe because the caller passes a captured frame of exactly
-  // this message, and a wrong shape throws on the first property access below
-  // rather than corrupting a fixture silently.
-  const decoded = decodeDexScreenerMessage(message, frame, {
+  /*
+   * DECODED AS PROTOBUF-JSON, NOT AS A GENERATED MESSAGE.
+   *
+   * This helper walks a oneof by property name and hands the result back to
+   * `toBinary`. A generated `Message` shares no members with the shape being
+   * walked, so both ends previously needed an escape hatch - `as unknown as`
+   * on the way in and `as never` on the way out - and the second of those
+   * would have accepted literally any value. The JSON codec is the right
+   * boundary for this: its output IS a plain JSON tree, `fromJson` validates
+   * the mutated tree against the same descriptor before re-encoding, and a
+   * wrong shape now fails there rather than being silently re-serialized.
+   */
+  const decoded = decodeDexScreenerMessageToJson(message, frame, {
     maxBytes: frame.byteLength,
-  }) as unknown as { payload: { value: { pairs: { pairAddress: string }[] } } };
-  const rows = decoded.payload.value.pairs;
-  decoded.payload.value.pairs = [...rows.slice(rows.length - repeated), ...rows];
-  for (const row of decoded.payload.value.pairs) {
+  }) as Record<string, { pairs: { pairAddress: string }[] } | undefined>;
+  /*
+   * THE ONEOF IS A DIRECT FIELD IN PROTOBUF-JSON, measured rather than assumed:
+   * `dex_screener.PairsChannelMessage` decodes to `{ pairs: { stats, pairs,
+   * pairsCount } }`, not to the generated Message's `{ payload: { case, value } }`.
+   * The old `as unknown as` shape asserted the latter and, because a double cast
+   * silences the compiler completely, it type-checked while being wrong about
+   * the data. The oneof member is keyed off the message name so the token
+   * BOTH channels name that member `pairs`, measured: the token channel's
+   * message decodes to `{ pairs: ... }` as well, so there is no per-message
+   * branch to make here.
+   */
+  const wrapper = decoded["pairs"];
+  if (wrapper === undefined) {
+    throw new Error(
+      `no pairs block in the decoded ${message}; keys: ${Object.keys(decoded).join(", ")}`
+    );
+  }
+  const rows = wrapper.pairs;
+  wrapper.pairs = [...rows.slice(rows.length - repeated), ...rows];
+  for (const row of wrapper.pairs) {
     row.pairAddress = `${row.pairAddress}-page2`;
   }
-  return toBinary(descriptor, decoded as never);
+  return toBinary(descriptor, fromJson(descriptor, decoded as JsonValue));
 }
 
 afterEach(() => {
@@ -662,7 +686,13 @@ describe("launchpad board", () => {
     const data = await call("dexscreener.launchpad.pairs", {
       chainIds: "solana",
     });
-    const rows = data.rows as { liquidityUsd: number | null; missingInputs: string[] }[];
+    const rows = data.rows as {
+      liquidityUsd: number | null;
+      missingInputs: string[];
+      // Declared on ShapedPairRow itself; the local type was simply missing it,
+      // which is what the cast at the assertion below was working around.
+      notApplicableInputs?: readonly string[];
+    }[];
     const first = rows[0];
     expect(first).toBeDefined();
     // Measured: bonding rows carry no `liquidity` field at all. Reporting 0
@@ -672,10 +702,7 @@ describe("launchpad board", () => {
     // `notApplicableInputs` instead.
     expect(first?.liquidityUsd).toBeNull();
     expect(first?.missingInputs).not.toContain("liquidityUsd");
-    expect(
-      (first as unknown as { notApplicableInputs?: string[] })
-        .notApplicableInputs
-    ).toContain("liquidityUsd");
+    expect(first?.notApplicableInputs).toContain("liquidityUsd");
   });
 });
 

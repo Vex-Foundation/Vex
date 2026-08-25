@@ -22,6 +22,7 @@ import {
   SCREEN_FILTER_NAMES,
   SCREEN_PRESET_FLOORS,
   trendingScoreRankKey,
+  type ScreenRankKey,
   type ScreenRequest,
 } from "../../tools/dexscreener/screen-core/request.js";
 import { DexScreenerSiteErrorCodes } from "../../tools/dexscreener/site-errors.js";
@@ -320,7 +321,11 @@ describe("buildScreenQuery: grammar details", () => {
         // The `fdv` sort is a measured server defect: it returns the `txns`
         // ordering. It must not be reachable even by a cast.
         rankBy: {
-          key: "fdv" as unknown as "volume",
+          // Cast to the real rank-key type, not through `unknown`: the point is
+          // that `fdv` is refused at RUNTIME even when something upstream
+          // claims it is a valid key, and the compiler should still check the
+          // rest of this object against the true shape.
+          key: "fdv" as ScreenRankKey,
           order: "desc",
         },
         window: "h24",

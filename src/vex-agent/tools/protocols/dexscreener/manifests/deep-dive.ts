@@ -232,8 +232,12 @@ const CANDLES_PARAMS: readonly ProtocolParamDef[] = [
     description:
       "Comma-separated column GROUPS, not individual field names. Supported groups: "
       + `${CANDLE_FIELD_GROUPS.join(", ")}. Defaults to ohlc. volume adds the USD volume column; `
-      + "blockRange adds each bar's first and last block, which is what an exact continuation is "
-      + "built from. Base and quote token volumes and any volume-weighted average price are "
+      + "blockRange adds each bar's anchor block, which is what an exact continuation is "
+      + "built from. It emits blockMin and blockMax and THEY ARE THE SAME NUMBER: measured equal "
+      + "on 383 of 383 bars across both chains, three resolutions and both transports, while "
+      + "consecutive daily bars sat 7,173 blocks apart. Read blockMin as the bar's first block "
+      + "and ignore blockMax; neither is the bar's last block and the pair does not delimit a "
+      + "range. Base and quote token volumes and any volume-weighted average price are "
       + "deliberately NOT offered: the provider's token volumes are raw fixed-point strings and it "
       + "publishes no token decimals here, so all three would be wrong by a power of ten.",
   },
@@ -469,7 +473,10 @@ const TOP_TRADERS_PARAMS: readonly ProtocolParamDef[] = [
       + "all: the provider sends the balance it needs on some rankings and not others, and on "
       + "boughtUsd asc and netCashFlowUsd desc it was measured absent on 100 of 100 rows. Ask for "
       + "currentHoldingValueUsd when that column is the question; `balanceCoverage` on every "
-      + "answer reports what actually arrived.",
+      + "answer reports what actually arrived. NAME MAPPING, because these two sort keys have no "
+      + "row field of the same spelling: `boughtUsd` ranks by the row column `volumeUsdBuy` and "
+      + "`soldUsd` by `volumeUsdSell`. Sorting by one and reading the other back is expected here, "
+      + "not a missing field.",
   },
   {
     key: "sortDir",
@@ -606,6 +613,9 @@ export const DEEP_DIVE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description:
       "Get OHLCV candles for a pair by `chain` plus `pairAddress` or `tokenAddress`. "
+      + "The V IS NOT IN THE DEFAULT ROWS: `fields` defaults to the `ohlc` group, so add "
+      + "`fields: \"ohlc,volume\"` for a per-bar volume column. The window's total USD volume "
+      + "does ship by default, as `summaryBlock.volumeUsdTotal`. "
       + "Use this for any chart, trend, volatility, or history question. `resolution` "
       + "is one of 18 values from `1s` to `1mo`; `limit` up to 999 per call (the "
       + "provider's page size); `startAtMs`/`endAtMs` select any historical window, "

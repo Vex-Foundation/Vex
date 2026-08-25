@@ -31,6 +31,7 @@ import {
   type DexScreenerTransport,
 } from "../../../tools/dexscreener/transport.js";
 import { parseBatchInputs } from "../../../vex-agent/tools/protocols/dexscreener/handlers/resolve.js";
+import { reconcileBatchRows } from "../../../tools/dexscreener/endpoints/pairs-batch.js";
 import { loadFixture } from "../../dexscreener-site/_fixtures.js";
 import { makeProtocolContext } from "./_test-context.js";
 import { readFileSync } from "node:fs";
@@ -390,6 +391,88 @@ describe("parseBatchInputs", () => {
   });
 });
 
+/**
+ * The two ways `returned` and `resolved` can diverge.
+ *
+ * Rule 10 point 3: every captured batch frame on disk happens to have
+ * `returned === resolved`, so neither shape was exercised by any fixture and
+ * both shipped broken. These drive the reconciliation with plain rows, which
+ * is the only way to state the shapes without inventing provider bytes.
+ */
+describe("reconcileBatchRows", () => {
+  const identity = (chainId: string, id: string, kind: "pair" | "token") => ({
+    chainId,
+    id,
+    kind,
+    raw: `${chainId}:${id}`,
+  });
+  const pairRow = (chainId: string, pairAddress: string, baseAddress: string) => ({
+    chainId,
+    pairAddress,
+    baseToken: { address: baseAddress },
+  });
+
+  it("withholds a row for a pair nobody asked for", () => {
+    // S10-7, measured: pairs=["robinhood:0x0000...0000"] came back with one
+    // live row for 0x4fc19534..., which the old code pushed unconditionally.
+    const out = reconcileBatchRows(
+      [identity("robinhood", "0x0000000000000000000000000000000000000000", "pair")],
+      [pairRow("robinhood", "0x4fc19534", "0xbase")]
+    );
+    expect(out.rows).toEqual([]);
+    expect(out.unrequested).toEqual(["robinhood:0x4fc19534"]);
+    expect([...out.resolvedKeys]).toEqual([]);
+  });
+
+  it("resolves two token identities onto one shared pair and names the collapse", () => {
+    // S10-8, measured: 9 identities collapsed to 8 rows, and the summary
+    // charged the missing row to "your thresholds" while nothing was filtered.
+    const out = reconcileBatchRows(
+      [
+        identity("ethereum", "0xtokena", "token"),
+        identity("ethereum", "0xtokenb", "token"),
+      ],
+      [
+        pairRow("ethereum", "0xpool", "0xtokena"),
+        pairRow("ethereum", "0xpool", "0xtokenb"),
+      ]
+    );
+    expect(out.rows).toHaveLength(1);
+    expect(out.collapsed).toEqual(["ethereum:0xpool"]);
+    expect([...out.resolvedKeys].sort()).toEqual([
+      "ethereum:0xtokena",
+      "ethereum:0xtokenb",
+    ]);
+    // Both identities resolved; one pair row exists. Any summary that says
+    // "2 of which are shown" is false, and this is the number that proves it.
+    expect(out.resolvedKeys.size - out.rows.length).toBe(1);
+  });
+
+  it("lets one row answer both a pair identity and its own base token", () => {
+    // The second divergence shape: no duplicate row at all, and still two
+    // resolved identities against one row.
+    const out = reconcileBatchRows(
+      [
+        identity("ethereum", "0xpool", "pair"),
+        identity("ethereum", "0xtokena", "token"),
+      ],
+      [pairRow("ethereum", "0xpool", "0xtokena")]
+    );
+    expect(out.rows).toHaveLength(1);
+    expect(out.collapsed).toEqual([]);
+    expect(out.resolvedKeys.size).toBe(2);
+  });
+
+  it("keeps a requested row even when a foreign row arrives beside it", () => {
+    const out = reconcileBatchRows(
+      [identity("ethereum", "0xpool", "pair")],
+      [pairRow("ethereum", "0xpool", "0xbase"), pairRow("ethereum", "0xother", "0xz")]
+    );
+    expect(out.rows).toHaveLength(1);
+    expect(out.unrequested).toEqual(["ethereum:0xother"]);
+  });
+});
+
 describe("dexscreener.pairs.batch", () => {
   const KNOWN = "ethereum:0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f";
 
@@ -401,6 +484,8 @@ describe("dexscreener.pairs.batch", () => {
       (accounting["resolved"] as number) +
       (accounting["invalid_format"] as string[]).length +
       (accounting["duplicates"] as string[]).length +
+      (accounting["unknown_chain"] as string[]).length +
+      (accounting["chain_shape_mismatch"] as string[]).length +
       (accounting["provider_omitted"] as string[]).length;
     expect(total).toBe(accounting["requested"]);
     expect(accounting["resolved"]).toBe(1);
@@ -411,14 +496,45 @@ describe("dexscreener.pairs.batch", () => {
 
   it("names an identity the provider silently left out instead of losing it", async () => {
     mount({ ws: [BATCH_FRAME] });
-    const missing = "solana:NotARealPairIdAtAll";
+    // Base58 of a plausible Solana length, so the entry passes every LOCAL
+    // check and the only remaining explanation is the provider's silence.
+    const missing = "solana:So11111111111111111111111111111111111111113";
     const out = await call("dexscreener.pairs.batch", {
       pairs: [KNOWN, missing],
     });
     const accounting = out["inputAccounting"] as Record<string, unknown>;
     expect(accounting["provider_omitted"]).toEqual([missing]);
     expect(accounting["resolved"]).toBe(1);
-    expect(String(out["providerOmittedNote"])).toContain("not evidence");
+    // S10-0/S10-38: the sentence may not upgrade "we parsed it" into "it is a
+    // real pair". Three personas read the old "valid identity" that way.
+    expect(String(out["summary"])).toContain("syntactically valid");
+    expect(String(out["summary"])).not.toMatch(/\d valid identit/);
+  });
+
+  it("refuses a chain slug the catalog does not have instead of blaming the provider", async () => {
+    mount({ ws: [BATCH_FRAME] });
+    // S10-10: this landed in provider_omitted under a note that argued the
+    // pair might still exist, while the chain itself does not.
+    const out = await call("dexscreener.pairs.batch", {
+      pairs: [KNOWN, "notachain:0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"],
+    });
+    const accounting = out["inputAccounting"] as Record<string, unknown>;
+    expect(accounting["unknown_chain"]).toEqual([
+      "notachain:0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    ]);
+    expect(accounting["provider_omitted"]).toEqual([]);
+    expect(String(out["summary"])).toContain("unknown_chain");
+  });
+
+  it("names an address whose shape contradicts the chain architecture", async () => {
+    mount({ ws: [BATCH_FRAME] });
+    // S10-33: an EVM address written under an SVM slug is the likeliest
+    // watchlist error, and the catalog carries the architecture to decide it.
+    const wrong = "solana:0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f";
+    const out = await call("dexscreener.pairs.batch", { pairs: [KNOWN, wrong] });
+    const accounting = out["inputAccounting"] as Record<string, unknown>;
+    expect(accounting["chain_shape_mismatch"]).toEqual([wrong]);
+    expect(accounting["provider_omitted"]).toEqual([]);
   });
 
   it("echoes malformed and duplicated inputs rather than dropping them", async () => {

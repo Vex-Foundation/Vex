@@ -53,16 +53,22 @@ const BOARD_EXAMPLE = { chainIds: "solana", window: "h24", limit: 20 };
 const TOP_SORT_BY: ProtocolParamDef = {
   key: "sortBy",
   type: "string",
-  enum: ["volume", "txns", "buys", "sells", "liquidity", "marketCap", "boosts"],
+  enum: ["volume", "txns", "buys", "sells", "liquidity", "boosts"],
   description:
-    "Which hard metric ranks the board: volume, txns, buys, sells, liquidity, marketCap or "
+    "Which hard metric ranks the board: volume, txns, buys, sells, liquidity or "
     + "boosts. Defaults to volume. volume, txns, buys and sells are measured over the selected "
-    + "window; liquidity and marketCap are point-in-time and ignore it. boosts ranks by the count "
+    + "window; liquidity is point-in-time and ignores it. boosts ranks by the count "
     + "of ACTIVE paid boosts (measured live: 100 rows served from a 54,051 population) and is an "
     + "advertising ranking, never a demand or safety one; pair it with maxBoostCount to bound the "
     + "other end. Sorting by fdv is deliberately "
     + "not offered: the provider returns the txns ordering for it, identical on 100 of 100 "
-    + "measured rows, so filter with minFdvUsd or maxFdvUsd and rank by marketCap instead.",
+    + "measured rows. Ranking by marketCap is deliberately NOT offered either, for the same "
+    + "reason it was withdrawn from dexscreener__tokens_screen: the provider accepts the key and "
+    + "answers with a degenerate board built out of mispriced pools (measured on this very tool, "
+    + "rank 1 carried a market cap of 263.09 trillion USD beside a fully diluted value of 332,916 "
+    + "on the SAME row, and all ten rows were the same class of junk). Filter with minMarketCapUsd "
+    + "or maxMarketCapUsd and rank by liquidity or volume instead; that keeps the market-cap "
+    + "question and drops the ordering that cannot answer it.",
 };
 
 const TOP_SORT_DIR: ProtocolParamDef = {
@@ -94,7 +100,9 @@ const LAUNCHPAD_SORT_BY: ProtocolParamDef = {
     "Which metric ranks the board: launchpadProgress, trendingScore, priceChange, volume, txns, "
     + "marketCap or pairAge. Defaults to launchpadProgress on the bonding stage, which is the "
     + "near-graduation question, and to trendingScore on the graduated stage, where progress is "
-    + "100 for every row and would rank nothing.",
+    + "100 for every row and would rank nothing. This board takes sortDir like the other boards: "
+    + "every key defaults to descending EXCEPT pairAge, which defaults to ascending so that the "
+    + "newest bonding tokens come first, and sortDir overrides either way.",
 };
 
 const TOKENS_SORT_BY: ProtocolParamDef = {
@@ -228,7 +236,10 @@ export const SCREENING_TOOLS: readonly ProtocolToolManifest[] = [
       + "any threshold with a number, or set `disableQualityFloor: true` to drop every "
       + "default floor at once; `qualityFloorApplied` reflects what was actually sent. "
       + "Use this when the question is about "
-      + "the strongest risers. Returns price change for all four windows, volume, "
+      + "the strongest risers. Default rows carry ONE price change, the one for the "
+      + "`window` you selected; send fields: \"core,allWindows\" to get all four, which is "
+      + "what makes a fresh low-liquidity spike distinguishable from a real trend. Returns "
+      + "volume, "
       + "liquidity, flow ratios, and pair age, so a fresh low-liquidity spike is "
       + "distinguishable from a sustained move. Without the floor the provider's top "
       + "rows are arithmetic artifacts; removing it is explicit, never silent. "
@@ -253,7 +264,9 @@ export const SCREENING_TOOLS: readonly ProtocolToolManifest[] = [
       + "echoed exactly like the gainers tool. Use this when the question is about the "
       + "deepest declines. Returns the same row shape as gainers including sell-side "
       + "flow (sellers, sell volume share, net outflow in USD), which is what "
-      + "distinguishes a real exodus from a thin-book wick. "
+      + "distinguishes a real exodus from a thin-book wick. Default rows carry ONE price "
+      + "change, the one for the `window` you selected; send fields: \"core,allWindows\" for "
+      + "all four. "
       + "The default floor is h24-anchored exactly as the site sends it: 300 "
       + "transactions, 30 sells, 100,000 USD volume, 250,000 USD liquidity, and a token "
       + "profile. "
@@ -287,7 +300,7 @@ export const SCREENING_TOOLS: readonly ProtocolToolManifest[] = [
       ...withDisableQualityFloor(
         withParamNotes([...SCREEN_PARAMS], [
           ["maxPairAgeSeconds", "This tool applies 86400 (one day) by default."],
-          ["minLiquidityUsd", "This tool applies 1000 USD by default. Sending 0 does NOT remove the filter: 0 is still a floor, and the provider only matches a row that CARRIES a liquidity figure, so a liquidity threshold of any value excludes every bonding-curve pair (measured: 0 rows returned). Use disableQualityFloor to drop the key from the wire entirely. Even then this board does not lift the provider's hidden launchpad exclusion, so new bonding-curve pairs are reached through dexscreener__launchpad_pairs_list, not here."],
+          ["minLiquidityUsd", "This tool applies 1000 USD by default. Sending 0 does NOT remove the filter: 0 is still a floor, and the provider only matches a row that CARRIES a liquidity figure, so a liquidity threshold of any value excludes every bonding-curve pair (measured: 0 rows returned). Use disableQualityFloor to drop the key from the wire entirely. To reach new bonding-curve pairs on THIS board, send includeLaunchpadPairs: true together with disableQualityFloor: true: that combination WAS measured lifting the provider's hidden launchpad exclusion, returning 17 of 20 rows as Pump.fun bonding pairs with exclusionDefaultReplaced true. dexscreener__launchpad_pairs_list remains the tool that ranks by curve progress and carries the launchpad columns."],
         ])
       ),
     ],
@@ -306,7 +319,15 @@ export const SCREENING_TOOLS: readonly ProtocolToolManifest[] = [
       + "ranked by trending, age, or market cap). Use this for launchpad questions; "
       + "the provider hides bonding pairs from normal screens and the tool lifts that "
       + "exclusion internally. Returns progress percent, creator address, migration "
-      + "dex, market cap, and flow. Bonding rows carry NO liquidity field by provider "
+      + "dex, market cap, and flow. `creator` IS NOT ONE THING ACROSS STAGES: on a bonding "
+      + "row it is the wallet that deployed the token, but on a graduated Pump.fun row it "
+      + "was measured to be the launchpad's own migration authority, the SAME constant "
+      + "address on every such row. A creator-history check is meaningful on bonding rows "
+      + "and worthless on graduated ones; confirm the stage before reading it. "
+      + "`stage: \"graduated\"` also serves TWO rows per token where both survive - the dead "
+      + "curve and the migrated pool - so a raw row count overstates graduations by about "
+      + "1.7x. Count `distinctTokensReturned`, or filter by `launchpadIds`, which collapses "
+      + "the pair. Bonding rows carry NO liquidity field by provider "
       + "design (measured): size comparisons use `marketCapUsd`, and liquidity reads "
       + "`not_applicable` rather than zero. Use this when the question names a launchpad, a "
       + "bonding curve, or graduation. "
@@ -318,7 +339,10 @@ export const SCREENING_TOOLS: readonly ProtocolToolManifest[] = [
     params: [
       LAUNCHPAD_STAGE,
       ...withDisableQualityFloor(
-        withSortBy([...SCREEN_PARAMS], LAUNCHPAD_SORT_BY)
+        withSortBy(
+          withSortBy([...SCREEN_PARAMS], LAUNCHPAD_SORT_BY),
+          TOP_SORT_DIR
+        )
       ),
     ],
     // MEASURED: `launchpadIds` matches GRADUATED rows only, because the

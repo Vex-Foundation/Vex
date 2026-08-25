@@ -212,7 +212,8 @@ export interface BatchChunkReport {
 export interface BatchResult {
   /**
    * The raw `dex_screener_schema.Pair` rows across every chunk, deduplicated
-   * by `chainId:pairAddress`, in the order the provider returned them.
+   * by `chainId:pairAddress`, in the order the provider returned them, and
+   * RESTRICTED TO ROWS THAT ANSWER A REQUESTED IDENTITY. See `unrequested`.
    */
   readonly rows: readonly unknown[];
   /**
@@ -220,6 +221,28 @@ export interface BatchResult {
    * so the caller can reconcile its request without re-reading rows.
    */
   readonly resolvedKeys: ReadonlySet<string>;
+  /**
+   * Rows the provider sent that answer NO requested identity, as
+   * `chainId:pairAddress`, dropped from `rows`.
+   *
+   * MEASURED, NOT DEFENSIVE. `robinhood:0x0000...0000` was measured returning
+   * one live row for a different pool entirely (`0x4fc19534...`), which the
+   * old unconditional push admitted into a portfolio board as though the
+   * caller had asked for it. The channel is a search endpoint underneath: it
+   * answers what it can match, not only what was named. The reverse set
+   * difference is the only place that fact can be caught.
+   */
+  readonly unrequested: readonly string[];
+  /**
+   * Rows dropped because their `chainId:pairAddress` was already emitted, as
+   * `chainId:pairAddress`.
+   *
+   * This is a COLLAPSE, not a filter: two requested identities (a pair and its
+   * base token, or two tokens of one pool) can legitimately resolve onto one
+   * pair row. Both identities count as resolved and one row is shown. Naming
+   * it separately is what keeps `resolved` and `returned` reconcilable.
+   */
+  readonly collapsed: readonly string[];
   readonly chunks: readonly BatchChunkReport[];
   readonly fetchedAtMs: number;
 }
@@ -249,37 +272,83 @@ export async function fetchPairsBatch(
   }
 
   const chunks: BatchChunkReport[] = [];
-  const rows: unknown[] = [];
-  const seenRowKeys = new Set<string>();
-  const resolvedKeys = new Set<string>();
+  const provided: unknown[] = [];
 
   const groups = chunkIdentities(query.identities, BATCH_CHUNK_SIZE);
   for (const [index, group] of groups.entries()) {
     throwIfAborted(options.signal);
     const chunk = await fetchOneChunk(group, query, options, index + 1);
     chunks.push(chunk.report);
-    for (const row of chunk.rows) {
-      const key = rowKey(row);
-      // The provider preserves duplicate inputs as duplicate rows; the caller
-      // asked for a set of pairs, so the row is collapsed here and the
-      // duplicate INPUT is accounted separately by the caller.
-      if (key !== null) {
-        if (seenRowKeys.has(key)) continue;
-        seenRowKeys.add(key);
-        resolvedKeys.add(key);
-      }
-      rows.push(row);
-    }
-    // A token input is answered by a pair row, so the token's own key never
-    // appears among the row keys. Record every base-token key too, so the
-    // caller can tell a resolved token from an omitted one.
-    for (const row of chunk.rows) {
-      const tokenKey = baseTokenKey(row);
-      if (tokenKey !== null) resolvedKeys.add(tokenKey);
-    }
+    provided.push(...chunk.rows);
   }
 
-  return { rows, resolvedKeys, chunks, fetchedAtMs: Date.now() };
+  return {
+    ...reconcileBatchRows(query.identities, provided),
+    chunks,
+    fetchedAtMs: Date.now(),
+  };
+}
+
+/**
+ * Match the provider's rows against the identities that were asked for.
+ *
+ * PURE, AND EXPORTED SO BOTH FAILURE SHAPES CAN BE FIXTURED. Every fixture of
+ * this channel happens to have `returned === resolved`, so the two ways the
+ * two can diverge - a row nobody requested, and two identities collapsing onto
+ * one row - were never exercised end to end. They are the shapes that produced
+ * the measured defects, so they are asserted here against plain rows rather
+ * than left to whichever capture happens to be on disk.
+ */
+export function reconcileBatchRows(
+  identities: readonly BatchIdentity[],
+  providerRows: readonly unknown[]
+): Pick<BatchResult, "rows" | "resolvedKeys" | "unrequested" | "collapsed"> {
+  const rows: unknown[] = [];
+  const seenRowKeys = new Set<string>();
+  const resolvedKeys = new Set<string>();
+  const unrequested: string[] = [];
+  const collapsed: string[] = [];
+
+  // The forward set: every identity the caller actually named, in the one
+  // spelling both `rowKey` and `baseTokenKey` produce. A row is admitted only
+  // if it lands in here.
+  const requestedKeys = new Set(
+    identities.map(
+      (identity) => `${identity.chainId.toLowerCase()}:${identity.id.toLowerCase()}`
+    )
+  );
+
+  for (const row of providerRows) {
+    const key = rowKey(row);
+    // A token input is answered by a pair row, so the token's own key never
+    // appears among the row keys; the base-token slot is where it lands.
+    const tokenKey = baseTokenKey(row);
+    const pairRequested = key !== null && requestedKeys.has(key);
+    const tokenRequested = tokenKey !== null && requestedKeys.has(tokenKey);
+    if (!pairRequested && !tokenRequested) {
+      // REVERSE SET DIFFERENCE. The row is real and live, and nobody asked for
+      // it; admitting it would put a pool the caller never named on a board the
+      // caller reads as its own watchlist. Measured: a one-identity batch came
+      // back with a live row for an entirely different pool.
+      unrequested.push(key ?? "unidentified row");
+      continue;
+    }
+    if (pairRequested && key !== null) resolvedKeys.add(key);
+    if (tokenRequested && tokenKey !== null) resolvedKeys.add(tokenKey);
+    // The provider preserves duplicate inputs as duplicate rows, and two
+    // distinct requested identities can share one pair. Either way both are
+    // resolved above and only one row is shown; the collapse is named.
+    if (key !== null) {
+      if (seenRowKeys.has(key)) {
+        collapsed.push(key);
+        continue;
+      }
+      seenRowKeys.add(key);
+    }
+    rows.push(row);
+  }
+
+  return { rows, resolvedKeys, unrequested, collapsed };
 }
 
 interface ChunkOutcome {
@@ -395,15 +464,40 @@ async function fetchOnePage(
     BATCH_RETRY_FRAMES,
   ].entries()) {
     throwIfAborted(options.signal);
-    const frames = await options.transport.wsExchange(DEXSCREENER_BATCH_WS_URL, {
-      send: [command],
-      expect: {
-        binaryFrames,
-        maxTotalBytes: BATCH_MAX_TOTAL_BYTES,
-      },
-      timeoutMs: options.timeoutMs,
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    });
+    /*
+     * S10-12. A CHANNEL THAT NEVER OPENED IS NOT A PROVIDER REJECTION.
+     *
+     * Measured: the local bridge process died ("relay exited 1") and the whole
+     * failure reached the agent classified `provider_error/provider_error`,
+     * with no retryability signal and no correlation. Those are opposite
+     * diagnoses with opposite remedies - one says the request was wrong and
+     * stop, the other says nothing reached DexScreener and trying again is
+     * exactly right - and the batch path collapsed them into the first.
+     *
+     * The typed transport failures already carry that distinction, so they
+     * pass through untouched. Anything else thrown by the transport is an
+     * untyped local fault, and it is named as one here rather than inheriting
+     * the provider's name by default.
+     */
+    let frames: readonly Uint8Array[];
+    try {
+      frames = await options.transport.wsExchange(DEXSCREENER_BATCH_WS_URL, {
+        send: [command],
+        expect: {
+          binaryFrames,
+          maxTotalBytes: BATCH_MAX_TOTAL_BYTES,
+        },
+        timeoutMs: options.timeoutMs,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      });
+    } catch (error) {
+      if (isDexScreenerSiteError(error)) throw error;
+      throw siteError(
+        DexScreenerSiteErrorCodes.TRANSPORT_FAILED,
+        `The batch channel for chunk ${chunkIndex} (${identities.length} identities) could not be reached: ${error instanceof Error ? error.message : "the transport failed without naming a reason"}`,
+        "This is a LOCAL transport fault, not a rejection by DexScreener: no request is known to have reached the provider, so nothing about these identities has been established and RETRYING IS APPROPRIATE. The read is idempotent. If it repeats, the desktop bridge is the thing to check, not the request."
+      );
+    }
     framesReceived += frames.length;
 
     for (const bytes of frames) {

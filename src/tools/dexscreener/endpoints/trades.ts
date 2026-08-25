@@ -326,6 +326,14 @@ export interface TradesPage {
   readonly bytes: number;
   readonly fetchedAtMs: number;
   /**
+   * Response headers of the Connect HTTP read, when the page came that way.
+   *
+   * S10-36. ABSENT on the feed WebSocket by design: nothing caches a frame
+   * between the socket and here, so `not_cached` is measured rather than
+   * assumed there. On the Connect channel it was assumed, and wrongly.
+   */
+  readonly responseHeaders?: ReadonlyMap<string, string>;
+  /**
    * The exact cursor for the next page back, or null when the page was short.
    *
    * Built from the OLDEST row of this page. A short page is the provider's own
@@ -506,6 +514,7 @@ async function fetchTradesConnect(
     url,
     bytes: response.body.byteLength,
     fetchedAtMs: Date.now(),
+    responseHeaders: response.headers,
     nextCursor: cursorFrom(trades),
   };
 }

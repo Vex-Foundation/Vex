@@ -549,6 +549,8 @@ export interface PairDetailsDocument {
   readonly cacheMaxAgeSeconds: number | null;
   /** `age` from the response, when the provider sent one. */
   readonly cacheAgeSeconds: number | null;
+  /** The response headers, so the caller can state cache state honestly. */
+  readonly responseHeaders: ReadonlyMap<string, string>;
 }
 
 export interface PairDetailsOptions {
@@ -614,6 +616,12 @@ export async function fetchPairDetails(
     bytes: response.body.byteLength,
     cacheMaxAgeSeconds: readMaxAge(response.headers.get("cache-control")),
     cacheAgeSeconds: readInteger(response.headers.get("age")),
+    // S10-36: the handler's sourceObservation hardcoded cacheState
+    // "not_cached" on a report whose whole value depends on how stale it is,
+    // and emitted cacheAgeMs beside that literal, which the contract allows
+    // only with cache_hit. The headers are the only evidence of either, so
+    // they travel with the document rather than being discarded here.
+    responseHeaders: response.headers,
   };
 }
 
@@ -658,6 +666,7 @@ export function parsePairDetails(
 ): Omit<
   PairDetailsDocument,
   "url" | "fetchedAtMs" | "bytes" | "cacheMaxAgeSeconds" | "cacheAgeSeconds"
+  | "responseHeaders"
 > {
   let root: Json;
   try {

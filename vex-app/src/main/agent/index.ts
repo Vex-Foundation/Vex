@@ -9,6 +9,8 @@
  */
 
 import { setBugReportSink, resetBugReportSink } from "@vex-agent/engine/support/bug-report-registry.js";
+import { registerDexScreenerTransport } from "@tools/dexscreener/transport.js";
+import { createDexScreenerBridgeTransport } from "../dexscreener-bridge/index.js";
 import { mountLaunchImageByteResolver } from "../images/index.js";
 import { createAgentBugReportSink } from "../support/agent-bug-report-sink.js";
 import { setupCompactionPreparationBridge } from "./compaction-preparation-bridge.js";
@@ -66,6 +68,21 @@ export function setupAgentBridges(): () => void {
   // throws by name and every autonomous launch fails closed: correct, but
   // the locker would be inert.
   teardowns.push(mountLaunchImageByteResolver());
+
+  // DexScreener site bridge - claim the single transport slot so the 18
+  // dexscreener tools reach the gated site hosts through Chromium instead of
+  // the degraded public-API fallback. Lazy inside: the session and hidden
+  // window materialize on first use, so an app that never asks DexScreener
+  // anything pays nothing here. Unregister BEFORE dispose so no request can
+  // route into a bridge that is tearing down.
+  const dexScreenerBridge = createDexScreenerBridgeTransport();
+  const unregisterDexScreener = registerDexScreenerTransport(
+    dexScreenerBridge.transport,
+  );
+  teardowns.push(() => {
+    unregisterDexScreener();
+    dexScreenerBridge.dispose();
+  });
 
   return () => {
     for (const teardown of teardowns) {

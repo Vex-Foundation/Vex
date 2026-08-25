@@ -488,9 +488,42 @@ export function assertChainSlugsResolved(
     .join("; ");
   throw siteError(
     DexScreenerSiteErrorCodes.CHAIN_SLUG_UNKNOWN,
-    `DexScreener does not have these chains: ${described}`,
+    `DexScreener does not have these chains: ${described}.`,
     "The screener answers an unknown chain with zero rows and no error, so the slug is refused here instead. Use dexscreener__chains_list for the full vocabulary."
   );
+}
+
+/**
+ * Whether `address` is shaped like an address of `architecture`.
+ *
+ * DECIDABLE LOCALLY, AND ONLY THIS FAR. The catalog carries `architecture` for
+ * 60 of 74 chains, and the two large families have disjoint, cheap address
+ * grammars: an EVM address is `0x` plus exactly 40 hex digits, an SVM address
+ * is base58 and never starts `0x`. Pasting an EVM address under a Solana slug
+ * (or the reverse) is therefore a caller error this surface can name before
+ * spending a provider round trip, and it is the most likely watchlist typo.
+ *
+ * What it deliberately does NOT decide: whether an EVM address belongs to the
+ * EVM chain it was written under. Every EVM chain shares one address grammar,
+ * so a Base address under an Arbitrum slug is indistinguishable here and stays
+ * the provider's answer to give. `unknown` is returned for both that case and
+ * for architectures the catalog omits or that this function does not model, so
+ * a caller can never read a missing decision as a passing one.
+ */
+export function addressShapeForArchitecture(
+  architecture: string | null,
+  address: string
+): "match" | "mismatch" | "unknown" {
+  const trimmed = address.trim();
+  if (trimmed === "") return "unknown";
+  const looksEvm = /^0x[0-9a-fA-F]{40}$/.test(trimmed);
+  const looksBase58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed);
+  if (architecture === "evm") return looksEvm ? "match" : "mismatch";
+  if (architecture === "svm") {
+    if (trimmed.startsWith("0x")) return "mismatch";
+    return looksBase58 ? "match" : "mismatch";
+  }
+  return "unknown";
 }
 
 /**

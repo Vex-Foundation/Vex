@@ -154,7 +154,14 @@ export const TRADER_SEMANTICS_CLAUSE =
   + "it cannot establish gain, loss, or whether a wallet exited. retainedBoughtPct is the share of "
   + "what the wallet BOUGHT on this pair that it still holds, never a share of token supply. "
   + "newOnPair means new on THIS pair, not a newly created wallet. An active trading span is the "
-  + "time between a wallet's first and last trade here, not a holding period.";
+  + "time between a wallet's first and last trade here, not a holding period. "
+  + "EVERY TRADER FIGURE IS COMPUTED OVER THE PROVIDER'S TRAILING 30-DAY WINDOW, not over the "
+  + "pair's whole life and not over the range you filtered to. firstSwapAtMs is CLAMPED to that "
+  + "window floor rather than reported as absent, so a wallet whose real first trade predates the "
+  + "window reads as exact UTC midnight thirty days ago with a zero millisecond remainder: read "
+  + "that value as \"no later than\", never as a first-trade time. This is also why "
+  + "dexscreener__top_traders_list, which ranks over its own declared window, can answer \"how much "
+  + "did this wallet buy here\" with a different number: two windows, not a contradiction.";
 
 /** How the pair identity is established, on all three pair-keyed tools. */
 export const DEEP_DIVE_SUBJECT_CLAUSE =

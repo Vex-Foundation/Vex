@@ -258,6 +258,15 @@ export interface BarsPage {
   readonly url: string;
   readonly bytes: number;
   readonly fetchedAtMs: number;
+  /**
+   * Response headers of the HTTP read, when this page came over HTTP.
+   *
+   * S10-36. ABSENT on the WebSocket transport by design: no cache sits between
+   * a frame and its socket there, so `not_cached` is the measured truth rather
+   * than an assumption. On HTTP it is not, and these headers are the only
+   * evidence of how stale the answer is.
+   */
+  readonly responseHeaders?: ReadonlyMap<string, string>;
 }
 
 export interface BarsPageOptions {
@@ -346,10 +355,21 @@ async function fetchBarsPageHttp(options: BarsPageOptions): Promise<BarsPage> {
     maxBytes: BARS_MAX_BYTES,
   });
   if (response.status !== 200) {
+    // S10-49. A 5xx on an idempotent read is TRANSIENT until proven otherwise,
+    // and it is separated here from a 4xx that says the request was wrong.
+    // Measured: one 500 on this endpoint, then 8 probes seconds later all 200.
+    // The old single classification also handed the caller a remediation
+    // naming the AMM id and quote token, which this tool resolves itself, so
+    // there was nothing the caller could have changed.
+    const transient = response.status >= 500;
     throw siteError(
-      DexScreenerSiteErrorCodes.BARS_INVALID,
+      transient
+        ? DexScreenerSiteErrorCodes.BARS_PROVIDER_TRANSIENT
+        : DexScreenerSiteErrorCodes.BARS_INVALID,
       `The DexScreener chart endpoint answered HTTP ${response.status} for ${options.resolution} bars on ${options.chainId}:${options.pairAddress}`,
-      "Check the AMM id and quote token against dexscreener__pair_get. A non-200 here is an endpoint or routing problem, not proof that the pool has no price history."
+      transient
+        ? "This is a server-side failure on a read-only request, and RETRYING IS APPROPRIATE: one 500 on this endpoint was followed seconds later by eight successful probes of the same URL. Retry once or twice with a short pause. Nothing here says the pool has no price history, and there is no parameter for you to correct: the AMM id and quote token were resolved by this tool, not supplied by you."
+        : "The provider rejected this request rather than failing on it. Confirm the pair identity with dexscreener__pair_get. A non-200 here is an endpoint or routing problem, not proof that the pool has no price history."
     );
   }
   let decoded: { readonly bars?: readonly PlBar[] | null };
@@ -374,6 +394,7 @@ async function fetchBarsPageHttp(options: BarsPageOptions): Promise<BarsPage> {
     url,
     bytes: response.body.byteLength,
     fetchedAtMs: Date.now(),
+    responseHeaders: response.headers,
   };
 }
 
@@ -620,6 +641,14 @@ export interface BarsWalkResult {
    */
   readonly nextBeforeBlock: number | null;
   readonly fetchedAtMs: number;
+  /**
+   * Headers of the LAST HTTP page of the walk, when it walked over HTTP.
+   *
+   * S10-36. The last page is the right one to report on: it is the most recent
+   * read, so it bounds how stale the freshest bar in hand can be. Absent on a
+   * WebSocket walk, where `not_cached` is the truth.
+   */
+  readonly responseHeaders?: ReadonlyMap<string, string>;
 }
 
 export interface BarsWalkOptions extends Omit<BarsPageOptions, "countBack"> {
@@ -649,6 +678,9 @@ export async function walkBars(
   let beforeBlock = options.beforeBlockNumber;
   let pagesWalked = 0;
   let bytes = 0;
+  // S10-36: the freshest read's cache headers, so the answer can state how
+  // stale it is instead of asserting a literal.
+  let lastResponseHeaders: ReadonlyMap<string, string> | undefined;
   let stopReason: WalkStopReason = "satisfied";
   let transport: BarTransport = barTransportFor(options.resolution);
 
@@ -670,6 +702,9 @@ export async function walkBars(
     });
     pagesWalked += 1;
     bytes += page.bytes;
+    if (page.responseHeaders !== undefined) {
+      lastResponseHeaders = page.responseHeaders;
+    }
     transport = page.transport;
 
     if (page.bars.length === 0) {
@@ -728,6 +763,9 @@ export async function walkBars(
         ? null
         : oldest.minBlockNumber,
     fetchedAtMs: Date.now(),
+    ...(lastResponseHeaders === undefined
+      ? {}
+      : { responseHeaders: lastResponseHeaders }),
   };
 }
 

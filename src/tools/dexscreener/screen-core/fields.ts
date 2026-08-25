@@ -167,7 +167,14 @@ export interface ShapedWindowMetrics {
   readonly buyers: string | null;
   readonly sellers: string | null;
   readonly makers: string | null;
-  readonly derived: ProjectedDerivedMetrics;
+  /**
+   * The derived ratios of THIS window.
+   *
+   * `volumeAccelerationRatio` is deliberately absent: its formula is fixed at
+   * m5 against h1 and does not vary by window, so it lives on the row and
+   * repeating it here would present one number as four measurements.
+   */
+  readonly derived: Omit<ProjectedDerivedMetrics, "volumeAccelerationRatio">;
 }
 
 export interface ShapedPairRow {
@@ -194,6 +201,8 @@ export interface ShapedPairRow {
   readonly liquidityUsd: number | null;
   readonly marketCapUsd: number | null;
   readonly fdvUsd: number | null;
+  /** Why both valuations are null, when they were withheld as impossible. */
+  readonly valuationWithheldReason?: string;
   readonly pairAgeSeconds: number | null;
   readonly buys: string | null;
   readonly sells: string | null;
@@ -299,6 +308,11 @@ export function shapePairRow(input: ShapePairRowInput): ShapedPairRow {
     liquidityUsd: row.liquidityUsd,
     marketCapUsd: row.marketCapUsd,
     fdvUsd: row.fdvUsd,
+    // Carried through so a withheld valuation is distinguishable from a
+    // valuation the provider never reported.
+    ...(row.valuationWithheldReason === undefined
+      ? {}
+      : { valuationWithheldReason: row.valuationWithheldReason }),
     pairAgeSeconds: row.pairAgeSeconds,
     buys: row.buys,
     sells: row.sells,
@@ -355,10 +369,30 @@ function toWindowMetrics(
       buyers: row.buyers,
       sellers: row.sellers,
       makers: row.makers,
-      derived: row.derived,
+      /*
+       * S10-51. THE ONE DERIVED FIELD THAT IS NOT PER-WINDOW IS NOT COPIED HERE.
+       *
+       * `derived` was spread wholesale into each window block, which is right
+       * for every ratio computed FROM that window's own columns and wrong for
+       * `volumeAccelerationRatio`, whose formula is fixed at m5 against h1
+       * whatever window it is filed under. The result was the identical number
+       * (measured: 1.61695) appearing in the m5, h1, h6 and h24 blocks as if it
+       * were four measurements, while the group's own description promises
+       * "every metric on all four windows". It stays on the row, once, where it
+       * is true.
+       */
+      derived: withoutRowLevelDerived(row.derived),
     };
   };
   return { m5: one("m5"), h1: one("h1"), h6: one("h6"), h24: one("h24") };
+}
+
+/** Drop the derived fields whose formula does not vary with the window. */
+function withoutRowLevelDerived(
+  derived: ProjectedPairRow["derived"]
+): Omit<ProjectedPairRow["derived"], "volumeAccelerationRatio"> {
+  const { volumeAccelerationRatio: _rowLevel, ...perWindow } = derived;
+  return perWindow;
 }
 
 /**

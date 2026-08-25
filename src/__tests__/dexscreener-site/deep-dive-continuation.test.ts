@@ -34,6 +34,7 @@ import {
   type DexScreenerTransport,
 } from "@tools/dexscreener/transport.js";
 import { loadFixture, loadJsonFixture } from "./_fixtures.js";
+import { makeProtocolContext } from "../vex-agent/tools/_test-context.js";
 
 const CHAIN = "ethereum";
 const PAIR = "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f";
@@ -174,7 +175,7 @@ async function call(
   const handler = DEXSCREENER_HANDLERS[toolId];
   expect(handler).toBeDefined();
   if (handler === undefined) throw new Error("no handler");
-  const result = await handler(params, {} as never);
+  const result = await handler(params, makeProtocolContext());
   expect(result.success, result.output).toBe(true);
   return result.data as Record<string, unknown>;
 }
@@ -410,7 +411,7 @@ describe("dexscreener__candles_list continuation", () => {
         beforeBlock: 25_524_766,
         endAtMs: 1_780_000_000_000,
       },
-      {} as never
+      makeProtocolContext()
     );
     expect(result?.success).toBe(false);
     expect(result?.output).toContain("beforeBlock");
@@ -508,7 +509,7 @@ describe("dexscreener__top_traders_list currentHoldingValueUsd", () => {
     if (handler === undefined) throw new Error("no handler");
     const result = await handler(
       { chain: CHAIN, pairAddress: PAIR, lookbackDays: 31, limit: 5 },
-      {} as never
+      makeProtocolContext()
     );
     expect(result.success).toBe(false);
     // Refused by the NAME of the offending parameter and the exact bound, not
@@ -528,7 +529,7 @@ describe("dexscreener__top_traders_list currentHoldingValueUsd", () => {
     if (handler === undefined) throw new Error("no handler");
     const result = await handler(
       { chain: CHAIN, pairAddress: PAIR, lookbackDays: 3_651, limit: 5 },
-      {} as never
+      makeProtocolContext()
     );
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/"lookbackDays" must be a whole number from 1 to 30; received 3651/u);

@@ -32,6 +32,8 @@ import {
   fetchChainsCatalog,
   resolveChainSlugs,
   assertChainSlugsResolved,
+  addressShapeForArchitecture,
+  type ChainsCatalog,
 } from "@tools/dexscreener/endpoints/chains-catalog.js";
 import {
   fetchPairSnapshot,
@@ -66,7 +68,11 @@ import {
   type DexScreenerTransport,
 } from "@tools/dexscreener/transport.js";
 import type { SourceObservation } from "@tools/dexscreener/screen-core/envelope.js";
-import { readCacheObservation } from "@tools/dexscreener/screen-core/envelope.js";
+import {
+  buildPriceDivergenceBlock,
+  PRICE_DIVERGENCE_SELECTION_WITHHELD_REASON,
+  readCacheObservation,
+} from "@tools/dexscreener/screen-core/envelope.js";
 import {
   externalContentFieldsFor,
   parseScreenFieldGroups,
@@ -77,7 +83,11 @@ import {
 } from "@tools/dexscreener/screen-core/fields.js";
 import { projectProfile } from "@tools/dexscreener/screen-core/profile.js";
 import {
+  assessPriceDivergence,
+  priceDivergenceTokenKey,
+  PRICE_DIVERGENCE_RATIO,
   projectPairRow,
+  type PriceDivergenceAssessment,
   type ProjectedPairRow,
 } from "@tools/dexscreener/screen-core/project.js";
 import type { ScreenWindow } from "@tools/dexscreener/screen-core/request.js";
@@ -438,6 +448,47 @@ export function usd(value: number | null): string {
   return `$${value.toFixed(2)}`;
 }
 
+/**
+ * `usd`, but consulting the row's own not-applicable list before calling a
+ * missing value unreported.
+ *
+ * The projection already distinguishes the two: a pre-graduation launchpad row
+ * has no pool, so `liquidityUsd` is absent BY CONSTRUCTION and lands in
+ * `notApplicableInputs` rather than `missingInputs`. That distinction exists
+ * precisely to stop a reader hunting for data that cannot exist, and the
+ * summary sentence was the one place still collapsing it back.
+ */
+export function liquidityClause(row: {
+  readonly liquidityUsd: number | null;
+  readonly notApplicableInputs?: readonly string[];
+}): string {
+  if (
+    row.liquidityUsd === null
+    && (row.notApplicableInputs ?? []).includes("liquidityUsd")
+  ) {
+    return "no pool liquidity, because this token is still on its bonding curve and has no pool";
+  }
+  return `${usd(row.liquidityUsd)} liquidity`;
+}
+
+/**
+ * Whether this row's token is one whose own pools disagree on its price.
+ *
+ * S10-31b. A pool drawn from such a token may not be published as a SELECTION
+ * (`deepestPair`), because the selection is made on dollar figures that are
+ * inflated by the same broken quote that mispriced the row, and this surface
+ * cannot say which of the two price clusters is the real one.
+ */
+function isInconsistentToken(
+  assessment: PriceDivergenceAssessment,
+  row: { readonly chainId: string; readonly baseTokenAddress: string }
+): boolean {
+  const key = priceDivergenceTokenKey(row.chainId, row.baseTokenAddress);
+  return assessment.inconsistentTokens.some(
+    (token) => priceDivergenceTokenKey(token.chainId, token.baseTokenAddress) === key
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Tool 9: pair_get                                                    */
 /* ------------------------------------------------------------------ */
@@ -649,7 +700,12 @@ async function runPairGet(
   return ok({
     summary:
       `${row.baseTokenSymbol ?? row.baseTokenAddress} on ${chain} at ${row.priceUsd ?? "an unreported price"} USD, `
-      + `${usd(row.liquidityUsd)} liquidity and ${usd(row.volumeUsd)} volume over ${window}`
+      // S10-25. `usd(null)` renders "an unreported amount", which on a bonding
+      // pair is the wrong diagnosis: the row's own `notApplicableInputs` says
+      // there IS no pool liquidity to report, because the token has not
+      // graduated to one yet. "Unreported" reads as a provider gap and sent a
+      // reader looking for data that does not exist.
+      + `${liquidityClause(row)} and ${usd(row.volumeUsd)} volume over ${window}`
       // Gated on the ONE basis that actually searched a window. There is a
       // third basis, `provider_resolved_from_token`, on which `resolvedFrom`,
       // `matchedInWindow` and `searchWindowSize` are all null by construction,
@@ -1260,24 +1316,46 @@ interface ParsedInputs {
   readonly identities: readonly BatchIdentity[];
   readonly invalidFormat: readonly string[];
   readonly duplicates: readonly string[];
+  /** Entries whose chain slug is not in the DexScreener catalog. */
+  readonly unknownChain: readonly string[];
+  /** Entries whose address grammar contradicts the chain's architecture. */
+  readonly chainShapeMismatch: readonly string[];
   readonly requested: number;
 }
 
 /**
  * Parse `chain:address` entries into identities, accounting for every one.
  *
- * Exactly three outcomes per input and nothing falls between them: a parsed
- * identity, a syntactically bad entry echoed in `invalid_format`, or a repeat
- * of an identity already seen echoed in `duplicates`. `provider_omitted` is
- * decided later, against the answer.
+ * Exactly five outcomes per input and nothing falls between them: a parsed
+ * identity, a syntactically bad entry echoed in `invalid_format`, a repeat of
+ * an identity already seen echoed in `duplicates`, a chain slug the catalog
+ * does not have echoed in `unknown_chain`, or an address whose grammar
+ * contradicts the chain's architecture echoed in `chain_shape_mismatch`.
+ * `provider_omitted` is decided later, against the answer.
+ *
+ * WHY THE VOCABULARY IS CHECKED HERE. `notachain:0xdeadbeef...` was measured
+ * landing in `provider_omitted` under a note that actively argued against the
+ * correct diagnosis ("an absence here is not evidence that the pair does not
+ * exist"), when the chain simply does not exist and the 74-slug vocabulary was
+ * one cached call away. The rest of this surface already refuses an unknown
+ * slug outright (`assertChainSlugsResolved`); batch buckets rather than
+ * refuses, because one bad entry in fifty should not discard the other
+ * forty-nine.
+ *
+ * `catalog` is optional so the pure parse stays testable and so a catalog
+ * fetch failure degrades to the old three-outcome behaviour instead of taking
+ * the whole lookup down.
  */
 export function parseBatchInputs(
   pairs: readonly string[],
-  tokens: readonly string[]
+  tokens: readonly string[],
+  catalog?: Pick<ChainsCatalog, "bySlug" | "chains">
 ): ParsedInputs {
   const identities: BatchIdentity[] = [];
   const invalidFormat: string[] = [];
   const duplicates: string[] = [];
+  const unknownChain: string[] = [];
+  const chainShapeMismatch: string[] = [];
   const seen = new Set<string>();
 
   const consume = (raw: string, kind: "pair" | "token"): void => {
@@ -1295,8 +1373,26 @@ export function parseBatchInputs(
       duplicates.push(trimmed);
       return;
     }
+    let slug = chainId.toLowerCase();
+    if (catalog !== undefined) {
+      const resolution = resolveChainSlugs(catalog, [chainId]);
+      const resolved = resolution.valid[0];
+      if (resolved === undefined) {
+        unknownChain.push(trimmed);
+        return;
+      }
+      slug = resolved;
+      const chain = catalog.bySlug.get(resolved);
+      if (
+        chain !== undefined
+        && addressShapeForArchitecture(chain.architecture, id) === "mismatch"
+      ) {
+        chainShapeMismatch.push(trimmed);
+        return;
+      }
+    }
     seen.add(key);
-    identities.push({ chainId: chainId.toLowerCase(), id, kind, raw: trimmed });
+    identities.push({ chainId: slug, id, kind, raw: trimmed });
   };
 
   for (const entry of pairs) consume(entry, "pair");
@@ -1306,7 +1402,14 @@ export function parseBatchInputs(
     identities,
     invalidFormat,
     duplicates,
-    requested: identities.length + invalidFormat.length + duplicates.length,
+    unknownChain,
+    chainShapeMismatch,
+    requested:
+      identities.length
+      + invalidFormat.length
+      + duplicates.length
+      + unknownChain.length
+      + chainShapeMismatch.length,
   };
 }
 
@@ -1318,9 +1421,25 @@ async function runPairsBatch(
   const groups = parseScreenFieldGroups(str(params, "fields"));
   const window = readWindow(params);
 
+  // The 74-slug vocabulary, so an unknown chain is named rather than filed as
+  // a pair the provider chose not to answer for. A catalog that cannot be
+  // reached degrades to the pure parse: refusing the whole lookup because the
+  // vocabulary is momentarily unavailable would be worse than the gap.
+  let catalog: ChainsCatalog | undefined;
+  try {
+    catalog = await fetchChainsCatalog({
+      transport,
+      timeoutMs: CATALOG_TIMEOUT_MS,
+      ...(signal === undefined ? {} : { signal }),
+    });
+  } catch {
+    catalog = undefined;
+  }
+
   const parsed = parseBatchInputs(
     readList(params, "pairs", false) ?? [],
-    readList(params, "tokens", false) ?? []
+    readList(params, "tokens", false) ?? [],
+    catalog
   );
   if (parsed.requested === 0) {
     throw siteError(
@@ -1332,9 +1451,13 @@ async function runPairsBatch(
   if (parsed.identities.length === 0) {
     throw siteError(
       DexScreenerSiteErrorCodes.BATCH_NO_INPUTS,
-      `All ${parsed.requested} identities were unusable: ${parsed.invalidFormat.length} were malformed and ${parsed.duplicates.length} were repeats`,
+      `All ${parsed.requested} identities were unusable: ${parsed.invalidFormat.length} were malformed, ${parsed.duplicates.length} were repeats, ${parsed.unknownChain.length} named a chain the DexScreener catalog does not have, and ${parsed.chainShapeMismatch.length} carried an address whose shape contradicts the chain's architecture`,
       "Each entry is chain:address, for example ethereum:0xA43fe1... or solana:Gyz6Rx.... Malformed entries: "
-        + (parsed.invalidFormat.join(", ") || "none") + "."
+        + (parsed.invalidFormat.join(", ") || "none")
+        + ". Unknown chains: " + (parsed.unknownChain.join(", ") || "none")
+        + ". Address shape mismatches: "
+        + (parsed.chainShapeMismatch.join(", ") || "none")
+        + ". Call dexscreener__chains_list for the accepted chain vocabulary."
     );
   }
 
@@ -1390,12 +1513,16 @@ async function runPairsBatch(
     resolved: parsed.identities.length - providerOmitted.length,
     invalid_format: parsed.invalidFormat,
     duplicates: parsed.duplicates,
+    unknown_chain: parsed.unknownChain,
+    chain_shape_mismatch: parsed.chainShapeMismatch,
     provider_omitted: providerOmitted,
   };
   const accounted =
     accounting.resolved
     + accounting.invalid_format.length
     + accounting.duplicates.length
+    + accounting.unknown_chain.length
+    + accounting.chain_shape_mismatch.length
     + accounting.provider_omitted.length;
   if (accounted !== parsed.requested) {
     throw new RangeError(
@@ -1403,18 +1530,42 @@ async function runPairsBatch(
     );
   }
 
+  // THE ROW-SIDE INVARIANT, asserted before ok().
+  //
+  // Two DIFFERENT collapses put more resolved identities than pair rows in
+  // hand, and both are legitimate: the provider repeating one pair for two
+  // token inputs (dropped as `result.collapsed`), and one single row claiming
+  // two requested identities at once (a pair address and its own base token,
+  // both asked for). Counting only the first produced the measured "8 of 9
+  // ... 9 of which are shown". So the quantity the summary may speak about is
+  // the one that covers both: resolved identities minus distinct pair rows the
+  // provider gave for them, which can never be negative because every emitted
+  // row is claimed by at least one requested identity.
+  const collapsedIdentities = accounting.resolved - shaped.length;
+  if (collapsedIdentities < 0) {
+    throw new RangeError(
+      `batch row accounting: ${shaped.length} pair rows exceed the ${accounting.resolved} resolved identities that claim them`
+    );
+  }
+  const unrequestedCount = result.unrequested.length;
+
   const hasTokens = parsed.identities.some((one) => one.kind === "token");
 
   return ok({
+    // EVERY NUMBER HERE IS READ OFF THE RECONCILED SETS ABOVE, and each clause
+    // names the mechanism that produced it. The previous template mixed two
+    // nouns under one name and attributed a dedupe collapse to thresholds that
+    // had dropped nothing, producing sentences ("0 of 1 ... 1 of which is
+    // shown", "8 of 9 ... 9 of which are shown") that were arithmetically
+    // false in both directions.
     summary:
-      // COUNTED IN IDENTITIES, because that is the noun the sentence uses.
-      // `rows.length` is rows AFTER the client-side thresholds, so using it
-      // here read "9 of 17 identities" on an answer whose own
-      // inputAccounting.resolved said 11: two different quantities under one
-      // name, on the block a reader reads first.
-      `${accounting.resolved} of ${parsed.requested} requested identities returned a current row over ${window}, ${rows.length} of which ${rows.length === 1 ? "is shown" : "are shown"} after your thresholds`
-      + `${providerOmitted.length === 0 ? "" : `; ${providerOmitted.length} valid ${providerOmitted.length === 1 ? "identity was" : "identities were"} left out by the provider and ${providerOmitted.length === 1 ? "is" : "are"} named in provider_omitted`}`
-      + `${dropped === 0 ? "" : `; ${dropped} resolved ${dropped === 1 ? "row was" : "rows were"} removed by your thresholds`}.`,
+      `${accounting.resolved} of ${parsed.requested} requested identities returned a current row over ${window}; ${rows.length} pair ${rows.length === 1 ? "row is" : "rows are"} shown`
+      + `${collapsedIdentities === 0 ? "" : `; ${collapsedIdentities} resolved ${collapsedIdentities === 1 ? "identity shares" : "identities share"} a pair row with another identity you asked for, so ${collapsedIdentities === 1 ? "it has" : "they have"} no separate row of ${collapsedIdentities === 1 ? "its" : "their"} own`}`
+      + `${dropped === 0 ? "" : `; ${dropped} resolved ${dropped === 1 ? "row was" : "rows were"} removed by thresholds you set`}`
+      + `${providerOmitted.length === 0 ? "" : `; ${providerOmitted.length} syntactically valid ${providerOmitted.length === 1 ? "identity" : "identities"} the provider returned no row for ${providerOmitted.length === 1 ? "is" : "are"} named in provider_omitted, and ${providerOmitted.length === 1 ? "it may not exist" : "they may not exist"}`}`
+      + `${parsed.unknownChain.length === 0 ? "" : `; ${parsed.unknownChain.length} named a chain the DexScreener catalog does not have and ${parsed.unknownChain.length === 1 ? "is" : "are"} named in unknown_chain`}`
+      + `${parsed.chainShapeMismatch.length === 0 ? "" : `; ${parsed.chainShapeMismatch.length} carried an address whose shape contradicts that chain's architecture and ${parsed.chainShapeMismatch.length === 1 ? "is" : "are"} named in chain_shape_mismatch`}`
+      + `${unrequestedCount === 0 ? "" : `; the provider also returned ${unrequestedCount} ${unrequestedCount === 1 ? "row" : "rows"} for ${unrequestedCount === 1 ? "a pair" : "pairs"} you did not ask for, withheld and named in rowAccounting.unrequested`}.`,
     rows,
     window,
     returned: rows.length,
@@ -1431,11 +1582,27 @@ async function runPairsBatch(
             "A token identity is answered by ONE pair the provider treats as canonical, and it is not necessarily the deepest: a WETH lookup was measured answering with a 4.23M USD pool while a 117.31M USD pool existed. Use dexscreener__pair_get with tokenAddress when depth is what matters.",
         }
       : {}),
+    rowAccounting: {
+      providerReturned: result.rows.length + unrequestedCount + result.collapsed.length,
+      shown: rows.length,
+      removedByThresholds: dropped,
+      collapsedOntoSharedPair: result.collapsed,
+      collapsedIdentities,
+      unrequested: result.unrequested,
+      note:
+        "providerReturned counts every pair row the channel sent, before anything here touched it. `unrequested` is the reverse set difference: rows answering no identity in your request, withheld from `rows` rather than shown. It is not defensive bookkeeping - a batch of one identity was measured coming back with a live row for a completely different pool, which under the old handling joined a portfolio board unannounced. `collapsedOntoSharedPair` is a COLLAPSE and never a filter: the identity resolved, and its answer is a pair row another identity is already showing.",
+    },
     ...(providerOmitted.length === 0
       ? {}
       : {
           providerOmittedNote:
-            "These identities are syntactically valid and the provider returned no row for them. The channel reports no reason and none is guessed here. Bonding-curve pairs are NOT this population: the request lifts the channel's default launchpad exclusion, and 100 of 100 live Pump.fun and Meteora DBC identities were measured resolving with that lift in place. An absence here is not evidence that the pair does not exist.",
+            "These identities are syntactically valid, their chain slug is in the DexScreener catalog and their address shape agrees with that chain's architecture, and the provider still returned no row for them. The channel reports no reason and none is guessed here, so the pair may not exist, may carry no current activity, or may be one the channel declines to answer for. Bonding-curve pairs are NOT this population: the request lifts the channel's default launchpad exclusion, and 100 of 100 live Pump.fun and Meteora DBC identities were measured resolving with that lift in place. Note the one error this check still cannot make: every EVM chain shares one address grammar, so an address written under the wrong EVM slug looks correct here and arrives as an omission.",
+        }),
+    ...(unrequestedCount === 0
+      ? {}
+      : {
+          unrequestedRowsNote:
+            "The provider answered with pair rows that match none of the identities you sent. They are withheld, and their chainId:pairAddress spellings are listed in rowAccounting.unrequested so you can see what it offered. Do not treat them as substitutes for the identities in provider_omitted: the channel gives no statement that they are related, and none is inferred here.",
         }),
     filtersApplied: filtered.applied,
     clientFiltering: {
@@ -2073,13 +2240,34 @@ async function runTokenPairs(
 
   const droppedByThreshold = totalOf(filtered.droppedByFilter);
 
+  // S10-31. A token's own pools are the only witness this response has to a
+  // provider mispricing, and tokenPairs is the one board that ALWAYS carries
+  // several pools of one token. Measured live on JUP: nine rows at roughly
+  // 5,000x the median of their siblings, in the very same answer.
+  //
+  // S10-31b. THE POPULATION IS `matching`, which is every pool the provider
+  // sent for this token before the client thresholds and before `limit`, and
+  // never `rows`. It is the same denominator the shares, the totals and
+  // `deepest` above are already computed over, which is exactly the point: the
+  // answer's price verdict and its money arithmetic now stand on one
+  // population. Assessing `rows` made `limit` decide the verdict, and on the
+  // live JUP capture `limit: 5` silenced all nine flags while `limit: 10`
+  // moved them onto the two honest pools.
+  const divergence = assessPriceDivergence(matching.map((row) => row.shaped));
+  const deepestWithheld =
+    deepest !== null && isInconsistentToken(divergence, deepest);
+  const deepestClause = deepestWithheld
+    ? `deepest WITHHELD (${PRICE_DIVERGENCE_SELECTION_WITHHELD_REASON})`
+    : `deepest ${deepest === null ? "not determinable" : `${deepest.dexId} at ${usd(deepest.liquidityUsd)}`}`;
+
   return ok({
     summary:
       `${rows.length} of ${matching.length} indexed pools for ${tokenAddress} on ${chain}, `
       + `${usd(totalLiquidityUsd)} liquidity across ${venueCount} `
-      + `${venueCount === 1 ? "venue" : "venues"} in the returned window, deepest `
-      + `${deepest === null ? "not determinable" : `${deepest.dexId} at ${usd(deepest.liquidityUsd)}`}.`,
+      + `${venueCount === 1 ? "venue" : "venues"} across every pool the provider matched, which is a LARGER set than the rows shown when limit held some back, `
+      + `${deepestClause}.`,
     rows,
+    ...buildPriceDivergenceBlock(divergence, rows, PRICE_DIVERGENCE_RATIO),
     chain,
     tokenAddress,
     window,
@@ -2104,8 +2292,20 @@ async function runTokenPairs(
     venueCount,
     totalLiquidityUsd,
     totalVolumeUsd,
+    /**
+     * The deepest pool, or null when there is none to name.
+     *
+     * S10-31b: null ALSO when this token's own pools disagree on its price.
+     * The deepest pool is chosen on `liquidityUsd`, and a pool the provider
+     * priced through a broken quote reports a liquidity inflated by the very
+     * same factor. On the live JUP capture the winner was a 173.79 million USD
+     * pool whose price sat 5,000x above its token's median, and it was named
+     * `deepestPair` while the divergence block flagged nothing. Naming a
+     * winner here would be picking one price cluster as the true one, which
+     * this response has no evidence for; `deepestPairWithheldReason` says so.
+     */
     deepestPair:
-      deepest === null
+      deepest === null || deepestWithheld
         ? null
         : {
             pairAddress: deepest.pairAddress,
@@ -2114,6 +2314,11 @@ async function runTokenPairs(
             liquidityUsd: deepest.liquidityUsd,
             quoteTokenSymbol: deepest.quoteTokenSymbol,
           },
+    ...(deepestWithheld
+      ? {
+          deepestPairWithheldReason: `No pool is named the deepest for ${tokenAddress} on ${chain}: ${PRICE_DIVERGENCE_SELECTION_WITHHELD_REASON}. See priceDivergence.inconsistentTokens. The rows and their provider figures are all still listed; what is withheld is the CHOICE between them.`,
+        }
+      : {}),
     /**
      * How the answer was arrived at, echoed on every response.
      *

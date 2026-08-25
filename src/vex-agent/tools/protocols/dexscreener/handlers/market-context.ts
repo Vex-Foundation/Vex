@@ -653,10 +653,15 @@ async function runNarratives(
           },
         }),
     classificationNote:
-      "A narrative row is an aggregate over every token DexScreener assigns to the theme. How it assigns them is the provider's own opaque classification, not a measured on-chain fact, and it is not audited here.",
+      "A narrative row is an aggregate over every token DexScreener assigns to the theme. How it assigns them is the provider's own opaque classification, not a measured on-chain fact, and it is not audited here. IT ALSO LAGS, BY HOURS, and that is the form the limitation takes in practice: a brand-new token trading hard on a theme is usually NOT in that theme's population yet, so a narrative board is a poor way to find one. Measured - the top boosted cat-theme token, MrCate at +504 percent over h24, was absent from the Cat metaIds population entirely, confirmed against the full window with onlyBoosted. Use a screening tool for what is moving now and this one for where the money already sits.",
     sanitizedFields: [...sanitized].sort(),
     providerWindow: {
-      endpoint: chain === null ? "/metas/v1/trending" : "/metas/v1/trending?chainId=",
+      // S10-42: the value belongs in the echo. Rendering the bare "?chainId="
+      // told the reader a scoped call had been made and not which scope.
+      endpoint:
+        chain === null
+          ? "/metas/v1/trending"
+          : `/metas/v1/trending?chainId=${chain}`,
       serverSide: chain !== null,
       responseBytes: document.bytes,
       note: chain === null

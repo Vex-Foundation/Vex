@@ -28,6 +28,8 @@ type BridgeWindow = import("../ws-bridge.js").BridgeWindow;
 const SCREENER_URL =
   "wss://io.dexscreener.com/dex/screener/v7/pairs/h24/1?rankBy[key]=volume";
 const PAIR_URL = "wss://io.dexscreener.com/dex/screener/v7/pair/solana/abc";
+/** One URL that serves several DIFFERENT commands, which is the S10-61 shape. */
+const FEED_URL = "wss://io.dexscreener.com/feed/ws";
 
 interface FakeState {
   readonly runtime: BridgeRuntime;
@@ -194,6 +196,129 @@ describe("DexScreenerWsBridge", () => {
 
     expect(await a).toStrictEqual(await b);
     expect(fakes.openCalls).toHaveLength(1);
+  });
+
+  it("does NOT merge two different commands that share one feed URL", async () => {
+    /*
+     * S10-61, the worst failure shape this bridge has. The feed channel carries
+     * its query as a COMMAND FRAME, so getHistoricalTransactions and
+     * getHistoricalBars are the same URL with different bytes. Coalescing on the
+     * URL alone handed the second caller the FIRST one's frames: an answer to a
+     * question it never asked, decoded against its own schema, indistinguishable
+     * from a correct result.
+     */
+    const fakes = makeFakes();
+    const bridge = new DexScreenerWsBridge(fakes.runtime);
+    disposeCurrent = () => bridge.dispose();
+
+    const trades = bridge.exchange(FEED_URL, {
+      send: [Uint8Array.from([1, 1, 1])],
+      expect: EXPECT_ONE,
+      timeoutMs: 5000,
+    });
+    const bars = bridge.exchange(FEED_URL, {
+      send: [Uint8Array.from([2, 2, 2])],
+      expect: EXPECT_ONE,
+      timeoutMs: 5000,
+    });
+
+    // TWO sockets, because two different questions were asked.
+    await until(() => fakes.openCalls.length === 2);
+    fakes.openCalls[0]?.resolve({ outcome: "complete", detail: "", frames: ["AQ=="] });
+    fakes.openCalls[1]?.resolve({ outcome: "complete", detail: "", frames: ["Ag=="] });
+
+    // And each caller gets ITS OWN answer, not the other's.
+    expect(await trades).toStrictEqual([Uint8Array.from([1])]);
+    expect(await bars).toStrictEqual([Uint8Array.from([2])]);
+  });
+
+  it("still single-flights two identical commands on one feed URL", async () => {
+    // The coalescing this bridge exists to do is unchanged: same URL, same
+    // bytes, same expectations is still one socket.
+    const fakes = makeFakes();
+    const bridge = new DexScreenerWsBridge(fakes.runtime);
+    disposeCurrent = () => bridge.dispose();
+
+    const a = bridge.exchange(FEED_URL, {
+      send: [Uint8Array.from([7, 7])],
+      expect: EXPECT_ONE,
+      timeoutMs: 5000,
+    });
+    const b = bridge.exchange(FEED_URL, {
+      send: [Uint8Array.from([7, 7])],
+      expect: EXPECT_ONE,
+      timeoutMs: 5000,
+    });
+    await until(() => fakes.openCalls.length === 1);
+    fakes.openCalls[0]?.resolve({ outcome: "complete", detail: "", frames: ["AQ=="] });
+
+    expect(await a).toStrictEqual(await b);
+    expect(fakes.openCalls).toHaveLength(1);
+  });
+
+  it("destroys a window that finished loading after dispose instead of adopting it", async () => {
+    // S10-62: dispose() clears `window` and `loading`, but a creation already
+    // in flight resumes afterwards. Assigning then left a live BrowserWindow
+    // and session on a disposed bridge that nothing would destroy again.
+    const fakes = makeFakes();
+    let releaseLoad: (() => void) | null = null;
+    const slowRuntime: BridgeRuntime = {
+      ...fakes.runtime,
+      createWindow: (session) => {
+        const window = fakes.runtime.createWindow(session);
+        const original = window.load.bind(window);
+        window.load = (url: string) =>
+          new Promise<void>((resolve) => {
+            releaseLoad = () => {
+              void original(url);
+              resolve();
+            };
+          });
+        return window;
+      },
+    };
+    const bridge = new DexScreenerWsBridge(slowRuntime);
+
+    const pending = bridge
+      .exchange(SCREENER_URL, { expect: EXPECT_ONE, timeoutMs: 5000 })
+      .catch((error: unknown) => codeOf(error));
+    await until(() => releaseLoad !== null);
+
+    bridge.dispose();
+    releaseLoad?.();
+
+    await expect(pending).resolves.toBe(
+      DexScreenerSiteErrorCodes.SITE_TRANSPORT_UNAVAILABLE
+    );
+    // The window this race created was destroyed, not adopted.
+    await until(() => fakes.created.every((window) => window.destroyed));
+  });
+
+  it("releases the app:// protocol handler on dispose, idempotently", async () => {
+    // S10-63: the handler is registered ON THE SESSION and outlives the bridge,
+    // so a disposed bridge left `app://` claimed on a partition a later bridge
+    // reuses, and the second protocol.handle for that scheme is the one that
+    // throws.
+    const unhandled: string[] = [];
+    const fakes = makeFakes();
+    const runtime: BridgeRuntime = {
+      ...fakes.runtime,
+      fromPartition: (partition: string) => {
+        const session = fakes.runtime.fromPartition(partition);
+        (session as unknown as { protocol: Record<string, unknown> }).protocol = {
+          handle: () => undefined,
+          unhandle: (scheme: string) => unhandled.push(scheme),
+        };
+        return session;
+      },
+    };
+    const bridge = new DexScreenerWsBridge(runtime);
+    bridge.sessionForRequests();
+
+    bridge.dispose();
+    bridge.dispose();
+
+    expect(unhandled).toStrictEqual(["app"]);
   });
 
   it("refuses a fifth concurrent exchange by name instead of queueing it", async () => {

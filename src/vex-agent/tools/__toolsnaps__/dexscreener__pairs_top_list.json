@@ -67,7 +67,7 @@
             "description": "DEX identifiers to drop. DANGEROUS BY CONSTRUCTION: the provider applies a hidden default that already excludes bonding-curve venues, and sending this key AT ALL replaces that default, so excluding one dex can make the result set BIGGER. Measured on solana: 53,094 rows normally, 84,058 when only PumpSwap was excluded. Use includeLaunchpadPairs for the common case; exclusionDefaultReplaced reports whenever this happened. Accepts either a comma-separated string (\"a,b\") or an array of strings ([\"a\",\"b\"]); the two are equivalent."
           },
           "fields": {
-            "description": "Comma-separated row field GROUPS to return, not individual field names. Supported groups: core, flow, reserves, allWindows, profile, launchpad, identity. Defaults to core, which already carries identity, the selected window's price, volume, liquidity, market cap, age, counts and every derived ratio. The two heaviest are profile (unbounded issuer-authored prose and links) and allWindows (four times the per-row metric payload). An unknown group name is refused with the full list rather than ignored.",
+            "description": "Comma-separated row field GROUPS to return, not individual field names. Supported groups: core, flow, reserves, allWindows, profile, launchpad, identity. Defaults to core, which carries the chain, dex, pair address, base-token address and symbols, the selected window's price, volume, liquidity, market cap, age, counts and every derived ratio. The two heaviest are profile (unbounded issuer-authored prose and links) and allWindows (four times the per-row metric payload). The `identity` group is NOT part of core and is what adds ammId, quoteTokenAddress, both tokens' decimals, priceNative and pairCreatedAtMs - the fields that let you tell a real pool from a mispriced one, so ask for it when the dollar columns are what you are judging. An unknown group name is refused with the full list rather than ignored.",
             "type": "string"
           },
           "includeInactive": {
@@ -104,7 +104,7 @@
                 "type": "array"
               }
             ],
-            "description": "Launchpad identifiers to keep, for example pumpfun, launchlab, meteoradbc, bags, fourmeme. MEASURED: the provider attaches a launchpad id to a pair only AFTER it graduates, so this filter matches graduated pairs and nothing else. While a curve is still running the launchpad is the pair's DEX, so use dexIds with the same value there (dexIds: pumpfun). On dexscreener__launchpad_pairs_list, pairing this with stage: \"bonding\" is refused by name rather than answered with an empty board: it returned 0 rows of a 0-row population while dexIds returned 53,478. Accepts either a comma-separated string (\"a,b\") or an array of strings ([\"a\",\"b\"]); the two are equivalent."
+            "description": "Launchpad identifiers to keep, for example pumpfun, launchlab, meteoradbc, bags, fourmeme. MEASURED: the provider attaches a launchpad id to a pair only AFTER it graduates, so this filter matches graduated pairs and nothing else. While a curve is still running the launchpad is the pair's DEX, so use dexIds with the same value there (dexIds: pumpfun). On dexscreener__launchpad_pairs_list, pairing this with stage: \"bonding\" is refused by name rather than answered with an empty board: it returned 0 rows of a 0-row population while dexIds returned 53,478. KNOWN DEPTH GAP: no tool on this surface enumerates the launchpad vocabulary - dexscreener__chains_list carries dex ids only - so the five spellings above are the list, measured live, and an id outside them is not refused by name the way an unknown chain slug is. It returns an empty board instead, so check your spelling against those five before reading a zero as an absence of launches. Accepts either a comma-separated string (\"a,b\") or an array of strings ([\"a\",\"b\"]); the two are equivalent."
           },
           "limit": {
             "description": "How many rows to return, from 1 to 100. Defaults to 20. 100 is the provider's own page size, so asking for more than that is refused rather than silently served short; use offset to walk further into the ranking.",
@@ -233,14 +233,13 @@
             "type": "boolean"
           },
           "sortBy": {
-            "description": "Which hard metric ranks the board: volume, txns, buys, sells, liquidity, marketCap or boosts. Defaults to volume. volume, txns, buys and sells are measured over the selected window; liquidity and marketCap are point-in-time and ignore it. boosts ranks by the count of ACTIVE paid boosts (measured live: 100 rows served from a 54,051 population) and is an advertising ranking, never a demand or safety one; pair it with maxBoostCount to bound the other end. Sorting by fdv is deliberately not offered: the provider returns the txns ordering for it, identical on 100 of 100 measured rows, so filter with minFdvUsd or maxFdvUsd and rank by marketCap instead.",
+            "description": "Which hard metric ranks the board: volume, txns, buys, sells, liquidity or boosts. Defaults to volume. volume, txns, buys and sells are measured over the selected window; liquidity is point-in-time and ignores it. boosts ranks by the count of ACTIVE paid boosts (measured live: 100 rows served from a 54,051 population) and is an advertising ranking, never a demand or safety one; pair it with maxBoostCount to bound the other end. Sorting by fdv is deliberately not offered: the provider returns the txns ordering for it, identical on 100 of 100 measured rows. Ranking by marketCap is deliberately NOT offered either, for the same reason it was withdrawn from dexscreener__tokens_screen: the provider accepts the key and answers with a degenerate board built out of mispriced pools (measured on this very tool, rank 1 carried a market cap of 263.09 trillion USD beside a fully diluted value of 332,916 on the SAME row, and all ten rows were the same class of junk). Filter with minMarketCapUsd or maxMarketCapUsd and rank by liquidity or volume instead; that keeps the market-cap question and drops the ordering that cannot answer it.",
             "enum": [
               "volume",
               "txns",
               "buys",
               "sells",
               "liquidity",
-              "marketCap",
               "boosts"
             ],
             "type": "string"

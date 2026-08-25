@@ -1,9 +1,114 @@
 # DexScreener tool surface v2 - plan (no implementation)
 
-Status: v1.3, after Codex review turn 3 (convergence turn), 2026-08-24.
+Status: v1.4, after the S10 fix round, 2026-08-25.
 Author: Claude Code (coordinator).
 
 ## Revision log
+
+**v1.4 (2026-08-25), the S10 fix round after the ten-persona trading wave.**
+Nine of ten personas returned NOT READY. The ledger is
+`wave3/S10-LEDGER.md` (S10-0..S10-63). What the round found, and the decisions
+taken:
+
+1. **One defect family dominated: summaries not derived from the envelope they
+   introduce.** Five sites, one principle, fixed together. Trades counted the
+   fetched 100-row page rather than the returned rows and INVERTED flow
+   direction on the default path ("67 buys, 33 sells" over rows that were 11
+   buys and 14 sells); candles described a 4-hour move as the answer to a
+   30-day range; inverted candles named the base token while reporting the
+   quote token's USD move; screener boards read as empty markets when the
+   caller's own filters had emptied them; `pair.get` called a bonding curve's
+   absent pool "an unreported amount". Every summary now reads the same facts
+   the envelope publishes.
+2. **`pairs.batch` admitted rows nobody requested.** The reconciliation ran in
+   one direction only. Now a reverse set difference withholds them into
+   `rowAccounting.unrequested`, the summary derives from the reconciled sets,
+   and a dedupe collapse is named as a collapse rather than charged to
+   thresholds that dropped nothing. Chain slugs are validated against the
+   74-slug catalog (`unknown_chain`) and addresses against each chain's
+   architecture (`chain_shape_mismatch`), following the existing chain refusal.
+3. **`marketCap` withdrawn from `pairs.top`'s sort vocabulary**, following the
+   `tokens.screen` precedent rather than flooring it: the provider accepts the
+   key and answers with a board of mispriced pools (rank 1 measured at a market
+   cap 790 million times its own FDV). Backed by two local invariants that need
+   no extra request: `marketCapUsd <= fdvUsd` nulls both with a named reason,
+   and a same-token price-divergence flag names rows priced against their own
+   token's median.
+4. **`metaIds` validated against the narrative catalog.** A slug where an id
+   was wanted returned a confident empty market for a live $158M theme. The
+   chain refusal was already the precedent for exactly this failure mode.
+5. **Derived aggregates reconciled against the raw columns already in hand.**
+   Holder concentration excluded the pool account (measured inverting the
+   ranking for launchpad pairs: 71.90 percent against 24.17); LP shares are
+   cross-checked against balance over supply and WITHHELD on divergence rather
+   than published with a caveat.
+
+### S10 completion pass (same day), closing the gaps the fix round named
+
+1. **The rule-10 point-3 gap is closed with real captures, not reconstructions.**
+   S10-1 and S10-15 were both fixed but neither could go red, because every
+   pair-details fixture on disk happened to carry neither shape. Two captures
+   now exist: `pair-details-solana-bonding-poolholder` (the pair's own curve
+   account returned as holder row 0 at 25.19 percent) and
+   `pair-details-robinhood-vex-lpdivergence` (GoPlus assigning 0.000000 percent
+   to the holder of 99.95 percent of LP supply). The wave-3 GOGH and BARK
+   archives were tool OUTPUT rather than wire bytes and both curves had moved on
+   by the time the fixture was cut, so a fresh live scan of the near-graduation
+   board found a pair reproducing the defect today rather than synthesizing one.
+   A matching pair-channel snapshot was captured alongside it, because the
+   exclusion compares the holder row against `subject.pairAddress` and every
+   other test in that file mounts the ethereum snapshot.
+2. **S10-36 finished.** Response headers now reach `observation()` on candles,
+   trades and top traders as well as pair details. They are threaded on the HTTP
+   paths ONLY and stay absent on the two WebSocket paths, where nothing caches a
+   frame between the socket and the handler and `not_cached` is the measured
+   truth rather than an assumption.
+3. **S10-12 finished.** A transport fault on the batch path is no longer
+   reported as a provider rejection: an untyped throwable from `wsExchange` is
+   named as a local fault that reached no provider, and states that retrying is
+   appropriate because the read is idempotent.
+4. **The `test:unsafe-escapes` gate is green, and it was this branch's debt.**
+   It compares against the merge base (4288af8f), so the test files added by
+   commit 64e2ee67 entered its diff for the first time when they were committed
+   and brought 18 pre-existing casts with them. Twelve were `handler(params, {}
+   as never)`, replaced with the repository's own `makeProtocolContext()`, whose
+   header documents exactly why a hand-rolled context is the wrong thing. Two
+   negative tests that must pass a value outside a union now cast to the real
+   parameter type instead of through `never`. One helper was rebuilt on the JSON
+   codec, which removed a cast at each end AND surfaced a latent bug: the
+   `as unknown as` shape it asserted (`payload.value.pairs`) was simply wrong
+   about the data, and only silenced the compiler; the measured protobuf-JSON
+   shape is `pairs.pairs`. One decoded tree is now typed as
+   `Record<string, JsonValue>` rather than a read-only interface plus a cast.
+   No assertion was weakened, no test deleted, no allowlist touched.
+
+### Live probes (rule 10)
+
+- **S10-56 RESOLVED BY MEASUREMENT, NOT BUILT.** The ledger recorded "no
+  server-side price-change floor". Probed live on the v7 screener (solana, h1):
+  unfiltered 15,700 pairs, `filters[priceChange][h1][min]=50` gave 229,
+  `=100000` gave 27, and a nonsense-key control gave 15,702 unchanged, proving
+  the filter is genuinely applied. The filter is real AND `minPriceChangePct` /
+  `maxPriceChangePct` are ALREADY exposed on all nine screening boards. The
+  ledger's premise was wrong; no depth gap exists and nothing was added.
+- **The price-divergence threshold was measured before it was pinned**, at both
+  ends: WETH's 30 ethereum pools spanned 1.001x above and 0.996x below their
+  median (healthy), while JUP's 30 solana pools held one row at 5,218x theirs
+  (the artefact). 5x sits about three orders of magnitude clear of each.
+- **S10-7 re-verified against the live wire** after the fix: the measured
+  one-identity `robinhood:0x0000...0000` batch now withholds the foreign pool
+  and reports it in `rowAccounting.unrequested`.
+
+### Named omissions (depth decree)
+
+- The launchpad id vocabulary (`pumpfun`, `launchlab`, `meteoradbc`, `bags`,
+  `fourmeme`) is enumerable by no tool on this surface; `chains_list` carries
+  dex ids only. Documented in the `launchpadIds` param description, including
+  that an unknown id returns an empty board rather than a refusal. Not built:
+  it needs a provider endpoint we have not found.
+- `blockMax` is dropped as a meaningful field rather than removed: it equals
+  `blockMin` on 383 of 383 measured bars, so the docs now say so instead of
+  claiming a range.
 
 **v1.3 (2026-08-24, evening), after Codex review turn 3.** Turn 3 returned
 BLOCKED with a deterministic clearance list and no remaining disagreement: all

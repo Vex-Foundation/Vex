@@ -24,6 +24,7 @@ import {
   type DexScreenerTransport,
 } from "@tools/dexscreener/transport.js";
 import { loadFixture, loadJsonFixture } from "./_fixtures.js";
+import { makeProtocolContext } from "../vex-agent/tools/_test-context.js";
 
 const CHAIN = "ethereum";
 const PAIR = "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f";
@@ -98,7 +99,7 @@ async function call(
   const handler = DEXSCREENER_HANDLERS[toolId];
   expect(handler).toBeDefined();
   if (handler === undefined) throw new Error("no handler");
-  const result = await handler(params, {} as never);
+  const result = await handler(params, makeProtocolContext());
   // A typed refusal comes back as `success: false` with the reason in
   // `output`. Assert on THAT field and surface the text, so a broken
   // expectation says why instead of failing later on an undefined read.
@@ -311,7 +312,7 @@ describe("dexscreener__candles_list", () => {
   it("refuses a resolution outside the 18 the provider serves", async () => {
     mount(HTTP_BARS);
     const handler = DEXSCREENER_HANDLERS["dexscreener.candles"];
-    const result = await handler?.({ chain: CHAIN, pairAddress: PAIR, resolution: "7h" }, {} as never);
+    const result = await handler?.({ chain: CHAIN, pairAddress: PAIR, resolution: "7h" }, makeProtocolContext());
     expect(result?.success).toBe(false);
     expect(result?.output).toContain("resolution");
   });
@@ -467,7 +468,7 @@ describe("dexscreener__trades_list", () => {
     const handler = DEXSCREENER_HANDLERS["dexscreener.trades"];
     const replayed = await handler?.(
       { chain: CHAIN, pairAddress: PAIR, eventType: "sell", cursor },
-      {} as never
+      makeProtocolContext()
     );
     // Continuing a `buy` walk with a `sell` cursor would silently answer a
     // question nobody asked, so it is refused rather than honoured.
@@ -828,7 +829,7 @@ describe("dexscreener__narratives_list", () => {
     mountNarratives(METAS_TRENDING_ARBITRUM);
     const handler = DEXSCREENER_HANDLERS["dexscreener.trending"];
     if (handler === undefined) throw new Error("no handler");
-    const result = await handler({ chain: "solanaa" }, {} as never);
+    const result = await handler({ chain: "solanaa" }, makeProtocolContext());
     expect(result.success).toBe(false);
     // S9-2: routed through the catalog's own resolver, so the refusal names
     // the value AND offers candidates, like every other chain param on this

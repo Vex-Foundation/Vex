@@ -54,7 +54,10 @@ import {
   getDexScreenerMessageDescriptor,
   getDexScreenerProtoRegistry,
 } from "../../tools/dexscreener/codec/protobuf.js";
-import { encodeDexScreenerCommand } from "../../tools/dexscreener/codec/encode.js";
+import {
+  encodeDexScreenerCommand,
+  type DexScreenerCommandName,
+} from "../../tools/dexscreener/codec/encode.js";
 import { DexScreenerSiteErrorCodes } from "../../tools/dexscreener/site-errors.js";
 import type {
   DexScreenerTransport,
@@ -69,6 +72,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ISSUER_NAME_MAX_CHARS } from "../../tools/dexscreener/sanitize.js";
+import { makeProtocolContext } from "../vex-agent/tools/_test-context.js";
 
 const PAIR_FRAME = loadFixture("pair-ws-ethereum-pepe").bytes;
 const LATEST_BLOCK_FRAME = loadFixture("screener-latestblock-solana").bytes;
@@ -292,6 +296,18 @@ describe("dexscreener__spotlight_get: issuer-authored link label", () => {
    * re-encoding one mutated field, rather than inventing raw bytes: every
    * value other than the one label is the provider's own captured data.
    */
+  /** One JSON object of the decoded tree, or an empty one. */
+  function asObject(value: JsonValue | undefined): Record<string, JsonValue> {
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+      ? value
+      : {};
+  }
+
+  /** One JSON array of the decoded tree, or an empty one. */
+  function asArray(value: JsonValue | undefined): JsonValue[] {
+    return Array.isArray(value) ? value : [];
+  }
+
   function spotlightBodyWithHostileLabel(): Uint8Array {
     const descriptor = getDexScreenerMessageDescriptor(
       "dex_search.SpotlightResponse"
@@ -300,26 +316,37 @@ describe("dexscreener__spotlight_get: issuer-authored link label", () => {
       "dex_search.SpotlightResponse",
       SPOTLIGHT_BODY,
       { maxBytes: 1_000_000 }
-    ) as {
-      readonly latestProfiles?: readonly {
-        readonly token?: {
-          readonly links?: readonly Record<string, unknown>[];
-        };
-      }[];
-    };
-    const profiles = decoded.latestProfiles ?? [];
+      /*
+       * TYPED AS THE JSON TREE IT ACTUALLY IS, so the re-encode below needs no
+       * escape hatch at all.
+       *
+       * This used to be a bespoke readonly interface built for reading, which
+       * is not assignable to `JsonValue` (readonly arrays, and `unknown`
+       * members), so handing it back to `fromJson` required a cast - and the
+       * cast that silenced the compiler was `as unknown as`, which would have
+       * accepted any shape whatsoever. `Record<string, JsonValue>` describes
+       * the same bytes, is what the codec really returns, and IS assignable,
+       * so the compiler checks the round trip end to end.
+       */
+    ) as Record<string, JsonValue>;
+    const profiles = asArray(decoded["latestProfiles"]);
     const hostileLabel = `We${ZERO_WIDTH_SPACE}bsite`;
     let planted = false;
-    const mutatedProfiles = profiles.map((profile) => {
-      const links = profile.token?.links ?? [];
+    const mutatedProfiles: JsonValue[] = profiles.map((profile) => {
+      const profileObject = asObject(profile);
+      const token = asObject(profileObject["token"]);
+      const links = asArray(token["links"]);
       if (planted || links.length === 0) return profile;
       const [firstLink, ...restLinks] = links;
       planted = true;
       return {
-        ...profile,
+        ...profileObject,
         token: {
-          ...profile.token,
-          links: [{ ...firstLink, label: hostileLabel }, ...restLinks],
+          ...token,
+          links: [
+            { ...asObject(firstLink), label: hostileLabel },
+            ...restLinks,
+          ],
         },
       };
     });
@@ -330,10 +357,7 @@ describe("dexscreener__spotlight_get: issuer-authored link label", () => {
     }
     return toBinary(
       descriptor,
-      fromJson(descriptor, {
-        ...decoded,
-        latestProfiles: mutatedProfiles,
-      } as unknown as JsonValue)
+      fromJson(descriptor, { ...decoded, latestProfiles: mutatedProfiles })
     );
   }
 
@@ -358,7 +382,7 @@ describe("dexscreener__spotlight_get: issuer-authored link label", () => {
       if (handler === undefined) throw new Error("no handler");
       const result = await handler(
         { feed: "latestProfiles", fields: "links", limit: 36 },
-        {} as never
+        makeProtocolContext()
       );
       expect(result.success, result.output).toBe(true);
       const data = result.data as Record<string, unknown>;
@@ -480,7 +504,11 @@ describe("the v8 batch command", () => {
   it("refuses to encode a message that is not an allowlisted command", () => {
     expect(() =>
       encodeDexScreenerCommand(
-        "dex_search.SearchPairsResponse" as never,
+        // A RESPONSE message name, deliberately outside the command union, to
+        // prove the runtime allowlist refuses it rather than trusting the
+        // type. The cast names the exact parameter type it is violating, so
+        // the compiler still checks the call against the real signature.
+        "dex_search.SearchPairsResponse" as DexScreenerCommandName,
         {}
       )
     ).toThrow(VexError);
@@ -596,7 +624,14 @@ describe("fetchPairsBatch", () => {
     const { transport, wsCalls } = scripted({ ws: [[pageOne], [pageTwo]] });
     const result = await fetchPairsBatch(
       {
-        identities: [identity("solana", "a")],
+        // The identities the scripted rows actually answer for. A row the
+        // caller did not ask for is now withheld by the reconciliation, so a
+        // page-walk test has to ask for the rows it is counting.
+        identities: [
+          identity("solana", "pair-one-0"),
+          identity("solana", "pair-one-1"),
+          identity("solana", "pair-two-0"),
+        ],
         window: "h24",
         rankKey: "RANK_BY_KEY_VOLUME",
         rankOrder: "desc",
@@ -652,23 +687,37 @@ describe("fetchPairsBatch", () => {
     expect(result.rows).toHaveLength(1);
   });
 
-  it("records both the pair key and the base-token key, so a token input can be reconciled", async () => {
+  it("reconciles a token input through the base-token key of its answering pair", async () => {
     const { transport } = scripted({ ws: [[BATCH_DUP_FRAME]] });
     const result = await fetchPairsBatch(
       {
-        identities: [identity("ethereum", "0xA43fe1")],
+        // The REAL base-token address of the captured row, as a token input:
+        // that is the whole point of recording the base-token key, and a
+        // stand-in address proved nothing once foreign rows are withheld.
+        identities: [
+          {
+            ...identity("ethereum", "0x6982508145454Ce325dDbE47a25d4ec3d2311933"),
+            kind: "token" as const,
+          },
+        ],
         window: "h24",
         rankKey: "RANK_BY_KEY_VOLUME",
         rankOrder: "desc",
       },
       { transport, timeoutMs: 1000 }
     );
-    expect(
-      result.resolvedKeys.has("ethereum:0xa43fe16908251ee70ef74718545e4fe6c5ccec9f")
-    ).toBe(true);
+    // The token asked for is resolved, through the base-token slot of the pair
+    // row that answered it.
     expect(
       result.resolvedKeys.has("ethereum:0x6982508145454ce325ddbe47a25d4ec3d2311933")
     ).toBe(true);
+    // And the pair's OWN key is not claimed as resolved, because nobody asked
+    // for it. resolvedKeys is now the answered subset of the request, never a
+    // census of every key the provider's rows happen to carry.
+    expect(
+      result.resolvedKeys.has("ethereum:0xa43fe16908251ee70ef74718545e4fe6c5ccec9f")
+    ).toBe(false);
+    expect(result.rows).toHaveLength(1);
   });
 
   it("fails the whole call when a chunk never answers, rather than returning a short list", async () => {
@@ -838,7 +887,7 @@ async function callTool(
   try {
     const handler = DEXSCREENER_HANDLERS[toolId];
     if (handler === undefined) throw new Error(`no handler for ${toolId}`);
-    const result = await handler(params, {} as never);
+    const result = await handler(params, makeProtocolContext());
     if (!result.success) throw new Error(result.output);
     return JSON.parse(result.output) as Record<string, unknown>;
   } finally {

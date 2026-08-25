@@ -1,0 +1,21 @@
+{
+  "fixture": "pair-details-robinhood-vex-lpdivergence.json",
+  "encoding": "json",
+  "endpoint": "https://io.dexscreener.com/dex/pair-details/v4/robinhood/0x817f16f5d8da83d1b089b082c0172af3923618da",
+  "requestParams": {
+    "chainId": "robinhood",
+    "id": "0x817f16f5d8da83d1b089b082c0172af3923618da",
+    "route": "pair_id"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-25",
+  "httpStatus": 200,
+  "bytes": 6696,
+  "sha256": "048a36139bc9118a1cfe7fc3476a48b59f4de5f7eac6b7f473b24f170e2968cf",
+  "capturedBy": "live wire capture taken during the wave-3 P3 safety-analyst pass (curl_cffi impersonate=chrome), 2026-08-25; archived at scratchpad/wave3/P3/raw/wire_vex.json. Committed unmodified: the divergent columns ARE the contract under test, so sanitizing them would remove the only thing the fixture proves.",
+  "note": "S10-15: GoPlus's LP percent column CONTRADICTS its own balance column in this very document. lpTotalSupply is 654.8172300202939; the holder of 654.52121653453542188 of it (99.95 percent) is assigned percent 0.000000000000000000, while a holder of 0.26354675125939849 (0.04 percent) is assigned 0.884149093697024658, which on the GoPlus FRACTION scale renders as 88.41 percent. The tool published top1 88.41, contractHeldPct 100 and taggingComplete true off that column. Reproduced on both provider cache routes, so it is the provider's data and not a transport artefact."
+}

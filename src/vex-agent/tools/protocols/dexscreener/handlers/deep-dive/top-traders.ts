@@ -192,7 +192,13 @@ export async function runTopTraders(
       responseBytes: document.bytes,
       note: `Up to ${TOP_TRADERS_PROVIDER_WINDOW} rows, not exactly that many: the key-opinion-leader filter was measured returning zero.`,
     },
-    sourceObservation: observation(transport, document.fetchedAtMs),
+    // S10-36: this document is always an HTTP read, so its cache state is
+    // always knowable and was always being asserted as "not_cached".
+    sourceObservation: observation(
+      transport,
+      document.fetchedAtMs,
+      document.responseHeaders
+    ),
   });
 }
 
