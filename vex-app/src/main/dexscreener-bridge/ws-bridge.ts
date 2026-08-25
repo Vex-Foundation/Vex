@@ -178,19 +178,25 @@ export interface BridgeSession {
   setUserAgent(userAgent: string): void;
   readonly webRequest: {
     onBeforeSendHeaders(
-      filterOrNull: { urls: string[] } | null,
-      listener?: (
-        details: { url: string; requestHeaders: Record<string, string> },
-        callback: (response: { requestHeaders?: Record<string, string> }) => void,
-      ) => void,
+      filter: { urls: string[] },
+      listener:
+        | ((
+            details: { url: string; requestHeaders: Record<string, string> },
+            callback: (response: { requestHeaders?: Record<string, string> }) => void,
+          ) => void)
+        | null,
     ): void;
+    onBeforeSendHeaders(listener: null): void;
     onHeadersReceived(
-      filterOrNull: { urls: string[] } | null,
-      listener?: (
-        details: { url: string; statusCode: number },
-        callback: (response: object) => void,
-      ) => void,
+      filter: { urls: string[] },
+      listener:
+        | ((
+            details: { url: string; statusCode: number },
+            callback: (response: object) => void,
+          ) => void)
+        | null,
     ): void;
+    onHeadersReceived(listener: null): void;
   };
   setPermissionCheckHandler(handler: (() => boolean) | null): void;
   setPermissionRequestHandler(

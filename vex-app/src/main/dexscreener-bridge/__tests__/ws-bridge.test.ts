@@ -91,8 +91,10 @@ function makeFakes(): FakeState {
       webRequest: {
         onBeforeSendHeaders: () => undefined,
         onHeadersReceived: (
-          _filter: { urls: string[] } | null,
-          listener?: (details: { url: string; statusCode: number }, cb: (r: object) => void) => void,
+          _filterOrNull: { urls: string[] } | null,
+          listener?:
+            | ((details: { url: string; statusCode: number }, cb: (r: object) => void) => void)
+            | null,
         ) => {
           headersListener = listener ?? null;
         },
@@ -262,7 +264,7 @@ describe("DexScreenerWsBridge", () => {
     // in flight resumes afterwards. Assigning then left a live BrowserWindow
     // and session on a disposed bridge that nothing would destroy again.
     const fakes = makeFakes();
-    let releaseLoad: (() => void) | null = null;
+    const releaseLoad: { current: (() => void) | null } = { current: null };
     const slowRuntime: BridgeRuntime = {
       ...fakes.runtime,
       createWindow: (session) => {
@@ -270,7 +272,7 @@ describe("DexScreenerWsBridge", () => {
         const original = window.load.bind(window);
         window.load = (url: string) =>
           new Promise<void>((resolve) => {
-            releaseLoad = () => {
+            releaseLoad.current = () => {
               void original(url);
               resolve();
             };
@@ -283,10 +285,10 @@ describe("DexScreenerWsBridge", () => {
     const pending = bridge
       .exchange(SCREENER_URL, { expect: EXPECT_ONE, timeoutMs: 5000 })
       .catch((error: unknown) => codeOf(error));
-    await until(() => releaseLoad !== null);
+    await until(() => releaseLoad.current !== null);
 
     bridge.dispose();
-    releaseLoad?.();
+    releaseLoad.current?.();
 
     await expect(pending).resolves.toBe(
       DexScreenerSiteErrorCodes.SITE_TRANSPORT_UNAVAILABLE
