@@ -208,6 +208,7 @@ export function LighterTradingDialog({
           <>
             <div className="lit-market-bar-shell">
               <MarketBar
+                environment={environment}
                 market={market}
                 marketPickerOpen={marketPickerOpen}
                 onOpenMarketPicker={() => setMarketPickerOpen((current) => !current)}
@@ -218,6 +219,7 @@ export function LighterTradingDialog({
               />
               {marketPickerOpen ? (
                 <MarketPicker
+                  environment={environment}
                   markets={marketList.markets}
                   selectedMarketId={marketId}
                   onClose={() => setMarketPickerOpen(false)}
@@ -438,6 +440,7 @@ function LighterConversation({
 }
 
 function MarketBar({
+  environment,
   market,
   marketPickerOpen,
   onOpenMarketPicker,
@@ -446,6 +449,7 @@ function MarketBar({
   streamStatus,
   streamReceivedAt,
 }: {
+  readonly environment: LighterTradingEnvironment;
   readonly market: LighterTradingMarket | null;
   readonly marketPickerOpen: boolean;
   readonly onOpenMarketPicker: () => void;
@@ -482,7 +486,7 @@ function MarketBar({
       >
         {market === null
           ? <img src="./protocols/lighter.svg" alt="" width="26" height="26" />
-          : <MarketSymbol market={market} />}
+          : <MarketSymbol environment={environment} market={market} />}
         <span><b>{market?.symbol ?? "Select market"}</b><small>{market === null ? "Lighter" : `${market.marketType} · ${market.status}`}</small></span>
         <IconChevronDown size={18} className="lit-chevron" />
       </button>
@@ -548,11 +552,13 @@ function streamStatusLabel(status: LighterTradingCandleConnectionStatus): string
 }
 
 function MarketPicker({
+  environment,
   markets,
   selectedMarketId,
   onClose,
   onSelect,
 }: {
+  readonly environment: LighterTradingEnvironment;
   readonly markets: readonly LighterTradingMarket[];
   readonly selectedMarketId: number | null;
   readonly onClose: () => void;
@@ -718,7 +724,7 @@ function MarketPicker({
               onMouseEnter={() => setHighlightedMarketId(market.marketId)}
               onClick={() => onSelect(market)}
             >
-              <span className="lit-market-name"><MarketSymbol market={market} /><b>{market.symbol}</b></span>
+              <span className="lit-market-name"><MarketSymbol environment={environment} market={market} /><b>{market.symbol}</b></span>
               <span>{market.marketType === "perp" ? "Perpetual" : "Spot"}</span>
               <span data-status={market.status}>{market.status}</span>
               <span>{market.minBaseAmount} {symbols.base} · {market.minQuoteAmount} {symbols.quote}</span>

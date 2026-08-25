@@ -15,6 +15,7 @@ const MARKET_LIST: LighterTradingMarketList = {
     market(1, "BTC", "perp"),
     market(7, "ETH", "perp"),
     market(8, "ETH/USDC", "spot"),
+    market(10, "AAPL", "perp"),
   ],
 };
 
@@ -267,6 +268,16 @@ describe("Light it up dialog", () => {
     expect(screen.getByTestId("real-chart-host")).toBeTruthy();
   });
 
+  it("keeps the full provider ticker visible beside a reviewed market mark", async () => {
+    renderDialog();
+
+    fireEvent.click(await screen.findByRole("button", { name: /BTC.*perp.*active/i }));
+    const option = screen.getByRole("option", { name: /AAPL.*Perpetual.*active/i });
+
+    expect(within(option).getByText("AAPL")).toBeTruthy();
+    expect(option.querySelector('[data-market-mark="brand"] svg')).not.toBeNull();
+  });
+
   it("closes the corner picker when clicking elsewhere in the workspace", async () => {
     renderDialog();
 
@@ -356,7 +367,7 @@ function market(
     symbol,
     marketType,
     status: "active",
-    baseAssetId: 1,
+    baseAssetId: marketType === "perp" ? 0 : 1,
     quoteAssetId: 3,
     minBaseAmount: "0.001",
     minQuoteAmount: "10",
