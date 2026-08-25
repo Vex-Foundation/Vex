@@ -78,6 +78,18 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   },
   { label: "Context compaction — applies the prepared summary", toolNames: ["CompactApply"] },
   { label: "Wallet transfers", toolNames: ["WalletSendPrepare", "WalletSendConfirm"] },
+  // Its own category, not an entry under "Wallet transfers": a transfer intent
+  // and a generic transaction intent live in different tables with different
+  // confirms, and neither confirm may consume the other's row.
+  {
+    label: "Arbitrary transaction signing (decoded and fee-capped)",
+    toolNames: [
+      "WalletEvmTransactionPrepare",
+      "WalletEvmTransactionConfirm",
+      "WalletSolanaTransactionPrepare",
+      "WalletSolanaTransactionConfirm",
+    ],
+  },
   { label: "Mission setup draft", toolNames: ["MissionDraftUpdate"] },
   { label: "Mission run stop", toolNames: ["MissionStop"] },
   // NOT mission-only: owner decree 2026-08-03 made waiting available to full

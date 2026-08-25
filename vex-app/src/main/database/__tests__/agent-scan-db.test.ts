@@ -263,7 +263,10 @@ describe("getAgentScan row selection", () => {
     await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
     const { sql } = pageCall();
     expect(sql).toContain(
-      "fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee')",
+      // Migration 088 adds `tx_vex_fee`: the generic EVM signing lane's fee leg
+      // is a child of the transaction it charges for, so the parent reports it
+      // here rather than the leg rendering as a row of its own.
+      "fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee','tx_vex_fee')",
     );
     expect(sql).toContain("fee.status     = 'confirmed'");
     // The deleted guard was the logical-row predicate applied to the `fee`

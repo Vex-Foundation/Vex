@@ -1,5 +1,5 @@
 {
-  "internalRegisteredCount": 32,
+  "internalRegisteredCount": 36,
   "internalVisibleOrder": [
     "ToolSearch",
     "TokenFind",
@@ -23,6 +23,10 @@
     "WalletTrackToken",
     "WalletSendPrepare",
     "WalletSendConfirm",
+    "WalletEvmTransactionPrepare",
+    "WalletEvmTransactionConfirm",
+    "WalletSolanaTransactionPrepare",
+    "WalletSolanaTransactionConfirm",
     "UnitsConvert",
     "CompactApply",
     "SessionMemorySearch",
@@ -34,7 +38,7 @@
     "PlanWrite"
   ],
   "maxDiscoveredToolsPerSession": 40,
-  "maxSimultaneousModelVisibleTools": 71,
+  "maxSimultaneousModelVisibleTools": 75,
   "protocolToolIds": [
     "dexscreener.candles",
     "dexscreener.chains",

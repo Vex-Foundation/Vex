@@ -32,6 +32,7 @@ import {
   provenLegAmounts,
   failActivityEvent,
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
 } from "@vex-agent/db/repos/agent-activity.js";
 import {
@@ -188,6 +189,7 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
         }
       }
       const outcome = await signStageBroadcast(clients.publicClient, clients.walletClient, txParams, {
+        onNonceReserved: (request) => reserveActivityEvmNonce(legRow.id, request),
         onHashStaged: async (handles) => {
           const res = await markActivityBroadcast(legRow.id, handles);
           if (!res.applied) {

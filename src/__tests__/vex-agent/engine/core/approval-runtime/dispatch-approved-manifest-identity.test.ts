@@ -79,7 +79,7 @@ vi.mock("@utils/logger.js", () => ({
 const { applyApproveSideEffects } = await import(
   "@vex-agent/engine/core/approval-runtime/post-tx/dispatch-approved.js"
 );
-const { computeManifestFingerprint } = await import(
+const { computeManifestFingerprint, computeRequestDigest } = await import(
   "@vex-agent/engine/core/approval-runtime/tool-call-envelope.js"
 );
 const { getProtocolManifest } = await import("@vex-agent/tools/protocols/catalog.js");
@@ -112,6 +112,10 @@ function snapshotWith(
       queue_tool_call: queueToolCall,
       queue_permission_at_enqueue: "restricted",
       session_permission_live: "restricted",
+      origin: "agent",
+      project_id: null,
+      scope_version_at_enqueue: null,
+      request_digest: null,
     },
   };
 }
@@ -210,5 +214,69 @@ describe("applyApproveSideEffects — manifest identity", () => {
     expect(context?.approved).toBe(true);
     expect(context?.approvalId).toBe("appr-1");
     expect(context?.modelOriginated).toBeUndefined();
+  });
+});
+
+/**
+ * THE REQUEST DIGEST on the AGENT lane (pass 6 / N3) - the same check the Studio
+ * lane has run since A4b, through the same owner.
+ *
+ * It closes the co-edit hole the card comparison cannot: `preview_json` and
+ * `approval_queue.tool_call` can be edited TOGETHER and still agree with each
+ * other, but neither can be edited into agreement with a digest that was taken
+ * before the human approved.
+ */
+describe("applyApproveSideEffects - the request digest", () => {
+  /** The same snapshot, with a digest recorded on the intent row. */
+  function snapshotWithDigest(
+    queueToolCall: Record<string, unknown>,
+    digest: string | null,
+  ): Extract<ApproveSnapshot, { type: "approved_in_tx" }> {
+    const snapshot = snapshotWith(queueToolCall);
+    return { ...snapshot, row: { ...snapshot.row, request_digest: digest } };
+  }
+
+  const PLAIN_ENVELOPE = { command: "wallet_send_confirm", args: { intentId: "wtx-1" } };
+
+  it("dispatches when the stored envelope still hashes to the recorded digest", async () => {
+    const snapshot = snapshotWithDigest(
+      PLAIN_ENVELOPE,
+      computeRequestDigest(PLAIN_ENVELOPE),
+    );
+
+    const outcome = await applyApproveSideEffects("appr-1", snapshot);
+
+    expect(mockDispatchTool).toHaveBeenCalledTimes(1);
+    expect(outcome.kind).toBe("dispatched");
+  });
+
+  it("REFUSES without dispatching when the stored envelope was edited after approval", async () => {
+    // The digest of what the human approved, beside an envelope that now says
+    // something else - the co-edit, from the dispatching side.
+    const snapshot = snapshotWithDigest(
+      { command: "wallet_send_confirm", args: { intentId: "wtx-ATTACKER" } },
+      computeRequestDigest(PLAIN_ENVELOPE),
+    );
+
+    const outcome = await applyApproveSideEffects("appr-1", snapshot);
+
+    expect(mockDispatchTool).not.toHaveBeenCalled();
+    if (outcome.kind !== "dispatched") throw new Error("expected a committed outcome");
+    expect(outcome.executionStatus).toBe("failed");
+    // A CONTROLLED failure, durable like any other tool result.
+    const committed = mockCommitApprovedToolResult.mock.calls[0]?.[0];
+    expect(committed?.dispatchResult.success).toBe(false);
+    expect(committed?.dispatchResult.output).toContain("Nothing was executed");
+    expect(committed?.dispatchResult.output).toContain("fresh approval");
+  });
+
+  it("a row from before the column existed records no digest and still dispatches", async () => {
+    const outcome = await applyApproveSideEffects(
+      "appr-1",
+      snapshotWithDigest(PLAIN_ENVELOPE, null),
+    );
+
+    expect(mockDispatchTool).toHaveBeenCalledTimes(1);
+    expect(outcome.kind).toBe("dispatched");
   });
 });

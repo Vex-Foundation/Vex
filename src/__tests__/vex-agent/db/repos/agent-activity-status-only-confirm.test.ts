@@ -36,6 +36,9 @@ function resetMocks(): void {
 }
 resetMocks();
 
+const transactionQuery = vi.fn(async () => ({ rows: [], rowCount: 0 }));
+const TRANSACTION_CLIENT = { query: transactionQuery };
+
 vi.mock("@vex-agent/db/client.js", () => ({
   query: vi.fn(),
   queryOne: (sql: string, params?: unknown[]) => mockQueryOne(sql, params),
@@ -43,7 +46,16 @@ vi.mock("@vex-agent/db/client.js", () => ({
   queryWith: vi.fn(),
   queryOneWith: (_c: unknown, sql: string, params?: unknown[]) => mockQueryOne(sql, params as never),
   executeWith: vi.fn(),
-  withTransaction: async (fn: (c: unknown) => Promise<unknown>) => fn({}),
+  withTransaction: async (fn: (c: typeof TRANSACTION_CLIENT) => Promise<unknown>) =>
+    fn(TRANSACTION_CLIENT),
+}));
+
+vi.mock("@vex-agent/db/repos/wallet-transaction-intents.js", () => ({
+  getByActivityIdWith: vi.fn(async () => null),
+}));
+
+vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
+  getByActivityIdWith: vi.fn(async () => null),
 }));
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
@@ -77,6 +89,7 @@ function row(over: Record<string, unknown> = {}): Record<string, unknown> {
 
 beforeEach(() => {
   resetMocks();
+  transactionQuery.mockClear();
 });
 
 describe("confirmActivityEventStatusOnly", () => {
@@ -85,22 +98,25 @@ describe("confirmActivityEventStatusOnly", () => {
   });
 
   it("CAS-confirms a pending row without writing any executed amount column", async () => {
-    // 1st queryOne: the pre-read (session id). 2nd: the CAS UPDATE.
-    mockQueryOne.mockResolvedValueOnce(row()).mockResolvedValueOnce(row({ status: "confirmed" }));
+    // Session lookup, coordinator activity read, then the status CAS.
+    mockQueryOne
+      .mockResolvedValueOnce(row())
+      .mockResolvedValueOnce(row())
+      .mockResolvedValueOnce(row({ status: "confirmed" }));
 
     const result = await repo.confirmActivityEventStatusOnly(42, "receipt_status_only_evm");
 
     expect(result.applied).toBe(true);
     expect(result.row.status).toBe("confirmed");
 
-    const update = mockQueryOne.mock.calls[1]?.[0] ?? "";
+    const update = mockQueryOne.mock.calls[2]?.[0] ?? "";
     expect(update).toContain("status = 'confirmed'");
     expect(update).toContain("confirmed_at = NOW()");
     expect(update).toContain("WHERE id = $1 AND status = 'pending'");
     expect(update).not.toContain("executed_amount");
     // The caller-supplied provenance rides along; it says HOW the status was
     // established and nothing about the amounts (migration 067).
-    expect(mockQueryOne.mock.calls[1]?.[1]).toEqual([42, "receipt_status_only_evm"]);
+    expect(mockQueryOne.mock.calls[2]?.[1]).toEqual([42, "receipt_status_only_evm"]);
     expect(update).toContain("confirmation_source = $2");
     // `settlement_source` is deliberately untouched: this sweep learned nothing
     // whatsoever about the money, so it has no business stating how it is known.
@@ -120,21 +136,23 @@ describe("confirmActivityEventStatusOnly", () => {
     };
     mockQueryOne
       .mockResolvedValueOnce(row(decoded))
+      .mockResolvedValueOnce(row(decoded))
       .mockResolvedValueOnce(row({ ...decoded, status: "confirmed" }));
 
     const result = await repo.confirmActivityEventStatusOnly(42, "receipt_status_only_evm");
 
-    const update = mockQueryOne.mock.calls[1]?.[0] ?? "";
+    const update = mockQueryOne.mock.calls[2]?.[0] ?? "";
     // No amount column is named, so none can be nulled by omission.
     expect(update).not.toMatch(/executed_amount_(in|out)2?_(raw|human)/);
     // The CAS carries the row id and its provenance — no amount parameter exists.
-    expect(mockQueryOne.mock.calls[1]?.[1]).toEqual([42, "receipt_status_only_evm"]);
+    expect(mockQueryOne.mock.calls[2]?.[1]).toEqual([42, "receipt_status_only_evm"]);
     expect(result.row.executedAmountInRaw).toBe("1400000");
     expect(result.row.executedAmountOutRaw).toBe("400000000000000");
   });
 
   it("reports a CAS miss with the current row instead of throwing", async () => {
     mockQueryOne
+      .mockResolvedValueOnce(row())
       .mockResolvedValueOnce(row())
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(row({ status: "confirmed" }));
@@ -147,7 +165,9 @@ describe("confirmActivityEventStatusOnly", () => {
 
   it("throws when the row does not exist", async () => {
     mockQueryOne.mockResolvedValue(null);
-    await expect(repo.confirmActivityEventStatusOnly(42, "receipt_status_only_evm")).rejects.toThrow(/does not exist/);
+    await expect(repo.confirmActivityEventStatusOnly(42, "receipt_status_only_evm")).rejects.toThrow(
+      /activity row is missing/,
+    );
   });
 });
 
@@ -166,6 +186,8 @@ describe("confirmActivityEvent — wrap/unwrap strict guard (replaces the droppe
 
   it("still confirms a wrap row that carries both executed raws", async () => {
     mockQueryOne
+      .mockResolvedValueOnce(row({ event_role: "wrap", kind: "wrap" }))
+      .mockResolvedValueOnce(row({ event_role: "wrap", kind: "wrap" }))
       .mockResolvedValueOnce(row({ event_role: "wrap", kind: "wrap" }))
       .mockResolvedValueOnce(row({ event_role: "wrap", kind: "wrap", status: "confirmed" }));
 

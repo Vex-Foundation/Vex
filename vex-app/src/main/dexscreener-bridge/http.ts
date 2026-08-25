@@ -21,6 +21,7 @@ import type {
   TransportResponse,
 } from "@tools/dexscreener/transport.js";
 import { checkHttpUrl, DEXSCREENER_ORIGIN } from "./allowlist.js";
+import type { BridgeSession } from "./ws-bridge.js";
 
 /**
  * The Chrome identity the site's edge accepts. Kept as one exported constant so
@@ -55,7 +56,7 @@ function requestHeaders(accept: string | undefined): Record<string, string> {
  * bridge's cookie jar and nothing else in the app sees them.
  */
 export async function siteHttpGet(
-  sessionForRequests: Electron.Session,
+  sessionForRequests: BridgeSession,
   url: string,
   options: HttpGetOptions
 ): Promise<TransportResponse> {

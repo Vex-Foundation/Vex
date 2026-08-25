@@ -21,6 +21,7 @@ import { setupActivityProgressBridge } from "./activity-progress-bridge.js";
 import { setupActivityResolvedBridge } from "./activity-resolved-bridge.js";
 import { setupMissionUpdateBridge } from "./mission-update-bridge.js";
 import { setupStreamBridge } from "./stream-bridge.js";
+import { setupStudioSettlementBridge } from "./studio-settlement-bridge.js";
 import { setupTranscriptBridge } from "./transcript-bridge.js";
 
 /**
@@ -55,6 +56,10 @@ export function setupAgentBridges(): () => void {
   // above fires only at the END; without this one the 5 s observation cadence
   // was invisible to the renderer, which polls at 60 s.
   teardowns.push(setupActivityProgressBridge());
+  // Vex Studio A3 - a Studio approval settled or was refused. Without this
+  // bridge the external coding agent's blocked call would wait out its whole
+  // expiry even though the answer is already durable.
+  teardowns.push(setupStudioSettlementBridge());
 
   // Puzzle 03 — install the production BugReportSink for engine emit
   // points (turn-loop / wake / compact). Teardown resets to noop.

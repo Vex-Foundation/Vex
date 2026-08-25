@@ -1,0 +1,39 @@
+{
+  "definition": {
+    "function": {
+      "description": "Broadcast the Solana transaction that `WalletSolanaTransactionPrepare` already prepared. This is the call that SPENDS REAL FUNDS: it signs with the user's wallet and sends an IRREVERSIBLE transaction. APPROVAL: in a restricted session it signs nothing, decrypts nothing and consumes nothing - it comes back asking for approval, and that approval is bound to the exact canonical message and to this intent's own expiry. BEFORE IT SIGNS it re-reads the session's selected wallet, checks the CURRENT BLOCK HEIGHT against the intent's lastValidBlockHeight (the real expiry; the displayed 60 second cap is only for readability), re-resolves every address lookup table, re-decodes every instruction, re-simulates, checks the message's own compute-budget instructions against the approved lamport ceiling, and asserts the message bytes are UNCHANGED with only the signature slot differing. Any drift REFUSES BY NAME with nothing signed and the intent left pending. RETURNS the outcome, the transaction signature and the echoed approvedFeeBounds, with a DISTINCT outcome for confirmed, failed on-chain, broadcast with confirmation UNKNOWN, and failed before broadcast. Only the last is safe to prepare again: Vex tracks an unknown one and NEVER re-sends it, and neither should you.",
+      "name": "WalletSolanaTransactionConfirm",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "The intent id that `WalletSolanaTransactionPrepare` returned. It is scoped to this session and to the exact canonical message that was approved.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": true,
+    "pressureSafety": "mutating",
+    "withheld": false
+  }
+}

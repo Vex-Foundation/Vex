@@ -118,7 +118,10 @@ import {
   summarizeErrorForLog,
 } from "../helpers.js";
 import type { ApproveSnapshot } from "../snapshot.js";
-import { checkApprovalManifestIdentity } from "../tool-call-envelope.js";
+import {
+  approvalRequestDigestMatches,
+  checkApprovalManifestIdentity,
+} from "../tool-call-envelope.js";
 import {
   ApprovalDispatchError,
   ApprovalPostDecisionError,
@@ -139,6 +142,7 @@ import {
 } from "./dispatch-approved/operator-stop.js";
 import { buildResumedApprovalToolContext } from "./dispatch-approved/resumed-tool-context.js";
 import { claimDispatchSlotUnderStopGate } from "./dispatch-approved/dispatch-slot-gate.js";
+import { applyStudioApproveSideEffects } from "./dispatch-approved/studio.js";
 
 /**
  * Side effects after `approved_in_tx` snapshot — claim the continuation, take
@@ -150,6 +154,15 @@ export async function applyApproveSideEffects(
   snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
 ): Promise<ApprovePrepareOutcome> {
   const row = snapshot.row;
+  // A3 - a Vex Studio approval takes its own sibling path. The branch is here,
+  // at the top of the ONLY dispatch path, because everything below is written
+  // for an agent session: a session-hydrated tool context, a transcript tool
+  // result, a resumed turn. None of those exists for a call an external coding
+  // agent made, and reusing them would wake the backing session's agent for a
+  // tool call it never made. Nothing below this line changed.
+  if (row.origin === "studio_mcp") {
+    return applyStudioApproveSideEffects(approvalId, snapshot);
+  }
   const sessionId = row.session_id;
   const missionRunId = row.mission_run_id;
   const fallbackToolCallId =
@@ -289,6 +302,14 @@ export async function applyApproveSideEffects(
     // retried without a fresh approval). It sits AFTER the slot claim so the
     // refused approval is terminal and cannot be re-dispatched.
     const identity = checkApprovalManifestIdentity(row.queue_tool_call);
+    // THE REQUEST DIGEST, the same check and the same owner the Studio lane
+    // uses. It is what a co-edit of the stored envelope cannot survive: the card
+    // and the envelope can be changed together and still agree with each other,
+    // but neither can be changed into agreement with the digest recorded when
+    // the human approved. Fail closed, and a CONTROLLED failure exactly like the
+    // identity refusal above - nothing ran, so the agent resumes knowing that.
+    // A `null` digest is a row written before the column existed; see
+    // `approvalRequestDigestMatches`.
     if (!identity.ok) {
       logger.warn("engine.approval_runtime.manifest_identity_refused", {
         approvalId,
@@ -297,6 +318,19 @@ export async function applyApproveSideEffects(
         reason: identity.reason,
       });
       dispatchResult = { success: false, output: identity.refusal };
+    } else if (!approvalRequestDigestMatches(row.queue_tool_call, row.request_digest)) {
+      logger.warn("engine.approval_runtime.request_digest_mismatch", {
+        approvalId,
+        sessionId,
+        missionRunId,
+      });
+      dispatchResult = {
+        success: false,
+        output:
+          "Approved action refused: the stored request no longer matches the one this approval was "
+          + "granted for. Nothing was executed and no funds moved. Call the tool again with the "
+          + "parameters you want and request a fresh approval.",
+      };
     } else {
       try {
         dispatchResult = await dispatchTool(

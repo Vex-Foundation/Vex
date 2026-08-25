@@ -27,6 +27,7 @@ import { mission } from "./mission.js";
 import { models } from "./models.js";
 import { images } from "./images.js";
 import { portfolio } from "./portfolio.js";
+import { projects } from "./projects.js";
 import { runtime } from "./runtime.js";
 import { sessions } from "./sessions.js";
 import { poolsLaunch } from "./pools-launch.js";
@@ -49,6 +50,7 @@ export const agentBridge = {
   memory,
   memoryInspector,
   portfolio,
+  projects,
   images,
   poolsLaunch,
   tokenLaunch,

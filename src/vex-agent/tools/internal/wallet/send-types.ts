@@ -79,12 +79,14 @@ export function buildWalletIntentPreview(args: {
 }): WalletIntentPreview {
   const tokenLabel = args.token === null ? "native" : args.token;
   const chainSuffix = args.chain ? ` on ${args.chain}` : "";
-  const truncatedTo =
-    args.to.length > 20
-      ? `${args.to.slice(0, 10)}…${args.to.slice(-6)}`
-      : args.to;
+  // The recipient is carried WHOLE. A prefix-and-suffix ellipsis is the exact
+  // shape an address-poisoning attack targets: a lookalike can be ground out to
+  // match both visible ends while differing in the hidden middle. This headline
+  // is the sentence a human authorizes an irreversible transfer from, so the
+  // whole value has to be legible here, matching the transaction card's
+  // renderer (`transaction/preview.ts`).
   return {
-    label: `Send ${args.amount} ${tokenLabel} to ${truncatedTo}${chainSuffix}`,
+    label: `Send ${args.amount} ${tokenLabel} to ${args.to}${chainSuffix}`,
     criticalArgs: {
       network: args.network,
       chain: args.chain,

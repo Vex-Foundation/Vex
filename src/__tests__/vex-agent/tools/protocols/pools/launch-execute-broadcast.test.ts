@@ -45,6 +45,7 @@ import * as dbClient from "@vex-agent/db/client.js";
 import * as lease from "@vex-agent/engine/runtime/lease-and-status.js";
 import * as feeRun from "@vex-agent/tools/protocols/shared/native-fee-leg/run.js";
 import * as pendingProvenance from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
+import * as attribution from "@vex-agent/tools/protocols/pools/handlers/launch/execute/attribute.js";
 import { broadcastPoolsLaunch } from "@vex-agent/tools/protocols/pools/handlers/launch/execute/broadcast.js";
 import type { PoolsLaunchPlan } from "@vex-agent/tools/protocols/pools/handlers/launch/execute/plan.js";
 
@@ -60,6 +61,7 @@ const TX_HASH = `0x${"ab".repeat(32)}` as Hex;
 const CALLDATA = `0x${"cd".repeat(64)}` as Hex;
 const FINGERPRINT = `0x${"ef".repeat(32)}` as Hex;
 const METADATA_URI = "ipfs://bafkreifaguifkgqdrrs2cwlbjejqblrguynowkm3zb77yvq3gsydqacywm";
+const ATTEST_SIGNATURE = `0x${"ab".repeat(65)}`;
 
 const FEE_WEI = 1_051_674_002_092_832n;
 const PREBUY_WEI = 10_000_000_000_000_000n;
@@ -159,6 +161,8 @@ let confirmedIntents: string[] = [];
 let failedIntents: string[] = [];
 let indexedTokens: Record<string, unknown>[] = [];
 let feeRuns: number;
+/** What the attestation leg was handed, so its ORDER and inputs can be asserted. */
+let attestPosts: Array<{ tokenAddress: string; signature: string | null; txHash: string }>;
 let outcome: stagedBroadcast.StagedBroadcastOutcome;
 let logs: { address: string; topics: string[]; data: string }[];
 
@@ -176,7 +180,23 @@ beforeEach(() => {
   failedIntents = [];
   indexedTokens = [];
   feeRuns = 0;
+  attestPosts = [];
   logs = [gatewayLog(), factoryLog()];
+
+  // The badge leg, stubbed at its own module boundary. These tests own the
+  // ORDERING contract (identity → signature → fee → POST) and the rule that the
+  // launch is never affected by any of it; the leg's own gate, wire body and
+  // classification are pinned in the pools-fun suite.
+  vi.spyOn(attribution, "signAndStorePoolsAttestation").mockImplementation(async () => {
+    order.push("attest_sign");
+    return ATTEST_SIGNATURE;
+  });
+  vi.spyOn(attribution, "postPoolsLaunchAttribution").mockImplementation(
+    async (tokenAddress, signature, txHash) => {
+      order.push("attest_post");
+      attestPosts.push({ tokenAddress, signature, txHash });
+    },
+  );
   outcome = { kind: "confirmed", txHash: TX_HASH, receipt: receipt() } as never;
 
   vi.spyOn(dbClient, "withTransaction").mockImplementation(
@@ -267,7 +287,19 @@ describe("a confirmed and PROVEN launch", () => {
     expect(result.success).toBe(true);
     // The whole ordering contract in one assertion: a fee that ran before the
     // launch was proven would be a charge for an unproven launch.
-    expect(order).toEqual(["broadcast", "index", "confirm_intent", "fee"]);
+    //
+    // The two `attest_*` steps joined this sequence with the VEX badge leg. The
+    // MONEY order is unchanged - index, then intent, then fee - and the badge's
+    // POST is strictly after the fee, which is the property the badge lane was
+    // required to preserve.
+    expect(order).toEqual([
+      "broadcast",
+      "index",
+      "attest_sign",
+      "confirm_intent",
+      "fee",
+      "attest_post",
+    ]);
     expect(confirmedIntents).toEqual(["intent-1"]);
     expect(feeRuns).toBe(1);
   });
@@ -386,5 +418,117 @@ describe("a staging CAS miss means another executor owns this launch", () => {
     expect(result.output).toContain("signed locally but never broadcast");
     expect(failedRows[0]!.failureCode).toBe("broadcast_error");
     expect(feeRuns).toBe(0);
+  });
+});
+
+/**
+ * THE VEX BADGE LEG - cosmetic, and provably unable to cost anything.
+ *
+ * Two properties, and they pull in opposite directions, which is why both are
+ * pinned here rather than trusted to the leg's own module:
+ *
+ *   ORDER    the signature is produced right after the durable identity record
+ *            (it can only be signed while the launch's wallet client is open),
+ *            and the POST goes LAST - after the fee. A badge that sat in front
+ *            of the fee leg would put an optional partner request between the
+ *            user's launch and Vex's revenue.
+ *   HARMLESS every way this leg can fail - a wallet that refuses, a partner
+ *            that refuses, a client that throws outright - leaves a confirmed
+ *            launch, a charged fee, and the same success payload.
+ */
+describe("the VEX badge leg is ordered last and can never cost a launch", () => {
+  it("signs right after the identity record, and POSTs after the fee", async () => {
+    await run();
+    expect(order).toEqual([
+      "broadcast",
+      "index",
+      "attest_sign",
+      "confirm_intent",
+      "fee",
+      "attest_post",
+    ]);
+  });
+
+  it("hands the POST the decoded token, the stored signature and the launch tx as locator", async () => {
+    await run();
+    expect(attestPosts).toEqual([
+      { tokenAddress: TOKEN, signature: ATTEST_SIGNATURE, txHash: TX_HASH },
+    ]);
+  });
+
+  it("confirms the launch when the WALLET REFUSES to sign", async () => {
+    vi.mocked(attribution.signAndStorePoolsAttestation).mockImplementation(async () => {
+      order.push("attest_sign");
+      return null;
+    });
+
+    const result = await run();
+
+    expect(result.success).toBe(true);
+    expect((result.data as Record<string, unknown>).status).toBe("confirmed");
+    expect(confirmedIntents).toEqual(["intent-1"]);
+    expect(feeRuns).toBe(1);
+    // The leg is still CALLED with null: refusing to send is the leg's own
+    // decision, not something the broadcast path second-guesses.
+    expect(attestPosts).toEqual([{ tokenAddress: TOKEN, signature: null, txHash: TX_HASH }]);
+  });
+
+  it("confirms the launch when the PARTNER REFUSES the attestation", async () => {
+    // A rejection is an ordinary resolved outcome inside the leg; nothing about
+    // it reaches this path. Pinned anyway, because the day it starts throwing
+    // is the day a badge fails a launch.
+    vi.mocked(attribution.postPoolsLaunchAttribution).mockImplementation(async () => {
+      order.push("attest_post");
+    });
+
+    const result = await run();
+
+    expect(result.success).toBe(true);
+    expect((result.data as Record<string, unknown>).status).toBe("confirmed");
+    expect(feeRuns).toBe(1);
+  });
+
+  it("confirms the launch when the attestation CLIENT THROWS", async () => {
+    vi.mocked(attribution.postPoolsLaunchAttribution).mockRejectedValue(
+      new Error("attestation exploded"),
+    );
+
+    const result = await run();
+
+    expect(result.success).toBe(true);
+    expect((result.data as Record<string, unknown>).status).toBe("confirmed");
+    expect(confirmedIntents).toEqual(["intent-1"]);
+    expect(feeRuns).toBe(1);
+    expect(indexedTokens).toHaveLength(1);
+  });
+
+  it("confirms the launch when SIGNING THROWS outright", async () => {
+    vi.mocked(attribution.signAndStorePoolsAttestation).mockRejectedValue(
+      new Error("wallet locked"),
+    );
+
+    const result = await run();
+
+    // The signing call sits inside the bookkeeping try/catch, so a throw is
+    // logged as a record failure - the launch itself still succeeds and the fee
+    // is still charged.
+    expect(result.success).toBe(true);
+    expect((result.data as Record<string, unknown>).status).toBe("confirmed");
+    expect(feeRuns).toBe(1);
+  });
+
+  it("never attributes a REVERTED launch", async () => {
+    outcome = { kind: "reverted", txHash: TX_HASH, receipt: receipt() };
+    await run();
+    expect(order).not.toContain("attest_sign");
+    expect(order).not.toContain("attest_post");
+  });
+
+  it("never attributes a launch whose identity could not be PROVEN", async () => {
+    logs = [factoryLog()];
+    outcome = { kind: "confirmed", txHash: TX_HASH, receipt: receipt() };
+    await run();
+    expect(order).not.toContain("attest_sign");
+    expect(order).not.toContain("attest_post");
   });
 });

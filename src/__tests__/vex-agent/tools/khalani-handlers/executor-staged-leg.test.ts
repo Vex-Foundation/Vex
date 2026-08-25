@@ -121,6 +121,8 @@ function solLeg(): SolanaStagedLeg {
 const ALLOWANCE_BLOCK = 34_567_890n;
 
 describe("bridge-executor — EVM staged leg", () => {
+  const reservePreparedNonce = async (request: { nodePendingNonce: number }): Promise<number> =>
+    request.nodePendingNonce;
   beforeEach(() => {
     vi.clearAllMocks();
     mockEstimateGas.mockResolvedValue(120_000n);
@@ -135,6 +137,7 @@ describe("bridge-executor — EVM staged leg", () => {
     const order: string[] = [];
     const staged: { txHash: string; fromAddress: string; nonce: number | null }[] = [];
     const outcome = await signStageKhalaniLeg(evmLeg(), BASE_CHAIN, [BASE_CHAIN], EVM, {
+      onNonceReserved: reservePreparedNonce,
       onHashStaged: async (h) => { order.push("stage"); staged.push(h); },
       onAccepted: async () => { order.push("accept"); },
     });
@@ -151,6 +154,7 @@ describe("bridge-executor — EVM staged leg", () => {
 
   it("onHashStaged throwing aborts BEFORE any broadcast", async () => {
     await expect(signStageKhalaniLeg(evmLeg(), BASE_CHAIN, [BASE_CHAIN], EVM, {
+      onNonceReserved: reservePreparedNonce,
       onHashStaged: async () => { throw new Error("CAS miss"); },
       onAccepted: async () => {},
     })).rejects.toThrow("CAS miss");
@@ -159,25 +163,27 @@ describe("bridge-executor — EVM staged leg", () => {
 
   it("a send failure is ambiguous(send)", async () => {
     mockSendRaw.mockRejectedValueOnce(new Error("rpc down"));
-    const outcome = await signStageKhalaniLeg(evmLeg(), BASE_CHAIN, [BASE_CHAIN], EVM, { onHashStaged: async () => {}, onAccepted: async () => {} });
+    const outcome = await signStageKhalaniLeg(evmLeg(), BASE_CHAIN, [BASE_CHAIN], EVM, { onNonceReserved: reservePreparedNonce, onHashStaged: async () => {}, onAccepted: async () => {} });
     expect(outcome).toEqual({ kind: "ambiguous", txHash: keccak256(SERIALIZED), stage: "send" });
   });
 
   it("a reverted receipt is reverted", async () => {
     mockWaitReceipt.mockResolvedValueOnce({ status: "reverted" });
-    const outcome = await signStageKhalaniLeg(evmLeg(), BASE_CHAIN, [BASE_CHAIN], EVM, { onHashStaged: async () => {}, onAccepted: async () => {} });
+    const outcome = await signStageKhalaniLeg(evmLeg(), BASE_CHAIN, [BASE_CHAIN], EVM, { onNonceReserved: reservePreparedNonce, onHashStaged: async () => {}, onAccepted: async () => {} });
     expect(outcome).toEqual({ kind: "reverted", txHash: keccak256(SERIALIZED) });
   });
 
   it("a receipt-wait failure is ambiguous(confirm)", async () => {
     mockWaitReceipt.mockRejectedValueOnce(new Error("timeout"));
-    const outcome = await signStageKhalaniLeg(evmLeg(), BASE_CHAIN, [BASE_CHAIN], EVM, { onHashStaged: async () => {}, onAccepted: async () => {} });
+    const outcome = await signStageKhalaniLeg(evmLeg(), BASE_CHAIN, [BASE_CHAIN], EVM, { onNonceReserved: reservePreparedNonce, onHashStaged: async () => {}, onAccepted: async () => {} });
     expect(outcome).toEqual({ kind: "ambiguous", txHash: keccak256(SERIALIZED), stage: "confirm" });
   });
 });
 
 /** The signed limit is max(provider gas, our headroomed estimate). */
 describe("bridge-executor — EVM staged leg gas limit", () => {
+  const reservePreparedNonce = async (request: { nodePendingNonce: number }): Promise<number> =>
+    request.nodePendingNonce;
   /** The bare estimate that was actually signed for the reverted Base swap. */
   const OWN_ESTIMATE = 1_026_236n;
   /** 200% headroom policy (`gasLimitWithHeadroom`) applied to OWN_ESTIMATE. */
@@ -209,7 +215,7 @@ describe("bridge-executor — EVM staged leg gas limit", () => {
     mockWaitReceipt.mockResolvedValue({ status: "success", blockNumber: ALLOWANCE_BLOCK });
   });
 
-  const noopHooks = { onHashStaged: async () => {}, onAccepted: async () => {} };
+  const noopHooks = { onNonceReserved: reservePreparedNonce, onHashStaged: async () => {}, onAccepted: async () => {} };
 
   // BOTH Vex-signed legs go through this path — an ERC-20 approval that runs
   // out of gas strands the bridge just as effectively as the deposit doing so.
@@ -260,7 +266,7 @@ describe("bridge-executor — EVM staged leg gas limit", () => {
     await expect(signStageKhalaniLeg(
       evmLegOf("bridge_deposit", { gas: overCeiling }),
       BASE_CHAIN, [BASE_CHAIN], EVM,
-      { onHashStaged: async (h) => { staged.push(h); }, onAccepted: async () => {} },
+      { onNonceReserved: reservePreparedNonce, onHashStaged: async (h) => { staged.push(h); }, onAccepted: async () => {} },
     )).rejects.toMatchObject({ code: ErrorCodes.PROVIDER_GAS_LIMIT_EXCESSIVE });
 
     // A refusal that costs nothing: no signature, no staged row, no broadcast.
@@ -321,6 +327,7 @@ describe("bridge-executor — EVM staged leg gas limit", () => {
     const staged: unknown[] = [];
 
     await expect(signStageKhalaniLeg(evmLegOf("bridge_deposit"), BASE_CHAIN, [BASE_CHAIN], EVM, {
+      onNonceReserved: reservePreparedNonce,
       onHashStaged: async (h) => { staged.push(h); },
       onAccepted: async () => {},
     })).rejects.toThrow(/execution reverted/);
@@ -344,7 +351,9 @@ describe("bridge-executor — EVM staged leg gas limit", () => {
  */
 describe("bridge-executor — EVM deposit leg estimated after a confirmed allowance", () => {
   const LIVE_ALLOWANCE_REVERT = "Execution reverted with reason: ERC20: transfer amount exceeds allowance.";
-  const noopHooks = { onHashStaged: async () => {}, onAccepted: async () => {} };
+  const reservePreparedNonce = async (request: { nodePendingNonce: number }): Promise<number> =>
+    request.nodePendingNonce;
+  const noopHooks = { onNonceReserved: reservePreparedNonce, onHashStaged: async () => {}, onAccepted: async () => {} };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -375,7 +384,7 @@ describe("bridge-executor — EVM deposit leg estimated after a confirmed allowa
 
     const outcome = await settle(signStageKhalaniLeg(
       evmLegOf("bridge_deposit"), BASE_CHAIN, [BASE_CHAIN], EVM,
-      { onHashStaged: async (h) => { staged.push(h); }, onAccepted: async () => {} },
+      { onNonceReserved: reservePreparedNonce, onHashStaged: async (h) => { staged.push(h); }, onAccepted: async () => {} },
       { blockNumber: ALLOWANCE_BLOCK },
     ));
 
@@ -392,7 +401,7 @@ describe("bridge-executor — EVM deposit leg estimated after a confirmed allowa
 
     const err = await settle(signStageKhalaniLeg(
       evmLegOf("bridge_deposit"), BASE_CHAIN, [BASE_CHAIN], EVM,
-      { onHashStaged: async (h) => { staged.push(h); }, onAccepted: async () => {} },
+      { onNonceReserved: reservePreparedNonce, onHashStaged: async (h) => { staged.push(h); }, onAccepted: async () => {} },
       { blockNumber: ALLOWANCE_BLOCK },
     ).catch((e: unknown) => e));
 
@@ -417,6 +426,8 @@ describe("bridge-executor — EVM deposit leg estimated after a confirmed allowa
 });
 
 describe("bridge-executor — Solana staged leg", () => {
+  const unusedEvmNonceReservation = async (request: { nodePendingNonce: number }): Promise<number> =>
+    request.nodePendingNonce;
   const PREPARED = {
     serialized: new Uint8Array([1, 2, 3, 4]),
     signature: "BASE58SIGNATURE",
@@ -437,6 +448,7 @@ describe("bridge-executor — Solana staged leg", () => {
       recentBlockhash?: string; lastValidBlockHeight?: number;
     }> = [];
     const outcome = await signStageKhalaniLeg(solLeg(), SOL_CHAIN, [SOL_CHAIN], SOL, {
+      onNonceReserved: unusedEvmNonceReservation,
       onHashStaged: async (h) => { staged.push(h); },
       onAccepted: async () => {},
     });
@@ -461,24 +473,24 @@ describe("bridge-executor — Solana staged leg", () => {
 
   it("a broadcast failure is ambiguous(send) — signature already staged", async () => {
     mockBroadcastSolana.mockRejectedValueOnce(new Error("blockhash expired"));
-    const outcome = await signStageKhalaniLeg(solLeg(), SOL_CHAIN, [SOL_CHAIN], SOL, { onHashStaged: async () => {}, onAccepted: async () => {} });
+    const outcome = await signStageKhalaniLeg(solLeg(), SOL_CHAIN, [SOL_CHAIN], SOL, { onNonceReserved: unusedEvmNonceReservation, onHashStaged: async () => {}, onAccepted: async () => {} });
     expect(outcome).toEqual({ kind: "ambiguous", txHash: "BASE58SIGNATURE", stage: "send" });
   });
 
   it("a reverted confirmation (RPC value.err) is REVERTED, never confirmed (blocker 2)", async () => {
     mockConfirmSolana.mockResolvedValueOnce({ status: "reverted", error: "InstructionError" });
-    const outcome = await signStageKhalaniLeg(solLeg(), SOL_CHAIN, [SOL_CHAIN], SOL, { onHashStaged: async () => {}, onAccepted: async () => {} });
+    const outcome = await signStageKhalaniLeg(solLeg(), SOL_CHAIN, [SOL_CHAIN], SOL, { onNonceReserved: unusedEvmNonceReservation, onHashStaged: async () => {}, onAccepted: async () => {} });
     expect(outcome).toEqual({ kind: "reverted", txHash: "BASE58SIGNATURE" });
   });
 
   it("a confirm RPC error is ambiguous(confirm) — never a false success", async () => {
     mockConfirmSolana.mockRejectedValueOnce(new Error("confirm timeout"));
-    const outcome = await signStageKhalaniLeg(solLeg(), SOL_CHAIN, [SOL_CHAIN], SOL, { onHashStaged: async () => {}, onAccepted: async () => {} });
+    const outcome = await signStageKhalaniLeg(solLeg(), SOL_CHAIN, [SOL_CHAIN], SOL, { onNonceReserved: unusedEvmNonceReservation, onHashStaged: async () => {}, onAccepted: async () => {} });
     expect(outcome).toEqual({ kind: "ambiguous", txHash: "BASE58SIGNATURE", stage: "confirm" });
   });
 
   it("family mismatch fails closed (Solana leg, EVM signer)", async () => {
-    await expect(signStageKhalaniLeg(solLeg(), SOL_CHAIN, [SOL_CHAIN], EVM, { onHashStaged: async () => {}, onAccepted: async () => {} }))
+    await expect(signStageKhalaniLeg(solLeg(), SOL_CHAIN, [SOL_CHAIN], EVM, { onNonceReserved: unusedEvmNonceReservation, onHashStaged: async () => {}, onAccepted: async () => {} }))
       .rejects.toThrow(/Solana deposit requires a Solana signing wallet/);
   });
 
@@ -488,6 +500,7 @@ describe("bridge-executor — Solana staged leg", () => {
     );
     const staged: unknown[] = [];
     await expect(signStageKhalaniLeg(solLeg(), SOL_CHAIN, [SOL_CHAIN], SOL, {
+      onNonceReserved: unusedEvmNonceReservation,
       onHashStaged: async (h) => { staged.push(h); },
       onAccepted: async () => {},
     })).rejects.toThrow(/sole required signer/);

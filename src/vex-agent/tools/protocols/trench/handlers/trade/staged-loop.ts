@@ -21,6 +21,7 @@ import { signStageBroadcast, type StagedBroadcastOutcome } from "@tools/evm-chai
 import { priorLegAnchorFrom, type ConfirmedPriorLeg } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import {
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
   confirmActivityEvent,
   failActivityEvent,
@@ -91,6 +92,7 @@ export async function runStagedLoop(x: StagedLoopInput): Promise<ToolResult> {
       const outcome: StagedBroadcastOutcome = await signStageBroadcast(
         x.publicClient, x.walletClient, plan.txParams,
         {
+          onNonceReserved: (request) => reserveActivityEvmNonce(eventRow.id, request),
           onHashStaged: async (handles) => {
             legBroadcastAttempted = true;
             const res = await markActivityBroadcast(eventRow.id, handles);
@@ -239,7 +241,7 @@ async function attachVexFee(
     feeRowId: fee.rowId,
     chainId: x.chainId,
     publicClient: x.publicClient,
-    walletClient: x.walletClient,
+    signer: x.walletClient,
     priorLeg,
   });
   return withFeeDisclosure(finalized.result, collection, plan.disclosure);

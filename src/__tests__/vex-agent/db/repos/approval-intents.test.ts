@@ -92,14 +92,14 @@ function makeCreateInput(): intents.CreateIntentInput {
 // ── createWith ─────────────────────────────────────────────────────────
 
 describe("createWith", () => {
-  it("INSERTs all 10 enqueue-time columns in declared order on the supplied client", async () => {
+  it("INSERTs all 15 enqueue-time columns in declared order on the supplied client", async () => {
     await intents.createWith(mockClient as never, makeCreateInput());
 
     expect(clientQueryLog).toHaveLength(1);
     const { sql, params } = clientQueryLog[0]!;
     expect(sql).toContain("INSERT INTO approval_intents");
     expect(sql).toContain(
-      "approval_id, session_id, mission_run_id, tool_call_id,\n  action_kind, risk_level, preview_json, policy_json,\n  expires_at, idempotency_key",
+      "approval_id, session_id, mission_run_id, tool_call_id,\n  action_kind, risk_level, preview_json, policy_json,\n  expires_at, idempotency_key,\n  origin, project_id, scope_version_at_enqueue, request_digest,\n  dispatch_generation_at_enqueue",
     );
     expect(params).toEqual([
       APPROVAL_ID,
@@ -112,6 +112,13 @@ describe("createWith", () => {
       expect.stringContaining("permission"), // JSON-stringified policy
       null, // expires_at default
       null, // idempotency_key default
+      // Migration 086. A caller that names none of the Studio fields writes the
+      // row every pre-086 caller wrote: agent origin, no project, no digest.
+      "agent",
+      null, // project_id
+      null, // scope_version_at_enqueue
+      null, // request_digest
+      null, // dispatch_generation_at_enqueue
     ]);
   });
 
@@ -285,7 +292,9 @@ describe("markDecisionWith", () => {
     expect(sql).toContain("decision        = $2");
     expect(sql).toContain("AND decision IS NULL");
     expect(sql).toContain("RETURNING approval_id");
-    expect(params).toEqual([APPROVAL_ID, "approved", null, APPROVAL_ID]);
+    // Migration 086 appended `refusal_reason`: NULL for every agent decision
+    // and for an ordinary user Reject, set only by the Studio refusal owners.
+    expect(params).toEqual([APPROVAL_ID, "approved", null, APPROVAL_ID, null]);
   });
 
   it("returns false when CAS misses (rowCount = 0)", async () => {
@@ -311,7 +320,13 @@ describe("markDecisionWith", () => {
       idempotencyKey: "custom-key-123",
     });
     const [, params] = mockClient.query.mock.calls[0];
-    expect(params).toEqual([APPROVAL_ID, "rejected", "expired_ttl", "custom-key-123"]);
+    expect(params).toEqual([
+      APPROVAL_ID,
+      "rejected",
+      "expired_ttl",
+      "custom-key-123",
+      null,
+    ]);
   });
 });
 

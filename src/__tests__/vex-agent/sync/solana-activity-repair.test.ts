@@ -61,6 +61,13 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
+// The linked-intent settlement is the SEAM V4 rides on: the row-resolution lane
+// hands it a verdict, and the whole point of V4 is WHICH verdict an expiry gets.
+const mockSettleLinkedIntentForRow = vi.fn(async (..._args: unknown[]) => {});
+vi.mock("@vex-agent/sync/wallet-transaction-intent-settlement.js", () => ({
+  settleLinkedIntentForRow: (...args: unknown[]) => mockSettleLinkedIntentForRow(...args),
+}));
+
 const {
   repairPendingSolanaActivity,
   isSolanaSweepCandidateDue,
@@ -395,6 +402,45 @@ describe("repairPendingSolanaActivity — expiry gate (the only absence-of-proof
     expect(mockFailActivityEvent).toHaveBeenCalledWith(
       1,
       expect.objectContaining({ failureCode: "solana_signature_expired" }),
+    );
+  });
+
+  it("settles the LINKED INTENT as superseded_unproven on expiry, never reverted (V4, T6)", async () => {
+    mockListSolanaStagedPending.mockResolvedValueOnce([candidateEvent({ lastValidBlockHeight: 100 })]);
+
+    await repairPendingSolanaActivity(
+      deps({
+        getSignatureStatuses: vi.fn(async () => statusesFound(null)),
+        getFinalizedTransaction: vi.fn(async () => ({ outcome: "not_found" as const })),
+        getCurrentBlockHeight: vi.fn(async () => ({ outcome: "found" as const, value: 101 })),
+      }),
+    );
+
+    // The blockhash expired with NO landed-or-reverted evidence: the honest
+    // terminal is superseded_unproven, not a chain_reverted claim that the
+    // transaction ran and failed.
+    expect(mockSettleLinkedIntentForRow).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1 }),
+      "superseded_unproven",
+    );
+  });
+
+  it("settles the LINKED INTENT as reverted on a REAL mined on-chain error (V4 counter-case)", async () => {
+    mockListSolanaStagedPending.mockResolvedValueOnce([candidateEvent({ lastValidBlockHeight: 100 })]);
+
+    await repairPendingSolanaActivity(
+      deps({
+        getSignatureStatuses: vi.fn(async () =>
+          statusesFound({ err: { InstructionError: [0, "Custom"] }, confirmationStatus: "finalized" }),
+        ),
+      }),
+    );
+
+    // Definitive on-chain revert evidence: this one IS reverted, proving the
+    // expiry case is distinguished rather than every failure folded into it.
+    expect(mockSettleLinkedIntentForRow).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1 }),
+      "reverted",
     );
   });
 

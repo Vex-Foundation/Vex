@@ -8,6 +8,10 @@ import {
   type ScoredManifest,
 } from "./lexical-score.js";
 import logger from "@utils/logger.js";
+import {
+  discoveryQueryPrivacyMode,
+  redactDiscoveryQuery,
+} from "./discovery.telemetry.js";
 
 const DEFAULT_DISCOVERY_LIMIT = 5;
 
@@ -46,8 +50,12 @@ export async function denseScore(
     }
 
     if (scored.length === 0) {
+      // THROUGH THE SANITIZER OWNER. The query is caller text - a person's
+      // phrase in the app, or an external MCP agent's phrase through
+      // `vex_ToolSearch` - and this module does not get its own privacy policy.
       logger.warn("discovery.dense.empty", {
-        query,
+        query: redactDiscoveryQuery(query),
+        queryPrivacy: discoveryQueryPrivacyMode(),
         embeddingModel,
         embeddingDim,
         candidateCount: candidates.length,
@@ -71,7 +79,8 @@ export async function denseScore(
     };
   } catch (err) {
     logger.warn("discovery.dense.failed", {
-      query,
+      query: redactDiscoveryQuery(query),
+      queryPrivacy: discoveryQueryPrivacyMode(),
       error: err instanceof Error ? err.message : String(err),
     });
     return lexicalScore(query, candidates, {

@@ -556,6 +556,29 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["action", "which sub-operation of a multi-mode tool to run; declared as an `enum`"],
   ["intentId", "the id of a prepared intent this call confirms; never synthesised by the caller"],
   ["response_format", "reply verbosity; the shared four-state contract, defaulting per tool and stated in its description"],
+
+  // -- Generic transaction signing (stage A4b) ------------------------
+  //
+  // The proposal itself and the MANDATORY fee caps. Two rules shape these
+  // spellings. First, every raw value names its UNIT in the key, because rule
+  // 90 says a raw amount travels with the unit needed to read it and these are
+  // the fields a user authorizes: `valueWei`, `maxFeePerGasWei`,
+  // `computeUnitPriceMicroLamports`. Second, none of them is a Vex invention:
+  // they are the field names of the transaction objects the chains and their
+  // SDKs already use, so an agent that knows how to build an EVM transaction
+  // or a Solana message does not have to learn a second vocabulary to hand one
+  // to Vex. `amountIn`/`amountRaw` deliberately do NOT appear here: a generic
+  // transaction has no single amount, and the amounts it does move are read
+  // out of the calldata by the decoder rather than declared by the caller.
+  ["data", "EVM calldata as 0x hex; `0x` means a plain native transfer and is accepted only when the target has no code"],
+  ["valueWei", "native coin sent with an EVM call, in RAW wei as a decimal integer string"],
+  ["gasLimit", "REQUIRED cap on gas UNITS; a caller input, never derived from an estimate"],
+  ["maxFeePerGasWei", "REQUIRED EIP-1559 cap on total price per gas unit, in RAW wei"],
+  ["maxPriorityFeePerGasWei", "REQUIRED EIP-1559 cap on the validator tip per gas unit, in RAW wei"],
+  ["gasPriceWei", "REQUIRED legacy cap on price per gas unit, in RAW wei; mutually exclusive with the 1559 pair"],
+  ["transactionBase64", "an UNSIGNED Solana transaction or message, base64; a signed one is refused"],
+  ["computeUnitLimit", "REQUIRED cap on requested Solana compute units; priority fee is charged on the REQUEST, not on usage"],
+  ["computeUnitPriceMicroLamports", "REQUIRED cap on Solana priority price per compute unit, in RAW micro-lamports"],
 ]);
 
 /**

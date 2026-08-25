@@ -27,6 +27,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getAddress, keccak256, toHex, type Hex } from "viem";
 
 const createAgentActivityIntent = vi.fn();
+const reserveActivityEvmNonce = vi.fn(async (
+  _id: number,
+  request: { readonly nodePendingNonce: number },
+) => request.nodePendingNonce);
 const markActivityBroadcast = vi.fn();
 const markBroadcastAccepted = vi.fn();
 const confirmActivityEvent = vi.fn();
@@ -36,6 +40,9 @@ const pinConfirmedPendleAcquisition = vi.fn();
 
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   createAgentActivityIntent: (...a: unknown[]) => createAgentActivityIntent(...a),
+  reserveActivityEvmNonce: (
+    ...args: Parameters<typeof reserveActivityEvmNonce>
+  ) => reserveActivityEvmNonce(...args),
   markActivityBroadcast: (...a: unknown[]) => markActivityBroadcast(...a),
   markBroadcastAccepted: (...a: unknown[]) => markBroadcastAccepted(...a),
   confirmActivityEvent: (...a: unknown[]) => confirmActivityEvent(...a),
@@ -134,6 +141,7 @@ const PT_PLAN = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  reserveActivityEvmNonce.mockImplementation(async (_id, request) => request.nodePendingNonce);
   createAgentActivityIntent.mockResolvedValue({ executionId: 7, events: [{ id: 99 }] });
   markActivityBroadcast.mockResolvedValue({ applied: true, row: {} });
   markBroadcastAccepted.mockResolvedValue({ applied: true, row: {} });
@@ -164,6 +172,10 @@ describe("a markActivityBroadcast CAS miss REFUSES to broadcast", () => {
 
   it("stages the hash BEFORE the submit, never after", async () => {
     const order: string[] = [];
+    reserveActivityEvmNonce.mockImplementation(async (_id, request) => {
+      order.push("reserve");
+      return request.nodePendingNonce;
+    });
     markActivityBroadcast.mockImplementation(async () => {
       order.push("stage");
       return { applied: true, row: {} };
@@ -176,7 +188,7 @@ describe("a markActivityBroadcast CAS miss REFUSES to broadcast", () => {
 
     await sendPendleRouterTx(c.publicClient, c.walletClient, tx, PT_PLAN);
 
-    expect(order).toEqual(["stage", "submit"]);
+    expect(order).toEqual(["reserve", "stage", "submit"]);
     expect(markActivityBroadcast.mock.calls[0]).toEqual([99, { txHash: EXPECTED_HASH, fromAddress: WALLET, nonce: 42 }]);
   });
 

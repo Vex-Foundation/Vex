@@ -6,34 +6,87 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { getAddress } from "viem";
+import { decodeFunctionData, getAddress, type Hex } from "viem";
 
-import { ensurePendleAllowanceExact } from "@tools/pendle/erc20.js";
-import { PENDLE_ROUTER } from "@tools/pendle/constants.js";
+import {
+  ensurePendleAllowanceExact as ensurePendleAllowanceExactBase,
+  type CreatePendleAllowanceStaging,
+} from "@tools/pendle/erc20.js";
+import { PENDLE_ERC20_ABI, PENDLE_ROUTER } from "@tools/pendle/constants.js";
 import { ErrorCodes } from "../../../../../errors.js";
 
 const TOKEN = getAddress("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48");
 const OWNER = getAddress("0x742d35cc6634c0532925a3b844bc454e4438f44e");
 
 function makeClients(currentAllowance: bigint, gasEstimate = 46_312n) {
-  const writeContract = vi.fn().mockResolvedValue("0xhash");
-  const estimateContractGas = vi.fn().mockResolvedValue(gasEstimate);
+  let nodePendingNonce = 7;
+  const signedRequests: Array<Record<string, unknown>> = [];
+  const signTransaction = vi.fn(async (request: Record<string, unknown>) => {
+    signedRequests.push(request);
+    return "0xdeadbeef" as Hex;
+  });
+  const estimateGas = vi.fn().mockResolvedValue(gasEstimate);
   const publicClient = {
     readContract: vi.fn().mockResolvedValue(currentAllowance),
-    estimateContractGas,
+    estimateGas,
+    sendRawTransaction: vi.fn(async () => {
+      nodePendingNonce += 1;
+      return `0x${"ab".repeat(32)}` as Hex;
+    }),
     waitForTransactionReceipt: vi.fn().mockResolvedValue({ status: "success" }),
   };
-  const walletClient = { account: { address: OWNER }, chain: { id: 1 }, writeContract };
-  return { publicClient, walletClient, writeContract, estimateContractGas };
+  const walletClient = {
+    account: { address: OWNER },
+    chain: { id: 1 },
+    prepareTransactionRequest: vi.fn(async (request: Record<string, unknown>) => ({
+      ...request,
+      nonce: nodePendingNonce,
+    })),
+    signTransaction,
+  };
+  return {
+    publicClient,
+    walletClient,
+    writeContract: signTransaction,
+    estimateContractGas: estimateGas,
+    signedRequests,
+  };
 }
 
 /** Extract [spender, amount] pairs of the approve calls, in order. */
 function approveArgs(writeContract: ReturnType<typeof vi.fn>): Array<[string, bigint]> {
   return writeContract.mock.calls.map((c) => {
-    const req = c[0] as { functionName: string; args: [string, bigint] };
-    expect(req.functionName).toBe("approve");
-    return req.args;
+    const request = c[0];
+    if (typeof request !== "object" || request === null || !("data" in request)) {
+      throw new Error("signed approval request carried no calldata");
+    }
+    const decoded = decodeFunctionData({ abi: PENDLE_ERC20_ABI, data: String(request.data) as Hex });
+    if (decoded.functionName !== "approve") throw new Error("signed request was not approve");
+    return [decoded.args[0], decoded.args[1]];
   });
+}
+
+const createTestStaging: CreatePendleAllowanceStaging = () => ({
+  hooks: {
+    onNonceReserved: async (request) => request.nodePendingNonce,
+    onHashStaged: async () => undefined,
+    onAccepted: async () => undefined,
+  },
+  terminalize: async () => undefined,
+});
+
+function ensurePendleAllowanceExact(
+  ...args: Parameters<typeof ensurePendleAllowanceExactBase>
+): ReturnType<typeof ensurePendleAllowanceExactBase> {
+  const [publicClient, walletClient, token, spender, requiredAmount] = args;
+  return ensurePendleAllowanceExactBase(
+    publicClient,
+    walletClient,
+    token,
+    spender,
+    requiredAmount,
+    createTestStaging,
+  );
 }
 
 describe("ensurePendleAllowanceExact — set-to-exact discipline", () => {
@@ -119,7 +172,11 @@ describe("ensurePendleAllowanceExact — gas-limit headroom", () => {
 
   /** The `gas` passed to each `approve` write, in order. */
   function writtenGas(writeContract: ReturnType<typeof vi.fn>): Array<bigint | undefined> {
-    return writeContract.mock.calls.map((c) => (c[0] as { gas?: bigint }).gas);
+    return writeContract.mock.calls.map((c) => {
+      const request = c[0];
+      if (typeof request !== "object" || request === null || !("gas" in request)) return undefined;
+      return typeof request.gas === "bigint" ? request.gas : undefined;
+    });
   }
 
   it("signs the headroomed estimate, not the bare estimate, on a single exact approval", async () => {
@@ -150,9 +207,15 @@ describe("ensurePendleAllowanceExact — gas-limit headroom", () => {
       publicClient as never, walletClient as never, TOKEN, PENDLE_ROUTER, 100n,
     );
 
-    const estimated = estimateContractGas.mock.calls.map(
-      (c) => (c[0] as { functionName: string; args: [string, bigint] }).args,
-    );
+    const estimated = estimateContractGas.mock.calls.map((c) => {
+      const request = c[0];
+      if (typeof request !== "object" || request === null || !("data" in request)) {
+        throw new Error("estimated approval request carried no calldata");
+      }
+      const decoded = decodeFunctionData({ abi: PENDLE_ERC20_ABI, data: String(request.data) as Hex });
+      if (decoded.functionName !== "approve") throw new Error("estimated request was not approve");
+      return [decoded.args[0], decoded.args[1]];
+    });
     expect(estimated).toEqual([
       [PENDLE_ROUTER, 0n],
       [PENDLE_ROUTER, 100n],
@@ -161,7 +224,7 @@ describe("ensurePendleAllowanceExact — gas-limit headroom", () => {
 
   it("throws APPROVAL_FAILED before any approve is written when the estimate reverts", async () => {
     const { publicClient, walletClient, writeContract } = makeClients(0n, ESTIMATE);
-    publicClient.estimateContractGas.mockRejectedValueOnce(new Error("execution reverted"));
+    publicClient.estimateGas.mockRejectedValueOnce(new Error("execution reverted"));
 
     await expect(
       ensurePendleAllowanceExact(publicClient as never, walletClient as never, TOKEN, PENDLE_ROUTER, 100n),

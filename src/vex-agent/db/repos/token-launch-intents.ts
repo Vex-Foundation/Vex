@@ -1,6 +1,13 @@
 /**
- * Token-launch intents repo — the durable Trench Express launch state machine
- * (contract C1; migration `062_trench_launch.sql`).
+ * Token-launch intents repo - the durable launch state machine (contract C1;
+ * migration `062_trench_launch.sql`).
+ *
+ * SHARED BY BOTH LAUNCHPADS since migration `082_pools_fun_launch.sql`. It was
+ * built for Trench Express and pools.fun reuses it deliberately (owner decision
+ * 2026-08-18): the single-use authorization, the resume path and the expiry
+ * sweep are exactly what a launch needs, and a second copy would be a second
+ * place for the money path to drift. The `protocol` column (`trench` |
+ * `pools_fun`) names a row's venue; do not read this table as Trench-only.
  *
  * This file is the PUBLIC ENTRY POINT and owns the contract documentation; the
  * implementation lives in the same-named sibling folder, split by reason to
