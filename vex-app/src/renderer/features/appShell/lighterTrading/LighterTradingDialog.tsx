@@ -735,7 +735,7 @@ function MarketPicker({
           <span>{shown.length} markets</span>
         </nav>
         <div className="lit-market-table-head" aria-hidden="true">
-          <span>Market</span><span>Type</span><span>Status</span><span>Base / quote minimum</span><span>Taker fee</span>
+          <span>Market</span><span>Status</span><span>Minimum size</span><span>Minimum value</span><span>Taker fee</span>
         </div>
         <div
           className="lit-market-table"
@@ -748,12 +748,23 @@ function MarketPicker({
           ) : shown.map((market) => {
             const symbols = marketSymbols(market.symbol, market.marketType);
             const classification = classifyLighterMarket(environment, market);
+            const productLabel = marketProductLabel(classification);
+            const takerFee = formatProviderPercent(market.fees.taker, market.fees.takerEnabled);
+            const optionLabel = [
+              market.symbol,
+              productLabel,
+              market.status,
+              `minimum size ${market.minBaseAmount} ${symbols.base}`,
+              `minimum value ${market.minQuoteAmount} ${symbols.quote}`,
+              `taker fee ${takerFee}`,
+            ].join(", ");
             return <button
               type="button"
               key={market.marketId}
               id={`lit-market-${market.marketId}`}
               role="option"
               tabIndex={-1}
+              aria-label={optionLabel}
               aria-selected={market.marketId === selectedMarketId}
               data-highlighted={market.marketId === highlightedMarketId || undefined}
               ref={market.marketId === highlightedMarketId ? highlightedOptionRef : undefined}
@@ -763,14 +774,23 @@ function MarketPicker({
               <span className="lit-market-name">
                 <MarketSymbol environment={environment} market={market} />
                 <span className="lit-market-identity">
-                  <b>{classification.ticker}</b>
-                  {market.symbol === classification.ticker ? null : <small>{market.symbol}</small>}
+                  <b title={market.symbol}>{market.symbol}</b>
+                  <small>{productLabel}</small>
                 </span>
               </span>
-              <span>{marketProductLabel(classification)}</span>
-              <span data-status={market.status}>{market.status}</span>
-              <span>{market.minBaseAmount} {symbols.base} · {market.minQuoteAmount} {symbols.quote}</span>
-              <span>{formatProviderPercent(market.fees.taker, market.fees.takerEnabled)}</span>
+              <span className="lit-market-status" data-status={market.status}>
+                <i aria-hidden="true" />
+                <span>{market.status}</span>
+              </span>
+              <span className="lit-market-value" data-mobile-label="Min size">
+                <span>{market.minBaseAmount}</span><small>{symbols.base}</small>
+              </span>
+              <span className="lit-market-value" data-mobile-label="Min value">
+                <span>{market.minQuoteAmount}</span><small>{symbols.quote}</small>
+              </span>
+              <span className="lit-market-value" data-mobile-label="Taker fee">
+                <span>{takerFee}</span>
+              </span>
             </button>
           })}
         </div>

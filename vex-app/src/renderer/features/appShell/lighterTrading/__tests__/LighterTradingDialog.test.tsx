@@ -158,7 +158,7 @@ describe("Light it up dialog", () => {
 
     expect(screen.queryByRole("option", { name: /BTC/ })).toBeNull();
     const stockSpot = screen.getByRole("option", {
-      name: /AAPL.*AAPL\/USDG.*Stock token.*Spot.*active/i,
+      name: /AAPL\/USDG.*Stock token.*Spot.*active/i,
     });
     fireEvent.click(stockSpot);
 
@@ -274,7 +274,11 @@ describe("Light it up dialog", () => {
     const search = screen.getByRole("combobox", { name: "Search Lighter markets" });
     fireEvent.change(search, { target: { value: "USDG" } });
 
-    const option = screen.getByRole("option", { name: /ETH.*ETH\/USDG.*Spot.*active/i });
+    const option = screen.getByRole("option", { name: /ETH\/USDG.*Spot.*active/i });
+    expect(within(option).getByText("ETH/USDG")).toBeTruthy();
+    expect(within(option).getByText("Spot")).toBeTruthy();
+    expect(screen.getByText("Minimum size")).toBeTruthy();
+    expect(screen.getByText("Minimum value")).toBeTruthy();
     fireEvent.click(option);
 
     await waitFor(() => {
@@ -304,7 +308,7 @@ describe("Light it up dialog", () => {
     fireEvent.click(await screen.findByRole("button", { name: /BTC.*perp.*active/i }));
     const option = screen.getByRole("option", { name: /AAPL.*Perpetual.*active/i });
 
-    expect(within(option).getByText("AAPL")).toBeTruthy();
+    expect(within(option).getByTitle("AAPL")).toBeTruthy();
     expect(option.querySelector('[data-market-mark="brand"] svg')).not.toBeNull();
   });
 
