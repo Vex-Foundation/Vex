@@ -60,6 +60,18 @@ func main() {
 }
 
 func run() int {
+	// REGISTERED FIRST, before endpoint resolution, the stale-endpoint probe and
+	// the dial. Those steps are network and filesystem work with their own
+	// deadlines, and until Notify is installed Go's DEFAULT SIGINT/SIGTERM
+	// disposition applies: the process dies immediately. A user who hit ctrl-c
+	// while the bridge was probing a wedged endpoint therefore got a kill rather
+	// than this program's own bounded teardown, and the connection it may have
+	// just opened was never closed by an owner. Registering here makes the whole
+	// run, not merely the relay, cover the signal.
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(signals)
+
 	projectID, err := resolveProjectID()
 	if errors.Is(err, errHelpRequested) {
 		return exitOK
@@ -97,10 +109,6 @@ func run() int {
 		_ = conn.Close()
 		return refusalExit(ack)
 	}
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	defer signal.Stop(signals)
 
 	result := relay.Run(relay.Options{
 		In:            os.Stdin,

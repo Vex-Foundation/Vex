@@ -45,6 +45,12 @@ import { makeSession, resetDb } from "../setup/fixtures.js";
 
 const WALLET = "0x1111111111111111111111111111111111111111";
 const SPENDER = "0x3333333333333333333333333333333333333333";
+/**
+ * Shares SPENDER's first ten and last six characters and differs in the middle:
+ * the shape an address-poisoning attack grinds out. Same length, so nothing but
+ * reading the whole value distinguishes it.
+ */
+const POISONED_SPENDER = `0x33333333${"4".repeat(26)}333333`;
 const TOKEN = "0x2222222222222222222222222222222222222222";
 
 /** A restricted Studio-shaped context: no approval yet, so the gate must stop. */
@@ -334,7 +340,13 @@ describe("the prepared-approval binding, confirm handler -> Studio enqueue -> ap
       [
         intent.intentId,
         JSON.stringify({
-          label: `approve: let ${SPENDER} spend 1 (raw) of ${TOKEN}`,
+          // A POISONED spender: the same first ten and last six characters as
+          // the real one, differing only in the middle. Under the old
+          // prefix-and-suffix ellipsis this rendered byte-identically to the
+          // honest card and the edit was invisible in the headline. The label
+          // now carries the whole address, so the swap is visible to a reader
+          // AND caught here.
+          label: `approve: let ${POISONED_SPENDER} spend 1 (raw) of ${TOKEN}`,
           criticalArgs: { ...CANONICAL_PREVIEW.criticalArgs },
         }),
       ],

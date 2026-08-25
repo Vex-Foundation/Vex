@@ -49,6 +49,30 @@ function sanitizeQuery(rawQuery: string | undefined, mode: DiscoveryQueryPrivacy
   return createHash("sha256").update(normalized).digest("hex").slice(0, 16);
 }
 
+/**
+ * THE ONE WAY a discovery query reaches a log line, from any module.
+ *
+ * `sanitizeQuery` was private, so `dense-score.ts` logged the raw text on its
+ * two fallback paths and a query typed by a person - or forwarded verbatim from
+ * an external MCP agent through `vex_ToolSearch` - landed in the log file
+ * unredacted, whatever `DISCOVERY_QUERY_PRIVACY` was set to. That is exactly
+ * the "one owner for a policy, not a copy per call site" rule: the privacy mode
+ * is a single decision and every consumer must reach it through this function.
+ *
+ * The mode is resolved per call rather than cached, matching
+ * `logDiscoveryTelemetry`, so a change to the environment variable takes effect
+ * without a restart and the two surfaces can never disagree about the mode in
+ * force for one call.
+ */
+export function redactDiscoveryQuery(query: string | undefined): string | undefined {
+  return sanitizeQuery(query, resolvePrivacyMode());
+}
+
+/** The privacy mode a redacted query was produced under, for the same log line. */
+export function discoveryQueryPrivacyMode(): DiscoveryQueryPrivacyMode {
+  return resolvePrivacyMode();
+}
+
 export function newDiscoveryRunId(): string {
   return randomUUID();
 }

@@ -21,13 +21,22 @@
  *
  * ## Everything else is read from the live sources
  *
- * `publicName`, `description`, `inputSchema`, `actionKind` and `requiresEnv`
- * come from the registry and the catalog AT RUNTIME, through the SAME canonical
- * projection the in-app provider `tools` array uses
- * (`registry/protocol-tool-projection.ts`). Only the `title` is authored, in
- * `titles.ts`, and only the annotations are derived, in `annotations.ts` from
- * the O7 table. Nothing is copied into this file, so a manifest edit cannot
- * leave a stale duplicate behind.
+ * `publicName`, `description`, `actionKind` and `requiresEnv` come from the
+ * registry and the catalog AT RUNTIME, through the SAME canonical projection the
+ * in-app provider `tools` array uses (`registry/protocol-tool-projection.ts`).
+ * Only the `title` is authored, in `titles.ts`, and only the annotations are
+ * derived, in `annotations.ts` from the O7 table. Nothing is copied into this
+ * file, so a manifest edit cannot leave a stale duplicate behind.
+ *
+ * `inputSchema` is the ONE deliberate divergence, and it is a strictness
+ * divergence rather than a content one: both schemas are compiled from the same
+ * manifest params, but the MCP one adds `additionalProperties: false` and the
+ * value bounds `validateProtocolParams` actually enforces
+ * (`./strict-schema.ts`). The reason is that the SDK VALIDATES this schema
+ * before dispatching a `tools/call`, so here the schema is an admission gate
+ * and not a hint - and a gate looser than the runtime boundary advertises an
+ * acceptance the runtime then denies. The provider projection stays loose on
+ * purpose; see that module for the full contract and its declared omission.
  *
  * The list NEVER varies. Not by project, not by permission, not by client
  * capability, and not by which provider keys are configured: an env-unmet tool
@@ -38,10 +47,8 @@
 
 import { getToolDef } from "../../tools/registry.js";
 import { getProtocolManifest } from "../../tools/protocols/catalog.js";
-import {
-  protocolToolDescription,
-  protocolToolInputSchema,
-} from "../../tools/registry/protocol-tool-projection.js";
+import { protocolToolDescription } from "../../tools/registry/protocol-tool-projection.js";
+import { strictProtocolToolInputSchema } from "./strict-schema.js";
 import {
   EXPORTED_TOOL_SEARCH_DESCRIPTION,
   EXPORTED_TOOL_SEARCH_INPUT_SCHEMA,
@@ -143,7 +150,11 @@ export function buildStudioInventory(): readonly StudioTool[] {
       namespace: manifest.namespace,
       title: requireTitle(manifest.publicName),
       description: protocolToolDescription(manifest),
-      inputSchema: protocolToolInputSchema(manifest),
+      // THE STRICT projection, not the provider one. The SDK compiles this
+      // schema and refuses a `tools/call` that fails it BEFORE the handler
+      // runs, so a schema looser than `validateProtocolParams` would promise an
+      // admission the runtime then denies. See `strict-schema.ts`.
+      inputSchema: strictProtocolToolInputSchema(manifest),
       annotations: studioToolAnnotations(manifest.actionKind),
       alwaysLoad: false,
       ...(manifest.requiresEnv === undefined ? {} : { requiresEnv: manifest.requiresEnv }),

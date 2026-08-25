@@ -2,7 +2,7 @@
 
 Run the tests before you push.
 
-<!-- vex:studio:begin vex=0.2.6 hash=2d93df875bf2caf1 -->
+<!-- vex:studio:begin vex=0.2.6 hash=aebed03627709828 -->
 # Vex Studio - project "acme-trading"
 
 This repository is connected to Vex, a self-custodial crypto agent. The Vex
@@ -61,11 +61,19 @@ read it back.
 
 ## The tool surface and how to navigate it
 
-12 tools are ALWAYS LOADED: `vex_ToolSearch`
-plus the core wallet tools. Another
-147 protocol tools across
+4 tools are ALWAYS LOADED - they are in
+`tools/list` without you asking for anything, and they are named in full
+below rather than summarized, so you never search for one you already hold.
+Another 147 protocol tools across
 3 protocols are discoverable through
 `vex_ToolSearch`, which is read-only and runs nothing.
+
+Always loaded:
+
+- vex_ToolSearch
+- WalletBalances
+- WalletEvmTransactionPrepare
+- WalletEvmTransactionConfirm
 
 FINDING TOOLS: this server lists every tool it has. The Vex tools and vex_ToolSearch are loaded up front; the protocol tools are found with vex_ToolSearch, which is read-only and runs nothing. Call any tool directly by the publicName it reports - there is no activation step.
 
@@ -107,16 +115,26 @@ door: the same per-call scope snapshot, the same approval card on a mutation in
 a restricted project (your app waits on the user's decision exactly as you do),
 the same vault-locked signing, and the same local registration of every action.
 
-SIGNING ANYTHING VEX HAS NO DEDICATED TOOL FOR. Two generic pairs exist for
+SIGNING SOMETHING VEX HAS NO DEDICATED TOOL FOR. Two generic pairs exist for
 exactly this: `WalletEvmTransactionPrepare` + `WalletEvmTransactionConfirm` on
 EVM, and `WalletSolanaTransactionPrepare` + `WalletSolanaTransactionConfirm` on
-Solana. Prepare DECODES and simulates an arbitrary transaction fail-closed - it
-signs nothing, holds no key - and records a durable intent; Confirm signs and
-broadcasts that intent only after the same decoded effect the user approved
-revalidates. So an app can drive ANY contract call or transfer through the
-user's own wallets while every safety property still holds: the approval card in
-a restricted project, the digest binding between what was shown and what is
-signed, and the fee caps.
+Solana. Prepare DECODES and simulates the transaction fail-closed - it
+signs nothing, holds no key - and records a durable intent; Confirm signs
+and broadcasts that intent only after the same decoded effect the user
+approved revalidates. Every safety property holds through them: the approval
+card in a restricted project, the digest binding between what was shown and
+what is signed, and the fee caps.
+
+THE DECODE SET IS CLOSED, AND IT IS NOT "anything". On EVM the v1 set is
+ERC-20 `transfer` / `approve` / `transferFrom` / `increaseAllowance` / `permit`,
+Permit2 `approve` / `permit` / `transferFrom` at the canonical Permit2 address
+for that chain, and a plain native transfer whose `data` is `0x` sent to an
+address that has no code. An unknown selector, a malformed layout, a Permit2
+call to any other address, or empty calldata sent to a contract is REFUSED BY
+NAME before an intent exists. ROUTER AND AGGREGATOR CALLDATA IS DELIBERATELY
+OUTSIDE v1: do not plan an app around signing it through these tools, and do
+not try to reshape a swap into an approve to get past the decoder. If what you
+need is outside the set, say so to the user rather than working around it.
 
 ## Reporting Vex bugs (bounty)
 

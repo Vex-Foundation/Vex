@@ -52,7 +52,13 @@ export type WalletIntentStatus =
   | "expired";
 
 export interface WalletIntentPreview {
-  /** Short human-readable summary, e.g. "Send 1.5 ETH to 0xabc…def on base". */
+  /**
+   * One-line human-readable summary, e.g.
+   * "Send 1.5 ETH to 0x1111111111111111111111111111111111111111 on base".
+   * Addresses are carried WHOLE: an elided address is the shape an
+   * address-poisoning attack targets, and this is the sentence a human
+   * authorizes an irreversible transfer from.
+   */
   label: string;
   /** Allow-listed scalar arg map for the UI critical-args panel. */
   criticalArgs: Record<string, string | number | boolean | null>;

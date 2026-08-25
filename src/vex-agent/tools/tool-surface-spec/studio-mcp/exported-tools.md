@@ -63,7 +63,7 @@ preconditions appear inside the first 2000 bytes.
 | WalletSolanaTransactionPrepare | Prepare a Solana transaction | internal | no | no | yes | - | 1505 |
 | WalletTrackToken | Track a token in the local wallet view | internal | no | no | yes | - | 971 |
 | WebResearch | Search and read the web | internal | yes | no | yes | TAVILY_API_KEY | 2057 |
-| vex_ToolSearch | Search the protocol tool catalog | internal | yes | no | yes | - | 903 |
+| vex_ToolSearch | Search the protocol tool catalog | internal | yes | no | yes | - | 1107 |
 
 ## Protocol tools
 

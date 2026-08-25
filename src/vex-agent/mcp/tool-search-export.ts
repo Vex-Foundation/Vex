@@ -93,8 +93,11 @@ export const EXPORTED_TOOL_SEARCH_DESCRIPTION =
   + "activation step. Call it with EXACTLY ONE of `query` (an intent phrase, "
   + "for example \"bridge USDC from Base to Solana\") or `namespace` (a protocol "
   + "name, to list every tool it has). `limit` is optional and must be a whole "
-  + `number between 1 and ${MAX_DISCOVERY_LIMIT} (default ${DEFAULT_DISCOVERY_LIMIT}); `
-  + "an out-of-range limit is refused rather than quietly reduced. Rows for a "
+  + `number between 1 and ${MAX_DISCOVERY_LIMIT} (default ${DEFAULT_DISCOVERY_LIMIT} `
+  + "for `query`, and the whole namespace for `namespace` unless you name one); "
+  + "an out-of-range limit is refused rather than quietly reduced. `totalCount` "
+  + "is always how many tools matched and `hasMore` says whether the limit left "
+  + "any out, so raise `limit` to see the rest. Rows for a "
   + "tool whose provider key is not configured in this Vex installation carry "
   + "`available: false` and the environment variable NAMES that would enable "
   + "it; the tool still appears, and calling it answers with the same fact.";
@@ -125,8 +128,10 @@ export const EXPORTED_TOOL_SEARCH_INPUT_SCHEMA: JsonSchema = {
     limit: {
       type: "number",
       description:
-        `Maximum rows to return, 1 to ${MAX_DISCOVERY_LIMIT} (default `
-        + `${DEFAULT_DISCOVERY_LIMIT}). Out-of-range values are refused, not clamped.`,
+        `Maximum rows to return, 1 to ${MAX_DISCOVERY_LIMIT}. Applies to both `
+        + `modes: default ${DEFAULT_DISCOVERY_LIMIT} with \`query\`, and the whole `
+        + "namespace with `namespace` when omitted. `totalCount` and `hasMore` "
+        + "report what a limit left out. Out-of-range values are refused, not clamped.",
     },
   },
   additionalProperties: false,
@@ -232,6 +237,22 @@ function parseExportArgs(
     return {
       ok: false,
       message: `vex_ToolSearch was called with no arguments. ${MODES_SENTENCE} This call was NOT run.`,
+    };
+  }
+
+  // BOTH is refused BY NAME, because the description promises exactly one and
+  // the two are different modes with different answers: query mode ranks and
+  // returns full manifests, namespace mode lists a whole protocol as lean rows.
+  // Silently letting `query` win would answer a question the caller did not
+  // ask and would make the published contract false (rule 04: an advertised
+  // contract that validation does not enforce is a defect, not a nicety).
+  if (query.value !== undefined && namespace.value !== undefined) {
+    return {
+      ok: false,
+      message:
+        "vex_ToolSearch: `query` and `namespace` are mutually exclusive and you "
+        + `sent both. ${MODES_SENTENCE} Send whichever one you meant; this call `
+        + "was NOT run.",
     };
   }
 

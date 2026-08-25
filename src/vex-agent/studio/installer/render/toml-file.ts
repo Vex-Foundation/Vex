@@ -22,6 +22,8 @@
  * merge - while everything outside it always does.
  */
 
+import { parse as parseToml } from "smol-toml";
+
 import type { StudioWritableAgent } from "../../agents.js";
 import { STUDIO_SERVER_KEY } from "../../agents.js";
 import { buildStudioEntryFields, type StudioEntryValue } from "./entry.js";
@@ -81,6 +83,9 @@ export function mergeTomlConfig(
   agent: StudioWritableAgent,
   facts: StudioProjectFacts,
 ): StudioRenderResult {
+  const parseFailure = describeTomlParseFailure(existing);
+  if (parseFailure !== undefined) return refused("malformed_toml", parseFailure);
+
   const blocks = splitTomlBlocks(existing);
   if (typeof blocks === "string") return refused("toml_multiline_string", blocks);
 
@@ -120,6 +125,9 @@ export function removeTomlConfig(
   existing: string,
   agent: StudioWritableAgent,
 ): StudioRenderResult {
+  const parseFailure = describeTomlParseFailure(existing);
+  if (parseFailure !== undefined) return refused("malformed_toml", parseFailure);
+
   const blocks = splitTomlBlocks(existing);
   if (typeof blocks === "string") return refused("toml_multiline_string", blocks);
 
@@ -158,6 +166,47 @@ function isStudioBlock(block: TomlBlock, agent: StudioWritableAgent): boolean {
     return block.body.some((line) => /^\s*name\s*=\s*["']vex["']\s*$/.test(line));
   }
   return header === studioTomlHeader(agent);
+}
+
+/**
+ * `undefined` when `text` is valid TOML, otherwise a reportable reason.
+ *
+ * WHY A REAL PARSER RUNS BEFORE A TEXT REWRITE. `splitTomlBlocks` is a line
+ * scanner: it finds `[header]` lines and copies everything else through
+ * untouched. That is exactly what preserves the user's comments and key order,
+ * and it is also why it CANNOT NOTICE that the file is broken. A config with an
+ * unterminated string, a duplicate key or a duplicate table sailed straight
+ * through it, got a `[mcp_servers.vex]` section appended, and was handed back to
+ * a client that then failed to parse the whole file - with Vex's own section
+ * sitting at the bottom of it, looking like the cause. `malformed_toml` was
+ * DECLARED in the refusal set for precisely this and nothing ever emitted it.
+ *
+ * The parser is used as a VALIDATOR ONLY. Nothing is ever serialized back
+ * through it: a round trip would rewrite the whole document in the library's
+ * spelling and destroy the comments and ordering this module exists to keep.
+ *
+ * The refusal names the LINE AND COLUMN, never `TomlError.codeblock` - that
+ * field quotes the user's own bytes back, and a refusal detail travels to the
+ * renderer and the logs. Position is what makes the error actionable; content
+ * is what makes it a leak.
+ */
+function describeTomlParseFailure(text: string): string | undefined {
+  try {
+    parseToml(text);
+    return undefined;
+  } catch (cause) {
+    const at = tomlErrorPosition(cause);
+    return at === null
+      ? "the file is not valid TOML"
+      : `the file is not valid TOML (line ${String(at.line)}, column ${String(at.column)})`;
+  }
+}
+
+/** `line`/`column` off a `TomlError`, duck-typed so a duplicated copy still works. */
+function tomlErrorPosition(cause: unknown): { line: number; column: number } | null {
+  if (typeof cause !== "object" || cause === null) return null;
+  const { line, column } = cause as { line?: unknown; column?: unknown };
+  return typeof line === "number" && typeof column === "number" ? { line, column } : null;
 }
 
 /** Blocks, or a string describing why the text cannot be edited by text. */
@@ -222,7 +271,42 @@ function tomlValue(value: StudioEntryValue, numberLiteral: "integer" | "float"):
   return `[${value.map(tomlString).join(", ")}]`;
 }
 
-/** Basic TOML string. Only backslash and quote can occur in a path or a flag. */
+/**
+ * A TOML BASIC STRING, escaped to the specification rather than to the set of
+ * characters we expect.
+ *
+ * TOML 1.0 forbids every unescaped control character (U+0000-U+0008,
+ * U+000A-U+001F, U+007F) inside a basic string. Escaping only `\` and `"` was
+ * betting that an absolute filesystem path and a UUID never contain one - a bet
+ * about a value that arrives from `locateStudioBridge()`, i.e. from the
+ * filesystem. A newline or a tab in a bridge path would have emitted a config
+ * that is not TOML at all, and the client would fail to start with a parse
+ * error naming the user's own file.
+ *
+ * The named escapes come first (they are what a human reads), then `\uXXXX` for
+ * the rest of the control range. DEL (U+007F) is included: TOML's `basic-char`
+ * production stops at U+007E.
+ */
 function tomlString(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  const escaped = value.replace(
+    // The control range IS the subject, so it is written as an explicit codepoint
+    // range rather than as literal control bytes in this source file.
+    /[\\"\u0000-\u001F\u007F]/gu,
+    (character) => TOML_ESCAPES[character] ?? unicodeEscape(character),
+  );
+  return `"${escaped}"`;
+}
+
+const TOML_ESCAPES: Readonly<Record<string, string>> = {
+  "\\": "\\\\",
+  "\"": "\\\"",
+  "\b": "\\b",
+  "\t": "\\t",
+  "\n": "\\n",
+  "\f": "\\f",
+  "\r": "\\r",
+};
+
+function unicodeEscape(character: string): string {
+  return `\\u${character.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
 }

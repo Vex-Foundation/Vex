@@ -62,7 +62,8 @@ const BRIEF: StudioProjectBrief = {
   scopeUpdatedOn: "2026-08-25",
   agentNames: ["Claude Code"],
   inventory: {
-    alwaysLoadedCount: 12,
+    alwaysLoadedCount: 2,
+    alwaysLoadedNames: ["vex_ToolSearch", "WalletBalances"],
     searchableCount: 100,
     protocols: [{ name: "morpho", toolCount: 100 }],
   },
@@ -85,9 +86,11 @@ function io(overrides: Partial<ReconcileIo> = {}): ReconcileIo {
         entryHash: record.entryHash,
         contentHash: record.contentHash,
       });
+      return true;
     },
     clearProvenance: async (key: string) => {
       store.delete(key);
+      return true;
     },
     ...overrides,
   };
@@ -98,6 +101,15 @@ async function run(options: {
   repair?: boolean;
   io?: ReconcileIo;
 }): Promise<readonly StudioArtifactOutcome[]> {
+  return (await runResult(options)).artifacts;
+}
+
+/** The whole result, for assertions about `completed` rather than per artifact. */
+async function runResult(options: {
+  agents: readonly ("claude-code" | "codex" | "cline" | "amp")[];
+  repair?: boolean;
+  io?: ReconcileIo;
+}): Promise<{ artifacts: readonly StudioArtifactOutcome[]; completed: boolean }> {
   const plan = buildStudioPlan({
     selectedAgentIds: [...options.agents],
     previouslyWritten: new Set(store.keys()),
@@ -111,7 +123,7 @@ async function run(options: {
     repair: options.repair ?? false,
     io: options.io ?? io(),
   });
-  return result.artifacts;
+  return { artifacts: result.artifacts, completed: result.completed };
 }
 
 /** Narrow a registry record to the writable variant without an unsafe cast. */
@@ -446,17 +458,55 @@ describe("FAULT INJECTION: a run that dies mid-way, and the Repair that finishes
     }
   });
 
-  it("would have refused everything if provenance were deferred to the end", async () => {
-    // The counter-proof: run once for real, then DISCARD the provenance the
-    // way a single end-of-run transaction would on a crash, and watch the next
-    // run refuse its own files. This is what the per-file commit prevents.
+  /**
+   * CONTRACT CHANGE (audit finding B). This test used to assert that losing the
+   * whole provenance store made Vex refuse its OWN files as collisions forever,
+   * and it framed that as the counter-proof for committing per file.
+   *
+   * That behavior was a defect, not a property worth pinning: it left a project
+   * with no remedy but the user hand-deleting an entry Vex itself had written.
+   * The reconciler now FINALIZES an entry whose content is byte-for-byte what a
+   * fresh render produces, because that is proof of authorship independent of
+   * the store.
+   *
+   * Per-file commit still matters and is still proven, by the fault-injection
+   * test above: it is what lets a half-finished run be finished rather than
+   * redone. What changed is the blast radius of losing the record entirely.
+   */
+  it("re-adopts its own entries when the provenance store is lost wholesale", async () => {
     await run({ agents: ["claude-code"] });
+    store.clear();
+
+    const outcomes = await run({ agents: ["claude-code"] });
+    const config = outcomeFor(outcomes, (o) => o.agentId === "claude-code");
+    expect(config.status).toBe("unchanged");
+    // The claim is restored, so the project is provable again from here on.
+    expect(store.has(agentArtifactKey("claude-code"))).toBe(true);
+  });
+
+  it("still refuses an entry that is NOT its own output, store or no store", async () => {
+    // The security property the old test was really protecting, asserted
+    // directly: adoption is by CONTENT, so an entry named `vex` that Vex would
+    // never render is still a collision and still refuses.
+    await writeFile(
+      path.join(project, ".mcp.json"),
+      `${JSON.stringify(
+        { mcpServers: { vex: { command: "/tmp/not-the-bridge", args: ["--rm", "-rf"] } } },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
     store.clear();
 
     const outcomes = await run({ agents: ["claude-code"] });
     const config = outcomeFor(outcomes, (o) => o.agentId === "claude-code");
     expect(config.status).toBe("refused");
     if (config.status === "refused") expect(config.reason).toBe("provenance_collision");
+
+    // And the foreign entry is untouched on disk.
+    const after = await readFile(path.join(project, ".mcp.json"), "utf8");
+    expect(after).toContain("/tmp/not-the-bridge");
   });
 });
 
@@ -469,5 +519,114 @@ describe("the rendered entry proves its own ownership next time", () => {
     const expected = readStudioOwnedRegion(fresh.text, agent);
     if (expected.kind !== "present") throw new Error("expected a present region");
     expect(store.get(agentArtifactKey("codex"))?.entryHash).toBe(expected.hash);
+  });
+});
+
+/**
+ * A DURABLE RECORD THAT DID NOT LAND IS NOT A SUCCESSFUL RUN.
+ *
+ * The file replacement happens before the provenance commit, and the production
+ * adapter used to log the commit failure and swallow it. The artifact was then
+ * reported `written`, the run reported `completed`, and the completion marker
+ * advanced - while the entry on disk was one Vex could no longer prove it
+ * owned. The user was told everything was fine and got a `provenance_collision`
+ * refusal on that same file at the next render.
+ *
+ * These tests drive the REAL reconciler over a REAL filesystem with only the
+ * database seam failing, which is the one part that cannot be a real database
+ * here.
+ */
+describe("a provenance commit that fails", () => {
+  /** The real store, with `commitProvenance` failing for one artifact key. */
+  function ioFailingCommitFor(failingKey: string): ReconcileIo {
+    const real = io();
+    return {
+      ...real,
+      commitProvenance: async (record: ArtifactProvenanceWrite) => {
+        if (record.artifactKey === failingKey) return false;
+        return real.commitProvenance(record);
+      },
+    };
+  }
+
+  it("does NOT report the artifact written, and does NOT report the run complete", async () => {
+    const key = agentArtifactKey("claude-code");
+    const result = await runResult({
+      agents: ["claude-code"],
+      io: ioFailingCommitFor(key),
+    });
+
+    const config = outcomeFor(result.artifacts, (o) => o.agentId === "claude-code");
+    expect(config.status).not.toBe("written");
+    expect(config.status).toBe("refused");
+    if (config.status === "refused") {
+      expect(config.reason).toBe("io_error");
+      // The detail must not pretend nothing happened: the bytes ARE on disk.
+      expect(config.detail).toContain("was changed on disk");
+      expect(config.detail).toContain("Repair");
+    }
+
+    // `completed: false` is what keeps `recordCompleteRender` from running, so
+    // the project stays visibly owing a render.
+    expect(result.completed).toBe(false);
+
+    // And nothing was recorded for that artifact.
+    expect(store.has(key)).toBe(false);
+  });
+
+  it("leaves the file on disk so Repair has something to reconcile", async () => {
+    // The failure is in the DATABASE, not the filesystem. Rolling the file back
+    // would be a second irreversible act on the user's config to compensate for
+    // a failure that had nothing to do with it.
+    const key = agentArtifactKey("claude-code");
+    await runResult({ agents: ["claude-code"], io: ioFailingCommitFor(key) });
+
+    const written = await readFile(path.join(project, ".mcp.json"), "utf8");
+    expect(written).toContain("vex");
+    expect(written).toContain(FACTS.bridgeCommand);
+  });
+
+  /**
+   * THE CRASH WINDOW, reproduced exactly: the file lands, the record does not,
+   * and the process is gone before either can be repaired. The next run starts
+   * from a file Vex wrote and a store that has never heard of it.
+   */
+  it("recovers on the NEXT run rather than refusing the file forever", async () => {
+    const key = agentArtifactKey("claude-code");
+    const first = await runResult({
+      agents: ["claude-code"],
+      io: ioFailingCommitFor(key),
+    });
+    expect(first.completed).toBe(false);
+    expect(store.has(key)).toBe(false);
+
+    // Second run, database healthy again. The entry on disk is byte-identical
+    // to what this run would render, so it is adopted rather than refused.
+    const second = await runResult({ agents: ["claude-code"] });
+    const config = outcomeFor(second.artifacts, (o) => o.agentId === "claude-code");
+    expect(config.status).toBe("unchanged");
+    expect(second.completed).toBe(true);
+    expect(store.has(key)).toBe(true);
+  });
+
+  it("does not advance provenance for a REMOVE whose clear failed", async () => {
+    // Install, then deselect with a failing clear.
+    await run({ agents: ["claude-code"] });
+    const key = agentArtifactKey("claude-code");
+    expect(store.has(key)).toBe(true);
+
+    const real = io();
+    const result = await runResult({
+      agents: [],
+      io: { ...real, clearProvenance: async () => false },
+    });
+
+    const config = outcomeFor(result.artifacts, (o) => o.agentId === "claude-code");
+    expect(config.status).not.toBe("removed");
+    expect(config.status).toBe("refused");
+    expect(result.completed).toBe(false);
+    // The stale claim is still there, which is the safe direction: a claim Vex
+    // still holds refuses a rewrite, where a dropped one would let anything in.
+    expect(store.has(key)).toBe(true);
   });
 });

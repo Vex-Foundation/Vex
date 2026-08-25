@@ -27,6 +27,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, it, expect } from "vitest";
+// The same parser the renderer validates with. Used here to prove the emitted
+// bytes are TOML a client can actually read, rather than to compare strings.
+import { parse as parseToml } from "smol-toml";
 
 import {
   STUDIO_AGENT_LIST,
@@ -233,6 +236,103 @@ describe("TOML merges and the foreign [permission] section", () => {
     const remove = removeStudioAgentConfig(hostile, agent, STUDIO_TEST_FACTS);
     expect(remove.status).toBe("refused");
   });
+
+  /**
+   * `malformed_toml` was DECLARED in the closed refusal set and nothing ever
+   * emitted it. The line scanner that does the section rewrite cannot notice
+   * that a file is broken - it copies every non-header line through untouched -
+   * so a config with an unterminated string or a duplicate key got a
+   * `[mcp_servers.vex]` section appended and was handed to a client that then
+   * failed to parse the whole file, with Vex's section at the bottom looking
+   * like the cause.
+   *
+   * One case per TOML failure class the parser distinguishes, because they are
+   * different mistakes a human makes in a config by hand.
+   */
+  describe("refuses a file that is not valid TOML, before rewriting a byte", () => {
+    const malformed = {
+      "an unterminated string": 'command = "unterminated\n',
+      "a duplicate key": 'timeout = 1\ntimeout = 2\n',
+      "a duplicate table": '[tools]\nx = 1\n[tools]\ny = 2\n',
+      "a malformed array": 'args = ["--project", "p"\n',
+    };
+
+    for (const [label, broken] of Object.entries(malformed)) {
+      it(`refuses ${label}`, () => {
+        for (const agent of tomlAgents) {
+          const merge = mergeStudioAgentConfig(broken, agent, STUDIO_TEST_FACTS);
+          expect(merge.status, `${agent.id}: ${label} must refuse`).toBe("refused");
+          if (merge.status === "refused") {
+            expect(merge.reason).toBe("malformed_toml");
+            // Actionable position, and NOT the user's own bytes: a refusal
+            // detail travels to the renderer and into the logs.
+            expect(merge.detail).toContain("not valid TOML");
+            expect(merge.detail).toMatch(/line \d+, column \d+/);
+            expect(merge.detail).not.toContain("unterminated");
+          }
+
+          const remove = removeStudioAgentConfig(broken, agent, STUDIO_TEST_FACTS);
+          expect(remove.status, `${agent.id}: ${label} remove must refuse`).toBe("refused");
+          if (remove.status === "refused") expect(remove.reason).toBe("malformed_toml");
+        }
+      });
+    }
+
+    /**
+     * TOML 1.0 forbids every unescaped control character inside a basic string.
+     * Escaping only `\` and `"` was a bet that a bridge path never contains
+     * one - a bet about a value that arrives from the FILESYSTEM. A newline in
+     * that path emitted a file that is not TOML at all, and the client failed
+     * to parse the user's own config.
+     *
+     * The proof is the parser, not a string comparison: whatever we emit must
+     * come back out of `smol-toml` as the exact bytes we put in.
+     */
+    it("escapes control characters in a bridge path so the file stays valid TOML", () => {
+      const agent = tomlAgents[0];
+      if (agent === undefined) throw new Error("no TOML agent in the registry");
+
+      const nasty = [
+        "/tmp/vex",
+        String.fromCharCode(10),
+        "nl/",
+        String.fromCharCode(9),
+        "tab/",
+        String.fromCharCode(7),
+        "bell/",
+        String.fromCharCode(127),
+        "del/",
+        String.fromCharCode(92),
+        'quote"end/vex-mcp',
+      ].join("");
+
+      const rendered = textOf(
+        renderStudioAgentConfig(agent, { ...STUDIO_TEST_FACTS, bridgeCommand: nasty }),
+        "control-character bridge path",
+      );
+
+      // It parses at all, which is the property that was broken.
+      const parsed = parseToml(rendered) as Record<string, unknown>;
+      // And it round-trips: the path the client reads is the path we were given.
+      const servers = parsed.mcp_servers as Record<string, { command: string }>;
+      expect(servers.vex?.command).toBe(nasty);
+
+      // No raw control byte survived into the emitted text. Newline is the
+      // document's own line separator and is the one exclusion.
+      const CONTROL = new RegExp("[\\u0000-\\u0009\\u000B-\\u001F\\u007F]", "u");
+      expect(CONTROL.test(rendered)).toBe(false);
+    });
+
+    it("still accepts every valid config the goldens are built from", () => {
+      // The guard rejects BROKEN files, not unusual ones. If it ever starts
+      // refusing a file this repository itself renders, that is the bug.
+      for (const agent of tomlAgents) {
+        const existing = existingConfigFixture(agent);
+        const merged = mergeStudioAgentConfig(existing, agent, STUDIO_TEST_FACTS);
+        expect(merged.status, `${agent.id} must not be refused`).not.toBe("refused");
+      }
+    });
+  });
 });
 
 describe("JSON merges", () => {
@@ -264,6 +364,143 @@ describe("JSON merges", () => {
     );
     expect(emptied).toContain("mcpServers");
     expect(emptied).not.toContain("vex-mcp");
+  });
+
+  /**
+   * `context.fileName` is a LIST THE USER ALSO OWNS, and Vex claims exactly one
+   * element of it.
+   *
+   * Declaring it as `value: ["AGENTS.md"]` made every render assign the whole
+   * array. A user who had told Gemini to read their own files lost all of them,
+   * silently, on a scope edit made for an unrelated reason - and got them
+   * deleted again on every subsequent render.
+   */
+  describe("Gemini's context.fileName is set membership, not assignment", () => {
+    const gemini = writable.find((agent) => agent.id === "gemini-cli");
+    if (gemini === undefined) throw new Error("gemini-cli is not in the registry");
+
+    const withUserList = (...names: string[]): string =>
+      `${JSON.stringify({ context: { fileName: names } }, null, 2)}\n`;
+
+    it("PRESERVES a pre-existing list and appends only its own element", () => {
+      const merged = textOf(
+        mergeStudioAgentConfig(
+          withUserList("GEMINI.md", "docs/house-rules.md"),
+          gemini,
+          STUDIO_TEST_FACTS,
+        ),
+        "gemini merge",
+      );
+      const list = JSON.parse(merged).context.fileName;
+      expect(list).toEqual(["GEMINI.md", "docs/house-rules.md", "AGENTS.md"]);
+    });
+
+    it("does not move or duplicate an element that is already there", () => {
+      const existing = withUserList("AGENTS.md", "GEMINI.md");
+      const merged = mergeStudioAgentConfig(existing, gemini, STUDIO_TEST_FACTS);
+      const text = merged.status === "rendered" ? merged.text : existing;
+      const list = JSON.parse(text).context.fileName;
+      // Same order, one occurrence: a re-render is not a reshuffle.
+      expect(list).toEqual(["AGENTS.md", "GEMINI.md"]);
+    });
+
+    it("survives a post-install edit that adds a filename of the user's", () => {
+      const installed = textOf(
+        mergeStudioAgentConfig(withUserList("GEMINI.md"), gemini, STUDIO_TEST_FACTS),
+        "gemini install",
+      );
+      // The user then adds their own file, as they are entitled to.
+      const edited = installed.replace('"AGENTS.md"', '"AGENTS.md",\n      "NOTES.md"');
+      const rerendered = mergeStudioAgentConfig(edited, gemini, STUDIO_TEST_FACTS);
+      const text = rerendered.status === "rendered" ? rerendered.text : edited;
+      expect(JSON.parse(text).context.fileName).toEqual([
+        "GEMINI.md",
+        "AGENTS.md",
+        "NOTES.md",
+      ]);
+    });
+
+    it("on DESELECT takes back only its element and leaves the rest", () => {
+      const installed = textOf(
+        mergeStudioAgentConfig(
+          withUserList("GEMINI.md", "docs/house-rules.md"),
+          gemini,
+          STUDIO_TEST_FACTS,
+        ),
+        "gemini install",
+      );
+      const removed = textOf(
+        removeStudioAgentConfig(installed, gemini, STUDIO_TEST_FACTS),
+        "gemini remove",
+      );
+      expect(JSON.parse(removed).context.fileName).toEqual([
+        "GEMINI.md",
+        "docs/house-rules.md",
+      ]);
+    });
+
+    it("on DESELECT drops a list that held nothing but its own element", () => {
+      const fresh = textOf(
+        renderStudioAgentConfig(gemini, STUDIO_TEST_FACTS),
+        "gemini fresh",
+      );
+      expect(JSON.parse(fresh).context.fileName).toEqual(["AGENTS.md"]);
+      const removed = textOf(
+        removeStudioAgentConfig(fresh, gemini, STUDIO_TEST_FACTS),
+        "gemini remove",
+      );
+      // The wrapper Vex was the sole occupant of goes with it, no `{}` residue.
+      expect(removed).not.toContain("context");
+    });
+
+    it("REFUSES a shape it cannot own instead of reshaping the user's value", () => {
+      // A string where a list belongs may be an older single-file spelling.
+      // Coercing it would delete a setting while looking like a clean install.
+      for (const hostile of [
+        '{\n  "context": { "fileName": "GEMINI.md" }\n}\n',
+        '{\n  "context": { "fileName": [1, 2] }\n}\n',
+      ]) {
+        const merged = mergeStudioAgentConfig(hostile, gemini, STUDIO_TEST_FACTS);
+        expect(merged.status).toBe("refused");
+        if (merged.status === "refused") expect(merged.reason).toBe("malformed_json");
+      }
+    });
+  });
+
+  /**
+   * A non-object root parses without a single `ParseError`, so nothing stopped
+   * `modify()` from turning the user's array - or their string, or their number
+   * - into an object with `mcpServers` in it. A well-formed rewrite that
+   * destroys the entire file.
+   */
+  it("refuses a JSON document whose ROOT is not an object", () => {
+    const agent = jsonAgents[0];
+    if (agent === undefined) throw new Error("no JSON agent in the registry");
+    for (const root of ['["a", "b"]\n', '"just a string"\n', "42\n", "null\n"]) {
+      const merge = mergeStudioAgentConfig(root, agent, STUDIO_TEST_FACTS);
+      expect(merge.status, `root ${root.trim()} must refuse`).toBe("refused");
+      if (merge.status === "refused") {
+        expect(merge.reason).toBe("malformed_json");
+        expect(merge.detail).toContain("not an object");
+      }
+      const remove = removeStudioAgentConfig(root, agent, STUDIO_TEST_FACTS);
+      expect(remove.status).toBe("refused");
+    }
+  });
+
+  it("INSTALLS into a whitespace-only file, which the root-shape gate must not refuse", () => {
+    // The boundary of the gate above, and the reason it is a ROOT-SHAPE gate
+    // rather than a parse gate: `[]` and `"text"` hold a value a rewrite would
+    // destroy, while a file of zero bytes holds nothing at all and is
+    // equivalent to the absent file Vex creates without hesitating. Refusing
+    // it would strand every user whose editor or installer left an empty
+    // config behind, with no content lost in either direction.
+    const agent = jsonAgents[0];
+    if (agent === undefined) throw new Error("no JSON agent in the registry");
+    for (const empty of ["", "   \n"]) {
+      const merged = mergeStudioAgentConfig(empty, agent, STUDIO_TEST_FACTS);
+      expect(merged.status, `"${empty}" must install`).toBe("rendered");
+    }
   });
 });
 

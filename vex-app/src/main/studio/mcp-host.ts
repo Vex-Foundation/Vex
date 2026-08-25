@@ -378,7 +378,14 @@ async function runStart(epoch: number): Promise<StudioHostStart> {
   // it must not be overtaken into a listener.
   if (epoch !== lifecycleEpoch) return refusedStart(lockedSentence());
 
-  const server = createServer();
+  // `allowHalfOpen` IS THE CONTRACT, not a tuning knob. Without it Node ends
+  // the writable side the moment the peer's FIN arrives, so a bridge that
+  // half-closes after sending its last request (which is exactly what
+  // `bridge/internal/relay/relay.go` does when its own stdin reaches EOF)
+  // could never receive that request's answer. With it, the socket transport
+  // owns the shutdown: it drains the frames already delivered under one
+  // absolute deadline, then ends the writable side itself.
+  const server = createServer({ allowHalfOpen: true });
   server.maxConnections = STUDIO_MAX_LISTENER_SOCKETS;
   server.on("connection", handleConnection);
   server.on("error", (error: Error) => {
@@ -555,9 +562,14 @@ export function lockStudioMcpHost(cause: "lock" | "vex_quit" = "lock"): void {
 /**
  * The ORDERED QUIT teardown: listener first, then connections, then settle.
  *
- * Bounded by the contract's 5 s deadline so a peer that will not close cannot
- * hold the quit open. The cause is `vex_quit`, which is what the durable
- * refusal records.
+ * ONE ABSOLUTE DEADLINE for the whole teardown, not one per stage. The two
+ * stages used to arm 5 s each, so a listener that took its full budget and a
+ * connection that then took its own held the quit for 10 s while advertising a
+ * 5 s bound. A deadline that a caller can add up is not a bound. The clock
+ * starts here and both waits race the SAME promise, so `STUDIO_HOST_SHUTDOWN_
+ * DEADLINE_MS` is the real ceiling on this function.
+ *
+ * The cause is `vex_quit`, which is what the durable refusal records.
  */
 export async function shutdownStudioMcpHost(): Promise<void> {
   advanceLifecycleEpoch();
@@ -565,27 +577,42 @@ export async function shutdownStudioMcpHost(): Promise<void> {
   const server = state.server;
   state.server = null;
   state.endpoint = null;
-  if (server !== null) {
-    await new Promise<void>((resolve) => {
-      server.close(() => {
-        resolve();
-      });
-      const timer = setTimeout(resolve, STUDIO_HOST_SHUTDOWN_DEADLINE_MS);
-      timer.unref?.();
-    });
+
+  let releaseDeadline = (): void => undefined;
+  const deadlineTimer = setTimeout(() => {
+    releaseDeadline();
+  }, STUDIO_HOST_SHUTDOWN_DEADLINE_MS);
+  deadlineTimer.unref?.();
+  const deadline = new Promise<void>((resolve) => {
+    releaseDeadline = resolve;
+  });
+
+  try {
+    if (server !== null) {
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          server.close(() => {
+            resolve();
+          });
+        }),
+        deadline,
+      ]);
+    }
+    const open = [...connections];
+    for (const connection of open) connection.destroyNow("vex_quit");
+    await Promise.race([
+      Promise.allSettled(open.map((connection) => connection.dispose("vex_quit"))),
+      deadline,
+    ]);
+  } finally {
+    clearTimeout(deadlineTimer);
+    // The deadline promise has one consumer per stage and no other owner; the
+    // resolve keeps a late `await` from parking on a timer that is gone.
+    releaseDeadline();
+    connections.clear();
+    globalInFlight = 0;
+    reservedConnections = 0;
   }
-  const open = [...connections];
-  for (const connection of open) connection.destroyNow("vex_quit");
-  await Promise.race([
-    Promise.allSettled(open.map((connection) => connection.dispose("vex_quit"))),
-    new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, STUDIO_HOST_SHUTDOWN_DEADLINE_MS);
-      timer.unref?.();
-    }),
-  ]);
-  connections.clear();
-  globalInFlight = 0;
-  reservedConnections = 0;
 }
 
 /** Test seam: forget every host-owned handle between cases. */

@@ -219,7 +219,7 @@ describe("the project-dependent half of the block", () => {
   });
 
   it("carries the LIVE tool counts it was given, not a pinned number", () => {
-    expect(body).toContain("12 tools are ALWAYS LOADED");
+    expect(body).toContain("4 tools are ALWAYS LOADED");
     expect(body).toContain("147 protocol tools across");
     expect(body).toContain("3 protocols");
     // And the per-protocol breakdown, also live.
@@ -231,15 +231,40 @@ describe("the project-dependent half of the block", () => {
     const other = renderStudioManagedBody({
       ...STUDIO_TEST_BRIEF,
       inventory: {
-        alwaysLoadedCount: 13,
+        alwaysLoadedCount: 1,
+        alwaysLoadedNames: ["vex_ToolSearch"],
         searchableCount: 200,
         protocols: [{ name: "pendle", toolCount: 200 }],
       },
     });
-    expect(other).toContain("13 tools are ALWAYS LOADED");
+    expect(other).toContain("1 tools are ALWAYS LOADED");
     expect(other).toContain("200 protocol tools across");
     expect(other).toContain("- pendle: 200");
     expect(other).not.toContain("morpho");
+  });
+
+  it("NAMES every always-loaded tool instead of describing the set", () => {
+    // The block used to call this set "the core wallet tools". That stopped
+    // being true once swap, bridge, chain-read, research and social tools
+    // joined the hot set, and an agent told it holds "wallet tools" goes
+    // looking through `vex_ToolSearch` for a swap tool it was already handed.
+    // The roster is bounded by what the server exports at all, so it is listed.
+    for (const tool of STUDIO_TEST_BRIEF.inventory.alwaysLoadedNames) {
+      expect(body, `${tool} must be named`).toContain(`- ${tool}`);
+    }
+    expect(body).not.toContain("the core wallet tools");
+
+    // Driven by the brief, not by a literal in the renderer.
+    const other = renderStudioManagedBody({
+      ...STUDIO_TEST_BRIEF,
+      inventory: {
+        ...STUDIO_TEST_BRIEF.inventory,
+        alwaysLoadedCount: 1,
+        alwaysLoadedNames: ["OnlyThisOne"],
+      },
+    });
+    expect(other).toContain("- OnlyThisOne");
+    expect(other).not.toContain("- WalletBalances");
   });
 
   it("puts the CHANGE LOG first, above every other section", () => {

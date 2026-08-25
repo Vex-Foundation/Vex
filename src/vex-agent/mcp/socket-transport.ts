@@ -28,6 +28,27 @@
  * and a doubled one would be a second teardown of an already-closed instance.
  * `closeAnnounced` is the latch.
  *
+ * ## READABLE EOF IS "NO MORE REQUESTS", NOT "NO MORE ANSWERS"
+ *
+ * A peer that half-closes (`shutdown(SHUT_WR)`) is saying it will send nothing
+ * further; it is still reading. The Go bridge does exactly this when its own
+ * stdin reaches EOF (`bridge/internal/relay/relay.go`: half-close, then drain
+ * under a bound), which is the ordinary end of a `claude -p` style one-shot
+ * session. Announcing `onclose` on that edge aborted every in-flight handler
+ * and dropped the request the peer was still waiting for - the last answer of
+ * every such session.
+ *
+ * So `end` starts a DRAIN instead: queued frames are delivered, the requests
+ * already delivered are allowed to answer, and only then is the writable side
+ * ended and `onclose` announced. The whole drain sits under ONE absolute
+ * deadline armed at the EOF edge, so a handler that never settles cannot hold
+ * the connection open, and a full socket `close` still announces immediately -
+ * a peer that is entirely gone is not waiting for anything.
+ *
+ * The accounting is this module's own because it frames BOTH directions: an
+ * inbound frame carrying `id` and `method` is a request outstanding, and an
+ * outbound frame carrying that `id` without a `method` is its answer.
+ *
  * ## The inbound bound IS the backpressure
  *
  * Decoded messages are queued here, bounded, and drained into `onmessage` one
@@ -145,6 +166,18 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
   private failed = false;
   private readingPaused = false;
   private shutdownTimer: NodeJS.Timeout | null = null;
+  /** Set at readable EOF. From then on no further request can arrive. */
+  private peerEnded = false;
+  /** The ONE absolute deadline for the post-EOF drain. Armed at that edge. */
+  private drainTimer: NodeJS.Timeout | null = null;
+  /**
+   * Request ids delivered to the consumer that have not been answered yet.
+   *
+   * Keyed by the id's JSON encoding so a numeric `1` and a string `"1"` are
+   * different outstanding requests, exactly as they are different progress
+   * tokens (see `progressCoalesceKey`).
+   */
+  private readonly outstandingRequests = new Set<string>();
 
   constructor(socket: Socket, options: SocketTransportOptions = {}) {
     this.socket = socket;
@@ -171,8 +204,11 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
 
     this.socket.on("data", this.handleData);
     this.socket.on("error", this.handleError);
-    this.socket.on("end", this.handleEnd);
-    this.socket.on("close", this.handleEnd);
+    // TWO DIFFERENT EDGES, deliberately not the same handler any more. `end` is
+    // the peer's read-side FIN and starts the bounded drain; `close` is the
+    // socket being gone and announces immediately.
+    this.socket.on("end", this.handlePeerEnd);
+    this.socket.on("close", this.handleSocketClosed);
 
     // The handshake remainder was read before this transport existed. Feeding
     // it here, after the listeners are attached, is what makes a coalesced
@@ -196,13 +232,25 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
    * and this method is the mechanism it drives.
    */
   send(message: unknown): Promise<void> {
-    if (this.socket.destroyed || this.socket.writableEnded) return Promise.resolve();
+    // An ANSWER clears its request from the drain accounting even when the
+    // socket can no longer carry it: the obligation is discharged either way,
+    // and leaving it outstanding would hold a post-EOF drain to its deadline
+    // for a response that has already been produced.
+    const answered = jsonRpcResponseKey(message);
+    if (answered !== null) this.outstandingRequests.delete(answered);
+    if (this.socket.destroyed || this.socket.writableEnded) {
+      this.settleIfDrained();
+      return Promise.resolve();
+    }
     const line = `${JSON.stringify(message)}\n`;
     if (this.writeLine !== undefined) {
-      return this.writeLine(line, progressCoalesceKey(message));
+      return this.writeLine(line, progressCoalesceKey(message)).finally(() => {
+        this.settleIfDrained();
+      });
     }
     return new Promise<void>((resolve) => {
       this.socket.write(line, () => {
+        this.settleIfDrained();
         resolve();
       });
     });
@@ -222,6 +270,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
     return new Promise<void>((resolve) => {
       const finish = (): void => {
         this.clearShutdownTimer();
+        this.clearDrainTimer();
         if (!this.socket.destroyed) this.socket.destroy();
         this.announceClose();
         resolve();
@@ -268,11 +317,71 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
     this.destroyNow();
   };
 
-  /** Peer FIN or socket destruction. THE abort edge (pin note section 3). */
-  private readonly handleEnd = (): void => {
+  /**
+   * Socket destruction. THE abort edge (pin note section 3), unconditional.
+   *
+   * Nothing is drained here: the socket is gone, so there is nobody left to
+   * answer and no writable side to flush.
+   */
+  private readonly handleSocketClosed = (): void => {
     this.clearShutdownTimer();
+    this.clearDrainTimer();
     this.announceClose();
   };
+
+  /**
+   * Readable EOF: the peer half-closed and will send no further request.
+   *
+   * It may still be READING, so this is not the abort edge. The queued frames
+   * and the requests already delivered get the contract's shutdown window to
+   * finish, under one absolute deadline armed right here.
+   */
+  private readonly handlePeerEnd = (): void => {
+    if (this.peerEnded) return;
+    this.peerEnded = true;
+    // A socket whose writable side is already finished cannot carry an answer,
+    // so there is nothing to drain FOR. Happens when the listener was built
+    // without `allowHalfOpen`, where Node ends the writable side on FIN.
+    if (this.socket.writableEnded || this.socket.destroyed || this.closing || this.failed) {
+      this.finishAfterDrain();
+      return;
+    }
+    this.drainTimer = setTimeout(() => {
+      this.drainTimer = null;
+      // The bound elapsed with work still outstanding. The peer learns nothing
+      // more; the close is what matters, and it is not optional.
+      this.finishAfterDrain();
+    }, this.shutdownDeadlineMs);
+    this.drainTimer.unref?.();
+    this.settleIfDrained();
+  };
+
+  /**
+   * Is the post-EOF drain complete? Checked after every event that can move it:
+   * a frame delivered, a response written, or the deadline elapsing.
+   */
+  private settleIfDrained(): void {
+    if (!this.peerEnded) return;
+    if (this.draining || this.queue.length > 0) return;
+    if (this.outstandingRequests.size > 0) return;
+    this.finishAfterDrain();
+  }
+
+  /** End the writable side, then close. Idempotent through `announceClose`. */
+  private finishAfterDrain(): void {
+    this.clearDrainTimer();
+    if (this.closeAnnounced) return;
+    this.closing = true;
+    if (!this.socket.destroyed && !this.socket.writableEnded) this.socket.end();
+    if (!this.socket.destroyed) this.socket.destroy();
+    this.announceClose();
+  }
+
+  private clearDrainTimer(): void {
+    if (this.drainTimer === null) return;
+    clearTimeout(this.drainTimer);
+    this.drainTimer = null;
+  }
 
   private consumeBuffer(): void {
     for (;;) {
@@ -338,6 +447,10 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
       const next = this.queue.shift();
       if (next === undefined) return;
       if (this.queue.length < this.maxQueuedMessages) this.resumeReading();
+      // Counted BEFORE delivery, so a synchronous answer inside `onmessage`
+      // still finds its id outstanding and clears it.
+      const requestKey = jsonRpcRequestKey(next);
+      if (requestKey !== null) this.outstandingRequests.add(requestKey);
       try {
         this.onmessage?.(next as never);
       } catch {
@@ -345,8 +458,12 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
         // payload it rejected. Reported as the closed code; the value itself is
         // never carried out of this module.
         this.onerror?.(new Error("sdk_wire_error"));
+        // A frame the consumer THREW on will never be answered, so it must not
+        // hold the post-EOF drain open until the deadline.
+        if (requestKey !== null) this.outstandingRequests.delete(requestKey);
       }
       if (this.queue.length > 0) this.scheduleDrain();
+      else this.settleIfDrained();
     });
   }
 
@@ -442,6 +559,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
   private destroyNow(): void {
     this.closing = true;
     this.clearShutdownTimer();
+    this.clearDrainTimer();
     if (!this.socket.destroyed) this.socket.destroy();
     this.announceClose();
   }
@@ -463,6 +581,47 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
     clearTimeout(this.shutdownTimer);
     this.shutdownTimer = null;
   }
+}
+
+/**
+ * The drain key of an inbound frame that is a REQUEST, or `null`.
+ *
+ * A JSON-RPC request is the only inbound frame that obliges an answer: it
+ * carries both a `method` and an `id`. A notification has a method and no id;
+ * a response has an id and no method. Only a request holds the post-EOF drain
+ * open.
+ *
+ * The key encodes the id's TYPE as well as its value, for the same reason
+ * `progressCoalesceKey` does: `1` and `"1"` are two different requests, and
+ * collapsing them would let one answer discharge the other's obligation.
+ */
+function jsonRpcRequestKey(message: unknown): string | null {
+  if (typeof message !== "object" || message === null) return null;
+  const record = message as Record<string, unknown>;
+  if (typeof record["method"] !== "string") return null;
+  return requestIdKey(record["id"]);
+}
+
+/**
+ * The drain key an outbound frame ANSWERS, or `null`.
+ *
+ * A response carries an id and no method. A server-initiated request also
+ * carries an id, but it carries a `method` too, so it is excluded here and
+ * cannot be mistaken for the answer to an inbound request that happens to
+ * share an id.
+ */
+function jsonRpcResponseKey(message: unknown): string | null {
+  if (typeof message !== "object" || message === null) return null;
+  const record = message as Record<string, unknown>;
+  if (typeof record["method"] === "string") return null;
+  return requestIdKey(record["id"]);
+}
+
+/** The typed encoding of a JSON-RPC id, or `null` when there is no usable id. */
+function requestIdKey(id: unknown): string | null {
+  if (typeof id === "number") return `n:${String(id)}`;
+  if (typeof id === "string") return `s:${id}`;
+  return null;
 }
 
 /**

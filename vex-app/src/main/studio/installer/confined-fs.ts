@@ -29,12 +29,26 @@
  *     concurrency, not a lock: it cannot stop a write that lands between the
  *     check and the rename, but it closes the window that actually matters -
  *     the whole render - down to microseconds.
- *   - CONTAINMENT IS REVALIDATED AFTER RESOLUTION. Between the path walk and
- *     the write, a directory on the way could have been swapped for a symlink.
- *     The write re-derives the path and re-checks it is inside the project.
+ *   - CONTAINMENT IS REVALIDATED AFTER RESOLUTION, AND THE PARENT CHAIN'S
+ *     IDENTITY IS RE-CHECKED IMMEDIATELY BEFORE THE RENAME. Between the path
+ *     walk and the write, a directory on the way could be swapped for a symlink.
+ *     A lexical containment check cannot see that - the path string is
+ *     unchanged - so the chain from the project root down to the artifact's
+ *     folder is captured as `dev`+`ino` after `mkdir` and compared again
+ *     microseconds before the one irreversible syscall. The temp file is opened
+ *     `O_EXCL|O_NOFOLLOW`.
+ *
+ *     THE RESIDUAL, STATED PLAINLY: `rename(2)` re-resolves its path from the
+ *     root and Node exposes no `renameat`/`openat2`, so the microseconds between
+ *     the final check and the rename are NOT covered. An attacker who can
+ *     already write inside the project folder and wins that race can still
+ *     redirect the final rename. What the pair does close is the whole
+ *     read-parse-render window, which is where a real editor or formatter
+ *     actually writes. See `captureDirectoryChain` in `paths.ts`.
  */
 
 import { createHash } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 
@@ -42,9 +56,24 @@ import type { StudioRefusalReason } from "@shared/schemas/studio-installer.js";
 import { log } from "../../logger/index.js";
 import {
   STUDIO_ARTIFACT_MAX_BYTES,
+  captureDirectoryChain,
   isEnoent,
   isInside,
+  verifyDirectoryChain,
 } from "./paths.js";
+
+/**
+ * `wx` plus `O_NOFOLLOW`: create exclusively, and never through a link.
+ *
+ * `O_NOFOLLOW` is POSIX and absent on Windows, where `fsConstants` simply does
+ * not define it; `?? 0` degrades to plain `wx` there rather than emitting a
+ * `NaN` flag word. On Windows the attack this defends against needs a symlink
+ * the user must be privileged to create in the first place.
+ */
+const TEMP_FILE_FLAGS = fsConstants.O_WRONLY
+  | fsConstants.O_CREAT
+  | fsConstants.O_EXCL
+  | (fsConstants.O_NOFOLLOW ?? 0);
 
 /** What is currently at an artifact path. */
 export type ConfinedRead =
@@ -77,6 +106,25 @@ export function hashText(text: string): string {
 }
 
 /**
+ * The ONLY thing this module is allowed to say about a filesystem failure.
+ *
+ * A raw Node `fs` error carries `message`, `path`, `dest` and `syscall`, and the
+ * path fields are ABSOLUTE - they name the user's home directory, their folder
+ * layout, and often their username. Logs travel: they reach the log file, a
+ * support bundle and Sentry. So a failure is reported as the closed pair the
+ * operator can actually act on - the error's class name and its `errno` code -
+ * beside the REPO-RELATIVE artifact label the caller already owns. Anything the
+ * code cannot classify becomes `unknown`, never the payload.
+ */
+export function describeIoFailure(cause: unknown): string {
+  if (!(typeof cause === "object" && cause !== null)) return "name=unknown code=unknown";
+  const name = (cause as { name?: unknown }).name;
+  const code = (cause as { code?: unknown }).code;
+  return `name=${typeof name === "string" ? name : "unknown"} `
+    + `code=${typeof code === "string" ? code : "unknown"}`;
+}
+
+/**
  * Read an artifact file as UTF-8, refusing anything Vex should not rewrite.
  *
  * `relativeLabel` is the repo-relative path used in user-facing detail text.
@@ -93,7 +141,9 @@ export async function readConfinedFile(
     bytes = await readFile(absolutePath);
   } catch (cause) {
     if (isEnoent(cause)) return { kind: "absent" };
-    log.warn(`[studio:installer] could not read ${relativeLabel}`, cause);
+    log.warn(
+      `[studio:installer] could not read ${relativeLabel} ${describeIoFailure(cause)}`,
+    );
     return { kind: "refused", reason: "io_error", detail: `"${relativeLabel}" could not be read.` };
   }
 
@@ -156,12 +206,23 @@ export async function replaceConfinedFile(options: {
   try {
     await mkdir(directory, { recursive: true });
   } catch (cause) {
-    log.warn(`[studio:installer] could not create the folder for ${relativeLabel}`, cause);
+    log.warn(
+      `[studio:installer] could not create the folder for ${relativeLabel} `
+        + describeIoFailure(cause),
+    );
     return {
       kind: "refused",
       reason: "io_error",
       detail: `The folder for "${relativeLabel}" could not be created.`,
     };
+  }
+
+  // THE PARENT CHAIN'S IDENTITY, captured after `mkdir` created whatever was
+  // missing. Re-checked immediately before the rename; see
+  // `captureDirectoryChain` for exactly what that pair does and does not close.
+  const captured = await captureDirectoryChain(options.projectDirectory, directory);
+  if (captured.kind === "refused") {
+    return { kind: "refused", reason: captured.reason, detail: captured.detail };
   }
 
   // THE LAST-MOMENT SOURCE CHECK. Re-read and compare before anything is
@@ -187,7 +248,11 @@ export async function replaceConfinedFile(options: {
   );
 
   try {
-    const handle = await open(tempPath, "wx", options.mode ?? 0o644);
+    // O_NOFOLLOW on the temp file's own final component. O_EXCL already refuses
+    // an existing name (a symlink included), so this is the second lock on the
+    // same door - and it is the only no-follow guarantee Node can give us, since
+    // `rename` has no such flag and re-resolves its path from the root.
+    const handle = await open(tempPath, TEMP_FILE_FLAGS, options.mode ?? 0o644);
     try {
       await handle.writeFile(options.text, "utf8");
       // Durable before the rename: a rename of a file whose contents are still
@@ -201,10 +266,22 @@ export async function replaceConfinedFile(options: {
       // set explicitly afterwards rather than trusted from creation.
       await applyMode(tempPath, options.mode);
     }
+
+    // THE LAST CHECK BEFORE THE ONE IRREVERSIBLE SYSCALL. Everything above took
+    // time - a read, a digest, a write, an fsync - and `rename` resolves its
+    // path string afresh. If any directory on the way became a different
+    // directory in that window, the rename would land outside the project.
+    const swapped = await verifyDirectoryChain(captured.chain);
+    if (swapped !== null) {
+      await discardTemp(tempPath);
+      return { kind: "refused", reason: swapped.reason, detail: swapped.detail };
+    }
     await rename(tempPath, absolutePath);
   } catch (cause) {
     await discardTemp(tempPath);
-    log.warn(`[studio:installer] could not write ${relativeLabel}`, cause);
+    log.warn(
+      `[studio:installer] could not write ${relativeLabel} ${describeIoFailure(cause)}`,
+    );
     return {
       kind: "refused",
       reason: "io_error",
@@ -257,7 +334,10 @@ async function discardTemp(tempPath: string): Promise<void> {
     await unlink(tempPath);
   } catch (cause) {
     if (!isEnoent(cause)) {
-      log.warn("[studio:installer] a temporary installer file could not be removed", cause);
+      log.warn(
+        "[studio:installer] a temporary installer file could not be removed "
+          + describeIoFailure(cause),
+      );
     }
   }
 }

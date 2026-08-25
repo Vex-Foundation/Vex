@@ -216,6 +216,130 @@ function isJsonTwin(a: string, b: string): boolean {
   return isJson(a) && isJson(b) && strip(a) === strip(b);
 }
 
+/**
+ * The identity of one directory on the way to an artifact.
+ *
+ * `dev`+`ino` is the filesystem's own answer to "is this the same directory I
+ * looked at a moment ago?". A path string cannot answer that: `rm -rf .codex &&
+ * ln -s /etc .codex` leaves the path spelled identically and pointing somewhere
+ * else entirely.
+ */
+export interface DirectoryIdentity {
+  readonly absolutePath: string;
+  readonly dev: number;
+  readonly ino: number;
+}
+
+/**
+ * Capture the identity of every directory from `projectDirectory` down to
+ * `directory`, refusing any component that is not a real directory.
+ *
+ * Called AFTER `mkdir` and again immediately before the `rename`. The pair is
+ * the strongest confinement Node makes available, and it is worth being precise
+ * about why it is a pair rather than a guarantee:
+ *
+ * A truly race-free write needs the kernel to resolve the path ONCE and hand
+ * back a handle the write is then performed against - `openat2(RESOLVE_BENEATH)`
+ * plus `renameat2`, addressing directories by descriptor so no later swap can
+ * redirect anything. Node exposes neither: `fs.promises` has no `openat`, no
+ * `mkdirat` and no `renameat`, and a `FileHandle` cannot be used as a directory
+ * base. `rename()` therefore re-resolves the path string from the root every
+ * time it is called, and nothing in Node can stop it.
+ *
+ * So this is capture-and-recheck: the swap window is narrowed from "the whole
+ * render" - a read, a parse and a render, i.e. milliseconds during which the
+ * user's editor, a formatter or another agent is genuinely likely to act - down
+ * to the few microseconds between the final `verifyDirectoryChain` and the
+ * `rename` syscall. THAT REMAINING WINDOW IS REAL AND IS NOT CLOSED. An attacker
+ * who can already write inside the project directory and who wins a microsecond
+ * race can still redirect the final rename. It is documented here rather than
+ * described as prevented, and closing it properly requires either a native
+ * binding or `openat2`.
+ *
+ * What IS fully closed: a symlink present at any point during the walk, and any
+ * swap that happens before the final recheck.
+ *
+ * ONE MEASURED LIMIT of `dev`+`ino`: a delete-and-recreate of a real directory
+ * often REUSES the inode - measured on the development filesystem, same `dev`
+ * and same `ino` across an `rm -r` followed by `mkdir` - so a same-path
+ * recreate is not detected. That is deliberate and harmless: the property being
+ * defended is confinement, and a real directory recreated at the same in-project
+ * path is still inside the project. Redirection requires a symlink or a mount,
+ * which changes the type or the device and IS caught.
+ */
+export async function captureDirectoryChain(
+  projectDirectory: string,
+  directory: string,
+): Promise<{ kind: "ok"; chain: readonly DirectoryIdentity[] } | RefusedArtifactPath> {
+  const root = path.resolve(projectDirectory);
+  const target = path.resolve(directory);
+  if (target !== root && !isInside(root, target)) {
+    return refuse("path_escape", "the artifact folder is outside the project folder.");
+  }
+
+  // Every component from the project root down to the artifact's own directory.
+  const relative = target === root ? "" : path.relative(root, target);
+  const segments = relative === "" ? [] : relative.split(path.sep);
+
+  const chain: DirectoryIdentity[] = [];
+  let walked = root;
+  for (const segment of [null, ...segments]) {
+    if (segment !== null) walked = path.join(walked, segment);
+    let entry;
+    try {
+      entry = await lstat(walked);
+    } catch {
+      return refuse("io_error", "a folder on the way to the artifact could not be inspected.");
+    }
+    if (entry.isSymbolicLink()) {
+      return refuse(
+        "symlinked_path",
+        "a folder on the way to this file is a symbolic link. Vex will not write "
+          + "through a link, because the real target may be outside this project.",
+      );
+    }
+    if (!entry.isDirectory()) {
+      return refuse("not_a_regular_file", "a folder on the way to this file is not a folder.");
+    }
+    chain.push({ absolutePath: walked, dev: entry.dev, ino: entry.ino });
+  }
+  return { kind: "ok", chain };
+}
+
+/**
+ * Re-check a captured chain. `null` when every directory is still the same one.
+ *
+ * Compares `dev`+`ino`, not paths: the whole point is to catch a directory that
+ * kept its name and became something else.
+ */
+export async function verifyDirectoryChain(
+  chain: readonly DirectoryIdentity[],
+): Promise<RefusedArtifactPath | null> {
+  for (const recorded of chain) {
+    let entry;
+    try {
+      entry = await lstat(recorded.absolutePath);
+    } catch {
+      return refuse("io_error", "a folder on the way to the artifact disappeared mid-write.");
+    }
+    if (entry.isSymbolicLink() || !entry.isDirectory()) {
+      return refuse(
+        "symlinked_path",
+        "a folder on the way to this file was replaced while Vex was preparing its "
+          + "update, so nothing was written.",
+      );
+    }
+    if (entry.dev !== recorded.dev || entry.ino !== recorded.ino) {
+      return refuse(
+        "symlinked_path",
+        "a folder on the way to this file was replaced while Vex was preparing its "
+          + "update, so nothing was written.",
+      );
+    }
+  }
+  return null;
+}
+
 export function isEnoent(cause: unknown): boolean {
   return (
     typeof cause === "object"

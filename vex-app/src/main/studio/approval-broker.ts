@@ -297,6 +297,17 @@ export async function awaitStudioSettlement(
      * armed at a time, and dispose has to be able to cancel exactly that one.
      */
     let recheckTimer: NodeJS.Timeout | null = null;
+    /**
+     * The ONE outstanding progress timer, for the same reason `recheckTimer` is
+     * one binding: the progress tick RESCHEDULES itself every couple of seconds
+     * for as long as the human takes to decide, and it used to push each new
+     * handle onto `timers` without ever removing the settled one. An approval
+     * left open for an hour accumulated ~1800 dead `Timeout` objects that only
+     * `dispose` ever released - a per-call leak that grows with exactly the wait
+     * this waiter exists to survive (rule 05: every handle has one owner, and a
+     * growing buffer needs a bound).
+     */
+    let progressTimer: NodeJS.Timeout | null = null;
     let removeAbortListener: (() => void) | null = null;
 
     const dispose = (): void => {
@@ -304,6 +315,8 @@ export async function awaitStudioSettlement(
       timers.length = 0;
       if (recheckTimer !== null) clearTimeout(recheckTimer);
       recheckTimer = null;
+      if (progressTimer !== null) clearTimeout(progressTimer);
+      progressTimer = null;
       if (removeAbortListener !== null) removeAbortListener();
       removeAbortListener = null;
       waiters.delete(input.approvalId);
@@ -355,16 +368,28 @@ export async function awaitStudioSettlement(
 
     const progressMs = input.progressIntervalMs ?? DEFAULT_PROGRESS_INTERVAL_MS;
     if (input.onProgress !== undefined) {
+      const armProgress = (): void => {
+        if (released) return;
+        const timer = setTimeout(tick, progressMs);
+        // A blocked MCP call is not a reason to hold the process open, same as
+        // the durable re-read timer above.
+        timer.unref?.();
+        progressTimer = timer;
+      };
       const tick = (): void => {
+        // Cleared FIRST: this handle has fired and is dead, so leaving it in the
+        // binding would let `dispose` clear a settled timer while the live one
+        // armed below went unowned.
+        progressTimer = null;
         if (released) return;
         try {
           input.onProgress?.();
         } catch (cause) {
           log.warn("[studio:broker] progress callback threw", cause);
         }
-        timers.push(setTimeout(tick, progressMs));
+        armProgress();
       };
-      timers.push(setTimeout(tick, progressMs));
+      armProgress();
     }
 
     if (input.expiresAt !== null) {

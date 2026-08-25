@@ -50,6 +50,8 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import type { StdioServerHandle } from "@modelcontextprotocol/server/stdio";
 import { randomUUID } from "node:crypto";
 
+import logger from "@utils/logger.js";
+
 import type { JsonSchema } from "../tools/types.js";
 import type { StudioToolCall } from "./admission.js";
 import { buildStudioInventory, type StudioTool } from "./inventory/index.js";
@@ -59,7 +61,11 @@ import type {
   StudioCallOutcome,
   StudioCancelCause,
 } from "./outcome.js";
-import { studioOutcomeToCallToolResult } from "./server-result.js";
+import {
+  studioHandlerFailureResult,
+  studioOutcomeToCallToolResult,
+  type StudioCallToolResult,
+} from "./server-result.js";
 import type { JsonRpcWireTransport } from "./socket-transport.js";
 
 /**
@@ -169,6 +175,23 @@ function typedCancelCause(
   }
 }
 
+/**
+ * The CLOSED classification of a throw out of `runCall`, for the log only.
+ *
+ * Three members, and none of them is derived from the thrown value's own text.
+ * `aborted` is the case the owner already named on this call's signal, and it
+ * is separated because a teardown mid-dispatch is an expected shape rather than
+ * a defect. `non_error` covers a thrown non-Error (a string, an object), which
+ * is worth distinguishing because it points at a different kind of bug.
+ */
+function classifyHandlerThrow(
+  cause: unknown,
+  signal: AbortSignal,
+): "aborted" | "error" | "non_error" {
+  if (signal.aborted) return "aborted";
+  return cause instanceof Error ? "error" : "non_error";
+}
+
 export function createStudioMcpServer(deps: StudioMcpServerDeps): McpServer {
   const server = new McpServer(
     { name: STUDIO_MCP_SERVER_NAME, version: deps.version ?? "0.0.0" },
@@ -202,8 +225,9 @@ function registerStudioTool(
       annotations: tool.annotations,
       ...studioToolMeta(tool),
     },
-    async (args: unknown, ctx): Promise<ReturnType<typeof studioOutcomeToCallToolResult>> => {
+    async (args: unknown, ctx): Promise<StudioCallToolResult> => {
       const startedAt = Date.now();
+      const toolCallId = `studio-${randomUUID()}`;
       const token = ctx.mcpReq._meta?.progressToken;
       const options: RunStudioCallOptions = {
         signal: ctx.mcpReq.signal,
@@ -231,15 +255,47 @@ function registerStudioTool(
             }),
       };
 
-      const outcome = await deps.runCall(
-        deps.projectId,
-        {
-          name: tool.publicName,
-          args: (args ?? {}) as Record<string, unknown>,
-          toolCallId: `studio-${randomUUID()}`,
-        },
-        options,
-      );
+      // THE BOUNDARY CATCH. Without it a throw out of `runCall` reaches the
+      // SDK's own `tools/call` wrapper, which puts `error.message` verbatim
+      // into the result text it writes to the wire
+      // (`server/dist/mcp-DXXb3Vv3.mjs`, `createToolError`). That message is
+      // whatever threw - a database driver quoting a connection URL, a Node
+      // error quoting a filesystem path, an SDK rejection quoting a payload -
+      // and none of it may cross to an external agent (rules 04, 07).
+      //
+      // A throw is also the ONE path with no outcome, so it must not be
+      // reported as a clean failure: nothing here proves the action did not
+      // run, so the result says UNRESOLVED and DO NOT RETRY rather than
+      // inventing "nothing was executed" (rules 09, 90 - a non-idempotent
+      // action never retries on an unknown commit outcome).
+      let outcome: StudioCallOutcome;
+      try {
+        outcome = await deps.runCall(
+          deps.projectId,
+          {
+            name: tool.publicName,
+            args: (args ?? {}) as Record<string, unknown>,
+            toolCallId,
+          },
+          options,
+        );
+      } catch (cause) {
+        // CLASSIFICATION AND CORRELATION ONLY. The cause's text is never
+        // logged: this is the same closed-vocabulary rule `wire-errors.ts`
+        // states for the transport, applied to the executor seam.
+        logger.error("studio.mcp.tool_handler_threw", {
+          toolName: tool.publicName,
+          correlationId: toolCallId,
+          classification: classifyHandlerThrow(cause, ctx.mcpReq.signal),
+          durationMs: Date.now() - startedAt,
+        });
+        deps.onCallSettled?.({
+          toolName: tool.publicName,
+          outcomeKind: "indeterminate",
+          durationMs: Date.now() - startedAt,
+        });
+        return studioHandlerFailureResult(toolCallId);
+      }
       deps.onCallSettled?.({
         toolName: tool.publicName,
         outcomeKind: outcome.kind,

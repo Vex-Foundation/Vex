@@ -64,6 +64,18 @@ export interface StudioBriefProtocol {
  */
 export interface StudioBriefInventory {
   readonly alwaysLoadedCount: number;
+  /**
+   * The `publicName` of every always-loaded tool, in inventory order, counted
+   * and NAMED from the same live inventory as `alwaysLoadedCount`.
+   *
+   * Named rather than described, because "the core wallet tools" was a
+   * description that had stopped being true: the always-loaded set also carries
+   * swap, bridge, chain-read, token, research and social tools, and an agent
+   * told it holds "wallet tools" searches for a swap tool it already has. The
+   * roster is bounded by the hot set the server exports at all, so listing it
+   * costs a few lines and removes the guess.
+   */
+  readonly alwaysLoadedNames: readonly string[];
   readonly searchableCount: number;
   readonly protocols: readonly StudioBriefProtocol[];
 }
@@ -242,11 +254,24 @@ export function renderStudioToolSurface(brief: StudioProjectBrief): string {
   const lines = [
     "## The tool surface and how to navigate it",
     "",
-    `${String(inventory.alwaysLoadedCount)} tools are ALWAYS LOADED: \`vex_ToolSearch\``,
-    "plus the core wallet tools. Another",
-    `${String(inventory.searchableCount)} protocol tools across`,
+    `${String(inventory.alwaysLoadedCount)} tools are ALWAYS LOADED - they are in`,
+    "`tools/list` without you asking for anything, and they are named in full",
+    "below rather than summarized, so you never search for one you already hold.",
+    `Another ${String(inventory.searchableCount)} protocol tools across`,
     `${String(inventory.protocols.length)} protocols are discoverable through`,
     "`vex_ToolSearch`, which is read-only and runs nothing.",
+    "",
+    "Always loaded:",
+    "",
+  ];
+  if (inventory.alwaysLoadedNames.length === 0) {
+    lines.push("- (none exported by this build)");
+  } else {
+    for (const name of inventory.alwaysLoadedNames) {
+      lines.push(`- ${name}`);
+    }
+  }
+  lines.push(
     "",
     STUDIO_USAGE_FINDING_TOOLS,
     "",
@@ -255,7 +280,7 @@ export function renderStudioToolSurface(brief: StudioProjectBrief): string {
     "",
     "Protocols and their tool counts:",
     "",
-  ];
+  );
   if (inventory.protocols.length === 0) {
     lines.push("- (none exported by this build)");
   } else {
@@ -296,16 +321,26 @@ export const STUDIO_BUILDING_APPS_NOTE = [
   "a restricted project (your app waits on the user's decision exactly as you do),",
   "the same vault-locked signing, and the same local registration of every action.",
   "",
-  "SIGNING ANYTHING VEX HAS NO DEDICATED TOOL FOR. Two generic pairs exist for",
+  "SIGNING SOMETHING VEX HAS NO DEDICATED TOOL FOR. Two generic pairs exist for",
   "exactly this: `WalletEvmTransactionPrepare` + `WalletEvmTransactionConfirm` on",
   "EVM, and `WalletSolanaTransactionPrepare` + `WalletSolanaTransactionConfirm` on",
-  "Solana. Prepare DECODES and simulates an arbitrary transaction fail-closed - it",
-  "signs nothing, holds no key - and records a durable intent; Confirm signs and",
-  "broadcasts that intent only after the same decoded effect the user approved",
-  "revalidates. So an app can drive ANY contract call or transfer through the",
-  "user's own wallets while every safety property still holds: the approval card in",
-  "a restricted project, the digest binding between what was shown and what is",
-  "signed, and the fee caps.",
+  "Solana. Prepare DECODES and simulates the transaction fail-closed - it",
+  "signs nothing, holds no key - and records a durable intent; Confirm signs",
+  "and broadcasts that intent only after the same decoded effect the user",
+  "approved revalidates. Every safety property holds through them: the approval",
+  "card in a restricted project, the digest binding between what was shown and",
+  "what is signed, and the fee caps.",
+  "",
+  "THE DECODE SET IS CLOSED, AND IT IS NOT \"anything\". On EVM the v1 set is",
+  "ERC-20 `transfer` / `approve` / `transferFrom` / `increaseAllowance` / `permit`,",
+  "Permit2 `approve` / `permit` / `transferFrom` at the canonical Permit2 address",
+  "for that chain, and a plain native transfer whose `data` is `0x` sent to an",
+  "address that has no code. An unknown selector, a malformed layout, a Permit2",
+  "call to any other address, or empty calldata sent to a contract is REFUSED BY",
+  "NAME before an intent exists. ROUTER AND AGGREGATOR CALLDATA IS DELIBERATELY",
+  "OUTSIDE v1: do not plan an app around signing it through these tools, and do",
+  "not try to reshape a swap into an approve to get past the decoder. If what you",
+  "need is outside the set, say so to the user rather than working around it.",
 ].join("\n");
 
 /** Section 9: where a real Vex bug goes, and who decides that it goes there. */

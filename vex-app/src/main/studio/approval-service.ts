@@ -183,25 +183,40 @@ export async function runStudioCall(
     return { kind: "not_queued", reason: reserved.reason };
   }
 
-  const { enqueueStudioApprovalIntent } = await import(
-    "@vex-agent/mcp/approvals.js"
-  );
-  const { buildProjectToolContext } = await import(
-    "@vex-agent/mcp/project-context.js"
-  );
-  const enqueued = await enqueueStudioApprovalIntent({
-    scope,
-    call,
-    result: execution.result,
-    toolContext: buildProjectToolContext(
+  // EVERYTHING BETWEEN THE RESERVATION AND THE ENQUEUE IS INSIDE THE GUARD.
+  // The two dynamic imports below are real failure points - a corrupted or
+  // missing chunk rejects them - and they used to sit OUTSIDE the release path,
+  // so an import failure leaked a waiter slot permanently. At
+  // `STUDIO_MAX_INFLIGHT_GLOBAL` such leaks, Studio refuses every subsequent
+  // call for the life of the process with "already running N calls" while
+  // nothing is running (rule 05: register cleanup AT acquisition).
+  //
+  // A `catch`-and-rethrow rather than a `finally`: on the SUCCESS path the
+  // reservation is handed to `awaitStudioSettlement`, which releases it when the
+  // waiter registers, so an unconditional release here would double-release and
+  // undercount the cap.
+  let enqueued;
+  try {
+    const { enqueueStudioApprovalIntent } = await import(
+      "@vex-agent/mcp/approvals.js"
+    );
+    const { buildProjectToolContext } = await import(
+      "@vex-agent/mcp/project-context.js"
+    );
+    enqueued = await enqueueStudioApprovalIntent({
       scope,
-      options.signal ? { abortSignal: options.signal } : {},
-    ),
-    readStudioRuntimeAvailability,
-  }).catch((cause: unknown) => {
+      call,
+      result: execution.result,
+      toolContext: buildProjectToolContext(
+        scope,
+        options.signal ? { abortSignal: options.signal } : {},
+      ),
+      readStudioRuntimeAvailability,
+    });
+  } catch (cause: unknown) {
     reserved.reservation.release();
     throw cause;
-  });
+  }
   if (enqueued.kind === "refused") {
     reserved.reservation.release();
     return { kind: "not_queued", reason: enqueued.reason };

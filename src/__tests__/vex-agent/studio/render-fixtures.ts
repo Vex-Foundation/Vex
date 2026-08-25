@@ -40,7 +40,16 @@ export const STUDIO_TEST_BRIEF: StudioProjectBrief = {
   scopeUpdatedOn: "2026-08-25",
   agentNames: ["Claude Code", "Codex CLI"],
   inventory: {
-    alwaysLoadedCount: 12,
+    alwaysLoadedCount: 4,
+    // Named, not counted. Held to a short deterministic list so the goldens
+    // stay a statement about the RENDERER rather than about however many tools
+    // this build happens to export.
+    alwaysLoadedNames: [
+      "vex_ToolSearch",
+      "WalletBalances",
+      "WalletEvmTransactionPrepare",
+      "WalletEvmTransactionConfirm",
+    ],
     searchableCount: 147,
     protocols: [
       { name: "kyberswap", toolCount: 21 },

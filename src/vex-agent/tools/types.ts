@@ -172,6 +172,23 @@ interface JsonSchemaPropertyShape {
   required?: string[];
   /** When false on an object, rejects extra keys (OpenAI strict requirement). */
   additionalProperties?: boolean;
+  /**
+   * VALUE BOUNDS, all optional and all unset by the provider-facing compiler
+   * (`registry/khalani.ts::paramsToJsonSchema`) - nothing that reaches a model
+   * provider emits them today, so adding them changes no existing schema byte.
+   *
+   * They exist for the STRICT MCP projection
+   * (`mcp/inventory/strict-schema.ts`), whose contract is that anything its
+   * schema admits, `validateProtocolParams` also admits. Expressing the
+   * runtime's own bounds is the only way that can be true: a basis-point param
+   * the runtime requires to be a whole non-negative number cannot be advertised
+   * as a bare `number`, and a `minItems`-less array advertises an empty list the
+   * runtime rejects.
+   */
+  minimum?: number;
+  multipleOf?: number;
+  minItems?: number;
+  minLength?: number;
 }
 
 /** The ordinary single-`type` property — what almost every param compiles to. */

@@ -216,10 +216,22 @@ function describeEmptyNamespace(namespace: ProtocolNamespace): string {
 }
 
 /**
- * Namespace list mode: the COMPLETE advertised, available surface of one
- * protocol as lean rows. No ranking (a list has no query to rank against) and
- * no `limit` truncation — a partial list would defeat its only purpose, which
- * is letting the model see everything a namespace offers in one cheap read.
+ * Namespace list mode: the advertised, available surface of one protocol as
+ * lean rows. No ranking - a list has no query to rank against.
+ *
+ * BY DEFAULT the list is COMPLETE, and that default is owner directive D2: the
+ * agent "może pobrać pełny namespace protokołu", and a silently partial list
+ * would defeat the mode's only purpose. The in-app lane never sends a `limit`
+ * in this mode (`dispatcher/tool-search.ts` forwards it for query mode only),
+ * so that path is byte-identical to before.
+ *
+ * A caller that DOES name a limit is answered with it, because a surface that
+ * advertises `limit` and then ignores it states a false contract - and the
+ * Studio MCP export advertises exactly that (`mcp/tool-search-export.ts`).
+ * Honoring it is not a silent cut: `totalCount` reports every row that exists
+ * and `hasMore` says rows were left out, which is the repo's bound-versus-
+ * truncation test (CLAUDE.md: the reader can tell what was left out and how to
+ * get it - raise the limit).
  */
 /**
  * The pointer that turns a listing into a two-step flow (owner directive D2:
@@ -238,9 +250,19 @@ function buildListNextStep(firstPublicName: string): string {
 function buildNamespaceListing(
   namespace: ProtocolNamespace,
   manifests: readonly ProtocolToolManifest[],
+  limit: number | undefined,
 ): ProtocolDiscoveryResult {
-  const tools = manifests.map(toDiscoveryListItem);
+  const all = manifests.map(toDiscoveryListItem);
+  const tools = limit === undefined ? all : all.slice(0, limit);
   const firstPublicName = tools[0]?.publicName;
+  const warnings: string[] = [];
+  if (all.length === 0) warnings.push(describeEmptyNamespace(namespace));
+  if (tools.length < all.length) {
+    warnings.push(
+      `Showing first ${tools.length} of ${all.length} tools in "${namespace}". `
+      + "Increase limit to see the rest.",
+    );
+  }
   return {
     // FIRST key of the envelope: `JSON.stringify` preserves insertion order and
     // the model reads the string front-to-back. An empty listing gets no
@@ -248,11 +270,13 @@ function buildNamespaceListing(
     ...(firstPublicName === undefined ? {} : { nextStep: buildListNextStep(firstPublicName) }),
     success: true,
     count: tools.length,
-    totalCount: tools.length,
-    hasMore: false,
+    // The COMPLETE count, always: `count` is what was returned and `totalCount`
+    // is what exists, so a bounded listing reports the rows it did not send.
+    totalCount: all.length,
+    hasMore: tools.length < all.length,
     tools,
-    warnings: tools.length === 0 ? [describeEmptyNamespace(namespace)] : [],
-    retrieval: { method: "list", denseFailed: false, candidateCount: tools.length },
+    warnings,
+    retrieval: { method: "list", denseFailed: false, candidateCount: all.length },
   };
 }
 
@@ -377,7 +401,14 @@ export async function discoverProtocolCapabilities(
         `A listing requires a namespace — listing every protocol at once is not available. ${buildDiscoverNamespaceDescription()}`,
       );
     }
-    return buildNamespaceListing(resolvedNamespace, filteredTools);
+    // The CLAMPED limit only when the caller actually named one. `limit` above
+    // substitutes `DEFAULT_DISCOVERY_LIMIT` for an absent value, which in this
+    // mode would silently shorten every listing that never asked to be bounded.
+    const requestedListLimit = typeof request.limit === "number"
+      && Number.isFinite(request.limit)
+      ? limit
+      : undefined;
+    return buildNamespaceListing(resolvedNamespace, filteredTools, requestedListLimit);
   }
 
   let scoredTools: ScoredManifest[];

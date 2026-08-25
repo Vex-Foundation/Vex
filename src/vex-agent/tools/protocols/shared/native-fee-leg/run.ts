@@ -168,6 +168,19 @@ export async function runNativeFeeLeg(
   const { plan, feeRowId } = input;
 
   // ── PHASE 1: everything that can still mean "nothing was broadcast" ──
+  //
+  // THE PHASE DISCRIMINATOR. Phase 1 is not one phase: `signStageBroadcast`
+  // signs the bytes, calls `onHashStaged`, and only then calls
+  // `sendRawTransaction` (`src/tools/evm-chains/staged-broadcast.ts`). Every
+  // throw from `onHashStaged` onwards therefore happens with a SIGNED
+  // transaction in hand, and the single catch below used to answer all of them
+  // with "refused before signing" - a sentence that is simply false for a
+  // staging CAS miss, and false in the direction that matters on a money path
+  // (rule 90: never overstate what did not happen).
+  //
+  // `false` until the staging hook is entered, which is the first line that can
+  // only run after signing.
+  let signed = false;
   let outcome: StagedBroadcastOutcome;
   try {
     assertFeeValueAuthorized(input.chainId, plan);
@@ -178,6 +191,10 @@ export async function runNativeFeeLeg(
       plan.txParams,
       {
         onHashStaged: async (handles) => {
+          // FIRST STATEMENT of the hook, before anything that can throw: the
+          // bytes are already signed by the time this callback is entered, and
+          // the flag must be true for every failure from here on.
+          signed = true;
           const res = await markActivityBroadcast(feeRowId, handles);
           if (!res.applied) {
             throw new Error(
@@ -224,10 +241,24 @@ export async function runNativeFeeLeg(
         txHash: null,
       };
     }
-    logger.warn(`${venue.logPrefix}.leg_failed`, { id: feeRowId, error: err instanceof Error ? err.name : "unknown" });
+    logger.warn(`${venue.logPrefix}.leg_failed`, {
+      id: feeRowId,
+      error: err instanceof Error ? err.name : "unknown",
+      phase: signed ? "after_signing" : "before_signing",
+    });
     return {
       collection: "not_attempted",
-      collectionNote: "The Vex fee transfer was refused before signing, so no fee was collected - your action is unaffected.",
+      // TWO SENTENCES, because two different things happened. Before signing,
+      // nothing exists and "refused before signing" is exactly true. After
+      // signing, bytes exist: the failure landed between staging and a proven
+      // submission, so the honest claim is only that Vex never saw it broadcast.
+      // Saying "before signing" there would tell the user a signed transaction
+      // does not exist.
+      collectionNote: signed
+        ? "The Vex fee transfer was signed, then failed before Vex could confirm it was "
+          + "broadcast, so no fee was collected and Vex is reconciling that transfer on its "
+          + "own. Your action is unaffected; do not retry the fee."
+        : "The Vex fee transfer was refused before signing, so no fee was collected - your action is unaffected.",
       txHash: null,
     };
   }

@@ -35,7 +35,7 @@ export {
   buildStudioEntryFields,
   studioEntryObject,
 } from "./entry.js";
-export { studioOwnedWrites } from "./json-file.js";
+export { studioServerEntryWrite } from "./json-file.js";
 export type { StudioOwnedRegion } from "./owned-region.js";
 export { readStudioOwnedRegion, studioRegionHash } from "./owned-region.js";
 export type { StudioManagedBlockState } from "./managed-block.js";

@@ -112,10 +112,33 @@ export type StudioTimeoutMechanism =
     readonly probe: string;
   };
 
-/** Which client version the facts in a record were established against. */
+/**
+ * The date every client fact in this registry was read off vendor sources.
+ *
+ * The research artifact these records are transcribed from, including its
+ * addendum. It is the ONE date the whole registry is as-of, so a reader can
+ * tell how old the evidence is without checking each row.
+ */
+export const STUDIO_CLIENT_FACTS_SURVEYED_ON = "2026-08-25";
+
+/**
+ * Which client version the facts in a record were established against.
+ *
+ * VEX DETECTS NOTHING. There is no version probe anywhere on the installer
+ * path: nothing runs `claude --version`, nothing reads a client's lockfile, and
+ * no record here is refreshed by an install. Both variants are therefore DATED
+ * VENDOR EVIDENCE and say so - the earlier `detected-at-install` spelling
+ * claimed a detector that does not exist, which is a claim about safety-relevant
+ * facts (config keys, trust gates, timeout semantics) that nobody was checking.
+ *
+ * `pinned` means the vendor documents a version line and we read that line.
+ * `surveyed` means the keys looked stable across the versions surveyed on
+ * `STUDIO_CLIENT_FACTS_SURVEYED_ON` and no narrower claim is available. Neither
+ * is a statement about the client the user actually has installed.
+ */
 export type StudioClientVersionBasis =
   | { readonly kind: "pinned"; readonly version: string; readonly note: string }
-  | { readonly kind: "detected-at-install"; readonly note: string };
+  | { readonly kind: "surveyed"; readonly note: string };
 
 /** The file format of an agent's config, which selects the merge strategy. */
 export type StudioConfigFormat = "jsonc" | "toml";
@@ -165,10 +188,24 @@ interface StudioAgentCommon {
   readonly inertUntil: string | null;
 }
 
-/** A constant value Vex owns at a path outside its server entry. */
+/**
+ * A SET MEMBERSHIP Vex owns at a path outside its server entry.
+ *
+ * NOT a value. The distinction is the whole point: the one instance of this
+ * (Gemini's `context.fileName`) is a LIST THE USER ALSO OWNS, and declaring it
+ * as `value: ["AGENTS.md"]` made every render replace the whole array - a user
+ * who had `["GEMINI.md", "docs/house-rules.md"]` lost both, silently, on a
+ * scope edit they made for an unrelated reason.
+ *
+ * So Vex claims exactly ONE ELEMENT. A merge appends `member` when it is not
+ * already there and preserves every other element verbatim; a remove takes that
+ * single element back out and leaves the rest; a path holding something that is
+ * not a list of strings is REFUSED BY NAME rather than reshaped.
+ */
 export interface StudioAdditionalWrite {
   readonly path: StudioOwnedJsonPath;
-  readonly value: readonly string[];
+  /** The single element Vex guarantees is present in the list at `path`. */
+  readonly member: string;
   /** Why this file needs it. Shown in the matrix, not in the file. */
   readonly reason: string;
 }
@@ -242,10 +279,28 @@ export const STUDIO_SERVER_KEY = "vex";
  * until `context.fileName` says otherwise. This is the ONE non-server value Vex
  * owns in an agent config.
  */
+/**
+ * KNOWN RESIDUAL, deliberately shipped: a deselect can remove an `AGENTS.md`
+ * the USER put in this list, not the one Vex appended.
+ *
+ * A merge is already safe - it appends only when the member is absent and
+ * preserves every other filename - so the data-loss half is closed. What is not
+ * closed is the remove: Vex cannot tell "this element is the one I added" from
+ * "this element was already the user's choice", because the durable provenance
+ * store keys only `entryHash` (the MCP entry's digest) and `contentHash` (the
+ * whole file). Proving insertion needs a THIRD durable fact, which means a
+ * migration on `project_file_provenance` - out of scope for this change and
+ * recorded as follow-up.
+ *
+ * The residual is bounded: it costs one line in a Gemini config, only on an
+ * explicit deselect of Gemini, only when the user had independently chosen the
+ * same filename Vex writes, and it is re-added by re-selecting the agent. It is
+ * NOT a fund path and NOT a silent overwrite of unrelated content.
+ */
 const GEMINI_CONTEXT_WRITE = [
   {
     path: ["context", "fileName"],
-    value: ["AGENTS.md"],
+    member: "AGENTS.md",
     reason:
       "Gemini CLI's default context file is GEMINI.md; without this it never "
       + "reads the AGENTS.md managed block Vex maintains.",
@@ -318,7 +373,7 @@ const CODEX: StudioProjectAgent = {
     "trust_level",
   ],
   clientVersionBasis: {
-    kind: "detected-at-install",
+    kind: "surveyed",
     note: "Config keys are stable across the versions surveyed; the trust gate is not.",
   },
   inertUntil:
@@ -351,7 +406,7 @@ const GEMINI: StudioProjectAgent = {
   },
   neverWritten: ["trust", "folderTrust"],
   clientVersionBasis: {
-    kind: "detected-at-install",
+    kind: "surveyed",
     note: "`context.fileName` and the `mcpServers` shape are stable across surveyed versions.",
   },
   inertUntil: null,
@@ -413,7 +468,7 @@ const GROK: StudioProjectAgent = {
   },
   neverWritten: ["permission", "permission_mode"],
   clientVersionBasis: {
-    kind: "detected-at-install",
+    kind: "surveyed",
     note:
       "A project `.grok/config.toml` can carry `[mcp_servers]`, `[plugins]` AND "
       + "`[permission]`: a project file CAN grant tool authority, which is why "
@@ -448,7 +503,7 @@ const KIMI: StudioLaunchAgent = {
   },
   neverWritten: [],
   clientVersionBasis: {
-    kind: "detected-at-install",
+    kind: "surveyed",
     note:
       "MoonshotAI/kimi-cli. Sources disagree on the rebranded \"Kimi Code\" user "
       + "path (`~/.kimi-code/`) and per-server overrides; irrelevant to the "
@@ -484,7 +539,7 @@ const QWEN: StudioProjectAgent = {
   },
   neverWritten: ["trust", "folderTrust", "allowed", "excluded"],
   clientVersionBasis: {
-    kind: "detected-at-install",
+    kind: "surveyed",
     note: "Settings shape mirrors Gemini CLI's; the idle cap is the qwen-specific fact.",
   },
   inertUntil: null,
@@ -518,7 +573,7 @@ const COPILOT: StudioProjectAgent = {
   },
   neverWritten: ["tools"],
   clientVersionBasis: {
-    kind: "detected-at-install",
+    kind: "surveyed",
     note:
       "Both project paths confirmed: `.mcp.json` walking up to the repo root takes "
       + "precedence over `.github/mcp.json` at the same level. Vex writes "
@@ -549,7 +604,7 @@ const CURSOR: StudioProjectAgent = {
   },
   neverWritten: [],
   clientVersionBasis: {
-    kind: "detected-at-install",
+    kind: "surveyed",
     note: "`type: \"stdio\"` and `envFile` documented; no config pre-approval field exists.",
   },
   inertUntil: null,
@@ -575,7 +630,7 @@ const AMP: StudioProjectAgent = {
   },
   neverWritten: ["mcpPermissions", "disable"],
   clientVersionBasis: {
-    kind: "detected-at-install",
+    kind: "surveyed",
     note: "Dotted top-level settings keys; `.jsonc` is read as an alternate.",
   },
   inertUntil: null,
@@ -600,7 +655,7 @@ const KIRO: StudioProjectAgent = {
   },
   neverWritten: ["autoApprove"],
   clientVersionBasis: {
-    kind: "detected-at-install",
+    kind: "surveyed",
     note:
       "`disabled` and `autoApprove` are the documented per-server fields; open "
       + "vendor bugs on `autoApprove` semantics are a second reason never to emit it.",
@@ -634,7 +689,7 @@ const VIBE: StudioProjectAgent = {
   },
   neverWritten: [],
   clientVersionBasis: {
-    kind: "detected-at-install",
+    kind: "surveyed",
     note:
       "Project path VERIFIED as `./.vibe/config.toml` (user `~/.vibe/config.toml`). "
       + "`name` is a HARD REQUIRED field (`name: str = Field(...)`), which is why "
@@ -670,7 +725,7 @@ const DROID: StudioProjectAgent = {
   },
   neverWritten: [],
   clientVersionBasis: {
-    kind: "detected-at-install",
+    kind: "surveyed",
     note:
       "No pre-approval config field exists at all; Factory approves servers "
       + "out of band by fingerprint.",
@@ -695,7 +750,7 @@ const CLINE: StudioUnsupportedAgent = {
     "type",
   ],
   clientVersionBasis: {
-    kind: "detected-at-install",
+    kind: "surveyed",
     note: "No writer exists, so no version is pinned.",
   },
   inertUntil: null,
@@ -715,7 +770,7 @@ const WARP: StudioUnsupportedAgent = {
   supportReturnsWhen: "the `warp` CLI gains a project or launch MCP mechanism",
   neverWritten: [],
   clientVersionBasis: {
-    kind: "detected-at-install",
+    kind: "surveyed",
     note: "No writer exists, so no version is pinned.",
   },
   inertUntil: null,

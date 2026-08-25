@@ -462,11 +462,89 @@ describe("clean EOF", () => {
     await waitFor(() => blocked.entry() !== undefined);
 
     client.endCleanly();
-    await waitFor(() => (blocked.entry()?.abortCount ?? 0) > 0);
+    // The half-close now DRAINS first (see the suite above), so this call is
+    // given the shutdown window to answer before the abort lands. It never
+    // does - it is blocked on a human - so the deadline elapses and the abort
+    // arrives exactly once, with the owner's cause. The timeout is above that
+    // window on purpose: the point of the assertion is that the abort still
+    // happens and still says `disconnect`, not that it is instant.
+    await waitFor(() => (blocked.entry()?.abortCount ?? 0) > 0, 12_000);
     // A moment past the first abort, so a second one would have landed.
     await sleep(150);
     expect(blocked.entry()?.abortCount).toBe(1);
     expect(blocked.entry()?.cause).toBe("disconnect");
+  }, 20_000);
+});
+
+// ── The tool-handler boundary: a throw never reaches the wire ───────────────
+
+describe("tool handler failure", () => {
+  /**
+   * The SDK's own `tools/call` wrapper answers a rejected handler by putting
+   * `error.message` verbatim into the result text it writes to the socket
+   * (`server/dist/mcp-DXXb3Vv3.mjs`, `createToolError`). So without a boundary
+   * catch in `mcp/server.ts`, whatever threw chooses what an external agent
+   * reads: a driver quoting a connection URL, a Node error quoting a path, a
+   * stack.
+   *
+   * Every sentinel below is a shape that really does appear in thrown messages
+   * on this path, and NONE of them may appear in the bytes on the wire.
+   */
+  const SENTINELS = [
+    "postgres://vex:hunter2@127.0.0.1:5432/vexdb",
+    "/home/kubas/Vex/vex-app/src/main/studio/approval-service.ts",
+    "at runStudioCall (/home/kubas/Vex/dist/main/studio/approval-service.js:214:19)",
+    "VEX_SENTINEL_INTERNAL_DETAIL",
+  ] as const;
+
+  it("answers a throwing handler without leaking ANY of its text to the wire", async () => {
+    runCallImpl = async () => {
+      const error = new Error(
+        `connect failed ${SENTINELS[0]} while reading ${SENTINELS[1]} ${SENTINELS[3]}`,
+      );
+      error.stack = `Error: ${SENTINELS[3]}\n    ${SENTINELS[2]}`;
+      throw error;
+    };
+    const client = await ReferenceClient.open(endpoint());
+    await client.handshake();
+    client.send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "r", version: "1" } },
+    });
+    await client.responseFor(1);
+    client.send({ jsonrpc: "2.0", method: "notifications/initialized" });
+    client.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "vex_ToolSearch", arguments: { query: "swap" } },
+    });
+
+    const response = await client.responseFor(2);
+    // A RESULT, not a JSON-RPC error: the call was dispatched and its outcome
+    // is a tool-level failure the agent must read.
+    const result = response["result"] as JsonRecord;
+    expect(result["isError"]).toBe(true);
+    const content = result["content"] as { type: string; text: string }[];
+    const text = content[0]?.text ?? "";
+
+    // THE WHOLE FRAME, not just the content block: nothing anywhere in the
+    // bytes the client received may carry a sentinel.
+    const wire = JSON.stringify(response);
+    for (const sentinel of SENTINELS) {
+      expect(wire).not.toContain(sentinel);
+    }
+    // And the answer is still USEFUL and still fails closed: the outcome is
+    // unresolved, so the one thing the agent must not do is named first.
+    expect(text.startsWith("DO NOT RETRY THIS CALL.")).toBe(true);
+    expect(text).toContain("UNRESOLVED");
+    // The correlation id is the only internal fact that crosses, and it is an
+    // opaque per-call identifier, not a location.
+    expect(text).toMatch(/Vex correlation id: studio-[0-9a-f-]{36}\./);
+
+    client.destroy();
   });
 });
 

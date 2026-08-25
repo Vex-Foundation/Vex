@@ -28,28 +28,30 @@ import {
 } from "./vex-fee.js";
 
 /**
- * Address ellipsis for the LABEL only. NEVER applied to a `criticalArgs` value:
- * the full address always sits in the bound panel of the same object, so
- * nothing is hidden, only summarised in the one-line headline. This matches
- * `buildWalletIntentPreview` on the transfer path, because the approval card is
- * one renderer and two ellipsis rules would read as two products.
+ * Addresses in the LABEL are carried WHOLE, and so is the same value one line
+ * below in `criticalArgs`.
  *
- * KNOWN LIMITATION, recorded rather than papered over: a prefix-and-suffix
- * ellipsis is the exact shape an address-poisoning attack targets, since a
- * lookalike address can be generated to match both ends. The mitigation here is
- * that the full value is one line below in `criticalArgs` and is what the
- * proposal digest binds. Whether the headline itself should carry the whole
- * address is a card-design decision for BOTH paths, not something to change on
- * one of them.
+ * WHY, having previously been elided to a prefix-and-suffix ellipsis: that
+ * shape is exactly what an address-poisoning attack targets, because a
+ * lookalike address can be ground out to match both visible ends while
+ * differing in the middle the reader never saw. The headline is the sentence a
+ * human authorizes an irreversible transfer from, so it is the one place the
+ * whole value has to be legible. `buildWalletIntentPreview` on the transfer
+ * path carries the whole address for the same reason: the approval card is one
+ * renderer and two address rules would read as two products.
+ *
+ * NOT A DIGEST CHANGE. No preimage FIELD moves here; only the rendered label of
+ * newly prepared intents does. Prepare and confirm render through this same
+ * function, so a new intent's card and its recomputed digest agree by
+ * construction. An intent prepared under the old label and confirmed under this
+ * code refuses on digest mismatch and is re-prepared, which is the safe
+ * direction: a stale card is rejected rather than silently authorized. The
+ * digest VERSION therefore stays where it is.
  */
-function shortAddress(value: string): string {
-  return value.length > 20 ? `${value.slice(0, 10)}...${value.slice(-6)}` : value;
-}
-
 function evmLabel(decoded: Extract<DecodedWalletTransaction, { family: "eip155" }>): string {
   const args = decoded.criticalArgs;
   if (decoded.functionName === "nativeTransfer") {
-    return `Send ${args.valueWei ?? "0"} wei to ${shortAddress(args.recipient ?? "")}`;
+    return `Send ${args.valueWei ?? "0"} wei to ${args.recipient ?? ""}`;
   }
   // The decoder proves an ERC-20 target's identity from calldata layout ALONE,
   // so it flags the result unverified. The headline leads with that: the user
@@ -59,11 +61,11 @@ function evmLabel(decoded: Extract<DecodedWalletTransaction, { family: "eip155" 
   if (decoded.role === "approve") {
     const amount = decoded.unlimitedApproval ? "UNLIMITED" : (args.amountRaw ?? args.addedAmountRaw ?? "");
     return `${unverifiedPrefix}${decoded.standard === "permit2" ? "Permit2 " : ""}${decoded.functionName}: `
-      + `let ${shortAddress(args.spender ?? "")} spend ${amount} (raw) of `
-      + `${shortAddress(args.token ?? "")}`;
+      + `let ${args.spender ?? ""} spend ${amount} (raw) of `
+      + `${args.token ?? ""}`;
   }
   return `${unverifiedPrefix}Call ${decoded.functionName} on `
-    + `${shortAddress(args.token ?? decoded.contract ?? "")}`;
+    + `${args.token ?? decoded.contract ?? ""}`;
 }
 
 function solanaLabel(decoded: Extract<DecodedWalletTransaction, { family: "solana" }>): string {

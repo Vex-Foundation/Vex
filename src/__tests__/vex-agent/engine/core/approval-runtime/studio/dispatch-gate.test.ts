@@ -20,9 +20,17 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { PoolClient } from "pg";
 
 const clientQuery = vi.fn();
 const poolQueryOne = vi.fn();
+
+/** A fake `PoolClient` exposing only the `query` this module actually calls. */
+function fakeClient(): PoolClient {
+  const query = ((...args: Parameters<typeof clientQuery>) =>
+    clientQuery(...args)) as PoolClient["query"];
+  return { query } as PoolClient;
+}
 
 vi.mock("@vex-agent/db/client.js", () => ({
   query: vi.fn().mockResolvedValue([]),
@@ -49,7 +57,7 @@ describe("the dispatch-slot claim statement", () => {
   it("is ONE conditional UPDATE that reads the generation row FOR SHARE", async () => {
     clientQuery.mockResolvedValue({ rows: [{ approval_id: "a-1" }], rowCount: 1 });
     const took = await intents.casClaimStudioDispatchSlotWith(
-      { query: clientQuery } as never,
+      fakeClient(),
       "a-1",
     );
     expect(took).toBe(true);
@@ -68,7 +76,7 @@ describe("the dispatch-slot claim statement", () => {
     // longer equals the value stamped at enqueue and the UPDATE matches nothing.
     clientQuery.mockResolvedValue({ rows: [], rowCount: 0 });
     const took = await intents.casClaimStudioDispatchSlotWith(
-      { query: clientQuery } as never,
+      fakeClient(),
       "a-1",
     );
     expect(took).toBe(false);
@@ -113,9 +121,7 @@ describe("the in-memory mirror", () => {
       rows: [{ dispatch_generation: "12" }],
       rowCount: 1,
     });
-    const value = await gate.readStudioDispatchGeneration({
-      query: clientQuery,
-    } as never);
+    const value = await gate.readStudioDispatchGeneration(fakeClient());
     expect(value).toBe("12");
     expect(gate.readMirroredStudioDispatchGeneration()).toBe("12");
   });

@@ -40,9 +40,17 @@ import { toIsoOrNull } from "./row-mapping.js";
  * stale claim commit, because the row `FOR SHARE` here conflicts with the
  * advance's row lock.
  *
- * Zero rows therefore has exactly three causes, and all three are correct
+ * Zero rows therefore has exactly four causes, and all four are correct
  * refusals: another writer already owns the dispatch, the row is not
- * `not_started`, or Vex was locked or unlocked after the enqueue.
+ * `not_started`, the row was never approved, or Vex was locked or unlocked
+ * after the enqueue.
+ *
+ * `decision = 'approved'` is part of the predicate (audit finding D3) because
+ * `execution_status = 'not_started'` alone does not prove a human decided
+ * anything - it is also the state of a row that is still `decision IS NULL`
+ * (undecided) or was never reached by the decision path at all. Without this
+ * predicate the slot could be claimed, and the action dispatched, for an
+ * intent nobody approved.
  */
 const CAS_CLAIM_STUDIO_SLOT_SQL = `UPDATE approval_intents
    SET execution_status    = 'dispatching',
@@ -50,6 +58,7 @@ const CAS_CLAIM_STUDIO_SLOT_SQL = `UPDATE approval_intents
  WHERE approval_id      = $1
    AND execution_status = 'not_started'
    AND origin           = 'studio_mcp'
+   AND decision         = 'approved'
    AND dispatch_generation_at_enqueue = (
          SELECT dispatch_generation FROM studio_runtime_gate WHERE id = 1 FOR SHARE
        )

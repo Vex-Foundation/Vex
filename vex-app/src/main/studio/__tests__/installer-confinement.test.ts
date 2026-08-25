@@ -20,9 +20,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   STUDIO_ARTIFACT_MAX_BYTES,
+  captureDirectoryChain,
   findAmbiguousTwin,
   isInside,
   resolveArtifactPath,
+  verifyDirectoryChain,
 } from "../installer/paths.js";
 import {
   hashText,
@@ -263,5 +265,130 @@ describe("replacement", () => {
     const { readdir } = await import("node:fs/promises");
     const entries = await readdir(project);
     expect(entries.filter((name) => name.includes(".tmp"))).toEqual([]);
+  });
+});
+
+/**
+ * THE PARENT-DIRECTORY SWAP.
+ *
+ * The confinement walk proves the path was clean WHEN IT LOOKED. The write
+ * happens later, and `rename(2)` re-resolves its path string from the root, so
+ * a directory that kept its name and became a symlink in between would send the
+ * write outside the project. A lexical containment check cannot see that: the
+ * path string is identical either way. Only `dev`+`ino` can.
+ *
+ * The swap here is REAL and CONTROLLED - the directory is genuinely replaced by
+ * a symlink to another temp tree between the capture and the verify - which is
+ * the only way to prove the recheck does anything. No sleeps, no timing.
+ */
+describe("parent-directory swap between validation and write", () => {
+  let outside: string;
+
+  beforeEach(async () => {
+    outside = await realpath(await mkdtemp(path.join(tmpdir(), "vex-outside-")));
+  });
+
+  it("captures the chain from the project root down to the artifact folder", async () => {
+    await mkdir(path.join(project, ".codex"), { recursive: true });
+    const captured = await captureDirectoryChain(project, path.join(project, ".codex"));
+    expect(captured.kind).toBe("ok");
+    if (captured.kind !== "ok") return;
+    expect(captured.chain.map((entry) => entry.absolutePath)).toEqual([
+      project,
+      path.join(project, ".codex"),
+    ]);
+    for (const entry of captured.chain) {
+      expect(entry.ino).toBeGreaterThan(0);
+    }
+    // Nothing moved, so the recheck passes.
+    expect(await verifyDirectoryChain(captured.chain)).toBeNull();
+  });
+
+  it("DETECTS a directory swapped for a symlink after the capture", async () => {
+    const inside = path.join(project, ".codex");
+    await mkdir(inside, { recursive: true });
+    const captured = await captureDirectoryChain(project, inside);
+    expect(captured.kind).toBe("ok");
+    if (captured.kind !== "ok") return;
+
+    // THE SWAP: same name, different object, pointing out of the project.
+    const { rm } = await import("node:fs/promises");
+    await rm(inside, { recursive: true });
+    await symlink(outside, inside, "dir");
+
+    const verdict = await verifyDirectoryChain(captured.chain);
+    expect(verdict).not.toBeNull();
+    expect(verdict?.reason).toBe("symlinked_path");
+  });
+
+  /**
+   * MEASURED LIMIT, pinned so nobody mistakes the mechanism for more than it is.
+   *
+   * A delete-and-recreate of a real directory frequently REUSES the inode (this
+   * was measured on the development filesystem: same `dev`, same `ino`, before
+   * and after). So `dev`+`ino` does NOT reliably detect that a directory was
+   * recreated in place.
+   *
+   * That is acceptable, and the reason is worth stating: the property this
+   * defends is CONFINEMENT - a write must not land outside the project. A
+   * recreated real directory at the same in-project path is still a real
+   * directory at the same in-project path, so a write into it is still confined.
+   * The redirection attack needs a SYMLINK (or a mount), and both change the
+   * type or the device, which the check does catch - the tests above prove it.
+   *
+   * This test asserts the limit rather than the wish, so that a future reader
+   * does not build a stronger guarantee on top of it.
+   */
+  it("does NOT claim to detect a same-inode recreate, and says so", async () => {
+    const inside = path.join(project, ".codex");
+    await mkdir(inside, { recursive: true });
+    const captured = await captureDirectoryChain(project, inside);
+    expect(captured.kind).toBe("ok");
+    if (captured.kind !== "ok") return;
+
+    const { rm } = await import("node:fs/promises");
+    await rm(inside, { recursive: true });
+    await mkdir(inside, { recursive: true });
+
+    const after = await stat(inside);
+    const recorded = captured.chain[captured.chain.length - 1];
+    const verdict = await verifyDirectoryChain(captured.chain);
+
+    if (recorded !== undefined && after.ino === recorded.ino && after.dev === recorded.dev) {
+      // Inode reused: undetectable by identity, and harmless - still confined.
+      expect(verdict).toBeNull();
+    } else {
+      // A filesystem that does not reuse inodes gets the stronger answer free.
+      expect(verdict).not.toBeNull();
+    }
+  });
+
+  it("REFUSES the whole write when the artifact's folder is already a link", async () => {
+    // The end-to-end proof: a symlinked parent present at call time never gets
+    // written through, and the file outside the project is not created.
+    const inside = path.join(project, ".codex");
+    await symlink(outside, inside, "dir");
+
+    const write = await replaceConfinedFile({
+      projectDirectory: project,
+      absolutePath: path.join(inside, "config.toml"),
+      relativeLabel: ".codex/config.toml",
+      text: "escaped = true\n",
+      expectedHash: null,
+      mode: null,
+    });
+
+    expect(write.kind).toBe("refused");
+    if (write.kind === "refused") expect(write.reason).toBe("symlinked_path");
+
+    // And nothing landed in the directory the link pointed at.
+    const { readdir } = await import("node:fs/promises");
+    expect(await readdir(outside)).toEqual([]);
+  });
+
+  it("refuses a chain whose target is not inside the project at all", async () => {
+    const captured = await captureDirectoryChain(project, outside);
+    expect(captured.kind).toBe("refused");
+    if (captured.kind === "refused") expect(captured.reason).toBe("path_escape");
   });
 });

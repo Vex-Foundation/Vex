@@ -32,6 +32,7 @@ import { app } from "electron";
 
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import type {
+  StudioArtifactOutcome,
   StudioArtifactStatus,
   StudioFilesStatus,
   StudioRenderOutcome,
@@ -66,16 +67,27 @@ import {
   resolveProjectDirectory,
   resolveProjectsRoot,
 } from "./projects-root.js";
-import { hashText, readConfinedFile, replaceConfinedFile } from "./installer/confined-fs.js";
+import {
+  describeIoFailure,
+  hashText,
+  readConfinedFile,
+  replaceConfinedFile,
+} from "./installer/confined-fs.js";
 import { locateStudioBridge } from "./installer/bridge-path.js";
 import { resolveArtifactPath } from "./installer/paths.js";
 import {
+  STUDIO_AGENTS_MD_RELATIVE_PATH,
   buildStudioPlan,
   studioGeneratorFingerprint,
   type StudioArtifactPlan,
+  type StudioPlan,
 } from "./installer/plan.js";
 import { enqueueStudioRender } from "./installer/queue.js";
-import { reconcileStudioArtifacts } from "./installer/reconcile.js";
+import {
+  reconcileStudioArtifacts,
+  type ArtifactProvenanceWrite,
+  type ReconcileResult,
+} from "./installer/reconcile.js";
 
 export { __resetStudioRenderQueuesForTests } from "./installer/queue.js";
 
@@ -148,44 +160,109 @@ async function runRender(
     projectId: scope.projectId,
     bridgeCommand: bridge.command,
   };
-  const brief = buildProjectBrief(scope, notesOutcome.data);
   const plan = buildStudioPlan({
     selectedAgentIds: scope.agents,
     previouslyWritten: new Set(provenance.keys()),
   });
 
-  const result = await reconcileStudioArtifacts({
+  const io = {
+    replaceFile: replaceConfinedFile,
+    // Both REPORT the failure to the reconciler instead of swallowing it. The
+    // log line stays for the operator; the boolean is what stops the run from
+    // claiming a result it cannot prove.
+    commitProvenance: async (record: ArtifactProvenanceWrite) => {
+      const committed = await commitArtifactProvenance(projectId, record);
+      if (!committed.ok) {
+        log.error(
+          `[studio:installer] provenance for ${record.artifactKey} was not persisted `
+            + `projectId=${projectId} correlationId=${correlationId}`,
+        );
+      }
+      return committed.ok;
+    },
+    clearProvenance: async (artifactKey: string) => {
+      const cleared = await clearArtifactProvenance(projectId, artifactKey);
+      if (!cleared.ok) {
+        log.error(
+          `[studio:installer] provenance for ${artifactKey} was not cleared `
+            + `projectId=${projectId} correlationId=${correlationId}`,
+        );
+      }
+      return cleared.ok;
+    },
+  };
+
+  // TWO PASSES, AND `AGENTS.md` IS THE SECOND ONE.
+  //
+  // The managed block PROMISES its reader, in `renderStudioChangeLog`, that
+  // "every regeneration that changed anything adds a line here". With one pass
+  // that was false by construction: the brief was built before reconciliation
+  // and the note was appended after it, so the line describing a run only ever
+  // appeared in the NEXT run's file. A reader comparing the change log against
+  // what had just happened to their repo saw the previous change, which is
+  // exactly the "silent rewrite" the section exists to rule out.
+  //
+  // So every other artifact is reconciled first, THIS run's note is composed
+  // from what those artifacts actually did, and `AGENTS.md` is rendered last
+  // from a brief that already carries it.
+  const firstPass = await reconcileStudioArtifacts({
     projectDirectory: directory.data,
-    plan,
+    plan: {
+      artifacts: plan.artifacts.filter((artifact) => artifact.kind !== "agents-md"),
+      unsupported: plan.unsupported,
+    },
     facts,
-    brief,
+    brief: buildProjectBrief(scope, notesOutcome.data),
     provenance,
     repair: trigger === "repair",
-    io: {
-      replaceFile: replaceConfinedFile,
-      commitProvenance: async (record) => {
-        const committed = await commitArtifactProvenance(projectId, record);
-        if (!committed.ok) {
-          // The file IS written. Losing its provenance means the next run sees
-          // an entry it cannot prove and refuses it as a collision - visible and
-          // safe, never a silent overwrite - so this is logged, not thrown.
-          log.error(
-            `[studio:installer] provenance for ${record.artifactKey} was not persisted `
-              + `projectId=${projectId} correlationId=${correlationId}`,
-          );
-        }
-      },
-      clearProvenance: async (artifactKey) => {
-        const cleared = await clearArtifactProvenance(projectId, artifactKey);
-        if (!cleared.ok) {
-          log.error(
-            `[studio:installer] provenance for ${artifactKey} was not cleared `
-              + `projectId=${projectId} correlationId=${correlationId}`,
-          );
-        }
-      },
-    },
+    io,
   });
+
+  // The note is composed ONLY when the first pass changed something. Injecting
+  // one unconditionally would change the block on every run, which would write
+  // `AGENTS.md`, which would justify the note: a self-fulfilling loop that
+  // rewrites a user's file forever. `AGENTS.md` is named in the summary because
+  // a note that lands in the block is itself a change to the block.
+  const firstPassChanged = firstPass.artifacts.some(
+    (outcome) => outcome.status === "written" || outcome.status === "removed",
+  );
+  const pendingNote = firstPassChanged
+    ? {
+      version: appVersion(),
+      date: isoDate(new Date()),
+      summary: summarizeRun(
+        [
+          ...firstPass.artifacts,
+          { status: "written", path: STUDIO_AGENTS_MD_RELATIVE_PATH },
+        ],
+        trigger,
+      ),
+    }
+    : null;
+
+  const secondPass = await reconcileStudioArtifacts({
+    projectDirectory: directory.data,
+    plan: {
+      artifacts: plan.artifacts.filter((artifact) => artifact.kind === "agents-md"),
+      unsupported: [],
+    },
+    facts,
+    brief: buildProjectBrief(
+      scope,
+      pendingNote === null ? notesOutcome.data : [pendingNote, ...notesOutcome.data],
+    ),
+    provenance,
+    repair: trigger === "repair",
+    io,
+  });
+
+  const result: ReconcileResult = {
+    // Restored to the PLAN's order, so the outcome list a caller reads does not
+    // depend on the internal two-pass split.
+    artifacts: orderByPlan(plan, [...firstPass.artifacts, ...secondPass.artifacts]),
+    warnings: [...firstPass.warnings, ...secondPass.warnings],
+    completed: firstPass.completed && secondPass.completed,
+  };
 
   const changed = result.artifacts.some(
     (outcome) => outcome.status === "written" || outcome.status === "removed",
@@ -204,9 +281,14 @@ async function runRender(
   }
 
   if (changed) {
+    // Persisted from the ACTUAL outcomes, not from `pendingNote`. The two agree
+    // whenever `AGENTS.md` was written, which is the case where the file and
+    // the store both carry the line. If the block refused (a half-open fence,
+    // say), the file was not rewritten at all, so the store keeps the honest
+    // record of what the run really did and the next render shows it.
     const note = await appendChangeNote(projectId, {
-      version: appVersion(),
-      date: isoDate(new Date()),
+      version: pendingNote?.version ?? appVersion(),
+      date: pendingNote?.date ?? isoDate(new Date()),
       summary: summarizeRun(result.artifacts, trigger),
     });
     if (!note.ok) {
@@ -387,8 +469,8 @@ async function resolveProjectDirectoryPath(
     return ok(await realpath(directory));
   } catch (cause) {
     log.warn(
-      `[studio:installer] the project folder could not be resolved correlationId=${correlationId}`,
-      cause,
+      `[studio:installer] the project folder could not be resolved `
+        + `correlationId=${correlationId} ${describeIoFailure(cause)}`,
     );
     return err(projectNotFoundError(correlationId));
   }
@@ -426,6 +508,10 @@ function buildProjectBrief(
     agentNames: scope.agents.map((id) => STUDIO_AGENTS[id].displayName),
     inventory: {
       alwaysLoadedCount: internal.length,
+      // NAMED, not described. The block used to call this set "the core wallet
+      // tools", which stopped being true once swap, bridge, chain-read, token,
+      // research and social tools joined the hot set.
+      alwaysLoadedNames: internal.map((tool) => tool.publicName),
       searchableCount: protocol.length,
       protocols: [...byNamespace].map(([name, toolCount]) => ({ name, toolCount })),
     },
@@ -436,10 +522,19 @@ function buildProjectBrief(
 /**
  * One line naming what this run changed, for the change-note log.
  *
- * Names the FILES, because that is what a reader of `AGENTS.md` can go and
- * look at. Bounded by construction: the artifact list is bounded by the closed
- * agent roster, and the summary column is 400 characters, so the paths are
- * counted rather than listed once there are more than a handful.
+ * Names EVERY file, because that is what a reader of `AGENTS.md` can go and
+ * look at, and because a change note that says "and 9 more file(s)" points at
+ * no retrieval path: the note IS the record, so a name it drops is a name
+ * nobody can recover.
+ *
+ * Listing all of them is safe by construction, not by luck. The artifact roster
+ * is CLOSED - one config path per agent in the registry plus `AGENTS.md`,
+ * `CLAUDE.md` and `.vex/protocols.md` - and the longest possible line, every
+ * artifact of the full roster written in one run, is 296 characters against the
+ * 400-character `project_change_notes.summary` CHECK (migration 089).
+ * `studio-change-note-bound.test.ts` re-measures that against the live registry
+ * so a future agent whose path pushes the worst case over the column bound
+ * fails a test here rather than an INSERT in front of a user.
  */
 function summarizeRun(
   artifacts: readonly { status: string; path: string | null }[],
@@ -452,8 +547,29 @@ function summarizeRun(
 
   const prefix = trigger === "repair" ? "repaired" : "updated";
   if (touched.length === 0) return `${prefix} this project's Vex files`;
-  if (touched.length <= 4) return `${prefix} ${touched.join(", ")}`;
-  return `${prefix} ${touched.slice(0, 4).join(", ")} and ${String(touched.length - 4)} more file(s)`;
+  return `${prefix} ${touched.join(", ")}`;
+}
+
+/**
+ * Put the two passes' outcomes back into the plan's own order.
+ *
+ * The split between "everything else" and "`AGENTS.md`" is an ordering
+ * requirement of the change log, not a change to the report. Unsupported
+ * selections have no plan artifact and keep their leading position.
+ */
+function orderByPlan(
+  plan: StudioPlan,
+  outcomes: readonly StudioArtifactOutcome[],
+): readonly StudioArtifactOutcome[] {
+  const position = new Map<string, number>();
+  plan.artifacts.forEach((artifact, index) => {
+    position.set(`${artifact.kind}:${artifact.relativePath}`, index);
+  });
+  const rank = (outcome: StudioArtifactOutcome): number =>
+    outcome.path === null
+      ? -1
+      : position.get(`${outcome.kind}:${outcome.path}`) ?? Number.MAX_SAFE_INTEGER;
+  return [...outcomes].sort((left, right) => rank(left) - rank(right));
 }
 
 function isoDate(value: Date): string {

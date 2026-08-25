@@ -44,6 +44,9 @@ importers:
       rettiwt-api:
         specifier: 7.1.2
         version: 7.1.2
+      smol-toml:
+        specifier: 1.8.0
+        version: 1.8.0
       socket.io-client:
         specifier: ^4.8.3
         version: 4.8.3(bufferutil@4.1.0)(utf-8-validate@6.0.6)
@@ -1791,6 +1794,10 @@ packages:
   smart-buffer@4.2.0:
     resolution: {integrity: sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg==}
     engines: {node: '>= 6.0.0', npm: '>= 3.0.0'}
+
+  smol-toml@1.8.0:
+    resolution: {integrity: sha512-kCZr2V3ch9i00x8zXRhjUNVcjG9ijES5dDudkXvUVCT5QlJNQWElSJdZqyPemffHoLNUYwOcou0Fy+ojN0uHSQ==}
+    engines: {node: '>= 18'}
 
   socket.io-client@4.8.3:
     resolution: {integrity: sha512-uP0bpjWrjQmUt5DTHq9RuoCBdFJF10cdX9X+a368j/Ft0wmaVgxlrjvK3kjvgCODOMMOz9lcaRzxmso0bTWZ/g==}
@@ -3904,6 +3911,8 @@ snapshots:
   slash@3.0.0: {}
 
   smart-buffer@4.2.0: {}
+
+  smol-toml@1.8.0: {}
 
   socket.io-client@4.8.3(bufferutil@4.1.0)(utf-8-validate@6.0.6):
     dependencies:

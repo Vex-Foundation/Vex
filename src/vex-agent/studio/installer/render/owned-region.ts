@@ -24,6 +24,7 @@
 
 import { createHash } from "node:crypto";
 import { findNodeAtLocation, parseTree, type Node } from "jsonc-parser";
+import { parse as parseToml } from "smol-toml";
 
 import type { StudioWritableAgent } from "../../agents.js";
 import { STUDIO_ENTRY_KEY_ALLOWLIST } from "./entry.js";
@@ -61,6 +62,16 @@ export function readStudioOwnedRegion(
 /** The digest function. One definition, so the writer and the reader agree. */
 export function studioRegionHash(normalized: string): string {
   return createHash("sha256").update(normalized, "utf8").digest("hex");
+}
+
+/** Validation only. Nothing is ever serialized back through the parser. */
+function isParsableToml(text: string): boolean {
+  try {
+    parseToml(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function allowlistFor(agent: StudioWritableAgent): ReadonlySet<string> {
@@ -129,6 +140,12 @@ function normalizeJsonValue(node: Node | undefined): string {
 }
 
 function readTomlRegion(existing: string, agent: StudioWritableAgent): StudioOwnedRegion {
+  // A broken file has no readable region, and the line scanner below would
+  // happily produce an ownership digest from one anyway. Committing that digest
+  // as provenance would record a claim over bytes nobody can parse.
+  if (!isParsableToml(existing)) {
+    return { kind: "unreadable", detail: "the file does not parse as TOML" };
+  }
   if (existing.includes('"""') || existing.includes("'''")) {
     return {
       kind: "unreadable",

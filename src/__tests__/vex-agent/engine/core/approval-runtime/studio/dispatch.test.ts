@@ -16,6 +16,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { ApproveSnapshot } from "@vex-agent/engine/core/approval-runtime/snapshot.js";
+
+type ApprovedInTxSnapshot = Extract<ApproveSnapshot, { type: "approved_in_tx" }>;
 
 const casClaimStudioDispatchSlotWith = vi.fn();
 const casRefuseStudioBeforeDispatchWith = vi.fn();
@@ -77,7 +80,7 @@ const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 const SESSION_ID = "22222222-2222-4222-8222-222222222222";
 const ENVELOPE = buildApprovalToolCall("wallet_send", { network: "solana" });
 
-function snapshot(overrides: Record<string, unknown> = {}) {
+function snapshot(overrides: Record<string, unknown> = {}): ApprovedInTxSnapshot {
   return {
     type: "approved_in_tx" as const,
     queueResolvedAt: "2026-08-23T10:00:00.000Z",
@@ -159,7 +162,7 @@ beforeEach(() => {
 
 describe("the happy dispatch", () => {
   it("claims the slot under the stop gate, then dispatches with the project wallets", async () => {
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(outcome.kind).toBe("dispatched");
     if (outcome.kind !== "dispatched") return;
     expect(outcome.executionStatus).toBe("succeeded");
@@ -213,7 +216,7 @@ describe("the happy dispatch", () => {
       result: { success: false, output: "insufficient funds" },
       dispatched: true,
     });
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(outcome.kind).toBe("dispatched");
     if (outcome.kind !== "dispatched") return;
     expect(outcome.executionStatus).toBe("failed");
@@ -225,7 +228,7 @@ describe("the happy dispatch", () => {
 describe("refusals before the dispatch", () => {
   it("does not dispatch when the slot claim misses (generation moved or taken)", async () => {
     casClaimStudioDispatchSlotWith.mockResolvedValue(false);
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(admitStudioCall).not.toHaveBeenCalled();
     expect(outcome.kind).toBe("dispatched");
     if (outcome.kind !== "dispatched") return;
@@ -249,7 +252,7 @@ describe("refusals before the dispatch", () => {
       runStatus: "stopped",
       scope: "session",
     });
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(admitStudioCall).not.toHaveBeenCalled();
     // The slot is never claimed on the stopped path - and the row is made
     // TERMINAL in the same gate transaction, because nothing else owns it.
@@ -268,7 +271,7 @@ describe("refusals before the dispatch", () => {
       }
       return { rows: [], rowCount: 0 };
     });
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(admitStudioCall).not.toHaveBeenCalled();
     if (outcome.kind !== "dispatched") return;
     expect(outcome.toolResult.output).toMatch(/permission or wallet selection changed/i);
@@ -284,7 +287,7 @@ describe("refusals before the dispatch", () => {
   it("refuses on a request-digest mismatch, without throwing", async () => {
     const outcome = await applyStudioApproveSideEffects(
       APPROVAL_ID,
-      snapshot({ request_digest: "a-digest-of-something-else" }) as never,
+      snapshot({ request_digest: "a-digest-of-something-else" }),
     );
     expect(admitStudioCall).not.toHaveBeenCalled();
     if (outcome.kind !== "dispatched") return;
@@ -308,7 +311,7 @@ describe("refusals before the dispatch", () => {
           },
         },
         request_digest: null,
-      }) as never,
+      }),
     );
     expect(admitStudioCall).not.toHaveBeenCalled();
     if (outcome.kind !== "dispatched") return;
@@ -320,7 +323,7 @@ describe("refusals before the dispatch", () => {
 describe("failures after the dispatch", () => {
   it("records `indeterminate` and does NOT retry when the dispatch throws", async () => {
     admitStudioCall.mockRejectedValue(new Error("provider exploded"));
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     // ONE statement: status AND settlement together, because the settlement
     // CAS is fenced on `dispatching`, which a prior status flip would have left.
     expect(casMarkIndeterminateWithSettlementWith).toHaveBeenCalledWith(
@@ -341,7 +344,7 @@ describe("failures after the dispatch", () => {
       if (input.status === "succeeded") throw new Error("write failed");
       return true;
     });
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(casMarkIndeterminateWithSettlementWith).toHaveBeenCalledTimes(1);
     // The preserved OUTPUT rides with the status, in that one statement.
     const preserved = casMarkIndeterminateWithSettlementWith.mock.calls[0]?.[1] as {
@@ -375,7 +378,7 @@ describe("failures after the dispatch", () => {
       settlementBytes: 60,
       expiresAt: null,
     });
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(outcome.kind).toBe("dispatched");
     // One attempt, no escalation, no second settlement.
     expect(commitStudioSettlementWith).toHaveBeenCalledTimes(1);
@@ -389,7 +392,7 @@ describe("failures after the dispatch", () => {
   it("reports UNCONFIRMED, not `succeeded`, when the lost CAS's row cannot be read", async () => {
     commitStudioSettlementWith.mockResolvedValue(false);
     getStudioSettlementByApprovalId.mockRejectedValue(new Error("db down"));
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     if (outcome.kind !== "dispatched") return;
     // The dispatch RAN, so the honest status is the one that says the outcome
     // is unknown - never the `succeeded` this writer intended to commit.
@@ -403,7 +406,7 @@ describe("failures after the dispatch", () => {
     casMarkIndeterminateWithSettlementWith
       .mockRejectedValueOnce(new Error("db blip"))
       .mockResolvedValue(true);
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(casMarkIndeterminateWithSettlementWith).toHaveBeenCalledTimes(2);
     // The retried thing is a status write on a row whose dispatch already ran.
     expect(admitStudioCall).toHaveBeenCalledTimes(1);
@@ -426,7 +429,7 @@ describe("failures after the dispatch", () => {
       settlementBytes: null,
       expiresAt: null,
     });
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     // Bounded: three attempts, then it stops. No dispatch retry, ever.
     expect(casMarkIndeterminateWithSettlementWith).toHaveBeenCalledTimes(3);
     expect(admitStudioCall).toHaveBeenCalledTimes(1);
@@ -450,7 +453,7 @@ describe("failures after the dispatch", () => {
       settlementBytes: 60,
       expiresAt: null,
     });
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     // A `false` CAS is NOT retryable: the predicate requires `dispatching` and
     // the row has left it.
     expect(casMarkIndeterminateWithSettlementWith).toHaveBeenCalledTimes(1);
@@ -475,7 +478,7 @@ describe("a refusal that did not commit is never reported as one", () => {
       settlementBytes: 60,
       expiresAt: null,
     });
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(admitStudioCall).not.toHaveBeenCalled();
     if (outcome.kind !== "dispatched") return;
     // The refusal DID NOT HAPPEN. Reporting it would tell an external agent
@@ -499,7 +502,7 @@ describe("a refusal that did not commit is never reported as one", () => {
       settlementBytes: null,
       expiresAt: null,
     });
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     if (outcome.kind !== "dispatched") return;
     expect(outcome.toolResult.output).toMatch(/could not record its refusal/i);
     expect(outcome.toolResult.output).toMatch(/may still be pending/i);
@@ -511,7 +514,7 @@ describe("a refusal that did not commit is never reported as one", () => {
   it("still reports the refusal when it DID commit", async () => {
     setStudioDispatchPreflight(() => false);
     casRefuseStudioBeforeDispatchWith.mockResolvedValue(true);
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(getStudioSettlementByApprovalId).not.toHaveBeenCalled();
     if (outcome.kind !== "dispatched") return;
     expect(outcome.executionStatus).toBe("failed");
@@ -548,7 +551,7 @@ describe("the commit-time scope check compares against the ENQUEUE version", () 
       return { rows: [], rowCount: 0 };
     });
 
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(admitStudioCall).not.toHaveBeenCalled();
     expect(commitStudioSettlementWith).toHaveBeenCalledWith(
       expect.anything(),
@@ -561,7 +564,7 @@ describe("the commit-time scope check compares against the ENQUEUE version", () 
   it("refuses a Studio row that recorded no enqueue version at all", async () => {
     const outcome = await applyStudioApproveSideEffects(
       APPROVAL_ID,
-      snapshot({ scope_version_at_enqueue: null }) as never,
+      snapshot({ scope_version_at_enqueue: null }),
     );
     // Nothing may dispatch under authority that cannot be re-proven.
     expect(casClaimStudioDispatchSlotWith).not.toHaveBeenCalled();
@@ -576,7 +579,7 @@ describe("the commit-time scope check compares against the ENQUEUE version", () 
 
   it("refuses durably when the project scope cannot be read", async () => {
     poolQuery.mockRejectedValue(new Error("db down"));
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(casClaimStudioDispatchSlotWith).not.toHaveBeenCalled();
     expect(casRefuseStudioBeforeDispatchWith).toHaveBeenCalledWith(
       expect.anything(),
@@ -589,7 +592,7 @@ describe("the commit-time scope check compares against the ENQUEUE version", () 
 describe("the dispatch preflight", () => {
   it("refuses BEFORE anything else when the lock fence cannot be proven", async () => {
     setStudioDispatchPreflight(() => false);
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     // Before the scope read and before the gate: the fence is what the whole
     // dispatch decision rests on.
     expect(poolQuery).not.toHaveBeenCalled();
@@ -606,7 +609,7 @@ describe("the dispatch preflight", () => {
   it("dispatches normally when nothing registered a preflight", async () => {
     // The durable generation CAS is the authority in every case but the failed
     // advance, so a headless engine must not be blocked by an absent predicate.
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(admitStudioCall).toHaveBeenCalledTimes(1);
     if (outcome.kind !== "dispatched") return;
     expect(outcome.executionStatus).toBe("succeeded");
@@ -626,7 +629,7 @@ describe("a terminal write that THROWS is handed to the repair owner", () => {
     setStudioDispatchPreflight(() => false);
     casRefuseStudioBeforeDispatchWith.mockRejectedValue(new Error("db down"));
 
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(studioWriteRepairCount()).toBe(1);
     // Nothing dispatched, and the caller is told the refusal is UNCONFIRMED
     // rather than being told a clean refusal happened.
@@ -640,7 +643,7 @@ describe("a terminal write that THROWS is handed to the repair owner", () => {
     // dispatched - and the row is still `approved/not_started`.
     acquireSessionControlLock.mockRejectedValueOnce(new Error("db down"));
 
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(studioWriteRepairCount()).toBe(1);
     expect(casClaimStudioDispatchSlotWith).not.toHaveBeenCalled();
     expect(admitStudioCall).not.toHaveBeenCalled();
@@ -654,7 +657,7 @@ describe("a terminal write that THROWS is handed to the repair owner", () => {
     admitStudioCall.mockRejectedValue(new Error("provider exploded"));
     casMarkIndeterminateWithSettlementWith.mockRejectedValue(new Error("db down"));
 
-    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot() as never);
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(casMarkIndeterminateWithSettlementWith).toHaveBeenCalledTimes(3);
     expect(studioWriteRepairCount()).toBe(1);
     // ONE dispatch, ever. The repair owner replays the write, never the call.

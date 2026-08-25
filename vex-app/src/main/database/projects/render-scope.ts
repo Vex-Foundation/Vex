@@ -43,6 +43,8 @@ interface ScopeRow {
   scope_version: number;
   created_at: Date | string;
   updated_at: Date | string;
+  /** Aggregated in the SAME statement, so it belongs to the same snapshot. */
+  wallets: WalletRow[];
 }
 
 interface WalletRow {
@@ -56,18 +58,40 @@ export async function readProjectRenderScope(
 ): Promise<Result<ProjectRenderScope | null, VexError>> {
   return withClient(async (client) => {
     try {
+      // ONE STATEMENT, so the row and its wallets are ONE SNAPSHOT.
+      //
+      // These used to be two `client.query` calls. Under READ COMMITTED - the
+      // Postgres default, and what this connection runs at - each statement
+      // takes its OWN snapshot, so a scope edit committing between them was
+      // rendered as version N's permission with version N+1's wallets: a
+      // combination that never existed in the database and that no reviewer of
+      // either commit ever approved. On the money path that is the whole
+      // question, because `permission` decides whether a mutation waits for an
+      // approval card and the wallets decide whose funds it moves.
+      //
+      // A lateral aggregate is preferred over `BEGIN ISOLATION LEVEL REPEATABLE
+      // READ` because it needs no transaction lifecycle on a pooled connection
+      // (no BEGIN/COMMIT to leak on an early return or a throw) and it is one
+      // round trip instead of three. `ORDER BY family` moves inside the
+      // aggregate so the wallet order is still deterministic.
       const rows = await client.query<ScopeRow>(
-        `SELECT id, name, slug, permission, agents, scope_version, created_at, updated_at
-           FROM projects WHERE id = $1`,
+        `SELECT p.id, p.name, p.slug, p.permission, p.agents, p.scope_version,
+                p.created_at, p.updated_at,
+                COALESCE(w.wallets, '[]'::json) AS wallets
+           FROM projects p
+           LEFT JOIN LATERAL (
+             SELECT json_agg(
+                      json_build_object('family', pw.family, 'address', pw.address)
+                      ORDER BY pw.family
+                    ) AS wallets
+               FROM project_wallets pw
+              WHERE pw.project_id = p.id
+           ) w ON TRUE
+          WHERE p.id = $1`,
         [projectId],
       );
       const row = rows.rows[0];
       if (row === undefined) return ok(null);
-
-      const walletRows = await client.query<WalletRow>(
-        "SELECT family, address FROM project_wallets WHERE project_id = $1 ORDER BY family",
-        [projectId],
-      );
 
       return ok<ProjectRenderScope>({
         projectId: row.id,
@@ -82,7 +106,7 @@ export async function readProjectRenderScope(
           return parsed.success ? [parsed.data] : [];
         }),
         scopeVersion: row.scope_version,
-        wallets: walletRows.rows.flatMap((wallet) =>
+        wallets: row.wallets.flatMap((wallet) =>
           wallet.address === null ? [] : [{ family: wallet.family, address: wallet.address }],
         ),
         createdAt: toDate(row.created_at),

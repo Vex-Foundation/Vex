@@ -88,6 +88,37 @@ export const STUDIO_INDETERMINATE_SENTENCE =
   + "approval itself - open Vex and read the approval before doing anything "
   + "else with this account.";
 
+/**
+ * The sentence for a tool handler that THREW instead of returning an outcome.
+ *
+ * A throw out of `runCall` is the one path where Vex has no outcome at all: the
+ * executor decided nothing, so whether the action ran is genuinely UNKNOWN.
+ * `dispatch_failed` would claim "nothing was executed", which the thrower did
+ * not prove, and `indeterminate` names an approval this call may never have
+ * reached. So this is its own sentence, and it leads with DO NOT RETRY for the
+ * same reason `indeterminate` does: MCP carries no machine-readable no-retry
+ * annotation, and the first words are the only channel.
+ *
+ * It carries the CORRELATION ID and nothing else. The thrown error's own
+ * message is peer- or provider-shaped text that can quote a path, a URL, a
+ * stack or a payload; it is logged redacted by its classification at the
+ * boundary and never crosses the wire (rules 04 error layers, 07 secrets).
+ */
+export function studioHandlerFailureSentence(correlationId: string): string {
+  return (
+    "DO NOT RETRY THIS CALL. Vex failed while carrying out this action and "
+    + "could not determine what happened, so its outcome is UNRESOLVED and it "
+    + "may have taken effect. Retrying could execute it a second time. Open Vex "
+    + "and check this action before doing anything else with this account. "
+    + `Vex correlation id: ${correlationId}.`
+  );
+}
+
+/** The `isError` result for a handler that threw. Never carries the cause. */
+export function studioHandlerFailureResult(correlationId: string): StudioCallToolResult {
+  return textResult(studioHandlerFailureSentence(correlationId), true);
+}
+
 export function studioOutcomeToCallToolResult(
   outcome: StudioCallOutcome,
 ): StudioCallToolResult {

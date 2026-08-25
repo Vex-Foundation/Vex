@@ -92,10 +92,20 @@ export interface ReconcileIo {
     readonly expectedHash: string | null;
     readonly mode: number | null;
   }) => Promise<ConfinedWrite>;
-  /** Persist one artifact's provenance. Called immediately after a write. */
-  readonly commitProvenance: (record: ArtifactProvenanceWrite) => Promise<void>;
+  /**
+   * Persist one artifact's provenance. Called immediately after a write.
+   *
+   * Returns whether the record actually landed. It used to return `void` and
+   * the production adapter logged and swallowed the failure - so a run whose
+   * database write failed still reported the artifact `written`, still reported
+   * `completed`, and still advanced the completion marker. The project then
+   * looked up to date while holding an entry Vex could no longer prove it
+   * owned, and the NEXT run refused that entry as a collision. The user's first
+   * news of the failure was a refusal on a file they had been told was fine.
+   */
+  readonly commitProvenance: (record: ArtifactProvenanceWrite) => Promise<boolean>;
   /** Forget one artifact's provenance, after its entry was removed. */
-  readonly clearProvenance: (artifactKey: string) => Promise<void>;
+  readonly clearProvenance: (artifactKey: string) => Promise<boolean>;
 }
 
 export interface ReconcileOptions {
@@ -210,12 +220,13 @@ async function reconcileOne(
     // artifact that is already correct. Without it, a project whose files were
     // restored from a backup would refuse its own entries as collisions.
     if (existingText !== null && !options.provenance.has(artifact.key)) {
-      await options.io.commitProvenance({
+      const recorded = await options.io.commitProvenance({
         artifactKey: artifact.key,
         relativePath: label,
         entryHash: decision.entryHash,
         contentHash: hashText(existingText),
       });
+      if (!recorded) return provenanceNotRecorded(artifact, label, false);
     }
     return {
       status: "unchanged",
@@ -238,7 +249,8 @@ async function reconcileOne(
   }
 
   if (artifact.operation === "remove") {
-    await options.io.clearProvenance(artifact.key);
+    const cleared = await options.io.clearProvenance(artifact.key);
+    if (!cleared) return provenanceNotRecorded(artifact, label, true);
     return {
       status: "removed",
       kind: artifact.kind,
@@ -247,12 +259,13 @@ async function reconcileOne(
     };
   }
 
-  await options.io.commitProvenance({
+  const recorded = await options.io.commitProvenance({
     artifactKey: artifact.key,
     relativePath: label,
     entryHash: decision.entryHash,
     contentHash: write.hash,
   });
+  if (!recorded) return provenanceNotRecorded(artifact, label, true);
 
   return {
     status: "written",
@@ -320,6 +333,26 @@ function decideAgentConfig(
   }
 
   if (region.kind === "present") {
+    // FINALIZE WHAT THE DISK ALREADY PROVES.
+    //
+    // An entry whose content is byte-for-byte what a fresh render produces is
+    // Vex's own output, whether or not the store remembers writing it. That is
+    // exactly the state left behind when a file replacement succeeded and its
+    // provenance commit did not - a crash, or a database that was briefly
+    // unreachable - and without this branch the next run refused that entry as
+    // a collision FOREVER, with no remedy but the user deleting it by hand.
+    //
+    // Adopting it is safe because it is a no-op on the bytes: the alternative
+    // is rendering the identical text. If a third party wrote an identical
+    // entry, we would have written the same thing anyway.
+    //
+    // The three states, kept distinct: matches DESIRED -> finalize (here);
+    // matches what the store RECORDED but not desired -> a normal update, or
+    // drift, handled below; any THIRD state -> refused as a collision.
+    if (region.hash === entryHashFor(artifact, options) && artifact.operation !== "remove") {
+      return { kind: "unchanged", entryHash: region.hash };
+    }
+
     if (recorded?.entryHash === undefined || recorded.entryHash === null) {
       return {
         kind: "refused",
@@ -330,6 +363,28 @@ function decideAgentConfig(
           + "remove that entry and try again.",
       };
     }
+    // REPAIR TAKEOVER. The refusals below tell the user "run Repair to replace
+    // it with the generated entry", and until this branch existed that sentence
+    // was false: `options.repair` was never consulted here, so Repair produced
+    // the same refusal and the promised remedy did not exist. Repair is the
+    // explicit user action on its own channel, which is exactly the semantic
+    // "drift is overwritten only by explicit Repair" names.
+    //
+    // The takeover is PROVENANCE-PROVEN, and that is the whole boundary: it
+    // applies only where `recorded.entryHash` is a real digest, i.e. where Vex
+    // can show this entry is one it wrote. The `entryHash === null` case below
+    // is an entry Vex NEVER wrote, and no trigger takes that over - Repair is
+    // permission to replace our own edited entry, never permission to seize
+    // somebody else's. That refusal keeps its manual-remediation copy.
+    if (options.repair && recorded.entryHash !== null) {
+      return fromRender(
+        artifact.operation === "remove"
+          ? removeStudioAgentConfig(existing, agent, options.facts)
+          : mergeStudioAgentConfig(existing, agent, options.facts),
+        artifact.operation === "remove" ? null : entryHashFor(artifact, options),
+      );
+    }
+
     if (recorded.entryHash !== region.hash) {
       return artifact.operation === "remove"
         ? {
@@ -484,6 +539,40 @@ function fromRender(result: StudioRenderResult, entryHash: string | null): Decis
     case "refused":
       return { kind: "refused", reason: result.reason, detail: result.detail };
   }
+}
+
+/**
+ * The durable record did not land. FAIL CLOSED, and say which side failed.
+ *
+ * `refused` is deliberate even when `fileTouched` is true and the bytes ARE on
+ * disk. The alternative - reporting `written` - is what produced the original
+ * defect: a green run, an advanced completion marker, and a collision refusal
+ * on the next render. A refusal keeps `completed` false, so
+ * `recordCompleteRender` never runs and the project stays visibly owing a
+ * render until Repair reconciles it.
+ *
+ * `io_error` is the closest member of the CLOSED refusal set in
+ * `@shared/schemas/studio-installer.js`, which this module may not extend. It
+ * is honest as far as it goes - a durable write failed - but it cannot say
+ * "the file changed and its record did not", so the DETAIL carries that. A
+ * dedicated `provenance_not_recorded` reason belongs in that schema; see the
+ * handoff note.
+ */
+function provenanceNotRecorded(
+  artifact: StudioArtifactPlan,
+  label: string,
+  fileTouched: boolean,
+): StudioArtifactOutcome {
+  return refusal(
+    artifact,
+    "io_error",
+    fileTouched
+      ? `"${label}" was changed on disk, but Vex could not record that it owns that `
+        + "change. Vex has stopped rather than report a result it cannot prove; run "
+        + "Repair once the database is reachable and it will reconcile the file."
+      : `Vex could not record its ownership of "${label}", so this run is not `
+        + "complete. Run Repair once the database is reachable.",
+  );
 }
 
 function refusal(
