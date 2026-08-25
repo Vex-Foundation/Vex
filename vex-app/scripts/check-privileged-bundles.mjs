@@ -67,6 +67,39 @@ function mainChunkFiles(root) {
   return walkFiles(path.join(root, "dist", "main"), (file) => file.endsWith(".js"));
 }
 
+/**
+ * Literal relative dynamic imports are emitted by Rolldown for the lazy
+ * internal-tool map. A missing target is not detected until the user invokes
+ * that specific tool, so verify the complete chunk graph after every build.
+ * Package imports (for example Electron/Sentry) deliberately do not begin
+ * with `.` and are outside this filesystem check.
+ */
+function findMissingRelativeDynamicImports(root) {
+  const missing = [];
+  // Rolldown emits executable chunk specifiers with a `.js` suffix. Requiring
+  // it excludes JSDoc type-import examples retained in unminified dependencies.
+  const importRe = /\bimport\(\s*["'](\.[^"']+\.js)["']\s*\)/g;
+
+  for (const file of mainChunkFiles(root)) {
+    const source = readFileSync(file, "utf8");
+    for (const match of source.matchAll(importRe)) {
+      const lineStart = source.lastIndexOf("\n", match.index) + 1;
+      const line = source.slice(lineStart, source.indexOf("\n", lineStart));
+      if (COMMENT_LINE_RE.test(line.trim())) continue;
+      const specifier = match[1];
+      if (!specifier) continue;
+      const target = path.resolve(path.dirname(file), specifier);
+      if (!existsSync(target)) {
+        missing.push(
+          `${path.relative(root, file)} imports missing ${specifier}`,
+        );
+      }
+    }
+  }
+
+  return missing;
+}
+
 /** Line-resolved hits so a failure points at the offending chunk position. */
 export function findBareFilenameHits(file) {
   const hits = [];
@@ -82,6 +115,22 @@ export function findBareFilenameHits(file) {
 }
 
 export const privilegedBundleChecks = [
+  {
+    label: "main bundle — every literal relative dynamic import resolves to an emitted chunk",
+    run(root) {
+      const jsFiles = mainChunkFiles(root);
+      if (jsFiles.length === 0) {
+        throw new Error(`no built main JS files in ${path.join(root, "dist", "main")}`);
+      }
+
+      const missing = findMissingRelativeDynamicImports(root);
+      if (missing.length > 0) {
+        throw new Error(
+          `main bundle contains lazy imports whose chunks are absent:\n    ${missing.join("\n    ")}`,
+        );
+      }
+    },
+  },
   {
     label: "preload bundle is CJS + uses contextBridge + NO raw ipcRenderer exposure",
     run(root) {

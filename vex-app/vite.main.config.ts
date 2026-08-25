@@ -102,6 +102,12 @@ export default defineConfig({
       output: {
         format: "esm",
         entryFileNames: "[name].js",
+        // The main process keeps the lazy internal-tool loader map in memory.
+        // Content-hashed dynamic chunks make a clean rebuild delete the chunk
+        // names that a still-running Electron process will resolve later. Keep
+        // chunk paths stable so a rebuilt main bundle cannot strand read-only
+        // tools such as WalletBalances or the Lighter onboarding shortcuts.
+        chunkFileNames: "[name].js",
       },
     },
   },
