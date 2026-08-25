@@ -769,7 +769,7 @@ describe("Lighter agent read handlers", () => {
     expect(data.userGuidance).toContain("Lighter minimum deposit 1 USDC");
   });
 
-  it("does not report ready from a public key without active local trading access", async () => {
+  it("preserves provider key registration while reporting managed access separately", async () => {
     mocks.onboarding.resolveStatus.mockResolvedValue({
       environment: "core",
       walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
@@ -796,7 +796,7 @@ describe("Lighter agent read handlers", () => {
     });
 
     expect(data.managedTradingAccessActive).toBe(false);
-    expect(data.tradingKeyRegistered).toBe(false);
+    expect(data.tradingKeyRegistered).toBe(true);
     expect(data.plan).toMatchObject({
       ready: false,
       legs: [{ kind: "reconcile_trading_access" }],
@@ -948,10 +948,12 @@ describe("Lighter agent read handlers", () => {
     });
     expect(data.plan).toMatchObject({
       ready: false,
-      legs: [{ kind: "reconcile_order_state" }],
+      legs: [{ kind: "reconcile_nonce_state" }],
     });
     expect(data.userGuidance).not.toContain("they are ready to trade");
     expect(data.userGuidance).toContain("lighter.order.status");
+    expect(data.userGuidance).toContain("lighter.withdraw.status");
+    expect(data.userGuidance).toContain("CORE nonce reservation");
     expect(data.userGuidance).toContain("Do not prepare a key registration");
   });
 

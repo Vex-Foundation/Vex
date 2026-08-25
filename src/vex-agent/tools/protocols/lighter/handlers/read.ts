@@ -508,8 +508,8 @@ function managedReadinessRecoveryLeg(
     || readiness.reason === "nonce_not_reservable"
   ) {
     return {
-      kind: "reconcile_order_state",
-      reason: "Reconcile unresolved local order and nonce evidence before preparing another order or key registration.",
+      kind: "reconcile_nonce_state",
+      reason: "Reconcile the exact local transaction and nonce evidence before preparing another signed action or key registration.",
     };
   }
   return {
@@ -719,7 +719,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             : plan.ready && managedTradingAccessActive
               ? "The selected wallet's Lighter account is funded and its locally encrypted Vex trading access is active. Tell the user they are ready to trade; do not expose account or API-key indexes unless they ask for technical details."
               : managedTradingReadiness?.reason === "nonce_not_reservable"
-                ? "Run lighter.order.status without an intent id to reconcile every unresolved local order and nonce reservation for Core. Do not prepare a key registration or another order until the nonce is reservable."
+                ? `Reconcile the exact local transaction that owns the ${environment.value.toUpperCase()} nonce reservation. Use lighter.withdraw.status for a withdrawal reservation or lighter.order.status for an order or order-lifecycle reservation. Do not prepare a key registration or another signed action until the nonce is reservable.`
                 : readinessRecoveryLeg?.kind === "reconcile_trading_access"
                   ? "Reconcile the existing managed trading-access lifecycle from durable and provider evidence. Do not prepare or register a replacement key while readiness verification is unresolved."
                   : "Continue only the required managed onboarding legs for the selected wallet. Vex resolves the account, slot, nonce, and encrypted credential internally. Keep each state-changing action approval-gated and do not tell the user they are ready until status proves both funding and active trading access.";
@@ -731,7 +731,6 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           { walletAddress, authenticated: false },
         ),
         ...status,
-        tradingKeyRegistered: managedTradingAccessActive,
         managedTradingAccessActive,
         managedTradingReadiness,
         plan,

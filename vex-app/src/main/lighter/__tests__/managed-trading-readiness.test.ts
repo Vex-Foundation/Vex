@@ -98,7 +98,7 @@ function deps(
       })),
       getNextNonce: vi.fn(async () => ({ code: 200, nonce: 1 })),
     },
-    findNonceState: vi.fn(async () => observedNonce()),
+    recordExecutionObserved: vi.fn(async () => observedNonce()),
     ...overrides,
   };
 }
@@ -132,7 +132,7 @@ describe("managed Lighter trading readiness", () => {
         chainId: 4663,
         vaultCredentialId: "lighter/rhc/account-42/api-key-4",
       })),
-      findNonceState: vi.fn(async () => observedNonce({ environment: "rhc" })),
+      recordExecutionObserved: vi.fn(async () => observedNonce({ environment: "rhc" })),
     });
 
     const result = await resolveManagedLighterTradingReadiness("rhc", 42, setup);
@@ -172,7 +172,7 @@ describe("managed Lighter trading readiness", () => {
     expect(setup.findRegistrationIntent).not.toHaveBeenCalled();
     expect(setup.client.getApiKeys).not.toHaveBeenCalled();
     expect(setup.client.getNextNonce).not.toHaveBeenCalled();
-    expect(setup.findNonceState).not.toHaveBeenCalled();
+    expect(setup.recordExecutionObserved).not.toHaveBeenCalled();
     expect(setup.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
     expect(setup.keyChecker.check).not.toHaveBeenCalled();
   });
@@ -211,17 +211,14 @@ describe("managed Lighter trading readiness", () => {
       reason: "live_key_mismatch",
       exactPublicKeyMatch: false,
     });
+    expect(setup.recordExecutionObserved).not.toHaveBeenCalled();
     expect(setup.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
     expect(setup.keyChecker.check).not.toHaveBeenCalled();
   });
 
   it("does not report ready while a local nonce reservation is unresolved", async () => {
     const setup = deps({
-      findNonceState: vi.fn(async () => observedNonce({
-        status: "reserved",
-        reservedNonce: "1",
-        reservationId: "lighter-order:stuck",
-      })),
+      recordExecutionObserved: vi.fn(async () => null),
     });
 
     const result = await resolveManagedLighterTradingReadiness("core", 42, setup);
@@ -231,6 +228,55 @@ describe("managed Lighter trading readiness", () => {
       reason: "nonce_not_reservable",
       nonceSynchronized: true,
       nonceReservable: false,
+    });
+  });
+
+  it("retires a consumed local reservation from exact live nonce evidence", async () => {
+    const setup = deps({
+      listManagedScopes: vi.fn(() => [{
+        environment: "rhc" as const,
+        accountIndex: 42,
+        apiKeyIndex: 4,
+      }]),
+      findRegistrationIntent: vi.fn(async () => activeIntent({
+        environment: "rhc",
+        chainId: 4663,
+        vaultCredentialId: "lighter/rhc/account-42/api-key-4",
+      })),
+      client: {
+        getApiKeys: vi.fn(async () => ({
+          code: 200,
+          api_keys: [{
+            account_index: 42,
+            api_key_index: 4,
+            nonce: 4,
+            public_key: PUBLIC_KEY,
+            transaction_time: 9,
+          }],
+        })),
+        getNextNonce: vi.fn(async () => ({ code: 200, nonce: 4 })),
+      },
+      recordExecutionObserved: vi.fn(async () => observedNonce({
+        environment: "rhc",
+        providerNonce: "4",
+        providerTransactionTime: "9",
+      })),
+    });
+
+    const result = await resolveManagedLighterTradingReadiness("rhc", 42, setup);
+
+    expect(result).toMatchObject({
+      ready: true,
+      reason: "ready",
+      nonceReservable: true,
+    });
+    expect(setup.recordExecutionObserved).toHaveBeenCalledWith({
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 4,
+      nonce: 4,
+      publicKey: PUBLIC_KEY,
+      transactionTime: 9,
     });
   });
 });

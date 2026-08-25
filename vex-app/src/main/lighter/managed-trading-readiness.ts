@@ -34,7 +34,7 @@ export interface LighterManagedTradingReadinessDeps {
   readonly secretReader: LighterTradingSecretReader;
   readonly keyChecker: LighterRegisteredKeyChecker;
   readonly client: Pick<LighterClient, "getApiKeys" | "getNextNonce">;
-  readonly findNonceState: typeof nonceStateRepo.find;
+  readonly recordExecutionObserved: typeof nonceStateRepo.recordExecutionObserved;
 }
 
 export async function resolveManagedLighterTradingReadiness(
@@ -77,10 +77,9 @@ export async function resolveManagedLighterTradingReadiness(
   };
 
   try {
-    const [apiKeys, nextNonce, nonceState] = await Promise.all([
+    const [apiKeys, nextNonce] = await Promise.all([
       deps.client.getApiKeys(environment, { accountIndex, apiKeyIndex: scope.apiKeyIndex }),
       deps.client.getNextNonce(environment, { accountIndex, apiKeyIndex: scope.apiKeyIndex }),
-      deps.findNonceState(environment, accountIndex, scope.apiKeyIndex),
     ]);
     const expectedPublicKey = canonicalPublicKey(intent.publicKey);
     const exactRows = apiKeys.api_keys.filter(
@@ -125,12 +124,23 @@ export async function resolveManagedLighterTradingReadiness(
       });
     }
 
-    const nonceReservable = nonceState === null
-      || (
-        nonceState.status === "observed"
-        && nonceState.providerNonce === liveNonce
-        && canonicalPublicKey(nonceState.publicKey) === livePublicKey
-      );
+    // Reconcile local nonce state only after the durable activation, exact live
+    // provider key, local signer key, and provider nonce all agree. The repo
+    // keeps an unresolved reservation locked unless the live provider nonce is
+    // strictly newer than the reserved nonce, so this can retire a consumed
+    // transaction without ever freeing an action that may still execute.
+    const nonceState = await deps.recordExecutionObserved({
+      environment,
+      accountIndex,
+      apiKeyIndex: scope.apiKeyIndex,
+      nonce: Number(liveNonce),
+      publicKey: exactRows[0]!.public_key,
+      transactionTime: exactRows[0]!.transaction_time,
+    });
+    const nonceReservable = nonceState !== null
+      && nonceState.status === "observed"
+      && nonceState.providerNonce === liveNonce
+      && canonicalPublicKey(nonceState.publicKey) === livePublicKey;
     if (!nonceReservable) {
       return notReady("nonce_not_reservable", {
         ...activationChecks(),
@@ -205,6 +215,6 @@ function defaultDeps(): LighterManagedTradingReadinessDeps {
     secretReader: createUnlockedVaultLighterTradingSecretReader(),
     keyChecker: createLighterRegisteredKeyCheckerBinary(),
     client: getLighterClient(),
-    findNonceState: nonceStateRepo.find,
+    recordExecutionObserved: nonceStateRepo.recordExecutionObserved,
   };
 }
