@@ -35,7 +35,10 @@ export function createDexScreenerBridgeTransport(): DexScreenerBridgeHandle {
 
   const transport: DexScreenerTransport = {
     name: "site_bridge",
-    capabilities: { site: true, publicApi: true },
+    // publicApi: false is the truth of the allowlist: this transport serves
+    // ONLY the gated site hosts and refuses api.dexscreener.com by name.
+    // Public REST consumers use the default public transport directly.
+    capabilities: { site: true, publicApi: false },
     httpGet: (url, options) =>
       siteHttpGet(bridge.sessionForRequests(), url, options),
     wsExchange: (url, options) => bridge.exchange(url, options),

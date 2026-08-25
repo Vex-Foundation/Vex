@@ -133,4 +133,3 @@ interface FakeHttpResponse {
   readonly headers: { get(name: string): string | null };
   readonly servedBody: unknown;
 }
-
