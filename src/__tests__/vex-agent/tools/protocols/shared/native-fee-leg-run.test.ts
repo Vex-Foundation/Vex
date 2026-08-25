@@ -190,7 +190,7 @@ describe("T-FEE 7 and 9: a refusal before the network sends nothing", () => {
     expect(failActivityEvent).toHaveBeenCalledWith(FEE_ROW, {
       failureCode: "unknown",
       failureReason:
-        "not submitted: authority changed after signing and staging; sendRawTransaction was never invoked",
+        "not submitted: authority could not be proven current after signing and staging; sendRawTransaction was never invoked",
     });
   });
 

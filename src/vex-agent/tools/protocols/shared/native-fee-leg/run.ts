@@ -140,7 +140,7 @@ export interface RunNativeFeeLegInput {
  * signed, nothing was sent.
  */
 const NOT_SUBMITTED_FAILURE_REASON =
-  "not submitted: authority changed after signing and staging; sendRawTransaction was never invoked";
+  "not submitted: authority could not be proven current after signing and staging; sendRawTransaction was never invoked";
 
 /**
  * How many times the not-submitted terminalization is attempted.
@@ -219,15 +219,15 @@ export async function runNativeFeeLeg(
         collection: "not_attempted",
         collectionNote:
           "The Vex fee transfer was signed but never submitted, because the authority it was "
-          + "authorized under changed in between, so no fee was collected and nothing reached the "
-          + "network. Your transaction is unaffected.",
+          + "authorized under could not be proven current in between, so no fee was collected and "
+          + "nothing reached the network. Your action is unaffected.",
         txHash: null,
       };
     }
     logger.warn(`${venue.logPrefix}.leg_failed`, { id: feeRowId, error: err instanceof Error ? err.name : "unknown" });
     return {
       collection: "not_attempted",
-      collectionNote: "The Vex fee transfer was refused before signing, so no fee was collected - your trade is unaffected.",
+      collectionNote: "The Vex fee transfer was refused before signing, so no fee was collected - your action is unaffected.",
       txHash: null,
     };
   }
@@ -251,7 +251,7 @@ export async function runNativeFeeLeg(
     }
     return {
       collection: "reverted",
-      collectionNote: "The Vex fee transfer reverted, so no fee was collected - your trade is unaffected.",
+      collectionNote: "The Vex fee transfer reverted, so no fee was collected - your action is unaffected.",
       txHash: outcome.txHash,
     };
   }
@@ -274,7 +274,7 @@ export async function runNativeFeeLeg(
     }
     return {
       collection: "unconfirmed",
-      collectionNote: "The Vex fee transfer was broadcast but not confirmed this turn; it is tracked automatically and is never re-sent. Your trade is unaffected.",
+      collectionNote: "The Vex fee transfer was broadcast but not confirmed this turn; it is tracked automatically and is never re-sent. Your action is unaffected.",
       txHash: outcome.txHash,
     };
   }
