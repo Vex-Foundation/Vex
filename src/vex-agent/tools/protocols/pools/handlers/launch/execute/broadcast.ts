@@ -44,6 +44,7 @@ import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
 import {
   createAgentActivityIntent,
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
   confirmLaunchWithOutputIdentity,
   fillLaunchOutputIdentityOnConfirmed,
@@ -126,6 +127,7 @@ export async function broadcastPoolsLaunch(x: BroadcastPoolsLaunchInput): Promis
       // names.
       { to: x.plan.call.to, data: x.plan.call.data, value: x.plan.call.valueWei },
       {
+        onNonceReserved: (request) => reserveActivityEvmNonce(launchRowId, request),
         onHashStaged: async (handles) => {
           signedLocally = true;
           const res = await markActivityBroadcast(launchRowId, handles);
@@ -461,7 +463,7 @@ async function chargePoolsVexFee(
   executionId: number,
   feeRowId: number | null,
   outcome: Extract<StagedBroadcastOutcome, { kind: "confirmed" }>,
-): Promise<NativeFeeCollection | { readonly collection: string; readonly collectionNote: string; readonly txHash: null }> {
+): Promise<NativeFeeCollection> {
   const plan = x.plan.feeLeg;
   if (plan === null) {
     return {
@@ -483,7 +485,7 @@ async function chargePoolsVexFee(
       feeRowId,
       chainId: POOLS_CHAIN_ID,
       publicClient: x.publicClient,
-      walletClient: x.walletClient,
+      signer: x.walletClient,
       // Anchor the fee's gas estimate on the block the launch confirmed in.
       priorLeg: priorLegAnchorFrom(outcome.receipt.blockNumber),
     });

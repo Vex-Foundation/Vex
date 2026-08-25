@@ -46,6 +46,7 @@ import {
 } from "@tools/evm-chains/native-value-authorization/index.js";
 import {
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
   confirmActivityEvent,
   failActivityEvent,
@@ -98,6 +99,7 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
       input.walletClient,
       plan.txParams,
       {
+        onNonceReserved: (request) => reserveActivityEvmNonce(feeRowId, request),
         onHashStaged: async (handles) => {
           const res = await markActivityBroadcast(feeRowId, handles);
           if (!res.applied) {

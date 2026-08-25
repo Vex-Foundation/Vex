@@ -62,6 +62,7 @@ import {
   confirmActivityEvent,
   failActivityEvent,
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
   type AgentActivityEventRole,
   type AgentActivityFailureCode,
@@ -314,6 +315,7 @@ export async function sendPendleRouterTx(
     walletClient,
     { to: tx.to, data: tx.data, value: tx.value },
     {
+      onNonceReserved: (request) => reserveActivityEvmNonce(eventRow.id, request),
       // Step 2 — reached AFTER signing and immediately BEFORE the raw submit.
       onHashStaged: async (handles) => {
         const staged = await markActivityBroadcast(eventRow.id, handles);

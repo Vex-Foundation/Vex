@@ -97,6 +97,9 @@ function approvedSnapshot() {
       mission_run_id: null,
       tool_call_id: null,
       queue_tool_call_id: "tc-1",
+      // The row as the snapshot SELECT returns it: a pre-digest row records none,
+      // which `approvalRequestDigestMatches` reads as "nothing to compare".
+      request_digest: null,
       queue_tool_call: { command: "kyberswap_swap", args: {} },
       queue_permission_at_enqueue: "full",
     },

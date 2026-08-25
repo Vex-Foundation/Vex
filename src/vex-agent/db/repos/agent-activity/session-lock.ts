@@ -26,12 +26,12 @@
  *
  * ## Hold duration
  *
- * Every helper here wraps a single CAS statement and nothing else. These
- * writers run on confirmation-poller and repair-sweep paths where the RPC or
- * provider lookup has ALREADY returned; no external call may ever move inside
- * one of these transactions. A writer holding this lock across a provider call
- * would block the operator's Stop — the inversion the lock exists to prevent
- * (see `engine/runtime/lease-and-status/session-control-lock.ts`).
+ * Every helper here wraps short DB-only work. An activity terminalizer may also
+ * settle its linked transaction-intent and execution rows before commit, but
+ * the RPC or provider lookup has ALREADY returned. No external call may ever
+ * move inside one of these transactions. A writer holding this lock across a
+ * provider call would block the operator's Stop, the inversion the lock exists
+ * to prevent (see `engine/runtime/lease-and-status/session-control-lock.ts`).
  *
  * ## A NULL session takes no lock, deliberately
  *

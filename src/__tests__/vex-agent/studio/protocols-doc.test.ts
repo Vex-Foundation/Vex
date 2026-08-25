@@ -1,0 +1,67 @@
+/**
+ * The generated `studio-mcp/protocols.md` must match the live inventory.
+ *
+ * Same lane, same contract and same reasoning as
+ * `mcp/exported-tools-doc.test.ts`: `pnpm generate:studio-protocols-doc --check`
+ * runs in CI, and this asserts it too so a developer who never runs the script
+ * still fails fast. A stale generated document is worse than no document,
+ * because it reads as current - and this one is COPIED INTO USER PROJECTS as
+ * `.vex/protocols.md`, so a stale copy is text an agent acts on.
+ *
+ * The renderer is imported, never re-implemented.
+ */
+
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { describe, it, expect } from "vitest";
+
+import { firstDifference } from "@vex-agent/scripts/studio-exported-tools-doc.js";
+import { renderStudioProtocolsDoc } from "@vex-agent/studio/instructions/protocols-doc.js";
+import { STUDIO_PROTOCOLS_DOC_PATH } from "@vex-agent/studio/installer/render/managed-block.js";
+
+const DOC_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../vex-agent/tools/tool-surface-spec/studio-mcp/protocols.md",
+);
+
+describe("the generated protocols document", () => {
+  it("matches the live inventory", () => {
+    const expected = renderStudioProtocolsDoc();
+    const actual = readFileSync(DOC_PATH, "utf8");
+    const difference = firstDifference(expected, actual);
+    if (difference !== undefined) {
+      throw new Error(
+        `studio-mcp/protocols.md is stale.\n${difference}\n`
+          + "Run `pnpm generate:studio-protocols-doc` and review the diff as a contract change.",
+      );
+    }
+    expect(actual).toBe(expected);
+  });
+
+  it("says it is generated, so nobody edits it by hand", () => {
+    expect(readFileSync(DOC_PATH, "utf8")).toContain("GENERATED FILE");
+  });
+
+  it("names the file it becomes inside a project", () => {
+    expect(readFileSync(DOC_PATH, "utf8")).toContain(STUDIO_PROTOCOLS_DOC_PATH);
+  });
+
+  it("carries the approval and units facts an agent needs before it calls anything", () => {
+    const doc = renderStudioProtocolsDoc();
+    expect(doc).toContain("approval");
+    expect(doc).toContain("unknown");
+    expect(doc).toContain("PER FIELD");
+  });
+
+  it("lists every exported tool, with no silent cut", () => {
+    const doc = renderStudioProtocolsDoc();
+    const totals = /- tools: (\d+)/.exec(doc)?.[1];
+    expect(totals).toBeDefined();
+    const rows = doc.split("\n").filter((line) => line.startsWith("| ") && !line.includes("---"));
+    // Every table repeats its header row, so subtract one per table.
+    const headers = doc.split("\n").filter((line) => line.startsWith("| tool |")).length;
+    expect(rows.length - headers).toBe(Number(totals));
+  });
+});

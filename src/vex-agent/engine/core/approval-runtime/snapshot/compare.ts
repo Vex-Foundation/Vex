@@ -8,13 +8,13 @@
  * single committed truth. The CAS / write owners live in `./build.js`.
  */
 
-import type { PoolClient } from "pg";
+import type { ClientBase } from "pg";
 
 import type { IntentSnapshotRow } from "./types.js";
 import { SNAPSHOT_SELECT_SQL } from "./render.js";
 
 export async function lockAndLoadSnapshot(
-  client: PoolClient,
+  client: ClientBase,
   approvalId: string,
 ): Promise<IntentSnapshotRow | null> {
   const res = await client.query<IntentSnapshotRow>(SNAPSHOT_SELECT_SQL, [
@@ -23,7 +23,7 @@ export async function lockAndLoadSnapshot(
   return res.rows[0] ?? null;
 }
 
-export async function getDbNow(client: PoolClient): Promise<Date> {
+export async function getDbNow(client: ClientBase): Promise<Date> {
   const res = await client.query<{ now: Date }>("SELECT NOW() as now", []);
   return res.rows[0].now;
 }

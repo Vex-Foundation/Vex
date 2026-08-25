@@ -86,7 +86,7 @@
  * spurious serialization between two unrelated sessions — never a cycle.
  */
 
-import type { PoolClient } from "pg";
+import type { ClientBase, PoolClient } from "pg";
 import { executeWith, withTransaction } from "../../../db/client.js";
 
 /** Prefix that separates this key space from every other advisory lock. */
@@ -108,6 +108,24 @@ export async function acquireSessionControlLock(
 ): Promise<void> {
   await executeWith(
     client,
+    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+    [sessionControlLockKey(sessionId)],
+  );
+}
+
+/**
+ * The same acquisition for a caller holding any SQL client, including the
+ * privileged main process's `pg.Client` (stage A3: `updateProjectScope` and the
+ * Studio refusal owners take this lock as edge 0 of their transactions).
+ * Identical statement, identical key, identical position in the global lock
+ * order - only the client type is wider. `PoolClient` extends `ClientBase`, so
+ * the pooled overload above is the same acquisition too.
+ */
+export async function acquireSessionControlLockOn(
+  client: ClientBase,
+  sessionId: string,
+): Promise<void> {
+  await client.query(
     "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
     [sessionControlLockKey(sessionId)],
   );

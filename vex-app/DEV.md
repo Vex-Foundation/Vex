@@ -1,5 +1,16 @@
 # Dev flags — Vex desktop app
 
+## Build prerequisites
+
+- Node + pnpm (versions per root `package.json` engines).
+- Go, EXACT pinned version `go1.27.0` (owner decision 2026-08-24): required
+  to build the Vex Studio MCP bridge (`bridge/` at the repo root), which
+  every packaging job builds BEFORE electron-builder. The build wrapper
+  runs with `GOTOOLCHAIN=local` and rejects any other `go version`; do not
+  invoke raw `go build` in packaging paths. Local install used on the dev
+  machine: official tarball under `~/.local/go` (add `~/.local/go/bin` to
+  PATH in build scripts only).
+
 Two build-time Vite flags for design/QA work on the renderer. Both are baked in
 at build time (`import.meta.env`), so release builds — made without them — do
 not contain the code paths at all. Neither flag touches the main process, IPC,

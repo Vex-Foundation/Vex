@@ -216,12 +216,19 @@ describe("registry", () => {
     // Hidden-by-default visibility does not affect this list — `getAllTools()`
     // is unfiltered.
     const mutating = getAllTools().filter(t => t.mutating).map(t => t.name).sort();
+    // Stage A4b added the two generic transaction CONFIRMs. They are mutating
+    // by contract even while their execution half is a registered
+    // not-yet-available stub: the classification describes what the tool IS,
+    // and a tool that will broadcast must never be classified read-only on the
+    // way to shipping.
     expect(mutating).toEqual([
       "BridgeExecute",
       "BridgeExecuteRelay",
       "SwapExecute",
       "SwapExecuteUniswap",
+      "WalletEvmTransactionConfirm",
       "WalletSendConfirm",
+      "WalletSolanaTransactionConfirm",
     ]);
   });
 

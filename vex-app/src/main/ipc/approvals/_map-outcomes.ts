@@ -50,7 +50,11 @@ export function mapApproveOutcome(
       const toolPart =
         outcome.executionStatus === "succeeded"
           ? "Tool executed"
-          : "Tool failed; see transcript";
+          : outcome.executionStatus === "indeterminate"
+            // Never "failed": the call may have taken effect, and the one thing
+            // nobody may do with an unprovable money-path outcome is re-run it.
+            ? "Tool outcome is UNKNOWN and was NOT retried"
+            : "Tool failed; see transcript";
       // Only promise a continuation when one was actually claimed.
       const message = resumed
         ? `Approved. ${toolPart}; agent is continuing.`

@@ -103,7 +103,7 @@ export async function finalizeOutcome(
         explorerRefsData(outcome.chain, outcome.txHash),
       );
     case "confirmation_unknown":
-      await markFailedChecked(
+      await markBroadcastUnconfirmedChecked(
         intentId,
         sessionId,
         { errorKind: "ConfirmationUnknown", errorHash: outcome.errorHash },
@@ -149,6 +149,14 @@ async function markFailedChecked(
     ),
   );
   if (row === null) {
+    const current = await walletIntentsRepo.getById(intentId, sessionId);
+    if (
+      current !== null
+      && current.status === "failed"
+      && current.txHash === txHash
+    ) {
+      return;
+    }
     logger.warn("wallet.send.mark_failed_status_mismatch", {
       intentId,
       sessionId,
@@ -157,6 +165,51 @@ async function markFailedChecked(
       errorHash: cause.errorHash,
     });
   }
+}
+
+/**
+ * Persist the honest ambiguous-broadcast state. A repair observer can race this
+ * write and settle the linked activity first, so a compatible terminal winner
+ * is idempotent success rather than an audit mismatch.
+ */
+async function markBroadcastUnconfirmedChecked(
+  intentId: string,
+  sessionId: string,
+  cause: { errorKind: string; errorHash: string },
+  txHash: string,
+): Promise<void> {
+  const reason = `${cause.errorKind}:${cause.errorHash}`;
+  const row = await withSessionControlLock(sessionId, (client) =>
+    walletIntentsRepo.markBroadcastUnconfirmedWith(
+      client,
+      intentId,
+      sessionId,
+      txHash,
+      reason,
+    ),
+  );
+  if (row !== null) return;
+
+  const current = await walletIntentsRepo.getById(intentId, sessionId);
+  if (
+    current !== null
+    && current.txHash === txHash
+    && (
+      current.status === "broadcast_unconfirmed"
+      || current.status === "executed"
+      || current.status === "failed"
+      || current.status === "superseded_unproven"
+    )
+  ) {
+    return;
+  }
+  logger.warn("wallet.send.mark_broadcast_unconfirmed_status_mismatch", {
+    intentId,
+    sessionId,
+    txHash,
+    errorKind: cause.errorKind,
+    errorHash: cause.errorHash,
+  });
 }
 
 async function finalizeConfirmed(
@@ -170,7 +223,15 @@ async function finalizeConfirmed(
     const row = await withSessionControlLock(sessionId, (client) =>
       walletIntentsRepo.markExecutedWith(client, intentId, sessionId, outcome.txHash),
     );
-    if (row === null) {
+    if (row !== null) {
+      markedExecuted = true;
+    } else {
+      const current = await walletIntentsRepo.getById(intentId, sessionId);
+      if (current !== null && current.status === "executed" && current.txHash === outcome.txHash) {
+        markedExecuted = true;
+      }
+    }
+    if (!markedExecuted) {
       // CAS miss — status was not 'consuming' at write time. Possible
       // operator-side mutation or process-restart inconsistency. Tx is
       // still real on-chain; surface via structural audit log + flip the
@@ -181,8 +242,6 @@ async function finalizeConfirmed(
         txHash: outcome.txHash,
       });
       auditReason = "StatusMismatch:no_consuming_row";
-    } else {
-      markedExecuted = true;
     }
   } catch (auditErr) {
     const sum = summarizeWalletError(auditErr);

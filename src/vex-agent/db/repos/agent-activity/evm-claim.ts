@@ -44,9 +44,13 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { query, queryOne } from "../../client.js";
+import type { PoolClient } from "pg";
+
+import { query, queryOne, queryOneWith } from "../../client.js";
 import logger from "@utils/logger.js";
+import { settleLinkedActivityRows } from "./linked-transaction-settlement.js";
 import { mapRow } from "./mappers.js";
+import { resolveActivitySessionByRowId } from "./session-lock.js";
 import type { AgentActivityEvent } from "./types.js";
 import type { CasResult } from "./types.js";
 
@@ -302,9 +306,28 @@ export interface SupersededEvidence {
  * 4. THE 90 s MONEY GATE, verbatim: inside it the owning handler may still be
  *    decoding its own receipt, and terminalizing under it would forfeit real
  *    executed amounts. Same rule as every other terminalization.
- * 5. The A6 window on the CONTINUOUS non-inclusion run. Both clocks are
- *    required, hence `GREATEST`: the gate is whichever finishes last.
+ * 5. The A6 window on the CONTINUOUS non-inclusion run - for
+ *    `tx_unknown_to_node` ONLY. Both clocks are required there, hence
+ *    `GREATEST`: the gate is whichever finishes last.
  *
+ * WHY `nonce_superseded` SKIPS GUARD 5. The window exists because
+ * "no node we asked has heard of this hash" is INCONCLUSIVE: the transaction may
+ * sit in a mempool we did not ask, so time is what turns silence into evidence.
+ * `nonce_superseded` is not silence. It is
+ * `eth_getTransactionCount(from, 'latest') > nonce`, which is the node's own
+ * statement that a transaction from this sender with this nonce is ALREADY
+ * INCLUDED in a block, while this hash has no receipt - so this hash can never
+ * land, and no amount of further waiting can change that. Waiting the window out
+ * on definitive evidence only kept a row reporting "in flight" for ten more
+ * minutes about a transaction the chain had already settled without it. (This is
+ * the reference wallets' `#isNonceTaken` rule: a CONFIRMED same-(from, nonce)
+ * sibling is conclusive, not suggestive.)
+ *
+ * The 90 s money gate (guard 4) still applies to BOTH reasons: inside it the
+ * owning handler may still be decoding its own receipt, and that is a race with
+ * OUR OWN writer rather than a question about the chain.
+ *
+
  * `pending_reason` and the evidence already on the row (`last_verification_
  * reason`, `last_checked_at`, `from_address`, `nonce`) are preserved: the row
  * must still be able to say WHY it ended this way. A6 makes the row terminal,
@@ -316,7 +339,58 @@ export async function markSupersededUnproven(
   handlerWindowMs: number,
   nonInclusionWindowMs: number = NONINCLUSION_TERMINALIZE_AFTER_MS,
 ): Promise<CasResult & { reason?: SupersededMiss }> {
-  const row = await queryOne<Record<string, unknown>>(
+  const sessionId = await resolveActivitySessionByRowId(id);
+  return settleLinkedActivityRows({
+    activityId: id,
+    sessionId,
+    intentOutcome: "superseded_unproven",
+    activityTarget: { status: "superseded_unproven" },
+    activityWrite: (client) => runMarkSupersededUnproven(
+      client,
+      id,
+      evidence,
+      handlerWindowMs,
+      nonInclusionWindowMs,
+    ),
+  });
+}
+
+/** Supersession CAS on the caller's existing transaction and session lock. */
+export async function markSupersededUnprovenWith(
+  client: PoolClient,
+  id: number,
+  evidence: SupersededEvidence,
+  handlerWindowMs: number,
+  nonInclusionWindowMs: number = NONINCLUSION_TERMINALIZE_AFTER_MS,
+): Promise<CasResult & { reason?: SupersededMiss }> {
+  return runMarkSupersededUnproven(
+    client,
+    id,
+    evidence,
+    handlerWindowMs,
+    nonInclusionWindowMs,
+  );
+}
+
+async function runMarkSupersededUnproven(
+  client: PoolClient,
+  id: number,
+  evidence: SupersededEvidence,
+  handlerWindowMs: number,
+  nonInclusionWindowMs: number,
+): Promise<CasResult & { reason?: SupersededMiss }> {
+  // The non-inclusion window is a guard on INCONCLUSIVE evidence only. A
+  // confirmed same-(from, nonce) sibling is conclusive, so it gates on the 90 s
+  // money window alone - see guard 5 in this function's doc.
+  const conclusive = evidence.reason === "nonce_superseded";
+  const windowSql = conclusive
+    ? "AND NOW() >= submit_attempted_at + make_interval(secs => $4::float8)"
+    : `AND first_noninclusion_observed_at IS NOT NULL
+        AND NOW() >= GREATEST(
+              submit_attempted_at + make_interval(secs => $4::float8),
+              first_noninclusion_observed_at + make_interval(secs => $5::float8))`;
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
     `UPDATE agent_activity
         SET status = 'superseded_unproven',
             pending_reason = $3,
@@ -328,16 +402,22 @@ export async function markSupersededUnproven(
         AND evm_claim_token = $2::uuid
         AND tx_hash IS NOT NULL
         AND submit_attempted_at IS NOT NULL
-        AND first_noninclusion_observed_at IS NOT NULL
-        AND NOW() >= GREATEST(
-              submit_attempted_at + make_interval(secs => $4::float8),
-              first_noninclusion_observed_at + make_interval(secs => $5::float8))
+        ${windowSql}
       RETURNING *`,
-    [id, evidence.claimToken, evidence.reason, handlerWindowMs / 1000, nonInclusionWindowMs / 1000],
+    conclusive
+      ? [id, evidence.claimToken, evidence.reason, handlerWindowMs / 1000]
+      : [
+          id,
+          evidence.claimToken,
+          evidence.reason,
+          handlerWindowMs / 1000,
+          nonInclusionWindowMs / 1000,
+        ],
   );
   if (row) return { applied: true, row: mapRow(row) };
 
-  const current = await queryOne<Record<string, unknown>>(
+  const current = await queryOneWith<Record<string, unknown>>(
+    client,
     "SELECT * FROM agent_activity WHERE id = $1",
     [id],
   );
@@ -350,7 +430,9 @@ export async function markSupersededUnproven(
     logger.debug("sync.evm_claim.lost", { id, caller: "markSupersededUnproven" });
     return { applied: false, row: mapped, reason: "claim_lost" };
   }
-  // Still pending, still ours: the only remaining guard is the window pair.
+  // Still pending, still ours: the only remaining guards are the time windows -
+  // the 90 s money gate for a conclusive `nonce_superseded`, that gate plus the
+  // continuous non-inclusion run for `tx_unknown_to_node`.
   return { applied: false, row: mapped, reason: "window_not_elapsed" };
 }
 

@@ -93,7 +93,7 @@ export const USER_SUBMIT_LAUNCH_DEPS: LaunchExecuteDeps = {
       feeRowId: input.feeRowId,
       chainId: TRENCH_CHAIN_ID,
       publicClient: input.publicClient as Parameters<typeof runTrenchFeeLeg>[0]["publicClient"],
-      walletClient: input.walletClient as Parameters<typeof runTrenchFeeLeg>[0]["walletClient"],
+      signer: input.signer as Parameters<typeof runTrenchFeeLeg>[0]["signer"],
       priorLeg: input.priorLeg as Parameters<typeof runTrenchFeeLeg>[0]["priorLeg"],
     }),
 } satisfies LaunchExecuteDeps;

@@ -73,6 +73,10 @@ const PT_ADDRESS = "0x9bf45ab47747f4b4dd09b3c2c73953484b4eb375";
 let creditedToken = "";
 /** Overrides the credited amount for the "receipt undershoots the quote" case. */
 let mockShortCredit: bigint | null = null;
+const reserveActivityEvmNonce = vi.fn(async (
+  _id: number,
+  request: { readonly nodePendingNonce: number },
+) => request.nodePendingNonce);
 vi.mock("@tools/pendle/evm-client.js", () => ({
   getPendlePublicClient: () => ({ readContract: async () => 18 }),
   getPendleEvmClients: () => ({
@@ -102,6 +106,7 @@ vi.mock("@tools/pendle/evm-client.js", () => ({
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   createAgentActivityIntent: vi.fn(async () => ({ executionId: 5, events: [{ id: 55 }] })),
   createAgentActivityPreBroadcastFailure: vi.fn(async () => ({ executionId: 6, event: {} })),
+  reserveActivityEvmNonce,
   markActivityBroadcast: vi.fn(async () => ({ applied: true, row: {} })),
   markBroadcastAccepted: vi.fn(async () => ({ applied: true, row: {} })),
   confirmActivityEvent: vi.fn(async () => ({ applied: true, row: {} })),
@@ -188,6 +193,10 @@ describe("a MATURED PT is redeemable at last (G-02 / D18)", () => {
     const res = await PENDLE_PT_HANDLERS["pendle.pt.redeem"]!(params, ctx);
 
     expect(res.success).toBe(true);
+    expect(reserveActivityEvmNonce).toHaveBeenCalledWith(
+      55,
+      expect.objectContaining({ nodePendingNonce: 3 }),
+    );
     expect(mockSendTransaction).toHaveBeenCalledTimes(1);
     expect(output(res).txHash).toBe(TX_HASH);
   });

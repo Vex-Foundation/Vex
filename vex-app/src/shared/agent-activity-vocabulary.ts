@@ -69,6 +69,14 @@ export const AGENT_ACTIVITY_KINDS = [
   // nothing a user has already seen changes label: the legacy derivation keeps
   // producing it, and both now mean the same thing.
   "transfer",
+  // Migration 087: a GENERIC SIGNED TRANSACTION (the EVM/Solana transaction
+  // prepare+confirm pair). Its own kind rather than a `transfer`: the transfer
+  // shape carries one input leg, and a proposal Vex did not build cannot
+  // honestly populate one - an approve moves nothing, a contract call moves
+  // whatever the contract decides, and an SPL instruction set may move several
+  // things at once. The row states the decoded effect through its role and the
+  // chain outcome, never an amount nobody proved.
+  "transaction",
 ] as const;
 export type AgentActivityKind = (typeof AGENT_ACTIVITY_KINDS)[number];
 
@@ -179,6 +187,19 @@ export const AGENT_ACTIVITY_EVENT_ROLES = [
   // is no output leg because nothing comes back, and the destination is
   // deliberately not recorded.
   "wallet_transfer",
+  // Migration 087: one role per DECODED EFFECT of a generic signed transaction.
+  // Prefixed because this enum is global - a bare `approve` would sit beside
+  // `allowance` and read as the same thing on a different arm. None of them
+  // carries an asset leg.
+  "tx_approve",
+  "tx_contract_call",
+  "tx_native_transfer",
+  "tx_spl_instruction_set",
+  // Migration 088: Vex's 25 bps integrator fee on the generic EVM signing lane,
+  // a separate treasury transfer that runs only after the signed transaction
+  // confirms. A CHILD LEG of the transaction execution, never its own feed row.
+  // EVM-only by database CHECK - the Solana pair on this lane charges nothing.
+  "tx_vex_fee",
 ] as const;
 export type AgentActivityEventRole = (typeof AGENT_ACTIVITY_EVENT_ROLES)[number];
 

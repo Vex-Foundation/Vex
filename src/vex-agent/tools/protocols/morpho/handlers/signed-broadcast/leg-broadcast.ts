@@ -29,6 +29,7 @@ import { signStageBroadcast, type StagedBroadcastOutcome } from "@tools/evm-chai
 import type { ConfirmedPriorLeg } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import {
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
   noteSettledBlockTime,
 } from "@vex-agent/db/repos/agent-activity.js";
@@ -60,6 +61,7 @@ export async function broadcastMorphoLeg(input: MorphoLegBroadcastInput): Promis
     input.walletClient,
     input.txParams,
     {
+      onNonceReserved: (request) => reserveActivityEvmNonce(input.eventId, request),
       onHashStaged: async (handles) => {
         const staged = await markActivityBroadcast(input.eventId, handles);
         if (!staged.applied) {

@@ -45,6 +45,9 @@ function resetMocks() {
 }
 resetMocks();
 
+const transactionQuery = vi.fn(async () => ({ rows: [], rowCount: 0 }));
+const TRANSACTION_CLIENT = { query: transactionQuery };
+
 vi.mock("@vex-agent/db/client.js", () => ({
   query: (sql: string, params?: unknown[]) => mockQuery(sql, params),
   queryOne: (sql: string, params?: unknown[]) => mockQueryOne(sql, params),
@@ -56,13 +59,23 @@ vi.mock("@vex-agent/db/client.js", () => ({
   queryWith: (_c: unknown, sql: string, params?: unknown[]) => mockQuery(sql, params as never),
   queryOneWith: (_c: unknown, sql: string, params?: unknown[]) => mockQueryOne(sql, params as never),
   executeWith: vi.fn(),
-  withTransaction: async (fn: (c: unknown) => Promise<unknown>) => fn({}),
+  withTransaction: async (fn: (c: typeof TRANSACTION_CLIENT) => Promise<unknown>) =>
+    fn(TRANSACTION_CLIENT),
+}));
+
+vi.mock("@vex-agent/db/repos/wallet-transaction-intents.js", () => ({
+  getByActivityIdWith: vi.fn(async () => null),
+}));
+
+vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
+  getByActivityIdWith: vi.fn(async () => null),
 }));
 
 const repo = await import("@vex-agent/db/repos/agent-activity.js");
 
 const PT = "0x1111111111111111111111111111111111111111";
 const YT = "0x2222222222222222222222222222222222222222";
+const SESSION_ID = "00000000-0000-4000-8000-000000000001";
 
 function yieldRow(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
@@ -78,6 +91,7 @@ function yieldRow(overrides: Partial<Record<string, unknown>> = {}): Record<stri
     status: "pending",
     wallet_address: "0xwallet",
     chain_family: "eip155",
+    session_id: SESSION_ID,
     created_at: new Date("2026-07-27T00:00:00Z"),
     updated_at: new Date("2026-07-27T00:00:00Z"),
     ...overrides,
@@ -86,6 +100,7 @@ function yieldRow(overrides: Partial<Record<string, unknown>> = {}): Record<stri
 
 beforeEach(() => {
   resetMocks();
+  transactionQuery.mockClear();
   vi.clearAllMocks();
 });
 
@@ -134,7 +149,7 @@ describe("the Option-C second-leg columns are mapped, not dropped", () => {
 describe("confirmActivityEvent enforces migration 053's PER-ROLE leg contract", () => {
   /** Make `getActivityEventById` (the guard's first read) return this row. */
   function currentRow(overrides: Partial<Record<string, unknown>>) {
-    mockQueryOne.mockResolvedValueOnce(yieldRow(overrides));
+    mockQueryOne.mockResolvedValue(yieldRow(overrides));
   }
 
   it("yield_claim confirms on an OUTPUT credit alone — it has no input leg", async () => {
@@ -218,7 +233,9 @@ describe("confirmActivityEvent enforces migration 053's PER-ROLE leg contract", 
       executedAmountOut2Human: "0.000000000000000002",
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[1]!;
+    const updateCall = mockQueryOne.mock.calls[3];
+    if (updateCall === undefined) throw new Error("confirm activity update was not issued");
+    const [sql, params] = updateCall;
     expect(sql).toContain("executed_amount_out2_raw");
     expect(sql).toMatch(/WHERE id = \$1 AND status = 'pending'/);
     expect(params).toContain("2");
@@ -252,11 +269,23 @@ describe("every yield role is reapable by the hashless-intent sweep", () => {
   );
 
   it("still finds each yield row by its NONCE-bearing identity after recovery", async () => {
-    // The recovered row is returned mapped, so the sweep's caller can report
-    // exactly which never-signed attempt was abandoned.
-    mockQuery.mockResolvedValueOnce([
-      yieldRow({ id: 9, event_role: "yield_lp", status: "definitively_failed", failure_code: "unknown", nonce: 17 }),
-    ]);
+    // Discovery returns only identity. The terminal row returned by the
+    // session-locked CAS is what the sweep reports to its caller.
+    const pending = yieldRow({
+      id: 9,
+      event_role: "yield_lp",
+      status: "pending",
+      failure_code: null,
+      tx_hash: null,
+      nonce: 17,
+    });
+    const terminal = yieldRow({
+      ...pending,
+      status: "definitively_failed",
+      failure_code: "unknown",
+    });
+    mockQuery.mockResolvedValueOnce([{ id: 9, session_id: SESSION_ID }]);
+    mockQueryOne.mockResolvedValueOnce(pending).mockResolvedValueOnce(terminal);
 
     const rows = await repo.recoverStaleHashlessIntents(15 * 60 * 1000, 50);
 

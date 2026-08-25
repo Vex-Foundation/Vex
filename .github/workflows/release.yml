@@ -105,13 +105,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Ensure draft release exists for tag
+      - name: Ensure a DRAFT release exists for tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $GITHUB_REF_NAME already exists — nothing to do."
+          # FAIL CLOSED ON A PUBLISHED RELEASE. This step used to accept ANY
+          # existing release for the tag, and the build jobs then publish with
+          # electron-builder's `releaseType: release`, which finds the release
+          # and OVERWRITES its assets. A rerun of this workflow against a tag
+          # whose release was already published therefore replaced shipped,
+          # signed artifacts - and it did so BEFORE the signature and
+          # notarization checks later in this workflow could object. Users on
+          # auto-update would have been served the new bytes.
+          #
+          # A draft is the only safe target: nothing has been distributed from
+          # it yet. Anything else stops here and the operator cuts a new tag.
+          if state="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [ "$state" != "true" ]; then
+              echo "::error::Release $GITHUB_REF_NAME already exists and is PUBLISHED, not a draft. This workflow would overwrite its assets, including artifacts users may already have downloaded or auto-updated to. Bump the version and cut a new tag instead."
+              exit 1
+            fi
+            echo "Draft release $GITHUB_REF_NAME already exists - reusing it."
           else
             gh release create "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" \
@@ -146,6 +161,19 @@ jobs:
           cache-dependency-path: |
             pnpm-lock.yaml
             vex-app/pnpm-lock.yaml
+
+      # Pinned by full commit SHA (v7.0.0). The Vex Studio bridge is a compiled
+      # binary that ships INSIDE the signed bundle, so the action that installs
+      # its toolchain is release-critical; a moving tag is not an acceptable
+      # pin for it. `go-version` is the EXACT patch, and bridge/build.sh
+      # refuses anything else with GOTOOLCHAIN=local.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          # The bridge is PURE STDLIB: there is no go.sum and nothing to cache,
+          # and setup-go's cache fails closed on a missing dependency file.
+          cache: false
 
       - name: Verify tag matches vex-app/package.json version
         working-directory: vex-app
@@ -198,6 +226,19 @@ jobs:
       - name: Build app
         working-directory: vex-app
         run: pnpm run build
+
+      # The bridge is built BEFORE electron-builder, for BOTH architectures the
+      # macOS job packages in one invocation. electron-builder 26 only warns on
+      # a missing extraResources source, so a package produced without this step
+      # would ship with no bridge and no error.
+      - name: Build Vex Studio bridge (darwin arm64 + amd64)
+        run: |
+          bash bridge/build.sh darwin arm64
+          bash bridge/build.sh darwin amd64
+
+      - name: Stage & verify bridge for packaging
+        working-directory: vex-app
+        run: node scripts/stage-bridge.mjs --platform mac --arch arm64 --arch x64
 
       # Method B notarization: decode the App Store Connect API key (.p8) to an
       # ephemeral file and expose its PATH + the key id/issuer via $GITHUB_ENV.
@@ -258,6 +299,29 @@ jobs:
             spctl -a -vvv -t exec "$app"
           done
 
+      # The embedded bridge carries its OWN signature (mac.binaries in the
+      # release profile). The bundle-level stapler check above does not prove
+      # it: an unsigned nested Mach-O fails at launch under the hardened
+      # runtime, not at package time. Assert the file is present, is a Mach-O,
+      # and verifies.
+      - name: Verify the embedded Vex Studio bridge is signed
+        working-directory: vex-app
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apps=(dist-electron/mac*/Vex.app)
+          for app in "${apps[@]}"; do
+            bridge="$app/Contents/Resources/bridge/vex-mcp"
+            if [ ! -f "$bridge" ]; then
+              echo "::error::No Vex Studio bridge at $bridge - the package would ship without it."
+              exit 1
+            fi
+            file "$bridge"
+            codesign --verify --strict --verbose=2 "$bridge"
+            codesign --display --verbose=2 "$bridge"
+          done
+          echo "Embedded bridge signed and verified in every .app bundle."
+
   linux:
     name: Build & publish Linux (x64)
     needs: create-release
@@ -275,6 +339,19 @@ jobs:
           cache-dependency-path: |
             pnpm-lock.yaml
             vex-app/pnpm-lock.yaml
+
+      # Pinned by full commit SHA (v7.0.0). The Vex Studio bridge is a compiled
+      # binary that ships INSIDE the signed bundle, so the action that installs
+      # its toolchain is release-critical; a moving tag is not an acceptable
+      # pin for it. `go-version` is the EXACT patch, and bridge/build.sh
+      # refuses anything else with GOTOOLCHAIN=local.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          # The bridge is PURE STDLIB: there is no go.sum and nothing to cache,
+          # and setup-go's cache fails closed on a missing dependency file.
+          cache: false
 
       - name: Verify tag matches vex-app/package.json version
         working-directory: vex-app
@@ -297,6 +374,13 @@ jobs:
       - name: Build app
         working-directory: vex-app
         run: pnpm run build
+
+      - name: Build Vex Studio bridge (linux amd64)
+        run: bash bridge/build.sh linux amd64
+
+      - name: Stage & verify bridge for packaging
+        working-directory: vex-app
+        run: node scripts/stage-bridge.mjs --platform linux --arch x64
 
       # No signing env on Linux (AppImage/deb are unsigned). --linux with no arch
       # flag uses the release profile's arch list (x64). electron-updater feed is
@@ -325,6 +409,19 @@ jobs:
           cache-dependency-path: |
             pnpm-lock.yaml
             vex-app/pnpm-lock.yaml
+
+      # Pinned by full commit SHA (v7.0.0). The Vex Studio bridge is a compiled
+      # binary that ships INSIDE the signed bundle, so the action that installs
+      # its toolchain is release-critical; a moving tag is not an acceptable
+      # pin for it. `go-version` is the EXACT patch, and bridge/build.sh
+      # refuses anything else with GOTOOLCHAIN=local.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          # The bridge is PURE STDLIB: there is no go.sum and nothing to cache,
+          # and setup-go's cache fails closed on a missing dependency file.
+          cache: false
 
       - name: Verify tag matches vex-app/package.json version
         working-directory: vex-app
@@ -370,6 +467,16 @@ jobs:
         working-directory: vex-app
         run: pnpm run build
 
+      # bash on windows-latest is Git Bash, which runs the wrapper unchanged.
+      - name: Build Vex Studio bridge (windows amd64)
+        shell: bash
+        run: bash bridge/build.sh windows amd64
+
+      - name: Stage & verify bridge for packaging
+        working-directory: vex-app
+        shell: bash
+        run: node scripts/stage-bridge.mjs --platform win --arch x64
+
       # app-builder-lib's WindowsSignAzureManager authenticates through
       # DefaultAzureCredential's EnvironmentCredential using these three vars.
       # Verified in the installed 26.8.1: initialize() hard-requires
@@ -413,3 +520,24 @@ jobs:
             }
           }
           Write-Host "All Windows artifacts signed, timestamped and attributed correctly."
+
+      # Bridge-path-specific assertion, on top of the recursive check above:
+      # the recursive scan walks dist-electron/*.exe, and the bridge lives
+      # inside the unpacked app directory. A missing or misnamed bridge would
+      # otherwise pass every gate and fail only in a user's MCP client.
+      - name: Verify the packaged Vex Studio bridge (Windows)
+        working-directory: vex-app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bridges = Get-ChildItem -Path dist-electron -Recurse -Filter vex-mcp.exe -ErrorAction SilentlyContinue
+          if ($bridges.Count -eq 0) {
+            Write-Error "No resources/bridge/vex-mcp.exe in dist-electron - the package would ship without its Vex Studio bridge."
+          }
+          foreach ($b in $bridges) {
+            if ($b.FullName -notmatch 'resources\\bridge\\vex-mcp\.exe$') {
+              Write-Error "Unexpected bridge location $($b.FullName); the contract path is resources/bridge/vex-mcp.exe."
+            }
+            Write-Host "bridge: $($b.FullName) ($($b.Length) bytes)"
+          }
+          Write-Host "Packaged Vex Studio bridge present at the contract path."

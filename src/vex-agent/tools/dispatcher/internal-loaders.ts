@@ -87,4 +87,20 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   WalletTrackToken: async () => (await import("../internal/wallet/track.js")).handleWalletTrackToken,
   WalletSendPrepare: async () => (await import("../internal/wallet/send.js")).handleWalletSendPrepare,
   WalletSendConfirm: async () => (await import("../internal/wallet/send.js")).handleWalletSendConfirm,
+
+  // Generic transaction signing (stage A4b). The two prepare handlers decode,
+  // simulate and persist; the two confirms are registered so the surface shows
+  // the tool that finishes the job, and answer honestly that their execution
+  // half has not shipped.
+  WalletEvmTransactionPrepare: async () =>
+    (await import("../internal/wallet/transaction/prepare-evm.js")).handleWalletEvmTransactionPrepare,
+  WalletSolanaTransactionPrepare: async () =>
+    (await import("../internal/wallet/transaction/prepare-solana.js"))
+      .handleWalletSolanaTransactionPrepare,
+  WalletEvmTransactionConfirm: async () =>
+    (await import("../internal/wallet/transaction/confirm-evm.js"))
+      .handleWalletEvmTransactionConfirm,
+  WalletSolanaTransactionConfirm: async () =>
+    (await import("../internal/wallet/transaction/confirm-solana.js"))
+      .handleWalletSolanaTransactionConfirm,
 };

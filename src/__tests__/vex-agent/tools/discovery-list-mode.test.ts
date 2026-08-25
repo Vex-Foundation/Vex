@@ -1,7 +1,7 @@
 /**
  * Namespace list mode (`discover_tools list:true`): the complete, lean index of
- * one protocol's advertised surface — no param schemas, no ranking, no limit
- * truncation, and never a whole-catalog dump.
+ * one protocol's advertised surface - no param schemas, no ranking, truthful
+ * optional pagination, and never a whole-catalog dump.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -88,7 +88,7 @@ describe("ToolSearch namespace listing mode", () => {
     expect(result.retrieval?.method).toBe("list");
   });
 
-  it("returns the COMPLETE namespace — no limit truncation", async () => {
+  it("returns the complete namespace by default and truthful limited pages", async () => {
     const namespace = "solana";
     const expected = PROTOCOL_TOOLS
       .filter((m) => m.namespace === namespace)
@@ -97,13 +97,22 @@ describe("ToolSearch namespace listing mode", () => {
       .map((m) => m.toolId)
       .sort();
 
-    // limit:1 must NOT truncate a list — a partial list defeats its purpose.
-    const result = await discoverProtocolCapabilities({ list: true, namespace, limit: 1 });
-    expect(result.tools.map((t) => t.toolId).sort()).toEqual(expected);
-    expect(result.count).toBe(expected.length);
-    expect(result.totalCount).toBe(expected.length);
-    expect(result.hasMore).toBe(false);
-    expect(result.warnings).toEqual([]);
+    const complete = await discoverProtocolCapabilities({ list: true, namespace });
+    expect(complete.tools.map((tool) => tool.toolId).sort()).toEqual(expected);
+    expect(complete.count).toBe(expected.length);
+    expect(complete.totalCount).toBe(expected.length);
+    expect(complete.hasMore).toBe(false);
+
+    const page = await discoverProtocolCapabilities({ list: true, namespace, limit: 1 });
+    expect(page.tools.map((tool) => tool.toolId)).toEqual(
+      complete.tools.slice(0, 1).map((tool) => tool.toolId),
+    );
+    expect(page.count).toBe(1);
+    expect(page.totalCount).toBe(expected.length);
+    expect(page.hasMore).toBe(true);
+    expect(page.warnings).toEqual([
+      `Showing first 1 of ${expected.length} tools in "${namespace}". Increase limit to see the rest.`,
+    ]);
   });
 
   it("keeps the biggest-by-tool-count namespace (solana) leaner than its full schema", async () => {

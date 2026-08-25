@@ -48,6 +48,7 @@ import {
 import {
   createAgentActivityIntent,
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
   confirmActivityEvent,
   failActivityEvent,
@@ -285,6 +286,7 @@ async function executeClaim(x: ExecuteClaimInput): Promise<ToolResult> {
       x.walletClient,
       { to: LOCKER, data: calldata, value: 0n },
       {
+        onNonceReserved: (request) => reserveActivityEvmNonce(rowId, request),
         onHashStaged: async (handles) => {
           signedLocally = true;
           const res = await markActivityBroadcast(rowId, handles);

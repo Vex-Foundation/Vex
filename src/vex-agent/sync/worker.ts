@@ -109,9 +109,13 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         rowsAffected = settlementResult.closed;
       } else if (syncType === "agent_activity_repair") {
         const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
-        const repairResult = await repairPendingActivity(buildProductionRepairDeps());
+        const repairResult = await repairPendingActivity(
+          buildProductionRepairDeps(),
+          { includeAuxiliaryState: true },
+        );
         result = { ...repairResult };
-        rowsAffected = repairResult.confirmed + repairResult.failed;
+        rowsAffected = repairResult.confirmed + repairResult.failed
+          + (repairResult.nonceReservations?.terminalized ?? 0);
       } else if (syncType === "bridge_activity_repair") {
         const { repairPendingBridges, buildProductionBridgeRepairDeps } = await import("./bridge-activity-repair.js");
         const bridgeResult = await repairPendingBridges(buildProductionBridgeRepairDeps());
@@ -230,8 +234,16 @@ export async function processNextRun(): Promise<boolean> {
       await syncRepo.completeRun(run.id, { ...settlementResult }, settlementResult.closed);
     } else if (job.syncType === "agent_activity_repair") {
       const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
-      const repairResult = await repairPendingActivity(buildProductionRepairDeps());
-      await syncRepo.completeRun(run.id, { ...repairResult }, repairResult.confirmed + repairResult.failed);
+      const repairResult = await repairPendingActivity(
+        buildProductionRepairDeps(),
+        { includeAuxiliaryState: true },
+      );
+      await syncRepo.completeRun(
+        run.id,
+        { ...repairResult },
+        repairResult.confirmed + repairResult.failed
+          + (repairResult.nonceReservations?.terminalized ?? 0),
+      );
     } else if (job.syncType === "bridge_activity_repair") {
       const { repairPendingBridges, buildProductionBridgeRepairDeps } = await import("./bridge-activity-repair.js");
       const bridgeResult = await repairPendingBridges(buildProductionBridgeRepairDeps());

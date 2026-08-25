@@ -29,11 +29,16 @@ import {
   buildRejectSnapshot,
 } from "./approval-runtime/snapshot.js";
 import { withApprovalDecisionTransaction } from "./approval-runtime/snapshot/locked-transaction.js";
+import { applyApproveSideEffects } from "./approval-runtime/post-tx.js";
+// Every generic decision entry point below goes through the ORIGIN-AWARE
+// dispatcher, never through `applyRejectSideEffects` directly. For an agent
+// row it IS `applyRejectSideEffects`, unchanged; for a Studio row it settles
+// the intent without a transcript message, a `result_message_id` or a
+// continuation claim. See `post-tx/reject-dispatch.ts`.
 import {
-  applyApproveSideEffects,
-  applyPolicyDriftSideEffects,
-  applyRejectSideEffects,
-} from "./approval-runtime/post-tx.js";
+  dispatchPolicyDriftSideEffects,
+  dispatchRejectSideEffects,
+} from "./approval-runtime/post-tx/reject-dispatch.js";
 import type { ApprovalExecutionStatus } from "../../db/repos/approval-intents.js";
 import {
   buildPolicyDriftToolResultContent,
@@ -65,6 +70,51 @@ export {
   runResumeAfterDecision,
   discardContinuation,
 } from "./approval-runtime/continuation.js";
+
+/**
+ * Vex Studio (stage A3). The dispatch gate is the lock bridge; the refusal
+ * primitive is what every owner (lock, scope edit, quit, transport EOF,
+ * cancellation) calls to make a pending Studio intent terminal BEFORE its
+ * waiter is released.
+ */
+export {
+  advanceStudioDispatchGeneration,
+  readMirroredStudioDispatchGeneration,
+  setStudioDispatchPreflight,
+  studioDispatchPreflightAllows,
+} from "./approval-runtime/studio/dispatch-gate.js";
+/**
+ * The startup reconciler. Runs once at process start, because that is the one
+ * moment at which an approved Studio row with no terminal state provably
+ * belongs to a process that died holding it: `dispatching` means the action may
+ * have run, `not_started` means it did not and still could.
+ */
+export {
+  announceStudioReconciliations,
+  announceStudioUnstartedRefusals,
+  reconcileAbandonedStudioDispatches,
+  reconcileUnstartedStudioApprovals,
+  type ReconciledStudioDispatch,
+} from "./approval-runtime/studio/reconcile-dispatching.js";
+
+/**
+ * The same-process repair owner for terminal writes that FAILED. Retries the
+ * write and never a dispatch; see its module header.
+ */
+export {
+  disposeStudioWriteRepair,
+  registerStudioWriteRepair,
+  studioWriteRepairCount,
+  STUDIO_REPAIR_CAP,
+  STUDIO_REPAIR_INTERVAL_MS,
+  type StudioWriteRepair,
+} from "./approval-runtime/studio/write-repair.js";
+export {
+  announceStudioRefusals,
+  refusePendingStudioIntents,
+  type RefusedStudioIntent,
+  type StudioRefusalTarget,
+} from "./approval-runtime/studio/refuse.js";
 
 export { sweepExpiredApprovals } from "./approval-runtime/sweep.js";
 
@@ -130,7 +180,7 @@ export async function prepareApprove(
       };
 
     case "expired_in_tx": {
-      const autoRejection = await applyRejectSideEffects(
+      const autoRejection = await dispatchRejectSideEffects(
         approvalId,
         {
           type: "rejected_in_tx",
@@ -152,7 +202,7 @@ export async function prepareApprove(
       // B-001 — live permission drifted MORE restrictive after enqueue. The
       // snapshot tx already flipped queue+intent to `rejected` (no approved
       // decision); render the rejection tool-result and resume. NO dispatch.
-      return applyPolicyDriftSideEffects(
+      return dispatchPolicyDriftSideEffects(
         approvalId,
         snapshot,
         buildPolicyDriftToolResultContent(),
@@ -211,7 +261,7 @@ export async function prepareReject(
       };
 
     case "rejected_in_tx":
-      return applyRejectSideEffects(
+      return dispatchRejectSideEffects(
         approvalId,
         snapshot,
         buildRejectedToolResultContent(snapshot.reason),
@@ -255,7 +305,7 @@ export async function expireApproval(
       };
 
     case "rejected_in_tx":
-      return applyRejectSideEffects(
+      return dispatchRejectSideEffects(
         approvalId,
         snapshot,
         TOOL_RESULT_EXPIRED_MESSAGE,

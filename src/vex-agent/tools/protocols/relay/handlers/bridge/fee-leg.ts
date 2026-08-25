@@ -26,6 +26,7 @@ import {
   confirmActivityEvent,
   failActivityEvent,
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
   provenLegAmounts,
 } from "@vex-agent/db/repos/agent-activity.js";
@@ -116,6 +117,7 @@ export async function runRelayVexFeeLeg(input: {
         value: transfer.value,
       },
       {
+        onNonceReserved: (request) => reserveActivityEvmNonce(legRowId, request),
         onHashStaged: async (handles) => {
           const res = await markActivityBroadcast(legRowId, handles);
           if (!res.applied) {

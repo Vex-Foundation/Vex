@@ -34,7 +34,7 @@
  * normalise before the value crosses the repo interface.
  */
 
-import type { PoolClient } from "pg";
+import type { ClientBase, PoolClient } from "pg";
 import type { ActionKind } from "../../tools/taxonomy.js";
 import type { RiskLevel } from "../../tools/risk-level.js";
 import type {
@@ -68,7 +68,81 @@ export {
   type ApprovalLifecycleRow,
 } from "./approval-intents/lifecycle.js";
 
+/**
+ * Studio settlement writes (migration 086). Same table, third reason to
+ * change: these are the only writes that store a whole tool result on the row
+ * instead of pointing at a transcript message, because a Studio call has no
+ * transcript to point at.
+ */
+export {
+  casClaimStudioDispatchSlotWith,
+  casRefuseStudioBeforeDispatchWith,
+  casMarkIndeterminateWithSettlementWith,
+  commitStudioSettlementWith,
+  getStudioSettlementByApprovalId,
+  listDispatchingStudioApprovals,
+  listUnstartedStudioApprovals,
+  type DispatchingStudioApproval,
+  type DispatchingStudioCursor,
+  type StudioSettlementRow,
+} from "./approval-intents/studio-settlement.js";
+
 export type ApprovalDecision = "approved" | "rejected" | "rejected_stop";
+
+/**
+ * WHICH SURFACE created the intent (migration 086). `agent` is the default and
+ * the value every pre-086 row carries; `studio_mcp` is a call from an external
+ * coding agent through the Vex Studio MCP surface.
+ *
+ * It is not a second state axis. It selects which SIDE EFFECTS a decision
+ * runs: an agent row appends a transcript tool result and resumes a turn, a
+ * Studio row writes a settlement and releases a blocked MCP call. The decision
+ * and execution state machines are identical for both.
+ */
+export type ApprovalOrigin = "agent" | "studio_mcp";
+
+/**
+ * The six causes that terminally refuse a PENDING Studio intent. Written
+ * together with `decision = 'rejected'`; `decision_reason` carries the human
+ * sentence, this carries the machine fact.
+ *
+ * Kept as its own type because `refuse.ts` owns a sentence for EXACTLY these
+ * six and must stay exhaustive over them: the post-decision causes below never
+ * travel through that primitive.
+ */
+export type StudioPendingRefusalReason =
+  | "lock"
+  | "disconnect"
+  | "cancelled"
+  | "project_deleted"
+  | "scope_changed"
+  | "vex_quit";
+
+/**
+ * The causes recorded AFTER a human approved the intent.
+ *
+ *   `stopped`                the operator-stop gate fired in the pre-dispatch
+ *                            transaction;
+ *   `generation_superseded`  Vex was locked or unlocked between the enqueue and
+ *                            the dispatch, or the dispatch preflight could not
+ *                            prove the fence had moved;
+ *   `scope_unavailable`      the project scope the dispatch needed could not be
+ *                            established;
+ *   `expired`                nobody decided before the intent's own TTL.
+ *
+ * Each is written together with a TERMINAL state (`execution_status = 'failed'`
+ * for the first three, `decision = 'rejected'` for the expiry), so a row can
+ * never carry one of them and still be dispatchable.
+ */
+export type StudioPostDecisionRefusalReason =
+  | "stopped"
+  | "generation_superseded"
+  | "scope_unavailable"
+  | "expired";
+
+export type ApprovalRefusalReason =
+  | StudioPendingRefusalReason
+  | StudioPostDecisionRefusalReason;
 /**
  * `indeterminate` (migration 056) is the honest terminal state for an approved
  * dispatch whose outcome cannot be proven — the process died between the
@@ -125,6 +199,24 @@ export interface CreateIntentInput {
    */
   expiresAt?: string | null;
   /**
+   * Migration 086 - Studio provenance. `agent` (the default) writes exactly the
+   * row shape every pre-086 caller wrote; the four Studio fields below are NULL
+   * for it, and the CHECK plus the column default keep an omitted value honest.
+   */
+  origin?: ApprovalOrigin;
+  /** Studio only - the project whose scope authorized the call. */
+  projectId?: string | null;
+  /** Studio only - the `projects.scope_version` the call was admitted under. */
+  scopeVersionAtEnqueue?: number | null;
+  /** Studio only - sha256 of the canonical envelope stored on the queue row. */
+  requestDigest?: string | null;
+  /**
+   * Studio only - the durable dispatch generation read in the SAME transaction
+   * as this insert. The dispatch-slot claim requires it to still be current, so
+   * a claim after a lock or unlock advance matches zero rows.
+   */
+  dispatchGenerationAtEnqueue?: string | null;
+  /**
    * Phase 3 stamps this at approve via `markDecisionWith` (defense-in-depth
    * audit for the dedup gate; `idx_approval_intents_idempotency` UNIQUE
    * partial index guards cross-approval reuse). Phase 2 inserts pass `null`.
@@ -135,8 +227,11 @@ export interface CreateIntentInput {
 const INSERT_INTENT_SQL = `INSERT INTO approval_intents (
   approval_id, session_id, mission_run_id, tool_call_id,
   action_kind, risk_level, preview_json, policy_json,
-  expires_at, idempotency_key
-) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10)`;
+  expires_at, idempotency_key,
+  origin, project_id, scope_version_at_enqueue, request_digest,
+  dispatch_generation_at_enqueue
+) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10,
+          $11, $12, $13, $14, $15)`;
 
 function toCreateParams(input: CreateIntentInput): unknown[] {
   return [
@@ -150,6 +245,11 @@ function toCreateParams(input: CreateIntentInput): unknown[] {
     jsonb(input.policyJson),
     input.expiresAt ?? null,
     input.idempotencyKey ?? null,
+    input.origin ?? "agent",
+    input.projectId ?? null,
+    input.scopeVersionAtEnqueue ?? null,
+    input.requestDigest ?? null,
+    input.dispatchGenerationAtEnqueue ?? null,
   ];
 }
 
@@ -181,19 +281,32 @@ export interface MarkDecisionInput {
   kind: ApprovalDecision;
   reason?: string | null;
   idempotencyKey?: string | null;
+  /**
+   * Migration 086 - the machine cause of a TERMINAL REFUSAL of a pending
+   * Studio intent, written in the same CAS as the decision so a refused row can
+   * never exist without the reason that refused it. Omitted (NULL) for every
+   * agent decision and for an ordinary user Reject.
+   */
+  refusalReason?: ApprovalRefusalReason | null;
 }
 
 const MARK_DECISION_SQL = `UPDATE approval_intents
    SET decision        = $2,
        decided_at      = NOW(),
        decision_reason = $3,
-       idempotency_key = $4
+       idempotency_key = $4,
+       refusal_reason  = $5
  WHERE approval_id = $1
    AND decision IS NULL
  RETURNING approval_id`;
 
+/**
+ * `ClientBase` for the same reason as `approvalsRepo.rejectWith`: the Studio
+ * refusal owners write this CAS from a main-process `pg.Client` transaction.
+ * `PoolClient` extends it, so every existing caller is unchanged.
+ */
 export async function markDecisionWith(
-  client: PoolClient,
+  client: ClientBase,
   input: MarkDecisionInput,
 ): Promise<boolean> {
   const res = await client.query(MARK_DECISION_SQL, [
@@ -201,6 +314,7 @@ export async function markDecisionWith(
     input.kind,
     input.reason ?? null,
     input.idempotencyKey ?? null,
+    input.refusalReason ?? null,
   ]);
   return (res.rowCount ?? 0) > 0;
 }

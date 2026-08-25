@@ -27,6 +27,22 @@
  *
  * The fragments name `approval_intents` columns UNQUALIFIED, so a consumer must
  * have that table (or an alias exposing those columns) unambiguously in scope.
+ *
+ * ## `origin = 'agent'` is part of both predicates, not a caller's filter
+ *
+ * Migration 086 gave `approval_intents` an ORIGIN. Everything these fragments
+ * describe is AGENT work: a resume wakes an agent turn, and the Stop key and
+ * the stop-retention read exist so the operator can interrupt one. A Vex Studio
+ * row owes the system a settlement and a released MCP waiter instead, and it
+ * owes them to a caller that is not the agent - so a Studio row must never
+ * enter a resume scan (the reconciler would run an agent turn on the backing
+ * session for a tool call the agent never made) and must never hold the Stop
+ * key open on a session the operator is not driving.
+ *
+ * The filter lives HERE rather than in each scan for the same reason the
+ * predicates do: two readers that disagree about which rows still owe work is
+ * the exact failure this module exists to prevent. Every pre-086 row and every
+ * agent row reads `origin = 'agent'`, so this changes no agent behaviour.
  */
 
 /**
@@ -47,9 +63,12 @@
  * `INCOMPLETE_APPROVAL_LIFECYCLE_PREDICATE` below instead.
  */
 export const RESUMABLE_SHAPES_PREDICATE = `(
-        (decision = 'approved' AND execution_status = 'not_started')
-     OR (result_message_id IS NOT NULL AND resume_consumed_at IS NULL)
-      )`;
+    origin = 'agent'
+    AND (
+          (decision = 'approved' AND execution_status = 'not_started')
+       OR (result_message_id IS NOT NULL AND resume_consumed_at IS NULL)
+        )
+  )`;
 
 /**
  * EVERY decided approval whose lifecycle is still incomplete — the resumable
@@ -67,7 +86,8 @@ export const RESUMABLE_SHAPES_PREDICATE = `(
  * healthy heartbeated dispatch into a false alarm.
  */
 export const INCOMPLETE_APPROVAL_LIFECYCLE_PREDICATE = `(
-    decision IS NOT NULL
+    origin = 'agent'
+    AND decision IS NOT NULL
     AND (
           (decision = 'approved' AND execution_status = 'dispatching')
        OR ${RESUMABLE_SHAPES_PREDICATE}

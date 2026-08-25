@@ -1,0 +1,22 @@
+{
+  // The user wrote this comment. A merge must not delete it.
+  "$schema": "https://example.invalid/settings.schema.json",
+  "amp.mcpServers": {
+    "other-server": {
+      "command": "/usr/bin/other",
+      "args": ["--serve"]
+    },
+    "vex": {
+      "command": "/home/user/.config/vex/bin/vex-mcp",
+      "args": [
+        "--project",
+        "0f6b1c2e-8a4d-4f1b-9c3e-7d5a2b8e4c10"
+      ]
+    }
+  },
+  /* A block comment, and a key Vex has never heard of. */
+  "somethingVexDoesNotKnow": {
+    "keep": true,
+    "nested": ["a", "b"]
+  }
+}

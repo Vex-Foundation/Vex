@@ -7,9 +7,10 @@
  * The executors' half (ordering, chain mechanics, exact amounts) is pinned in
  * `send-execute-evm.test.ts` / `send-execute-solana.test.ts`.
  *
- * The `agent-activity` repository and the session control lock are faked at
- * their module boundaries - they are the DB boundary, not the subject. The
- * writer's own decisions stay real.
+ * The `agent-activity` repository and session control lock are faked at their
+ * module boundaries. The execution repository stays real: its actual SQL runs
+ * against a stateful client seam so this suite exercises the write-once CAS
+ * rather than an unconditional completion mock.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -18,35 +19,91 @@ import type { WalletIntent } from "@vex-agent/db/repos/wallet-intents.js";
 import type { WalletTransferPlan } from "@vex-agent/tools/internal/wallet/send/activity-writer.js";
 
 type ActivityRepo = typeof import("@vex-agent/db/repos/agent-activity.js");
+type WalletIntentsRepo = typeof import("@vex-agent/db/repos/wallet-intents.js");
 
-const mockCreateIntent = vi.fn<ActivityRepo["createAgentActivityIntent"]>();
+const mockCreateIntent = vi.fn<ActivityRepo["createAgentActivityIntentWith"]>();
+const mockLinkActivity = vi.fn<WalletIntentsRepo["linkActivityWith"]>();
 const mockCreatePreBroadcastFailure = vi.fn<ActivityRepo["createAgentActivityPreBroadcastFailure"]>();
 const mockMarkBroadcast = vi.fn<ActivityRepo["markActivityBroadcast"]>();
 const mockMarkSolanaBroadcast = vi.fn<ActivityRepo["markActivitySolanaBroadcast"]>();
 const mockMarkAccepted = vi.fn<ActivityRepo["markBroadcastAccepted"]>();
 const mockConfirm = vi.fn<ActivityRepo["confirmActivityEvent"]>();
 const mockFail = vi.fn<ActivityRepo["failActivityEvent"]>();
+const mockFailWith = vi.fn<ActivityRepo["failActivityEventWith"]>();
 const mockNoteBlockTime = vi.fn<ActivityRepo["noteSettledBlockTime"]>();
 
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
-  createAgentActivityIntent: (...a: unknown[]) => mockCreateIntent(...(a as [never])),
+  createAgentActivityIntentWith: (...a: unknown[]) => mockCreateIntent(...(a as [never, never])),
   createAgentActivityPreBroadcastFailure: (...a: unknown[]) => mockCreatePreBroadcastFailure(...(a as [never])),
   markActivityBroadcast: (...a: unknown[]) => mockMarkBroadcast(...(a as [never, never])),
   markActivitySolanaBroadcast: (...a: unknown[]) => mockMarkSolanaBroadcast(...(a as [never, never])),
   markBroadcastAccepted: (...a: unknown[]) => mockMarkAccepted(...(a as [never])),
   confirmActivityEvent: (...a: unknown[]) => mockConfirm(...(a as [never, never])),
   failActivityEvent: (...a: unknown[]) => mockFail(...(a as [never, never])),
+  failActivityEventWith: (...a: Parameters<ActivityRepo["failActivityEventWith"]>) =>
+    mockFailWith(...a),
   noteSettledBlockTime: (...a: unknown[]) => mockNoteBlockTime(...(a as [never, never])),
 }));
 
-const mockCompleteExecution = vi.fn(async () => {});
-vi.mock("@vex-agent/db/repos/executions.js", () => ({
-  completeExecutionIntentWith: (...a: unknown[]) => mockCompleteExecution(...(a as [])),
+type LinkedSettlementInput = {
+  readonly activityWrite: (client: unknown) => Promise<unknown>;
+};
+const mockSettleLinkedRows = vi.fn(async (input: LinkedSettlementInput) =>
+  input.activityWrite({}));
+vi.mock("@vex-agent/db/repos/agent-activity/linked-transaction-settlement.js", () => ({
+  settleLinkedActivityRows: (input: LinkedSettlementInput) => mockSettleLinkedRows(input),
 }));
 
-const FAKE_CLIENT = {} as never;
+vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
+  linkActivityWith: (...a: unknown[]) => mockLinkActivity(...(a as [never, never, never, never])),
+}));
+
+type FakeExecutionStatus = "intent" | "succeeded" | "failed";
+
+interface ExecutionWriteAttempt {
+  readonly sql: string;
+  readonly executionId: unknown;
+  readonly resultJson: unknown;
+  readonly success: unknown;
+  readonly externalRefsJson: unknown;
+  readonly durationMs: unknown;
+  readonly applied: boolean;
+}
+
+let fakeExecutionStatus: FakeExecutionStatus = "intent";
+const executionWrites: ExecutionWriteAttempt[] = [];
+
+async function runExecutionQuery(
+  sql: string,
+  params: readonly unknown[] = [],
+): Promise<{ rowCount: number }> {
+  if (!sql.includes("UPDATE protocol_executions")) {
+    throw new Error("the fake client received an unexpected query");
+  }
+  if (!sql.includes("WHERE id = $1 AND execution_status = 'intent'")) {
+    throw new Error("protocol execution completion lost its write-once CAS predicate");
+  }
+  const applied = fakeExecutionStatus === "intent";
+  if (applied) fakeExecutionStatus = params[2] === true ? "succeeded" : "failed";
+  executionWrites.push({
+    sql,
+    executionId: params[0],
+    resultJson: params[1],
+    success: params[2],
+    externalRefsJson: params[4],
+    durationMs: params[5],
+    applied,
+  });
+  return { rowCount: applied ? 1 : 0 };
+}
+
+const mockClientQuery = vi.fn(runExecutionQuery);
+const FAKE_CLIENT = { query: mockClientQuery };
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
-  withSessionControlLock: async (_sessionId: string, fn: (c: never) => Promise<unknown>) => fn(FAKE_CLIENT),
+  withSessionControlLock: async (
+    _sessionId: string,
+    fn: (client: typeof FAKE_CLIENT) => Promise<unknown>,
+  ) => fn(FAKE_CLIENT),
 }));
 
 const writer = await import(
@@ -63,13 +120,15 @@ const INTENT: WalletIntent = {
   amount: "0.5",
   token: null,
   previewJson: {},
-  status: "pending" as WalletIntent["status"],
+  status: "consuming" as WalletIntent["status"],
+  activityId: null,
   expiresAt: "2099-01-01T00:00:00.000Z",
   consumedAt: null,
   cancelledAt: null,
   txHash: null,
   failureReason: null,
   idempotencyKey: null,
+  repairCheckedAt: null,
   createdAt: "2026-07-05T00:00:00.000Z",
 };
 
@@ -86,7 +145,11 @@ const PLAN: WalletTransferPlan = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  executionWrites.length = 0;
+  fakeExecutionStatus = "intent";
+  mockClientQuery.mockImplementation(runExecutionQuery);
   mockCreateIntent.mockResolvedValue({ executionId: 5, events: [{ id: 42 }] } as never);
+  mockLinkActivity.mockResolvedValue({ ...INTENT, activityId: "42" });
   mockMarkBroadcast.mockResolvedValue({ applied: true, row: {} } as never);
   mockMarkSolanaBroadcast.mockResolvedValue({ applied: true, row: {} } as never);
   mockMarkAccepted.mockResolvedValue({ applied: true, row: {} } as never);
@@ -95,16 +158,34 @@ beforeEach(() => {
   mockNoteBlockTime.mockResolvedValue(true);
 });
 
+function createdIntentInput(): Parameters<ActivityRepo["createAgentActivityIntentWith"]>[1] {
+  const call = mockCreateIntent.mock.calls[0];
+  if (call === undefined) throw new Error("createAgentActivityIntentWith was not called");
+  return call[1];
+}
+
+function createdTransferEvent() {
+  const event = createdIntentInput().events[0];
+  if (event === undefined) throw new Error("the transfer activity event was not supplied");
+  return event;
+}
+
+function executionWriteAt(index: number): ExecutionWriteAttempt {
+  const write = executionWrites[index];
+  if (write === undefined) throw new Error(`execution write ${index} was not attempted`);
+  return write;
+}
+
 describe("openWalletTransferActivity", () => {
   it("creates ONE pending row with the transfer kind/role, an INPUT leg only, and no USD claim", async () => {
     await writer.openWalletTransferActivity(INTENT, PLAN);
 
-    const input = mockCreateIntent.mock.calls[0]![0];
+    const input = createdIntentInput();
     expect(input.toolId).toBe("wallet_send_confirm");
     expect(input.namespace).toBe("wallet");
     expect(input.events).toHaveLength(1);
 
-    const event = input.events[0]!;
+    const event = createdTransferEvent();
     expect(event.kind).toBe("transfer");
     expect(event.eventRole).toBe("wallet_transfer");
     expect(event.protocol).toBe("wallet");
@@ -130,12 +211,18 @@ describe("openWalletTransferActivity", () => {
     expect(event.usdInEst).toBeUndefined();
     expect(event.usdOutEst).toBeUndefined();
     expect(event.usdVexFeeEst).toBeUndefined();
+    expect(mockLinkActivity).toHaveBeenCalledWith(
+      FAKE_CLIENT,
+      INTENT.intentId,
+      INTENT.sessionId,
+      42,
+    );
   });
 
   it("does NOT record the recipient on the activity row", async () => {
     await writer.openWalletTransferActivity(INTENT, PLAN);
 
-    const event = mockCreateIntent.mock.calls[0]![0].events[0]!;
+    const event = createdTransferEvent();
     // The destination lives on the local `wallet_intents` row and this
     // execution's params; the ledger row that feeds the agent-visible feed
     // deliberately carries no counterparty (rules/90 privacy stance).
@@ -258,39 +345,64 @@ describe("finalization", () => {
     });
     expect(mockCreatePreBroadcastFailure).not.toHaveBeenCalled();
   });
+
+  it("uses the explicit signed-not-submitted coordinator after a definitive node refusal", async () => {
+    const activity = await writer.openWalletTransferActivity(INTENT, PLAN);
+    await activity.failSignedNotSubmitted({ failureReason: "SubmitRejected:VexError:abcd" });
+
+    expect(mockSettleLinkedRows).toHaveBeenCalledWith(expect.objectContaining({
+      activityId: 42,
+      sessionId: INTENT.sessionId,
+      intentOutcome: "signed_not_submitted",
+      activityTarget: {
+        status: "definitively_failed",
+        failureCode: "broadcast_error",
+      },
+    }));
+    expect(mockFailWith).toHaveBeenCalledWith({}, 42, {
+      failureCode: "broadcast_error",
+      failureReason: "SubmitRejected:VexError:abcd",
+    });
+    expect(mockFail).not.toHaveBeenCalled();
+  });
 });
 
 describe("protocol_executions completion", () => {
   it("settles the SAME execution row on a confirmed outcome, under the session lock", async () => {
     const activity = await writer.openWalletTransferActivity(INTENT, PLAN);
-    await activity.completeExecution({ kind: "confirmed", txHash: "0xdead" });
+    await activity.completeExecution({
+      kind: "confirmed",
+      txHash: "0xdead",
+      blockTimeIso: "2026-08-25T12:34:56.000Z",
+    });
 
-    const [, completion] = mockCompleteExecution.mock.calls[0] as unknown as [unknown, {
-      executionId: number; success: boolean; externalRefs: Record<string, unknown>;
-    }];
+    const completion = executionWriteAt(0);
     expect(completion.executionId).toBe(5);
     expect(completion.success).toBe(true);
-    expect(completion.externalRefs).toEqual({ txHash: "0xdead" });
+    expect(completion.resultJson).toBe(
+      '{"status":"confirmed","txHash":"0xdead","blockTimeIso":"2026-08-25T12:34:56.000Z"}',
+    );
+    expect(completion.externalRefsJson).toBe('{"txHash":"0xdead"}');
+    expect(completion.applied).toBe(true);
+    expect(fakeExecutionStatus).toBe("succeeded");
   });
 
-  it("settles it as unsuccessful on a revert, an unknown confirmation, and a pre-broadcast failure", async () => {
+  it("keeps the first completion when later writers race the same write-once row", async () => {
     const activity = await writer.openWalletTransferActivity(INTENT, PLAN);
-    await activity.completeExecution({ kind: "reverted", txHash: "0xdead" });
+    await activity.completeExecution({ kind: "confirmed", txHash: "0xfirst" });
     await activity.completeExecution({ kind: "confirmation_unknown", txHash: "0xdead" });
     await activity.completeExecution({ kind: "failed_before_broadcast" });
 
-    const completions = mockCompleteExecution.mock.calls.map(
-      (call) => (call as unknown as [unknown, { success: boolean; result: { status: string } }])[1],
+    expect(executionWrites.map((write) => write.applied)).toEqual([true, false, false]);
+    expect(executionWriteAt(0).resultJson).toBe('{"status":"confirmed","txHash":"0xfirst"}');
+    expect(executionWriteAt(1).resultJson).toBe(
+      '{"status":"confirmation_unknown","txHash":"0xdead"}',
     );
-    expect(completions.map((c) => c.success)).toEqual([false, false, false]);
-    // The tool attempt is CLOSED on an unknown confirmation, with a structural
-    // status that does not claim the chain settled. The activity row is what
-    // stays pending.
-    expect(completions[1]?.result.status).toBe("confirmation_unknown");
+    expect(fakeExecutionStatus).toBe("succeeded");
   });
 
   it("does not surface a completion failure as a transfer failure", async () => {
-    mockCompleteExecution.mockRejectedValueOnce(new Error("lock timeout"));
+    mockClientQuery.mockRejectedValueOnce(new Error("lock timeout"));
     const activity = await writer.openWalletTransferActivity(INTENT, PLAN);
 
     await expect(
@@ -337,9 +449,7 @@ describe("recordWalletTransferPlanFailure", () => {
     // at `execution_status = 'intent'`, which the compaction safe-moment gate
     // selects independently of `agent_activity` - so a transfer that never even
     // resolved a plan blocked compaction permanently.
-    const [, completion] = mockCompleteExecution.mock.calls[0] as unknown as [unknown, {
-      executionId: number; success: boolean;
-    }];
+    const completion = executionWriteAt(0);
     expect(completion.executionId).toBe(9);
     expect(completion.success).toBe(false);
   });
@@ -352,7 +462,7 @@ describe("recordWalletTransferPlanFailure", () => {
     });
 
     // There is no execution id to complete; inventing one would be worse.
-    expect(mockCompleteExecution).not.toHaveBeenCalled();
+    expect(mockClientQuery).not.toHaveBeenCalled();
   });
 
   it("swallows its own write failure - a transfer that never happened is still reported as such", async () => {

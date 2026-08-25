@@ -92,6 +92,18 @@ const KIND_ADMISSION: Readonly<Record<string, string | null>> = {
    * transactions feed, which is where a user looks for it.
    */
   transfer: null,
+  /**
+   * `transaction` (migration 087) is NOT carried by the token history, and here
+   * that is a verdict rather than a deferred gap.
+   *
+   * A per-token history answers "what happened to THIS token". A generic signed
+   * transaction cannot answer it: an approval moves no token at all, a contract
+   * call moves whatever the contract decided, and an SPL instruction set may
+   * move several. The row deliberately carries no asset leg, so there is no
+   * token to file it under - inventing one is precisely what the kind exists to
+   * avoid. It IS visible in the Agent Scan feed and in the transactions feed.
+   */
+  transaction: null,
 };
 
 /** The row-inclusion predicate of the agent_activity half. */

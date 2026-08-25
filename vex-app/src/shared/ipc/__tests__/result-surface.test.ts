@@ -105,6 +105,16 @@ describe("result barrel surface", () => {
       "tokenLaunch.value_ceiling_exceeded",
       "tokenLaunch.launch_count_exceeded",
       "tokenLaunch.ceiling_not_set",
+      // Vex Studio projects (stage P). Seven named refusals rather than a
+      // generic failure: a project that cannot be created or edited is always
+      // one of a small set of concrete, user-fixable situations.
+      "projects.root_changed",
+      "projects.root_unavailable",
+      "projects.slug_taken",
+      "projects.not_found",
+      "projects.scope_conflict",
+      "projects.wallet_drift",
+      "projects.backing_session_integrity",
       "internal.contract_violation",
       "internal.cancelled",
       "internal.unexpected",
@@ -147,6 +157,10 @@ describe("result barrel surface", () => {
       // VEX_ERROR_CODES pin above is deliberately unchanged.
       "poolsLaunch",
       "sessions",
+      // Vex Studio projects (stage P): the project entity itself. It grants no
+      // authority of its own - a project's permission and wallet scope are
+      // enforced by the same session-keyed gates every agent session uses.
+      "projects",
       "preload",
       "internal",
     ]);

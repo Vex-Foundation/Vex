@@ -1,0 +1,372 @@
+/**
+ * WHERE the Vex Studio MCP host listens, and whether it is allowed to.
+ *
+ * The frozen contract is `src/vex-agent/tools/tool-surface-spec/studio-mcp/
+ * bridge-endpoint-contract.md`, and the golden vectors beside it
+ * (`bridge-endpoint-vectors.json`) are executed against THIS module by
+ * `__tests__/mcp-host-endpoint.test.ts` and, in stage A4c, against the Go
+ * bridge's independent re-implementation. Both sides derive the same path from
+ * the same facts with no shared code and no configuration file to read.
+ *
+ * ## Every path operation is TARGET-flavoured
+ *
+ * `platform` is an INPUT, not `process.platform`: the golden vectors carry
+ * linux, darwin and win32 rows and every owner runs all of them on whatever
+ * machine CI happens to give it. The ambient `node:path` follows the HOST, so
+ * on a Windows runner `path.join("/run/user/1000", name)` is
+ * `\run\user\1000\...` and `path.dirname("/srv/sockets/x.sock")` is
+ * `\srv\sockets` - a red suite, and in a shipped build a host binding a path
+ * the bridge never dials. Every join, dirname and isAbsolute below therefore
+ * goes through `flavour(input.platform)` (`path.win32` or `path.posix`), the
+ * same selector the config-directory resolver uses. On a real win32 host
+ * `path.win32 === path`, so runtime behaviour is unchanged.
+ *
+ * ## Pure planner, injected facts
+ *
+ * `planStudioEndpoint` performs no I/O. Directory ownership and mode arrive
+ * through `probeDirectory`, so the same function answers a real filesystem, a
+ * golden vector and a hostile-permissions test case identically. The host owns
+ * the real probe (`nodeDirectoryProbe`) and the bind-time stale/live checks,
+ * which cannot be pure.
+ *
+ * ## The override is VALIDATED BEFORE BIND, never trusted
+ *
+ * `VEX_STUDIO_SOCKET` wins everywhere it is accepted, but a value that fails
+ * validation REFUSES host startup with the named cause. It never silently
+ * falls back to the derived path: the derived path's parent has verified
+ * ownership and mode, and quietly substituting it would hide the fact that
+ * somebody pointed Vex's privileged listener somewhere unverified. That is the
+ * P4 trust boundary, and a bypass is the failure this whole module exists to
+ * prevent.
+ */
+
+import { createHash } from "node:crypto";
+
+import { flavour } from "../../paths/config-dir.js";
+
+/** `sun_path` is ~104 bytes INCLUDING the terminator on Linux and macOS. */
+export const STUDIO_SUN_PATH_MAX_BYTES = 103;
+
+/** The env name that overrides the derived endpoint. */
+export const STUDIO_SOCKET_OVERRIDE_ENV = "VEX_STUDIO_SOCKET";
+
+/** What one directory looks like to the planner. `null` means it is absent. */
+export interface EndpointDirectoryFacts {
+  readonly isDirectory: boolean;
+  /** Owning uid. Compared against the running process's uid. */
+  readonly uid: number;
+  /** Permission bits only (`stat.mode & 0o777`). */
+  readonly mode: number;
+}
+
+export type EndpointDirectoryProbe = (dir: string) => EndpointDirectoryFacts | null;
+
+export interface EndpointPlanInput {
+  readonly platform: NodeJS.Platform;
+  /** The REALPATH of the Vex config directory. The hash input, and only that. */
+  readonly configDirRealPath: string;
+  readonly env: NodeJS.ProcessEnv;
+  readonly tmpdir: string;
+  readonly uid: number;
+  readonly probeDirectory: EndpointDirectoryProbe;
+}
+
+export type StudioEndpointRefusalCode =
+  | "override_not_absolute"
+  | "override_invalid_pipe"
+  | "override_pipe_on_unix"
+  | "windows_pending_platform_proof"
+  | "endpoint_ancestor_changed"
+  | "override_parent_missing"
+  | "override_parent_not_directory"
+  | "override_parent_not_owned"
+  | "override_parent_mode"
+  | "path_too_long";
+
+/** Runtime refusal when an endpoint ancestor cannot be proven unchanged. */
+export const ENDPOINT_ANCESTOR_CHANGED_CODE =
+  "endpoint_ancestor_changed" satisfies StudioEndpointRefusalCode;
+
+export type StudioEndpointPlan =
+  | {
+      readonly kind: "unix";
+      readonly path: string;
+      readonly parentDir: string;
+      /**
+       * Whether the host owns this parent and must create it 0700. False for
+       * `XDG_RUNTIME_DIR` (the system owns it, already verified) and for an
+       * override (the operator owns it, and it must already exist).
+       */
+      readonly createParent: boolean;
+    }
+  | { readonly kind: "pipe"; readonly path: string }
+  | {
+      readonly kind: "refused";
+      readonly code: StudioEndpointRefusalCode;
+      readonly message: string;
+    };
+
+/**
+ * The endpoint discriminator: the first 12 hex characters of SHA-256 over the
+ * REALPATH of the Vex config directory.
+ *
+ * The config directory, not the projects root: the standalone Go bridge can
+ * derive the config directory from the platform convention alone, and has no
+ * validated way to learn a `config.json` override for the projects root. 12
+ * hex characters is 48 bits, which is a collision-resistance question about
+ * two config directories on one machine, not an adversarial one - the bridge
+ * still has to pass the handshake, and the socket's own directory permissions
+ * are the access control.
+ */
+export function studioEndpointHash(configDirRealPath: string): string {
+  return createHash("sha256").update(configDirRealPath, "utf8").digest("hex").slice(0, 12);
+}
+
+/** The socket file name for one config directory. */
+export function studioEndpointFileName(configDirRealPath: string): string {
+  return `vex-studio-${studioEndpointHash(configDirRealPath)}.sock`;
+}
+
+/**
+ * The Windows named pipe for one config directory.
+ *
+ * Same discriminator, same input, different transport: Windows has no
+ * filesystem socket, so the endpoint lives in the machine's pipe namespace.
+ *
+ * The name is PREDICTABLE by design. This is VS Code's own pattern for its
+ * main IPC, verified in the reference checkout: `createStaticIPCHandle`
+ * (`src/vs/base/parts/ipc/node/ipc.net.ts`) derives `\\.\pipe\<hash>-...`
+ * from a SHA-256 of the user data directory and serves it with a plain
+ * `createServer().listen`, and the whole `src/vs/base` + `src/vs/platform`
+ * tree contains no security-descriptor handling. The boundary is the
+ * documented Windows DEFAULT pipe security descriptor - which does not grant a
+ * second user the duplex access a client needs - plus protocol-level
+ * validation. Vex keeps its own additional layers on top: the listener exists
+ * only while Vex is unlocked and ready, the handshake ack admits a project,
+ * and every mutating call is approval-gated.
+ *
+ * DERIVING the name is not permission to OPEN it: see
+ * `unprovenWindowsTransport` below and contract section 1.6.
+ */
+export function studioEndpointPipeName(configDirRealPath: string): string {
+  return `\\\\.\\pipe\\vex-studio-${studioEndpointHash(configDirRealPath)}`;
+}
+
+/** Is this directory usable as a private runtime directory for `uid`? */
+function isPrivateDirectory(facts: EndpointDirectoryFacts | null, uid: number): boolean {
+  if (facts === null || !facts.isDirectory) return false;
+  if (facts.uid !== uid) return false;
+  // No group and no other bits. 0700 or tighter.
+  return (facts.mode & 0o077) === 0;
+}
+
+function refuse(
+  code: StudioEndpointRefusalCode,
+  message: string,
+): StudioEndpointPlan {
+  return { kind: "refused", code, message };
+}
+
+/** The `sun_path` assertion, applied to every Unix plan before it is returned. */
+function withinSunPath(candidate: string): boolean {
+  return Buffer.byteLength(candidate, "utf8") <= STUDIO_SUN_PATH_MAX_BYTES;
+}
+
+/**
+ * Windows named-pipe syntax, checked structurally.
+ *
+ * Applied to an override on every platform, and to the DERIVED Windows pipe
+ * too, so the host and the bridge cannot disagree about what a pipe name is. A
+ * pipe whose name is empty, or that contains a path separator after the
+ * `pipe\` prefix, is not a pipe name Node will bind.
+ */
+export function isWindowsPipePath(value: string): boolean {
+  const match = /^\\\\[.?]\\pipe\\(.+)$/.exec(value);
+  if (match === null) return false;
+  const name = match[1] ?? "";
+  return name.length > 0 && !name.includes("\\") && !name.includes("/");
+}
+
+/**
+ * THE WINDOWS TRANSPORT GATE. One flag, one owner, one code (contract 1.6).
+ *
+ * WHY FALSE. libuv - what Node's `server.listen` reaches on win32 - creates
+ * the pipe with a NULL security descriptor and WITHOUT
+ * `PIPE_REJECT_REMOTE_CLIENTS`. The resulting DEFAULT SD grants Everyone, and
+ * the anonymous logon, READ access. Duplex is denied to a second user, so the
+ * handshake itself still cannot be driven; a READ-ONLY connect is not denied,
+ * and on a self-custodial wallet that is a cross-user handshake-slot
+ * exhaustion vector plus an unmeasured remote-client posture. Rule 90 fails
+ * closed until a Windows runner measures it.
+ *
+ * WHAT STAYS. Everything that can be proven from Linux: the derivation, the
+ * pipe name, the override syntax, the plan shape and the handshake path all
+ * remain and remain vector-tested. Only TOUCHING the transport is refused.
+ *
+ * FLIPPING IT IS MECHANICAL, NOT EDITORIAL. The proof matrix in contract
+ * section 1.6 runs on the REQUIRED `bridge-windows` CI job; extending that job
+ * with the matrix is the only way this constant becomes true, and the Go
+ * bridge carries the identical flag (`endpoint.WindowsTransportProven`).
+ */
+export const WINDOWS_TRANSPORT_PROVEN = false;
+
+/**
+ * The gate applied at the LISTEN site, and the only producer of
+ * `windows_pending_platform_proof`. Returns the refusal, or `null` when the
+ * plan may proceed.
+ */
+export function unprovenWindowsTransport(
+  plan: StudioEndpointPlan,
+): StudioEndpointPlan | null {
+  if (plan.kind !== "pipe" || WINDOWS_TRANSPORT_PROVEN) return null;
+  return refuse(
+    "windows_pending_platform_proof",
+    "The Vex Studio Windows named-pipe transport is not enabled: its pipe "
+      + "security descriptor has not been measured on a Windows runner, and Vex "
+      + "will not open a wallet transport whose cross-user access is unproven. "
+      + "Use Vex Studio on Linux or macOS. The Vex Studio host did not start.",
+  );
+}
+
+export function planStudioEndpoint(input: EndpointPlanInput): StudioEndpointPlan {
+  const override = input.env[STUDIO_SOCKET_OVERRIDE_ENV];
+  if (typeof override === "string" && override.length > 0) {
+    return planOverride(override, input);
+  }
+
+  // WINDOWS: a named pipe, derived from the SAME hash input as the unix
+  // socket. There is no directory to create or verify and no `sun_path` bound
+  // to check: a pipe is not a filesystem object. See
+  // `studioEndpointPipeName` for the security model and its evidence.
+  if (input.platform === "win32") {
+    return { kind: "pipe", path: studioEndpointPipeName(input.configDirRealPath) };
+  }
+
+  const fileName = studioEndpointFileName(input.configDirRealPath);
+
+  // Linux: the XDG runtime directory when the system actually gave us a
+  // private one. The fallback chain below is the "or it did not" branch.
+  // Unix targets only from here: a win32 target returned its pipe above, and
+  // a pipe is not a filesystem path. The flavour is still selected from the
+  // input rather than assumed, so a future non-win32 flavour cannot be
+  // silently inherited from the host.
+  const target = flavour(input.platform);
+
+  if (input.platform === "linux") {
+    const runtimeDir = input.env["XDG_RUNTIME_DIR"];
+    if (
+      typeof runtimeDir === "string"
+      && runtimeDir.length > 0
+      && target.isAbsolute(runtimeDir)
+      && isPrivateDirectory(input.probeDirectory(runtimeDir), input.uid)
+    ) {
+      const candidate = target.join(runtimeDir, fileName);
+      if (!withinSunPath(candidate)) {
+        return refuse("path_too_long", sunPathMessage(candidate));
+      }
+      return { kind: "unix", path: candidate, parentDir: runtimeDir, createParent: false };
+    }
+  }
+
+  // macOS always, and Linux when `XDG_RUNTIME_DIR` is unset, relative, not a
+  // directory, not ours, or readable by anyone else.
+  const parentDir = target.join(input.tmpdir, `vex-studio-${String(input.uid)}`);
+  const candidate = target.join(parentDir, fileName);
+  if (!withinSunPath(candidate)) {
+    return refuse("path_too_long", sunPathMessage(candidate));
+  }
+  return { kind: "unix", path: candidate, parentDir, createParent: true };
+}
+
+function planOverride(value: string, input: EndpointPlanInput): StudioEndpointPlan {
+  // PIPE SYNTAX IS A WINDOWS-TARGET STATEMENT, and only that.
+  //
+  // It used to be accepted whenever the VALUE began `\\`, on every platform.
+  // On Linux that skipped the ownership, mode and `lstat` validation this
+  // function exists for and handed the literal to `server.listen`, which bound
+  // a FILE named `\\.\pipe\...` relative to the process's working directory
+  // while the bridge ENOENTed against a path that was never a socket. A pipe
+  // override on a unix target is now refused BY NAME.
+  if (input.platform !== "win32" && value.startsWith("\\\\")) {
+    return refuse(
+      "override_pipe_on_unix",
+      `${STUDIO_SOCKET_OVERRIDE_ENV} looks like a Windows named pipe `
+        + "(\\\\.\\pipe\\<name>), but this is not Windows. A pipe name is not a "
+        + "unix socket path and would not be validated as one. Set an absolute "
+        + "path in a directory you own with mode 0700. The Vex Studio host did "
+        + "not start.",
+    );
+  }
+  if (input.platform === "win32") {
+    if (!isWindowsPipePath(value)) {
+      return refuse(
+        "override_invalid_pipe",
+        `${STUDIO_SOCKET_OVERRIDE_ENV} is not a valid named pipe. Use `
+          + "\\\\.\\pipe\\<name> with no separators in <name>. The Vex Studio "
+          + "host did not start.",
+      );
+    }
+    return { kind: "pipe", path: value };
+  }
+
+  const target = flavour(input.platform);
+  if (!target.isAbsolute(value)) {
+    return refuse(
+      "override_not_absolute",
+      `${STUDIO_SOCKET_OVERRIDE_ENV} must be an absolute path. A relative value `
+        + "would put Vex's privileged listener wherever it happened to be "
+        + "launched from. The Vex Studio host did not start.",
+    );
+  }
+  if (!withinSunPath(value)) {
+    return refuse("path_too_long", sunPathMessage(value));
+  }
+
+  const parentDir = target.dirname(value);
+  const facts = input.probeDirectory(parentDir);
+  if (facts === null) {
+    return refuse(
+      "override_parent_missing",
+      `${STUDIO_SOCKET_OVERRIDE_ENV} points into ${parentDir}, which does not `
+        + "exist. Vex does not create an override's directory: the operator owns "
+        + "it, and creating it would mean Vex chose its permissions. The Vex "
+        + "Studio host did not start.",
+    );
+  }
+  if (!facts.isDirectory) {
+    return refuse(
+      "override_parent_not_directory",
+      `${STUDIO_SOCKET_OVERRIDE_ENV} points into ${parentDir}, which is not a `
+        + "directory. The Vex Studio host did not start.",
+    );
+  }
+  if (facts.uid !== input.uid) {
+    return refuse(
+      "override_parent_not_owned",
+      `${STUDIO_SOCKET_OVERRIDE_ENV} points into ${parentDir}, which is owned by `
+        + "another user. Vex will not put a privileged listener in a directory it "
+        + "does not own. The Vex Studio host did not start.",
+    );
+  }
+  // EXACTLY 0700 for an override, not "0700 or tighter": an override is an
+  // operator statement about a directory Vex did not create, and a mode that is
+  // not what the contract names is worth refusing rather than interpreting.
+  if ((facts.mode & 0o777) !== 0o700) {
+    return refuse(
+      "override_parent_mode",
+      `${STUDIO_SOCKET_OVERRIDE_ENV} points into ${parentDir}, whose mode is `
+        + `0${(facts.mode & 0o777).toString(8)} rather than 0700. Another user `
+        + "could reach the socket. The Vex Studio host did not start.",
+    );
+  }
+  return { kind: "unix", path: value, parentDir, createParent: false };
+}
+
+function sunPathMessage(candidate: string): string {
+  return (
+    `The Vex Studio socket path is ${String(Buffer.byteLength(candidate, "utf8"))} `
+    + `bytes, over the ${String(STUDIO_SUN_PATH_MAX_BYTES)}-byte sun_path limit. `
+    + `Set ${STUDIO_SOCKET_OVERRIDE_ENV} to a shorter absolute path in a `
+    + "directory you own with mode 0700. The Vex Studio host did not start."
+  );
+}

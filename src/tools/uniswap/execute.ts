@@ -36,6 +36,7 @@ import {
 
 import { VexError, ErrorCodes } from "../../errors.js";
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
+import { acquireEvmNonceOwner } from "@tools/evm-chains/nonce-owner.js";
 import {
   estimateGasForPlanLeg,
   type ConfirmedPriorLeg,
@@ -235,8 +236,15 @@ export async function signUniswapTransaction(
   walletClient: WalletClient<Transport, Chain, Account>,
   tx: BuiltSwapTx,
   priorLeg?: ConfirmedPriorLeg,
+  reserveNonce?: (request: {
+    readonly fromAddress: Address;
+    readonly chainId: number;
+    readonly nodePendingNonce: number;
+  }) => Promise<number>,
 ): Promise<SignedUniswapTransaction> {
   const account = walletClient.account;
+  const nonceOwner = await acquireEvmNonceOwner(account.address, walletClient.chain.id);
+  try {
 
   // Estimated explicitly rather than left to `prepareTransactionRequest`,
   // which signs viem's bare estimate with no headroom (`gasLimitWithHeadroom`
@@ -263,22 +271,36 @@ export async function signUniswapTransaction(
     value: tx.value,
     gas: gasLimit,
   });
+  const nodePendingNonce = prepared.nonce;
+  if (nodePendingNonce === undefined) {
+    throw new VexError(ErrorCodes.SWAP_FAILED, "Uniswap transaction preparation did not resolve a nonce.");
+  }
+  if (reserveNonce === undefined) {
+    throw new VexError(ErrorCodes.SWAP_FAILED, "Uniswap transaction has no durable nonce reservation owner.");
+  }
+  const nonce = await reserveNonce({
+    fromAddress: getAddress(walletClient.account.address),
+    chainId: walletClient.chain.id,
+    nodePendingNonce,
+  });
+  if (!Number.isSafeInteger(nonce) || nonce < nodePendingNonce) {
+    throw new VexError(ErrorCodes.SWAP_FAILED, "Uniswap durable nonce reservation is invalid.");
+  }
   // Re-asserted on the request that is actually serialized: when fees/nonce
   // still need filling, viem may route preparation through the node's
   // `wallet_fillTransaction`, whose reply overwrites `gas` with the node's own
   // unbuffered figure. The signed bytes are what the chain enforces, so the
   // headroom has to survive to exactly here.
-  const serializedTransaction = await walletClient.signTransaction({ ...prepared, gas: gasLimit });
-  const nonce = prepared.nonce;
-  if (nonce === undefined) {
-    throw new VexError(ErrorCodes.SWAP_FAILED, "Uniswap transaction signing did not resolve a nonce.");
-  }
+  const serializedTransaction = await walletClient.signTransaction({ ...prepared, gas: gasLimit, nonce });
   return {
     serializedTransaction,
     txHash: keccak256(serializedTransaction),
     fromAddress: getAddress(walletClient.account.address),
     nonce,
   };
+  } finally {
+    nonceOwner.release();
+  }
 }
 
 /**

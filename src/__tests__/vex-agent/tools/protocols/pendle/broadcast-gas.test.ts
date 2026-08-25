@@ -29,8 +29,14 @@ import { getAddress, keccak256, type Hex } from "viem";
 
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
 
+const reserveActivityEvmNonce = vi.fn(async (
+  _id: number,
+  request: { readonly nodePendingNonce: number },
+) => request.nodePendingNonce);
+
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   createAgentActivityIntent: vi.fn(async () => ({ executionId: 1, events: [{ id: 1 }] })),
+  reserveActivityEvmNonce,
   markActivityBroadcast: vi.fn(async () => ({ applied: true, row: {} })),
   markBroadcastAccepted: vi.fn(async () => ({ applied: true, row: {} })),
   confirmActivityEvent: vi.fn(async () => ({ applied: true, row: {} })),
@@ -108,6 +114,10 @@ describe("sendPendleRouterTx signs the headroomed limit, not the bare estimate",
     const result = await sendPendleRouterTx(c.publicClient, c.walletClient, { to: TO, data: DATA, value: 0n }, PLAN);
 
     expect(result.txHash).toBe(TX_HASH);
+    expect(reserveActivityEvmNonce).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ nodePendingNonce: 7 }),
+    );
     expect(c.estimateGas).toHaveBeenCalledTimes(1);
     // Estimated for the EXACT call that will run — same to/data/value.
     expect(c.estimateGas.mock.calls[0]?.[0]).toMatchObject({ to: TO, data: DATA, value: 0n });

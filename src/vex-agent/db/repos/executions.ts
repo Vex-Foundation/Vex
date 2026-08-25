@@ -107,8 +107,48 @@ function toCompleteParams(input: CompleteExecutionIntentInput): unknown[] {
 export async function completeExecutionIntentWith(
   client: PoolClient,
   input: CompleteExecutionIntentInput,
-): Promise<void> {
-  await client.query(COMPLETE_EXECUTION_INTENT_SQL, toCompleteParams(input));
+): Promise<boolean> {
+  // REPORTS whether the CAS applied. Discarding `rowCount` here made every
+  // caller unable to tell "I completed this row" from "somebody already
+  // completed it", which is precisely the distinction the atomic terminal
+  // settlement needs in order to decide between an idempotent continue and a
+  // rollback. Existing callers that ignore the value keep their behaviour.
+  const res = await client.query(COMPLETE_EXECUTION_INTENT_SQL, toCompleteParams(input));
+  return (res.rowCount ?? 0) > 0;
+}
+
+/** What a completed `protocol_executions` row states, for a compatible-winner check. */
+export interface ExecutionCompletion {
+  readonly executionStatus: "intent" | "succeeded" | "failed";
+  readonly success: boolean;
+  readonly result: Record<string, unknown>;
+}
+
+/**
+ * The completion facts of one execution row inside the CALLER's transaction.
+ * Client-bound so the compatible-winner check of a terminal settlement reads
+ * the row through the same client that holds the settlement's own uncommitted
+ * changes; a pool-level read would see a different snapshot.
+ */
+export async function readExecutionCompletionWith(
+  client: PoolClient,
+  id: number,
+): Promise<ExecutionCompletion | null> {
+  const row = await queryOneWith<{
+    execution_status: string;
+    success: boolean;
+    result: Record<string, unknown> | null;
+  }>(
+    client,
+    "SELECT execution_status, success, result FROM protocol_executions WHERE id = $1",
+    [id],
+  );
+  if (row === null) return null;
+  return {
+    executionStatus: row.execution_status as ExecutionCompletion["executionStatus"],
+    success: row.success,
+    result: row.result ?? {},
+  };
 }
 
 export async function recordExecution(

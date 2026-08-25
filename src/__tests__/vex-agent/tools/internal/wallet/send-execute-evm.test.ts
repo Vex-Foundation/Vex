@@ -128,11 +128,13 @@ type ActivityWriterModule = typeof import("@vex-agent/tools/internal/wallet/send
 const activityHandle = {
   executionId: 77,
   rowId: 42,
+  reserveEvmNonce: vi.fn(async (request: { nodePendingNonce: number }) => request.nodePendingNonce),
   stageEvm: vi.fn(async () => {}),
   stageSolana: vi.fn(async () => {}),
   noteAccepted: vi.fn(async () => {}),
   confirm: vi.fn(async () => {}),
   fail: vi.fn(async () => {}),
+  failSignedNotSubmitted: vi.fn(async () => {}),
   completeExecution: vi.fn(async () => {}),
 };
 const mockOpenActivity = vi.fn<ActivityWriterModule["openWalletTransferActivity"]>(
@@ -209,12 +211,14 @@ function makeIntent(overrides: Partial<WalletIntent> = {}): WalletIntent {
     token: null,
     previewJson: {},
     status: "pending" as WalletIntent["status"],
+    activityId: null,
     expiresAt: "2099-01-01T00:00:00.000Z",
     consumedAt: null,
     cancelledAt: null,
     txHash: null,
     failureReason: null,
     idempotencyKey: null,
+    repairCheckedAt: null,
     createdAt: "2026-07-05T00:00:00.000Z",
     ...overrides,
   };
@@ -238,6 +242,12 @@ beforeEach(() => {
     };
   });
 });
+
+function firstInvocation(callOrder: readonly number[], label: string): number {
+  const first = callOrder[0];
+  if (first === undefined) throw new Error(`${label} was not called`);
+  return first;
+}
 
 /**
  * The one `signStageBroadcast` call, asserted to exist. A missing call is a
@@ -409,6 +419,10 @@ describe("executeEvmTransfer - local registry branch", () => {
     expect(activityHandle.completeExecution).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "confirmed", txHash: TX_HASH }),
     );
+    expect(firstInvocation(
+      activityHandle.completeExecution.mock.invocationCallOrder,
+      "completeExecution",
+    )).toBeLessThan(firstInvocation(activityHandle.confirm.mock.invocationCallOrder, "confirm"));
   });
 
   it("records the SAME atomic amount on the row that it signs into the transaction", async () => {
@@ -446,6 +460,10 @@ describe("executeEvmTransfer - local registry branch", () => {
     expect(activityHandle.completeExecution).toHaveBeenCalledWith({
       kind: "failed_before_broadcast",
     });
+    expect(firstInvocation(
+      activityHandle.completeExecution.mock.invocationCallOrder,
+      "completeExecution",
+    )).toBeLessThan(firstInvocation(activityHandle.fail.mock.invocationCallOrder, "fail"));
   });
 
   it("leaves an AMBIGUOUS outcome pending on the activity row, but still closes the tool attempt", async () => {
@@ -492,6 +510,10 @@ describe("executeEvmTransfer - local registry branch", () => {
     expect(activityHandle.completeExecution).toHaveBeenCalledWith({
       kind: "reverted", txHash: TX_HASH,
     });
+    expect(firstInvocation(
+      activityHandle.completeExecution.mock.invocationCallOrder,
+      "completeExecution",
+    )).toBeLessThan(firstInvocation(activityHandle.fail.mock.invocationCallOrder, "fail"));
     expect(activityHandle.confirm).not.toHaveBeenCalled();
   });
 
