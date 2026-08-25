@@ -20,7 +20,15 @@
  * outlives its merge is stale by construction and the gate says so.
  */
 
-export const DELETED_TEST_ALLOWLIST = [];
+export const DELETED_TEST_ALLOWLIST = [
+  {
+    path: "src/__tests__/dexscreener/client-request-options.test.ts",
+    reason:
+      "Subject removed by S11a: the REST client's per-request options surface went with the client itself when every non-agent price consumer moved onto the price-read seam and the old client was deleted (feat/vex-board, refactor commit 7cbffbdf).",
+    covered:
+      "The seam's own contract is proven in `src/__tests__/dexscreener/price-read.test.ts`, and every migrated consumer's observable behavior is pinned unchanged in `src/__tests__/dexscreener/s11a-consumer-characterization.test.ts`.",
+  },
+];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
   DELETED_TEST_ALLOWLIST.map((entry) => entry.path),
