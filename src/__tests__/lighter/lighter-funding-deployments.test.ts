@@ -38,7 +38,7 @@ describe("Lighter funding deployments", () => {
       restBaseUrl: LIGHTER_ENDPOINTS.rhc.restBaseUrl,
       wsBaseUrl: LIGHTER_ENDPOINTS.rhc.wsUrl,
       gatewayProxy: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
-      expectedGatewayImplementation: "0xE470e41Cacc197EA07f879577765A8c81234ED7B",
+      expectedGatewayImplementation: "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
       settlementTokenProxy: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
       expectedSettlementTokenImplementation: "0x68184C449E1a8f34fA18d289737129FD27B66f8F",
       settlementAllowanceStorageSlot: 3n,

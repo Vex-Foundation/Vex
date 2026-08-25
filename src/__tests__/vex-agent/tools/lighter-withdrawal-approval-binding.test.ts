@@ -24,7 +24,7 @@ const INTENT = {
   initialMarginUnits: "1000000", pendingOrderCount: 0, openPositionCount: 0,
   activeOrderCount: 0, withdrawalDelaySeconds: 2687,
   gatewayAddress: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
-  gatewayImplementation: "0xE470e41Cacc197EA07f879577765A8c81234ED7B",
+  gatewayImplementation: "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
   gatewayCodeHash: `0x${"1".repeat(64)}`,
   settlementTokenCodeHash: `0x${"2".repeat(64)}`,
   preflightObservedAt: "2030-01-01T00:00:00.000Z",

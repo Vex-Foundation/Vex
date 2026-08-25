@@ -84,13 +84,33 @@ interface PendingMigration {
 
 function listPendingMigrations(
   migrationsDir: string,
-  currentVersion: number
+  currentVersion: number,
+  appliedFiles: ReadonlySet<string>
 ): ReadonlyArray<PendingMigration> {
-  return readdirSync(migrationsDir)
+  const migrations = readdirSync(migrationsDir)
     .filter((f) => f.endsWith(".sql") && /^\d{3}_/.test(f))
     .sort()
-    .map((file) => ({ version: parseInt(file.slice(0, 3), 10), file }))
-    .filter((m) => m.version > currentVersion);
+    .map((file) => ({ version: parseInt(file.slice(0, 3), 10), file }));
+
+  const filesByVersion = new Map<number, string[]>();
+  for (const migration of migrations) {
+    const siblings = filesByVersion.get(migration.version) ?? [];
+    siblings.push(migration.file);
+    filesByVersion.set(migration.version, siblings);
+  }
+
+  return migrations.filter((migration) => {
+    if (appliedFiles.has(migration.file)) return false;
+    if (migration.version > currentVersion) return true;
+
+    // A run may stop after committing the first file in a duplicate-prefix
+    // group. Its numeric version is then already current, but the filename
+    // ledger tells us which sibling still needs to run. Legacy databases have
+    // no filename entries, so they continue to skip old numeric history and
+    // receive any missing schema through a forward repair migration instead.
+    const siblings = filesByVersion.get(migration.version) ?? [];
+    return siblings.some((file) => appliedFiles.has(file));
+  });
 }
 
 async function readCurrentVersion(client: pg.PoolClient): Promise<number> {
@@ -100,10 +120,30 @@ async function readCurrentVersion(client: pg.PoolClient): Promise<number> {
   return result.rows[0]?.version ?? 0;
 }
 
+async function readAppliedFiles(
+  client: pg.PoolClient
+): Promise<ReadonlySet<string>> {
+  const result = await client.query<{ file: string }>(
+    "SELECT file FROM schema_migration_files"
+  );
+  return new Set(result.rows.map((row) => row.file));
+}
+
 async function ensureSchemaVersionTable(client: pg.PoolClient): Promise<void> {
   await client.query(`
     CREATE TABLE IF NOT EXISTS schema_version (
       version INTEGER PRIMARY KEY,
+      applied_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  // Keep the shipped numeric table intact for compatibility with existing
+  // installs and operational queries. Exact filenames live in a companion
+  // ledger because historical migrations 079-084 contain duplicate numeric
+  // prefixes that cannot both be represented by version INTEGER PRIMARY KEY.
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS schema_migration_files (
+      file TEXT PRIMARY KEY,
+      version INTEGER NOT NULL,
       applied_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
@@ -119,8 +159,12 @@ async function applyMigration(
     await client.query("BEGIN");
     await client.query(sql);
     await client.query(
-      "INSERT INTO schema_version (version) VALUES ($1)",
+      "INSERT INTO schema_version (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
       [migration.version]
+    );
+    await client.query(
+      "INSERT INTO schema_migration_files (file, version) VALUES ($1, $2)",
+      [migration.file, migration.version]
     );
     await client.query("COMMIT");
   } catch (cause: unknown) {
@@ -161,7 +205,12 @@ export async function runMigrationsWithProgress(
 
     await ensureSchemaVersionTable(client);
     const currentVersion = await readCurrentVersion(client);
-    const pending = listPendingMigrations(options.migrationsDir, currentVersion);
+    const recordedFiles = await readAppliedFiles(client);
+    const pending = listPendingMigrations(
+      options.migrationsDir,
+      currentVersion,
+      recordedFiles
+    );
 
     options.onProgress?.({
       phase: "planned",

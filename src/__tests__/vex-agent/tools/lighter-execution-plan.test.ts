@@ -55,6 +55,8 @@ function intent(overrides: Partial<LighterOrderExecutionIntentRow> = {}): Lighte
     providerOutcomeSource: null,
     providerOutcomeJson: null,
     providerOutcomeCheckedAt: null,
+    preSubmitRevalidationJson: null,
+    preSubmitRevalidatedAt: null,
     createdAt: "2026-08-12T00:00:01.000Z",
     updatedAt: "2026-08-12T00:00:02.000Z",
     expiresAt: "2030-01-01T00:00:00.000Z",
@@ -122,6 +124,6 @@ describe("Lighter order execution plan", () => {
     expect(() => buildLighterOrderReadyForSignerPlan(intent({
       orderType: "limit",
       timeInForce: "post-only",
-    }))).toThrow("cancel and modify them safely");
+    }))).toThrow("retained real-provider canaries");
   });
 });

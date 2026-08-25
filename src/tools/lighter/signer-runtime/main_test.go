@@ -130,6 +130,47 @@ func TestSignCreateOrderAcceptsMarketIOCWithNilExpiry(t *testing.T) {
 	}
 }
 
+func TestSignCreateSpotOrderPreservesOfficialMarketIndexRange(t *testing.T) {
+	for _, marketIndex := range []int16{txtypes.MinSpotMarketIndex, txtypes.MaxSpotMarketIndex} {
+		t.Run(fmt.Sprintf("market-%d", marketIndex), func(t *testing.T) {
+			request := signerRequest{
+				Operation: "signCreateOrder", PrivateKey: strings.Repeat("1", 80),
+				ChainID: lighterCoreChainID, AccountIndex: "42", APIKeyIndex: 7, Nonce: "0",
+				Order: &createOrderRequest{
+					MarketIndex: marketIndex, ClientOrderIndex: "281474976710655",
+					BaseAmount: "12500", Price: "299999", IsAsk: 0,
+					OrderType: 1, TimeInForce: 0, ReduceOnly: 0,
+					TriggerPrice: "0", OrderExpiry: "0",
+				},
+			}
+			response, err := signCreateOrder(request)
+			if err != nil {
+				t.Fatalf("signCreateOrder() spot market %d error = %v", marketIndex, err)
+			}
+			var txInfo map[string]any
+			if err := json.Unmarshal([]byte(response.TxInfo), &txInfo); err != nil {
+				t.Fatalf("spot TxInfo is not JSON: %v", err)
+			}
+			if txInfo["MarketIndex"] != float64(marketIndex) {
+				t.Fatalf("MarketIndex = %#v, want %d", txInfo["MarketIndex"], marketIndex)
+			}
+		})
+	}
+
+	request := signerRequest{
+		Operation: "signCreateOrder", PrivateKey: strings.Repeat("1", 80),
+		ChainID: lighterCoreChainID, AccountIndex: "42", APIKeyIndex: 7, Nonce: "0",
+		Order: &createOrderRequest{
+			MarketIndex: txtypes.MaxSpotMarketIndex + 1, ClientOrderIndex: "1",
+			BaseAmount: "1", Price: "1", IsAsk: 0, OrderType: 1,
+			TimeInForce: 0, ReduceOnly: 0, TriggerPrice: "0", OrderExpiry: "0",
+		},
+	}
+	if _, err := signCreateOrder(request); err == nil {
+		t.Fatal("expected a spot market index above lighter-go's range to be rejected")
+	}
+}
+
 func TestSignOrderLifecycleTransactionsPreserveExactProviderIdentity(t *testing.T) {
 	expiredAt := time.Now().Add(2 * time.Minute).UnixMilli()
 	base := signerRequest{

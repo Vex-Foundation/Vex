@@ -19,7 +19,7 @@ const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const GATEWAY_CODE = "0x6001600055" as const;
 const TOKEN_CODE = "0x6002600055" as const;
 const RHC_GATEWAY = "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d";
-const RHC_IMPLEMENTATION = "0xe470e41cACc197ea07f879577765a8C81234ed7B";
+const RHC_IMPLEMENTATION = "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90";
 const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
 
 function publicClient(overrides?: { pending?: bigint; balance?: bigint; maxFee?: bigint }) {

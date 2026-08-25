@@ -10,7 +10,7 @@ vi.mock("@vex-agent/db/repos/lighter-withdrawal-intents.js", () => ({
   findByIntentId: mocks.findIntent,
 }));
 vi.mock("@vex-agent/db/repos/lighter-withdrawal-claims.js", () => ({
-  findLatestForWithdrawal: mocks.findClaim,
+  findLatestForWithdrawalIntent: mocks.findClaim,
   expirePreparedWith: mocks.expireClaim,
   markUnsubmittedFailureWith: mocks.unsubmitted,
 }));
@@ -24,7 +24,7 @@ vi.mock("@vex-agent/tools/protocols/lighter/withdrawal-reconciliation.js", () =>
   reconcileLighterWithdrawal: mocks.reconcile,
 }));
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
-  withSessionControlLock: vi.fn(async (_sessionId: string, fn: (db: object) => Promise<unknown>) => fn({})),
+  withSessionControlLocks: vi.fn(async (_sessionIds: string[], fn: (db: object) => Promise<unknown>) => fn({})),
 }));
 vi.mock("@tools/lighter/client.js", () => ({ getLighterClient: vi.fn(() => ({})) }));
 vi.mock("@tools/uniswap/deployments.js", () => ({ getUniswapDeployment: vi.fn(() => ({ chainId: 1 })) }));
@@ -78,12 +78,13 @@ describe("background Lighter withdrawal repair", () => {
 
   it("expires an abandoned prepared claim before continuing reconciliation", async () => {
     mocks.findClaim.mockResolvedValue({
-      claimId: "claim-1", state: "prepared", expiresAt: "2000-01-01T00:00:00.000Z",
+      claimId: "claim-1", sessionId: "session-2", state: "prepared",
+      expiresAt: "2000-01-01T00:00:00.000Z",
     });
     mocks.expireClaim.mockResolvedValue(true);
     mocks.findIntent.mockResolvedValue(intent("claimable"));
     await repairUnresolvedLighterWithdrawals();
-    expect(mocks.expireClaim).toHaveBeenCalledWith({}, "claim-1", "session-1");
+    expect(mocks.expireClaim).toHaveBeenCalledWith({}, "claim-1", "session-2");
     expect(mocks.reconcile).toHaveBeenCalledWith(expect.objectContaining({
       intent: expect.objectContaining({ executionState: "claimable" }),
     }));

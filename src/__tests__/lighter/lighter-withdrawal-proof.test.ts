@@ -1,6 +1,7 @@
 import {
   encodeAbiParameters,
   encodeEventTopics,
+  type Hex,
   type TransactionReceipt,
 } from "viem";
 import { describe, expect, it, vi } from "vitest";
@@ -28,6 +29,19 @@ const GATEWAY = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const TX_HASH = `0x${"a".repeat(64)}` as const;
 const BLOCK_HASH = `0x${"b".repeat(64)}` as const;
+
+function requireScalarTopics(
+  topics: readonly (Hex | readonly Hex[] | null)[],
+): [] | [Hex, ...Hex[]] {
+  const scalar: Hex[] = [];
+  for (const topic of topics) {
+    if (typeof topic !== "string") {
+      throw new Error("Expected exact scalar event topics.");
+    }
+    scalar.push(topic);
+  }
+  return scalar.length === 0 ? [] : [scalar[0]!, ...scalar.slice(1)];
+}
 
 function l2Tx(status = 3) {
   return {
@@ -64,16 +78,16 @@ function l2Tx(status = 3) {
 }
 
 function receipt(): TransactionReceipt {
-  const gatewayTopics = encodeEventTopics({
+  const gatewayTopics = requireScalarTopics(encodeEventTopics({
     abi: LIGHTER_CORE_WITHDRAW_GATEWAY_ABI,
     eventName: "WithdrawPending",
-    args: { owner: OWNER, assetIndex: 3, baseAmount: 2_000_000n },
-  });
-  const transferTopics = encodeEventTopics({
+    args: { owner: OWNER },
+  }));
+  const transferTopics = requireScalarTopics(encodeEventTopics({
     abi: LIGHTER_CORE_WITHDRAW_ERC20_ABI,
     eventName: "Transfer",
-    args: { from: GATEWAY, to: OWNER, value: 2_000_000n },
-  });
+    args: { from: GATEWAY, to: OWNER },
+  }));
   const base = {
     blockHash: BLOCK_HASH,
     blockNumber: 100n,
@@ -332,6 +346,26 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
     }));
   });
 
+  it("accepts Lighter's repeated terminal history cursor when the repeated page is empty", async () => {
+    const d = reconciliationDeps({ pendingBalance: 0n });
+    d.client.getWithdrawHistory
+      .mockResolvedValueOnce({ code: 200, withdraws: [history("pending")], cursor: "stable-cursor" })
+      .mockResolvedValueOnce({ code: 200, withdraws: [], cursor: "stable-cursor" });
+    const reconciled = await reconcileLighterCoreWithdrawal(d as never);
+    expect(reconciled.executionState).toBe("secure_waiting");
+    expect(d.client.getWithdrawHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it("still rejects a repeated history cursor that keeps returning rows", async () => {
+    const d = reconciliationDeps({ pendingBalance: 0n });
+    d.client.getWithdrawHistory.mockResolvedValue({
+      code: 200,
+      withdraws: [history("pending")],
+      cursor: "looping-cursor",
+    });
+    await expect(reconcileLighterCoreWithdrawal(d as never)).rejects.toThrow(/repeated a pagination cursor/);
+  });
+
   it("releases a reverted manual claim only after exact 12-confirmation reconciliation", async () => {
     const d = reconciliationDeps({ state: "manual_claim_submitted", pendingBalance: 2_000_000n });
     const markReconciledOutcome = vi.fn(async () => true);
@@ -367,10 +401,10 @@ describe("RHC withdrawal exact settlement isolation", () => {
   it("queries only RHC history and proves the reviewed USDG gateway transfer", async () => {
     const rhcGateway = "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d";
     const usdg = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
-    const gatewayTopics = encodeEventTopics({ abi: LIGHTER_CORE_WITHDRAW_GATEWAY_ABI,
-      eventName: "WithdrawPending", args: { owner: OWNER, assetIndex: 3, baseAmount: 2_000_000n } });
-    const transferTopics = encodeEventTopics({ abi: LIGHTER_CORE_WITHDRAW_ERC20_ABI,
-      eventName: "Transfer", args: { from: rhcGateway, to: OWNER, value: 2_000_000n } });
+    const gatewayTopics = requireScalarTopics(encodeEventTopics({ abi: LIGHTER_CORE_WITHDRAW_GATEWAY_ABI,
+      eventName: "WithdrawPending", args: { owner: OWNER } }));
+    const transferTopics = requireScalarTopics(encodeEventTopics({ abi: LIGHTER_CORE_WITHDRAW_ERC20_ABI,
+      eventName: "Transfer", args: { from: rhcGateway, to: OWNER } }));
     const rhcReceipt = {
       ...receipt(),
       to: rhcGateway,
@@ -398,7 +432,7 @@ describe("RHC withdrawal exact settlement isolation", () => {
     const reconciled = await reconcileLighterWithdrawal({
       intent: current,
       client: { getTx, getWithdrawHistory } as never,
-      privilegedAuth: { accountIndex: 737810 },
+      privilegedAuth: { token: "bounded-read-auth", accountIndex: 737810 },
       publicClient: {
         readContract: vi.fn(async () => 0n), getBlockNumber: vi.fn(async () => 111n),
         getLogs: vi.fn(async () => [{ args: { owner: OWNER, assetIndex: 3, baseAmount: 2_000_000n }, transactionHash: TX_HASH }]),

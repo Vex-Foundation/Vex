@@ -63,12 +63,12 @@ function preflight(): LighterCoreWithdrawalPreflightSnapshot {
     settlementNetworkName: "Ethereum mainnet",
     accountIndex: p.accountIndex,
     apiKeyIndex: p.apiKeyIndex,
-    walletAddress: p.walletAddress,
-    destinationAddress: p.destinationAddress,
+    walletAddress: p.walletAddress as `0x${string}`,
+    destinationAddress: p.destinationAddress as `0x${string}`,
     assetIndex: 3,
     assetSymbol: "USDC",
     assetDecimals: 6,
-    settlementTokenAddress: p.settlementTokenAddress,
+    settlementTokenAddress: p.settlementTokenAddress as `0x${string}`,
     routeType: 0,
     amountUnits: p.amountUnits,
     minimumWithdrawalUnits: "1000000",
@@ -84,8 +84,8 @@ function preflight(): LighterCoreWithdrawalPreflightSnapshot {
     keyTransactionTime: "1893455000",
     withdrawalDelaySeconds: 1227,
     delayObservedAt: new Date(NOW).toISOString(),
-    gatewayAddress: p.gatewayAddress,
-    gatewayImplementationAddress: p.gatewayImplementation,
+    gatewayAddress: p.gatewayAddress as `0x${string}`,
+    gatewayImplementationAddress: p.gatewayImplementation as `0x${string}`,
     gatewayCodeHash: p.gatewayCodeHash as `0x${string}`,
     settlementTokenCodeHash: p.settlementTokenCodeHash as `0x${string}`,
     settlementBlockNumber: p.settlementScanFromBlock,
@@ -136,9 +136,11 @@ function deps(events: string[], sendTx?: ExecuteApprovedLighterCoreWithdrawalDep
           amountUnits: input.amountUnits,
           matchHash: input.matchHash,
           txType: 13 as const,
+          txInfo: "opaque-signed-payload",
           txHash: "lighter-tx-hash",
         };
-        return Object.defineProperty(result, "txInfo", { value: "opaque-signed-payload", enumerable: false });
+        Object.defineProperty(result, "txInfo", { enumerable: false });
+        return result;
       }),
     },
     client: {
@@ -219,6 +221,58 @@ describe("approved Core withdrawal execution", () => {
     expect(events.at(-1)).toBe("ambiguous_persisted");
   });
 
+  it("preserves an absolute provider execution timestamp above the 32-bit integer range", async () => {
+    const events: string[] = [];
+    const predictedExecutionTimeMs = 1_787_650_372_010;
+    const d = deps(events, vi.fn(async () => ({
+      code: 200,
+      tx_hash: "lighter-tx-hash",
+      predicted_execution_time_ms: predictedExecutionTimeMs,
+    })));
+
+    const result = await executeApprovedLighterCoreWithdrawal({ plan: plan(), deps: d });
+
+    expect(result).toMatchObject({ status: "submitted", predictedExecutionTimeMs });
+    expect(d.intents.markApiAccepted).toHaveBeenCalledWith(
+      expect.objectContaining({ predictedExecutionTimeMs }),
+    );
+  });
+
+  it("reports reconciliation-only ambiguity when acceptance persistence fails after submission", async () => {
+    const events: string[] = [];
+    const send = vi.fn(async () => {
+      events.push("sendtx");
+      return {
+        code: 200,
+        tx_hash: "lighter-tx-hash",
+        predicted_execution_time_ms: 1_787_650_372_010,
+      };
+    });
+    const base = deps(events, send);
+    const d: ExecuteApprovedLighterCoreWithdrawalDeps = {
+      ...base,
+      intents: {
+        ...base.intents,
+        markApiAccepted: vi.fn(async () => {
+          events.push("acceptance_persist_failed");
+          throw new Error('value "1787650372010" is out of range for type integer');
+        }),
+      },
+    };
+
+    const result = await executeApprovedLighterCoreWithdrawal({ plan: plan(), deps: d });
+
+    expect(result).toMatchObject({
+      status: "ambiguous",
+      executionState: "ambiguous",
+      reason: "api_acceptance_persist_failed",
+      signerTxHash: "lighter-tx-hash",
+    });
+    expect(result.message).toContain("will not retry blindly");
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(events.slice(-2)).toEqual(["acceptance_persist_failed", "ambiguous_persisted"]);
+  });
+
   it("refuses changed live amount/identity before reading the secret", async () => {
     const events: string[] = [];
     const d: ExecuteApprovedLighterCoreWithdrawalDeps = {
@@ -241,7 +295,7 @@ describe("approved RHC withdrawal execution", () => {
       settlementChainId: 4663,
       settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
       gatewayAddress: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
-      gatewayImplementation: "0xE470e41Cacc197EA07f879577765A8c81234ED7B",
+      gatewayImplementation: "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
       credentialReference: { ...plan().credentialReference, environment: "rhc",
         vaultCredentialId: "lighter/rhc/account-737810/api-key-4" },
       nonceScope: { environment: "rhc", accountIndex: 737_810, apiKeyIndex: 4 },
@@ -251,9 +305,9 @@ describe("approved RHC withdrawal execution", () => {
       ...corePreflight, environment: "rhc", endpoint: rhcPlan.endpoint,
       signingChainId: 466324, settlementChainId: 4663,
       settlementNetworkName: "Robinhood Chain mainnet", assetSymbol: "USDG",
-      settlementTokenAddress: rhcPlan.settlementTokenAddress,
-      gatewayAddress: rhcPlan.gatewayAddress,
-      gatewayImplementationAddress: rhcPlan.gatewayImplementation,
+      settlementTokenAddress: rhcPlan.settlementTokenAddress as `0x${string}`,
+      gatewayAddress: rhcPlan.gatewayAddress as `0x${string}`,
+      gatewayImplementationAddress: rhcPlan.gatewayImplementation as `0x${string}`,
       legacyPendingBalanceUnits: "0",
     };
     const base = deps(events);
@@ -263,7 +317,7 @@ describe("approved RHC withdrawal execution", () => {
       authSigner: {
         ...base.authSigner,
         createAccountAuth: vi.fn(async (input) => ({
-          kind: "lighter_account_auth_signer_result", environment: "rhc",
+          kind: "lighter_account_auth_signer_result" as const, environment: "rhc" as const,
           accountIndex: input.accountIndex, apiKeyIndex: input.apiKeyIndex,
           deadlineUnixSeconds: input.deadlineUnixSeconds,
           authToken: `${input.deadlineUnixSeconds}:${input.accountIndex}:${input.apiKeyIndex}:${"c".repeat(128)}`,
@@ -279,8 +333,10 @@ describe("approved RHC withdrawal execution", () => {
             environment: "rhc" as const, accountIndex: input.accountIndex,
             apiKeyIndex: input.apiKeyIndex, nonce: input.nonce, expiredAt: input.expiredAt,
             assetIndex: 3 as const, routeType: 0 as const, amountUnits: input.amountUnits,
-            matchHash: input.matchHash, txType: 13 as const, txHash: "lighter-tx-hash" };
-          return Object.defineProperty(result, "txInfo", { value: "opaque-rhc-payload", enumerable: false });
+            matchHash: input.matchHash, txType: 13 as const, txInfo: "opaque-rhc-payload",
+            txHash: "lighter-tx-hash" };
+          Object.defineProperty(result, "txInfo", { enumerable: false });
+          return result;
         }),
       },
       client: {

@@ -65,7 +65,7 @@ describe("Lighter RHC manual claim approval binding", () => {
     settlementChainId: 4663,
     settlementNetworkName: "Robinhood Chain mainnet",
     gatewayAddress: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
-    gatewayImplementation: "0xe470e41cACc197ea07f879577765a8C81234ed7B",
+    gatewayImplementation: "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
     settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
     assetSymbol: "USDG",
   } as unknown as LighterWithdrawalClaimAttemptRow;

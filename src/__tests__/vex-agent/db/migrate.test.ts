@@ -37,15 +37,20 @@ let testDir = "";
 beforeEach(() => {
   vi.clearAllMocks();
   testDir = mkdtempSync(join(tmpdir(), "vex-migrate-"));
-  // Default client.query: every call returns `undefined` except the
-  // current-version SELECT, which returns `{rows: [{version: 0}]}` so
-  // the shared runner treats every file as pending.
+  // Default client.query: SELECTs return the minimal pg-shaped result the
+  // shared runner consumes; all other statements may return `undefined`.
   mockClientQuery.mockImplementation(async (sql: unknown) => {
     if (
       typeof sql === "string" &&
       /SELECT COALESCE\(MAX\(version\)/i.test(sql)
     ) {
       return { rows: [{ version: 0 }] };
+    }
+    if (
+      typeof sql === "string" &&
+      /SELECT file FROM schema_migration_files/i.test(sql)
+    ) {
+      return { rows: [] };
     }
     return undefined;
   });
@@ -73,8 +78,12 @@ describe("vex-agent/db/migrate", () => {
       "CREATE TABLE demo(id integer);"
     );
     expect(mockClientQuery).toHaveBeenCalledWith(
-      "INSERT INTO schema_version (version) VALUES ($1)",
+      "INSERT INTO schema_version (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
       [1]
+    );
+    expect(mockClientQuery).toHaveBeenCalledWith(
+      "INSERT INTO schema_migration_files (file, version) VALUES ($1, $2)",
+      ["001_initial.sql", 1]
     );
     expect(mockClientQuery).toHaveBeenCalledWith("COMMIT");
     expect(mockRelease).toHaveBeenCalledTimes(1);

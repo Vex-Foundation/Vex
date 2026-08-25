@@ -4,16 +4,14 @@ import type { LighterEnvironment } from "@tools/lighter/constants.js";
 /**
  * Derives a short-lived READ-ONLY account auth token from the saved trading key
  * so authenticated account reads (open orders, order history, trades) work on a
- * single-key setup, instead of falling back to inference when no standalone
- * read-only token is configured. The token authorizes account reads only — it
- * is never used to sign or submit an order.
+ * single-key setup. The derived token authorizes account reads only — it is
+ * never used to sign or submit an order.
  *
  * Installed by the main process only; agent code never sees key material. The
  * resolver returns null when it should not or cannot mint a token — for example
- * when a standalone read-only token is already configured (the client uses
- * that), the vault is locked, the signer is unavailable, or no trading scope is
- * saved for the account. A null result leaves the caller's existing behaviour
- * unchanged.
+ * when the vault is locked, the signer is unavailable, or no trading scope is
+ * saved for the account. A null result leaves the authenticated read unavailable;
+ * there is no standalone-token fallback.
  */
 export type LighterReadOnlyAccountAuthResolver = (
   environment: LighterEnvironment,

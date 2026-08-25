@@ -130,7 +130,11 @@ describe("Lighter Core secure USDC withdrawal preflight", () => {
     expect(computeLighterCoreWithdrawalPreviewHash(preview.identity)).toBe(preview.matchHash);
   });
 
-  it.each([
+  const refusalCases: ReadonlyArray<readonly [
+    string,
+    (base: LighterCoreWithdrawalPreflightEvidence) => LighterCoreWithdrawalPreflightEvidence,
+    RegExp,
+  ]> = [
     ["amount above available balance", (base: LighterCoreWithdrawalPreflightEvidence) => ({ ...base, amountUnits: 8_000_001n }), /exceeds the live available balance/],
     ["amount below minimum", (base: LighterCoreWithdrawalPreflightEvidence) => ({ ...base, amountUnits: 999_999n }), /below the live minimum/],
     ["margin impairment", (base: LighterCoreWithdrawalPreflightEvidence) => ({
@@ -150,9 +154,35 @@ describe("Lighter Core secure USDC withdrawal preflight", () => {
     ["gateway withdrawal disabled", (base: LighterCoreWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, gatewayAssetConfig: [base.settlement.gatewayAssetConfig[0], 0, 1n, 1n, 1n, 1n] } }), /not enabled/],
     ["existing pending balance", (base: LighterCoreWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, pendingBalanceUnits: 1n } }), /unresolved modern Core pending/],
     ["stale Ethereum block", (base: LighterCoreWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, blockTimestampSeconds: BLOCK_TIMESTAMP_SECONDS - 301n } }), /latest block is stale/],
-    ["pending secure withdrawal", (base: LighterCoreWithdrawalPreflightEvidence) => ({ ...base, history: [{ ...base.history[0]!, status: "pending" as const }] }), /already pending or claimable/],
-  ])("refuses %s", (_name, mutate, message) => {
+    ["pending secure withdrawal", (base: LighterCoreWithdrawalPreflightEvidence) => ({ ...base, history: [{ ...base.history[0]!, status: "pending" as const }] }), /already pending/],
+  ];
+
+  it.each(refusalCases)("refuses %s", (_name, mutate, message) => {
     expect(() => proveLighterCoreWithdrawalPreflight(mutate(evidence()))).toThrow(message);
+  });
+
+  it("does not let a stale secure-history claimable label block a settled account", () => {
+    const base = evidence();
+    const snapshot = proveLighterCoreWithdrawalPreflight({
+      ...base,
+      history: [{ ...base.history[0]!, status: "claimable" }],
+      settlement: { ...base.settlement, pendingBalanceUnits: 0n },
+    });
+
+    expect(snapshot).toMatchObject({
+      pendingBalanceUnits: "0",
+      nonterminalWithdrawalCount: 0,
+      withdrawalHistoryCount: 1,
+    });
+  });
+
+  it("still blocks a claimable secure withdrawal when the gateway balance remains", () => {
+    const base = evidence();
+    expect(() => proveLighterCoreWithdrawalPreflight({
+      ...base,
+      history: [{ ...base.history[0]!, status: "claimable" }],
+      settlement: { ...base.settlement, pendingBalanceUnits: 1_000_000n },
+    })).toThrow(/unresolved modern Core pending/);
   });
 
   it("changes approval identity when the amount changes", () => {

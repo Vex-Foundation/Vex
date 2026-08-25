@@ -87,17 +87,42 @@ export async function createManualClaimAttemptWith(
   if (s.settlementNetworkName !== profile.settlementNetworkName || s.assetSymbol !== profile.assetSymbol) {
     throw new Error("Manual claim preview contains crossed Lighter environment identity.");
   }
+  // The parent keeps the implementation reviewed when the L2 withdrawal was
+  // prepared. A later, separately reviewed proxy upgrade may legitimately
+  // change the implementation used by this fresh claim preflight, so bind the
+  // stable proxy/code/token/owner/amount identity here and let the claim
+  // preflight enforce the currently reviewed implementation.
   const parent = await queryOneWith<{ intent_id: string }>(
     client,
     `UPDATE lighter_withdrawal_intents
         SET execution_state = 'manual_claim_prepared', claim_mode = 'manual', updated_at = NOW()
-      WHERE intent_id = $1 AND session_id = $2 AND environment = $3
-        AND settlement_chain_id = $4 AND settlement_network_name = $5 AND asset_symbol = $6
+      WHERE intent_id = $1 AND environment = $2
+        AND settlement_chain_id = $3 AND settlement_network_name = $4 AND asset_symbol = $5
+        AND LOWER(wallet_address) = LOWER($6)
+        AND LOWER(destination_address) = LOWER($7)
+        AND LOWER(gateway_address) = LOWER($8)
+        AND LOWER(gateway_code_hash) = LOWER($9)
+        AND LOWER(settlement_token_address) = LOWER($10)
+        AND LOWER(settlement_token_code_hash) = LOWER($11)
+        AND amount_units = $12
         AND execution_state = 'claimable'
-        AND pending_balance_units = amount_units AND destination_tx_hash IS NULL
+        AND pending_balance_units = $12
+        AND destination_tx_hash IS NULL
       RETURNING intent_id`,
-    [p.identity.withdrawalIntentId, p.identity.sessionId, profile.environment,
-      profile.settlementChainId, profile.settlementNetworkName, profile.assetSymbol],
+    [
+      p.identity.withdrawalIntentId,
+      profile.environment,
+      profile.settlementChainId,
+      profile.settlementNetworkName,
+      profile.assetSymbol,
+      s.walletAddress,
+      s.ownerAddress,
+      s.gatewayAddress,
+      s.gatewayCodeHash,
+      s.settlementTokenAddress,
+      s.settlementTokenCodeHash,
+      s.amountUnits,
+    ],
   );
   if (parent === null) throw new Error(`${profile.sourceName} withdrawal is no longer exactly claimable.`);
   const row = await queryOneWith<Record<string, unknown>>(
@@ -151,6 +176,23 @@ export async function findLatestForWithdrawal(
   return row === null ? null : mapRow(row);
 }
 
+/**
+ * Find the latest claim continuation for a globally unique withdrawal intent.
+ * The claim may belong to a newer host session than the original withdrawal;
+ * authorization still comes from the claim row's own session-scoped approval.
+ */
+export async function findLatestForWithdrawalIntent(
+  withdrawalIntentId: string,
+): Promise<LighterWithdrawalClaimAttemptRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${COLUMNS} FROM lighter_withdrawal_claim_attempts
+      WHERE withdrawal_intent_id = $1
+      ORDER BY created_at DESC LIMIT 1`,
+    [withdrawalIntentId],
+  );
+  return row === null ? null : mapRow(row);
+}
+
 export async function expirePreparedWith(
   client: PoolClient,
   claimId: string,
@@ -164,8 +206,8 @@ export async function expirePreparedWith(
   if (row === null) return false;
   const parent = await queryOneWith(client,
     `UPDATE lighter_withdrawal_intents SET execution_state = 'claimable', updated_at = NOW()
-      WHERE intent_id = $1 AND session_id = $2 AND execution_state = 'manual_claim_prepared'
-      RETURNING intent_id`, [row.withdrawal_intent_id, sessionId]);
+      WHERE intent_id = $1 AND execution_state = 'manual_claim_prepared'
+      RETURNING intent_id`, [row.withdrawal_intent_id]);
   if (parent === null) throw new Error("Expired manual claim could not restore its parent withdrawal.");
   return true;
 }
@@ -189,10 +231,10 @@ export async function markDecisionWith(client: PoolClient, input: {
   const parent = await queryOneWith(
     client,
     `UPDATE lighter_withdrawal_intents
-        SET execution_state = $3, claim_approval_id = $4, updated_at = NOW()
-      WHERE intent_id = $1 AND session_id = $2 AND execution_state = 'manual_claim_prepared'
+        SET execution_state = $2, claim_approval_id = $3, updated_at = NOW()
+      WHERE intent_id = $1 AND execution_state = 'manual_claim_prepared'
       RETURNING intent_id`,
-    [String(row.withdrawal_intent_id), input.sessionId,
+    [String(row.withdrawal_intent_id),
       input.decision === "approved" ? "manual_claim_approved" : "claimable",
       input.approvalId],
   );
@@ -211,8 +253,8 @@ export async function markUnsubmittedFailureWith(client: PoolClient, input: {
   if (row === null) return false;
   const parent = await queryOneWith(client,
     `UPDATE lighter_withdrawal_intents SET execution_state = 'claimable', updated_at = NOW()
-      WHERE intent_id = $1 AND session_id = $2 AND execution_state = 'manual_claim_approved'
-      RETURNING intent_id`, [row.withdrawal_intent_id, input.sessionId]);
+      WHERE intent_id = $1 AND execution_state = 'manual_claim_approved'
+      RETURNING intent_id`, [row.withdrawal_intent_id]);
   if (parent === null) throw new Error("Unsubmitted manual claim failure could not restore its parent withdrawal.");
   return true;
 }
@@ -236,11 +278,11 @@ export async function markStagedWith(client: PoolClient, input: {
   if (row === null) return null;
   const parent = await queryOneWith(client,
     `UPDATE lighter_withdrawal_intents
-        SET execution_state = 'manual_claim_staged', claim_tx_hash = $3,
-            destination_tx_hash = $3, updated_at = NOW()
-      WHERE intent_id = $1 AND session_id = $2 AND execution_state = 'manual_claim_approved'
+        SET execution_state = 'manual_claim_staged', claim_tx_hash = $2,
+            destination_tx_hash = $2, updated_at = NOW()
+      WHERE intent_id = $1 AND execution_state = 'manual_claim_approved'
       RETURNING intent_id`,
-    [String(row.withdrawal_intent_id), input.sessionId, input.txHash]);
+    [String(row.withdrawal_intent_id), input.txHash]);
   if (parent === null) throw new Error("Staged manual claim could not update its parent withdrawal intent.");
   return mapRow(row);
 }
@@ -254,8 +296,8 @@ export async function markSubmittedWith(client: PoolClient, claimId: string, ses
   if (row === null) return false;
   const parent = await queryOneWith(client,
     `UPDATE lighter_withdrawal_intents SET execution_state = 'manual_claim_submitted', updated_at = NOW()
-      WHERE intent_id = $1 AND session_id = $2 AND execution_state IN ('manual_claim_staged','manual_claim_submitted')
-      RETURNING intent_id`, [row.withdrawal_intent_id, sessionId]);
+      WHERE intent_id = $1 AND execution_state IN ('manual_claim_staged','manual_claim_submitted')
+      RETURNING intent_id`, [row.withdrawal_intent_id]);
   if (parent === null) throw new Error("Submitted manual claim could not update its parent withdrawal intent.");
   return true;
 }
@@ -269,11 +311,14 @@ export async function recordReplacementWith(client: PoolClient, input: {
         AND tx_hash IS NOT NULL AND replacement_tx_hash IS NULL
       RETURNING withdrawal_intent_id`, [input.claimId, input.sessionId, hash(input.replacementTxHash)]);
   if (row === null) return false;
-  await queryOneWith(client,
-    `UPDATE lighter_withdrawal_intents SET claim_replacement_tx_hash = $3,
-       destination_tx_hash = $3, updated_at = NOW()
-     WHERE intent_id = $1 AND session_id = $2 RETURNING intent_id`,
-    [row.withdrawal_intent_id, input.sessionId, input.replacementTxHash]);
+  const parent = await queryOneWith(client,
+    `UPDATE lighter_withdrawal_intents SET claim_replacement_tx_hash = $2,
+       destination_tx_hash = $2, updated_at = NOW()
+     WHERE intent_id = $1
+       AND execution_state IN ('manual_claim_staged','manual_claim_submitted','ambiguous')
+     RETURNING intent_id`,
+    [row.withdrawal_intent_id, input.replacementTxHash]);
+  if (parent === null) throw new Error("Manual claim replacement could not update its parent withdrawal intent.");
   return true;
 }
 
@@ -297,12 +342,15 @@ export async function markOutcomeWith(client: PoolClient, input: {
   if (row === null) return false;
   const parentState = input.outcome === "reverted" ? "claimable"
     : input.outcome === "ambiguous" ? "ambiguous" : "manual_claim_submitted";
-  await queryOneWith(client,
-    `UPDATE lighter_withdrawal_intents SET execution_state = $3,
-       ambiguous_reason = $4, updated_at = NOW()
-     WHERE intent_id = $1 AND session_id = $2 RETURNING intent_id`,
-    [row.withdrawal_intent_id, input.sessionId, parentState,
+  const parent = await queryOneWith(client,
+    `UPDATE lighter_withdrawal_intents SET execution_state = $2,
+       ambiguous_reason = $3, updated_at = NOW()
+     WHERE intent_id = $1
+       AND execution_state IN ('manual_claim_staged','manual_claim_submitted','ambiguous')
+     RETURNING intent_id`,
+    [row.withdrawal_intent_id, parentState,
       input.outcome === "ambiguous" ? safeText(input.reason ?? "manual_claim_outcome_unknown") : null]);
+  if (parent === null) throw new Error("Manual claim outcome could not update its parent withdrawal intent.");
   return true;
 }
 
@@ -319,7 +367,11 @@ export async function markReconciledOutcome(input: {
         SET state = $4, receipt_json = $5::jsonb,
             confirmed_at = CASE WHEN $4 = 'confirmed' THEN NOW() ELSE confirmed_at END,
             updated_at = NOW()
-      WHERE session_id = $1 AND withdrawal_intent_id = $2
+      WHERE withdrawal_intent_id = $2
+        AND EXISTS (
+          SELECT 1 FROM lighter_withdrawal_intents parent
+           WHERE parent.intent_id = $2 AND parent.session_id = $1
+        )
         AND state IN ('staged','submitted','confirming','ambiguous')
         AND (LOWER(tx_hash) = LOWER($3) OR LOWER(replacement_tx_hash) = LOWER($3))
       RETURNING ${COLUMNS}`,

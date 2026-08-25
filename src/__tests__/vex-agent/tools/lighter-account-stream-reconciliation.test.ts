@@ -165,7 +165,9 @@ function deps(rows: readonly LighterOrderLifecycleIntentRow[]) {
   const value = {
     client: { getNextNonce: vi.fn(async () => ({ code: 200, nonce: 10 })) },
     orderIntents: {
-      listStreamWatchable: vi.fn(async () => []),
+      listStreamWatchable: vi.fn<
+        LighterAccountStreamReconciliationDeps["orderIntents"]["listStreamWatchable"]
+      >(async () => []),
       markStreamOutcome: vi.fn(async () => null),
     },
     lifecycleIntents: {

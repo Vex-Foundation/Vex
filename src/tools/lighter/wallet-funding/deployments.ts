@@ -70,7 +70,7 @@ const RHC_FUNDING_DEPLOYMENT = defineDeployment({
   restBaseUrl: LIGHTER_ENDPOINTS.rhc.restBaseUrl,
   wsBaseUrl: LIGHTER_ENDPOINTS.rhc.wsUrl,
   gatewayProxy: getAddress("0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d"),
-  expectedGatewayImplementation: getAddress("0xE470e41Cacc197EA07f879577765A8c81234ED7B"),
+  expectedGatewayImplementation: getAddress("0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90"),
   settlementTokenProxy: getAddress("0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"),
   expectedSettlementTokenImplementation: getAddress("0x68184C449E1a8f34fA18d289737129FD27B66f8F"),
   settlementAllowanceStorageSlot: 3n,

@@ -68,14 +68,44 @@ describe("Lighter RHC secure USDG withdrawal preflight", () => {
     expect(computeLighterRhcWithdrawalPreviewHash(preview.identity)).toBe(preview.matchHash);
   });
 
-  it.each([
+  const refusalCases: ReadonlyArray<readonly [
+    string,
+    (base: LighterRhcWithdrawalPreflightEvidence) => LighterRhcWithdrawalPreflightEvidence,
+    RegExp,
+  ]> = [
     ["Core signer domain cannot replace settlement chain", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, chainId: 304 } }), /not Robinhood Chain mainnet/],
     ["Core USDC metadata", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, assets: { ...base.assets, asset_details: [{ ...base.assets.asset_details[0]!, symbol: "USDC" }] } }), /differs from the reviewed/],
     ["gateway implementation drift", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, gatewayImplementationAddress: WALLET } }), /implementation differs/],
     ["disabled USDG withdrawals", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, gatewayAssetConfig: [base.settlement.gatewayAssetConfig[0], 0, 1n, 1n, 1n, 1n] } }), /not enabled/],
     ["existing pending USDG", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, pendingBalanceUnits: 1n } }), /unresolved RHC pending USDG/],
-    ["pending RHC withdrawal", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, history: [{ ...base.history[0]!, status: "pending" as const }] }), /already pending or claimable/],
-  ])("refuses %s", (_name, mutate, message) => {
+    ["pending RHC withdrawal", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, history: [{ ...base.history[0]!, status: "pending" as const }] }), /already pending/],
+  ];
+
+  it.each(refusalCases)("refuses %s", (_name, mutate, message) => {
     expect(() => proveLighterRhcWithdrawalPreflight(mutate(evidence()))).toThrow(message);
+  });
+
+  it("does not let a stale secure-history claimable label block a settled account", () => {
+    const base = evidence();
+    const snapshot = proveLighterRhcWithdrawalPreflight({
+      ...base,
+      history: [{ ...base.history[0]!, status: "claimable" }],
+      settlement: { ...base.settlement, pendingBalanceUnits: 0n },
+    });
+
+    expect(snapshot).toMatchObject({
+      pendingBalanceUnits: "0",
+      nonterminalWithdrawalCount: 0,
+      withdrawalHistoryCount: 1,
+    });
+  });
+
+  it("still blocks a claimable secure withdrawal when the gateway balance remains", () => {
+    const base = evidence();
+    expect(() => proveLighterRhcWithdrawalPreflight({
+      ...base,
+      history: [{ ...base.history[0]!, status: "claimable" }],
+      settlement: { ...base.settlement, pendingBalanceUnits: 1_000_000n },
+    })).toThrow(/unresolved RHC pending USDG/);
   });
 });

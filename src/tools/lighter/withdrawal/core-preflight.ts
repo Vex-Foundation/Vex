@@ -317,8 +317,14 @@ export function proveLighterCoreWithdrawalPreflight(
   if ((account.index ?? account.account_index) !== (walletAccount.index ?? walletAccount.account_index)) {
     throw preflightError("Core account lookup by index and wallet did not resolve the same account.");
   }
-  if (account.status !== 1) throw preflightError("The selected Core account is not active.");
-
+  // No `account.status !== 1` gate here: live-verified 2026-08-22 against real
+  // Core and RHC accounts (`/api/v1/account`) — both returned `status: 0` for
+  // ordinary, existing accounts, not `1`. Nothing else in this integration
+  // treats `status` as a meaningful account-health signal, and this check had
+  // no test coverage. Account health for a withdrawal is already established
+  // below by ownership uniqueness, balance sufficiency, and margin-requirement
+  // checks — real signals, unlike this one, whose actual value space Lighter
+  // does not document.
   const availableBalanceUnits = readAccountAmount(account.available_balance, "available balance");
   const collateralUnits = readAccountAmount(account.collateral, "collateral");
   const initialMarginRequirementUnits = readAccountAmount(
@@ -383,12 +389,16 @@ export function proveLighterCoreWithdrawalPreflight(
   if (!Number.isSafeInteger(evidence.delay.seconds) || evidence.delay.seconds < 0) {
     throw preflightError("Core returned an invalid withdrawal delay.");
   }
+  // Lighter documents secure withdrawals as remaining `claimable`; it only
+  // expects `completed` for fast withdrawals. Consequently, `claimable` is
+  // not an account-wide liveness signal for secure history. The live gateway
+  // pending balance below is authoritative for whether a claim still exists.
   const nonterminal = evidence.history.filter(
     (item) => item.asset_id === LIGHTER_CORE_WITHDRAW_ASSET_INDEX
-      && (item.status === "pending" || item.status === "claimable"),
+      && item.status === "pending",
   );
   if (nonterminal.length > 0) {
-    throw preflightError("A Core USDC withdrawal is already pending or claimable for this account.");
+    throw preflightError("A Core USDC withdrawal is already pending for this account.");
   }
 
   if (evidence.settlement.chainId !== deployment.settlementChainId) {
@@ -468,7 +478,7 @@ export function proveLighterCoreWithdrawalPreflight(
   };
 }
 
-async function readAllCoreWithdrawalHistory(
+export async function readAllCoreWithdrawalHistory(
   client: Pick<LighterClient, "getWithdrawHistory">,
   accountIndex: number,
   privilegedAuth: LighterPrivilegedAccountAuth,
@@ -486,7 +496,16 @@ async function readAllCoreWithdrawalHistory(
     rows.push(...response.withdraws);
     const next = response.cursor.trim();
     if (next.length === 0) return rows;
-    if (cursors.has(next)) throw preflightError("Core withdrawal history returned a repeated cursor.");
+    if (cursors.has(next)) {
+      // A stable cursor with no new rows this page is how the provider signals
+      // "nothing more" for an account with no (or exhausted) withdrawal
+      // history — it does not always hand back an empty cursor string. Only
+      // treat a repeat as a genuine pagination fault when it keeps handing
+      // back new rows, which is the actual infinite-loop/duplication risk
+      // this guard exists to catch.
+      if (response.withdraws.length === 0) return rows;
+      throw preflightError("Core withdrawal history returned a repeated cursor.");
+    }
     cursors.add(next);
     cursor = next;
   }

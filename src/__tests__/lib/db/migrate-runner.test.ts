@@ -42,17 +42,24 @@ interface MockPool {
  * controllable client. `setQueryImpl` overrides the default query
  * dispatcher per test.
  */
-function makeMockPool(currentVersion = 0): MockPool {
+function makeMockPool(
+  currentVersion = 0,
+  appliedFiles: readonly string[] = []
+): MockPool {
   const calls: ClientCall[] = [];
-  let queryImpl: (
+  const defaultQueryImpl: (
     sql: string,
     params: unknown[] | undefined
   ) => Promise<unknown> = async (sql) => {
     if (/SELECT COALESCE\(MAX\(version\)/i.test(sql)) {
       return { rows: [{ version: currentVersion }] };
     }
+    if (/SELECT file FROM schema_migration_files/i.test(sql)) {
+      return { rows: appliedFiles.map((file) => ({ file })) };
+    }
     return undefined;
   };
+  let queryImpl = defaultQueryImpl;
   const release = vi.fn();
   const client = {
     query: vi.fn(async (sql: string, params?: unknown[]) => {
@@ -70,7 +77,10 @@ function makeMockPool(currentVersion = 0): MockPool {
       calls,
       release,
       setQueryImpl: (fn) => {
-        queryImpl = fn;
+        queryImpl = async (sql, params) => {
+          const result = await fn(sql, params);
+          return result ?? defaultQueryImpl(sql, params);
+        };
       },
     },
   };
@@ -176,6 +186,64 @@ describe("runMigrationsWithProgress — applied + noop", () => {
     const commitCount = client.calls.filter((c) => c.sql === "COMMIT").length;
     expect(beginCount).toBe(2);
     expect(commitCount).toBe(2);
+    expect(
+      client.calls.filter((c) =>
+        /INSERT INTO schema_migration_files/i.test(c.sql)
+      )
+    ).toHaveLength(2);
+  });
+
+  it("applies every same-prefix file once without a numeric PK collision", async () => {
+    writeFileSync(join(tmpDir, "079_alpha.sql"), "SELECT 'alpha';");
+    writeFileSync(join(tmpDir, "079_beta.sql"), "SELECT 'beta';");
+    const { pool, client } = makeMockPool(78);
+
+    const result = await runMigrationsWithProgress({
+      pool,
+      migrationsDir: tmpDir,
+    });
+
+    expect(result.files).toEqual(["079_alpha.sql", "079_beta.sql"]);
+    const numericInserts = client.calls.filter((c) =>
+      /INSERT INTO schema_version/i.test(c.sql)
+    );
+    expect(numericInserts).toHaveLength(2);
+    expect(numericInserts.every((c) => /ON CONFLICT/i.test(c.sql))).toBe(true);
+    expect(numericInserts.map((c) => c.params)).toEqual([[79], [79]]);
+    const fileInserts = client.calls.filter((c) =>
+      /INSERT INTO schema_migration_files/i.test(c.sql)
+    );
+    expect(fileInserts.map((c) => c.params)).toEqual([
+      ["079_alpha.sql", 79],
+      ["079_beta.sql", 79],
+    ]);
+  });
+
+  it("resumes an unrecorded sibling after one same-prefix file committed", async () => {
+    writeFileSync(join(tmpDir, "079_alpha.sql"), "SELECT 'alpha';");
+    writeFileSync(join(tmpDir, "079_beta.sql"), "SELECT 'beta';");
+    const { pool } = makeMockPool(79, ["079_alpha.sql"]);
+
+    const result = await runMigrationsWithProgress({
+      pool,
+      migrationsDir: tmpDir,
+    });
+
+    expect(result.files).toEqual(["079_beta.sql"]);
+  });
+
+  it("keeps legacy numeric history skipped and runs only its forward repair", async () => {
+    writeFileSync(join(tmpDir, "079_alpha.sql"), "SELECT 'alpha';");
+    writeFileSync(join(tmpDir, "079_beta.sql"), "SELECT 'beta';");
+    writeFileSync(join(tmpDir, "109_collision_repair.sql"), "SELECT 'repair';");
+    const { pool } = makeMockPool(108);
+
+    const result = await runMigrationsWithProgress({
+      pool,
+      migrationsDir: tmpDir,
+    });
+
+    expect(result.files).toEqual(["109_collision_repair.sql"]);
   });
 
   it("emits planned/start/applied progress events with correct index/total", async () => {

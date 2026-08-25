@@ -453,7 +453,10 @@ async function readAllHistory(
     rows.push(...response.withdraws);
     const next = response.cursor.trim();
     if (next.length === 0) return rows;
-    if (seen.has(next)) throw invalid(`${environment.toUpperCase()} withdrawal history repeated a pagination cursor.`);
+    if (seen.has(next)) {
+      if (response.withdraws.length === 0) return rows;
+      throw invalid(`${environment.toUpperCase()} withdrawal history repeated a pagination cursor.`);
+    }
     seen.add(next);
     cursor = next;
   }

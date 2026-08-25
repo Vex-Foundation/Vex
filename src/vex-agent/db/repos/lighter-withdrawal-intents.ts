@@ -225,6 +225,247 @@ export async function createOrFindLiveApprovalPendingWith(
   return { outcome: "live_conflict", intent: mapRow(conflict) };
 }
 
+export async function findNonterminalForScope(
+  environment: LighterEnvironment,
+  accountIndex: number,
+): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS}
+       FROM lighter_withdrawal_intents
+      WHERE environment = $1
+        AND account_index = $2
+        AND asset_index = 3
+        AND route_type = 0
+        AND execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired')
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [environment, safeNonNegativeInteger(accountIndex, "account index")],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export function isSafelyExpirableApprovalPending(
+  intent: LighterWithdrawalIntentRow,
+  nowMs = Date.now(),
+): boolean {
+  return intent.approvalStatus === "approval_pending"
+    && intent.executionState === "approval_pending"
+    && intent.protocolExecutionId === null
+    && intent.approvalId === null
+    && intent.decisionReason === null
+    && intent.decidedAt === null
+    && intent.preSubmitRevalidationJson === null
+    && intent.preSubmitRevalidatedAt === null
+    && intent.nonceReservationId === null
+    && intent.nonceValue === null
+    && intent.signerTxHash === null
+    && intent.signerExpiryMs === null
+    && intent.signedAt === null
+    && intent.submissionStagedAt === null
+    && intent.submittedTxHash === null
+    && intent.submitCode === null
+    && intent.submitMessage === null
+    && intent.predictedExecutionTimeMs === null
+    && intent.volumeQuotaRemaining === null
+    && intent.apiAcceptedAt === null
+    && intent.providerTxStatus === null
+    && intent.providerTxEvidenceJson === null
+    && intent.withdrawalHistoryId === null
+    && intent.withdrawalHistoryStatus === null
+    && intent.withdrawalHistoryJson === null
+    && intent.ambiguousReason === null
+    && intent.claimMode === null
+    && intent.claimApprovalId === null
+    && intent.claimTxHash === null
+    && intent.claimReplacementTxHash === null
+    && intent.destinationTxHash === null
+    && intent.destinationBlockNumber === null
+    && intent.destinationBlockHash === null
+    && intent.destinationConfirmations === null
+    && intent.destinationEvidenceJson === null
+    && intent.l2ExecutedAt === null
+    && intent.claimableAt === null
+    && intent.destinationConfirmedAt === null
+    && intent.lastCheckedAt === null
+    && intent.settlementScanFromBlock === null
+    && intent.withdrawalHistoryTimestamp === null
+    && Number.isFinite(Date.parse(intent.expiresAt))
+    && Date.parse(intent.expiresAt) <= nowMs;
+}
+
+export function isSafelyReemittableApprovalPending(
+  intent: LighterWithdrawalIntentRow,
+  preview: LighterCoreWithdrawalPreview | LighterRhcWithdrawalPreview,
+  nowMs = Date.now(),
+): boolean {
+  const snapshot = preview.snapshot;
+  return intent.sessionId === preview.identity.sessionId
+    && intent.approvalStatus === "approval_pending"
+    && intent.executionState === "approval_pending"
+    && intent.protocolExecutionId === null
+    && intent.approvalId === null
+    && intent.decisionReason === null
+    && intent.decidedAt === null
+    && intent.preSubmitRevalidationJson === null
+    && intent.preSubmitRevalidatedAt === null
+    && intent.nonceReservationId === null
+    && intent.nonceValue === null
+    && intent.signerTxHash === null
+    && intent.signerExpiryMs === null
+    && intent.signedAt === null
+    && intent.submissionStagedAt === null
+    && intent.submittedTxHash === null
+    && intent.submitCode === null
+    && intent.submitMessage === null
+    && intent.predictedExecutionTimeMs === null
+    && intent.volumeQuotaRemaining === null
+    && intent.apiAcceptedAt === null
+    && intent.providerTxStatus === null
+    && intent.providerTxEvidenceJson === null
+    && intent.withdrawalHistoryId === null
+    && intent.withdrawalHistoryStatus === null
+    && intent.withdrawalHistoryJson === null
+    && intent.ambiguousReason === null
+    && intent.claimMode === null
+    && intent.claimApprovalId === null
+    && intent.claimTxHash === null
+    && intent.claimReplacementTxHash === null
+    && intent.destinationTxHash === null
+    && intent.destinationBlockNumber === null
+    && intent.destinationBlockHash === null
+    && intent.destinationConfirmations === null
+    && intent.destinationEvidenceJson === null
+    && intent.l2ExecutedAt === null
+    && intent.claimableAt === null
+    && intent.destinationConfirmedAt === null
+    && intent.lastCheckedAt === null
+    && intent.settlementScanFromBlock === null
+    && intent.withdrawalHistoryTimestamp === null
+    && Number.isFinite(Date.parse(intent.expiresAt))
+    && Date.parse(intent.expiresAt) > nowMs
+    && intent.environment === snapshot.environment
+    && intent.endpoint === snapshot.endpoint
+    && intent.signingChainId === snapshot.signingChainId
+    && intent.settlementChainId === snapshot.settlementChainId
+    && intent.settlementNetworkName === snapshot.settlementNetworkName
+    && intent.accountIndex === snapshot.accountIndex
+    && intent.apiKeyIndex === snapshot.apiKeyIndex
+    && intent.walletAddress.toLowerCase() === snapshot.walletAddress.toLowerCase()
+    && intent.destinationAddress.toLowerCase() === snapshot.destinationAddress.toLowerCase()
+    && intent.assetIndex === snapshot.assetIndex
+    && intent.assetSymbol === snapshot.assetSymbol
+    && intent.assetDecimals === snapshot.assetDecimals
+    && intent.settlementTokenAddress.toLowerCase() === snapshot.settlementTokenAddress.toLowerCase()
+    && intent.routeType === snapshot.routeType
+    && intent.amountUnits === snapshot.amountUnits
+    && intent.minimumWithdrawalUnits === snapshot.minimumWithdrawalUnits
+    && intent.withdrawalDelaySeconds === snapshot.withdrawalDelaySeconds
+    && intent.gatewayAddress.toLowerCase() === snapshot.gatewayAddress.toLowerCase()
+    && intent.gatewayImplementation.toLowerCase()
+      === snapshot.gatewayImplementationAddress.toLowerCase()
+    && intent.gatewayCodeHash === snapshot.gatewayCodeHash
+    && intent.settlementTokenCodeHash === snapshot.settlementTokenCodeHash;
+}
+
+export async function hasPendingApprovalForIntentWith(
+  client: PoolClient,
+  sessionId: string,
+  intentId: string,
+): Promise<boolean> {
+  const row = await queryOneWith<{ present: boolean }>(
+    client,
+    `SELECT EXISTS (
+       SELECT 1
+         FROM approval_queue q
+         JOIN approval_intents i ON i.approval_id = q.id
+        WHERE q.session_id = $1
+          AND i.session_id = $1
+          AND q.status = 'pending'
+          AND COALESCE(q.tool_call->>'command', q.tool_call->>'name') = 'execute_tool'
+          AND COALESCE(q.tool_call->'args', q.tool_call->'arguments')->>'toolId' = 'lighter.withdraw'
+          AND COALESCE(q.tool_call->'args', q.tool_call->'arguments')->'params'->>'intentId' = $2
+     ) AS present`,
+    [safeText(sessionId, "session id"), safeText(intentId, "intent id")],
+  );
+  return row?.present === true;
+}
+
+export async function expireStaleApprovalPendingWith(
+  client: PoolClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly environment: LighterEnvironment;
+    readonly accountIndex: number;
+  },
+): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
+    `UPDATE lighter_withdrawal_intents
+        SET approval_status = 'expired',
+            execution_state = 'expired',
+            decision_reason = 'prepared withdrawal expired before approval dispatch',
+            decided_at = NOW(),
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND environment = $3
+        AND account_index = $4
+        AND asset_index = 3
+        AND route_type = 0
+        AND approval_status = 'approval_pending'
+        AND execution_state = 'approval_pending'
+        AND expires_at <= NOW()
+        AND protocol_execution_id IS NULL
+        AND approval_id IS NULL
+        AND decision_reason IS NULL
+        AND decided_at IS NULL
+        AND pre_submit_revalidation_json IS NULL
+        AND pre_submit_revalidated_at IS NULL
+        AND nonce_reservation_id IS NULL
+        AND nonce_value IS NULL
+        AND signer_tx_hash IS NULL
+        AND signer_expiry_ms IS NULL
+        AND signed_at IS NULL
+        AND submission_staged_at IS NULL
+        AND submitted_tx_hash IS NULL
+        AND submit_code IS NULL
+        AND submit_message IS NULL
+        AND predicted_execution_time_ms IS NULL
+        AND volume_quota_remaining IS NULL
+        AND api_accepted_at IS NULL
+        AND provider_tx_status IS NULL
+        AND provider_tx_evidence_json IS NULL
+        AND withdrawal_history_id IS NULL
+        AND withdrawal_history_status IS NULL
+        AND withdrawal_history_json IS NULL
+        AND ambiguous_reason IS NULL
+        AND claim_mode IS NULL
+        AND claim_approval_id IS NULL
+        AND claim_tx_hash IS NULL
+        AND claim_replacement_tx_hash IS NULL
+        AND destination_tx_hash IS NULL
+        AND destination_block_number IS NULL
+        AND destination_block_hash IS NULL
+        AND destination_confirmations IS NULL
+        AND destination_evidence_json IS NULL
+        AND l2_executed_at IS NULL
+        AND claimable_at IS NULL
+        AND destination_confirmed_at IS NULL
+        AND last_checked_at IS NULL
+        AND settlement_scan_from_block IS NULL
+        AND withdrawal_history_timestamp IS NULL
+      RETURNING ${SELECT_COLUMNS}`,
+    [
+      safeText(input.intentId, "intent id"),
+      safeText(input.sessionId, "session id"),
+      input.environment,
+      safeNonNegativeInteger(input.accountIndex, "account index"),
+    ],
+  );
+  return row === null ? null : mapRow(row);
+}
+
 export async function findByIntentId(
   sessionId: string,
   intentId: string,
@@ -234,6 +475,22 @@ export async function findByIntentId(
        FROM lighter_withdrawal_intents
       WHERE session_id = $1 AND intent_id = $2`,
     [sessionId, intentId],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function findByIntentIdWith(
+  client: PoolClient,
+  sessionId: string,
+  intentId: string,
+): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
+    `SELECT ${SELECT_COLUMNS}
+       FROM lighter_withdrawal_intents
+      WHERE session_id = $1 AND intent_id = $2
+      FOR UPDATE`,
+    [safeText(sessionId, "session id"), safeText(intentId, "intent id")],
   );
   return row === null ? null : mapRow(row);
 }
@@ -248,6 +505,76 @@ export async function findLatestForSession(
       ORDER BY created_at DESC
       LIMIT 1`,
     [sessionId],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function findByIntentIdForWallet(
+  intentId: string,
+  walletAddress: string,
+): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS}
+       FROM lighter_withdrawal_intents
+      WHERE intent_id = $1
+        AND LOWER(wallet_address) = LOWER($2)
+        AND LOWER(destination_address) = LOWER($2)
+      LIMIT 1`,
+    [safeText(intentId, "intent id"), safeText(walletAddress, "wallet address")],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function findByIntentIdForWalletWith(
+  client: PoolClient,
+  intentId: string,
+  walletAddress: string,
+): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
+    `SELECT ${SELECT_COLUMNS}
+       FROM lighter_withdrawal_intents
+      WHERE intent_id = $1
+        AND LOWER(wallet_address) = LOWER($2)
+        AND LOWER(destination_address) = LOWER($2)
+      LIMIT 1`,
+    [safeText(intentId, "intent id"), safeText(walletAddress, "wallet address")],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function findLatestForWallet(
+  walletAddress: string,
+): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS}
+       FROM lighter_withdrawal_intents
+      WHERE LOWER(wallet_address) = LOWER($1)
+        AND LOWER(destination_address) = LOWER($1)
+      ORDER BY (
+        execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired')
+      ) DESC, created_at DESC
+      LIMIT 1`,
+    [safeText(walletAddress, "wallet address")],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+export async function findLatestForWalletWith(
+  client: PoolClient,
+  walletAddress: string,
+): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
+    `SELECT ${SELECT_COLUMNS}
+       FROM lighter_withdrawal_intents
+      WHERE LOWER(wallet_address) = LOWER($1)
+        AND LOWER(destination_address) = LOWER($1)
+      ORDER BY (
+        execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired')
+      ) DESC, created_at DESC
+      LIMIT 1`,
+    [safeText(walletAddress, "wallet address")],
   );
   return row === null ? null : mapRow(row);
 }
@@ -513,7 +840,7 @@ export async function recordReconciliation(input: {
         SET execution_state = $3,
             provider_tx_status = $4,
             provider_tx_evidence_json = $5::jsonb,
-            withdrawal_history_id = COALESCE(withdrawal_history_id, $6),
+            withdrawal_history_id = COALESCE(withdrawal_history_id, $6::text),
             withdrawal_history_status = COALESCE($7, withdrawal_history_status),
             withdrawal_history_timestamp = COALESCE($8, withdrawal_history_timestamp),
             withdrawal_history_json = COALESCE($9::jsonb, withdrawal_history_json),
@@ -568,7 +895,11 @@ export async function recordReconciliation(input: {
             'submission_staged','api_accepted','l2_pending','l2_executed','secure_waiting','ambiguous'
           ))
         )
-        AND (withdrawal_history_id IS NULL OR $6 IS NULL OR withdrawal_history_id = $6)
+        AND (
+          withdrawal_history_id IS NULL
+          OR $6::text IS NULL
+          OR withdrawal_history_id = $6::text
+        )
       RETURNING ${SELECT_COLUMNS}`,
     [
       input.intentId,

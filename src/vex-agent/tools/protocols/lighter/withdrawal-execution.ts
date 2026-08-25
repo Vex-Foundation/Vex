@@ -199,17 +199,22 @@ export async function executeApprovedLighterWithdrawal(input: {
     if (response.code !== 200) return await ambiguous(deps, plan, "provider_non_acceptance_code", signed.txHash);
     if (response.tx_hash !== signed.txHash) return await ambiguous(deps, plan, "provider_tx_hash_mismatch", signed.txHash);
 
-    const accepted = await deps.intents.markApiAccepted({
-      intentId: plan.intentId,
-      sessionId: plan.sessionId,
-      signerTxHash: signed.txHash,
-      submittedTxHash: response.tx_hash,
-      submitCode: response.code,
-      submitMessage: response.message ?? null,
-      predictedExecutionTimeMs: response.predicted_execution_time_ms,
-      volumeQuotaRemaining: response.volume_quota_remaining ?? null,
-      settlementScanFromBlock: plan.settlementScanFromBlock,
-    });
+    let accepted: Awaited<ReturnType<typeof withdrawalIntentsRepo.markApiAccepted>>;
+    try {
+      accepted = await deps.intents.markApiAccepted({
+        intentId: plan.intentId,
+        sessionId: plan.sessionId,
+        signerTxHash: signed.txHash,
+        submittedTxHash: response.tx_hash,
+        submitCode: response.code,
+        submitMessage: response.message ?? null,
+        predictedExecutionTimeMs: response.predicted_execution_time_ms,
+        volumeQuotaRemaining: response.volume_quota_remaining ?? null,
+        settlementScanFromBlock: plan.settlementScanFromBlock,
+      });
+    } catch {
+      return await ambiguous(deps, plan, "api_acceptance_persist_failed", signed.txHash);
+    }
     if (accepted === null) return await ambiguous(deps, plan, "api_acceptance_persist_failed", signed.txHash);
     return {
       status: "submitted",

@@ -17,6 +17,7 @@ import {
   readLighterWithdrawalClaimPreflight,
 } from "@tools/lighter/withdrawal/core-claim.js";
 import { proveLighterCoreWithdrawalSettlement } from "@tools/lighter/withdrawal/settlement-proof.js";
+import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 import { decimalToBaseUnits } from "@tools/lighter/wallet-funding/onboarding-plan.js";
 import { acquireLighterDepositExecutionLease } from "@tools/lighter/wallet-funding/execution-lease.js";
 import { signStageBroadcast } from "@tools/evm-chains/staged-broadcast.js";
@@ -25,7 +26,10 @@ import { getUniswapEvmClients, getUniswapPublicClient } from "@tools/uniswap/evm
 import * as withdrawalIntentsRepo from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
 import * as withdrawalClaimsRepo from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
 import type { LighterWithdrawalIntentRow } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
-import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import {
+  withSessionControlLock,
+  withSessionControlLocks,
+} from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import type { PreparedActionFollowUp } from "../../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
@@ -46,6 +50,13 @@ import { buildLighterWithdrawalReadyForSignerPlan } from "../withdrawal-executio
 import { reconcileLighterWithdrawal } from "../withdrawal-reconciliation.js";
 import { resolveLighterReadOnlyAccountAuth } from "../read-account-auth.js";
 import { listLighterTradingCredentialScopes } from "../trading-credential-scope.js";
+import {
+  buildWithdrawalClaimPreparedPresentation,
+  buildWithdrawalClaimSubmittedPresentation,
+  buildWithdrawalPreparedPresentation,
+  buildWithdrawalStatusPresentation,
+  buildWithdrawalSubmittedPresentation,
+} from "../withdrawal-presentation.js";
 
 function buildApprovalFollowUp(intent: LighterWithdrawalIntentRow): PreparedActionFollowUp {
   return {
@@ -79,18 +90,25 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
   "lighter.withdraw.claim.prepare": async (params, context) => {
     const sessionId = context.sessionId;
     const intentId = typeof params.intentId === "string" ? params.intentId.trim() : "";
-    if (!sessionId || intentId.length === 0) return fail("Manual Lighter claim preparation requires a session-scoped withdrawal intent id.");
-    const intent = await withdrawalIntentsRepo.findByIntentId(sessionId, intentId);
-    if (intent === null) return fail(`No Lighter withdrawal intent ${intentId} exists in this session.`);
-    const profile = getLighterSecureWithdrawalProfile(intent.environment);
-    if (intent.executionState !== "claimable" || intent.pendingBalanceUnits !== intent.amountUnits) {
-      return fail(`${profile.sourceName} withdrawal ${intentId} is not exactly claimable. Reconcile its status before preparing a wallet transaction.`);
-    }
+    if (!sessionId || intentId.length === 0) return fail("Manual Lighter claim preparation requires a wallet-bound withdrawal intent id.");
     let selected: string;
     try {
       selected = getAddress(resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155"));
     } catch (error) {
       return walletScopeErrorToResult(error);
+    }
+    const intent = await withdrawalIntentsRepo.findByIntentId(sessionId, intentId)
+      ?? await withdrawalIntentsRepo.findByIntentIdForWallet(intentId, selected);
+    if (intent === null) {
+      return fail(`No Lighter withdrawal intent ${intentId} exists for the selected wallet.`);
+    }
+    const profile = getLighterSecureWithdrawalProfile(intent.environment);
+    const funding = getLighterFundingDeployment(intent.environment);
+    if (funding.expectedGatewayImplementation === undefined) {
+      return fail(`The reviewed ${profile.sourceName} gateway implementation is unavailable.`);
+    }
+    if (intent.executionState !== "claimable" || intent.pendingBalanceUnits !== intent.amountUnits) {
+      return fail(`${profile.sourceName} withdrawal ${intentId} is not exactly claimable. Reconcile its status before preparing a wallet transaction.`);
     }
     if (selected !== getAddress(intent.walletAddress)) return fail(`The selected Vex wallet does not own this ${profile.sourceName} withdrawal claim.`);
     const deployment = getUniswapDeployment(profile.settlementChainId);
@@ -102,7 +120,7 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
         publicClient: getUniswapPublicClient(deployment),
         walletAddress: intent.walletAddress,
         gatewayAddress: intent.gatewayAddress,
-        expectedGatewayImplementation: intent.gatewayImplementation,
+        expectedGatewayImplementation: funding.expectedGatewayImplementation,
         expectedGatewayCodeHash: intent.gatewayCodeHash,
         settlementTokenAddress: intent.settlementTokenAddress,
         expectedSettlementTokenCodeHash: intent.settlementTokenCodeHash,
@@ -114,7 +132,7 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
     }
     let attempt;
     try {
-      attempt = await withSessionControlLock(sessionId, (client) =>
+      attempt = await withSessionControlLocks([sessionId, intent.sessionId], (client) =>
         withdrawalClaimsRepo.createManualClaimAttemptWith(client, {
           claimId: `lighter-withdrawal-claim-${randomUUID()}`,
           preview,
@@ -122,17 +140,19 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
     } catch (error) {
       return fail(error instanceof Error ? error.message : `Manual ${profile.sourceName} claim could not be reserved durably.`);
     }
+    const amountDisplay = `${formatUnits(BigInt(attempt.amountUnits), 6)} ${profile.assetSymbol}`;
     return {
       ...ok({
         source: `vex_lighter_${intent.environment}_manual_claim_intent`,
         status: "approval_prepared",
+        amountSemantics: "exact_transfer",
         claimId: attempt.claimId,
         withdrawalIntentId: attempt.withdrawalIntentId,
-        amountDisplay: `${formatUnits(BigInt(attempt.amountUnits), 6)} ${profile.assetSymbol}`,
+        amountDisplay,
         settlementNetwork: profile.settlementNetworkName,
         networkFeeCeilingWei: attempt.networkFeeCeilingWei,
         expiresAt: attempt.expiresAt,
-        userGuidance: `Tell the user to review the separate ${profile.settlementNetworkName} claim approval card. This spends ETH for gas and does not reuse the L2 withdrawal approval.`,
+        ...buildWithdrawalClaimPreparedPresentation(amountDisplay),
       }),
       preparedActionFollowUp: buildClaimApprovalFollowUp(attempt),
     };
@@ -244,11 +264,17 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
       await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markOutcomeWith(client, {
         claimId, sessionId, outcome: "confirming", receipt: publicReceipt(outcome.receipt),
       }));
+      const amountDisplay = `${formatUnits(BigInt(approved.amountUnits), 6)} ${profile.assetSymbol}`;
       return ok({ source: `vex_lighter_${profile.environment}_manual_claim`, status: "confirming", claimId,
         txHash: outcome.receipt.transactionHash, receiptStatus: outcome.receipt.status,
-        userGuidance: outcome.kind === "confirmed"
-          ? `Tell the user the exact claim mined and is awaiting 12-confirmation ${profile.settlementNetworkName} finality before delivery is final.`
-          : "Tell the user the claim transaction reverted and remains blocked until exact finality and pending-balance reconciliation." });
+        amountDisplay,
+        ...(outcome.kind === "confirmed"
+          ? buildWithdrawalClaimSubmittedPresentation(amountDisplay)
+          : {
+              presentation: "concise_error",
+              message: `The ${amountDisplay} claim transaction reverted.`,
+              userGuidance: `Reply briefly: "The ${amountDisplay} claim transaction reverted." Do not say the funds arrived or add unrelated account details.`,
+            }) });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       const current = await withdrawalClaimsRepo.findByClaimId(sessionId, claimId).catch(() => null);
@@ -276,34 +302,64 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
     const sessionId = context.sessionId;
     if (!sessionId) return fail("Lighter withdrawal status requires a host session id.");
     const intentId = typeof params.intentId === "string" ? params.intentId.trim() : "";
+    let walletAddress: string;
+    try {
+      walletAddress = getAddress(resolveSelectedAddress(
+        context.walletResolution,
+        context.walletPolicy,
+        "eip155",
+      ));
+    } catch (error) {
+      return walletScopeErrorToResult(error);
+    }
+    // Status is always selected-wallet scoped, including rows created in this
+    // session. A session can outlive a wallet-selection change, so session
+    // ownership alone is not sufficient authorization to disclose or refresh
+    // a withdrawal.
     let intent = intentId.length > 0
-      ? await withdrawalIntentsRepo.findByIntentId(sessionId, intentId)
-      : await withdrawalIntentsRepo.findLatestForSession(sessionId);
+      ? await withdrawalIntentsRepo.findByIntentIdForWallet(intentId, walletAddress)
+      : await withdrawalIntentsRepo.findLatestForWallet(walletAddress);
     if (intent === null) return fail(intentId.length > 0
-      ? `No Lighter withdrawal intent ${intentId} exists in this session.`
-      : "No Lighter withdrawal intent exists in this session.");
+      ? `No Lighter withdrawal intent ${intentId} exists for the selected wallet.`
+      : "No Lighter withdrawal intent exists for the selected wallet.");
+    const recoveredFromEarlierSession = intent.sessionId !== sessionId;
     const profile = getLighterSecureWithdrawalProfile(intent.environment);
-    let claimAttempt = await withdrawalClaimsRepo.findLatestForWithdrawal(sessionId, intent.intentId);
+    let claimAttempt = await withdrawalClaimsRepo.findLatestForWithdrawalIntent(intent.intentId);
     if (
       intent.executionState === "manual_claim_prepared"
       && claimAttempt?.state === "prepared"
       && Date.parse(claimAttempt.expiresAt) <= Date.now()
     ) {
-      await withSessionControlLock(sessionId, (client) =>
-        withdrawalClaimsRepo.expirePreparedWith(client, claimAttempt!.claimId, sessionId));
-      intent = await withdrawalIntentsRepo.findByIntentId(sessionId, intent.intentId) ?? intent;
-      claimAttempt = await withdrawalClaimsRepo.findLatestForWithdrawal(sessionId, intent.intentId);
+      await withSessionControlLocks([intent.sessionId, claimAttempt.sessionId], (client) =>
+        withdrawalClaimsRepo.expirePreparedWith(client, claimAttempt!.claimId, claimAttempt!.sessionId));
+      intent = await withdrawalIntentsRepo.findByIntentId(intent.sessionId, intent.intentId) ?? intent;
+      claimAttempt = await withdrawalClaimsRepo.findLatestForWithdrawalIntent(intent.intentId);
     }
     if (!["destination_confirmed", "rejected", "failed", "refunded", "expired"].includes(intent.executionState)) {
       if (intent.signerTxHash === null || intent.submissionStagedAt === null) {
-        return ok(withdrawalStatusPayload(intent, claimAttempt));
+        return ok({
+          ...withdrawalStatusPayload(intent, claimAttempt),
+          recoveredFromEarlierSession,
+        });
       }
       const privilegedAuth = await resolveLighterReadOnlyAccountAuth(intent.environment, intent.accountIndex);
       if (privilegedAuth === null) {
-        return fail(`Unlock the local vault to derive bounded read-only ${profile.sourceName} reconciliation access. No transaction will be signed or retried.`);
+        return ok({
+          ...withdrawalStatusPayload(intent, claimAttempt),
+          recoveredFromEarlierSession,
+          reconciliationStatus: "awaiting_vault",
+          reconciliationError: `Unlock the local vault to derive bounded read-only ${profile.sourceName} reconciliation access.`,
+          userGuidance: "Tell the user the durable withdrawal exists, but fresh evidence requires an unlocked local vault. Do not prepare or retry a withdrawal.",
+        });
       }
       const settlement = getUniswapDeployment(profile.settlementChainId);
-      if (settlement === undefined) return fail(`${profile.settlementNetworkName} deployment is unavailable for withdrawal reconciliation.`);
+      if (settlement === undefined) return ok({
+        ...withdrawalStatusPayload(intent, claimAttempt),
+        recoveredFromEarlierSession,
+        reconciliationStatus: "degraded",
+        reconciliationError: `${profile.settlementNetworkName} deployment is unavailable for evidence refresh.`,
+        userGuidance: "Tell the user the durable withdrawal exists, but fresh settlement evidence is unavailable. Do not prepare or retry a withdrawal.",
+      });
       try {
         intent = await reconcileLighterWithdrawal({
           intent,
@@ -311,12 +367,23 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
           privilegedAuth,
           publicClient: getUniswapPublicClient(settlement),
         });
-      } catch (error) {
-        return fail(error instanceof Error ? error.message : String(error));
+      } catch {
+        return ok({
+          ...withdrawalStatusPayload(intent, claimAttempt),
+          recoveredFromEarlierSession,
+          reconciliationStatus: "degraded",
+          reconciliationError: "Exact evidence refresh failed; this durable status was returned without signing, submitting, or retrying anything.",
+          userGuidance: intent.executionState === "ambiguous"
+            ? "Tell the user the durable withdrawal exists and remains unresolved. Do not say nothing was signed, do not prepare another withdrawal, and retry only the evidence status read."
+            : "Tell the user the durable withdrawal status could not be refreshed. Do not retry any transaction.",
+        });
       }
     }
-    claimAttempt = await withdrawalClaimsRepo.findLatestForWithdrawal(sessionId, intent.intentId);
-    return ok(withdrawalStatusPayload(intent, claimAttempt));
+    claimAttempt = await withdrawalClaimsRepo.findLatestForWithdrawalIntent(intent.intentId);
+    return ok({
+      ...withdrawalStatusPayload(intent, claimAttempt),
+      recoveredFromEarlierSession,
+    });
   },
 
   "lighter.withdraw.prepare": async (params, context) => {
@@ -403,14 +470,52 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
       return fail(error instanceof Error ? error.message : String(error));
     }
 
-    let outcome: withdrawalIntentsRepo.CreateLighterWithdrawalIntentOutcome;
+    type PreparationOutcome = withdrawalIntentsRepo.CreateLighterWithdrawalIntentOutcome
+      | { readonly outcome: "reemit" | "live_approval"; readonly intent: LighterWithdrawalIntentRow };
+    let outcome: PreparationOutcome;
     try {
-      outcome = await withSessionControlLock(sessionId, (db) =>
-        withdrawalIntentsRepo.createOrFindLiveApprovalPendingWith(db, {
+      const existing = await withdrawalIntentsRepo.findNonterminalForScope(
+        environment,
+        scope.accountIndex,
+      );
+      const stale = existing !== null
+        && withdrawalIntentsRepo.isSafelyExpirableApprovalPending(existing);
+      const reemittable = existing !== null
+        && withdrawalIntentsRepo.isSafelyReemittableApprovalPending(existing, preview);
+      const lockSessionIds = stale ? [sessionId, existing.sessionId] : [sessionId];
+      outcome = await withSessionControlLocks(lockSessionIds, async (db) => {
+        if (reemittable && existing !== null) {
+          const current = await withdrawalIntentsRepo.findByIntentIdWith(
+            db,
+            sessionId,
+            existing.intentId,
+          );
+          if (
+            current !== null
+            && withdrawalIntentsRepo.isSafelyReemittableApprovalPending(current, preview)
+          ) {
+            const hasLiveApproval = await withdrawalIntentsRepo.hasPendingApprovalForIntentWith(
+              db,
+              sessionId,
+              current.intentId,
+            );
+            return { outcome: hasLiveApproval ? "live_approval" : "reemit", intent: current };
+          }
+        }
+        if (stale) {
+          await withdrawalIntentsRepo.expireStaleApprovalPendingWith(db, {
+            intentId: existing.intentId,
+            sessionId: existing.sessionId,
+            environment,
+            accountIndex: scope.accountIndex,
+          });
+        }
+        return withdrawalIntentsRepo.createOrFindLiveApprovalPendingWith(db, {
           intentId: `lighter-withdrawal-${randomUUID()}`,
           preview,
           credentialReadiness: readiness,
-        }));
+        });
+      });
     } catch {
       return fail(`Vex could not safely reserve the durable ${profile.sourceName} withdrawal intent. No withdrawal was prepared.`);
     }
@@ -425,24 +530,34 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
     ) {
       return fail(`${profile.sourceName} withdrawal intent ${intent.intentId} is no longer approval-pending. Prepare a fresh withdrawal.`);
     }
+    const amountDisplay = `${formatUnits(BigInt(intent.amountUnits), 6)} ${profile.assetSymbol}`;
+    const preparedPayload = ok({
+      source: `vex_lighter_${environment}_withdrawal_intent`,
+      status: outcome.outcome === "created"
+        ? "approval_prepared"
+        : outcome.outcome === "live_approval"
+          ? "approval_pending_existing"
+          : "approval_prepared_existing",
+      amountSemantics: "exact_transfer",
+      intentId: intent.intentId,
+      previewId: intent.previewId,
+      matchHash: intent.matchHash,
+      environment,
+      amountUnits: intent.amountUnits,
+      amountDisplay,
+      destinationAddress: intent.destinationAddress,
+      settlementNetwork: profile.settlementNetworkName,
+      route: "secure",
+      withdrawalDelaySeconds: intent.withdrawalDelaySeconds,
+      expiresAt: intent.expiresAt,
+      ...buildWithdrawalPreparedPresentation(
+        amountDisplay,
+        outcome.outcome === "live_approval",
+      ),
+    });
+    if (outcome.outcome === "live_approval") return preparedPayload;
     return {
-      ...ok({
-        source: `vex_lighter_${environment}_withdrawal_intent`,
-        status: outcome.outcome === "created" ? "approval_prepared" : "approval_prepared_existing",
-        message: `Exact ${profile.sourceName} ${profile.assetSymbol} secure withdrawal prepared; review the trusted approval card.`,
-        intentId: intent.intentId,
-        previewId: intent.previewId,
-        matchHash: intent.matchHash,
-        environment,
-        amountUnits: intent.amountUnits,
-        amountDisplay: `${formatUnits(BigInt(intent.amountUnits), 6)} ${profile.assetSymbol}`,
-        destinationAddress: intent.destinationAddress,
-        settlementNetwork: profile.settlementNetworkName,
-        route: "secure",
-        withdrawalDelaySeconds: intent.withdrawalDelaySeconds,
-        expiresAt: intent.expiresAt,
-        userGuidance: "Tell the user to review the approval card. Do not ask for a typed confirmation, account index, API key, nonce, or credential.",
-      }),
+      ...preparedPayload,
       preparedActionFollowUp: buildApprovalFollowUp(intent),
     };
   },
@@ -481,12 +596,21 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
         plan: buildLighterWithdrawalReadyForSignerPlan(approved),
         deps,
       });
+      const amountDisplay = `${formatUnits(BigInt(approved.amountUnits), 6)} ${profile.assetSymbol}`;
       return ok({
         source: `vex_lighter_${approved.environment}_withdrawal_execution`,
         ...result,
-        userGuidance: result.status === "submitted"
-          ? `Tell the user the ${profile.sourceName} withdrawal was submitted and is awaiting L2 plus ${profile.settlementNetworkName} settlement proof; API acceptance is not final delivery.`
-          : "Tell the user the outcome is uncertain and Vex will reconcile it before any retry.",
+        amountDisplay,
+        ...(result.status === "submitted"
+          ? buildWithdrawalSubmittedPresentation(
+              amountDisplay,
+              approved.withdrawalDelaySeconds,
+            )
+          : {
+              presentation: "concise_error",
+              message: `The ${amountDisplay} withdrawal outcome is still being verified. Please do not retry it yet.`,
+              userGuidance: `Reply briefly: "The ${amountDisplay} withdrawal outcome is still being verified. Please do not retry it yet." Do not say it succeeded or failed, and do not add unrelated details.`,
+            }),
       });
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
@@ -508,6 +632,7 @@ function withdrawalStatusPayload(
   claim?: withdrawalClaimsRepo.LighterWithdrawalClaimAttemptRow | null,
 ): Record<string, unknown> {
   const profile = getLighterSecureWithdrawalProfile(intent.environment);
+  const amountDisplay = `${formatUnits(BigInt(intent.amountUnits), 6)} ${profile.assetSymbol}`;
   return {
     source: `vex_lighter_${intent.environment}_withdrawal_reconciliation`,
     intentId: intent.intentId,
@@ -515,7 +640,7 @@ function withdrawalStatusPayload(
     executionState: intent.executionState,
     approvalStatus: intent.approvalStatus,
     amountUnits: intent.amountUnits,
-    amountDisplay: `${formatUnits(BigInt(intent.amountUnits), 6)} ${profile.assetSymbol}`,
+    amountDisplay,
     settlementNetwork: profile.settlementNetworkName,
     destinationAddress: intent.destinationAddress,
     signerTxHash: intent.signerTxHash,
@@ -535,12 +660,10 @@ function withdrawalStatusPayload(
     destinationConfirmations: intent.destinationConfirmations,
     lastCheckedAt: intent.lastCheckedAt,
     final: intent.executionState === "destination_confirmed",
-    userGuidance: intent.executionState === "destination_confirmed"
-      ? `Tell the user exact ${profile.settlementNetworkName} delivery is confirmed.`
-      : intent.executionState === "claimable"
-        ? `Tell the user the ${profile.assetSymbol} is claimable at the gateway; a separate wallet approval is required before paying ${profile.settlementNetworkName} gas.`
-        : intent.executionState === "ambiguous"
-          ? "Tell the user the outcome remains uncertain and must not be retried."
-          : `Tell the user the withdrawal is still progressing and API/history labels are not final ${profile.settlementNetworkName} delivery.`,
+    ...buildWithdrawalStatusPresentation(
+      intent.executionState,
+      amountDisplay,
+      profile.settlementNetworkName,
+    ),
   };
 }
