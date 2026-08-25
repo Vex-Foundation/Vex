@@ -365,9 +365,6 @@ export function useComposerSubmit(
     if (reasoningEffort !== null) {
       setSessionReasoningEffort(sessionId, reasoningEffort);
     }
-    if (isLighterWorkspaceCommand(message)) {
-      requestLighterWorkspaceOpen();
-    }
     void runChatSubmit(message, reasoningEffort);
   }, [
     sessionId,
@@ -391,6 +388,16 @@ export function useComposerSubmit(
       event.preventDefault();
       const message = draft.trim();
       if (message.length === 0) return;
+      // `Light it up` is a renderer-local workspace command, not an agent
+      // prompt. Consume it before session creation, steering, queueing, mission
+      // gates, or chat submission so it can never enter the transcript or
+      // receive an out-of-context model response.
+      if (isLighterWorkspaceCommand(message)) {
+        setDraft("");
+        setNotice(null);
+        requestLighterWorkspaceOpen();
+        return;
+      }
       // Welcome state (no session yet): Send opens the new-session modal
       // seeded with this draft PLUS the reasoning effort SNAPSHOTTED right
       // now (E3/D5) — unresolved capability at this instant → null → a
@@ -409,9 +416,6 @@ export function useComposerSubmit(
       // steered row. When steering is refused (turn just ended, parked run)
       // the message QUEUES instead (A27) - never dropped, never doubled.
       if (submitPending || inFlightRef.current.has(sessionId)) {
-        if (isLighterWorkspaceCommand(message)) {
-          requestLighterWorkspaceOpen();
-        }
         setDraft("");
         const steerOutcome = await trySteerLiveTurn(sessionId, message);
         if (steerOutcome === "steered") {
@@ -426,9 +430,6 @@ export function useComposerSubmit(
       if (freeTextGate) {
         setNotice({ tone: "error", text: gatedReason(runStatus) });
         return;
-      }
-      if (isLighterWorkspaceCommand(message)) {
-        requestLighterWorkspaceOpen();
       }
       // Clear optimistically — the message is on its way to the agent and the
       // transcript already shows it. runChatSubmit owns failure handling

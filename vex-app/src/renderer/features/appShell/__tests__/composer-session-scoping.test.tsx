@@ -137,7 +137,7 @@ afterEach(() => {
 });
 
 describe("resident composer - a turn belongs to ONE session", () => {
-  it("opens Light it up from an exact submitted user turn", async () => {
+  it("consumes Light it up as UI-only and never submits it as a user turn", async () => {
     const openListener = vi.fn();
     const unsubscribe = subscribeLighterWorkspaceOpen(openListener);
     const view = renderComposer(SESSION_A);
@@ -145,12 +145,10 @@ describe("resident composer - a turn belongs to ONE session", () => {
     await typeAndSubmit(view.result, "Light it up");
 
     expect(openListener).toHaveBeenCalledTimes(1);
-    expect(submitMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId: SESSION_A,
-        message: "Light it up",
-      }),
-    );
+    expect(submitMock).not.toHaveBeenCalled();
+    expect(mockTrySteerLiveTurn).not.toHaveBeenCalled();
+    expect(readQueue(SESSION_A)).toHaveLength(0);
+    expect(view.result.current.draft).toBe("");
     unsubscribe();
   });
 
