@@ -1,0 +1,33 @@
+{
+  "encoding": "protobuf",
+  "protobufMessage": "dex_screener.PairsSearchChannelCommand",
+  "endpoint": "wss://io.dexscreener.com/dex/screener/v8/pairs-search",
+  "requestParams": {
+    "ids": [
+      {
+        "chainId": "ethereum",
+        "id": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f"
+      },
+      {
+        "chainId": "ethereum",
+        "id": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f"
+      },
+      {
+        "chainId": "solana",
+        "id": "not-a-real-id"
+      }
+    ],
+    "page": 1,
+    "timeframe": "TIMEFRAME_KEY_H24",
+    "rankKey": "RANK_BY_KEY_VOLUME"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-08-24T09:41:03.892680+00:00",
+  "httpStatus": 101,
+  "capturedBy": "Codex plan-review turn 2 live probe (curl_cffi impersonate=chrome), 2026-08-24; archived and sha256-verified under scratchpad/live-turn2/root, re-verified against archive-manifest.json when installed here",
+  "fixture": "v8-batch-invalid-and-duplicate.command.bin.b64",
+  "bytes": 150,
+  "sha256": "2ebb5d0a9ca1d4b240f035538f816cbeaabba5d9641ee3dfbacc57503f14e184"
+}

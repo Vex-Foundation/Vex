@@ -48,7 +48,7 @@ const RAW_BASE_UNIT_NAMESPACES = new Set(["pendle"]);
 
 /**
  * One leg's agent-facing amount. Raw-unit rows say so, in the same doctrine as
- * dexscreener's `TOKEN_DECIMALS_RESOLVER_NOTE` (`dexscreener/list-core/
+ * dexscreener's former `TOKEN_DECIMALS_RESOLVER_NOTE` (was `dexscreener/list-core/
  * provenance.ts`): an amount whose decimals are unknown must never be quoted
  * as a quantity — `"1047061"` is 1.05 at 6 decimals and 0.00105 at 9.
  */

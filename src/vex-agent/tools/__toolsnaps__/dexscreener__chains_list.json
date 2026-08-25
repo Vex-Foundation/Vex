@@ -1,0 +1,29 @@
+{
+  "definition": {
+    "function": {
+      "description": "List the supported chains with their metadata; optional `chain` narrows to one. Narrowing does not add detail: every row already carries that chain's complete dex list, so the only thing `chain` changes is how many rows come back. Use this to discover valid `chainIds` and `dexIds` values before screening (the `labels` vocabulary is listed in that parameter's own description, not here: this catalog carries no label list), and to build correct explorer links from the returned URL templates. Returns per chain: slug, name, nativeChainId, architecture, dex count and slugs, explorer templates, audit integration keys (presence of an integration is catalog metadata; whether an audit actually answers for a given token is a per-token question this catalog does not answer), and whether the SITE surfaces a narratives view for the chain. That last field is named `narrativesSurfacedOnSite` because it is a site-visibility label and not a data gate: narratives were measured aggregating live on robinhood, ton and polygon, none of which the site surfaces, so false here does not mean the chain has none. Cached daily; the catalog host serves it in one 63 KB response. Row order and each row's dex list carry NO meaning: the provider ranks both live and both drift (20+ adjacent transpositions measured nine minutes apart, and one chain's dex order changed inside two minutes), so behind the 24 hour cache the order can be a day old. Membership is stable; sequence is not. The integration keys here say which audit providers a chain has AT ALL; to find out what they actually report for one token, call `dexscreener__pair_details_get`, whose coverage is derived from the response rather than from this catalog (measured: the catalog carries a GoPlus KEY on 56 chains, 21 of those have it ENABLED, and the enabled set is what this tool lists, so the 56 is a number you will not find in this output; enabled is still not the same as answering for a given token). Explorer templates: the placeholder NAME inside a template is the provider's own and does not identify what the slot wants, in EITHER direction. Read the slot from the FIELD instead: accountUrlTemplate takes a wallet address, assetUrlTemplate and holdersUrlTemplate take a token address, txnsUrlTemplate takes a transaction hash. Measured: holdersUrlTemplate wants a token address on all 21 chains where it is spelled `{{txns}}`; taiko spells the same token slot `{{token}}` and beam's assetUrlTemplate spells it `{{address}}`; and oasissapphire's txnsUrlTemplate spells a TRANSACTION HASH slot `{{address}}`. Substituting by placeholder name builds a dead link. An unknown chain value is refused by name with the nearest catalog matches, because the screening tools answer an unknown slug with zero rows and no error. Every response carries sourceObservation with the transport that answered, fetchedAtMs, and the cache state, so a cached catalog read is distinguishable from a live one.",
+      "name": "dexscreener__chains_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "Narrow the catalog to one chain. Omit it to list every supported chain. Narrowing does not add detail: every row carries that chain's complete DEX list either way, so this only changes how many rows come back. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "dexscreener",
+    "requiresEnv": null,
+    "toolId": "dexscreener.chains"
+  }
+}

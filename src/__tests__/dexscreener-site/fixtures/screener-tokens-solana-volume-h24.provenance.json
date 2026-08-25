@@ -1,0 +1,24 @@
+{
+  "fixture": "screener-tokens-solana-volume-h24.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_screener.TokensChannelMessage",
+  "endpoint": "wss://io.dexscreener.com/dex/screener/v2/tokens/h24/1?rankBy[key]=volume&rankBy[order]=desc&filters[chainIds][0]=solana",
+  "requestParams": {
+    "path": "/dex/screener/v2/tokens/h24/1",
+    "query": "rankBy[key]=volume&rankBy[order]=desc&filters[chainIds][0]=solana"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-08-24T10:56:49.864498+00:00",
+  "httpStatus": 101,
+  "bytes": 91160,
+  "sha256": "d413d25f842eec5448742f40e7f3e7f30831273264c1c1f11ca3e7bd65001df8",
+  "capturedBy": "live WS capture for S2a (curl_cffi impersonate=chrome), one session, closed on the first pairs frame",
+  "frameOrder": [
+    "latestBlock",
+    "pairs"
+  ],
+  "frameIndex": 1,
+  "note": "Binary frame 1 of the session. Frame 0 was latestBlock (18 bytes)."
+}

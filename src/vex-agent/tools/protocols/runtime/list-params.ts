@@ -1,7 +1,7 @@
 /**
  * The untrusted-param boundary shared by every protocol list tool.
  *
- * Namespace-neutral owner (relocated from `dexscreener/list-core/param-readers.ts`
+ * Namespace-neutral owner (relocated from the since-deleted `dexscreener/list-core/param-readers.ts`
  * when a fourth consumer — `trench` — joined DexScreener's pair/feed/narrative
  * list families; rule 04 default-owner move). DexScreener still imports the same
  * symbols through a re-export facade at the old path, so no dexscreener call site
@@ -9,7 +9,7 @@
  *
  * Protocol call params come straight from the model, so these readers convert an
  * open `Record<string, unknown>` into typed values or an explicit rejection.
- * Extracted from `../pair-list/list-query.ts` unchanged when the feed and
+ * Extracted from the since-deleted `dexscreener/pair-list/list-query.ts` unchanged when the feed and
  * narrative tools gained the same vocabulary: three families reading `limit` with
  * three copies of the rules is how `limit: 0` came to mean "20" in one handler
  * and "everything" in another.

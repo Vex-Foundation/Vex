@@ -13,6 +13,7 @@ import { runBaselineTarget, type BaselineTarget, type MeasuredBaseline } from ".
 import { assertDenseMeasurement, findDenseMeasurementViolations } from "./dense-measurement.js";
 import { denseTarget, type EvalDataset } from "./eval-targets.js";
 import { applyRequiresEnvSentinels } from "./requires-env-sentinels.js";
+import { assertFullDiscoveryCandidates } from "./live-catalog.js";
 import {
   MRR5_OVERALL_FLOOR,
   RECALL5_BLIND_FLOOR,
@@ -251,6 +252,21 @@ describe("denseTarget gates through the real target", () => {
     validate: () => [],
   };
 
+  /**
+   * The candidate count a full-catalog dense row must carry, read from the
+   * SAME source the target reads.
+   *
+   * Derived rather than written as a literal. The literal used elsewhere in
+   * this file is deliberate: those cases assert the gate's own arithmetic and
+   * want a fixed number. These three cases run the REAL target, which compares
+   * against the live catalog, so a literal here is a second source of truth
+   * that goes stale every time a tool is added - as it did when the surface
+   * moved to 136 and again at 140, in neither case because this file changed.
+   */
+  function liveCandidateCount(): number {
+    return assertFullDiscoveryCandidates("dense-measurement test fixture");
+  }
+
   function scriptedTarget(rows: QueryResult[], path: string): BaselineTarget {
     return {
       ...denseTarget(dataset, { evaluate: async () => buildModeReport("dense", rows) }),
@@ -260,7 +276,10 @@ describe("denseTarget gates through the real target", () => {
 
   it("refuses a below-floor dense measurement before the writer", async () => {
     const path = tempBaselinePath();
-    const miss = result({ topIds: [], hitRank: -1, coverageHit: false, groupMrr5: 0 });
+    const miss = result({
+      topIds: [], hitRank: -1, coverageHit: false, groupMrr5: 0,
+      candidateCount: liveCandidateCount(),
+    });
     const target = scriptedTarget(
       [miss, { ...miss, query: protocolAwareQuery }],
       path,
@@ -273,7 +292,15 @@ describe("denseTarget gates through the real target", () => {
   it("refuses a lexical fallback before the floors are even consulted", async () => {
     const path = tempBaselinePath();
     const target = scriptedTarget(
-      [result({}), result({ query: protocolAwareQuery, retrievalMethod: "lexical", denseFailed: true })],
+      [
+        result({ candidateCount: liveCandidateCount() }),
+        result({
+          query: protocolAwareQuery,
+          retrievalMethod: "lexical",
+          denseFailed: true,
+          candidateCount: liveCandidateCount(),
+        }),
+      ],
       path,
     );
 
@@ -283,7 +310,13 @@ describe("denseTarget gates through the real target", () => {
 
   it("writes when every row is dense over the full catalog and the floors clear", async () => {
     const path = tempBaselinePath();
-    const target = scriptedTarget([result({}), result({ query: protocolAwareQuery })], path);
+    const target = scriptedTarget(
+      [
+        result({ candidateCount: liveCandidateCount() }),
+        result({ query: protocolAwareQuery, candidateCount: liveCandidateCount() }),
+      ],
+      path,
+    );
 
     const outcome = await runBaselineTarget(target, "update");
     expect(outcome.ok).toBe(true);

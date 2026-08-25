@@ -4,24 +4,24 @@
   "datasetId": "tool-discovery-solana",
   "datasetVersion": "solana-v1",
   "status": "captured",
-  "capturedAt": "2026-08-22T19:13:38.567Z",
+  "capturedAt": "2026-08-25T12:47:08.043Z",
   "metrics": {
     "overall": {
       "count": 68,
-      "recall1": 0.426,
+      "recall1": 0.441,
       "recall5": 0.603,
       "coverage5": 0.603,
-      "mrr5": 0.489,
-      "groupMrr5": 0.489
+      "mrr5": 0.496,
+      "groupMrr5": 0.496
     },
     "awareness": {
       "blind": {
         "count": 34,
-        "recall1": 0.206,
+        "recall1": 0.235,
         "recall5": 0.382,
         "coverage5": 0.382,
-        "mrr5": 0.27,
-        "groupMrr5": 0.27
+        "mrr5": 0.284,
+        "groupMrr5": 0.284
       },
       "protocolAware": {
         "count": 34,
@@ -35,11 +35,11 @@
     "intentShapes": {
       "single": {
         "count": 68,
-        "recall1": 0.426,
+        "recall1": 0.441,
         "recall5": 0.603,
         "coverage5": 0.603,
-        "mrr5": 0.489,
-        "groupMrr5": 0.489
+        "mrr5": 0.496,
+        "groupMrr5": 0.496
       },
       "cross": {
         "count": 0,
@@ -117,11 +117,11 @@
       },
       "prediction_discovery": {
         "count": 14,
-        "recall1": 0.5,
+        "recall1": 0.571,
         "recall5": 0.571,
         "coverage5": 0.571,
-        "mrr5": 0.536,
-        "groupMrr5": 0.536
+        "mrr5": 0.571,
+        "groupMrr5": 0.571
       },
       "prediction_trading": {
         "count": 12,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-solana@solana-v1, mode lexical, 68 cases evaluated.",
-    "overall recall@1 0.426, recall@5 0.603, coverage@5 0.603, mrr@5 0.489, groupMrr@5 0.489.",
-    "Measured delta vs previous baseline (solana-v1, captured 2026-08-22T14:13:12.067Z): 12 metric values moved; overall recall@5 0.603 -> 0.603, overall mrr@5 0.496 -> 0.489, case count 68 -> 68."
+    "overall recall@1 0.441, recall@5 0.603, coverage@5 0.603, mrr@5 0.496, groupMrr@5 0.496.",
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

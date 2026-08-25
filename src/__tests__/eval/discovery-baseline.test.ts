@@ -25,9 +25,14 @@ import {
 // awareness split is no longer 100/100 by construction — deletions only ever
 // removed rows from their original half, so it stayed close (55/61) rather
 // than being independently rebalanced.
-const EXPECTED_QUERY_COUNT = 116;
-const EXPECTED_BLIND_COUNT = 55;
-const EXPECTED_PROTOCOL_AWARE_COUNT = 61;
+// S3.5 (2026-08-24): 116 to 109. The DexScreener public-API retirement
+// (D-DS2) retargeted 13 rows in place and deleted 7 whose subject has no
+// successor. The awareness split moved 55/61 to 52/57 for the same reason it
+// drifted in phase 1: deletions only ever removed rows from their original
+// half, and no row was invented to rebalance it.
+const EXPECTED_QUERY_COUNT = 109;
+const EXPECTED_BLIND_COUNT = 52;
+const EXPECTED_PROTOCOL_AWARE_COUNT = 57;
 
 const dataset = loadDataset();
 

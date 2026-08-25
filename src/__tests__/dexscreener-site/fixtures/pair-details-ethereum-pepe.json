@@ -1,0 +1,439 @@
+{
+ "cg": null,
+ "gp": {
+  "dataStatus": "complete",
+  "isInDex": true,
+  "isOpenSource": true,
+  "isProxy": false,
+  "isTrueToken": false,
+  "buyTax": "0",
+  "canTakeBackOwnership": false,
+  "cannotSellAll": false,
+  "creatorAddress": "0xfbfEaF0DA0F2fdE5c66dF570133aE35f3eB58c9A",
+  "creatorBalance": "3718337.06",
+  "creatorPercent": "0.000000",
+  "dex": [
+   {
+    "name": "UniswapV2",
+    "liquidity": "14483171.03991239",
+    "pair": "0xa43fe16908251ee70ef74718545e4fe6c5ccec9f"
+   },
+   {
+    "name": "UniswapV3",
+    "liquidity": "324731.454874133993382995920000000000",
+    "pair": "0x11950d141ecb863f01007add7d1a342041227b58"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "28573.374496795496616297160000000000",
+    "pair": "0xe42df52d7938631f6c6cb56aac2fafc1e00ea77b7517a02ee244bd7d86c061cd"
+   },
+   {
+    "name": "UniswapV3",
+    "liquidity": "10208.685520064060086735900000000000",
+    "pair": "0xf239009a101b6b930a527deaab6961b6e7dec8a6"
+   },
+   {
+    "name": "UniswapV3",
+    "liquidity": "3770.908092929740000000000000000000",
+    "pair": "0xcee31c846cbf003f4ceb5bbd234cba03c6e940c7"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "3015.447239262054445652320000000000",
+    "pair": "0xecd73ecbf77219f21f129c8836d5d686bbc27d264742ddad620500e3e548e2c9"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "2523.728576010695977472660000000000",
+    "pair": "0x4d2985ed0e6f89fdfea66264f88241db024c75ec656d9b7314ccb759e27d11ca"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "198.714365845136000000000000000000",
+    "pair": "0x7d69a413a3f59753903d4729f8207d67f0f9f5ad6126a0a97fda32604e533d83"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "156.093025723890179714800000000000",
+    "pair": "0x526ff1379d1245f8deae6ba2ea8c5ada94fdfd165ca819a76e9a505becbb1021"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "96.145268647004000000000000000000",
+    "pair": "0x431959638dcec8298260bc3cf9d5fbcdacb027b8d8e0001fd64e15adc0d8893a"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "57.417163654554000000000000000000",
+    "pair": "0x7216053d6d541ff046c855d8456583cb0d08a67f6566ecff4119acdb5ba36bec"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "55.005312206687190645700000000000",
+    "pair": "0x69591af23ea2a56f9859a7a66c7ca38dbdd7226415157a939a7216224ffd73c0"
+   },
+   {
+    "name": "UniswapV3",
+    "liquidity": "35.651814123216000000000000000000",
+    "pair": "0xa7bc6c09907fa2ded89f1c8d05374621cb1f88c5"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "21.160891854020000000000000000000",
+    "pair": "0x5577a7fa9f9e5a4d8188ec55dc48f593a95bff943fea1bda46e3b3aff8396ff6"
+   },
+   {
+    "name": "UniswapV2",
+    "liquidity": "10.04967363",
+    "pair": "0x5a75ed4624bbda1e992dd006ea2aca83d64c30fb"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "1.513613539956",
+    "pair": "0x303e557eb3952e540a244576cfc5c06ce0dada134f94b4b12b7bbcf6a07fd501"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "1.37571984727918567098",
+    "pair": "0x39463597ac659e18133deb93f633383f65044ab7503c5c3a56c4fecb661a00b4"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "0.80225191026039757644",
+    "pair": "0xbc6249057edb87c2e82b432a95810c9cb56b3ed4285c2786c7a64be6b6ee74e4"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "0.75888290450230796538",
+    "pair": "0x0b63ffbb2c23480b56384a482d8c8cbd1c6389613963e3b2ef4649416498cd65"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "0.517921000000000000000000000000",
+    "pair": "0x1b5fd69436d0d0ab61153cd34d052c7fb182538bde58aa50b013de039c11aab7"
+   },
+   {
+    "name": "UniswapV2",
+    "liquidity": "0.02455078",
+    "pair": "0xb676b41f577812c5d5d755d22d302bc7a84bb489"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "0.00765111299423536912",
+    "pair": "0x1ce2caecf3a491463423667d301f005a6921d07e6c6bf9ac51e1e4928db3d85c"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "0.004586950738",
+    "pair": "0xc85aba81249a47280f232c056d612c95cd05c47bb69235e35ae51af21bafe88f"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "0.0033407451754108972",
+    "pair": "0x544d97b13e6a40f612c707ac66a7949aea4cc260901c61ea5e474d734698bbb4"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "0.000061956476000000000000000000",
+    "pair": "0x97e5a73e72d6163f3f0730ca20a3ffb981ff3cb803da749f74fb2db4b4756b58"
+   },
+   {
+    "name": "UniswapV4",
+    "liquidity": "0.00000007235733605708",
+    "pair": "0x1b5bed788a1708c5b417c09a1513b3d6ee56dfb3096ae2035890ba15c149c778"
+   }
+  ],
+  "externalCall": false,
+  "holderCount": 580992,
+  "holders": [
+   {
+    "address": "0xf977814e90da44bfa03b6295a0616a897441acec",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "36523128430574.675",
+    "percent": "0.086817222047280560"
+   },
+   {
+    "address": "0x1d48963dd8fada6ab5c2c7b92eba81ecc5030270",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "28874092948935.883197028959490652",
+    "percent": "0.068635099091431846"
+   },
+   {
+    "address": "0x5a52e96bacdabb82fd05763e25335261b270efcb",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "28007429624597.8498773786689001",
+    "percent": "0.066574998943868844"
+   },
+   {
+    "address": "0x611f7bf868a6212f871e89f7e44684045ddfb09d",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "14147091425625.96516479153111",
+    "percent": "0.033628312535066782"
+   },
+   {
+    "address": "0x3f9a8345729ea842708e080e238c92731e5699b8",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "14027422374086.782547003352953991",
+    "percent": "0.033343853479501119"
+   },
+   {
+    "address": "0xbf45fb5d20bc3d0954188773e803b4e30e87e0b8",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "8051613125586",
+    "percent": "0.019139069258306678"
+   },
+   {
+    "address": "0xc671b05671a7cd3080c6ceae79d284bdde0ef271",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "7818182491709.591493831579570323",
+    "percent": "0.018584193483839329"
+   },
+   {
+    "address": "0xefef30bd1cca520619306c95091ab18473febc5c",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "7223906038001.611499882185183112",
+    "percent": "0.017171569947574959"
+   },
+   {
+    "address": "0x76ec5a0d3632b2133d9f1980903305b62678fbd3",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "7209770646642.576531003530999119",
+    "percent": "0.017137969446657430"
+   },
+   {
+    "address": "0x000000000000000000000000000000000000dead",
+    "isLocked": true,
+    "isContract": false,
+    "balance": "6917544412592.567954793444851788",
+    "percent": "0.016443333720208490"
+   }
+  ],
+  "isAntiWhale": true,
+  "antiWhaleModifiable": true,
+  "isBlacklisted": true,
+  "isHoneypot": false,
+  "isMintable": false,
+  "isWhitelisted": false,
+  "lpHolderCount": 71,
+  "lpTotalSupply": "28019386.512660453577548833",
+  "lpHolders": [
+   {
+    "address": "0x6982508145454ce325ddbe47a25d4ec3d2311933",
+    "isLocked": false,
+    "isContract": true,
+    "balance": "27987939.902750970427665813",
+    "percent": "0.998877683853096707"
+   },
+   {
+    "address": "0x371d98623613ef5e9bb04014b999e2b7da4d3739",
+    "isLocked": false,
+    "isContract": true,
+    "balance": "6568.668179010222481018",
+    "percent": "0.000234432976469423"
+   },
+   {
+    "address": "0x4c3923c5e4e87eb2f0eb7db6818ee743ddc9cd50",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "5180.666601520862562934",
+    "percent": "0.000184895789891045"
+   },
+   {
+    "address": "0xe1512fb3d7c9bd07fb27d199cc037de5c5f81a31",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "2697.745134329246312255",
+    "percent": "0.000096281377649374"
+   },
+   {
+    "address": "0x000000000000000000000000000000000000dead",
+    "isLocked": true,
+    "isContract": false,
+    "balance": "2559.882245726958199859",
+    "percent": "0.000091361109729161"
+   },
+   {
+    "address": "0x4dc77f9318bfd41bafe10603c65c00e93c6be11f",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "2228.478069257613878418",
+    "percent": "0.000079533435475137"
+   },
+   {
+    "address": "0x0fbf5b87bde5b99906a0a80f7a5efc64ddd2a4c3",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "2101.606022040434715256",
+    "percent": "0.000075005426014264"
+   },
+   {
+    "address": "0xb0e283dd96f8ff2edfe7e6cce49a86dc2b79d388",
+    "isLocked": false,
+    "isContract": false,
+    "balance": "1831.20529541072323149",
+    "percent": "0.000065354938966393"
+   },
+   {
+    "address": "0xb481a24f2177d03c6eab6b60531043cb04e5d4ac",
+    "isLocked": false,
+    "isContract": true,
+    "balance": "1577.57375062471810247",
+    "percent": "0.000056302936893778"
+   },
+   {
+    "address": "0x5f8e50be79880b16bd75ebdab8638170511a0b5f",
+    "isLocked": false,
+    "isContract": true,
+    "balance": "956.447348596992032633",
+    "percent": "0.000034135199504272"
+   }
+  ],
+  "ownerAddress": "0x0000000000000000000000000000000000000000",
+  "ownerBalance": "0",
+  "ownerChangeBalance": false,
+  "ownerPercent": "0.0",
+  "hiddenOwner": false,
+  "sellTax": "0",
+  "slippageModifiable": false,
+  "totalSupply": "420689899645536.006445468000045255",
+  "transferPausable": true,
+  "tradingCooldown": false,
+  "tokenName": "Pepe",
+  "tokenSymbol": "PEPE",
+  "trustList": false,
+  "updatedAt": 1787489038183
+ },
+ "ts": null,
+ "cmc": null,
+ "ti": null,
+ "cms": {
+  "chainId": "ethereum",
+  "name": "Pepe",
+  "symbol": "PEPE",
+  "address": "0x6982508145454Ce325dDbE47a25d4ec3d2311933",
+  "pairAddresses": [],
+  "description": "Pepe is a community based meme token surround the iconic meme Pepe the frog. Pepe aims to leverage the power of such an iconic meme to become the most memeable memecoin in existence.",
+  "links": [
+   {
+    "label": "Website",
+    "url": "https://www.pepe.vip/"
+   },
+   {
+    "url": "https://twitter.com/pepecoineth",
+    "type": "twitter"
+   }
+  ],
+  "icon": {
+   "id": "ae001139fa1fcd24f8421d82caf72d8e06fabafab33b089c5d2e6d18039354e7"
+  },
+  "header": {
+   "id": "f558e07ff23d76a0a22f23e9e554bb513b79404163d185d5e79d96a5058004eb"
+  },
+  "createdAt": "2024-02-27T11:50:40.000Z",
+  "updatedAt": "2026-08-23T11:06:23.166Z",
+  "claims": [],
+  "metaIds": [
+   "JXitcm3w7oiKssq5z8sO",
+   "tYgbgt1mByripiIWKRPd",
+   "KAxVtm2QhpF8vU6RkrBl"
+  ]
+ },
+ "qi": {
+  "contractVerified": true,
+  "tokenDetails": {
+   "tokenName": "Pepe",
+   "tokenSymbol": "PEPE",
+   "tokenDecimals": 18,
+   "tokenOwner": "0x0000000000000000000000000000000000000000",
+   "tokenSupply": 420690000000000,
+   "tokenCreatedDate": 1681483895000,
+   "quickiTokenHash": {
+    "exactQHash": "q-d495f034ff45",
+    "similarQHash": "q-2b8829947b70"
+   }
+  },
+  "tokenDynamicDetails": {
+   "lastUpdatedTimestamp": 1787402045263,
+   "isHoneypot": false,
+   "buyTax": "0.0",
+   "sellTax": "0.0",
+   "transferTax": "0.0",
+   "lpPair": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+   "lpSupply": 28019386.512660455,
+   "lpBurnedPercent": "0.01",
+   "priceImpact": "0.0",
+   "problem": false
+  },
+  "quickiAudit": {
+   "contractCreator": "0xfbfeaf0da0f2fde5c66df570133ae35f3eb58c9a",
+   "contractOwner": "0x0000000000000000000000000000000000000000",
+   "contractName": "PepeToken",
+   "contractChain": "eth",
+   "contractAddress": "0x6982508145454ce325ddbe47a25d4ec3d2311933",
+   "contractRenounced": true,
+   "hiddenOwner": false,
+   "isProxy": false,
+   "canMint": false,
+   "canBurn": true,
+   "canBlacklist": true,
+   "cantBlacklistRenounced": true,
+   "canMultiBlacklist": false,
+   "canWhitelist": false,
+   "canUpdateFees": false,
+   "canUpdateMaxWallet": true,
+   "canUpdateMaxTx": false,
+   "canPauseTrading": false,
+   "cantPauseTradingRenounced": false,
+   "hasTradingCooldown": false,
+   "canUpdateWallets": false,
+   "hasSuspiciousFunctions": false,
+   "hasExternalFunctions": false,
+   "hasModifiedTransferWarning": false,
+   "hasScams": false,
+   "contractLinks": [
+    "https://hardhat.org"
+   ],
+   "functions": [
+    "approve",
+    "blacklist",
+    "burn",
+    "decreaseAllowance",
+    "increaseAllowance",
+    "renounceOwnership",
+    "setRule",
+    "transfer",
+    "transferFrom",
+    "transferOwnership"
+   ],
+   "onlyOwnerFunctions": [
+    "owner",
+    "renounceOwnership",
+    "transferOwnership",
+    "blacklist",
+    "setRule"
+   ]
+  },
+  "chainId": "ethereum",
+  "tokenAddress": "0x6982508145454Ce325dDbE47a25d4ec3d2311933",
+  "updatedAt": 1787472241064
+ },
+ "hpi": null,
+ "ll": null,
+ "holders": null,
+ "lpHolders": null,
+ "su": {
+  "totalSupply": 420689899645536,
+  "circulatingSupply": 413772355232943.44
+ },
+ "ta": null
+}

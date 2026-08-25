@@ -1,0 +1,16 @@
+{
+  "encoding": "protobuf",
+  "protobufMessage": "dex_search.SpotlightResponse",
+  "endpoint": "https://io.dexscreener.com/dex/search/spotlight/v10",
+  "requestParams": {},
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24T12:22:46+00:00",
+  "httpStatus": 200,
+  "capturedBy": "live capture for S3 (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-08-24; capture script scratchpad/s3-capture.py",
+  "fixture": "spotlight-v10.bin.b64",
+  "bytes": 23571,
+  "sha256": "44a12cb9f3640253622e55d53f622d78ef2d59f0c8c6d43ab94a80345847c2b4"
+}

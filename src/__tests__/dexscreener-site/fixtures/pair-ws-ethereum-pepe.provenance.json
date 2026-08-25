@@ -1,0 +1,18 @@
+{
+  "encoding": "protobuf",
+  "protobufMessage": "dex_screener.PairChannelMessage",
+  "endpoint": "wss://io.dexscreener.com/dex/screener/v7/pair/ethereum/0xa43fe16908251ee70ef74718545e4fe6c5ccec9f",
+  "requestParams": {
+    "chainId": "ethereum",
+    "pairId": "0xa43fe16908251ee70ef74718545e4fe6c5ccec9f"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-08-24T12:22:47+00:00",
+  "httpStatus": 101,
+  "capturedBy": "live capture for S3 (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-08-24; capture script scratchpad/s3-capture.py",
+  "fixture": "pair-ws-ethereum-pepe.bin.b64",
+  "bytes": 960,
+  "sha256": "a3119a3d19ebcd6dd432cd19031eb0e8b5e9d3a26a38eeea4f74e9212d46e4c8"
+}

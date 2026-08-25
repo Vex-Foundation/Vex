@@ -1,0 +1,17 @@
+{
+  "encoding": "protobuf",
+  "protobufMessage": "dex_screener.PairChannelMessage",
+  "endpoint": "wss://io.dexscreener.com/dex/screener/v7/pair/solana/gyz6rxjfnb3yjp2j2e7hmonojgqekzuxeeujurncqj1w",
+  "requestParams": {},
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-25T08:59:00+00:00",
+  "httpStatus": 101,
+  "capturedBy": "live capture for S8 RESOLVE fix round (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-08-25; capture script scratchpad/s8/resolve/probe.py",
+  "note": "First binary frame of the single-pair channel for a KNOWN solana pool, arriving 0.468 s after connect; a byte-identical second copy arrived in the same tick. This is the measurement behind PAIR_FIRST_ATTEMPT_FRAMES = 2: the answer is present at half a second, and asking for six frames waited ~13 s for it. Also the pool named by dexscreener__pair_get exampleParams.",
+  "fixture": "pair-ws-solana-known.bin.b64",
+  "bytes": 1066,
+  "sha256": "cd88dbc67639cdc16f7d5fe0a3f475bef14aa8c32aa2da933d192476e43c6b32"
+}

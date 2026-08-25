@@ -90,7 +90,7 @@ describe("lexical retrieval determinism", () => {
 describe("supplemental retrieval dataset", () => {
   it("is a separate file that does not touch the canonical dataset contract", () => {
     expect(supplemental.version).toBe("supplemental-v1");
-    expect(loadDataset()).toHaveLength(116);
+    expect(loadDataset()).toHaveLength(109);
   });
 
   it("references only active, advertised tool IDs", () => {

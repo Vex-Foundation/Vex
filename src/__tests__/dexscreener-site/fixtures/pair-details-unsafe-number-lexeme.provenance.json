@@ -1,0 +1,22 @@
+{
+  "fixture": "pair-details-unsafe-number-lexeme.json",
+  "encoding": "json",
+  "endpoint": "https://io.dexscreener.com/dex/pair-details/v4/{chain}/{pairId}",
+  "requestParams": {
+    "route": "pair_id"
+  },
+  "requestHeaders": {
+    "Accept": "application/json",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 239,
+  "sha256": "00dca816b4ce1b1385db95f9a95add686dee7405643e2f51bc3cfcf97d5d530d",
+  "capturedBy": "SYNTHETIC amounts on a REAL shape. The su block states supply as a bare JSON number on every live capture (ethereum 2026-08-24: 420689899645536 and 413772355123227.6; solana 2026-08-24: 729988329.5371597), so the numeric path is live; only the magnitude here is chosen, to a lexeme no IEEE-754 double can hold.",
+  "responseHeaders": {
+    "cache-control": "public, max-age=60"
+  },
+  "note": "The lexeme 12345678901234567890.123456789 came out of the previous projection as 12345678901234567000 under a note promising the provider's own digits and no floating point. Rule 90 money-path discipline: raw amounts never cross binary floating point."
+}

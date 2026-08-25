@@ -2,7 +2,7 @@
  * The GENERIC median/order-of-magnitude outlier primitive.
  *
  * The rule used to exist twice: once over the provider's raw base-token prices
- * (`vex-agent/tools/protocols/dexscreener/pair-list/price-sanity.ts`) and once
+ * (the since-deleted `dexscreener/pair-list/price-sanity.ts`) and once
  * over normalized watch candidates (`tools/dexscreener/token-watch-price`).
  * These tests pin the primitive both sides now consume: the minimum population,
  * the median-as-ELEMENT choice, and the fixed ratio in both directions.

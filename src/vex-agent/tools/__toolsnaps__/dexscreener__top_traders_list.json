@@ -1,0 +1,70 @@
+{
+  "definition": {
+    "function": {
+      "description": "List the pair's top wallets by `sortBy`: `boughtUsd`, `soldUsd`, `netCashFlowUsd` (maps to the provider's pnl rank), or `currentHoldingValueUsd` (the provider's unrealized rank), with `lookbackDays` to bound the window. Use this for who-bought-and-sold-the-most questions. This surface is bounded_non_pageable: one leaderboard of up to 100 wallets, no continuation; wallets beyond it are unreachable and the envelope says so. Returns per wallet: buys, sells, USD in and out, `netCashFlowUsd` (cash flow, not profit: cost basis and transfers are invisible to the venue), `retainedBoughtPct`, `currentHoldingValueUsd`, and active trading span. The `unknowns` block names what this endpoint cannot see (other venues, transfers, supply share) so the agent does not overclaim. `currentHoldingValueUsd` IS DERIVED HERE AND SHOWS ITS WORKING. The provider ranks by this figure and does not emit it (measured: 100 of 100 rows on a fresh unrealized rank carried a balance and no value), so each row carries the exact decimal product of the provider's own `balanceAmount` and the pair's current `priceUsd`, with both factors echoed in `currentHoldingValueBasis` and no floating-point arithmetic on the token amount. When either factor is missing the value is `null` with `missingInputs` naming what was absent, never an estimate. It is present VALUE at the observation time and moves with the price; it is not profit and not unrealized gain. IT DEPENDS ON THE RANKING, MEASURED. The provider sends `balanceAmount` on some sorts and not others: out of 100 rows, `sortBy: currentHoldingValueUsd` returned 0 nulls, `netCashFlowUsd` with `sortDir: asc` returned 0, `boughtUsd` desc returned 58, and `boughtUsd` asc and `netCashFlowUsd` desc each returned 100 of 100 null. So on two of the eight sort and direction combinations EVERY row's holding value is null. Every answer carries `balanceCoverage` with the count for that page, and for a reliably populated holding value ask for `sortBy: currentHoldingValueUsd`. THE AMOUNT LEXEMES ARE ALREADY PROVIDER ROUNDINGS, IN SIGNIFICANT DIGITS RATHER THAN DECIMAL PLACES: `amountBuy`, `amountSell` and `balanceAmount` arrive carrying about 15 to 16 significant digits whatever the token's decimals, so a large balance reads as `1464600134847.065` and a small one runs to seven decimal places as `0.0001992` to reach the same precision. The multiplication is exact over what was given and `exactProductUsd` carries every digit of it, but the displayed holding value is rounded to CENTS, because a product carried to 18 significant digits claims precision its inputs do not have; a genuinely sub-cent position therefore displays as 0.00 and is readable only in `exactProductUsd`. `label` and `url` were EMPTY on 100 percent of 1,300 live rows across four pairs; a null in either is the measured normal and is not information about the wallet. A wrong AMM id on this route answers HTTP 404, not 400, with an empty body, and that is the realistic non-200: every value this tool can send is already inside what the provider accepts. THE WINDOW IS 30 DAYS AND CANNOT BE WIDENED: the provider defaults to 30 days and answers HTTP 400 above it (measured at 31, 60, 90 and 365), so `lookbackDays` bounds the window downward only and every answer is a 30-day ranking unless it says otherwise. A wallet that traded heavily before that window is absent, which is not evidence that it never traded. Use this when the question names the biggest or top traders of a pool over the last month. Trader figures are venue-local and are NOT profit. netCashFlowUsd is dollars out minus dollars in on this pair; cost basis, transfers and every other venue are invisible here, so it cannot establish gain, loss, or whether a wallet exited. retainedBoughtPct is the share of what the wallet BOUGHT on this pair that it still holds, never a share of token supply. newOnPair means new on THIS pair, not a newly created wallet. An active trading span is the time between a wallet's first and last trade here, not a holding period. It is UP TO 100 rows and not exactly 100: with `onlyKol` the measured result was zero rows, so an empty leaderboard under that filter is expected and is not evidence about the pair. Give chain plus pairAddress for a known pool, or tokenAddress to resolve the deepest pool of the provider's bounded 30-row search window; resolutionBasis echoes which happened and a token resolution is never a claim about every pool the token trades in. The pool's AMM id and its quote token are resolved from the pair itself and are not parameters: a wrong AMM id answers with zero rows and a wrong quote token returns a silently INVERTED price series, so neither is left to the caller. For chronological or wallet-filtered flow, and for any window narrower than the whole pair, use dexscreener__trades_list instead; for the price move these wallets traded into, use dexscreener__candles_list. Every response carries sourceObservation with the transport that answered, fetchedAtMs, and the cache state, so a cached catalog read is distinguishable from a live one.",
+      "name": "dexscreener__top_traders_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "Chain slug the pool lives on, for example solana, ethereum, bsc, base or robinhood. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`). A pair or token address is only unique within one chain, so this is required; an unknown slug is refused by name with the nearest catalog matches rather than answered with zero rows.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "How many wallets to return, 1 to 100. Defaults to 25. 100 is the provider's whole leaderboard. There is NO offset and no cursor: this surface serves one bounded leaderboard per sort and wallets beyond it are unreachable, which the envelope states rather than hiding behind a page parameter that does nothing.",
+            "type": "number"
+          },
+          "lookbackDays": {
+            "description": "Rank only wallets active within this many days (the provider's maxDaysAgo), from 1 to 30. MEASURED: 30 is the provider's own maximum AND its default. On a 2023-vintage pool with no lookback sent, the oldest first trade on every sort was 30.01 days old; mda=30 returned the same 100 wallets as omitting it; and mda=31, 60, 90 and 365 each answered HTTP 400 with an empty body. So THIS LEADERBOARD IS A 30-DAY LEADERBOARD and cannot rank a pair's whole history: a wallet that traded heavily more than 30 days ago does not appear at all. A value above 30 is refused by name here rather than sent, because the provider's 400 blames the route and would send you to debug an AMM id that is correct. The window in force is echoed in filtersApplied on every answer. Measured working: a 1-day lookback returned 100 rows all with a last trade inside 0.952 days. IT WINDOWS THE MONEY FIGURES, NOT ONLY WHO IS ELIGIBLE. Every per-wallet column - buys, sells, volumeUsdBuy, volumeUsdSell, amountBuy, amountSell, firstSwapAtMs, and therefore netCashFlowUsd and activeSpanSeconds - is RECOMPUTED over this window rather than being a lifetime total filtered by recency. Measured on the same wallet: at 30 days it reads buys 29 and volumeUsdBuy 246,836.60, at 1 day it reads buys 3 and 11,325.53, a 28x difference with no marker on the row. So \"how much has this wallet bought here\" is answered for the window in force and never for the pair's whole history.",
+            "type": "number"
+          },
+          "onlyKol": {
+            "description": "Restrict the leaderboard to wallets the provider labels as key opinion leaders. Defaults to false. MEASURED CAVEAT: this filter returned ZERO rows on the probed pair, so an empty result with it on is expected and is not evidence that no notable wallet traded the pair. The provider's labelling is its own opaque classification.",
+            "type": "boolean"
+          },
+          "pairAddress": {
+            "description": "The pool (pair) address. Give this when you already know the exact pool, from dexscreener__pairs_search, a screening board, or dexscreener__pair_get. Either this or tokenAddress is required. When both are given, pairAddress wins and the response says so rather than silently ignoring the other.",
+            "type": "string"
+          },
+          "sortBy": {
+            "description": "Which column ranks the leaderboard: boughtUsd, soldUsd, netCashFlowUsd, currentHoldingValueUsd. Defaults to boughtUsd. netCashFlowUsd maps to the provider's \"pnl\" rank and currentHoldingValueUsd to its \"unrealized\" rank; both provider names are wrong about what they measure, so the names here say what the column IS. Ranking runs on the provider over the whole pair, not locally over a sample, and asc is a true full-population reverse rank rather than a reversal of the top 100 (measured: zero maker overlap between the asc and desc pages of the same sort). The sort also decides whether `currentHoldingValueUsd` is derivable at all: the provider sends the balance it needs on some rankings and not others, and on boughtUsd asc and netCashFlowUsd desc it was measured absent on 100 of 100 rows. Ask for currentHoldingValueUsd when that column is the question; `balanceCoverage` on every answer reports what actually arrived.",
+            "enum": [
+              "boughtUsd",
+              "soldUsd",
+              "netCashFlowUsd",
+              "currentHoldingValueUsd"
+            ],
+            "type": "string"
+          },
+          "sortDir": {
+            "description": "desc for the largest values first, asc for the smallest. Defaults to desc. asc with netCashFlowUsd surfaces the wallets that have put in the most and taken out the least on this pair; that is a cash-flow statement and not a loss.",
+            "enum": [
+              "desc",
+              "asc"
+            ],
+            "type": "string"
+          },
+          "tokenAddress": {
+            "description": "A token contract address, resolved to the deepest pool of the provider's bounded 30-row search window on this chain. Use it when you have a token but not a pool. resolutionBasis echoes that a resolution happened and resolutionNote states the bound: \"deepest\" means deepest among at most 30 pools the provider chose to return, never a claim about every pool the token trades in. For the full pool list call dexscreener__token_pairs_list.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "dexscreener",
+    "requiresEnv": null,
+    "toolId": "dexscreener.top.traders"
+  }
+}

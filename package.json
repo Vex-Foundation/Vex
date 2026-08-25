@@ -45,6 +45,7 @@
     "vex:test:e2e": "pnpm --dir vex-app test:e2e"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "2.14.0",
     "@morpho-org/morpho-sdk": "5.5.0",
     "@openrouter/sdk": "^1.1.13",
     "@solana/spl-token": "^0.4.14",

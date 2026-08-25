@@ -1,0 +1,16 @@
+{
+  "fixture": "chains-by-trending.json",
+  "encoding": "json",
+  "endpoint": "https://dd.dexscreener.com/ds-data/v2/chains/by-trending",
+  "requestParams": {},
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24T10:58:00+00:00",
+  "httpStatus": 200,
+  "bytes": 82948,
+  "sha256": "5563a8556752f4572f5bbb83a2b604f33da328173f0a2840ac7b72d41d6cabf4",
+  "capturedBy": "live capture for S2a (curl_cffi impersonate=chrome), one GET; re-serialized with indent=1 for review, semantically identical to the 63,214-byte body the endpoint returned",
+  "note": "74 chains. architecture absent on 14 of 74, integrations absent on 5 of 74, nativeChainId on 17, wrappedNativeToken on 19: the parser treats those as nullable for that reason."
+}

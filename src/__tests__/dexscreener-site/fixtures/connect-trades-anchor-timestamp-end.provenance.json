@@ -1,0 +1,24 @@
+{
+  "fixture": "connect-trades-anchor-timestamp-end.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_feed.GetTransactionsResponse",
+  "endpoint": "https://io.dexscreener.com/feed/rpc/dex_feed.PublicService/GetTransactions?connect=v1&encoding=proto&base64=1&message=<GetTransactionsRequest with timestampEnd>",
+  "requestParams": {
+    "chainId": "ethereum",
+    "ammId": "uniswap",
+    "pairId": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+    "quoteTokenAddress": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "timestampEnd": "2026-05-26T09:38:32Z"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 25954,
+  "sha256": "3498ccaf09bedae2dbe3f65f845f5e7e80ada8c6c5036a25ac021e31e0ae47f5",
+  "capturedBy": "live recon probe (curl_cffi impersonate=chrome), 2026-08-24 09:38-09:46Z; archived under scratchpad/live-turn2/chart-flow with run.jsonl, per-request meta and sha256",
+  "note": "The candle block anchor. The nearest prior trade is block 25178613 at 09:31:59Z, 393 seconds BEFORE the requested instant: the anchor is approximate by contract and its distance is reported."
+}

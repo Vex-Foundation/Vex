@@ -1,0 +1,20 @@
+{
+  "fixture": "connect-trending-solana-h24.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_trending.GetTrendingPairsResponse",
+  "endpoint": "https://io.dexscreener.com/dex/trending/dex_trending.PublicService/GetTrendingPairs?connect=v1&encoding=proto&base64=1",
+  "requestParams": {
+    "chainId": "solana",
+    "timeframeKey": "h24 (enum 4)"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-25",
+  "httpStatus": 200,
+  "bytes": 9105,
+  "sha256": "9c34dbfceb06d36b97f559ea62236bb777f63d5e27c19385e133a8c5cf875548",
+  "capturedBy": "live EP7 endpoint-wave probe (curl_cffi impersonate=chrome); archived under scratchpad/endpoint-wave/ep7-trending/live-connect-solana-h24.bin",
+  "note": "The Connect half of the KEPT trending decoder pair. The Avro table TRENDING_V6 had a decode test and a fixture; the protobuf names on the allowlist had neither, so half of a deliberately retained capability was unproven. 30 pairs, tokenIconId and baseToken.decimals present."
+}

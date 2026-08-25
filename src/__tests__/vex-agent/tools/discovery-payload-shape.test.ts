@@ -52,11 +52,17 @@ describe("discover_tools ranked payload", () => {
     expect(row.required).toContain("query");
   });
 
-  it("omits constraints on a manifest that declares no exclusive groups", async () => {
+  // The guard must skip every manifest that declares ANY param-group family,
+  // not just `exclusiveParamGroups`. `atLeastOneOf` (which plan 14.6 item 11
+  // mandates on pair_get and pairs_batch_get) also renders a constraint
+  // sentence, so the narrower guard failed a manifest that was behaving
+  // correctly. `describeParamGroupConstraints` is the same predicate the
+  // coverage block below already uses, and it owns all three families.
+  it("omits constraints on a manifest that declares no param-group constraints", async () => {
     const result = await discoverProtocolCapabilities({ namespace: "dexscreener", limit: 50 });
     for (const tool of result.tools) {
       const manifest = manifestFor(tool.toolId);
-      if ((manifest.exclusiveParamGroups ?? []).length > 0) continue;
+      if (describeParamGroupConstraints(manifest).length > 0) continue;
       expect(tool).not.toHaveProperty("constraints");
     }
   });

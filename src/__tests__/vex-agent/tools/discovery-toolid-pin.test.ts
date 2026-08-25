@@ -73,17 +73,17 @@ describe("pinExactToolIdMatch", () => {
   });
 
   it("keeps the relative order of the remaining rows and de-duplicates the pin", () => {
-    const scored = scoredOf("dexscreener.trending", "dexscreener.search", "dexscreener.boosts");
+    const scored = scoredOf("dexscreener.trending", "dexscreener.search", "dexscreener.spotlight");
     const pinned = pinExactToolIdMatch("dexscreener.search", candidates, scored);
     expect(pinned.map((e) => e.manifest.toolId)).toEqual([
       "dexscreener.search",
       "dexscreener.trending",
-      "dexscreener.boosts",
+      "dexscreener.spotlight",
     ]);
   });
 
   it("pins a prefix that uniquely names one candidate", () => {
-    const target = "dexscreener.communityTakeovers";
+    const target = "dexscreener.launchpad.pairs";
     const prefix = target.slice(0, target.length - 3).toLowerCase();
     const unique = PROTOCOL_TOOLS.filter((m) => m.toolId.toLowerCase().startsWith(prefix));
     expect(unique, "fixture drift: prefix is no longer unique").toHaveLength(1);

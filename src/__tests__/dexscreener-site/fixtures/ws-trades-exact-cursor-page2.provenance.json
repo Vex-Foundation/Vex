@@ -1,0 +1,30 @@
+{
+  "fixture": "ws-trades-exact-cursor-page2.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_feed.WSMessage",
+  "endpoint": "wss://io.dexscreener.com/feed/ws WSCommand.getHistoricalTransactions",
+  "requestParams": {
+    "cid": 12,
+    "chainId": "ethereum",
+    "ammId": "uniswap",
+    "pairId": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+    "quoteTokenId": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "type": "TYPE_BUY_OR_SELL",
+    "before": {
+      "blockNumber": 25823281,
+      "transactionIndex": 5,
+      "eventIndex": 59
+    }
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 26897,
+  "sha256": "f237ff8b39624f52ffd7ac3c49d9ba7466ce0dc2fd2f2d5d224d99557baf19dc",
+  "capturedBy": "live recon probe (curl_cffi impersonate=chrome), 2026-08-24 09:38-09:46Z; archived under scratchpad/live-turn2/chart-flow with run.jsonl, per-request meta and sha256",
+  "note": "Continuation by the EXACT triple. The controlled probe proved a block-only cursor omits same-block events: Connect with beforeBlockNumber=25824167 skipped a real BUY the exact cursor returned."
+}

@@ -95,6 +95,19 @@ export function mapDexScreenerError(status: number, body?: unknown): VexError {
     return withStatus(err, status);
   }
 
+  // 408 sits inside the 4xx range and is NOT a refusal of the request as
+  // spelled: the provider is saying it did not receive one in time. Grouping
+  // it with 400 would tell an agent to change a query that was never read.
+  if (status === 408) {
+    const err = new VexError(
+      ErrorCodes.DEXSCREENER_TIMEOUT,
+      msg,
+      "The provider timed out waiting for the request rather than rejecting it. The same request is worth exactly one retry."
+    );
+    err.retryable = true;
+    return withStatus(err, status);
+  }
+
   if (status === 404) {
     return withStatus(new VexError(ErrorCodes.DEXSCREENER_NOT_FOUND, msg, "Check that the chain and address are correct."), status);
   }

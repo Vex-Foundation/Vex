@@ -27,17 +27,30 @@ const FIXTURES: readonly GoldenFixture[] = [
   { intent: "solana token search", expectedAny: ["solana.tokens"] },
   { intent: "fresh solana tokens", expectedAny: ["solana.tokens.trending"] },
   { intent: "jupiter price lookup", expectedAny: ["solana.prices"] },
-  // Guarded regression: when the Trench launchpad shipped, the ubiquitous
-  // query token "tokens" (matched by trench.tokens' toolId + aliases) briefly
-  // displaced the trending surface here (trench.tokens 99 vs
-  // dexscreener.trending 58). Fixed by giving `dexscreener.trending` explicit
-  // lexical metadata (aliases + a "trending meme tokens" exampleIntent) in
-  // `embeddings/dexscreener/trending.ts` — measured after: trending 129,
-  // trench.tokens 99. Trench-phrased queries stay pinned by the trench
-  // fixtures below; `trench.tokens` is deliberately NOT accepted here.
-  { intent: "trending meme tokens", expectedAny: ["dexscreener.trending", "dexscreener.boosts"] },
-  { intent: "community takeover", expectedAny: ["dexscreener.communityTakeovers"] },
-  { intent: "pair liquidity analytics", expectedAny: ["dexscreener.pairs", "dexscreener.tokens"] },
+  // THREE DEXSCREENER FIXTURES CHANGED IN S3.5, and what happened to each.
+  //
+  // "trending meme tokens" was pinned to `dexscreener.trending` by a lexical
+  // anchor added when the Trench launchpad's `tokens` token displaced it
+  // (trench.tokens 99 vs trending 58; after the anchor, trending 129). That
+  // anchor lived in the retired `embeddings/dexscreener/trending.ts` and died
+  // with it. It is NOT re-added: the query asks for trending TOKENS, and
+  // `dexscreener.trending` is now the NARRATIVE aggregate, which is exactly
+  // the confusion the rename to `dexscreener__narratives_list` exists to end.
+  // The fixture is retired rather than retargeted, because the surviving pair
+  // board answers "which pairs", and the token-shaped query is legitimately
+  // owned by the solana, trench and pools surfaces that now hold the top 3.
+  //
+  // "community takeover" is retired with no successor. Plan 4.6 records the
+  // CTO feed as a NAMED omission (owner decision D-DS3): the public API's feed
+  // has no site equivalent and was dropped rather than kept alive. A fixture
+  // pinning an intent nothing answers would be a false guard.
+  //
+  // "pair liquidity analytics" survives and is retargeted to the tools that
+  // now answer it: one pool's live state, and one token's pools ranked by
+  // depth.
+  { intent: "pair liquidity analytics", expectedAny: ["dexscreener.pair.get", "dexscreener.tokenPairs"] },
+  { intent: "which narrative or meta sector is moving", expectedAny: ["dexscreener.trending"] },
+  { intent: "who just bought a boost", expectedAny: ["dexscreener.spotlight"] },
   { intent: "new token launches on trench", expectedAny: ["trench.tokens"] },
   { intent: "newest tokens on robinhood", expectedAny: ["trench.tokens"] },
   { intent: "trench bonding curve tokens", expectedAny: ["trench.tokens"] },
@@ -46,7 +59,7 @@ const FIXTURES: readonly GoldenFixture[] = [
   // ── ambiguous / cross-namespace ───────────────────────────────────
   { intent: "wallet token balances", expectedAny: ["khalani.tokens", "solana.tokens"] },
   { intent: "prediction market events", expectedAny: ["solana.predict.events"] },
-  { intent: "token search", expectedAny: ["khalani.tokens", "solana.tokens", "kyberswap.tokens", "dexscreener.search", "dexscreener.tokens"] },
+  { intent: "token search", expectedAny: ["khalani.tokens", "solana.tokens", "kyberswap.tokens", "dexscreener.search"] },
 
   // ── param-driven ──────────────────────────────────────────────────
   { intent: "slippage tolerance swap quote", expectedAny: ["kyberswap.swap", "solana.swap"] },

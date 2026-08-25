@@ -242,10 +242,14 @@ describe("protocol discovery", () => {
     expect(bridge!.mutating).toBe(true);
   });
 
-  it("matches community takeover query to dexscreener", async () => {
-    const result = await discoverProtocolCapabilities({ query: "community takeover" });
+  // Was "community takeover" until S3.5 retired that tool with the rest of the
+  // public-API surface (owner decision D-DS2). The property under test is
+  // unchanged - a namespace-characteristic phrase reaches the tool that owns it
+  // - so the query moves to a phrase the surviving surface actually answers.
+  it("matches a paid-promotion query to dexscreener", async () => {
+    const result = await discoverProtocolCapabilities({ query: "who just bought a boost" });
     expect(result.success).toBe(true);
-    expect(result.tools[0]?.toolId).toBe("dexscreener.communityTakeovers");
+    expect(result.tools[0]?.toolId).toBe("dexscreener.spotlight");
   });
 
   // ── Defense in depth: only advertised namespaces leak ────────────

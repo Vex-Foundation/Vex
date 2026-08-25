@@ -58,7 +58,6 @@ describe("canonicalToolName - case is preserved", () => {
   // resolved through the live catalog; the dotted id it maps back to keeps its case.
   it.each([
     ["dexscreener__token_pairs_list", "dexscreener.tokenPairs"],
-    ["dexscreener__community_takeovers_list", "dexscreener.communityTakeovers"],
     ["solana__lend_borrow_operate", "solana.lend.borrowOperate"],
     ["pendle__lp_to_pt", "pendle.lp.toPt"],
   ])("maps %s to %s", (wire, dotted) => {

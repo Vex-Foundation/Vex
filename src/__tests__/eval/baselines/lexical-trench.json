@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-trench",
   "datasetVersion": "trench-v1",
   "status": "captured",
-  "capturedAt": "2026-08-22T14:12:49.228Z",
+  "capturedAt": "2026-08-25T12:47:09.012Z",
   "metrics": {
     "overall": {
       "count": 24,
       "recall1": 0.375,
       "recall5": 0.667,
       "coverage5": 0.667,
-      "mrr5": 0.497,
-      "groupMrr5": 0.497
+      "mrr5": 0.493,
+      "groupMrr5": 0.493
     },
     "awareness": {
       "blind": {
@@ -20,8 +20,8 @@
         "recall1": 0.214,
         "recall5": 0.5,
         "coverage5": 0.5,
-        "mrr5": 0.327,
-        "groupMrr5": 0.327
+        "mrr5": 0.321,
+        "groupMrr5": 0.321
       },
       "protocolAware": {
         "count": 10,
@@ -38,8 +38,8 @@
         "recall1": 0.375,
         "recall5": 0.667,
         "coverage5": 0.667,
-        "mrr5": 0.497,
-        "groupMrr5": 0.497
+        "mrr5": 0.493,
+        "groupMrr5": 0.493
       },
       "cross": {
         "count": 0,
@@ -112,8 +112,8 @@
         "recall1": 0.571,
         "recall5": 0.714,
         "coverage5": 0.714,
-        "mrr5": 0.619,
-        "groupMrr5": 0.619
+        "mrr5": 0.607,
+        "groupMrr5": 0.607
       },
       "prediction_discovery": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-trench@trench-v1, mode lexical, 24 cases evaluated.",
-    "overall recall@1 0.375, recall@5 0.667, coverage@5 0.667, mrr@5 0.497, groupMrr@5 0.497.",
+    "overall recall@1 0.375, recall@5 0.667, coverage@5 0.667, mrr@5 0.493, groupMrr@5 0.493.",
     "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

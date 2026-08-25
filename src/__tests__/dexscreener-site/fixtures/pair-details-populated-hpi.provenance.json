@@ -1,0 +1,22 @@
+{
+  "fixture": "pair-details-populated-hpi.json",
+  "encoding": "json",
+  "endpoint": "https://io.dexscreener.com/dex/pair-details/v4/{chain}/{pairId}",
+  "requestParams": {
+    "route": "pair_id"
+  },
+  "requestHeaders": {
+    "Accept": "application/json",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 319,
+  "sha256": "696f13ada5e4843ebf027aabe42f94f04da270eba08b6ab2224cfb5ddcdecfaa",
+  "capturedBy": "SYNTHETIC. Every root key null except hpi, which carries a plausible honeypot.is verdict. No live capture has ever returned a populated hpi or ti block (recon section 5.2 records both as null across eight samples, and the two 2026-08-24 captures agree), so this document is constructed rather than observed and its FIELD NAMES are not evidence of the real honeypot.is layout.",
+  "responseHeaders": {
+    "cache-control": "public, max-age=60"
+  },
+  "note": "The defect it pins: a populated root block that this projection does not read used to count toward the document being an answer while contributing nothing, so a response holding isHoneypot true with both tax rates rendered as zero of nine blocks answered with no hint that anything was withheld."
+}

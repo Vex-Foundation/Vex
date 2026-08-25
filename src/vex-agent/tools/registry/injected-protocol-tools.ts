@@ -78,6 +78,52 @@ const TOOL_ID_BY_PUBLIC_NAME: ReadonlyMap<string, string> = new Map(
 );
 
 /**
+ * Namespaces whose every tool is injected into EVERY session's tools array
+ * without a ToolSearch discovery round (owner decision D-DS9, 2026-08-25):
+ * the agent must see the market-research surface from its first token instead
+ * of paying discovery latency. Measured at the decision: 18 manifests,
+ * ~265 KB of schema, ~66k tokens of tools-array occupancy, amortized by
+ * prompt caching. Reversal is deleting the namespace from this set; dialing
+ * back to a curated subset is a per-tool list here instead of a namespace.
+ * Every visibility gate below still applies (availability, advertised
+ * namespace, pressure barrier) - this constant widens WHICH manifests are
+ * considered, never WHETHER one may be shown.
+ */
+const ALWAYS_INJECTED_NAMESPACES: ReadonlySet<string> = new Set(["dexscreener"]);
+
+/**
+ * Whether a namespace's tools are always injected (D-DS9). Exported for the
+ * system-prompt Protocols layer: the prompt must tell the model these tools
+ * are already in its tools array, or the model pays a ToolSearch round the
+ * injection made unnecessary. One owner for the set; the prompt derives.
+ */
+export function isAlwaysInjectedNamespace(namespace: string): boolean {
+  return ALWAYS_INJECTED_NAMESPACES.has(namespace);
+}
+
+/**
+ * The session's injection id list: always-injected namespaces first, in
+ * catalog order, then the session's discovered working set minus duplicates.
+ * Catalog order is deterministic (module-load constant), so the tools array
+ * stays byte-stable across requests - the property prompt caching needs.
+ */
+function injectionToolIds(sessionId: string | undefined): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const manifest of PROTOCOL_TOOLS) {
+    if (!ALWAYS_INJECTED_NAMESPACES.has(manifest.namespace)) continue;
+    ids.push(manifest.toolId);
+    seen.add(manifest.toolId);
+  }
+  for (const toolId of getDiscoveredToolIds(sessionId)) {
+    if (seen.has(toolId)) continue;
+    ids.push(toolId);
+    seen.add(toolId);
+  }
+  return ids;
+}
+
+/**
  * `kyberswap.swap.quote` → `kyberswap__swap_quote`.
  *
  * A catalog lookup, not a transform. Throws on an unregistered toolId: every
@@ -150,14 +196,16 @@ export function isInjectedToolNameShape(name: string): boolean {
 }
 
 /**
- * Build the injected function schemas for a session, in discovery order
- * (oldest first). Empty when nothing was discovered — the tools array is then
- * byte-identical to today's.
+ * Build the injected function schemas for a session: the always-injected
+ * namespaces (D-DS9) in catalog order, then the discovery working set (oldest
+ * first). With no always-injected namespace configured and nothing discovered
+ * the array is empty and the tools array is byte-identical to the pre-D-DS9
+ * behaviour.
  */
 export function buildInjectedProtocolTools(ctx: ToolVisibilityContext): OpenAITool[] {
   const injected: OpenAITool[] = [];
 
-  for (const toolId of getDiscoveredToolIds(ctx.sessionId)) {
+  for (const toolId of injectionToolIds(ctx.sessionId)) {
     const manifest = getProtocolManifest(toolId);
     if (!manifest) continue;
     if (!isProtocolToolAvailable(manifest)) continue;
