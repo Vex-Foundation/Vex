@@ -13,7 +13,46 @@
  */
 
 import type { StudioWritableAgent } from "@vex-agent/studio/agents.js";
-import type { StudioProjectFacts } from "@vex-agent/studio/installer/render/index.js";
+import type {
+  StudioProjectBrief,
+  StudioProjectFacts,
+} from "@vex-agent/studio/installer/render/index.js";
+
+/**
+ * Deterministic project brief for the `AGENTS.md` goldens.
+ *
+ * FIXED tool counts, fixed dates, fixed change notes. The shipped file gets
+ * these values from the LIVE inventory and the project row; the goldens get
+ * them from here, so a new protocol landing in the inventory does not rewrite
+ * fifty golden files, while `managed-block.test.ts` still pins that the numbers
+ * reach the text at all.
+ */
+export const STUDIO_TEST_BRIEF: StudioProjectBrief = {
+  projectName: "acme-trading",
+  projectId: "0f6b1c2e-8a4d-4f1b-9c3e-7d5a2b8e4c10",
+  vexVersion: "0.2.6",
+  permission: "restricted",
+  wallets: [
+    { family: "evm", address: "0x1111111111111111111111111111111111111111" },
+    { family: "solana", address: "So11111111111111111111111111111111111111112" },
+  ],
+  createdOn: "2026-08-01",
+  scopeUpdatedOn: "2026-08-25",
+  agentNames: ["Claude Code", "Codex CLI"],
+  inventory: {
+    alwaysLoadedCount: 12,
+    searchableCount: 147,
+    protocols: [
+      { name: "kyberswap", toolCount: 21 },
+      { name: "morpho", toolCount: 43 },
+      { name: "uniswap", toolCount: 83 },
+    ],
+  },
+  changeNotes: [
+    { version: "0.9.4", date: "2026-08-25", summary: "updated the wallet selection" },
+    { version: "0.9.3", date: "2026-08-12", summary: "added the codex config" },
+  ],
+};
 
 /**
  * Deterministic facts. A fake UUID and a POSIX path, so the goldens are the

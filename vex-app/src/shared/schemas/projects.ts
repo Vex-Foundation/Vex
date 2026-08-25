@@ -23,8 +23,12 @@
  */
 
 import { z } from "zod";
-import { STUDIO_AGENT_IDS } from "@vex-lib/studio-agent-ids.js";
+import { STUDIO_AGENT_IDS } from "./studio-agent-ids.js";
 import { sessionPermissionSchema } from "./sessions.js";
+import {
+  studioFilesStatusSchema,
+  studioRenderOutcomeSchema,
+} from "./studio-installer.js";
 
 /** Backing-session scope marker. Agent-mode reads filter `vex_app`, so a
  *  project's backing session never appears in the session sidebar. */
@@ -39,15 +43,14 @@ export const PROJECT_SLUG_MAX_LENGTH = 64;
  * Studio arcs, so an unknown id must be a rejected input rather than a value
  * that silently does nothing.
  *
- * The list itself is NOT authored here. It is re-exported from
- * `@vex-lib/studio-agent-ids.js`, which the engine's agent registry
- * (`src/vex-agent/studio/agents.ts`) also reads: the root tsconfig compiles only
- * `src`, so the engine cannot import this module, and a second hand-kept copy
- * would be a second source of truth for a DURABLE stored value. Extending the
- * roster is a deliberate edit in that module; the parity tests on both sides
- * (`src/__tests__/lib/studio-agent-ids.test.ts` and
- * `./__tests__/projects.test.ts`) pin the same ordered list so an edit that
- * reaches only one package fails.
+ * The list itself is not authored here either: it is re-exported from
+ * `./studio-agent-ids.ts`, which explains why the shared layer holds a PINNED
+ * COPY of the engine's canonical roster instead of importing `@vex-lib/*` (the
+ * process-boundary check forbids a shared module from reaching into a runtime
+ * package, and weakening that check is not an option). The two parity tests -
+ * `src/__tests__/lib/studio-agent-ids.test.ts` on the engine side and
+ * `./__tests__/projects.test.ts` here - pin the same ordered literal, so a
+ * roster edit that reaches only one package fails.
  */
 export { STUDIO_AGENT_IDS };
 
@@ -151,6 +154,13 @@ export const projectDtoSchema = z
     /** Monotonic optimistic-concurrency token for scope edits. Starts at 1. */
     scopeVersion: z.number().int().min(1),
     backingSessionId: z.string().uuid(),
+    /**
+     * Per-artifact state of the files Vex maintains in the project directory
+     * (stage A5b). Read from disk on every project read: drift is a filesystem
+     * fact, and a cached "clean" answer would be exactly the silent overwrite
+     * the drift contract exists to prevent.
+     */
+    files: studioFilesStatusSchema,
     createdAt: z.string().datetime({ offset: true }),
     updatedAt: z.string().datetime({ offset: true }),
   })
@@ -217,14 +227,62 @@ export type ProjectUpdateScopeInput = z.infer<
   typeof projectUpdateScopeInputSchema
 >;
 
-/** Both `create` and `updateScope` return the full, freshly persisted project. */
+/** `create` returns the full, freshly persisted project. */
 export const projectCreateResultSchema = projectDtoSchema;
 export type ProjectCreateResult = z.infer<typeof projectCreateResultSchema>;
 
-export const projectUpdateScopeResultSchema = projectDtoSchema;
+/**
+ * `updateScope` returns the persisted project AND what the file reconciliation
+ * that the edit triggered actually did (stage A5b).
+ *
+ * ONE RESULT, TWO FACTS, on purpose. A scope edit rewrites the files in the
+ * user's repository, and those writes can refuse: a foreign entry at the Vex
+ * path, a drifted managed block, a malformed config. Returning only the row
+ * would show a green "saved" while a config the user is relying on was left
+ * untouched. `render` is never optional and never empty - a run that rendered
+ * nothing says so with `trigger: "superseded"`.
+ */
+export const projectUpdateScopeResultSchema = z
+  .object({
+    project: projectDtoSchema,
+    render: studioRenderOutcomeSchema,
+  })
+  .strict();
 export type ProjectUpdateScopeResult = z.infer<
   typeof projectUpdateScopeResultSchema
 >;
+
+/**
+ * `repairFiles` returns the same pair: the project as it now reads, and what
+ * the reconciliation did. Repair is the ONLY path that overwrites a drifted
+ * managed block, which is why it is an explicit user action with its own
+ * channel rather than a retry of `updateScope`.
+ */
+export const projectRepairFilesResultSchema = projectUpdateScopeResultSchema;
+export type ProjectRepairFilesResult = z.infer<
+  typeof projectRepairFilesResultSchema
+>;
+
+export {
+  projectRepairFilesInputSchema,
+  studioArtifactKindSchema,
+  studioArtifactOutcomeSchema,
+  studioArtifactStatusSchema,
+  studioFilesStatusSchema,
+  studioInstallerWarningSchema,
+  studioRefusalReasonSchema,
+  studioRenderOutcomeSchema,
+} from "./studio-installer.js";
+export type {
+  ProjectRepairFilesInput,
+  StudioArtifactKind,
+  StudioArtifactOutcome,
+  StudioArtifactStatus,
+  StudioFilesStatus,
+  StudioInstallerWarning,
+  StudioRefusalReason,
+  StudioRenderOutcome,
+} from "./studio-installer.js";
 
 /** `get` returns null for an unknown id (the caller held a stale view). */
 export const projectGetResultSchema = projectDtoSchema.nullable();

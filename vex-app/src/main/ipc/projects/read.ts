@@ -8,7 +8,7 @@
  */
 
 import { CH } from "@shared/ipc/channels.js";
-import type { Result } from "@shared/ipc/result.js";
+import { ok, type Result } from "@shared/ipc/result.js";
 import {
   projectGetInputSchema,
   projectGetResultSchema,
@@ -19,6 +19,7 @@ import {
 } from "@shared/schemas/projects.js";
 import { getProject, listProjects } from "../../database/projects/read.js";
 import { registerHandler } from "../register-handler.js";
+import { withProjectFiles, withProjectFilesAll } from "./files.js";
 
 export function registerProjectsGetHandler(): () => void {
   return registerHandler({
@@ -26,8 +27,11 @@ export function registerProjectsGetHandler(): () => void {
     domain: "projects",
     inputSchema: projectGetInputSchema,
     outputSchema: projectGetResultSchema,
-    handle: async (input, ctx): Promise<Result<ProjectGetResult>> =>
-      getProject(input.projectId, ctx.requestId),
+    handle: async (input, ctx): Promise<Result<ProjectGetResult>> => {
+      const outcome = await getProject(input.projectId, ctx.requestId);
+      if (!outcome.ok || outcome.data === null) return outcome;
+      return ok(await withProjectFiles(outcome.data, ctx.requestId));
+    },
   });
 }
 
@@ -37,7 +41,10 @@ export function registerProjectsListHandler(): () => void {
     domain: "projects",
     inputSchema: projectListInputSchema,
     outputSchema: projectListSchema,
-    handle: async (_input, ctx): Promise<Result<ProjectList>> =>
-      listProjects(ctx.requestId),
+    handle: async (_input, ctx): Promise<Result<ProjectList>> => {
+      const outcome = await listProjects(ctx.requestId);
+      if (!outcome.ok) return outcome;
+      return ok(await withProjectFilesAll(outcome.data, ctx.requestId));
+    },
   });
 }

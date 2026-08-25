@@ -5,6 +5,8 @@ import type {
   ProjectGetInput,
   ProjectGetResult,
   ProjectList,
+  ProjectRepairFilesInput,
+  ProjectRepairFilesResult,
   ProjectUpdateScopeInput,
   ProjectUpdateScopeResult,
 } from "../../../schemas/projects.js";
@@ -41,4 +43,16 @@ export interface ProjectsBridge {
   readonly updateScope: (
     input: ProjectUpdateScopeInput
   ) => Promise<Result<ProjectUpdateScopeResult>>;
+  /**
+   * Reconcile every file Vex maintains in the project folder, drift included.
+   *
+   * The ONLY path that overwrites an artifact a human edited after Vex wrote
+   * it, which is why it is an explicit user action rather than a retry of
+   * `updateScope`. It changes no authority and takes no expected version.
+   * A5 never deletes files: the strongest thing this does is replace Vex's own
+   * region inside a file that stays.
+   */
+  readonly repairFiles: (
+    input: ProjectRepairFilesInput
+  ) => Promise<Result<ProjectRepairFilesResult>>;
 }

@@ -36,6 +36,38 @@ export {
   studioEntryObject,
 } from "./entry.js";
 export { studioOwnedWrites } from "./json-file.js";
+export type { StudioOwnedRegion } from "./owned-region.js";
+export { readStudioOwnedRegion, studioRegionHash } from "./owned-region.js";
+export type { StudioManagedBlockState } from "./managed-block.js";
+export {
+  STUDIO_PROTOCOLS_DOC_PATH,
+  inspectStudioManagedBlock,
+  mergeStudioManagedBlock,
+  removeStudioManagedBlock,
+  renderStudioManagedBlock,
+  renderStudioManagedBody,
+  studioManagedBodyHash,
+} from "./managed-block.js";
+export {
+  STUDIO_AGENTS_MD_PATH,
+  STUDIO_CLAUDE_MD_IMPORT,
+  STUDIO_CLAUDE_MD_PATH,
+  claudeMdImportsAgents,
+  mergeClaudeMdImport,
+  removeClaudeMdImport,
+  renderFreshClaudeMd,
+} from "./claude-md.js";
+export type {
+  StudioBriefInventory,
+  StudioBriefPermission,
+  StudioBriefWallet,
+  StudioChangeNote,
+  StudioProjectBrief,
+} from "../../instructions/project-brief.js";
+export {
+  STUDIO_CHANGE_NOTE_LIMIT,
+  boundStudioChangeNotes,
+} from "../../instructions/project-brief.js";
 export { renderStudioTomlSection, studioTomlHeader } from "./toml-file.js";
 
 /** The contents of this agent's config file when Vex creates it from nothing. */

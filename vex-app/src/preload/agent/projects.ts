@@ -2,11 +2,13 @@ import { CH } from "../../shared/ipc/channels.js";
 import {
   projectCreateInputSchema,
   projectGetInputSchema,
+  projectRepairFilesInputSchema,
   projectUpdateScopeInputSchema,
 } from "../../shared/schemas/projects.js";
 import type {
   ProjectCreateInput,
   ProjectGetInput,
+  ProjectRepairFilesInput,
   ProjectUpdateScopeInput,
 } from "../../shared/schemas/projects.js";
 import type { ProjectsBridge } from "../../shared/types/bridge/agent/projects.js";
@@ -27,6 +29,13 @@ export const projects = {
       CH.projects.updateScope,
       input,
       projectUpdateScopeInputSchema
+    );
+  },
+  repairFiles(input: ProjectRepairFilesInput) {
+    return invokeWithSchema(
+      CH.projects.repairFiles,
+      input,
+      projectRepairFilesInputSchema
     );
   },
 } satisfies ProjectsBridge;

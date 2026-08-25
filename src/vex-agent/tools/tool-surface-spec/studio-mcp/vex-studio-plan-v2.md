@@ -764,6 +764,33 @@ the coordinator's scratchpad `a1-probe/REPORT.md`):
     `mcp/instructions.ts` keeps `STUDIO_MCP_INSTRUCTIONS` byte-identical,
     pinned by a literal captured before the move.
 
+58. Stage A5b LANDED (2026-08-25) - THE LAST BACKEND BUILD STAGE. The
+    main-process half of the installer: confined filesystem contract
+    (per-segment lstat walk, 1 MiB bound, twins, atomic same-directory
+    replace with source-hash verification), per-artifact provenance
+    committed IMMEDIATELY after each replacement (fault-injection
+    proven: a crash mid-run leaves exactly the written artifacts
+    recorded and Repair completes the remainder; the counter-proof
+    shows deferred provenance collides with itself), per-project
+    serialized triggers reloading the latest committed scope, drift
+    per artifact on the project DTO, `CH.projects.repairFiles` (NO
+    delete channel), and migration 089 (provenance + change notes +
+    render marker; proven through the live testcontainers chain by the
+    coordinator). Item 7b content shipped in the owner's 9-section
+    order with LIVE inventory counts, both authority as-of dates, the
+    bounded change log ("this file does not grow" stated in it), the
+    generic signing pair named for both families from the registry, the
+    building-apps-on-MCP passage (MCP IS the API, no separate REST),
+    and the ask-first bug-bounty note. Marker carries the app version
+    OUTSIDE the hashed body, so a Vex bump alone is never drift.
+    Boundary discipline: the shared layer holds a PINNED copy of the
+    agent roster in lockstep by parity tests, never an `@vex-lib`
+    import (`check-process-boundaries` stays unweakened). Named
+    deviations, accepted: project CREATE does not render (Repair or the
+    first scope edit does - stage B UI offers Repair on fresh
+    projects); DTO reads walk the filesystem sequentially;
+    `STUDIO_GENERATOR_REVISION` is a hand-bumped literal.
+
 ## 0. Decisions in force
 
 Closed by the owner (to be recorded as D20+ in `owner-decisions.md`):

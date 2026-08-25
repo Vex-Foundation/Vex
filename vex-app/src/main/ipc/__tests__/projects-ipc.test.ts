@@ -1,5 +1,5 @@
 /**
- * Contract tests for the four `vex:projects:*` channels.
+ * Contract tests for the five `vex:projects:*` channels.
  *
  * Each channel is driven through the real `registerHandler` boundary with a
  * scripted DB owner, covering the four paths every IPC surface owes:
@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => ({
   getProject: vi.fn(),
   listProjects: vi.fn(),
   updateProjectScope: vi.fn(),
+  renderProjectFiles: vi.fn(),
+  enrichProjectFiles: vi.fn(),
   resolveWalletRef: vi.fn(),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -61,6 +63,10 @@ vi.mock("../_wallet-refs.js", async () => {
   );
   return { ...actual, resolveWalletRef: mocks.resolveWalletRef };
 });
+vi.mock("../../studio/installer.js", () => ({
+  renderProjectFiles: mocks.renderProjectFiles,
+  enrichProjectFiles: mocks.enrichProjectFiles,
+}));
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
 const { registerProjectsHandlers } = await import("../projects/index.js");
@@ -85,8 +91,21 @@ const DTO = {
   wallets: { evm: null, solana: null },
   scopeVersion: 1,
   backingSessionId: SESSION_ID,
+  files: {
+    lastRenderedScopeVersion: null,
+    generatorFingerprint: null,
+    artifacts: [],
+  },
   createdAt: "2026-08-23T10:00:00.000Z",
   updatedAt: "2026-08-23T10:00:00.000Z",
+};
+
+const RENDER = {
+  scopeVersion: 2,
+  completed: true,
+  trigger: "scope_update" as const,
+  artifacts: [],
+  warnings: [],
 };
 
 type ResultShape = {
@@ -119,6 +138,12 @@ beforeEach(() => {
     ok: true,
     data: { ...DTO, scopeVersion: 2 },
   });
+  mocks.renderProjectFiles.mockResolvedValue({ ok: true, data: RENDER });
+  // The disk half is the installer's job and has its own suites; here it is
+  // stubbed to the DTO's own value so these tests stay about the IPC contract.
+  mocks.enrichProjectFiles.mockImplementation(
+    async (project: { files: unknown }) => project.files,
+  );
   registerProjectsHandlers();
 });
 
@@ -138,18 +163,25 @@ const CHANNELS = [
       permission: "full",
     },
   },
+  { channel: CH.projects.repairFiles, payload: { projectId: PROJECT_ID } },
 ] as const;
 
 describe("vex:projects:* - registration and the shared boundary paths", () => {
-  it("registers exactly the four declared channels", () => {
+  it("registers exactly the five declared channels", () => {
     expect([...handlers.keys()].sort()).toEqual(
       [
         CH.projects.create,
         CH.projects.get,
         CH.projects.list,
         CH.projects.updateScope,
+        CH.projects.repairFiles,
       ].sort(),
     );
+  });
+
+  it("has NO delete channel: A5 never deletes a user's files", () => {
+    expect(Object.keys(CH.projects)).not.toContain("delete");
+    expect([...handlers.keys()].some((c) => c.includes("delete"))).toBe(false);
   });
 
   it.each(CHANNELS)("$channel rejects an untrusted sender", async ({ channel, payload }) => {
@@ -174,6 +206,7 @@ describe("vex:projects:* - registration and the shared boundary paths", () => {
         mocks.getProject,
         mocks.listProjects,
         mocks.updateProjectScope,
+        mocks.renderProjectFiles,
       ];
       // Abort while the owner is in flight, exactly as `vex:cancel` would.
       for (const owner of owners) {
@@ -320,7 +353,7 @@ describe("vex:projects:updateScope", () => {
       permission: "full",
     });
     expect(r.ok).toBe(true);
-    expect((r.data as { scopeVersion: number }).scopeVersion).toBe(2);
+    expect((r.data as { project: { scopeVersion: number } }).project.scopeVersion).toBe(2);
     // No wallet edit means the owner is told so explicitly, not left to guess.
     expect(mocks.updateProjectScope.mock.calls[0]?.[1]).toBeNull();
   });

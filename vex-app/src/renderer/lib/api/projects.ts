@@ -28,6 +28,8 @@ import type {
   ProjectCreateResult,
   ProjectGetResult,
   ProjectList,
+  ProjectRepairFilesInput,
+  ProjectRepairFilesResult,
   ProjectUpdateScopeInput,
   ProjectUpdateScopeResult,
 } from "@shared/schemas/projects.js";
@@ -107,10 +109,41 @@ export function useUpdateProjectScope(): UseMutationResult<
       if (!result.ok) return;
       // The returned row already carries the incremented `scopeVersion`, so
       // seeding the detail cache is what lets the next edit send a fresh
-      // expected version instead of a stale one.
+      // expected version instead of a stale one. `result.data.render` is the
+      // file-reconciliation report and is NOT cached here: it describes one
+      // run, not the project's state, and the project's own `files` field
+      // already carries the state a screen renders from.
       queryClient.setQueryData(
-        projectKeys.detail(result.data.id),
-        { ok: true, data: result.data } satisfies Result<ProjectGetResult>,
+        projectKeys.detail(result.data.project.id),
+        { ok: true, data: result.data.project } satisfies Result<ProjectGetResult>,
+      );
+      void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
+    },
+  });
+}
+
+/**
+ * Repair a project's Vex files.
+ *
+ * NOT retried automatically. Repair overwrites artifacts a human edited, so a
+ * blind retry would repeat a destructive-to-someone's-edit action the user
+ * asked for exactly once.
+ */
+export function useRepairProjectFiles(): UseMutationResult<
+  Result<ProjectRepairFilesResult>,
+  Error,
+  ProjectRepairFilesInput
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ProjectRepairFilesInput) =>
+      window.vex.projects.repairFiles(input),
+    retry: false,
+    onSuccess: (result) => {
+      if (!result.ok) return;
+      queryClient.setQueryData(
+        projectKeys.detail(result.data.project.id),
+        { ok: true, data: result.data.project } satisfies Result<ProjectGetResult>,
       );
       void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
     },

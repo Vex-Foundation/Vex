@@ -9,7 +9,7 @@
  */
 
 import { CH } from "@shared/ipc/channels.js";
-import { err, type Result } from "@shared/ipc/result.js";
+import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
   projectCreateInputSchema,
   projectCreateResultSchema,
@@ -18,6 +18,7 @@ import {
 import { createProject } from "../../database/projects/create.js";
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
+import { withProjectFiles } from "./files.js";
 import { resolveProjectWallets } from "./wallet-refs.js";
 
 export function registerProjectsCreateHandler(): () => void {
@@ -35,17 +36,23 @@ export function registerProjectsCreateHandler(): () => void {
         return err(wallets.error);
       }
       const outcome = await createProject(input, wallets.refs, ctx.requestId);
-      if (outcome.ok) {
+      if (!outcome.ok) {
+        log.info(
+          `[ipc:vex:projects:create] errCode=${outcome.error.code} correlationId=${ctx.requestId}`,
+        );
+        return outcome;
+      }
+      {
         log.info(
           `[ipc:vex:projects:create] ok permission=${outcome.data.permission} ` +
             `agents=${outcome.data.agents.length} correlationId=${ctx.requestId}`,
         );
-      } else {
-        log.info(
-          `[ipc:vex:projects:create] errCode=${outcome.error.code} correlationId=${ctx.requestId}`,
-        );
       }
-      return outcome;
+      // A new project has no files yet: A5's render triggers are a scope
+      // UPDATE, a Vex version change and an explicit Repair. The DTO therefore
+      // reports every artifact as `missing` rather than pretending, and the
+      // Studio UI offers Repair to create them.
+      return ok(await withProjectFiles(outcome.data, ctx.requestId));
     },
   });
 }

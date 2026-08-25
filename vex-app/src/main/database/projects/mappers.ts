@@ -40,7 +40,10 @@ export interface ProjectRow {
   backing_session_id: string;
   agents: string[] | null;
   scope_version: number;
+  /** The generator FINGERPRINT of the last complete render (migration 089). */
   generator_version: string | null;
+  /** The scope version that last complete render covered (migration 089). */
+  last_rendered_scope_version: number | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -54,7 +57,8 @@ export interface ProjectWalletRow {
 
 export const PROJECT_ROW_COLUMNS =
   "id, name, slug, root_path, permission, backing_session_id, agents, " +
-  "scope_version, generator_version, created_at, updated_at";
+  "scope_version, generator_version, last_rendered_scope_version, " +
+  "created_at, updated_at";
 
 export const PROJECT_WALLET_ROW_COLUMNS =
   "project_id, family, wallet_id, address";
@@ -130,6 +134,15 @@ export function toProjectDto(
     wallets,
     scopeVersion: row.scope_version,
     backingSessionId: row.backing_session_id,
+    // The DURABLE half of the file status. `artifacts` is the DISK half and is
+    // filled by the installer at the IPC boundary (`enrichProjectFiles`),
+    // never here: reading a project's files from inside a database
+    // transaction would hold a row lock across filesystem IO.
+    files: {
+      lastRenderedScopeVersion: row.last_rendered_scope_version,
+      generatorFingerprint: row.generator_version,
+      artifacts: [],
+    },
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };

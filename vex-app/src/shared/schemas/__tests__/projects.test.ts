@@ -20,17 +20,17 @@ import {
 /**
  * PARITY PIN, app half.
  *
- * `../projects.js` no longer authors the roster: it re-exports
- * `@vex-lib/studio-agent-ids.js`, which the engine's agent registry
- * (`src/vex-agent/studio/agents.ts`) reads too, because the root tsconfig
- * compiles only `src` and a second hand-kept copy would be a second source of
- * truth for a DURABLE stored value.
+ * `../projects.js` re-exports the roster from `../studio-agent-ids.ts`, which
+ * holds a PINNED COPY of the engine's canonical list
+ * (`src/lib/studio-agent-ids.ts`, read by `src/vex-agent/studio/agents.ts`).
+ * The shared layer may not import `@vex-lib/*` - the process-boundary check
+ * forbids a shared contract from reaching into a runtime package - so the two
+ * packages are kept in LOCKSTEP by these pins rather than by an import.
  *
- * The import removes drift in one direction and hides it in the other: an edit
- * in the lib would silently change this package's request validation. So both
- * sides pin the same literal list. The engine half is
- * `src/__tests__/lib/studio-agent-ids.test.ts`. Changing the roster means
- * editing the module and BOTH pins deliberately.
+ * This is the app half; the engine half is
+ * `src/__tests__/lib/studio-agent-ids.test.ts`. Both hold the SAME ordered
+ * literal, so a roster edit that reaches only one package fails here or there.
+ * Changing the roster means editing both modules and BOTH pins deliberately.
  */
 const PINNED_ROSTER = [
   "claude-code",

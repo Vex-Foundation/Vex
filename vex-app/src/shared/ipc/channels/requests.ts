@@ -435,12 +435,19 @@ export const CH = {
    * `projects.scope_conflict` and writes nothing. Deletion is deliberately not
    * part of this surface yet - removing a project means removing a folder of
    * the user's files, which gets its own explicit workflow.
+   *
+   * `updateScope` also RENDERS the project's coding-agent config files and
+   * instruction files (stage A5b) and returns what that reconciliation did,
+   * per artifact. `repairFiles` runs the same reconciliation on demand and is
+   * the ONLY path that overwrites an artifact a human edited after Vex wrote
+   * it. There is deliberately NO delete channel: A5 never deletes files.
    */
   projects: {
     create: "vex:projects:create",
     get: "vex:projects:get",
     list: "vex:projects:list",
     updateScope: "vex:projects:updateScope",
+    repairFiles: "vex:projects:repairFiles",
   },
 
   // Cancellation
