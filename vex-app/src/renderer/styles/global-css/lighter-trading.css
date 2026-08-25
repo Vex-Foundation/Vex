@@ -49,28 +49,6 @@
   --lit-action-ink: #ffffff;
 }
 
-.lit-launcher {
-  display: inline-flex;
-  height: 32px;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid var(--color-line-2);
-  border-radius: 9999px;
-  background: var(--color-surface-2);
-  padding: 0 11px 0 6px;
-  color: var(--color-ink-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
-}
-
-.lit-launcher:hover {
-  border-color: var(--color-line-4);
-  background: var(--color-interactive-hover);
-  color: var(--color-ink-primary);
-}
-
-.lit-launcher:focus-visible,
 .lit-dialog button:focus-visible,
 .lit-dialog select:focus-visible,
 .lit-dialog input:focus-visible,

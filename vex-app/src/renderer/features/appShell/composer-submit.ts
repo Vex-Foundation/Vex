@@ -44,6 +44,10 @@ import {
   submitFailureNotice,
   submitSuccessText,
 } from "./composer-helpers.js";
+import {
+  isLighterWorkspaceCommand,
+  requestLighterWorkspaceOpen,
+} from "./lighterTrading/workspace-command.js";
 
 export type ComposerNotice =
   | {
@@ -361,6 +365,9 @@ export function useComposerSubmit(
     if (reasoningEffort !== null) {
       setSessionReasoningEffort(sessionId, reasoningEffort);
     }
+    if (isLighterWorkspaceCommand(message)) {
+      requestLighterWorkspaceOpen();
+    }
     void runChatSubmit(message, reasoningEffort);
   }, [
     sessionId,
@@ -402,6 +409,9 @@ export function useComposerSubmit(
       // steered row. When steering is refused (turn just ended, parked run)
       // the message QUEUES instead (A27) - never dropped, never doubled.
       if (submitPending || inFlightRef.current.has(sessionId)) {
+        if (isLighterWorkspaceCommand(message)) {
+          requestLighterWorkspaceOpen();
+        }
         setDraft("");
         const steerOutcome = await trySteerLiveTurn(sessionId, message);
         if (steerOutcome === "steered") {
@@ -416,6 +426,9 @@ export function useComposerSubmit(
       if (freeTextGate) {
         setNotice({ tone: "error", text: gatedReason(runStatus) });
         return;
+      }
+      if (isLighterWorkspaceCommand(message)) {
+        requestLighterWorkspaceOpen();
       }
       // Clear optimistically — the message is on its way to the agent and the
       // transcript already shows it. runChatSubmit owns failure handling
