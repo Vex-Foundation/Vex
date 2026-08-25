@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import {
   classifyLighterMarket,
+  marketMatchesSection,
   marketProductLabel,
-  marketSectionFor,
 } from "../market-classification.js";
 
 const AAPL_SPOT = market({
@@ -21,7 +21,6 @@ describe("Lighter market classification", () => {
     expect(classification).toEqual({
       assetClass: "stock",
       executionType: "spot",
-      section: "stocks",
       ticker: "AAPL",
     });
     expect(marketProductLabel(classification)).toBe("Stock token · Spot");
@@ -36,7 +35,11 @@ describe("Lighter market classification", () => {
       quoteAssetId: 0,
     }));
 
-    expect(classification.section).toBe("stocks");
+    expect(marketMatchesSection("rhc", market({
+      marketId: 10,
+      symbol: "AAPL",
+      marketType: "perp",
+    }), "stocks")).toBe(true);
     expect(classification.executionType).toBe("perp");
     expect(marketProductLabel(classification)).toBe("Stock · Perpetual");
   });
@@ -61,11 +64,11 @@ describe("Lighter market classification", () => {
 
     expect(classifyLighterMarket("rhc", btc)).toMatchObject({
       assetClass: "unclassified",
-      section: "perp",
+      executionType: "perp",
     });
-    expect(marketSectionFor("rhc", ethSpot)).toBe("spot");
-    expect(marketSectionFor("rhc", gold)).toBe("perp");
-    expect(marketSectionFor("rhc", unknownSpot)).toBe("spot");
+    expect(marketMatchesSection("rhc", ethSpot, "spot")).toBe(true);
+    expect(marketMatchesSection("rhc", gold, "perp")).toBe(true);
+    expect(marketMatchesSection("rhc", unknownSpot, "spot")).toBe(true);
   });
 
   it.each([
@@ -78,31 +81,33 @@ describe("Lighter market classification", () => {
   ])("fails closed when the verified %s changes", (_field, environment, changed) => {
     expect(classifyLighterMarket(environment as "core" | "rhc", changed)).toMatchObject({
       assetClass: "unclassified",
-      section: changed.marketType,
+      executionType: changed.marketType,
     });
   });
 
-  it("partitions every listing into exactly one popup section", () => {
-    const markets = [
-      AAPL_SPOT,
-      market({ marketId: 10, symbol: "AAPL", marketType: "perp" }),
-      market({ marketId: 1, symbol: "BTC", marketType: "perp" }),
-      market({
-        marketId: 2048,
-        symbol: "ETH/USDG",
-        marketType: "spot",
-        baseAssetId: 1,
-        quoteAssetId: 3,
-      }),
-    ];
-    const sections = ["stocks", "perp", "spot"] as const;
+  it("keeps execution sections complete while Stocks remains an asset-class view", () => {
+    const aaplPerp = market({ marketId: 10, symbol: "AAPL", marketType: "perp" });
+    const btc = market({ marketId: 1, symbol: "BTC", marketType: "perp" });
+    const ethSpot = market({
+      marketId: 2048,
+      symbol: "ETH/USDG",
+      marketType: "spot",
+      baseAssetId: 1,
+      quoteAssetId: 3,
+    });
 
-    for (const row of markets) {
-      expect(sections.filter((section) => marketSectionFor("rhc", row) === section))
-        .toHaveLength(1);
-    }
+    expect(sectionMembership(AAPL_SPOT)).toEqual(["stocks", "spot"]);
+    expect(sectionMembership(aaplPerp)).toEqual(["stocks", "perp"]);
+    expect(sectionMembership(btc)).toEqual(["perp"]);
+    expect(sectionMembership(ethSpot)).toEqual(["spot"]);
   });
 });
+
+function sectionMembership(row: LighterTradingMarket): string[] {
+  return (["stocks", "perp", "spot"] as const).filter((section) => (
+    marketMatchesSection("rhc", row, section)
+  ));
+}
 
 function market(overrides: Partial<LighterTradingMarket>): LighterTradingMarket {
   return {

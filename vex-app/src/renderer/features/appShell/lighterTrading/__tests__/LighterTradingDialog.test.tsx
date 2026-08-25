@@ -130,7 +130,7 @@ describe("Light it up dialog", () => {
     };
   });
 
-  it("partitions provider markets into enabled Perps, Stocks, and Spot sections", async () => {
+  it("offers complete execution views alongside the provider-sourced Stocks view", async () => {
     renderDialog();
 
     const perps = await screen.findByRole("button", { name: "Perps" });
@@ -144,16 +144,49 @@ describe("Light it up dialog", () => {
     fireEvent.click(stocks);
     await waitFor(() => expect(stocks.getAttribute("aria-pressed")).toBe("true"));
     const summary = screen.getByRole("region", { name: "Selected market summary" });
-    expect(summary.getAttribute("data-market-section")).toBe("stocks");
+    expect(summary.getAttribute("data-market-asset-class")).toBe("stock");
     expect(summary.getAttribute("data-market-type")).toBe("perp");
     expect(within(summary).getByText("Stock · Perpetual", { exact: false })).toBeTruthy();
+  });
+
+  it("does not remove stock-backed listings from Perpetuals or Spot", async () => {
+    renderDialog();
+
+    fireEvent.click(await screen.findByRole("button", { name: /BTC.*Perpetual.*active/i }));
+    const picker = screen.getByRole("dialog", { name: "Search Lighter markets" });
+    const tabs = within(picker).getByRole("navigation", { name: "Market filter" });
+
+    expect(within(picker).getAllByRole("option")).toHaveLength(3);
+    expect(within(picker).getByRole("option", { name: /AAPL.*Stock.*Perpetual.*active/i }))
+      .toBeTruthy();
+    expect(within(tabs).getByText("3 markets")).toBeTruthy();
+
+    fireEvent.click(within(tabs).getByRole("button", { name: "Spot" }));
+    expect(within(picker).getAllByRole("option")).toHaveLength(2);
+    expect(within(picker).getByRole("option", {
+      name: /AAPL.*AAPL\/USDG.*Stock token.*Spot.*active/i,
+    })).toBeTruthy();
+    expect(within(tabs).getByText("2 markets")).toBeTruthy();
+
+    fireEvent.click(within(tabs).getByRole("button", { name: "Stocks" }));
+    expect(within(picker).getAllByRole("option")).toHaveLength(2);
+    expect(within(tabs).getByText("2 markets")).toBeTruthy();
+
+    fireEvent.click(within(tabs).getByRole("button", { name: "Perpetuals" }));
+    fireEvent.click(within(picker).getByRole("option", {
+      name: /AAPL.*Stock.*Perpetual.*active/i,
+    }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Perps" }).getAttribute("aria-pressed"))
+        .toBe("true");
+    });
   });
 
   it("keeps a tokenized equity under Stocks while preserving its spot execution", async () => {
     renderDialog();
 
     fireEvent.click(await screen.findByRole("button", { name: /BTC.*Perpetual.*active/i }));
-    const pickerTabs = within(screen.getByRole("navigation", { name: "Market type" }));
+    const pickerTabs = within(screen.getByRole("navigation", { name: "Market filter" }));
     fireEvent.click(pickerTabs.getByRole("button", { name: "Stocks" }));
 
     expect(screen.queryByRole("option", { name: /BTC/ })).toBeNull();
@@ -167,7 +200,7 @@ describe("Light it up dialog", () => {
         .toBe("true");
     });
     const summary = screen.getByRole("region", { name: "Selected market summary" });
-    expect(summary.getAttribute("data-market-section")).toBe("stocks");
+    expect(summary.getAttribute("data-market-asset-class")).toBe("stock");
     expect(summary.getAttribute("data-market-type")).toBe("spot");
     expect(within(summary).getByText("AAPL")).toBeTruthy();
     expect(within(summary).getByText(/AAPL\/USDG.*Stock token.*Spot.*active/i)).toBeTruthy();
@@ -271,8 +304,11 @@ describe("Light it up dialog", () => {
     renderDialog();
 
     fireEvent.click(await screen.findByRole("button", { name: /BTC.*perp.*active/i }));
+    const pickerTabs = within(screen.getByRole("navigation", { name: "Market filter" }));
+    fireEvent.click(pickerTabs.getByRole("button", { name: "All markets" }));
     const search = screen.getByRole("combobox", { name: "Search Lighter markets" });
     fireEvent.change(search, { target: { value: "USDG" } });
+    expect(pickerTabs.getByText("2 of 5 markets")).toBeTruthy();
 
     const option = screen.getByRole("option", { name: /ETH.*ETH\/USDG.*Spot.*active/i });
     fireEvent.click(option);
@@ -280,6 +316,8 @@ describe("Light it up dialog", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "Search Lighter markets" })).toBeNull();
       expect(screen.getByRole("button", { name: /ETH.*ETH\/USDG.*Spot.*active/i })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Spot" }).getAttribute("aria-pressed"))
+        .toBe("true");
     });
   });
 
@@ -345,7 +383,7 @@ describe("Light it up dialog", () => {
     trigger.focus();
     fireEvent.click(trigger);
 
-    const spotTab = within(screen.getByRole("navigation", { name: "Market type" }))
+    const spotTab = within(screen.getByRole("navigation", { name: "Market filter" }))
       .getByRole("button", { name: "Spot" });
     spotTab.focus();
     fireEvent.keyDown(spotTab, { key: "Enter" });
@@ -369,7 +407,7 @@ describe("Light it up dialog", () => {
     fireEvent.keyDown(search, { key: "Tab", shiftKey: true });
 
     expect(document.activeElement).toBe(
-      within(screen.getByRole("navigation", { name: "Market type" }))
+      within(screen.getByRole("navigation", { name: "Market filter" }))
         .getByRole("button", { name: "Spot" }),
     );
     expect(document.activeElement?.getAttribute("role")).not.toBe("option");
