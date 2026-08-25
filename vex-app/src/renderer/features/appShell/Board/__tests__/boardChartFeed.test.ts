@@ -16,7 +16,6 @@
 import { describe, expect, it } from "vitest";
 import type {
   CandlestickData,
-  ISeriesApi,
   Time,
   UTCTimestamp,
 } from "lightweight-charts";
@@ -33,8 +32,16 @@ import {
   toDisplayPrice,
   toDisplayTimeSec,
   type BoardCandleInput,
+  type BoardCandleSink,
   type BoardChartBar,
 } from "../boardChartFeed.js";
+
+/** The bar at `index`, or a named throw - never a non-null assertion. */
+function barAt(bars: readonly BoardChartBar[], index: number): BoardChartBar {
+  const found = bars[index];
+  if (found === undefined) throw new Error(`chart bar ${index} missing`);
+  return found;
+}
 
 function bar(
   tMs: number,
@@ -45,7 +52,7 @@ function bar(
 
 /** Records what the feed wrote, and enforces the library's real update law. */
 function fakeSeries(): {
-  readonly api: ISeriesApi<"Candlestick", Time>;
+  readonly api: BoardCandleSink;
   readonly calls: { kind: "setData" | "update"; times: number[] }[];
 } {
   const calls: { kind: "setData" | "update"; times: number[] }[] = [];
@@ -67,7 +74,7 @@ function fakeSeries(): {
       calls.push({ kind: "update", times: [time] });
       lastTime = time;
     },
-  } as unknown as ISeriesApi<"Candlestick", Time>;
+  } satisfies BoardCandleSink;
   return { api, calls };
 }
 
@@ -124,7 +131,7 @@ describe("normalizeBoardBars", () => {
       bar(3_000),
     ]);
     for (let i = 1; i < bars.length; i += 1) {
-      expect(bars[i]!.time as number).toBeGreaterThan(bars[i - 1]!.time as number);
+      expect(barAt(bars, i).time as number).toBeGreaterThan(barAt(bars, i - 1).time as number);
     }
   });
 
@@ -137,8 +144,10 @@ describe("normalizeBoardBars", () => {
     expect(result.hiddenOlder).toBe(7);
     expect(result.totalDistinct).toBe(BOARD_CHART_MAX_BARS + 7);
     // The newest bar survives; the oldest is the one dropped.
-    expect(result.bars.at(-1)!.time).toBe((BOARD_CHART_MAX_BARS + 7) * 1_000 / 1000);
-    expect(result.bars[0]!.time).toBe(8);
+    expect(barAt(result.bars, result.bars.length - 1).time).toBe(
+      (BOARD_CHART_MAX_BARS + 7) * 1_000 / 1000,
+    );
+    expect(barAt(result.bars, 0).time).toBe(8);
   });
 
   it("reports nothing hidden when the board is within budget", () => {

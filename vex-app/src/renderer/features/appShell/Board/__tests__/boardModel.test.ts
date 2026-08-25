@@ -13,6 +13,21 @@ import { boardSpec, hydratedRow } from "./boardFixture.js";
 
 const FETCHED_AT = 1_783_172_700_000;
 
+type BoardViewModel = ReturnType<typeof buildBoardViewModel>;
+type AnnotationRow = ReturnType<typeof buildAnnotationRows>[number];
+
+function cardAt(model: BoardViewModel, index: number): BoardViewModel["cards"][number] {
+  const card = model.cards[index];
+  if (card === undefined) throw new Error(`board card ${index} missing`);
+  return card;
+}
+
+function annotationRowAt(rows: readonly AnnotationRow[], index: number): AnnotationRow {
+  const row = rows[index];
+  if (row === undefined) throw new Error(`board annotation row ${index} missing`);
+  return row;
+}
+
 describe("buildBoardViewModel", () => {
   it("pairs hydration rows to pools positionally, preserving the agent's order", () => {
     const model = buildBoardViewModel(
@@ -45,7 +60,7 @@ describe("buildBoardViewModel", () => {
     });
     const model = buildBoardViewModel(spec, FETCHED_AT);
     expect(model.cards).toHaveLength(2);
-    expect(model.cards[1]!.row).toBeNull();
+    expect(cardAt(model, 1).row).toBeNull();
   });
 
   it("classifies the trend from the signed decimal string, not a float", () => {
@@ -57,8 +72,8 @@ describe("buildBoardViewModel", () => {
       }),
       FETCHED_AT,
     );
-    expect(model.cards[0]!.trendH1).toBe("down");
-    expect(model.cards[0]!.trendH24).toBe("up");
+    expect(cardAt(model, 0).trendH1).toBe("down");
+    expect(cardAt(model, 0).trendH24).toBe("up");
   });
 
   it("is fresh inside the freshness window and stale beyond it", () => {
@@ -108,9 +123,9 @@ describe("buildAnnotationRows", () => {
       }),
     );
     expect(rows.map((r) => r.kind)).toStrictEqual(["level", "zone", "marker"]);
-    expect(rows[0]!.coordinate).toBe("0.00042");
-    expect(rows[1]!.coordinate).toBe("0.0003 to 0.0004");
-    expect(rows[2]!.label).toBe("listing");
+    expect(annotationRowAt(rows, 0).coordinate).toBe("0.00042");
+    expect(annotationRowAt(rows, 1).coordinate).toBe("0.0003 to 0.0004");
+    expect(annotationRowAt(rows, 2).label).toBe("listing");
   });
 
   it("preserves the full precision of a sub-cent level in the legend", () => {
@@ -124,7 +139,7 @@ describe("buildAnnotationRows", () => {
         },
       }),
     );
-    expect(rows[0]!.coordinate).toBe(price);
+    expect(annotationRowAt(rows, 0).coordinate).toBe(price);
   });
 
   it("is empty when the board has no chart", () => {

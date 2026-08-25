@@ -120,6 +120,10 @@ describe("toDto - board projection (metadata -> 'board')", () => {
     // budget is therefore rechecked here with the same function `BoardCompose`
     // refuses with, so a page cannot carry a board the contract caps out.
     const base = boardSpecFixture();
+    const templateRow = base.hydration.rows[0];
+    if (templateRow === undefined) {
+      throw new Error("board fixture hydration row 0 missing");
+    }
     const oversize = {
       ...base,
       notes: Array.from({ length: 6 }, () => "n".repeat(280)),
@@ -132,7 +136,7 @@ describe("toDto - board projection (metadata -> 'board')", () => {
       hydration: {
         ...base.hydration,
         rows: Array.from({ length: 8 }, () => ({
-          ...base.hydration.rows[0]!,
+          ...templateRow,
           baseTokenSymbol: "S".repeat(512),
           baseTokenName: "N".repeat(512),
           quoteTokenSymbol: "Q".repeat(512),

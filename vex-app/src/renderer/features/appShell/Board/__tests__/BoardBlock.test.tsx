@@ -26,14 +26,16 @@ import { BOARD_STALE_AFTER_MS, boardSpecV1Schema } from "@vex-lib/board/index.js
 import { BoardBlock } from "../BoardBlock.js";
 import { boardSpec, candle, hydratedRow, FIXTURE_FETCHED_AT } from "./boardFixture.js";
 
-const chartInstances: {
+type ChartRecord = {
   removed: boolean;
   options: Record<string, unknown>;
   seriesOptions: Record<string, unknown>;
   priceLineTitles: unknown[];
   markers: unknown[];
   fitContentCalls: number;
-}[] = [];
+};
+
+const chartInstances: ChartRecord[] = [];
 
 vi.mock("lightweight-charts", () => {
   const CandlestickSeries = { type: "Candlestick" };
@@ -105,6 +107,39 @@ function renderBoard(spec = boardSpec()): HTMLElement {
   return container;
 }
 
+/** The `[data-vex-area="..."]` element the assertion is about, or a named failure. */
+function boardArea(container: HTMLElement, area: string): HTMLElement {
+  const el = container.querySelector(`[data-vex-area="${area}"]`);
+  if (el === null) throw new Error(`board area "${area}" not found`);
+  return el as HTMLElement;
+}
+
+function attributionAnchor(container: HTMLElement): HTMLElement {
+  const el = container.querySelector(
+    '[data-vex-area="board-chart-attribution"] a',
+  );
+  if (el === null) throw new Error("board chart attribution anchor not found");
+  return el as HTMLElement;
+}
+
+function annotationLegend(container: HTMLElement): HTMLElement {
+  const el = container.querySelector('[aria-label="Chart annotations"]');
+  if (el === null) throw new Error("chart annotation legend not found");
+  return el as HTMLElement;
+}
+
+function tokenCardAt(cards: NodeListOf<Element>, index: number): Element {
+  const card = cards[index];
+  if (card === undefined) throw new Error(`board token card ${index} missing`);
+  return card;
+}
+
+function chartAt(index: number): ChartRecord {
+  const chart = chartInstances[index];
+  if (chart === undefined) throw new Error(`chart instance ${index} missing`);
+  return chart;
+}
+
 describe("board fixture parity", () => {
   it("the default fixture is a spec the canonical schema accepts", () => {
     const parsed = boardSpecV1Schema.safeParse(boardSpec());
@@ -160,8 +195,10 @@ describe("BoardBlock states", () => {
     );
     const cards = container.querySelectorAll('[data-vex-area="board-token-card"]');
     expect(cards).toHaveLength(2);
-    expect(cards[1]!.getAttribute("data-state")).toBe("unhydrated");
-    expect(cards[1]!.textContent).toContain("No market data for this pool.");
+    expect(tokenCardAt(cards, 1).getAttribute("data-state")).toBe("unhydrated");
+    expect(tokenCardAt(cards, 1).textContent).toContain(
+      "No market data for this pool.",
+    );
   });
 
   it("never renders a fabricated zero for a missing figure", () => {
@@ -177,7 +214,7 @@ describe("BoardBlock states", () => {
         ],
       }),
     );
-    const card = container.querySelector('[data-vex-area="board-token-card"]')!;
+    const card = boardArea(container, "board-token-card");
     expect(card.textContent).not.toContain("$0.00");
     expect(card.textContent).toContain("-");
   });
@@ -199,8 +236,7 @@ describe("BoardBlock staleness", () => {
   it("is fresh inside the window and says nothing about delay", () => {
     const container = renderBoard();
     expect(
-      container
-        .querySelector('[data-vex-area="board-block"]')!
+      boardArea(container, "board-block")
         .getAttribute("data-stale"),
     ).toBe("false");
     expect(screen.getByRole("article").getAttribute("aria-label")).not.toContain(
@@ -211,7 +247,7 @@ describe("BoardBlock staleness", () => {
   it("states the delay in the accessible name once the window has passed", () => {
     vi.setSystemTime(FIXTURE_FETCHED_AT + 4 * 3_600_000);
     const container = renderBoard();
-    const block = container.querySelector('[data-vex-area="board-block"]')!;
+    const block = boardArea(container, "board-block");
     expect(block.getAttribute("data-stale")).toBe("true");
     expect(block.getAttribute("aria-label")).toContain("market data delayed");
     expect(screen.getByRole("article").getAttribute("aria-label")).toContain(
@@ -228,7 +264,7 @@ describe("BoardBlock staleness", () => {
     // once per mount. Nobody remounts a transcript row to age it.
     vi.setSystemTime(FIXTURE_FETCHED_AT + 1_000);
     const container = renderBoard();
-    const block = container.querySelector('[data-vex-area="board-block"]')!;
+    const block = boardArea(container, "board-block");
     expect(block.getAttribute("data-stale")).toBe("false");
 
     // One step over the boundary, and only one: the surface changes exactly
@@ -262,7 +298,7 @@ describe("BoardBlock staleness", () => {
 
   it("keeps the analysis clock and the market-data clock as separate lines", () => {
     const container = renderBoard();
-    const clocks = container.querySelector('[data-vex-area="board-clocks"]')!;
+    const clocks = boardArea(container, "board-clocks");
     expect(clocks.textContent).toContain("Analysis");
     expect(clocks.textContent).toContain("Market data");
   });
@@ -274,7 +310,7 @@ describe("BoardBlock notes", () => {
       ...boardSpec(),
       notes: ["first\nsecond", "third"],
     });
-    const notes = container.querySelector('[data-vex-area="board-notes"]')!;
+    const notes = boardArea(container, "board-notes");
     expect(notes.getAttribute("data-count")).toBe("2");
     expect(notes.textContent).toContain("first\nsecond");
   });
@@ -284,7 +320,7 @@ describe("BoardBlock notes", () => {
       ...boardSpec(),
       notes: ["<b>not bold</b>"],
     });
-    const notes = container.querySelector('[data-vex-area="board-notes"]')!;
+    const notes = boardArea(container, "board-notes");
     expect(notes.querySelector("b")).toBeNull();
     expect(notes.textContent).toContain("<b>not bold</b>");
   });
@@ -319,7 +355,7 @@ describe("BoardBlock chart disclosure", () => {
     renderBoard(withChart());
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
     expect(chartInstances).toHaveLength(1);
-    expect(chartInstances[0]!.removed).toBe(false);
+    expect(chartAt(0).removed).toBe(false);
   });
 
   it("removes the chart when the region collapses again", () => {
@@ -327,33 +363,31 @@ describe("BoardBlock chart disclosure", () => {
     const trigger = screen.getByRole("button", { name: "Show chart" });
     fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("button", { name: "Hide chart" }));
-    expect(chartInstances[0]!.removed).toBe(true);
+    expect(chartAt(0).removed).toBe(true);
   });
 
   it("removes the chart on unmount", () => {
     renderBoard(withChart());
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
     cleanup();
-    expect(chartInstances[0]!.removed).toBe(true);
+    expect(chartAt(0).removed).toBe(true);
   });
 
   it("disables the library's own attribution anchor and renders owned credit", () => {
     const container = renderBoard(withChart());
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
-    const layout = chartInstances[0]!.options["layout"] as {
+    const layout = chartAt(0).options["layout"] as {
       attributionLogo: boolean;
     };
     expect(layout.attributionLogo).toBe(false);
-    const credit = container.querySelector(
-      '[data-vex-area="board-chart-attribution"] a',
-    )!;
+    const credit = attributionAnchor(container);
     expect(credit.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
   it("sets a custom price format so a sub-cent price is not rendered as 0.00", () => {
     renderBoard(withChart());
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
-    const priceFormat = chartInstances[0]!.seriesOptions["priceFormat"] as {
+    const priceFormat = chartAt(0).seriesOptions["priceFormat"] as {
       type: string;
     };
     expect(priceFormat.type).toBe("custom");
@@ -364,7 +398,7 @@ describe("BoardBlock chart disclosure", () => {
     // degenerate-range extension and renders a flat series as a blank scale.
     renderBoard(withChart());
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
-    const priceFormat = chartInstances[0]!.seriesOptions["priceFormat"] as {
+    const priceFormat = chartAt(0).seriesOptions["priceFormat"] as {
       minMove: number;
     };
     expect(Number.isFinite(priceFormat.minMove)).toBe(true);
@@ -384,7 +418,7 @@ describe("BoardBlock chart disclosure", () => {
     renderBoard(flat);
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
 
-    const priceFormat = chartInstances[0]!.seriesOptions["priceFormat"] as {
+    const priceFormat = chartAt(0).seriesOptions["priceFormat"] as {
       minMove: number;
       formatter: (value: number) => string;
     };
@@ -417,7 +451,7 @@ describe("BoardBlock chart disclosure", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
     expect(
-      container.querySelector('[data-vex-area="board-chart-caveats"]')!
+      boardArea(container, "board-chart-caveats")
         .textContent,
     ).toContain("open or close outside the reported high/low");
   });
@@ -426,7 +460,7 @@ describe("BoardBlock chart disclosure", () => {
     const container = renderBoard(withChart());
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
     expect(
-      container.querySelector('[data-vex-area="board-chart-caveats"]')!
+      boardArea(container, "board-chart-caveats")
         .textContent,
     ).not.toContain("outside the reported high/low");
   });
@@ -448,18 +482,20 @@ describe("BoardBlock chart disclosure", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
 
     // One marker drawn, and it is the one that landed on a bar.
-    expect(chartInstances[0]!.markers).toHaveLength(1);
-    expect(
-      (chartInstances[0]!.markers[0] as { time: number }).time,
-    ).toBe(Math.floor(FIXTURE_FETCHED_AT / 1000));
+    expect(chartAt(0).markers).toHaveLength(1);
+    const drawnMarker = chartAt(0).markers[0];
+    if (drawnMarker === undefined) throw new Error("drawn chart marker missing");
+    expect((drawnMarker as { time: number }).time).toBe(
+      Math.floor(FIXTURE_FETCHED_AT / 1000),
+    );
 
     // Nothing is lost: both labels are still readable, and the omitted one
     // carries the reason in words.
-    const legend = container.querySelector('[aria-label="Chart annotations"]')!;
+    const legend = annotationLegend(container);
     expect(legend.textContent).toContain("on a bar");
     expect(legend.textContent).toContain("between bars");
     expect(
-      container.querySelector('[data-vex-area="board-annotation-note"]')!
+      boardArea(container, "board-annotation-note")
         .textContent,
     ).toBe(`marker at ${new Date(offGrid).toISOString()} matches no candle`);
   });
@@ -467,8 +503,8 @@ describe("BoardBlock chart disclosure", () => {
   it("recolors existing levels, zones and markers when the theme flips", async () => {
     const container = renderBoard(withChart());
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
-    const before = chartInstances[0]!.priceLineTitles.length;
-    const markersBefore = chartInstances[0]!.markers.length;
+    const before = chartAt(0).priceLineTitles.length;
+    const markersBefore = chartAt(0).markers.length;
     expect(before).toBeGreaterThan(0);
 
     await act(async () => {
@@ -479,9 +515,9 @@ describe("BoardBlock chart disclosure", () => {
 
     // The annotation owner re-ran against the new palette: the geometry it
     // owns was rebuilt rather than left painted in the old theme's accent.
-    expect(chartInstances[0]!.priceLineTitles.length).toBeGreaterThan(before);
-    expect(chartInstances[0]!.markers.length).toBeGreaterThan(markersBefore);
-    expect(chartInstances[0]!.removed).toBe(false);
+    expect(chartAt(0).priceLineTitles.length).toBeGreaterThan(before);
+    expect(chartAt(0).markers.length).toBeGreaterThan(markersBefore);
+    expect(chartAt(0).removed).toBe(false);
     expect(container.querySelector('[data-vex-area="board-chart"]')).not.toBeNull();
     document.documentElement.removeAttribute("data-vex-theme");
   });
@@ -495,7 +531,7 @@ describe("BoardBlock chart disclosure", () => {
       }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
-    expect(chartInstances[0]!.markers).toHaveLength(1);
+    expect(chartAt(0).markers).toHaveLength(1);
     expect(
       container.querySelector('[data-vex-area="board-annotation-note"]'),
     ).toBeNull();
@@ -504,19 +540,19 @@ describe("BoardBlock chart disclosure", () => {
   it("fits the viewport exactly once for the subject, not per render", () => {
     renderBoard(withChart());
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
-    expect(chartInstances[0]!.fitContentCalls).toBe(1);
+    expect(chartAt(0).fitContentCalls).toBe(1);
   });
 
   it("draws price lines with NO library-drawn title", () => {
     renderBoard(withChart());
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
-    expect(chartInstances[0]!.priceLineTitles).toStrictEqual([""]);
+    expect(chartAt(0).priceLineTitles).toStrictEqual([""]);
   });
 
   it("gives markers no text, so no agent-authored string reaches the canvas", () => {
     renderBoard(withChart());
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
-    for (const marker of chartInstances[0]!.markers) {
+    for (const marker of chartAt(0).markers) {
       expect(marker).not.toHaveProperty("text");
     }
   });
@@ -524,9 +560,7 @@ describe("BoardBlock chart disclosure", () => {
   it("lists every annotation label as DOM text with its coordinate", () => {
     const container = renderBoard(withChart());
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
-    const legend = container.querySelector(
-      '[data-vex-area="board-chart-annotations"]',
-    )!;
+    const legend = boardArea(container, "board-chart-annotations");
     expect(legend.getAttribute("aria-label")).toBe("Chart annotations");
     expect(legend.textContent).toContain("resistance");
     expect(legend.textContent).toContain("accumulation");
@@ -538,9 +572,7 @@ describe("BoardBlock chart disclosure", () => {
   it("names the forming bar and the resolution in the caveats", () => {
     const container = renderBoard(withChart());
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
-    const caveats = container.querySelector(
-      '[data-vex-area="board-chart-caveats"]',
-    )!;
+    const caveats = boardArea(container, "board-chart-caveats");
     expect(caveats.textContent).toContain("1h");
     expect(caveats.textContent).toContain("3 bars");
     expect(caveats.textContent).toContain("newest bar still forming");
@@ -552,7 +584,7 @@ describe("BoardBlock chart disclosure", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
     expect(
-      container.querySelector('[data-vex-area="board-chart-caveats"]')!
+      boardArea(container, "board-chart-caveats")
         .textContent,
     ).toContain("provider bounded the range");
   });
@@ -561,7 +593,8 @@ describe("BoardBlock chart disclosure", () => {
     const container = renderBoard(withChart());
     const trigger = screen.getByRole("button", { name: "Show chart" });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
-    const regionId = trigger.getAttribute("aria-controls")!;
+    const regionId = trigger.getAttribute("aria-controls");
+    if (regionId === null) throw new Error("chart trigger has no aria-controls");
     // `useId` emits colons, which are not valid in a bare CSS id selector and
     // jsdom has no `CSS.escape`; the attribute selector is exact either way.
     expect(
@@ -595,7 +628,7 @@ describe("BoardBlock chart degradation", () => {
     const container = renderBoard(boardSpec({ bars: [] }));
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
     expect(chartInstances).toHaveLength(0);
-    const empty = container.querySelector('[data-vex-area="board-chart-empty"]')!;
+    const empty = boardArea(container, "board-chart-empty");
     expect(empty.textContent).toContain("No candles for this pool at 1h.");
   });
 
@@ -608,7 +641,7 @@ describe("BoardBlock chart degradation", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
     expect(
-      container.querySelector('[data-vex-area="board-chart-annotations"]')!
+      boardArea(container, "board-chart-annotations")
         .textContent,
     ).toContain("resistance");
   });
@@ -622,7 +655,7 @@ describe("BoardBlock chart budget reporting", () => {
     const container = renderBoard(boardSpec({ bars }));
     fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
     expect(
-      container.querySelector('[data-vex-area="board-chart-caveats"]')!
+      boardArea(container, "board-chart-caveats")
         .textContent,
     ).toContain("5 older bars");
   });

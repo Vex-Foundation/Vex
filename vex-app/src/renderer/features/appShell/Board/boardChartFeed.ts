@@ -309,10 +309,21 @@ export type CandlePushOutcome = "updated" | "appended" | "stale";
  * class returns `'stale'` instead, which is also rule 05's stale-completion
  * guard - a late response loses to the newer state already published.
  */
+/**
+ * The exact series surface the feed drives. Narrow on purpose: the test fake
+ * implements it directly and the library's `ISeriesApi<"Candlestick">`
+ * satisfies it structurally, so no unsafe cast sits between a fake and this
+ * contract.
+ */
+export interface BoardCandleSink {
+  setData(data: CandlestickData<Time>[]): void;
+  update(bar: CandlestickData<Time>): void;
+}
+
 export class CandleFeed {
   private lastTimeSec: number | null = null;
 
-  constructor(private readonly series: ISeriesApi<"Candlestick", Time>) {}
+  constructor(private readonly series: BoardCandleSink) {}
 
   /** The newest time held, in SECONDS, or null when the feed is empty. */
   get newestTimeSec(): number | null {
