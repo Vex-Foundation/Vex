@@ -50,6 +50,12 @@ export const NON_EXPORTED_INTERNAL_TOOLS: ReadonlySet<string> = new Set([
   "LoopDefer",
   "CompactApply",
   "PlanWrite",
+  // Presentation: BoardCompose attaches a rendered board to the in-app
+  // assistant message and is enforced by the engine turn loop's presentation
+  // gate. The MCP path has neither the renderer nor the turn loop, so an
+  // external agent could only stage boards nobody can see (merge decision
+  // 2026-08-25).
+  "BoardCompose",
 ]);
 
 /** The read-only catalog-search tool, exported through its own adapter. */

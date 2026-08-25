@@ -7,8 +7,8 @@
  * `getMessageAround`). Raw `metadata` JSONB is deliberately never selected in
  * full; every read off that column is a NARROW, individually validated sub-key
  * projection (see `MESSAGE_ROW_COLUMNS`): `explorerRefs`, `success`,
- * `reasoning`, `durationMs`, and `displayStatus` — five of them today, each
- * with its own fail-to-null schema. The `message_type` top-level column remains the
+ * `reasoning`, `durationMs`, `displayStatus`, and `board` - six of them today,
+ * each with its own fail-to-null schema. The `message_type` top-level column remains the
  * discriminator for row kind.
  *
  * TOOL NAMES ARE CANONICALIZED HERE. A discovered protocol manifest is called
@@ -20,11 +20,13 @@
  */
 
 import {
+  boardProjectionSchema,
   explorerRefsSchema,
   reasoningProjectionSchema,
   toolDurationMsProjectionSchema,
   toolDisplayStatusProjectionSchema,
   toolSuccessProjectionSchema,
+  type BoardProjection,
   type ExplorerRef,
   type MessageCursor,
   type MessageKind,
@@ -33,6 +35,7 @@ import {
   type ToolCallDisplay,
   type ToolDisplayStatus,
 } from "@shared/schemas/messages.js";
+import { checkBoardSpecByteBudget } from "@vex-lib/board/index.js";
 import { canonicalToolName } from "../../agent/tool-name-canonical.js";
 import { sanitizeToolArgs } from "./redaction.js";
 
@@ -56,17 +59,19 @@ export interface MessageRow {
   readonly success: unknown;
   /** ONLY the `displayStatus` sub-key of `messages.metadata` (tool-result rows). */
   readonly display_status: unknown;
+  /** ONLY the `board` sub-key of `messages.metadata` (assistant rows). */
+  readonly board: unknown;
 }
 
 // Raw `metadata` JSONB is still deliberately NOT selected in full — the strict
-// "metadata completely omitted" posture stands. Exactly FOUR narrowly
+// "metadata completely omitted" posture stands. Exactly SIX narrowly
 // allow-listed sub-key projections exist (`explorerRefs`, `reasoning`,
-// `durationMs`, `success`); the SELECT reaches only those sub-keys and the mapper
-// zod-validates each before it reaches the DTO (JSONB is untrusted at this
-// boundary). The `message_type` column (migration 002) remains the engine's
-// authoritative marker discriminator.
+// `durationMs`, `success`, `displayStatus`, `board`); the SELECT reaches only
+// those sub-keys and the mapper zod-validates each before it reaches the DTO
+// (JSONB is untrusted at this boundary). The `message_type` column
+// (migration 002) remains the engine's authoritative marker discriminator.
 export const MESSAGE_ROW_COLUMNS =
-  "id, session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, metadata -> 'explorerRefs' AS explorer_refs, metadata -> 'reasoning' AS reasoning, metadata -> 'durationMs' AS duration_ms, metadata -> 'success' AS success, metadata -> 'displayStatus' AS display_status";
+  "id, session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, metadata -> 'explorerRefs' AS explorer_refs, metadata -> 'reasoning' AS reasoning, metadata -> 'durationMs' AS duration_ms, metadata -> 'success' AS success, metadata -> 'displayStatus' AS display_status, metadata -> 'board' AS board";
 
 export function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -260,6 +265,35 @@ function extractDisplayStatus(row: MessageRow): ToolDisplayStatus | null {
   return parsed.success ? parsed.data : null;
 }
 
+/**
+ * Validate the `metadata -> 'board'` projection. ONLY assistant rows carry a
+ * board (the engine consumes a staged `board_compose` presentation into the
+ * SAME INSERT that commits the turn's final prose); every other row → `null`.
+ * Malformed, oversize, or wrong-typed JSONB → `null` (never throws) so one bad
+ * row cannot poison the page, and the row then renders as ordinary assistant
+ * prose.
+ *
+ * DELIBERATELY NOT mirrored from `extractExplorerRefs`: no empty-value collapse
+ * exists here. A board that validates is projected exactly as persisted, so
+ * this mapper's own arithmetic never turns a real board into "there was none".
+ * A rejected board and an absent board do both surface as `null` at the DTO -
+ * that is fail-closed by design (the DTO carries no channel for "there was a
+ * board and it was refused", and inventing one would be a contract change) -
+ * so the engine-side compose path remains the place where a board that cannot
+ * validate must be refused rather than persisted.
+ */
+function extractBoard(row: MessageRow): BoardProjection | null {
+  if (row.role !== "assistant") return null;
+  const parsed = boardProjectionSchema.safeParse(row.board);
+  if (!parsed.success) return null;
+  // The byte budget is rechecked HERE, not only at compose. The field bounds
+  // alone still admit a structurally valid board of roughly 60 KiB, and this
+  // mapper reads a durable row that a different (older, or future) writer may
+  // have produced. One guard, the same function `BoardCompose` refuses with,
+  // so the two cannot drift.
+  return checkBoardSpecByteBudget(parsed.data).withinBudget ? parsed.data : null;
+}
+
 export function toDto(row: MessageRow): SessionMessageDto {
   // Extract the tool name once: it drives BOTH the recall-kind decision
   // and the DTO's `toolName` field.
@@ -282,6 +316,7 @@ export function toDto(row: MessageRow): SessionMessageDto {
     durationMs: extractDurationMs(row),
     success: extractSuccess(row),
     displayStatus: extractDisplayStatus(row),
+    board: extractBoard(row),
   };
 }
 

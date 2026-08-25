@@ -69,16 +69,17 @@ describe("G2 - internal tool description lint", () => {
     // 32 → 36: stage A4b registered the four generic transaction signing tools,
     // all four inside the basic (JSON-schema) lane, which is why that count
     // moved from 14 to 18 in the same step.
-    expect(SUBJECTS).toHaveLength(36);
+    // 36 → 37: `BoardCompose` (`registry/board.ts`), outside the basic lane.
+    expect(SUBJECTS).toHaveLength(37);
     expect(BASIC_LANE.size, "basic-lane coverage changed").toBe(18);
 
-    // The 18 the basic rule never saw, and the 14 it sees without an
-    // ActionKind, are ALL in this lane.
+    // The 19 the basic rule never saw (18 + `BoardCompose`), and the 14 it
+    // sees without an ActionKind, are ALL in this lane.
     const linted = new Set(SUBJECTS.map((tool) => tool.name));
     for (const name of BASIC_LANE) {
       expect(linted.has(name), `${name} is outside the ActionKind lane`).toBe(true);
     }
-    expect([...linted].filter((name) => !BASIC_LANE.has(name))).toHaveLength(18);
+    expect([...linted].filter((name) => !BASIC_LANE.has(name))).toHaveLength(19);
   });
 
   // The blast radius of the split: without the overlap, no committed rule can

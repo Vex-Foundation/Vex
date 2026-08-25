@@ -9,9 +9,12 @@ vi.mock("@utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
+// S11a: local-chain valuation reads through the `price-read` seam, not the old
+// REST client. `readTokensPairs` keeps the same (chain, comma-separated
+// addresses) call shape, so the fixtures below are unchanged.
 const mockGetTokens = vi.fn();
-vi.mock("@tools/dexscreener/client.js", () => ({
-  getDexScreenerClient: () => ({ getTokens: (...a: unknown[]) => mockGetTokens(...a) }),
+vi.mock("@tools/dexscreener/price-read.js", () => ({
+  readTokensPairs: (...a: unknown[]) => mockGetTokens(...a),
 }));
 
 // A real viem public client with the two RPC-backed actions this suite drives

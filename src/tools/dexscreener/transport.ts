@@ -59,11 +59,17 @@ const DEFAULT_TRANSPORT_ORIGINS: readonly string[] = [
   DEXSCREENER_CATALOG_ORIGIN,
 ];
 
-/** What a transport can do. `publicApi` is always true: every transport serves it. */
+/** What a transport can do. */
 export interface DexScreenerTransportCapabilities {
   /** The site hosts (io.dexscreener.com, dd.dexscreener.com, WebSockets). */
   readonly site: boolean;
-  readonly publicApi: true;
+  /**
+   * The public REST API (api.dexscreener.com). The default transport serves
+   * it; the Electron site bridge does NOT - its allowlist admits only the
+   * gated site hosts and refuses the public API by name, so a transport may
+   * truthfully say `false` here.
+   */
+  readonly publicApi: boolean;
 }
 
 /** One HTTP response, whole. Nothing here is trimmed or summarized. */

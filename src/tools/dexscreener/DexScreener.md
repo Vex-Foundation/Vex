@@ -1,6 +1,6 @@
 # DexScreener lane
 
-**Last updated: 2026-08-25 (S8).**
+**Last updated: 2026-08-25 (S11).**
 
 This directory holds TWO surfaces that no longer overlap. Read the split first;
 almost every stale assumption about this lane comes from conflating them.
@@ -8,14 +8,14 @@ almost every stale assumption about this lane comes from conflating them.
 | Surface | Files | Who calls it |
 |---|---|---|
 | **Site surface** (current) | `transport.ts`, `site-errors.ts`, `sanitize.ts`, `codec/`, `endpoints/`, `screen-core/` | Every one of the 18 agent tools in `src/vex-agent/tools/protocols/dexscreener/` |
-| **Public-API remnant** (retired as a tool backend) | `client.ts`, `types.ts`, `throttle.ts`, `errors.ts`, `validation.ts`, `validation/` | No agent tool. Three client methods survive as an internal price and pool source. |
+| **Public-API seam** (non-agent consumers) | `price-read.ts`, `candles-read.ts`, `types.ts`, `throttle.ts`, `errors.ts`, `validation/` | No agent tool. The wake price-watch poller, the `$VEX` banner, Uniswap quote safety, EVM balance valuation, and the desktop market widget. |
 
-`token-watch-price.ts` and `token-watch-price/` sit on the remnant side: they
-derive the one canonical USD price of a watched token from the pool list
+`token-watch-price.ts` and `token-watch-price/` sit on the public-API side:
+they derive the one canonical USD price of a watched token from the pool list
 `/token-pairs/v1` returns.
 
 There is no `src/commands/dexscreener` CLI, and there is no DexScreener
-WebSocket client on the remnant side.
+WebSocket client on the public-API side.
 
 ---
 
@@ -93,27 +93,35 @@ the response envelope and its source observation.
 
 ---
 
-## The public-API remnant
+## The public-API seam
 
-`client.ts` still wraps 13 REST methods of `api.dexscreener.com` behind
-`throttle.ts` (per-process token buckets, 300/min fast and 60/min slow, TTL
-cache, in-flight dedupe, `Retry-After` honouring). None of them backs an agent
-tool any more. Three are live production dependencies of code OUTSIDE the tool
-surface:
+The old 13-method REST client (`client.ts`) was DELETED in S11 at measured zero
+consumers, together with `validation.ts` and the `validateWs*` parsers it fed.
+What replaced it is one narrow owner per question:
 
-| Method | Surviving caller |
-|---|---|
-| `getTokenPairs` | wake token-price watches and the poller, through `token-watch-price.ts`; the own-token banner |
-| `getTokens` | `src/tools/evm-chains/balances.ts`, uniswap swap quote safety |
-| `getPairs` | uniswap swap quote safety |
+| Module | Reads | Who calls it |
+|---|---|---|
+| `price-read.ts` | `/token-pairs/v1`, `/latest/dex/pairs`, `/tokens/v1` | wake token-price watches and the poller (through `token-watch-price.ts`), the `$VEX` own-token banner, Uniswap swap quote safety, `src/tools/evm-chains/balances.ts`, the desktop `$VEX` market widget |
+| `candles-read.ts` | the site `bars` channel | the desktop market widget's chart, board hydration |
 
-The other ten (`search`, `getProfiles`, `getProfilesRecentUpdates`,
-`getBoosts`, `getTopBoosts`, `getCommunityTakeovers`, `getMetasTrending`,
-`getMeta`, `getAds`, `getOrders`) have no production caller left, and neither
-do the `validateWs*` parsers or `validation/metas.ts`. They are a known
-dead-code pass, deliberately not folded into the site-surface work.
+`throttle.ts` survives underneath both (per-process token buckets, 300/min fast
+and 60/min slow, TTL cache, in-flight dedupe, `Retry-After` honouring).
 
-Useful remnant facts that are still true and still cost money when forgotten:
+TRANSPORT, and the two halves differ on purpose. `price-read.ts` names
+`defaultPublicApiTransport` DIRECTLY rather than asking the registry: its three
+reads are all on `api.dexscreener.com`, which is ungated, and the registered
+transport inside the desktop app is the site bridge, whose allowlist admits
+`io.` and `dd.` only - so routing them through the registry threw before the
+network in the shipped app while passing headless. `candles-read.ts` reads
+`io.dexscreener.com`, which IS gated, so it keeps asking the registry and the
+bridge serves it.
+
+The other ten old methods (`search`, `getProfiles`,
+`getProfilesRecentUpdates`, `getBoosts`, `getTopBoosts`,
+`getCommunityTakeovers`, `getMetasTrending`, `getMeta`, `getAds`, `getOrders`)
+went with the client; the agent asks those questions over the site surface.
+
+Useful public-API facts that are still true and still cost money when forgotten:
 `priceChange.*` is ALREADY a percentage, `pairCreatedAt` and
 `paymentTimestampMs` are milliseconds, and DexScreener computes
 `FDV = (total supply - burned supply) * price` with market cap equal to FDV
@@ -176,7 +184,7 @@ committed).
 Wire names, enum members and field spellings come from the checked-in
 descriptor and schema artifacts, never from convention. Tests live in
 `src/__tests__/dexscreener-site/`; the older `src/__tests__/dexscreener/`
-protects what is left of the public-API remnant.
+protects the public-API seam.
 
 **If you change a file in this directory, update this document in the same
 change.**

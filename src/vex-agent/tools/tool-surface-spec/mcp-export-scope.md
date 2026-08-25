@@ -19,6 +19,7 @@ The MCP server exports the tool surface EXCEPT the session-bound groups:
 | Protocol tools | YES, all namespaces | the full catalog (134 toolIds today), under their publicName |
 | Memory | NO | session_memory_search, session_memory_resolve_item, long_memory_suggest, long_memory_search, long_memory_get, long_memory_history |
 | Engine / runtime | NO | mission_draft_update, mission_stop, loop_defer, compact_apply, plan_write |
+| Presentation | NO | board_compose |
 | Knowledge | NO | already retired from the agent surface; stays retired in the export |
 | Meta / discovery | ToolSearch YES (read-only catalog search); execute_tool NO | see below and owner-decisions.md D2 |
 
@@ -33,6 +34,12 @@ The MCP server exports the tool surface EXCEPT the session-bound groups:
   exactly the session-bound ones.
 - Knowledge tools were removed from the agent surface before this program
   and do not return through the export.
+- BoardCompose (Presentation) attaches a rendered board to the in-app
+  assistant message and is enforced by the engine turn loop's presentation
+  gate ("only call in its batch", "next output is the final reply"). The MCP
+  path has neither the renderer nor the turn loop, so an external agent could
+  only stage boards nobody can see. Excluded by the merge decision of
+  2026-08-25; revisit if the Studio UI ever renders per-call boards.
 
 ## Design notes for the Studio phase (not Batch 1 work)
 

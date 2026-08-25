@@ -4,7 +4,8 @@
  * scaling.
  *
  * Behavior preserved bit-for-bit:
- *   - Deferred save: `saveAssistantMessage(... null toolCalls)`.
+ *   - Deferred save: `saveAssistantMessage(... null toolCalls)`, now also
+ *     carrying a board staged earlier in the turn (see the consume block).
  *   - Push assistant message into the mutable `liveMessages` array.
  *   - Mission RUN: text does NOT end the loop. Merge pending operator
  *     instructions, append `[Engine: continue ...]` marker message
@@ -24,6 +25,10 @@ import type { EngineContext } from "../types.js";
 import type { Message } from "@vex-agent/db/repos/messages.js";
 import { saveAssistantMessage } from "./turn.js";
 import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
+import {
+  clearPendingPresentation,
+  consumePendingPresentation,
+} from "./board-presentation.js";
 
 export type TextResponseOutcome =
   | { kind: "mission_run_continue" }
@@ -38,10 +43,35 @@ export async function handleTextResponse(args: {
   readonly reasoning: string | null;
   readonly mergeOperatorInstructions: () => Promise<void>;
 }): Promise<TextResponseOutcome> {
-  // Deferred save: text-only assistant message
-  await saveAssistantMessage(args.context.sessionId, args.content, null, {
-    reasoning: args.reasoning,
-  });
+  // ── Board consume: this row is the commit point ──
+  // A board staged by `BoardCompose` earlier in this turn is taken here and
+  // written INTO the same INSERT as the prose, so prose and board commit
+  // together or not at all. Eligibility is deliberately narrow: only a
+  // TEXT-ONLY assistant response (this function is reached on no tool calls)
+  // whose content is not blank. A blank or whitespace-only response is not a
+  // reply a board can annotate, so it leaves the board staged for the next
+  // one; the loop clears it if none comes.
+  //
+  // Taken BEFORE the write and cleared (never restaged) when the write throws:
+  // the row that would have carried it does not exist, and a later row must
+  // not silently inherit an analysis written for a message the user never saw.
+  const pending =
+    args.content.trim() === ""
+      ? null
+      : consumePendingPresentation(args.context.sessionId);
+
+  try {
+    // Deferred save: text-only assistant message
+    await saveAssistantMessage(args.context.sessionId, args.content, null, {
+      reasoning: args.reasoning,
+      ...(pending === null ? {} : { board: pending.spec }),
+    });
+  } catch (err) {
+    if (pending !== null) {
+      clearPendingPresentation(args.context.sessionId, "final_insert_failed");
+    }
+    throw err;
+  }
 
   args.liveMessages.push({
     role: "assistant",

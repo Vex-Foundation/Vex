@@ -184,6 +184,7 @@ function msg(id: number): SessionMessageDto {
     durationMs: null,
     success: null,
     displayStatus: null,
+    board: null,
   };
 }
 

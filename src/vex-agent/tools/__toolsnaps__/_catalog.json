@@ -1,5 +1,5 @@
 {
-  "internalRegisteredCount": 36,
+  "internalRegisteredCount": 37,
   "internalVisibleOrder": [
     "ToolSearch",
     "TokenFind",
@@ -35,10 +35,11 @@
     "MemorySearch",
     "MemoryGet",
     "MemoryHistory",
-    "PlanWrite"
+    "PlanWrite",
+    "BoardCompose"
   ],
   "maxDiscoveredToolsPerSession": 40,
-  "maxSimultaneousModelVisibleTools": 75,
+  "maxSimultaneousModelVisibleTools": 76,
   "protocolToolIds": [
     "dexscreener.candles",
     "dexscreener.chains",

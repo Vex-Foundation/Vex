@@ -18,6 +18,7 @@ import {
   resolveSessionInferenceConfig,
 } from "@vex-agent/inference/openrouter/endpoint-failover.js";
 import type { Message } from "@vex-agent/db/repos/messages.js";
+import type { BoardSpecV1 } from "../../../lib/board/index.js";
 import type { PromptStackOptions } from "../prompts/index.js";
 import { buildTurnEnvelope, type TurnEnvelope } from "./turn-envelope.js";
 import {
@@ -252,6 +253,16 @@ export async function saveAssistantMessage(
     readonly systemOriginated?: boolean;
     /** Provider reasoning trace for this turn; capped + tail-kept on persist. */
     readonly reasoning?: string | null;
+    /**
+     * A board staged by `BoardCompose` earlier in THIS turn, consumed by the
+     * row being written here. Runtime-authored: it is the validated, hydrated
+     * spec the engine built, never model output re-read from anywhere.
+     *
+     * Passing it is what makes prose and board ONE commit. Only
+     * `handleTextResponse` sets it, and only after taking the board out of the
+     * session's pending slot; every other caller omits it.
+     */
+    readonly board?: BoardSpecV1;
   },
 ): Promise<void> {
   const hasContent = content !== null && content !== undefined;
@@ -285,9 +296,15 @@ export async function saveAssistantMessage(
   // `messages.metadata` JSONB column (db/repos/messages/write.ts), so the
   // reasoning trace rides there — the desktop app reads it as the column's
   // top-level `metadata -> 'reasoning'`. Omitted entirely when there is none.
+  // `board` rides the same payload and surfaces as `metadata -> 'board'`, which
+  // is the column the desktop app projects the board block from. Omitted
+  // entirely when no board was staged, so ordinary rows carry no extra JSONB.
   const reasoning = reasoningForPayload(opts?.reasoning);
-  if (reasoning !== null) {
-    metadata.payload = { reasoning };
+  if (reasoning !== null || opts?.board !== undefined) {
+    metadata.payload = {
+      ...(reasoning !== null ? { reasoning } : {}),
+      ...(opts?.board !== undefined ? { board: opts.board } : {}),
+    };
   }
 
   await appendMessage(

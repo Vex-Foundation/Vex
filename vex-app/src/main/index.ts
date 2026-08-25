@@ -242,8 +242,9 @@ async function initializeMainRuntime(): Promise<void> {
 
   // 6a-market. Own the VEX market poller (T1) so the welcome-screen price
   // widget has a live snapshot to read + subscribe to. Broadcast-only (no DB,
-  // no provider gate, no vault): it polls public DexScreener / GeckoTerminal /
-  // Virtuals endpoints and pushes sanitized snapshots on EV.market.vex. Its
+  // no provider gate, no vault): it polls DexScreener (price and candles,
+  // through the shared read seams) and Virtuals, and pushes sanitized snapshots
+  // on EV.market.vex. Its
   // idempotent async stop clears every timer + drains in-flight polls on quit.
   const stopMarketService = setupVexMarketService();
   globalCleanup.add(async () => {

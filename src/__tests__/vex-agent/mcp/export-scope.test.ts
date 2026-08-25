@@ -76,6 +76,7 @@ const DOC_NAME_TO_LIVE_NAME: Readonly<Record<string, string>> = {
   loop_defer: "LoopDefer",
   compact_apply: "CompactApply",
   plan_write: "PlanWrite",
+  board_compose: "BoardCompose",
 };
 
 /** Group rows of the decision table that enumerate concrete tool names. */

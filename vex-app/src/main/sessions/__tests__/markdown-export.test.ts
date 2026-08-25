@@ -39,6 +39,7 @@ function message(
     durationMs: null,
     success: null,
     displayStatus: null,
+    board: null,
     ...overrides,
   };
 }
