@@ -25,7 +25,18 @@ describe("Light it up responsive market metrics", () => {
   });
 
   it("contains the market picker within the narrow viewport", () => {
-    expect(css).toContain(".lit-market-picker-layer { position: fixed; inset: 12px; width: auto; }");
-    expect(css).toContain(".lit-market-picker { max-height: calc(100dvh - 24px); border-radius: 14px; }");
+    expect(css).toContain(
+      ".lit-market-picker-layer { position: fixed; inset: 12px 12px auto; width: auto; }",
+    );
+    expect(css).toContain(
+      ".lit-market-picker { max-height: min(72dvh, 620px); border-radius: 14px; }",
+    );
+  });
+
+  it("bounds the desktop picker so the live chart remains visible", () => {
+    expect(css).toContain("right: auto;");
+    expect(css).toContain("width: min(780px, calc(100vw - 24px));");
+    expect(css).toContain("width: clamp(860px, 52vw, 960px);");
+    expect(css).toContain("max-height: min(640px, calc(100dvh - 300px));");
   });
 });
