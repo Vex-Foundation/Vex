@@ -33,6 +33,10 @@ import * as approvalIntentsRepo from "@vex-agent/db/repos/approval-intents.js";
 import { advanceStudioDispatchGeneration } from "@vex-agent/engine/core/approval-runtime/studio/dispatch-gate.js";
 import { refusePendingStudioIntents } from "@vex-agent/engine/core/approval-runtime/studio/refuse.js";
 import { acquireSessionControlLockOn } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import { enqueueStudioApprovalIntent } from "@vex-agent/mcp/approvals.js";
+import { buildProjectToolContext } from "@vex-agent/mcp/project-context.js";
+import type { ProjectScope } from "@vex-agent/mcp/project-scope.js";
+import type { ToolResult } from "@vex-agent/tools/types.js";
 import { makeSession, resetDb } from "../setup/fixtures.js";
 
 /** `resetDb` truncates every table, so the seeded gate row is restored here. */
@@ -43,7 +47,10 @@ async function seedRuntimeGate(): Promise<void> {
   );
 }
 
-async function seedProject(sessionId: string): Promise<string> {
+async function seedProject(
+  sessionId: string,
+  permission: "restricted" | "full" = "full",
+): Promise<string> {
   const projectId = randomUUID();
   await execute(
     `INSERT INTO studio_settings (id, projects_root)
@@ -52,8 +59,8 @@ async function seedProject(sessionId: string): Promise<string> {
   await execute(
     `INSERT INTO projects (id, name, slug, root_path, permission,
                            backing_session_id, scope_version)
-     VALUES ($1, 'Test', $2, $2, 'full', $3, 1)`,
-    [projectId, `p-${projectId.slice(0, 8)}`, sessionId],
+     VALUES ($1, 'Test', $2, $2, $4, $3, 1)`,
+    [projectId, `p-${projectId.slice(0, 8)}`, sessionId, permission],
   );
   return projectId;
 }
@@ -106,7 +113,9 @@ async function readState(approvalId: string): Promise<{
     "SELECT execution_status, decision, refusal_reason FROM approval_intents WHERE approval_id = $1",
     [approvalId],
   );
-  return rows[0]!;
+  const row = rows[0];
+  if (row === undefined) throw new Error("Studio intent row missing");
+  return row;
 }
 
 beforeEach(async () => {
@@ -115,6 +124,35 @@ beforeEach(async () => {
 });
 
 describe("the dispatch generation is a real linearization point", () => {
+  it("persists the typed refusal obligation with the generation advance", async () => {
+    const advanced = await advanceStudioDispatchGeneration("lock");
+    expect(advanced).toEqual({ ok: true, generation: "2" });
+
+    const afterLock = await query<{
+      pending_refusal_reason: string | null;
+      pending_refusal_since: Date | null;
+    }>(
+      `SELECT pending_refusal_reason, pending_refusal_since
+         FROM studio_runtime_gate WHERE id = 1`,
+    );
+    const durableLock = afterLock[0];
+    if (durableLock === undefined) throw new Error("runtime gate row missing");
+    expect(durableLock.pending_refusal_reason).toBe("lock");
+    expect(durableLock.pending_refusal_since).toBeInstanceOf(Date);
+
+    // Unlock advances again but may not erase a refusal sweep that the prior
+    // process still owes. Startup or the live repair owner clears it only in
+    // the same transaction as the refusal writes.
+    const afterUnlock = await advanceStudioDispatchGeneration();
+    expect(afterUnlock).toEqual({ ok: true, generation: "3" });
+    const rows = await query<{ pending_refusal_reason: string | null }>(
+      "SELECT pending_refusal_reason FROM studio_runtime_gate WHERE id = 1",
+    );
+    const durableUnlock = rows[0];
+    if (durableUnlock === undefined) throw new Error("runtime gate row missing");
+    expect(durableUnlock.pending_refusal_reason).toBe("lock");
+  });
+
   it("refuses a slot claim whose generation advanced BEFORE the claim ran", async () => {
     const sessionId = await makeSession();
     const projectId = await seedProject(sessionId);
@@ -149,7 +187,9 @@ describe("the dispatch generation is a real linearization point", () => {
       const seen = await dispatcher.query<{ dispatch_generation: string }>(
         "SELECT dispatch_generation FROM studio_runtime_gate WHERE id = 1",
       );
-      expect(String(seen.rows[0]!.dispatch_generation)).toBe("1");
+      const seenGeneration = seen.rows[0];
+      if (seenGeneration === undefined) throw new Error("runtime gate row missing");
+      expect(String(seenGeneration.dispatch_generation)).toBe("1");
 
       // On a SECOND connection, the user locks Vex. It commits immediately,
       // because the dispatcher holds no lock on the gate row yet.
@@ -203,6 +243,103 @@ describe("the dispatch generation is a real linearization point", () => {
   });
 });
 
+describe("enqueue versus lock generation advance", () => {
+  it("rechecks main availability after the FOR SHARE generation read unblocks", async () => {
+    const sessionId = await makeSession();
+    const projectId = await seedProject(sessionId, "restricted");
+    const scope: ProjectScope = {
+      projectId,
+      scopeVersion: 1,
+      permission: "restricted",
+      backingSessionId: sessionId,
+      wallets: { evm: null, solana: null },
+    };
+    const result: ToolResult = {
+      success: false,
+      output: "approval required",
+      pendingApproval: true,
+      actionKind: "user_wallet_broadcast",
+    };
+
+    const locker = await getPool().connect();
+    let committed = false;
+    try {
+      await locker.query("BEGIN");
+      // Hold the same row a real generation advance updates. A plain MVCC
+      // SELECT would read generation 1 immediately; production's FOR SHARE
+      // must wait for this transaction.
+      await locker.query(
+        `UPDATE studio_runtime_gate
+            SET dispatch_generation = dispatch_generation + 1
+          WHERE id = 1`,
+      );
+
+      let available = true;
+      let availabilityReads = 0;
+      const enqueue = enqueueStudioApprovalIntent({
+        scope,
+        call: {
+          name: "wallet_send",
+          args: { network: "solana", amount: "1" },
+          toolCallId: `call-${randomUUID()}`,
+        },
+        result,
+        toolContext: buildProjectToolContext(scope),
+        readStudioRuntimeAvailability: () => {
+          availabilityReads += 1;
+          return available
+            ? { available: true }
+            : {
+                available: false,
+                reason: "Vex began locking, so this approval was not queued.",
+              };
+        },
+      });
+
+      await waitForCondition(() => availabilityReads === 1);
+      // If the generation read were not locking, enqueue would already have
+      // returned and inserted under the post-lock generation.
+      let settled = false;
+      void enqueue.then(() => {
+        settled = true;
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      expect(settled).toBe(false);
+
+      // The synchronous main transition flag changes while the database read
+      // is blocked. Once the advance commits, the second availability check
+      // runs while enqueue still holds FOR SHARE and must refuse all writes.
+      available = false;
+      await locker.query("COMMIT");
+      committed = true;
+      const outcome = await enqueue;
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "Vex began locking, so this approval was not queued.",
+      });
+      expect(availabilityReads).toBe(2);
+
+      const rows = await query<{ count: string }>(
+        "SELECT COUNT(*)::text AS count FROM approval_intents WHERE origin = 'studio_mcp'",
+      );
+      const count = rows[0];
+      if (count === undefined) throw new Error("approval count missing");
+      expect(count.count).toBe("0");
+    } finally {
+      if (!committed) await locker.query("ROLLBACK");
+      locker.release();
+    }
+  });
+});
+
+async function waitForCondition(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("condition did not become true");
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 describe("approve versus a scope edit take their locks in the same order", () => {
   it("serializes on the session control lock instead of deadlocking", async () => {
     const sessionId = await makeSession();
@@ -253,8 +390,10 @@ describe("approve versus a scope edit take their locks in the same order", () =>
         "SELECT decision, refusal_reason FROM approval_intents WHERE approval_id = $1 FOR UPDATE",
         [approvalId],
       );
-      expect(state.rows[0]!.decision).toBe("rejected");
-      expect(state.rows[0]!.refusal_reason).toBe("scope_changed");
+      const intentState = state.rows[0];
+      if (intentState === undefined) throw new Error("approval row missing");
+      expect(intentState.decision).toBe("rejected");
+      expect(intentState.refusal_reason).toBe("scope_changed");
       await approver.query("COMMIT");
     } finally {
       editor.release();

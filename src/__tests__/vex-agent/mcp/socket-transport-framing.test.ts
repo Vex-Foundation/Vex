@@ -21,7 +21,7 @@ import { EventEmitter } from "node:events";
 
 import { describe, expect, it } from "vitest";
 
-import type { Socket } from "node:net";
+import { Socket } from "node:net";
 
 import {
   StudioSocketTransport,
@@ -40,7 +40,7 @@ class StalledSocket extends EventEmitter {
   readonly written: string[] = [];
   destroyCount = 0;
 
-  write(line: string): boolean {
+  write(line: string, _callback?: () => void): boolean {
     this.written.push(line);
     return false;
   }
@@ -68,6 +68,24 @@ class StalledSocket extends EventEmitter {
   }
 }
 
+function testSocket(backing: StalledSocket): Socket {
+  const socket = new Socket();
+  Object.defineProperties(socket, {
+    destroyed: { configurable: true, get: () => backing.destroyed },
+    writableEnded: { configurable: true, get: () => backing.writableEnded },
+    write: { configurable: true, value: backing.write.bind(backing) },
+    on: { configurable: true, value: backing.on.bind(backing) },
+    once: { configurable: true, value: backing.once.bind(backing) },
+    off: { configurable: true, value: backing.off.bind(backing) },
+    pause: { configurable: true, value: backing.pause.bind(backing) },
+    resume: { configurable: true, value: backing.resume.bind(backing) },
+    setNoDelay: { configurable: true, value: backing.setNoDelay.bind(backing) },
+    end: { configurable: true, value: backing.end.bind(backing) },
+    destroy: { configurable: true, value: backing.destroy.bind(backing) },
+  });
+  return socket;
+}
+
 function makeTransport(
   socket: StalledSocket,
   options: {
@@ -83,7 +101,7 @@ function makeTransport(
   const state = { closes: 0 };
   const errors: Error[] = [];
   const failures: SocketTransportFailure[] = [];
-  const transport = new StudioSocketTransport(socket as unknown as Socket, {
+  const transport = new StudioSocketTransport(testSocket(socket), {
     shutdownDeadlineMs: options.shutdownDeadlineMs ?? 60,
     onFailure: (failure) => {
       failures.push(failure);

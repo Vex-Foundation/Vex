@@ -662,9 +662,7 @@ describe("the pre-dispatch abort gate", () => {
     setStudioExecutorLoaderForTests(async () => {
       loaderCalls += 1;
       await held;
-      return { executeStudioTool } as unknown as typeof import(
-        "@vex-agent/mcp/executor.js"
-      );
+      return { executeStudioTool };
     });
     const controller = new AbortController();
 
@@ -694,9 +692,7 @@ describe("the pre-dispatch abort gate", () => {
     const order: string[] = [];
     setStudioExecutorLoaderForTests(async () => {
       order.push("executor");
-      return { executeStudioTool } as unknown as typeof import(
-        "@vex-agent/mcp/executor.js"
-      );
+      return { executeStudioTool };
     });
     loadProjectScopeSnapshot.mockImplementation(async () => {
       order.push("snapshot");

@@ -28,10 +28,6 @@ import {
   builtBridgePath,
   goTargetFor,
   inspectExecutable,
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-expect-error - a plain packaging script, deliberately outside the
-  // TypeScript program: it runs under bare node in electron-builder's
-  // afterPack hook and in CI, where a compile step does not exist.
 } from "../../../../scripts/bridge-artifact.mjs";
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..", "..", "..");

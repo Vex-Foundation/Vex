@@ -22,13 +22,139 @@
  * only while a server holds it. `refuseLiveEndpoint` is that path.
  */
 
-import { chmodSync, lstatSync, mkdirSync, unlinkSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, realpathSync, unlinkSync } from "node:fs";
 import { connect } from "node:net";
+import { dirname, resolve } from "node:path";
 
-import type { EndpointDirectoryFacts, StudioEndpointPlan } from "./endpoint.js";
+import {
+  ENDPOINT_ANCESTOR_CHANGED_CODE,
+  type EndpointDirectoryFacts,
+  type StudioEndpointPlan,
+} from "./endpoint.js";
 
 /** How long a connect probe waits before calling an endpoint LIVE. */
 const LIVENESS_PROBE_MS = 1_000;
+
+interface EndpointDirectoryIdentity {
+  readonly absolutePath: string;
+  readonly dev: number;
+  readonly ino: number;
+  readonly kind: "directory" | "symlink";
+}
+
+export interface EndpointDirectoryChainIdentity {
+  readonly entries: readonly EndpointDirectoryIdentity[];
+}
+
+export type EndpointDirectoryChainCapture =
+  | { readonly kind: "captured"; readonly identity: EndpointDirectoryChainIdentity }
+  | { readonly kind: "refused"; readonly reason: string };
+
+/** Frozen local-refusal shape, shared independently with the Go bridge. */
+export function endpointAncestorChangedRefusal(absolutePath: string): string {
+  return (
+    `${ENDPOINT_ANCESTOR_CHANGED_CODE}: The Vex Studio endpoint ancestor `
+    + `${absolutePath} changed before use.`
+  );
+}
+
+function endpointAncestorPaths(absolutePath: string): readonly string[] {
+  const paths: string[] = [];
+  let current = absolutePath;
+  while (true) {
+    paths.push(current);
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return paths.reverse();
+}
+
+/**
+ * Pin every existing ancestor from the filesystem root through the endpoint
+ * parent. The lexical chain records intermediate symlinks themselves. The
+ * realpath-resolved chain also records their target ancestors, because a
+ * stable intermediate link does not by itself prove that its target chain was
+ * not replaced.
+ *
+ * SECURITY RESIDUAL. Node has no descriptor-relative bind or unlink API. A
+ * filesystem that removes and recreates an entry with the same path, kind,
+ * device and immediately reused inode between checks is indistinguishable to
+ * this identity proof. Holding open directory descriptors would close that
+ * residual, but Node does not expose the required openat2/renameat operations.
+ */
+export function captureEndpointDirectoryChain(parentDir: string): EndpointDirectoryChainCapture {
+  const lexicalParent = resolve(parentDir);
+  let resolvedParent: string;
+  try {
+    resolvedParent = realpathSync(lexicalParent);
+  } catch {
+    return {
+      kind: "refused",
+      reason: endpointAncestorChangedRefusal(lexicalParent),
+    };
+  }
+
+  const entries: EndpointDirectoryIdentity[] = [];
+  const seen = new Set<string>();
+  const paths = [
+    ...endpointAncestorPaths(lexicalParent),
+    ...endpointAncestorPaths(resolvedParent),
+  ];
+  for (const absolutePath of paths) {
+    if (seen.has(absolutePath)) continue;
+    seen.add(absolutePath);
+    let entry: ReturnType<typeof lstatSync>;
+    try {
+      entry = lstatSync(absolutePath);
+    } catch {
+      return {
+        kind: "refused",
+        reason: endpointAncestorChangedRefusal(absolutePath),
+      };
+    }
+    const kind = entry.isSymbolicLink()
+      ? "symlink"
+      : entry.isDirectory()
+        ? "directory"
+        : null;
+    if (kind === null) {
+      return {
+        kind: "refused",
+        reason: endpointAncestorChangedRefusal(absolutePath),
+      };
+    }
+    entries.push({ absolutePath, dev: entry.dev, ino: entry.ino, kind });
+  }
+  return { kind: "captured", identity: { entries } };
+}
+
+/** Re-check a captured chain immediately around unlink and bind operations. */
+export function verifyEndpointDirectoryChain(
+  identity: EndpointDirectoryChainIdentity,
+): string | null {
+  for (const recorded of identity.entries) {
+    let entry: ReturnType<typeof lstatSync>;
+    try {
+      entry = lstatSync(recorded.absolutePath);
+    } catch {
+      return endpointAncestorChangedRefusal(recorded.absolutePath);
+    }
+    const kind = entry.isSymbolicLink()
+      ? "symlink"
+      : entry.isDirectory()
+        ? "directory"
+        : null;
+    if (
+      kind !== recorded.kind
+      || entry.dev !== recorded.dev
+      || entry.ino !== recorded.ino
+    ) {
+      return endpointAncestorChangedRefusal(recorded.absolutePath);
+    }
+  }
+  return null;
+}
 
 /**
  * The real filesystem probe the planner needs. `null` when absent.
@@ -262,7 +388,12 @@ export async function refuseLiveEndpoint(endpoint: string): Promise<string | nul
  * whatever it points at, and a symlink is not a socket, so it is refused and
  * left in place.
  */
-export async function clearStaleEndpoint(endpoint: string): Promise<string | null> {
+export async function clearStaleEndpoint(
+  endpoint: string,
+  verifyDirectoryIdentity: () => string | null = () => null,
+): Promise<string | null> {
+  const identityFailure = verifyDirectoryIdentity();
+  if (identityFailure !== null) return identityFailure;
   let entry: ReturnType<typeof lstatSync>;
   try {
     entry = lstatSync(endpoint);
@@ -281,6 +412,8 @@ export async function clearStaleEndpoint(endpoint: string): Promise<string | nul
       + "cannot share one Studio endpoint; close the other one first."
     );
   }
+  const preUnlinkIdentityFailure = verifyDirectoryIdentity();
+  if (preUnlinkIdentityFailure !== null) return preUnlinkIdentityFailure;
   try {
     unlinkSync(endpoint);
     return null;

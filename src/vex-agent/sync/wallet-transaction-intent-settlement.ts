@@ -10,9 +10,10 @@
  * same questions about the same hashes would be two observers racing for one
  * row's terminality, which is the failure this module exists to avoid.
  *
- * So this module holds NO chain access at all. It is called BY those lanes at
- * the moment they terminalize an activity row, and it answers one question:
- * does an intent hang off this row, and what does that verdict make of it?
+ * So this module holds NO chain access at all. The pool-level activity writers
+ * now settle their linked WTI and PE rows inside the same transaction. This
+ * module owns crash recovery plus compatibility convergence for rows a prior
+ * build already left partially terminal.
  *
  * ## And no rebroadcast, ever
  *
@@ -36,12 +37,15 @@
  */
 
 import {
-  failActivityEvent,
+  failHashlessActivityEventWith,
   type AgentActivityEvent,
 } from "@vex-agent/db/repos/agent-activity.js";
-import { completeExecutionIntentWith } from "@vex-agent/db/repos/executions.js";
+import {
+  recoverLinkedBroadcastUnconfirmed,
+  settleLinkedActivityRows,
+  settleFromPersistedTerminalActivity,
+} from "@vex-agent/db/repos/agent-activity/linked-transaction-settlement.js";
 import * as intentsRepo from "@vex-agent/db/repos/wallet-transaction-intents.js";
-import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import logger from "@utils/logger.js";
 
 import { REPAIR_CANDIDATE_AGE_MS } from "./handler-window.js";
@@ -60,12 +64,13 @@ export type LinkedActivityVerdict = "confirmed" | "reverted" | "superseded_unpro
 export const STRANDED_INTENT_RECOVERY_LIMIT = 25;
 
 /**
- * T5 / T6, and the `consuming` convergence.
+ * T5 / T6 compatibility convergence.
  *
- * Called by a lane immediately after its own terminalizing CAS applied. Every
- * failure is logged and swallowed: the lane's activity row is already terminal
- * and correct, and a bookkeeping write that could not run must never turn a
- * successful repair into a failed sweep invocation.
+ * Current pool-level activity terminalizers already settle all three rows in
+ * one transaction. The repair lanes keep calling this idempotent seam so older
+ * partial rows and a lane-first row written by a previous build still converge.
+ * A failure is logged and swallowed because this compatibility call runs only
+ * after an activity verdict is already durable.
  *
  * ## Why `consuming` is settled here too
  *
@@ -82,95 +87,29 @@ export const STRANDED_INTENT_RECOVERY_LIMIT = 25;
  * verdict's terminal. No chain access, no second observer, and no re-send: this
  * spends evidence the caller already holds.
  *
- * Two guards keep that from becoming interference:
- *
- *   - a STAGED HASH is required. Without one there is no proof anything was
- *     broadcast, and T4a - not this - owns that row;
- *   - the claim must be older than the handler window. Inside it the confirm
- *     handler may still be running, and converging its row would be racing a
- *     live signing path. The same clock the stranded scan uses, for the same
- *     reason.
+ * A staged hash is required. Without one there is no proof anything was
+ * broadcast, and T4a owns that row instead.
  */
 export async function settleLinkedTransactionIntent(
   activityId: number,
   verdict: LinkedActivityVerdict,
-  protocolExecutionId: number | null,
-  stagedTxHash: string | null = null,
+  _protocolExecutionId: number | null,
+  _stagedTxHash: string | null = null,
 ): Promise<void> {
   try {
     const intent = await intentsRepo.getByActivityId(activityId);
     if (intent === null) return;
-
-    const convergeFromConsuming =
-      intent.status === "consuming"
-      && stagedTxHash !== null
-      && claimIsOlderThanHandlerWindow(intent.consumedAt);
-
-    if (intent.status === "broadcast_unconfirmed" || convergeFromConsuming) {
-      const settled = await withSessionControlLock(intent.sessionId, async (client) => {
-        if (convergeFromConsuming) {
-          // ONE transaction: if this CAS misses, someone else moved the row and
-          // the verdict below must not be applied to whatever they made of it.
-          const bumped = await intentsRepo.markBroadcastUnconfirmedWith(
-            client,
-            intent.intentId,
-            intent.sessionId,
-            stagedTxHash as string,
-          );
-          if (bumped === null) return null;
-        }
-        if (verdict === "confirmed") {
-          return intentsRepo.settleUnconfirmedAsExecutedWith(
-            client,
-            intent.intentId,
-            intent.sessionId,
-          );
-        }
-        if (verdict === "reverted") {
-          return intentsRepo.settleUnconfirmedAsChainFailedWith(
-            client,
-            intent.intentId,
-            intent.sessionId,
-            "RepairLane:chain_reverted",
-          );
-        }
-        return intentsRepo.markSupersededUnprovenWith(
-          client,
-          intent.intentId,
-          intent.sessionId,
-          "RepairLane:superseded_unproven",
-        );
-      });
-      if (settled === null) {
-        // Not a failure: a concurrent pass, or the handler's own late write,
-        // already moved the row out of `broadcast_unconfirmed`.
-        logger.info("wallet.transaction.settle_linked_miss", {
-          activityId,
-          intentId: intent.intentId,
-          verdict,
-        });
-      } else {
-        logger.info("wallet.transaction.settled_from_repair", {
-          activityId,
-          intentId: intent.intentId,
-          verdict,
-          status: settled.status,
-        });
-      }
-    }
-
-    // IDEMPOTENT, and run on every verdict rather than only on the settled
-    // branch: the execution row is completed `WHERE execution_status = 'intent'`,
-    // so a row the handler already completed is untouched, and one stranded at
-    // `intent` by a crash is released here.
-    if (protocolExecutionId !== null) {
-      await completeStrandedExecution(
-        intent.sessionId,
-        protocolExecutionId,
-        verdict,
-        verdict === "confirmed",
-      );
-    }
+    const settled = await settleFromPersistedTerminalActivity(
+      activityId,
+      intent.sessionId,
+      verdict,
+    );
+    logger.info(
+      settled
+        ? "wallet.transaction.settled_from_repair"
+        : "wallet.transaction.settle_linked_miss",
+      { activityId, intentId: intent.intentId, verdict },
+    );
   } catch (error) {
     logger.warn("wallet.transaction.settle_linked_failed", {
       activityId,
@@ -178,19 +117,6 @@ export async function settleLinkedTransactionIntent(
       error: error instanceof Error ? error.name : typeof error,
     });
   }
-}
-
-/**
- * Is this claim old enough that no confirm handler can still be holding it?
- *
- * A row with no `consumed_at` is not claimed at all, which cannot be converged
- * from - so it reads as inside the window, the conservative direction.
- */
-function claimIsOlderThanHandlerWindow(consumedAt: string | null): boolean {
-  if (consumedAt === null) return false;
-  const claimedAtMs = Date.parse(consumedAt);
-  if (!Number.isFinite(claimedAtMs)) return false;
-  return Date.now() - claimedAtMs >= REPAIR_CANDIDATE_AGE_MS;
 }
 
 /**
@@ -302,29 +228,38 @@ export async function recoverStrandedTransactionIntents(
         // POSITIVE evidence that nothing was sent. The intent is honestly
         // terminal with `tx_hash` NULL, and the activity row is terminalized
         // with it - no lane will ever look at a hashless row.
-        const settled = await withSessionControlLock(intent.sessionId, (client) =>
-          intentsRepo.markCrashedBeforeBroadcastWith(
-            client,
-            intent.intentId,
-            intent.sessionId,
-            "CrashRecovery:no_staged_hash",
-          ),
-        );
-        if (settled !== null) crashedBeforeBroadcast++;
-        if (row.activityStatus === "pending") {
-          await failActivityEvent(row.activityId, {
+        const terminalized = await settleLinkedActivityRows({
+          activityId: row.activityId,
+          sessionId: intent.sessionId,
+          intentOutcome: "crashed_before_broadcast",
+          activityTarget: {
+            status: "definitively_failed",
+            failureCode: "broadcast_error",
+          },
+          activityWrite: (client) => failHashlessActivityEventWith(client, row.activityId, {
             failureCode: "broadcast_error",
             failureReason:
               "the confirm handler stopped before the transaction was broadcast; no signed hash was "
               + "ever staged, so nothing reached the network",
-          });
+          }),
+        });
+        // A prior terminal writer may already have recorded another failure
+        // code, notably the old hashless reaper's `unknown`. The coordinator
+        // adopts that persisted hashless failure as crash-before-broadcast
+        // evidence and advances WTI plus PE. Count convergence from the durable
+        // intent, not from whether this invocation won the AA CAS.
+        if (
+          terminalized.row.status === "definitively_failed"
+          && terminalized.row.txHash === null
+        ) {
+          const after = await intentsRepo.getById(intent.intentId, intent.sessionId);
+          if (
+            after?.status === "failed"
+            && after.failureStage === "crashed_before_broadcast"
+          ) {
+            crashedBeforeBroadcast++;
+          }
         }
-        await completeStrandedExecution(
-          intent.sessionId,
-          row.protocolExecutionId,
-          "crashed_before_broadcast",
-          false,
-        );
         continue;
       }
 
@@ -355,25 +290,15 @@ export async function recoverStrandedTransactionIntents(
       // and a caller who reads "failed" retries. The ACTIVITY row is left
       // alone - it is staged-with-hash, which is precisely what makes it a
       // candidate for the lane that owns chain observation.
-      const settled = await withSessionControlLock(intent.sessionId, (client) =>
-        intentsRepo.markBroadcastUnconfirmedWith(
-          client,
-          intent.intentId,
-          intent.sessionId,
-          row.stagedTxHash as string,
-        ),
+      const recovered = await recoverLinkedBroadcastUnconfirmed(
+        row.activityId,
+        intent.sessionId,
       );
-      if (settled !== null) recoveredUnconfirmed++;
+      if (recovered) recoveredUnconfirmed++;
       // `success: false`, and deliberately so: recovery learned that bytes MAY
       // be on the network, which is not a success. The intent's own
       // `broadcast_unconfirmed` status is what keeps saying the outcome is
       // unproven; completing the ATTEMPT only stops it blocking the gate.
-      await completeStrandedExecution(
-        intent.sessionId,
-        row.protocolExecutionId,
-        "broadcast_unconfirmed",
-        false,
-      );
     } catch (error) {
       logger.warn("wallet.transaction.stranded_recovery_failed", {
         intentId: intent.intentId,
@@ -397,38 +322,4 @@ export async function recoverStrandedTransactionIntents(
     recoveredUnconfirmed,
     convergedFromTerminalActivity,
   };
-}
-
-/**
- * Complete a `protocol_executions` row still at `intent`.
- *
- * `success` states what the ATTEMPT ended as, never what the chain did. Only a
- * proven confirmation is a success: a recovery that learned nothing more than
- * "the bytes may be out there" reports `false`, while the intent's own
- * `broadcast_unconfirmed` status keeps saying the outcome is unproven.
- */
-async function completeStrandedExecution(
-  sessionId: string,
-  executionId: number,
-  status: string,
-  success: boolean,
-): Promise<void> {
-  if (executionId <= 0 || Number.isNaN(executionId)) return;
-  try {
-    await withSessionControlLock(sessionId, (client) =>
-      completeExecutionIntentWith(client, {
-        executionId,
-        result: { status, settledBy: "repair" },
-        success,
-        tradeCapture: null,
-        externalRefs: {},
-        durationMs: 0,
-      }),
-    );
-  } catch (error) {
-    logger.warn("wallet.transaction.stranded_execution_complete_failed", {
-      executionId,
-      error: error instanceof Error ? error.name : typeof error,
-    });
-  }
 }

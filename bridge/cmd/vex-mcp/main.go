@@ -94,10 +94,23 @@ func run() int {
 	if gated := endpoint.UnprovenWindowsTransport(plan); gated != nil {
 		return fail(exitEndpointRefused, fmt.Sprintf("%s: %s", gated.Code, gated.Message))
 	}
+	var directoryIdentity *endpoint.DirectoryChainIdentity
+	if plan.Kind == endpoint.KindUnix {
+		directoryIdentity, err = endpoint.CaptureDirectoryChain(plan.ParentDir)
+		if err != nil {
+			return fail(exitEndpointRefused, err.Error())
+		}
+	}
 
 	conn, err := dialEndpoint(plan)
 	if err != nil {
 		return fail(exitDialFailed, dialSentence(plan.Path, err))
+	}
+	if directoryIdentity != nil {
+		if err := directoryIdentity.Verify(); err != nil {
+			_ = conn.Close()
+			return fail(exitEndpointRefused, err.Error())
+		}
 	}
 
 	ack, remainder, err := handshake.Perform(conn, projectID, handshake.AckDeadline)

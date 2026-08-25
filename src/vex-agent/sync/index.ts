@@ -138,7 +138,10 @@ export async function syncTick(): Promise<void> {
         await syncRepo.completeRun(runId, { ...settlementResult }, settlementResult.closed);
       } else if (job.syncType === "agent_activity_repair") {
         const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
-        const repairResult = await repairPendingActivity(buildProductionRepairDeps());
+        const repairResult = await repairPendingActivity(
+          buildProductionRepairDeps(),
+          { includeAuxiliaryState: true },
+        );
         // STAGE F, on the same driver: a row this sweep (or a handler) confirmed
         // STATUS-ONLY still owes the user its executed amounts. Same job, because
         // it is the same question one step later — "did it settle" and "what did
@@ -153,7 +156,8 @@ export async function syncTick(): Promise<void> {
         await syncRepo.completeRun(
           runId,
           { ...repairResult, amounts: { ...amountResult }, periodic: true },
-          repairResult.confirmed + repairResult.failed + amountResult.filled,
+          repairResult.confirmed + repairResult.failed + amountResult.filled
+            + (repairResult.nonceReservations?.terminalized ?? 0),
         );
       } else if (job.syncType === "bridge_activity_repair") {
         // C1 fix (Batch 4 closure) — this periodic job was seeded (seed.ts)

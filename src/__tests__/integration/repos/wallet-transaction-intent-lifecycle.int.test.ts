@@ -20,6 +20,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { describe, it, expect, beforeEach } from "vitest";
 
 import { execute, getPool, queryOne } from "@vex-agent/db/client.js";
+import { confirmActivityEventStatusOnly } from "@vex-agent/db/repos/agent-activity.js";
 import * as intentsRepo from "@vex-agent/db/repos/wallet-transaction-intents.js";
 import { PROPOSAL_DIGEST_VERSION } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
 import { claimTransactionIntent } from "@vex-agent/tools/internal/wallet/transaction/activity-writer.js";
@@ -42,7 +43,14 @@ interface ThreeRows {
     tx_hash: string | null;
     activity_id: string | null;
   };
-  readonly aa: { id: number; status: string; kind: string; event_role: string; tx_hash: string | null } | null;
+  readonly aa: {
+    id: number;
+    status: string;
+    kind: string;
+    event_role: string;
+    tx_hash: string | null;
+    protocol_execution_id: number;
+  } | null;
   readonly pe: { execution_status: string; success: boolean } | null;
 }
 
@@ -55,7 +63,7 @@ async function readThreeRows(intentId: string): Promise<ThreeRows> {
   if (wti === null) throw new Error(`no intent row for ${intentId}`);
   const aa = wti.activity_id === null
     ? null
-    : await queryOne<ThreeRows["aa"] & { protocol_execution_id: number }>(
+    : await queryOne<NonNullable<ThreeRows["aa"]>>(
         `SELECT id, status, kind, event_role, tx_hash, protocol_execution_id
            FROM agent_activity WHERE id = $1`,
         [wti.activity_id],
@@ -64,7 +72,7 @@ async function readThreeRows(intentId: string): Promise<ThreeRows> {
     ? null
     : await queryOne<{ execution_status: string; success: boolean }>(
         "SELECT execution_status, success FROM protocol_executions WHERE id = $1",
-        [(aa as unknown as { protocol_execution_id: number }).protocol_execution_id],
+        [aa.protocol_execution_id],
       );
   return { wti, aa, pe };
 }
@@ -426,7 +434,10 @@ describe("wallet_transaction_intents lifecycle T1-T8, three coupled rows", () =>
       { kind: "confirmation_unknown", txHash: "0xhash-twice", chain: "base", errorKind: "K", errorHash: "h" },
       {},
     );
-    await settleLinkedTransactionIntent(claimed.activity.activityId, "confirmed", claimed.activity.executionId);
+    await confirmActivityEventStatusOnly(
+      claimed.activity.activityId,
+      "receipt_status_only_evm",
+    );
     await settleLinkedTransactionIntent(claimed.activity.activityId, "reverted", claimed.activity.executionId);
 
     const rows = await readThreeRows(claimed.intent.intentId);

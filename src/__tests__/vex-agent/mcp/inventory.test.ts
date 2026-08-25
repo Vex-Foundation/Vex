@@ -382,7 +382,7 @@ describe("the list is identical across projects and environments", () => {
   it("no exported input schema declares a JSON Schema dialect", () => {
     const offenders: string[] = [];
     for (const tool of buildStudioInventory()) {
-      const declared = (tool.inputSchema as unknown as Record<string, unknown>)["$schema"];
+      const declared = Reflect.get(tool.inputSchema, "$schema");
       if (declared === undefined) continue;
       if (
         declared === "https://json-schema.org/draft/2020-12/schema"

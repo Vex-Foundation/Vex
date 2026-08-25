@@ -24,6 +24,8 @@ import {
   type AgentActivityEvent,
   type TerminalCasResult,
 } from "@vex-agent/db/repos/agent-activity.js";
+import * as walletIntentsRepo from "@vex-agent/db/repos/wallet-intents.js";
+import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { summarizeSolanaOnChainError } from "@tools/solana-ecosystem/shared/solana-transaction/onchain-error-summary.js";
 import logger from "@utils/logger.js";
 
@@ -115,6 +117,72 @@ export async function resolveSolanaPendingRows(
   }
 
   return { confirmed, failed, stillPending };
+}
+
+/**
+ * Resolve pre-084 Solana transfer hashes that have no activity row. This reuses
+ * the sweep's read-only status and transaction ports. With no persisted
+ * blockhash-height evidence it never declares expiry; absence stays pending.
+ */
+export async function resolveLegacySolanaTransfers(
+  candidates: readonly walletIntentsRepo.WalletIntent[],
+  deps: SolanaActivitySweepDeps,
+): Promise<SolanaBatchResolution> {
+  const due = candidates.filter(
+    (intent): intent is walletIntentsRepo.WalletIntent & { txHash: string } =>
+      intent.txHash !== null,
+  );
+  if (due.length === 0) {
+    return { confirmed: 0, failed: 0, stillPending: candidates.length };
+  }
+
+  const statuses = await deps.getSignatureStatuses(due.map((intent) => intent.txHash));
+  let confirmed = 0;
+  let failed = 0;
+  let stillPending = candidates.length - due.length;
+
+  for (const [index, intent] of due.entries()) {
+    const status = statusFor(statuses, index);
+    let verdict: "confirmed" | "reverted" | null = null;
+    if (status.outcome === "found" && isLandedStatus(status.value.confirmationStatus)) {
+      if (hasOwnErr(status.value)) {
+        verdict = isOnChainError(status.value.err) ? "reverted" : "confirmed";
+      }
+    } else if (status.outcome === "not_found") {
+      const tx = await deps.getFinalizedTransaction(intent.txHash);
+      if (tx.outcome === "found") {
+        const meta = readTransactionMetaErr(tx.value);
+        if (meta.present) verdict = isOnChainError(meta.err) ? "reverted" : "confirmed";
+      }
+    }
+
+    if (verdict === null) {
+      await touchLegacySolanaReview(intent);
+      stillPending++;
+      continue;
+    }
+
+    const settled = await withSessionControlLock(intent.sessionId, (client) =>
+      walletIntentsRepo.settleLegacyReviewWith(
+        client,
+        intent.intentId,
+        intent.sessionId,
+        intent.txHash,
+        verdict,
+      ),
+    );
+    if (settled === null) continue;
+    if (verdict === "confirmed") confirmed++;
+    else failed++;
+  }
+
+  return { confirmed, failed, stillPending };
+}
+
+async function touchLegacySolanaReview(intent: walletIntentsRepo.WalletIntent): Promise<void> {
+  await withSessionControlLock(intent.sessionId, (client) =>
+    walletIntentsRepo.touchLegacyReviewWith(client, intent.intentId, intent.sessionId),
+  );
 }
 
 /** Project the batched lookup onto ONE row. A short/absent entry is ambiguity, never absence. */

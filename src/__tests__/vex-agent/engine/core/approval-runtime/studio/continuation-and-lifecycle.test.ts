@@ -13,6 +13,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { StudioSettlementEvent } from "@vex-agent/engine/runtime/studio-settlement-bus.js";
 
 const getStudioSettlementByApprovalId = vi.fn();
 const markResumeAttempted = vi.fn();
@@ -87,10 +88,8 @@ describe("runResumeAfterDecision - the Studio case", () => {
       settlementBytes: 42,
       expiresAt: null,
     });
-    const events: Array<Record<string, unknown>> = [];
-    const off = studioSettlementBus.subscribe((e) =>
-      events.push(e as unknown as Record<string, unknown>),
-    );
+    const events: StudioSettlementEvent[] = [];
+    const off = studioSettlementBus.subscribe((event) => events.push(event));
     let result;
     try {
       result = await runResumeAfterDecision({
@@ -149,10 +148,8 @@ describe("runResumeAfterDecision - the Studio case", () => {
         settlementBytes: null,
         expiresAt: null,
       });
-      const events: Array<Record<string, unknown>> = [];
-      const off = studioSettlementBus.subscribe((e) =>
-        events.push(e as unknown as Record<string, unknown>),
-      );
+      const events: StudioSettlementEvent[] = [];
+      const off = studioSettlementBus.subscribe((event) => events.push(event));
       try {
         await runResumeAfterDecision({
           kind: "studio_mcp",

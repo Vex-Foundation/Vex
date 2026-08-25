@@ -53,6 +53,7 @@ export type {
 export {
   createPendingActivityEvent,
   createAgentActivityIntent,
+  createAgentActivityIntentWith,
   recordPreBroadcastFailure,
   createAgentActivityPreBroadcastFailure,
 } from "./agent-activity/swap-intent.js";
@@ -142,6 +143,7 @@ export {
   noteNonInclusionObserved,
   clearNonInclusionClock,
   markSupersededUnproven,
+  markSupersededUnprovenWith,
   mintClaimToken,
   // The phase decision as a VALUE, for the surfaces that must state the row's
   // current cadence rather than act on it (the progress push, the agent copy).
@@ -164,6 +166,32 @@ export type {
   PendingReasonContext,
   NotePendingReasonMiss,
 } from "./agent-activity/swap-lifecycle.js";
+
+// One durable nonce allocator for every local EVM signer. Staged activity
+// paths reserve on their existing row; the legacy Pendle allowance seam uses
+// migration 091's narrow reservation table.
+export type {
+  EvmNonceReservationRequest,
+  LegacyEvmNonceReservation,
+  ClaimedEvmNonceReservation,
+  ClaimDueEvmNonceReservationsResult,
+  EvmNonceRepairTerminalReason,
+  EvmNonceRepairInconclusiveReason,
+} from "./evm-nonce-reservations.js";
+export {
+  LEGACY_EVM_NONCE_RESERVATION_STALE_MS,
+  reserveActivityEvmNonce,
+  reserveLegacyEvmNonce,
+  stageLegacyEvmNonce,
+  markLegacyEvmNonceAccepted,
+  terminalizeLegacyEvmNonce,
+  EVM_NONCE_REPAIR_LIMIT,
+  EVM_NONCE_REPAIR_LEASE_MS,
+  EVM_NONCE_REPAIR_INTERVAL_MS,
+  claimDueEvmNonceReservations,
+  terminalizeClaimedEvmNonceReservation,
+  rotateInconclusiveEvmNonceReservation,
+} from "./evm-nonce-reservations.js";
 export {
   markActivityBroadcast,
   markActivitySolanaBroadcast,
@@ -177,8 +205,10 @@ export {
   // decoded. Exported from the facade so the sweeps never reach into the
   // implementation module. See its doc in `./agent-activity/swap-lifecycle.ts`.
   confirmActivityEventStatusOnly,
+  confirmActivityEventStatusOnlyWith,
   failActivityEvent,
   failActivityEventWith,
+  failHashlessActivityEventWith,
   abortPlannedEvents,
   touchLastChecked,
   clearVerificationStall,

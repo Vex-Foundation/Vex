@@ -120,6 +120,12 @@ export type KhalaniStageHandles =
     };
 
 export interface KhalaniStageHooks {
+  /** Reserve an EVM nonce durably before signing. Unused for Solana legs. */
+  readonly onNonceReserved: (request: {
+    readonly fromAddress: Hex;
+    readonly chainId: number;
+    readonly nodePendingNonce: number;
+  }) => Promise<number>;
   /** Persist the computed hash/signature (`markActivityBroadcast`) — a throw aborts BEFORE any broadcast. */
   readonly onHashStaged: (handles: KhalaniStageHandles) => Promise<void>;
   /** Bookkeeping after the RPC accepts the submission (`markBroadcastAccepted`) — a throw here does NOT roll back. */

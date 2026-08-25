@@ -277,6 +277,16 @@ export class DeferredOfflineSignerUnavailableError extends Error {
 
 export interface StagedBroadcastHooks {
   /**
+   * Reserve the nonce durably before any signature exists. The request carries
+   * the node's pending count; the durable allocator may return a larger value
+   * when another unresolved Vex transaction already owns that nonce.
+   */
+  readonly onNonceReserved: (request: {
+    readonly fromAddress: Address;
+    readonly chainId: number;
+    readonly nodePendingNonce: number;
+  }) => Promise<number>;
+  /**
    * Called AFTER the transaction is signed and its hash computed, BEFORE it
    * is sent to the network. The caller persists the hash here
    * (`markActivityBroadcast`) — a throw from this hook aborts the broadcast
@@ -325,22 +335,12 @@ export async function signStageBroadcast(
   receiptWaitRetry?: ReceiptWaitRetryOptions,
   bounds?: StagedFeeBounds,
 ): Promise<StagedBroadcastOutcome> {
-  // THE NONCE OWNER, on the DEFERRED ARM ONLY (`nonce-owner.ts`). Taken BEFORE
-  // the nonce is filled and held across the pre-sign fence, the signature and
-  // the staging hook, so two concurrent confirms for one wallet cannot read the
-  // same pending count from the node and sign the same nonce. The body releases
-  // it as soon as the submit has settled; this `finally` is the idempotent
-  // backstop that covers every refusal, throw and early return before that.
-  //
-  // The EAGER arm takes no owner and is unchanged in every respect: its thirteen
-  // venue call sites keep their exact prior behaviour, including their
-  // concurrency.
-  if (!isDeferred(signer)) {
-    return await runStagedBroadcast(
-      publicClient, signer, txParams, hooks, null, priorLeg, receiptWaitRetry, bounds,
-    );
-  }
-  const nonceOwner = await acquireEvmNonceOwner(signer.address, signer.chain.id);
+  // One owner covers both signer arms. The durable reservation performed below
+  // makes the allocation survive restart; this live owner prevents concurrent
+  // callers in the one signing process from doing redundant preparation work.
+  const ownerAddress = isDeferred(signer) ? signer.address : signer.account.address;
+  const ownerChainId = isDeferred(signer) ? signer.chain.id : signer.chain.id;
+  const nonceOwner = await acquireEvmNonceOwner(ownerAddress, ownerChainId);
   try {
     return await runStagedBroadcast(
       publicClient, signer, txParams, hooks, nonceOwner, priorLeg, receiptWaitRetry, bounds,
@@ -351,8 +351,7 @@ export async function signStageBroadcast(
 }
 
 /**
- * The staged sequence itself. `nonceOwner` is the lease the deferred arm holds
- * (`null` on the eager arm); it is released the instant the submit settles, so
+ * The staged sequence itself. `nonceOwner` is released the instant the submit settles, so
  * the bounded receipt wait never serializes one wallet's next transaction on
  * block time.
  */
@@ -361,7 +360,7 @@ async function runStagedBroadcast(
   signer: StagedSigner,
   txParams: StagedTxParams,
   hooks: StagedBroadcastHooks,
-  nonceOwner: EvmNonceOwnerLease | null,
+  nonceOwner: EvmNonceOwnerLease,
   priorLeg?: ConfirmedPriorLeg,
   receiptWaitRetry?: ReceiptWaitRetryOptions,
   bounds?: StagedFeeBounds,
@@ -424,8 +423,21 @@ async function runStagedBroadcast(
   const request = eager === null
     ? await publicClient.prepareTransactionRequest(prepareArgs)
     : await eager.prepareTransactionRequest(prepareArgs);
+  const nodePendingNonce = request.nonce;
+  if (nodePendingNonce === undefined) {
+    throw new Error("signStageBroadcast: prepared transaction request has no nonce");
+  }
+  const nonce = await hooks.onNonceReserved({
+    fromAddress: account.address,
+    chainId: chain.id,
+    nodePendingNonce,
+  });
+  if (!Number.isSafeInteger(nonce) || nonce < nodePendingNonce) {
+    throw new Error("signStageBroadcast: durable nonce reservation returned an invalid nonce");
+  }
+  const reservedRequest = { ...request, nonce };
   if (bounds !== undefined) {
-    assertWithinFeeBounds({ ...request, gas: gasLimit }, bounds);
+    assertWithinFeeBounds({ ...reservedRequest, gas: gasLimit }, bounds);
   }
   // Re-asserted on the request that is actually serialized: when fees/nonce
   // still need filling, viem may route preparation through the node's
@@ -444,13 +456,9 @@ async function runStagedBroadcast(
   // deferred arm signs offline so that nothing at all reaches a provider between
   // `onBeforeSign` and this line. See `DeferredEvmSigner` step 5.
   const serializedTransaction = deferred === null
-    ? await walletClient.signTransaction({ ...request, gas: gasLimit })
-    : await signPreparedTransactionOffline(walletClient, chain, { ...request, gas: gasLimit });
+    ? await walletClient.signTransaction({ ...reservedRequest, gas: gasLimit })
+    : await signPreparedTransactionOffline(walletClient, chain, { ...reservedRequest, gas: gasLimit });
   const txHash = keccak256(serializedTransaction);
-  const nonce = request.nonce;
-  if (nonce === undefined) {
-    throw new Error("signStageBroadcast: prepared transaction request has no nonce");
-  }
 
   await hooks.onHashStaged({
     txHash,
@@ -468,7 +476,7 @@ async function runStagedBroadcast(
     // reads - or it did not, and in both cases this wallet's nonce is no longer
     // being decided here. Released before the receipt wait for exactly that
     // reason; the caller's `finally` makes a second release a no-op.
-    nonceOwner?.release();
+    nonceOwner.release();
   }
 
   // Best-effort bookkeeping (per this function's contract) — a throw here

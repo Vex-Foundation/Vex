@@ -207,7 +207,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
     // TWO DIFFERENT EDGES, deliberately not the same handler any more. `end` is
     // the peer's read-side FIN and starts the bounded drain; `close` is the
     // socket being gone and announces immediately.
-    this.socket.on("end", this.handlePeerEnd);
+    this.socket.on("end", this.notifyPeerEnd);
     this.socket.on("close", this.handleSocketClosed);
 
     // The handshake remainder was read before this transport existed. Feeding
@@ -331,12 +331,16 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
 
   /**
    * Readable EOF: the peer half-closed and will send no further request.
+   * Record it even when it happened before this transport existed.
    *
    * It may still be READING, so this is not the abort edge. The queued frames
    * and the requests already delivered get the contract's shutdown window to
    * finish, under one absolute deadline armed right here.
+   *
+   * The Electron host checks `socket.readableEnded` after its dynamic import
+   * gap and replays that persistent fact through this idempotent method.
    */
-  private readonly handlePeerEnd = (): void => {
+  readonly notifyPeerEnd = (): void => {
     if (this.peerEnded) return;
     this.peerEnded = true;
     // A socket whose writable side is already finished cannot carry an answer,

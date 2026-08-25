@@ -36,8 +36,9 @@
  * EXCLUDED: description churn is constant in this repo and must never strand a
  * queued approval.
  *
- * HISTORICAL ROWS ARE UNTOUCHED. A row without the `vex` block is replayed
- * exactly as before — no fingerprint, no identity check, same dispatch.
+ * Historical agent rows without the `vex` block keep their prior replay
+ * behavior. Studio additionally requires its versioned authority digest, so a
+ * pre-authority-digest Studio row is refused and must be requested again.
  */
 
 import { z } from "zod";
@@ -47,6 +48,7 @@ import type { ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
 import { getProtocolManifest } from "@vex-agent/tools/protocols/catalog.js";
 import { resolveInjectedProtocolTool } from "@vex-agent/tools/registry/injected-protocol-tools.js";
 import { resolveToolName } from "@vex-agent/tools/registry/name-resolution.js";
+import type { IntentPreview } from "../approval-intent-preview.js";
 
 /**
  * Current envelope-metadata version.
@@ -391,6 +393,134 @@ export function approvalRequestDigestMatches(
 ): boolean {
   if (storedDigest === null) return true;
   return computeRequestDigest(rawToolCall) === storedDigest;
+}
+
+/** Current preimage contract for a Studio approval's complete authority card. */
+export const STUDIO_AUTHORITY_DIGEST_VERSION = "studio-authority-v1";
+
+export interface StudioAuthorityDigestInput {
+  readonly envelope: Record<string, unknown>;
+  readonly preview: unknown;
+  readonly expiresAt: string;
+  readonly sessionId: string;
+  readonly projectId: string;
+  readonly scopeVersion: number;
+  readonly permission: "restricted" | "full";
+}
+
+/**
+ * Bind every fact the Studio approval UI and resume path treat as authority.
+ * The version is part of both the stored prefix and the hashed preimage, so a
+ * future contract cannot accidentally validate a digest created under this
+ * field set. Manifest metadata is included explicitly as well as through the
+ * envelope to make its role in the authority contract reviewable.
+ */
+export function computeStudioAuthorityDigest(
+  input: StudioAuthorityDigestInput,
+): string {
+  const preimage = {
+    version: STUDIO_AUTHORITY_DIGEST_VERSION,
+    origin: "studio_mcp",
+    sessionId: input.sessionId,
+    projectId: input.projectId,
+    scopeVersion: input.scopeVersion,
+    permission: input.permission,
+    expiresAt: input.expiresAt,
+    preview: input.preview,
+    envelope: input.envelope,
+    manifestIdentity: studioManifestIdentity(input.envelope),
+  };
+  const hash = createHash("sha256")
+    .update(JSON.stringify(canonicalizeJsonValue(preimage)))
+    .digest("hex");
+  return `${STUDIO_AUTHORITY_DIGEST_VERSION}:${hash}`;
+}
+
+/** A historical envelope-only or missing digest never authorizes Studio. */
+export function studioAuthorityDigestMatches(
+  input: StudioAuthorityDigestInput,
+  storedDigest: string | null,
+): boolean {
+  if (
+    storedDigest === null
+    || !storedDigest.startsWith(`${STUDIO_AUTHORITY_DIGEST_VERSION}:`)
+  ) {
+    return false;
+  }
+  return computeStudioAuthorityDigest(input) === storedDigest;
+}
+
+/**
+ * Exact JSON equality for the complete renderer card. Recursive key sorting is
+ * only to neutralize JSONB object-key order; arrays retain their order and an
+ * added or removed field always changes the comparison.
+ */
+export function approvalPreviewExactlyMatches(
+  expected: IntentPreview,
+  stored: unknown,
+): boolean {
+  return (
+    JSON.stringify(canonicalizeJsonValue(expected))
+    === JSON.stringify(canonicalizeJsonValue(stored))
+  );
+}
+
+export interface StudioApprovalToolCall {
+  readonly toolName: string;
+  readonly toolArgs: Record<string, unknown>;
+  readonly toolCallId: string;
+}
+
+/**
+ * Recover the public Studio call from its durable envelope. Protocol approvals
+ * are stored as the internal `execute_tool` restart envelope, but Studio
+ * admission deliberately keeps that internal name closed. The manifest block
+ * retains the original public name, and the nested params are the exact args
+ * that name received. A malformed shape returns null and is refused.
+ */
+export function readStudioApprovalToolCall(
+  rawToolCall: Record<string, unknown>,
+  fallbackToolCallId: string,
+): StudioApprovalToolCall | null {
+  const metadata = envelopeMetadataSchema.safeParse(rawToolCall.vex);
+  if (metadata.success) {
+    if (!isPlainRecord(rawToolCall.args)) return null;
+    if (!isPlainRecord(rawToolCall.args.params)) return null;
+    return {
+      toolName: metadata.data.originalToolName,
+      toolArgs: rawToolCall.args.params,
+      toolCallId: fallbackToolCallId,
+    };
+  }
+  if (rawToolCall.vex !== undefined) return null;
+
+  const name = rawToolCall.command ?? rawToolCall.name;
+  const args = rawToolCall.args ?? rawToolCall.arguments ?? {};
+  if (typeof name !== "string" || name.length === 0 || !isPlainRecord(args)) {
+    return null;
+  }
+  return { toolName: name, toolArgs: args, toolCallId: fallbackToolCallId };
+}
+
+function studioManifestIdentity(
+  envelope: Record<string, unknown>,
+): Record<string, unknown> {
+  if (envelope.vex !== undefined) {
+    return { kind: "protocol", metadata: envelope.vex };
+  }
+  return {
+    kind: "internal",
+    command:
+      typeof envelope.command === "string"
+        ? envelope.command
+        : typeof envelope.name === "string"
+          ? envelope.name
+          : null,
+  };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function computeRequestDigest(envelope: Record<string, unknown>): string {

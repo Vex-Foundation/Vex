@@ -18,7 +18,7 @@
  * the ORDERING OWNER — every queue/intent CAS write happens here, in order.
  */
 
-import type { PoolClient } from "pg";
+import type { ClientBase } from "pg";
 
 import * as approvalsRepo from "../../../../db/repos/approvals.js";
 import * as approvalIntentsRepo from "../../../../db/repos/approval-intents.js";
@@ -42,7 +42,7 @@ import type {
 import type { ApprovalRefusalReason } from "../../../../db/repos/approval-intents.js";
 
 export async function buildApproveSnapshot(
-  client: PoolClient,
+  client: ClientBase,
   approvalId: string,
 ): Promise<ApproveSnapshot> {
   const row = await lockAndLoadSnapshot(client, approvalId);
@@ -165,7 +165,7 @@ export async function buildApproveSnapshot(
 }
 
 async function autoRejectInTx(
-  client: PoolClient,
+  client: ClientBase,
   row: IntentSnapshotRow,
   approvalId: string,
   expiresAt: Date,
@@ -222,7 +222,7 @@ interface DriftVerdict {
  * must not vanish with the project.
  */
 async function readProjectDrift(
-  client: PoolClient,
+  client: ClientBase,
   row: IntentSnapshotRow,
 ): Promise<DriftVerdict | null> {
   if (row.project_id === null) {
@@ -272,7 +272,7 @@ async function readProjectDrift(
 }
 
 async function policyDriftRejectInTx(
-  client: PoolClient,
+  client: ClientBase,
   row: IntentSnapshotRow,
   approvalId: string,
   drift: DriftVerdict,
@@ -310,7 +310,7 @@ async function policyDriftRejectInTx(
 }
 
 export async function buildRejectSnapshot(
-  client: PoolClient,
+  client: ClientBase,
   approvalId: string,
   reason: string,
 ): Promise<RejectSnapshot> {

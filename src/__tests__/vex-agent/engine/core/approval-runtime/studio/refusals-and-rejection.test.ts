@@ -14,6 +14,18 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  Client,
+  type QueryConfig,
+  type QueryResult,
+  type QueryResultRow,
+} from "pg";
+import type {
+  ApproveSnapshot,
+  IntentSnapshotRow,
+  RejectSnapshot,
+} from "@vex-agent/engine/core/approval-runtime/snapshot.js";
+import type { StudioSettlementEvent } from "@vex-agent/engine/runtime/studio-settlement-bus.js";
 
 const rejectWith = vi.fn();
 const markDecisionWith = vi.fn();
@@ -40,14 +52,26 @@ const { studioSettlementBus } = await import(
 
 const PROJECT_ID = "project-1";
 
+type PromiseQuery = <Row extends QueryResultRow = QueryResultRow>(
+  query: string | QueryConfig,
+  values?: unknown[],
+) => Promise<QueryResult<Row>>;
+
 function scriptClient(rows: ReadonlyArray<{ approval_id: string; project_id: string | null }>) {
-  return vi.fn(async (sql: unknown, ..._params: unknown[]) => {
-    if (String(sql).includes("FOR UPDATE")) return { rows, rowCount: rows.length };
-    return { rows: [], rowCount: 0 };
+  const client = new Client();
+  const query = vi.fn<PromiseQuery>();
+  Object.defineProperty(client, "query", { configurable: true, value: query });
+  query.mockResolvedValue({
+    command: "SELECT",
+    rowCount: rows.length,
+    oid: 0,
+    fields: [],
+    rows: [...rows],
   });
+  return { client, query };
 }
 
-function snapshotRow(origin: "agent" | "studio_mcp") {
+function snapshotRow(origin: "agent" | "studio_mcp"): IntentSnapshotRow {
   return {
     approval_id: "approval-1",
     session_id: "session-1",
@@ -81,7 +105,7 @@ beforeEach(() => {
 
 describe("refusePendingStudioIntents", () => {
   it("locks the rows, CASes each terminal with its refusal reason, and emits nothing", async () => {
-    const query = scriptClient([
+    const { client, query } = scriptClient([
       { approval_id: "a-1", project_id: PROJECT_ID },
       { approval_id: "a-2", project_id: PROJECT_ID },
     ]);
@@ -90,7 +114,7 @@ describe("refusePendingStudioIntents", () => {
     let refused;
     try {
       refused = await refusePendingStudioIntents(
-        { query } as never,
+        client,
         { projectId: PROJECT_ID },
         "scope_changed",
       );
@@ -121,11 +145,13 @@ describe("refusePendingStudioIntents", () => {
   });
 
   it("is a no-op for a row another writer already settled", async () => {
-    const query = scriptClient([{ approval_id: "a-1", project_id: PROJECT_ID }]);
+    const { client, query } = scriptClient([
+      { approval_id: "a-1", project_id: PROJECT_ID },
+    ]);
     // The queue CAS misses: the row left `pending` under us.
     rejectWith.mockResolvedValue(null);
     const refused = await refusePendingStudioIntents(
-      { query } as never,
+      client,
       { approvalId: "a-1" },
       "cancelled",
     );
@@ -134,18 +160,16 @@ describe("refusePendingStudioIntents", () => {
   });
 
   it("targets every project for a lock or a quit", async () => {
-    const query = scriptClient([]);
-    await refusePendingStudioIntents({ query } as never, { all: true }, "lock");
+    const { client, query } = scriptClient([]);
+    await refusePendingStudioIntents(client, { all: true }, "lock");
     const lockSql = String(query.mock.calls[0]?.[0]);
     expect(lockSql).not.toContain("project_id = $1");
     expect(query.mock.calls[0]?.[1]).toEqual([]);
   });
 
   it("announces one settlement event per refused row, after the caller commits", () => {
-    const events: Array<Record<string, unknown>> = [];
-    const off = studioSettlementBus.subscribe((e) =>
-      events.push(e as unknown as Record<string, unknown>),
-    );
+    const events: StudioSettlementEvent[] = [];
+    const off = studioSettlementBus.subscribe((event) => events.push(event));
     try {
       announceStudioRefusals([
         { approvalId: "a-1", projectId: PROJECT_ID },
@@ -161,7 +185,9 @@ describe("refusePendingStudioIntents", () => {
       outcome: "rejected",
     });
     // Ids and one enum only: no prose, no tool output rides this bus.
-    expect(Object.keys(events[0]!).sort()).toEqual([
+    const firstEvent = events[0];
+    if (firstEvent === undefined) throw new Error("settlement event missing");
+    expect(Object.keys(firstEvent).sort()).toEqual([
       "approvalId",
       "occurredAt",
       "outcome",
@@ -174,13 +200,13 @@ describe("refusePendingStudioIntents", () => {
 describe("the origin-aware rejection dispatcher", () => {
   it("hands an AGENT rejection to the existing side effects, unchanged", async () => {
     applyRejectSideEffects.mockResolvedValue({ kind: "rejected" });
-    const snapshot = {
-      type: "rejected_in_tx" as const,
+    const snapshot: Extract<RejectSnapshot, { type: "rejected_in_tx" }> = {
+      type: "rejected_in_tx",
       row: snapshotRow("agent"),
       queueResolvedAt: "2026-08-23T10:00:00.000Z",
       reason: "no",
     };
-    await dispatchRejectSideEffects("approval-1", snapshot as never, "content");
+    await dispatchRejectSideEffects("approval-1", snapshot, "content");
     expect(applyRejectSideEffects).toHaveBeenCalledWith(
       "approval-1",
       snapshot,
@@ -189,10 +215,8 @@ describe("the origin-aware rejection dispatcher", () => {
   });
 
   it("settles a STUDIO rejection with an event and no transcript or continuation", async () => {
-    const events: Array<Record<string, unknown>> = [];
-    const off = studioSettlementBus.subscribe((e) =>
-      events.push(e as unknown as Record<string, unknown>),
-    );
+    const events: StudioSettlementEvent[] = [];
+    const off = studioSettlementBus.subscribe((event) => events.push(event));
     let outcome;
     try {
       outcome = await dispatchRejectSideEffects(
@@ -202,7 +226,7 @@ describe("the origin-aware rejection dispatcher", () => {
           row: snapshotRow("studio_mcp"),
           queueResolvedAt: "2026-08-23T10:00:00.000Z",
           reason: "expired",
-        } as never,
+        },
         "content that must not be written anywhere",
       );
     } finally {
@@ -226,19 +250,22 @@ describe("the origin-aware rejection dispatcher", () => {
 
   it("splits the policy-drift path the same way", async () => {
     applyPolicyDriftSideEffects.mockResolvedValue({ kind: "policy_drift_blocked" });
-    const agentSnapshot = {
-      type: "policy_drift_blocked" as const,
+    const agentSnapshot: Extract<
+      ApproveSnapshot,
+      { type: "policy_drift_blocked" }
+    > = {
+      type: "policy_drift_blocked",
       row: snapshotRow("agent"),
       queueResolvedAt: "2026-08-23T10:00:00.000Z",
       reason: "drift",
-      permissionAtEnqueue: "full" as const,
-      livePermission: "restricted" as const,
-      driftKind: "session_permission" as const,
+      permissionAtEnqueue: "full",
+      livePermission: "restricted",
+      driftKind: "session_permission",
       refusalReason: null,
     };
     await dispatchPolicyDriftSideEffects(
       "approval-1",
-      agentSnapshot as never,
+      agentSnapshot,
       "content",
     );
     expect(applyPolicyDriftSideEffects).toHaveBeenCalledTimes(1);
@@ -246,7 +273,7 @@ describe("the origin-aware rejection dispatcher", () => {
     vi.clearAllMocks();
     const outcome = await dispatchPolicyDriftSideEffects(
       "approval-1",
-      { ...agentSnapshot, row: snapshotRow("studio_mcp") } as never,
+      { ...agentSnapshot, row: snapshotRow("studio_mcp") },
       "content",
     );
     expect(applyPolicyDriftSideEffects).not.toHaveBeenCalled();

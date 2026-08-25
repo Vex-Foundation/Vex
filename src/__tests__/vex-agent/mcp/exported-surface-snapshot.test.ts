@@ -73,6 +73,26 @@ function compare(key: string, actual: JsonValue): void {
   }
 }
 
+function toJsonValue(value: unknown): JsonValue {
+  if (
+    value === null
+    || typeof value === "string"
+    || typeof value === "number"
+    || typeof value === "boolean"
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(toJsonValue);
+  if (typeof value === "object") {
+    const projected: Record<string, JsonValue> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (entry !== undefined) projected[key] = toJsonValue(entry);
+    }
+    return projected;
+  }
+  throw new Error(`Studio inventory contains a non-JSON schema value of type ${typeof value}`);
+}
+
 /** The ordered surface, in the shape a reviewer reads. */
 function exportedSurface(): JsonValue {
   return {
@@ -88,7 +108,7 @@ function exportedSurface(): JsonValue {
       alwaysLoad: tool.alwaysLoad,
       requiresEnv: tool.requiresEnv ?? null,
       descriptionBytes: Buffer.byteLength(tool.description, "utf8"),
-      inputSchema: tool.inputSchema as unknown as JsonValue,
+      inputSchema: toJsonValue(tool.inputSchema),
     })),
   };
 }

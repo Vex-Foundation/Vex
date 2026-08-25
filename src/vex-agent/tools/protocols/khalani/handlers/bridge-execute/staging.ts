@@ -8,6 +8,7 @@
 import type { KhalaniStageHandles, KhalaniStageHooks } from "@tools/khalani/bridge-executor.js";
 import {
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markActivitySolanaBroadcast,
   markBroadcastAccepted,
 } from "@vex-agent/db/repos/agent-activity.js";
@@ -15,6 +16,7 @@ import logger from "@utils/logger.js";
 
 export function khalaniStageHooksFor(rowId: number): KhalaniStageHooks {
   return {
+    onNonceReserved: (request) => reserveActivityEvmNonce(rowId, request),
     onHashStaged: async (h: KhalaniStageHandles) => {
       // Nonce-less staging is Solana-only: the dedicated CAS's
       // `chain_family='solana'` predicate makes a nonce-less EVM leg a

@@ -13,14 +13,13 @@
  * MEANS "dispatch began before the lock", and a claim racing the advance is
  * refused with zero rows.
  *
- * ## The window that remains, stated honestly
+ * ## The pre-commit window
  *
- * Between the synchronous scrub and the advance's COMMIT, a slot claim can
- * still commit. That call is not a hole: the signing capability was revoked
- * synchronously with the scrub, so the dispatch fails closed at the signer and
- * is recorded as `failed` or `indeterminate` through the existing CAS. Nothing
- * can broadcast. The generation closes the door for everything after it; the
- * revocation closes it for the one call that got through.
+ * Main sets a synchronous transition deny before its first lock or unlock
+ * await. The registered preflight reads that fact, the unlocked state and the
+ * poison state. This closes the interval before the generation UPDATE commits
+ * for signing and non-signing mutations alike. The durable generation remains
+ * the cross-transaction authority after commit.
  *
  * ## The in-memory mirror is a courtesy, never the authority
  *
@@ -43,6 +42,7 @@ import logger from "@utils/logger.js";
 import {
   advanceStudioDispatchGenerationRow,
   readStudioDispatchGenerationWith,
+  type StudioPendingGlobalRefusalReason,
 } from "@vex-agent/db/repos/studio-runtime-gate.js";
 
 import {
@@ -81,9 +81,13 @@ export type StudioGenerationAdvance =
  * can log it, and the durable refusal that follows reconciles through the
  * scheduled sweep when the database comes back.
  */
-export async function advanceStudioDispatchGeneration(): Promise<StudioGenerationAdvance> {
+export async function advanceStudioDispatchGeneration(
+  pendingRefusalReason: StudioPendingGlobalRefusalReason | null = null,
+): Promise<StudioGenerationAdvance> {
   try {
-    const generation = await advanceStudioDispatchGenerationRow();
+    const generation = await advanceStudioDispatchGenerationRow(
+      pendingRefusalReason,
+    );
     if (generation === null) {
       // The seeded row is missing, which means migration 086 has not run. Fail
       // loudly rather than silently leaving the fence open.

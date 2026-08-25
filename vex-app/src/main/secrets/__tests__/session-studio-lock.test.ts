@@ -116,8 +116,11 @@ describe("lockSecretSession", () => {
     // destroyed before the first await, so the dispatch-generation advance
     // that follows never waits on a peer noticing its socket is gone.
     expect(order[1]).toBe("host_lock");
+    expect(session.isStudioSessionTransitionInProgress()).toBe(true);
+    expect(session.isStudioDispatchPoisoned()).toBe(true);
     await pending;
     expect(order).toEqual(["revoke_signing", "host_lock", "advance", "refuse"]);
+    expect(session.isStudioSessionTransitionInProgress()).toBe(false);
   });
 
   it("still scrubs, and still advances the fence, when the refusal fails", async () => {
@@ -186,6 +189,37 @@ describe("the poison and its bounded retry", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(advanceStudioDispatchGeneration.mock.calls.length).toBe(callsAtDispose);
   });
+
+  it("keeps Studio closed across unlock until a failed typed refusal sweep repairs", async () => {
+    vi.useFakeTimers();
+    refuseAllPendingStudioIntents.mockResolvedValueOnce(null);
+    await session.lockSecretSession("vex_quit");
+
+    expect(session.hasPendingStudioRefusalRepair()).toBe(true);
+    expect(session.isStudioDispatchPoisoned()).toBe(true);
+
+    // A fresh generation is necessary but not sufficient. The listener must
+    // not reopen while the durable quit refusal remains unwritten.
+    order.length = 0;
+    await session.unlockSecretSession("pw");
+    expect(session.isSecretSessionUnlocked()).toBe(true);
+    expect(session.isStudioDispatchPoisoned()).toBe(true);
+    expect(order).not.toContain("host_start");
+
+    const advancesBeforeRepair = advanceStudioDispatchGeneration.mock.calls.length;
+    refuseAllPendingStudioIntents.mockResolvedValue(2);
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    // The owner retries the WRITE obligation with the original machine cause.
+    // It does not advance the already-proven generation again.
+    expect(refuseAllPendingStudioIntents).toHaveBeenLastCalledWith("vex_quit");
+    expect(advanceStudioDispatchGeneration.mock.calls.length).toBe(
+      advancesBeforeRepair,
+    );
+    expect(session.hasPendingStudioRefusalRepair()).toBe(false);
+    expect(session.isStudioDispatchPoisoned()).toBe(false);
+    expect(order).toContain("host_start");
+  });
 });
 
 describe("unlockSecretSession", () => {
@@ -198,11 +232,15 @@ describe("unlockSecretSession", () => {
   });
 
   it("AWAITS the advance, so a failure has poisoned the runtime before it reports success", async () => {
-    let resolveAdvance: ((value: unknown) => void) | null = null;
+    let resolveAdvance: (value: unknown) => void = () => {
+      throw new Error("advance resolver was not installed");
+    };
+    let resolverInstalled = false;
     advanceStudioDispatchGeneration.mockImplementation(
       () =>
         new Promise((resolve) => {
           resolveAdvance = resolve;
+          resolverInstalled = true;
         }),
     );
     const pending = session.unlockSecretSession("pw");
@@ -211,11 +249,12 @@ describe("unlockSecretSession", () => {
       settled = true;
     });
     await vi.waitFor(() => {
-      expect(resolveAdvance).not.toBeNull();
+      expect(resolverInstalled).toBe(true);
     });
     // Still blocked on the advance: fire-and-forget would have returned here.
     expect(settled).toBe(false);
-    (resolveAdvance as unknown as (value: unknown) => void)({
+    expect(session.isStudioSessionTransitionInProgress()).toBe(true);
+    resolveAdvance({
       ok: false,
       cause: new Error("db down"),
     });
@@ -248,6 +287,7 @@ describe("the lock cause", () => {
   it("defaults to `lock` for a user-initiated relock", async () => {
     await session.lockSecretSession();
     expect(lockStudioMcpHost).toHaveBeenCalledWith("lock");
+    expect(advanceStudioDispatchGeneration).toHaveBeenCalledWith("lock");
     expect(refuseAllPendingStudioIntents).toHaveBeenCalledWith("lock");
   });
 
@@ -256,6 +296,7 @@ describe("the lock cause", () => {
     // BOTH owners, one cause: the host hands `vex_quit` to every blocked call's
     // abort chain, and the durable refusal writes the same value.
     expect(lockStudioMcpHost).toHaveBeenCalledWith("vex_quit");
+    expect(advanceStudioDispatchGeneration).toHaveBeenCalledWith("vex_quit");
     expect(refuseAllPendingStudioIntents).toHaveBeenCalledWith("vex_quit");
     // And the scrub still happened: the cause changes the audit story, never
     // the security guarantee.
@@ -283,8 +324,9 @@ describe("the defensive relock in getUnlockedSecretPresence", () => {
   it("closes the host and advances the fence, not just the scrub", async () => {
     const vault = await import("@vex-lib/local-secret-vault.js");
     vi.mocked(vault.unlockSecretVault).mockReturnValue({
+      version: 1,
       secrets: { JUPITER_API_KEY: "x" },
-    } as never);
+    });
     await session.unlockSecretSession("pw");
     order.length = 0;
     vi.clearAllMocks();

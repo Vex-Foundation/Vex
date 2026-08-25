@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -36,6 +38,33 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: Reject unsafe test escapes
+        env:
+          PR_BASE_SHA: "${{ github.event.pull_request.base.sha }}"
+        run: |
+          if [ -n "$PR_BASE_SHA" ]; then
+            pnpm test:unsafe-escapes -- --base "$PR_BASE_SHA"
+          else
+            pnpm test:unsafe-escapes
+          fi
+
+  studio-postgres:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run the required Studio PostgreSQL and migration gate
+        run: pnpm test:studio-postgres
 
   vex-app-build-and-test:
     runs-on: ubuntu-latest

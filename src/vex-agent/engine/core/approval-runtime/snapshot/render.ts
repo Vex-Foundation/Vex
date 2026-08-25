@@ -19,6 +19,7 @@ export const SNAPSHOT_SELECT_SQL = `SELECT
     i.mission_run_id,
     i.tool_call_id,
     i.expires_at,
+    i.preview_json,
     i.decision,
     i.decision_reason,
     i.decided_at,

@@ -62,14 +62,15 @@ const DialTimeout = 2 * time.Second
 type RefusalCode string
 
 const (
-	RefuseOverrideNotAbsolute    RefusalCode = "override_not_absolute"
-	RefuseOverrideInvalidPipe    RefusalCode = "override_invalid_pipe"
-	RefuseOverridePipeOnUnix     RefusalCode = "override_pipe_on_unix"
-	RefuseOverrideParentMissing  RefusalCode = "override_parent_missing"
-	RefuseOverrideParentNotDir   RefusalCode = "override_parent_not_directory"
-	RefuseOverrideParentNotOwned RefusalCode = "override_parent_not_owned"
-	RefuseOverrideParentMode     RefusalCode = "override_parent_mode"
-	RefusePathTooLong            RefusalCode = "path_too_long"
+	RefuseOverrideNotAbsolute     RefusalCode = "override_not_absolute"
+	RefuseOverrideInvalidPipe     RefusalCode = "override_invalid_pipe"
+	RefuseOverridePipeOnUnix      RefusalCode = "override_pipe_on_unix"
+	RefuseOverrideParentMissing   RefusalCode = "override_parent_missing"
+	RefuseOverrideParentNotDir    RefusalCode = "override_parent_not_directory"
+	RefuseOverrideParentNotOwned  RefusalCode = "override_parent_not_owned"
+	RefuseOverrideParentMode      RefusalCode = "override_parent_mode"
+	RefusePathTooLong             RefusalCode = "path_too_long"
+	RefuseEndpointAncestorChanged RefusalCode = "endpoint_ancestor_changed"
 
 	// RefuseWindowsPendingPlatformProof is the RUNTIME gate of section 1.6,
 	// not a planning outcome: Derive still plans the pipe, and the vectors

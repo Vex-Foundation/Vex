@@ -33,7 +33,10 @@ import { execute, queryOne } from "@vex-agent/db/client.js";
 import * as intentsRepo from "@vex-agent/db/repos/wallet-transaction-intents.js";
 import { PROPOSAL_DIGEST_VERSION } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
 import { enqueueStudioApprovalIntent } from "@vex-agent/mcp/approvals.js";
-import { computeRequestDigest } from "@vex-agent/engine/core/approval-runtime/tool-call-envelope.js";
+import {
+  computeRequestDigest,
+  computeStudioAuthorityDigest,
+} from "@vex-agent/engine/core/approval-runtime/tool-call-envelope.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { handleWalletEvmTransactionConfirm } from "@vex-agent/tools/internal/wallet/transaction/confirm-evm.js";
 import { digestOfIntent } from "@vex-agent/tools/internal/wallet/transaction/revalidate.js";
@@ -76,17 +79,42 @@ function baseContext(
     missionRunId: null,
     missionId: null,
     planMode: false,
-    sessionKind: "chat",
+    sessionKind: "agent",
     contextUsageBand: "normal",
-    walletResolution: { source: "session", sessionId },
+    walletResolution: { source: "session", evm: null, solana: null },
     walletPolicy: { kind: "none" },
     ...overrides,
-  } as unknown as InternalToolContext;
+  };
 }
 
 /** The same context after the user approved, naming the approval it resumes. */
 function approvedContext(sessionId: string, approvalId: string): InternalToolContext {
   return baseContext(sessionId, { approved: true, approvalId });
+}
+
+interface ApprovalCard {
+  readonly toolName: string;
+  readonly criticalArgs: Record<string, unknown>;
+}
+
+function requireApprovalCard(value: unknown): ApprovalCard {
+  const card = requireRecord(value, "approval card");
+  if (typeof card.toolName !== "string") {
+    throw new Error("approval card toolName was not a string");
+  }
+  return {
+    toolName: card.toolName,
+    criticalArgs: requireRecord(card.criticalArgs, "approval criticalArgs"),
+  };
+}
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new Error(`${label} was not an object`);
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -255,10 +283,7 @@ describe("the prepared-approval binding, confirm handler -> Studio enqueue -> ap
       "SELECT preview_json, expires_at FROM approval_intents WHERE approval_id = $1",
       [outcome.approvalId],
     );
-    const card = intentRow?.preview_json as {
-      toolName: string;
-      criticalArgs: Record<string, unknown>;
-    };
+    const card = requireApprovalCard(intentRow?.preview_json);
     expect(card.criticalArgs.effect).toBe(intent.preview.label);
     expect(card.criticalArgs.spender).toBe(SPENDER);
     expect(card.criticalArgs.intentId).toBe(intent.intentId);
@@ -284,20 +309,39 @@ describe("the prepared-approval binding, confirm handler -> Studio enqueue -> ap
       [outcome.approvalId],
     );
     const stored = queue?.tool_call ?? {};
-    const bound = stored.proposalBinding as { proposalDigest: string; resource: { intentId: string } };
+    const bound = requireRecord(stored.proposalBinding, "proposal binding");
+    const resource = requireRecord(bound.resource, "proposal resource");
     expect(bound.proposalDigest).toBe(intent.proposalDigest);
-    expect(bound.resource.intentId).toBe(intent.intentId);
+    expect(resource.intentId).toBe(intent.intentId);
 
-    const digestRow = await queryOne<{ request_digest: string | null }>(
-      "SELECT request_digest FROM approval_intents WHERE approval_id = $1",
+    const digestRow = await queryOne<{
+      request_digest: string | null;
+      preview_json: Record<string, unknown>;
+      expires_at: Date;
+    }>(
+      `SELECT request_digest, preview_json, expires_at
+         FROM approval_intents WHERE approval_id = $1`,
       [outcome.approvalId],
     );
-    // The digest the dispatch will recompute is a digest OVER the envelope that
-    // carries the binding, so changing the proposal changes it.
-    expect(digestRow?.request_digest).toBe(computeRequestDigest(stored));
+    if (digestRow === null) throw new Error("approval digest row missing");
+    const authority = {
+      expiresAt: digestRow.expires_at.toISOString(),
+      sessionId,
+      projectId,
+      scopeVersion: 1,
+      permission: "restricted" as const,
+      preview: digestRow.preview_json,
+    };
+    // The Studio digest covers the envelope, complete card, expiry and project
+    // authority. Recomputing that full preimage must reproduce the stored row.
+    expect(digestRow.request_digest).toBe(
+      computeStudioAuthorityDigest({ envelope: stored, ...authority }),
+    );
     const withoutBinding = { ...stored };
     delete withoutBinding.proposalBinding;
-    expect(computeRequestDigest(withoutBinding)).not.toBe(digestRow?.request_digest);
+    expect(
+      computeStudioAuthorityDigest({ envelope: withoutBinding, ...authority }),
+    ).not.toBe(digestRow.request_digest);
   });
 
   it("the approved resume refuses an approval granted for a DIFFERENT proposal", async () => {
@@ -382,8 +426,8 @@ describe("the prepared-approval binding, confirm handler -> Studio enqueue -> ap
       [outcome.approvalId],
     );
     const stored = queue?.tool_call ?? {};
-    const bound = stored.proposalBinding as Record<string, unknown>;
-    const preview = bound.preview as { label: string; criticalArgs: Record<string, unknown> };
+    const bound = requireRecord(stored.proposalBinding, "proposal binding");
+    const preview = requireRecord(bound.preview, "bound preview");
     await execute("UPDATE approval_queue SET tool_call = $2 WHERE id = $1", [
       outcome.approvalId,
       JSON.stringify({
@@ -422,7 +466,7 @@ describe("the prepared-approval binding, confirm handler -> Studio enqueue -> ap
       "SELECT preview_json FROM approval_intents WHERE approval_id = $1",
       [outcome.approvalId],
     );
-    const card = cardRow?.preview_json as { toolName: string; criticalArgs: Record<string, unknown> };
+    const card = requireApprovalCard(cardRow?.preview_json);
     await execute("UPDATE approval_intents SET preview_json = $2 WHERE approval_id = $1", [
       outcome.approvalId,
       JSON.stringify({
@@ -458,7 +502,7 @@ describe("the prepared-approval binding, confirm handler -> Studio enqueue -> ap
       "SELECT preview_json FROM approval_intents WHERE approval_id = $1",
       [outcome.approvalId],
     );
-    const card = cardRow?.preview_json as { toolName: string; criticalArgs: Record<string, unknown> };
+    const card = requireApprovalCard(cardRow?.preview_json);
     expect(card.toolName).toBe("WalletEvmTransactionConfirm");
     // EVERY money fact stays true. Only the TITLE changes - which is precisely
     // the edit that shows a human a harmless heading over an envelope that still
@@ -495,7 +539,7 @@ describe("the prepared-approval binding, confirm handler -> Studio enqueue -> ap
       "SELECT preview_json FROM approval_intents WHERE approval_id = $1",
       [outcome.approvalId],
     );
-    const card = cardRow?.preview_json as Record<string, unknown>;
+    const card = requireRecord(cardRow?.preview_json, "approval card");
     // This lane's card carries NO namespace, and the renderer shows what the row
     // has. An ADDED field is the classic misleading-card shape: every true fact
     // still present, plus one more line the user reads as authoritative.
@@ -533,18 +577,16 @@ describe("the prepared-approval binding, confirm handler -> Studio enqueue -> ap
       [outcome.approvalId],
     );
     const stored = queue?.tool_call ?? {};
-    const bound = stored.proposalBinding as {
-      preview: { label: string; criticalArgs: Record<string, unknown> };
-      proposalDigestVersion: string;
-    };
+    const bound = requireRecord(stored.proposalBinding, "proposal binding");
+    const preview = requireRecord(bound.preview, "bound preview");
     expect(bound.proposalDigestVersion).toBe(PROPOSAL_DIGEST_VERSION);
-    expect(bound.preview.label).toBe(CANONICAL_PREVIEW.label);
-    expect(bound.preview.criticalArgs).toEqual(CANONICAL_PREVIEW.criticalArgs);
+    expect(preview.label).toBe(CANONICAL_PREVIEW.label);
+    expect(preview.criticalArgs).toEqual(CANONICAL_PREVIEW.criticalArgs);
 
     // Changing the sentence changes the digest the dispatch recomputes.
     const withOtherLabel = {
       ...stored,
-      proposalBinding: { ...bound, preview: { ...bound.preview, label: "something else" } },
+      proposalBinding: { ...bound, preview: { ...preview, label: "something else" } },
     };
     expect(computeRequestDigest(withOtherLabel)).not.toBe(computeRequestDigest(stored));
   });

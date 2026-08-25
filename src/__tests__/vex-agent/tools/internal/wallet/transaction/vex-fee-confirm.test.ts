@@ -15,6 +15,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createPublicClient, createWalletClient, http, type Chain, type Transport } from "viem";
+import { parseAccount } from "viem/accounts";
+import { base } from "viem/chains";
 
 import type { WalletTransactionIntent } from "@vex-agent/db/repos/wallet-transaction-intents.js";
 import { PROPOSAL_DIGEST_VERSION } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
@@ -147,6 +150,17 @@ function intent(valueWei: string): WalletTransactionIntent {
 
 const EXECUTION_ID = 7;
 const FEE_ROW_ID = 99;
+const TEST_CHAIN: Chain = base;
+const TEST_TRANSPORT: Transport = http("http://127.0.0.1:1");
+const TEST_PUBLIC_CLIENT = createPublicClient({
+  chain: TEST_CHAIN,
+  transport: TEST_TRANSPORT,
+});
+const TEST_WALLET_CLIENT = createWalletClient({
+  account: parseAccount(WALLET),
+  chain: TEST_CHAIN,
+  transport: TEST_TRANSPORT,
+});
 
 function context(): InternalToolContext {
   return {
@@ -155,7 +169,7 @@ function context(): InternalToolContext {
     sessionPermission: "full",
     walletResolution: {},
     walletPolicy: {},
-  } as unknown as InternalToolContext;
+  } as InternalToolContext;
 }
 
 const deps = {
@@ -175,12 +189,12 @@ const deps = {
     }),
   }),
   signerClientsFactory: async () => ({
-    publicClient: {} as never,
-    chain: { id: 8453 } as never,
-    createWalletClient: () => ({}) as never,
+    publicClient: TEST_PUBLIC_CLIENT,
+    chain: TEST_CHAIN,
+    createWalletClient: () => TEST_WALLET_CLIENT,
     chainName: "Base",
   }),
-} as unknown as Parameters<typeof handleWalletEvmTransactionConfirm>[2];
+} satisfies Parameters<typeof handleWalletEvmTransactionConfirm>[2];
 
 /** The action's own staged broadcast answers `outcome`. */
 function actionOutcome(outcome: unknown): void {
@@ -304,9 +318,12 @@ describe("T-FEE 6: a transaction that did not confirm is never charged", () => {
     // terminal state first, and this write cannot delay or alter them.
     expect(settleTerminalRows).toHaveBeenCalled();
     expect(abortPlannedEvents).toHaveBeenCalledWith(EXECUTION_ID, 1, expect.stringContaining("chain_failed"));
-    expect(settleTerminalRows.mock.invocationCallOrder[0]).toBeLessThan(
-      abortPlannedEvents.mock.invocationCallOrder[0]!,
-    );
+    const settlementOrder = settleTerminalRows.mock.invocationCallOrder[0];
+    const abortOrder = abortPlannedEvents.mock.invocationCallOrder[0];
+    if (settlementOrder === undefined || abortOrder === undefined) {
+      throw new Error("expected both settlement and fee-abort calls");
+    }
+    expect(settlementOrder).toBeLessThan(abortOrder);
   });
 
   it("never signs a fee for an AMBIGUOUS transaction", async () => {

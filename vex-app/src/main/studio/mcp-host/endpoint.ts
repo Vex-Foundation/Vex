@@ -76,11 +76,16 @@ export type StudioEndpointRefusalCode =
   | "override_invalid_pipe"
   | "override_pipe_on_unix"
   | "windows_pending_platform_proof"
+  | "endpoint_ancestor_changed"
   | "override_parent_missing"
   | "override_parent_not_directory"
   | "override_parent_not_owned"
   | "override_parent_mode"
   | "path_too_long";
+
+/** Runtime refusal when an endpoint ancestor cannot be proven unchanged. */
+export const ENDPOINT_ANCESTOR_CHANGED_CODE =
+  "endpoint_ancestor_changed" satisfies StudioEndpointRefusalCode;
 
 export type StudioEndpointPlan =
   | {

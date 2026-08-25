@@ -29,12 +29,18 @@
  *      THROWS, which aborts the send: refusing to broadcast an untracked
  *      transfer is the whole reason the writer is shaped this way.
  *   5. Only then are the signed bytes submitted, once.
- *   6. `confirm` / `fail` finalize from DEFINITIVE chain evidence only. An
- *      ambiguous outcome calls NEITHER - the row stays `pending` for the repair
- *      sweep, and nothing is ever re-sent. Ambiguity never terminalizes
- *      (rules/90; plan section 11.1 / FIX-SPINE C1).
- *   7. `completeExecution` settles the `protocol_executions` row on EVERY path
- *      by which the tool returns, ambiguity included.
+ *   6. `completeExecution` settles the `protocol_executions` row on EVERY path
+ *      by which the tool returns, ambiguity included. On a definitive outcome,
+ *      it runs before `confirm` / `fail` so the handler's exact result,
+ *      references, and duration win the execution row's write-once CAS. A crash
+ *      after that write leaves AA/WI unresolved and therefore fail-closed until
+ *      repair completes them.
+ *   7. `confirm` / `fail` finalize from DEFINITIVE chain evidence only. Their
+ *      linked-row coordinator supplies a repair-labelled PE completion only as
+ *      fallback if step 6 did not land. An ambiguous outcome calls NEITHER -
+ *      the row stays `pending` for the repair sweep, and nothing is ever
+ *      re-sent. Ambiguity never terminalizes (rules/90; plan section 11.1 /
+ *      FIX-SPINE C1).
  *
  * THE TWO ROWS ANSWER DIFFERENT QUESTIONS, and conflating them strands money
  * state. `protocol_executions` records the TOOL
@@ -65,19 +71,23 @@
 
 import { formatUnits } from "viem";
 
+import * as walletIntentsRepo from "@vex-agent/db/repos/wallet-intents.js";
 import type { WalletIntent } from "@vex-agent/db/repos/wallet-intents.js";
 import {
-  createAgentActivityIntent,
+  createAgentActivityIntentWith,
   createAgentActivityPreBroadcastFailure,
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markActivitySolanaBroadcast,
   markBroadcastAccepted,
   confirmActivityEvent,
   failActivityEvent,
+  failActivityEventWith,
   noteSettledBlockTime,
   type AgentActivityFailureCode,
   type BridgeChainFamily,
 } from "@vex-agent/db/repos/agent-activity.js";
+import { settleLinkedActivityRows } from "@vex-agent/db/repos/agent-activity/linked-transaction-settlement.js";
 import { completeExecutionIntentWith } from "@vex-agent/db/repos/executions.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import logger from "@utils/logger.js";
@@ -149,6 +159,12 @@ export type WalletTransferSettlement =
 export interface WalletTransferActivity {
   readonly executionId: number;
   readonly rowId: number;
+  /** Reserve this row's EVM nonce durably before signing. */
+  reserveEvmNonce(input: {
+    readonly fromAddress: string;
+    readonly chainId: number;
+    readonly nodePendingNonce: number;
+  }): Promise<number>;
   /** EVM staging. THROWS on a CAS miss - the caller must abort before submitting. */
   stageEvm(handles: { txHash: string; fromAddress: string; nonce: number }): Promise<void>;
   /** Solana staging, carrying the blockhash evidence the 049 CHECK requires. THROWS on a CAS miss. */
@@ -175,9 +191,16 @@ export interface WalletTransferActivity {
   /** CAS-finalize `definitively_failed`. Best-effort. NEVER called for an ambiguous outcome. */
   fail(input: { failureCode: AgentActivityFailureCode; failureReason: string }): Promise<void>;
   /**
+   * Finalize a staged signature that the node definitively rejected before
+   * accepting it. Distinct from a hashless crash and from broadcast ambiguity.
+   */
+  failSignedNotSubmitted(input: { readonly failureReason: string }): Promise<void>;
+  /**
    * Settle the `protocol_executions` row: the TOOL ATTEMPT completes on every
    * outcome the tool can name, `confirmation_unknown` included. Only the
    * `agent_activity` row may stay pending; the chain outcome is its concern.
+   * For definitive outcomes the executor calls this before `confirm` / `fail`,
+   * preserving the handler's exact audit metadata before repair's fallback CAS.
    */
   completeExecution(settlement: WalletTransferSettlement): Promise<void>;
 }
@@ -205,45 +228,53 @@ export async function openWalletTransferActivity(
   plan: WalletTransferPlan,
 ): Promise<WalletTransferActivity> {
   const started = Date.now();
-  const created = await createAgentActivityIntent({
-    toolId: TOOL_ID,
-    namespace: NAMESPACE,
-    intentParams: intentParamsOf(intent),
-    events: [
-      {
-        eventIndex: 0,
-        eventRole: "wallet_transfer",
-        kind: "transfer",
-        protocol: PROTOCOL,
-        chainId: plan.chainId,
-        chainSlug: plan.chainSlug,
-        chainFamily: plan.chainFamily,
-        walletAddress: intent.walletAddress,
-        sessionId: intent.sessionId,
-        // INPUT LEG ONLY. The asset left the wallet; nothing comes back, so an
-        // output leg would invent a counterparty. The DESTINATION is
-        // deliberately absent from the row (rules/90 privacy stance) - it lives
-        // on the local `wallet_intents` row and in this execution's params.
-        tokenIn: {
-          tokenAddress: plan.tokenAddress,
-          tokenSymbol: plan.tokenSymbol,
-          tokenDecimals: plan.tokenDecimals,
-          amountHuman: plan.amountHuman,
-          amountRaw: plan.amountRaw.toString(),
+  const created = await withSessionControlLock(intent.sessionId, async (client) => {
+    const rows = await createAgentActivityIntentWith(client, {
+      toolId: TOOL_ID,
+      namespace: NAMESPACE,
+      intentParams: intentParamsOf(intent),
+      events: [
+        {
+          eventIndex: 0,
+          eventRole: "wallet_transfer",
+          kind: "transfer",
+          protocol: PROTOCOL,
+          chainId: plan.chainId,
+          chainSlug: plan.chainSlug,
+          chainFamily: plan.chainFamily,
+          walletAddress: intent.walletAddress,
+          sessionId: intent.sessionId,
+          // INPUT LEG ONLY. The asset left the wallet; nothing comes back, so an
+          // output leg would invent a counterparty. The destination remains on
+          // the local wallet_intents row and in this execution's params.
+          tokenIn: {
+            tokenAddress: plan.tokenAddress,
+            tokenSymbol: plan.tokenSymbol,
+            tokenDecimals: plan.tokenDecimals,
+            amountHuman: plan.amountHuman,
+            amountRaw: plan.amountRaw.toString(),
+          },
+          // usd_* stay NULL. A send has no venue quote and no price this path
+          // fetched; a number invented here would be a valuation nobody made.
         },
-        // usd_* stay NULL. A send has no venue quote and no price this path
-        // fetched; a number invented here would be a valuation nobody made.
-      },
-    ],
+      ],
+    });
+    const event = rows.events[0];
+    if (event === undefined) {
+      throw new Error("agent_activity: transfer intent returned no event row");
+    }
+    const linked = await walletIntentsRepo.linkActivityWith(
+      client,
+      intent.intentId,
+      intent.sessionId,
+      event.id,
+    );
+    if (linked === null) {
+      throw new Error("agent_activity: transfer intent activity link CAS missed");
+    }
+    return { executionId: rows.executionId, event };
   });
-  // Exactly one event was requested above, so exactly one comes back. Checked
-  // rather than asserted: without a row id there is nothing to stage against,
-  // and the caller must not sign.
-  const event = created.events[0];
-  if (event === undefined) {
-    throw new Error("agent_activity: transfer intent returned no event row");
-  }
-  return makeHandle(intent.sessionId, created.executionId, event.id, plan, started);
+  return makeHandle(intent.sessionId, created.executionId, created.event.id, plan, started);
 }
 
 function makeHandle(
@@ -256,6 +287,8 @@ function makeHandle(
   return {
     executionId,
     rowId,
+
+    reserveEvmNonce: (input) => reserveActivityEvmNonce(rowId, input),
 
     async stageEvm(handles) {
       const res = await markActivityBroadcast(rowId, handles);
@@ -347,6 +380,29 @@ function makeHandle(
       }
     },
 
+    async failSignedNotSubmitted(input) {
+      try {
+        await settleLinkedActivityRows({
+          activityId: rowId,
+          sessionId,
+          intentOutcome: "signed_not_submitted",
+          activityTarget: {
+            status: "definitively_failed",
+            failureCode: "broadcast_error",
+          },
+          activityWrite: (client) => failActivityEventWith(client, rowId, {
+            failureCode: "broadcast_error",
+            failureReason: input.failureReason,
+          }),
+        });
+      } catch (err) {
+        logger.warn("wallet.send.activity_signed_not_submitted_failed", {
+          rowId,
+          ...summarizeWalletError(err),
+        });
+      }
+    },
+
     async completeExecution(settlement) {
       try {
         await withSessionControlLock(sessionId, (client) =>
@@ -354,7 +410,13 @@ function makeHandle(
             executionId,
             // Structural only. No raw provider text, no key material, no amounts
             // the row does not already carry under its own columns.
-            result: { status: settlement.kind, ...("txHash" in settlement ? { txHash: settlement.txHash } : {}) },
+            result: {
+              status: settlement.kind,
+              ...("txHash" in settlement ? { txHash: settlement.txHash } : {}),
+              ...(settlement.kind === "confirmed" && settlement.blockTimeIso !== undefined
+                ? { blockTimeIso: settlement.blockTimeIso }
+                : {}),
+            },
             success: settlement.kind === "confirmed",
             tradeCapture: null,
             externalRefs: "txHash" in settlement ? { txHash: settlement.txHash } : {},

@@ -74,10 +74,12 @@ import { log } from "../logger/index.js";
 import { studioReadiness } from "./readiness.js";
 import { planStudioEndpoint, unprovenWindowsTransport } from "./mcp-host/endpoint.js";
 import {
+  captureEndpointDirectoryChain,
   clearStaleEndpoint,
   nodeDirectoryProbe,
   prepareEndpointDirectory,
   refuseLiveEndpoint,
+  verifyEndpointDirectoryChain,
 } from "./mcp-host/bind.js";
 import {
   atCapacityRefusal,
@@ -347,6 +349,7 @@ async function runStart(epoch: number): Promise<StudioHostStart> {
   const gated = unprovenWindowsTransport(plan);
   if (gated !== null && gated.kind === "refused") return refusedStart(gated.message);
 
+  let verifyDirectoryIdentity = (): string | null => null;
   if (plan.kind === "pipe") {
     // DEFENSIVE, at the listen site itself. `planOverride` refuses pipe syntax
     // off win32 by name, and this is the second copy of that decision: a pipe
@@ -371,12 +374,17 @@ async function runStart(epoch: number): Promise<StudioHostStart> {
     // remove" is only answerable in a directory nobody else can write.
     const prepared = prepareEndpointDirectory(plan);
     if (prepared !== null) return refusedStart(prepared);
-    const staleFailure = await clearStaleEndpoint(plan.path);
+    const captured = captureEndpointDirectoryChain(plan.parentDir);
+    if (captured.kind === "refused") return refusedStart(captured.reason);
+    verifyDirectoryIdentity = () => verifyEndpointDirectoryChain(captured.identity);
+    const staleFailure = await clearStaleEndpoint(plan.path, verifyDirectoryIdentity);
     if (staleFailure !== null) return refusedStart(staleFailure);
   }
   // The stale probe is a network round trip with a 1 s ceiling. A lock inside
   // it must not be overtaken into a listener.
   if (epoch !== lifecycleEpoch) return refusedStart(lockedSentence());
+  const preBindIdentityFailure = verifyDirectoryIdentity();
+  if (preBindIdentityFailure !== null) return refusedStart(preBindIdentityFailure);
 
   // `allowHalfOpen` IS THE CONTRACT, not a tuning knob. Without it Node ends
   // the writable side the moment the peer's FIN arrives, so a bridge that
@@ -406,6 +414,12 @@ async function runStart(epoch: number): Promise<StudioHostStart> {
       `The Vex Studio MCP host could not bind ${plan.path}: `
         + `${cause instanceof Error ? cause.message : String(cause)}`,
     );
+  }
+
+  const postBindIdentityFailure = verifyDirectoryIdentity();
+  if (postBindIdentityFailure !== null) {
+    server.close();
+    return refusedStart(postBindIdentityFailure);
   }
 
   // THE PUBLICATION GATE. The listener now exists and is bound, so a stale

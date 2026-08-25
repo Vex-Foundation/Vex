@@ -143,7 +143,7 @@ export async function approve(
  * with the same semantics as `approve(id)` when CAS misses.
  */
 export async function approveWith(
-  client: PoolClient,
+  client: ClientBase,
   id: string,
 ): Promise<
   (ApprovalItem & { pendingContext: Record<string, unknown> | null }) | null

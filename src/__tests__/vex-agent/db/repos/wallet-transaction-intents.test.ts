@@ -18,11 +18,15 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import pg from "pg";
 
 import type { PoolClient } from "pg";
 
 import * as repo from "@vex-agent/db/repos/wallet-transaction-intents.js";
-import { PROPOSAL_DIGEST_VERSION } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
+import {
+  DecodedWalletTransactionSchema,
+  PROPOSAL_DIGEST_VERSION,
+} from "@vex-agent/db/contracts/wallet-transaction-intent.js";
 
 interface QueryCall {
   readonly sql: string;
@@ -81,17 +85,26 @@ function durableRow(overrides: Record<string, unknown> = {}): Record<string, unk
 
 let nextRows: Record<string, unknown>[] = [];
 
-const client = {
-  query: vi.fn(async (sql: string, params?: unknown[]) => {
-    calls.push({ sql, params: params ?? [] });
-    return { rows: nextRows };
-  }),
-} as unknown as PoolClient;
+const queryMock = vi.fn(async (sql: string, params?: unknown[]) => {
+  calls.push({ sql, params: params ?? [] });
+  return {
+    command: "SELECT",
+    rowCount: nextRows.length,
+    oid: 0,
+    fields: [],
+    rows: nextRows,
+  };
+});
+
+const client: PoolClient = Object.assign(new pg.Client(), {
+  release(): void {},
+  query: queryMock,
+});
 
 beforeEach(() => {
   calls.length = 0;
   nextRows = [durableRow()];
-  (client.query as unknown as { mockClear: () => void }).mockClear();
+  queryMock.mockClear();
 });
 
 function lastSql(): string {
@@ -161,7 +174,7 @@ describe("T1 create", () => {
         family: "eip155",
         evm: { to: "0x2222222222222222222222222222222222222222", data: "0x", valueWei: "1" },
       },
-      decoded: durableRow().decoded_json as never,
+      decoded: DecodedWalletTransactionSchema.parse(durableRow().decoded_json),
       preview: { label: "Call transfer", criticalArgs: {} },
       feeBounds: {
         mode: "legacy",

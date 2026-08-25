@@ -17,6 +17,9 @@
 
 import { randomUUID } from "node:crypto";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import type { ApproveSnapshot } from "@vex-agent/engine/core/approval-runtime/snapshot.js";
+
+type ApprovedInTxSnapshot = Extract<ApproveSnapshot, { type: "approved_in_tx" }>;
 
 const admitStudioCall = vi.fn();
 vi.mock("@vex-agent/mcp/admission.js", () => ({ admitStudioCall }));
@@ -110,7 +113,9 @@ async function readState(approvalId: string): Promise<DurableState> {
        FROM approval_intents WHERE approval_id = $1`,
     [approvalId],
   );
-  return rows[0]!;
+  const row = rows[0];
+  if (row === undefined) throw new Error("Studio approval row missing");
+  return row;
 }
 
 const ENVELOPE = buildApprovalToolCall("wallet_send", { network: "solana" });
@@ -119,7 +124,7 @@ function snapshot(
   approvalId: string,
   sessionId: string,
   projectId: string,
-): unknown {
+): ApprovedInTxSnapshot {
   return {
     type: "approved_in_tx",
     queueResolvedAt: new Date().toISOString(),
@@ -175,7 +180,7 @@ describe("a scope edit that commits AFTER the enqueue", () => {
 
     const outcome = await applyStudioApproveSideEffects(
       approvalId,
-      snapshot(approvalId, sessionId, projectId) as never,
+      snapshot(approvalId, sessionId, projectId),
     );
     expect(admitStudioCall).not.toHaveBeenCalled();
     expect(outcome.kind).toBe("dispatched");
@@ -207,7 +212,7 @@ describe("a lock that advances the generation after the enqueue", () => {
 
     await applyStudioApproveSideEffects(
       approvalId,
-      snapshot(approvalId, sessionId, projectId) as never,
+      snapshot(approvalId, sessionId, projectId),
     );
     expect(admitStudioCall).not.toHaveBeenCalled();
 
@@ -229,7 +234,7 @@ describe("a preflight that cannot prove the lock fence", () => {
 
     await applyStudioApproveSideEffects(
       approvalId,
-      snapshot(approvalId, sessionId, projectId) as never,
+      snapshot(approvalId, sessionId, projectId),
     );
     expect(admitStudioCall).not.toHaveBeenCalled();
 

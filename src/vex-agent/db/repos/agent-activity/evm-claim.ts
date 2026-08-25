@@ -44,9 +44,13 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { query, queryOne } from "../../client.js";
+import type { PoolClient } from "pg";
+
+import { query, queryOne, queryOneWith } from "../../client.js";
 import logger from "@utils/logger.js";
+import { settleLinkedActivityRows } from "./linked-transaction-settlement.js";
 import { mapRow } from "./mappers.js";
+import { resolveActivitySessionByRowId } from "./session-lock.js";
 import type { AgentActivityEvent } from "./types.js";
 import type { CasResult } from "./types.js";
 
@@ -335,6 +339,46 @@ export async function markSupersededUnproven(
   handlerWindowMs: number,
   nonInclusionWindowMs: number = NONINCLUSION_TERMINALIZE_AFTER_MS,
 ): Promise<CasResult & { reason?: SupersededMiss }> {
+  const sessionId = await resolveActivitySessionByRowId(id);
+  return settleLinkedActivityRows({
+    activityId: id,
+    sessionId,
+    intentOutcome: "superseded_unproven",
+    activityTarget: { status: "superseded_unproven" },
+    activityWrite: (client) => runMarkSupersededUnproven(
+      client,
+      id,
+      evidence,
+      handlerWindowMs,
+      nonInclusionWindowMs,
+    ),
+  });
+}
+
+/** Supersession CAS on the caller's existing transaction and session lock. */
+export async function markSupersededUnprovenWith(
+  client: PoolClient,
+  id: number,
+  evidence: SupersededEvidence,
+  handlerWindowMs: number,
+  nonInclusionWindowMs: number = NONINCLUSION_TERMINALIZE_AFTER_MS,
+): Promise<CasResult & { reason?: SupersededMiss }> {
+  return runMarkSupersededUnproven(
+    client,
+    id,
+    evidence,
+    handlerWindowMs,
+    nonInclusionWindowMs,
+  );
+}
+
+async function runMarkSupersededUnproven(
+  client: PoolClient,
+  id: number,
+  evidence: SupersededEvidence,
+  handlerWindowMs: number,
+  nonInclusionWindowMs: number,
+): Promise<CasResult & { reason?: SupersededMiss }> {
   // The non-inclusion window is a guard on INCONCLUSIVE evidence only. A
   // confirmed same-(from, nonce) sibling is conclusive, so it gates on the 90 s
   // money window alone - see guard 5 in this function's doc.
@@ -345,7 +389,8 @@ export async function markSupersededUnproven(
         AND NOW() >= GREATEST(
               submit_attempted_at + make_interval(secs => $4::float8),
               first_noninclusion_observed_at + make_interval(secs => $5::float8))`;
-  const row = await queryOne<Record<string, unknown>>(
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
     `UPDATE agent_activity
         SET status = 'superseded_unproven',
             pending_reason = $3,
@@ -371,7 +416,8 @@ export async function markSupersededUnproven(
   );
   if (row) return { applied: true, row: mapRow(row) };
 
-  const current = await queryOne<Record<string, unknown>>(
+  const current = await queryOneWith<Record<string, unknown>>(
+    client,
     "SELECT * FROM agent_activity WHERE id = $1",
     [id],
   );

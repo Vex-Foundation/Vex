@@ -53,11 +53,13 @@ describe("encodeStudioSettlement", () => {
   it("stores a field the codec has never heard of rather than dropping it", () => {
     // The projection walks keys, so a field added to `ToolResult` later is
     // stored without this module changing.
-    const result = {
+    const result: ToolResult = {
       success: false,
       output: "no",
+    };
+    Object.assign(result, {
       somethingNewNextQuarter: { nested: [1, 2, 3] },
-    } as unknown as ToolResult;
+    });
     const encoded = encodeStudioSettlement(result);
     expect(encoded.body.result.somethingNewNextQuarter).toEqual({
       nested: [1, 2, 3],
@@ -65,7 +67,7 @@ describe("encodeStudioSettlement", () => {
   });
 
   it("tags a non-JSON `data` value explicitly instead of dropping it", () => {
-    const result = {
+    const result: ToolResult = {
       success: true,
       output: "ok",
       data: {
@@ -74,7 +76,7 @@ describe("encodeStudioSettlement", () => {
         when: new Date("2026-08-23T10:00:00.000Z"),
         missing: undefined,
       },
-    } as unknown as ToolResult;
+    };
     const encoded = encodeStudioSettlement(result);
     const data = encoded.body.result.data as Record<string, unknown>;
 

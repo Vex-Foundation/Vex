@@ -18,7 +18,18 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import type { Account, Chain, Hex } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  type Address,
+  type Chain,
+  type Hex,
+  type TransactionReceipt,
+  type Transport,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { base } from "viem/chains";
 
 import {
   acquireEvmNonceOwner,
@@ -31,19 +42,41 @@ import {
 } from "@tools/evm-chains/staged-broadcast.js";
 
 const TO = "0x2222222222222222222222222222222222222222" as const;
-const FROM = "0x1111111111111111111111111111111111111111" as const;
-const OTHER_WALLET = "0x9999999999999999999999999999999999999999" as const;
+const ACCOUNT = privateKeyToAccount(`0x${"11".repeat(32)}`);
+const OTHER_ACCOUNT = privateKeyToAccount(`0x${"22".repeat(32)}`);
+const FROM = ACCOUNT.address;
+const OTHER_WALLET = OTHER_ACCOUNT.address;
 const SERIALIZED = "0xdeadbeef" as Hex;
-const CHAIN = { id: 8453, name: "Base" } as unknown as Chain;
-const ACCOUNT = { address: FROM, type: "local" } as unknown as Account;
+const CHAIN: Chain = base;
 
-type Args = Parameters<typeof signStageBroadcast>;
+function testTransport(): Transport {
+  return http("http://127.0.0.1:1");
+}
+
+function confirmedReceipt(): TransactionReceipt {
+  return {
+    blockHash: `0x${"ab".repeat(32)}`,
+    blockNumber: 1n,
+    contractAddress: null,
+    cumulativeGasUsed: 21_000n,
+    effectiveGasPrice: 1n,
+    from: FROM,
+    gasUsed: 21_000n,
+    logs: [],
+    logsBloom: `0x${"00".repeat(256)}`,
+    status: "success",
+    to: TO,
+    transactionHash: `0x${"cd".repeat(32)}`,
+    transactionIndex: 0,
+    type: "eip1559",
+  };
+}
 
 /** A node whose PENDING COUNT is the only source of the nonce, advanced by sends. */
 function fakeNode() {
   const state = { pendingCount: 7, sends: 0 };
   const preparedNonces: number[] = [];
-  const publicClient = {
+  const publicClient = Object.assign(createPublicClient({ chain: CHAIN, transport: testTransport() }), {
     estimateGas: async () => 21_000n,
     prepareTransactionRequest: async (request: Record<string, unknown>) => {
       const nonce = state.pendingCount;
@@ -55,14 +88,15 @@ function fakeNode() {
       state.pendingCount += 1;
       return "0xhash" as Hex;
     },
-    waitForTransactionReceipt: async () => ({ status: "success", blockNumber: 1n }),
-  };
+    waitForTransactionReceipt: async () => confirmedReceipt(),
+  });
   return { state, preparedNonces, publicClient };
 }
 
-function walletClientFor(address: string) {
-  return {
-    account: { ...ACCOUNT, address, signTransaction: async () => SERIALIZED },
+function walletClientFor(address: Address) {
+  const account = address.toLowerCase() === FROM.toLowerCase() ? ACCOUNT : OTHER_ACCOUNT;
+  const signingAccount = { ...account, signTransaction: async () => SERIALIZED };
+  return Object.assign(createWalletClient({ account: signingAccount, chain: CHAIN, transport: testTransport() }), {
     chain: CHAIN,
     prepareTransactionRequest: async () => {
       throw new Error("the deferred arm must never prepare on the wallet client");
@@ -70,29 +104,40 @@ function walletClientFor(address: string) {
     signTransaction: async () => {
       throw new Error("the deferred arm must never use viem's wallet action");
     },
-  };
+  });
 }
 
 function deferredSigner(
-  address: string,
+  address: Address,
   overrides: Partial<DeferredEvmSigner> = {},
 ): DeferredEvmSigner {
   return {
     kind: "deferred",
-    address: address as `0x${string}`,
+    address,
     chain: CHAIN,
     onBeforeSign: async () => undefined,
-    createSigner: async () =>
-      walletClientFor(address) as unknown as Awaited<ReturnType<DeferredEvmSigner["createSigner"]>>,
+    createSigner: async () => walletClientFor(address),
     ...overrides,
   };
 }
 
 function passiveHooks() {
   return {
+    onNonceReserved: vi.fn(async (request: { nodePendingNonce: number }) => request.nodePendingNonce),
     onHashStaged: vi.fn(async () => undefined),
     onAccepted: vi.fn(async () => undefined),
   };
+}
+
+function durableHooks(reservations: number[]) {
+  const hooks = passiveHooks();
+  hooks.onNonceReserved.mockImplementation(async (request) => {
+    const highest = reservations.length === 0 ? -1 : Math.max(...reservations);
+    const nonce = Math.max(request.nodePendingNonce, highest + 1);
+    reservations.push(nonce);
+    return nonce;
+  });
+  return hooks;
 }
 
 /** A promise plus its resolver, for pinning an ordering without a sleep. */
@@ -111,7 +156,7 @@ describe("two concurrent DEFERRED confirms for one wallet cannot sign the same n
     // window in which the second used to read the same pending count.
     const held = gate();
     const first = signStageBroadcast(
-      node.publicClient as unknown as Args[0],
+      node.publicClient,
       deferredSigner(FROM, { onBeforeSign: async () => await held.promise }),
       { to: TO, data: "0x" },
       passiveHooks(),
@@ -122,7 +167,7 @@ describe("two concurrent DEFERRED confirms for one wallet cannot sign the same n
     await Promise.resolve();
     await Promise.resolve();
     const second = signStageBroadcast(
-      node.publicClient as unknown as Args[0],
+      node.publicClient,
       deferredSigner(FROM),
       { to: TO, data: "0x" },
       passiveHooks(),
@@ -147,7 +192,7 @@ describe("two concurrent DEFERRED confirms for one wallet cannot sign the same n
     const node = fakeNode();
     const held = gate();
     const first = signStageBroadcast(
-      node.publicClient as unknown as Args[0],
+      node.publicClient,
       deferredSigner(FROM, { onBeforeSign: async () => await held.promise }),
       { to: TO, data: "0x" },
       passiveHooks(),
@@ -156,7 +201,7 @@ describe("two concurrent DEFERRED confirms for one wallet cannot sign the same n
 
     // Completes while the first is still parked: different key, different turn.
     const otherOutcome = await signStageBroadcast(
-      node.publicClient as unknown as Args[0],
+      node.publicClient,
       deferredSigner(OTHER_WALLET),
       { to: TO, data: "0x" },
       passiveHooks(),
@@ -168,31 +213,45 @@ describe("two concurrent DEFERRED confirms for one wallet cannot sign the same n
     expect(evmNonceOwnerCountForTest()).toBe(0);
   });
 
-  it("the EAGER arm takes no owner at all, so it never waits on one", async () => {
+  it("serializes an EAGER send behind a DEFERRED confirm for the same wallet", async () => {
     const node = fakeNode();
-    // The wallet's turn is held by someone else for the whole test.
-    const lease = await acquireEvmNonceOwner(FROM, CHAIN.id);
-    const eagerClient = {
-      account: { ...ACCOUNT, address: FROM },
+    const held = gate();
+    const deferred = signStageBroadcast(
+      node.publicClient,
+      deferredSigner(FROM, { onBeforeSign: async () => await held.promise }),
+      { to: TO, data: "0x" },
+      passiveHooks(),
+    );
+    await Promise.resolve();
+
+    const eagerClient = Object.assign(createWalletClient({
+      account: ACCOUNT,
+      chain: CHAIN,
+      transport: testTransport(),
+    }), {
       chain: CHAIN,
       prepareTransactionRequest: async (request: Record<string, unknown>) => ({
         ...request,
         gas: 30_000n,
-        nonce: 7,
+        nonce: node.state.pendingCount,
         chain: CHAIN,
       }),
       signTransaction: async () => SERIALIZED,
-    };
-
-    const outcome = await signStageBroadcast(
-      node.publicClient as unknown as Args[0],
-      eagerClient as unknown as Args[1],
+    });
+    const eager = signStageBroadcast(
+      node.publicClient,
+      eagerClient,
       { to: TO, data: "0x" },
       passiveHooks(),
     );
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    expect(node.state.sends).toBe(0);
 
-    expect(outcome.kind).toBe("confirmed");
-    lease.release();
+    held.open();
+    const [deferredOutcome, eagerOutcome] = await Promise.all([deferred, eager]);
+    expect(deferredOutcome.kind).toBe("confirmed");
+    expect(eagerOutcome.kind).toBe("confirmed");
+    expect(node.state.sends).toBe(2);
     expect(evmNonceOwnerCountForTest()).toBe(0);
   });
 });
@@ -201,7 +260,7 @@ describe("the turn is RELEASED on every outcome", () => {
   /** Prove the wallet can sign again: the next confirm completes. */
   async function nextConfirmSucceeds(node: ReturnType<typeof fakeNode>): Promise<void> {
     const outcome = await signStageBroadcast(
-      node.publicClient as unknown as Args[0],
+      node.publicClient,
       deferredSigner(FROM),
       { to: TO, data: "0x" },
       passiveHooks(),
@@ -214,7 +273,7 @@ describe("the turn is RELEASED on every outcome", () => {
     const node = fakeNode();
     await expect(
       signStageBroadcast(
-        node.publicClient as unknown as Args[0],
+        node.publicClient,
         deferredSigner(FROM, {
           onBeforeSign: async () => {
             throw new Error("authority fence refused");
@@ -233,7 +292,7 @@ describe("the turn is RELEASED on every outcome", () => {
     hooks.onHashStaged.mockRejectedValueOnce(new Error("durable write failed"));
     await expect(
       signStageBroadcast(
-        node.publicClient as unknown as Args[0],
+        node.publicClient,
         deferredSigner(FROM),
         { to: TO, data: "0x" },
         hooks,
@@ -242,8 +301,10 @@ describe("the turn is RELEASED on every outcome", () => {
     await nextConfirmSucceeds(node);
   });
 
-  it("after an AMBIGUOUS submit", async () => {
+  it("after an AMBIGUOUS submit keeps N reserved across a restart and gives the next arm N+1", async () => {
     const node = fakeNode();
+    const reservations: number[] = [];
+    const firstHooks = durableHooks(reservations);
     const failingSend = {
       ...node.publicClient,
       sendRawTransaction: async () => {
@@ -251,13 +312,37 @@ describe("the turn is RELEASED on every outcome", () => {
       },
     };
     const outcome = await signStageBroadcast(
-      failingSend as unknown as Args[0],
+      failingSend,
       deferredSigner(FROM),
       { to: TO, data: "0x" },
-      passiveHooks(),
+      firstHooks,
     );
     expect(outcome.kind).toBe("ambiguous");
-    await nextConfirmSucceeds(node);
+    expect(reservations).toEqual([7]);
+    expect(firstHooks.onHashStaged).toHaveBeenCalledWith(expect.objectContaining({ nonce: 7 }));
+
+    // The live owner has been released, which models a new process after a
+    // restart. Durable state, not the process map, must keep nonce 7 occupied.
+    expect(evmNonceOwnerCountForTest()).toBe(0);
+    const beforeSign = gate();
+    const secondHooks = durableHooks(reservations);
+    const second = signStageBroadcast(
+      node.publicClient,
+      deferredSigner(FROM, { onBeforeSign: async () => await beforeSign.promise }),
+      { to: TO, data: "0x" },
+      secondHooks,
+    );
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    expect(reservations).toEqual([7, 8]);
+
+    // The first request is accepted late only after the second has reserved 8.
+    // No code retries nonce 7, and the second signature cannot replace it.
+    node.state.pendingCount = 8;
+    beforeSign.open();
+    expect((await second).kind).toBe("confirmed");
+    expect(secondHooks.onHashStaged).toHaveBeenCalledWith(expect.objectContaining({ nonce: 8 }));
+    expect(node.state.sends).toBe(1);
+    expect(node.state.pendingCount).toBe(9);
   });
 
   it("after a THROWN preparation, before any nonce existed", async () => {
@@ -270,7 +355,7 @@ describe("the turn is RELEASED on every outcome", () => {
     };
     await expect(
       signStageBroadcast(
-        throwingPrepare as unknown as Args[0],
+        throwingPrepare,
         deferredSigner(FROM),
         { to: TO, data: "0x" },
         passiveHooks(),
@@ -286,11 +371,11 @@ describe("the turn is RELEASED on every outcome", () => {
       ...node.publicClient,
       waitForTransactionReceipt: async () => {
         await waiting.promise;
-        return { status: "success", blockNumber: 1n };
+        return confirmedReceipt();
       },
     };
     const first = signStageBroadcast(
-      slowReceipt as unknown as Args[0],
+      slowReceipt,
       deferredSigner(FROM),
       { to: TO, data: "0x" },
       passiveHooks(),
@@ -300,7 +385,7 @@ describe("the turn is RELEASED on every outcome", () => {
     // The submit has settled, so the turn is over even though the first call
     // has not returned yet.
     const second = await signStageBroadcast(
-      node.publicClient as unknown as Args[0],
+      node.publicClient,
       deferredSigner(FROM),
       { to: TO, data: "0x" },
       passiveHooks(),

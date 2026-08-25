@@ -20,6 +20,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  ENDPOINT_ANCESTOR_CHANGED_CODE,
   isWindowsPipePath,
   planStudioEndpoint,
   unprovenWindowsTransport,
@@ -31,6 +32,7 @@ import {
   STUDIO_SUN_PATH_MAX_BYTES,
   type EndpointDirectoryFacts,
 } from "../mcp-host/endpoint.js";
+import { endpointAncestorChangedRefusal } from "../mcp-host/bind.js";
 import {
   parseStudioHandshake,
   encodeStudioHandshakeAck,
@@ -101,6 +103,13 @@ interface Vectors {
   };
   readonly limits: Record<string, number>;
   readonly realpathFallback: string;
+  readonly endpointAncestorIdentity: {
+    readonly changed: {
+      readonly code: string;
+      readonly path: string;
+      readonly message: string;
+    };
+  };
   readonly hashRules: { readonly cases: readonly HashRuleCase[] };
   readonly derivation: readonly PlanCase[];
   readonly override: readonly PlanCase[];
@@ -134,6 +143,12 @@ function runPlan(testCase: PlanCase): ReturnType<typeof planStudioEndpoint> {
 describe("studio endpoint golden vectors", () => {
   it("the fixture is the contract version this host implements", () => {
     expect(vectors.contractVersion).toBe(1);
+  });
+
+  it("formats the ancestor-identity refusal from the shared golden vector", () => {
+    const changed = vectors.endpointAncestorIdentity.changed;
+    expect(ENDPOINT_ANCESTOR_CHANGED_CODE).toBe(changed.code);
+    expect(endpointAncestorChangedRefusal(changed.path)).toBe(changed.message);
   });
 
   it.each(vectors.hash.cases)(

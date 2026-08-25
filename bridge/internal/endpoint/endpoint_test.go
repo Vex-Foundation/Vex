@@ -123,6 +123,17 @@ func TestBoundsMatchTheFixture(t *testing.T) {
 	}
 }
 
+func TestEndpointAncestorRefusalVector(t *testing.T) {
+	changed := load(t).EndpointAncestorIdentity.Changed
+	if string(endpoint.RefuseEndpointAncestorChanged) != changed.Code {
+		t.Fatalf("ancestor refusal code %q, contract says %q",
+			endpoint.RefuseEndpointAncestorChanged, changed.Code)
+	}
+	if got := endpoint.EndpointAncestorChangedRefusal(changed.Path); got != changed.Message {
+		t.Fatalf("ancestor refusal %q, contract says %q", got, changed.Message)
+	}
+}
+
 func TestDerivationAndOverrideVectors(t *testing.T) {
 	file := load(t)
 	for _, table := range []struct {

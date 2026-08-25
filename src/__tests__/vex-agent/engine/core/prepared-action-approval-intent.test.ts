@@ -34,6 +34,22 @@ const TRUSTED_PREVIEW = {
   },
 };
 
+function firstCreatedIntent() {
+  const call = createWith.mock.calls[0];
+  if (call === undefined) throw new Error("approval intent was not created");
+  return call[1];
+}
+
+function firstStoredEnvelope(): Record<string, unknown> {
+  const call = enqueueWith.mock.calls[0];
+  if (call === undefined) throw new Error("approval queue row was not created");
+  const envelope: unknown = call[2];
+  if (typeof envelope !== "object" || envelope === null || Array.isArray(envelope)) {
+    throw new Error("stored approval envelope was not an object");
+  }
+  return Object.fromEntries(Object.entries(envelope));
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-07-12T10:00:00.000Z"));
@@ -96,7 +112,7 @@ describe("prepared-action approval intent", () => {
         expiresAt: PREPARED_EXPIRY,
       }),
     );
-    const stored = createWith.mock.calls[0]![1];
+    const stored = firstCreatedIntent();
     expect(JSON.stringify(stored.previewJson)).not.toContain(
       "model-spoofed-recipient",
     );
@@ -113,7 +129,7 @@ describe("prepared-action approval intent", () => {
         trustedExpiresAt: PREPARED_EXPIRY,
       }),
     );
-    const stored = createWith.mock.calls[0]![1];
+    const stored = firstCreatedIntent();
     expect(stored.expiresAt).toBe(PREPARED_EXPIRY);
   });
 
@@ -124,7 +140,7 @@ describe("prepared-action approval intent", () => {
         trustedExpiresAt: "2026-07-12T23:00:00.000Z",
       }),
     );
-    const stored = createWith.mock.calls[0]![1];
+    const stored = firstCreatedIntent();
     expect(stored.expiresAt).toBe(
       new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     );
@@ -141,7 +157,7 @@ describe("prepared-action approval intent", () => {
         trustedExpiresAt: pastExpiry,
       }),
     );
-    const stored = createWith.mock.calls[0]![1];
+    const stored = firstCreatedIntent();
     expect(stored.expiresAt).toBe(pastExpiry);
   });
 
@@ -152,7 +168,7 @@ describe("prepared-action approval intent", () => {
         trustedExpiresAt: "not-a-date",
       }),
     );
-    const stored = createWith.mock.calls[0]![1];
+    const stored = firstCreatedIntent();
     expect(stored.expiresAt).toBe(
       new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     );
@@ -160,7 +176,7 @@ describe("prepared-action approval intent", () => {
 
   it("builds the args-derived preview (untrusted-tool default path) when no trusted preview is supplied", async () => {
     await enqueueApprovalIntent(baseArgs());
-    const stored = createWith.mock.calls[0]![1];
+    const stored = firstCreatedIntent();
     // The default (non-handoff) path derives the preview from the tool's own
     // args via the allow-listed builder — model-visible fields only, still
     // never the raw untouched args object.
@@ -186,8 +202,8 @@ describe("the agent lane records the request digest at enqueue", () => {
       baseArgs({ trustedPreview: TRUSTED_PREVIEW, trustedExpiresAt: PREPARED_EXPIRY }),
     );
 
-    const storedEnvelope = enqueueWith.mock.calls[0]![2] as Record<string, unknown>;
-    const stored = createWith.mock.calls[0]![1];
+    const storedEnvelope = firstStoredEnvelope();
+    const stored = firstCreatedIntent();
     expect(stored.requestDigest).toBe(computeRequestDigest(storedEnvelope));
     // Not the placeholder it used to be.
     expect(stored.requestDigest).not.toBeNull();

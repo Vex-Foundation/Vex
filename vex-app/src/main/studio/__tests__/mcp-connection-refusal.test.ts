@@ -24,8 +24,6 @@ import { EventEmitter } from "node:events";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Socket } from "node:net";
-
 import type { StudioConnectionHandle } from "@vex-agent/mcp/server.js";
 
 import {
@@ -37,6 +35,7 @@ import {
   atCapacityRefusal,
   STUDIO_HANDSHAKE_DEADLINE_MS,
 } from "../mcp-host/handshake.js";
+import { testSocket } from "./socket-test-adapter.js";
 
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -137,7 +136,7 @@ function harness(options: HarnessOptions = {}): Harness {
     },
     onClosed: (): void => undefined,
   };
-  const connection = new StudioConnection("c-test", socket as unknown as Socket, deps);
+  const connection = new StudioConnection("c-test", testSocket(socket), deps);
   return {
     connection,
     socket,

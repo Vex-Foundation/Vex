@@ -51,6 +51,7 @@ import { mapRow } from "./mappers.js";
 import type { AgentActivityEvent, AgentActivityFailureCode, CasResult } from "./types.js";
 import type { ConfirmationSource } from "./provenance-vocabulary.js";
 import { armFastLane, resolveFastLane } from "./fast-lane-signal.js";
+import { settleLinkedActivityRowsWith } from "./linked-transaction-settlement.js";
 import logger from "@utils/logger.js";
 
 // ── Types (swap-only inputs) ─────────────────────────────────────────
@@ -64,8 +65,9 @@ export interface MarkActivityBroadcastInput {
 // ── Staged broadcast persistence ────────────────────────────────────
 
 /**
- * Persist the SIGNED tx hash + from/nonce BEFORE the RPC submit call
- * (§11.1 step 2). CAS-guarded `WHERE status='pending' AND tx_hash IS NULL`
+ * Persist the SIGNED tx hash BEFORE the RPC submit call after the nonce was
+ * durably reserved on this same row before signing. CAS-guarded
+ * `WHERE status='pending' AND tx_hash IS NULL`
  * (FIX-SPINE C6 — finding 5) — a repair-sweep, a retry, or a duplicate call
  * can NEVER overwrite an already-staged hash; `applied:false` signals the
  * miss instead.
@@ -79,6 +81,11 @@ export async function markActivityBroadcast(
         SET tx_hash = $2, from_address = $3, nonce = $4,
             submit_attempted_at = NOW(), updated_at = NOW()
       WHERE id = $1 AND status = 'pending' AND tx_hash IS NULL
+        AND chain_family = 'eip155'
+        AND (
+          (lower(from_address) = lower($3) AND nonce = $4)
+          OR (from_address IS NULL AND nonce IS NULL)
+        )
       RETURNING *`,
     [id, input.txHash, input.fromAddress, input.nonce],
   );
@@ -205,21 +212,36 @@ export async function abortPlannedEvents(
   // Under the session control lock. Every row of one `protocol_execution_id`
   // belongs to the same session, so a single key covers this multi-row CAS.
   const sessionId = await resolveActivitySessionByExecutionId(executionId);
-  const rows = await withActivitySessionLock(sessionId, (client) =>
-    queryWith<Record<string, unknown>>(
-    client,
-    `UPDATE agent_activity
-        SET status = 'definitively_failed', failure_code = 'unknown',
-            failure_reason = $3, updated_at = NOW(), pending_reason = NULL
-      WHERE protocol_execution_id = $1 AND event_index >= $2
-        AND ($4::int IS NULL OR event_index < $4::int)
-        AND status = 'pending' AND tx_hash IS NULL
-      RETURNING *`,
-    // C17: the stored reason is ALWAYS prefixed "not attempted:" — a single
-    // enforcement point, whatever wording the venue caller passed in.
-    [executionId, fromIndex, sanitizeFailureReason(`not attempted: ${reason}`), toIndexExclusive ?? null],
-  ));
-  return rows.map(mapRow);
+  return withActivitySessionLock(sessionId, async (client) => {
+    const rawRows = await queryWith<Record<string, unknown>>(
+      client,
+      `UPDATE agent_activity
+          SET status = 'definitively_failed', failure_code = 'unknown',
+              failure_reason = $3, updated_at = NOW(), pending_reason = NULL
+        WHERE protocol_execution_id = $1 AND event_index >= $2
+          AND ($4::int IS NULL OR event_index < $4::int)
+          AND status = 'pending' AND tx_hash IS NULL
+        RETURNING *`,
+      // C17: the stored reason is ALWAYS prefixed "not attempted:" - a single
+      // enforcement point, whatever wording the venue caller passed in.
+      [executionId, fromIndex, sanitizeFailureReason(`not attempted: ${reason}`), toIndexExclusive ?? null],
+    );
+    const rows = rawRows.map(mapRow);
+
+    // The bulk AA update and every linked WI/WTI/PE transition share this
+    // transaction. A conflict in any linked state rolls the complete abort
+    // back, so no terminal activity row can escape without its durable owner.
+    for (const row of rows) {
+      await settleLinkedActivityRowsWith(client, {
+        activityId: row.id,
+        sessionId: row.sessionId,
+        intentOutcome: "crashed_before_broadcast",
+        activityTarget: { status: "definitively_failed", failureCode: "unknown" },
+        activityWrite: () => Promise.resolve({ applied: false, row }),
+      });
+    }
+    return rows;
+  });
 }
 
 // Stale hashless-intent recovery (`recoverStaleHashlessIntents`,
@@ -271,8 +293,10 @@ export {
   confirmActivityEvent,
   confirmActivityEventWith,
   confirmActivityEventStatusOnly,
+  confirmActivityEventStatusOnlyWith,
   failActivityEvent,
   failActivityEventWith,
+  failHashlessActivityEventWith,
 } from "./swap-lifecycle/terminal-cas.js";
 
 // ── Reads ─────────────────────────────────────────────────────────

@@ -69,7 +69,7 @@ function context(overrides: Partial<InternalToolContext> = {}): InternalToolCont
     sessionPermission: "full",
     approved: false,
     ...overrides,
-  } as unknown as InternalToolContext;
+  } as InternalToolContext;
 }
 
 function intent(overrides: Partial<WalletTransactionIntent> = {}): WalletTransactionIntent {

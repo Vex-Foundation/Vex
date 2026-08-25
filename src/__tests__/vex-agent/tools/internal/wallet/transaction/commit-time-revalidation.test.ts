@@ -98,7 +98,9 @@ function solanaIntent(overrides: Partial<WalletTransactionIntent> = {}): WalletT
 }
 
 function wallet(address: string, family: "eip155" | "solana" = "eip155"): ChainWallet {
-  return { family, address } as unknown as ChainWallet;
+  return family === "eip155"
+    ? { family, address: address as `0x${string}`, privateKey: `0x${"11".repeat(32)}` }
+    : { family, address, secretKey: new Uint8Array(64) };
 }
 
 describe("the row, its digest, and the approval it is bound to", () => {

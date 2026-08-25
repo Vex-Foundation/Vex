@@ -26,6 +26,8 @@ export interface IntentSnapshotRow {
   mission_run_id: string | null;
   tool_call_id: string | null;
   expires_at: Date | string | null;
+  /** Complete renderer card captured under the approval-row lock. */
+  preview_json?: unknown;
   decision: ApprovalDecision | null;
   decision_reason: string | null;
   decided_at: Date | string | null;

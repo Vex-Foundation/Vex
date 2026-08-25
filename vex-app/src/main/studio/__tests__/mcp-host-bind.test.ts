@@ -22,6 +22,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -32,7 +33,12 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { prepareEndpointDirectory } from "../mcp-host/bind.js";
+import {
+  captureEndpointDirectoryChain,
+  endpointAncestorChangedRefusal,
+  prepareEndpointDirectory,
+  verifyEndpointDirectoryChain,
+} from "../mcp-host/bind.js";
 import type { StudioEndpointPlan } from "../mcp-host/endpoint.js";
 
 type UnixPlan = Extract<StudioEndpointPlan, { kind: "unix" }>;
@@ -163,6 +169,56 @@ onUnix("prepareEndpointDirectory on a real filesystem", () => {
     const parent = path.join(root, "absent");
     expect(String(prepareEndpointDirectory(planFor(parent, false)))).toContain(
       "is missing",
+    );
+  });
+
+  it("REFUSES an override when an ancestor is swapped before bind", () => {
+    const ancestor = path.join(root, "operator-root");
+    const parent = path.join(ancestor, "private");
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    chmodSync(parent, 0o700);
+
+    const captured = captureEndpointDirectoryChain(parent);
+    if (captured.kind !== "captured") {
+      throw new Error(captured.reason);
+    }
+
+    // Keep the original tree alive so its inode cannot be recycled into the
+    // replacement. The path spelling is unchanged but its identity is not.
+    renameSync(ancestor, path.join(root, "held-original"));
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    chmodSync(parent, 0o700);
+
+    expect(verifyEndpointDirectoryChain(captured.identity)).toBe(
+      endpointAncestorChangedRefusal(ancestor),
+    );
+  });
+
+  it("REFUSES replacement behind a stable intermediate symlink", () => {
+    const targetRoot = path.join(root, "target-root");
+    const heldTarget = path.join(root, "held-target");
+    const realParent = path.join(targetRoot, "private");
+    mkdirSync(realParent, { recursive: true, mode: 0o700 });
+    chmodSync(realParent, 0o700);
+
+    const lexicalRoot = path.join(root, "operator-root");
+    symlinkSync(targetRoot, lexicalRoot, "dir");
+    const lexicalParent = path.join(lexicalRoot, "private");
+    const captured = captureEndpointDirectoryChain(lexicalParent);
+    if (captured.kind !== "captured") {
+      throw new Error(captured.reason);
+    }
+
+    // The lexical link and final directory identity remain stable. Only the
+    // real target ancestor changes from a directory into a symlink, which is
+    // why the independently captured realpath chain is required.
+    renameSync(targetRoot, heldTarget);
+    symlinkSync(heldTarget, targetRoot, "dir");
+    expect(lstatSync(lexicalRoot).isSymbolicLink()).toBe(true);
+    expect(lstatSync(lexicalParent).isDirectory()).toBe(true);
+
+    expect(verifyEndpointDirectoryChain(captured.identity)).toBe(
+      endpointAncestorChangedRefusal(targetRoot),
     );
   });
 });

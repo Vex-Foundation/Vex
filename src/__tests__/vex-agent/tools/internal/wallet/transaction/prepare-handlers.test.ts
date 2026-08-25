@@ -57,7 +57,7 @@ import type {
   SolanaPrepareChain,
 } from "@vex-agent/tools/internal/wallet/transaction/chain-seams.js";
 
-const CONTEXT = { sessionId: "session-1" } as unknown as InternalToolContext;
+const CONTEXT = { sessionId: "session-1" } as InternalToolContext;
 
 const TOKEN = "0x2222222222222222222222222222222222222222";
 const RECIPIENT = "0x3333333333333333333333333333333333333333";
@@ -416,4 +416,3 @@ describe("WalletSolanaTransactionPrepare", () => {
 });
 
 // ── The registered stubs ─────────────────────────────────────────────
-

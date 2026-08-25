@@ -88,7 +88,11 @@ const BASE_CHAIN = {
 const DEPOSIT_TARGET: Address = getAddress("0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa");
 const UNDISCLOSED_NATIVE_CHARGE = 1_000_000_000_000_000n; // the live 1e15 wei
 
-const noopHooks = { onHashStaged: vi.fn(async () => {}), onAccepted: vi.fn(async () => {}) };
+const noopHooks = {
+  onNonceReserved: vi.fn(async (request: { nodePendingNonce: number }) => request.nodePendingNonce),
+  onHashStaged: vi.fn(async () => {}),
+  onAccepted: vi.fn(async () => {}),
+};
 
 type EvmStagedLeg = Extract<KhalaniStagedLeg, { kind: "evm" }>;
 

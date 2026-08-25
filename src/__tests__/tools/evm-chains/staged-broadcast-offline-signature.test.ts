@@ -30,12 +30,15 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   createWalletClient,
+  createPublicClient,
   custom,
   parseTransaction,
   recoverTransactionAddress,
+  type Chain,
   type Hex,
+  type Transport,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { parseAccount, privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
@@ -53,6 +56,7 @@ type SerializedTransaction = Parameters<
 const PRIVATE_KEY = `0x${"11".repeat(32)}` as Hex;
 const ACCOUNT = privateKeyToAccount(PRIVATE_KEY);
 const TO = "0x2222222222222222222222222222222222222222" as const;
+const TEST_CHAIN: Chain = base;
 
 /** The prepared EIP-1559 request, exactly the shape viem's preparation returns. */
 function preparedRequest() {
@@ -77,7 +81,7 @@ function preparedRequest() {
  * which the deferred arm makes none on this client anyway) could not be mistaken
  * for the leak this test hunts.
  */
-function throwingTransport(state: { armed: boolean; methods: string[] }) {
+function throwingTransport(state: { armed: boolean; methods: string[] }): Transport {
   return custom({
     request: async ({ method }: { method: string }) => {
       state.methods.push(method);
@@ -90,7 +94,7 @@ function throwingTransport(state: { armed: boolean; methods: string[] }) {
 }
 
 function fakePublicClient() {
-  return {
+  return Object.assign(createPublicClient({ chain: TEST_CHAIN, transport: throwingTransport({ armed: false, methods: [] }) }), {
     estimateGas: vi.fn(async () => 21_000n),
     prepareTransactionRequest: vi.fn(async () => preparedRequest()),
     // The parameter is DECLARED so the assertion below can read the exact bytes
@@ -99,10 +103,8 @@ function fakePublicClient() {
       async (_args: { serializedTransaction: SerializedTransaction }) => "0xhash" as Hex,
     ),
     waitForTransactionReceipt: vi.fn(async () => ({ status: "success", blockNumber: 1n })),
-  };
+  });
 }
-
-type Args = Parameters<typeof signStageBroadcast>;
 
 describe("the deferred arm signs OFFLINE - no provider call after the fence", () => {
   it("produces a real signature with the throwing transport never being asked anything", async () => {
@@ -110,17 +112,18 @@ describe("the deferred arm signs OFFLINE - no provider call after the fence", ()
     const publicClient = fakePublicClient();
     const walletClient = createWalletClient({
       account: ACCOUNT,
-      chain: base,
+      chain: TEST_CHAIN,
       transport: throwingTransport(state),
     });
     const hooks = {
+      onNonceReserved: vi.fn(async (request: { nodePendingNonce: number }) => request.nodePendingNonce),
       onHashStaged: vi.fn(async () => undefined),
       onAccepted: vi.fn(async () => undefined),
     };
     const signer: DeferredEvmSigner = {
       kind: "deferred",
       address: ACCOUNT.address,
-      chain: base,
+      chain: TEST_CHAIN,
       onBeforeSign: async () => {
         // THE FENCE. From this instant on, any request the production path makes
         // is a request made while the key is about to be, or already is, in
@@ -131,7 +134,7 @@ describe("the deferred arm signs OFFLINE - no provider call after the fence", ()
     };
 
     const outcome = await signStageBroadcast(
-      publicClient as unknown as Args[0],
+      publicClient,
       signer,
       { to: TO, data: "0x" },
       hooks,
@@ -178,28 +181,27 @@ describe("the deferred arm signs OFFLINE - no provider call after the fence", ()
     // A JSON-RPC account: viem would sign it through `eth_signTransaction`, i.e.
     // through the provider, in exactly the window this arm closes.
     const walletClient = createWalletClient({
-      account: ACCOUNT.address,
-      chain: base,
+      account: parseAccount(ACCOUNT.address),
+      chain: TEST_CHAIN,
       transport: throwingTransport(state),
     });
     const hooks = {
+      onNonceReserved: vi.fn(async (request: { nodePendingNonce: number }) => request.nodePendingNonce),
       onHashStaged: vi.fn(async () => undefined),
       onAccepted: vi.fn(async () => undefined),
     };
     const signer: DeferredEvmSigner = {
       kind: "deferred",
       address: ACCOUNT.address,
-      chain: base,
+      chain: TEST_CHAIN,
       onBeforeSign: async () => {
         state.armed = true;
       },
-      createSigner: async () => walletClient as unknown as Awaited<
-        ReturnType<DeferredEvmSigner["createSigner"]>
-      >,
+      createSigner: async () => walletClient,
     };
 
     await expect(
-      signStageBroadcast(publicClient as unknown as Args[0], signer, { to: TO, data: "0x" }, hooks),
+      signStageBroadcast(publicClient, signer, { to: TO, data: "0x" }, hooks),
     ).rejects.toBeInstanceOf(DeferredOfflineSignerUnavailableError);
     expect(hooks.onHashStaged).not.toHaveBeenCalled();
     expect(publicClient.sendRawTransaction).not.toHaveBeenCalled();

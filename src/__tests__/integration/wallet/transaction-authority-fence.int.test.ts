@@ -50,7 +50,9 @@
 
 import { randomUUID } from "node:crypto";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { Chain, Hex } from "viem";
+import { createPublicClient, createWalletClient, http, type Chain, type Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { base as baseChain } from "viem/chains";
 import {
   Keypair,
   PublicKey,
@@ -68,7 +70,8 @@ import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 
 import { makeSession, resetDb } from "../setup/fixtures.js";
 
-const WALLET = "0x1111111111111111111111111111111111111111";
+const EVM_ACCOUNT = privateKeyToAccount(`0x${"11".repeat(32)}`);
+const WALLET = EVM_ACCOUNT.address;
 const OTHER_WALLET = "0x9999999999999999999999999999999999999999";
 const TO = "0x2222222222222222222222222222222222222222";
 // REAL base58 keys, deterministic across runs: the canonical message below is
@@ -362,7 +365,7 @@ function digestOfIntentInput(
     txHash: null,
     failureReason: null,
     createdAt: new Date().toISOString(),
-  } as unknown as intentsRepo.WalletTransactionIntent);
+  } as intentsRepo.WalletTransactionIntent);
 }
 
 async function insert(
@@ -381,7 +384,7 @@ function context(sessionId: string): InternalToolContext {
     approved: false,
     walletResolution: {},
     walletPolicy: { kind: "none" },
-  } as unknown as InternalToolContext;
+  } as InternalToolContext;
 }
 
 interface Rows {
@@ -401,7 +404,7 @@ function readIntent(intentId: string): Promise<Rows | null> {
 
 // ── EVM ────────────────────────────────────────────────────────────────
 
-const CHAIN = { id: 8453, name: "Base" } as unknown as Chain;
+const CHAIN: Chain = baseChain;
 
 /**
  * A whole EVM confirm, with the chain and the signing client as seams and
@@ -417,18 +420,25 @@ function evmDeps(
   const chainFactory = vi.fn(async () => ({
     chainId: 8453,
     chainAlias: "base",
+    nativeSymbol: "ETH",
+    nativeDecimals: 18,
     simulate: async () => {
       // The LAST call before the claim, so a barrier here wins before it.
       if (at === "preflight") await barrier(sessionId);
       return { ok: true as const, value: undefined };
     },
     getCode: async () => "0x",
+    estimateFees: async () => ({
+      suggestedGasLimit: "21000",
+      suggestedMaxFeePerGasWei: "1000000000",
+      suggestedMaxPriorityFeePerGasWei: "1000000",
+      suggestedGasPriceWei: "1000000000",
+      supportsEip1559: true,
+    }),
   }));
 
-  const walletClient = {
-    account: {
-      address: WALLET,
-      type: "local",
+  const signingAccount = {
+      ...EVM_ACCOUNT,
       // THE SIGNATURE, on the account rather than the client: the deferred arm
       // signs OFFLINE through the local account's own signer, because viem's
       // wallet action would ask the node for `eth_chainId` first and that round
@@ -440,7 +450,13 @@ function evmDeps(
         if (at === "post_sign") await barrier(sessionId);
         return "0xdeadbeef" as Hex;
       }),
-    },
+  };
+  const walletClient = Object.assign(createWalletClient({
+    account: signingAccount,
+    chain: CHAIN,
+    transport: http("http://127.0.0.1:1"),
+  }), {
+    account: signingAccount,
     chain: CHAIN,
     prepareTransactionRequest: vi.fn(),
     // Never reached on this arm; present so the fixture is the shape production
@@ -448,9 +464,12 @@ function evmDeps(
     signTransaction: vi.fn(async () => {
       throw new Error("the deferred arm must not reach viem's wallet action");
     }),
-  };
+  });
 
-  const publicClient = {
+  const publicClient = Object.assign(createPublicClient({
+    chain: CHAIN,
+    transport: http("http://127.0.0.1:1"),
+  }), {
     chain: CHAIN,
     estimateGas: async () => 21_000n,
     prepareTransactionRequest: async () => ({
@@ -468,7 +487,7 @@ function evmDeps(
       return "0xhash" as Hex;
     },
     waitForTransactionReceipt: async () => ({ status: "success", blockNumber: 1n }),
-  };
+  });
 
   const signerClientsFactory = vi.fn(async () => {
     calls.clientsBuilt += 1;
@@ -491,7 +510,7 @@ function evmDeps(
     deps: {
       chainFactory,
       signerClientsFactory,
-    } as unknown as Parameters<typeof handleWalletEvmTransactionConfirm>[2],
+    },
   };
 }
 
@@ -506,6 +525,7 @@ function solanaDeps(
   let heightCalls = 0;
 
   const chainFactory = vi.fn(async () => ({
+    getLatestBlockhash: async () => ({ blockhash: BLOCKHASH, lastValidBlockHeight: 1000 }),
     getBlockHeight: async () => {
       heightCalls += 1;
       // Call 1 is the pre-claim revalidation; call 2 is the recheck immediately
@@ -515,11 +535,15 @@ function solanaDeps(
       return 500;
     },
     getMessageFee: async () => 5200,
+    estimateFees: async () => ({
+      suggestedComputeUnitLimit: "200000",
+      suggestedComputeUnitPriceMicroLamports: "1000",
+    }),
+    getLookupTableAddresses: async () => null,
     simulateMessage: async () => {
       if (at === "preflight") await barrier(sessionId);
       return { ok: true as const, value: undefined };
     },
-    decodeContext: {},
   }));
 
   const signing = {
@@ -549,9 +573,7 @@ function solanaDeps(
   return {
     calls,
     signing,
-    deps: { chainFactory, signing } as unknown as Parameters<
-      typeof handleWalletSolanaTransactionConfirm
-    >[2],
+    deps: { chainFactory, signing },
   };
 }
 

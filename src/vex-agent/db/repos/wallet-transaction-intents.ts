@@ -199,6 +199,23 @@ export async function getByActivityId(
   return row ? parseDurableIntentRow(row) : null;
 }
 
+/**
+ * The intent linked to an activity row, read on the CALLER's transaction.
+ * Atomic repair settlement must use this twin: a pool-level read cannot see
+ * sibling writes made by the transaction that holds the session control lock.
+ */
+export async function getByActivityIdWith(
+  client: PoolClient,
+  activityId: number,
+): Promise<WalletTransactionIntent | null> {
+  const res = await client.query<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS} FROM wallet_transaction_intents WHERE activity_id = $1`,
+    [activityId],
+  );
+  const row = res.rows[0];
+  return row === undefined ? null : parseDurableIntentRow(row);
+}
+
 /** A `consuming` intent whose handler is gone, joined to what its activity row proves. */
 export interface StrandedTransactionIntent {
   readonly intent: WalletTransactionIntent;

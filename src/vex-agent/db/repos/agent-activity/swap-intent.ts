@@ -315,10 +315,10 @@ export interface CreateAgentActivityIntentInput {
 export async function createAgentActivityIntent(
   input: CreateAgentActivityIntentInput,
 ): Promise<{ executionId: number; events: AgentActivityEvent[] }> {
-  if (input.events.length === 0) {
+  const firstEvent = input.events[0];
+  if (firstEvent === undefined) {
     throw new Error("agent_activity: createAgentActivityIntent requires at least one event");
   }
-  const sessionId = input.events[0]!.sessionId;
   return withTransaction(async (client) => {
     // Session control lock FIRST — this transaction ADDS rows to the set the
     // compaction safe-moment gate reads (`protocol_executions` at `intent`,
@@ -327,24 +327,49 @@ export async function createAgentActivityIntent(
     // money state came into existence, and authorise a transcript rewrite over
     // a broadcast about to happen. DB-only and short — every signing and
     // broadcast call happens AFTER this transaction commits.
-    await acquireSessionControlLock(client, sessionId);
-
-    const executionId = await createExecutionIntent(
-      input.toolId, input.namespace, sessionId, input.intentParams, client,
-    );
-    if (executionId <= 0) {
-      throw new Error("agent_activity: durable intent insert returned no execution id");
-    }
-    const events: AgentActivityEvent[] = [];
-    for (const eventInput of input.events) {
-      const event = await createPendingActivityEvent(
-        { ...eventInput, protocolExecutionId: executionId },
-        client,
-      );
-      events.push(event);
-    }
-    return { executionId, events };
+    await acquireSessionControlLock(client, firstEvent.sessionId);
+    return createAgentActivityIntentWith(client, input);
   });
+}
+
+/**
+ * Client-bound twin for a caller that must atomically link another money row.
+ * The caller owns the transaction and must acquire the session control lock as
+ * its first lock before invoking this DB-only helper.
+ */
+export async function createAgentActivityIntentWith(
+  client: PoolClient,
+  input: CreateAgentActivityIntentInput,
+): Promise<{ executionId: number; events: AgentActivityEvent[] }> {
+  const firstEvent = input.events[0];
+  if (firstEvent === undefined) {
+    throw new Error("agent_activity: createAgentActivityIntentWith requires at least one event");
+  }
+  for (const event of input.events) {
+    if (event.sessionId !== firstEvent.sessionId) {
+      throw new Error("agent_activity: every event in one execution must belong to the same session");
+    }
+  }
+
+  const executionId = await createExecutionIntent(
+    input.toolId,
+    input.namespace,
+    firstEvent.sessionId,
+    input.intentParams,
+    client,
+  );
+  if (executionId <= 0) {
+    throw new Error("agent_activity: durable intent insert returned no execution id");
+  }
+  const events: AgentActivityEvent[] = [];
+  for (const eventInput of input.events) {
+    const event = await createPendingActivityEvent(
+      { ...eventInput, protocolExecutionId: executionId },
+      client,
+    );
+    events.push(event);
+  }
+  return { executionId, events };
 }
 
 /**

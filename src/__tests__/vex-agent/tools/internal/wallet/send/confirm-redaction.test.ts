@@ -24,6 +24,7 @@ const mockGetById = vi.fn();
 const mockConsumeIfPending = vi.fn();
 const mockMarkExecuted = vi.fn();
 const mockMarkFailed = vi.fn();
+const mockMarkBroadcastUnconfirmed = vi.fn();
 const mockMarkAuditFailed = vi.fn();
 
 vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
@@ -32,6 +33,7 @@ vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
   consumeIfPendingWith: (...a: unknown[]) => mockConsumeIfPending(...a),
   markExecutedWith: (...a: unknown[]) => mockMarkExecuted(...a),
   markFailedWith: (...a: unknown[]) => mockMarkFailed(...a),
+  markBroadcastUnconfirmedWith: (...a: unknown[]) => mockMarkBroadcastUnconfirmed(...a),
   markAuditFailedWith: (...a: unknown[]) => mockMarkAuditFailed(...a),
 }));
 

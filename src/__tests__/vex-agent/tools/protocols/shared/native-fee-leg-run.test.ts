@@ -72,8 +72,8 @@ function input(overrides: Record<string, unknown> = {}): Parameters<typeof runNa
     plan: plan(),
     feeRowId: FEE_ROW,
     chainId: 8453,
-    publicClient: {} as never,
-    signer: {} as never,
+    publicClient: {},
+    signer: {},
     ...overrides,
   } as Parameters<typeof runNativeFeeLeg>[1];
 }

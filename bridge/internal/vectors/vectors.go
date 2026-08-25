@@ -105,10 +105,17 @@ type HandshakeCase struct {
 
 // File is the whole fixture.
 type File struct {
-	ContractVersion  int            `json:"contractVersion"`
-	RealpathFallback string         `json:"realpathFallback"`
-	Limits           map[string]int `json:"limits"`
-	Hash             struct {
+	ContractVersion          int            `json:"contractVersion"`
+	RealpathFallback         string         `json:"realpathFallback"`
+	Limits                   map[string]int `json:"limits"`
+	EndpointAncestorIdentity struct {
+		Changed struct {
+			Code    string `json:"code"`
+			Path    string `json:"path"`
+			Message string `json:"message"`
+		} `json:"changed"`
+	} `json:"endpointAncestorIdentity"`
+	Hash struct {
 		Algorithm        string     `json:"algorithm"`
 		Encoding         string     `json:"encoding"`
 		FileNameTemplate string     `json:"fileNameTemplate"`

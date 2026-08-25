@@ -52,7 +52,10 @@ function importSpecifiers(source: string): string[] {
   const dynamic = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
   for (const re of [staticFrom, bareImport, dynamic]) {
     let match: RegExpExecArray | null;
-    while ((match = re.exec(source)) !== null) specs.push(match[1]!);
+    while ((match = re.exec(source)) !== null) {
+      const specifier = match[1];
+      if (specifier !== undefined) specs.push(specifier);
+    }
   }
   return specs;
 }
@@ -105,7 +108,9 @@ describe("src/vex-agent/mcp import-direction gate", () => {
     for (const source of cases) {
       const specs = importSpecifiers(source);
       expect(specs).toHaveLength(1);
-      expect(BANNED.some((b) => b.pattern.test(specs[0]!))).toBe(true);
+      const specifier = specs[0];
+      if (specifier === undefined) throw new Error("synthetic import was not parsed");
+      expect(BANNED.some((b) => b.pattern.test(specifier))).toBe(true);
     }
   });
 
@@ -113,6 +118,8 @@ describe("src/vex-agent/mcp import-direction gate", () => {
     const specs = importSpecifiers(
       'import { toQueryRow } from "../tools/protocols/discovery/rows.js";',
     );
-    expect(BANNED.some((b) => b.pattern.test(specs[0]!))).toBe(false);
+    const specifier = specs[0];
+    if (specifier === undefined) throw new Error("legitimate import was not parsed");
+    expect(BANNED.some((b) => b.pattern.test(specifier))).toBe(false);
   });
 });

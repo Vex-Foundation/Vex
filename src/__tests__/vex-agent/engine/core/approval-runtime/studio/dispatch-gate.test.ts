@@ -96,6 +96,19 @@ describe("advanceStudioDispatchGeneration", () => {
     expect(gate.readMirroredStudioDispatchGeneration()).toBe("8");
   });
 
+  it("writes a typed pending refusal cause in the same generation statement", async () => {
+    poolQueryOne.mockResolvedValue({ dispatch_generation: "9" });
+    const advanced = await gate.advanceStudioDispatchGeneration("vex_quit");
+    expect(advanced).toEqual({ ok: true, generation: "9" });
+
+    const call = poolQueryOne.mock.calls[0];
+    if (call === undefined) throw new Error("generation update was not called");
+    expect(call[1]).toEqual(["vex_quit"]);
+    expect(String(call[0])).toContain(
+      "pending_refusal_reason = COALESCE($1, pending_refusal_reason)",
+    );
+  });
+
   it("reports a database failure instead of throwing, so a lock still completes", async () => {
     poolQueryOne.mockRejectedValue(new Error("connection refused"));
     const advanced = await gate.advanceStudioDispatchGeneration();

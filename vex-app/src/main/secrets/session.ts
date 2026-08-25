@@ -199,9 +199,12 @@ export function initializeMasterPassword(
 export async function unlockSecretSession(
   password: string,
 ): Promise<Result<{ readonly unlocked: true }>> {
+  beginStudioSessionTransition();
+  let unlockedRuntimeChanged = false;
   try {
     unlockSecretVault(password, { filePath: SECRETS_VAULT_FILE });
     unlockedMasterPassword = password;
+    unlockedRuntimeChanged = true;
     applyUnlockedRuntime(password);
     stripManagedSecretsFromDotenvFile(ENV_FILE);
     // Vex Studio: the dispatch generation is MONOTONIC in both directions, so
@@ -223,9 +226,16 @@ export async function unlockSecretSession(
     // startup does not open the door early. Not awaited: a socket that cannot
     // bind is a diagnostic, never a reason to fail an unlock the vault already
     // completed.
-    void startStudioMcpHost();
+    reopenStudioHostIfSafe();
     return ok({ unlocked: true });
   } catch (cause) {
+    if (!unlockedRuntimeChanged) {
+      cancelStudioSessionTransition();
+    } else if (studioSessionTransitionInProgress) {
+      // The runtime changed but the durable generation did not complete. Keep
+      // the transition closed and let the recovery owner prove a fresh fence.
+      poisonStudioDispatch();
+    }
     return toPublicError(cause);
   }
 }
@@ -252,6 +262,17 @@ export async function unlockSecretSession(
  * next lock or unlock.
  */
 let studioGenerationPoisoned = false;
+/**
+ * Synchronous authority transition. Set before lock or unlock reaches its
+ * first await and cleared only by a committed generation advance. It closes
+ * the non-signing dispatch window that secret scrubbing alone cannot close.
+ */
+let studioSessionTransitionInProgress = false;
+/**
+ * A lock/quit refusal sweep that has not yet committed. The typed cause is
+ * retained verbatim so a recovery pass writes the same durable audit fact.
+ */
+let studioPendingRefusalCause: SecretSessionLockCause | null = null;
 let studioPoisonRetryTimer: NodeJS.Timeout | null = null;
 /**
  * SINGLE-FLIGHT for the retry. An advance is a database round trip that can
@@ -271,7 +292,21 @@ const STUDIO_POISON_RETRY_MS = 12_000;
  * means an advance failed and no later advance has succeeded, so both refuse.
  */
 export function isStudioDispatchPoisoned(): boolean {
-  return studioGenerationPoisoned;
+  return (
+    studioGenerationPoisoned
+    || studioSessionTransitionInProgress
+    || studioPendingRefusalCause !== null
+  );
+}
+
+/** Main-side preflight fact, exported so dispatch checks it explicitly. */
+export function isStudioSessionTransitionInProgress(): boolean {
+  return studioSessionTransitionInProgress;
+}
+
+/** Test and readiness seam for the durable refusal-repair obligation. */
+export function hasPendingStudioRefusalRepair(): boolean {
+  return studioPendingRefusalCause !== null;
 }
 
 /**
@@ -288,6 +323,8 @@ export function disposeStudioDispatchPoisonRetry(): void {
 export function resetStudioDispatchPoisonForTests(): void {
   disposeStudioDispatchPoisonRetry();
   studioGenerationPoisoned = false;
+  studioSessionTransitionInProgress = false;
+  studioPendingRefusalCause = null;
   studioPoisonRetryInFlight = false;
 }
 
@@ -308,13 +345,17 @@ async function advanceStudioDispatchGenerationSafely(
     const { advanceStudioDispatchGeneration } = await import(
       "@vex-agent/engine/core/approval-runtime.js"
     );
-    const advanced = await advanceStudioDispatchGeneration();
+    const pendingRefusalReason =
+      phase === "unlock" ? null : studioPendingRefusalCause;
+    const advanced = await advanceStudioDispatchGeneration(
+      pendingRefusalReason,
+    );
     if (!advanced.ok) {
       log.warn(`[secrets-session] studio dispatch generation not advanced on ${phase}`);
       poisonStudioDispatch();
       return false;
     }
-    clearStudioDispatchPoison();
+    clearStudioGenerationPoison();
     return true;
   } catch (err) {
     log.warn(`[secrets-session] studio dispatch advance failed on ${phase}`, err);
@@ -332,11 +373,15 @@ function poisonStudioDispatch(): void {
         + "are refused until an advance succeeds",
     );
   }
+  ensureStudioRecoveryTimer();
+}
+
+function ensureStudioRecoveryTimer(): void {
   if (studioPoisonRetryTimer !== null) return;
   studioPoisonRetryTimer = setInterval(() => {
     if (studioPoisonRetryInFlight) return;
     studioPoisonRetryInFlight = true;
-    void advanceStudioDispatchGenerationSafely("retry").finally(() => {
+    void runStudioRecoveryPass().finally(() => {
       studioPoisonRetryInFlight = false;
     });
   }, STUDIO_POISON_RETRY_MS);
@@ -344,12 +389,51 @@ function poisonStudioDispatch(): void {
   studioPoisonRetryTimer.unref?.();
 }
 
-function clearStudioDispatchPoison(): void {
+function clearStudioGenerationPoison(): void {
   if (studioGenerationPoisoned) {
     log.info("[secrets-session] studio dispatch fence proven again");
   }
   studioGenerationPoisoned = false;
-  disposeStudioDispatchPoisonRetry();
+  studioSessionTransitionInProgress = false;
+  stopStudioRecoveryWhenClear();
+  reopenStudioHostIfSafe();
+}
+
+function beginStudioSessionTransition(): void {
+  studioSessionTransitionInProgress = true;
+}
+
+function cancelStudioSessionTransition(): void {
+  studioSessionTransitionInProgress = false;
+  stopStudioRecoveryWhenClear();
+}
+
+function stopStudioRecoveryWhenClear(): void {
+  if (!isStudioDispatchPoisoned()) {
+    disposeStudioDispatchPoisonRetry();
+  }
+}
+
+function reopenStudioHostIfSafe(): void {
+  if (!isSecretSessionUnlocked() || isStudioDispatchPoisoned()) return;
+  void startStudioMcpHost();
+}
+
+/**
+ * Retry only the proofs that are still missing. A successful generation
+ * advance never erases a pending refusal obligation, and a successful refusal
+ * never pretends a failed generation moved.
+ */
+async function runStudioRecoveryPass(): Promise<void> {
+  if (studioGenerationPoisoned || studioSessionTransitionInProgress) {
+    await advanceStudioDispatchGenerationSafely("retry");
+  }
+  const refusalCause = studioPendingRefusalCause;
+  if (refusalCause !== null) {
+    await refuseStudioIntentsSafely(refusalCause);
+  }
+  stopStudioRecoveryWhenClear();
+  reopenStudioHostIfSafe();
 }
 
 /**
@@ -421,26 +505,32 @@ export type SecretSessionLockCause = "lock" | "vex_quit";
  * A lock has to stop queued Studio actions from dispatching. Two steps do that,
  * and neither may move ahead of the scrub:
  *
- *   1. ADVANCE THE DURABLE DISPATCH GENERATION. Every pending Studio intent
+ *   1. DENY DISPATCH SYNCHRONOUSLY, then advance the durable dispatch
+ *      generation. Every pending Studio intent
  *      recorded the generation current at its enqueue, and the dispatch-slot
  *      claim is one statement requiring that value to still be current. Once
- *      this commits, no queued Studio action can take a slot. A claim that
- *      commits in the window BETWEEN the scrub and this commit is not a hole:
- *      the signing capability was revoked synchronously with the scrub, so that
- *      dispatch fails closed at the signer and is recorded through the existing
- *      CAS. Nothing can broadcast.
+ *      this commits, no queued Studio action can take a slot. Before commit,
+ *      the transition deny blocks both signing and non-signing mutations.
  *   2. REFUSE THE PENDING INTENTS DURABLY, which is what releases the blocked
  *      MCP calls with an honest answer. It runs second because a waiter must
  *      never be released while its row could still be dispatched.
  *
- * A database failure in either step is LOGGED and never thrown past the scrub:
- * the lock's security guarantee is the scrub and the revoked signer, both of
- * which already happened, and the durable refusal reconciles through the
- * scheduled sweep, which expires the rows anyway.
+ * A database failure in either step is logged and never thrown past the scrub.
+ * The transition stays denied, and the bounded recovery owner retries the
+ * generation and exact typed refusal write without reopening Studio.
  */
 export async function lockSecretSession(
   cause: SecretSessionLockCause = "lock",
 ): Promise<void> {
+  // FIRST and synchronous. Secret scrubbing revokes signing, but Studio also
+  // exports non-signing mutations. This transition flag is what denies those
+  // while provider-cache invalidation and the durable generation advance are
+  // still pending.
+  beginStudioSessionTransition();
+  // Written with the generation advance below. If the process stops after the
+  // fence commits but before the sweep finishes, startup still knows both that
+  // a sweep is owed and the trusted cause it must write.
+  retainPendingRefusalCause(cause);
   scrubUnlockedRuntime();
   // STEP 2, SYNCHRONOUS, and BEFORE the first await. The listener stops
   // admitting and every registered socket is destroyed with the trusted cause
@@ -466,17 +556,46 @@ export async function lockSecretSession(
 async function refuseStudioIntentsSafely(
   cause: SecretSessionLockCause,
 ): Promise<void> {
+  // Register the obligation before the dynamic import can await or fail. A
+  // later unlock may prove a fresh generation, but it cannot reopen Studio
+  // until this exact cause has been written durably by a successful sweep.
+  const effectiveCause = retainPendingRefusalCause(cause);
   try {
     const { refuseAllPendingStudioIntents } = await import(
       "../studio/approval-refusals.js"
     );
-    const refused = await refuseAllPendingStudioIntents(cause);
+    const refused = await refuseAllPendingStudioIntents(effectiveCause);
     if (refused === null) {
       log.warn("[secrets-session] studio refusal on lock could not run");
+      ensureStudioRecoveryRetry();
+      return;
     }
+    if (studioPendingRefusalCause === effectiveCause) {
+      studioPendingRefusalCause = null;
+    }
+    stopStudioRecoveryWhenClear();
+    reopenStudioHostIfSafe();
   } catch (err) {
     log.warn("[secrets-session] studio refusal on lock failed", err);
+    ensureStudioRecoveryRetry();
   }
+}
+
+function retainPendingRefusalCause(
+  cause: SecretSessionLockCause,
+): SecretSessionLockCause {
+  // Quit is the terminal and more specific transition. A user-lock cleanup
+  // already in flight must never overwrite it with the weaker earlier cause.
+  if (studioPendingRefusalCause === "vex_quit" || cause === "vex_quit") {
+    studioPendingRefusalCause = "vex_quit";
+  } else {
+    studioPendingRefusalCause = "lock";
+  }
+  return studioPendingRefusalCause;
+}
+
+function ensureStudioRecoveryRetry(): void {
+  ensureStudioRecoveryTimer();
 }
 
 /**

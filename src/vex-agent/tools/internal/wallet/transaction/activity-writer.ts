@@ -55,6 +55,7 @@ import type { PoolClient } from "pg";
 import {
   createPendingActivityEvent,
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markActivitySolanaBroadcast,
   markBroadcastAccepted,
   type AgentActivityEventRole,
@@ -123,6 +124,12 @@ export interface TransactionActivity {
   readonly feeRowId: number | null;
   /** When the tool attempt began, for the execution row's `duration_ms`. */
   readonly startedAtMs: number;
+  /** Reserve this row's EVM nonce durably before signing. */
+  reserveEvmNonce(input: {
+    readonly fromAddress: string;
+    readonly chainId: number;
+    readonly nodePendingNonce: number;
+  }): Promise<number>;
   /** EVM staging. THROWS on a CAS miss - the caller must abort before submitting. */
   stageEvm(handles: {
     readonly txHash: string;
@@ -355,6 +362,8 @@ function makeHandle(
     activityId,
     feeRowId,
     startedAtMs,
+
+    reserveEvmNonce: (input) => reserveActivityEvmNonce(activityId, input),
 
     async stageEvm(handles) {
       const res = await markActivityBroadcast(activityId, {

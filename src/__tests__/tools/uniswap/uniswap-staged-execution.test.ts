@@ -16,7 +16,11 @@ import { keccak256, type Address, type Hex } from "viem";
 
 import { ErrorCodes } from "../../../errors.js";
 import { readUniswapAllowance } from "@tools/uniswap/erc20.js";
-import { signUniswapTransaction, broadcastUniswapTransaction, buildApproveTx } from "@tools/uniswap/execute.js";
+import {
+  signUniswapTransaction as signUniswapTransactionBase,
+  broadcastUniswapTransaction,
+  buildApproveTx,
+} from "@tools/uniswap/execute.js";
 import {
   DependentLegGasEstimateError,
   DEPENDENT_LEG_ESTIMATE_ATTEMPTS,
@@ -26,6 +30,21 @@ const TOKEN = "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b" as Address;
 const OWNER = "0x1111111111111111111111111111111111111111" as Address;
 const ROUTER = "0xcaf681a66d020601342297493863e78c959e5cb2" as Address; // Robinhood SwapRouter02 (allowlisted)
 const SIGNED_TX = "0x02f8b0018203118080825208808080c080a0" as Hex;
+
+function signUniswapTransaction(
+  publicClient: Parameters<typeof signUniswapTransactionBase>[0],
+  walletClient: Parameters<typeof signUniswapTransactionBase>[1],
+  tx: Parameters<typeof signUniswapTransactionBase>[2],
+  priorLeg?: Parameters<typeof signUniswapTransactionBase>[3],
+): ReturnType<typeof signUniswapTransactionBase> {
+  return signUniswapTransactionBase(
+    publicClient,
+    walletClient,
+    tx,
+    priorLeg,
+    async (request) => request.nodePendingNonce,
+  );
+}
 
 describe("readUniswapAllowance", () => {
   it("reads allowance(owner, spender) via the public client", async () => {

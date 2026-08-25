@@ -211,9 +211,7 @@ export async function collectWalletTransactionVexFee(
     return {
       collection: collection.collection,
       collectionNote: collection.collectionNote,
-      // The runner only produces these two arms with a hash; the fallback keeps
-      // the type honest without asserting.
-      txHash: collection.txHash ?? "",
+      txHash: collection.txHash,
       plannedFeeWei,
       receiver,
     };
@@ -223,7 +221,7 @@ export async function collectWalletTransactionVexFee(
     return {
       collection: collection.collection,
       collectionNote: collection.collectionNote,
-      txHash: collection.txHash ?? "",
+      txHash: collection.txHash,
       plannedFeeWei,
       // The transfer's value IS the planned amount on this lane: the base is a
       // digest-bound field, so there is no settled-versus-quoted gap to report.

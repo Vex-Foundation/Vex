@@ -18,8 +18,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../logger/index.js", () => ({
   log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+vi.mock("../../studio/approval-refusals.js", () => ({
+  repairPendingStudioRefusal: vi.fn().mockResolvedValue(true),
+}));
+let secretSessionUnlocked = true;
+let studioTransitioning = false;
+let studioPoisoned = false;
 vi.mock("../../secrets/session.js", () => ({
-  isStudioDispatchPoisoned: () => false,
+  isSecretSessionUnlocked: () => secretSessionUnlocked,
+  isStudioSessionTransitionInProgress: () => studioTransitioning,
+  isStudioDispatchPoisoned: () => studioPoisoned,
 }));
 
 const setStudioDispatchPreflight = vi.fn();
@@ -58,6 +66,9 @@ vi.mock("@vex-agent/engine/core/approval-runtime.js", () => ({
 const { setupStudioSettlementBridge, awaitStudioRuntimeReady } = await import(
   "../studio-settlement-bridge.js"
 );
+const { repairPendingStudioRefusal } = await import(
+  "../../studio/approval-refusals.js"
+);
 const { isStudioRuntimeReady, studioReadiness, resetStudioReadinessForTests } =
   await import("../../studio/readiness.js");
 /**
@@ -72,9 +83,13 @@ const { readStudioDispatchPreflight, setStudioDispatchPreflight: setRealPrefligh
 beforeEach(() => {
   vi.clearAllMocks();
   trace.length = 0;
+  secretSessionUnlocked = true;
+  studioTransitioning = false;
+  studioPoisoned = false;
   resetStudioReadinessForTests();
   reconcileAbandonedStudioDispatches.mockResolvedValue([]);
   reconcileUnstartedStudioApprovals.mockResolvedValue([]);
+  vi.mocked(repairPendingStudioRefusal).mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -119,6 +134,17 @@ describe("the readiness barrier", () => {
     expect(isStudioRuntimeReady()).toBe(true);
     // The same predicate now allows: it reads the flag, it does not cache it.
     expect(registered?.()).toBe(true);
+
+    // A non-signing Studio mutation uses the same preflight. Lock transition
+    // denial cannot depend on the signer being scrubbed.
+    studioTransitioning = true;
+    expect(registered?.()).toBe(false);
+    studioTransitioning = false;
+    secretSessionUnlocked = false;
+    expect(registered?.()).toBe(false);
+    secretSessionUnlocked = true;
+    studioPoisoned = true;
+    expect(registered?.()).toBe(false);
     teardown();
   });
 
@@ -135,6 +161,22 @@ describe("the readiness barrier", () => {
     expect(readiness.cause).toMatch(/approval fence/i);
     // And the reconciler never ran: nothing may write on an unproven fence.
     expect(trace).toEqual(["preflight"]);
+    teardown();
+  });
+
+  it("stays UNREADY when a durable lock refusal is still unrepaired", async () => {
+    vi.mocked(repairPendingStudioRefusal).mockResolvedValueOnce(false);
+    const teardown = setupStudioSettlementBridge();
+    await awaitStudioRuntimeReady();
+
+    expect(isStudioRuntimeReady()).toBe(false);
+    expect(reconcileAbandonedStudioDispatches).not.toHaveBeenCalled();
+    const registered = setStudioDispatchPreflight.mock.calls[0]?.[0];
+    expect(typeof registered).toBe("function");
+    if (typeof registered !== "function") {
+      throw new Error("dispatch preflight was not registered");
+    }
+    expect(registered()).toBe(false);
     teardown();
   });
 

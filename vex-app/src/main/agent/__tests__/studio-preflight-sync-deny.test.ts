@@ -25,7 +25,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+vi.mock("../../studio/approval-refusals.js", () => ({
+  repairPendingStudioRefusal: vi.fn().mockResolvedValue(true),
+}));
 vi.mock("../../secrets/session.js", () => ({
+  isSecretSessionUnlocked: () => true,
+  isStudioSessionTransitionInProgress: () => false,
   isStudioDispatchPoisoned: () => false,
 }));
 

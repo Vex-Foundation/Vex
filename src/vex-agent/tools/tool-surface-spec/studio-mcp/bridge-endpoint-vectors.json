@@ -49,6 +49,13 @@
     "bridgeDrainDeadlineMs": 5000,
     "bridgeDiagnosticMaxBytes": 512
   },
+  "endpointAncestorIdentity": {
+    "changed": {
+      "code": "endpoint_ancestor_changed",
+      "path": "/tmp/vex-endpoint-identity/private",
+      "message": "endpoint_ancestor_changed: The Vex Studio endpoint ancestor /tmp/vex-endpoint-identity/private changed before use."
+    }
+  },
   "configDir": {
     "appName": "vex",
     "envNames": [

@@ -16,7 +16,7 @@
 import { mkdtemp, mkdir, realpath, symlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { Client } from "pg";
+import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -51,7 +51,9 @@ afterEach(async () => {
 
 /** Minimal scripted `pg.Client` - only `studio_settings` is read here. */
 function scriptedClient(rows: ReadonlyArray<{ projects_root: string }>): Client {
-  return { query: vi.fn(async () => ({ rows, rowCount: rows.length })) } as unknown as Client;
+  return Object.assign(new Client(), {
+    query: vi.fn(async () => ({ rows, rowCount: rows.length })),
+  });
 }
 
 describe("configuredProjectsRoot", () => {

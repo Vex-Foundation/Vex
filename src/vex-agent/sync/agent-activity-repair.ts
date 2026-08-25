@@ -58,6 +58,7 @@
 
 import {
   claimDuePendingEvm,
+  claimDueEvmNonceReservations,
   clearNonInclusionClock,
   clearVerificationStall,
   confirmActivityEventStatusOnly,
@@ -68,10 +69,17 @@ import {
   notePendingReason,
   noteSettledBlockTime,
   releaseEvmClaim,
+  rotateInconclusiveEvmNonceReservation,
+  terminalizeClaimedEvmNonceReservation,
   touchLastChecked,
   type AgentActivityEvent,
   type ClaimDuePendingEvmResult,
+  type ClaimedEvmNonceReservation,
 } from "@vex-agent/db/repos/agent-activity.js";
+import * as walletIntentsRepo from "@vex-agent/db/repos/wallet-intents.js";
+import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import { resolveLocalChainId } from "@tools/evm-chains/registry.js";
+import { resolveChainId } from "@tools/khalani/chains.js";
 import {
   MINED_REVERT_ROLE_NEUTRAL_REASON,
   MINED_REVERT_SWAP_LEG_REASON,
@@ -109,6 +117,9 @@ export { REPAIR_CANDIDATE_AGE_MS, isPastHandlerWindow };
  * rows.
  */
 export const REPAIR_BATCH_LIMIT = 25;
+
+/** Separate bounded page for pre-084 transfer hashes that have no activity row. */
+export const LEGACY_TRANSFER_REVIEW_BATCH_LIMIT = 10;
 
 /**
  * Simultaneous chain lookups inside one lane pass. Raising this is the first
@@ -148,11 +159,26 @@ export interface RepairDeps {
   readonly observeTransaction: (input: EvmObservationInput) => Promise<EvmObservation>;
 }
 
+export interface RepairPassOptions {
+  /** Periodic pass only. Fast lanes leave bounded migration/restart queues here. */
+  readonly includeAuxiliaryState?: boolean;
+}
+
+export interface NonceReservationRepairCounts {
+  readonly checked: number;
+  readonly terminalized: number;
+  readonly inconclusive: number;
+  readonly claimLost: number;
+  readonly overflowDue: number;
+}
+
 export interface RepairSweepResult {
   readonly checked: number;
   readonly confirmed: number;
   readonly failed: number;
   readonly stillPending: number;
+  /** Present only on the periodic pass that owns restart/migration queues. */
+  readonly nonceReservations?: NonceReservationRepairCounts;
 }
 
 /**
@@ -169,7 +195,10 @@ export interface RepairSweepResult {
  * window the lane may look and record what it saw; it may not run a status CAS,
  * because the owning handler may still be decoding its own receipt.
  */
-export async function repairPendingActivity(deps: RepairDeps): Promise<RepairSweepResult> {
+export async function repairPendingActivity(
+  deps: RepairDeps,
+  options: RepairPassOptions = {},
+): Promise<RepairSweepResult> {
   // W5 design REVISION 1 R3: this sweep owns ONLY EVM ('eip155') rows — the
   // Solana activity sweep (`solana-activity-repair.ts`) owns every
   // chain_family='solana' staged row via its own disjoint candidate query. The
@@ -208,7 +237,159 @@ export async function repairPendingActivity(deps: RepairDeps): Promise<RepairSwe
     // `logDuplicateCas`; never double-counted here.
   });
 
-  return { checked: claim.claimed.length, confirmed, failed, stillPending };
+  const legacy = options.includeAuxiliaryState === true
+    ? await walletIntentsRepo.listLegacyReviewCandidates(
+        "eip155",
+        LEGACY_TRANSFER_REVIEW_BATCH_LIMIT,
+      )
+    : [];
+  await forEachBounded(legacy, EVM_LANE_MAX_CONCURRENCY, async (intent) => {
+    const outcome = await resolveLegacyEvmTransfer(intent, deps);
+    if (outcome === "confirmed") confirmed++;
+    else if (outcome === "failed") failed++;
+    else stillPending++;
+  });
+
+  const nonceReservations = options.includeAuxiliaryState === true
+    ? await repairEvmNonceReservations(deps)
+    : undefined;
+
+  return {
+    checked: claim.claimed.length + legacy.length,
+    confirmed,
+    failed,
+    stillPending,
+    ...(nonceReservations === undefined ? {} : { nonceReservations }),
+  };
+}
+
+async function repairEvmNonceReservations(
+  deps: RepairDeps,
+): Promise<NonceReservationRepairCounts> {
+  const page = await claimDueEvmNonceReservations();
+  if (page.overflowDue > 0) {
+    logger.warn("evm_nonce_repair.overflow", {
+      claimed: page.claimed.length,
+      overflowDue: page.overflowDue,
+    });
+  }
+
+  let terminalized = 0;
+  let inconclusive = 0;
+  let claimLost = 0;
+  await forEachBounded(page.claimed, EVM_LANE_MAX_CONCURRENCY, async (reservation) => {
+    const outcome = await resolveEvmNonceReservation(reservation, deps);
+    if (outcome === "terminalized") terminalized++;
+    else if (outcome === "inconclusive") inconclusive++;
+    else claimLost++;
+  });
+  return {
+    checked: page.claimed.length,
+    terminalized,
+    inconclusive,
+    claimLost,
+    overflowDue: page.overflowDue,
+  };
+}
+
+type NonceReservationOutcome = "terminalized" | "inconclusive" | "claim_lost";
+
+async function resolveEvmNonceReservation(
+  reservation: ClaimedEvmNonceReservation,
+  deps: RepairDeps,
+): Promise<NonceReservationOutcome> {
+  const observation = await deps.observeTransaction({
+    chainId: reservation.chainId,
+    txHash: reservation.txHash,
+    fromAddress: reservation.fromAddress,
+    nonce: reservation.nonce,
+  });
+  if (observation.kind === "mined") {
+    const applied = await terminalizeClaimedEvmNonceReservation(
+      reservation.id,
+      reservation.claimToken,
+      observation.status === "success" ? "mined_success" : "mined_revert",
+    );
+    return applied ? "terminalized" : "claim_lost";
+  }
+  if (observation.kind === "nonce_superseded") {
+    const applied = await terminalizeClaimedEvmNonceReservation(
+      reservation.id,
+      reservation.claimToken,
+      "nonce_superseded",
+    );
+    return applied ? "terminalized" : "claim_lost";
+  }
+
+  const applied = await rotateInconclusiveEvmNonceReservation(
+    reservation.id,
+    reservation.claimToken,
+    observation.kind,
+  );
+  return applied ? "inconclusive" : "claim_lost";
+}
+
+type LegacyTransferReviewOutcome = "confirmed" | "failed" | "pending" | "duplicate";
+
+/**
+ * Observe a pre-084 transfer by hash only. With no persisted nonce this path can
+ * prove inclusion or a mined revert, but never supersession. It never signs or
+ * submits and a non-answer only rotates the durable review row.
+ */
+export async function resolveLegacyEvmTransfer(
+  intent: walletIntentsRepo.WalletIntent,
+  deps: RepairDeps,
+): Promise<LegacyTransferReviewOutcome> {
+  const txHash = intent.txHash;
+  if (txHash === null) return "pending";
+  const chainId = resolveLegacyEvmChainId(intent.chainAlias);
+  if (chainId === null) {
+    logger.warn("wallet.send.legacy_review_chain_unresolved", {
+      intentId: intent.intentId,
+      chainAliasPresent: intent.chainAlias !== null,
+    });
+    await touchLegacyReview(intent);
+    return "pending";
+  }
+
+  const observation = await deps.observeTransaction({
+    chainId,
+    txHash,
+    fromAddress: intent.walletAddress,
+    nonce: null,
+  });
+  if (observation.kind !== "mined") {
+    await touchLegacyReview(intent);
+    return "pending";
+  }
+
+  const verdict = observation.status === "success" ? "confirmed" : "reverted";
+  const settled = await withSessionControlLock(intent.sessionId, (client) =>
+    walletIntentsRepo.settleLegacyReviewWith(
+      client,
+      intent.intentId,
+      intent.sessionId,
+      txHash,
+      verdict,
+    ),
+  );
+  if (settled === null) return "duplicate";
+  return verdict === "confirmed" ? "confirmed" : "failed";
+}
+
+function resolveLegacyEvmChainId(chainAlias: string | null): number | null {
+  if (chainAlias === null) return null;
+  try {
+    return resolveChainId(chainAlias);
+  } catch {
+    return resolveLocalChainId(chainAlias) ?? null;
+  }
+}
+
+async function touchLegacyReview(intent: walletIntentsRepo.WalletIntent): Promise<void> {
+  await withSessionControlLock(intent.sessionId, (client) =>
+    walletIntentsRepo.touchLegacyReviewWith(client, intent.intentId, intent.sessionId),
+  );
 }
 
 /**

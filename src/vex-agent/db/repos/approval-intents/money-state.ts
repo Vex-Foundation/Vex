@@ -39,9 +39,10 @@
  *  4. `wallet_intents` `consuming`, or `pending` that has NOT expired. An
  *     EXPIRED `pending` is dead — `consumeIfPending` filters on
  *     `expires_at > NOW()`, so it can never be claimed — and must not block.
- *  5. `wallet_intents` `failed` / `audit_failed` CARRYING a `tx_hash` — a
- *     failure with a hash may still land on chain. A failure without one never
- *     broadcast and is genuinely terminal.
+ *  5. `wallet_intents` `broadcast_unconfirmed` / `review_required`, or an
+ *     `audit_failed` row carrying a hash. These are named unresolved outcomes.
+ *     A legacy `failed` row with a hash releases only when its linked activity
+ *     proves a mined revert; every other such row still fails closed.
  *  6. `wallet_transaction_intents` (migration 087) `consuming`,
  *     `broadcast_unconfirmed`, or `pending` that has NOT expired. Same reading
  *     as 4 with one addition the transfer table cannot express:
@@ -169,8 +170,24 @@ const UNRESOLVED_MONEY_STATE_SQL = `
   SELECT 'wallet_confirmation_unknown', w.intent_id::text, w.status::text
     FROM wallet_intents w
    WHERE w.session_id = $1
-     AND w.status IN ('failed', 'audit_failed')
      AND w.tx_hash IS NOT NULL
+     AND (
+       w.status IN ('broadcast_unconfirmed', 'review_required', 'audit_failed')
+       OR (
+         w.status = 'failed'
+         AND w.failure_reason IS DISTINCT FROM 'RepairLane:chain_reverted'
+         AND NOT EXISTS (
+           SELECT 1
+             FROM agent_activity a
+            WHERE a.id = w.activity_id
+              AND a.session_id = w.session_id
+              AND a.event_role = 'wallet_transfer'
+              AND a.tx_hash = w.tx_hash
+              AND a.status = 'definitively_failed'
+              AND a.failure_code = 'mined_revert'
+         )
+       )
+     )
 
    UNION ALL
 

@@ -43,6 +43,15 @@ import {
 } from "@solana/web3.js";
 
 import { execute, queryOne } from "@vex-agent/db/client.js";
+import {
+  confirmActivityEventStatusOnlyWith,
+  failActivityEventWith,
+} from "@vex-agent/db/repos/agent-activity.js";
+import {
+  recoverLinkedBroadcastUnconfirmed,
+  settleLinkedActivityRows,
+  type LinkedSettlementWritePoint,
+} from "@vex-agent/db/repos/agent-activity/linked-transaction-settlement.js";
 import * as intentsRepo from "@vex-agent/db/repos/wallet-transaction-intents.js";
 import { PROPOSAL_DIGEST_VERSION } from "@vex-agent/db/contracts/wallet-transaction-intent.js";
 import { claimTransactionIntent } from "@vex-agent/tools/internal/wallet/transaction/activity-writer.js";
@@ -186,12 +195,19 @@ function minedRevertDeps(): SolanaActivitySweepDeps {
     }),
     getFinalizedTransaction: async () => ({ outcome: "unavailable" }),
     getCurrentBlockHeight: async () => ({ outcome: "unavailable" }),
-  } as unknown as SolanaActivitySweepDeps;
+  };
+}
+
+interface ActivityRow {
+  status: string;
+  failure_code: string | null;
+  tx_hash: string | null;
+  protocol_execution_id: number;
 }
 
 interface ThreeRows {
   wti: { status: string; failure_stage: string | null; tx_hash: string | null };
-  aa: { status: string; failure_code: string | null } | null;
+  aa: ActivityRow | null;
   pe: { execution_status: string; success: boolean } | null;
 }
 
@@ -201,15 +217,15 @@ async function readThreeRows(intentId: string, activityId: number): Promise<Thre
     [intentId],
   );
   if (wti === null) throw new Error(`no intent row for ${intentId}`);
-  const aa = await queryOne<ThreeRows["aa"] & { protocol_execution_id: number }>(
-    "SELECT status, failure_code, protocol_execution_id FROM agent_activity WHERE id = $1",
+  const aa = await queryOne<ActivityRow>(
+    "SELECT status, failure_code, tx_hash, protocol_execution_id FROM agent_activity WHERE id = $1",
     [activityId],
   );
   const pe = aa === null
     ? null
     : await queryOne<{ execution_status: string; success: boolean }>(
         "SELECT execution_status, success FROM protocol_executions WHERE id = $1",
-        [(aa as unknown as { protocol_execution_id: number }).protocol_execution_id],
+        [aa.protocol_execution_id],
       );
   return { wti, aa, pe };
 }
@@ -244,17 +260,88 @@ describe("a `consuming` intent under a terminal activity row is converged, not s
     expect(rows.pe?.execution_status).toBe("failed");
   });
 
-  it("LANE FIRST: a claim INSIDE the handler window is left alone - repair is not interference", async () => {
+  it("LANE FIRST: definitive evidence settles a fresh linked intent in the same transaction", async () => {
     const sessionId = await makeSession();
     const claimed = await claimAndStage(await prepareSolanaIntent(sessionId), { backdate: false });
 
     await repairPendingSolanaActivity(minedRevertDeps());
 
     const rows = await readThreeRows(claimed.intent.intentId, claimed.activity.activityId);
-    // The activity row is the lane's to terminalize; the INTENT is not, while a
-    // confirm handler may still be holding it.
+    // This generic transaction row carries no venue amount decoder that a
+    // status-only settlement could preempt. Once the chain has proven a revert,
+    // keeping WTI consuming while AA becomes terminal would recreate the split
+    // this coordinator removes.
     expect(rows.aa?.status).toBe("definitively_failed");
-    expect(rows.wti.status).toBe("consuming");
+    expect(rows.wti.status).toBe("failed");
+    expect(rows.wti.failure_stage).toBe("chain_reverted");
+    expect(rows.pe?.execution_status).toBe("failed");
+  });
+
+  it("T4a adopts an already-terminal unknown hashless AA and converges WTI plus PE", async () => {
+    const sessionId = await makeSession();
+    const intent = await prepareSolanaIntent(sessionId);
+    const claimed = await claimTransactionIntent(intent, intent.proposalDigest, CLEAR_FENCE);
+    if (!claimed.ok) throw new Error(`claim failed: ${claimed.reason}`);
+    await execute(
+      `UPDATE agent_activity
+          SET status = 'definitively_failed', failure_code = 'unknown',
+              failure_reason = 'legacy hashless reaper'
+        WHERE id = $1`,
+      [claimed.activity.activityId],
+    );
+    await execute(
+      "UPDATE wallet_transaction_intents SET consumed_at = NOW() - INTERVAL '10 minutes' WHERE intent_id = $1",
+      [intent.intentId],
+    );
+
+    const recovered = await recoverStrandedTransactionIntents();
+    expect(recovered.crashedBeforeBroadcast).toBe(1);
+
+    const rows = await readThreeRows(intent.intentId, claimed.activity.activityId);
+    expect(rows.aa?.status).toBe("definitively_failed");
+    expect(rows.aa?.failure_code).toBe("unknown");
+    expect(rows.wti).toEqual({
+      status: "failed",
+      failure_stage: "crashed_before_broadcast",
+      tx_hash: null,
+    });
+    expect(rows.pe?.execution_status).toBe("failed");
+  });
+
+  it("an explicit signed-not-submitted verdict retains AA evidence but leaves WTI hashless", async () => {
+    const sessionId = await makeSession();
+    const claimed = await claimAndStage(await prepareSolanaIntent(sessionId));
+
+    await settleLinkedActivityRows({
+      activityId: claimed.activity.activityId,
+      sessionId,
+      intentOutcome: "signed_not_submitted",
+      activityTarget: {
+        status: "definitively_failed",
+        failureCode: "broadcast_error",
+      },
+      activityWrite: (client) => failActivityEventWith(
+        client,
+        claimed.activity.activityId,
+        {
+          failureCode: "broadcast_error",
+          failureReason: "the node rejected the signed bytes before accepting them",
+        },
+      ),
+    });
+
+    const rows = await readThreeRows(claimed.intent.intentId, claimed.activity.activityId);
+    expect(rows.aa).toMatchObject({
+      status: "definitively_failed",
+      failure_code: "broadcast_error",
+      tx_hash: SIGNATURE,
+    });
+    expect(rows.wti).toEqual({
+      status: "failed",
+      failure_stage: "pre_broadcast",
+      tx_hash: null,
+    });
+    expect(rows.pe?.execution_status).toBe("failed");
   });
 
   it("SCAN FIRST: the stranded scan converges a `consuming` WTI from an ALREADY terminal row", async () => {
@@ -336,4 +423,130 @@ describe("a `consuming` intent under a terminal activity row is converged, not s
     expect(rows.wti.status).toBe("broadcast_unconfirmed");
     expect(rows.wti.tx_hash).toBe(SIGNATURE);
   });
+});
+
+function interruptAfter(expected: LinkedSettlementWritePoint) {
+  return {
+    afterWrite(point: LinkedSettlementWritePoint): void {
+      if (point === expected) throw new Error(`injected interruption after ${point}`);
+    },
+  };
+}
+
+async function expectClaimShapeUnchanged(
+  intentId: string,
+  activityId: number,
+): Promise<void> {
+  const rows = await readThreeRows(intentId, activityId);
+  expect(rows.wti.status).toBe("consuming");
+  expect(rows.wti.tx_hash).toBeNull();
+  expect(rows.aa?.status).toBe("pending");
+  expect(rows.pe?.execution_status).toBe("intent");
+}
+
+describe("repair settlement rolls back every write boundary", () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  const terminalPoints: readonly LinkedSettlementWritePoint[] = [
+    "activity_terminal",
+    "intent_broadcast_unconfirmed",
+    "intent_terminal",
+    "execution_terminal",
+  ];
+
+  for (const point of terminalPoints) {
+    it(`rolls back a confirmed repair interrupted after ${point}`, async () => {
+      const sessionId = await makeSession();
+      const claimed = await claimAndStage(await prepareSolanaIntent(sessionId));
+
+      await expect(
+        settleLinkedActivityRows(
+          {
+            activityId: claimed.activity.activityId,
+            sessionId,
+            intentOutcome: "confirmed",
+            activityTarget: { status: "confirmed" },
+            activityWrite: (client) => confirmActivityEventStatusOnlyWith(
+              client,
+              claimed.activity.activityId,
+              "receipt_status_only_solana",
+            ),
+          },
+          interruptAfter(point),
+        ),
+      ).rejects.toThrow(`injected interruption after ${point}`);
+
+      await expectClaimShapeUnchanged(
+        claimed.intent.intentId,
+        claimed.activity.activityId,
+      );
+    });
+  }
+
+  const crashedPoints: readonly LinkedSettlementWritePoint[] = [
+    "activity_terminal",
+    "intent_terminal",
+    "execution_terminal",
+  ];
+
+  for (const point of crashedPoints) {
+    it(`rolls back T4a interrupted after ${point}`, async () => {
+      const sessionId = await makeSession();
+      const intent = await prepareSolanaIntent(sessionId);
+      const claimed = await claimTransactionIntent(intent, intent.proposalDigest, CLEAR_FENCE);
+      if (!claimed.ok) throw new Error(`claim failed: ${claimed.reason}`);
+
+      await expect(
+        settleLinkedActivityRows(
+          {
+            activityId: claimed.activity.activityId,
+            sessionId,
+            intentOutcome: "crashed_before_broadcast",
+            activityTarget: {
+              status: "definitively_failed",
+              failureCode: "broadcast_error",
+            },
+            activityWrite: (client) => failActivityEventWith(
+              client,
+              claimed.activity.activityId,
+              {
+                failureCode: "broadcast_error",
+                failureReason: "injected crash before broadcast",
+              },
+            ),
+          },
+          interruptAfter(point),
+        ),
+      ).rejects.toThrow(`injected interruption after ${point}`);
+
+      await expectClaimShapeUnchanged(intent.intentId, claimed.activity.activityId);
+    });
+  }
+
+  const unconfirmedPoints: readonly LinkedSettlementWritePoint[] = [
+    "intent_broadcast_unconfirmed",
+    "execution_terminal",
+  ];
+
+  for (const point of unconfirmedPoints) {
+    it(`rolls back T4b interrupted after ${point}`, async () => {
+      const sessionId = await makeSession();
+      const claimed = await claimAndStage(await prepareSolanaIntent(sessionId));
+
+      await expect(
+        recoverLinkedBroadcastUnconfirmed(
+          claimed.activity.activityId,
+          sessionId,
+          interruptAfter(point),
+        ),
+      ).rejects.toThrow(`injected interruption after ${point}`);
+
+      await expectClaimShapeUnchanged(
+        claimed.intent.intentId,
+        claimed.activity.activityId,
+      );
+    });
+  }
 });

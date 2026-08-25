@@ -17,6 +17,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ApproveSnapshot } from "@vex-agent/engine/core/approval-runtime/snapshot.js";
+import type { ToolResult } from "@vex-agent/tools/types.js";
 
 type ApprovedInTxSnapshot = Extract<ApproveSnapshot, { type: "approved_in_tx" }>;
 
@@ -65,8 +66,11 @@ vi.mock(
 const { applyStudioApproveSideEffects } = await import(
   "@vex-agent/engine/core/approval-runtime/post-tx/dispatch-approved/studio.js"
 );
-const { buildApprovalToolCall, computeRequestDigest } = await import(
+const { buildApprovalToolCall, computeStudioAuthorityDigest } = await import(
   "@vex-agent/engine/core/approval-runtime/tool-call-envelope.js"
+);
+const { buildIntentPreview } = await import(
+  "@vex-agent/engine/core/approval-intent-preview.js"
 );
 const { setStudioDispatchPreflight } = await import(
   "@vex-agent/engine/core/approval-runtime/studio/dispatch-gate.js"
@@ -78,18 +82,60 @@ const { studioWriteRepairCount, resetStudioWriteRepairForTests } = await import(
 const APPROVAL_ID = "approval-1";
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 const SESSION_ID = "22222222-2222-4222-8222-222222222222";
-const ENVELOPE = buildApprovalToolCall("wallet_send", { network: "solana" });
+const TOOL_ARGS = { network: "solana" };
+const ENVELOPE = buildApprovalToolCall("wallet_send", TOOL_ARGS);
+const PREVIEW = buildIntentPreview("wallet_send", TOOL_ARGS);
+const EXPIRES_AT = "2026-08-23T11:00:00.000Z";
+
+function pendingAdmission() {
+  return {
+    result: {
+      success: false,
+      output: "approval required",
+      pendingApproval: true,
+      actionKind: "user_wallet_broadcast",
+    } satisfies ToolResult,
+    dispatched: true,
+  };
+}
+
+function scriptApprovedResult(result: ToolResult): void {
+  admitStudioCall.mockImplementation(async (_call, rawContext) => {
+    const context = requireRecord(rawContext, "Studio tool context");
+    return context.approved === true
+      ? { result, dispatched: true }
+      : pendingAdmission();
+  });
+}
+
+function scriptApprovedThrow(cause: Error): void {
+  admitStudioCall.mockImplementation(async (_call, rawContext) => {
+    const context = requireRecord(rawContext, "Studio tool context");
+    if (context.approved === true) throw cause;
+    return pendingAdmission();
+  });
+}
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new Error(`${label} was not an object`);
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 function snapshot(overrides: Record<string, unknown> = {}): ApprovedInTxSnapshot {
   return {
-    type: "approved_in_tx" as const,
+    type: "approved_in_tx",
     queueResolvedAt: "2026-08-23T10:00:00.000Z",
     row: {
       approval_id: APPROVAL_ID,
       session_id: SESSION_ID,
       mission_run_id: null,
       tool_call_id: "call-1",
-      expires_at: null,
+      expires_at: EXPIRES_AT,
+      preview_json: PREVIEW,
       decision: "approved",
       decision_reason: null,
       decided_at: null,
@@ -98,7 +144,15 @@ function snapshot(overrides: Record<string, unknown> = {}): ApprovedInTxSnapshot
       origin: "studio_mcp",
       project_id: PROJECT_ID,
       scope_version_at_enqueue: 4,
-      request_digest: computeRequestDigest(ENVELOPE),
+      request_digest: computeStudioAuthorityDigest({
+        envelope: ENVELOPE,
+        preview: PREVIEW,
+        expiresAt: EXPIRES_AT,
+        sessionId: SESSION_ID,
+        projectId: PROJECT_ID,
+        scopeVersion: 4,
+        permission: "full",
+      }),
       queue_status: "approved",
       queue_resolved_at: null,
       queue_created_at: new Date(),
@@ -154,9 +208,10 @@ beforeEach(() => {
     { family: "evm", wallet_id: "evm_authoritative", address: "0xAuthoritative" },
     { family: "solana", wallet_id: null, address: null },
   ]);
-  admitStudioCall.mockResolvedValue({
-    result: { success: true, output: "sent", data: { txHash: "0xabc" } },
-    dispatched: true,
+  scriptApprovedResult({
+    success: true,
+    output: "sent",
+    data: { txHash: "0xabc" },
   });
 });
 
@@ -179,7 +234,15 @@ describe("the happy dispatch", () => {
 
     // The wallet resolution comes from `project_wallets`, which is
     // AUTHORITATIVE; the backing session's mirrored columns are never read.
-    const context = admitStudioCall.mock.calls[0]?.[1] as Record<string, unknown>;
+    const rebuildContext = requireRecord(
+      admitStudioCall.mock.calls[0]?.[1],
+      "card rebuild context",
+    );
+    expect(rebuildContext.approved).toBe(false);
+    const context = requireRecord(
+      admitStudioCall.mock.calls[1]?.[1],
+      "approved dispatch context",
+    );
     expect(context.walletResolution).toEqual({
       source: "session",
       evm: { id: "evm_authoritative", address: "0xAuthoritative" },
@@ -212,16 +275,49 @@ describe("the happy dispatch", () => {
   });
 
   it("carries a CONTROLLED tool failure through as a real answer", async () => {
-    admitStudioCall.mockResolvedValue({
-      result: { success: false, output: "insufficient funds" },
-      dispatched: true,
-    });
+    scriptApprovedResult({ success: false, output: "insufficient funds" });
     const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(outcome.kind).toBe("dispatched");
     if (outcome.kind !== "dispatched") return;
     expect(outcome.executionStatus).toBe("failed");
     expect(outcome.toolResult.output).toBe("insufficient funds");
     expect(commitStudioSettlementWith).toHaveBeenCalledTimes(1);
+  });
+
+  it("rebuilds and dispatches a protocol envelope through its public Studio name", async () => {
+    const args = {
+      chain: "base",
+      tokenIn: "0x1111111111111111111111111111111111111111",
+      tokenOut: "0x2222222222222222222222222222222222222222",
+      amountIn: "1",
+    };
+    const envelope = buildApprovalToolCall("kyberswap__swap__execute", args);
+    const preview = buildIntentPreview("kyberswap__swap__execute", args);
+    const digest = computeStudioAuthorityDigest({
+      envelope,
+      preview,
+      expiresAt: EXPIRES_AT,
+      sessionId: SESSION_ID,
+      projectId: PROJECT_ID,
+      scopeVersion: 4,
+      permission: "full",
+    });
+
+    const outcome = await applyStudioApproveSideEffects(
+      APPROVAL_ID,
+      snapshot({
+        queue_tool_call: envelope,
+        preview_json: preview,
+        request_digest: digest,
+      }),
+    );
+    expect(outcome.kind).toBe("dispatched");
+    expect(admitStudioCall).toHaveBeenCalledTimes(2);
+    for (const call of admitStudioCall.mock.calls) {
+      const publicCall = requireRecord(call[0], "public Studio call");
+      expect(publicCall.name).toBe("kyberswap__swap__execute");
+      expect(publicCall.args).toEqual(args);
+    }
   });
 });
 
@@ -297,6 +393,49 @@ describe("refusals before the dispatch", () => {
     expect(commitStudioSettlementWith).toHaveBeenCalledTimes(1);
   });
 
+  it("refuses when expiry changed after enqueue", async () => {
+    const outcome = await applyStudioApproveSideEffects(
+      APPROVAL_ID,
+      snapshot({ expires_at: "2026-08-23T12:00:00.000Z" }),
+    );
+    expect(admitStudioCall).not.toHaveBeenCalled();
+    if (outcome.kind !== "dispatched") return;
+    expect(outcome.toolResult.output).toMatch(/no longer matches/i);
+  });
+
+  it("refuses a co-edited card even when its authority digest was recomputed", async () => {
+    const tamperedPreview = {
+      ...PREVIEW,
+      criticalArgs: { ...PREVIEW.criticalArgs, safety: "safe" },
+    };
+    const tamperedDigest = computeStudioAuthorityDigest({
+      envelope: ENVELOPE,
+      preview: tamperedPreview,
+      expiresAt: EXPIRES_AT,
+      sessionId: SESSION_ID,
+      projectId: PROJECT_ID,
+      scopeVersion: 4,
+      permission: "full",
+    });
+    const outcome = await applyStudioApproveSideEffects(
+      APPROVAL_ID,
+      snapshot({
+        preview_json: tamperedPreview,
+        request_digest: tamperedDigest,
+      }),
+    );
+    // The unapproved call rebuilds the live card, but the approved mutator is
+    // never entered because the complete card has an added field.
+    expect(admitStudioCall).toHaveBeenCalledTimes(1);
+    const context = requireRecord(
+      admitStudioCall.mock.calls[0]?.[1],
+      "card rebuild context",
+    );
+    expect(context.approved).toBe(false);
+    if (outcome.kind !== "dispatched") return;
+    expect(outcome.toolResult.output).toMatch(/complete approval card/i);
+  });
+
   it("refuses on a manifest-fingerprint mismatch", async () => {
     const outcome = await applyStudioApproveSideEffects(
       APPROVAL_ID,
@@ -322,7 +461,7 @@ describe("refusals before the dispatch", () => {
 
 describe("failures after the dispatch", () => {
   it("records `indeterminate` and does NOT retry when the dispatch throws", async () => {
-    admitStudioCall.mockRejectedValue(new Error("provider exploded"));
+    scriptApprovedThrow(new Error("provider exploded"));
     const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     // ONE statement: status AND settlement together, because the settlement
     // CAS is fenced on `dispatching`, which a prior status flip would have left.
@@ -330,7 +469,7 @@ describe("failures after the dispatch", () => {
       expect.anything(),
       expect.objectContaining({ approvalId: APPROVAL_ID }),
     );
-    expect(admitStudioCall).toHaveBeenCalledTimes(1);
+    expect(admitStudioCall).toHaveBeenCalledTimes(2);
     if (outcome.kind !== "dispatched") return;
     // The REPORTED status is the durable one. `failed` here would invite the
     // one retry that must never happen.
@@ -357,7 +496,7 @@ describe("failures after the dispatch", () => {
     );
     // Never dispatched twice: the call already ran, and an unprovable outcome
     // is not a reason to run it again.
-    expect(admitStudioCall).toHaveBeenCalledTimes(1);
+    expect(admitStudioCall).toHaveBeenCalledTimes(2);
     if (outcome.kind !== "dispatched") return;
     expect(outcome.executionStatus).toBe("indeterminate");
   });
@@ -402,20 +541,20 @@ describe("failures after the dispatch", () => {
   });
 
   it("retries the indeterminate STATUS WRITE, bounded, and never the dispatch", async () => {
-    admitStudioCall.mockRejectedValue(new Error("provider exploded"));
+    scriptApprovedThrow(new Error("provider exploded"));
     casMarkIndeterminateWithSettlementWith
       .mockRejectedValueOnce(new Error("db blip"))
       .mockResolvedValue(true);
     const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(casMarkIndeterminateWithSettlementWith).toHaveBeenCalledTimes(2);
     // The retried thing is a status write on a row whose dispatch already ran.
-    expect(admitStudioCall).toHaveBeenCalledTimes(1);
+    expect(admitStudioCall).toHaveBeenCalledTimes(2);
     if (outcome.kind !== "dispatched") return;
     expect(outcome.executionStatus).toBe("indeterminate");
   });
 
   it("does NOT claim `indeterminate` when the status write never committed", async () => {
-    admitStudioCall.mockRejectedValue(new Error("provider exploded"));
+    scriptApprovedThrow(new Error("provider exploded"));
     casMarkIndeterminateWithSettlementWith.mockRejectedValue(new Error("db down"));
     getStudioSettlementByApprovalId.mockResolvedValue({
       approvalId: APPROVAL_ID,
@@ -432,7 +571,7 @@ describe("failures after the dispatch", () => {
     const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     // Bounded: three attempts, then it stops. No dispatch retry, ever.
     expect(casMarkIndeterminateWithSettlementWith).toHaveBeenCalledTimes(3);
-    expect(admitStudioCall).toHaveBeenCalledTimes(1);
+    expect(admitStudioCall).toHaveBeenCalledTimes(2);
     if (outcome.kind !== "dispatched") return;
     // The text says the outcome is BOTH unknown and unrecorded, rather than
     // asserting a durable `indeterminate` that does not exist.
@@ -440,7 +579,7 @@ describe("failures after the dispatch", () => {
   });
 
   it("reports the durable winner when the status write LOST the CAS", async () => {
-    admitStudioCall.mockRejectedValue(new Error("provider exploded"));
+    scriptApprovedThrow(new Error("provider exploded"));
     casMarkIndeterminateWithSettlementWith.mockResolvedValue(false);
     getStudioSettlementByApprovalId.mockResolvedValue({
       approvalId: APPROVAL_ID,
@@ -610,9 +749,51 @@ describe("the dispatch preflight", () => {
     // The durable generation CAS is the authority in every case but the failed
     // advance, so a headless engine must not be blocked by an absent predicate.
     const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
-    expect(admitStudioCall).toHaveBeenCalledTimes(1);
+    expect(admitStudioCall).toHaveBeenCalledTimes(2);
     if (outcome.kind !== "dispatched") return;
     expect(outcome.executionStatus).toBe("succeeded");
+  });
+
+  it("denies a non-signing mutation when lock begins during card rebuild", async () => {
+    let allows = true;
+    setStudioDispatchPreflight(() => allows);
+    admitStudioCall.mockImplementation(async (_call, rawContext) => {
+      const context = requireRecord(rawContext, "Studio tool context");
+      if (context.approved === true) {
+        throw new Error("approved non-signing mutator must not start");
+      }
+      // This models lockSecretSession's synchronous transition flag landing
+      // while a provider-backed preview rebuild was awaiting. The second
+      // preflight must observe it before any approved local write begins.
+      allows = false;
+      return pendingAdmission();
+    });
+
+    const args = { network: "solana", token: "So11111111111111111111111111111111111111112" };
+    const envelope = buildApprovalToolCall("wallet_track_token", args);
+    const preview = buildIntentPreview("wallet_track_token", args);
+    const digest = computeStudioAuthorityDigest({
+      envelope,
+      preview,
+      expiresAt: EXPIRES_AT,
+      sessionId: SESSION_ID,
+      projectId: PROJECT_ID,
+      scopeVersion: 4,
+      permission: "full",
+    });
+    const outcome = await applyStudioApproveSideEffects(
+      APPROVAL_ID,
+      snapshot({
+        queue_tool_call: envelope,
+        preview_json: preview,
+        request_digest: digest,
+      }),
+    );
+
+    expect(admitStudioCall).toHaveBeenCalledTimes(1);
+    if (outcome.kind !== "dispatched") return;
+    expect(outcome.executionStatus).toBe("failed");
+    expect(outcome.toolResult.output).toMatch(/lock fence/i);
   });
 });
 
@@ -654,14 +835,14 @@ describe("a terminal write that THROWS is handed to the repair owner", () => {
   it("registers the indeterminate write once its bounded attempts are exhausted", async () => {
     // The dispatch RAN and threw, so the outcome is unprovable; then every
     // attempt at the status write throws too.
-    admitStudioCall.mockRejectedValue(new Error("provider exploded"));
+    scriptApprovedThrow(new Error("provider exploded"));
     casMarkIndeterminateWithSettlementWith.mockRejectedValue(new Error("db down"));
 
     const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(casMarkIndeterminateWithSettlementWith).toHaveBeenCalledTimes(3);
     expect(studioWriteRepairCount()).toBe(1);
     // ONE dispatch, ever. The repair owner replays the write, never the call.
-    expect(admitStudioCall).toHaveBeenCalledTimes(1);
+    expect(admitStudioCall).toHaveBeenCalledTimes(2);
     if (outcome.kind !== "dispatched") return;
     expect(outcome.executionStatus).toBe("indeterminate");
   });

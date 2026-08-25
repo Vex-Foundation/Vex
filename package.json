@@ -20,6 +20,7 @@
     "generate:studio-tools-doc": "tsx src/vex-agent/scripts/studio-exported-tools-doc.ts",
     "generate:studio-protocols-doc": "tsx src/vex-agent/scripts/studio-protocols-doc.ts",
     "test:integration": "vitest run --config vitest/integration.config.ts",
+    "test:studio-postgres": "vitest run --config vitest/studio-postgres.config.ts",
     "test:eval": "vitest run --config vitest/eval.config.ts",
     "test:eval:e2e": "VEX_E2E_MEMORY_EVAL=1 vitest run --config vitest/eval.config.ts src/__tests__/integration/eval/e2e-memory-correctness.int.test.ts",
     "test:eval:e2e:full": "VEX_E2E_MEMORY_EVAL=1 VEX_E2E_SUBSET=full vitest run --config vitest/eval.config.ts src/__tests__/integration/eval/e2e-memory-correctness.int.test.ts",

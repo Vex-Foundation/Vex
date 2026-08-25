@@ -15,6 +15,14 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  Client,
+  type QueryConfig,
+  type QueryResult,
+  type QueryResultRow,
+} from "pg";
+import type { Permission } from "@vex-agent/engine/types.js";
+import type { IntentSnapshotRow } from "@vex-agent/engine/core/approval-runtime/snapshot.js";
 
 const approveWith = vi.fn();
 const rejectWith = vi.fn();
@@ -35,7 +43,14 @@ const { TOOL_RESULT_EXPIRED_REASON } = await import(
 const APPROVAL_ID = "approval-1";
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 
-function studioRow(overrides: Record<string, unknown> = {}) {
+type PromiseQuery = <Row extends QueryResultRow = QueryResultRow>(
+  query: string | QueryConfig,
+  values?: unknown[],
+) => Promise<QueryResult<Row>>;
+
+function studioRow(
+  overrides: Partial<IntentSnapshotRow> = {},
+): IntentSnapshotRow {
   return {
     approval_id: APPROVAL_ID,
     session_id: "session-1",
@@ -63,22 +78,41 @@ function studioRow(overrides: Record<string, unknown> = {}) {
 }
 
 function scriptClient(
-  row: Record<string, unknown>,
-  project: { scope_version: number; permission: string } | undefined,
+  row: IntentSnapshotRow,
+  project: { scope_version: number; permission: Permission } | undefined,
 ) {
-  const query = vi.fn(async (sql: unknown) => {
-    const text = String(sql);
-    if (text.includes("FROM approval_intents i")) return { rows: [row], rowCount: 1 };
-    if (text.includes("FROM projects")) {
-      return {
-        rows: project === undefined ? [] : [project],
-        rowCount: project === undefined ? 0 : 1,
-      };
-    }
-    if (text.includes("SELECT NOW()")) return { rows: [{ now: new Date() }] };
-    return { rows: [], rowCount: 0 };
+  const client = new Client();
+  const query = vi.fn<PromiseQuery>();
+  Object.defineProperty(client, "query", { configurable: true, value: query });
+  query.mockResolvedValueOnce({
+    command: "SELECT",
+    rowCount: 1,
+    oid: 0,
+    fields: [],
+    rows: [row],
   });
-  return query;
+  if (row.expires_at !== null) {
+    query.mockResolvedValueOnce({
+      command: "SELECT",
+      rowCount: 1,
+      oid: 0,
+      fields: [],
+      rows: [{ now: new Date() }],
+    });
+  } else if (
+    row.origin === "studio_mcp"
+    && row.session_permission_live === row.queue_permission_at_enqueue
+  ) {
+    const projectRows = project === undefined ? [] : [project];
+    query.mockResolvedValueOnce({
+      command: "SELECT",
+      rowCount: projectRows.length,
+      oid: 0,
+      fields: [],
+      rows: projectRows,
+    });
+  }
+  return { client, query };
 }
 
 beforeEach(() => {
@@ -90,8 +124,8 @@ beforeEach(() => {
 
 describe("Studio approve - commit-time project drift", () => {
   it("rejects in-tx with `project_deleted` when the project is gone", async () => {
-    const query = scriptClient(studioRow(), undefined);
-    const snapshot = await buildApproveSnapshot({ query } as never, APPROVAL_ID);
+    const { client, query } = scriptClient(studioRow(), undefined);
+    const snapshot = await buildApproveSnapshot(client, APPROVAL_ID);
     expect(snapshot.type).toBe("policy_drift_blocked");
     if (snapshot.type !== "policy_drift_blocked") return;
     expect(snapshot.driftKind).toBe("project_deleted");
@@ -106,11 +140,11 @@ describe("Studio approve - commit-time project drift", () => {
   });
 
   it("rejects in-tx with `scope_changed` when the scope version moved", async () => {
-    const query = scriptClient(studioRow(), {
+    const { client } = scriptClient(studioRow(), {
       scope_version: 5,
       permission: "full",
     });
-    const snapshot = await buildApproveSnapshot({ query } as never, APPROVAL_ID);
+    const snapshot = await buildApproveSnapshot(client, APPROVAL_ID);
     expect(snapshot.type).toBe("policy_drift_blocked");
     if (snapshot.type !== "policy_drift_blocked") return;
     expect(snapshot.driftKind).toBe("scope_changed");
@@ -119,11 +153,11 @@ describe("Studio approve - commit-time project drift", () => {
   });
 
   it("rejects in-tx when the PROJECT permission was tightened after enqueue", async () => {
-    const query = scriptClient(studioRow(), {
+    const { client } = scriptClient(studioRow(), {
       scope_version: 4,
       permission: "restricted",
     });
-    const snapshot = await buildApproveSnapshot({ query } as never, APPROVAL_ID);
+    const snapshot = await buildApproveSnapshot(client, APPROVAL_ID);
     expect(snapshot.type).toBe("policy_drift_blocked");
     if (snapshot.type !== "policy_drift_blocked") return;
     // Policy drift, not a refusal by an owner: nobody cancelled the action.
@@ -136,11 +170,11 @@ describe("Studio approve - commit-time project drift", () => {
   it("still runs the session-mirror check first, and reports it as such", async () => {
     // The mirror drifted and the project did not. The existing B-001 outcome
     // must still fire, with no Studio reason attached to it.
-    const query = scriptClient(
+    const { client, query } = scriptClient(
       studioRow({ session_permission_live: "restricted" }),
       { scope_version: 4, permission: "full" },
     );
-    const snapshot = await buildApproveSnapshot({ query } as never, APPROVAL_ID);
+    const snapshot = await buildApproveSnapshot(client, APPROVAL_ID);
     expect(snapshot.type).toBe("policy_drift_blocked");
     if (snapshot.type !== "policy_drift_blocked") return;
     expect(snapshot.driftKind).toBe("session_permission");
@@ -151,11 +185,11 @@ describe("Studio approve - commit-time project drift", () => {
   });
 
   it("approves when the project still matches, locking it LAST and FOR UPDATE", async () => {
-    const query = scriptClient(studioRow(), {
+    const { client, query } = scriptClient(studioRow(), {
       scope_version: 4,
       permission: "full",
     });
-    const snapshot = await buildApproveSnapshot({ query } as never, APPROVAL_ID);
+    const snapshot = await buildApproveSnapshot(client, APPROVAL_ID);
     expect(snapshot.type).toBe("approved_in_tx");
     const statements = query.mock.calls.map((c) => String(c[0]));
     const rowsAt = statements.findIndex((s) => s.includes("FROM approval_intents i"));
@@ -166,11 +200,11 @@ describe("Studio approve - commit-time project drift", () => {
   });
 
   it("never reads a project row for an agent approval", async () => {
-    const query = scriptClient(
+    const { client, query } = scriptClient(
       studioRow({ origin: "agent", project_id: null, scope_version_at_enqueue: null }),
       undefined,
     );
-    const snapshot = await buildApproveSnapshot({ query } as never, APPROVAL_ID);
+    const snapshot = await buildApproveSnapshot(client, APPROVAL_ID);
     expect(snapshot.type).toBe("approved_in_tx");
     const statements = query.mock.calls.map((c) => String(c[0]));
     expect(statements.some((s) => s.includes("FROM projects"))).toBe(false);
@@ -185,9 +219,12 @@ describe("Studio approve - commit-time project drift", () => {
  */
 describe("expiry is recorded as a typed reason on Studio rows", () => {
   it("stamps `expired` when the expiry path rejects a Studio row", async () => {
-    const query = scriptClient(studioRow(), { scope_version: 4, permission: "full" });
+    const { client } = scriptClient(studioRow(), {
+      scope_version: 4,
+      permission: "full",
+    });
     const snapshot = await buildRejectSnapshot(
-      { query } as never,
+      client,
       APPROVAL_ID,
       TOOL_RESULT_EXPIRED_REASON,
     );
@@ -200,18 +237,21 @@ describe("expiry is recorded as a typed reason on Studio rows", () => {
   });
 
   it("writes NULL for an ordinary reject reason, which is not a refusal at all", async () => {
-    const query = scriptClient(studioRow(), { scope_version: 4, permission: "full" });
-    await buildRejectSnapshot({ query } as never, APPROVAL_ID, "user said no");
+    const { client } = scriptClient(studioRow(), {
+      scope_version: 4,
+      permission: "full",
+    });
+    await buildRejectSnapshot(client, APPROVAL_ID, "user said no");
     expect(markDecisionWith.mock.calls[0]?.[1].refusalReason).toBeNull();
   });
 
   it("leaves an AGENT row's column NULL, exactly as before", async () => {
-    const query = scriptClient(
+    const { client } = scriptClient(
       studioRow({ origin: "agent", project_id: null }),
       undefined,
     );
     await buildRejectSnapshot(
-      { query } as never,
+      client,
       APPROVAL_ID,
       TOOL_RESULT_EXPIRED_REASON,
     );
@@ -219,11 +259,11 @@ describe("expiry is recorded as a typed reason on Studio rows", () => {
   });
 
   it("stamps it on the approve-time auto-expiry too", async () => {
-    const query = scriptClient(
+    const { client } = scriptClient(
       studioRow({ expires_at: new Date(Date.now() - 60_000) }),
       { scope_version: 4, permission: "full" },
     );
-    const snapshot = await buildApproveSnapshot({ query } as never, APPROVAL_ID);
+    const snapshot = await buildApproveSnapshot(client, APPROVAL_ID);
     expect(snapshot.type).toBe("expired_in_tx");
     expect(markDecisionWith.mock.calls[0]?.[1]).toMatchObject({
       refusalReason: "expired",

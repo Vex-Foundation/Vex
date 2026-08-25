@@ -62,6 +62,7 @@ import {
 } from "@tools/evm-chains/native-value-authorization/index.js";
 import {
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
   confirmActivityEvent,
   failActivityEvent,
@@ -79,18 +80,23 @@ import type { NativeFeeLegPlan } from "./plan.js";
  * reached the network) are different truths, and the audit surface must be able
  * to tell them apart.
  */
-export interface NativeFeeCollection {
-  readonly collection:
-    | "confirmed"
-    | "confirmed_unrecorded"
-    | "reverted"
-    | "unconfirmed"
-    | "not_attempted"
-    | "not_charged";
-  /** Plain-language, agent-facing. Always states that the action itself is unaffected. */
-  readonly collectionNote: string;
-  readonly txHash: string | null;
-}
+export type NativeFeeCollection =
+  | {
+      readonly collection: "confirmed" | "confirmed_unrecorded";
+      /** Plain-language, agent-facing. Always states that the action itself is unaffected. */
+      readonly collectionNote: string;
+      readonly txHash: string;
+    }
+  | {
+      readonly collection: "reverted" | "unconfirmed";
+      readonly collectionNote: string;
+      readonly txHash: string;
+    }
+  | {
+      readonly collection: "not_attempted" | "not_charged";
+      readonly collectionNote: string;
+      readonly txHash: null;
+    };
 
 /**
  * The caller's POST-STAGE, PRE-SUBMIT gate. `"refuse"` means the signed bytes
@@ -190,6 +196,7 @@ export async function runNativeFeeLeg(
       input.signer,
       plan.txParams,
       {
+        onNonceReserved: (request) => reserveActivityEvmNonce(feeRowId, request),
         onHashStaged: async (handles) => {
           // FIRST STATEMENT of the hook, before anything that can throw: the
           // bytes are already signed by the time this callback is entered, and

@@ -2,11 +2,10 @@
  * The mechanics both wallet-intent tables share, and NOTHING else.
  *
  * `wallet_intents` (transfers) and `wallet_transaction_intents` (generic
- * signing) do NOT share a state machine: seven statuses against nine, one
- * evidence rule that says "tx_hash MAY be set" against one that splits three
- * ways on a failure stage, and two different confirms that must not be able to
- * consume each other's rows. Extracting a common lifecycle would mean inventing
- * a superset nobody implements.
+ * signing) do NOT share a state machine: transfer-specific review and linked
+ * activity states against generic transaction failure stages, plus two different
+ * confirms that must not consume each other's rows. Extracting a common
+ * lifecycle would mean inventing a superset nobody implements.
  *
  * What genuinely coincides is smaller and real:
  *

@@ -18,12 +18,11 @@ import { EventEmitter } from "node:events";
 
 import { describe, expect, it } from "vitest";
 
-import type { Socket } from "node:net";
-
 import {
   StudioOutboundQueue,
   STUDIO_MAX_PENDING_OUTBOUND,
 } from "../mcp-host/outbound-queue.js";
+import { testSocket } from "./socket-test-adapter.js";
 
 /**
  * A socket whose writable side is BLOCKED on demand.
@@ -71,7 +70,7 @@ function makeQueue(socket: BlockedSocket, options: {
   readonly maxPending?: number;
   readonly onOverflow?: (reason: string, pending: number) => void;
 } = {}): StudioOutboundQueue {
-  return new StudioOutboundQueue(socket as unknown as Socket, {
+  return new StudioOutboundQueue(testSocket(socket), {
     ...(options.maxPending === undefined ? {} : { maxPending: options.maxPending }),
     ...(options.onOverflow === undefined
       ? {}

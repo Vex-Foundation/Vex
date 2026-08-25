@@ -19,15 +19,14 @@
  * releasing it once the transaction has been published. This module is the
  * repo-native equivalent of that ownership - the same shape, none of its code.
  *
- * ## Scope: IN-PROCESS, and that is sufficient here
+ * ## Scope: live single-flight plus durable allocation
  *
  * The wallets this guards are the user's self-custodial keys, and the Vex main
  * process is the ONLY signer for them: the renderer has no key material, the
  * Studio MCP surface dispatches back through this same process, and the repair
- * lanes never sign. A cross-process lock would add a durable resource with its
- * own liveness and recovery model to guard a race that cannot cross a process.
- * If a second signing process is ever introduced, this owner is the seam that
- * must become durable - it is deliberately the only place the decision lives.
+ * lanes never sign. This owner serializes live work in that process. The nonce
+ * itself is reserved in Postgres before signing, so a process restart cannot
+ * forget an unresolved transaction and reuse its nonce.
  *
  * ## LOCK ORDER (documented because a second lock is where deadlocks are born)
  *
@@ -41,8 +40,8 @@
  *
  * The invariant that keeps this deadlock-free is the reverse direction:
  * NOTHING MAY ACQUIRE A NONCE OWNER WHILE HOLDING THE SESSION CONTROL LOCK.
- * There is one acquisition site (`signStageBroadcast`'s deferred arm) and it
- * holds no transaction and no lock when it asks.
+ * Every acquisition happens before a database reservation and while no
+ * transaction or session-control lock is held.
  *
  * ## Waiting is BOUNDED and fails closed
  *

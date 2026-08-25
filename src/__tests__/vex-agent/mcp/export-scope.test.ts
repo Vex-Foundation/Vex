@@ -181,7 +181,11 @@ describe("Studio MCP export scope - the document agrees with the predicate", () 
     const disagreements: string[] = [];
     for (const row of DOC_ROWS) {
       for (const docName of row.docNames) {
-        const liveName = DOC_NAME_TO_LIVE_NAME[docName]!;
+        const liveName = DOC_NAME_TO_LIVE_NAME[docName];
+        if (liveName === undefined) {
+          disagreements.push(`${row.group}: no live mapping for ${docName}`);
+          continue;
+        }
         const actual = isExportedInternalTool(liveName);
         if (actual !== row.exported) {
           disagreements.push(
@@ -195,9 +199,14 @@ describe("Studio MCP export scope - the document agrees with the predicate", () 
   });
 
   it("every live internal tool appears in the document", () => {
-    const documented = new Set(
-      DOC_ROWS.flatMap((row) => row.docNames.map((name) => DOC_NAME_TO_LIVE_NAME[name]!)),
-    );
+    const documented = new Set<string>();
+    for (const row of DOC_ROWS) {
+      for (const name of row.docNames) {
+        const liveName = DOC_NAME_TO_LIVE_NAME[name];
+        if (liveName === undefined) throw new Error(`no live mapping for ${name}`);
+        documented.add(liveName);
+      }
+    }
     // `ToolSearch` and `execute_tool` are decided in the meta row, which names
     // them in prose rather than in the comma list the parser reads.
     documented.add(EXPORTED_TOOL_SEARCH_NAME);

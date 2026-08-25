@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
+import pg from "pg";
 import type { PoolClient } from "pg";
 
 import { getUnresolvedMoneyStateForSession } from "@vex-agent/db/repos/approval-intents/money-state.js";
@@ -22,12 +23,19 @@ import { WALLET_TRANSACTION_INTENT_STATUSES } from "@vex-agent/db/contracts/wall
 let issuedSql = "";
 
 function scriptedClient(rows: readonly Record<string, unknown>[]): PoolClient {
-  return {
+  return Object.assign(new pg.Client(), {
+    release(): void {},
     query: vi.fn(async (sql: string) => {
       issuedSql = sql;
-      return { rows: [...rows] };
+      return {
+        command: "SELECT",
+        rowCount: rows.length,
+        oid: 0,
+        fields: [],
+        rows: [...rows],
+      };
     }),
-  } as unknown as PoolClient;
+  });
 }
 
 /** The whitespace-normalized statement, so the assertions read like the SQL does. */

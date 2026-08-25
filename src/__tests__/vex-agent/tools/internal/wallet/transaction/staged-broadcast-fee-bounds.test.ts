@@ -15,6 +15,15 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  type Chain,
+  type Transport,
+} from "viem";
+import { parseAccount } from "viem/accounts";
+import { base } from "viem/chains";
 
 vi.mock("@tools/evm-chains/dependent-leg-gas-estimate.js", () => ({
   estimateGasForPlanLeg: async () => 21_000n,
@@ -33,8 +42,13 @@ const {
   StagedFeeBoundsExceededError,
 } = await import("@tools/evm-chains/staged-broadcast.js");
 
-const ACCOUNT = { address: "0x1111111111111111111111111111111111111111" };
+const ACCOUNT = { address: "0x1111111111111111111111111111111111111111" as const };
 const TO = "0x2222222222222222222222222222222222222222";
+const TEST_CHAIN: Chain = base;
+
+function testTransport(): Transport {
+  return http("http://127.0.0.1:1");
+}
 
 interface Trace {
   signed: number;
@@ -50,9 +64,12 @@ interface Trace {
  */
 function harness(fill: Record<string, unknown>) {
   const trace: Trace = { signed: 0, staged: 0, sent: 0, requested: null };
-  const walletClient = {
-    account: ACCOUNT,
-    chain: { id: 8453 },
+  const walletClient = Object.assign(createWalletClient({
+    account: parseAccount(ACCOUNT.address),
+    chain: TEST_CHAIN,
+    transport: testTransport(),
+  }), {
+    chain: TEST_CHAIN,
     prepareTransactionRequest: async (request: Record<string, unknown>) => {
       trace.requested = request;
       return { ...request, nonce: 7, ...fill };
@@ -61,14 +78,18 @@ function harness(fill: Record<string, unknown>) {
       trace.signed += 1;
       return "0xdeadbeef";
     },
-  };
-  const publicClient = {
+  });
+  const publicClient = Object.assign(createPublicClient({
+    chain: TEST_CHAIN,
+    transport: testTransport(),
+  }), {
     sendRawTransaction: async () => {
       trace.sent += 1;
       return "0xhash";
     },
-  };
+  });
   const hooks = {
+    onNonceReserved: async (request: { nodePendingNonce: number }) => request.nodePendingNonce,
     onHashStaged: async () => {
       trace.staged += 1;
     },
@@ -77,19 +98,17 @@ function harness(fill: Record<string, unknown>) {
   return { trace, walletClient, publicClient, hooks };
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-function run(h: ReturnType<typeof harness>, bounds: unknown) {
+function run(h: ReturnType<typeof harness>, bounds: Parameters<typeof signStageBroadcast>[6]) {
   return signStageBroadcast(
-    h.publicClient as any,
-    h.walletClient as any,
+    h.publicClient,
+    h.walletClient,
     { to: TO as `0x${string}`, data: "0x" as `0x${string}`, value: 0n },
     h.hooks,
     undefined,
     undefined,
-    bounds as any,
+    bounds,
   );
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 const EIP1559_BOUNDS = {
   mode: "eip1559" as const,
@@ -158,11 +177,13 @@ describe("signStageBroadcast bounds", () => {
     const h = harness({ maxFeePerGas: 9_000_000_000n, maxPriorityFeePerGas: 1_000_000n });
     await run(h, EIP1559_BOUNDS).catch((err: unknown) => {
       expect(err).toBeInstanceOf(StagedFeeBoundsExceededError);
-      const refusal = err as InstanceType<typeof StagedFeeBoundsExceededError>;
-      expect(refusal.field).toBe("maxFeePerGas");
-      expect(refusal.actual).toBe("9000000000");
-      expect(refusal.approved).toBe("1000000000");
-      expect(refusal.message).toContain("Nothing was signed");
+      if (!(err instanceof StagedFeeBoundsExceededError)) {
+        throw new Error("expected StagedFeeBoundsExceededError");
+      }
+      expect(err.field).toBe("maxFeePerGas");
+      expect(err.actual).toBe("9000000000");
+      expect(err.approved).toBe("1000000000");
+      expect(err.message).toContain("Nothing was signed");
     });
   });
 

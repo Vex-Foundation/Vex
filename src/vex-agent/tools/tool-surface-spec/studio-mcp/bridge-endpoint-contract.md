@@ -29,6 +29,12 @@ classes and shutdown state machine (3.4, 3.5). Nothing a v1 host or bridge
 already observed changed shape; the resolver correction is described in 1.1.1
 and landed in all three implementations in the same change.
 
+SECURITY AMENDMENT after the independent backend audit: Unix endpoint use now
+pins both the lexical ancestor chain and its realpath-resolved target chain by
+filesystem identity (1.5). An identity change refuses locally with the shared
+code `endpoint_ancestor_changed`, and the exact diagnostic is frozen in the
+machine-readable companion fixture. This is additive under section 5.
+
 - Host side: `vex-app/src/main/studio/mcp-host.ts` plus `mcp-host/endpoint.ts`,
   `mcp-host/handshake.ts`, `mcp-host/connection.ts`,
   `mcp-host/outbound-queue.ts`, and the engine's
@@ -351,6 +357,52 @@ Removing an existing socket file is NEVER a blind unlink. In order:
 The socket itself is `chmod`ed to 0600 after bind, in addition to the 0700
 directory.
 
+#### 1.5.1 Ancestor identity between validation and use
+
+Ownership, mode and immediate-parent validation are snapshots. They are not
+permission to keep using the same path after an ancestor has been replaced.
+On Unix, both owners therefore capture every existing ancestor from the
+filesystem root through the endpoint parent before transport use. Each entry
+is pinned by kind plus device/inode identity. The host verifies the snapshot
+before stale removal, immediately before unlink, immediately before bind, and
+after bind. The bridge captures before dial and verifies after connect but
+before sending the project handshake.
+
+The path walk has TWO views. The LEXICAL chain records an intermediate symlink
+itself. A lexical chain alone does not record the real target ancestors behind
+that link, so a stable link plus a replaced target chain could otherwise pass
+verification. Both owners also resolve the endpoint parent through realpath
+and pin every ancestor in that resolved chain. Failure to resolve or inspect
+either chain refuses before transport use.
+
+| requirement | refusal code |
+| --- | --- |
+| every lexical and realpath-resolved ancestor retains its captured kind and filesystem identity | `endpoint_ancestor_changed` |
+
+The emitted local-refusal sentence is frozen, including its code prefix:
+
+```
+endpoint_ancestor_changed: The Vex Studio endpoint ancestor <absolute-path> changed before use.
+```
+
+The `endpointAncestorIdentity.changed` golden vector supplies one path and the
+complete expected sentence. The TypeScript host and Go bridge independently
+format and test that same vector, so code or sentence drift is a red test.
+
+ACCEPTED RESIDUAL, STATED PLAINLY. These checks are path-based because Node has
+no descriptor-relative socket bind/unlink API, and Go has no matching
+cross-platform standard-library primitive. If a filesystem removes and
+recreates an entry between checks with the same kind, device and immediately
+reused inode, identity comparison cannot distinguish it from the captured
+entry. The held-original race tests prevent inode reuse in the measured attack
+case, but they do not claim that inode reuse is impossible.
+
+The prior INTERMEDIATE-SYMLINK residual is not accepted silently: the lexical
+chain still cannot describe a symlink target, which is why the realpath chain
+is mandatory too. Replacing a target ancestor in the ordinary case changes an
+identity in that second chain and refuses. The same-path device/inode reuse
+residual above applies to both views.
+
 ### 1.6 The Windows transport gate, and how it opens
 
 THE WINDOWS NAMED-PIPE TRANSPORT IS RUNTIME-DISABLED. Both owners hold one
@@ -627,7 +679,7 @@ not fit is REPORTED with its exact omitted byte count, never silently dropped.
 | --- | --- | --- |
 | 0 | the session ended cleanly | client stdin EOF after the drain, or peer EOF |
 | 1 | usage | no project id, a non-UUID project id, an unknown argument |
-| 2 | endpoint refused locally | every `RefusalCode` in section 1.4, including `override_pipe_on_unix`, plus `windows_pending_platform_proof` from the section 1.6 gate. `windows_probe_pending` was REMOVED with the Windows adoption in section 1.2 and is no longer a code either side emits |
+| 2 | endpoint refused locally | every `RefusalCode` in sections 1.4 and 1.5.1, including `override_pipe_on_unix` and `endpoint_ancestor_changed`, plus `windows_pending_platform_proof` from the section 1.6 gate. `windows_probe_pending` was REMOVED with the Windows adoption in section 1.2 and is no longer a code either side emits |
 | 3 | dial failed | ENOENT, ECONNREFUSED, EACCES, or the dial timeout |
 | 4 | handshake failed | write failure, ack deadline, ack over the bound, or an ack that fails the strict parse |
 | 5 | refused `unknown_project` | ack |

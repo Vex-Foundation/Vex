@@ -27,6 +27,7 @@ import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
 import {
   createAgentActivityIntent,
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
   confirmLaunchWithOutputIdentity,
   fillLaunchOutputIdentityOnConfirmed,
@@ -106,6 +107,7 @@ export async function broadcastLaunch(x: BroadcastLaunchInput): Promise<ToolResu
   let outcome: StagedBroadcastOutcome;
   try {
     outcome = await signStageBroadcast(x.publicClient, x.walletClient, x.plan.txParams, {
+      onNonceReserved: (request) => reserveActivityEvmNonce(launchRowId, request),
       onHashStaged: async (handles) => {
         signedLocally = true;
         const res = await markActivityBroadcast(launchRowId, handles);

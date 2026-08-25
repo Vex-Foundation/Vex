@@ -52,6 +52,7 @@ import { riskLevelFromActionKind } from "@vex-agent/tools/risk-level.js";
 import {
   buildApprovalToolCall,
   computeRequestDigest,
+  computeStudioAuthorityDigest,
 } from "./tool-call-envelope.js";
 import {
   buildIntentPreview,
@@ -62,6 +63,44 @@ import { buildDurableApprovalCard } from "./durable-approval-card.js";
 
 /** The binding contract, as `ToolResult` declares it structurally. */
 type PreparedApprovalBinding = NonNullable<ToolResult["preparedApprovalBinding"]>;
+
+export interface ApprovalIntentPreviewInput {
+  readonly toolName: string;
+  readonly toolArgs: Record<string, unknown>;
+  readonly result: ToolResult;
+  readonly trustedPreview?: IntentPreview;
+  readonly preparedApprovalBinding?: PreparedApprovalBinding;
+}
+
+/**
+ * The one complete-card builder for enqueue and Studio's immediate pre-dispatch
+ * revalidation. Keeping the typed prequote/risk channels here prevents the
+ * checking side from rebuilding a narrower card than the user saw.
+ */
+export function buildApprovalIntentPreview(
+  input: ApprovalIntentPreviewInput,
+): IntentPreview {
+  const binding = input.preparedApprovalBinding;
+  return (
+    (binding === undefined
+      ? undefined
+      : buildDurableApprovalCard(input.toolName, binding))
+    ?? input.trustedPreview
+    ?? buildIntentPreview(
+      input.toolName,
+      input.toolArgs,
+      (input.result.prequote || input.result.riskPreview !== undefined)
+        ? {
+            prequoteVerdict: input.result.prequote?.verdict,
+            fotTax: input.result.prequote?.fotTax,
+            termLock: input.result.prequote?.termLock,
+            feePreview: input.result.prequote?.feePreview,
+            riskPreview: input.result.riskPreview,
+          }
+        : undefined,
+    )
+  );
+}
 
 /**
  * Puzzle 5 phase 3 - TTL stamped at enqueue (not at approve). The approve
@@ -171,33 +210,17 @@ export async function enqueueApprovalIntentWithGate(
   // ToolResult - NOT raw args) into the preview so restricted-mode approval
   // surfaces `pass` / `unknown` ("UNVERIFIED") before the human approves.
   const binding = input.preparedApprovalBinding;
-  const intentPreview =
-    // ONE builder, shared with the confirm handler's revalidation - see
-    // `./durable-approval-card.ts` for why the card the human reads may not have
-    // a second, narrower definition on the checking side.
-    (binding === undefined ? undefined : buildDurableApprovalCard(input.toolName, binding)) ??
-    input.trustedPreview ??
-    buildIntentPreview(
-      input.toolName,
-      input.toolArgs,
-      (result.prequote || result.riskPreview !== undefined)
-        ? {
-            prequoteVerdict: result.prequote?.verdict,
-            fotTax: result.prequote?.fotTax,
-            // Wave 5 (Pendle): the term-lock maturity rides the same typed channel;
-            // buildIntentPreview renders the fixed lock warning (never from args).
-            termLock: result.prequote?.termLock,
-            // W5 (design §6 R4): the Jupiter fee-bearing disclosure rides the
-            // same typed channel; buildIntentPreview renders it (never from args).
-            feePreview: result.prequote?.feePreview,
-            // B1/B3 (Batch 5): the Jupiter Lend Borrow LTV/health disclosure
-            // rides its OWN top-level `ToolResult.riskPreview` sibling field
-            // (it has no matched swap/bridge `prequote` at all) into the same
-            // typed channel; buildIntentPreview renders it (never from args).
-            riskPreview: result.riskPreview,
-          }
-        : undefined,
-    );
+  const intentPreview = buildApprovalIntentPreview({
+    toolName: input.toolName,
+    toolArgs: input.toolArgs,
+    result,
+    ...(input.trustedPreview === undefined
+      ? {}
+      : { trustedPreview: input.trustedPreview }),
+    ...(binding === undefined
+      ? {}
+      : { preparedApprovalBinding: binding }),
+  });
   const intentPolicy = buildPolicySnapshot(input.toolContext);
   // The INTENT's own expiry floors the default, so an approval can never
   // outlive the proposal it would broadcast - a Solana blockhash is valid for
@@ -206,16 +229,20 @@ export async function enqueueApprovalIntentWithGate(
   // The envelope is built ONCE and both stored and digested, so the digest
   // provably describes the value that will be dispatched. The binding travels
   // INSIDE it, which is what folds the proposal digest into the canonical
-  // request digest rather than bolting a second digest on beside it.
+  // authority digest rather than bolting a second digest on beside it.
   const envelope = buildApprovalToolCall(input.toolName, input.toolArgs, binding);
-  // BOTH LANES, not Studio only. The digest was introduced for the Studio
-  // dispatch, and while the agent lane stored `null` a CONSISTENT co-edit of
+  // Both lanes record a digest, with different authority contracts. Studio
+  // binds the complete card, expiry and project identity. The agent lane binds
+  // the envelope as before. While that lane stored `null`, a consistent co-edit of
   // `approval_intents.preview_json` AND `approval_queue.tool_call` passed every
   // check the agent resume ran: the card matched the envelope because both had
   // been changed together, and nothing else recorded what the pair looked like
   // when the human approved. The digest is that record, and the agent lane
-  // dispatches the same money-path tools, so it gets the same one.
-  const requestDigest = computeRequestDigest(envelope);
+  // dispatches the same money-path tools, so it keeps its envelope digest.
+  const requestDigest =
+    input.origin === "studio_mcp"
+      ? computeStudioEnqueueAuthorityDigest(input, envelope, intentPreview, intentExpiresAt)
+      : computeRequestDigest(envelope);
 
   const outcome = await withTransaction(async (client): Promise<ApprovalEnqueueOutcome> => {
     const verdict = await gate(client);
@@ -300,6 +327,26 @@ export async function enqueueApprovalIntentWithGate(
     });
   }
   return outcome;
+}
+
+function computeStudioEnqueueAuthorityDigest(
+  input: EnqueueApprovalInput,
+  envelope: Record<string, unknown>,
+  preview: IntentPreview,
+  expiresAt: string,
+): string {
+  if (input.projectId === undefined || input.scopeVersion === undefined) {
+    throw new Error("Studio approval authority identity is incomplete");
+  }
+  return computeStudioAuthorityDigest({
+    envelope,
+    preview,
+    expiresAt,
+    sessionId: input.sessionId,
+    projectId: input.projectId,
+    scopeVersion: input.scopeVersion,
+    permission: input.permission,
+  });
 }
 
 /**

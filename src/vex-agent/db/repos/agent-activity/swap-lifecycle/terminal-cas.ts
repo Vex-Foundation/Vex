@@ -10,18 +10,16 @@
  * ## Why the client-bound twin exists
  *
  * The pool-level functions open their OWN transaction and take the session
- * control lock inside it. That is correct for a handler return or a repair
- * sweep, where the write is the whole transaction. It is WRONG for a caller
- * that must terminalize several coupled rows atomically: such a caller already
- * holds the lock and a transaction, and a nested pool-level write would run on
- * a DIFFERENT connection - it could not see the caller's uncommitted row
- * changes, it would block on the caller's own row locks, and its commit would
- * not roll back with the caller's.
+ * control lock inside it. When the activity belongs to a generic transaction
+ * intent, that transaction also settles the linked WTI and PE rows through the
+ * coordinator in `../linked-transaction-settlement.ts`. It is still WRONG for
+ * a caller that already owns a wider settlement transaction to nest a
+ * pool-level write: the new connection could not see uncommitted sibling rows
+ * and could not roll back with them.
  *
- * So the twin does exactly the same CAS, the same fence, and the same
- * `{applied, row}` reporting, on the CALLER's client - including the MISS READ,
- * which must come from the same connection or it would report a pre-transaction
- * snapshot as the current row.
+ * So the twin does exactly the same AA CAS, the same fence, and the same
+ * `{applied, row}` reporting on the CALLER's client, including the miss read.
+ * The caller owns every linked sibling write in that case.
  *
  * The two arms share one implementation, so the CAS predicate, the guards and
  * the fence can never drift apart between them.
@@ -37,6 +35,10 @@ import type { AgentActivityEvent, AgentActivityFailureCode, CasResult } from "..
 import type { ConfirmationSource } from "../provenance-vocabulary.js";
 import { resolveFastLane } from "../fast-lane-signal.js";
 import { getActivityEventById, getActivityEventByIdWith } from "./reads.js";
+import {
+  settleLinkedActivityRows,
+  type LinkedIntentRepairOutcome,
+} from "../linked-transaction-settlement.js";
 import logger from "@utils/logger.js";
 
 /**
@@ -183,7 +185,14 @@ export async function confirmActivityEvent(
   input: ConfirmActivityEventInput,
   context: TerminalWriteContext = HANDLER_RETURN,
 ): Promise<TerminalCasResult> {
-  return runConfirmActivityEvent(null, id, input, context);
+  const sessionId = await resolveActivitySessionByRowId(id);
+  return settleLinkedActivityRows({
+    activityId: id,
+    sessionId,
+    intentOutcome: "confirmed",
+    activityTarget: { status: "confirmed" },
+    activityWrite: (client) => runConfirmActivityEvent(client, id, input, context),
+  });
 }
 
 /**
@@ -331,13 +340,39 @@ export async function confirmActivityEventStatusOnly(
   source: Extract<ConfirmationSource, "receipt_status_only_evm" | "receipt_status_only_solana">,
   context: TerminalWriteContext = HANDLER_RETURN,
 ): Promise<TerminalCasResult> {
+  const sessionId = await resolveActivitySessionByRowId(id);
+  return settleLinkedActivityRows({
+    activityId: id,
+    sessionId,
+    intentOutcome: "confirmed",
+    activityTarget: { status: "confirmed" },
+    activityWrite: (client) => runConfirmActivityEventStatusOnly(client, id, source, context),
+  });
+}
+
+/** Status-only confirmation on the caller's existing transaction and lock. */
+export async function confirmActivityEventStatusOnlyWith(
+  client: PoolClient,
+  id: number,
+  source: Extract<ConfirmationSource, "receipt_status_only_evm" | "receipt_status_only_solana">,
+  context: TerminalWriteContext = HANDLER_RETURN,
+): Promise<TerminalCasResult> {
+  return runConfirmActivityEventStatusOnly(client, id, source, context);
+}
+
+async function runConfirmActivityEventStatusOnly(
+  conn: WriteConnection,
+  id: number,
+  source: Extract<ConfirmationSource, "receipt_status_only_evm" | "receipt_status_only_solana">,
+  context: TerminalWriteContext,
+): Promise<TerminalCasResult> {
   const fence = claimFence(context, 3);
   // `settlement_source` is deliberately UNTOUCHED: this sweep proved inclusion
   // and learned nothing whatsoever about the amounts, so it has no business
   // stating how they were established - that is a separate fact with its own
   // writer, and a late decode must still be able to record it.
   const row = await runTerminalCas(
-    null,
+    conn,
     () => resolveActivitySessionByRowId(id),
       `UPDATE agent_activity
         SET status = 'confirmed', confirmed_at = NOW(), updated_at = NOW(),
@@ -354,7 +389,7 @@ export async function confirmActivityEventStatusOnly(
       [id, source, ...fence.params],
   );
   if (row) return { applied: true, row: resolveFastLane(mapRow(row)) };
-  return terminalMiss(null, id, "confirmActivityEventStatusOnly", context);
+  return terminalMiss(conn, id, "confirmActivityEventStatusOnly", context);
 }
 
 /**
@@ -417,7 +452,29 @@ export async function failActivityEvent(
   input: FailActivityEventInput,
   context: TerminalWriteContext = HANDLER_RETURN,
 ): Promise<TerminalCasResult> {
-  return runFailActivityEvent(null, id, input, context);
+  const intentOutcome = linkedIntentOutcomeForFailure(input.failureCode);
+  if (intentOutcome === null) return runFailActivityEvent(null, id, input, context);
+
+  const sessionId = await resolveActivitySessionByRowId(id);
+  return settleLinkedActivityRows({
+    activityId: id,
+    sessionId,
+    intentOutcome,
+    activityTarget: {
+      status: "definitively_failed",
+      failureCode: input.failureCode,
+    },
+    activityWrite: (client) => runFailActivityEvent(client, id, input, context),
+  });
+}
+
+function linkedIntentOutcomeForFailure(
+  failureCode: AgentActivityFailureCode,
+): LinkedIntentRepairOutcome | null {
+  if (failureCode === "mined_revert") return "reverted";
+  if (failureCode === "solana_signature_expired") return "superseded_unproven";
+  if (failureCode === "broadcast_error") return "crashed_before_broadcast";
+  return null;
 }
 
 /**
@@ -430,7 +487,21 @@ export async function failActivityEventWith(
   input: FailActivityEventInput,
   context: TerminalWriteContext = HANDLER_RETURN,
 ): Promise<TerminalCasResult> {
-  return runFailActivityEvent(client, id, input, context);
+  return runFailActivityEvent(client, id, input, context, false);
+}
+
+/**
+ * Client-bound failure CAS for proof that staging never happened. The extra
+ * hashless predicate is checked by the winning UPDATE, not by an earlier read,
+ * so a signer that stages concurrently makes this write miss and keeps the
+ * row pending for chain observation.
+ */
+export async function failHashlessActivityEventWith(
+  client: PoolClient,
+  id: number,
+  input: FailActivityEventInput,
+): Promise<TerminalCasResult> {
+  return runFailActivityEvent(client, id, input, HANDLER_RETURN, true);
 }
 
 async function runFailActivityEvent(
@@ -438,6 +509,7 @@ async function runFailActivityEvent(
   id: number,
   input: FailActivityEventInput,
   context: TerminalWriteContext,
+  requireHashless: boolean = false,
 ): Promise<TerminalCasResult> {
   assertFailureCode(input.failureCode);
   // Under the session control lock - see `./session-lock.ts`. DB-only.
@@ -455,11 +527,11 @@ async function runFailActivityEvent(
             -- live lease and token - state that outlives the thing it describes
             -- and that a late worker could still try to act on.
             evm_claim_lease_until = NULL, evm_claim_token = NULL
-      WHERE id = $1 AND status = 'pending'${fence.clause}
+      WHERE id = $1 AND status = 'pending'
+        ${requireHashless ? "AND tx_hash IS NULL" : ""}${fence.clause}
       RETURNING *`,
       [id, input.failureCode, sanitizeFailureReason(input.failureReason), ...fence.params],
   );
   if (row) return { applied: true, row: resolveFastLane(mapRow(row)) };
   return terminalMiss(conn, id, "failActivityEvent", context);
 }
-

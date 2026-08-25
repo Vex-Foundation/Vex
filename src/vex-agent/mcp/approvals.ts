@@ -204,5 +204,18 @@ async function runStudioEnqueueGate(
         + "refused to queue this action. Nothing was executed. Restart Vex and try again.",
     };
   }
+  // The generation read above takes the gate row FOR SHARE and can wait behind
+  // a lock's UPDATE. Main's first availability answer therefore describes the
+  // instant before that wait, not the instant at which this transaction will
+  // insert. Re-read while the gate-row lock is held. If a lock transition
+  // started in between, this transaction writes nothing; releasing it then
+  // lets the generation advance finish.
+  const availabilityAfterGenerationLock = input.readStudioRuntimeAvailability();
+  if (!availabilityAfterGenerationLock.available) {
+    return {
+      kind: "refused",
+      reason: availabilityAfterGenerationLock.reason,
+    };
+  }
   return { kind: "clear", dispatchGeneration: generation };
 }

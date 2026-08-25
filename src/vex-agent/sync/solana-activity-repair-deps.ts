@@ -45,6 +45,7 @@ export function buildProductionSolanaRepairDeps(): SolanaActivitySweepDeps {
   };
 
   return {
+    includeLegacyTransferReview: true,
     /**
      * BATCHED: `getSignatureStatuses` takes an array, so one sweep run costs one
      * round trip for its whole due batch (bounded by

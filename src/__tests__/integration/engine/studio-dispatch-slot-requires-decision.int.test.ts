@@ -80,7 +80,9 @@ async function readExecutionStatus(approvalId: string): Promise<string> {
     "SELECT execution_status FROM approval_intents WHERE approval_id = $1",
     [approvalId],
   );
-  return rows[0]!.execution_status;
+  const row = rows[0];
+  if (row === undefined) throw new Error("Studio approval row missing");
+  return row.execution_status;
 }
 
 beforeEach(async () => {

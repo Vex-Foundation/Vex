@@ -10,7 +10,8 @@
  *   3. ONE transaction under the session control lock (`studio-gate.ts`):
  *      operator-stop gate, dispatch-slot claim FENCED ON THE DISPATCH
  *      GENERATION, project re-check against the ENQUEUE scope version,
- *      manifest identity and request-digest equality;
+ *      manifest identity, authority-digest equality and a fresh complete-card
+ *      rebuild;
  *   4. dispatch;
  *   5. commit the settlement.
  *
@@ -83,12 +84,15 @@ import type { ProjectScope } from "@vex-agent/mcp/project-scope.js";
 import type { ToolResult } from "@vex-agent/tools/types.js";
 
 import { claimResumeContinuation } from "../../continuation.js";
-import { extractToolCall, shortSha256, summarizeErrorForLog } from "../../helpers.js";
+import { shortSha256, summarizeErrorForLog } from "../../helpers.js";
 import type { ApproveSnapshot } from "../../snapshot.js";
 import {
-  approvalRequestDigestMatches,
+  approvalPreviewExactlyMatches,
   checkApprovalManifestIdentity,
+  readStudioApprovalToolCall,
+  studioAuthorityDigestMatches,
 } from "../../tool-call-envelope.js";
+import { buildApprovalIntentPreview } from "../../enqueue.js";
 import {
   ApprovalPostDecisionError,
   type ApprovePrepareOutcome,
@@ -124,7 +128,6 @@ export async function applyStudioApproveSideEffects(
   const projectId = row.project_id;
   const fallbackToolCallId =
     row.queue_tool_call_id ?? row.tool_call_id ?? approvalId;
-  const toolCall = extractToolCall(row.queue_tool_call, fallbackToolCallId);
 
   // 1. Claim. Cannot be busy and cannot mismatch: the Studio arm holds no
   //    lease and has no mission run to flip.
@@ -216,8 +219,8 @@ export async function applyStudioApproveSideEffects(
     return await refusedOutcome(snapshot, continuation, gate);
   }
 
-  // MANIFEST IDENTITY and REQUEST DIGEST, both fail closed and both AFTER the
-  // slot claim, so a refused approval is terminal and cannot be re-dispatched.
+  // MANIFEST IDENTITY and AUTHORITY DIGEST both fail closed and both run AFTER
+  // the slot claim, so a refused approval is terminal and cannot be replayed.
   const identity = checkApprovalManifestIdentity(row.queue_tool_call);
   if (!identity.ok) {
     logger.warn("engine.studio.manifest_identity_refused", {
@@ -230,8 +233,24 @@ export async function applyStudioApproveSideEffects(
       output: identity.refusal,
     });
   }
-  if (!approvalRequestDigestMatches(row.queue_tool_call, row.request_digest)) {
-    logger.warn("engine.studio.request_digest_mismatch", {
+  const expiresAt = normalizedExpiry(row.expires_at);
+  if (
+    expiresAt === null
+    || enqueueScopeVersion === null
+    || !studioAuthorityDigestMatches(
+      {
+        envelope: row.queue_tool_call,
+        preview: row.preview_json,
+        expiresAt,
+        sessionId,
+        projectId: scope.projectId,
+        scopeVersion: Number(enqueueScopeVersion),
+        permission: row.queue_permission_at_enqueue,
+      },
+      row.request_digest,
+    )
+  ) {
+    logger.warn("engine.studio.authority_digest_mismatch", {
       approvalId,
       projectId,
     });
@@ -241,6 +260,52 @@ export async function applyStudioApproveSideEffects(
         "the stored request no longer matches the one this approval was "
         + "granted for",
       ),
+    });
+  }
+
+  const toolCall = readStudioApprovalToolCall(
+    row.queue_tool_call,
+    fallbackToolCallId,
+  );
+  if (toolCall === null) {
+    logger.warn("engine.studio.approval_call_unreadable", {
+      approvalId,
+      projectId,
+    });
+    return settleDispatched(approvalId, snapshot, continuation, {
+      success: false,
+      output: studioRefusalText(
+        "the stored approved call could not be reconstructed safely",
+      ),
+    });
+  }
+
+  // Re-run the unapproved restricted admission immediately before dispatch.
+  // Internal mutators stop at their approval gate; protocol mutators also
+  // rebuild their current prequote/risk disclosures. The complete rebuilt card
+  // must equal the JSON the user approved, including every top-level field and
+  // every critical-argument key.
+  const card = await revalidateStudioApprovalCard(scope, toolCall, row.preview_json);
+  if (!card.ok) {
+    logger.warn("engine.studio.approval_card_revalidation_refused", {
+      approvalId,
+      projectId,
+      reason: card.reason,
+    });
+    return settleDispatched(approvalId, snapshot, continuation, {
+      success: false,
+      output: studioRefusalText(card.refusal),
+    });
+  }
+
+  // The card rebuild above can await provider reads. A lock may begin during
+  // that wait, after the first preflight and after the slot claim. Re-read the
+  // synchronous main-side preflight on the last event-loop turn before the
+  // approved call starts. This is what closes the non-signing mutation window.
+  if (!studioDispatchPreflightAllows()) {
+    return settleDispatched(approvalId, snapshot, continuation, {
+      success: false,
+      output: studioRefusalText(STUDIO_REFUSAL_CAUSES.fence_unproven),
     });
   }
 
@@ -302,6 +367,70 @@ export async function applyStudioApproveSideEffects(
 
   // 5. Settle.
   return settleDispatched(approvalId, snapshot, continuation, result);
+}
+
+type StudioCardRevalidation =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: string; readonly refusal: string };
+
+async function revalidateStudioApprovalCard(
+  scope: ProjectScope,
+  toolCall: NonNullable<ReturnType<typeof readStudioApprovalToolCall>>,
+  storedPreview: unknown,
+): Promise<StudioCardRevalidation> {
+  let admission: Awaited<ReturnType<typeof admitStudioCall>>;
+  try {
+    admission = await admitStudioCall(
+      {
+        name: toolCall.toolName,
+        args: toolCall.toolArgs,
+        toolCallId: toolCall.toolCallId,
+      },
+      buildProjectToolContext({ ...scope, permission: "restricted" }),
+    );
+  } catch (cause) {
+    const summary = summarizeErrorForLog(cause);
+    logger.warn("engine.studio.approval_card_rebuild_failed", {
+      errorKind: summary.errorKind,
+      errorHash: summary.errorHash,
+    });
+    return {
+      ok: false,
+      reason: "rebuild_failed",
+      refusal: "the current approval disclosures could not be rebuilt safely",
+    };
+  }
+  if (admission.result.pendingApproval !== true) {
+    return {
+      ok: false,
+      reason: "approval_no_longer_required",
+      refusal:
+        "the call no longer produced the approval card that was previously shown",
+    };
+  }
+  const rebuilt = buildApprovalIntentPreview({
+    toolName: toolCall.toolName,
+    toolArgs: toolCall.toolArgs,
+    result: admission.result,
+    ...(admission.result.preparedApprovalBinding === undefined
+      ? {}
+      : { preparedApprovalBinding: admission.result.preparedApprovalBinding }),
+  });
+  if (!approvalPreviewExactlyMatches(rebuilt, storedPreview)) {
+    return {
+      ok: false,
+      reason: "card_mismatch",
+      refusal:
+        "the current complete approval card no longer exactly matches the card the user approved",
+    };
+  }
+  return { ok: true };
+}
+
+function normalizedExpiry(value: Date | string | null): string | null {
+  if (value === null) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
 // ── Settlement ──────────────────────────────────────────────────────────

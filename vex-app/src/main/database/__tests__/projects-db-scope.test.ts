@@ -34,7 +34,7 @@
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { Client } from "pg";
+import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectUpdateScopeInput } from "@shared/schemas/projects.js";
 
@@ -42,7 +42,7 @@ const mocks = vi.hoisted(() => ({
   loadConfig: vi.fn(() => ({}) as { projectsRoot?: string }),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   getWalletById: vi.fn(),
-  client: null as unknown as { query: ReturnType<typeof vi.fn> },
+  getClient: vi.fn<() => Client>(),
 }));
 
 vi.mock("@config/store.js", () => ({ loadConfig: mocks.loadConfig }));
@@ -54,8 +54,7 @@ vi.mock("../sessions/connection.js", async () => {
   );
   return {
     ...actual,
-    withClient: async (fn: (c: Client) => Promise<unknown>) =>
-      fn(mocks.client as unknown as Client),
+    withClient: async (fn: (c: Client) => Promise<unknown>) => fn(mocks.getClient()),
   };
 });
 
@@ -83,7 +82,7 @@ function scriptClient(responder: (sql: string) => ScriptedResult | Error) {
       rowCount: outcome.rowCount ?? (outcome.rows?.length ?? 0),
     };
   });
-  mocks.client = { query };
+  mocks.getClient.mockReturnValue(Object.assign(new Client(), { query }));
   return query;
 }
 

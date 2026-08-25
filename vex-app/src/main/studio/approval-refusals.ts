@@ -24,11 +24,11 @@
  *
  * ## Failure posture
  *
- * A refusal that cannot be written is REPORTED, never swallowed into success,
- * and never allowed to propagate into its caller's own guarantee. A lock whose
- * database is gone still scrubs and still blocks dispatch (the generation
- * advance and the revoked signer do that); the durable refusal reconciles on
- * the next scheduled sweep, which expires the rows anyway.
+ * A refusal that cannot be written is reported, never swallowed into success,
+ * and never allowed to propagate into its caller's own guarantee. The lock
+ * transition remains denied, and migration 092 records the typed global cause
+ * with the generation advance. The live recovery owner retries it, and a new
+ * process repairs the same obligation before Studio readiness opens.
  */
 
 import type { PoolClient } from "pg";
@@ -46,6 +46,11 @@ export type StudioRefusalReason =
   | "scope_changed"
   | "vex_quit";
 
+export type StudioGlobalRefusalReason = Extract<
+  StudioRefusalReason,
+  "lock" | "vex_quit"
+>;
+
 /**
  * Refuse EVERY pending Studio intent, whatever project it belongs to. What a
  * Vex lock and an application quit mean.
@@ -56,9 +61,65 @@ export type StudioRefusalReason =
  * safety.
  */
 export async function refuseAllPendingStudioIntents(
-  reason: StudioRefusalReason,
+  reason: StudioGlobalRefusalReason,
 ): Promise<number | null> {
   return runRefusal({ all: true }, reason);
+}
+
+/**
+ * Repair a global refusal obligation left on the runtime-gate row by an older
+ * process. Called before Studio readiness opens. The read, refusal writes and
+ * obligation clear share one transaction, so a crash leaves either the whole
+ * obligation or none of it.
+ */
+export async function repairPendingStudioRefusal(): Promise<boolean> {
+  const correlationId = studioCorrelationId();
+  const dbUrlOutcome = await ensureEngineDbUrl(correlationId);
+  if (!dbUrlOutcome.ok) return false;
+  try {
+    const { withTransaction } = await import("@vex-agent/db/client.js");
+    const { refusePendingStudioIntents, announceStudioRefusals } = await import(
+      "@vex-agent/engine/core/approval-runtime.js"
+    );
+    const {
+      clearStudioPendingGlobalRefusalWith,
+      readStudioPendingGlobalRefusalWith,
+    } = await import("@vex-agent/db/repos/studio-runtime-gate.js");
+    const repaired = await withTransaction(async (client: PoolClient) => {
+      const durableReason = await readStudioPendingGlobalRefusalWith(client);
+      // Every pending Studio request at process start is orphaned: MCP sockets
+      // and their blocked callers cannot survive a process exit. If the prior
+      // process died while Postgres was unavailable, it could not persist a
+      // marker at all, so `vex_quit` is the conservative startup cause.
+      const reason = durableReason ?? "vex_quit";
+      const refused = await refusePendingStudioIntents(
+        client,
+        { all: true },
+        reason,
+      );
+      if (durableReason !== null) {
+        const cleared = await clearStudioPendingGlobalRefusalWith(client, reason);
+        if (!cleared) {
+          throw new Error("Studio pending refusal obligation changed during repair");
+        }
+      }
+      return refused;
+    });
+    announceStudioRefusals(repaired);
+    if (repaired.length > 0) {
+      log.info(
+        `[studio:refusals] startup repaired=${String(repaired.length)} `
+          + `correlationId=${correlationId}`,
+      );
+    }
+    return true;
+  } catch (cause) {
+    log.warn(
+      `[studio:refusals] startup repair failed correlationId=${correlationId}`,
+      cause,
+    );
+    return false;
+  }
 }
 
 /** Refuse ONE pending Studio intent. `true` when the CAS actually committed. */
@@ -99,9 +160,22 @@ async function runRefusal(
     const { refusePendingStudioIntents, announceStudioRefusals } = await import(
       "@vex-agent/engine/core/approval-runtime.js"
     );
-    const refused = await withTransaction((client: PoolClient) =>
-      refusePendingStudioIntents(client, target, reason),
-    );
+    const {
+      clearStudioPendingGlobalRefusalWith,
+      markStudioPendingGlobalRefusalWith,
+    } = await import("@vex-agent/db/repos/studio-runtime-gate.js");
+    const refused = await withTransaction(async (client: PoolClient) => {
+      if ("all" in target && (reason === "lock" || reason === "vex_quit")) {
+        await markStudioPendingGlobalRefusalWith(client, reason);
+        const rows = await refusePendingStudioIntents(client, target, reason);
+        const cleared = await clearStudioPendingGlobalRefusalWith(client, reason);
+        if (!cleared) {
+          throw new Error("Studio pending refusal obligation could not be cleared");
+        }
+        return rows;
+      }
+      return refusePendingStudioIntents(client, target, reason);
+    });
     // AFTER the commit, never inside it: a subscriber reads the row by id on
     // this signal, so an emit from inside the transaction could reach a reader
     // that cannot see the write yet.

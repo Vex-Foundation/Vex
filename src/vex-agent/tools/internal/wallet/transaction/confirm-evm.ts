@@ -396,6 +396,7 @@ async function executeEvmTransaction(args: {
       deferredSigner,
       { to: payload.to as `0x${string}`, data: payload.data as `0x${string}`, value: BigInt(payload.valueWei) },
       {
+        onNonceReserved: (request) => activity.reserveEvmNonce(request),
         onHashStaged: async (handles) => {
           try {
             await activity.stageEvm({

@@ -18,6 +18,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { StudioRuntimeAvailability } from "@vex-agent/mcp/approvals.js";
+import type { ToolResult } from "@vex-agent/tools/types.js";
+import type { MissionUpdateEvent } from "@vex-agent/engine/runtime/mission-bus.js";
+import type { ProjectScope } from "@vex-agent/mcp/project-scope.js";
+import { buildProjectToolContext } from "@vex-agent/mcp/project-context.js";
 
 const enqueueWith = vi.fn();
 const createWith = vi.fn();
@@ -45,40 +49,40 @@ const { enqueueStudioApprovalIntent } = await import(
 const { missionUpdateBus } = await import(
   "@vex-agent/engine/runtime/mission-bus.js"
 );
-const { computeRequestDigest, buildApprovalToolCall } = await import(
+const { computeStudioAuthorityDigest, buildApprovalToolCall } = await import(
   "@vex-agent/engine/core/approval-runtime/tool-call-envelope.js"
 );
 
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 const SESSION_ID = "22222222-2222-4222-8222-222222222222";
 
-function scope() {
+function scope(): ProjectScope {
   return {
     projectId: PROJECT_ID,
     scopeVersion: 4,
-    permission: "restricted" as const,
+    permission: "restricted",
     backingSessionId: SESSION_ID,
     wallets: { evm: null, solana: null },
   };
 }
 
 function baseInput(overrides: Record<string, unknown> = {}) {
+  const projectScope = scope();
+  const result: ToolResult = {
+    success: false,
+    output: "approval required",
+    pendingApproval: true,
+    actionKind: "user_wallet_broadcast",
+  };
   return {
-    scope: scope(),
+    scope: projectScope,
     call: {
       name: "wallet_send",
       args: { network: "solana", amount: "1" },
       toolCallId: "call-1",
     },
-    result: {
-      success: false,
-      output: "approval required",
-      pendingApproval: true,
-      actionKind: "user_wallet_broadcast",
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    toolContext: { sessionId: SESSION_ID, permission: "restricted" } as any,
+    result,
+    toolContext: buildProjectToolContext(projectScope),
     readStudioRuntimeAvailability: (): StudioRuntimeAvailability => ({
       available: true,
     }),
@@ -118,10 +122,8 @@ beforeEach(() => {
 describe("Studio enqueue - the clear path", () => {
   it("writes origin, project id, scope version, digest, generation and source", async () => {
     scriptGate({ scope_version: 4, permission: "restricted" }, "7");
-    const events: Array<Record<string, unknown>> = [];
-    const off = missionUpdateBus.subscribe((e) =>
-      events.push(e as unknown as Record<string, unknown>),
-    );
+    const events: MissionUpdateEvent[] = [];
+    const off = missionUpdateBus.subscribe((event) => events.push(event));
     let outcome;
     try {
       outcome = await enqueueStudioApprovalIntent(baseInput());
@@ -130,7 +132,7 @@ describe("Studio enqueue - the clear path", () => {
     }
     expect(outcome.kind).toBe("enqueued");
 
-    const intent = createWith.mock.calls[0]?.[1] as Record<string, unknown>;
+    const intent = requireRecord(createWith.mock.calls[0]?.[1], "intent insert");
     expect(intent.origin).toBe("studio_mcp");
     expect(intent.projectId).toBe(PROJECT_ID);
     expect(intent.scopeVersionAtEnqueue).toBe(4);
@@ -141,9 +143,24 @@ describe("Studio enqueue - the clear path", () => {
 
     // The digest is taken over the ENVELOPE that will be dispatched, so
     // recomputing it from the stored value at commit time must agree.
-    const queueArgs = enqueueWith.mock.calls[0] as unknown[];
-    const storedEnvelope = queueArgs[2] as Record<string, unknown>;
-    expect(intent.requestDigest).toBe(computeRequestDigest(storedEnvelope));
+    const queueArgs = enqueueWith.mock.calls[0];
+    if (queueArgs === undefined) throw new Error("queue insert was not called");
+    const storedEnvelope = requireRecord(queueArgs[2], "stored envelope");
+    const storedPreview = requireRecord(intent.previewJson, "stored preview");
+    if (typeof intent.expiresAt !== "string") {
+      throw new Error("intent expiry was not a string");
+    }
+    expect(intent.requestDigest).toBe(
+      computeStudioAuthorityDigest({
+        envelope: storedEnvelope,
+        preview: storedPreview,
+        expiresAt: intent.expiresAt,
+        sessionId: SESSION_ID,
+        projectId: PROJECT_ID,
+        scopeVersion: 4,
+        permission: "restricted",
+      }),
+    );
     expect(storedEnvelope).toEqual(
       buildApprovalToolCall("wallet_send", { network: "solana", amount: "1" }),
     );
@@ -171,8 +188,24 @@ describe("Studio enqueue - the clear path", () => {
     // The project row is held only for reading, so concurrent enqueues for one
     // project do not serialize behind each other.
     expect(statements[projectAt]).toContain("FOR SHARE");
+    const generationAt = statements.findIndex((s) =>
+      s.includes("studio_runtime_gate"),
+    );
+    expect(generationAt).toBeGreaterThan(projectAt);
+    expect(statements[generationAt]).toContain("FOR SHARE");
   });
 });
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new Error(`${label} was not an object`);
+  }
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 describe("Studio enqueue - the gate refuses", () => {
   const cases: ReadonlyArray<{

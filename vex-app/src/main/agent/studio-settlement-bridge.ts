@@ -62,8 +62,13 @@
 import { studioSettlementBus } from "@vex-agent/engine/runtime/studio-settlement-bus.js";
 import { setStudioDispatchPreflight } from "@vex-agent/engine/core/approval-runtime/studio/dispatch-preflight.js";
 import { log } from "../logger/index.js";
-import { isStudioDispatchPoisoned } from "../secrets/session.js";
+import {
+  isSecretSessionUnlocked,
+  isStudioDispatchPoisoned,
+  isStudioSessionTransitionInProgress,
+} from "../secrets/session.js";
 import { settleStudioWaiter } from "../studio/approval-broker.js";
+import { repairPendingStudioRefusal } from "../studio/approval-refusals.js";
 import {
   beginStudioReadinessEpoch,
   isStudioRuntimeReady,
@@ -174,6 +179,11 @@ async function initializeStudioRuntime(epoch: number): Promise<void> {
     scheduleDispatchPreflightRetry(epoch);
     return;
   }
+  if (!(await repairPendingStudioRefusal())) {
+    markStudioFenceUninitialized(epoch);
+    scheduleDispatchPreflightRetry(epoch);
+    return;
+  }
   await reconcileAbandonedDispatches();
   markStudioRuntimeReady(epoch);
   log.info("[agent:studio-settlement-bridge] studio runtime ready");
@@ -216,6 +226,11 @@ function scheduleDispatchPreflightRetry(epoch: number, attempt = 1): void {
     void (async () => {
       if (readyBarrier === null) return;
       if (await registerDispatchPreflight()) {
+        if (!(await repairPendingStudioRefusal())) {
+          markStudioFenceUninitialized(epoch);
+          scheduleDispatchPreflightRetry(epoch, attempt + 1);
+          return;
+        }
         await reconcileAbandonedDispatches();
         // The epoch is checked INSIDE readiness, at the moment of the write,
         // not here: a teardown can land during the awaits above, and a check
@@ -242,7 +257,11 @@ async function registerDispatchPreflight(): Promise<boolean> {
     // refuses the dispatch durably rather than running an approved action under
     // a generation nobody advanced past or racing the reconciler for its row.
     setStudioDispatchPreflight(
-      () => isStudioRuntimeReady() && !isStudioDispatchPoisoned(),
+      () =>
+        isStudioRuntimeReady()
+        && isSecretSessionUnlocked()
+        && !isStudioSessionTransitionInProgress()
+        && !isStudioDispatchPoisoned(),
     );
     return true;
   } catch (cause) {

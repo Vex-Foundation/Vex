@@ -67,6 +67,14 @@ export function serveOverSocket(
         input.onWireFailure(studioWireErrorCode(error));
       },
     );
+    // `allowHalfOpen` keeps the writable side available for final responses,
+    // but it also means a peer FIN does not produce `close`. The FIN can land
+    // during the dynamic imports above, before the transport owns `end`; Node
+    // does not replay that event to a late listener. `readableEnded` is the
+    // persistent fact, so replay it after `serveStudioMcpConnection`
+    // synchronously starts the transport. The method is idempotent when the
+    // live listener also saw it.
+    if (input.socket.readableEnded) transport.notifyPeerEnd();
     if (closed || deps.epoch !== deps.currentEpoch()) await inner.close();
   })().catch((cause: unknown) => {
     // THE SERVE PATH FAILED TO EXIST. Before this, a failed SDK import or a

@@ -23,7 +23,17 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import type { Account, Chain, Hex } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  type Address,
+  type Chain,
+  type Hex,
+  type Transport,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { base } from "viem/chains";
 
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
 import {
@@ -33,12 +43,16 @@ import {
 } from "@tools/evm-chains/staged-broadcast.js";
 
 const TO = "0x2222222222222222222222222222222222222222" as const;
-const FROM = "0x1111111111111111111111111111111111111111" as const;
+const ACCOUNT = privateKeyToAccount(`0x${"11".repeat(32)}`);
+const FROM = ACCOUNT.address;
 const OTHER = "0x9999999999999999999999999999999999999999" as const;
 const SERIALIZED = "0xdeadbeef" as Hex;
 
-const CHAIN = { id: 8453, name: "Base" } as unknown as Chain;
-const ACCOUNT = { address: FROM, type: "local" } as unknown as Account;
+const CHAIN: Chain = base;
+
+function testTransport(): Transport {
+  return http("http://127.0.0.1:1");
+}
 
 /**
  * The two arms sign through DIFFERENT functions, and that is the contract:
@@ -54,7 +68,7 @@ const ACCOUNT = { address: FROM, type: "local" } as unknown as Account;
  */
 
 /** Every call the primitive makes, in order, as one readable trace. */
-function harness(overrides: { chainId?: number; account?: string } = {}) {
+function harness(overrides: { chainId?: number; account?: Address } = {}) {
   const trace: string[] = [];
   const prepared = {
     to: TO,
@@ -65,7 +79,10 @@ function harness(overrides: { chainId?: number; account?: string } = {}) {
     chain: CHAIN,
   };
 
-  const publicClient = {
+  const publicClient = Object.assign(createPublicClient({
+    chain: CHAIN,
+    transport: testTransport(),
+  }), {
     estimateGas: vi.fn(async () => {
       trace.push("publicClient.estimateGas");
       return 21_000n;
@@ -82,20 +99,27 @@ function harness(overrides: { chainId?: number; account?: string } = {}) {
       trace.push("publicClient.waitForTransactionReceipt");
       return { status: "success", blockNumber: 1n };
     }),
-  };
+  });
 
   const accountSignTransaction = vi.fn(async () => {
     trace.push("account.signTransaction");
     return SERIALIZED;
   });
 
-  const walletClient = {
-    account: {
+  const signingAccount = {
       ...ACCOUNT,
       address: overrides.account ?? FROM,
       signTransaction: accountSignTransaction,
-    },
-    chain: overrides.chainId === undefined ? CHAIN : { ...CHAIN, id: overrides.chainId },
+  };
+  const signingChain: Chain = overrides.chainId === undefined
+    ? CHAIN
+    : { ...CHAIN, id: overrides.chainId };
+  const walletClient = Object.assign(createWalletClient({
+    account: signingAccount,
+    chain: signingChain,
+    transport: testTransport(),
+  }), {
+    chain: signingChain,
     prepareTransactionRequest: vi.fn(async () => {
       trace.push("walletClient.prepareTransactionRequest");
       return prepared;
@@ -104,9 +128,13 @@ function harness(overrides: { chainId?: number; account?: string } = {}) {
       trace.push("walletClient.signTransaction");
       return SERIALIZED;
     }),
-  };
+  });
 
   const hooks = {
+    onNonceReserved: vi.fn(async (request: { nodePendingNonce: number }) => {
+      trace.push("hooks.onNonceReserved");
+      return request.nodePendingNonce;
+    }),
     onHashStaged: vi.fn(async () => {
       trace.push("hooks.onHashStaged");
     }),
@@ -118,15 +146,13 @@ function harness(overrides: { chainId?: number; account?: string } = {}) {
   return { trace, publicClient, walletClient, hooks, accountSignTransaction };
 }
 
-type Args = Parameters<typeof signStageBroadcast>;
-
 describe("signStageBroadcast - the EAGER arm is unchanged", () => {
   it("makes exactly the same calls, in the same order, as before the split", async () => {
     const h = harness();
 
     const outcome = await signStageBroadcast(
-      h.publicClient as unknown as Args[0],
-      h.walletClient as unknown as Args[1],
+      h.publicClient,
+      h.walletClient,
       { to: TO, data: "0x" },
       h.hooks,
     );
@@ -138,6 +164,7 @@ describe("signStageBroadcast - the EAGER arm is unchanged", () => {
     expect(h.trace).toEqual([
       "publicClient.estimateGas",
       "walletClient.prepareTransactionRequest",
+      "hooks.onNonceReserved",
       "walletClient.signTransaction",
       "hooks.onHashStaged",
       "publicClient.sendRawTransaction",
@@ -155,8 +182,8 @@ describe("signStageBroadcast - the EAGER arm is unchanged", () => {
   it("stages the account's own address and the prepared nonce, and signs the headroomed gas", async () => {
     const h = harness();
     await signStageBroadcast(
-      h.publicClient as unknown as Args[0],
-      h.walletClient as unknown as Args[1],
+      h.publicClient,
+      h.walletClient,
       { to: TO, data: "0x" },
       h.hooks,
     );
@@ -166,13 +193,18 @@ describe("signStageBroadcast - the EAGER arm is unchanged", () => {
       fromAddress: FROM,
       nonce: 7,
     });
-    const signedWith = h.walletClient.signTransaction.mock
-      .calls[0] as unknown as [{ gas: bigint }] | undefined;
-    if (signedWith === undefined) throw new Error("signTransaction was never called");
+    const signedCall: unknown = h.walletClient.signTransaction.mock.calls[0];
+    if (!Array.isArray(signedCall) || signedCall.length === 0) {
+      throw new Error("signTransaction was never called");
+    }
+    const signedRequest: unknown = signedCall[0];
+    if (typeof signedRequest !== "object" || signedRequest === null || !("gas" in signedRequest)) {
+      throw new Error("signed request carried no gas field");
+    }
     // The HEADROOMED limit, re-asserted on the request that is serialized -
     // never the node's own unbuffered figure that came back on `prepared`.
-    expect(signedWith[0].gas).toBe(gasLimitWithHeadroom(21_000n));
-    expect(signedWith[0].gas).not.toBe(30_000n);
+    expect(signedRequest.gas).toBe(gasLimitWithHeadroom(21_000n));
+    expect(signedRequest.gas).not.toBe(30_000n);
   });
 
   it("a throw from the staging hook prevents the submission entirely", async () => {
@@ -181,8 +213,8 @@ describe("signStageBroadcast - the EAGER arm is unchanged", () => {
 
     await expect(
       signStageBroadcast(
-        h.publicClient as unknown as Args[0],
-        h.walletClient as unknown as Args[1],
+        h.publicClient,
+        h.walletClient,
         { to: TO, data: "0x" },
         h.hooks,
       ),
@@ -205,7 +237,7 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
       }),
       createSigner: vi.fn(async () => {
         h.trace.push("createSigner");
-        return h.walletClient as unknown as Awaited<ReturnType<DeferredEvmSigner["createSigner"]>>;
+        return h.walletClient;
       }),
       ...overrides,
     };
@@ -216,7 +248,7 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
     const signer = deferred(h);
 
     const outcome = await signStageBroadcast(
-      h.publicClient as unknown as Args[0],
+      h.publicClient,
       signer,
       { to: TO, data: "0x" },
       h.hooks,
@@ -227,6 +259,8 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
       "publicClient.estimateGas",
       // Prepared on the PUBLIC client: nonce and fees need no key.
       "publicClient.prepareTransactionRequest",
+      // Reserved durably before the pre-sign authority fence.
+      "hooks.onNonceReserved",
       // The gate, AFTER every awaited preparation call.
       "onBeforeSign",
       // Then, and only then, the key.
@@ -259,7 +293,7 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
 
     await expect(
       signStageBroadcast(
-        h.publicClient as unknown as Args[0],
+        h.publicClient,
         signer,
         { to: TO, data: "0x" },
         h.hooks,
@@ -282,7 +316,7 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
 
     await expect(
       signStageBroadcast(
-        h.publicClient as unknown as Args[0],
+        h.publicClient,
         signer,
         { to: TO, data: "0x" },
         h.hooks,
@@ -298,7 +332,7 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
 
     await expect(
       signStageBroadcast(
-        h.publicClient as unknown as Args[0],
+        h.publicClient,
         signer,
         { to: TO, data: "0x" },
         h.hooks,
@@ -314,7 +348,7 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
 
     await expect(
       signStageBroadcast(
-        h.publicClient as unknown as Args[0],
+        h.publicClient,
         signer,
         { to: TO, data: "0x" },
         h.hooks,
@@ -331,7 +365,7 @@ describe("signStageBroadcast - the DEFERRED arm", () => {
 
     await expect(
       signStageBroadcast(
-        h.publicClient as unknown as Args[0],
+        h.publicClient,
         signer,
         { to: TO, data: "0x" },
         h.hooks,

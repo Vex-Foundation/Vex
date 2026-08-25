@@ -23,7 +23,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { Client } from "pg";
+import { Client } from "pg";
 
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -68,7 +68,7 @@ function studioBackedClient() {
     }
     return { rows: [], rowCount: 0 };
   });
-  return { client: { query } as unknown as Client, query, studioRow };
+  return { client: Object.assign(new Client(), { query }), query, studioRow };
 }
 
 describe("agent-mode session reads exclude the Studio backing session", () => {
