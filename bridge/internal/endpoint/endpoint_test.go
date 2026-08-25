@@ -3,6 +3,7 @@ package endpoint_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/Vex-Foundation/vex/bridge/internal/endpoint"
@@ -289,12 +290,16 @@ func TestProbeFilesystemDoesNotFollowASymlink(t *testing.T) {
 		t.Skipf("this filesystem does not support symlinks: %v", err)
 	}
 
-	// The control: the real directory IS a private directory.
+	// The control: the real directory IS a private directory. The mode half of
+	// the control is Unix-only: Windows FileMode carries only the read-only
+	// bit (a 0700 Mkdir reports 0777), so asserting 0700 there would test the
+	// platform's mode model, not the probe. The lstat proof below is the
+	// test's subject and runs on every platform.
 	direct := endpoint.ProbeFilesystem(target)
 	if direct == nil || !direct.IsDirectory {
 		t.Fatalf("the target itself did not probe as a directory: %+v", direct)
 	}
-	if direct.Mode&0o777 != 0o700 {
+	if runtime.GOOS != "windows" && direct.Mode&0o777 != 0o700 {
 		t.Fatalf("the target's mode is 0%o, not 0700", direct.Mode&0o777)
 	}
 
@@ -345,6 +350,15 @@ func TestSymlinkedRuntimeDirIsNotPrivate(t *testing.T) {
 // than a fall-through: an override's parent that is a symlink is not a
 // directory, so the plan says so instead of validating the link's target.
 func TestSymlinkedOverrideParentIsRefusedByName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The unix override arm takes POSIX-absolute paths, which cannot
+		// address a Windows host filesystem, so this real-probe construction
+		// refuses earlier as override_not_absolute. In production the arm is
+		// unreachable on a Windows host (a GOOS=windows override is a pipe
+		// name and never probes the filesystem), and the lstat rule itself is
+		// proven on every platform by TestProbeFilesystemDoesNotFollowASymlink.
+		t.Skip("unix socket override arm cannot address a Windows filesystem")
+	}
 	root := t.TempDir()
 	target := filepath.Join(root, "real")
 	if err := os.Mkdir(target, 0o700); err != nil {
