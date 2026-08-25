@@ -509,6 +509,26 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
   overflow: auto;
 }
 
+/* Keep the inside market visible at every desktop height. Each side receives
+ * half of the available depth rail; excess far-from-market levels are clipped
+ * while the best ask stays pinned directly above the fixed spread. */
+@media (min-width: 1280px) {
+  .lit-book-scroll {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .lit-book-side {
+    display: grid;
+    min-height: 0;
+    align-content: start;
+    overflow: hidden;
+  }
+
+  .lit-book-side[data-side="ask"] { align-content: end; }
+}
+
 .lit-book-columns,
 .lit-trades-columns {
   display: grid;
@@ -999,8 +1019,8 @@ button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-s
   .lit-chat-live i { width: 8px; height: 8px; }
 
   .lit-workspace {
-    grid-template-columns: minmax(720px, 6.1fr) minmax(300px, 2.2fr) minmax(520px, 4fr);
-    grid-template-rows: minmax(440px, 1fr) 250px;
+    grid-template-columns: minmax(620px, 6.1fr) minmax(280px, 2.2fr) minmax(430px, 4fr);
+    grid-template-rows: minmax(360px, 1fr) clamp(160px, 20vh, 220px);
     gap: 16px;
     padding: 16px;
   }
