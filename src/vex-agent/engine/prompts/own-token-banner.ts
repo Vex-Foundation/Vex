@@ -17,7 +17,7 @@
  * line", it does NOT drop the banner.
  */
 
-import { getDexScreenerClient } from "@tools/dexscreener/client.js";
+import { readPair } from "@tools/dexscreener/price-read.js";
 import { getVirtualsClient } from "@tools/virtuals/client.js";
 
 /** $VEX Uniswap V2 pool on Robinhood Chain (VEX/VIRTUAL). DexScreener chain slug + pair. */
@@ -167,8 +167,7 @@ async function withBudget(promise: Promise<string>, budgetMs: number): Promise<s
 function defaultDeps(): OwnTokenBannerDeps {
   return {
     fetchSnapshot: async () => {
-      const client = getDexScreenerClient();
-      const result = await client.getPairs(VEX_CHAIN_SLUG, VEX_PAIR_ADDRESS);
+      const result = await readPair(VEX_CHAIN_SLUG, VEX_PAIR_ADDRESS);
       const pair = result.pairs?.[0] ?? null;
       return {
         priceUsd: pair?.priceUsd ?? null,

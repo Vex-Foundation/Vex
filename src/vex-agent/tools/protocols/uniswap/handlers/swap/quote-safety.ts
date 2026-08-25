@@ -6,7 +6,7 @@
  * the pass/fail/unknown doctrine, and that is where a refusal is decided.
  */
 
-import { getDexScreenerClient } from "@tools/dexscreener/client.js";
+import { readTokensPairs } from "@tools/dexscreener/price-read.js";
 import { UNISWAP_MIN_LIQUIDITY_USD } from "@tools/uniswap/safety.js";
 import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
 import type { UniswapToken } from "@tools/uniswap/types.js";
@@ -26,7 +26,7 @@ export async function checkOutputLiquidity(
   // Native output → WETH: liquidity is not a scam signal for the native wrapper.
   if (tokenOut.isNative) return { checked: true, usd: null, aboveThreshold: true };
   try {
-    const pairs = await getDexScreenerClient().getTokens(deployment.key, tokenOut.address);
+    const pairs = await readTokensPairs(deployment.key, tokenOut.address);
     let bestUsd: number | null = null;
     for (const pair of pairs) {
       if (pair.baseToken?.address?.toLowerCase() !== tokenOut.address.toLowerCase()) continue;

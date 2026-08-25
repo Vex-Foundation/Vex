@@ -35,10 +35,9 @@ vi.mock("@vex-agent/db/repos/loop-wake.js", () => ({
   getPendingWithWatchType: (...args: unknown[]) => mockGetPendingWithWatchType(...args),
 }));
 
-vi.mock("@tools/dexscreener/client.js", () => ({
-  getDexScreenerClient: () => ({
-    getTokenPairs: (...args: unknown[]) => mockGetTokenPairs(...args),
-  }),
+// S11a: the token_price watch arms through the `price-read` seam.
+vi.mock("@tools/dexscreener/price-read.js", () => ({
+  readTokenPools: (...args: unknown[]) => mockGetTokenPairs(...args),
 }));
 
 vi.mock("@vex-agent/db/client.js", () => ({

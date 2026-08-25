@@ -120,8 +120,8 @@ export function buildProductionPriceWatchDeps(): PriceWatchPollerDeps {
     getPendingPriceWatches: () => loopWakeRepo.getPendingWithWatchType(TOKEN_PRICE_WATCH_TYPE),
     promotePendingWake: (input) => loopWakeRepo.promotePendingWake(input),
     getTokenPairs: async (chainSlug, tokenAddress, options) => {
-      const { getDexScreenerClient } = await import("@tools/dexscreener/client.js");
-      return getDexScreenerClient().getTokenPairs(chainSlug, tokenAddress, options);
+      const { readTokenPools } = await import("@tools/dexscreener/price-read.js");
+      return readTokenPools(chainSlug, tokenAddress, options);
     },
     now: () => new Date(),
   };
