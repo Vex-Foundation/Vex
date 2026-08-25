@@ -13,6 +13,14 @@
  */
 
 import { z } from "zod";
+// The ONE canonical board contract, owned by the pure shared root
+// (`src/lib/board/`) so the engine that composes a board and the app that
+// persists, projects and renders it validate against the SAME schema. Importing
+// it here (rather than restating it) is what makes the two-schema drift hazard
+// structurally impossible: there is only one schema. The module is pure (zod
+// only, no privileged imports), which is why it is allow-listed in
+// `vex-app/scripts/check-process-boundaries.mjs`.
+import { boardSpecV1Schema } from "@vex-lib/board/index.js";
 
 export const MESSAGES_TAIL_DEFAULT_LIMIT = 50;
 export const MESSAGES_TAIL_MAX_LIMIT = 100;
@@ -162,6 +170,21 @@ export const toolDisplayStatusProjectionSchema = z.literal("pending");
 export type ToolDisplayStatus = z.infer<typeof toolDisplayStatusProjectionSchema>;
 
 /**
+ * Bounded projection of `messages.metadata -> 'board'` (assistant rows): the
+ * persisted `BoardSpecV1` a `board_compose` call staged and the turn's final
+ * assistant prose consumed into its own INSERT. Derived in the ROOT engine at
+ * compose time (never by the model, never in the renderer): the model supplies
+ * only the analytical input, and the engine authors the hydration block.
+ *
+ * This IS the engine's schema, imported from the pure shared root rather than
+ * restated, so an oversize/malformed JSONB projection is rejected at the mapper
+ * boundary and the two sides cannot drift. Every bound (48 KiB serialized
+ * budget, per-field caps, the reject-only text predicate) lives there.
+ */
+export const boardProjectionSchema = boardSpecV1Schema;
+export type BoardProjection = z.infer<typeof boardProjectionSchema>;
+
+/**
  * Renderer-visible message DTO. Raw `messages.metadata` JSONB is still never
  * shipped wholesale; `explorerRefs` is the FIRST narrowly allow-listed,
  * mapper-validated projection off that column (tool-result rows only). Other
@@ -232,6 +255,19 @@ export const sessionMessageDtoSchema = z
      * confirmed" and never makes a claim `success` does not support.
      */
     displayStatus: toolDisplayStatusProjectionSchema.nullable(),
+    /**
+     * Composed board for an assistant row (validated projection of
+     * `messages.metadata -> 'board'`). Required and `null` on non-assistant
+     * rows, on legacy rows written before the projection existed, on rows whose
+     * turn composed no board, AND on a row whose persisted board FAILED
+     * validation here (fail-closed, so one bad row cannot poison a page).
+     * Unlike `explorerRefs`, NO empty-value collapse is applied: a board that
+     * validates is projected exactly as persisted, so "no board" and "rejected
+     * board" are never conflated by this mapper's own arithmetic. The renderer
+     * degrades to the row's ordinary assistant prose in every null case - the
+     * prose always stands alone.
+     */
+    board: boardProjectionSchema.nullable(),
   })
   .strict();
 export type SessionMessageDto = z.infer<typeof sessionMessageDtoSchema>;

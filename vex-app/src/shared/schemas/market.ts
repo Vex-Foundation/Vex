@@ -6,8 +6,8 @@
  * `vexMarketSnapshotSchema` is validated at BOTH IPC boundaries: main's
  * `market.getVexSnapshot` output + the `EV.market.vex` broadcast (re-validated
  * in `publishSnapshot`), and the preload `subscribe` payload check. Every field
- * is derived from untrusted external APIs (DexScreener pair, GeckoTerminal
- * OHLCV, Virtuals holders) and coerced to a finite number or `null` in main
+ * is derived from untrusted external APIs (DexScreener pair and hourly
+ * candles, Virtuals holders) and coerced to a finite number or `null` in main
  * BEFORE it reaches this schema — a missing/malformed upstream field is `null`,
  * never a fabricated value.
  *

@@ -59,6 +59,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -82,6 +83,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -105,6 +107,7 @@ describe("messages schemas", () => {
       durationMs: 2314,
       success: true,
       displayStatus: null,
+      board: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -129,6 +132,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -149,6 +153,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -168,6 +173,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, reasoning: "thought…" })
@@ -200,6 +206,7 @@ describe("messages schemas", () => {
       reasoning: null,
       durationMs: null,
       success: false,
+      board: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, displayStatus: "pending" })
@@ -233,6 +240,7 @@ describe("messages schemas", () => {
       reasoning: null,
       success: null,
       displayStatus: null,
+      board: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, durationMs: -1 }).success,
@@ -267,6 +275,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -292,6 +301,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     });
     expect(parsed.success).toBe(false);
   });

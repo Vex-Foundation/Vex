@@ -70,6 +70,13 @@ const PURE_VEX_LIB_MODULES = new Set([
   // the text policy above: one definition across the agent runtime, the IPC
   // schema and the renderer form, and it imports nothing at all.
   "@vex-lib/token-metadata-limits.js",
+  // The canonical board contract (`src/lib/board/`). Same reason as the two
+  // entries above: it must be ONE definition across the agent runtime that
+  // composes a board, the shared message DTO that ships it, and the renderer
+  // that draws it - two copies would drift into boards silently collapsing to
+  // null in the DB mapper with no error anywhere. Pure by construction: zod
+  // schemas and a text predicate, no privileged imports.
+  "@vex-lib/board/index.js",
 ]);
 
 function isForbiddenRootAliasImport(spec) {

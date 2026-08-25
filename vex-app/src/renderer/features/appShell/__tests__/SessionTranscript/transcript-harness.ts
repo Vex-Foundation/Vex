@@ -57,6 +57,7 @@ export function msg(p: {
     durationMs: null,
     success: null,
     displayStatus: null,
+    board: null,
   };
 }
 

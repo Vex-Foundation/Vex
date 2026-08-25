@@ -30,6 +30,7 @@ export function dto(p: {
   readonly reasoning?: SessionMessageDto["reasoning"];
   readonly durationMs?: SessionMessageDto["durationMs"];
   readonly success?: SessionMessageDto["success"];
+  readonly board?: SessionMessageDto["board"];
   readonly id?: number;
 }): SessionMessageDto {
   return {
@@ -47,6 +48,7 @@ export function dto(p: {
     durationMs: p.durationMs ?? null,
     success: p.success ?? null,
     displayStatus: null,
+    board: p.board ?? null,
   };
 }
 
