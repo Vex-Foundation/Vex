@@ -122,6 +122,12 @@ describe("Light it up chart adapter", () => {
     );
 
     expect(chartHarness.createChart).toHaveBeenCalledTimes(1);
+    expect(chartHarness.createChart).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({
+        layout: expect.objectContaining({ fontSize: 13 }),
+      }),
+    );
     expect(chartHarness.candleSetData).toHaveBeenLastCalledWith([]);
 
     const liveCandles = [candle({ timestamp: 1_720_000_000, close: 102 })];

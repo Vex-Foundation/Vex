@@ -31,6 +31,9 @@ export function MarketChart({ candles, symbol, theme }: MarketChartProps): JSX.E
     const grid = styles.getPropertyValue("--lit-grid").trim();
     const positive = styles.getPropertyValue("--lit-positive").trim();
     const negative = styles.getPropertyValue("--lit-negative").trim();
+    const chartFontSize = Number.parseFloat(
+      styles.getPropertyValue("--lit-chart-font-size").trim(),
+    );
 
     const chart = createChart(host, {
       autoSize: true,
@@ -38,6 +41,8 @@ export function MarketChart({ candles, symbol, theme }: MarketChartProps): JSX.E
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: ink,
         attributionLogo: false,
+        fontFamily: styles.fontFamily,
+        fontSize: Number.isFinite(chartFontSize) ? chartFontSize : 13,
       },
       grid: {
         vertLines: { color: grid },
