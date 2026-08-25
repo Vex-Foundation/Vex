@@ -508,3 +508,18 @@ contract (shares the code-point table with the sanitizer, never
 transforms). Key docs: board-lane/{REPORT,PATTERNS,CHART-PLAYBOOK}.md +
 codex-board-plan{,-t2,-t3}.md in scratchpad. Implementation starts AFTER
 this lane's commit+push.
+
+## EXECUTION IN FLIGHT (2026-08-25 evening): board A0+A1 + S11, 6 parallel builders
+
+Branch feat/vex-board (off feat/dexscreener-site @ 7a44d733, the CLOSED
+dexscreener lane). ROOT plan with the FROZEN BoardSpec v1 contract table,
+task ownership and assembly steps:
+/tmp/claude-1000/-home-kubas-Vex/8a03fa30-1e20-42c6-be58-ae8b1cebd991/scratchpad/execution/BOARD-S11-ROOT.md
+Tasks: T1 pure-root schema+reject predicate; T2 engine BoardCompose
+terminal tool + pendingPresentation; T3 app persistence (assistant-row
+projection, mapper triad, row model); T4 renderer Board feature + chart
+adapter per CHART-PLAYBOOK; T5 S11a engine price-consumer swaps
+(characterize->swap->shadow); T6 S11b market widget swap + gecko removal.
+Coordinator assembles (old-client deletion at measured zero consumers),
+commits in 4 reviewable slices, pushes, then CODEX VERIFICATION on thread
+harness-vex-board (4 fan-out lenses) per the ROOT's final section.

@@ -20,7 +20,7 @@ vi.mock("../snapshot-cache.js", () => ({
   getCurrentSnapshot: vi.fn(() => null),
 }));
 vi.mock("../dexscreener-pair.js", () => ({ fetchVexPair: vi.fn() }));
-vi.mock("../gecko-client.js", () => ({ fetchVexSparkline: vi.fn() }));
+vi.mock("../vex-candles.js", () => ({ fetchVexSparkline: vi.fn() }));
 vi.mock("../virtuals-client.js", () => ({ fetchVexHolderCount: vi.fn() }));
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -121,7 +121,7 @@ describe("setupVexMarketService", () => {
     const stop = setupVexMarketService({
       ...BASE,
       fetchPair: vi.fn().mockResolvedValue(PAIR),
-      fetchSparkline: vi.fn().mockRejectedValue(new Error("gecko down")),
+      fetchSparkline: vi.fn().mockRejectedValue(new Error("candles unavailable")),
       fetchHolderCount: vi.fn().mockRejectedValue(new Error("virtuals down")),
       publish,
     });

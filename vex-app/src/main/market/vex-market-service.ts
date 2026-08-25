@@ -2,11 +2,16 @@
  * VEX market poller (T1).
  *
  * Three independent, self-scheduling polls compose one `VexMarketSnapshot`:
- *   - PRICE (DexScreener pair, 10s)  — the authoritative price side; its
+ *   - PRICE (DexScreener pair, 10s) - the authoritative price side; its
  *     freshness drives the snapshot's `stale` flag.
- *   - SPARKLINE (GeckoTerminal OHLCV hour, 60s) — trailing hourly closes.
- *   - HOLDERS (Virtuals, 120s, best-effort) — a single integer; failure or a
+ *   - SPARKLINE (DexScreener hourly candles, 60s) - trailing hourly closes.
+ *   - HOLDERS (Virtuals, 120s, best-effort) - a single integer; failure or a
  *     `null` result keeps last-good and never blocks the snapshot.
+ *
+ * S11b: both DexScreener reads now go through the shared seams
+ * (`@tools/dexscreener/price-read.js`, `@tools/dexscreener/candles-read.js`)
+ * and the transport the app registers at agent startup. GeckoTerminal, the
+ * widget's former candle provider, is gone.
  *
  * Lifecycle mirrors `agent/sync-worker.ts`: an immediate first tick, a
  * non-reentrant single-in-flight guard per source, and an idempotent async
@@ -24,7 +29,7 @@
 
 import { publishSnapshot as defaultPublish } from "./snapshot-cache.js";
 import { fetchVexPair, type VexPairData } from "./dexscreener-pair.js";
-import { fetchVexSparkline } from "./gecko-client.js";
+import { fetchVexSparkline } from "./vex-candles.js";
 import { fetchVexHolderCount } from "./virtuals-client.js";
 import { log } from "../logger/index.js";
 import type { VexMarketSnapshot } from "@shared/schemas/market.js";

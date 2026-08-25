@@ -175,6 +175,20 @@ export const DELETED_TEST_ALLOWLIST = [
     covered:
       "The site handlers are proved without network by `dexscreener-screening-handlers.test.ts` and `dexscreener-resolve-handlers.test.ts`; the endpoints by `src/__tests__/dexscreener-site/`.",
   },
+  {
+    path: "src/__tests__/dexscreener/client-request-options.test.ts",
+    reason:
+      "Request-option contract of the retired public-API REST client. The client (src/tools/dexscreener/client.ts) was deleted at measured zero production consumers after the S11 migration to the price-read seam.",
+    covered:
+      "The wait-bound contract lives on in caller-bounds.ts and is proved by `price-read.test.ts`; the consumers' observable behavior is pinned by `s11a-consumer-characterization.test.ts` against the seam.",
+  },
+  {
+    path: "src/__tests__/dexscreener/dexscreener-error-surface.test.ts",
+    reason:
+      "Error taxonomy of the retired public-API REST client, deleted with it at measured zero production consumers (S11 assembly).",
+    covered:
+      "The same taxonomy (mapDexScreenerError, mapTransportError) is exercised through the seam by `price-read.test.ts` provider-400 and transport-failure cases.",
+  },
 ];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
