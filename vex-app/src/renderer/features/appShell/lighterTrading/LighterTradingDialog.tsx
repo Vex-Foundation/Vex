@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useState,
-  type JSX,
-} from "react";
+import { useEffect, useMemo, useState, type JSX } from "react";
 import type {
   LighterTradingEnvironment,
   LighterTradingMarket,
@@ -16,19 +11,14 @@ import {
   DialogDescription,
   DialogTitle,
 } from "../../../components/ui/dialog.js";
-import { useSubmitChat } from "../../../lib/api/chat.js";
 import {
   useLighterTradingMarkets,
   useLighterTradingSnapshot,
 } from "../../../lib/api/lighter-trading.js";
 import { useUiStore } from "../../../stores/uiStore.js";
+import { SessionPanel } from "../SessionPanel.js";
 import { MarketChart } from "./MarketChart.js";
 import { OrderBook } from "./OrderBook.js";
-import {
-  buildLighterReviewMessage,
-  TradeTicket,
-  type TradeDraft,
-} from "./TradeTicket.js";
 import {
   formatCompact,
   formatNumber,
@@ -58,7 +48,6 @@ export function LighterTradingDialog({
   const [category, setCategory] = useState<MarketCategory>("perp");
   const [marketId, setMarketId] = useState<number | null>(null);
   const [resolution, setResolution] = useState<LighterTradingResolution>("15m");
-  const [reviewError, setReviewError] = useState<string | null>(null);
   const marketsQuery = useLighterTradingMarkets(environment, open);
   const marketList = marketsQuery.data?.ok === true ? marketsQuery.data.data : null;
   const filteredMarkets = useMemo(() => {
@@ -75,10 +64,6 @@ export function LighterTradingDialog({
     setMarketId(next?.marketId ?? null);
   }, [filteredMarkets, marketId]);
 
-  useEffect(() => {
-    setReviewError(null);
-  }, [environment]);
-
   const market = filteredMarkets.find((row) => row.marketId === marketId) ?? null;
   const snapshotQuery = useLighterTradingSnapshot(
     environment,
@@ -87,42 +72,16 @@ export function LighterTradingDialog({
     open && category !== "stocks",
   );
   const snapshot = snapshotQuery.data?.ok === true ? snapshotQuery.data.data : null;
-  const submitChat = useSubmitChat();
-
-  const review = (draft: TradeDraft): void => {
-    if (activeSessionId === null || market === null) return;
-    setReviewError(null);
-    submitChat.mutate(
-      {
-        sessionId: activeSessionId,
-        message: buildLighterReviewMessage({ environment, market, draft }),
-      },
-      {
-        onSuccess: (result) => {
-          if (result.ok) {
-            onOpenChange(false);
-            return;
-          }
-          setReviewError(result.error.message);
-        },
-        onError: () => {
-          setReviewError("Vex could not open the order review. Nothing was signed or submitted.");
-        },
-      },
-    );
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        closeOnBackdropClick={!submitChat.isPending}
         className="lit-dialog"
         data-vex-area="lighter-trading-dialog"
         data-lighter-theme={theme}
       >
         <DialogTitle className="sr-only">Light it up — Lighter trading analysis</DialogTitle>
         <DialogDescription className="sr-only">
-          Review live Lighter markets, charts, order-book depth, and prepare an approval-gated market order preview.
+          Review live Lighter markets, charts, and order-book depth while chatting with Vex in the active session.
         </DialogDescription>
 
         <header className="lit-header">
@@ -159,7 +118,6 @@ export function LighterTradingDialog({
               type="button"
               className="lit-close"
               onClick={() => onOpenChange(false)}
-              disabled={submitChat.isPending}
               aria-label="Close Light it up"
             >
               ×
@@ -217,22 +175,60 @@ export function LighterTradingDialog({
                   </footer>
                 </section>
                 <OrderBook book={snapshot.book} />
-                <TradeTicket
-                  market={market}
-                  snapshot={snapshot}
-                  activeSession={activeSessionId !== null}
-                  dataFresh={Date.now() - snapshot.retrievedAt <= 15_000}
-                  submitting={submitChat.isPending}
-                  onReview={review}
-                />
+                <LighterConversation open={open} activeSessionId={activeSessionId} />
                 <RecentTrades trades={snapshot.trades} />
               </div>
             )}
           </>
         )}
-        {reviewError !== null ? <p className="lit-review-error" role="alert">{reviewError}</p> : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function LighterConversation({
+  open,
+  activeSessionId,
+}: {
+  readonly open: boolean;
+  readonly activeSessionId: string | null;
+}): JSX.Element {
+  return (
+    <section
+      className="lit-panel lit-chat-panel"
+      aria-labelledby="lit-chat-title"
+    >
+      <header className="lit-panel-header lit-chat-heading">
+        <span>
+          <h3 id="lit-chat-title">Chat with Vex</h3>
+          <small>
+            {activeSessionId === null
+              ? "No active session"
+              : "Active session · approvals stay in chat"}
+          </small>
+        </span>
+        <span
+          className="lit-chat-live"
+          data-active={activeSessionId !== null || undefined}
+        >
+          <i aria-hidden="true" /> {activeSessionId === null ? "Offline" : "Live"}
+        </span>
+      </header>
+      {!open ? null : activeSessionId === null ? (
+        <div className="lit-chat-empty" role="status">
+          <img src="./protocols/lighter.svg" alt="" width="42" height="42" />
+          <b>Open a session to trade with Vex</b>
+          <span>
+            The live chart remains available. Close this workspace, start or
+            select a session, then return to analyze and chat side by side.
+          </span>
+        </div>
+      ) : (
+        <div className="lit-chat-shell">
+          <SessionPanel surface="embedded" />
+        </div>
+      )}
+    </section>
   );
 }
 

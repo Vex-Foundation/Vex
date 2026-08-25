@@ -6,10 +6,7 @@ import type {
 } from "@shared/schemas/lighter-trading.js";
 import { LighterTradingDialog } from "../LighterTradingDialog.js";
 
-const mocks = vi.hoisted(() => ({
-  submitChat: vi.fn(),
-  onOpenChange: vi.fn(),
-}));
+const mocks = vi.hoisted(() => ({ onOpenChange: vi.fn() }));
 
 const MARKET_LIST: LighterTradingMarketList = {
   environment: "rhc",
@@ -60,19 +57,20 @@ vi.mock("../../../../lib/api/lighter-trading.js", () => ({
   }),
 }));
 
-vi.mock("../../../../lib/api/chat.js", () => ({
-  useSubmitChat: () => ({
-    isPending: false,
-    mutate: mocks.submitChat,
-  }),
-}));
-
 vi.mock("../../../../stores/uiStore.js", () => ({
   useUiStore: (selector: (state: { theme: "chronos" }) => unknown) => selector({ theme: "chronos" }),
 }));
 
 vi.mock("../MarketChart.js", () => ({
   MarketChart: () => <div data-testid="real-chart-host" />,
+}));
+
+vi.mock("../../SessionPanel.js", () => ({
+  SessionPanel: ({ surface }: { surface?: string }) => (
+    <div data-testid="active-session-chat" data-surface={surface}>
+      Transcript, approvals, and composer
+    </div>
+  ),
 }));
 
 describe("Light it up dialog", () => {
@@ -103,34 +101,27 @@ describe("Light it up dialog", () => {
     await waitFor(() => expect(spot.getAttribute("aria-pressed")).toBe("true"));
   });
 
-  it("hands Review order only to the deterministic preview chat flow", async () => {
-    renderDialog();
+  it("keeps the live chart and active Vex conversation visible together", async () => {
+    const view = renderDialog();
 
-    fireEvent.change(await screen.findByLabelText(/Base size/), {
-      target: { value: "0.02" },
-    });
-    const price = screen.getByLabelText(/Maximum buy price/);
-    await waitFor(() => expect((price as HTMLInputElement).value).toBe("3210.50"));
-    fireEvent.click(screen.getByRole("button", { name: "Review order" }));
+    expect(await screen.findByTestId("real-chart-host")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Chat with Vex" })).toBeTruthy();
+    expect(screen.getByTestId("active-session-chat").getAttribute("data-surface")).toBe("embedded");
+    expect(screen.getByText("Transcript, approvals, and composer")).toBeTruthy();
 
-    expect(mocks.submitChat).toHaveBeenCalledTimes(1);
-    expect(mocks.submitChat).toHaveBeenCalledWith(
-      {
-        sessionId: "session-1",
-        message: expect.stringMatching(
-          /^Review this exact Lighter trade as a preview only\. Do not place or submit it\.; .*orderType=market; timeInForce=immediate-or-cancel; .*Nothing may execute without the separate approval card\.$/,
-        ),
-      },
-      expect.objectContaining({
-        onSuccess: expect.any(Function),
-        onError: expect.any(Function),
-      }),
+    view.rerender(
+      <LighterTradingDialog
+        open={false}
+        activeSessionId="session-1"
+        onOpenChange={mocks.onOpenChange}
+      />,
     );
+    expect(screen.queryByTestId("active-session-chat")).toBeNull();
   });
 });
 
-function renderDialog(): void {
-  render(
+function renderDialog(): ReturnType<typeof render> {
+  return render(
     <LighterTradingDialog
       open
       activeSessionId="session-1"

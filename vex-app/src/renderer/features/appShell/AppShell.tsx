@@ -116,6 +116,7 @@ function ShellFrame({
   const toggleBook = useUiStore((s) => s.toggleBook);
   const bookWidth = useUiStore((s) => s.bookWidth);
   const setBookWidth = useUiStore((s) => s.setBookWidth);
+  const [lighterTradingOpen, setLighterTradingOpen] = useState(false);
 
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState(() =>
@@ -255,14 +256,21 @@ function ShellFrame({
             {/* Session-LESS failures (memory maintenance) surface here: they
              * belong to no conversation. Renders null when idle. */}
             <GlobalErrorBanner />
-            <LighterTradingHost activeSessionId={activeSessionId} />
+            <LighterTradingHost
+              activeSessionId={activeSessionId}
+              open={lighterTradingOpen}
+              onOpenChange={setLighterTradingOpen}
+            />
             <GlobalApprovals />
             <SessionExportControl activeSessionId={activeSessionId} />
           </div>
         </header>
 
         <div className="min-h-0 flex-1">
-          <SessionPanel />
+          {/* The live conversation moves into Light it up while the workspace
+           * is open. Keeping a single mounted chat prevents duplicate
+           * composers, approval cards, and submit handlers. */}
+          {lighterTradingOpen ? null : <SessionPanel />}
         </div>
       </section>
 

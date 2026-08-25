@@ -1,16 +1,21 @@
-import { useState, type JSX } from "react";
+import type { JSX } from "react";
 import { LighterTradingDialog } from "./LighterTradingDialog.js";
 
-export function LighterTradingHost({ activeSessionId }: {
+export function LighterTradingHost({
+  activeSessionId,
+  open,
+  onOpenChange,
+}: {
   readonly activeSessionId: string | null;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
 }): JSX.Element {
-  const [open, setOpen] = useState(false);
   return (
     <>
       <button
         type="button"
         className="lit-launcher"
-        onClick={() => setOpen(true)}
+        onClick={() => onOpenChange(true)}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
@@ -20,7 +25,7 @@ export function LighterTradingHost({ activeSessionId }: {
       <LighterTradingDialog
         open={open}
         activeSessionId={activeSessionId}
-        onOpenChange={setOpen}
+        onOpenChange={onOpenChange}
       />
     </>
   );

@@ -273,11 +273,11 @@
   display: grid;
   min-height: 0;
   flex: 1 1 auto;
-  grid-template-columns: minmax(440px, 7fr) minmax(180px, 2.2fr) minmax(280px, 3fr);
+  grid-template-columns: minmax(440px, 6.4fr) minmax(180px, 2fr) minmax(340px, 3.6fr);
   grid-template-rows: minmax(360px, 1fr) 168px;
   grid-template-areas:
-    "chart book ticket"
-    "trades book ticket";
+    "chart book chat"
+    "trades book chat";
   gap: 8px;
   overflow: hidden;
   padding: 8px;
@@ -294,7 +294,7 @@
 
 .lit-chart-panel { grid-area: chart; display: flex; flex-direction: column; }
 .lit-order-book { grid-area: book; display: flex; flex-direction: column; }
-.lit-ticket { grid-area: ticket; display: flex; flex-direction: column; }
+.lit-chat-panel { grid-area: chat; display: flex; flex-direction: column; }
 .lit-recent-trades { grid-area: trades; display: flex; flex-direction: column; }
 
 .lit-panel-header {
@@ -319,6 +319,67 @@
   color: var(--lit-ink-muted);
   font-size: 9px;
 }
+
+.lit-chat-heading > span:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lit-chat-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--lit-ink-muted);
+  font-size: 9px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.lit-chat-live i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.lit-chat-live[data-active="true"] { color: var(--lit-positive); }
+
+.lit-chat-shell {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--lit-ink) 4%, transparent), transparent 38%),
+    var(--lit-panel);
+}
+
+.lit-chat-shell [data-vex-area="session-panel"] {
+  --vex-surface-0: var(--lit-panel);
+  background: transparent;
+}
+
+.lit-chat-shell [data-vex-session-content] { padding-block: 8px 0; }
+.lit-chat-shell [data-vex-area="session-header"] { height: 24px; }
+.lit-chat-shell [data-vex-composer-seat] { background-color: transparent; }
+
+.lit-chat-empty {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 32px;
+  color: var(--lit-ink-secondary);
+  text-align: center;
+}
+
+.lit-chat-empty b { color: var(--lit-ink); font-size: 13px; }
+.lit-chat-empty span { max-width: 300px; color: var(--lit-ink-muted); font-size: 10px; line-height: 1.5; }
 
 .lit-chart-heading > span {
   display: flex;
@@ -645,8 +706,8 @@
     grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.8fr);
     grid-template-rows: minmax(360px, 1fr) 210px;
     grid-template-areas:
-      "chart ticket"
-      "book ticket";
+      "chart chat"
+      "book chat";
   }
   .lit-recent-trades { display: none; }
   .lit-order-book { min-height: 0; }
@@ -680,7 +741,7 @@
   .lit-workspace { display: flex; overflow: visible; flex-direction: column; }
   .lit-chart-panel { min-height: 390px; }
   .lit-order-book { min-height: 280px; }
-  .lit-ticket { min-height: 560px; }
+  .lit-chat-panel { min-height: 620px; }
   .lit-book-scroll { display: block; }
   .lit-book-spread { border-inline: 0; border-block: 1px solid var(--lit-line); writing-mode: horizontal-tb; justify-content: space-between; }
 }

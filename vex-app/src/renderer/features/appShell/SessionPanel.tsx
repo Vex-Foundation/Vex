@@ -84,6 +84,12 @@ export interface SessionPanelProps {
    * `<SessionPanel />` with no slot, so its header is unchanged.
    */
   readonly headerTrailing?: ReactNode;
+  /**
+   * `embedded` keeps the active session in its conversation layout even when
+   * its transcript is empty, and tightens the reading/composer gutters for a
+   * side-by-side workspace. The shell remains the default resident surface.
+   */
+  readonly surface?: "shell" | "embedded";
 }
 
 /**
@@ -96,6 +102,7 @@ const TAPE_COLUMN = "mx-auto w-full max-w-[860px] px-6";
 
 export function SessionPanel({
   headerTrailing,
+  surface = "shell",
 }: SessionPanelProps = {}): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   // Puzzle 02/06: keep the active session's transcript + usage queries fresh
@@ -214,7 +221,16 @@ export function SessionPanel({
     !chatSubmitting &&
     !turnStarting;
   const hero = activeSessionId === null || isIdleSession;
-  const phase = settling ? "settling" : hero ? "hero" : "active";
+  const phase =
+    surface === "embedded" && activeSessionId !== null
+      ? "active"
+      : settling
+        ? "settling"
+        : hero
+          ? "hero"
+          : "active";
+  const readingColumn =
+    surface === "embedded" ? "mx-auto w-full px-3" : TAPE_COLUMN;
 
   const showMissionCard =
     activeSession !== null && activeSession.mode === "mission";
@@ -227,6 +243,7 @@ export function SessionPanel({
       data-vex-area="session-panel"
       data-vex-state={panelState}
       data-phase={phase}
+      data-vex-session-surface={surface}
       className="relative flex h-full min-h-0 w-full flex-col overflow-hidden"
     >
       <div
@@ -254,7 +271,7 @@ export function SessionPanel({
           >
             {/* Header + banners keep the reading column; only the transcript
                 goes full-bleed, so its rows reach the panel's width. */}
-            <div className={TAPE_COLUMN}>
+            <div className={readingColumn}>
               <SessionContext
                 activeSession={activeSession}
                 activeSessionId={activeSessionId}
@@ -272,7 +289,7 @@ export function SessionPanel({
             {activeSession !== null ? (
               <SessionTranscript sessionId={activeSession.id} />
             ) : null}
-            <div className={TAPE_COLUMN}>
+            <div className={readingColumn}>
               {activeSession !== null ? (
                 <ApprovalsRegion sessionId={activeSession.id} />
               ) : null}
@@ -308,7 +325,11 @@ export function SessionPanel({
             data-vex-composer-dock=""
             className={cn(
               "mx-auto w-full",
-              phase === "hero" ? "w-[min(760px,92%)]" : "max-w-[760px] pb-4",
+              phase === "hero"
+                ? "w-[min(760px,92%)]"
+                : surface === "embedded"
+                  ? "px-3 pb-3"
+                  : "max-w-[760px] pb-4",
             )}
           >
             <SessionComposer
