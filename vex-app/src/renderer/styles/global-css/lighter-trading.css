@@ -205,6 +205,49 @@
   font-weight: 650;
 }
 
+button.lit-market-select {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--lit-line);
+  border-radius: 10px;
+  background: var(--lit-panel);
+  padding: 6px 12px;
+  color: var(--lit-ink);
+  text-align: left;
+}
+
+button.lit-market-select:hover {
+  border-color: var(--lit-line-strong);
+  background: var(--lit-panel-raised);
+}
+
+button.lit-market-select > span:nth-child(2) {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+button.lit-market-select b {
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.lit-market-select small {
+  color: var(--lit-ink-muted);
+  font-size: 10px;
+  text-transform: capitalize;
+}
+
+button.lit-market-select > span:last-child { color: var(--lit-ink-muted); font-size: 17px; }
+
 .lit-market-metric {
   display: flex;
   min-width: 0;
@@ -260,7 +303,7 @@
   grid-template-rows: minmax(360px, 1fr) 184px;
   grid-template-areas:
     "chart book chat"
-    "trades book chat";
+    "trades trades chat";
   gap: 12px;
   overflow: hidden;
   padding: 12px;
@@ -446,6 +489,35 @@
   overflow: auto;
 }
 
+.lit-book-columns,
+.lit-trades-columns {
+  display: grid;
+  flex: 0 0 auto;
+  align-items: center;
+  border-bottom: 1px solid var(--lit-line);
+  color: var(--lit-ink-muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.lit-book-columns {
+  min-height: 30px;
+  grid-template-columns: 1fr 1fr;
+  padding-inline: 12px;
+}
+
+.lit-book-columns span:last-child { text-align: right; }
+
+.lit-trades-columns {
+  min-height: 30px;
+  grid-template-columns: 64px 1fr 1fr 88px;
+  padding-inline: 14px;
+}
+
+.lit-trades-columns span:last-child { text-align: right; }
+
 .lit-book-side { padding: 5px 0; }
 
 .lit-book-row {
@@ -491,6 +563,8 @@
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+
+.lit-book-spread strong small { margin-left: 5px; color: var(--lit-ink-muted); font-size: 0.9em; }
 
 .lit-book-empty {
   padding: 18px 10px;
@@ -619,6 +693,153 @@
   font-size: 10px;
 }
 
+.lit-market-picker-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--lit-bg) 78%, transparent);
+  padding: 40px;
+  backdrop-filter: blur(8px);
+}
+
+.lit-market-picker {
+  display: flex;
+  width: min(1180px, 100%);
+  max-height: min(820px, calc(100vh - 80px));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--lit-line-strong);
+  border-radius: 18px;
+  background: var(--lit-panel);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
+}
+
+.lit-market-search {
+  display: grid;
+  min-height: 72px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--lit-line);
+  padding: 0 20px;
+  color: var(--lit-ink-muted);
+  font-size: 27px;
+}
+
+.lit-market-search input {
+  min-width: 0;
+  background: transparent;
+  color: var(--lit-ink);
+  font-size: 20px;
+  outline: none;
+}
+
+.lit-market-search input::placeholder { color: var(--lit-ink-muted); }
+.lit-market-search button { color: var(--lit-ink-muted); font-size: 28px; }
+.lit-market-search button:hover { color: var(--lit-ink); }
+
+.lit-market-picker-tabs {
+  display: flex;
+  min-height: 58px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--lit-line);
+  padding: 8px 16px;
+}
+
+.lit-market-picker-tabs button {
+  min-height: 38px;
+  border-radius: 9px;
+  padding-inline: 14px;
+  color: var(--lit-ink-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.lit-market-picker-tabs button[aria-pressed="true"] {
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+}
+
+.lit-market-picker-tabs > span {
+  margin-left: auto;
+  color: var(--lit-ink-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lit-market-table-head,
+.lit-market-table > button {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) 0.8fr 0.8fr 1fr 0.8fr;
+  align-items: center;
+  gap: 16px;
+  padding-inline: 22px;
+}
+
+.lit-market-table-head {
+  min-height: 42px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--lit-line);
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.lit-market-table {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.lit-market-table > button {
+  width: 100%;
+  min-height: 62px;
+  border-bottom: 1px solid var(--lit-line);
+  color: var(--lit-ink-secondary);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.lit-market-table > button:hover,
+.lit-market-table > button[aria-selected="true"] { background: var(--lit-panel-raised); }
+
+.lit-market-name { display: flex; min-width: 0; align-items: center; gap: 12px; }
+.lit-market-name i {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--lit-line-strong);
+  border-radius: 50%;
+  background: var(--lit-bg);
+  color: var(--lit-ink);
+  font-style: normal;
+  font-weight: 700;
+}
+.lit-market-name b { overflow: hidden; color: var(--lit-ink); font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
+.lit-market-table [data-status="active"] { color: var(--lit-positive); text-transform: capitalize; }
+.lit-market-table > p { padding: 52px; color: var(--lit-ink-muted); text-align: center; }
+
+.lit-market-picker-footer {
+  display: flex;
+  min-height: 48px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 22px;
+  border-top: 1px solid var(--lit-line);
+  padding-inline: 20px;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+}
+
 .lit-review-button {
   min-height: 42px;
   flex: 0 0 auto;
@@ -740,7 +961,10 @@
     gap: 20px;
     padding: 14px 26px;
   }
-  .lit-market-select select { font-size: 18px; }
+  button.lit-market-select { min-height: 54px; border-radius: 12px; padding-inline: 14px; }
+  button.lit-market-select img { width: 32px; height: 32px; }
+  button.lit-market-select b { font-size: 18px; }
+  button.lit-market-select small { font-size: 12px; }
   .lit-market-metric {
     min-height: 48px;
     justify-content: center;
@@ -756,7 +980,7 @@
 
   .lit-workspace {
     grid-template-columns: minmax(720px, 6.1fr) minmax(300px, 2.2fr) minmax(520px, 4fr);
-    grid-template-rows: minmax(440px, 1fr) 224px;
+    grid-template-rows: minmax(440px, 1fr) 250px;
     gap: 16px;
     padding: 16px;
   }
@@ -786,10 +1010,11 @@
   }
 
   .lit-book-side { padding-block: 7px; }
+  .lit-book-columns { min-height: 36px; padding-inline: 16px; font-size: 12px; }
   .lit-book-row {
-    height: 38px;
+    height: 30px;
     padding-inline: 16px;
-    font-size: 15px;
+    font-size: 14px;
   }
   .lit-book-spread {
     min-height: 48px;
@@ -805,6 +1030,26 @@
     padding-inline: 18px;
     font-size: 14px;
   }
+  .lit-trades-columns {
+    min-height: 36px;
+    grid-template-columns: 80px 1fr 1fr 112px;
+    padding-inline: 18px;
+    font-size: 12px;
+  }
+
+  .lit-market-picker { width: min(1480px, 100%); max-height: min(1040px, calc(100vh - 120px)); }
+  .lit-market-search { min-height: 88px; padding-inline: 28px; }
+  .lit-market-search input { font-size: 24px; }
+  .lit-market-picker-tabs { min-height: 68px; padding-inline: 22px; }
+  .lit-market-picker-tabs button { min-height: 44px; padding-inline: 18px; font-size: 16px; }
+  .lit-market-picker-tabs > span { font-size: 15px; }
+  .lit-market-table-head,
+  .lit-market-table > button { grid-template-columns: minmax(300px, 1.7fr) repeat(4, 1fr); padding-inline: 30px; }
+  .lit-market-table-head { min-height: 50px; font-size: 13px; }
+  .lit-market-table > button { min-height: 72px; font-size: 17px; }
+  .lit-market-name i { width: 40px; height: 40px; }
+  .lit-market-name b { font-size: 20px; }
+  .lit-market-picker-footer { min-height: 56px; padding-inline: 28px; font-size: 14px; }
 
   .lit-chat-shell [data-vex-session-content] { padding-block-start: 16px; }
   .lit-chat-shell [data-vex-area="session-header"] { height: 36px; }

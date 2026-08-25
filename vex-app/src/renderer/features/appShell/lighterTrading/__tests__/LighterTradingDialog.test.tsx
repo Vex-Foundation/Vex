@@ -118,6 +118,22 @@ describe("Light it up dialog", () => {
     );
     expect(screen.queryByTestId("active-session-chat")).toBeNull();
   });
+
+  it("searches and selects a real provider market from the Lighter-style picker", async () => {
+    renderDialog();
+
+    fireEvent.click(await screen.findByRole("button", { name: /ETH.*perp.*active/i }));
+    const search = screen.getByRole("textbox", { name: "Search Lighter markets" });
+    fireEvent.change(search, { target: { value: "USDC" } });
+
+    const option = screen.getByRole("option", { name: /ETH\/USDC.*Spot.*active/i });
+    fireEvent.click(option);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Search Lighter markets" })).toBeNull();
+      expect(screen.getByRole("button", { name: /ETH\/USDC.*spot.*active/i })).toBeTruthy();
+    });
+  });
 });
 
 function renderDialog(): ReturnType<typeof render> {

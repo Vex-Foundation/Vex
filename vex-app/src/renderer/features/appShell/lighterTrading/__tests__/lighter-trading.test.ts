@@ -7,6 +7,7 @@ import type {
 } from "@shared/schemas/lighter-trading.js";
 import { toChartCandles, toChartVolume } from "../chart-adapter.js";
 import { MarketChart } from "../MarketChart.js";
+import { bestBookPrice, OrderBook } from "../OrderBook.js";
 import { buildLighterReviewMessage } from "../TradeTicket.js";
 
 const chartHarness = vi.hoisted(() => {
@@ -142,6 +143,26 @@ describe("Light it up chart adapter", () => {
       expect.objectContaining({ time: 1_720_000_000, close: 102 }),
     ]);
     expect(chartHarness.fitContent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Light it up order book", () => {
+  it("places the best ask next to the spread while preserving best-price selection", () => {
+    const asks = [
+      { orderId: "a1", price: "101", size: "2" },
+      { orderId: "a2", price: "103", size: "4" },
+      { orderId: "a3", price: "102", size: "3" },
+    ];
+    const { container } = render(createElement(OrderBook, {
+      book: {
+        asks,
+        bids: [{ orderId: "b1", price: "100", size: "5" }],
+      },
+    }));
+
+    expect(bestBookPrice(asks, "ask")).toBe("101");
+    expect(Array.from(container.querySelectorAll('[data-side="ask"] .lit-book-price'))
+      .map((node) => node.textContent)).toEqual(["103", "102", "101"]);
   });
 });
 

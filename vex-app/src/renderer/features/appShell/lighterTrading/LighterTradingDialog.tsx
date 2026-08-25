@@ -48,6 +48,7 @@ export function LighterTradingDialog({
   const [category, setCategory] = useState<MarketCategory>("perp");
   const [marketId, setMarketId] = useState<number | null>(null);
   const [resolution, setResolution] = useState<LighterTradingResolution>("15m");
+  const [marketPickerOpen, setMarketPickerOpen] = useState(false);
   const marketsQuery = useLighterTradingMarkets(environment, open);
   const marketList = marketsQuery.data?.ok === true ? marketsQuery.data.data : null;
   const filteredMarkets = useMemo(() => {
@@ -136,9 +137,8 @@ export function LighterTradingDialog({
         ) : (
           <>
             <MarketBar
-              markets={filteredMarkets}
-              marketId={marketId}
-              onMarketChange={setMarketId}
+              market={market}
+              onOpenMarketPicker={() => setMarketPickerOpen(true)}
               snapshot={snapshot}
             />
             {snapshotQuery.data?.ok === false ? (
@@ -179,6 +179,18 @@ export function LighterTradingDialog({
                 <RecentTrades trades={snapshot.trades} />
               </div>
             )}
+            {marketPickerOpen ? (
+              <MarketPicker
+                markets={marketList.markets}
+                selectedMarketId={marketId}
+                onClose={() => setMarketPickerOpen(false)}
+                onSelect={(nextMarket) => {
+                  setCategory(nextMarket.marketType);
+                  setMarketId(nextMarket.marketId);
+                  setMarketPickerOpen(false);
+                }}
+              />
+            ) : null}
           </>
         )}
       </DialogContent>
@@ -233,32 +245,27 @@ function LighterConversation({
 }
 
 function MarketBar({
-  markets,
-  marketId,
-  onMarketChange,
+  market,
+  onOpenMarketPicker,
   snapshot,
 }: {
-  readonly markets: readonly LighterTradingMarket[];
-  readonly marketId: number | null;
-  readonly onMarketChange: (marketId: number) => void;
+  readonly market: LighterTradingMarket | null;
+  readonly onOpenMarketPicker: () => void;
   readonly snapshot: LighterTradingSnapshot | null;
 }): JSX.Element {
   const change = snapshot?.detail.daily.priceChange ?? null;
   return (
     <section className="lit-market-bar" aria-label="Selected market summary">
-      <label className="lit-market-select">
-        <span className="sr-only">Selected market</span>
-        <select
-          value={marketId ?? ""}
-          onChange={(event) => onMarketChange(Number(event.currentTarget.value))}
-        >
-          {markets.map((market) => (
-            <option key={market.marketId} value={market.marketId}>
-              {market.symbol} · {market.status}
-            </option>
-          ))}
-        </select>
-      </label>
+      <button
+        type="button"
+        className="lit-market-select"
+        aria-haspopup="dialog"
+        onClick={onOpenMarketPicker}
+      >
+        <img src="./protocols/lighter.svg" alt="" width="26" height="26" />
+        <span><b>{market?.symbol ?? "Select market"}</b><small>{market === null ? "Lighter" : `${market.marketType} · ${market.status}`}</small></span>
+        <span aria-hidden="true">⌄</span>
+      </button>
       <MarketMetric label="Last" value={formatPrice(snapshot?.detail.lastTradePrice ?? null)} />
       <MarketMetric
         label="24h change"
@@ -272,6 +279,93 @@ function MarketBar({
         <i aria-hidden="true" /> {snapshot === null ? "Waiting" : Date.now() - snapshot.retrievedAt > 15_000 ? "Delayed" : "Live"}
       </span>
     </section>
+  );
+}
+
+function MarketPicker({
+  markets,
+  selectedMarketId,
+  onClose,
+  onSelect,
+}: {
+  readonly markets: readonly LighterTradingMarket[];
+  readonly selectedMarketId: number | null;
+  readonly onClose: () => void;
+  readonly onSelect: (market: LighterTradingMarket) => void;
+}): JSX.Element {
+  const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<"all" | "perp" | "spot">("all");
+  const shown = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    return markets.filter((market) => (
+      (tab === "all" || market.marketType === tab)
+      && (normalized.length === 0 || market.symbol.toLocaleLowerCase().includes(normalized))
+    ));
+  }, [markets, query, tab]);
+
+  return (
+    <div
+      className="lit-market-picker-backdrop"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
+    >
+      <section
+        className="lit-market-picker"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lit-market-picker-title"
+      >
+        <h2 id="lit-market-picker-title" className="sr-only">Search Lighter markets</h2>
+        <div className="lit-market-search">
+          <span aria-hidden="true">⌕</span>
+          <input
+            autoFocus
+            value={query}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            placeholder="Search markets"
+            aria-label="Search Lighter markets"
+          />
+          <button type="button" onClick={onClose} aria-label="Close market search">×</button>
+        </div>
+        <nav className="lit-market-picker-tabs" aria-label="Market type">
+          {(["all", "perp", "spot"] as const).map((item) => (
+            <button
+              type="button"
+              key={item}
+              aria-pressed={tab === item}
+              onClick={() => setTab(item)}
+            >
+              {item === "all" ? "All markets" : item === "perp" ? "Perpetuals" : "Spot"}
+            </button>
+          ))}
+          <span>{shown.length} markets</span>
+        </nav>
+        <div className="lit-market-table-head" aria-hidden="true">
+          <span>Market</span><span>Type</span><span>Status</span><span>Minimum size</span><span>Taker fee</span>
+        </div>
+        <div className="lit-market-table" role="listbox" aria-label="Available Lighter markets">
+          {shown.length === 0 ? (
+            <p>No matching markets.</p>
+          ) : shown.map((market) => (
+            <button
+              type="button"
+              key={market.marketId}
+              role="option"
+              aria-selected={market.marketId === selectedMarketId}
+              onClick={() => onSelect(market)}
+            >
+              <span className="lit-market-name"><i aria-hidden="true">{market.symbol.slice(0, 1)}</i><b>{market.symbol}</b></span>
+              <span>{market.marketType === "perp" ? "Perpetual" : "Spot"}</span>
+              <span data-status={market.status}>{market.status}</span>
+              <span>{market.minBaseAmount}</span>
+              <span>{formatNumber(Number(market.fees.taker) * 100)}%</span>
+            </button>
+          ))}
+        </div>
+        <footer className="lit-market-picker-footer"><span>↑↓ Navigate</span><span>Enter Select</span><span>Esc Close</span></footer>
+      </section>
+    </div>
   );
 }
 
@@ -292,18 +386,21 @@ function RecentTrades({ trades }: {
       {trades.length === 0 ? (
         <p className="lit-book-empty">No recent trades returned.</p>
       ) : (
-        <div className="lit-trades-list">
-          {trades.slice(0, 12).map((trade) => (
-            <div key={trade.tradeId} data-side={trade.takerSide}>
-              <span>{trade.takerSide === "buy" ? "Buy" : "Sell"}</span>
-              <b>{trade.price}</b>
-              <span>{trade.size}</span>
-              <time dateTime={new Date(trade.timestamp >= 1_000_000_000_000 ? trade.timestamp : trade.timestamp * 1_000).toISOString()}>
-                {formatRetrievedAt(trade.timestamp >= 1_000_000_000_000 ? trade.timestamp : trade.timestamp * 1_000)}
-              </time>
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="lit-trades-columns" aria-hidden="true"><span>Side</span><span>Price</span><span>Size</span><span>Time</span></div>
+          <div className="lit-trades-list">
+            {trades.slice(0, 12).map((trade) => (
+              <div key={trade.tradeId} data-side={trade.takerSide}>
+                <span>{trade.takerSide === "buy" ? "Buy" : "Sell"}</span>
+                <b>{trade.price}</b>
+                <span>{trade.size}</span>
+                <time dateTime={new Date(trade.timestamp >= 1_000_000_000_000 ? trade.timestamp : trade.timestamp * 1_000).toISOString()}>
+                  {formatRetrievedAt(trade.timestamp >= 1_000_000_000_000 ? trade.timestamp : trade.timestamp * 1_000)}
+                </time>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </section>
   );

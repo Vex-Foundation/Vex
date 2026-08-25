@@ -24,7 +24,10 @@ function BookSide({ rows, side }: {
   readonly rows: readonly BookRow[];
   readonly side: "ask" | "bid";
 }): JSX.Element {
-  const shown = useMemo(() => sortedRows(rows, side), [rows, side]);
+  const shown = useMemo(() => {
+    const nearest = sortedRows(rows, side).slice(0, 10);
+    return side === "ask" ? nearest.reverse() : nearest;
+  }, [rows, side]);
   const maxSize = Math.max(0, ...shown.map((row) => Number(row.size)));
 
   if (shown.length === 0) {
@@ -55,18 +58,23 @@ export function OrderBook({ book }: {
   const ask = bestAsk === null ? null : Number(bestAsk);
   const bid = bestBid === null ? null : Number(bestBid);
   const spread = ask !== null && bid !== null && ask >= bid ? ask - bid : null;
+  const mid = ask !== null && bid !== null ? (ask + bid) / 2 : null;
+  const spreadPercent = spread !== null && mid !== null && mid > 0
+    ? (spread / mid) * 100
+    : null;
 
   return (
     <section className="lit-panel lit-order-book" aria-labelledby="lit-order-book-title">
       <header className="lit-panel-header">
         <h3 id="lit-order-book-title">Order book</h3>
-        <span>Price / Size</span>
+        <span>Live depth</span>
       </header>
+      <div className="lit-book-columns" aria-hidden="true"><span>Price</span><span>Size</span></div>
       <div className="lit-book-scroll">
         <BookSide rows={book.asks} side="ask" />
         <div className="lit-book-spread">
           <span>Spread</span>
-          <strong>{formatNumber(spread)}</strong>
+          <strong>{formatNumber(spread)} <small>{spreadPercent === null ? "" : `${formatNumber(spreadPercent)}%`}</small></strong>
         </div>
         <BookSide rows={book.bids} side="bid" />
       </div>
