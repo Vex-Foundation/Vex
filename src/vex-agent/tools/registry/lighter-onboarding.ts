@@ -23,7 +23,7 @@ function onboardingParameters(
       amountIn: {
         type: "string",
         description:
-          `Optional intended collateral in human ${settlementAsset} decimals, for example "1" or "11". Omit only for amount-free setup discovery.`,
+          `Optional target collateral for a named trade in human ${settlementAsset} decimals, for example "1" or "11". Requires marketId or marketSymbol. Never pass a direct deposit or funding amount here; use ToolSearch once to select lighter.deposit.prepare and pass the user's amount unchanged.`,
       },
       marketId: {
         type: "number",
@@ -57,7 +57,7 @@ function defineOnboardingShortcut(
     pressureSafety: "read_only",
     actionKind: "read",
     description:
-      `Check the selected Vex wallet's complete live Lighter onboarding readiness on ${environmentName} (${environmentShortName}) in ONE read-only call. This tool is fixed to ${environmentShortName}. It already checks wallet ${settlementAsset} on ${settlementNetwork}, native ETH for gas, Lighter collateral/account ownership, gateway allowance, the live deposit minimum, and locally managed trading-credential readiness. Prefer this directly for ${environmentShortName} setup, readiness, funding checks, and 'can I deposit?' questions; do NOT run protocol discovery or a separate wallet-balance read first. After it returns, answer directly from its deterministic result without another diagnostic or research pass unless the call failed. It moves no funds, signs nothing, creates no approval, and never registers a key. Omit walletAddress to use the selected Vex EVM wallet. amountIn is human ${settlementAsset}; include marketSymbol or marketId only when checking a named trade's live minimum.`,
+      `Check the selected Vex wallet's complete live Lighter onboarding readiness on ${environmentName} (${environmentShortName}) in ONE read-only call. This tool is fixed to ${environmentShortName}. It already checks wallet ${settlementAsset} on ${settlementNetwork}, native ETH for gas, Lighter collateral/account ownership, gateway allowance, the live deposit minimum, and locally managed trading-credential readiness. Prefer this directly for ${environmentShortName} setup, readiness, named-trade funding checks, and 'can I deposit?' questions; do NOT run protocol discovery or a separate wallet-balance read first. Direct deposits are the exception: when the user says deposit or fund an explicit amount, skip this onboarding read and WalletBalances, use ToolSearch once to select lighter.deposit.prepare, and pass the requested amount unchanged. After this shortcut returns, answer directly from its deterministic result without another diagnostic or research pass unless the call failed. It moves no funds, signs nothing, creates no approval, and never registers a key. Omit walletAddress to use the selected Vex EVM wallet. amountIn is target collateral for a named trade only and requires marketSymbol or marketId.`,
     parameters: onboardingParameters(definition),
   };
 }

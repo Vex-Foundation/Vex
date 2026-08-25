@@ -63,9 +63,27 @@ describe("Lighter environment-fixed onboarding shortcuts", () => {
       expect(def?.parameters.additionalProperties).toBe(false);
       expect(def?.parameters.properties).not.toHaveProperty("environment");
       expect(def?.description).toContain(shortcut.settlementAsset);
+      expect(def?.description).toContain("Direct deposits are the exception");
+      expect(def?.description).toContain("skip this onboarding read and WalletBalances");
+      expect(def?.parameters.properties?.amountIn?.description).toContain(
+        "Requires marketId or marketSymbol",
+      );
       expect(visible).toContain(shortcut.name);
     }
   });
+
+  it.each(SHORTCUTS)(
+    "$name rejects ambiguous amounts before entering the protocol runtime",
+    async ({ handler }) => {
+      const result = await handler({ amountIn: "5" }, makeTestContext());
+
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("amountIn only for a named trade");
+      expect(result.output).toContain("pass the user's requested amount unchanged");
+      expect(result.output).toContain("Do not call WalletBalances first");
+      expect(mocks.executeProtocolTool).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(SHORTCUTS)(
     "$name fixes the target to $environment and allowlists model input",
@@ -130,7 +148,7 @@ describe("Lighter environment-fixed onboarding shortcuts", () => {
     const result = await dispatchTool(
       {
         name: "lighter_core_onboarding_status",
-        args: { amountIn: "1" },
+        args: { amountIn: "1", marketSymbol: "SUI" },
         toolCallId: "call_core_readiness",
       },
       makeTestContext(),
@@ -142,7 +160,7 @@ describe("Lighter environment-fixed onboarding shortcuts", () => {
     expect(mocks.executeProtocolTool).toHaveBeenCalledWith(
       expect.objectContaining({
         toolId: "lighter.account.onboarding.status",
-        params: { environment: "core", amountIn: "1" },
+        params: { environment: "core", amountIn: "1", marketSymbol: "SUI" },
       }),
       expect.any(Object),
     );
@@ -154,6 +172,8 @@ describe("Lighter environment-fixed onboarding shortcuts", () => {
     expect(toolModel).toContain("fixed to Robinhood Chain");
     expect(toolModel).toContain("`lighter_core_onboarding_status`");
     expect(toolModel).toContain("fixed to Core");
+    expect(toolModel).toContain("Skip the onboarding shortcuts and `WalletBalances`");
+    expect(toolModel).toContain("pass the user's amount unchanged");
 
     const onboarding = buildProtocolsPrompt()
       .split("## Lighter Onboarding Routing")[1]
