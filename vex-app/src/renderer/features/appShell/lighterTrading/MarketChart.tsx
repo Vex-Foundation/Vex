@@ -385,7 +385,7 @@ export function MarketChart({
       if (!crosshairActiveRef.current) setLegend(latestLegendRef.current);
     }
     if (visibleRange !== null) timeScale.setVisibleLogicalRange(visibleRange);
-  }, [theme, pricePrecision, priceMinMove]);
+  }, [environment, theme, pricePrecision, priceMinMove]);
 
   useEffect(() => {
     const host = hostRef.current;

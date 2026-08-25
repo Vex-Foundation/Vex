@@ -23,6 +23,11 @@
   --lit-hover: rgba(255, 255, 255, 0.055);
   --lit-selection: rgba(53, 197, 138, 0.28);
   --lit-scrollbar: rgba(200, 200, 208, 0.28);
+  --lit-canvas: var(--lit-bg);
+  --lit-environment-mark: var(--lit-ink-muted);
+  --lit-environment-surface: var(--lit-panel);
+  --lit-environment-surface-hover: var(--lit-panel-raised);
+  --lit-market-bar-surface: transparent;
   --lit-chart-font-size: 13;
   inset: 0;
   width: 100vw;
@@ -32,7 +37,7 @@
   margin: 0;
   border-width: 0;
   border-radius: 0;
-  background: var(--lit-bg);
+  background: var(--lit-canvas);
   color: var(--lit-ink);
   font-family: var(--font-sans);
   font-size: 14px;
@@ -66,6 +71,78 @@
   --lit-selection: rgba(8, 121, 78, 0.2);
   --lit-scrollbar: rgba(18, 18, 24, 0.24);
   color-scheme: light;
+}
+
+/* Robinhood Chain keeps the trading surface quiet and functional while
+ * borrowing the supplied Robin Neon / Heather / Robin Black palette as an
+ * atmospheric layer. Core intentionally retains the native Lighter palette. */
+.lit-dialog[data-lighter-environment="rhc"] {
+  --lit-robin-neon: #ccff00;
+  --lit-robin-heather: #d4d0c9;
+  --lit-robin-black: #1c180d;
+  --lit-bg: #11100d;
+  --lit-panel: #181713;
+  --lit-panel-raised: #23211b;
+  --lit-line: color-mix(in srgb, var(--lit-robin-heather) 12%, transparent);
+  --lit-line-strong: color-mix(in srgb, var(--lit-robin-heather) 24%, transparent);
+  --lit-ink: #f7f7f2;
+  --lit-ink-secondary: var(--lit-robin-heather);
+  --lit-ink-muted: #aaa79e;
+  --lit-grid: color-mix(in srgb, var(--lit-robin-neon) 5.5%, transparent);
+  --lit-focus: #dcff72;
+  --lit-hover: color-mix(in srgb, var(--lit-robin-neon) 5.5%, transparent);
+  --lit-selection: color-mix(in srgb, var(--lit-robin-neon) 24%, transparent);
+  --lit-scrollbar: color-mix(in srgb, var(--lit-robin-neon) 18%, transparent);
+  --lit-canvas:
+    radial-gradient(
+      ellipse at 88% 0%,
+      color-mix(in srgb, var(--lit-robin-neon) 4.5%, transparent),
+      transparent 38%
+    ),
+    var(--lit-bg);
+  --lit-environment-mark: var(--lit-robin-neon);
+  --lit-environment-surface:
+    color-mix(in srgb, var(--lit-panel) 94%, var(--lit-environment-mark));
+  --lit-environment-surface-hover:
+    color-mix(in srgb, var(--lit-panel-raised) 92%, var(--lit-environment-mark));
+  --lit-market-bar-surface:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--lit-robin-neon) 1.8%, transparent),
+      transparent 36%
+    );
+}
+
+.lit-dialog[data-lighter-theme="celeris"][data-lighter-environment="rhc"] {
+  --lit-bg: #faf9f6;
+  --lit-panel: #ffffff;
+  --lit-panel-raised: #efede8;
+  --lit-line: color-mix(in srgb, var(--lit-robin-black) 10%, transparent);
+  --lit-line-strong: color-mix(in srgb, var(--lit-robin-black) 20%, transparent);
+  --lit-ink: var(--lit-robin-black);
+  --lit-ink-secondary: #4e4a44;
+  --lit-ink-muted: #716d66;
+  --lit-grid: color-mix(in srgb, var(--lit-robin-black) 7.5%, transparent);
+  --lit-action: var(--lit-robin-black);
+  --lit-action-ink: #ffffff;
+  --lit-focus: #526900;
+  --lit-hover: color-mix(in srgb, var(--lit-robin-neon) 12%, transparent);
+  --lit-selection: color-mix(in srgb, var(--lit-robin-neon) 28%, transparent);
+  --lit-scrollbar: rgba(126, 122, 118, 0.32);
+  --lit-canvas:
+    radial-gradient(
+      ellipse at 88% 0%,
+      color-mix(in srgb, var(--lit-robin-neon) 8%, transparent),
+      transparent 36%
+    ),
+    var(--lit-bg);
+  --lit-environment-mark: #6d8800;
+  --lit-market-bar-surface:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--lit-robin-neon) 5.5%, transparent),
+      transparent 38%
+    );
 }
 
 .lit-dialog ::selection {
@@ -197,6 +274,25 @@
   gap: 10px;
 }
 
+.lit-environment {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.lit-environment-mark {
+  position: absolute;
+  z-index: 1;
+  left: 12px;
+  width: 8px;
+  height: 8px;
+  border: 1px solid color-mix(in srgb, var(--lit-bg) 62%, transparent);
+  border-radius: 999px;
+  background: var(--lit-environment-mark);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lit-environment-mark) 12%, transparent);
+  pointer-events: none;
+}
+
 .lit-environment select,
 .lit-market-select select {
   height: 40px;
@@ -209,10 +305,19 @@
   transition: border-color 140ms ease, background 140ms ease;
 }
 
+.lit-environment select {
+  background: var(--lit-environment-surface);
+  padding-left: 32px;
+}
+
 .lit-environment select:hover,
 .lit-market-select select:hover {
   border-color: var(--lit-line-strong);
   background-color: var(--lit-panel-raised);
+}
+
+.lit-environment select:hover {
+  background-color: var(--lit-environment-surface-hover);
 }
 
 .lit-close {
@@ -262,6 +367,7 @@
   align-items: center;
   gap: 16px;
   border-bottom: 1px solid var(--lit-line);
+  background: var(--lit-market-bar-surface);
   padding: 10px 18px;
 }
 
@@ -1470,6 +1576,7 @@ button.lit-market-select > .lit-market-symbol[data-symbol-length="long"] { min-w
     padding-inline: 15px 40px;
     font-size: 16px;
   }
+  .lit-environment select { padding-left: 36px; }
   .lit-close { width: 44px; height: 44px; border-radius: 11px; font-size: 26px; }
 
   .lit-market-bar {

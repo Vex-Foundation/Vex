@@ -136,6 +136,7 @@ export function LighterTradingDialog({
         className="lit-dialog"
         data-vex-area="lighter-trading-dialog"
         data-lighter-theme={theme}
+        data-lighter-environment={environment}
       >
         <DialogTitle className="sr-only">Light it up — Lighter trading analysis</DialogTitle>
         <DialogDescription className="sr-only">
@@ -145,7 +146,14 @@ export function LighterTradingDialog({
         <header className="lit-header">
           <div className="lit-brand">
             <img src="./protocols/lighter.svg" alt="" width="32" height="32" />
-            <span><b>Light it up</b><small>Lighter market data</small></span>
+            <span>
+              <b>Light it up</b>
+              <small>
+                {environment === "rhc"
+                  ? "Robinhood Chain · Lighter markets"
+                  : "Lighter Core markets"}
+              </small>
+            </span>
           </div>
 
           <nav className="lit-category-tabs" aria-label="Lighter market category">
@@ -163,10 +171,15 @@ export function LighterTradingDialog({
 
           <div className="lit-header-actions">
             <label className="lit-environment">
-              <span className="sr-only">Lighter environment</span>
+              <span className="sr-only">Lighter network</span>
+              <span className="lit-environment-mark" aria-hidden="true" />
               <select
                 value={environment}
-                onChange={(event) => setEnvironment(event.currentTarget.value as LighterTradingEnvironment)}
+                onChange={(event) => {
+                  setMarketPickerOpen(false);
+                  setMarketId(null);
+                  setEnvironment(event.currentTarget.value as LighterTradingEnvironment);
+                }}
               >
                 <option value="rhc">Robinhood Chain</option>
                 <option value="core">Lighter Core</option>

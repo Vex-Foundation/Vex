@@ -144,6 +144,27 @@ describe("Light it up dialog", () => {
     await waitFor(() => expect(spot.getAttribute("aria-pressed")).toBe("true"));
   });
 
+  it("binds the workspace treatment to the selected Lighter environment", async () => {
+    renderDialog();
+
+    const workspace = document.querySelector('[data-vex-area="lighter-trading-dialog"]');
+    const environment = screen.getByRole("combobox", { name: "Lighter network" });
+
+    expect(workspace?.getAttribute("data-lighter-environment")).toBe("rhc");
+    expect(await screen.findByText("Robinhood Chain · Lighter markets")).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole("button", { name: /BTC.*perp.*active/i }));
+    expect(screen.getByRole("dialog", { name: "Search Lighter markets" })).toBeTruthy();
+
+    fireEvent.change(environment, { target: { value: "core" } });
+
+    await waitFor(() => {
+      expect(workspace?.getAttribute("data-lighter-environment")).toBe("core");
+      expect(screen.getByText("Lighter Core markets")).toBeTruthy();
+      expect(screen.queryByRole("dialog", { name: "Search Lighter markets" })).toBeNull();
+    });
+  });
+
   it("keeps the live chart and active Vex conversation visible together", async () => {
     const view = renderDialog();
 
