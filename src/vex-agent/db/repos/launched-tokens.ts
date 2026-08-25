@@ -367,7 +367,7 @@ export async function countUnsignedAttributionGap(chainId: number): Promise<numb
   return row === null ? 0 : Number(row.gap);
 }
 
-// ── pools.fun attribution lane (migration 087) ──────────────────────────────
+// ── pools.fun attribution lane (migration 094) ──────────────────────────────
 //
 // A PARALLEL lane to the trench one above, not a widening of it. The two are
 // separate because the proof is separate: pools.fun asks the creator to sign a
@@ -486,7 +486,7 @@ export async function claimPoolsAttributionCandidates(input: {
  * recorded. `false` means the row was already terminal and this call changed
  * nothing.
  *
- * Migration 087's `launched_tokens_pools_terminal_requires_signature` is the
+ * Migration 094's `launched_tokens_pools_terminal_requires_signature` is the
  * backstop under this: a row with no `pools_attest_signature` (every trench row)
  * cannot reach a terminal state at all, so a mis-routed id fails loudly at the
  * database rather than silently marking the wrong venue's token.
@@ -513,7 +513,7 @@ export async function markPoolsAttributed(input: { id: number }): Promise<boolea
  *
  * The code vocabulary is FROZEN and owned by
  * `src/tools/pools-fun/attribution-codes.ts`; this signature imports the type
- * (type-only, so no runtime dependency crosses the layer) and migration 087's
+ * (type-only, so no runtime dependency crosses the layer) and migration 094's
  * `launched_tokens_pools_rejection_code_valid` CHECK restates the same three
  * literals. A lockstep test guards the module-to-SQL half of that pairing.
  *
@@ -544,7 +544,7 @@ export async function markPoolsAttributionRejected(input: {
  * re-serving these would be a loop that can only fail.
  *
  * No `chainId` parameter, matching the claim: the launchpad is the selector.
- * An unsigned row is non-terminal BY CONSTRUCTION (087's
+ * An unsigned row is non-terminal BY CONSTRUCTION (094's
  * `launched_tokens_pools_terminal_requires_signature`), so this count can never
  * quietly include rows that already reached an end state.
  */

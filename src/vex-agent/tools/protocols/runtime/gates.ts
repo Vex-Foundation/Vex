@@ -9,7 +9,11 @@
  * SAME point it previously ran inline — no ordering or side-effect change.
  */
 
-import type { ProtocolExecutionContext, ProtocolToolManifest } from "../types.js";
+import type {
+  ApprovalSurface,
+  ProtocolExecutionContext,
+  ProtocolToolManifest,
+} from "../types.js";
 import type { ToolResult } from "../../types.js";
 import {
   EXECUTE_GATE_TOOLS,
@@ -205,6 +209,36 @@ const FORM_IS_THE_APPROVAL_TOOLS: ReadonlySet<string> = new Set([
   "pools.launch_execute",
 ]);
 
+/**
+ * The ONE normalization of {@link ProtocolExecutionContext.approvalSurface}.
+ *
+ * ABSENT means the in-app turn loop, which is what every direct
+ * `executeProtocolTool` caller in the tree is: the internal action aliases,
+ * the desktop launch paths, the approval resume, and the typed test contexts.
+ * Only the Studio MCP mapper states `studio_mcp`, and it states it explicitly.
+ */
+function resolveApprovalSurface(context: ProtocolExecutionContext): ApprovalSurface {
+  return context.approvalSurface ?? "in_app_form";
+}
+
+/**
+ * True iff the launch-form carve-out applies to this dispatch.
+ *
+ * The carve-out exists because the launch FORM is the consent surface and a
+ * card would ask for the same spend twice. Over `studio_mcp` that form does not
+ * exist at all, so skipping the card there would mean an external agent could
+ * reach a fund-moving handler with NO human consent surface whatsoever. Under
+ * that surface the two launch tools take the ordinary approval card (plan v2
+ * revision item 3); their handlers still refuse a restricted session by name if
+ * they are ever reached another way.
+ */
+function launchFormReplacesApprovalCard(
+  toolId: string,
+  context: ProtocolExecutionContext,
+): boolean {
+  return FORM_IS_THE_APPROVAL_TOOLS.has(toolId) && resolveApprovalSurface(context) === "in_app_form";
+}
+
 export function evaluateApprovalGate(
   manifest: ProtocolToolManifest,
   request: { readonly toolId: string },
@@ -217,7 +251,8 @@ export function evaluateApprovalGate(
   prequoteRiskPreview: LendBorrowRiskPreview | undefined,
 ): ToolResult | undefined {
   if (manifest.mutating && manifest.actionKind !== "local_write" && !context.approved && !isPreviewExecution(request.toolId, params)
-    && context.sessionPermission === "restricted" && !FORM_IS_THE_APPROVAL_TOOLS.has(request.toolId)) {
+    && context.sessionPermission === "restricted"
+    && !launchFormReplacesApprovalCard(request.toolId, context)) {
     logger.info("protocol.execute.approval_required", { toolId: request.toolId, permission: context.sessionPermission });
     // Carry the gate-matched prequote verdict to the restricted-mode approval
     // preview via the TYPED `prequote` field (NOT raw args) so the human sees

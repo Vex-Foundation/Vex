@@ -6,7 +6,11 @@
  * map these to the IPC contract.
  */
 
-import type { ApprovalDecision } from "../../../../db/repos/approval-intents.js";
+import type {
+  ApprovalDecision,
+  ApprovalOrigin,
+  ApprovalRefusalReason,
+} from "../../../../db/repos/approval-intents.js";
 import * as approvalIntentsRepo from "../../../../db/repos/approval-intents.js";
 import type { MissionRunStatus, Permission } from "../../../types.js";
 
@@ -22,11 +26,19 @@ export interface IntentSnapshotRow {
   mission_run_id: string | null;
   tool_call_id: string | null;
   expires_at: Date | string | null;
+  /** Complete renderer card captured under the approval-row lock. */
+  preview_json?: unknown;
   decision: ApprovalDecision | null;
   decision_reason: string | null;
   decided_at: Date | string | null;
   execution_status: approvalIntentsRepo.ApprovalExecutionStatus | null;
   execution_result_hash: string | null;
+  // Studio columns (migration 086). `origin` is NOT NULL with a default, so it
+  // is always present; the rest are NULL for every agent row.
+  origin: ApprovalOrigin;
+  project_id: string | null;
+  scope_version_at_enqueue: number | string | null;
+  request_digest: string | null;
   // queue columns (denormalised join)
   queue_status: string;
   queue_resolved_at: Date | string | null;
@@ -41,6 +53,16 @@ export interface IntentSnapshotRow {
   // permission-downgrade tx cannot change until this approve commits.
   session_permission_live: Permission;
 }
+
+/**
+ * The authority that moved between enqueue and approve. See
+ * `ApproveSnapshot["policy_drift_blocked"].driftKind`.
+ */
+export type ApprovalDriftKind =
+  | "session_permission"
+  | "project_permission"
+  | "project_deleted"
+  | "scope_changed";
 
 export type ApproveSnapshot =
   | { type: "not_found" }
@@ -68,6 +90,21 @@ export type ApproveSnapshot =
       reason: string;
       permissionAtEnqueue: Permission;
       livePermission: Permission;
+      /**
+       * WHICH authority moved. `session_permission` is the original B-001 case
+       * and the only one an agent row can reach, so an agent approve is
+       * unchanged in value as well as in shape. The three Studio cases share
+       * this outcome because they are the same event: authority the human
+       * approved under no longer holds, so the action failed CLOSED before any
+       * dispatch state transition.
+       */
+      driftKind: ApprovalDriftKind;
+      /**
+       * The machine cause written to `refusal_reason`, for the two Studio
+       * cases that have one. `null` for both permission drifts, which are
+       * policy drift rather than a refusal by an owner.
+       */
+      refusalReason: ApprovalRefusalReason | null;
     }
   | {
       type: "approved_in_tx";

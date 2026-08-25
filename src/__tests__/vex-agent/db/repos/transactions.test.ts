@@ -311,7 +311,7 @@ describe("filters", () => {
     // Bridges collapse to the logical row; swaps/lend/prediction/launch still
     // emit every row (one role per on-chain tx — no logical/leg split, R5).
     expect(activityHalf).toContain(
-      "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR kind = 'claim' OR kind = 'transfer' OR event_role = 'bridge_fill_expected')",
+      "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR kind = 'claim' OR kind = 'transfer' OR kind = 'transaction' OR event_role = 'bridge_fill_expected')",
     );
   });
 

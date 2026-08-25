@@ -15,6 +15,10 @@ import { DELETED_TEST_ALLOWLIST_PATHS } from "./deleted-test-allowlist.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "..");
+const TEST_PATHS = [
+  "src/__tests__",
+  ":(glob)vex-app/src/**/__tests__/**",
+];
 
 function fail(message) {
   console.error(`✗ ${message}`);
@@ -71,7 +75,7 @@ function renameSourcePaths(base) {
 
 function changedTestFiles(base) {
   const renameSources = renameSourcePaths(base);
-  const status = runGit(["diff", "--name-status", "-z", base, "--", "src/__tests__"]);
+  const status = runGit(["diff", "--name-status", "-z", base, "--", ...TEST_PATHS]);
   const tokens = status.split("\0").filter(Boolean);
   const files = [];
   const deleted = new Set();
@@ -100,7 +104,7 @@ function changedTestFiles(base) {
           "  (path + reason + where surviving behavior is covered) to scripts/deleted-test-allowlist.mjs.",
       );
     }
-    if (/\.(?:test|int\.test)\.[cm]?[jt]sx?$/.test(file)) files.push(file);
+    if (/\.(?:test|spec|int\.test)\.[cm]?[jt]sx?$/.test(file)) files.push(file);
   }
   // Stale entries fail: an allowlisted deletion that is no longer a deletion is
   // a row nobody removed when the test came back.
@@ -120,7 +124,7 @@ function changedPaths(base) {
 }
 
 function addedLinesByFile(base) {
-  const output = runGit(["diff", "--unified=0", base, "--", "src/__tests__"]);
+  const output = runGit(["diff", "--unified=0", base, "--", ...TEST_PATHS]);
   const lines = new Map();
   let currentFile = null;
   let nextLine = 0;
@@ -150,6 +154,12 @@ function lineOf(sourceFile, position) {
   return sourceFile.getLineAndCharacterOfPosition(position).line + 1;
 }
 
+function unwrapParentheses(node) {
+  let current = node;
+  while (ts.isParenthesizedExpression(current)) current = current.expression;
+  return current;
+}
+
 function isForbiddenAssertion(node) {
   if (!ts.isAsExpression(node) && !ts.isTypeAssertionExpression(node)) return null;
   if (node.type.kind === ts.SyntaxKind.AnyKeyword) return "as any";
@@ -159,9 +169,26 @@ function isForbiddenAssertion(node) {
    * a real typed double would surface.
    */
   if (node.type.kind === ts.SyntaxKind.NeverKeyword) return "as never";
-  if ((ts.isAsExpression(node.expression) || ts.isTypeAssertionExpression(node.expression))
-    && node.expression.type.kind === ts.SyntaxKind.UnknownKeyword) return "as unknown as";
+  const expression = unwrapParentheses(node.expression);
+  if ((ts.isAsExpression(expression) || ts.isTypeAssertionExpression(expression))
+    && expression.type.kind === ts.SyntaxKind.UnknownKeyword) return "as unknown as";
   return null;
+}
+
+function assertDetectorSelfTest() {
+  const sourceFile = ts.createSourceFile(
+    "unsafe-detector-self-test.ts",
+    "const escaped = (null as unknown) as string;",
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  let detected = false;
+  const visit = (node) => {
+    if (isForbiddenAssertion(node) === "as unknown as") detected = true;
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  if (!detected) fail("unsafe-test detector self-test failed for parenthesized double assertion");
 }
 
 function isFocusedTestModifier(node) {
@@ -225,6 +252,7 @@ function deriveMergeBase() {
 }
 
 function main() {
+  assertDetectorSelfTest();
   const base = argumentValue("--base") ?? deriveMergeBase();
   console.log(`• comparing against base ${base}`);
   const forbiddenPaths = new Set(["tsconfig.json", "tsconfig.test.json", "scripts/test-type-baseline.json", "scripts/test-type-baseline-allowlist.json"]);

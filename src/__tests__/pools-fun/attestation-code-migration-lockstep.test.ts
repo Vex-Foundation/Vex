@@ -6,7 +6,7 @@
  *   1. `@tools/pools-fun/attribution-codes.ts` - `POOLS_ATTEST_TERMINAL_CODES`,
  *      which the client classifies against and the sweep decides from;
  *   2. the CHECK constraint on the rejection-code column in
- *      `db/migrations/087_pools_launch_attribution.sql`, which the DATABASE
+ *      `db/migrations/094_pools_launch_attribution.sql`, which the DATABASE
  *      enforces at write time.
  *
  * Drift between them is invisible until it is expensive. A code added to the
@@ -22,7 +22,7 @@
  * is the shared contract), so it reads the file and extracts the quoted
  * literals from the CHECK that mentions the codes.
  *
- * MIGRATION 087 IS REQUIRED. A missing migration file is a red test, never a
+ * MIGRATION 094 IS REQUIRED. A missing migration file is a red test, never a
  * skip: the vocabulary module and the CHECK ship as one contract, and a build
  * that has one without the other is exactly the drift this file exists to
  * catch.
@@ -47,7 +47,7 @@ const MIGRATION_FILE = join(
   "vex-agent",
   "db",
   "migrations",
-  "087_pools_launch_attribution.sql",
+  "094_pools_launch_attribution.sql",
 );
 
 const migrationExists = existsSync(MIGRATION_FILE);
@@ -111,9 +111,9 @@ describe("the pools attestation code vocabulary is internally coherent", () => {
 });
 
 describe(
-  "migration 087's CHECK and POOLS_ATTEST_TERMINAL_CODES are the same set",
+  "migration 094's CHECK and POOLS_ATTEST_TERMINAL_CODES are the same set",
   () => {
-    it("the migration file exists - 087 is REQUIRED, a missing file is a red test not a skip", () => {
+    it("the migration file exists - 094 is REQUIRED, a missing file is a red test not a skip", () => {
       expect(migrationExists, `expected ${MIGRATION_FILE} to exist`).toBe(true);
     });
 

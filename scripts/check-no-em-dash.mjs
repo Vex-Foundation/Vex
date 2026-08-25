@@ -20,11 +20,13 @@
  * reached the tree: a new, untracked lint module carrying two em-dash lines
  * passed every diff-scoped check.
  *
- * `src/vex-agent/tools/__toolsnaps__` and
+ * `src/vex-agent/tools/__toolsnaps__`, `src/vex-agent/mcp/__toolsnaps__` and
  * `src/vex-agent/engine/prompts/__promptsnaps__` are excluded because they
  * are generated output, not authored content: their text is regenerated from
  * the manifests and the prompt modules, so those sources are where a violation
- * is fixed and where this gate must fail.
+ * is fixed and where this gate must fail. The Studio MCP artifact carries the
+ * same manifest descriptions and schemas as the tools one, for the same
+ * reason.
  *
  * ONE exemption, and it is a closed allowlist (`RELOCATED_VERBATIM_SENTENCES`):
  * owner-approved PRESERVE EXACT prompt sentences that a migration moved
@@ -77,10 +79,15 @@ function runGit(args) {
 function isAuthoredContent(file) {
   if (file.includes("node_modules/")) return false;
   if (file.startsWith("src/vex-agent/tools/__toolsnaps__/")) return false;
+  if (file.startsWith("src/vex-agent/mcp/__toolsnaps__/")) return false;
   if (file.startsWith("src/vex-agent/engine/prompts/__promptsnaps__/")) return false;
   return (
     file.startsWith("src/")
     || file.startsWith("vex-app/src/")
+    // The Go bridge is authored content too: its package docs and its
+    // user-facing stderr sentences are shipped prose, and nothing else scanned
+    // them.
+    || file.startsWith("bridge/")
     || file.startsWith("docs/")
     || file.startsWith("scripts/")
     || file.endsWith(".md")

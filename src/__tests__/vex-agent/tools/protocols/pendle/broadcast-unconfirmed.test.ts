@@ -118,9 +118,16 @@ vi.mock("@tools/evm-chains/erc20-balance-guard.js", () => ({
 
 const mockCreateIntent = vi.fn();
 const mockPreBroadcastFailure = vi.fn();
+const mockReserveActivityEvmNonce = vi.fn(async (
+  _id: number,
+  request: { readonly nodePendingNonce: number },
+) => request.nodePendingNonce);
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   createAgentActivityIntent: (...a: unknown[]) => mockCreateIntent(...a),
   createAgentActivityPreBroadcastFailure: (...a: unknown[]) => mockPreBroadcastFailure(...a),
+  reserveActivityEvmNonce: (
+    ...args: Parameters<typeof mockReserveActivityEvmNonce>
+  ) => mockReserveActivityEvmNonce(...args),
   markActivityBroadcast: vi.fn(async () => ({ applied: true, row: {} })),
   markBroadcastAccepted: vi.fn(async () => ({ applied: true, row: {} })),
   confirmActivityEvent: vi.fn(async () => ({ applied: true, row: {} })),
@@ -338,6 +345,10 @@ describe.each(MUTATING_TOOLS)("$toolId — unproven broadcast", ({ toolId, run, 
   it("an AMBIGUOUS submit surfaces the hash and forbids a retry", async () => {
     submitOutcome = "ambiguous";
     const res = (await run(params)) as Res;
+    expect(mockReserveActivityEvmNonce).toHaveBeenCalledWith(
+      99,
+      expect.objectContaining({ nodePendingNonce: 11 }),
+    );
     expectUnprovenBroadcast(res, toolId);
     // The exact sentence the card fixes — ambiguity resolves automatically.
     expect(res.output).toContain(

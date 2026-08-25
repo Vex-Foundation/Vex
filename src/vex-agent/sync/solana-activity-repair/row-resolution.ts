@@ -24,6 +24,8 @@ import {
   type AgentActivityEvent,
   type TerminalCasResult,
 } from "@vex-agent/db/repos/agent-activity.js";
+import * as walletIntentsRepo from "@vex-agent/db/repos/wallet-intents.js";
+import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { summarizeSolanaOnChainError } from "@tools/solana-ecosystem/shared/solana-transaction/onchain-error-summary.js";
 import logger from "@utils/logger.js";
 
@@ -34,6 +36,7 @@ import {
 } from "./amount-decode-lane.js";
 import type { SolanaExecutedLegAmounts } from "./executed-amounts.js";
 import { isSolanaSweepEscalated } from "./candidate-schedule.js";
+import { settleLinkedIntentForRow } from "../wallet-transaction-intent-settlement.js";
 import type {
   SolanaActivitySweepDeps,
   SolanaBatchResolution,
@@ -84,14 +87,102 @@ export async function resolveSolanaPendingRows(
       });
     }
     const outcome = await processSolanaCandidate(event, statusFor(statuses, index), deps, amountBudget);
+    // THE LINKED INTENT (migration 087, T5/T6). This lane owns Solana signature
+    // observation, so it settles the `wallet_transaction_intents` row hanging
+    // off this activity row instead of a second observer asking the chain the
+    // same question. No chain access and no re-send happen in there.
+    //
+    // The verdict must PRESERVE the distinction the row resolution proved: a
+    // `mined_revert` (real on-chain error evidence) is `reverted`, but a
+    // blockhash/height EXPIRY with no landed-or-reverted evidence is
+    // `superseded_unproven` (T6), never `chain_reverted`. Folding expiry into
+    // `reverted` would tell the user the transaction failed on chain when
+    // nobody established that it ran at all.
+    if (outcome === "confirmed" || outcome === "failed" || outcome === "superseded") {
+      const verdict =
+        outcome === "confirmed"
+          ? "confirmed"
+          : outcome === "failed"
+            ? "reverted"
+            : "superseded_unproven";
+      await settleLinkedIntentForRow(event, verdict);
+    }
     if (outcome === "confirmed") confirmed++;
-    else if (outcome === "failed") failed++;
+    // A superseded row is terminal on the activity side (its blockhash expired),
+    // so it counts with the resolved-not-pending rows, never as still pending.
+    else if (outcome === "failed" || outcome === "superseded") failed++;
     else if (outcome === "pending") stillPending++;
     // outcome === "duplicate": a concurrent process already settled this row
     // - logged in logDuplicateCas already; never double-counted here.
   }
 
   return { confirmed, failed, stillPending };
+}
+
+/**
+ * Resolve pre-084 Solana transfer hashes that have no activity row. This reuses
+ * the sweep's read-only status and transaction ports. With no persisted
+ * blockhash-height evidence it never declares expiry; absence stays pending.
+ */
+export async function resolveLegacySolanaTransfers(
+  candidates: readonly walletIntentsRepo.WalletIntent[],
+  deps: SolanaActivitySweepDeps,
+): Promise<SolanaBatchResolution> {
+  const due = candidates.filter(
+    (intent): intent is walletIntentsRepo.WalletIntent & { txHash: string } =>
+      intent.txHash !== null,
+  );
+  if (due.length === 0) {
+    return { confirmed: 0, failed: 0, stillPending: candidates.length };
+  }
+
+  const statuses = await deps.getSignatureStatuses(due.map((intent) => intent.txHash));
+  let confirmed = 0;
+  let failed = 0;
+  let stillPending = candidates.length - due.length;
+
+  for (const [index, intent] of due.entries()) {
+    const status = statusFor(statuses, index);
+    let verdict: "confirmed" | "reverted" | null = null;
+    if (status.outcome === "found" && isLandedStatus(status.value.confirmationStatus)) {
+      if (hasOwnErr(status.value)) {
+        verdict = isOnChainError(status.value.err) ? "reverted" : "confirmed";
+      }
+    } else if (status.outcome === "not_found") {
+      const tx = await deps.getFinalizedTransaction(intent.txHash);
+      if (tx.outcome === "found") {
+        const meta = readTransactionMetaErr(tx.value);
+        if (meta.present) verdict = isOnChainError(meta.err) ? "reverted" : "confirmed";
+      }
+    }
+
+    if (verdict === null) {
+      await touchLegacySolanaReview(intent);
+      stillPending++;
+      continue;
+    }
+
+    const settled = await withSessionControlLock(intent.sessionId, (client) =>
+      walletIntentsRepo.settleLegacyReviewWith(
+        client,
+        intent.intentId,
+        intent.sessionId,
+        intent.txHash,
+        verdict,
+      ),
+    );
+    if (settled === null) continue;
+    if (verdict === "confirmed") confirmed++;
+    else failed++;
+  }
+
+  return { confirmed, failed, stillPending };
+}
+
+async function touchLegacySolanaReview(intent: walletIntentsRepo.WalletIntent): Promise<void> {
+  await withSessionControlLock(intent.sessionId, (client) =>
+    walletIntentsRepo.touchLegacyReviewWith(client, intent.intentId, intent.sessionId),
+  );
 }
 
 /** Project the batched lookup onto ONE row. A short/absent entry is ambiguity, never absence. */
@@ -106,7 +197,7 @@ function statusFor(
   return { outcome: "found", value: entry };
 }
 
-type CandidateOutcome = "confirmed" | "failed" | "pending" | "duplicate";
+type CandidateOutcome = "confirmed" | "failed" | "superseded" | "pending" | "duplicate";
 
 async function processSolanaCandidate(
   event: AgentActivityEvent,
@@ -364,7 +455,11 @@ async function finalizeIfExpired(
       `Solana activity sweep: blockhash expired (current block height ${heightLookup.value} `
       + `> persisted last_valid_block_height ${event.lastValidBlockHeight}) with no signature found.`,
   });
-  if (outcome.applied) return "failed";
+  // `superseded`, NOT `failed`: an expired blockhash with no signature ever
+  // observed is absence of proof, not evidence of an on-chain revert. The
+  // linked intent settles `superseded_unproven` (T6); a `failed` verdict here
+  // would map to `chain_reverted` and claim the transaction ran and reverted.
+  if (outcome.applied) return "superseded";
   logDuplicateCas(event.id, "fail");
   return outcome.row.status === "pending" ? "pending" : "duplicate";
 }

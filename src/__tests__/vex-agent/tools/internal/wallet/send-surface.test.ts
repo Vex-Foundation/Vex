@@ -35,6 +35,7 @@ vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
   consumeIfPendingWith: vi.fn(),
   markExecutedWith: vi.fn(),
   markFailedWith: vi.fn(),
+  markBroadcastUnconfirmedWith: vi.fn(),
   markAuditFailedWith: vi.fn(),
 }));
 

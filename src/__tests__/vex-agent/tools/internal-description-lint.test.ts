@@ -28,6 +28,7 @@ import { describe, it, expect } from "vitest";
 import { getAllTools } from "@vex-agent/tools/registry.js";
 import { ACTION_ALIAS_TOOLS } from "@vex-agent/tools/registry/action-aliases.js";
 import { WALLET_TOOLS } from "@vex-agent/tools/registry/wallet.js";
+import { WALLET_TRANSACTION_TOOLS } from "@vex-agent/tools/registry/wallet-transaction.js";
 import { ACTION_KINDS } from "@vex-agent/tools/taxonomy.js";
 import { lintInternalToolDescription } from "@vex-agent/tools/protocols/_manifest-lint/internal-description-rules.js";
 import {
@@ -42,7 +43,9 @@ import type { ManifestLintIssue } from "@vex-agent/tools/protocols/_manifest-lin
  * arrays that suite lints rather than from a hand-copied name list. Used only
  * to assert the split honestly; it does NOT narrow this lane.
  */
-const BASIC_LANE = new Set([...ACTION_ALIAS_TOOLS, ...WALLET_TOOLS].map((tool) => tool.name));
+const BASIC_LANE = new Set(
+  [...ACTION_ALIAS_TOOLS, ...WALLET_TOOLS, ...WALLET_TRANSACTION_TOOLS].map((tool) => tool.name),
+);
 
 /** Every registered internal tool. The ActionKind lane excludes nothing. */
 const SUBJECTS = getAllTools();
@@ -63,8 +66,11 @@ describe("G2 - internal tool description lint", () => {
   it("lints every registered internal tool, including the 14 the basic rule sees", () => {
     // 34 → 32: the ToolSearch merge deleted the `describe_tools` and
     // `execute_tool` ToolDefs (`registry/protocol.ts`).
-    expect(SUBJECTS).toHaveLength(32);
-    expect(BASIC_LANE.size, "basic-lane coverage changed").toBe(14);
+    // 32 → 36: stage A4b registered the four generic transaction signing tools,
+    // all four inside the basic (JSON-schema) lane, which is why that count
+    // moved from 14 to 18 in the same step.
+    expect(SUBJECTS).toHaveLength(36);
+    expect(BASIC_LANE.size, "basic-lane coverage changed").toBe(18);
 
     // The 18 the basic rule never saw, and the 14 it sees without an
     // ActionKind, are ALL in this lane.
@@ -85,6 +91,8 @@ describe("G2 - internal tool description lint", () => {
     expect(moneyPath).toEqual(expect.arrayContaining([
       "BridgeExecute", "SwapExecute", "SwapExecuteUniswap", "BridgeExecuteRelay",
       "WalletSendPrepare", "WalletSendConfirm",
+      "WalletEvmTransactionPrepare", "WalletEvmTransactionConfirm",
+      "WalletSolanaTransactionPrepare", "WalletSolanaTransactionConfirm",
     ]));
     // Every one of them sits in the basic lane too, which is exactly why the
     // ActionKind lane may not exclude that lane.

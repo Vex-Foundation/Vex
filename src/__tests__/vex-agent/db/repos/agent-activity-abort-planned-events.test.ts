@@ -21,6 +21,12 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 type QueryMock = Mock<(sql: string, params?: unknown[]) => Promise<Record<string, unknown>[]>>;
 
 let mockQuery: QueryMock;
+type SettlementInput = {
+  readonly activityWrite: (client: unknown) => Promise<unknown>;
+};
+const mockSettleLinkedActivityRowsWith = vi.fn(
+  async (client: unknown, input: SettlementInput) => input.activityWrite(client),
+);
 
 function resetMocks() {
   mockQuery = vi
@@ -41,6 +47,12 @@ vi.mock("@vex-agent/db/client.js", () => ({
   queryOneWith: vi.fn(),
   executeWith: vi.fn(),
   withTransaction: async (fn: (c: unknown) => Promise<unknown>) => fn({}),
+}));
+
+vi.mock("@vex-agent/db/repos/agent-activity/linked-transaction-settlement.js", () => ({
+  settleLinkedActivityRows: async (input: SettlementInput) => input.activityWrite({}),
+  settleLinkedActivityRowsWith: (client: unknown, input: SettlementInput) =>
+    mockSettleLinkedActivityRowsWith(client, input),
 }));
 
 const repo = await import("@vex-agent/db/repos/agent-activity.js");
@@ -102,6 +114,7 @@ function activityRow(overrides: Partial<Record<string, unknown>> = {}): Record<s
 
 beforeEach(() => {
   resetMocks();
+  mockSettleLinkedActivityRowsWith.mockClear();
 });
 
 describe("abortPlannedEvents", () => {
@@ -120,6 +133,7 @@ describe("abortPlannedEvents", () => {
     const params = lastParams();
     expect(params[0]).toBe(42);
     expect(params[1]).toBe(1);
+    expect(mockSettleLinkedActivityRowsWith).toHaveBeenCalledTimes(1);
   });
 
   // THE LENGTH CAP WAS REMOVED, THE REDACTION WAS NOT (funded live audit,
@@ -148,6 +162,7 @@ describe("abortPlannedEvents", () => {
     expect(rows[0]!.status).toBe("definitively_failed");
     expect(rows[0]!.failureCode).toBe("unknown");
     expect(rows[1]!.id).toBe(6);
+    expect(mockSettleLinkedActivityRowsWith).toHaveBeenCalledTimes(2);
   });
 
   it("returns [] (never throws) when nothing qualifies", async () => {

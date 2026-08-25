@@ -28,7 +28,11 @@ import logger from "@utils/logger.js";
 import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
 import { LEASE_TTL_MS } from "./helpers.js";
 import { appendApprovalResolvedCueOnce } from "./resume-cue.js";
-import type { PreparedContinuation } from "./types.js";
+import { isTerminalStudioState } from "./studio/terminal-state.js";
+import {
+  continuationHoldsLease,
+  type PreparedContinuation,
+} from "./types.js";
 
 /**
  * Claim outcome. `busy` is transient — another runner holds the session lease,
@@ -59,11 +63,33 @@ export interface ClaimResumeInput {
   readonly approvalId: string;
   /** Tags the lease owner: `approve` / `reject` / `expire` / `policy_drift`. */
   readonly ownerPrefix: string;
+  /**
+   * A3 - which surface enqueued the intent. `studio_mcp` takes the third arm
+   * below; every other value is an agent approval and behaves exactly as before.
+   */
+  readonly origin?: "agent" | "studio_mcp";
+  /** Studio only - carried through so the settlement event can name it. */
+  readonly projectId?: string | null;
 }
 
 export async function claimResumeContinuation(
   input: ClaimResumeInput,
 ): Promise<ClaimResumeOutcome> {
+  // A3 - the Studio arm, keyed on the row's ORIGIN and nothing else. It takes
+  // no lease (see `StudioContinuation`), so it cannot report `busy` and a
+  // Studio approval can never be deferred behind an in-app agent turn on the
+  // same backing session. Its exclusivity is the per-intent dispatch CAS.
+  if (input.origin === "studio_mcp") {
+    return {
+      outcome: "claimed",
+      continuation: {
+        kind: "studio_mcp",
+        approvalId: input.approvalId,
+        sessionId: input.sessionId,
+        projectId: input.projectId ?? null,
+      },
+    };
+  }
   const ownerId = `${input.ownerPrefix}-${input.approvalId}`;
   return input.missionRunId === null
     ? claimChatSessionResume(input, ownerId)
@@ -209,6 +235,15 @@ async function claimChatSessionResume(
 export async function runResumeAfterDecision(
   cont: PreparedContinuation,
 ): Promise<TurnResult> {
+  // A3 - the Studio case runs NO TURN. The approved call already dispatched and
+  // its settlement already committed inside `applyApproveSideEffects`; what is
+  // left is to tell the blocked MCP request that a durable answer exists. It
+  // deliberately does not touch `resume_consumed_at`: that column terminates
+  // AGENT resume eligibility, and a Studio row is filtered out of every scan
+  // that reads it, so writing it would record a resume that never existed.
+  if (cont.kind === "studio_mcp") {
+    return runStudioSettlementAnnounce(cont);
+  }
   try {
     // Attempt audit — deliberately not a gate. A crash between this stamp and
     // the core starting must still recover, so nothing may read `resumed_at` as
@@ -359,6 +394,11 @@ async function runChatSessionResume(
 export async function discardContinuation(
   cont: PreparedContinuation,
 ): Promise<void> {
+  // Nothing to release: the Studio arm holds no lease. The settlement row is
+  // already durable, so a discarded Studio continuation costs the waiter its
+  // early notification and nothing else - its own expiry timer and the
+  // scheduled sweep are the durable floor.
+  if (!continuationHoldsLease(cont)) return;
   await releaseLeaseAndEmitControlState(
     cont.leaseHandle,
     cont.sessionId,
@@ -366,4 +406,88 @@ export async function discardContinuation(
       ? { missionRunId: cont.missionRunId }
       : undefined,
   );
+}
+
+/**
+ * The Vex Studio "resume": announce a durable settlement, run no turn.
+ *
+ * The row is read AFTER the settling transaction has committed, so the outcome
+ * this emits is committed truth rather than the dispatcher's in-memory belief,
+ * and it emits NOTHING unless that row is TERMINAL.
+ * A row that has vanished (only possible if its whole approval was deleted)
+ * emits nothing: there is no answer to announce, and the blocked call falls
+ * back to its own expiry.
+ *
+ * `TurnResult` is the shape every continuation returns; a Studio settlement
+ * made no model call, dispatched no tool from a TURN, and enqueued no approval,
+ * so every field is the honest zero. It is not a stopped turn either, which is
+ * why `stopReason` stays null.
+ */
+async function runStudioSettlementAnnounce(
+  cont: Extract<PreparedContinuation, { kind: "studio_mcp" }>,
+): Promise<TurnResult> {
+  const idle: TurnResult = {
+    text: null,
+    toolCallsMade: 0,
+    pendingApprovals: [],
+    stopReason: null,
+    missionStatus: null,
+  };
+  const { getStudioSettlementByApprovalId } = await import(
+    "../../../db/repos/approval-intents.js"
+  );
+  const row = await getStudioSettlementByApprovalId(cont.approvalId);
+  if (row === null) {
+    logger.warn("engine.studio.settlement_row_missing", {
+      approvalId: cont.approvalId,
+    });
+    return idle;
+  }
+  // READ BEFORE EMIT, and emit ONLY for a terminal row. The approval commits
+  // before the dispatch, so this can legitimately run while the row is still
+  // `approved/not_started` or `approved/dispatching` - announcing that would
+  // release a blocked external agent with an answer for an action still on its
+  // way. The writer that makes the row terminal announces it, and the broker's
+  // periodic durable read is the floor under a lost announce.
+  if (
+    !isTerminalStudioState({
+      decision: row.decision,
+      executionStatus: row.executionStatus,
+    })
+  ) {
+    logger.warn("engine.studio.settlement_announce_skipped_non_terminal", {
+      approvalId: cont.approvalId,
+      executionStatus: row.executionStatus,
+    });
+    return idle;
+  }
+  const { emitStudioSettlement } = await import(
+    "../../runtime/studio-settlement-bus.js"
+  );
+  emitStudioSettlement({
+    approvalId: cont.approvalId,
+    projectId: row.projectId ?? cont.projectId,
+    outcome: studioOutcomeFromRow(row.decision, row.executionStatus),
+  });
+  return idle;
+}
+
+/**
+ * Map the row's own state to the bounded outcome enum. The decision comes
+ * first: a row that was never approved cannot have dispatched, whatever its
+ * execution status says.
+ */
+function studioOutcomeFromRow(
+  decision: string | null,
+  executionStatus: string,
+): "settled" | "rejected" | "dispatch_failed" | "indeterminate" {
+  if (decision !== "approved") return "rejected";
+  if (executionStatus === "succeeded" || executionStatus === "failed") {
+    // `failed` here is a CONTROLLED tool failure: the call ran and reported an
+    // error, which is a real answer the agent must receive whole. Only a
+    // dispatch that could not be carried out is `dispatch_failed`.
+    return "settled";
+  }
+  if (executionStatus === "indeterminate") return "indeterminate";
+  return "dispatch_failed";
 }

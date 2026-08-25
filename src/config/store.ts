@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { CHAIN } from "../constants/chain.js";
 import { CONFIG_DIR, CONFIG_FILE } from "./paths.js";
@@ -121,6 +121,17 @@ export interface VexConfig {
   // Absent by default; the bundled default RPC (per the Pendle chain registry)
   // wins otherwise. Consumed by src/tools/pendle/evm-client.ts.
   pendleRpcUrls?: Record<string, string> | undefined;
+  // Optional override for the Vex Studio projects root (user-visible workspace,
+  // default `~/Vex/projects`). ABSOLUTE PATHS ONLY - a relative value is
+  // ignored, for the same reason `VEX_CONFIG_DIR` ignores one: a typo must
+  // never redirect project directories into the launcher's cwd. Absent by
+  // default. Consumed through `resolveProjectsRootPath` in
+  // `src/config/paths.ts` / `vex-app/src/main/paths/config-dir.ts`.
+  //
+  // Changing it after projects exist is REFUSED at the projects boundary
+  // (`projects.root_changed`): `projects.root_path` is relative to the root
+  // recorded in `studio_settings`, so a silent re-home would orphan every row.
+  projectsRoot?: string | undefined;
   /**
    * Master switch for the pools.fun VEX-badge attestation lane. `false` means
    * the launch handler produces NO signature, writes NO attestation column,
@@ -281,6 +292,25 @@ export function dropEmptyPoolsFunAttestApiUrl(
   return dropEmptyDarkServiceUrl(services, "poolsFunAttestApiUrl");
 }
 
+/**
+ * Untrusted config input: accept the projects-root override only as a
+ * non-empty ABSOLUTE path. Anything else (missing, wrong type, empty,
+ * relative) resolves to `undefined` so the platform default wins.
+ */
+export function parseProjectsRoot(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const value = raw.trim();
+  if (value.length === 0 || !isAbsolute(value)) {
+    if (raw.length > 0) {
+      logger.warn(
+        "Ignoring config.projectsRoot: the value must be an absolute path",
+      );
+    }
+    return undefined;
+  }
+  return value;
+}
+
 function parseClaudeConfig(raw: unknown): VexConfig["claude"] | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return undefined;
@@ -421,6 +451,7 @@ export function loadConfig(): VexConfig {
       ...(parseClaudeConfig(parsed.claude) ? { claude: parseClaudeConfig(parsed.claude) } : {}),
       ...(parseChainRpcUrls(parsed.localChainRpcUrls) ? { localChainRpcUrls: parseChainRpcUrls(parsed.localChainRpcUrls) } : {}),
       ...(parseChainRpcUrls(parsed.pendleRpcUrls) ? { pendleRpcUrls: parseChainRpcUrls(parsed.pendleRpcUrls) } : {}),
+      ...(parseProjectsRoot(parsed.projectsRoot) ? { projectsRoot: parseProjectsRoot(parsed.projectsRoot) } : {}),
     };
   } catch (err) {
     logger.error(`Failed to parse config: ${err}`);

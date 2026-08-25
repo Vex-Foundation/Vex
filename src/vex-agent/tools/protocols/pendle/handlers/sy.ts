@@ -31,7 +31,7 @@ import { getAddress, parseUnits, type Address, type Hex } from "viem";
 import { getPendleClient } from "@tools/pendle/client.js";
 import { PENDLE_ROUTER } from "@tools/pendle/constants.js";
 import { getPendleEvmClients } from "@tools/pendle/evm-client.js";
-import { ensurePendleAllowanceExact } from "@tools/pendle/erc20.js";
+import { ensurePendleAllowanceExact } from "@vex-agent/tools/protocols/pendle/allowance.js";
 import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
 
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";

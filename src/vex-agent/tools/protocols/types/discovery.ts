@@ -50,7 +50,28 @@ export interface ProtocolDiscoveryRequest {
    * dumping every namespace as one payload is forbidden.
    */
   list?: boolean;
+  /**
+   * How a manifest whose `requiresEnv` is UNMET is treated.
+   *
+   * `"filter-env-unmet"` (the DEFAULT, and exactly today's in-app behaviour):
+   * such a manifest is dropped from the candidate set, so the agent never sees
+   * a tool it cannot run.
+   *
+   * `"include-unavailable"`: the manifest is returned. The Studio MCP export
+   * needs this because MCP 2026-07-28 requires a tool catalog that does not
+   * vary by connection state or local configuration - an env-unmet tool is
+   * still listed, and the CALL answers a typed `configuration_unavailable`
+   * result naming the env variable. The caller is responsible for marking the
+   * row unavailable; discovery only stops hiding it.
+   *
+   * The advertised-namespace and lifecycle gates are NOT relaxed by either
+   * value: a reserved namespace and a retired manifest stay unreachable.
+   */
+  availability?: DiscoveryAvailabilityMode;
 }
+
+/** See {@link ProtocolDiscoveryRequest.availability}. */
+export type DiscoveryAvailabilityMode = "filter-env-unmet" | "include-unavailable";
 
 /**
  * The COMPLETE model-facing manifest projection — a ranked discovery row minus

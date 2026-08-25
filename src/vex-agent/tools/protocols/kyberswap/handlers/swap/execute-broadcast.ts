@@ -21,6 +21,7 @@ import logger from "@utils/logger.js";
 import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 import {
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
   confirmActivityEvent,
   failActivityEvent,
@@ -88,6 +89,7 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
       const outcome: StagedBroadcastOutcome = await signStageBroadcast(
         publicClient, walletClient, plan.txParams,
         {
+          onNonceReserved: (request) => reserveActivityEvmNonce(eventRow.id, request),
           onHashStaged: async (handles) => {
             // Reached only AFTER this leg is signed and immediately before
             // `sendRawTransaction` — past this point the leg can no longer

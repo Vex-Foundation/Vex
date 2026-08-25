@@ -1,4 +1,4 @@
--- 087 - pools.fun creator ATTRIBUTION state for a launched token (the VEX badge).
+-- 094 - pools.fun creator ATTRIBUTION state for a launched token (the VEX badge).
 --
 -- RUNS AFTER 084. The number is deliberate: a concurrent studio branch claims
 -- 085/086 and lands before this one. The runner applies every file whose

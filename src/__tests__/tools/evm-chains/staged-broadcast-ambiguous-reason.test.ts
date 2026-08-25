@@ -62,7 +62,11 @@ function walletClient(): WalletClient<Transport, Chain, Account> {
   });
 }
 
-const HOOKS = () => ({ onHashStaged: vi.fn(), onAccepted: vi.fn() });
+const HOOKS = () => ({
+  onNonceReserved: vi.fn(async (request: { nodePendingNonce: number }) => request.nodePendingNonce),
+  onHashStaged: vi.fn(),
+  onAccepted: vi.fn(),
+});
 
 describe("signStageBroadcast — the ambiguous variant names its reason", () => {
   it("carries the sanitized send failure", async () => {

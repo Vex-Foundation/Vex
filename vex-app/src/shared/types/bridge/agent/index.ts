@@ -25,6 +25,7 @@ import type { MissionBridge } from "./mission.js";
 import type { ModelsBridge } from "./models.js";
 import type { ImagesBridge } from "./images.js";
 import type { PortfolioBridge } from "./portfolio.js";
+import type { ProjectsBridge } from "./projects.js";
 import type { RuntimeBridge } from "./runtime.js";
 import type { SessionsBridge } from "./sessions.js";
 import type { PoolsLaunchBridge } from "./pools-launch.js";
@@ -44,6 +45,7 @@ export type { MissionBridge } from "./mission.js";
 export type { ModelsBridge } from "./models.js";
 export type { ImagesBridge } from "./images.js";
 export type { PortfolioBridge } from "./portfolio.js";
+export type { ProjectsBridge } from "./projects.js";
 export type { RuntimeBridge } from "./runtime.js";
 export type { SessionsBridge } from "./sessions.js";
 export type { PoolsLaunchBridge } from "./pools-launch.js";
@@ -70,6 +72,11 @@ export interface VexAgentBridge {
   readonly memoryInspector: MemoryInspectorBridge;
   /** Read-only dual-scope POSITION portfolio: global inventory / session scope (stage 3). */
   readonly portfolio: PortfolioBridge;
+  /**
+   * Vex Studio projects (stage P): folder plus backing session. No filesystem
+   * capability crosses this boundary - main owns the root and the folder name.
+   */
+  readonly projects: ProjectsBridge;
   /** Image locker (C2) — the GLOBAL library of pre-staged token-launch images. */
   readonly images: ImagesBridge;
   /**

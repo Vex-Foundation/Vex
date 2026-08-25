@@ -143,12 +143,14 @@ function makeIntent(
     token: null,
     previewJson: { label: "Send 1.5 native to 0xfed…cba09 on base", criticalArgs: {} },
     status: "pending",
+    activityId: null,
     expiresAt: "2026-05-25T10:00:00.000Z",
     consumedAt: null,
     cancelledAt: null,
     txHash: null,
     failureReason: null,
     idempotencyKey: "intent-1",
+    repairCheckedAt: null,
     createdAt: "2026-05-24T20:00:00.000Z",
     ...overrides,
   };
@@ -223,6 +225,19 @@ describe("getPreparedIntent handler", () => {
     expect(result.data).not.toHaveProperty("failureReason");
     expect(result.data).not.toHaveProperty("idempotencyKey");
   });
+
+  it.each(["broadcast_unconfirmed", "superseded_unproven", "review_required"])(
+    "projects the durable %s lifecycle status without coercion",
+    async (status) => {
+      mocks.getById.mockResolvedValueOnce(makeIntent({ status, txHash: "0xunresolved" }));
+      const result = await call(CH.wallets.getPreparedIntent, {
+        sessionId: SESSION,
+        intentId: "intent-1",
+      });
+      expect(result.ok).toBe(true);
+      expect(result.data).toMatchObject({ status, txHash: "0xunresolved" });
+    },
+  );
 
   it("preview Zod safeparse drops malformed JSONB to null (defense-in-depth)", async () => {
     mocks.getById.mockResolvedValueOnce(

@@ -69,11 +69,13 @@ vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
 const activityHandle = {
   executionId: 91,
   rowId: 13,
+  reserveEvmNonce: vi.fn(async (request: { nodePendingNonce: number }) => request.nodePendingNonce),
   stageEvm: vi.fn(async () => {}),
   stageSolana: vi.fn(async () => {}),
   noteAccepted: vi.fn(async () => {}),
   confirm: vi.fn(async () => {}),
   fail: vi.fn(async () => {}),
+  failSignedNotSubmitted: vi.fn(async () => {}),
   completeExecution: vi.fn(async () => {}),
 };
 const mockOpenActivity = vi.fn<ActivityWriterModule["openWalletTransferActivity"]>(
@@ -113,12 +115,14 @@ function makeIntent(overrides: Partial<WalletIntent> = {}): WalletIntent {
     token: null,
     previewJson: {},
     status: "pending" as WalletIntent["status"],
+    activityId: null,
     expiresAt: "2099-01-01T00:00:00.000Z",
     consumedAt: null,
     cancelledAt: null,
     txHash: null,
     failureReason: null,
     idempotencyKey: null,
+    repairCheckedAt: null,
     createdAt: "2026-07-05T00:00:00.000Z",
     ...overrides,
   };
@@ -137,6 +141,12 @@ beforeEach(() => {
   mockSubmitOverRpc.mockResolvedValue({ kind: "accepted", signature: SIGNATURE });
   mockConfirmStaged.mockResolvedValue({ signature: SIGNATURE, phase: "confirmed" });
 });
+
+function firstInvocation(callOrder: readonly number[], label: string): number {
+  const first = callOrder[0];
+  if (first === undefined) throw new Error(`${label} was not called`);
+  return first;
+}
 
 /** The lamports the assembled SystemProgram.transfer instruction actually carries. */
 function signedLamports(): bigint {
@@ -212,6 +222,10 @@ describe("executeSolanaTransfer - staged write path", () => {
     expect(activityHandle.completeExecution).toHaveBeenCalledWith({
       kind: "confirmed", txHash: SIGNATURE,
     });
+    expect(firstInvocation(
+      activityHandle.completeExecution.mock.invocationCallOrder,
+      "completeExecution",
+    )).toBeLessThan(firstInvocation(activityHandle.confirm.mock.invocationCallOrder, "confirm"));
   });
 
   it("aborts before submission when the stage CAS misses", async () => {
@@ -225,10 +239,15 @@ describe("executeSolanaTransfer - staged write path", () => {
     expect(activityHandle.fail).toHaveBeenCalledWith(
       expect.objectContaining({ failureCode: "broadcast_error" }),
     );
+    expect(activityHandle.failSignedNotSubmitted).not.toHaveBeenCalled();
     expect(mockRecordPlanFailure).not.toHaveBeenCalled();
     expect(activityHandle.completeExecution).toHaveBeenCalledWith({
       kind: "failed_before_broadcast",
     });
+    expect(firstInvocation(
+      activityHandle.completeExecution.mock.invocationCallOrder,
+      "completeExecution",
+    )).toBeLessThan(firstInvocation(activityHandle.fail.mock.invocationCallOrder, "fail"));
   });
 
   it("refuses to sign when the durable row cannot be written", async () => {
@@ -313,12 +332,20 @@ describe("executeSolanaTransfer - staged write path", () => {
 
     // The node ANSWERED and refused, so nothing reached the network.
     expect(outcome.kind).toBe("pre_broadcast_failed");
-    expect(activityHandle.fail).toHaveBeenCalledWith(
-      expect.objectContaining({ failureCode: "broadcast_error" }),
+    expect(activityHandle.failSignedNotSubmitted).toHaveBeenCalledWith(
+      expect.objectContaining({ failureReason: expect.stringMatching(/^SubmitRejected:/) }),
     );
+    expect(activityHandle.fail).not.toHaveBeenCalled();
     expect(activityHandle.completeExecution).toHaveBeenCalledWith({
       kind: "failed_before_broadcast",
     });
+    expect(firstInvocation(
+      activityHandle.completeExecution.mock.invocationCallOrder,
+      "completeExecution",
+    )).toBeLessThan(firstInvocation(
+      activityHandle.failSignedNotSubmitted.mock.invocationCallOrder,
+      "failSignedNotSubmitted",
+    ));
   });
 
   it("finalizes a definitive chain failure and completes the execution", async () => {
@@ -335,6 +362,10 @@ describe("executeSolanaTransfer - staged write path", () => {
     expect(activityHandle.completeExecution).toHaveBeenCalledWith({
       kind: "reverted", txHash: SIGNATURE,
     });
+    expect(firstInvocation(
+      activityHandle.completeExecution.mock.invocationCallOrder,
+      "completeExecution",
+    )).toBeLessThan(firstInvocation(activityHandle.fail.mock.invocationCallOrder, "fail"));
   });
 
   it("writes ONE hashless terminal row when the plan cannot be resolved, and signs nothing", async () => {

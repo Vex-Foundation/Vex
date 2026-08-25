@@ -1,7 +1,7 @@
 /**
- * Integration: migration 087 applies cleanly to a schema that stops at 084.
+ * Integration: migration 094 applies cleanly to a schema that stops at 084.
  *
- * WHY THIS EXISTS. `globalSetup` runs the whole chain 001..087 in one pass on an
+ * WHY THIS EXISTS. `globalSetup` runs the whole chain 001..094 in one pass on an
  * empty database, which proves the file is valid SQL and nothing more. It does
  * NOT prove the thing that actually matters for a migration landing on real
  * installations:
@@ -17,7 +17,7 @@
  * MECHANISM. A second database is created inside the SAME container the suite
  * already runs, and the real `runMigrationsWithProgress` is pointed at a temp
  * directory holding only the files at or below 084. Rows are inserted at that
- * schema. Then 087 is copied in and the runner is invoked again, so 087 applies
+ * schema. Then 094 is copied in and the runner is invoked again, so 094 applies
  * as an INCREMENT to a populated 084 schema rather than as step 87 of a fresh
  * chain. Nothing is stubbed: same runner, same files, same Postgres.
  */
@@ -32,8 +32,8 @@ import { runMigrationsWithProgress } from "../../../lib/db/migrate-runner.js";
 import { getVexAgentMigrationsDir } from "@utils/package-assets.js";
 
 const SOURCE_DIR = getVexAgentMigrationsDir();
-const TARGET_DB = "vex_087_probe";
-const MIGRATION_087 = "087_pools_launch_attribution.sql";
+const TARGET_DB = "vex_094_probe";
+const MIGRATION_094 = "094_pools_launch_attribution.sql";
 
 let pool: pg.Pool;
 let stagingDir: string;
@@ -93,7 +93,7 @@ beforeAll(async () => {
   url.pathname = `/${TARGET_DB}`;
   pool = new pg.Pool({ connectionString: url.toString() });
 
-  stagingDir = mkdtempSync(path.join(tmpdir(), "vex-087-"));
+  stagingDir = mkdtempSync(path.join(tmpdir(), "vex-094-"));
 }, 120_000);
 
 afterAll(async () => {
@@ -110,8 +110,8 @@ afterAll(async () => {
   }
 });
 
-describe("087 applies to a populated schema at 084", () => {
-  it("reaches 084 with none of 087's objects present", async () => {
+describe("094 applies to a populated schema at 084", () => {
+  it("reaches 084 with none of 094's objects present", async () => {
     stage(filesUpTo(84));
     const result = await runMigrationsWithProgress({ pool, migrationsDir: stagingDir });
     expect(result.applied).toBe(filesUpTo(84).length);
@@ -121,7 +121,7 @@ describe("087 applies to a populated schema at 084", () => {
     );
     expect(onlyRow(version, "schema_version high-water mark").v).toBe(84);
 
-    // Nothing 087 adds may pre-exist, or the migration is redefining someone
+    // Nothing 094 adds may pre-exist, or the migration is redefining someone
     // else's object rather than adding its own.
     const columns = await columnNames();
     for (const c of [
@@ -135,25 +135,25 @@ describe("087 applies to a populated schema at 084", () => {
     }
   });
 
-  it("087 applies over EXISTING rows and leaves them valid", async () => {
+  it("094 applies over EXISTING rows and leaves them valid", async () => {
     // A trench row and a pools row, written at the 084 schema - exactly what a
-    // real installation holds when 087 arrives. If any new CHECK were written so
+    // real installation holds when 094 arrives. If any new CHECK were written so
     // that all-NULL failed it, this ALTER would abort here.
     for (const launchpad of ["trench_express", "pools_fun"]) {
       await pool.query(
         `INSERT INTO launched_tokens
            (wallet_address, chain_id, launchpad, token_address, name, symbol, create_tx_hash)
-         VALUES ($1, 4663, $2, $3, 'Pre 087', 'PRE', $4)`,
+         VALUES ($1, 4663, $2, $3, 'Pre 094', 'PRE', $4)`,
         [`0x${"1".repeat(40)}`, launchpad, `0x${launchpad === "pools_fun" ? "2" : "3"}${"0".repeat(39)}`, `0x${"4".repeat(64)}`],
       );
     }
 
-    copyFileSync(path.join(SOURCE_DIR, MIGRATION_087), path.join(stagingDir, MIGRATION_087));
+    copyFileSync(path.join(SOURCE_DIR, MIGRATION_094), path.join(stagingDir, MIGRATION_094));
     const result = await runMigrationsWithProgress({ pool, migrationsDir: stagingDir });
 
     // Exactly one file applied, and the 085/086 gap did not stop the runner.
     expect(result.applied).toBe(1);
-    expect(result.files).toEqual([MIGRATION_087]);
+    expect(result.files).toEqual([MIGRATION_094]);
 
     const rows = await pool.query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM launched_tokens`);
     expect(Number(onlyRow(rows, "launched_tokens row count").n)).toBe(2);
@@ -209,7 +209,7 @@ describe("087 applies to a populated schema at 084", () => {
     expect(literals).toEqual(["invalid_signature", "not_pools_launch", "validation_failed"]);
   });
 
-  it("re-running the chain is a no-op - 087 is not re-applied", async () => {
+  it("re-running the chain is a no-op - 094 is not re-applied", async () => {
     const result = await runMigrationsWithProgress({ pool, migrationsDir: stagingDir });
     expect(result.applied).toBe(0);
   });

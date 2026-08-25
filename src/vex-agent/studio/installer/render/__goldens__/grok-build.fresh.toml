@@ -1,0 +1,3 @@
+[mcp_servers.vex]
+command = "/home/user/.config/vex/bin/vex-mcp"
+args = ["--project", "0f6b1c2e-8a4d-4f1b-9c3e-7d5a2b8e4c10"]

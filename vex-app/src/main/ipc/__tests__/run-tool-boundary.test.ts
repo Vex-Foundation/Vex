@@ -78,6 +78,21 @@ import ts from "typescript";
 // ── Source root: vex-app/src (this file is at vex-app/src/main/ipc/__tests__) ─
 const VEX_APP_SRC = path.resolve(__dirname, "..", "..", "..");
 
+/**
+ * The Studio MCP surface (`src/vex-agent/mcp/**`), guarded for the SAME reason
+ * and by the same detector (Vex Studio stage A2).
+ *
+ * That surface executes tools on behalf of an EXTERNAL coding agent over a
+ * local MCP server. Its context is built with `approved: false` and
+ * `modelOriginated: true` precisely so a mutating call under a restricted
+ * project scope stops at the approval card. `runTool` builds `approved: true`
+ * and would lift that gate for every external caller at once, which is the
+ * worst version of the risk this guard already covers for vex-app.
+ */
+const VEX_AGENT_MCP_SRC = path.resolve(
+  __dirname, "..", "..", "..", "..", "..", "src", "vex-agent", "mcp",
+);
+
 /** The symbol that must never be reachable from vex-app. */
 const FORBIDDEN_SYMBOL = "runTool";
 
@@ -319,6 +334,27 @@ describe("runTool reachability guard (B-010)", () => {
     );
     expect(rendered).toEqual([]);
   });
+
+  it(
+    "no file under src/vex-agent/mcp imports runTool (named, barrel, or namespace)",
+    { timeout: 60_000 },
+    () => {
+      const files = listSourceFiles(VEX_AGENT_MCP_SRC);
+      // Sanity: the walker actually found the Studio MCP source tree.
+      expect(files.length).toBeGreaterThan(0);
+
+      const hits: RunToolHit[] = [];
+      for (const file of files) hits.push(...scanFile(file));
+
+      // If this fails, do NOT relax the guard: the MCP executor must drive the
+      // ordinary dispatch path, where a mutating tool under a restricted
+      // project scope still returns the approval-required refusal.
+      const rendered = hits.map(
+        (h) => `${path.relative(VEX_AGENT_MCP_SRC, h.file)} :: ${h.kind} - ${h.detail}`,
+      );
+      expect(rendered).toEqual([]);
+    },
+  );
 
   // ── Detector self-tests (mutation coverage) ──────────────────────────────
   // Each shape MUST be flagged, so a future refactor of the scanner cannot

@@ -11,6 +11,7 @@
 
 import {
   getAddress,
+  encodeFunctionData,
   type Address,
   type Chain,
   type Hex,
@@ -21,8 +22,10 @@ import {
 } from "viem";
 
 import { VexError, ErrorCodes } from "../../errors.js";
-import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
-import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
+import {
+  signStageBroadcast,
+  type StagedBroadcastHooks,
+} from "@tools/evm-chains/staged-broadcast.js";
 import logger from "../../utils/logger.js";
 import { PENDLE_ERC20_ABI, PENDLE_ROUTER } from "./constants.js";
 
@@ -55,6 +58,58 @@ export function assertPendleRouterSpender(spender: Address): void {
   }
 }
 
+export interface PendleAllowanceStaging {
+  readonly hooks: StagedBroadcastHooks;
+  /** Definitive receipt observed. Durable cleanup is best-effort bookkeeping. */
+  readonly terminalize: () => Promise<void>;
+}
+
+export type CreatePendleAllowanceStaging = () => PendleAllowanceStaging;
+
+async function sendStagedPendleApproval(
+  publicClient: PublicClient<Transport, Chain>,
+  walletClient: WalletClient<Transport, Chain, Account>,
+  token: Address,
+  spender: Address,
+  amount: bigint,
+  createStaging: CreatePendleAllowanceStaging | undefined,
+  label: string,
+): Promise<Hex> {
+  if (createStaging === undefined) {
+    throw new VexError(
+      ErrorCodes.APPROVAL_FAILED,
+      "Refusing to sign a Pendle approval without a durable nonce reservation owner.",
+    );
+  }
+  const staging = createStaging();
+  const outcome = await signStageBroadcast(
+    publicClient,
+    walletClient,
+    {
+      to: getAddress(token),
+      data: encodeFunctionData({
+        abi: PENDLE_ERC20_ABI,
+        functionName: "approve",
+        args: [spender, amount],
+      }),
+      value: 0n,
+    },
+    staging.hooks,
+  );
+  if (outcome.kind === "ambiguous") {
+    throw new VexError(
+      ErrorCodes.APPROVAL_FAILED,
+      `${label} outcome is unresolved for ${outcome.txHash}.`,
+      "Check the transaction hash before retrying. Do not resubmit automatically.",
+    );
+  }
+  await staging.terminalize().catch(() => undefined);
+  if (outcome.kind === "reverted") {
+    throw new VexError(ErrorCodes.APPROVAL_FAILED, `${label} reverted on-chain.`);
+  }
+  return outcome.txHash;
+}
+
 /**
  * Ensure the Router's allowance for `token` is EXACTLY `requiredAmount` (Codex
  * fund-safety fix: a stale LARGER Router allowance would make over-spend real, so
@@ -70,6 +125,7 @@ export async function ensurePendleAllowanceExact(
   token: Address,
   spender: Address,
   requiredAmount: bigint,
+  createStaging?: CreatePendleAllowanceStaging,
 ): Promise<{ txHash: Hex; resetTxHash?: Hex } | null> {
   assertPendleRouterSpender(spender);
   const owner = walletClient.account.address;
@@ -89,33 +145,15 @@ export async function ensurePendleAllowanceExact(
   let resetTxHash: Hex | undefined;
   if (currentAllowance > 0n) {
     try {
-      // Estimated explicitly so the approve is signed with the shared headroom
-      // instead of `writeContract`'s internal bare estimate (see
-      // `gasLimitWithHeadroom` for the on-chain loss that proves why a bare
-      // estimate is unsafe). Kept INSIDE this try so a would-revert approve
-      // still throws before anything is signed AND still lands on the existing
-      // APPROVAL_FAILED classification, exactly as the internal estimate did.
-      const resetGasEstimate = await publicClient.estimateContractGas({
-        account: walletClient.account,
-        address: getAddress(token),
-        abi: PENDLE_ERC20_ABI,
-        functionName: "approve",
-        args: [spender, 0n],
-      });
-      resetTxHash = await walletClient.writeContract({
-        account: walletClient.account,
-        chain: walletClient.chain,
-        address: getAddress(token),
-        abi: PENDLE_ERC20_ABI,
-        functionName: "approve",
-        args: [spender, 0n],
-        gas: gasLimitWithHeadroom(resetGasEstimate),
-      });
-      await waitForSuccessfulReceipt(publicClient, resetTxHash, {
-        code: ErrorCodes.APPROVAL_FAILED,
-        what: "Allowance-reset transaction",
-        hint: "The existing allowance was not cleared, so the follow-up approve would be blocked. Check the transaction hash before retrying.",
-      });
+      resetTxHash = await sendStagedPendleApproval(
+        publicClient,
+        walletClient,
+        token,
+        spender,
+        0n,
+        createStaging,
+        "Allowance-reset transaction",
+      );
     } catch (err) {
       if (err instanceof VexError) throw err;
       throw new VexError(ErrorCodes.APPROVAL_FAILED, `Failed to reset allowance: ${err instanceof Error ? err.message : String(err)}`);
@@ -123,28 +161,15 @@ export async function ensurePendleAllowanceExact(
   }
 
   try {
-    // Same headroom discipline as the reset leg above.
-    const gasEstimate = await publicClient.estimateContractGas({
-      account: walletClient.account,
-      address: getAddress(token),
-      abi: PENDLE_ERC20_ABI,
-      functionName: "approve",
-      args: [spender, requiredAmount],
-    });
-    const txHash = await walletClient.writeContract({
-      account: walletClient.account,
-      chain: walletClient.chain,
-      address: getAddress(token),
-      abi: PENDLE_ERC20_ABI,
-      functionName: "approve",
-      args: [spender, requiredAmount],
-      gas: gasLimitWithHeadroom(gasEstimate),
-    });
-    await waitForSuccessfulReceipt(publicClient, txHash, {
-      code: ErrorCodes.APPROVAL_FAILED,
-      what: "Approval transaction",
-      hint: "The Pendle Router was not granted an allowance. Check the transaction hash before retrying.",
-    });
+    const txHash = await sendStagedPendleApproval(
+      publicClient,
+      walletClient,
+      token,
+      spender,
+      requiredAmount,
+      createStaging,
+      "Approval transaction",
+    );
     return resetTxHash ? { txHash, resetTxHash } : { txHash };
   } catch (err) {
     if (err instanceof VexError) throw err;

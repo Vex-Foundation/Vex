@@ -78,6 +78,7 @@ describe("signStageBroadcast — the never-interrupt window", () => {
       walletClient,
       { to: TO, data: "0x", value: 0n },
       {
+        onNonceReserved: async (request) => request.nodePendingNonce,
         onHashStaged: async () => { trace.push("staged"); },
         onAccepted: async () => { trace.push("accepted"); },
       },

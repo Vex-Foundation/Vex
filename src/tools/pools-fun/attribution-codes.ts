@@ -6,7 +6,7 @@
  * client (`./attribution.ts`) classifies a response body against it, the sweep
  * (`@vex-agent/sync/pools-attribution.ts`) decides from it whether a row leaves
  * the retry lane forever, and the durable CHECK constraint on the rejection
- * column mirrors it (migration `087_pools_launch_attribution.sql`). A lockstep
+ * column mirrors it (migration `094_pools_launch_attribution.sql`). A lockstep
  * test asserts the migration's literal set equals `POOLS_ATTEST_TERMINAL_CODES`
  * exactly, because a vocabulary that drifts from its constraint fails at write
  * time, in the sweep, days after the code that caused it shipped.
