@@ -16,6 +16,8 @@ import { ErrorCodes, VexError } from "../../../errors.js";
 const PRIVATE_KEY = `0x${"1".repeat(80)}`;
 const TX_INFO = "{\"signed\":\"payload\"}";
 const TX_HASH = "0xabc123";
+const PROVIDER_SUBMIT_MESSAGE =
+  '{"status":"accepted","detail":"queued by Lighter"}';
 const PUBLIC_KEY = "b".repeat(80);
 const AUTH_TOKEN = `1893456600:42:7:${"a".repeat(128)}`;
 const NOW = 1_893_456_000_000;
@@ -294,7 +296,7 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
       getNextNonce: vi.fn(async () => ({ code: 200, nonce: 0 })),
       sendTx: vi.fn(async () => ({
         code: 200,
-        message: "ok",
+        message: PROVIDER_SUBMIT_MESSAGE,
         tx_hash: TX_HASH,
         predicted_execution_time_ms: 250,
         volume_quota_remaining: 99,
@@ -843,7 +845,7 @@ describe("Lighter approved create execution pipeline", () => {
       signerTxHash: TX_HASH,
       submittedTxHash: TX_HASH,
       submitCode: 200,
-      submitMessage: "ok",
+      submitMessage: PROVIDER_SUBMIT_MESSAGE,
       predictedExecutionTimeMs: 250,
       volumeQuotaRemaining: 99,
     });
@@ -866,6 +868,7 @@ describe("Lighter approved create execution pipeline", () => {
       },
       { token: AUTH_TOKEN, accountIndex: PLAN.accountIndex },
     );
+    expect(JSON.stringify(result)).not.toContain(PROVIDER_SUBMIT_MESSAGE);
     expect(d.client.getAccountTrades).toHaveBeenCalledWith(
       "rhc",
       {

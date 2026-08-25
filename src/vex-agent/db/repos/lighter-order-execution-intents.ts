@@ -145,7 +145,7 @@ export interface MarkLighterOrderApiAcceptedInput {
   readonly signerTxHash: string;
   readonly submittedTxHash: string;
   readonly submitCode: number;
-  readonly submitMessage?: string | null;
+  readonly submitMessage: string | null;
   readonly predictedExecutionTimeMs: number;
   readonly volumeQuotaRemaining?: number | null;
 }
@@ -745,7 +745,7 @@ function toMarkApiAcceptedParams(input: MarkLighterOrderApiAcceptedInput): unkno
     requiredSafeId(input.signerTxHash, "signerTxHash"),
     requiredSafeId(input.submittedTxHash, "submittedTxHash"),
     requiredNonNegativeInt(input.submitCode, "submitCode"),
-    optionalSafeText(input.submitMessage, "submitMessage"),
+    input.submitMessage ?? null,
     requiredNonNegativeInt(input.predictedExecutionTimeMs, "predictedExecutionTimeMs"),
     input.volumeQuotaRemaining === null || input.volumeQuotaRemaining === undefined
       ? null

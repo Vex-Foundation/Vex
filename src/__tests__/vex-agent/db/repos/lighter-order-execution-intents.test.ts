@@ -547,6 +547,7 @@ describe("lighter order execution intents repo", () => {
   });
 
   it("marks a submitted intent as API accepted without treating it as final execution", async () => {
+    const submitMessage = '{"status":"accepted","detail":"queued by Lighter"}';
     mockQueryOne.mockResolvedValueOnce(dbRow({
       approval_status: "approved",
       execution_state: "api_accepted",
@@ -554,7 +555,7 @@ describe("lighter order execution intents repo", () => {
       client_order_index: "187649984473770",
       submitted_tx_hash: "0xabc123",
       submit_code: 200,
-      submit_message: "accepted",
+      submit_message: submitMessage,
       predicted_execution_time_ms: 250,
       volume_quota_remaining: "10780",
       signed_at: new Date("2026-08-12T00:02:00.000Z"),
@@ -569,7 +570,7 @@ describe("lighter order execution intents repo", () => {
       signerTxHash: "0xabc123",
       submittedTxHash: "0xabc123",
       submitCode: 200,
-      submitMessage: "accepted",
+      submitMessage,
       predictedExecutionTimeMs: 250,
       volumeQuotaRemaining: 10780,
     });
@@ -585,7 +586,7 @@ describe("lighter order execution intents repo", () => {
       "0xabc123",
       "0xabc123",
       200,
-      "accepted",
+      submitMessage,
       250,
       10780,
     ]);
@@ -593,7 +594,7 @@ describe("lighter order execution intents repo", () => {
       executionState: "api_accepted",
       submittedTxHash: "0xabc123",
       submitCode: 200,
-      submitMessage: "accepted",
+      submitMessage,
       predictedExecutionTimeMs: 250,
       volumeQuotaRemaining: "10780",
       apiAcceptedAt: "2026-08-12T00:02:02.000Z",
@@ -815,7 +816,21 @@ describe("lighter order execution intents repo", () => {
     });
   });
 
-  it("refuses signed payload-shaped submit metadata before DB writes", async () => {
+  it("persists exact provider submit messages while protecting internal evidence fields", async () => {
+    const submitMessage = '{"message":"accepted","tx_info":"provider-owned evidence"}';
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      execution_state: "api_accepted",
+      signer_tx_hash: "0xabc123",
+      submitted_tx_hash: "0xabc123",
+      submit_code: 200,
+      submit_message: submitMessage,
+      predicted_execution_time_ms: 250,
+      signed_at: new Date("2026-08-12T00:02:00.000Z"),
+      submitted_at: new Date("2026-08-12T00:02:01.000Z"),
+      api_accepted_at: new Date("2026-08-12T00:02:02.000Z"),
+    }));
+
     await expect(repo.markApiAccepted({
       intentId: "lighter-exec-1",
       sessionId: "session-1",
@@ -823,9 +838,13 @@ describe("lighter order execution intents repo", () => {
       signerTxHash: "0xabc123",
       submittedTxHash: "0xabc123",
       submitCode: 200,
-      submitMessage: "accepted with tx_info Sig payload",
+      submitMessage,
       predictedExecutionTimeMs: 250,
-    })).rejects.toThrow("submitMessage must not contain signed payload material");
+    })).resolves.toMatchObject({ submitMessage });
+
+    expect(mockQueryOne.mock.calls[0]?.[1]).toContain(submitMessage);
+    mockQueryOne.mockClear();
+
     await expect(repo.markAmbiguous({
       intentId: "lighter-exec-1",
       sessionId: "session-1",
