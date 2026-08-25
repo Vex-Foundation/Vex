@@ -19,6 +19,7 @@ import type {
   LighterTradingEnvironment,
   LighterTradingResolution,
 } from "@shared/schemas/lighter-trading.js";
+import { IconPlus, IconRefresh } from "../../../components/icons/index.js";
 import {
   toChartCandles,
   toChartVolume,
@@ -489,11 +490,46 @@ export function MarketChart({
         data-testid="lighter-market-chart"
       />
       {candles.length > 0 ? (
-        <div className="lit-chart-tools" aria-label="Chart controls">
-          <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => zoomVisibleRange(0.75)}>+</button>
-          <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => zoomVisibleRange(1.35)}>−</button>
-          <button type="button" aria-label="Reset chart view" title="Reset chart view" onClick={resetVisibleRange}>↺</button>
-          <button type="button" aria-label="Return to live candles" title="Return to live candles" onClick={resetVisibleRange}>●</button>
+        <div className="lit-chart-tools" role="toolbar" aria-label="Chart controls">
+          <button
+            type="button"
+            aria-label="Zoom in"
+            title="Zoom in"
+            data-label="Zoom in"
+            onClick={() => zoomVisibleRange(0.75)}
+          >
+            <IconPlus size={17} />
+          </button>
+          <button
+            type="button"
+            aria-label="Zoom out"
+            title="Zoom out"
+            data-label="Zoom out"
+            onClick={() => zoomVisibleRange(1.35)}
+          >
+            <svg className="lit-stroke-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12" /></svg>
+          </button>
+          <button
+            type="button"
+            aria-label="Reset chart view"
+            title="Reset chart view"
+            data-label="Reset view"
+            onClick={resetVisibleRange}
+          >
+            <IconRefresh size={17} />
+          </button>
+          <button
+            type="button"
+            aria-label="Return to live candles"
+            title="Return to live candles"
+            data-label="Go live"
+            onClick={resetVisibleRange}
+          >
+            <svg className="lit-stroke-icon" viewBox="0 0 20 20" aria-hidden="true">
+              <circle cx="10" cy="10" r="2.25" />
+              <path d="M5.8 5.8a6 6 0 0 0 0 8.4M14.2 5.8a6 6 0 0 1 0 8.4" />
+            </svg>
+          </button>
         </div>
       ) : null}
       {legend !== null ? (

@@ -10,24 +10,43 @@ import {
   lighterTradingCandleSubscriptionStopInputSchema,
   lighterTradingCandleSubscriptionStopResultSchema,
   lighterTradingCandleUpdateEventSchema,
+  lighterTradingAccountInputSchema,
+  lighterTradingAccountSchema,
   lighterTradingListMarketsInputSchema,
   lighterTradingMarketListSchema,
+  lighterTradingPublicBookEventSchema,
+  lighterTradingPublicMarketStatusEventSchema,
+  lighterTradingPublicMarketSubscriptionStartInputSchema,
+  lighterTradingPublicMarketSubscriptionStartResultSchema,
+  lighterTradingPublicMarketSubscriptionStopInputSchema,
+  lighterTradingPublicMarketSubscriptionStopResultSchema,
+  lighterTradingPublicStatsEventSchema,
+  lighterTradingPublicTradesEventSchema,
   lighterTradingSnapshotInputSchema,
   lighterTradingSnapshotSchema,
+  type LighterTradingAccount,
   type LighterTradingCandleSubscriptionStartResult,
   type LighterTradingCandleSubscriptionStopResult,
   type LighterTradingMarketList,
+  type LighterTradingPublicMarketSubscriptionStartResult,
+  type LighterTradingPublicMarketSubscriptionStopResult,
   type LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
 import {
   readLighterTradingMarketList,
-  readLighterTradingSnapshot,
+  readLighterTradingMarketSnapshot,
 } from "../lighter/trading-panel-service.js";
+import { readLighterTradingAccount } from "../lighter/trading-account-service.js";
 import {
   cleanupLighterCandleStreamsForOwner,
   subscribeLighterCandleStream,
   unsubscribeLighterCandleStream,
 } from "../lighter/candle-stream.js";
+import {
+  cleanupLighterPublicMarketsForOwner,
+  subscribeLighterPublicMarket,
+  unsubscribeLighterPublicMarket,
+} from "../lighter/public-market-stream.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
 
@@ -64,6 +83,15 @@ interface SenderCandleSubscriptions {
 const candleSubscriptionsByOwner = new Map<number, SenderCandleSubscriptions>();
 const candleSubscriptionOwners = new Map<string, number>();
 
+interface SenderPublicMarketSubscriptions {
+  readonly sender: WebContents;
+  readonly subscriptionIds: Set<string>;
+  readonly onDestroyed: () => void;
+}
+
+const publicMarketSubscriptionsByOwner = new Map<number, SenderPublicMarketSubscriptions>();
+const publicMarketSubscriptionOwners = new Map<string, number>();
+
 function removeOwnerSubscriptions(ownerId: number, state: SenderCandleSubscriptions): void {
   cleanupLighterCandleStreamsForOwner(ownerId);
   for (const subscriptionId of state.subscriptionIds) {
@@ -85,6 +113,34 @@ function stateForSender(sender: WebContents): SenderCandleSubscriptions {
   const onDestroyed = (): void => removeOwnerSubscriptions(sender.id, state);
   state = { sender, subscriptionIds: new Set(), onDestroyed };
   candleSubscriptionsByOwner.set(sender.id, state);
+  sender.once("destroyed", onDestroyed);
+  return state;
+}
+
+function removeOwnerPublicMarketSubscriptions(
+  ownerId: number,
+  state: SenderPublicMarketSubscriptions,
+): void {
+  cleanupLighterPublicMarketsForOwner(ownerId);
+  for (const subscriptionId of state.subscriptionIds) {
+    publicMarketSubscriptionOwners.delete(subscriptionId);
+  }
+  state.subscriptionIds.clear();
+  state.sender.removeListener("destroyed", state.onDestroyed);
+  if (publicMarketSubscriptionsByOwner.get(ownerId) === state) {
+    publicMarketSubscriptionsByOwner.delete(ownerId);
+  }
+}
+
+function publicMarketStateForSender(sender: WebContents): SenderPublicMarketSubscriptions {
+  const existing = publicMarketSubscriptionsByOwner.get(sender.id);
+  if (existing?.sender === sender) return existing;
+  if (existing !== undefined) removeOwnerPublicMarketSubscriptions(sender.id, existing);
+
+  let state: SenderPublicMarketSubscriptions;
+  const onDestroyed = (): void => removeOwnerPublicMarketSubscriptions(sender.id, state);
+  state = { sender, subscriptionIds: new Set(), onDestroyed };
+  publicMarketSubscriptionsByOwner.set(sender.id, state);
   sender.once("destroyed", onDestroyed);
   return state;
 }
@@ -142,9 +198,57 @@ function forwardCandleStreamEvent(
   if (parsed.success) sender.send(EV.lighterTrading.candleStatus, parsed.data);
 }
 
+function forwardPublicMarketEvent(
+  sender: WebContents,
+  input: {
+    readonly subscriptionId: string;
+    readonly environment: "core" | "rhc";
+    readonly marketId: number;
+    readonly marketType: "perp" | "spot";
+  },
+  raw: unknown,
+): void {
+  if (sender.isDestroyed()) return;
+  const record = readRecord(raw);
+  if (
+    record === null
+    || record.subscriptionId !== input.subscriptionId
+    || record.environment !== input.environment
+    || record.marketId !== input.marketId
+    || record.marketType !== input.marketType
+  ) return;
+
+  const { kind: _kind, ...candidate } = record;
+  if (record.kind === "book") {
+    const parsed = lighterTradingPublicBookEventSchema.safeParse(candidate);
+    if (parsed.success) sender.send(EV.lighterTrading.publicBook, parsed.data);
+    return;
+  }
+  if (record.kind === "trades") {
+    const parsed = lighterTradingPublicTradesEventSchema.safeParse(candidate);
+    if (parsed.success) sender.send(EV.lighterTrading.publicTrades, parsed.data);
+    return;
+  }
+  if (record.kind === "stats") {
+    const parsed = lighterTradingPublicStatsEventSchema.safeParse(candidate);
+    if (parsed.success) sender.send(EV.lighterTrading.publicStats, parsed.data);
+    return;
+  }
+  if (record.kind === "status") {
+    const parsed = lighterTradingPublicMarketStatusEventSchema.safeParse(candidate);
+    if (parsed.success) sender.send(EV.lighterTrading.publicMarketStatus, parsed.data);
+  }
+}
+
 function cleanupAllCandleSubscriptions(): void {
   for (const [ownerId, state] of candleSubscriptionsByOwner) {
     removeOwnerSubscriptions(ownerId, state);
+  }
+}
+
+function cleanupAllPublicMarketSubscriptions(): void {
+  for (const [ownerId, state] of publicMarketSubscriptionsByOwner) {
+    removeOwnerPublicMarketSubscriptions(ownerId, state);
   }
 }
 
@@ -173,12 +277,28 @@ export function registerLighterTradingHandlers(): Array<() => void> {
       outputSchema: lighterTradingSnapshotSchema,
       handle: async (input, ctx): Promise<Result<LighterTradingSnapshot>> => {
         try {
-          return ok(await readLighterTradingSnapshot(input));
+          return ok(await readLighterTradingMarketSnapshot(input));
         } catch {
           log.warn("[lighter-trading] live market snapshot read failed", {
             environment: input.environment,
             marketId: input.marketId,
             resolution: input.resolution,
+          });
+          return unavailable(ctx.requestId);
+        }
+      },
+    }),
+    registerHandler({
+      channel: CH.lighterTrading.getAccount,
+      domain: "market",
+      inputSchema: lighterTradingAccountInputSchema,
+      outputSchema: lighterTradingAccountSchema,
+      handle: async (input, ctx): Promise<Result<LighterTradingAccount>> => {
+        try {
+          return ok(await readLighterTradingAccount(input.environment));
+        } catch {
+          log.warn("[lighter-trading] account panel read failed", {
+            environment: input.environment,
           });
           return unavailable(ctx.requestId);
         }
@@ -245,7 +365,67 @@ export function registerLighterTradingHandlers(): Array<() => void> {
         return ok({ subscriptionId: input.subscriptionId, status: "stopped" });
       },
     }),
+    registerHandler({
+      channel: CH.lighterTrading.startPublicMarketSubscription,
+      domain: "market",
+      inputSchema: lighterTradingPublicMarketSubscriptionStartInputSchema,
+      outputSchema: lighterTradingPublicMarketSubscriptionStartResultSchema,
+      handle: async (
+        input,
+        ctx,
+      ): Promise<Result<LighterTradingPublicMarketSubscriptionStartResult>> => {
+        const sender = ctx.event.sender;
+        if (publicMarketSubscriptionOwners.has(input.subscriptionId)) {
+          return invalidSubscription(ctx.requestId);
+        }
+        const state = publicMarketStateForSender(sender);
+        try {
+          const subscription = subscribeLighterPublicMarket(
+            sender.id,
+            input,
+            (event: unknown) => forwardPublicMarketEvent(sender, input, event),
+          );
+          if (subscription.subscriptionId !== input.subscriptionId) {
+            subscription.unsubscribe();
+            return invalidSubscription(ctx.requestId);
+          }
+          state.subscriptionIds.add(input.subscriptionId);
+          publicMarketSubscriptionOwners.set(input.subscriptionId, sender.id);
+          return ok({ ...input, status: "started" });
+        } catch {
+          log.warn("[lighter-trading] public market subscription start failed", {
+            environment: input.environment,
+            marketId: input.marketId,
+            marketType: input.marketType,
+          });
+          return unavailable(ctx.requestId);
+        }
+      },
+    }),
+    registerHandler({
+      channel: CH.lighterTrading.stopPublicMarketSubscription,
+      domain: "market",
+      inputSchema: lighterTradingPublicMarketSubscriptionStopInputSchema,
+      outputSchema: lighterTradingPublicMarketSubscriptionStopResultSchema,
+      handle: async (
+        input,
+        ctx,
+      ): Promise<Result<LighterTradingPublicMarketSubscriptionStopResult>> => {
+        const sender = ctx.event.sender;
+        const state = publicMarketSubscriptionsByOwner.get(sender.id);
+        if (
+          state?.sender !== sender
+          || !state.subscriptionIds.has(input.subscriptionId)
+          || publicMarketSubscriptionOwners.get(input.subscriptionId) !== sender.id
+        ) return invalidSubscription(ctx.requestId);
+        unsubscribeLighterPublicMarket(sender.id, input.subscriptionId);
+        state.subscriptionIds.delete(input.subscriptionId);
+        publicMarketSubscriptionOwners.delete(input.subscriptionId);
+        return ok({ subscriptionId: input.subscriptionId, status: "stopped" });
+      },
+    }),
   ];
   teardowns.push(cleanupAllCandleSubscriptions);
+  teardowns.push(cleanupAllPublicMarketSubscriptions);
   return teardowns;
 }

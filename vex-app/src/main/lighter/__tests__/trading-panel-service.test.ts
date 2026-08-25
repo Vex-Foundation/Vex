@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { lighterTradingSnapshotSchema } from "@shared/schemas/lighter-trading.js";
 import {
   readLighterTradingMarketList,
+  readLighterTradingMarketSnapshot,
   readLighterTradingSnapshot,
   type LighterTradingPanelClient,
 } from "../trading-panel-service.js";
@@ -191,6 +192,13 @@ describe("Lighter trading panel service", () => {
           },
         ],
       })),
+      getRecentTrades: vi.fn(async (environment, params) => {
+        const response = await base.getRecentTrades(environment, params);
+        return {
+          ...response,
+          trades: response.trades.map((trade) => ({ ...trade, market_id: 8 })),
+        };
+      }),
     };
 
     const result = await readLighterTradingSnapshot(
@@ -236,5 +244,48 @@ describe("Lighter trading panel service", () => {
       resolution: "15m",
       setTimestampToEnd: false,
     }));
+  });
+
+  it("hydrates the IPC market snapshot without a duplicate candle-history gate", async () => {
+    const client = fakeClient();
+    const result = await readLighterTradingMarketSnapshot(
+      { environment: "core", marketId: 7, resolution: "5m" },
+      client,
+      () => 1_787_530_000_000,
+    );
+
+    expect(result.book.asks).toHaveLength(2);
+    expect(result.trades).toHaveLength(1);
+    expect(result.candles).toEqual([]);
+    expect(client.getCandles).not.toHaveBeenCalled();
+    expect(lighterTradingSnapshotSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("rejects a same-id detail from the wrong product collection", async () => {
+    const client = fakeClient();
+    vi.mocked(client.getMarketDetails).mockResolvedValueOnce({
+      code: 200,
+      order_book_details: [],
+      spot_order_book_details: [{ ...market, market_type: "spot" }],
+    });
+
+    await expect(readLighterTradingMarketSnapshot(
+      { environment: "core", marketId: 7, resolution: "5m" },
+      client,
+    )).rejects.toThrow("detail is unavailable");
+  });
+
+  it("rejects recent trades scoped to another market", async () => {
+    const client = fakeClient();
+    const response = await client.getRecentTrades("core", { marketId: 7, limit: 40 });
+    vi.mocked(client.getRecentTrades).mockResolvedValueOnce({
+      ...response,
+      trades: response.trades.map((trade) => ({ ...trade, market_id: 8 })),
+    });
+
+    await expect(readLighterTradingMarketSnapshot(
+      { environment: "core", marketId: 7, resolution: "5m" },
+      client,
+    )).rejects.toThrow("trades do not match");
   });
 });

@@ -168,15 +168,25 @@ async function readStreamParityProof(
         || candle.high !== reference.high
         || candle.low !== reference.low
         || candle.close !== reference.close
-        || candle.volumeBase !== reference.volumeBase
-        || candle.volumeQuote !== reference.volumeQuote
+        || !sameProviderFloat(candle.volumeBase, reference.volumeBase)
+        || !sameProviderFloat(candle.volumeQuote, reference.volumeQuote)
         || candle.lastTradeId !== reference.lastTradeId
       ) {
-        mismatches.push(`${candle.timestamp}`);
+        mismatches.push(JSON.stringify({
+          timestamp: candle.timestamp,
+          stream: candle,
+          rest: reference,
+        }));
       }
     }
     return { event, liveUpdate, commonClosedCandles: common.length, mismatches };
   } finally {
     supervisor.stop();
   }
+}
+
+function sameProviderFloat(left: number, right: number): boolean {
+  if (left === right) return true;
+  const scale = Math.max(1, Math.abs(left), Math.abs(right));
+  return Math.abs(left - right) <= Number.EPSILON * scale * 16;
 }

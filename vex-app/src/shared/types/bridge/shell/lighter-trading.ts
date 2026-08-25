@@ -1,5 +1,7 @@
 import type { Result } from "../../../ipc/result.js";
 import type {
+  LighterTradingAccount,
+  LighterTradingAccountInput,
   LighterTradingCandleSnapshotEvent,
   LighterTradingCandleStatusEvent,
   LighterTradingCandleSubscriptionStartInput,
@@ -9,6 +11,14 @@ import type {
   LighterTradingCandleUpdateEvent,
   LighterTradingListMarketsInput,
   LighterTradingMarketList,
+  LighterTradingPublicBookEvent,
+  LighterTradingPublicMarketStatusEvent,
+  LighterTradingPublicMarketSubscriptionStartInput,
+  LighterTradingPublicMarketSubscriptionStartResult,
+  LighterTradingPublicMarketSubscriptionStopInput,
+  LighterTradingPublicMarketSubscriptionStopResult,
+  LighterTradingPublicStatsEvent,
+  LighterTradingPublicTradesEvent,
   LighterTradingSnapshot,
   LighterTradingSnapshotInput,
 } from "../../../schemas/lighter-trading.js";
@@ -21,6 +31,9 @@ export interface LighterTradingBridge {
   readonly getSnapshot: (
     input: LighterTradingSnapshotInput,
   ) => Promise<Result<LighterTradingSnapshot>>;
+  readonly getAccount: (
+    input: LighterTradingAccountInput,
+  ) => Promise<Result<LighterTradingAccount>>;
   readonly startCandleSubscription: (
     input: LighterTradingCandleSubscriptionStartInput,
   ) => Promise<Result<LighterTradingCandleSubscriptionStartResult>>;
@@ -35,5 +48,23 @@ export interface LighterTradingBridge {
   ) => () => void;
   readonly onCandleStatus: (
     callback: (event: LighterTradingCandleStatusEvent) => void,
+  ) => () => void;
+  readonly startPublicMarketSubscription: (
+    input: LighterTradingPublicMarketSubscriptionStartInput,
+  ) => Promise<Result<LighterTradingPublicMarketSubscriptionStartResult>>;
+  readonly stopPublicMarketSubscription: (
+    input: LighterTradingPublicMarketSubscriptionStopInput,
+  ) => Promise<Result<LighterTradingPublicMarketSubscriptionStopResult>>;
+  readonly onPublicBook: (
+    callback: (event: LighterTradingPublicBookEvent) => void,
+  ) => () => void;
+  readonly onPublicTrades: (
+    callback: (event: LighterTradingPublicTradesEvent) => void,
+  ) => () => void;
+  readonly onPublicStats: (
+    callback: (event: LighterTradingPublicStatsEvent) => void,
+  ) => () => void;
+  readonly onPublicMarketStatus: (
+    callback: (event: LighterTradingPublicMarketStatusEvent) => void,
   ) => () => void;
 }

@@ -56,6 +56,26 @@ afterEach(() => {
 });
 
 describe("lighter trading preload candle boundary", () => {
+  it("validates account reads before invoking main", async () => {
+    const getAccountRaw = lighterTrading.getAccount as (
+      input: unknown,
+    ) => Promise<unknown>;
+
+    await getAccountRaw({ environment: "rhc" });
+    expect(invoke).toHaveBeenCalledWith(
+      CH.lighterTrading.getAccount,
+      expect.objectContaining({ payload: { environment: "rhc" } }),
+    );
+
+    invoke.mockClear();
+    await getAccountRaw({
+      environment: "rhc",
+      authToken: "must-not-cross",
+      accountIndex: 42,
+    });
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it("validates start and stop requests before invoking main", async () => {
     const startRaw = lighterTrading.startCandleSubscription as (
       input: unknown,
@@ -129,5 +149,99 @@ describe("lighter trading preload candle boundary", () => {
     off();
     emit(EV.lighterTrading.candleUpdate, event);
     expect(callback).not.toHaveBeenCalled();
+  });
+
+  it("validates public market subscriptions and every sanitized push surface", async () => {
+    const publicInput = {
+      subscriptionId,
+      environment: "rhc" as const,
+      marketId: 7,
+      marketType: "perp" as const,
+    };
+    await lighterTrading.startPublicMarketSubscription(publicInput);
+    await lighterTrading.stopPublicMarketSubscription({ subscriptionId });
+    expect(invoke).toHaveBeenCalledWith(
+      CH.lighterTrading.startPublicMarketSubscription,
+      expect.objectContaining({ payload: publicInput }),
+    );
+
+    const onBook = vi.fn();
+    const onTrades = vi.fn();
+    const onStats = vi.fn();
+    const onStatus = vi.fn();
+    lighterTrading.onPublicBook(onBook);
+    lighterTrading.onPublicTrades(onTrades);
+    lighterTrading.onPublicStats(onStats);
+    lighterTrading.onPublicMarketStatus(onStatus);
+    const base = {
+      ...publicInput,
+      status: "live",
+      providerTimestamp: 1_787_530_000_000,
+      receivedAt: 1_787_530_000_050,
+    };
+    emit(EV.lighterTrading.publicBook, {
+      ...base,
+      nonce: "10",
+      book: { asks: [{ price: "4201", size: "2" }], bids: [] },
+    });
+    emit(EV.lighterTrading.publicTrades, {
+      ...base,
+      nonce: "11",
+      trades: [{
+        tradeId: "90071992547409939999",
+        type: "trade",
+        price: "4200",
+        size: "0.1",
+        usdAmount: "420",
+        takerSide: "buy",
+        timestamp: 1_787_530_000_000,
+      }],
+    });
+    emit(EV.lighterTrading.publicStats, {
+      ...base,
+      stats: {
+        lastTradePrice: 4_200,
+        indexPrice: 4_201,
+        markPrice: 4_200.5,
+        midPrice: 4_200.25,
+        bestAskPrice: 4_200.3,
+        bestBidPrice: 4_200.2,
+        openInterestQuote: 159_467_961.6831,
+        daily: {
+          baseTokenVolume: 30,
+          quoteTokenVolume: 126_000,
+          priceLow: 4_000,
+          priceHigh: 4_300,
+          priceChange: 1.2,
+        },
+        funding: {
+          clampSmall: null,
+          clampBig: null,
+          baseInterestRate: null,
+          currentRate: "0.0012",
+          lastRate: "0.0011",
+          timestamp: 1_787_526_400_000,
+          premium: "0.0219",
+        },
+      },
+    });
+    emit(EV.lighterTrading.publicMarketStatus, {
+      ...base,
+      status: "delayed",
+      providerTimestamp: null,
+      bookStatus: "delayed",
+      tradesStatus: "live",
+      statsStatus: "live",
+    });
+    emit(EV.lighterTrading.publicBook, {
+      ...base,
+      nonce: "12",
+      book: { asks: [{ price: "4201", size: "2", owner: "secret" }], bids: [] },
+    });
+
+    expect(onBook).toHaveBeenCalledOnce();
+    expect(onTrades).toHaveBeenCalledOnce();
+    expect(onStats).toHaveBeenCalledOnce();
+    expect(onStatus).toHaveBeenCalledOnce();
   });
 });

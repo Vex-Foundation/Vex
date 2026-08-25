@@ -91,7 +91,7 @@ const MARKET: LighterTradingMarket = {
   minQuoteAmount: "10",
   orderQuoteLimit: "100000",
   decimals: { size: 4, price: 2, quote: 6 },
-  fees: { maker: "0", taker: "0.0003" },
+  fees: { maker: "0", taker: "0.0003", makerEnabled: false, takerEnabled: true },
 };
 
 describe("Light it up deterministic review handoff", () => {
@@ -169,6 +169,18 @@ describe("Light it up chart adapter", () => {
 
     expect(upsertChartCandles([rest], [staleStream, equalStream])).toEqual([rest]);
     expect(upsertChartCandles([equalStream], [rest])).toEqual([rest]);
+  });
+
+  it("bounds long-running chart history to the newest 500 provider candles", () => {
+    const rows = Array.from({ length: 520 }, (_, index) => candle({
+      timestamp: 1_720_000_000 + index * 60,
+      close: 100 + index,
+      high: 101 + index,
+    }));
+    const merged = upsertChartCandles([], rows);
+    expect(merged).toHaveLength(500);
+    expect(merged[0]?.timestamp).toBe(rows[20]?.timestamp);
+    expect(merged.at(-1)?.timestamp).toBe(rows.at(-1)?.timestamp);
   });
 
   it("uses provider volume and directional colors", () => {
@@ -427,6 +439,63 @@ describe("Light it up order book", () => {
     expect(bestBookPrice(asks, "ask")).toBe("101");
     expect(Array.from(container.querySelectorAll('[data-side="ask"] .lit-book-price'))
       .map((node) => node.textContent)).toEqual(["103", "102", "101"]);
+  });
+
+  it("renders cumulative totals from the inside market outward", () => {
+    const { container } = render(createElement(OrderBook, {
+      symbol: "BTC",
+      book: {
+        asks: [
+          { orderId: "a1", price: "101", size: "2" },
+          { orderId: "a2", price: "102", size: "3" },
+          { orderId: "a3", price: "103", size: "4" },
+        ],
+        bids: [
+          { orderId: "b1", price: "100", size: "5" },
+          { orderId: "b2", price: "99", size: "6" },
+        ],
+      },
+    }));
+
+    // Asks read far → best; totals accumulate from the best ask outward.
+    expect(Array.from(container.querySelectorAll('[data-side="ask"] .lit-book-total'))
+      .map((node) => node.textContent)).toEqual(["9", "5", "2"]);
+    // Bids read best → far; totals accumulate downward.
+    expect(Array.from(container.querySelectorAll('[data-side="bid"] .lit-book-total'))
+      .map((node) => node.textContent)).toEqual(["5", "11"]);
+    expect(container.querySelector(".lit-book-columns")?.textContent).toContain("Size BTC");
+  });
+
+  it("renders far more than ten levels per side to fill the depth rail", () => {
+    const asks = Array.from({ length: 30 }, (_, index) => ({
+      orderId: `a${index}`,
+      price: String(200 + index),
+      size: "1",
+    }));
+    const { container } = render(createElement(OrderBook, {
+      book: { asks, bids: [{ orderId: "b1", price: "199", size: "1" }] },
+    }));
+
+    // Capped at the 24-level depth limit, well above the previous 10.
+    expect(container.querySelectorAll('[data-side="ask"] .lit-book-row').length).toBe(24);
+  });
+
+  it("aggregates duplicate REST prices without coercing provider decimals", () => {
+    const { container } = render(createElement(OrderBook, {
+      book: {
+        asks: [
+          { orderId: "a1", price: "9007199254740993.10", size: "0.1" },
+          { orderId: "a2", price: "9007199254740993.10", size: "0.2" },
+        ],
+        bids: [{ orderId: "b1", price: "9007199254740993.00", size: "1" }],
+      },
+    }));
+
+    expect(container.querySelectorAll('[data-side="ask"] .lit-book-row')).toHaveLength(1);
+    expect(container.querySelector('[data-side="ask"] .lit-book-price')?.textContent)
+      .toBe("9,007,199,254,740,993.10");
+    expect(container.querySelector('[data-side="ask"] .lit-book-size')?.textContent).toBe("0.3");
+    expect(container.querySelector(".lit-book-spread strong")?.textContent).toBe("0.1");
   });
 });
 

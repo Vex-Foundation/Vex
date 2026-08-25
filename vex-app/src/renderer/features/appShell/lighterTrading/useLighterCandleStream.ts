@@ -105,13 +105,23 @@ export function useLighterCandleStream({
       typeof window.vex.lighterTrading.onCandleSnapshot
     >[0] extends (value: infer TValue) => void ? TValue : never): void => {
       if (!active || !matches(event)) return;
-      setState((previous) => previous.identity !== identity ? previous : ({
-        ...previous,
-        candles: upsertChartCandles(previous.candles, event.candles),
-        status: "live",
-        providerTimestamp: event.providerTimestamp,
-        receivedAt: event.receivedAt,
-      }));
+      setState((previous) => {
+        if (
+          previous.identity !== identity
+          || (previous.providerTimestamp !== null
+            && event.providerTimestamp < previous.providerTimestamp)
+        ) return previous;
+        const candles = upsertChartCandles(previous.candles, event.candles);
+        // A stale/equal provider echo must not refresh the on-screen data age.
+        if (sameRows(previous.candles, candles)) return previous;
+        return {
+          ...previous,
+          candles,
+          status: "live",
+          providerTimestamp: event.providerTimestamp,
+          receivedAt: event.receivedAt,
+        };
+      });
     };
 
     const offSnapshot = window.vex.lighterTrading.onCandleSnapshot(applyCandles);
@@ -123,8 +133,6 @@ export function useLighterCandleStream({
       setState((previous) => previous.identity !== identity ? previous : ({
         ...previous,
         status: event.status,
-        providerTimestamp: event.providerTimestamp,
-        receivedAt: event.receivedAt,
       }));
     });
 
@@ -141,7 +149,7 @@ export function useLighterCandleStream({
         ...previous,
         status: "unavailable",
         providerTimestamp: null,
-        receivedAt: Date.now(),
+        receivedAt: null,
       }));
     };
 

@@ -10,6 +10,11 @@ import {
   lighterTradingListMarketsInputSchema,
   lighterTradingLiveResolutionSchema,
   lighterTradingMarketListSchema,
+  lighterTradingPublicBookEventSchema,
+  lighterTradingPublicMarketStatusEventSchema,
+  lighterTradingPublicMarketSubscriptionStartInputSchema,
+  lighterTradingPublicStatsEventSchema,
+  lighterTradingPublicTradesEventSchema,
   lighterTradingSnapshotSchema,
 } from "../lighter-trading.js";
 
@@ -26,7 +31,7 @@ const market = {
   minQuoteAmount: "10",
   orderQuoteLimit: "1000000",
   decimals: { size: 4, price: 2, quote: 6 },
-  fees: { maker: "0", taker: "0" },
+  fees: { maker: "0", taker: "0", makerEnabled: false, takerEnabled: false },
 };
 
 describe("lighter trading shared contracts", () => {
@@ -219,5 +224,83 @@ describe("lighter trading shared contracts", () => {
         candles: [{}],
       }).success,
     ).toBe(false);
+  });
+
+  it("validates strict public market subscriptions and product-scoped live events", () => {
+    const scope = {
+      subscriptionId,
+      environment: "core" as const,
+      marketId: 1,
+      marketType: "perp" as const,
+    };
+    expect(lighterTradingPublicMarketSubscriptionStartInputSchema.parse(scope)).toEqual(scope);
+    expect(lighterTradingPublicMarketSubscriptionStartInputSchema.safeParse({
+      ...scope,
+      auth: "must-not-cross",
+    }).success).toBe(false);
+
+    const base = {
+      ...scope,
+      status: "live" as const,
+      providerTimestamp: 1_787_530_000_000,
+      receivedAt: 1_787_530_000_050,
+    };
+    expect(lighterTradingPublicBookEventSchema.parse({
+      ...base,
+      nonce: "90071992547409931234",
+      book: {
+        asks: [{ price: "4201.10", size: "2.0001" }],
+        bids: [{ price: "4199.90", size: "1.4" }],
+      },
+    }).nonce).toBe("90071992547409931234");
+    expect(lighterTradingPublicTradesEventSchema.parse({
+      ...base,
+      nonce: "90071992547409931235",
+      trades: [{
+        tradeId: "90071992547409939999",
+        type: "trade",
+        price: "4200",
+        size: "0.1",
+        usdAmount: "420",
+        takerSide: "buy",
+        timestamp: 1_787_530_000_000,
+      }],
+    }).trades[0]?.tradeId).toBe("90071992547409939999");
+    expect(lighterTradingPublicStatsEventSchema.parse({
+      ...base,
+      stats: {
+        lastTradePrice: 4_200,
+        indexPrice: 4_201,
+        markPrice: 4_200.5,
+        midPrice: 4_200.25,
+        bestAskPrice: 4_200.3,
+        bestBidPrice: 4_200.2,
+        openInterestQuote: 159_467_961.6831,
+        daily: {
+          baseTokenVolume: 30,
+          quoteTokenVolume: 126_000,
+          priceLow: 4_000,
+          priceHigh: 4_300,
+          priceChange: 1.2,
+        },
+        funding: {
+          clampSmall: null,
+          clampBig: null,
+          baseInterestRate: null,
+          currentRate: "0.0012",
+          lastRate: "0.0011",
+          timestamp: 1_787_526_400_000,
+          premium: "0.0219",
+        },
+      },
+    }).stats.openInterestQuote).toBe(159_467_961.6831);
+    expect(lighterTradingPublicMarketStatusEventSchema.parse({
+      ...base,
+      status: "delayed",
+      providerTimestamp: null,
+      bookStatus: "delayed",
+      tradesStatus: "live",
+      statsStatus: "live",
+    })).toMatchObject({ bookStatus: "delayed", statsStatus: "live" });
   });
 });

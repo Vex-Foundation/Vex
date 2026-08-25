@@ -1,6 +1,7 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import type {
+  LighterTradingAccount,
   LighterTradingEnvironment,
   LighterTradingMarketList,
   LighterTradingResolution,
@@ -8,10 +9,9 @@ import type {
 } from "@shared/schemas/lighter-trading.js";
 
 const MARKET_LIST_STALE_MS = 30_000;
-// One active workspace performs a single composite snapshot read. Ten seconds
-// keeps ordinary UI use comfortably inside Lighter's public REST budget while
-// still making staleness explicit in the ticket.
-const SNAPSHOT_REFETCH_MS = 10_000;
+// The account panel changes less often than the tape; a slower cadence keeps
+// the authenticated read light while positions/orders stay reasonably fresh.
+const ACCOUNT_REFETCH_MS = 15_000;
 
 export function useLighterTradingMarkets(
   environment: LighterTradingEnvironment,
@@ -22,6 +22,8 @@ export function useLighterTradingMarkets(
     queryFn: () => window.vex.lighterTrading.listMarkets({ environment }),
     enabled,
     staleTime: MARKET_LIST_STALE_MS,
+    refetchInterval: enabled ? MARKET_LIST_STALE_MS : false,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -43,7 +45,24 @@ export function useLighterTradingSnapshot(
     },
     enabled: enabled && marketId !== null,
     staleTime: 2_000,
-    refetchInterval: enabled && marketId !== null ? SNAPSHOT_REFETCH_MS : false,
+    // Public book, trades and market stats are event-driven. REST is the
+    // initial/reconnect snapshot only; periodic composite polling would both
+    // lag the provider and consume the recent-trades rate-limit budget.
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
+  });
+}
+
+export function useLighterTradingAccount(
+  environment: LighterTradingEnvironment,
+  enabled: boolean,
+): UseQueryResult<Result<LighterTradingAccount>> {
+  return useQuery({
+    queryKey: ["lighterTrading", "account", environment],
+    queryFn: () => window.vex.lighterTrading.getAccount({ environment }),
+    enabled,
+    staleTime: 5_000,
+    refetchInterval: enabled ? ACCOUNT_REFETCH_MS : false,
     refetchIntervalInBackground: false,
   });
 }

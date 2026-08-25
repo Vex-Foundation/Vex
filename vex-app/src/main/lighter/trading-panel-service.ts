@@ -123,6 +123,8 @@ export function projectLighterTradingMarket(
     fees: {
       maker: market.maker_fee,
       taker: market.taker_fee,
+      makerEnabled: market.is_maker_fee_enabled,
+      takerEnabled: market.is_taker_fee_enabled,
     },
   };
 }
@@ -306,6 +308,36 @@ export async function readLighterTradingSnapshot(
   client: LighterTradingPanelClient = getLighterClient(),
   now: () => number = Date.now,
 ): Promise<LighterTradingSnapshot> {
+  return readLighterTradingSnapshotInternal(input, client, now, true);
+}
+
+/**
+ * Reads only the REST fields that are not bootstrapped by the authoritative
+ * candle supervisor. This prevents the renderer's initial depth/tape/metrics
+ * from waiting on a second, redundant 300-candle request.
+ */
+export async function readLighterTradingMarketSnapshot(
+  input: {
+    readonly environment: LighterEnvironment;
+    readonly marketId: number;
+    readonly resolution: LighterTradingResolution;
+  },
+  client: LighterTradingPanelClient = getLighterClient(),
+  now: () => number = Date.now,
+): Promise<LighterTradingSnapshot> {
+  return readLighterTradingSnapshotInternal(input, client, now, false);
+}
+
+async function readLighterTradingSnapshotInternal(
+  input: {
+    readonly environment: LighterEnvironment;
+    readonly marketId: number;
+    readonly resolution: LighterTradingResolution;
+  },
+  client: LighterTradingPanelClient,
+  now: () => number,
+  includeCandles: boolean,
+): Promise<LighterTradingSnapshot> {
   const target = canonicalLighterCandleTarget(input);
   const [marketResult, candleResult] = await Promise.allSettled([
     Promise.all([
@@ -326,7 +358,9 @@ export async function readLighterTradingSnapshot(
         limit: SNAPSHOT_TRADE_ROWS,
       }),
     ]),
-    readLighterTradingCandleHistory(target, client, now),
+    includeCandles
+      ? readLighterTradingCandleHistory(target, client, now)
+      : Promise.resolve([]),
   ]);
   if (marketResult.status === "rejected") throw marketResult.reason;
   if (candleResult.status === "rejected") throw candleResult.reason;
@@ -339,12 +373,25 @@ export async function readLighterTradingSnapshot(
   if (market === undefined) {
     throw new Error("Selected Lighter market is not present in the live market response.");
   }
-  const detail = findDetail(input.marketId, [
-    ...details.order_book_details,
-    ...details.spot_order_book_details,
-  ]);
+  const detail = findDetail(
+    input.marketId,
+    market.market_type === "spot"
+      ? details.spot_order_book_details
+      : details.order_book_details,
+  );
   if (detail === null) {
     throw new Error("Selected Lighter market detail is unavailable.");
+  }
+  if (
+    detail.market_type !== market.market_type
+    || detail.symbol !== market.symbol
+    || detail.base_asset_id !== market.base_asset_id
+    || detail.quote_asset_id !== market.quote_asset_id
+  ) {
+    throw new Error("Selected Lighter market detail does not match the requested market identity.");
+  }
+  if (recentTrades.trades.some((trade) => trade.market_id !== input.marketId)) {
+    throw new Error("Recent Lighter trades do not match the requested market identity.");
   }
 
   return {

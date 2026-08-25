@@ -72,11 +72,13 @@ describe("useLighterCandleStream", () => {
     ])));
     expect(result.current.candles.at(-1)?.close).toBe(102);
     expect(result.current.status).toBe("live");
+    expect(result.current.receivedAt).toBe(1_720_000_001_000);
 
     act(() => callbacks.update[0]?.(updateEvent(subscriptionId, [
       streamCandle({ lastTradeId: "90071992547409929", close: 99 }),
-    ])));
+    ], 1_720_000_099_000)));
     expect(result.current.candles.at(-1)?.close).toBe(102);
+    expect(result.current.receivedAt).toBe(1_720_000_001_000);
 
     act(() => callbacks.update[0]?.(updateEvent(crypto.randomUUID(), [
       streamCandle({ lastTradeId: "90071992547409999", close: 999 }),
@@ -114,6 +116,7 @@ describe("useLighterCandleStream", () => {
 
     expect(result.current.status).toBe("reconnecting");
     expect(result.current.providerTimestamp).toBeNull();
+    expect(result.current.receivedAt).toBeNull();
   });
 });
 
@@ -138,6 +141,7 @@ function streamCandle(
 function updateEvent(
   subscriptionId: string,
   candles: LighterTradingStreamCandle[],
+  receivedAt = 1_720_000_001_000,
 ): LighterTradingCandleUpdateEvent {
   return {
     subscriptionId,
@@ -145,7 +149,7 @@ function updateEvent(
     marketId: 10,
     resolution: "5m",
     providerTimestamp: candles.at(-1)?.timestamp ?? 0,
-    receivedAt: 1_720_000_001_000,
+    receivedAt,
     status: "live",
     candles,
   };

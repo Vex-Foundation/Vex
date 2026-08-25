@@ -31,6 +31,10 @@ export const EV = {
     candleSnapshot: "vex:event:lighter:candleSnapshot",
     candleUpdate: "vex:event:lighter:candleUpdate",
     candleStatus: "vex:event:lighter:candleStatus",
+    publicBook: "vex:event:lighter:publicBook",
+    publicTrades: "vex:event:lighter:publicTrades",
+    publicStats: "vex:event:lighter:publicStats",
+    publicMarketStatus: "vex:event:lighter:publicMarketStatus",
   },
   updater: {
     // Full `UpdateStatus` discriminated union pushed on every updater state

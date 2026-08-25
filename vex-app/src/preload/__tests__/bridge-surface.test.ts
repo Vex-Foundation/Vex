@@ -178,8 +178,11 @@ describe("preload bridge surface", () => {
       // Light it up — read-only Lighter market list + analysis snapshot.
       "CH.lighterTrading.listMarkets",
       "CH.lighterTrading.getSnapshot",
+      "CH.lighterTrading.getAccount",
       "CH.lighterTrading.startCandleSubscription",
       "CH.lighterTrading.stopCandleSubscription",
+      "CH.lighterTrading.startPublicMarketSubscription",
+      "CH.lighterTrading.stopPublicMarketSubscription",
       // "Vex setup" user profile (DB-backed, replaces persona.md).
       "CH.settings.getUserProfile",
       "CH.settings.setUserProfile",
@@ -272,7 +275,7 @@ describe("preload bridge surface", () => {
     ).toContain("onVexUpdate");
   });
 
-  it("exposes only typed Lighter candle subscription methods and event channels", () => {
+  it("exposes only typed Lighter public subscription methods and event channels", () => {
     const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
     for (const reference of [
       "EV.lighterTrading.candleSnapshot",
@@ -281,6 +284,14 @@ describe("preload bridge surface", () => {
       "onCandleSnapshot",
       "onCandleUpdate",
       "onCandleStatus",
+      "EV.lighterTrading.publicBook",
+      "EV.lighterTrading.publicTrades",
+      "EV.lighterTrading.publicStats",
+      "EV.lighterTrading.publicMarketStatus",
+      "onPublicBook",
+      "onPublicTrades",
+      "onPublicStats",
+      "onPublicMarketStatus",
     ]) {
       expect(corpus).toContain(reference);
     }

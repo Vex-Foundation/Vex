@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => ({
   subscribe: vi.fn(),
   unsubscribe: vi.fn(),
   cleanupOwner: vi.fn(),
+  publicSubscribe: vi.fn(),
+  publicUnsubscribe: vi.fn(),
+  publicCleanupOwner: vi.fn(),
+  readAccount: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
@@ -23,13 +27,22 @@ vi.mock("../../logger/index.js", () => ({
 }));
 vi.mock("../../lighter/trading-panel-service.js", () => ({
   readLighterTradingMarketList: (...args: unknown[]) => mocks.readList(...args),
-  readLighterTradingSnapshot: (...args: unknown[]) => mocks.readSnapshot(...args),
+  readLighterTradingMarketSnapshot: (...args: unknown[]) => mocks.readSnapshot(...args),
 }));
 vi.mock("../../lighter/candle-stream.js", () => ({
   subscribeLighterCandleStream: (...args: unknown[]) => mocks.subscribe(...args),
   unsubscribeLighterCandleStream: (...args: unknown[]) => mocks.unsubscribe(...args),
   cleanupLighterCandleStreamsForOwner: (...args: unknown[]) =>
     mocks.cleanupOwner(...args),
+}));
+vi.mock("../../lighter/public-market-stream.js", () => ({
+  subscribeLighterPublicMarket: (...args: unknown[]) => mocks.publicSubscribe(...args),
+  unsubscribeLighterPublicMarket: (...args: unknown[]) => mocks.publicUnsubscribe(...args),
+  cleanupLighterPublicMarketsForOwner: (...args: unknown[]) =>
+    mocks.publicCleanupOwner(...args),
+}));
+vi.mock("../../lighter/trading-account-service.js", () => ({
+  readLighterTradingAccount: (...args: unknown[]) => mocks.readAccount(...args),
 }));
 
 const { registerLighterTradingHandlers } = await import("../lighter-trading.js");
@@ -78,7 +91,22 @@ const market = {
   minQuoteAmount: "10",
   orderQuoteLimit: "1000000",
   decimals: { size: 4, price: 2, quote: 6 },
-  fees: { maker: "0", taker: "0" },
+  fees: { maker: "0", taker: "0", makerEnabled: false, takerEnabled: false },
+};
+const account = {
+  environment: "rhc",
+  retrievedAt: 1_787_530_000_000,
+  status: "ready",
+  accountIndex: 42,
+  openOrdersAvailable: true,
+  summary: {
+    collateral: "100",
+    availableBalance: "80",
+    unrealizedPnl: "2.5",
+  },
+  assets: [],
+  positions: [],
+  openOrders: [],
 };
 
 async function call(
@@ -114,6 +142,15 @@ beforeEach(() => {
     ) => ({ subscriptionId: input.subscriptionId, unsubscribe: vi.fn() }),
   );
   mocks.unsubscribe.mockReturnValue(true);
+  mocks.publicSubscribe.mockImplementation(
+    (
+      _ownerId: number,
+      input: { subscriptionId: string },
+      _listener: (event: unknown) => void,
+    ) => ({ subscriptionId: input.subscriptionId, unsubscribe: vi.fn() }),
+  );
+  mocks.publicUnsubscribe.mockReturnValue(true);
+  mocks.readAccount.mockResolvedValue(account);
   teardowns = registerLighterTradingHandlers();
 });
 
@@ -154,6 +191,36 @@ describe("lighterTrading IPC", () => {
       redacted: true,
     });
     expect(JSON.stringify(result)).not.toContain("provider body");
+  });
+
+  it("accepts only an environment for the account snapshot and returns the validated DTO", async () => {
+    const result = await call(CH.lighterTrading.getAccount, { environment: "rhc" });
+
+    expect(result).toEqual({ ok: true, data: account });
+    expect(mocks.readAccount).toHaveBeenCalledWith("rhc");
+
+    mocks.readAccount.mockClear();
+    const refused = await call(CH.lighterTrading.getAccount, {
+      environment: "rhc",
+      authToken: "must-not-cross",
+      accountIndex: 42,
+    });
+    expect(refused.ok).toBe(false);
+    expect(refused.error.code).toBe("validation.invalid_input");
+    expect(mocks.readAccount).not.toHaveBeenCalled();
+  });
+
+  it("redacts account-read failures at the IPC boundary", async () => {
+    mocks.readAccount.mockRejectedValueOnce(new Error("provider echoed privileged-token"));
+
+    const result = await call(CH.lighterTrading.getAccount, { environment: "core" });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatchObject({
+      code: "provider.unavailable",
+      redacted: true,
+    });
+    expect(JSON.stringify(result)).not.toContain("privileged-token");
   });
 
   it("binds a renderer UUID to its sender and forwards only validated candle events", async () => {
@@ -307,5 +374,67 @@ describe("lighterTrading IPC", () => {
     expect(unsupportedLiveResolution.ok).toBe(false);
     expect(unsupportedLiveResolution.error.code).toBe("validation.invalid_input");
     expect(mocks.subscribe).not.toHaveBeenCalled();
+  });
+
+  it("owner-scopes and validates sanitized public market stream events", async () => {
+    const subscriptionId = "00000000-0000-4000-8000-000000000229";
+    const input = {
+      subscriptionId,
+      environment: "core" as const,
+      marketId: 1,
+      marketType: "perp" as const,
+    };
+    let listener: ((event: unknown) => void) | undefined;
+    mocks.publicSubscribe.mockImplementationOnce(
+      (
+        _ownerId: number,
+        target: typeof input,
+        callback: (event: unknown) => void,
+      ) => {
+        listener = callback;
+        return { subscriptionId: target.subscriptionId, unsubscribe: vi.fn() };
+      },
+    );
+
+    expect(await call(CH.lighterTrading.startPublicMarketSubscription, input)).toEqual({
+      ok: true,
+      data: { ...input, status: "started" },
+    });
+    listener?.({
+      kind: "book",
+      ...input,
+      status: "live",
+      providerTimestamp: 1_787_530_000_000,
+      receivedAt: 1_787_530_000_050,
+      nonce: "90071992547409931234",
+      book: { asks: [{ price: "4201", size: "2" }], bids: [] },
+    });
+    listener?.({
+      kind: "book",
+      ...input,
+      marketId: 2,
+      status: "live",
+      providerTimestamp: 1_787_530_000_000,
+      receivedAt: 1_787_530_000_050,
+      nonce: "11",
+      book: { asks: [], bids: [], rawProvider: true },
+    });
+    expect(primaryWebContents.send).toHaveBeenCalledOnce();
+    expect(primaryWebContents.send).toHaveBeenCalledWith(
+      "vex:event:lighter:publicBook",
+      expect.objectContaining({ subscriptionId, marketId: 1 }),
+    );
+    expect(secondaryWebContents.send).not.toHaveBeenCalled();
+
+    const refused = await call(
+      CH.lighterTrading.stopPublicMarketSubscription,
+      { subscriptionId },
+      otherSender,
+    );
+    expect(refused.ok).toBe(false);
+    expect(mocks.publicUnsubscribe).not.toHaveBeenCalled();
+
+    primaryWebContents.destroy();
+    expect(mocks.publicCleanupOwner).toHaveBeenCalledWith(101);
   });
 });

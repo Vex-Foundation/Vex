@@ -1,11 +1,18 @@
 import { CH, EV } from "../../shared/ipc/channels.js";
 import {
+  lighterTradingAccountInputSchema,
   lighterTradingCandleSnapshotEventSchema,
   lighterTradingCandleStatusEventSchema,
   lighterTradingCandleSubscriptionStartInputSchema,
   lighterTradingCandleSubscriptionStopInputSchema,
   lighterTradingCandleUpdateEventSchema,
   lighterTradingListMarketsInputSchema,
+  lighterTradingPublicBookEventSchema,
+  lighterTradingPublicMarketStatusEventSchema,
+  lighterTradingPublicMarketSubscriptionStartInputSchema,
+  lighterTradingPublicMarketSubscriptionStopInputSchema,
+  lighterTradingPublicStatsEventSchema,
+  lighterTradingPublicTradesEventSchema,
   lighterTradingSnapshotInputSchema,
 } from "../../shared/schemas/lighter-trading.js";
 import type { LighterTradingBridge } from "../../shared/types/bridge/shell/lighter-trading.js";
@@ -24,6 +31,13 @@ export const lighterTrading = {
       CH.lighterTrading.getSnapshot,
       input,
       lighterTradingSnapshotInputSchema,
+    );
+  },
+  getAccount(input) {
+    return invokeWithSchema(
+      CH.lighterTrading.getAccount,
+      input,
+      lighterTradingAccountInputSchema,
     );
   },
   startCandleSubscription(input) {
@@ -58,6 +72,48 @@ export const lighterTrading = {
     return subscribe(
       EV.lighterTrading.candleStatus,
       lighterTradingCandleStatusEventSchema,
+      callback,
+    );
+  },
+  startPublicMarketSubscription(input) {
+    return invokeWithSchema(
+      CH.lighterTrading.startPublicMarketSubscription,
+      input,
+      lighterTradingPublicMarketSubscriptionStartInputSchema,
+    );
+  },
+  stopPublicMarketSubscription(input) {
+    return invokeWithSchema(
+      CH.lighterTrading.stopPublicMarketSubscription,
+      input,
+      lighterTradingPublicMarketSubscriptionStopInputSchema,
+    );
+  },
+  onPublicBook(callback) {
+    return subscribe(
+      EV.lighterTrading.publicBook,
+      lighterTradingPublicBookEventSchema,
+      callback,
+    );
+  },
+  onPublicTrades(callback) {
+    return subscribe(
+      EV.lighterTrading.publicTrades,
+      lighterTradingPublicTradesEventSchema,
+      callback,
+    );
+  },
+  onPublicStats(callback) {
+    return subscribe(
+      EV.lighterTrading.publicStats,
+      lighterTradingPublicStatsEventSchema,
+      callback,
+    );
+  },
+  onPublicMarketStatus(callback) {
+    return subscribe(
+      EV.lighterTrading.publicMarketStatus,
+      lighterTradingPublicMarketStatusEventSchema,
       callback,
     );
   },
