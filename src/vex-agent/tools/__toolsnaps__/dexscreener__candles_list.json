@@ -1,0 +1,113 @@
+{
+  "definition": {
+    "function": {
+      "description": "Get OHLCV candles for a pair by `chain` plus `pairAddress` or `tokenAddress`. The V IS NOT IN THE DEFAULT ROWS: `fields` defaults to the `ohlc` group, so add `fields: \"ohlc,volume\"` for a per-bar volume column. The window's total USD volume does ship by default, as `summaryBlock.volumeUsdTotal`. Use this for any chart, trend, volatility, or history question. `resolution` is one of 18 values from `1s` to `1mo`; `limit` up to 999 per call (the provider's page size); `startAtMs`/`endAtMs` select any historical window, resolved internally through a block anchor so an arbitrary period costs two requests, not a page walk; deeper ranges continue with the exact `nextBeforeBlock` cursor. `series` chooses price or marketCap (no supply argument needed); `priceBasis` usd, native, or both; `inverted` flips the pair. Returns column-oriented rows plus a summary block: period change percent, high and low with their timestamps, total volume, largest single-candle move, gap count, and whether the newest bar is still forming. The envelope reports pages walked and the exact covered range against the requested one. WITHHELD DATA IS ALWAYS `truncated: true`. Whether the walk stopped at a bound or `limit` held back bars that were inside the requested range, the envelope says so, reports `barsWithheldByLimit`, and hands back `nextBeforeBlock` built from the OLDEST BAR RETURNED. Pass that value back as `beforeBlock` to continue exactly there. With `startAtMs` and no explicit `limit` the row bound is the provider's full 999-bar page, so a requested range is never quietly reduced to the newest few bars. THE BLOCK ANCHOR IS APPROXIMATE AND SAYS SO. `endAtMs` resolves through the nearest PRIOR trade, which on a measured 90-day target sat 393 seconds early. `anchorResolvedAtMs` and `anchorDistanceMs` report where it landed, and an anchor that is missing or further than ten resolution steps away falls back to walking backward from now with `anchorFallback: true`. `lastBarPartial` is on every answer because the newest bar is still forming: across 999 hourly bars all 998 COMPLETED bars matched exactly between the two provider transports and only the forming bar differed. Never compare, sum, or conclude from a partial bar. A sparse series is NORMAL at second-scale resolutions, not a data gap: 5s bars were measured with a median 50-second and maximum 1,600-second spacing. `summary.gapCount` counts the bars the provider did not emit inside the requested range, and missing buckets are never filled with zero volume. THE USD COLUMNS ARE THE PROVIDER'S DERIVED RENDERING AND THE NATIVE COLUMNS ARE THE EXACT SERIES. Measured: `closeUSD` exceeds `highUSD` by up to 1.81 percent on rows whose native columns are exactly equal (183 of 200 rows on an inverted series), because the USD extremes are converted at a different moment than the USD close, while the native columns were clean across 2,190 captured bars. `summary.high` and `summary.low` are therefore taken over EVERY price column including open and close, not the high/low columns alone. For a decision that turns on a sub-percent difference ask for `priceBasis: native`. AN EMPTY ANSWER IS AMBIGUOUS AND SAYS SO. `stopReason: provider_exhausted` means the provider returned no bars, NOT that this is the pool's first block: a wrong AMM id, chain slug or pair address each answer with a byte-identical empty page. When it happens on the first page the envelope names both readings instead of asserting one. The provider also accepts a circulating-supply OVERRIDE on the market-cap series, measured honoured. It is a NAMED OMISSION: `series: marketCap` returns the provider's own computed market cap with no supply argument, and a caller-supplied supply would produce a chart that looks just as authoritative and means whatever number was passed. Prices are DECIMAL STRINGS end to end and are never converted to floating-point numbers. Token-denominated volumes and any volume-weighted average price are deliberately absent: the provider's token volumes are raw fixed-point strings with no decimals published anywhere on this API, so every one of them would be wrong by a power of ten. Deep reads walk the provider's pages under two bounds you can raise: maxPages (default 10) and deadlineMs (default 25000, ceiling 120000). Hitting either is REPORTED with the exact range that was covered and a cursor for the rest, so nothing is dropped silently and everything not returned is reachable by asking again. Give chain plus pairAddress for a known pool, or tokenAddress to resolve the deepest pool of the provider's bounded 30-row search window; resolutionBasis echoes which happened and a token resolution is never a claim about every pool the token trades in. The pool's AMM id and its quote token are resolved from the pair itself and are not parameters: a wrong AMM id answers with zero rows and a wrong quote token returns a silently INVERTED price series, so neither is left to the caller. For the trades behind a candle call dexscreener__trades_list with that bar's start and end; for the wallets behind the whole move call dexscreener__top_traders_list. Every response carries sourceObservation with the transport that answered, fetchedAtMs, and the cache state, so a cached catalog read is distinguishable from a live one.",
+      "name": "dexscreener__candles_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "beforeBlock": {
+            "description": "Continue a truncated answer: pass back its nextBeforeBlock value unchanged. It is the provider's own EXCLUSIVE block anchor, so the continued walk starts at the bar below the oldest one the previous answer returned and repeats nothing. It is the only continuation this tool has, and it is refused together with endAtMs because both decide where the walk starts and honouring one silently would answer a different window than the one asked for.",
+            "type": "number"
+          },
+          "chain": {
+            "description": "Chain slug the pool lives on, for example solana, ethereum, bsc, base or robinhood. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`). A pair or token address is only unique within one chain, so this is required; an unknown slug is refused by name with the nearest catalog matches rather than answered with zero rows.",
+            "type": "string"
+          },
+          "deadlineMs": {
+            "description": "Wall-clock budget for the whole walk, in milliseconds. Defaults to 25000, ceiling 120000. Hitting it is reported exactly like the page budget: covered range plus a cursor, never a short answer presented as a complete one.",
+            "type": "number"
+          },
+          "endAtMs": {
+            "description": "Newest instant to cover, in epoch MILLISECONDS. Omit it for the latest bars. This is resolved internally to a block through the nearest PRIOR trade, so an arbitrary historical window costs two requests rather than a page walk (measured: a 90-day-old window in 980 ms and 33 KB against 1,582 ms and 436 KB walking). The anchor is APPROXIMATE by contract because trades are not evenly spaced: anchorResolvedAtMs and anchorDistanceMs report where it actually landed (measured 393 seconds early on one target), and an anchor that is missing or too far away falls back to walking backward from now with anchorFallback set.",
+            "type": "number"
+          },
+          "fields": {
+            "description": "Comma-separated column GROUPS, not individual field names. Supported groups: ohlc, volume, blockRange. Defaults to ohlc. volume adds the USD volume column; blockRange adds each bar's anchor block, which is what an exact continuation is built from. It emits blockMin and blockMax and THEY ARE THE SAME NUMBER: measured equal on 383 of 383 bars across both chains, three resolutions and both transports, while consecutive daily bars sat 7,173 blocks apart. Read blockMin as the bar's first block and ignore blockMax; neither is the bar's last block and the pair does not delimit a range. Base and quote token volumes and any volume-weighted average price are deliberately NOT offered: the provider's token volumes are raw fixed-point strings and it publishes no token decimals here, so all three would be wrong by a power of ten.",
+            "type": "string"
+          },
+          "inverted": {
+            "description": "Quote per base instead of base per quote. Defaults to false. The inversion is applied against the pool's OWN quote token, which the tool resolves: there is no quote parameter because sending a wrong one returns a valid-looking, silently inverted series with no marker of any kind (measured).",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "How many bars to return, 1 to 999. Defaults to 100. 999 is the PROVIDER's page size, not a Vex cap. It bounds rows RETURNED; a wide startAtMs range is what triggers an internal page walk, and the walk is reported separately in providerWindow. The two numbers measure different things. 999 hourly bars decode to about 271 KB of provider bytes, which is why the default is modest and the rows are column-oriented. When it holds back bars that were inside the requested range, the answer reports truncated true with barsWithheldByLimit and a nextBeforeBlock that continues from the OLDEST BAR RETURNED, never from the oldest bar fetched: a cursor below the fetched floor would make the withheld bars unreachable.",
+            "type": "number"
+          },
+          "maxPages": {
+            "description": "How many provider pages of up to 999 bars the backward walk may fetch. Defaults to 10; raise it for a deep historical range. There is no upper ceiling on it: deadlineMs is the real bound on a walk. Hitting either is reported as truncated with the covered range and a nextBeforeBlock cursor, so every bar not returned is reachable by asking again.",
+            "type": "number"
+          },
+          "pairAddress": {
+            "description": "The pool (pair) address. Give this when you already know the exact pool, from dexscreener__pairs_search, a screening board, or dexscreener__pair_get. Either this or tokenAddress is required. When both are given, pairAddress wins and the response says so rather than silently ignoring the other.",
+            "type": "string"
+          },
+          "priceBasis": {
+            "description": "Which price columns to return: usd, native (the quote token), or both. Defaults to usd. native is the pool's own arithmetic and has no exchange-rate dependence; usd is the one most questions mean. Every value is a DECIMAL STRING, never a floating-point number.",
+            "enum": [
+              "usd",
+              "native",
+              "both"
+            ],
+            "type": "string"
+          },
+          "resolution": {
+            "description": "Bar size, one of the 18 the provider serves: 1s, 5s, 15s, 30s, 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d, 3d, 1w, 1mo. Defaults to 1h. Second-scale series are SPARSE by nature and not a data gap: 5s bars were measured with a median 50-second and maximum 1,600-second spacing, so summary.gapCount reports the bars the provider did not emit inside the requested range rather than letting a sparse series read as a continuous one. Which transport serves a resolution is a provider fact the tool hides: daily and above, and 5s, exist only on the WebSocket channel.",
+            "enum": [
+              "1s",
+              "5s",
+              "15s",
+              "30s",
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "2h",
+              "4h",
+              "8h",
+              "12h",
+              "1d",
+              "3d",
+              "1w",
+              "1mo"
+            ],
+            "type": "string"
+          },
+          "series": {
+            "description": "price for the price series, marketCap for a market-capitalisation series. Defaults to price. Market-cap bars need NO supply argument: the provider computes them, and no circulating supply is sent or assumed.",
+            "enum": [
+              "price",
+              "marketCap"
+            ],
+            "type": "string"
+          },
+          "startAtMs": {
+            "description": "Oldest instant to cover, in epoch MILLISECONDS. The provider is paged backward until this is covered or a bound is hit. When given, it takes precedence over limit: with no explicit limit the row bound becomes the provider's full 999-bar page instead of the modest default, so a requested range is never quietly reduced to the newest few bars. An explicit limit is still honoured, and every in-range bar it holds back sets truncated true and moves nextBeforeBlock to the oldest bar returned, so the rest is reached by asking again. coveredRange against requestedRange states exactly how much of what you asked for arrived.",
+            "type": "number"
+          },
+          "tokenAddress": {
+            "description": "A token contract address, resolved to the deepest pool of the provider's bounded 30-row search window on this chain. Use it when you have a token but not a pool. resolutionBasis echoes that a resolution happened and resolutionNote states the bound: \"deepest\" means deepest among at most 30 pools the provider chose to return, never a claim about every pool the token trades in. For the full pool list call dexscreener__token_pairs_list.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "dexscreener",
+    "requiresEnv": null,
+    "toolId": "dexscreener.candles"
+  }
+}

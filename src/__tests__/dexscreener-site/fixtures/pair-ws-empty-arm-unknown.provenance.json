@@ -1,0 +1,17 @@
+{
+  "encoding": "protobuf",
+  "protobufMessage": "dex_screener.PairChannelMessage",
+  "endpoint": "wss://io.dexscreener.com/dex/screener/v7/pair/ethereum/0x000000000000000000000000000000000000dead",
+  "requestParams": {},
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-25T08:59:20+00:00",
+  "httpStatus": 101,
+  "capturedBy": "live capture for S8 RESOLVE fix round (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-08-25; capture script scratchpad/s8/resolve/probe.py",
+  "note": "The 2-byte {\"pair\":{}} frame: the provider answering that it indexes no such pool, for a well-formed but unindexed ethereum address. Arrived at 0.470 s, as fast as a real snapshot, and re-sent on every tick. This is the unknown-pair answer that fetchPairSnapshot raises immediately instead of retrying into a transport timeout.",
+  "fixture": "pair-ws-empty-arm-unknown.bin.b64",
+  "bytes": 2,
+  "sha256": "102b51b9765a56a3e899f7cf0ee38e5251f9c503b357b330a49183eb7b155604"
+}

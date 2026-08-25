@@ -29,7 +29,7 @@ Evidence files:
 | Electron main `net.fetch` (Chromium network service) | `io.dexscreener.com`: 200 with Chrome UA + `Origin: https://dexscreener.com` + `Referer`. `dexscreener.com` SSR HTML: 403 challenge with UA only, **200 with the full Chrome navigation header set** (Accept, Accept-Language, Upgrade-Insecure-Requests, Sec-Fetch-Dest/Mode/Site/User, sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform) |
 | WebSockets from Electron | main process has no Chromium WebSocket. A hidden sandboxed `BrowserWindow` in an isolated `session.fromPartition` works: local `data:` page + `webRequest.onBeforeSendHeaders` setting `Origin: https://dexscreener.com` on `io.dexscreener.com` requests -> screener WS OPEN, first 100-pair frame (106 KB) in 648 ms. Loading a real site page (`/robots.txt`, 2 requests, 1 MB JS heap) also works. Preferred: local page, no remote code |
 | `Origin` header | required on every WS upgrade (403 without). HTTP endpoints echo `access-control-allow-origin: https://dexscreener.com` |
-| keepalive | every WS sends a TEXT frame `"ping"` (~27 s); client must answer `"pong"` (JSON string with quotes). `feed/ws` also sends 0-byte binary keepalives every ~15 s |
+| keepalive | the SCREENER channels send a TEXT frame `"ping"` (~27 s); client must answer `"pong"` (JSON string with quotes). **CORRECTED 2026-08-25 (EP11): `feed/ws` sends NO text ping at all** - none in 60 s across two sessions, so "every WS" was wrong and answering a ping cannot hold that socket open. `feed/ws` sends **0-byte keepalives every ~15 s** (measured at t=16.8 s, 30.6 s, 46.9 s), and frame flags show they are `BINARY` DATA frames of length 0, not protocol PING control frames, so a browser `WebSocket` fires `onmessage` for each one. A frame budget that counts them cannot be met before a 25 s deadline; a zero-length binary frame is a keepalive and must not count toward `binaryFrames` (see the `WsExpectation` contract). `feed/ws` also drops an INACTIVE socket at **~60 s** (60.1 s and 60.5 s), abruptly and with no close frame |
 | rate limits | `dexscreener.com` SSR: 30 page loads in ~9 s -> **429, `Retry-After: 40`**, recovers after 45 s; 3 s spacing never tripped. `io.dexscreener.com` HTTP: 14 back-to-back, no limit seen. WS: 155 connects in 25 min, no limit seen |
 | cookies | only `__cf_bm` (bot management, 30 min) and `DS-Country`. No auth for anonymous reads |
 | content-type lies | on `io.dexscreener.com` the header says `application/json` for bodies that are protobuf (`/dex/search/*`) or the site's Avro dialect (`/dex/chart/*`, `/dex/log/*`, `/dex/trending/v6`, `/metas/*`). Dispatch decoding by endpoint, never by header |
@@ -165,7 +165,12 @@ maxLaunchpadProgress, launchpadIds, labels, baseTokenSuffixes, metaIds`.
 {m5,h1,h6,h24}`, `volume/volumeBuy/volumeSell{h1,h6,h24[,m5]}` (USD), `priceChange{m5,h1,h6,h24}`
 (percent), `liquidity{usd,base,quote}`, `marketCap`, `fdv`, `pairCreatedAt`, `cmsProfile{headerId,
 iconId, description, links[{label,url,type}]}`, `isBoostable`, `boosts{active}`,
-`isDEXFeedStreamEnabled`. No token decimals. uint64 fields arrive as strings in JSON form.
+`isDEXFeedStreamEnabled`. **CORRECTED 2026-08-25 (EP9/EP10): "No token decimals" is true of the
+SCREENER, PAIR and CHART channels and false of the surface as a whole** - `pair-details/v4` carries
+`qi.tokenDetails.tokenDecimals` (measured populated: HEX 8, FLOKI 9, USDC 6, and on every captured
+document with a QuickIntel block). It is not reachable from the bars or trades channels, which is
+why `volumeToken0`/`volumeToken1` stay unprojected there, but it is not absent from the provider.
+uint64 fields arrive as strings in JSON form.
 
 ### 2.9 Vocabularies
 
@@ -237,8 +242,8 @@ tool must present "no audit data" as unknown, never as clean.
 
 | transport | URL / command | notes |
 |---|---|---|
-| HTTP, site Avro | `GET https://io.dexscreener.com/dex/chart/amm/v3/{ammId}/bars/{chain}/{pairId}?res={RES}&cb={countBack}&q={quoteTokenAddress}[&uo=0][&i=1][&bbn=beforeBlock][&abn=afterBlock][&mc=1&cs=circSupply]` | RES: `1S 15S 30S 1 3 5 15 30 60 120 240 480 720` (daily+ -> 400); cap **999 bars per call**; page back with `bbn = bars[0].minBlockNumber`; `i=1` inverts; `mc=1` needs `cs`; record `{timestamp(ms), open, openUsd, high, highUsd, low, lowUsd, close, closeUsd, volumeUsd, minBlockNumber, maxBlockNumber}` (strings); last close matched the public API price exactly |
-| feed WS, protobuf | `wss://io.dexscreener.com/feed/ws` `WSCommand.getHistoricalBars{cid, limit, chainId, pairId, ammId, resolution(BarResolution S1..MO1), type(PRICE|MARKET_CAP), quoteTokenId, beforeBlockNumber}` -> `WSMessage.historicalBars{bars[]}` | only source of `D1 D3 W1 MO1`; market-cap bars without supply; adds `volumeToken0/volumeToken1`; limit 2000 accepted |
+| HTTP, site Avro | `GET https://io.dexscreener.com/dex/chart/amm/v3/{ammId}/bars/{chain}/{pairId}?res={RES}&cb={countBack}&q={quoteTokenAddress}[&uo=0][&i=1][&bbn=beforeBlock][&abn=afterBlock][&mc=1&cs=circSupply]` | RES: `1S 15S 30S 1 3 5 15 30 60 120 240 480 720` (daily+ -> 400); cap **999 bars per call**; page back with `bbn = bars[0].minBlockNumber`; `i=1` inverts; **CORRECTED 2026-08-25 (EP10): `mc=1` does NOT need `cs`** - `mc=1` alone returns the provider-computed market cap and it matched the WS `BAR_TYPE_MARKET_CAP` series EXACTLY on completed bars; `cs` is a supply OVERRIDE (`mc=1&cs=1000000000` returns price x 1e9 exactly) and is a NAMED OMISSION rather than an exposed parameter; `abn` re-measured DEAD (byte-identical window to baseline); an invalid identity (wrong `ammId`, chain slug or `pairId`) answers **200 with a byte-identical empty page**, indistinguishable from a genuine end of history; record `{timestamp(ms), open, openUsd, high, highUsd, low, lowUsd, close, closeUsd, volumeUsd, minBlockNumber, maxBlockNumber}` (strings); last close matched the public API price exactly |
+| feed WS, protobuf | `wss://io.dexscreener.com/feed/ws` `WSCommand.getHistoricalBars{cid, limit, chainId, pairId, ammId, resolution(BarResolution S1..MO1), type(PRICE|MARKET_CAP), quoteTokenId, beforeBlockNumber}` -> `WSMessage.historicalBars{bars[]}` | only source of `D1 D3 W1 MO1`; market-cap bars without supply; adds `volumeToken0/volumeToken1`; **CORRECTED 2026-08-25 (EP11): "limit 2000 accepted" is misleading - the true cap is 999.** `limit` 999, 1000, 1500, 2000, 2001, 5000 and 100000 all answer `WS_COMMAND_CODE_OK` with exactly 999 bars, byte-identical (sha `fc1ba90a`, 271,844 B): anything above 999 is accepted and SILENTLY CLAMPED. `limit=0` returns 0 bars; **`limit=-1` TEARS THE SOCKET DOWN with no answer at all** (4 of 4 attempts across two spaced sessions), which is what makes the client-side `limit >= 1` guard load-bearing rather than cosmetic. `cid` omitted (0) is never answered. `cancel` suppresses an answer SILENTLY and never yields `WS_COMMAND_CODE_CANCELED`. The socket MULTIPLEXES and REORDERS answers (20 concurrent cids answered out of send order), so dispatch is on `cid` and never on frame position |
 
 **ammId is `pair.type.value.a`, never `dexId`.** Measured: solana raydium/orca/meteora(DLMM) ->
 `solamm`, meteora DYN2 -> `meteora`, pumpswap -> `pumpfundex`, pumpfun -> `pumpfun`; uniswap
@@ -292,7 +297,7 @@ the `rankBy=volume` order did not reproduce. Do not build on it without a dedica
 | top traders by bought / sold / pnl / unrealized | `/dex/log/amm/v5/.../top` |
 | live quote for a watched pair | pair WS, ~1 KB / 3.2 s |
 | crowd sentiment, AI blurb | reactions, token insight (optional colour only) |
-| NOT available | audit/tax/holder screening filters, `fdv` sort, live trade push, token decimals |
+| NOT available | audit/tax/holder screening filters, `fdv` sort, live trade push (`subscribeTransactions` acknowledges and then sends nothing; re-measured 2026-08-25, and `isDEXFeedStreamEnabled` was false on 500 of 500 live pairs). Token decimals are NOT available on the screener, pair, bars or trades channels; they ARE available on `pair-details/v4` via `qi.tokenDetails.tokenDecimals`. The gapless substitute for the live push is polling `GetTransactions` with `afterBlockNumber` |
 
 ## 8. Open items
 

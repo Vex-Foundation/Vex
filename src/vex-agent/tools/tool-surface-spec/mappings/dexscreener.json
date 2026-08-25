@@ -4,62 +4,92 @@
     {
       "toolId": "dexscreener.search",
       "publicName": "dexscreener__pairs_search",
-      "rationale": "Resource added to a flat toolId. The tool searches DEX PAIRS by name, symbol, address or venue and returns pair rows; `search` alone did not say what is searched, in a namespace where four different resources are searchable."
-    },
-    {
-      "toolId": "dexscreener.pairs",
-      "publicName": "dexscreener__pairs_get",
-      "rationale": "Verb added. `get` and not `list`: the caller names up to 60 pair addresses and Vex reconciles every one of them, so this is a batch lookup by id, not an enumeration."
-    },
-    {
-      "toolId": "dexscreener.tokens",
-      "publicName": "dexscreener__tokens_get",
-      "rationale": "Verb added; same batch-lookup-by-address shape as pairs_get, on the token side."
+      "rationale": "Resource added to a flat toolId. The tool searches DEX PAIRS by name, symbol, address or venue and returns pair rows; `search` alone did not say what is searched. RECLAIMED in S3.5: the public-API tool that held this identity was retired whole (owner decision D-DS2, no alias), and the site-channel search tool took both the toolId and the publicName over unchanged. The question did not change, only the channel that answers it, so the immutable-toolId contract holds and no durable row or audit record needs a migration. What changed for a caller: the search is now scopable to one chain SERVER-side, which the public API could not do at all."
     },
     {
       "toolId": "dexscreener.tokenPairs",
       "publicName": "dexscreener__token_pairs_list",
-      "rationale": "camelCase split plus `list`. This one really is an enumeration: ONE token address in, the provider's bounded set of pools for it out, sorted and windowed Vex-side. The verb is what now separates it from pairs_get and tokens_get, which the three near-identical toolIds did not."
-    },
-    {
-      "toolId": "dexscreener.orders",
-      "publicName": "dexscreener__token_orders_list",
-      "rationale": "Resource scoped. The tool answers a question about ONE named token's paid promotional orders, not about orders in general, and the `token_` prefix keeps it from reading as a trading-order surface, which this namespace has none of."
-    },
-    {
-      "toolId": "dexscreener.ads",
-      "publicName": "dexscreener__ads_list",
-      "rationale": "Verb added; a windowed feed of paid ad placements."
-    },
-    {
-      "toolId": "dexscreener.profiles",
-      "publicName": "dexscreener__profiles_list",
-      "rationale": "Verb added; token profile metadata within the provider's feed window. Batch 2 (owner decision D7) retired `dexscreener.profiles.recent` into this tool's `feed` param (latest | recentUpdates); its row is gone from this artifact and no alias replaces the retired name (D5)."
-    },
-    {
-      "toolId": "dexscreener.boosts",
-      "publicName": "dexscreener__boosts_list",
-      "rationale": "Verb added; the paid-boost feeds. Batch 2 (owner decision D7) retired `dexscreener.boosts.top` into this tool's `feed` param (latest | top); its row is gone from this artifact and no alias replaces the retired name (D5)."
-    },
-    {
-      "toolId": "dexscreener.communityTakeovers",
-      "publicName": "dexscreener__community_takeovers_list",
-      "rationale": "camelCase split plus `list`; plural is correct, the tool returns the recency window of CTO-labelled rows."
-    },
-    {
-      "toolId": "dexscreener.attention",
-      "publicName": "dexscreener__attention_list",
-      "rationale": "Verb added. The word `attention` is kept despite the description calling it a synthetic merge and not a genuine attention signal, because renaming it is a description-wave decision; the doc records the concern."
+      "rationale": "camelCase split plus `list`. ONE token address in, the provider's bounded set of pools for it out, sorted and windowed Vex-side. RECLAIMED in S3.5 the same way as `dexscreener.search`: the public-API tool was retired whole and the site-channel tool took both identities over unchanged. What changed for a caller: the pool window is now stated as the provider's 30-row cap with `providerCapped` and `resolutionBasis`, instead of implying every pool of the token was enumerated."
     },
     {
       "toolId": "dexscreener.trending",
       "publicName": "dexscreener__narratives_list",
-      "rationale": "Semantic rename. The tool returns NARRATIVES/metas with aggregate stats, and its own description says so in capitals ('Returns NARRATIVES, not individual tokens'). `trending` invited the model to reach for it when it wanted trending tokens, which lives in solana__tokens_discover and the boost feeds instead. Renaming the resource to what it returns removes that trap and pairs it with the drill-down below."
+      "rationale": "Semantic rename. The tool returns NARRATIVES/metas with aggregate stats; `trending` invited the model to reach for it when it wanted trending tokens, which lives in the pair boards instead. RECLAIMED in S3.5: the public-API narratives tool was retired whole and the site-channel tool took both identities over unchanged, which plan 4.6 records as 'both identities preserved'. What changed for a caller: aggregates are now per chain rather than global only, and each row carries the `id` that the screening tools' `metaIds` filter accepts."
     },
     {
-      "toolId": "dexscreener.meta",
-      "publicName": "dexscreener__narrative_get",
-      "rationale": "Semantic rename. `meta` is opaque and, worse, collides with the ordinary meaning of tool metadata; the tool drills into ONE narrative by slug. Singular resource plus `get` makes the pair narratives_list -> narrative_get self-describing, and the slug's provenance obvious."
+      "toolId": "dexscreener.pairs.trending",
+      "publicName": "dexscreener__pairs_trending_list",
+      "rationale": "Resource plus ranking plus verb. `pairs_trending` and not `trending`: the flat `trending` publicName is already taken by the narratives tool (`dexscreener__narratives_list`), and the resource segment is what keeps the two apart - this one ranks PAIRS by the site's trending score, that one lists narrative groups."
+    },
+    {
+      "toolId": "dexscreener.pairs.top",
+      "publicName": "dexscreener__pairs_top_list",
+      "rationale": "Resource plus ranking plus verb. `top` names the league-table reading (leaders by a hard metric the caller picks) as against `trending`, which is the provider's attention score; the pair of names is the routing signal that keeps a metric question off the attention board."
+    },
+    {
+      "toolId": "dexscreener.gainers",
+      "publicName": "dexscreener__gainers_list",
+      "rationale": "The trader's own word, kept flat. `gainers` needs no resource segment because it means one thing in this domain, and prefixing it with `pairs_` would have buried the token users actually type under a segment that adds nothing."
+    },
+    {
+      "toolId": "dexscreener.losers",
+      "publicName": "dexscreener__losers_list",
+      "rationale": "The mirror of `gainers`, named the same way for the same reason. The two boards are one query with the sort direction flipped, and symmetric names are what make that obvious to the model choosing between them."
+    },
+    {
+      "toolId": "dexscreener.pairs.new",
+      "publicName": "dexscreener__pairs_new_list",
+      "rationale": "Resource plus recency plus verb. `pairs_new` and not `new_pairs`: the resource leads every other name in this namespace, so a model scanning publicNames finds all the pair boards together."
+    },
+    {
+      "toolId": "dexscreener.launchpad.pairs",
+      "publicName": "dexscreener__launchpad_pairs_list",
+      "rationale": "Both resources named, launchpad first, because the launchpad is what narrows the set and the pair is what comes back. It is deliberately not folded into `pairs_new_list`: bonding-curve tokens are hidden from ordinary screens by a provider default and have no liquidity field, so they are a different board with different reachable fields."
+    },
+    {
+      "toolId": "dexscreener.chains",
+      "publicName": "dexscreener__chains_list",
+      "rationale": "Flat resource plus verb: the catalog is one enumeration with no second resource to name. It is the vocabulary source for `chainIds`, `dexIds` and `labels` everywhere else in the namespace, so the plainest possible name is the right one."
+    },
+    {
+      "toolId": "dexscreener.tokens.screen",
+      "publicName": "dexscreener__tokens_screen",
+      "rationale": "`screen` and not `list`, deliberately breaking the namespace's usual verb. `screen` says this is a filtered, provider-ranked sweep of a chain that returns whatever matches, and that the ordering is the provider's opaque score rather than a metric the caller chose. The name was originally chosen to stand apart from the public-API `dexscreener__tokens_get`, which S3.5 retired; the reasoning still holds against `dexscreener__pairs_batch_get`, the surviving fetch-what-I-named tool."
+    },
+    {
+      "toolId": "dexscreener.pair.get",
+      "publicName": "dexscreener__pair_get",
+      "rationale": "Singular resource plus `get`, the namespace's own pairing with `pairs_*_list`. It is deliberately `pair_get` and not `pair_snapshot_get`: the tool answers the whole current state of one pair, and a qualifier would imply some other pair read returns something different. Its sibling `dexscreener__pair_details_get` keeps the `details` segment precisely because it does return something different, the safety and holder audit."
+    },
+    {
+      "toolId": "dexscreener.spotlight",
+      "publicName": "dexscreener__spotlight_get",
+      "rationale": "The provider's own word for the endpoint, kept because it names the one thing all three feeds share: bought attention. `boosts_list` would have been narrower than the tool (it also carries the newest profiles) and `promotions_list` would have been a Vex coinage for a surface the site already names. `get` and not `list` because one call returns three fixed feeds as a document, not one enumerable collection."
+    },
+    {
+      "toolId": "dexscreener.pairs.batch",
+      "publicName": "dexscreener__pairs_batch_get",
+      "rationale": "Resource plus mode plus verb. `batch_get` states the distinguishing property directly: the caller supplies the membership and the tool refreshes it in one round trip, as against every other pairs tool where the provider decides who is in the answer. It is deliberately not `pairs_get`, the name the retired public-API batch tool held: that name is now unclaimed and stays unclaimed, because a call to it must fall through to the unknown-tool path rather than silently reaching a differently-shaped successor (owner decision D-DS2, no aliases)."
+    },
+    {
+      "toolId": "dexscreener.pair.details",
+      "publicName": "dexscreener__pair_details_get",
+      "rationale": "Resource plus verb. `pair_details` and not `pair`: `dexscreener__pair_get` already names the live pool snapshot (price, liquidity, volume), and this tool answers a different question about the same pool - is it safe, who holds it, is the liquidity locked. The `_get` verb marks it as a point read of one subject rather than a list, matching `pair_get` and `spotlight_get`. NEW in S4; no identity is reclaimed and none of the retired public-API tools answered any part of this question."
+    },
+    {
+      "toolId": "dexscreener.candles",
+      "publicName": "dexscreener__candles_list",
+      "rationale": "Flat resource plus `list`. `candles` is the word users and every charting surface use for OHLCV bars, and the tool returns a series of them, so the `_list` verb is literal. No resource prefix is needed: nothing else in the fleet lists candles, and the pair is a parameter rather than a namespace segment. NEW in S4; the public API DexScreener exposes has no candle endpoint at all, so nothing was retired here."
+    },
+    {
+      "toolId": "dexscreener.trades",
+      "publicName": "dexscreener__trades_list",
+      "rationale": "Flat resource plus `list`. `trades` and not `transactions`: the rows are swaps and liquidity events on one pool, which is what a trader calls trades, and `transactions` would collide semantically with wallet-level transaction history in other namespaces. NEW in S4."
+    },
+    {
+      "toolId": "dexscreener.top.traders",
+      "publicName": "dexscreener__top_traders_list",
+      "rationale": "Qualified resource plus `list`. `top_traders` and not `traders`: the tool returns a bounded provider-side RANKING, not the pair's traders, and dropping `top` would promise a completeness the surface explicitly does not have (one leaderboard of up to 100 wallets, no continuation). The dotted `top.traders` mirrors that qualification. NEW in S4."
     }
   ]
 }

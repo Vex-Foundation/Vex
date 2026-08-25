@@ -1,0 +1,21 @@
+{
+  "fixture": "pair-details-solana-bonding-poolholder.json",
+  "encoding": "json",
+  "endpoint": "https://io.dexscreener.com/dex/pair-details/v4/solana/HCh4WNzkiBuWCLvZZ4TB5FrPoF6j7pJrPiQdQYMbLtEY",
+  "requestParams": {
+    "chainId": "solana",
+    "id": "HCh4WNzkiBuWCLvZZ4TB5FrPoF6j7pJrPiQdQYMbLtEY",
+    "route": "pair_id"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-25",
+  "httpStatus": 200,
+  "bytes": 4209,
+  "sha256": "bfc86df9af650531249b4071c171b0a3423c638e9f83a6d2a1dbf89052a7f87a",
+  "capturedBy": "live pair-details probe through the S10 driver (curl_cffi impersonate=chrome), 2026-08-25, while the pair was still bonding; archived at scratchpad/s10/raw/. Selected from a 5-pair live scan of the near-graduation launchpad board because the archived wave-3 GOGH/BARK captures were tool OUTPUT rather than wire bytes and those two curves had moved on by the time this fixture was cut.",
+  "note": "S10-1: the pair's OWN pool/bonding-curve account is returned as HOLDER ROW 0 of the token holder list, holding 25.19 percent. Counting it as a whale is what inverted the concentration ranking for this token class (measured on GOGH: top10 71.90 with the curve counted against 24.17 without, and on BARK 37.18 against 20.59). The row `id` equals the pairAddress in the request, which is the whole evidence the exclusion needs and it is in the same document. Solana holder rows use `id`/`balance`/`percentage` and state percentage ALREADY as a percent, unlike the GoPlus fraction on the ethereum fixture."
+}

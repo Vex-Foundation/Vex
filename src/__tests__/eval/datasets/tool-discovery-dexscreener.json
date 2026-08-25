@@ -1,287 +1,883 @@
 {
-  "version": "dexscreener-v1",
+  "version": "dexscreener-v5",
   "namespace": "dexscreener",
-  "description": "Retrieval-verification dataset for the dexscreener namespace. Every live tool carries at least one blind row (outcome phrased without naming the brand) and at least one protocol-aware row (the brand is named), with the exact full toolId as the expectation. Queries were written from the manifests and the navigation entry only, phrased the way a model would type them into tool search when a user asks for pool depth, liquidity, trending narratives, paid promotion, profile metadata, community takeovers, a token's pools, or a name-to-address search.",
+  "description": "Retrieval-verification dataset for the dexscreener namespace. Every live tool carries at least one blind row (outcome phrased without naming the brand) and at least one protocol-aware row (the brand is named), with the exact full toolId as the expectation. v2 (stage S2b) added the eight site-screening tools: the six leaderboard boards, the chain catalog and the token-level screen. v3 (stage S3) added the three resolve and market-context tools that stage could land: the single-pair live snapshot, the paid-attention spotlight, and the explicit-identity batch refresh. v4 (stage S3.5) is the first revision that REMOVES rows. The 12 public-API tools were retired whole and alias-free (owner decision D-DS2), so 26 rows lost their subject. They were handled in three ways, never left dangling. RETARGETED, because the user intent survives on a new owner: the known-pool-address rows to the single-pair snapshot, the many-known-identities rows to the batch refresh, the profile and boost feed rows to the spotlight document, and the narrative drill-down rows to the narrative aggregate that now yields the metaIds the screening boards take. REMOVED, because plan 4.6 records them as named omissions (owner decision D-DS3) and no tool answers them: the community-takeover feed, the per-token promotional-order ledger, and the ad-placement feed (paid ads survive only as an `onlyAds` FILTER on the screening boards, which is not a feed anyone can ask for). ADDED: rows for the three tools S3.5 landed on reclaimed identities, phrased around the capabilities that are actually new on them - server-side chain scoping on search, deepest-of-returned-window routing on the token pool list, and per-chain aggregates on narratives - because a reclaimed toolId whose rows only describe the retired behaviour would prove nothing about the tool that now holds it. v5 (stage S4) adds the deep-dive family: `pair.details`, `candles`, `trades` and `top.traders`. These are the namespace's first contract-level and wallet-level tools, so none of their rows are retargeted from a retired subject - every one is new intent that no DexScreener tool could answer before. Each tool carries at least one blind row and one protocol-aware row, plus one multi-tool row for the safety-then-chart-then-flow sequence the plan's section 5 describes, which is the sequence the four tools exist to make possible in one namespace.",
   "queries": [
     {
       "query": "find the pools trading a token when I only know its ticker PEPE and not its contract address",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.search"],
-      "expectedCoverageGroups": [["dexscreener.search"]]
+      "expectedToolIds": [
+        "dexscreener.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.search"
+        ]
+      ]
     },
     {
       "query": "look up an unknown 0x address I was sent and see what market it belongs to on which chain",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.search"],
-      "expectedCoverageGroups": [["dexscreener.search"]]
+      "expectedToolIds": [
+        "dexscreener.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.search"
+        ]
+      ]
     },
     {
       "query": "DexScreener text search for pairs matching a project name across all chains",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.search"],
-      "expectedCoverageGroups": [["dexscreener.search"]]
-    },
-    {
-      "query": "read the liquidity, 24h volume and price change of one specific liquidity pool whose contract address I already have on Ethereum",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.pairs"],
-      "expectedCoverageGroups": [["dexscreener.pairs"]]
-    },
-    {
-      "query": "fetch stats for several known pool addresses on Base in a single request",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.pairs"],
-      "expectedCoverageGroups": [["dexscreener.pairs"]]
-    },
-    {
-      "query": "DexScreener pool lookup by chain and pair address with reserves and market cap fields",
-      "awareness": "protocol-aware",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.pairs"],
-      "expectedCoverageGroups": [["dexscreener.pairs"]]
-    },
-    {
-      "query": "price 30 token contract addresses I hold on Solana all at once for a portfolio snapshot",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.tokens"],
-      "expectedCoverageGroups": [["dexscreener.tokens"]]
-    },
-    {
-      "query": "compare a list of ERC-20 addresses on one chain side by side sorted by liquidity",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.tokens"],
-      "expectedCoverageGroups": [["dexscreener.tokens"]]
-    },
-    {
-      "query": "DexScreener batch price lookup for many token addresses on the same chain",
-      "awareness": "protocol-aware",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.tokens"],
-      "expectedCoverageGroups": [["dexscreener.tokens"]]
+      "expectedToolIds": [
+        "dexscreener.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.search"
+        ]
+      ]
     },
     {
       "query": "list every indexed pool for one token contract on Solana and tell me which one has the deepest USD liquidity",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.tokenPairs"],
-      "expectedCoverageGroups": [["dexscreener.tokenPairs"]]
+      "expectedToolIds": [
+        "dexscreener.tokenPairs"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.tokenPairs"
+        ]
+      ]
     },
     {
       "query": "check whether this token's price is consistent across its markets or one pool is an outlier",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.tokenPairs"],
-      "expectedCoverageGroups": [["dexscreener.tokenPairs"]]
+      "expectedToolIds": [
+        "dexscreener.tokenPairs"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.tokenPairs"
+        ]
+      ]
     },
     {
       "query": "DexScreener list of all markets for a given token address on Arbitrum ranked by depth",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.tokenPairs"],
-      "expectedCoverageGroups": [["dexscreener.tokenPairs"]]
-    },
-    {
-      "query": "which projects just refreshed their token branding, icons, description and social links",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.profiles"],
-      "expectedCoverageGroups": [["dexscreener.profiles"]]
-    },
-    {
-      "query": "newest token profile metadata entries on Solana from the last hour",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.profiles"],
-      "expectedCoverageGroups": [["dexscreener.profiles"]]
-    },
-    {
-      "query": "read DexScreener token profile entries including the community takeover flag per token",
-      "awareness": "protocol-aware",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.profiles"],
-      "expectedCoverageGroups": [["dexscreener.profiles"]]
-    },
-    {
-      "query": "which tokens are currently paying the most for promoted visibility on the chart site",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.boosts"],
-      "expectedCoverageGroups": [["dexscreener.boosts"]]
-    },
-    {
-      "query": "latest purchases of paid promotion packs and the cumulative totals per token on BSC",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.boosts"],
-      "expectedCoverageGroups": [["dexscreener.boosts"]]
-    },
-    {
-      "query": "show the DexScreener top boosted tokens feed with a minimum boost total",
-      "awareness": "protocol-aware",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.boosts"],
-      "expectedCoverageGroups": [["dexscreener.boosts"]]
-    },
-    {
-      "query": "which tokens have just been labelled as community takeovers in the last 24 hours",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.communityTakeovers"],
-      "expectedCoverageGroups": [["dexscreener.communityTakeovers"]]
-    },
-    {
-      "query": "current CTO labelled window as a starting list of abandoned projects picked up by holders",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.communityTakeovers"],
-      "expectedCoverageGroups": [["dexscreener.communityTakeovers"]]
-    },
-    {
-      "query": "DexScreener community takeover feed sorted by how recently the claim was made",
-      "awareness": "protocol-aware",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.communityTakeovers"],
-      "expectedCoverageGroups": [["dexscreener.communityTakeovers"]]
-    },
-    {
-      "query": "give me one combined ranked list that merges token profile presence with paid promotion spend",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.attention"],
-      "expectedCoverageGroups": [["dexscreener.attention"]]
-    },
-    {
-      "query": "merged DexScreener view of profiles plus boosts deduplicated into a single attention ranking",
-      "awareness": "protocol-aware",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.attention"],
-      "expectedCoverageGroups": [["dexscreener.attention"]]
+      "expectedToolIds": [
+        "dexscreener.tokenPairs"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.tokenPairs"
+        ]
+      ]
     },
     {
       "query": "what themes or metas is the market rotating into right now, like AI or dog coins",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.trending"],
-      "expectedCoverageGroups": [["dexscreener.trending"]]
+      "expectedToolIds": [
+        "dexscreener.trending"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.trending"
+        ]
+      ]
     },
     {
       "query": "trending narrative categories with aggregate market cap and 6h change, before I name any token",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.trending"],
-      "expectedCoverageGroups": [["dexscreener.trending"]]
+      "expectedToolIds": [
+        "dexscreener.trending"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.trending"
+        ]
+      ]
     },
     {
       "query": "DexScreener trending metas feed ranked by aggregate 24h volume",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.trending"],
-      "expectedCoverageGroups": [["dexscreener.trending"]]
+      "expectedToolIds": [
+        "dexscreener.trending"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.trending"
+        ]
+      ]
     },
     {
-      "query": "I have the slug 'knockoff-legends' and want the tokens trading inside that theme",
+      "query": "what is hot and moving on solana right now",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.meta"],
-      "expectedCoverageGroups": [["dexscreener.meta"]]
+      "expectedToolIds": [
+        "dexscreener.pairs.trending"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs.trending"
+        ]
+      ]
     },
     {
-      "query": "drill into a single meta category and list its Solana pairs with turnover above a threshold",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.meta"],
-      "expectedCoverageGroups": [["dexscreener.meta"]]
-    },
-    {
-      "query": "open one DexScreener narrative by slug and get its aggregate stats plus member pairs",
+      "query": "DexScreener trending pairs for the last hour on base",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.meta"],
-      "expectedCoverageGroups": [["dexscreener.meta"]]
+      "expectedToolIds": [
+        "dexscreener.pairs.trending"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs.trending"
+        ]
+      ]
     },
     {
-      "query": "what promotional packages has this exact token on Solana paid for, with payment timestamps",
+      "query": "which pairs have the highest 24h trading volume on this chain",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.orders"],
-      "expectedCoverageGroups": [["dexscreener.orders"]]
+      "expectedToolIds": [
+        "dexscreener.pairs.top"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs.top"
+        ]
+      ]
     },
     {
-      "query": "check the paid order status and boost payment ledger for one token contract I already identified",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.orders"],
-      "expectedCoverageGroups": [["dexscreener.orders"]]
-    },
-    {
-      "query": "verify on DexScreener whether this token address bought a profile or promotion order and whether it is approved",
+      "query": "DexScreener league table of the most traded pairs by transactions",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.orders"],
-      "expectedCoverageGroups": [["dexscreener.orders"]]
+      "expectedToolIds": [
+        "dexscreener.pairs.top"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs.top"
+        ]
+      ]
     },
     {
-      "query": "what tokens are currently running paid banner placements on the chart aggregator",
+      "query": "what pumped the most today, filtered so illiquid junk does not win",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.ads"],
-      "expectedCoverageGroups": [["dexscreener.ads"]]
+      "expectedToolIds": [
+        "dexscreener.gainers"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.gainers"
+        ]
+      ]
     },
     {
-      "query": "latest advertising placements bought in the past day filtered to Solana",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": ["dexscreener.ads"],
-      "expectedCoverageGroups": [["dexscreener.ads"]]
-    },
-    {
-      "query": "DexScreener paid ad placement feed with when each placement went live",
+      "query": "DexScreener biggest gainers over the last hour on solana",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["dexscreener.ads"],
-      "expectedCoverageGroups": [["dexscreener.ads"]]
+      "expectedToolIds": [
+        "dexscreener.gainers"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.gainers"
+        ]
+      ]
+    },
+    {
+      "query": "what is dumping and bleeding the hardest right now",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.losers"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.losers"
+        ]
+      ]
+    },
+    {
+      "query": "DexScreener biggest losers board for the last 24 hours",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.losers"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.losers"
+        ]
+      ]
+    },
+    {
+      "query": "which pairs launched in the last hour and already have liquidity",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pairs.new"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs.new"
+        ]
+      ]
+    },
+    {
+      "query": "DexScreener newest pairs listing with the age of each pair",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pairs.new"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs.new"
+        ]
+      ]
+    },
+    {
+      "query": "which bonding curve tokens are close to graduating",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.launchpad.pairs"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.launchpad.pairs"
+        ]
+      ]
+    },
+    {
+      "query": "DexScreener pump fun board of tokens still on the curve",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.launchpad.pairs"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.launchpad.pairs"
+        ]
+      ]
+    },
+    {
+      "query": "which blockchains and dexes can you actually look up market data on",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.chains"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.chains"
+        ]
+      ]
+    },
+    {
+      "query": "list the chain slugs and dex identifiers DexScreener indexes",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.chains"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.chains"
+        ]
+      ]
+    },
+    {
+      "query": "show me a list of coins on this chain, one row per coin and not per pool",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.tokens.screen"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.tokens.screen"
+        ]
+      ]
+    },
+    {
+      "query": "DexScreener token level leaderboard deduplicated across pools",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.tokens.screen"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.tokens.screen"
+        ]
+      ]
+    },
+    {
+      "query": "what is this pool trading at right now, with the buyers and sellers in the last hour",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pair.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pair.get"
+        ]
+      ]
+    },
+    {
+      "query": "give me a live snapshot of one pair I already have the address for so I can poll my position",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pair.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pair.get"
+        ]
+      ]
+    },
+    {
+      "query": "use dexscreener to pull the current state of this pair address including makers per window",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pair.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pair.get"
+        ]
+      ]
+    },
+    {
+      "query": "which tokens are paying for promotion right now and who just bought their first boost",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.spotlight"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.spotlight"
+        ]
+      ]
+    },
+    {
+      "query": "show me the newest token profiles that were just published",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.spotlight"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.spotlight"
+        ]
+      ]
+    },
+    {
+      "query": "dexscreener boosted tokens and recent boost purchases in one call",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.spotlight"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.spotlight"
+        ]
+      ]
+    },
+    {
+      "query": "refresh every pair on my watchlist at once instead of asking for them one at a time",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pairs.batch"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs.batch"
+        ]
+      ]
+    },
+    {
+      "query": "compare these five pool addresses side by side with their current volume and liquidity",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pairs.batch"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs.batch"
+        ]
+      ]
+    },
+    {
+      "query": "dexscreener batch lookup for a list of chain and pair addresses I already know",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pairs.batch"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs.batch"
+        ]
+      ]
+    },
+    {
+      "query": "read the liquidity, 24h volume and price change of one specific liquidity pool whose contract address I already have on Ethereum",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pair.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pair.get"
+        ]
+      ]
+    },
+    {
+      "query": "DexScreener pool lookup by chain and pair address with the full live metric set",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pair.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pair.get"
+        ]
+      ]
+    },
+    {
+      "query": "fetch stats for several known pool addresses on Base in a single request",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pairs.batch"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs.batch"
+        ]
+      ]
+    },
+    {
+      "query": "price 30 token contract addresses I hold on Solana all at once for a portfolio snapshot",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pairs.batch"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs.batch"
+        ]
+      ]
+    },
+    {
+      "query": "DexScreener batch refresh for many pair and token addresses on mixed chains in one frame",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pairs.batch"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pairs.batch"
+        ]
+      ]
+    },
+    {
+      "query": "which projects just published token branding, a description and social links",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.spotlight"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.spotlight"
+        ]
+      ]
+    },
+    {
+      "query": "which tokens are currently paying the most for promoted visibility on the chart site",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.spotlight"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.spotlight"
+        ]
+      ]
+    },
+    {
+      "query": "show the DexScreener boosted token feeds and the newest published token profiles together",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.spotlight"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.spotlight"
+        ]
+      ]
+    },
+    {
+      "query": "I want the aggregate stats for one market theme and then the tokens trading inside it",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.trending"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.trending"
+        ]
+      ]
+    },
+    {
+      "query": "open the DexScreener narrative aggregates and read each theme's market cap and token count",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.trending"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.trending"
+        ]
+      ]
+    },
+    {
+      "query": "search for a token by ticker but only on Base so same-name copies on other chains do not crowd the results",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.search"
+        ]
+      ]
+    },
+    {
+      "query": "DexScreener pair search scoped to a single chain server-side rather than filtered afterwards",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.search"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.search"
+        ]
+      ]
+    },
+    {
+      "query": "which pool should I route a swap through for this token address, deepest liquidity first",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.tokenPairs"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.tokenPairs"
+        ]
+      ]
+    },
+    {
+      "query": "DexScreener pool list for one token address with each pool's share of the returned liquidity and volume",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.tokenPairs"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.tokenPairs"
+        ]
+      ]
+    },
+    {
+      "query": "which market narrative is moving on solana right now and by how much market cap",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.trending"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.trending"
+        ]
+      ]
+    },
+    {
+      "query": "check whether a token is a honeypot and what the buy and sell taxes are before I trade it",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pair.details"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pair.details"
+        ]
+      ]
+    },
+    {
+      "query": "see how concentrated the holders of this token are and whether the liquidity is locked",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pair.details"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pair.details"
+        ]
+      ]
+    },
+    {
+      "query": "DexScreener safety report for this pair with the GoPlus and QuickIntel audit blocks",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.pair.details"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pair.details"
+        ]
+      ]
+    },
+    {
+      "query": "get hourly OHLC price history for a pool so I can see what the chart did over the last two days",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.candles"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.candles"
+        ]
+      ]
+    },
+    {
+      "query": "daily candles for this pair going back to when it launched",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.candles"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.candles"
+        ]
+      ]
+    },
+    {
+      "query": "DexScreener candles at 5 minute resolution for yesterday, market cap series rather than price",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.candles"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.candles"
+        ]
+      ]
+    },
+    {
+      "query": "show me who has been buying this token in the last hour and how big their buys were",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.trades"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.trades"
+        ]
+      ]
+    },
+    {
+      "query": "list every trade this one wallet has made on this pool",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.trades"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.trades"
+        ]
+      ]
+    },
+    {
+      "query": "DexScreener trade history for this pair filtered to sells over ten thousand dollars",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.trades"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.trades"
+        ]
+      ]
+    },
+    {
+      "query": "rank the wallets that bought and sold the most on this pool",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.top.traders"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.top.traders"
+        ]
+      ]
+    },
+    {
+      "query": "who are the biggest buyers of this pair over the last seven days",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.top.traders"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.top.traders"
+        ]
+      ]
+    },
+    {
+      "query": "DexScreener top traders leaderboard for this pair sorted by net venue cash flow",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.top.traders"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.top.traders"
+        ]
+      ]
+    },
+    {
+      "query": "I found a pumping pair on a screener; check if it is safe, then see the price move and who was buying into it",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "dexscreener.pair.details",
+        "dexscreener.candles",
+        "dexscreener.trades"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.pair.details"
+        ],
+        [
+          "dexscreener.candles"
+        ],
+        [
+          "dexscreener.trades"
+        ]
+      ]
     }
   ]
 }

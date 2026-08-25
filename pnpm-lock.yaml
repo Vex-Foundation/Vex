@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.14.0
+        version: 2.14.0
       '@modelcontextprotocol/core':
         specifier: 2.0.0
         version: 2.0.0
@@ -99,6 +102,9 @@ packages:
 
   '@balena/dockerignore@1.0.2':
     resolution: {integrity: sha512-wMue2Sy4GAVTk6Ic4tJVcnfdau+gx2EnG7S+uAEe+TWJFqE4YoWN4/H8MSLj4eYJKxGg26lZwboEniNiNwZQ6Q==}
+
+  '@bufbuild/protobuf@2.14.0':
+    resolution: {integrity: sha512-C3UGsiCwSprE2NKIIFA3hCDlpXTMCAXRZuEVp88L1GY36Y41+rYL5fryE+nOFhp4p4JPQvdV8PQ4DWgHgeTE+w==}
 
   '@colors/colors@1.6.0':
     resolution: {integrity: sha512-Ir+AOibqzrIsL6ajt3Rz3LskB7OiMVHqltZmspbW/TJuTVuyOMirVqAkjfY6JISiLHgyNqicAC8AyHHGzNd/dA==}
@@ -2212,6 +2218,8 @@ snapshots:
   '@babel/runtime@7.29.2': {}
 
   '@balena/dockerignore@1.0.2': {}
+
+  '@bufbuild/protobuf@2.14.0': {}
 
   '@colors/colors@1.6.0': {}
 

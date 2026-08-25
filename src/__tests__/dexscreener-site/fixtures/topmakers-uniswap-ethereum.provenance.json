@@ -1,0 +1,21 @@
+{
+  "fixture": "topmakers-uniswap-ethereum.bin.b64",
+  "encoding": "dsavro",
+  "dsavroSchema": "TOPMAKERS",
+  "endpoint": "https://io.dexscreener.com/dex/log/amm/v5/uniswap/top/ethereum/0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f?q=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2&s=bought&sd=desc",
+  "requestParams": {
+    "q": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "s": "bought",
+    "sd": "desc"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24T09:38:36.437894+00:00",
+  "httpStatus": 200,
+  "bytes": 13457,
+  "sha256": "12d8d842f6c9d4090dfe09eb3c006091a926c11954b9fbefa8e527e2822c5793",
+  "capturedBy": "live recon probe (curl_cffi impersonate=chrome), 2026-08-24; archived under scratchpad/live-turn2"
+}

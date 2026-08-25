@@ -1,0 +1,21 @@
+{
+  "gp": null,
+  "qi": null,
+  "holders": null,
+  "lpHolders": null,
+  "ta": null,
+  "ll": null,
+  "su": null,
+  "cms": null,
+  "cg": null,
+  "cmc": null,
+  "ts": null,
+  "ti": null,
+  "hpi": {
+    "isHoneypot": true,
+    "isOpenSource": false,
+    "buyTax": "9.9",
+    "sellTax": "12.5",
+    "holderCount": 123
+  }
+}

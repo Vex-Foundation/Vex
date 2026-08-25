@@ -1,5 +1,53 @@
 # DexScreener tool surface v2 - handoff
 
+## STATE UPDATE 2026-08-25 (goal run; supersedes everything below on conflict)
+
+OWNER GOAL ACTIVE (Stop-hook): finish integration fully -> fix -> SECOND
+1-agent-1-endpoint wave -> Codex -> commit+push to PR; DexScreener embedded in
+the agent's main prompt (DONE via declaration card + D-DS9 always-injection).
+
+Position in sequence:
+- S1-S8 all landed in worktree /home/kubas/Vex/.claude/worktrees/agent-a00fdee79b4f5d6bc
+  (18 tools; S8 = consolidated fix round from wave 1, all 3 blocking + 20
+  important fixed; my independent rerun 6,761-6,763 tests green).
+- D-DS9 IMPLEMENTED: ALWAYS_INJECTED_NAMESPACES=["dexscreener"] in
+  registry/injected-protocol-tools.ts (~66k tokens/request, measured; recorded
+  in plan 14.6 item 18; 47/47 injection tests green).
+- WAVE 2 (second 1-agent-1-endpoint): 13/14 reports COMPLETE
+  (EP1,2,3,4,5,6,8,9,10,12,13,14,15): EVERY S8 fix re-verified red-to-green
+  live. Full findings ledger: scratchpad/endpoint-wave2/S9-LEDGER.md
+  (S9-1..S9-20 important + advisories; includes coordinator rulings:
+  429-transient class, dd.dexscreener.com into default transport allowlist,
+  C0 sanitizer gap S9-16, afterBlock window doors S9-19).
+- IN FLIGHT: only EP11 feed/ws (a95bea2a3a731124e), actively working
+  (keepalive-skip verified, now D2 routing). Resume via SendMessage on stall.
+- NEXT after wave 2 completes: (1) dispatch builder S9 with S9-LEDGER.md
+  (same shape as S8 brief; rule 10 binding; worktree; regenerate
+  snapshots/D9/lexical with scope proofs); (2) my inspection; (3) Codex FINAL
+  turn 2 on thread harness-dexscreener-tools (--mode build, network config,
+  live re-test mandate, prompt pattern = scratchpad/codex-final-review.md);
+  (4) INTEGRATION (mine): mount bridge in vex-app/src/main/agent/index.ts
+  (createDexScreenerBridgeTransport + dispose in teardown; file is touched by
+  the OTHER window's Studio-P work in the MAIN tree - merge carefully), merge
+  worktree -> feat/studio-p, full gates, pnpm tool-reembed + FIRST dense
+  baseline (floors recall@5>=0.95 blind>=0.94 mrr>=0.88), in-app smoke
+  (app://vex/dexscreener-bridge, screener channel, non-latestBlock frame,
+  2-3 real tool calls); (5) COMMIT+PUSH to the PR (standing authorization +
+  goal; commit ONLY this lane's paths - main tree carries other agents'
+  uncommitted work); lane docs already updated (DexScreener.md rewritten in
+  S8; plan v1.3 + 14.6; descriptions doc is the D-DS7 source with a 74-test
+  drift gate).
+- Codex thread: harness-dexscreener-tools (id 01a032f1-0f41-7981-af2b-29eb8a87f35b).
+  Driver: ~/.claude/skills/codex/codex-run.sh continue --name
+  harness-dexscreener-tools --mode build --config
+  'sandbox_workspace_write.network_access=true' --prompt-file <f>.
+- Key facts: api.dexscreener.com unreachable from this machine (all clients);
+  io.dexscreener.com fine; dd.dexscreener.com has NO fingerprint gate.
+  Rule file /home/kubas/Vex/.claude/rules/10-live-provider-verification.md is
+  binding on all briefs (live endpoint = the specification).
+- D-DS8: CoinGecko lane CANCELLED by owner (not deferred).
+
+
 ## STATE UPDATE 2026-08-24 afternoon (supersedes the table below where they conflict)
 
 - Codex turns 2 AND 3 are DONE on thread `harness-dexscreener-tools`. Turn 2:
@@ -309,3 +357,154 @@ Re-dispatch Codex turn 2 with the command in section 5, then report its live
 measurements and its position on the granularity synthesis. Do not begin
 implementation: harness gate 7 is still open and the owner has not answered the
 granularity question.
+
+## OWNER ORDER 2026-08-25 (post-S9, before Codex)
+
+Two NEW stages inserted after S9 inspection, before the Codex final turn:
+(A) coordinator PERSONAL live test: production trading-agent angle, "what
+market intelligence can this surface actually deliver" (fresh Solana hunt,
+Robinhood/HOOD, VEX trend read, market pulse, batch watchlist) and
+(B) wave 3 v2: 10 Opus 5 agents, EACH with all 18 tools, each a trading
+persona (sniper, momentum, safety, whale flow, narrative, listings scout,
+market structure, cross-chain, portfolio monitor, skeptical auditor) using
+the tools as in production; READY/NOT READY verdicts; quality bar compared
+against github-mcp-server reference patterns.
+Full protocol: scratchpad/wave3/PLAN.md (absolute:
+/tmp/claude-1000/-home-kubas-Vex/8a03fa30-1e20-42c6-be58-ae8b1cebd991/scratchpad/wave3/PLAN.md).
+Sequence now: S9 builder -> coordinator inspection -> personal test (A) ->
+wave 3 (B) -> fix pass if any NOT READY -> Codex final turn -> integration
+(bridge mount, merge to feat/studio-p, gates, reembed + dense baseline,
+in-app smoke) -> commit+push to PR (this lane's paths only).
+
+## OWNER 2026-08-25: prompt source-hierarchy card (IN SCOPE) + board idea (NEXT LANE)
+
+IN SCOPE for this lane (after S9 lands): add a system-prompt source-hierarchy
+card that (a) names all 18 dexscreener tools explicitly, (b) declares THREE
+primary research sources: the DexScreener reverse-proxy surface (market
+data), web research tools (src/vex-agent/tools/internal/web-research/,
+web.ts), and Twitter tools (twitter-account.ts, twitter-projection.ts),
+(c) marks the other market-data protocols (trench, pools, virtuals, etc.)
+as fallback sources used when the primaries cannot answer (owner
+correction 2026-08-25: all three are MAIN sources, not confirmation-only).
+Prompt module lives with the other cards in src/vex-agent/engine/prompts/
+(snapshot-tested like siblings). ALSO verify the Tool Map section
+(tool-catalog.ts -> getVisibleToolsByCategory) shows the 18 tools under
+D-DS9 always-injection - same visibility union as the tools array, this is
+the drift point to check.
+
+BOARD LANE ESCALATED (owner 2026-08-25): no longer just an option - design
+starts NOW. Explore agent dispatched for reconnaissance (report:
+/tmp/claude-1000/-home-kubas-Vex/8a03fa30-1e20-42c6-be58-ae8b1cebd991/scratchpad/board-lane/REPORT.md).
+Owner adds: the CURRENT vex-app market element is likely obsolete and every
+reference to the old 12 dexscreener tools in vex-app is dead code to remove
+(verify first: main/market/* has its OWN HTTP clients, may be the
+independent VEX-token card, not tool-dependent). Owner addendum: gecko-client
+(CoinGecko) is ALSO removed repo-wide (consistent with D-DS8); the redesign
+is a DATA-SOURCE SWAP to the new dexscreener surface, never a bare deletion
+- own-token banner and the VEX token card must keep their data. Quality bar: senior
+patterns from deepseek-harness (owner's pick for UI/UX), vscode,
+github-mcp-server. Implementation still lands AFTER the current lane's
+commit+push. Approved shape:
+"dexscreener board" - internal-only tool (hidden from Studio MCP) where the
+agent composes a DECLARATIVE JSON board spec (schema-validated; never HTML):
+token cards (logo, chain badge, price, metrics), chart specs with agent
+annotations (levels/zones/markers from candle analysis), notes. Renderer
+renders the spec with owned components in chat; live refresh by subscribing
+declared pools to the EXISTING dexscreener-bridge WS channels via a
+main-process subscription manager over typed IPC (latest-only, bounded,
+cleanup on unmount). Board spec persisted in the transcript (model-visible
+iff logged). Token/chain logos fetched+cached in main, not renderer
+hotlinks. Board is presentation, never authority - no signing shortcuts.
+Rationale: per-user IP + fingerprint session means no central rate limit;
+politeness budgets stay per app instance. Reuse candidate:
+vex-app/src/main/market/dexscreener-pair.ts.
+
+## STATE 2026-08-25 late: wave 3 done, builder S10 running
+
+Committed+pushed: branch feat/dexscreener-site, commit 64e2ee67 (360 files)
+including the prompt source-hierarchy card (budget ceilings raised with a
+reviewed diff; source-policy test contract changed for D-DS9 names).
+Coordinator personal test: 5 missions, 20+ live calls through
+executeProtocolTool, report scratchpad/personal-test/REPORT.md. Verdict:
+surface is powerful; found the batch "valid identity" wording defect.
+WAVE 3 (10 Opus trading personas, all 18 tools each, live): 10/10 reports,
+9 NOT READY + 1 READY (P4 whale-flow). All findings consolidated with
+locations and fix directions in scratchpad/wave3/S10-LEDGER.md (S10-0..60).
+Convergent diagnosis: envelope layer exemplary; defects cluster in
+(A) batch row/identity invariant, (B) summaries not derived from envelope
+facts (trades/candles/inverted/screeners), (C) derived aggregates not
+reconciled with raw columns (pool-as-holder, LP shares, mcap<=fdv),
+(D) unvalidated vocabularies (metaIds, batch chain slugs), (E) false
+manifest claims (pairs.new launchpad sentence, core-carries-identity,
+fields-narrowing coverage lies). Builder S10 dispatched with the ledger,
+priorities A-E, rule-10 live re-verification mandate, D-DS7 order, full
+ladder. After S10: coordinator inspection -> targeted re-verify of HIGH
+fixes -> Codex final turn (harness-dexscreener-tools, live mandate) ->
+integration -> commit+push. P3 residual evidence gaps rider: live non-zero
+tax + populated hpi block (builder attempts opportunistically).
+
+## OWNER ORDER 2026-08-25: S11 data-source swap (after S10, in integration)
+
+Owner named two swaps; measured blast radius is SIX consumers of the OLD
+public-API client (src/tools/dexscreener/client.ts survived the tool
+deletion): (1) vex-app/src/main/market/dexscreener-pair.ts fetchVexPair
+(the $VEX widget), (2) engine/wake/price-watch-poller.ts +
+engine/wake/watch/token-price.ts (loop_defer price watches - owner wants
+the wake price from the new WS surface), (3) engine/prompts/
+own-token-banner.ts, (4) protocols/uniswap/handlers/swap/quote-safety.ts,
+(5) tools/evm-chains/balances.ts, (6) vex-app gecko-client (already
+decreed removed, D-DS8-adjacent). Plan: migrate ALL consumers to a shared
+new-surface price read (pairs-batch: every watched token in ONE WS frame
+per poll tick; pair endpoint for single reads; degraded public-API
+transport keeps headless working), THEN delete the old client whole (no
+second source of truth for prices). loop_defer phase 2 (true WS push
+instead of polling) shares the bridge subscription extension with the
+board lane - do not build it twice. Sequence: after S10 lands, as part of
+integration (bridge mount is the prerequisite for the in-app site
+transport).
+
+## Board lane pattern catalog DONE (Explore phase 2, 2026-08-25)
+
+/tmp/claude-1000/-home-kubas-Vex/8a03fa30-1e20-42c6-be58-ae8b1cebd991/scratchpad/board-lane/PATTERNS.md
+(895 lines): exemplar per seam with file:line; KEY FINDING: transcript-bridge
+is a refresh signal only (DB row canonical), so an atomically-composed board
+needs NO stream-bridge change - seam 3 collapses into the mapper seam; board
+MUST be composed atomically (no mid-stream builds). 850-line audit: no
+facade refactor needed in the touch zone (largest touched file 492 lines);
+TranscriptMessage stays safe only if case "board" is one delegating line.
+Wiring order A (static) -> B (live, gated on bridge mount) -> C (market
+swap) -> D (optional); ~28 new files ~3800 lines with tests. Top pitfalls:
+mid-stream composition, permissive schema re-opening raw JSONB, two-schema
+drift (silent null), subscription lifetime vs 4-exchange bridge cap,
+broadcastToAllWindows leaking keyed payloads.
+
+## OWNER FREEZE + closing protocol (2026-08-25)
+
+Owner decree: S10 is the FINAL fix round for the dexscreener tools - after
+it, findings become documented known issues (a blocking money-path defect
+goes to the owner, never a silent new round). Closing protocol written:
+lane-protocol-2026-08-25.md (both copies). Codex board-plan review
+dispatched on NEW thread harness-vex-board (prompt:
+scratchpad/codex-board-plan.md) - review-to-GREEN-LIGHT of the board design
+per REPORT.md + PATTERNS.md; board implementation stays AFTER lane close.
+
+## BOARD PLAN: GREEN LIGHT (Codex, harness-vex-board, turn 3, 2026-08-25)
+
+Amended plan approved as implementation-ready: stages A0 (contract +
+pendingPresentation with BoardCompose as a TERMINAL tool - sole call in
+batch, staged->prose-consume, parking unreachable while pending) -> A1
+(static board; chart adapter owns validation because the lib's checks are
+dev-only asserts stripped in production; update()-for-ticks no-flicker
+contract proven from installed bytes; PriceFormatCustom for 1e-13 prices;
+attributionLogo off + static licensed attribution; conditional mount of
+BoardChart from ExpandRegion open state so collapse detaches primitives and
+calls chart.remove()) -> B1 (opt-in polling) -> B2 (persistent channels,
+gated on bridge fixes S10-61..63 + lifecycle machine + capacity
+measurement). Stage C = S11 (separate migration lane). A1 spike gates (not
+assumptions): reverify 5.2.1 bytes post-install, prove prepend offset
+arithmetic, compile against fancy-canvas signature, keep animation +
+conflation disabled. Reject-only hostile-text predicate in the pure-root
+contract (shares the code-point table with the sanitizer, never
+transforms). Key docs: board-lane/{REPORT,PATTERNS,CHART-PLAYBOOK}.md +
+codex-board-plan{,-t2,-t3}.md in scratchpad. Implementation starts AFTER
+this lane's commit+push.

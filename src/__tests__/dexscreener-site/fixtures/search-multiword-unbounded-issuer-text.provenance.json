@@ -1,0 +1,24 @@
+{
+  "encoding": "protobuf",
+  "protobufMessage": "dex_search.SearchPairsResponse",
+  "endpoint": "https://io.dexscreener.com/dex/search/v12/pairs",
+  "requestParams": {
+    "q": "pepe wif hat"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "responseHeaders": {
+    "cf-cache-status": "MISS",
+    "cache-control": "no-store",
+    "content-type": "application/json"
+  },
+  "capturedAt": "2026-08-25T09:00:01+00:00",
+  "httpStatus": 200,
+  "capturedBy": "live capture for S8 RESOLVE fix round (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-08-25; capture script scratchpad/s8/resolve/probe.py",
+  "note": "A live 30-row search window carrying ONE robinhood row whose baseToken.name is 34,090 characters and whose symbol is 9,575. The evidence for the issuer-text reporting bound: unbounded, this single row is most of a 91,531-byte answer. Also the multi-word OR grammar (rows match any one of the three words, across six chains).",
+  "fixture": "search-multiword-unbounded-issuer-text.bin.b64",
+  "bytes": 66078,
+  "sha256": "885f669d150a038a517c6321be6db0ca6cf26038b4ee1860923f3b4bb624764c"
+}

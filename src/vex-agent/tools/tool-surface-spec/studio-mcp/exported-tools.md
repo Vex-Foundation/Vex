@@ -28,11 +28,11 @@ preconditions appear inside the first 2000 bytes.
 
 ## Totals
 
-- exported tools: 159
+- exported tools: 165
 - internal: 25
-- protocol: 134 across 11 namespaces
+- protocol: 140 across 11 namespaces
 - always loaded: 25
-- read-only: 103
+- read-only: 109
 - destructive: 49
 
 ## Internal tools
@@ -71,18 +71,24 @@ preconditions appear inside the first 2000 bytes.
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| dexscreener__ads_list | List DEX Screener ad placements | protocol | yes | no | no | - | 1651 |
-| dexscreener__attention_list | Rank tokens by DEX Screener attention | protocol | yes | no | no | - | 1973 |
-| dexscreener__boosts_list | Read DEX Screener paid boosts | protocol | yes | no | no | - | 1990 |
-| dexscreener__community_takeovers_list | List community-takeover tokens | protocol | yes | no | no | - | 2087 |
-| dexscreener__narrative_get | Read one trending narrative | protocol | yes | no | no | - | 1529 |
-| dexscreener__narratives_list | List trending DEX Screener narratives | protocol | yes | no | no | - | 2161 |
-| dexscreener__pairs_get | Read one DEX pair | protocol | yes | no | no | - | 1271 |
-| dexscreener__pairs_search | Search DEX pairs | protocol | yes | no | no | - | 1941 |
-| dexscreener__profiles_list | Read DEX Screener token profiles | protocol | yes | no | no | - | 2338 |
-| dexscreener__token_orders_list | List a token's paid promotion orders | protocol | yes | no | no | - | 1594 |
-| dexscreener__token_pairs_list | List a token's DEX pools | protocol | yes | no | no | - | 2000 |
-| dexscreener__tokens_get | Batch-price tokens on one chain | protocol | yes | no | no | - | 2418 |
+| dexscreener__candles_list | Read a pair's OHLCV candles | protocol | yes | no | no | - | 5291 |
+| dexscreener__chains_list | List DEX Screener chains | protocol | yes | no | no | - | 2946 |
+| dexscreener__gainers_list | List top-gaining DEX pairs | protocol | yes | no | no | - | 2711 |
+| dexscreener__launchpad_pairs_list | List launchpad pairs by stage | protocol | yes | no | no | - | 3122 |
+| dexscreener__losers_list | List top-losing DEX pairs | protocol | yes | no | no | - | 2329 |
+| dexscreener__narratives_list | List trending DEX Screener narratives | protocol | yes | no | no | - | 2231 |
+| dexscreener__pair_details_get | Read a pair's safety report | protocol | yes | no | no | - | 4668 |
+| dexscreener__pair_get | Read one pair's live state | protocol | yes | no | no | - | 2973 |
+| dexscreener__pairs_batch_get | Batch-read pairs or tokens | protocol | yes | no | no | - | 2623 |
+| dexscreener__pairs_new_list | List newest DEX pairs | protocol | yes | no | no | - | 2352 |
+| dexscreener__pairs_search | Search DEX pairs | protocol | yes | no | no | - | 2417 |
+| dexscreener__pairs_top_list | Rank DEX pairs by a metric | protocol | yes | no | no | - | 2470 |
+| dexscreener__pairs_trending_list | List trending DEX pairs | protocol | yes | no | no | - | 2189 |
+| dexscreener__spotlight_get | Read the DEX Screener spotlight feeds | protocol | yes | no | no | - | 2808 |
+| dexscreener__token_pairs_list | List a token's DEX pools | protocol | yes | no | no | - | 2712 |
+| dexscreener__tokens_screen | Screen tokens across chains | protocol | yes | no | no | - | 1994 |
+| dexscreener__top_traders_list | Rank a pair's top wallets | protocol | yes | no | no | - | 5700 |
+| dexscreener__trades_list | List a pair's trades | protocol | yes | no | no | - | 4171 |
 
 ### khalani
 

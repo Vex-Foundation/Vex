@@ -1,0 +1,18 @@
+{
+  "encoding": "json",
+  "endpoint": "https://io.dexscreener.com/hype/reactions/dexPair/ethereum:0xa43fe16908251ee70ef74718545e4fe6c5ccec9f",
+  "requestParams": {
+    "chainId": "ethereum",
+    "pairId": "0xa43fe16908251ee70ef74718545e4fe6c5ccec9f"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24T12:22:46+00:00",
+  "httpStatus": 200,
+  "capturedBy": "live capture for S3 (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-08-24; capture script scratchpad/s3-capture.py",
+  "fixture": "reactions-ethereum-pepe.bin.b64",
+  "bytes": 142,
+  "sha256": "8d9dfa7601d974ee09f01cb6fbae49257ae90e3ff9ba080c4ee7b8ff4031166c"
+}

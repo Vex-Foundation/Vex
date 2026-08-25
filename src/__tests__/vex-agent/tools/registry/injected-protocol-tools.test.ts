@@ -161,7 +161,19 @@ describe("injected schemas", () => {
     const fn = injected.find((t) => t.function.name === toInjectedToolName(manifest.toolId));
     assert.ok(fn, `${manifest.toolId} was not injected`);
 
-    expect(fn.function.description).toBe(manifest.description);
+    // The injection pipeline APPENDS the manifest's cross-parameter group
+    // sentences to the description (the behaviour the next test owns), so the
+    // projection is the manifest description PLUS those sentences. This used
+    // to read `toBe(manifest.description)` and was correct only while no
+    // dexscreener manifest declared a group; `pair_get` now declares
+    // `atLeastOneOf(pairAddress, tokenAddress)` (plan 14.6 item 11), so the
+    // bare equality started failing a manifest that was behaving correctly.
+    const constraints = describeParamGroupConstraints(manifest);
+    expect(fn.function.description).toBe(
+      constraints.length === 0
+        ? manifest.description
+        : `${manifest.description} ${constraints.join(" ")}`,
+    );
     expect(fn.function.parameters).toEqual(paramsToJsonSchema(manifest.params));
     expect(fn.function.parameters.required).toEqual(
       manifest.params.filter((p) => p.required).map((p) => p.key),
@@ -169,9 +181,11 @@ describe("injected schemas", () => {
   });
 
   it("append the manifest's cross-param group rules to the description", () => {
-    // Every manifest declaring a group today is Jupiter's, and Jupiter is
-    // env-gated out of injection — so the env this assertion needs is set for
-    // the assertion, and restored after it.
+    // Jupiter declares groups and is env-gated out of injection, so the env
+    // this assertion needs is set for it and restored after. DexScreener's
+    // `pair_get` now also declares one (`atLeastOneOf`), so this no longer
+    // depends on Jupiter alone; the gate stays because the helper picks the
+    // FIRST declaring manifest in catalog order.
     const previousKey = process.env.JUPITER_API_KEY;
     process.env.JUPITER_API_KEY = "test-key";
     try {
@@ -204,8 +218,12 @@ describe("injected schemas", () => {
   }
 
   it("are appended POSITIONALLY LAST, after the internal tools", () => {
+    // D-DS9: dexscreener is always injected, so the DISCOVERY-appended probe
+    // uses a namespace outside the always-injected set.
     const before = getOpenAITools(ctx());
-    const manifest = PROTOCOL_TOOLS.find((m) => m.namespace === "dexscreener");
+    const manifest = PROTOCOL_TOOLS.find(
+      (m) => m.namespace === "uniswap" && !m.mutating,
+    );
     assert.ok(manifest);
     recordDiscoveredTools(SESSION, [manifest.toolId]);
 
@@ -216,11 +234,19 @@ describe("injected schemas", () => {
     expect(last.function.name).toBe(toInjectedToolName(manifest.toolId));
   });
 
-  it("leave the tools array untouched when nothing was discovered", () => {
+  it("carries EXACTLY the always-injected block when nothing was discovered (D-DS9)", () => {
     const withSession = getOpenAITools(ctx());
     const withoutSession = getOpenAITools(defaultVisibilityContext());
     expect(withSession).toEqual(withoutSession);
-    expect(withSession.every((t) => !isInjectedToolNameShape(t.function.name))).toBe(true);
+    // The only injected-shaped names with an empty working set are the
+    // always-injected dexscreener block - present in full, and nothing else.
+    const injectedShaped = withSession
+      .map((t) => t.function.name)
+      .filter((n) => isInjectedToolNameShape(n));
+    const dexscreener = PROTOCOL_TOOLS.filter((m) => m.namespace === "dexscreener");
+    expect(injectedShaped.sort()).toEqual(
+      dexscreener.map((m) => m.publicName).sort(),
+    );
   });
 });
 
@@ -265,10 +291,31 @@ describe("injection gates", () => {
     // alternatives now. Preference lives in the Tool Map doctrine, not in
     // whether the tool exists.
     recordDiscoveredTools(SESSION, ["uniswap.swap.quote", "uniswap.swap.execute"]);
-    expect(buildInjectedProtocolTools(ctx()).map((t) => t.function.name)).toEqual([
-      "uniswap__swap_quote",
-      "uniswap__swap_execute",
-    ]);
+    const names = buildInjectedProtocolTools(ctx()).map((t) => t.function.name);
+    // D-DS9 prepends the always-injected dexscreener block; the discovered
+    // pair still appears, in discovery order, after it.
+    expect(names.slice(-2)).toEqual(["uniswap__swap_quote", "uniswap__swap_execute"]);
+  });
+
+  it("injects every dexscreener tool with an EMPTY working set (owner decision D-DS9)", () => {
+    // No discovery at all: the market-research namespace is still fully
+    // present, in catalog order, so the agent can call it from its first
+    // token. Reversal of D-DS9 is deleting the namespace from
+    // ALWAYS_INJECTED_NAMESPACES, at which point this test goes with it.
+    const names = buildInjectedProtocolTools(ctx()).map((t) => t.function.name);
+    const dexscreener = PROTOCOL_TOOLS.filter((m) => m.namespace === "dexscreener");
+    expect(dexscreener.length).toBeGreaterThan(0);
+    for (const manifest of dexscreener) {
+      expect(names).toContain(manifest.publicName);
+    }
+    expect(names).toHaveLength(dexscreener.length);
+  });
+
+  it("does not duplicate an always-injected tool the session also discovered", () => {
+    recordDiscoveredTools(SESSION, ["dexscreener.candles", "uniswap.swap.quote"]);
+    const names = buildInjectedProtocolTools(ctx()).map((t) => t.function.name);
+    expect(names.filter((n) => n === "dexscreener__candles_list")).toHaveLength(1);
+    expect(names[names.length - 1]).toBe("uniswap__swap_quote");
   });
 
   it("drops mutating manifests at the pressure barrier, and restores them under the C8 bypass", () => {
@@ -276,14 +323,22 @@ describe("injection gates", () => {
     assert.ok(mutating);
     recordDiscoveredTools(SESSION, [mutating.toolId]);
 
-    expect(buildInjectedProtocolTools(ctx({ contextUsageBand: "barrier" }))).toEqual([]);
-    expect(buildInjectedProtocolTools(ctx({ contextUsageBand: "critical" }))).toEqual([]);
-    expect(
+    // D-DS9: the read-only always-injected dexscreener block survives every
+    // pressure band, so the assertion is about the MUTATING manifest's
+    // presence, not the array being empty.
+    const dexCount = PROTOCOL_TOOLS.filter((m) => m.namespace === "dexscreener").length;
+    const name = toInjectedToolName(mutating.toolId);
+    const at = (band?: "barrier" | "critical", bypass?: boolean) =>
       buildInjectedProtocolTools(
-        ctx({ contextUsageBand: "barrier", preparationBypassesBarrier: true }),
-      ),
-    ).toHaveLength(1);
-    expect(buildInjectedProtocolTools(ctx())).toHaveLength(1);
+        ctx({ contextUsageBand: band, preparationBypassesBarrier: bypass }),
+      ).map((tool) => tool.function.name);
+
+    expect(at("barrier")).not.toContain(name);
+    expect(at("critical")).not.toContain(name);
+    expect(at("barrier")).toHaveLength(dexCount);
+    expect(at("barrier", true)).toContain(name);
+    expect(at()).toContain(name);
+    expect(at()).toHaveLength(dexCount + 1);
   });
 });
 

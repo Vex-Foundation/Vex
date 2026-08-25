@@ -1,0 +1,21 @@
+{
+  "fixture": "pair-details-quickintel-nested-pulsechain.json",
+  "encoding": "json",
+  "note": "The QuickIntel-only coverage class (pulsechain: catalog goPlus=false, quickIntel=true) and the widest nested QuickIntel body captured. It is the fixture that exercises quickiAudit.hasExternalContractRisk, hasGeneralVulnerabilities, hasObfuscatedAddressRisk and canMultiBlacklist, and tokenDynamicDetails.priceImpact and tokenSupplyBurned, none of which any earlier committed fixture carried. It also carries populated hpi, ti and ts root blocks for the presentButUnprojected path.",
+  "endpoint": "https://io.dexscreener.com/dex/pair-details/v4/pulsechain/0x19bb45a7270177e303dee6eaa6f5ad0cf4361f01",
+  "requestParams": {
+    "chain": "pulsechain",
+    "identifier": "0x19bb45a7270177e303dee6eaa6f5ad0cf4361f01",
+    "inverted": false
+  },
+  "requestHeaders": {
+    "Accept": "application/json",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-25T07:48:00+00:00",
+  "httpStatus": 200,
+  "bytes": 21911,
+  "sha256": "899f6d094a2929a7fa4d2cc87633a04bba3b80c22300e9d5cda0e020a1f42bce",
+  "capturedBy": "EP9 pair-details verifier wave (curl_cffi impersonate=chrome), 2026-08-25; archived as endpoint-wave/ep9-pair-details/raw-pulsechain-hexwpls.bin with SHA256SUMS.txt"
+}

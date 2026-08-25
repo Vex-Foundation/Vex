@@ -1,0 +1,25 @@
+{
+  "fixture": "pair-details-solana-listings.json",
+  "encoding": "json",
+  "endpoint": "https://io.dexscreener.com/dex/pair-details/v4/solana/g8kgi7aupex8evr8vmkrth9skev5bietwc33ujaiimgh",
+  "requestParams": {
+    "chainId": "solana",
+    "id": "G8kgi7aUpeX8EVR8VMkrth9SKEv5BietWC33UjAiiMGh",
+    "route": "pair_id"
+  },
+  "requestHeaders": {
+    "Accept": "application/json",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 9504,
+  "sha256": "3ce08ecec3b66e814971f2c78835859b32a7424b457bd2f175966603a4fbb1e6",
+  "capturedBy": "live final-review capture (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-08-24; capture-index.json records url, status, cache-control, age and sha256",
+  "responseHeaders": {
+    "cache-control": "public, max-age=60",
+    "age": "18"
+  },
+  "note": "The CURRENT listing shapes, which is why this capture exists next to the older solana fixture whose cg block was null: CoinGecko sends websites as {label, url} rows and social as {type, url} rows, and CoinMarketCap sends tags as {slug, name, group} rows with its links grouped under urls{website, twitter, explorer}. The previous projection accepted string arrays only and emitted all three empty."
+}

@@ -1,6 +1,6 @@
 {
-  "version": "v3-agent-116",
-  "description": "English-only discover_tools seed for active protocol retrieval. The first 55 blind prompts simulate an agent/user that does not know protocol names. The next 61 protocol-aware prompts mention a platform/protocol name but not internal tool IDs or function names. Expected IDs must be exact active tool IDs or valid active prefixes; expectedCoverageGroups measure multi-step coverage. (Shrunk from v3-agent-200 in the Agent Scan phase 1 teardown: polymarket, KyberSwap zap, KyberSwap limit orders, and the old buy/sell split all removed; no backfill invented - see discovery-baseline.test.ts for the count lockstep.) (Batch 2 tool-surface merge: the D7 near-duplicate retirements remapped 6 rows in place - kyberswap.chains.supported -> kyberswap.chains (the merged tool answers the same live-status question) and dexscreener.boosts.top -> dexscreener.boosts (the top feed is now its feed: top param). Query text, awareness, scenario and intentShape are unchanged, so every retargeted row still measures the intent it was written for; no row was dropped and no query text was invented.)",
+  "version": "v4-agent-109",
+  "description": "English-only discover_tools seed for active protocol retrieval. The first 55 blind prompts simulate an agent/user that does not know protocol names. The next 61 protocol-aware prompts mention a platform/protocol name but not internal tool IDs or function names. Expected IDs must be exact active tool IDs or valid active prefixes; expectedCoverageGroups measure multi-step coverage. (Shrunk from v3-agent-200 in the Agent Scan phase 1 teardown: polymarket, KyberSwap zap, KyberSwap limit orders, and the old buy/sell split all removed; no backfill invented - see discovery-baseline.test.ts for the count lockstep.) (Batch 2 tool-surface merge: the D7 near-duplicate retirements remapped 6 rows in place - kyberswap.chains.supported -> kyberswap.chains (the merged tool answers the same live-status question) and dexscreener.boosts.top -> dexscreener.boosts (the top feed is now its feed: top param). Query text, awareness, scenario and intentShape are unchanged, so every retargeted row still measures the intent it was written for; no row was dropped and no query text was invented.) S3.5: the 12 public-API DexScreener tools were retired whole and alias-free (owner decision D-DS2). Rows naming them were retargeted to the tool that now answers the same question (pool address to the single-pair snapshot, many known addresses to the batch refresh, profile and boost feeds to the spotlight document, narrative drill-down to the narrative aggregate), and removed outright where plan 4.6 records a named omission with no successor (community takeovers, per-token promotional orders, the ad-placement feed). No row was left pointing at a toolId that does not exist.",
   "queries": [
     {
       "query": "what chains can I move USDC between",
@@ -640,25 +640,25 @@
       "scenario": "market_research",
       "intentShape": "single",
       "expectedToolIds": [
-        "dexscreener.pairs"
+        "dexscreener.pair.get"
       ],
       "expectedCoverageGroups": [
         [
-          "dexscreener.pairs"
+          "dexscreener.pair.get"
         ]
       ]
     },
     {
-      "query": "price several token addresses across DEX pools",
+      "query": "refresh several known token addresses across DEX pools in one call",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
       "expectedToolIds": [
-        "dexscreener.tokens"
+        "dexscreener.pairs.batch"
       ],
       "expectedCoverageGroups": [
         [
-          "dexscreener.tokens"
+          "dexscreener.pairs.batch"
         ]
       ]
     },
@@ -677,16 +677,16 @@
       ]
     },
     {
-      "query": "show latest token profiles gaining attention",
+      "query": "show the newest published token profiles",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
       "expectedToolIds": [
-        "dexscreener.profiles"
+        "dexscreener.spotlight"
       ],
       "expectedCoverageGroups": [
         [
-          "dexscreener.profiles"
+          "dexscreener.spotlight"
         ]
       ]
     },
@@ -710,11 +710,11 @@
       "scenario": "market_research",
       "intentShape": "single",
       "expectedToolIds": [
-        "dexscreener.boosts"
+        "dexscreener.spotlight"
       ],
       "expectedCoverageGroups": [
         [
-          "dexscreener.boosts"
+          "dexscreener.spotlight"
         ]
       ]
     },
@@ -724,55 +724,11 @@
       "scenario": "market_research",
       "intentShape": "single",
       "expectedToolIds": [
-        "dexscreener.boosts"
+        "dexscreener.spotlight"
       ],
       "expectedCoverageGroups": [
         [
-          "dexscreener.boosts"
-        ]
-      ]
-    },
-    {
-      "query": "find community takeover meme coin signals",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": [
-        "dexscreener.communityTakeovers"
-      ],
-      "expectedCoverageGroups": [
-        [
-          "dexscreener.communityTakeovers"
-        ]
-      ]
-    },
-    {
-      "query": "check whether a token paid for promotion",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": [
-        "dexscreener.orders",
-        "dexscreener.ads"
-      ],
-      "expectedCoverageGroups": [
-        [
-          "dexscreener.orders",
-          "dexscreener.ads"
-        ]
-      ]
-    },
-    {
-      "query": "monitor current paid ad placements for tokens",
-      "awareness": "blind",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": [
-        "dexscreener.ads"
-      ],
-      "expectedCoverageGroups": [
-        [
-          "dexscreener.ads"
+          "dexscreener.spotlight"
         ]
       ]
     },
@@ -782,12 +738,12 @@
       "scenario": "workflow",
       "intentShape": "workflow",
       "expectedToolIds": [
-        "dexscreener.boosts",
+        "dexscreener.spotlight",
         "kyberswap.tokens.check"
       ],
       "expectedCoverageGroups": [
         [
-          "dexscreener.boosts",
+          "dexscreener.spotlight",
           "dexscreener.trending"
         ],
         [
@@ -1492,25 +1448,25 @@
       "scenario": "market_research",
       "intentShape": "single",
       "expectedToolIds": [
-        "dexscreener.pairs"
+        "dexscreener.pair.get"
       ],
       "expectedCoverageGroups": [
         [
-          "dexscreener.pairs"
+          "dexscreener.pair.get"
         ]
       ]
     },
     {
-      "query": "use DexScreener to price several token addresses",
+      "query": "use DexScreener to refresh several known token addresses at once",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
       "expectedToolIds": [
-        "dexscreener.tokens"
+        "dexscreener.pairs.batch"
       ],
       "expectedCoverageGroups": [
         [
-          "dexscreener.tokens"
+          "dexscreener.pairs.batch"
         ]
       ]
     },
@@ -1534,11 +1490,11 @@
       "scenario": "market_research",
       "intentShape": "single",
       "expectedToolIds": [
-        "dexscreener.profiles"
+        "dexscreener.spotlight"
       ],
       "expectedCoverageGroups": [
         [
-          "dexscreener.profiles"
+          "dexscreener.spotlight"
         ]
       ]
     },
@@ -1562,11 +1518,11 @@
       "scenario": "market_research",
       "intentShape": "single",
       "expectedToolIds": [
-        "dexscreener.boosts"
+        "dexscreener.spotlight"
       ],
       "expectedCoverageGroups": [
         [
-          "dexscreener.boosts"
+          "dexscreener.spotlight"
         ]
       ]
     },
@@ -1576,53 +1532,11 @@
       "scenario": "market_research",
       "intentShape": "single",
       "expectedToolIds": [
-        "dexscreener.boosts"
+        "dexscreener.spotlight"
       ],
       "expectedCoverageGroups": [
         [
-          "dexscreener.boosts"
-        ]
-      ]
-    },
-    {
-      "query": "use DexScreener to find community takeover tokens",
-      "awareness": "protocol-aware",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": [
-        "dexscreener.communityTakeovers"
-      ],
-      "expectedCoverageGroups": [
-        [
-          "dexscreener.communityTakeovers"
-        ]
-      ]
-    },
-    {
-      "query": "use DexScreener to check token promotion payments",
-      "awareness": "protocol-aware",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": [
-        "dexscreener.orders"
-      ],
-      "expectedCoverageGroups": [
-        [
-          "dexscreener.orders"
-        ]
-      ]
-    },
-    {
-      "query": "use DexScreener to monitor ad placements",
-      "awareness": "protocol-aware",
-      "scenario": "market_research",
-      "intentShape": "single",
-      "expectedToolIds": [
-        "dexscreener.ads"
-      ],
-      "expectedCoverageGroups": [
-        [
-          "dexscreener.ads"
+          "dexscreener.spotlight"
         ]
       ]
     },
@@ -1651,12 +1565,12 @@
       "scenario": "workflow",
       "intentShape": "workflow",
       "expectedToolIds": [
-        "dexscreener.boosts",
+        "dexscreener.spotlight",
         "kyberswap.tokens.check"
       ],
       "expectedCoverageGroups": [
         [
-          "dexscreener.boosts"
+          "dexscreener.spotlight"
         ],
         [
           "kyberswap.tokens.check"
@@ -1682,38 +1596,16 @@
       ]
     },
     {
-      "query": "use DexScreener to find paid promotion and current ads",
-      "awareness": "protocol-aware",
-      "scenario": "market_research",
-      "intentShape": "cross",
-      "expectedToolIds": [
-        "dexscreener.orders",
-        "dexscreener.ads"
-      ],
-      "expectedCoverageGroups": [
-        [
-          "dexscreener.orders"
-        ],
-        [
-          "dexscreener.ads"
-        ]
-      ]
-    },
-    {
       "query": "use DexScreener to find trending tokens and CTO signals",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "cross",
       "expectedToolIds": [
-        "dexscreener.trending",
-        "dexscreener.communityTakeovers"
+        "dexscreener.trending"
       ],
       "expectedCoverageGroups": [
         [
           "dexscreener.trending"
-        ],
-        [
-          "dexscreener.communityTakeovers"
         ]
       ]
     }

@@ -1,0 +1,22 @@
+{
+  "fixture": "bars-http-inversion-wrong-quote.bin.b64",
+  "encoding": "dsavro",
+  "dsavroSchema": "PL_BARS_RESPONSE",
+  "endpoint": "https://io.dexscreener.com/dex/chart/amm/v3/uniswap/bars/ethereum/0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f?res=60&cb=1&q=<wrong quote>",
+  "requestParams": {
+    "res": "60",
+    "cb": 1,
+    "q": "0x6982508145454Ce325dDbE47a25d4ec3d2311933"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 423,
+  "sha256": "bd0a0ff199feeeae384974deb80897fe9e4a48e1675dfcf6aa08612b9734e99e",
+  "capturedBy": "live recon probe (curl_cffi impersonate=chrome), 2026-08-24 09:38-09:46Z; archived under scratchpad/live-turn2/chart-flow with run.jsonl, per-request meta and sha256",
+  "note": "A WRONG quote token returns a silently INVERTED series with no error and no marker. This is why the quote is resolved from the pair and is not a tool parameter."
+}

@@ -1,0 +1,21 @@
+{
+  "fixture": "pair-details-inverted-audited-token.json",
+  "encoding": "json",
+  "note": "The provider's own statement of WHICH token it analysed, captured on the inverted route. Requested with ?inverted=1 on the USDC/WETH v3 pool, so qi.tokenAddress is 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 (USDC) and gp.tokenSymbol is USDC, where the plain route on the same pool answers WETH. It is the fixture the auditedToken projection and its subject-mismatch flag are proven against, and it also carries quickiAudit.proxyImplementation.",
+  "endpoint": "https://io.dexscreener.com/dex/pair-details/v4/ethereum/0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640?inverted=1",
+  "requestParams": {
+    "chain": "ethereum",
+    "identifier": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+    "inverted": true
+  },
+  "requestHeaders": {
+    "Accept": "application/json",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-25T07:50:00+00:00",
+  "httpStatus": 200,
+  "bytes": 8446,
+  "sha256": "4213576e9f8bc799692d3ef4d34637ac9961b8f3114b0aed9ead58bf89eea8b5",
+  "capturedBy": "EP9 pair-details verifier wave (curl_cffi impersonate=chrome), 2026-08-25; archived as endpoint-wave/ep9-pair-details/raw-eth-usdcweth-inv.bin with SHA256SUMS.txt"
+}

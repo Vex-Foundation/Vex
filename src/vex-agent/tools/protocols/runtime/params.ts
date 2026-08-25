@@ -428,7 +428,27 @@ export function validateProtocolParams(
       // of the pre-convention tree (`chainId`, `amount`, `inputToken`), and
       // "unknown parameter" alone leaves it guessing which of eleven allowed
       // keys was meant. See BANNED_PARAM_KEYS in `conventions.ts`.
-      const replacement = BANNED_PARAM_KEYS.get(key);
+      /*
+       * S10-11. A HINT MUST NOT NAME A KEY THIS TOOL ALSO REFUSES.
+       *
+       * The retired-spelling table is fleet-wide, so its replacement is the
+       * canonical key across the tree and not necessarily a key THIS manifest
+       * declares. Measured: dexscreener__pairs_batch_get answered "chains" with
+       * "Instead use `chainIds`" while `chainIds` is not a parameter of that
+       * tool either, sending the agent straight into a second refusal. The
+       * replacement text is prose, so the keys it recommends are read out of it
+       * by their backticks and checked against what is actually declared.
+       */
+      const rawReplacement = BANNED_PARAM_KEYS.get(key);
+      const recommends = [
+        ...(rawReplacement ?? "").matchAll(/`([A-Za-z][A-Za-z0-9_]*)`/g),
+      ].map((match) => match[1] ?? "");
+      const replacement =
+        rawReplacement === undefined
+          ? undefined
+          : recommends.length === 0 || recommends.some((one) => declared.has(one))
+            ? rawReplacement
+            : undefined;
       // A per-tool explanation for a key the TOOL cannot support, as opposed to
       // a spelling the convention retired. Same purpose as the banned-key hint
       // above and the same place in the message: the agent is about to pick

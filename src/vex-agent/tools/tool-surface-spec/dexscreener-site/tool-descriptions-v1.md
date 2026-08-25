@@ -89,7 +89,9 @@ right now", "pokaz najplynniejsze pule"
 description (model-visible draft):
 List pairs ordered by a chosen `sortBy` metric (volume, txns, buys, sells,
 liquidity, marketCap, boosts) within the selected `window`; `minBoostCount`
-and `maxBoostCount` bound the paid-boost axis. Use this for league-table
+and `maxBoostCount` bound the paid-boost axis; every maximum threshold here
+matches only rows that CARRY the field, so `maxBoostCount` bounds within the
+boosted population and excluding ads entirely is a client-side filter. Use this for league-table
 questions with measurable answers. Returns metric-complete rows plus derived
 ratios (turnover, net flow, transactions per maker) and the filtered set's
 aggregate stats. `fdv` sorting is not offered because the provider returns a
@@ -307,8 +309,9 @@ metric set including buyers/sellers/makers and the buy/sell volume split
 (fields the public API never had), derived flow ratios, and profile links.
 Optional `fields: profile` (issuer links and description; not in the default
 projection) and `include: reactions,insight` (side reads, each costing one
-extra provider request: crowd emoji counters and a provider-generated text
-blurb, labelled as such). Profile links can be verified
+extra provider request: crowd emoji counters, and a provider-generated text
+blurb that exists only for roughly 1,200 Solana tokens and answers absent
+elsewhere, labelled as such). Profile links can be verified
 onward: X/Twitter via the TwitterAccount tool, the website via WebResearch.
 
 ## 10. dexscreener__pair_details_get (`dexscreener.pair.details`)
@@ -450,7 +453,10 @@ per wallet: buys, sells, USD in and out, `netCashFlowUsd` (cash flow, not
 profit: cost basis and transfers are invisible to the venue),
 `retainedBoughtPct`, `currentHoldingValueUsd`, and active trading span. The
 `unknowns` block names what this endpoint cannot see (other venues, transfers,
-supply share) so the agent does not overclaim.
+supply share) so the agent does not overclaim. `currentHoldingValueUsd`
+depends on the provider sending a balance, which it does reliably only on the
+`currentHoldingValueUsd` ranking itself; other sorts can return pages with no
+balance at all, reported as missing, never zero.
 
 ## 14. dexscreener__narratives_list (`dexscreener.trending` toolId preserved)
 
@@ -460,9 +466,9 @@ volume, and token count per theme, with the IDs the screeners accept.
 embeddingText:
 Narratives and metas: themes like AI, cat and dog coins, or x402, aggregated
 per chain with total market cap, 5-minute to 24-hour change in percent and
-dollars, liquidity, volume, and token count, available on Solana, BSC, Base,
-and Ethereum. Each row carries the narrative ID that the screening tools
-accept as a filter, so theme discovery drills straight into the theme's pairs.
+dollars, liquidity, volume, and token count, for any active chain (the site
+surfaces Solana, BSC, Base, and Ethereum). Each row carries the narrative ID the screening tools accept
+as a filter, so theme discovery drills into the theme's pairs.
 Use this when the user asks which narrative or sector is moving; individual
 pairs live in the screening tools. Example queries: which narrative is hot
 today, AI tokens market cap, what meta is pumping on solana, sector rotation
@@ -476,8 +482,10 @@ description (model-visible draft):
 List the 18 DexScreener narratives with per-`chain` aggregates for the
 selected `window`: marketCapUsd, marketCapChangePct and marketCapDeltaUsd,
 volumeUsd, liquidityUsd, tokenCount, and derived turnover. Use this as the
-first hop for theme questions; narratives exist on solana, bsc, base, and
-ethereum only, and other chains are refused by name. Returns each narrative's
+first hop for theme questions. Aggregates exist for any chain with narrative
+activity (measured live on robinhood, ton, and polygon too); a chain with
+none answers quietly as N of 18 active, and the four site-surfaced chains are
+a visibility label, never a data gate. Returns each narrative's
 `id`, which is the exact value the screening tools' `metaIds` parameter needs;
 optional `topTokens` embeds each narrative's leading pairs to skip the second
 call.
@@ -574,27 +582,30 @@ live 300-input probe completed), large lists are chunked internally and the
 chunking reported. Use this when the set is known and freshness is the
 question. Returns full screening-family rows plus per-input accounting:
 `resolved`, `invalid_format`, `duplicates`, and `provider_omitted` (a
-syntactically valid identity the provider left out, cause unproven; measured
-on 91 of 300 bonding-curve inputs). A token input resolves to ONE
+syntactically valid identity the provider returned no row for; bonding-curve
+launchpad pairs resolve normally since the batch lifts the provider's hidden
+launchpad exclusion the way the screeners do). A token input resolves to ONE
 provider-canonical pair which is not necessarily the deepest;
-`resolutionBasis` says which pair answered. No pagination exists on this
-channel.
+`resolutionBasis` says which pair answered. The provider pages this channel
+at 500 rows with a true total; large lists chunk to that page size and page
+walks are reported.
 
 ## 18. dexscreener__tokens_screen (`dexscreener.tokens.screen`)
 
-canonicalSummary: Token-level leaderboard per chain: one row per token, not
-per pool, ranked by the provider's token score.
+canonicalSummary: Token leaderboard per chain: one aggregate row per token
+summing its pools, ranked by the provider's opaque score.
 
 embeddingText:
-Token leaderboard with one row per token instead of one per pool: a token
-with ten pools appears once, with market cap, FDV, representative pair,
-volume, and price change, on any chain. The deduplicated, provider-ranked
-token view of what trades on a chain; the ordering is the provider's opaque
-token score and pages can overlap slightly, both reported rather than hidden.
-Use this when the user wants tokens or coins on a chain as token rows; exact
-metric league tables and pool-level detail live in dexscreener__pairs_top_list.
-Example queries: top tokens on solana, provider-ranked token view of base,
-token list for bsc, best tokens today, show me coins not pools.
+Token leaderboard aggregating each token's pools on a chain: volume,
+liquidity, and transaction counts are sums across the token's pools, attached
+to one representative pool whose price and market cap can mislead by orders
+of magnitude and are labelled so. Coverage is the provider's profile-carrying
+universe, tokens can repeat across pages, and the ordering is the provider's
+opaque score, all reported rather than hidden. Use this when the user wants
+token-level aggregates on a chain; exact metric league tables and pool detail
+live in dexscreener__pairs_top_list. Example queries: top tokens on solana,
+token level volume across pools, token list for bsc, best tokens today, show
+me coins not pools.
 
 aliases: token list, top coins, lista tokenow, najwieksze tokeny, ranking
 monet
@@ -602,12 +613,14 @@ exampleIntents: "pokaz najwieksze tokeny na solanie", "lista coinow na base",
 "top tokens by market cap"
 
 description (model-visible draft):
-List tokens (deduplicated by base token) for the selected chains and `window`,
-up to 100 per page with offset paging. Use this when the answer should be
-token rows rather than pool rows. Returns per token: market cap, FDV, the
-representative pair the provider chose, volume, price change, and flow.
-Honesty contract, measured: the ranking is the provider's opaque token score
-(`providerRank`) and does not reproduce from any visible metric; there is no
-server-side total (`totalUnavailable`); adjacent pages can repeat a dozen
-tokens (`pagesOverlap`). For metric-exact league tables use the pair screening
-tools and deduplicate client-side.
+List token aggregate rows for the selected chains and `window`, up to 100
+per page with offset paging. Use this when the answer should be token rows
+rather than pool rows. Returns per token: volume, liquidity, and transaction
+counts SUMMED across the token's pools (the channel's real value), plus the
+representative pool the provider chose with its price; that pool's marketCap
+and FDV are labelled representative-pool values and can be wrong by orders of
+magnitude for multi-pool tokens. Honesty contract, measured: the universe is
+the provider's profile-carrying tokens only; the ranking is the provider's
+opaque score (`providerRank`); there is no server-side total; the same token
+can repeat across pages with disjoint aggregates and repeats are flagged by
+token. For metric-exact league tables use the pair screening tools.

@@ -48,8 +48,8 @@ importers:
         specifier: ~6.8.3
         version: 6.8.3
       lightweight-charts:
-        specifier: 5.2.0
-        version: 5.2.0
+        specifier: 5.2.1
+        version: 5.2.1
       marked:
         specifier: ~18.0.3
         version: 18.0.3
@@ -2089,8 +2089,8 @@ packages:
     resolution: {integrity: sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ==}
     engines: {node: '>= 12.0.0'}
 
-  lightweight-charts@5.2.0:
-    resolution: {integrity: sha512-ey3Vas8UhV06ni+LT9TA1nEe4y8So4Mi6CL/oarNHFMyTktz/xy8e8+oh04Q//eO3t6etvFXgayz2fClyFQb5w==}
+  lightweight-charts@5.2.1:
+    resolution: {integrity: sha512-IVwoK1RLFiLPubaKIjNbtjWLnpPMqiABSrTay6whmNa8L1+19292VtHJ+BWyPUuLCwF0tcQlhEWd1CLB2a1nsQ==}
 
   lodash.escaperegexp@4.1.2:
     resolution: {integrity: sha512-TM9YBvyC84ZxE3rgfefxUWiQKLilstD6k7PTGt6wfbtXF8ixIJLOL3VYyV/z+ZiPLsVxAsKAFVwWlWeb2Y8Yyw==}
@@ -5087,7 +5087,7 @@ snapshots:
       lightningcss-win32-arm64-msvc: 1.32.0
       lightningcss-win32-x64-msvc: 1.32.0
 
-  lightweight-charts@5.2.0:
+  lightweight-charts@5.2.1:
     dependencies:
       fancy-canvas: 2.1.0
 

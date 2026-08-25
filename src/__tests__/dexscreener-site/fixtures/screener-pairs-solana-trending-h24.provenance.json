@@ -1,0 +1,24 @@
+{
+  "fixture": "screener-pairs-solana-trending-h24.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_screener.PairsChannelMessage",
+  "endpoint": "wss://io.dexscreener.com/dex/screener/v7/pairs/h24/1?rankBy[key]=trendingScoreH24&rankBy[order]=desc&filters[chainIds][0]=solana",
+  "requestParams": {
+    "path": "/dex/screener/v7/pairs/h24/1",
+    "query": "rankBy[key]=trendingScoreH24&rankBy[order]=desc&filters[chainIds][0]=solana"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-08-24T09:38:52.677854+00:00",
+  "httpStatus": 101,
+  "bytes": 91253,
+  "sha256": "d38e28a62536672731035168c265d9f7ccb11371009f87c75d1e4b3052d0c010",
+  "capturedBy": "live WS probe (curl_cffi impersonate=chrome), 2026-08-24; archived under scratchpad/live-turn2/momentum-launch/raw/screener-solana-trending-h24",
+  "frameOrder": [
+    "latestBlock",
+    "pairs"
+  ],
+  "frameIndex": 1,
+  "note": "Binary frame 1 of the session. Frame 0 was latestBlock (18 bytes): the first binary frame is NOT the result frame."
+}

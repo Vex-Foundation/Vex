@@ -1,6 +1,17 @@
 /**
- * W6a — `chainId` → `chain` on the four single-chain DexScreener tools and
+ * W6a - `chainId` to `chain` on the single-chain DexScreener tools and
  * `ChainRead`, plus the virtuals `chain` enum (W7 populate).
+ *
+ * S3.5 UPDATE. Three of the four DexScreener tools this wave renamed
+ * (`dexscreener.pairs`, `dexscreener.tokens`, `dexscreener.orders`) were
+ * retired whole with the rest of the public-API surface (owner decision
+ * D-DS2). `dexscreener.tokenPairs` survives as a RECLAIMED toolId on the
+ * website channel, so the wave's contract is pinned on it alone. The numeric
+ * chain-id translation moved with it: the retired tools translated a number to
+ * a slug in their own adapter, and the site surface resolves it against the
+ * chains catalog's `nativeChainId` (`endpoints/chains-catalog.ts`). That
+ * resolution is proved HERE, purely, against the captured catalog, because a
+ * handler test would need the desktop transport this suite does not have.
  *
  * WHAT THIS PROVES, and why each half is here.
  *
@@ -26,18 +37,25 @@
  *    NOT a string, and a later wave must not "unify" it into one.
  */
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-import { DEXSCREENER_HANDLERS } from "@vex-agent/tools/protocols/dexscreener/handlers.js";
 import { DEXSCREENER_TOOLS } from "@vex-agent/tools/protocols/dexscreener/manifest.js";
 import { VIRTUALS_HANDLERS } from "@vex-agent/tools/protocols/virtuals/handlers.js";
 import { VIRTUALS_TOOLS } from "@vex-agent/tools/protocols/virtuals/manifest.js";
 import { validateProtocolParams } from "@vex-agent/tools/protocols/runtime/params.js";
+import {
+  assertChainSlugsResolved,
+  parseChainsCatalog,
+  resolveChainSlugs,
+} from "@tools/dexscreener/endpoints/chains-catalog.js";
 import { coerceNumericStringParams } from "@vex-agent/tools/protocols/runtime/numeric-string-coercion.js";
 import { CANONICAL_CHAIN_SENTENCE } from "@vex-agent/tools/protocols/conventions.js";
 import { handleChainRead } from "@vex-agent/tools/internal/chain-read.js";
 import { EVM_TOOLS } from "@vex-agent/tools/registry/evm.js";
-import { getDexScreenerClient } from "@tools/dexscreener/client.js";
 import { getVirtualsClient } from "@tools/virtuals/client.js";
 import type { VirtualsListResult, VirtualsPagination } from "@tools/virtuals/types.js";
 import { makeProtocolContext, makeTestContext } from "../_test-context.js";
@@ -46,6 +64,26 @@ import { makeProtocolContext, makeTestContext } from "../_test-context.js";
 const EMPTY_PAGINATION: VirtualsPagination = { page: 1, pageSize: 0, pageCount: 0, total: 0 };
 
 const CTX = makeProtocolContext();
+
+/**
+ * The captured chains catalog, shared with the site-surface suite.
+ *
+ * Read from the same fixture rather than hand-built: a hand-built catalog
+ * could carry a `nativeChainId` the provider does not actually publish, and
+ * the whole point of this pin is that the number an agent gets from
+ * `TokenFind` reaches a chain DexScreener really serves.
+ */
+const CATALOG_FIXTURE = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../dexscreener-site/fixtures/chains-by-trending.json",
+);
+const CATALOG_CHAINS = parseChainsCatalog(
+  new Uint8Array(readFileSync(CATALOG_FIXTURE)),
+);
+const CATALOG = {
+  chains: CATALOG_CHAINS,
+  bySlug: new Map(CATALOG_CHAINS.map((entry) => [entry.slug, entry])),
+};
 
 /** A handler-map lookup that fails loudly instead of asserting non-null. */
 function handlerFor<THandler>(
@@ -57,13 +95,8 @@ function handlerFor<THandler>(
   return handler;
 }
 
-/** The four single-chain tools W6a renamed. */
-const RENAMED_TOOL_IDS = [
-  "dexscreener.pairs",
-  "dexscreener.tokens",
-  "dexscreener.tokenPairs",
-  "dexscreener.orders",
-] as const;
+/** The single-chain DexScreener tool W6a renamed that still exists. */
+const RENAMED_TOOL_IDS = ["dexscreener.tokenPairs"] as const;
 
 function manifestFor(toolId: string) {
   const manifest = DEXSCREENER_TOOLS.find((tool) => tool.toolId === toolId);
@@ -73,10 +106,7 @@ function manifestFor(toolId: string) {
 
 /** A minimal legal params object for a tool, minus its chain. */
 const OTHER_REQUIRED: Record<string, Record<string, unknown>> = {
-  "dexscreener.pairs": { pairAddress: "0xdead" },
-  "dexscreener.tokens": { tokenAddresses: "0xdead" },
   "dexscreener.tokenPairs": { tokenAddress: "0xdead" },
-  "dexscreener.orders": { tokenAddress: "0xdead" },
 };
 
 afterEach(() => {
@@ -114,45 +144,33 @@ describe("W6a — dexscreener `chainId` → `chain`", () => {
     expect(outcome.reason).toMatch(/\bchain\b/);
   });
 
-  it("translates a numeric chain id to the slug DexScreener's URL path needs", async () => {
-    const client = getDexScreenerClient();
-    const getTokenPairs = vi.spyOn(client, "getTokenPairs").mockResolvedValue([]);
-
-    const result = await handlerFor(DEXSCREENER_HANDLERS, "dexscreener.tokenPairs")(
-      { chain: "8453", tokenAddress: "0xdead" },
-      CTX,
-    );
-
-    expect(result.success).toBe(true);
-    expect(getTokenPairs).toHaveBeenCalledWith("base", "0xdead");
-    // The echo spells the chain the way the next call must spell it.
-    expect(JSON.parse(result.output).chain).toBe("base");
+  // The three tests that used to live here drove `dexscreener.tokenPairs`,
+  // `dexscreener.orders` and a mocked public-API client. The client is gone
+  // from this tool's path, so the same three properties are proved against the
+  // resolver that now owns them, with no transport and no mock:
+  //   1. a numeric chain id resolves to the catalog's own slug;
+  //   2. an unregistered id is refused BY NAME rather than forwarded;
+  //   3. a slug is returned in the catalog's spelling, not the caller's.
+  it("resolves a numeric chain id to the slug the site channel needs", () => {
+    expect(resolveChainSlugs(CATALOG, ["8453"]).valid).toEqual(["base"]);
   });
 
-  it("refuses an unregistered numeric chain id by name instead of forwarding a 404", async () => {
-    const client = getDexScreenerClient();
-    const getTokenPairs = vi.spyOn(client, "getTokenPairs").mockResolvedValue([]);
-
-    const result = await handlerFor(DEXSCREENER_HANDLERS, "dexscreener.tokenPairs")(
-      { chain: "999999999", tokenAddress: "0xdead" },
-      CTX,
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.output).toContain("999999999");
-    expect(result.output).toContain("chain");
-    expect(getTokenPairs).not.toHaveBeenCalled();
+  it("refuses an unregistered numeric chain id by name instead of forwarding it", () => {
+    const resolution = resolveChainSlugs(CATALOG, ["999999999"]);
+    expect(resolution.valid).toEqual([]);
+    expect(resolution.unknown[0]?.value).toBe("999999999");
+    expect(() => assertChainSlugsResolved(resolution)).toThrow(/999999999/);
   });
 
-  it("a slug is passed upstream exactly as written — we do not re-spell DexScreener's own table", async () => {
-    const client = getDexScreenerClient();
-    const getOrders = vi
-      .spyOn(client, "getOrders")
-      .mockResolvedValue({ orders: [], boostPayments: [], skippedOrders: 0, skippedBoostPayments: 0 });
+  it("returns the catalog's own spelling for a slug, not the caller's casing", () => {
+    expect(resolveChainSlugs(CATALOG, ["Solana"]).valid).toEqual(["solana"]);
+  });
 
-    await handlerFor(DEXSCREENER_HANDLERS, "dexscreener.orders")({ chain: "Solana", tokenAddress: "T" }, CTX);
-
-    expect(getOrders).toHaveBeenCalledWith("Solana", "T");
+  it("never coerces a non-numeric slug into a chain-id lookup", () => {
+    // "base" must match by SLUG. If the numeric branch ran first, or coerced,
+    // a same-spelled miss would silently resolve to whatever NaN compared to.
+    expect(resolveChainSlugs(CATALOG, ["base"]).valid).toEqual(["base"]);
+    expect(resolveChainSlugs(CATALOG, ["notachain"]).valid).toEqual([]);
   });
 });
 

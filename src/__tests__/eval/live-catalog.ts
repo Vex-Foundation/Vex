@@ -18,7 +18,17 @@ import { buildDiscoveryCandidates } from "./lexical-retrieval.js";
 import { liveProtocolManifests } from "./retrieval-eval-harness.js";
 
 /**
- * This closure's pinned inventory: 134 active advertised tools.
+ * This closure's pinned inventory: 136 active advertised tools.
+ *
+ * S3.5 (2026-08-24): 145 to 136. The 12 public-API DexScreener tools were
+ * retired whole and alias-free (owner decision D-DS2) and three tools landed
+ * on identities that retirement freed, so the surface shrank by nine. Every
+ * lexical baseline below was recaptured in the same change.
+ *
+ * 136 before stage S4, which added the four DexScreener deep-dive tools
+ * (`pair.details`, `candles`, `trades`, `top.traders`). All four are new
+ * identities, so this is a pure +4 and every affected baseline was recaptured
+ * in the same change.
  *
  * A deliberate ratchet, not a duplicate of the catalog. It fails when the tool
  * surface changes without anyone noticing, which is the event that invalidates
@@ -28,7 +38,7 @@ import { liveProtocolManifests } from "./retrieval-eval-harness.js";
  * and recapture the affected baselines with the lane's `--update` command. Do
  * not silence the test by deriving the number from the catalog.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 134;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 140;
 
 /** Active manifests in advertised namespaces. Independent of process env. */
 export function liveCatalogToolCount(): number {

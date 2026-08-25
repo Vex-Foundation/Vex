@@ -1,0 +1,24 @@
+{
+  "fixture": "screener-latestblock-solana.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_screener.PairsChannelMessage",
+  "endpoint": "wss://io.dexscreener.com/dex/screener/v7/pairs/h24/1?rankBy[key]=trendingScoreH24&rankBy[order]=desc&filters[chainIds][0]=solana",
+  "requestParams": {
+    "path": "/dex/screener/v7/pairs/h24/1",
+    "query": "rankBy[key]=trendingScoreH24&rankBy[order]=desc&filters[chainIds][0]=solana"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-08-24T09:38:52.677854+00:00",
+  "httpStatus": 101,
+  "bytes": 18,
+  "sha256": "68292fd0c33913327ec056430b6218a8df2b9eef16c5e0642776bcf6e6d796e1",
+  "capturedBy": "live WS probe (curl_cffi impersonate=chrome), 2026-08-24; archived under scratchpad/live-turn2/momentum-launch/raw/screener-solana-trending-h24",
+  "frameOrder": [
+    "latestBlock",
+    "pairs"
+  ],
+  "frameIndex": 0,
+  "note": "Binary frame 0 of the same session as screener-pairs-solana-trending-h24. It is the latestBlock arm of the oneof, and it is why no consumer may treat the first binary frame as the result."
+}

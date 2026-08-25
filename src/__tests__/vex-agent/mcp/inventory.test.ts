@@ -55,14 +55,16 @@ describe("the exported inventory covers exactly the export scope", () => {
   });
 
   it("pins the exported surface size the owner decided (O20)", () => {
-    // 159 is a REVIEWED number: 25 internal tools plus 134 protocol tools. It
+    // 165 is a REVIEWED number: 25 internal tools plus 140 protocol tools. It
     // is pinned literally because a change to it is always a decision about
     // what external agents may call, never an incidental refactor.
     // 155 -> 159: stage A4b exported the four generic transaction signing
     // tools (EVM and Solana prepare/confirm).
-    expect(inventory).toHaveLength(159);
+    // 159 -> 165: the dexscreener protocol replaced its 12 public-API tools
+    // with the 18-tool website-API surface (S10).
+    expect(inventory).toHaveLength(165);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(25);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(134);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(140);
   });
 
   it("exports ToolSearch under its own public name and no other spelling", () => {

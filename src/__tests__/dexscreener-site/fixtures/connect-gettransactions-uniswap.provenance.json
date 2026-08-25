@@ -1,0 +1,22 @@
+{
+  "fixture": "connect-gettransactions-uniswap.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_feed.GetTransactionsResponse",
+  "endpoint": "https://io.dexscreener.com/feed/rpc/dex_feed.PublicService/GetTransactions?connect=v1&encoding=proto&base64=1&message=CghldGhlcmV1bRIHdW5pc3dhcBoqMHhBNDNmZTE2OTA4MjUxZWU3MEVGNzQ3MTg1NDVlNEZFNkM1Y0NFYzlmKioweEMwMmFhQTM5YjIyM0ZFOEQwQTBlNUM0RjI3ZUFEOTA4M0M3NTZDYzI",
+  "requestParams": {
+    "ammId": "uniswap",
+    "chainId": "ethereum",
+    "pairId": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+    "quoteTokenAddress": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24T09:38:25.507867+00:00",
+  "httpStatus": 200,
+  "bytes": 27410,
+  "sha256": "a9eec5e521bc97625d6def13ed1f6053b3cc2753694754a0bb088c3d7511a363",
+  "capturedBy": "live recon probe (curl_cffi impersonate=chrome), 2026-08-24; archived under scratchpad/live-turn2"
+}

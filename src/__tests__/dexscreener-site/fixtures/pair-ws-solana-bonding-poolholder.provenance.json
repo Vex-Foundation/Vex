@@ -1,0 +1,19 @@
+{
+  "fixture": "pair-ws-solana-bonding-poolholder.bin",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_screener.PairChannelMessage",
+  "endpoint": "wss://io.dexscreener.com/dex/screener/v7/pair/solana/HCh4WNzkiBuWCLvZZ4TB5FrPoF6j7pJrPiQdQYMbLtEY",
+  "requestParams": {
+    "chainId": "solana",
+    "pairAddress": "HCh4WNzkiBuWCLvZZ4TB5FrPoF6j7pJrPiQdQYMbLtEY"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-08-25",
+  "httpStatus": 200,
+  "bytes": 607,
+  "sha256": "213d68f42756fffbbb5737783325d42c15dd91871eb088f8add4488bd6b90992",
+  "capturedBy": "live pair WS snapshot through the S10 bridge runtime, 2026-08-25, captured alongside pair-details-solana-bonding-poolholder so the two agree on one subject.",
+  "note": "The pair-channel snapshot for the SAME pair as pair-details-solana-bonding-poolholder. It exists so the S10-1 regression can resolve a subject whose pairAddress really equals the holder row under test; every other pair-details test mounts the ethereum snapshot, which is why no fixture could exercise the pool-row exclusion before."
+}

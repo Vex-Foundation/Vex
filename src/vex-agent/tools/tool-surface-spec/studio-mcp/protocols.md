@@ -31,9 +31,9 @@ guess.
 
 ## Totals
 
-- tools: 159
+- tools: 165
 - Vex tools: 25
-- protocol tools: 134 across 11 protocols
+- protocol tools: 140 across 11 protocols
 - destructive: 49
 
 ## Vex tools
@@ -72,18 +72,24 @@ guess.
 
 | tool | title | access | destructive | requires env |
 | --- | --- | --- | --- | --- |
-| dexscreener__ads_list | List DEX Screener ad placements | read-only | no | - |
-| dexscreener__attention_list | Rank tokens by DEX Screener attention | read-only | no | - |
-| dexscreener__boosts_list | Read DEX Screener paid boosts | read-only | no | - |
-| dexscreener__community_takeovers_list | List community-takeover tokens | read-only | no | - |
-| dexscreener__narrative_get | Read one trending narrative | read-only | no | - |
+| dexscreener__candles_list | Read a pair's OHLCV candles | read-only | no | - |
+| dexscreener__chains_list | List DEX Screener chains | read-only | no | - |
+| dexscreener__gainers_list | List top-gaining DEX pairs | read-only | no | - |
+| dexscreener__launchpad_pairs_list | List launchpad pairs by stage | read-only | no | - |
+| dexscreener__losers_list | List top-losing DEX pairs | read-only | no | - |
 | dexscreener__narratives_list | List trending DEX Screener narratives | read-only | no | - |
-| dexscreener__pairs_get | Read one DEX pair | read-only | no | - |
+| dexscreener__pair_details_get | Read a pair's safety report | read-only | no | - |
+| dexscreener__pair_get | Read one pair's live state | read-only | no | - |
+| dexscreener__pairs_batch_get | Batch-read pairs or tokens | read-only | no | - |
+| dexscreener__pairs_new_list | List newest DEX pairs | read-only | no | - |
 | dexscreener__pairs_search | Search DEX pairs | read-only | no | - |
-| dexscreener__profiles_list | Read DEX Screener token profiles | read-only | no | - |
-| dexscreener__token_orders_list | List a token's paid promotion orders | read-only | no | - |
+| dexscreener__pairs_top_list | Rank DEX pairs by a metric | read-only | no | - |
+| dexscreener__pairs_trending_list | List trending DEX pairs | read-only | no | - |
+| dexscreener__spotlight_get | Read the DEX Screener spotlight feeds | read-only | no | - |
 | dexscreener__token_pairs_list | List a token's DEX pools | read-only | no | - |
-| dexscreener__tokens_get | Batch-price tokens on one chain | read-only | no | - |
+| dexscreener__tokens_screen | Screen tokens across chains | read-only | no | - |
+| dexscreener__top_traders_list | Rank a pair's top wallets | read-only | no | - |
+| dexscreener__trades_list | List a pair's trades | read-only | no | - |
 
 ### khalani
 

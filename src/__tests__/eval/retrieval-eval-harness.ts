@@ -57,12 +57,18 @@ const SeedQuerySchema = z.object({
 
 const SeedDatasetSchema = z.object({
   // Agent Scan phase 1 (2026-07-22): shrunk from v3-agent-200 to v3-agent-116
-  // — polymarket/zap/limitOrder/old-buy-sell rows removed, no backfill (see
+  // - polymarket/zap/limitOrder/old-buy-sell rows removed, no backfill (see
   // tool-discovery-seed.json's description + discovery-baseline.test.ts for
   // the count-lockstep decision). Same v3 schema shape, smaller curated count.
-  version: z.literal("v3-agent-116"),
+  // S3.5 (2026-08-24): shrunk again to v4-agent-109 when the 12 public-API
+  // DexScreener tools were retired whole and alias-free (owner decision
+  // D-DS2). 13 rows were retargeted in place onto the tool that now answers
+  // the same question; 7 were deleted outright because plan 4.6 records their
+  // subject as a named omission with no successor. No query text was invented
+  // to backfill the count, for the same reason phase 1 did not.
+  version: z.literal("v4-agent-109"),
   description: z.string(),
-  queries: z.array(SeedQuerySchema).length(116),
+  queries: z.array(SeedQuerySchema).length(109),
 });
 
 export type SeedQuery = z.infer<typeof SeedQuerySchema>;

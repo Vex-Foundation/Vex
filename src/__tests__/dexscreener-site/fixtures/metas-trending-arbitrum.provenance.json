@@ -1,0 +1,25 @@
+{
+  "fixture": "metas-trending-arbitrum.bin.b64",
+  "encoding": "dsavro",
+  "dsavroSchema": "METAS_TRENDING",
+  "endpoint": "https://io.dexscreener.com/metas/v1/trending?chainId=arbitrum",
+  "requestParams": {
+    "chainId": "arbitrum"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-25",
+  "httpStatus": 200,
+  "bytes": 1,
+  "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+  "responseHeaders": {
+    "content-type": "application/json",
+    "cache-control": "public, max-age=30",
+    "cf-cache-status": "REVALIDATED"
+  },
+  "capturedBy": "live S8 I10 capture (curl_cffi impersonate=chrome), scratchpad/s8/market-context/probe1.py",
+  "note": "The quiet-chain shape: a single 0x00 byte, an Avro array of count zero. A real chain with no narrative activity right now. The provider answers HTTP 200, so a quiet chain must be reported as 0 of 18 active and never as a refusal."
+}

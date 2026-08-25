@@ -9,10 +9,17 @@ Planning and execution use tools differently:
 
 During mission RUN — or in AGENT chat when the user explicitly asked for the action — discovery is a means to execution (Operational Research). After \`ToolSearch\` returns a relevant read-only protocol tool, choose the best one and CALL IT BY NAME on your next turn before searching the same namespace again or reaching for a general web lookup.`;
 
+const MARKET_SOURCE_HIERARCHY_SECTION = `## Market Research Source Hierarchy
+
+- PRIMARY research sources, reach for these first: the \`dexscreener\` protocol tools (always loaded in your tools array, see the Protocols section for the full name list), \`WebResearch\`, and \`TwitterAccount\`. DexScreener is the market-data backbone: screening boards, search, token and pair resolution, batch reads, narratives, spotlight, safety details, candles, trades, and trader leaderboards. WebResearch and TwitterAccount are the news and social-signal backbone; use them to confirm or contextualize what the market data shows.
+- FALLBACK research sources: the other market-data namespaces answer a research question only when the primaries cannot, such as protocol-specific state a screener does not index. Their operational roles are unchanged: an executable price still always comes from a fresh venue quote, never from a research read.`;
+
 export function buildResearchPrompt(): string {
   return `# Research
 
 Research workflow varies by mode. Mission SETUP: this is Capability Orientation — identify which tools/venues fit the mission and ground the draft (read \`WalletBalances\`, \`AgentScan\`), not market operation; do NOT call market-data tools or pull quotes while planning (see the rule below). Mission RUN: research must end in an actionable decision (execute / shortlist / defer / stop). Chat: answer the current request, then stop.
+
+${MARKET_SOURCE_HIERARCHY_SECTION}
 
 ${CAPABILITY_ORIENTATION_SECTION}`;
 }

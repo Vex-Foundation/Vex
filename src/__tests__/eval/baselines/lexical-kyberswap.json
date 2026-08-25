@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-kyberswap",
   "datasetVersion": "kyberswap-v1",
   "status": "captured",
-  "capturedAt": "2026-08-22T14:13:17.267Z",
+  "capturedAt": "2026-08-25T12:47:01.712Z",
   "metrics": {
     "overall": {
       "count": 20,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-kyberswap@kyberswap-v1, mode lexical, 20 cases evaluated.",
     "overall recall@1 0.2, recall@5 0.4, coverage@5 0.4, mrr@5 0.279, groupMrr@5 0.279.",
-    "Measured delta vs previous baseline (kyberswap-v1, captured 2026-08-22T13:40:39.501Z): 12 metric values moved; overall recall@5 0.4 -> 0.4, overall mrr@5 0.338 -> 0.279, case count 20 -> 20."
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

@@ -1,0 +1,25 @@
+{
+  "fixture": "metas-trending-robinhood.bin.b64",
+  "encoding": "dsavro",
+  "dsavroSchema": "METAS_TRENDING",
+  "endpoint": "https://io.dexscreener.com/metas/v1/trending?chainId=robinhood",
+  "requestParams": {
+    "chainId": "robinhood"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-25",
+  "httpStatus": 200,
+  "bytes": 1228,
+  "sha256": "1c54aba45e54e874059a1d3c9086c28f4b551434eefd592baa1fdbcc56c19541",
+  "responseHeaders": {
+    "content-type": "application/json",
+    "cache-control": "public, max-age=30",
+    "cf-cache-status": "EXPIRED"
+  },
+  "capturedBy": "live S8 I10 capture (curl_cffi impersonate=chrome), scratchpad/s8/market-context/probe1.py",
+  "note": "The chain gate falsifier. robinhood carries features.metas.isEnabled=false in the chains catalog, yet this live 200 carries 7 real narrative aggregates (cat $253,793,855 over 15 tokens, dog, character, degen, stonks, knockoff-legends, ai). Any code that refuses a chain on metasEnabled refuses THIS data."
+}

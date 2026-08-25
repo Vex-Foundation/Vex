@@ -109,7 +109,7 @@ describe("ProtocolToolManifest taxonomy — pinned critical mappings", () => {
 
     // DexScreener — entirely read-only (no auth, no API key).
     ["dexscreener.search", "read"],
-    ["dexscreener.tokens", "read"],
+    ["dexscreener.tokenPairs", "read"],
     ["dexscreener.trending", "read"],
   ];
 

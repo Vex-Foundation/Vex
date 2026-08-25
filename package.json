@@ -50,6 +50,7 @@
     "test:bridge": "cd bridge && GOTOOLCHAIN=local go test ./..."
   },
   "dependencies": {
+    "@bufbuild/protobuf": "2.14.0",
     "@modelcontextprotocol/core": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "@morpho-org/morpho-sdk": "5.5.0",

@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-relay",
   "datasetVersion": "relay-v1",
   "status": "captured",
-  "capturedAt": "2026-08-22T14:28:08.946Z",
+  "capturedAt": "2026-08-25T16:09:08.903Z",
   "metrics": {
     "overall": {
       "count": 11,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-relay@relay-v1, mode dense, 11 cases evaluated.",
     "overall recall@1 0.909, recall@5 1, coverage@5 1, mrr@5 0.955, groupMrr@5 0.909.",
-    "First capture: no previous baseline to measure a delta against."
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

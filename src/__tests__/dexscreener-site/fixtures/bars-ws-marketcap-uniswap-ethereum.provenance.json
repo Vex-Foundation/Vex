@@ -1,0 +1,27 @@
+{
+  "fixture": "bars-ws-marketcap-uniswap-ethereum.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_feed.WSMessage",
+  "endpoint": "wss://io.dexscreener.com/feed/ws WSCommand.getHistoricalBars",
+  "requestParams": {
+    "cid": 42,
+    "limit": 60,
+    "chainId": "ethereum",
+    "pairId": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+    "ammId": "uniswap",
+    "resolution": "BAR_RESOLUTION_H1",
+    "type": "BAR_TYPE_MARKET_CAP",
+    "quoteTokenId": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 16794,
+  "sha256": "ba710f14067cc87b28a161d63e689ede2e912b380993c869284853c561517fea",
+  "capturedBy": "live S4 fixture capture (curl_cffi impersonate=chrome), 2026-08-24; scratchpad/s4-capture/probe_s4.py and probe_pd.py, index.json records url, params, status and sha256",
+  "note": "Market-cap bars with NO supply argument: the command carries no circulating-supply field and the provider answered WS_COMMAND_CODE_OK with 60 bars."
+}

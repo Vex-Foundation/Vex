@@ -1,9 +1,114 @@
 # DexScreener tool surface v2 - plan (no implementation)
 
-Status: v1.3, after Codex review turn 3 (convergence turn), 2026-08-24.
+Status: v1.4, after the S10 fix round, 2026-08-25.
 Author: Claude Code (coordinator).
 
 ## Revision log
+
+**v1.4 (2026-08-25), the S10 fix round after the ten-persona trading wave.**
+Nine of ten personas returned NOT READY. The ledger is
+`wave3/S10-LEDGER.md` (S10-0..S10-63). What the round found, and the decisions
+taken:
+
+1. **One defect family dominated: summaries not derived from the envelope they
+   introduce.** Five sites, one principle, fixed together. Trades counted the
+   fetched 100-row page rather than the returned rows and INVERTED flow
+   direction on the default path ("67 buys, 33 sells" over rows that were 11
+   buys and 14 sells); candles described a 4-hour move as the answer to a
+   30-day range; inverted candles named the base token while reporting the
+   quote token's USD move; screener boards read as empty markets when the
+   caller's own filters had emptied them; `pair.get` called a bonding curve's
+   absent pool "an unreported amount". Every summary now reads the same facts
+   the envelope publishes.
+2. **`pairs.batch` admitted rows nobody requested.** The reconciliation ran in
+   one direction only. Now a reverse set difference withholds them into
+   `rowAccounting.unrequested`, the summary derives from the reconciled sets,
+   and a dedupe collapse is named as a collapse rather than charged to
+   thresholds that dropped nothing. Chain slugs are validated against the
+   74-slug catalog (`unknown_chain`) and addresses against each chain's
+   architecture (`chain_shape_mismatch`), following the existing chain refusal.
+3. **`marketCap` withdrawn from `pairs.top`'s sort vocabulary**, following the
+   `tokens.screen` precedent rather than flooring it: the provider accepts the
+   key and answers with a board of mispriced pools (rank 1 measured at a market
+   cap 790 million times its own FDV). Backed by two local invariants that need
+   no extra request: `marketCapUsd <= fdvUsd` nulls both with a named reason,
+   and a same-token price-divergence flag names rows priced against their own
+   token's median.
+4. **`metaIds` validated against the narrative catalog.** A slug where an id
+   was wanted returned a confident empty market for a live $158M theme. The
+   chain refusal was already the precedent for exactly this failure mode.
+5. **Derived aggregates reconciled against the raw columns already in hand.**
+   Holder concentration excluded the pool account (measured inverting the
+   ranking for launchpad pairs: 71.90 percent against 24.17); LP shares are
+   cross-checked against balance over supply and WITHHELD on divergence rather
+   than published with a caveat.
+
+### S10 completion pass (same day), closing the gaps the fix round named
+
+1. **The rule-10 point-3 gap is closed with real captures, not reconstructions.**
+   S10-1 and S10-15 were both fixed but neither could go red, because every
+   pair-details fixture on disk happened to carry neither shape. Two captures
+   now exist: `pair-details-solana-bonding-poolholder` (the pair's own curve
+   account returned as holder row 0 at 25.19 percent) and
+   `pair-details-robinhood-vex-lpdivergence` (GoPlus assigning 0.000000 percent
+   to the holder of 99.95 percent of LP supply). The wave-3 GOGH and BARK
+   archives were tool OUTPUT rather than wire bytes and both curves had moved on
+   by the time the fixture was cut, so a fresh live scan of the near-graduation
+   board found a pair reproducing the defect today rather than synthesizing one.
+   A matching pair-channel snapshot was captured alongside it, because the
+   exclusion compares the holder row against `subject.pairAddress` and every
+   other test in that file mounts the ethereum snapshot.
+2. **S10-36 finished.** Response headers now reach `observation()` on candles,
+   trades and top traders as well as pair details. They are threaded on the HTTP
+   paths ONLY and stay absent on the two WebSocket paths, where nothing caches a
+   frame between the socket and the handler and `not_cached` is the measured
+   truth rather than an assumption.
+3. **S10-12 finished.** A transport fault on the batch path is no longer
+   reported as a provider rejection: an untyped throwable from `wsExchange` is
+   named as a local fault that reached no provider, and states that retrying is
+   appropriate because the read is idempotent.
+4. **The `test:unsafe-escapes` gate is green, and it was this branch's debt.**
+   It compares against the merge base (4288af8f), so the test files added by
+   commit 64e2ee67 entered its diff for the first time when they were committed
+   and brought 18 pre-existing casts with them. Twelve were `handler(params, {}
+   as never)`, replaced with the repository's own `makeProtocolContext()`, whose
+   header documents exactly why a hand-rolled context is the wrong thing. Two
+   negative tests that must pass a value outside a union now cast to the real
+   parameter type instead of through `never`. One helper was rebuilt on the JSON
+   codec, which removed a cast at each end AND surfaced a latent bug: the
+   `as unknown as` shape it asserted (`payload.value.pairs`) was simply wrong
+   about the data, and only silenced the compiler; the measured protobuf-JSON
+   shape is `pairs.pairs`. One decoded tree is now typed as
+   `Record<string, JsonValue>` rather than a read-only interface plus a cast.
+   No assertion was weakened, no test deleted, no allowlist touched.
+
+### Live probes (rule 10)
+
+- **S10-56 RESOLVED BY MEASUREMENT, NOT BUILT.** The ledger recorded "no
+  server-side price-change floor". Probed live on the v7 screener (solana, h1):
+  unfiltered 15,700 pairs, `filters[priceChange][h1][min]=50` gave 229,
+  `=100000` gave 27, and a nonsense-key control gave 15,702 unchanged, proving
+  the filter is genuinely applied. The filter is real AND `minPriceChangePct` /
+  `maxPriceChangePct` are ALREADY exposed on all nine screening boards. The
+  ledger's premise was wrong; no depth gap exists and nothing was added.
+- **The price-divergence threshold was measured before it was pinned**, at both
+  ends: WETH's 30 ethereum pools spanned 1.001x above and 0.996x below their
+  median (healthy), while JUP's 30 solana pools held one row at 5,218x theirs
+  (the artefact). 5x sits about three orders of magnitude clear of each.
+- **S10-7 re-verified against the live wire** after the fix: the measured
+  one-identity `robinhood:0x0000...0000` batch now withholds the foreign pool
+  and reports it in `rowAccounting.unrequested`.
+
+### Named omissions (depth decree)
+
+- The launchpad id vocabulary (`pumpfun`, `launchlab`, `meteoradbc`, `bags`,
+  `fourmeme`) is enumerable by no tool on this surface; `chains_list` carries
+  dex ids only. Documented in the `launchpadIds` param description, including
+  that an unknown id returns an empty board rather than a refusal. Not built:
+  it needs a provider endpoint we have not found.
+- `blockMax` is dropped as a meaningful field rather than removed: it equals
+  `blockMin` on 383 of 383 measured bars, so the docs now say so instead of
+  claiming a range.
 
 **v1.3 (2026-08-24, evening), after Codex review turn 3.** Turn 3 returned
 BLOCKED with a deterministic clearance list and no remaining disagreement: all
@@ -639,8 +744,11 @@ holding or already out.
 
 **14. `dexscreener__narratives_list`** (`dexscreener.trending`, both identities preserved)
 
-`chain` (optional; narratives exist on solana, bsc, base and ethereum only, and
-the tool refuses other chains by name rather than returning empty), `window`,
+`chain` (optional; ANY catalog chain may be asked. `features.metas.isEnabled` is a
+site-visibility label, not a data gate: aggregates were measured live on robinhood,
+ton and polygon, none of which the site surfaces. A chain with no narrative activity
+is answered as "0 of 18 active", never refused; only a slug that is not a chain at
+all is refused, with the nearest catalog matches), `window`,
 `sortBy` in `marketCapUsd volumeUsd liquidityUsd tokenCount marketCapChangePct`,
 `sortDir`, `limit`, `fields`. Rows carry the narrative ID, which is the value
 `metaIds` on the screening tools needs, and this cross-reference is stated in both
@@ -884,7 +992,9 @@ just started paying" is distinguishable from "who has paid the most".
 Rows carry slug, name, native chain id, architecture, dex slugs and count, block
 explorer URL templates for account, token, transaction and holders, which audit
 integrations exist for that chain (GoPlus, QuickIntel, CoinGecko, CMC and the
-rest), and whether narratives are enabled. This is also the validation source: an
+rest), and whether the site surfaces a narratives page for that chain (a
+visibility label, NOT a data gate: narratives aggregate on chains it is false
+for). This is also the validation source: an
 unknown `chainIds` or `dexIds` value is refused by name with candidates, the
 `StructuredResolutionError` pattern from github-mcp, instead of quietly returning
 zero rows.
@@ -934,9 +1044,15 @@ narrative aggregates per chain and window.
 Named omissions with reasons, to be written into the lane doc:
 
 1. Per-window independent thresholds. The provider accepts a different window per
-   threshold family (volume in h24 while ranking on m5). Vex exposes one
-   `thresholdWindow` for all of them, because the full surface is 40 keys and an
-   unusable schema is not depth. Revisit if a real query needs it.
+   threshold family (volume in h24 while ranking on m5), and it also accepts
+   SEVERAL WINDOWS OF ONE FAMILY at once and ANDs them: `filters[volume][h24][min]=1000000`
+   combined with `filters[volume][m5][min]=1000` returned 104 rows, a set neither
+   bound produces alone. `ScreenRequest` carries a single `thresholdWindow` for every
+   family, so a two-window condition on one metric is unreachable through the tool
+   surface and must be checked against the returned rows instead. Declared rather
+   than built: a per-threshold window would multiply the schema by four on twenty-two
+   params for a condition no measured intent asks for, and every threshold param now
+   names the limit in its own description.
 2. `rankBy=fdv` is omitted because it is a measured server defect.
 3. The audit filter family is omitted because the provider ignores it.
 4. `subscribeTransactions` live push is omitted because the provider gates it off.
@@ -944,6 +1060,144 @@ Named omissions with reasons, to be written into the lane doc:
    omitted because they are measured dead.
 6. The token-grouped screener channel (`v2/tokens`) is omitted because its ranking
    did not reproduce and its `pairsCount` is a page size, not a total.
+7. Server-side `Subscribe.filters` on the v8 batch channel (`dex_screener_query.Filters`,
+   37 fields) is omitted as a caller-facing surface, with ONE deliberate exception:
+   `excludedDEXIds` is always sent, because omitting the field entirely leaves the
+   channel's hidden launchpad exclusion in force (EP4: the same 100 bonding-curve ids
+   answered 0 rows without it and 100 of 100 with it). The other 36 fields stay
+   client-side: this tool screens an EXPLICIT list the caller already named, so the
+   client-side threshold family is exhaustive over that list rather than a sample, and
+   it is the single source of truth for what `droppedByFilter` reports. Two evaluators
+   over one list would be a second source of truth for the same question. Revisit only
+   if a list large enough for server-side narrowing to matter turns up.
+8. The v8 batch channel's rank surface is 6 of the 19 `RankByKey` members: `volume`,
+   `txns`, `liquidity`, `marketCap`, the `priceChange` family, and `pairAge`. Every
+   one of those is measured working on THIS channel. The rest are omitted because
+   they were not probed live here and this channel punishes a wrong key harder than
+   any other: an out-of-enum rank key makes the provider close the connection
+   abruptly (EP4 `e6-rankkey99`: curl 52, empty reply, ~700 ms), rather than
+   ignoring it. Adding a member means measuring it first.
+9. The two trending top-30 endpoints (`/dex/trending/v6` Avro and Connect
+   `dex_trending.PublicService/GetTrendingPairs`) are not consumed. The screener
+   `trendingScore{TF}` board reproduces their order EXACTLY (re-verified live
+   2026-08-25: 4 of 4 boards, 30 of 30 rows, solana m5/h6 and base h1/h24) and every
+   trending field is a strict subset of the screener row, including `tokenIconId`,
+   measured identical on 30 of 30 rows against `cmsProfile.iconId`. They are hard
+   capped at 30 rows with no `limit`, cursor or offset; both are edge cached about
+   30 seconds despite sending `no-store`, and the two transports were measured
+   disagreeing with EACH OTHER on the same pair in the same second (marketCap
+   1,354,257 vs 1,363,857; priceChange.m5 -6.86 vs -1.83). The only thing given up
+   is latency and bytes (9 KB / 21-51 ms cached versus 91 KB / 815 ms for a 100-row
+   WS frame), which is not a capability. Their DECODERS are retained on purpose as
+   the independent oracle for the homepage-ordering claim tool 1 makes and cannot
+   verify from its own board; the removal condition is recorded at `TRENDING_PAIR`
+   in `codec/dsavro-schemas.ts`.
+10. `/ds-data/dexes` (602 dexes, 1,545 deployments, ~372 KB) is not consumed. It is
+    the ONLY machine source of the dex label vocabulary: 25 values including the
+    uppercase variants V1, V2 and V3 that recon.md's hand-written list of 22 omits.
+    It also carries dex display names, `defaultURL` and the `defaultSwapURL`
+    deeplink template. The `labels` parameter teaches the vocabulary by example and
+    matches case-insensitively, so no false closed set is claimed today; wiring this
+    catalog in would turn `labels` into a validated one. Revisit if label typos
+    become a real failure mode.
+11. `/ds-data/v4/tokens/latest` is not consumed, and the assumption that spotlight's
+    `latestProfiles` covers it is measurably FALSE: read within 8 minutes of each
+    other, both feeds carried exactly 36 rows and their (chain, address) sets were
+    DISJOINT, zero overlap, with the ds-data feed's newest row about 7 hours behind
+    spotlight's. The omission stands on FRESHNESS, not on redundancy: spotlight is
+    the fresher feed and carries `nsfw`, `icon.id`, `header.id` and `boosts.active`
+    which this one lacks. Its own extras are `profile{header,website,twitter,discord,
+    linkCount,imgKey}` and split websites/socials, the same information spotlight
+    merges into `links`.
+12. `/ds-data/v2/chains/by-txns` (public, same 74 members, differently ranked) and
+    `/metas/v1/by-slug` are not consumed. No tool has a chain-ordering contract, and
+    the by-slug record is a strict subset of `/metas/v1/all`, which is fetched whole
+    (by-slug also answers an unknown or empty slug with HTTP 500 and an empty body).
+13. CLIENT-SIDE AD EXCLUSION IS NOT OFFERED, and `maxBoostCount` is not a substitute
+    for it. The decisive reason is that the fact is not on the row: `dex_screener_schema.Pair`
+    carries no impressions field at all, and `currentPurchasedImpressions` /
+    `recentPurchasedImpressions` exist in the checked-in descriptor only as FILTER
+    names. The only advertising signal a row carries is `boosts.active`, so a flag
+    called "exclude ads" could only ever mean "exclude boosted" and would be a false
+    name for what it does. Separately, every provider maximum is presence-plus-bound,
+    so `filters[activeBoosts][max]` selects WITHIN the boosted population rather than
+    against it (measured on solana: min 1 gave 105 rows, max 10 gave 51, max 1000000
+    gave 105 again rather than the 64,420-row baseline, max 0 gave 0). An agent that
+    set `maxBoostCount: 3` to avoid ad-pumped pairs received ONLY ad-carrying pairs;
+    both the param description and the request-layer contract now say so, which is
+    the part of this that actually protects the agent. An honestly named
+    `excludeBoostedPairs` flag remains buildable on the existing envelope accounting
+    and is deferred only for want of a measured intent that needs it.
+14. `dexscreener__tokens_screen` does not offer `marketCap` as a rank key although the
+    provider accepts it. Measured 2026-08-25 on solana, `rankBy[key]=marketCap`
+    returned 43 rows in total, with 18 of 42 adjacent pairs inverted on the very
+    column it claims to rank, JUP served at 3,683,346,910,956 USD and PUMP at
+    23,984,853,158,508, quoted in junk pairs (`MET`, `TrumpBucks`, `WSK`, `CSR`). An
+    earlier capture saw 32 rows with the same shape. Filter with `minMarketCapUsd` /
+    `maxMarketCapUsd` and rank by `liquidity` or `volume` instead. `pairAge` and
+    `sortDir` were added in the same pass, both measured honoured on the channel.
+15. `isBoostable` and `isDEXFeedStreamEnabled` are present on every screener row and
+    are deliberately not projected: both are site UI capability flags (whether the
+    boost button renders, whether the live-feed socket is offered) and neither
+    carries a market or safety fact. `liquidity.base` and `liquidity.quote` were in
+    the same undeclared set and ARE now exposed, under the `reserves` field group,
+    because they are the only fields that reveal a lopsided pool.
+16. Single-pair channel (`/dex/screener/v7/pair/...`) and search
+    (`/dex/search/v12/pairs`). `isBoostable` (measured `true` on 4 of 4 live pairs and
+    30 of 30 live search rows) is the provider's eligibility flag for buying
+    visibility: a UI capability, not a market fact, and nothing on this surface routes
+    on eligibility. `isDEXFeedStreamEnabled` (measured `false` on 4 of 4) gates the
+    `subscribeTransactions` live push this surface deliberately does not consume;
+    shipping a flag about a capability we do not use invites the model to reason about
+    it. `baseToken.totalSupply` / `quoteToken.totalSupply` are in the descriptor and
+    absent on every live pair captured; supply belongs to
+    `dexscreener__pair_details_get`. `liquidity.base` / `liquidity.quote` are NOT
+    omitted: they are projected by `screen-core`.
+17. Spotlight (`/dex/search/spotlight/v10`). `LatestProfile.Boosts.legacyActive` is
+    omitted: present on 7 of 7 rows that carry boosts and EQUAL to `active` on all
+    seven (int32 versus uint64-string spellings of one number); a second spelling
+    invites a search for a difference never observed. `PartialToken.id` is omitted:
+    present on 36 of 36 rows and exactly `"<chainId>:<lowercased address>"`, both
+    already on the row, and its lowercased half is a trap on Solana where address case
+    is load-bearing elsewhere. `tokenImageURL`, `icon.id` and `header.id` are NO
+    LONGER omitted: they ship under the `media` field group, closing the silent depth
+    regression against the retired `dexscreener.profiles` / `dexscreener.boosts` tools,
+    which both carried an icon.
+18. feed/ws `subscribeTokenInsights` is omitted. One frame carrying 1,144 fully
+    populated insights (1.37 MB, measured). It is the ONLY way to discover WHICH
+    tokens have a blurb, because `getTokenInsight` answers NOT_FOUND for an absent
+    insight and a wrong id alike. Omitted on SIZE, not capability, and the
+    consequence is named rather than hidden: the insight-coverage question is
+    unanswerable without it, and that is a known gap rather than an absent provider
+    feature.
+19. The chart endpoint's `cs` (circulating-supply override) is omitted. Measured
+    honoured: `mc=1&cs=1000000000` returns price times 1e9 exactly, overriding the
+    provider's own supply. Not exposed under rule 90, because `series: marketCap`
+    already returns the provider-computed figure with no supply argument, and a
+    model-supplied supply would produce a market cap that LOOKS authoritative and is
+    whatever number was passed.
+20. Connect `invert` is omitted from trades. Measured, it inverts the price AND swaps
+    the buy/sell labels. Rows are labelled base and quote instead, so orientation is
+    unambiguous without a flag that changes two things at once.
+21. `TokenInsight.token` and `TokenInsight.pair` sub-messages are omitted for
+    REDUNDANCY, not for staleness. The pair aggregates (`volumeH24`,
+    `priceChangeH24`, `marketCap`, `createdAt`) are CURRENT values sent with the
+    blurb, not a frozen snapshot of when it was written, and they duplicate the
+    live pair snapshot the same answer already carries. Note that the blurb TEXT
+    beside them is not current: it runs a median 10.5 days old, which is why the
+    handler emits `blurbAgeMs` and says the prose describes a past moment.
+22. `afterBlock` is expressed on BOTH trade routes, and the WS probe that item
+    once asked for has been run (2026-08-25, archived under `scratchpad/s9/`).
+    Connect takes an exact `afterBlockNumber`, which is STRICTLY EXCLUSIVE of the
+    block passed. The socket takes an `after` TRIPLE, measured strictly exclusive
+    and compared lexicographically over `(block, transactionIndex, eventIndex)`:
+    anchored at `(B, 0, 0)` it KEEPS block B's events, and anchored at
+    `(B, uint32 max, uint32 max)` it drops them, which is Connect's window
+    exactly. The client sends the max-index anchor, so the two channels express
+    the same window and the earlier refusal is gone. That refusal had locked both
+    continuation doors: a full page fetched with `afterBlock` handed back a cursor
+    that the next call refused, leaving the rows between `afterBlock` and the
+    oldest block returned reachable by no request at all.
 
 ---
 
@@ -1180,8 +1434,28 @@ surface is fully covered.
 Backing: `wss://io.dexscreener.com/dex/screener/v8/pairs-search`, subscribe by
 explicit `{chainId, id}` list, verified live by Codex turn 2: 3 ids in 593 ms,
 140 ids in one 144,557-byte frame, chain and liquidity filters honoured,
-ranking honoured (same members, different order), no pagination (pages past 1
-empty with `pairsCount` retained).
+ranking honoured (same members, different order).
+
+CORRECTED BY EP4 (S8). Two claims above were taken from measurements that
+could not see the behaviour they described, and both are now fixed in the
+module:
+
+- **Pagination exists.** "Pages past 1 empty with `pairsCount` retained" was
+  measured only below the page size. The page size is 500 rows: 700 distinct
+  ids answered 500, then 200, then 0, with `pairsCount` = 700 on every page,
+  pages disjoint and contiguous by `rankBy`. `pairsCount` is a TRUE TOTAL, so
+  `pairsCount > rows so far` is the provider's own exact continuation signal.
+  The chunk size is now 500, matching that page, and each chunk walks pages
+  until the total is in hand; `page = 0` answers nothing at all, so the walk
+  starts at 1. Correctness previously rested on the accident that a chunk of
+  140 stayed under the page size.
+- **The bonding-curve omission was ours, not the provider's.** Sending no
+  `filters` leaves the channel's hidden `excludedDEXIds` default in force. The
+  same 100 live Pump.fun and Meteora DBC ids answered 0 rows without it and
+  100 of 100 with `filters.excludedDEXIds = [""]`, the same lift the screeners
+  already apply. The module now sends it on every subscribe, and it was
+  re-confirmed live in S8 (rows 100, pairsCount 100, dexIds pumpfun 95 /
+  meteoradbc 5, 891 ms).
 
 | Param | Notes |
 |---|---|
@@ -1192,9 +1466,14 @@ empty with `pairsCount` retained).
 
 Envelope: `requested`, `resolved`, `invalid_format[]` (syntactically bad,
 echoed), `duplicates[]`, `provider_omitted[]` (a syntactically valid identity
-the provider left out; the cause is unproven and never invented; measured on
-91 active pump.fun and 7 Meteora DBC inputs, reported, never silently lost).
-No `offset`/`page`: the channel has no pagination.
+the provider left out; the cause is unproven and never invented; reported,
+never silently lost). Bonding-curve pairs are NOT that population: with the
+`excludedDEXIds` lift in place they resolve 100 of 100, so what remains in this
+bucket is a genuinely unresolvable identity.
+No `offset`/`page` is EXPOSED, but not because none exists: the handler walks
+the provider's 500-row pages internally until `pairsCount` is satisfied, so
+there is nothing left for a caller to continue to, and a chunk that cannot be
+completed fails by name rather than returning a short list.
 
 Gains: watchlist and portfolio snapshots. The agent refreshes up to 100 known
 pairs in ONE round trip instead of 100 `pair_get` calls. This is a site-native
@@ -1225,6 +1504,21 @@ Gains: "top tokens on this chain" as TOKEN rows: market cap and FDV per token
 with its representative pair, deduplicated by the provider.
 
 ### 14.3 Corrected contracts (supersede earlier sections where they conflict)
+
+0. **Pair channel latency and the unknown-pool answer** (S8, supersedes the frame
+   counts in the tool 9 notes). The channel pushes the snapshot on connect and a
+   second copy in the same tick (measured 0.468 s and 0.468 s); every further frame
+   is a full re-send on a ~3.2 s tick. Callers therefore ask TWO frames, never six.
+   An empty `pair` arm (`{"pair":{}}`, 2 bytes) is the provider's UNKNOWN-POOL
+   ANSWER, not a missing frame: it is raised immediately as
+   `DEXSCREENER_PAIR_UNKNOWN` on the first attempt. Before this, an unknown pool
+   spent a 20 s attempt plus a 10-frame retry that could not complete inside the
+   budget by arithmetic, and reported `TRANSPORT_TIMEOUT` about 33 s later, which
+   reads as a provider outage rather than "that pool is not indexed here".
+   GENERAL RULE this establishes, binding on every WebSocket consumer here: the
+   transport resolves only when the countable-frame budget is reached, so a budget
+   larger than the answer the channel actually produces is not caution, it is a
+   guaranteed timeout with the answer already in hand.
 
 1. **Candles time range** (supersedes 4.8/tool 11 walk notes): `endAtMs`
    resolves to a block via `GetTransactions(timestampEnd=endAtMs)`; candles
@@ -1402,4 +1696,14 @@ Decisions taken for the fix round:
     otherwise narrowed set emits `filteredSetVolumeSharePct`. The frame's
     stats block reflects every filter in force (S6 builder's observation), so
     the looser single-chain rule still mislabelled floored subsets.
+
+18. **D-DS9 (owner, 2026-08-25): the whole namespace is ALWAYS INJECTED into
+    the model's tools array**, next to the internal tools, with no ToolSearch
+    discovery round. Mechanism: `ALWAYS_INJECTED_NAMESPACES` in
+    `registry/injected-protocol-tools.ts`, unioned before the session working
+    set, every visibility gate retained. Measured cost at the decision: 18
+    schemas, ~265 KB, ~66k tokens of tools-array occupancy per request,
+    amortized by prompt caching; the owner chose immediate market-research
+    access over the context savings. Reversal is one line; a curated subset
+    is the named fallback if the occupancy proves heavy in practice.
 

@@ -4,6 +4,7 @@ import {
   isProtocolToolAvailable,
 } from "@vex-agent/tools/protocols/catalog.js";
 import { getAdvertisedProtocolNavigation } from "@vex-agent/tools/protocols/descriptions.js";
+import { isAlwaysInjectedNamespace } from "@vex-agent/tools/registry/injected-protocol-tools.js";
 import { getToolDef } from "@vex-agent/tools/registry/lookup.js";
 import type { ProtocolNamespace, ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
 import { getProtocolNamespaceCoverage } from "./chain-coverage.js";
@@ -66,9 +67,27 @@ function renderDeclaration(namespace: ProtocolNamespace): string[] {
     throw new Error(`Protocol declaration "${namespace}" has neither runtime coverage nor coverageNote.`);
   }
 
+  // D-DS9: an always-injected namespace already has every tool in the
+  // session's tools array, so the model must call those tools by name
+  // directly instead of paying the ToolSearch round the header doctrine
+  // prescribes for every other namespace. The name list renders from the
+  // same catalog the injection reads, in the same order, so the prompt can
+  // never advertise a tool the tools array does not carry.
+  const alwaysLoadedLines = isAlwaysInjectedNamespace(namespace)
+    ? [
+        "Always loaded: every tool below is already in your tools array; call it by name directly, no ToolSearch round needed: "
+          + advertisedTools()
+            .filter((tool) => tool.namespace === namespace)
+            .map((tool) => `\`${tool.publicName}\``)
+            .join(", ")
+          + ".",
+      ]
+    : [];
+
   const lines = [
     `### ${namespace}`,
     declaration.identity,
+    ...alwaysLoadedLines,
     `Read: ${declaration.read}`,
     `Quote: ${declaration.quote}`,
     `Act: ${declaration.act}`,
@@ -96,7 +115,7 @@ export function buildProtocolsPrompt(): string {
     "",
     "## What Vex can reach",
     "",
-    "Search a namespace with ToolSearch; a namespace itself is never called by name.",
+    "Search a namespace with ToolSearch; a namespace itself is never called by name. Exception: a namespace marked \"Always loaded\" already has every tool in your tools array, so call those tools directly.",
     "",
   ];
 

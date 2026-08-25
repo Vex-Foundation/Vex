@@ -1,0 +1,21 @@
+{
+  "encoding": "protobuf",
+  "protobufMessage": "dex_screener.PairsChannelMessage",
+  "note": "The boosted-row population. Captured by ranking on the provider's activeBoosts key so that rows carrying a boosts.active value are guaranteed present: boosts.active is uint64 in the descriptor, so protobuf JSON renders it as a decimal STRING, and a number-only reader projects null for every boosted pair. The trending/bonding fixtures beside this one carry no boosts at all, so they cannot discriminate a correct reader from a broken one; this capture is the one that can.",
+  "endpoint": "wss://io.dexscreener.com/dex/screener/v7/pairs/h24/1?rankBy[key]=activeBoosts&rankBy[order]=desc&filters[chainIds][0]=solana",
+  "requestParams": {
+    "rankBy[key]": "activeBoosts",
+    "rankBy[order]": "desc",
+    "filters[chainIds][0]": "solana"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24T19:32:00+00:00",
+  "httpStatus": 101,
+  "capturedBy": "live capture for S7 (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-08-24; capture harness scratchpad/s7/harness.mts + proxy.py, capture dir ws-36dd4bfb6716814d0582/blob1.bin",
+  "fixture": "screener-pairs-solana-boosts-h24.bin.b64",
+  "bytes": 95818,
+  "sha256": "c5ea4796dfc1a659c1ccd20112b44df2a27875fd90effe8382e8a7220f75cbf2"
+}

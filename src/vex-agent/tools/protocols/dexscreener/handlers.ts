@@ -1,29 +1,29 @@
 /**
- * DexScreener protocol handlers — aggregates the four family handler maps.
+ * DexScreener protocol handlers - aggregates the four family handler maps.
  *
- * All read-only: no wallet, no signing, no mutations. Split by family so the
- * three list pipelines each sit next to the handlers that use them:
+ * All read-only: no wallet, no signing, no mutations. Split by family so each
+ * handler sits next to the channel and the projection it uses:
  *
- * | module                 | tools                                                    | pipeline              |
- * |------------------------|----------------------------------------------------------|-----------------------|
- * | `handlers/core.ts`     | search, pairs, tokens, tokenPairs                        | `pair-list/`          |
- * | `handlers/feeds.ts`    | profiles, profiles.recent, boosts, boosts.top, communityTakeovers, ads, attention | `feed-list/` |
- * | `handlers/narratives.ts` | trending, meta                                         | `narrative-list/`     |
- * | `handlers/orders.ts`   | orders                                                   | none — per-token      |
+ * | module                       | tools                                                                                                  | channel                        |
+ * |------------------------------|--------------------------------------------------------------------------------------------------------|--------------------------------|
+ * | `handlers/screening.ts`      | pairs.trending, pairs.top, gainers, losers, pairs.new, launchpad.pairs, chains, tokens.screen             | screener WS + catalog          |
+ * | `handlers/resolve.ts`        | pair.get, spotlight, pairs.batch, search, tokenPairs                                                     | pair WS, spotlight, search v12 |
+ * | `handlers/market-context.ts` | trending (narratives)                                                                                    | metas Avro                     |
+ * | `handlers/deep-dive.ts`      | pair.details, candles, trades, top.traders                                                               | pair-details JSON, chart Avro and feed WS, Connect RPC, top-makers Avro |
  *
  * `DEXSCREENER_HANDLERS` remains the single public surface; the split is
  * invisible to `protocols/runtime.ts` and to every test.
  */
 
 import type { ProtocolHandler } from "../types.js";
-import { DEXSCREENER_CORE_HANDLERS } from "./handlers/core.js";
-import { DEXSCREENER_FEED_HANDLERS } from "./handlers/feeds.js";
-import { DEXSCREENER_NARRATIVE_HANDLERS } from "./handlers/narratives.js";
-import { DEXSCREENER_ORDER_HANDLERS } from "./handlers/orders.js";
+import { DEXSCREENER_MARKET_CONTEXT_HANDLERS } from "./handlers/market-context.js";
+import { DEXSCREENER_RESOLVE_HANDLERS } from "./handlers/resolve.js";
+import { DEXSCREENER_SCREENING_HANDLERS } from "./handlers/screening.js";
+import { DEXSCREENER_DEEP_DIVE_HANDLERS } from "./handlers/deep-dive.js";
 
 export const DEXSCREENER_HANDLERS: Record<string, ProtocolHandler> = {
-  ...DEXSCREENER_CORE_HANDLERS,
-  ...DEXSCREENER_FEED_HANDLERS,
-  ...DEXSCREENER_NARRATIVE_HANDLERS,
-  ...DEXSCREENER_ORDER_HANDLERS,
+  ...DEXSCREENER_SCREENING_HANDLERS,
+  ...DEXSCREENER_RESOLVE_HANDLERS,
+  ...DEXSCREENER_MARKET_CONTEXT_HANDLERS,
+  ...DEXSCREENER_DEEP_DIVE_HANDLERS,
 };

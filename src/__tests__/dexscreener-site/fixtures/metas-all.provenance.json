@@ -1,0 +1,16 @@
+{
+  "fixture": "metas-all.bin.b64",
+  "encoding": "dsavro",
+  "dsavroSchema": "METAS_ALL",
+  "endpoint": "https://io.dexscreener.com/metas/v1/all",
+  "requestParams": {},
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24T10:46:14.138297+00:00",
+  "httpStatus": 200,
+  "bytes": 1484,
+  "sha256": "4e33c6ef47f85fbf27dbe3a47d2edbf7c2771cb5375e10a3f0bfa1390d77c0a3",
+  "capturedBy": "live capture for S1 (curl_cffi impersonate=chrome), one request per endpoint, 2 s apart"
+}

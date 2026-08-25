@@ -1,0 +1,25 @@
+{
+  "fixture": "ws-trades-baseline-uniswap.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_feed.WSMessage",
+  "endpoint": "wss://io.dexscreener.com/feed/ws WSCommand.getHistoricalTransactions",
+  "requestParams": {
+    "cid": 11,
+    "chainId": "ethereum",
+    "ammId": "uniswap",
+    "pairId": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+    "quoteTokenId": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "type": "TYPE_BUY_OR_SELL"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 27418,
+  "sha256": "3499e9a2607b00138aa81047d572d36c68535247af53c39a30d2b89b49c0655e",
+  "capturedBy": "live recon probe (curl_cffi impersonate=chrome), 2026-08-24 09:38-09:46Z; archived under scratchpad/live-turn2/chart-flow with run.jsonl, per-request meta and sha256",
+  "note": "100 rows with the full per-trade counterparty profile."
+}

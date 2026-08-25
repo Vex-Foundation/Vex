@@ -74,6 +74,9 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["toToken", "bridge destination token; pairs with toChain"],
   ["token", "the one token a single-token tool acts on"],
   ["tokenAddress", "a token CONTRACT address on a read tool"],
+  ["pairs", "a LIST of chain-qualified POOL identities (chain:pairAddress) on a batch read tool; plural because the caller supplies the membership, unlike pairAddress which names one"],
+  ["tokens", "a LIST of chain-qualified TOKEN identities (chain:tokenAddress) on a batch read tool; the token-side sibling of `pairs`"],
+  ["include", "a LIST of OPTIONAL SIDE READS to perform, each costing an extra request; distinct from `fields`, which shapes rows already fetched"],
   ["tokenAddresses", "a list of token contract addresses"],
   ["walletAddress", "an ACCOUNT address (the thing that holds funds)"],
   ["amountIn", "input amount in HUMAN decimal units, as a string"],
@@ -124,6 +127,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["order", "ranking direction, `asc` or `desc`; declared as an `enum`"],
   ["offset", "row offset for paging; pairs with the reply's `nextOffset`"],
   ["fields", "comma-separated row field GROUPS to keep, to bound a large result"],
+  ["topTokens", "how many CHILD rows to embed inside each parent row on a grouped read (a narrative's leading pairs); distinct from `limit`, which bounds the parent rows, and from `include`, which names side reads rather than a depth"],
   ["listedOnly", "keep only rows the protocol itself lists/curates; excludes permissionless dust"],
 
   // -- Lending-market reads (morpho, batch 1) ----------------------
@@ -357,6 +361,32 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["maxBuySellRatio", "ceiling on buys divided by sells; a RATIO, not a percent"],
   ["minQuoteDepthTokens", "floor on quote-side depth counted in TOKENS, not USD"],
 
+  // -- The site screening channel (dexscreener v2 surface) -----------
+  //
+  // The keys the website's own screener sends that the public API never had.
+  // Each is a SERVER-side filter: it changes which rows the provider ranks,
+  // not which rows survive locally, so a missing key here silently widens a
+  // screen instead of narrowing it. Named individually for the same reason the
+  // block above is: the provider FAILS OPEN on a filter name it does not know.
+  ["thresholdWindow", "which window the volume/transaction/price-change thresholds measure over; defaults to `window`"],
+  ["includeInactive", "lift the provider's gate that hides pairs with no activity in `window`"],
+  ["includeLaunchpadPairs", "lift the provider's hidden exclusion of bonding-curve pairs; widens the set"],
+  ["metaIds", "a LIST of narrative IDs (not slugs) to keep; a slug matches nothing"],
+  ["launchpadIds", "a LIST of launchpad identifiers to keep (pumpfun, launchlab, ...)"],
+  ["baseTokenSuffixes", "a LIST of base-token mint-address suffixes to keep (for example `pump`)"],
+  ["maxTxnCount", "ceiling on trades over the threshold window"],
+  ["minBuyCount", "floor on BUY trades over the threshold window; a count, not a volume"],
+  ["maxBuyCount", "ceiling on BUY trades over the threshold window"],
+  ["minSellCount", "floor on SELL trades over the threshold window; a count, not a volume"],
+  ["maxSellCount", "ceiling on SELL trades over the threshold window"],
+  ["minBoostCount", "floor on how many paid boosts are ACTIVE on the pair; a count, not a spend"],
+  ["minLaunchpadProgressPct", "floor on bonding-curve completion, as a PERCENT of the curve"],
+  ["maxLaunchpadProgressPct", "ceiling on bonding-curve completion, as a PERCENT of the curve"],
+  ["requireProfile", "keep only pairs whose base token has a DexScreener profile"],
+  ["onlyAds", "keep only pairs with a CURRENTLY running paid ad placement"],
+  ["onlyRecentAds", "keep only pairs that bought an ad slot recently, running or not"],
+  ["stage", "which side of a launchpad graduation to list (still bonding, or migrated)"],
+
   // -- Bridge routing and order lookup (khalani, relay) ---------------
   //
   // The cross-chain vocabulary. `recipient` and `fromAddress` are deliberately
@@ -488,6 +518,35 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["includeCurveProgress", "add each row's bonding-curve progress, which costs a per-row read"],
   ["minCurveProgressPct", "floor on bonding-curve completion, as a PERCENT"],
   ["maxCurveProgressPct", "ceiling on bonding-curve completion, as a PERCENT"],
+
+  // -- Time-series and deep-read shaping (DexScreener deep dive, S4) ---
+  //
+  // These describe reading ONE pool's history rather than screening a
+  // population, which is why none of the screening keys fit them.
+  ["resolution", "bar size of a time series, as a duration token (1s..1mo); the series' own granularity, not a limit"],
+  ["series", "WHICH series a time-series tool returns (price or market cap); orthogonal to resolution and to priceBasis"],
+  ["priceBasis", "the denomination of a price column (usd, native, or both); a price needs a currency and the key says which"],
+  ["inverted", "report on the OTHER side of a pair (quote per base, or the quote token) - orientation, never a filter"],
+  ["startAtMs", "inclusive lower bound of a time window, in epoch MILLISECONDS; the unit is in the key because a seconds value lands in 1970"],
+  ["endAtMs", "inclusive upper bound of a time window, in epoch MILLISECONDS; pairs with startAtMs"],
+  ["maxPages", "ceiling on PROVIDER pages an internal walk may fetch; the bound is reported when hit, with a cursor for the rest"],
+  ["deadlineMs", "wall-clock budget for an internal walk, in MILLISECONDS; the sibling bound of maxPages and reported the same way"],
+  ["beforeBlock", "EXCLUSIVE upper block bound for a continuation; takes back the `nextBeforeBlock` a truncated walk returned, so withheld rows stay reachable"],
+  ["afterBlock", "EXCLUSIVE lower block bound: return only rows after this block. The forward twin of `beforeBlock`, and the provider's own spelling of forward paging on the trade read"],
+  ["maxChains", "ceiling on chains one fan-out may span; a raisable DEFAULT, since each chain costs one provider request and the deadline is the real bound"],
+  ["maxBoostCount", "upper bound on a row's count of ACTIVE paid boosts; it bounds WITHIN the boosted population and never excludes advertised rows, because a maximum matches only rows that carry the field"],
+  ["maxEnrichedNarratives", "ceiling on how many rows a per-row enrichment pass may cover; a raisable DEFAULT, since each row costs one extra provider exchange"],
+  ["disableQualityFloor", "drop EVERY default quality floor a screen applies, in one boolean; the schema-representable form of floor removal, so no threshold needs a null"],
+  ["mode", "which SHAPE of one answer to return (rows, an aggregate, or both) when all shapes come from one fetch; distinct from `action`, which selects a different operation"],
+  ["eventType", "which KIND of on-chain event to return (buy, sell, liquidity add or remove); a superset of a buy/sell side and named so it cannot be read as one"],
+  ["maker", "one WALLET whose activity to return, scoped to the resource being read; distinct from walletAddress, which names the user's own account"],
+  ["traderProfile", "how much of the per-row counterparty profile to carry (compact, full, none); a depth selector for one embedded block"],
+  ["lookbackDays", "how many days back a provider-side ranking window reaches; a window length, not a filter on a timestamp"],
+  ["onlyKol", "restrict a leaderboard to wallets the PROVIDER labels as key opinion leaders; provider classification, named after it so it cannot read as a Vex judgement"],
+  ["minBaseAmountIn", "lower bound on a trade's BASE-token amount, human decimals as a string"],
+  ["maxBaseAmountIn", "upper bound on a trade's BASE-token amount, human decimals as a string"],
+  ["minQuoteAmountIn", "lower bound on a trade's QUOTE-token amount, human decimals as a string"],
+  ["maxQuoteAmountIn", "upper bound on a trade's QUOTE-token amount, human decimals as a string"],
 
   // -- Wallet and response shaping (internal tools) -------------------
   //

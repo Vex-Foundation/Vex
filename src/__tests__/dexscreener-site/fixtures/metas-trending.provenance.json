@@ -1,0 +1,16 @@
+{
+  "fixture": "metas-trending.bin.b64",
+  "encoding": "dsavro",
+  "dsavroSchema": "METAS_TRENDING",
+  "endpoint": "https://io.dexscreener.com/metas/v1/trending",
+  "requestParams": {},
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24T10:46:16.382703+00:00",
+  "httpStatus": 200,
+  "bytes": 3212,
+  "sha256": "3c3306b961da3a7b1f82f8b2d1072a7aa0c3dd4b5e7467fcc30483de562441c5",
+  "capturedBy": "live capture for S1 (curl_cffi impersonate=chrome), one request per endpoint, 2 s apart"
+}

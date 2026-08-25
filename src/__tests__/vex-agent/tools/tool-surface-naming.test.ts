@@ -135,13 +135,31 @@ describe("G2 - publicName mapping gate", () => {
     );
   });
 
-  it("the mapped surface is the whole 134-tool catalog (drift alarm, not a cap)", () => {
+  it("the mapped surface is the whole 136-tool catalog (drift alarm, not a cap)", () => {
     // Not a limit: a Batch-2 addition updates this number together with its
     // mapping row, so the count and the map can never diverge silently.
     // 137 before the Batch 2 near-duplicate merges (owner decision D7) retired
     // `kyberswap.chains.supported`, `dexscreener.profiles.recent` and
     // `dexscreener.boosts.top` into their surviving siblings' parameters.
-    expect(PROTOCOL_TOOLS.length).toBe(134);
+    // 134 before the DexScreener site surface (stage S2b) added its eight
+    // agent-visible tools: the six screening boards, the chain catalog and the
+    // token-level screen.
+    // 142 before stage S3 added the three resolve and market-context tools it
+    // could land: the single-pair snapshot, the spotlight feeds and the
+    // explicit-identity batch.
+    // 145 before stage S3.5, which is the only step in this history that made
+    // the catalog SMALLER: it retired the 12 public-API DexScreener tools whole
+    // and alias-free (owner decision D-DS2) and landed the three that were
+    // blocked on their identities. Net 12 removed, 3 added. Three of the
+    // retired identities were RECLAIMED rather than freed - `dexscreener.search`,
+    // `dexscreener.tokenPairs` and `dexscreener.trending` keep their toolIds AND
+    // publicNames on the site-channel tools that now answer the same questions -
+    // so the mapping artifact lost nine rows, not twelve.
+    // 136 before stage S4, which added the four DexScreener deep-dive tools:
+    // `pair.details`, `candles`, `trades` and `top.traders`. All four are new
+    // identities - no toolId is reclaimed, because none of the retired
+    // public-API tools answered any part of what they answer.
+    expect(PROTOCOL_TOOLS.length).toBe(140);
   });
 });
 

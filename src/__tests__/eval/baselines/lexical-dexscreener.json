@@ -1,45 +1,45 @@
 {
-  "version": "dexscreener-v1",
+  "version": "dexscreener-v5",
   "mode": "lexical",
   "datasetId": "tool-discovery-dexscreener",
-  "datasetVersion": "dexscreener-v1",
+  "datasetVersion": "dexscreener-v5",
   "status": "captured",
-  "capturedAt": "2026-08-22T19:13:25.495Z",
+  "capturedAt": "2026-08-25T12:46:59.606Z",
   "metrics": {
     "overall": {
-      "count": 35,
-      "recall1": 0.457,
-      "recall5": 0.8,
-      "coverage5": 0.8,
-      "mrr5": 0.59,
-      "groupMrr5": 0.59
+      "count": 62,
+      "recall1": 0.435,
+      "recall5": 0.71,
+      "coverage5": 0.694,
+      "mrr5": 0.541,
+      "groupMrr5": 0.538
     },
     "awareness": {
       "blind": {
-        "count": 23,
-        "recall1": 0.304,
-        "recall5": 0.696,
-        "coverage5": 0.696,
-        "mrr5": 0.457,
-        "groupMrr5": 0.457
+        "count": 38,
+        "recall1": 0.289,
+        "recall5": 0.553,
+        "coverage5": 0.526,
+        "mrr5": 0.38,
+        "groupMrr5": 0.376
       },
       "protocolAware": {
-        "count": 12,
-        "recall1": 0.75,
-        "recall5": 1,
-        "coverage5": 1,
-        "mrr5": 0.847,
-        "groupMrr5": 0.847
+        "count": 24,
+        "recall1": 0.667,
+        "recall5": 0.958,
+        "coverage5": 0.958,
+        "mrr5": 0.795,
+        "groupMrr5": 0.795
       }
     },
     "intentShapes": {
       "single": {
-        "count": 35,
-        "recall1": 0.457,
-        "recall5": 0.8,
-        "coverage5": 0.8,
-        "mrr5": 0.59,
-        "groupMrr5": 0.59
+        "count": 61,
+        "recall1": 0.443,
+        "recall5": 0.705,
+        "coverage5": 0.705,
+        "mrr5": 0.546,
+        "groupMrr5": 0.546
       },
       "cross": {
         "count": 0,
@@ -58,12 +58,12 @@
         "groupMrr5": 0
       },
       "workflow": {
-        "count": 0,
+        "count": 1,
         "recall1": 0,
-        "recall5": 0,
+        "recall5": 1,
         "coverage5": 0,
-        "mrr5": 0,
-        "groupMrr5": 0
+        "mrr5": 0.2,
+        "groupMrr5": 0.067
       }
     },
     "scenarios": {
@@ -108,12 +108,12 @@
         "groupMrr5": 0
       },
       "market_research": {
-        "count": 35,
-        "recall1": 0.457,
-        "recall5": 0.8,
-        "coverage5": 0.8,
-        "mrr5": 0.59,
-        "groupMrr5": 0.59
+        "count": 62,
+        "recall1": 0.435,
+        "recall5": 0.71,
+        "coverage5": 0.694,
+        "mrr5": 0.541,
+        "groupMrr5": 0.538
       },
       "prediction_discovery": {
         "count": 0,
@@ -174,8 +174,8 @@
     }
   },
   "notes": [
-    "dataset tool-discovery-dexscreener@dexscreener-v1, mode lexical, 35 cases evaluated.",
-    "overall recall@1 0.457, recall@5 0.8, coverage@5 0.8, mrr@5 0.59, groupMrr@5 0.59.",
-    "Measured delta vs previous baseline (dexscreener-v1, captured 2026-08-22T14:12:54.321Z): 8 metric values moved; overall recall@5 0.8 -> 0.8, overall mrr@5 0.588 -> 0.59, case count 35 -> 35."
+    "dataset tool-discovery-dexscreener@dexscreener-v5, mode lexical, 62 cases evaluated.",
+    "overall recall@1 0.435, recall@5 0.71, coverage@5 0.694, mrr@5 0.541, groupMrr@5 0.538.",
+    "Measured delta vs previous baseline (dexscreener-v5, captured 2026-08-25T09:39:44.436Z): 8 metric values moved; overall recall@5 0.71 -> 0.71, overall mrr@5 0.537 -> 0.541, case count 62 -> 62."
   ]
 }

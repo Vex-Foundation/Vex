@@ -4,13 +4,17 @@
  *
  * OWNERSHIP. This module OWNS the rule. `assessMedianOutliers` is the generic
  * primitive: minimum population, median-as-ELEMENT, and a fixed ratio in both
- * directions. Two populations consume it and neither restates it:
+ * directions. Its consumer does not restate it:
  *
  *   - `assessNormalizedCandidates` (below) over watch candidates already
- *     normalized to the watched token, in exact decimal arithmetic;
- *   - `vex-agent/tools/protocols/dexscreener/pair-list/price-sanity.ts`, which
- *     first reuses the same watched-token normalization and then adapts the
- *     exact-decimal median, per-row verdicts, side, and price into pair rows.
+ *     normalized to the watched token, in exact decimal arithmetic.
+ *
+ * A SECOND consumer existed until stage S3.5:
+ * `dexscreener/pair-list/price-sanity.ts` adapted the same exact-decimal
+ * median into public-API pair rows. It was deleted with the 12 retired
+ * DexScreener tools (owner decision D-DS2). The primitive stays generic
+ * anyway: it is the shape of the rule, not a concession to one caller, and
+ * the site surface's own price sanity will reuse it rather than restate it.
  *
  * The rule lives here, in `src/tools`, so the low-level client layer does not
  * have to import a `vex-agent` protocol module: `vex-agent` may import
@@ -18,7 +22,7 @@
  *
  * WHY THE VALUE TYPE IS A PARAMETER. The two populations are not comparable in
  * the same arithmetic. The watch compares exact decimals because a money
- * threshold must not round, and the pair-list assessor now uses that same exact
+ * threshold must not round, and the pair-list assessor used that same exact
  * arithmetic. The generic primitive remains parameterized for other populations.
  *
  * The threshold is a FIXED order of magnitude, not a percentage of the sample:
