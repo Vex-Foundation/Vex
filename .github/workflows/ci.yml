@@ -40,14 +40,13 @@ jobs:
         run: pnpm test
 
       - name: Reject unsafe test escapes
-        env:
-          PR_BASE_SHA: "${{ github.event.pull_request.base.sha }}"
-        run: |
-          if [ -n "$PR_BASE_SHA" ]; then
-            pnpm test:unsafe-escapes -- --base "$PR_BASE_SHA"
-          else
-            pnpm test:unsafe-escapes
-          fi
+        # PULL REQUESTS ONLY, by design. The deleted-test allowlist's lifecycle
+        # is PR-scoped: an entry is consumed the moment its change merges, so a
+        # push-event scan on a trunk is stale-by-construction after every merge
+        # that deleted a test (measured: the first post-merge push to main went
+        # red on 22 consumed entries, 2026-08-25).
+        if: github.event_name == 'pull_request'
+        run: pnpm test:unsafe-escapes -- --base "${{ github.event.pull_request.base.sha }}"
 
   studio-postgres:
     runs-on: ubuntu-latest
