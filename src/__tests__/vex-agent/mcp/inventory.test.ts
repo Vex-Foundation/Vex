@@ -62,9 +62,12 @@ describe("the exported inventory covers exactly the export scope", () => {
     // tools (EVM and Solana prepare/confirm).
     // 159 -> 165: the dexscreener protocol replaced its 12 public-API tools
     // with the 18-tool website-API surface (S10).
-    expect(inventory).toHaveLength(165);
+    // 165 -> 178: the indexify namespace landed with 13 tools (10 reads,
+    // trade_execute, order_resolve, stack_create) — the first custodial API
+    // venue. Every namespace exports, so all 13 appear here.
+    expect(inventory).toHaveLength(178);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(25);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(140);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(153);
   });
 
   it("exports ToolSearch under its own public name and no other spelling", () => {

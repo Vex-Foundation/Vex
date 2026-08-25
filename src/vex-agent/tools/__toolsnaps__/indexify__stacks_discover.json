@@ -1,0 +1,73 @@
+{
+  "definition": {
+    "function": {
+      "description": "Browse the stacks on Indexify, the Solana social-index platform where creators bundle tokens into investable USDC-denominated baskets. Use this when the user wants trending stacks, official Indexify stacks, or the catalogue ranked by performance, market cap, price, or age. Returns compact rows: stack id, slug, name, category, price (every stack is indexed from $1.00 at inception, so price IS lifetime performance), 24h/7d/30d/all-time changes, weighted market cap, creator fee, creator username, token count with top symbols, and investor-relevant flags. Resolve a specific stack the user names with indexify__stacks_search instead, and read one stack's full allocation with indexify__stack_get. Read-only.",
+      "name": "indexify__stacks_discover",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "feed": {
+            "description": "Which provider feed fills the rows: all (default; the whole sortable catalogue), trending (Indexify's own trending ranking), or official (Indexify-curated stacks).",
+            "enum": [
+              "all",
+              "trending",
+              "official"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum rows returned, 1-25. Defaults to 10. Raw provider rows are large, so the cap is a hard output-budget bound.",
+            "type": "number"
+          },
+          "maxMarketCapUsd": {
+            "description": "Ceiling on the stack's weighted market capitalisation, in USD. Pairs with minMarketCapUsd to band the screen.",
+            "type": "number"
+          },
+          "minMarketCapUsd": {
+            "description": "Floor on the stack's weighted market capitalisation, in USD. Filters out micro-cap baskets before ranking.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Row offset for paging, 0-based. Pass the previous call's offset plus its returned row count to read the next page.",
+            "type": "number"
+          },
+          "order": {
+            "description": "Ranking direction for the all feed, asc or desc. Defaults to desc, which puts the best performer or the largest first.",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "type": "string"
+          },
+          "sort": {
+            "description": "Ranking key for the all feed: a change window (change4H/change1D/change1W/change1M/changeAll), newest, oldest, price, or mcap. Ignored by trending and official, which carry their own order.",
+            "enum": [
+              "change4H",
+              "change1D",
+              "change1W",
+              "change1M",
+              "changeAll",
+              "newest",
+              "oldest",
+              "price",
+              "mcap"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "indexify",
+    "requiresEnv": null,
+    "toolId": "indexify.stacks"
+  }
+}

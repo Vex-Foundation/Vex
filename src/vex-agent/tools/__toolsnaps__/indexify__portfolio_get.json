@@ -1,0 +1,24 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read the linked Indexify account's balances. Use this before sizing a stack buy (the venue trades only the account's deposited USDC, never a Vex session wallet) or when the user asks what the Indexify account holds. Returns spendable USDC, USDC reserved by in-flight orders, total portfolio value in USDC, and the account's Indexify-embedded Solana wallet address — which is also the USDC deposit address. Per-token balances are not available from the venue; per-stack positions are read with indexify__stack_holdings_get instead. Read-only.",
+      "name": "indexify__portfolio_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "indexify",
+    "requiresEnv": "INDEXIFY_API_KEY",
+    "toolId": "indexify.portfolio"
+  }
+}

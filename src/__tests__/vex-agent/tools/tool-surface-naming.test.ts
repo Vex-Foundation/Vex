@@ -159,7 +159,10 @@ describe("G2 - publicName mapping gate", () => {
     // `pair.details`, `candles`, `trades` and `top.traders`. All four are new
     // identities - no toolId is reclaimed, because none of the retired
     // public-API tools answered any part of what they answer.
-    expect(PROTOCOL_TOOLS.length).toBe(140);
+    // 140 before the Indexify integration, which added the 13-tool `indexify`
+    // namespace (10 reads, trade_execute, order_resolve, stack_create) — the
+    // tree's first custodial API venue. All new identities.
+    expect(PROTOCOL_TOOLS.length).toBe(153);
   });
 });
 

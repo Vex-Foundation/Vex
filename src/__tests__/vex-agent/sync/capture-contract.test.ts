@@ -129,7 +129,12 @@ describe("capture contract — structural coverage", () => {
     // records an advisory `previewed` intent that the database itself keeps
     // non-live, and `launch_request_form` opens the app's form and parks the
     // turn. Both are mutating because each writes a durable row; neither signs.
+    // indexify.stack_create is the custodial-venue variant of the shape: it
+    // publishes a public stack via an authenticated API call — mutating with a
+    // lasting external footprint, but no funds move, no position is acquired,
+    // and nothing is signed.
     expect(getToolsByKind("utility").map(([id]) => id).sort()).toEqual([
+      "indexify.stack_create",
       "pools.launch_preview",
       "pools.launch_request_form",
       "trench.launch_request_form",

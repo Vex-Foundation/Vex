@@ -1,0 +1,49 @@
+{
+  "definition": {
+    "function": {
+      "description": "Buy or sell an Indexify stack for real. SPENDS REAL FUNDS from the linked Indexify account's custodial USDC balance — not from a Vex session wallet — the moment the venue accepts it; there is no signing step and no cancellation. A buy spends amountIn USDC (at least the venue minimum, $5 measured) split across the stack's tokens; a sell converts sellPercent (1-100) of the HELD position back to USDC — sells are sized ONLY as a percent of holdings, never in dollars, so never pass a dollar figure as sellPercent. Call indexify__portfolio_get before buying (balance) and indexify__fees_get to state costs. Returns TRUTHFUL-PENDING, never a confirmation: the order id, the stated direction and size, and the instruction to confirm settlement with indexify__orders_list — the venue fans one order out into per-token Solana swaps that can land SUCCESS, FAILED, or PARTIAL (resolve a PARTIAL with indexify__order_resolve). Provide exactly one of: amountIn, sellPercent.",
+      "name": "indexify__stack_trade_execute",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "BUY ONLY: the USDC to spend, in HUMAN decimal units as a string (\"10\" = $10), at least the venue minimum. Give either amountIn or sellPercent, never both.",
+            "type": "string"
+          },
+          "direction": {
+            "description": "Which way the trade moves: buy (spend USDC into the stack) or sell (convert part of the held position back to USDC). Must agree with the amount param given — buy takes amountIn, sell takes sellPercent; a mismatch is refused by name.",
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "type": "string"
+          },
+          "sellPercent": {
+            "description": "SELL ONLY: how much of the held position to sell, as a PERCENT of holdings from 1 to 100 (50 sells half). NOT a dollar amount.",
+            "type": "number"
+          },
+          "stackId": {
+            "description": "The stack to trade, by its numeric id from discovery, search, or stack detail. Verify it is the stack the user means before spending.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "stackId",
+          "direction"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "external_post",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "indexify",
+    "requiresEnv": "INDEXIFY_API_KEY",
+    "toolId": "indexify.trade_execute"
+  }
+}

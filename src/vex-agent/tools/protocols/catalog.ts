@@ -45,6 +45,8 @@ import { TRENCH_TOOLS } from "./trench/manifest.js";
 import { TRENCH_HANDLERS } from "./trench/handlers.js";
 import { POOLS_TOOLS } from "./pools/manifest.js";
 import { POOLS_HANDLERS } from "./pools/handlers.js";
+import { INDEXIFY_TOOLS } from "./indexify/manifest.js";
+import { INDEXIFY_HANDLERS } from "./indexify/handlers.js";
 
 // ── Namespace allowlist ──────────────────────────────────────────
 
@@ -60,6 +62,7 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
   "morpho",
   "trench",
   "pools",
+  "indexify",
 ] as const;
 
 export const PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] =
@@ -96,6 +99,7 @@ export const NAMESPACE_MODULES: readonly NamespaceModule[] = [
   { namespace: "morpho", manifests: MORPHO_TOOLS, handlers: MORPHO_HANDLERS },
   { namespace: "trench", manifests: TRENCH_TOOLS, handlers: TRENCH_HANDLERS },
   { namespace: "pools", manifests: POOLS_TOOLS, handlers: POOLS_HANDLERS },
+  { namespace: "indexify", manifests: INDEXIFY_TOOLS, handlers: INDEXIFY_HANDLERS },
 ];
 
 // ── Indices (built eagerly at module load) ───────────────────────
@@ -204,4 +208,8 @@ export const NAMESPACE_DEFAULTS: Record<ProtocolNamespace, NamespaceDefault> = {
   // Read-only launchpad intelligence; no tool here holds, moves, or reports a
   // position, so nothing it returns belongs in portfolio capture.
   pools: "non_portfolio",
+  // Custodial social-index venue: stack trades move the linked Indexify
+  // account's USDC and holdings report positions, so the namespace is a
+  // trading one even though nothing is signed locally.
+  indexify: "mixed_trading",
 };

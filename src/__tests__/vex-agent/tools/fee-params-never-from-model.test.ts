@@ -81,6 +81,14 @@ const REVIEWED_NON_CHARGING_SITES = new Map<string, string>([
     "protocol:dexscreener.spotlight :: feed",
     "read-only provider feed selector, closed enum; sets no fee and directs no payment",
   ],
+  // Same spelling collision on the Indexify stack browser: `feed` picks which
+  // provider endpoint fills the rows (all | trending | official), a closed
+  // enum on a read-only tool. It reaches no signing path, charges nothing,
+  // and names no recipient.
+  [
+    "protocol:indexify.stacks :: feed",
+    "read-only provider feed selector, closed enum; sets no fee and directs no payment",
+  ],
 ]);
 
 interface ParamSite {

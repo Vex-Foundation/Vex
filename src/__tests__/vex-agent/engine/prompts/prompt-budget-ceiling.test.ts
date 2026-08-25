@@ -21,12 +21,20 @@ function context(overrides: Partial<EngineContext>): EngineContext {
 }
 
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 56_156 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 56_857 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 62_579 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 62_598 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 61_195 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 61_010 },
+  // REVIEWED BUDGET DIFF, Indexify integration (2026-08-26): +1,956 bytes in
+  // every mode, identical across the six because the addition is one static
+  // block rendered once per mode — the `### indexify` declaration (identity,
+  // read/quote/act, when-it-applies, the custodial characteristics-and-limits
+  // paragraph, the Solana coverage line, and the partial-gating mutation
+  // marker). The custody paragraph is the block's largest piece and is
+  // deliberately not shortened: it is the only place the model learns this
+  // venue trades a custodial account rather than the session wallet.
+  { name: "agent / restricted", context: context({}), ceiling: 58_112 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 58_813 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 64_535 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 64_554 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 63_151 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 62_966 },
 ] as const;
 
 beforeAll(() => {

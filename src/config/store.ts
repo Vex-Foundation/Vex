@@ -78,6 +78,7 @@ export interface VexConfig {
     trenchExpressApiUrl: string;
     trenchExpressTestnetApiUrl: string;
     poolsFunApiUrl: string;
+    indexifyApiUrl: string;
     virtualsApiUrl: string;
     pendleApiUrl: string;
     morphoApiUrl: string;
@@ -206,6 +207,10 @@ export function getDefaultConfig(): VexConfig {
       trenchExpressApiUrl: "https://api.trench.express",
       trenchExpressTestnetApiUrl: "https://api-testnet.trench.express",
       poolsFunApiUrl: "https://api.bankr.bot",
+      // Indexify (Solana stacks). The URL is keyless config; the account's
+      // `ix_` API key lives ONLY in the INDEXIFY_API_KEY env var, which
+      // `requiresEnv` gates the authenticated tools on.
+      indexifyApiUrl: "https://api.indexify.finance",
       virtualsApiUrl: "https://api.virtuals.io",
       pendleApiUrl: "https://api-v2.pendle.finance/core",
       // Morpho's keyless GraphQL endpoint. No API key exists, so no

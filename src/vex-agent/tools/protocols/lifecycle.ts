@@ -43,6 +43,7 @@ export const NAMESPACE_LIFECYCLE: Record<ProtocolNamespace, NamespaceLifecycle> 
   morpho: "active",
   trench: "active",
   pools: "active",
+  indexify: "active",
 };
 
 /** True iff the namespace is currently `deprecated_hidden`. */

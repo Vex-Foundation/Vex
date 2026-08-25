@@ -1,0 +1,37 @@
+{
+  "definition": {
+    "function": {
+      "description": "List the linked Indexify account's stack orders, or read one order in full. Use this after indexify__stack_trade_execute to confirm settlement — every Indexify trade becomes an order (PENDING → SUCCESS, FAILED, or PARTIAL) that settles asynchronously on the venue's side. Without orderId, returns recent orders with id, stack, direction, status, and timestamps. With orderId, returns that order's detail: status, per-transaction Solana hashes, and — when the order is PARTIAL — the breakdown of which tokens filled, which failed, and which resolutions (acknowledge, retry, sell_all) the venue currently offers for indexify__order_resolve. Read-only.",
+      "name": "indexify__orders_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "Maximum order rows returned when listing, 1-50. Defaults to 10. Ignored when orderId is given.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Order-list row offset for paging, 0-based. Ignored when orderId is given; pairs with limit otherwise.",
+            "type": "number"
+          },
+          "orderId": {
+            "description": "One order's own id, as trade replies and order rows carry it. Switches the read from the list to that order's full detail.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "indexify",
+    "requiresEnv": "INDEXIFY_API_KEY",
+    "toolId": "indexify.orders"
+  }
+}

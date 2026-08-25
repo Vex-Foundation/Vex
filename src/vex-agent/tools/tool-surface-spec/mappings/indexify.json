@@ -1,0 +1,70 @@
+{
+  "namespace": "indexify",
+  "entries": [
+    {
+      "toolId": "indexify.stacks",
+      "publicName": "indexify__stacks_discover",
+      "rationale": "The canonical screening verb, symmetric with pools__tokens_discover and trench__tokens_discover: the tool filters and ranks the venue's stack catalogue across three feeds and echoes the feed it answered from."
+    },
+    {
+      "toolId": "indexify.search",
+      "publicName": "indexify__stacks_search",
+      "rationale": "Free-text name lookup over the same stack rows the discover tool returns, symmetric with pools__tokens_search; regrouped under the resource it searches."
+    },
+    {
+      "toolId": "indexify.stack",
+      "publicName": "indexify__stack_get",
+      "rationale": "Canonical by-id verb on the singular resource: one stack read in full (allocation weights, link, investor count) by slug or numeric id. Also breaks the stack/stacks near-typo pair the same way pools__token_get did."
+    },
+    {
+      "toolId": "indexify.tokens",
+      "publicName": "indexify__tokens_search",
+      "rationale": "Free-text lookup over the venue's own tradable-token catalogue; `search` because the input is a name fragment, and the tokens resource keeps it distinct from the stack lane."
+    },
+    {
+      "toolId": "indexify.creators",
+      "publicName": "indexify__creators_list",
+      "rationale": "The bounded, ordered leaderboard read is `list`; the same tool's by-username profile branch stays under the one name because both answer 'who is this creator' over the same resource."
+    },
+    {
+      "toolId": "indexify.portfolio",
+      "publicName": "indexify__portfolio_get",
+      "rationale": "By-id read of the ONE linked account's balances — `get` on the singular resource; there is nothing to list or filter."
+    },
+    {
+      "toolId": "indexify.holdings",
+      "publicName": "indexify__stack_holdings_get",
+      "rationale": "The account's position inside ONE named stack, so the singular scoping resource is part of the name, exactly like pools__token_candles_list scopes candles to one token."
+    },
+    {
+      "toolId": "indexify.orders",
+      "publicName": "indexify__orders_list",
+      "rationale": "The canonical verb for the bounded order list; the same tool's by-orderId detail branch stays under the one name because an order id is a row selector over the same resource, not a different resource."
+    },
+    {
+      "toolId": "indexify.history",
+      "publicName": "indexify__history_list",
+      "rationale": "Bounded, ordered, filterable rows of the account's venue-side transaction ledger — `list` is the canonical verb, and `history` names the resource the venue itself calls transaction history."
+    },
+    {
+      "toolId": "indexify.fees",
+      "publicName": "indexify__fees_get",
+      "rationale": "A read of the venue's fee facts (minimum buy, creator-fee bounds, per-trade estimate) — `get` because the answer is one fact set, not a row list."
+    },
+    {
+      "toolId": "indexify.trade_execute",
+      "publicName": "indexify__stack_trade_execute",
+      "rationale": "Resource-then-verb with the fund-moving verb last, symmetric with trench__trade_execute: the one tool that spends the linked account's USDC, buy and sell in one manifest under a `direction` enum."
+    },
+    {
+      "toolId": "indexify.order_resolve",
+      "publicName": "indexify__order_resolve",
+      "rationale": "Resource-then-verb: applies ONE of the venue's offered resolutions (acknowledge/retry/sell_all) to one PARTIAL order. `resolve` rather than `execute` because the action set is the venue's, chosen by the `action` enum."
+    },
+    {
+      "toolId": "indexify.stack_create",
+      "publicName": "indexify__stack_create",
+      "rationale": "Resource-then-verb: creates ONE public stack under the linked account. `create` rather than `execute` because nothing is traded — the mutation is the publication itself."
+    }
+  ]
+}

@@ -28,7 +28,8 @@ export type ProtocolNamespace =
   | "pendle"
   | "morpho"
   | "trench"
-  | "pools";
+  | "pools"
+  | "indexify";
 
 /**
  * Lifecycle state of a protocol manifest.

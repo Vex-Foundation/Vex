@@ -59,6 +59,19 @@
     "dexscreener.top.traders",
     "dexscreener.trades",
     "dexscreener.trending",
+    "indexify.creators",
+    "indexify.fees",
+    "indexify.history",
+    "indexify.holdings",
+    "indexify.order_resolve",
+    "indexify.orders",
+    "indexify.portfolio",
+    "indexify.search",
+    "indexify.stack",
+    "indexify.stack_create",
+    "indexify.stacks",
+    "indexify.tokens",
+    "indexify.trade_execute",
     "khalani.bridge",
     "khalani.chains.list",
     "khalani.orders.get",
@@ -183,6 +196,7 @@
     "virtuals.list"
   ],
   "requiresEnvGates": [
+    "INDEXIFY_API_KEY",
     "JUPITER_API_KEY",
     "RETTIWT_API_KEY",
     "TAVILY_API_KEY"

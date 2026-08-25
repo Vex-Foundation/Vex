@@ -1,0 +1,42 @@
+{
+  "definition": {
+    "function": {
+      "description": "Resolve a PARTIAL Indexify order — one where some of the stack's tokens filled and others failed. Use this only after indexify__orders_list showed the order is PARTIAL and which resolutions the venue offers. SPENDS REAL FUNDS on two of the three paths: retry re-buys the failed tokens with the order's reserved USDC, and sell_all liquidates every token the order did buy back to USDC; acknowledge accepts the partial fill as final and moves no funds. Returns the venue's acceptance for the chosen resolution — a retry returns a NEW order id to track with indexify__orders_list; acknowledge and sell_all return the venue's confirmation of the resolution.",
+      "name": "indexify__order_resolve",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "Which resolution to apply: acknowledge (accept the partial fill, moves nothing), retry (re-buy the failed tokens), or sell_all (liquidate what did fill back to USDC).",
+            "enum": [
+              "acknowledge",
+              "retry",
+              "sell_all"
+            ],
+            "type": "string"
+          },
+          "orderId": {
+            "description": "The PARTIAL order to resolve, by the id indexify__orders_list and the trade reply carry. Must belong to the linked account.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderId",
+          "action"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "external_post",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "indexify",
+    "requiresEnv": "INDEXIFY_API_KEY",
+    "toolId": "indexify.order_resolve"
+  }
+}

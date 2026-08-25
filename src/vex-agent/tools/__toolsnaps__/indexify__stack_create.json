@@ -1,0 +1,55 @@
+{
+  "definition": {
+    "function": {
+      "description": "Create a new stack on Indexify under the linked account. Use this only when the user explicitly wants to publish a stack — creation moves no funds and signs nothing, but the stack goes PUBLIC immediately under the linked account's name at its own web link, open for anyone to invest in, and only its creator can close it later. Resolve every allocation's mint address with indexify__tokens_search first: allocations maps mint address to INTEGER percent weight, 1-12 tokens, weights summing to exactly 100. The creator fee is PINNED to the venue's own default (currently 0.5%, adjustable later in the Indexify app) and is never a parameter. The name and description are validated with the venue's own checks before creation, so a taken name or flagged wording is refused by name without side effects. Returns the new stack's id, slug, confirmed allocation, and the shareable web link.",
+      "name": "indexify__stack_create",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "allocations": {
+            "description": "Map of Solana token MINT ADDRESS to INTEGER percent weight, for example {\"JUPy...\": 60, \"jito...\": 40}. 1-12 tokens; weights must sum to exactly 100; every mint must exist in Indexify's catalogue (indexify__tokens_search).",
+            "type": "object"
+          },
+          "category": {
+            "description": "The venue's risk/duration label for the stack: high_risk_short, high_risk_long, medium_risk_short, medium_risk_long, low_risk_short, or low_risk_long.",
+            "enum": [
+              "high_risk_short",
+              "high_risk_long",
+              "medium_risk_short",
+              "medium_risk_long",
+              "low_risk_short",
+              "low_risk_long"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "description": "The stack's thesis in plain words, up to 500 characters, shown on its public page and validated by the venue first.",
+            "type": "string"
+          },
+          "name": {
+            "description": "The stack's display name, validated for availability and wording by the venue before anything is created. Avoid symbols.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "category",
+          "allocations"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "external_post",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "indexify",
+    "requiresEnv": "INDEXIFY_API_KEY",
+    "toolId": "indexify.stack_create"
+  }
+}

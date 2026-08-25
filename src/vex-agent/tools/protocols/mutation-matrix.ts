@@ -263,6 +263,29 @@ const entries: [string, MutationContract][] = [
   // the wallet. Not a spot trade (no input/output pair, no principal moved) →
   // audited as a "reward" income event.
   ["pendle.claim",             { kind: "audit", capture: "none", expectedType: "yield", previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
+
+  // ── Indexify (custodial API venue — actionKind external_post) ──
+  //
+  // A DIFFERENT settlement model from every row above: Indexify executes
+  // trades SERVER-SIDE against the linked account's custodial USDC and
+  // answers with an order id — nothing is signed or broadcast locally, per-
+  // token Solana hashes exist only later on the venue's order ledger. The
+  // durable truth is therefore (1) the `protocol_executions` audit row the
+  // runtime captures for every mutation, and (2) the venue's own queryable
+  // ledger (`indexify.orders` / `indexify.history`, which carry the hashes).
+  // `capture: "none"` — no `_tradeCapture` exists and the legacy projection
+  // must not run; a staged `agent_activity` lane for custodial venues needs
+  // its own vocabulary design and is deliberately NOT faked with a
+  // wallet-shaped row here. No dryRun: the read-only preview is the separate
+  // `indexify.fees` tool.
+  ["indexify.trade_execute",   { kind: "trade",   capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // Partial-order resolution: retry and sell_all move the SAME order's funds
+  // (a retry re-buys with the order's reserved USDC; sell_all liquidates) and
+  // acknowledge moves nothing — one tool, classified by its riskiest path.
+  ["indexify.order_resolve",   { kind: "trade",   capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // Stack creation publishes a public basket under the linked account but
+  // moves NO funds and acquires NO position — utility, like the launch forms.
+  ["indexify.stack_create",    { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
 ];
 
 // ── Exported map ───────────────────────────────────────────────

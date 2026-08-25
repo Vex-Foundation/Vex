@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read the linked Indexify account's position inside ONE stack. Use this after a trade settles to confirm the position, or when the user asks how a stack investment is doing. Returns the position's current value in USDC, total invested, cost basis, per-token amounts where the venue reports them, and the PnL block: realized, unrealized, and total profit/loss with percentages. A stack the account never bought returns zeros, not an error, so a zero row after a buy means the order has not settled yet — check it with indexify__orders_list. Read-only.",
+      "name": "indexify__stack_holdings_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "stackId": {
+            "description": "The stack's own numeric id, as discovery, search, and order rows carry it. One stack per call.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "stackId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "indexify",
+    "requiresEnv": "INDEXIFY_API_KEY",
+    "toolId": "indexify.holdings"
+  }
+}

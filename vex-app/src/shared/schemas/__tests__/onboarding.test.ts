@@ -15,6 +15,7 @@ const validState: EnvState = {
     tavilyConfigured: false,
     rettiwtConfigured: false,
     relayConfigured: false,
+    indexifyConfigured: false,
   },
   embeddings: {
     configured: true,

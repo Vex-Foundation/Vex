@@ -30,6 +30,12 @@ import { liveProtocolManifests } from "./retrieval-eval-harness.js";
  * identities, so this is a pure +4 and every affected baseline was recaptured
  * in the same change.
  *
+ * 140 before the Indexify integration (2026-08-26), which added the 13-tool
+ * `indexify` namespace — all new identities, a pure +13. Every affected
+ * lexical baseline was recaptured in the same change (13 extra candidates
+ * dilute ranking metrics by thousandths); a dedicated indexify seed dataset
+ * is a follow-up alongside the namespace's first retrieval regression.
+ *
  * A deliberate ratchet, not a duplicate of the catalog. It fails when the tool
  * surface changes without anyone noticing, which is the event that invalidates
  * every stored baseline in `baselines/`.
@@ -38,7 +44,7 @@ import { liveProtocolManifests } from "./retrieval-eval-harness.js";
  * and recapture the affected baselines with the lane's `--update` command. Do
  * not silence the test by deriving the number from the catalog.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 140;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 153;
 
 /** Active manifests in advertised namespaces. Independent of process env. */
 export function liveCatalogToolCount(): number {

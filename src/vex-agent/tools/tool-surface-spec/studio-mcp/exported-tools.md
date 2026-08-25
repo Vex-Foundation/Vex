@@ -28,11 +28,11 @@ preconditions appear inside the first 2000 bytes.
 
 ## Totals
 
-- exported tools: 165
+- exported tools: 178
 - internal: 25
-- protocol: 140 across 11 namespaces
+- protocol: 153 across 12 namespaces
 - always loaded: 25
-- read-only: 109
+- read-only: 119
 - destructive: 49
 
 ## Internal tools
@@ -89,6 +89,24 @@ preconditions appear inside the first 2000 bytes.
 | dexscreener__tokens_screen | Screen tokens across chains | protocol | yes | no | no | - | 1994 |
 | dexscreener__top_traders_list | Rank a pair's top wallets | protocol | yes | no | no | - | 5700 |
 | dexscreener__trades_list | List a pair's trades | protocol | yes | no | no | - | 4171 |
+
+### indexify
+
+| name | title | lane | read only | destructive | always load | requires env | description bytes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| indexify__creators_list | Read Indexify creators and leaderboard | protocol | yes | no | no | - | 860 |
+| indexify__fees_get | Preview Indexify trading fees | protocol | yes | no | no | - | 545 |
+| indexify__history_list | Read Indexify transaction history | protocol | yes | no | no | INDEXIFY_API_KEY | 576 |
+| indexify__order_resolve | Resolve a partial Indexify order | protocol | no | no | no | INDEXIFY_API_KEY | 657 |
+| indexify__orders_list | List or read Indexify orders | protocol | yes | no | no | INDEXIFY_API_KEY | 657 |
+| indexify__portfolio_get | Read the Indexify account balances | protocol | yes | no | no | INDEXIFY_API_KEY | 543 |
+| indexify__stack_create | Create an Indexify stack | protocol | no | no | no | INDEXIFY_API_KEY | 885 |
+| indexify__stack_get | Read one Indexify stack | protocol | yes | no | no | INDEXIFY_API_KEY | 620 |
+| indexify__stack_holdings_get | Read the account's position in one stack | protocol | yes | no | no | INDEXIFY_API_KEY | 551 |
+| indexify__stack_trade_execute | Buy or sell an Indexify stack | protocol | no | no | no | INDEXIFY_API_KEY | 973 |
+| indexify__stacks_discover | Browse Indexify stacks | protocol | yes | no | no | - | 709 |
+| indexify__stacks_search | Search Indexify stacks by name | protocol | yes | no | no | - | 513 |
+| indexify__tokens_search | Search Indexify's tradable tokens | protocol | yes | no | no | - | 500 |
 
 ### khalani
 

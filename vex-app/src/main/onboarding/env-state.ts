@@ -235,6 +235,7 @@ export async function gatherEnvState(): Promise<EnvState> {
   const hasTavily = secretPresence.secrets.TAVILY_API_KEY === true;
   const hasRettiwt = secretPresence.secrets.RETTIWT_API_KEY === true;
   const hasRelay = secretPresence.secrets.RELAY_API_KEY === true;
+  const hasIndexify = secretPresence.secrets.INDEXIFY_API_KEY === true;
 
   return {
     hasKeystorePassword: hasPwd,
@@ -244,6 +245,7 @@ export async function gatherEnvState(): Promise<EnvState> {
       tavilyConfigured: hasTavily,
       rettiwtConfigured: hasRettiwt,
       relayConfigured: hasRelay,
+      indexifyConfigured: hasIndexify,
     },
     secrets: {
       vaultConfigured: secretPresence.vaultConfigured,

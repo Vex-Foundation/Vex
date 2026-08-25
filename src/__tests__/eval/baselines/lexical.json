@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-seed",
   "datasetVersion": "v3-agent-116",
   "status": "captured",
-  "capturedAt": "2026-08-25T12:46:56.537Z",
+  "capturedAt": "2026-08-25T22:50:44.926Z",
   "metrics": {
     "overall": {
       "count": 109,
       "recall1": 0.394,
       "recall5": 0.569,
       "coverage5": 0.495,
-      "mrr5": 0.456,
-      "groupMrr5": 0.413
+      "mrr5": 0.455,
+      "groupMrr5": 0.412
     },
     "awareness": {
       "blind": {
@@ -29,7 +29,7 @@
         "recall5": 0.579,
         "coverage5": 0.509,
         "mrr5": 0.449,
-        "groupMrr5": 0.413
+        "groupMrr5": 0.412
       }
     },
     "intentShapes": {
@@ -38,8 +38,8 @@
         "recall1": 0.367,
         "recall5": 0.544,
         "coverage5": 0.544,
-        "mrr5": 0.43,
-        "groupMrr5": 0.43
+        "mrr5": 0.429,
+        "groupMrr5": 0.429
       },
       "cross": {
         "count": 3,
@@ -63,7 +63,7 @@
         "recall5": 0.733,
         "coverage5": 0.333,
         "mrr5": 0.647,
-        "groupMrr5": 0.379
+        "groupMrr5": 0.377
       }
     },
     "scenarios": {
@@ -112,8 +112,8 @@
         "recall1": 0.368,
         "recall5": 0.579,
         "coverage5": 0.526,
-        "mrr5": 0.439,
-        "groupMrr5": 0.412
+        "mrr5": 0.436,
+        "groupMrr5": 0.41
       },
       "prediction_discovery": {
         "count": 6,
@@ -169,13 +169,13 @@
         "recall5": 0.706,
         "coverage5": 0.294,
         "mrr5": 0.585,
-        "groupMrr5": 0.342
+        "groupMrr5": 0.34
       }
     }
   },
   "notes": [
     "dataset tool-discovery-seed@v3-agent-116, mode lexical, 109 cases evaluated.",
-    "overall recall@1 0.394, recall@5 0.569, coverage@5 0.495, mrr@5 0.456, groupMrr@5 0.413.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "overall recall@1 0.394, recall@5 0.569, coverage@5 0.495, mrr@5 0.455, groupMrr@5 0.412.",
+    "Measured delta vs previous baseline (v3-agent-116, captured 2026-08-25T12:46:56.537Z): 9 metric values moved; overall recall@5 0.569 -> 0.569, overall mrr@5 0.456 -> 0.455, case count 109 -> 109."
   ]
 }

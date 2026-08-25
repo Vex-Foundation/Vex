@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Search Indexify's own catalogue of tradable Solana tokens by name or symbol. Use this before creating a stack (allocations need the exact mint addresses Indexify knows) or when checking whether Indexify can trade a token at all. Returns token name, symbol, mint address, and the provider's verification flag. This is Indexify's internal catalogue, not a market-data source — keep using DexScreener for price research and pair analytics; a token absent here simply cannot go into a stack. Read-only.",
+      "name": "indexify__tokens_search",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "description": "Token name or symbol fragment to look for, 1 to 64 characters, matched by the provider across its catalogue.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "indexify",
+    "requiresEnv": null,
+    "toolId": "indexify.tokens"
+  }
+}

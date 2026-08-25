@@ -89,6 +89,7 @@ describe("vex.onboarding.getEnvState handler", () => {
         tavilyConfigured: false,
         rettiwtConfigured: false,
         relayConfigured: false,
+        indexifyConfigured: false,
       },
       secrets: {
         vaultConfigured: true,
