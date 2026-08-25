@@ -18,13 +18,14 @@
   --lit-negative-wash: rgba(240, 95, 115, 0.12);
   --lit-action: #f7f7f8;
   --lit-action-ink: #101016;
-  inset: 16px;
-  width: calc(100vw - 32px);
-  max-width: 1480px;
-  height: min(900px, calc(100vh - 32px));
-  max-height: calc(100vh - 32px);
-  border-radius: 20px;
-  border-color: var(--lit-line-strong);
+  inset: 0;
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  max-height: none;
+  margin: 0;
+  border-width: 0;
+  border-radius: 0;
   background: var(--lit-bg);
   color: var(--lit-ink);
 }
@@ -697,7 +698,6 @@
 }
 
 @media (max-width: 1050px) {
-  .lit-dialog { inset: 12px; width: calc(100vw - 24px); height: calc(100vh - 24px); max-height: calc(100vh - 24px); }
   .lit-header { grid-template-columns: minmax(148px, 1fr) auto minmax(148px, 1fr); gap: 8px; }
   .lit-brand small { display: none; }
   .lit-category-tabs button { padding-inline: 10px; }
