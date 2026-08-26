@@ -83,12 +83,25 @@ export type MessageCursor = z.infer<typeof messageCursorSchema>;
  * One displayable tool call extracted from a `tool_call` row's
  * `messages.tool_calls` JSONB. The mapper in `messages-db.ts` is the only
  * place this is built — `toolArgs` is a SANITIZED, pre-serialized JSON string
- * (secret-like keys dropped, secret-shaped values hard-redacted, size-capped)
+ * (secret-like keys dropped, secret-shaped values hard-redacted, never cut)
  * so the untrusted renderer receives strings only, never raw JSONB. The
  * `.max()` bounds below are enforced at the IPC boundary by the read handlers'
  * `outputSchema: messagePageSchema`, so an oversize mapper output is rejected
  * rather than shipped.
  */
+/**
+ * Ceiling on the DISPLAYED tool-args string. This is a corruption guard, not
+ * a truncation budget: the mapper ships the WHOLE sanitized serialization or
+ * `null`, never a cut string (owner decree - no silent content cutting; the
+ * previous 2,000-char cap plus a "(truncated)" suffix pushed the first large
+ * BoardCompose call past the bound and failed the whole messages page in
+ * production). The largest legitimate producer is BoardCompose, which refuses
+ * its own spec above 49,152 bytes, so 131,072 sits far above every real row;
+ * only a corrupted row can exceed it, and the mapper maps that to `null`.
+ * One declaration, both sides: the mapper's guard imports THIS constant.
+ */
+export const TOOL_ARGS_DISPLAY_CEILING = 131_072;
+
 export const toolCallDisplaySchema = z
   .object({
     /** Provider tool-call id — correlates a `tool_result` back to its call. */
@@ -100,8 +113,12 @@ export const toolCallDisplaySchema = z
      * wire name (`kyberswap__swap__quote`) before it reaches this field.
      */
     toolName: z.string().min(1).max(120),
-    /** Sanitized JSON string of the call args; `null` when there were none. */
-    toolArgs: z.string().max(2000).nullable(),
+    /**
+     * Sanitized JSON string of the call args, WHOLE (secrets redacted, content
+     * never cut); `null` when there were none or the row is corrupt beyond
+     * {@link TOOL_ARGS_DISPLAY_CEILING}.
+     */
+    toolArgs: z.string().max(TOOL_ARGS_DISPLAY_CEILING).nullable(),
   })
   .strict();
 export type ToolCallDisplay = z.infer<typeof toolCallDisplaySchema>;
