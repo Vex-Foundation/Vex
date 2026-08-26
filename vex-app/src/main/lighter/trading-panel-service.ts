@@ -20,6 +20,7 @@ import type {
 const SNAPSHOT_CANDLE_COUNT = 300;
 const SNAPSHOT_BOOK_ROWS = 24;
 const SNAPSHOT_TRADE_ROWS = 30;
+const ALL_MARKET_DETAILS_ID = 255;
 
 export const LIGHTER_STREAM_CANDLE_RESOLUTIONS = [
   "1m",
@@ -104,6 +105,7 @@ function marketStatusRank(market: LighterMarket): number {
 
 export function projectLighterTradingMarket(
   market: LighterMarket,
+  detail: LighterMarketDetail | null = null,
 ): LighterTradingMarket {
   return {
     marketId: market.market_id,
@@ -126,7 +128,30 @@ export function projectLighterTradingMarket(
       makerEnabled: market.is_maker_fee_enabled,
       takerEnabled: market.is_taker_fee_enabled,
     },
+    activity24h: {
+      tradesCount: nonNegativeNumberOrNull(detail?.daily_trades_count),
+      quoteVolume: nonNegativeNumberOrNull(detail?.daily_quote_token_volume),
+    },
   };
+}
+
+function nonNegativeNumberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
+}
+
+function matchingMarketDetail(
+  market: LighterMarket,
+  details: readonly LighterMarketDetail[],
+): LighterMarketDetail | null {
+  return details.find((detail) => (
+    detail.market_id === market.market_id
+    && detail.market_type === market.market_type
+    && detail.symbol === market.symbol
+    && detail.base_asset_id === market.base_asset_id
+    && detail.quote_asset_id === market.quote_asset_id
+  )) ?? null;
 }
 
 function sortMarkets(markets: readonly LighterMarket[]): LighterMarket[] {
@@ -150,13 +175,32 @@ export async function readLighterTradingMarketList(
   client: LighterTradingPanelClient = getLighterClient(),
   now: () => number = Date.now,
 ): Promise<LighterTradingMarketList> {
-  const response = await client.getMarkets(environment, { filter: "all" });
+  const [response, detailsResult] = await Promise.all([
+    client.getMarkets(environment, { filter: "all" }),
+    client.getMarketDetails(environment, {
+      // Lighter uses 255 as the read-only all-market detail sentinel.
+      marketId: ALL_MARKET_DETAILS_ID,
+      filter: "all",
+    }).then(
+      (details) => ({ ok: true as const, details }),
+      () => ({ ok: false as const }),
+    ),
+  ]);
+  const details = detailsResult.ok
+    ? [
+        ...detailsResult.details.order_book_details,
+        ...detailsResult.details.spot_order_book_details,
+      ]
+    : [];
   return {
     environment,
     retrievedAt: now(),
     markets: sortMarkets(response.order_books)
       .slice(0, 500)
-      .map(projectLighterTradingMarket),
+      .map((market) => projectLighterTradingMarket(
+        market,
+        matchingMarketDetail(market, details),
+      )),
   };
 }
 
@@ -397,7 +441,7 @@ async function readLighterTradingSnapshotInternal(
   return {
     environment: input.environment,
     retrievedAt: now(),
-    market: projectLighterTradingMarket(market),
+    market: projectLighterTradingMarket(market, detail),
     detail: {
       lastTradePrice: numberOrNull(detail.last_trade_price),
       openInterest: numberOrNull(detail.open_interest),

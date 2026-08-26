@@ -67,6 +67,12 @@ export const lighterTradingMarketSchema = z
         takerEnabled: z.boolean(),
       })
       .strict(),
+    activity24h: z
+      .object({
+        tradesCount: z.number().finite().nonnegative().nullable(),
+        quoteVolume: z.number().finite().nonnegative().nullable(),
+      })
+      .strict(),
   })
   .strict();
 

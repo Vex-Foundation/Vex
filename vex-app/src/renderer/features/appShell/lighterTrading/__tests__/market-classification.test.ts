@@ -117,6 +117,7 @@ function market(overrides: Partial<LighterTradingMarket>): LighterTradingMarket 
     orderQuoteLimit: "100000",
     decimals: { size: 4, price: 2, quote: 6 },
     fees: { maker: "0", taker: "0.0003", makerEnabled: false, takerEnabled: true },
+    activity24h: { tradesCount: 0, quoteVolume: 0 },
     ...overrides,
   };
 }

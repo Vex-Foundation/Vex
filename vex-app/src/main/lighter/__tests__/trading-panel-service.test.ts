@@ -129,16 +129,59 @@ function fakeClient(): LighterTradingPanelClient {
 
 describe("Lighter trading panel service", () => {
   it("projects a bounded market list without provider passthrough fields", async () => {
+    const client = fakeClient();
     const result = await readLighterTradingMarketList(
       "rhc",
-      fakeClient(),
+      client,
       () => 1_787_530_000_000,
     );
 
     expect(result.markets).toEqual([
-      expect.objectContaining({ marketId: 7, symbol: "ETH-USD", marketType: "perp" }),
+      expect.objectContaining({
+        marketId: 7,
+        symbol: "ETH-USD",
+        marketType: "perp",
+        activity24h: { tradesCount: 120, quoteVolume: 126_000 },
+      }),
     ]);
     expect(result.markets[0]).not.toHaveProperty("liquidation_fee");
+    expect(client.getMarketDetails).toHaveBeenCalledWith("rhc", {
+      marketId: 255,
+      filter: "all",
+    });
+  });
+
+  it("does not attach activity from mismatched provider identity", async () => {
+    const client = fakeClient();
+    vi.mocked(client.getMarketDetails).mockResolvedValueOnce({
+      code: 200,
+      order_book_details: [{
+        ...market,
+        symbol: "WRONG",
+        daily_trades_count: 500,
+        daily_quote_token_volume: 1_000_000,
+      }],
+      spot_order_book_details: [],
+    });
+
+    const result = await readLighterTradingMarketList("rhc", client);
+
+    expect(result.markets[0]?.activity24h).toEqual({
+      tradesCount: null,
+      quoteVolume: null,
+    });
+  });
+
+  it("keeps the market list available when provider activity details are unavailable", async () => {
+    const client = fakeClient();
+    vi.mocked(client.getMarketDetails).mockRejectedValueOnce(new Error("details unavailable"));
+
+    const result = await readLighterTradingMarketList("rhc", client);
+
+    expect(result.markets[0]?.activity24h).toEqual({
+      tradesCount: null,
+      quoteVolume: null,
+    });
   });
 
   it("sorts book and candles, deduplicates candle time, and normalizes seconds", async () => {

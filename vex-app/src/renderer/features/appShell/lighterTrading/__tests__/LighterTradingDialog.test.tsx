@@ -15,6 +15,7 @@ const MARKET_LIST: LighterTradingMarketList = {
     market(1, "BTC", "perp"),
     market(0, "ETH", "perp"),
     market(2048, "ETH/USDG", "spot", 1, 3),
+    market(2065, "SPY/USDG", "spot", 20, 3, 2_054, 1_425_995.03),
     market(10, "AAPL", "perp"),
     market(2049, "AAPL/USDG", "spot", 4, 3),
   ],
@@ -242,9 +243,18 @@ describe("Light it up dialog", () => {
     expect(screen.queryByText("Open interest (USD)")).toBeNull();
     expect(screen.queryByText("Funding (current)")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /ETH\/USDG.*Spot.*active/i }));
+    fireEvent.click(screen.getByRole("button", { name: /SPY.*SPY\/USDG.*Spot.*active/i }));
     expect(screen.getAllByText("0.0003%").length).toBeGreaterThan(0);
     expect(screen.queryByText("0.03%")).toBeNull();
+  });
+
+  it("defaults Spot to the active market with the strongest 24h quote volume", async () => {
+    renderDialog();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Spot" }));
+
+    expect(await screen.findByRole("button", { name: /SPY.*SPY\/USDG.*Spot.*active/i }))
+      .toBeTruthy();
   });
 
   it("turns the sessionless agent column into an actionable analysis start surface", async () => {
@@ -397,6 +407,8 @@ function market(
   marketType: "perp" | "spot",
   baseAssetId = marketType === "perp" ? 0 : 1,
   quoteAssetId = marketType === "perp" ? 0 : 3,
+  tradesCount = 0,
+  quoteVolume = 0,
 ): LighterTradingMarketList["markets"][number] {
   return {
     marketId,
@@ -410,5 +422,6 @@ function market(
     orderQuoteLimit: "100000",
     decimals: { size: 4, price: 2, quote: 6 },
     fees: { maker: "0", taker: "0.0003", makerEnabled: false, takerEnabled: true },
+    activity24h: { tradesCount, quoteVolume },
   };
 }

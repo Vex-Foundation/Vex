@@ -92,6 +92,7 @@ const MARKET: LighterTradingMarket = {
   orderQuoteLimit: "100000",
   decimals: { size: 4, price: 2, quote: 6 },
   fees: { maker: "0", taker: "0.0003", makerEnabled: false, takerEnabled: true },
+  activity24h: { tradesCount: 120, quoteVolume: 1_600_000 },
 };
 
 describe("Light it up deterministic review handoff", () => {

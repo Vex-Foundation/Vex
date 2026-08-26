@@ -43,6 +43,7 @@ import {
   marketSectionFor,
   type LighterMarketSection,
 } from "./market-classification.js";
+import { selectDefaultLighterMarket } from "./market-selection.js";
 import { useLighterCandleStream } from "./useLighterCandleStream.js";
 import { useLighterPublicMarketStream } from "./useLighterPublicMarketStream.js";
 import {
@@ -91,14 +92,9 @@ export function LighterTradingDialog({
   useEffect(() => {
     const selectedExists = filteredMarkets.some((market) => market.marketId === marketId);
     if (selectedExists) return;
-    const next = filteredMarkets.find((market) => (
-      market.status === "active" && market.symbol.toLocaleUpperCase() === "BTC"
-    ))
-      ?? filteredMarkets.find((market) => market.status === "active")
-      ?? filteredMarkets[0]
-      ?? null;
+    const next = selectDefaultLighterMarket(category, filteredMarkets);
     setMarketId(next?.marketId ?? null);
-  }, [filteredMarkets, marketId]);
+  }, [category, filteredMarkets, marketId]);
 
   const market = filteredMarkets.find((row) => row.marketId === marketId) ?? null;
   const snapshotQuery = useLighterTradingSnapshot(
