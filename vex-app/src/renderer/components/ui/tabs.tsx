@@ -6,10 +6,12 @@
  * navigation (Arrow Left/Right, Home, End).
  *
  * Supports both controlled (`value` + `onValueChange`) and uncontrolled
- * (`defaultValue`) modes. Single-page usage is assumed — the
- * `id={`tab-${value}`}` pairing requires unique values across the
- * mounted DOM. Future Phase 2 panels with nested tabs should adopt a
- * scoped id helper.
+ * (`defaultValue`) modes. Ids are unscoped by default (`tab-<value>`), which
+ * requires unique values across the mounted DOM; nested or repeated tab sets
+ * pass `idScope` to namespace them. Inactive panels unmount their children by
+ * default; `keepMounted` keeps them in the DOM, hidden and inert, for panels
+ * whose state must survive a tab switch. Both are additive: omitting them
+ * reproduces the original behaviour exactly.
  */
 
 import {
@@ -29,6 +31,13 @@ import { cn } from "../../lib/utils.js";
 interface TabsContextValue {
   readonly value: string;
   readonly setValue: (next: string) => void;
+  /**
+   * Prefix inserted into every generated id, or "" for the historical
+   * unscoped ids. See {@link TabsProps.idScope}.
+   */
+  readonly idPrefix: string;
+  /** See {@link TabsProps.keepMounted}. */
+  readonly keepMounted: boolean;
 }
 
 const TabsContext = createContext<TabsContextValue | null>(null);
@@ -47,6 +56,28 @@ export interface TabsProps {
   readonly onValueChange?: (value: string) => void;
   readonly children: ReactNode;
   readonly className?: string;
+  /**
+   * Namespace for this tab set's generated ids.
+   *
+   * The unscoped ids (`tab-portfolio` / `tabpanel-portfolio`) require unique
+   * VALUES across the mounted DOM, which nested tab sets break: two panels
+   * called "overview" would claim one id and `aria-controls` would point at
+   * whichever mounted first. Passing a scope makes the ids
+   * `tab-<scope>-<value>`; omitting it keeps the exact historical ids, so
+   * every existing consumer is unchanged.
+   */
+  readonly idScope?: string;
+  /**
+   * Keep inactive panels MOUNTED (hidden, `aria-hidden`, `inert`) instead of
+   * unmounting their children.
+   *
+   * Default false, which is the historical behaviour: an inactive panel
+   * renders no children. Opt in when a panel owns state that must survive a
+   * tab switch (a scroll offset, a running query, a partly filled form);
+   * leave it off when the panel is cheap and its children hold live
+   * subscriptions that should stop while nobody is looking.
+   */
+  readonly keepMounted?: boolean;
 }
 
 export function Tabs({
@@ -55,6 +86,8 @@ export function Tabs({
   onValueChange,
   children,
   className,
+  idScope,
+  keepMounted = false,
 }: TabsProps): JSX.Element {
   const [internal, setInternal] = useState<string>(defaultValue ?? "");
   const isControlled = value !== undefined;
@@ -63,8 +96,9 @@ export function Tabs({
     if (!isControlled) setInternal(next);
     onValueChange?.(next);
   };
+  const idPrefix = idScope === undefined ? "" : `${idScope}-`;
   return (
-    <TabsContext.Provider value={{ value: current, setValue }}>
+    <TabsContext.Provider value={{ value: current, setValue, idPrefix, keepMounted }}>
       <div className={cn("flex flex-col", className)}>{children}</div>
     </TabsContext.Provider>
   );
@@ -143,9 +177,9 @@ export const TabsTrigger = forwardRef<HTMLButtonElement, TabsTriggerProps>(
         }}
         type="button"
         role="tab"
-        id={`tab-${value}`}
+        id={`tab-${ctx.idPrefix}${value}`}
         aria-selected={isActive}
-        aria-controls={`tabpanel-${value}`}
+        aria-controls={`tabpanel-${ctx.idPrefix}${value}`}
         tabIndex={isActive ? 0 : -1}
         data-tab-value={value}
         onClick={() => ctx.setValue(value)}
@@ -174,18 +208,27 @@ export const TabsContent = forwardRef<HTMLDivElement, TabsContentProps>(
   ({ value, className, children, ...props }, ref) => {
     const ctx = useTabsContext();
     const isActive = ctx.value === value;
+    // KEEP-MOUNTED: the panel stays in the DOM with its state intact, and is
+    // taken out of the accessibility tree and out of the tab order the same
+    // way the browser would - `hidden` alone leaves it discoverable to some
+    // assistive tech, so `aria-hidden` and `inert` ride with it. Focus cannot
+    // land inside an inert subtree, so the panel itself drops out of the tab
+    // order too while it is not the selected one.
+    const dormant = ctx.keepMounted && !isActive;
     return (
       <div
         ref={ref}
         role="tabpanel"
-        id={`tabpanel-${value}`}
-        aria-labelledby={`tab-${value}`}
+        id={`tabpanel-${ctx.idPrefix}${value}`}
+        aria-labelledby={`tab-${ctx.idPrefix}${value}`}
         hidden={!isActive}
+        aria-hidden={dormant ? true : undefined}
+        inert={dormant ? true : undefined}
         tabIndex={0}
         className={cn("mt-4 focus-visible:outline-none", className)}
         {...props}
       >
-        {isActive ? children : null}
+        {isActive || ctx.keepMounted ? children : null}
       </div>
     );
   }

@@ -42,8 +42,20 @@ export const BOARD_TOOLS: readonly ToolDef[] = [
       + "tokens, pools, a market comparison or a watchlist, and for a single token you are examining "
       + "in depth, where the chart carries the argument. Do not offer a board as an option and do not "
       + "hand-type a table of the same figures instead. "
-      + "WHAT MAKES A GOOD ONE. The pool caption is your one-line takeaway about that pool, not a "
-      + "restatement of its price. Every annotation must carry ANALYSIS: a support or resistance "
+      + "WHAT MAKES A GOOD ONE. The board title is YOURS to write: name what this board is about "
+      + "for this reader, in your own words, rather than reaching for a generic heading. "
+      + "The pool caption is your one-line takeaway about that pool, not a "
+      + "restatement of its price. "
+      + "The pool ANALYSIS is the full assessment, up to 600 characters, and it is the field that "
+      + "carries your thinking: for every token worth a closer look, write what is moving the price, "
+      + "the key levels you would watch, and your read of the risk. Lead with the safety sentence - "
+      + "the first fragment is shown on its own beside the safety chip, so it must stand alone. "
+      + "OBSERVATIONS, NEVER ADVICE: describe what the figures show and what would change the "
+      + "picture; never tell the reader to buy, sell, hold or size a position. Your prose never "
+      + "colours the safety chip: that chip is decided from the contract and liquidity checks the "
+      + "runtime reads itself, and it stays whatever those checks say no matter how the analysis is "
+      + "worded. "
+      + "Every annotation must carry ANALYSIS: a support or resistance "
       + "level, a range or accumulation zone, a marker on the event that explains a move. NEVER "
       + "annotate the current price; it is already on the card and on the chart, and a level that "
       + "only repeats it teaches the reader nothing. Add the chart when the candles inform the "
@@ -95,6 +107,15 @@ export const BOARD_TOOLS: readonly ToolDef[] = [
                 type: "string",
                 description:
                   "Your note about this pool, 1-140 characters, single line. Optional.",
+              },
+              analysis: {
+                type: "string",
+                description:
+                  "Your full assessment of this token, 1-600 characters. Line breaks are allowed. "
+                  + "Write what is moving the price, the levels that matter, and the risk read - "
+                  + "observations, never advice. The first fragment is shown beside the safety "
+                  + "chip, so start with the safety sentence. Optional; omit it for a pool you "
+                  + "have nothing substantive to say about.",
               },
             },
             required: ["chain", "pairAddress"],

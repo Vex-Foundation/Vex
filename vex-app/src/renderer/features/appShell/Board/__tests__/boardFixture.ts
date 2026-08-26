@@ -64,7 +64,9 @@ export interface BoardSpecOverrides {
 
 export function boardSpec(overrides: BoardSpecOverrides = {}): BoardSpecV1 {
   const pools = overrides.pools ?? [
-    { chain: "base", pairAddress: "0xaaa111" },
+    // `analysis` is emitted explicitly, null included, for the same reason
+    // `iconId` is above: current writers always emit the key.
+    { chain: "base", pairAddress: "0xaaa111", analysis: null },
   ];
   const rows = overrides.rows ?? pools.map(() => hydratedRow());
   const chart =

@@ -21,6 +21,8 @@ import type { BoardHydratedRow, BoardSpecV1 } from "@vex-lib/board/index.js";
 import type { BoardDataMode } from "../../../lib/api/board-live.js";
 import {
   boardTrend,
+  formatBoardUtcClock,
+  formatBoardUtcDate,
   isBoardMarketDataStale,
   type BoardTrend,
 } from "./boardFormat.js";
@@ -234,4 +236,111 @@ function liveClause(mode: BoardDataMode): string {
       throw new Error(`board data mode not handled: ${String(unreachable)}`);
     }
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Board surfaces v3 - derivations shared by the card, grid and header */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The board's subtitle, DERIVED - never authored.
+ *
+ * `spec.title` is the model's own words (A2); this line underneath is the
+ * runtime's, and it carries only facts the runtime owns: how many pools the
+ * board holds and WHEN its figures were read, in UTC. The mockup's example
+ * subtitle names a composition preset ("Top movers"); the persisted spec
+ * carries no preset field, so inventing one here would be putting words in
+ * the model's mouth. The pool count is the honest substitute and it is the
+ * fact a reader actually needs beside a clock.
+ */
+export function boardSubtitle(model: BoardViewModel): string {
+  const count = model.cards.length;
+  const parts = [`${count} ${count === 1 ? "pool" : "pools"}`];
+  const date = formatBoardUtcDate(model.marketDataFetchedAt);
+  if (date !== null) parts.push(date);
+  const clock = formatBoardUtcClock(model.marketDataFetchedAt);
+  if (clock !== null) parts.push(clock);
+  return parts.join(" · ");
+}
+
+/**
+ * The DURABLE authored content of a board, gathered for the modal's
+ * "Composed analysis / Data notes" disclosure (A2).
+ *
+ * THE REGRESSION THIS EXISTS TO PREVENT. The v3 surfaces replaced the
+ * in-transcript block, and every string the model or the runtime wrote into a
+ * persisted board had to stay REACHABLE: captions, per-pool assessments,
+ * board notes, annotation labels with their unmatched-marker reasons, the
+ * provenance of the bytes and both composition clocks. Gathering them in one
+ * derivation - rather than letting each surface remember to render its own -
+ * is what makes "every authored string is reachable" a testable claim about a
+ * single function instead of a hope about five components.
+ */
+export interface BoardAuthoredContent {
+  readonly captions: readonly {
+    readonly key: string;
+    readonly heading: string;
+    readonly caption: string;
+  }[];
+  readonly assessments: readonly {
+    readonly key: string;
+    readonly heading: string;
+    readonly analysis: string;
+  }[];
+  readonly notes: readonly string[];
+  readonly annotations: readonly BoardAnnotationRow[];
+  readonly provenance: BoardSpecV1["hydration"]["provenance"];
+  readonly analysisCreatedAt: number;
+  readonly marketDataFetchedAt: number;
+  /** True when the board carries no authored prose at all (a legacy board). */
+  readonly empty: boolean;
+}
+
+export function buildBoardAuthoredContent(
+  spec: BoardSpecV1,
+): BoardAuthoredContent {
+  const rows = spec.hydration.rows;
+  const heading = (index: number): string => {
+    const pool = spec.pools[index];
+    if (pool === undefined) return `pool ${String(index + 1)}`;
+    return rows[index]?.baseTokenSymbol ?? pool.pairAddress;
+  };
+  const captions = spec.pools.flatMap((pool, index) =>
+    pool.caption === undefined || pool.caption === null
+      ? []
+      : [
+          {
+            key: `caption/${String(index)}`,
+            heading: heading(index),
+            caption: pool.caption,
+          },
+        ],
+  );
+  const assessments = spec.pools.flatMap((pool, index) =>
+    pool.analysis === null || pool.analysis === undefined
+      ? []
+      : [
+          {
+            key: `analysis/${String(index)}`,
+            heading: heading(index),
+            analysis: pool.analysis,
+          },
+        ],
+  );
+  const notes = spec.notes ?? [];
+  const annotations = buildAnnotationRows(spec);
+  return {
+    captions,
+    assessments,
+    notes,
+    annotations,
+    provenance: spec.hydration.provenance,
+    analysisCreatedAt: spec.hydration.analysisCreatedAt,
+    marketDataFetchedAt: spec.hydration.marketDataFetchedAt,
+    empty:
+      captions.length === 0 &&
+      assessments.length === 0 &&
+      notes.length === 0 &&
+      annotations.length === 0,
+  };
 }

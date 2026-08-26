@@ -12,13 +12,21 @@
  * board goes back to the figures it was composed with. Nothing here is
  * persisted, and the default on every mount is OFF.
  *
- * THE CHART IS NOT LIVE IN THIS CONTRACT, deliberately and visibly. There is
- * no push channel for candles, and the renderer's candle feed can append and
- * update bars but cannot retract them, so a live candle stream without a
- * reconciliation contract would leave bars on screen that the toggle could not
- * take back. The chart therefore keeps its own "chart as of" clock and stays
- * an honest snapshot. Live candles are a declared future gate with a named
- * prerequisite (a bounded-window reconciliation contract), not an oversight.
+ * NO CANDLE RIDES THIS CONTRACT, and that is still deliberate. The PERSISTED
+ * analyst chart on a composed board remains a snapshot: it keeps its own
+ * "chart as of" clock, nothing here edits it, and the toggle cannot take back
+ * a bar it never put there.
+ *
+ * The SPOTLIGHT chart is a different surface and it is live, on its own
+ * channel: `vex:boardChart:poll` (`shared/schemas/board-chart.ts`), a
+ * renderer-timed poll over four pill resolutions whose bars are drawn only for
+ * as long as the spotlight is open. The prerequisite this file named for live
+ * candles - a bounded-window reconciliation contract - is what that channel
+ * carries: a fixed bar window per pill, an echoed resolution so old bars are
+ * never labelled with a new pill, and reported truncation counts. It is a
+ * separate channel rather than a member of this one because the lifetimes
+ * differ: this lease belongs to an open board, and the chart poll belongs to
+ * one open spotlight and is cut the instant the reader leaves it.
  *
  * FOUR PROPERTIES THE SHAPES BELOW ENFORCE:
  *
@@ -45,14 +53,24 @@ import {
 } from "@vex-lib/board/index.js";
 
 /**
- * One pool to keep live.
+ * One pool to keep live: a POSITIVE PICK of the two identity fields, and
+ * nothing else.
  *
- * The board's own pool shape minus `caption`: a caption is the agent's prose
- * and has no business crossing this boundary, so the strict object rejects it
- * by name rather than dropping it silently.
+ * WHY A PICK RATHER THAN AN OMIT. This used to be the board's pool shape minus
+ * `caption`, which is a subtractive rule: every field ADDED to the pool shape
+ * later would silently become admissible on this channel. `analysis` is
+ * exactly that field - the model's own assessment of a token, up to 600
+ * characters of prose - and under the old rule it would have crossed a live
+ * poll boundary that has no business carrying authored text at all. A pick
+ * names what may cross, so a new pool field is inadmissible until somebody
+ * writes it in here on purpose.
+ *
+ * `.strict()` still does the refusing: both `caption` and `analysis` are
+ * rejected BY NAME rather than dropped silently, which is what the rejection
+ * tests assert.
  */
 export const boardLivePoolSchema = boardPoolInputSchema
-  .omit({ caption: true })
+  .pick({ chain: true, pairAddress: true })
   .strict();
 export type BoardLivePool = z.infer<typeof boardLivePoolSchema>;
 

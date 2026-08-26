@@ -15,8 +15,15 @@ import { render } from "@testing-library/react";
 import { TranscriptRows } from "../../SessionTranscript/TranscriptRows.js";
 import type { TranscriptEntry } from "../../transcriptRowModel.js";
 
+/**
+ * The row body, reporting the ONE prop this suite's second subject is about.
+ * A board card riding a row reads its arrival from here, so what the list
+ * decides is what the unseen dot gets.
+ */
 vi.mock("../../TranscriptMessage.js", () => ({
-  TranscriptMessage: () => <div data-testid="row-body" />,
+  TranscriptMessage: ({ boardArrival }: { boardArrival?: string }) => (
+    <div data-testid="row-body" data-board-arrival={boardArrival} />
+  ),
 }));
 
 function row(
@@ -91,6 +98,36 @@ describe("TranscriptRows - what animates", () => {
   it("animates nothing while the first page is still landing (settledIds null)", () => {
     const { container } = renderRows([row(1, "user")], null);
     expect(entry(container, 1).innerHTML).not.toContain("vex-message-send");
+  });
+});
+
+/**
+ * ONE DECISION, TWO CONSUMERS. The unseen dot and the print animation read the
+ * SAME `liveAppend`, so they cannot disagree about which rows are new - and the
+ * fail-closed case (no settled set yet) is history for both.
+ */
+describe("TranscriptRows - the arrival a board card rides on", () => {
+  function arrival(container: HTMLElement, id: number): string | null {
+    return entry(container, id)
+      .querySelector("[data-testid='row-body']")
+      ?.getAttribute("data-board-arrival") ?? null;
+  }
+
+  it("marks a genuinely live append as live", () => {
+    const { container } = renderRows([row(2, "assistant")], new Set());
+    expect(arrival(container, 2)).toBe("live-append");
+  });
+
+  it("marks a historical mount as settled", () => {
+    const { container } = renderRows([row(2, "assistant")], new Set([2]));
+    expect(arrival(container, 2)).toBe("settled");
+  });
+
+  it("FAILS CLOSED while the first page is still landing", () => {
+    // Unknown provenance never lights a dot: the same rule that stops the
+    // whole first page from replaying its animations.
+    const { container } = renderRows([row(2, "assistant")], null);
+    expect(arrival(container, 2)).toBe("settled");
   });
 });
 

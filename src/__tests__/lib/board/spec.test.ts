@@ -37,7 +37,7 @@ const TAG_A = String.fromCodePoint(0xe0041);
 function minimalInput(): BoardComposeInput {
   return {
     title: "SOL majors",
-    pools: [{ chain: "solana", pairAddress: "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2" }],
+    pools: [{ chain: "solana", pairAddress: "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2", analysis: null }],
   };
 }
 
@@ -642,5 +642,122 @@ describe("hydrated row - the token icon handle", () => {
     // Stated as a real ratio rather than "it fits": the handles must be a
     // rounding error against the 48 KiB ceiling, not a squeeze past it.
     expect(budget.byteLength).toBeLessThan(BOARD_SPEC_MAX_BYTES / 2);
+  });
+});
+
+describe("per-pool analysis - the model's own assessment", () => {
+  function poolWith(analysis: unknown): unknown {
+    return {
+      ...minimalInput(),
+      pools: [
+        {
+          chain: "solana",
+          pairAddress: "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2",
+          ...(analysis === undefined ? {} : { analysis }),
+        },
+      ],
+    };
+  }
+
+  it("reads a legacy pool that carries no analysis key at all as null", () => {
+    // A durable board written before the field existed. It must still parse:
+    // a parse failure here is a board that silently vanishes from a
+    // transcript the user can still see.
+    const parsed = boardComposeInputSchema.safeParse(minimalInput());
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const pool = parsed.data.pools[0];
+    expect(pool?.analysis).toBeNull();
+    expect(pool !== undefined && "analysis" in pool).toBe(true);
+  });
+
+  it("carries the legacy normalization through the ASSEMBLED persisted document", () => {
+    const spec = boardSpecV1Schema.safeParse({
+      version: 1,
+      ...minimalInput(),
+      hydration: hydrationFor(1, false),
+    });
+    expect(spec.success).toBe(true);
+    if (!spec.success) return;
+    expect(spec.data.pools[0]?.analysis).toBeNull();
+  });
+
+  it("accepts an explicit null, which is what a writer emits for a pool it said nothing about", () => {
+    const parsed = boardComposeInputSchema.safeParse(poolWith(null));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.pools[0]?.analysis).toBeNull();
+  });
+
+  it("keeps a full assessment verbatim, line breaks included", () => {
+    const text = "Safety checks are clean.\nVolume is accelerating into the 24h high.";
+    const parsed = boardComposeInputSchema.safeParse(poolWith(text));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.pools[0]?.analysis).toBe(text);
+  });
+
+  it("accepts 600 characters and refuses 601", () => {
+    expect(boardComposeInputSchema.safeParse(poolWith("a".repeat(600))).success).toBe(
+      true,
+    );
+    expect(boardComposeInputSchema.safeParse(poolWith("a".repeat(601))).success).toBe(
+      false,
+    );
+  });
+
+  it("refuses the empty string rather than storing an assessment that says nothing", () => {
+    expect(boardComposeInputSchema.safeParse(poolWith("")).success).toBe(false);
+  });
+
+  it.each([
+    ["a zero-width character", `clean${ZWSP}checks`],
+    ["a bidi override", `clean${RLO}checks`],
+    ["a unicode tag character", `clean${TAG_A}checks`],
+    ["a carriage return", "clean\rchecks"],
+    ["a tab", "clean\tchecks"],
+  ])("refuses %s, and refuses rather than cleaning it", (_label, value) => {
+    const parsed = boardComposeInputSchema.safeParse(poolWith(value));
+    expect(parsed.success).toBe(false);
+    if (parsed.success) return;
+    // The message names the class and never echoes the payload back into a
+    // model-visible and reader-visible string.
+    const message = parsed.error.issues.map((issue) => issue.message).join(" ");
+    expect(message).not.toContain(value);
+  });
+
+  it("refuses a non-string", () => {
+    expect(boardComposeInputSchema.safeParse(poolWith(42)).success).toBe(false);
+  });
+
+  it("counts code points, so an emoji costs one character of the budget", () => {
+    // 600 astral code points is 1200 UTF-16 units: a length check written
+    // against `String.prototype.length` would refuse this.
+    const emoji = "\u{1F680}".repeat(600);
+    expect(boardComposeInputSchema.safeParse(poolWith(emoji)).success).toBe(true);
+  });
+
+  it("stays inside the 48 KiB document budget at the worst case the bounds admit", () => {
+    // Eight pools, each with the longest assessment and the longest caption
+    // the contract allows, plus a full hydration. The budget is a REFUSAL
+    // threshold, so the point of this case is that the new field cannot make
+    // an otherwise legal board unpresentable.
+    const pools = Array.from({ length: BOARD_MAX_POOLS }, () => ({
+      chain: "solana",
+      pairAddress: "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2",
+      caption: "c".repeat(140),
+      analysis: "a".repeat(600),
+    }));
+    const spec = boardSpecV1Schema.safeParse({
+      version: 1,
+      title: "SOL majors",
+      pools,
+      hydration: hydrationFor(BOARD_MAX_POOLS, false),
+    });
+    expect(spec.success).toBe(true);
+    if (!spec.success) return;
+    const budget = checkBoardSpecByteBudget(spec.data);
+    expect(budget.withinBudget).toBe(true);
+    expect(budget.byteLength).toBeLessThan(BOARD_SPEC_MAX_BYTES);
   });
 });

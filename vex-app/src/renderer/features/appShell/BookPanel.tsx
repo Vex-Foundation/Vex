@@ -70,6 +70,15 @@ import {
 import { BookInspectPanel } from "./book/inspect/BookInspectPanel.js";
 import { useToolInspectStore } from "./book/inspect/inspect-store.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { coerceBookTab } from "../../stores/uiStore/persistence.js";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "../../components/ui/tabs.js";
+import { ActiveBoardModule } from "./book/board/ActiveBoardModule.js";
+import { useBoardSurfaceStore } from "./Board/board-surface-store.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
 
 /** The card a section id stands for. Exhaustive over `BookSectionId`. */
@@ -110,6 +119,14 @@ export function BookPanel({
   // if the OS preference changes while the rail is open (SidebarProfile
   // pattern, shared with WelcomePortfolioPanel).
   const [reduced] = useState(prefersReducedMotion);
+
+  // The BOOK's two instruments (A13). The tab is a PERSISTED preference and
+  // the control below is its ONLY writer; the board surfaces never switch it.
+  const bookTab = useUiStore((state) => state.bookTab);
+  const setBookTab = useUiStore((state) => state.setBookTab);
+  const boardUnseen = useBoardSurfaceStore(
+    (state) => state.unseenBoardKey !== null,
+  );
 
   // The rail's section order is a persisted COSMETIC preference; the stored
   // payload is resolved (unknown ids dropped, missing ones appended) before it
@@ -188,34 +205,89 @@ export function BookPanel({
         <BookInspectPanel inspect={inspect} />
       ) : null}
       {bookOpen ? (
-        <motion.ul
-          variants={stackVariants}
-          initial={reduced ? false : "hidden"}
-          animate="show"
-          role="list"
-          ref={stackRef}
+        // The instruments live in their own box so the inspect overlay can
+        // hide them with CSS - mounted, never unmounted, exactly as the card
+        // stack was hidden before the tabs existed.
+        <div
+          data-vex-area="book-instruments"
           className={cn(
-            "vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto",
+            "flex min-h-0 flex-1 flex-col",
             inspecting && "hidden",
           )}
         >
-          {order.map((id, index) => (
-            <ReorderableSection
-              key={id}
-              id={id}
-              index={index}
-              count={order.length}
-              reorder={reorder}
+        <Tabs
+          value={bookTab}
+          onValueChange={(next) => {
+            // The ONLY writer of this preference. Nothing in the board
+            // surfaces switches the rail's tab: a newly composed board lights
+            // the dot below and waits to be chosen (A13).
+            setBookTab(coerceBookTab(next));
+          }}
+          idScope="book"
+          keepMounted
+          className="min-h-0 flex-1"
+        >
+          <TabsList className="self-start">
+            <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+            <TabsTrigger value="board">
+              Board
+              {/* The unseen dot. Set by a LIVE board arrival only, and spoken
+                  as words beside it, because a 6px dot is not information a
+                  screen-reader user can reach. */}
+              {boardUnseen ? (
+                <span
+                  data-vex-area="book-board-unseen"
+                  className="ml-1.5 inline-flex items-center"
+                >
+                  <span
+                    aria-hidden
+                    className="h-[6px] w-[6px] rounded-full bg-accent-primary"
+                  />
+                  <span className="sr-only">, new board</span>
+                </span>
+              ) : null}
+            </TabsTrigger>
+          </TabsList>
+          {/* KEEP-MOUNTED: the Portfolio stack owns scroll offsets, running
+              queries and card state that a tab switch must not throw away. */}
+          <TabsContent
+            value="portfolio"
+            className="mt-3 flex min-h-0 flex-1 flex-col"
+          >
+            <motion.ul
+              variants={stackVariants}
+              initial={reduced ? false : "hidden"}
+              animate="show"
+              role="list"
+              ref={stackRef}
+              className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto"
             >
-              {renderBookSection(id, activeSessionId)}
-            </ReorderableSection>
-          ))}
-          {/* The keyboard path's spoken confirmation — the same visually-hidden
-              live-region idiom the Turn Island uses. */}
-          <li aria-live="polite" className="sr-only">
-            {reorder.announcement}
-          </li>
-        </motion.ul>
+              {order.map((id, index) => (
+                <ReorderableSection
+                  key={id}
+                  id={id}
+                  index={index}
+                  count={order.length}
+                  reorder={reorder}
+                >
+                  {renderBookSection(id, activeSessionId)}
+                </ReorderableSection>
+              ))}
+              {/* The keyboard path's spoken confirmation - the same visually-hidden
+                  live-region idiom the Turn Island uses. */}
+              <li aria-live="polite" className="sr-only">
+                {reorder.announcement}
+              </li>
+            </motion.ul>
+          </TabsContent>
+          <TabsContent
+            value="board"
+            className="vex-scroll vex-scroll-overlay mt-3 min-h-0 flex-1 overflow-y-auto"
+          >
+            <ActiveBoardModule />
+          </TabsContent>
+        </Tabs>
+        </div>
       ) : null}
     </aside>
   );

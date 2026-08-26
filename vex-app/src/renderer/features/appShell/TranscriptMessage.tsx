@@ -31,7 +31,8 @@ import {
 import { CompactionMarker } from "./CompactionMarker.js";
 import { MemoryMarker } from "./MemoryMarker.js";
 import { ReasonedBlock } from "./ReasonedBlock.js";
-import { BoardBlock } from "./Board/BoardBlock.js";
+import { BoardRowCard } from "./Board/BoardRowCard.js";
+import type { BoardArrival } from "./Board/board-surface-contracts.js";
 import { ToolActRow } from "./ToolLedger/ToolActRow.js";
 import { ExplorerRefLinks } from "./ToolLedger/ExplorerRefLinks.js";
 import { ToolGroupRow } from "./ToolLedger/ToolGroupRow.js";
@@ -214,6 +215,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
   row,
   pendingApprovals,
   agentWorking = false,
+  boardArrival = "settled",
   feedbackSessionId,
   feedbackMessageKey,
   onEditMessage,
@@ -228,6 +230,15 @@ export const TranscriptMessage = memo(function TranscriptMessage({
   readonly pendingApprovals?: ReadonlyMap<string, string>;
   /** True only for the newest assistant avatar in the currently active turn. */
   readonly agentWorking?: boolean;
+  /**
+   * How this row reached the screen, for a board card riding on it (A13).
+   *
+   * A PRIMITIVE, and it comes from the SAME bookkeeping that decides whether
+   * the row plays its print animation, so the unseen dot and the animation can
+   * never disagree about what "new" means. Defaulted to `"settled"` and
+   * FAIL-CLOSED: an unknown provenance never lights a dot.
+   */
+  readonly boardArrival?: BoardArrival;
   /**
    * Per-message feedback identifiers (G7); both omitted = no affordance.
    * Two PRIMITIVES rather than one object so the memo boundary's shallow
@@ -313,7 +324,13 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           <AssistantSpeakerLabel />
           <ReasonedBlock reasoning={row.reasoning} />
           <AssistantBody content={row.content} />
-          {row.board != null ? <BoardBlock spec={row.board} /> : null}
+          {row.board != null ? (
+            <BoardRowCard
+              messageId={row.id}
+              spec={row.board}
+              arrival={boardArrival}
+            />
+          ) : null}
           <AssistantActionsTail
             createdAt={row.createdAt}
             copyText={row.content}

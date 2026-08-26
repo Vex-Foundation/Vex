@@ -25,6 +25,10 @@ export function boardSpecFixture(
         chain: "solana",
         pairAddress: "AbC123pairAddress",
         caption: "deepest pool",
+        // Emitted explicitly, null included, exactly as writers do. Legacy
+        // pools lacking the key are exercised in the spec suite's own
+        // normalization case.
+        analysis: null,
       },
     ],
     notes: ["Liquidity thinned out after the 14:00 candle."],

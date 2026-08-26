@@ -27,6 +27,8 @@ import {
 } from "@thesvg/react";
 import {
   chainDisplay,
+  chainDisplayBySlug,
+  type ChainDisplay,
   type ChainSvgKey,
 } from "@shared/chains/display.js";
 import { cn } from "../../lib/utils.js";
@@ -42,16 +44,24 @@ const THESVG_BY_KEY: Readonly<Record<ChainSvgKey, BrandIcon>> = {
   "bnb-chain": BnbChain,
 };
 
-export function ChainIcon({
-  chainId,
+/**
+ * The mark for an already-resolved chain display.
+ *
+ * Extracted so the two KEY SPACES a chain can arrive in - the portfolio's
+ * numeric `chain_id` and the market provider's chain slug - paint the same
+ * pixels through one renderer instead of two. Neither entry point below
+ * changed behaviour: `ChainIcon` still resolves an id and draws exactly what
+ * it drew before.
+ */
+export function ChainMark({
+  display,
   size = 14,
   className,
 }: {
-  readonly chainId: number;
+  readonly display: ChainDisplay;
   readonly size?: number;
   readonly className?: string;
 }): JSX.Element {
-  const display = chainDisplay(chainId);
   if (display.icon.kind === "thesvg") {
     const Icon = THESVG_BY_KEY[display.icon.key];
     return (
@@ -88,5 +98,44 @@ export function ChainIcon({
     >
       {display.name.charAt(0)}
     </span>
+  );
+}
+
+export function ChainIcon({
+  chainId,
+  size = 14,
+  className,
+}: {
+  readonly chainId: number;
+  readonly size?: number;
+  readonly className?: string;
+}): JSX.Element {
+  return <ChainMark display={chainDisplay(chainId)} size={size} className={className} />;
+}
+
+/**
+ * The mark for a MARKET PROVIDER chain slug (`"base"`, `"solana"`, `"bsc"`).
+ *
+ * Board pools carry a slug, never a chain id. An uncatalogued slug is an
+ * ordinary outcome here - the provider indexes far more chains than the
+ * portfolio does - so it resolves to the monogram ring of its own name rather
+ * than to a blank or to some other chain's logo. Decorative like every mark
+ * in this file: the caller names the chain in text or in its accessible name.
+ */
+export function ChainSlugIcon({
+  chainSlug,
+  size = 14,
+  className,
+}: {
+  readonly chainSlug: string;
+  readonly size?: number;
+  readonly className?: string;
+}): JSX.Element {
+  return (
+    <ChainMark
+      display={chainDisplayBySlug(chainSlug)}
+      size={size}
+      className={className}
+    />
   );
 }

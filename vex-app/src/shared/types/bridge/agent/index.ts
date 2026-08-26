@@ -25,6 +25,10 @@ import type { MissionBridge } from "./mission.js";
 import type { ModelsBridge } from "./models.js";
 import type { BoardIconsBridge } from "./board-icons.js";
 import type { BoardLiveBridge } from "./board-live.js";
+import type { BoardDetailsBridge } from "./board-details.js";
+import type { BoardSparklineBridge } from "./board-sparkline.js";
+import type { BoardSpotlightBridge } from "./board-spotlight.js";
+import type { BoardChartBridge } from "./board-chart.js";
 import type { ImagesBridge } from "./images.js";
 import type { PortfolioBridge } from "./portfolio.js";
 import type { ProjectsBridge } from "./projects.js";
@@ -96,6 +100,29 @@ export interface VexAgentBridge {
    * board.
    */
   readonly boardLive: BoardLiveBridge;
+  /**
+   * Board DETAILS - safety, holders and liquidity locks for one pool or one
+   * whole board. Evidence, never a verdict: the chip is decided by the shared
+   * classifier over what this returns.
+   */
+  readonly boardDetails: BoardDetailsBridge;
+  /**
+   * Board SPARKLINE - the cold candle lines behind the card price rows. One
+   * call per board; main owns the queue, the deadline and the bar count.
+   */
+  readonly boardSparkline: BoardSparklineBridge;
+  /**
+   * Board SPOTLIGHT - the trader leaderboard, momentum windows, other pools,
+   * promotion and narrative context, and the live trade tape. Every one is a
+   * one-shot the spotlight surface owns and cuts on exit.
+   */
+  readonly boardSpotlight: BoardSpotlightBridge;
+  /**
+   * Board CHART - the spotlight chart's candle poll. Four pill resolutions,
+   * renderer-timed on main's own cadence vocabulary, cut when the reader leaves
+   * the spotlight, and never served from a positive cache.
+   */
+  readonly boardChart: BoardChartBridge;
   /**
    * Token launch (C5). `preview` and `myLaunches` are live; `submit` and
    * `cancel` are mounted but refuse in words, pending the C0 authorization

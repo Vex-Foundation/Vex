@@ -73,6 +73,34 @@ export const BOARD_NOTE_RULE: BoardTextRule = {
   multiline: true,
 };
 
+/**
+ * The model's own assessment of ONE token on the board. Multi-line.
+ *
+ * NOT a caption. A caption is the one-line takeaway that fits on a card; this
+ * is the full read the spotlight surface shows under "VEX assessment": what is
+ * moving the price, the key levels, the risk read. 600 characters is roughly a
+ * short paragraph and a half, which is what the owner asked the model to have
+ * room for, and it is a REJECT-ONLY bound like every other board string - a
+ * longer assessment is refused with its class named, never trimmed into one
+ * that says something the model did not write.
+ *
+ * Line breaks are allowed, exactly as they are for a note, because an
+ * assessment with an observations paragraph and a risk paragraph reads as two
+ * paragraphs. Every other forbidden class (controls, bidi, tag blocks,
+ * zero-width) is rejected here on the same table.
+ *
+ * IT IS PROSE, AND PROSE NEVER COLOURS A CHIP. The safety chip is decided by
+ * the pure classifier over provider evidence
+ * (`vex-app/src/shared/board/safety-classifier.ts`); this string is displayed
+ * beside it and can never move it. That separation is the whole reason the
+ * field is allowed to be free text at all.
+ */
+export const BOARD_ANALYSIS_RULE: BoardTextRule = {
+  minChars: 1,
+  maxChars: 600,
+  multiline: true,
+};
+
 /** Maximum pools on one board. Order in the array is display order. */
 export const BOARD_MAX_POOLS = 8;
 /** Maximum analysis notes. */
@@ -245,6 +273,24 @@ export const boardPoolInputSchema = z
     chain: z.string().min(1).max(32).regex(CHAIN_SLUG_PATTERN),
     pairAddress: z.string().min(1).max(128).regex(PAIR_ADDRESS_PATTERN),
     caption: boardText(BOARD_CAPTION_RULE).optional(),
+    /**
+     * The model's full assessment of this token, or null when it wrote none.
+     *
+     * OPTIONAL ON READ, ALWAYS WRITTEN - the same expand-and-contract half
+     * `iconId` documents on the hydrated row, and for the same durable reason.
+     * Boards composed before this field existed are already persisted in
+     * transcript rows, and this schema re-parses those rows on every read; a
+     * required key would turn each of them into a parse failure, which the DB
+     * mapper renders as a board that silently vanished. A missing key
+     * therefore lands as `null` through the default, which is exactly what the
+     * reader would have seen anyway ("No saved analysis"), and writers emit
+     * the key on every board from now on.
+     *
+     * It is IMMUTABLE and HONESTLY DATED: it was written at compose time
+     * against the figures of that moment, and the surface stamps it with the
+     * board's own compose clock rather than the live one.
+     */
+    analysis: boardText(BOARD_ANALYSIS_RULE).nullable().default(null),
   })
   .strict();
 

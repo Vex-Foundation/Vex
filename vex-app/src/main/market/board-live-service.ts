@@ -73,7 +73,11 @@ import {
   type BatchIdentity,
 } from "@tools/dexscreener/endpoints/pairs-batch.js";
 import { getDexScreenerTransport } from "@tools/dexscreener/transport.js";
-import { DexScreenerSiteErrorCodes } from "@tools/dexscreener/site-errors.js";
+import { DexScreenerSiteErrorCodes, siteError } from "@tools/dexscreener/site-errors.js";
+import {
+  getBoardLiveScheduler,
+  type BoardLiveScheduler,
+} from "./board-live-scheduler.js";
 import {
   BOARD_BATCH_RANK_KEY,
   projectBoardRow,
@@ -290,6 +294,63 @@ async function defaultFetchBatch(args: {
   };
 }
 
+/**
+ * The card lease's batch read, ADMITTED through the board-wide scheduler.
+ *
+ * A7 caps board-owned exchanges at two, board-wide, and the cap is only real
+ * if every board read is counted by the same scheduler: a card tick that went
+ * straight to the transport would sit beside two admitted Spotlight reads as a
+ * third exchange, leaving the agent one bridge slot. The lease keeps its own
+ * clock and event semantics; the scheduler only decides WHEN the read may run
+ * and cuts it with the modal's other channels.
+ *
+ * A refusal is surfaced in the transport's own vocabulary so the lease's
+ * failure classifier stays the single owner of transient-vs-permanent:
+ * `busy` is a local, retryable fault (TRANSPORT_FAILED), a missing scheduler
+ * or a stopped one is as permanent as a missing bridge
+ * (SITE_TRANSPORT_UNAVAILABLE), and `cancelled` names the caller's own cut.
+ */
+export function admittedFetchBatch(
+  inner: BoardLiveServiceDeps["fetchBatch"],
+  resolveScheduler: () => BoardLiveScheduler | null = getBoardLiveScheduler,
+): BoardLiveServiceDeps["fetchBatch"] {
+  return async (args) => {
+    const scheduler = resolveScheduler();
+    if (scheduler === null) {
+      throw siteError(
+        DexScreenerSiteErrorCodes.SITE_TRANSPORT_UNAVAILABLE,
+        "The board scheduler is not mounted, so the live card read cannot be admitted",
+        "Live boards need the desktop bridge and its scheduler; nothing was requested from the provider.",
+      );
+    }
+    const admission = await scheduler.admit(
+      { id: "cards-batch", owner: "modal", signal: args.signal },
+      (run) => inner({ ...args, signal: run.signal }),
+    );
+    if (admission.kind === "ran") return admission.value;
+    switch (admission.reason) {
+      case "busy":
+        throw siteError(
+          DexScreenerSiteErrorCodes.TRANSPORT_FAILED,
+          "The board scheduler had no room to queue the live card read",
+          "This is a LOCAL capacity fault, not a provider rejection: the next tick retries.",
+        );
+      case "cancelled":
+        throw siteError(
+          DexScreenerSiteErrorCodes.TRANSPORT_CANCELLED,
+          "The live card read was cancelled by its own lease before it ran",
+          "The lease was cut; no answer is owed.",
+        );
+      case "not_mounted":
+        throw siteError(
+          DexScreenerSiteErrorCodes.SITE_TRANSPORT_UNAVAILABLE,
+          "The board scheduler stopped before the live card read could run",
+          "Live boards end with the desktop session; nothing was requested from the provider.",
+        );
+    }
+  };
+}
+
 export class BoardLiveService {
   /** The single lease, or null. One globally: a second subscribe supersedes. */
   private current: Lease | null = null;
@@ -298,7 +359,7 @@ export class BoardLiveService {
 
   constructor(deps: Partial<BoardLiveServiceDeps> = {}) {
     this.deps = {
-      fetchBatch: deps.fetchBatch ?? defaultFetchBatch,
+      fetchBatch: deps.fetchBatch ?? admittedFetchBatch(defaultFetchBatch),
       isSupported:
         deps.isSupported ??
         ((): boolean => getDexScreenerTransport().capabilities.site),

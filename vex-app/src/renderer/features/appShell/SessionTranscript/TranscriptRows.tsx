@@ -10,7 +10,10 @@
  *     a new turn, so its extra `mt-4` totals the 28px turn spacing.
  *  2. WHAT ANIMATES — only rows appended LIVE (id outside the settled set).
  *     History, including load-older prepends, hard-cuts. A tool group keeps its
- *     first call row's id, so its status matches its members'.
+ *     first call row's id, so its status matches its members'. The SAME
+ *     decision travels on as `boardArrival`, so a board card's unseen dot and
+ *     this animation can never disagree about which rows are new: a null
+ *     `settledIds` (first page still landing) is history for both.
  *
  * The animation rides an INNER wrapper, never the element carrying
  * `data-vex-entry-id` / `data-vex-anchor-key`. That element is the scroll
@@ -106,6 +109,7 @@ export function TranscriptRows({
               <TranscriptMessage
                 row={row}
                 pendingApprovals={pendingApprovals}
+                boardArrival={liveAppend ? "live-append" : "settled"}
                 agentWorking={workingAgentEntryKey === entryKey(row)}
                 feedbackSessionId={sessionId}
                 feedbackMessageKey={entryKey(row)}

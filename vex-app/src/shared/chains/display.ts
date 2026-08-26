@@ -146,3 +146,77 @@ export const EVM_QUICK_CHAIN_IDS: readonly number[] = [
 
 /** Default EVM selection — ALWAYS Ethereum, even at zero balance. */
 export const DEFAULT_EVM_CHAIN_ID = ETHEREUM_CHAIN_ID;
+
+/* ------------------------------------------------------------------ */
+/* Provider chain SLUGS (board surfaces)                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * DexScreener chain slugs mapped onto the curated chain ids above.
+ *
+ * WHY A SECOND KEY SPACE. Everything in this file up to here is keyed by the
+ * numeric `proj_balances.chain_id`, because that is what the portfolio owns.
+ * A board pool is addressed by the PROVIDER's chain slug (`"base"`,
+ * `"bsc"`), which never passes through the portfolio and has no chain id on
+ * the row it arrives with. Deriving one from the other at the call site would
+ * scatter the same table across surfaces, so the bridge lives here, beside
+ * the catalogue it bridges to, and stays the same small hardcoded allow-list.
+ *
+ * Slugs are matched case-insensitively and several are ALIASES for one chain
+ * (`bsc` / `bnbchain` / `bnb-chain`), because the provider's own spelling has
+ * varied across endpoints. An unlisted slug is not an error: it resolves to a
+ * neutral display whose name is the slug itself, so the mark falls back to a
+ * monogram ring of the chain the pool is actually on, never to a blank box
+ * and never to another chain's logo.
+ */
+const CHAIN_ID_BY_SLUG: Readonly<Record<string, number>> = {
+  ethereum: ETHEREUM_CHAIN_ID,
+  eth: ETHEREUM_CHAIN_ID,
+  solana: SOLANA_CHAIN_ID,
+  sol: SOLANA_CHAIN_ID,
+  base: BASE_CHAIN_ID,
+  arbitrum: ARBITRUM_CHAIN_ID,
+  arbitrumone: ARBITRUM_CHAIN_ID,
+  polygon: 137,
+  optimism: 10,
+  bsc: 56,
+  bnbchain: 56,
+  "bnb-chain": 56,
+  robinhood: ROBINHOOD_CHAIN_ID,
+};
+
+/** Normalized lookup key for a provider chain slug. */
+function slugKey(slug: string): string {
+  return slug.trim().toLowerCase();
+}
+
+/**
+ * The curated chain id for a provider chain slug, or null when the slug is
+ * not in the allow-list. Exported for surfaces that need the id itself (a
+ * filter key, an explorer lookup) rather than the display record.
+ */
+export function chainIdForSlug(slug: string): number | null {
+  return CHAIN_ID_BY_SLUG[slugKey(slug)] ?? null;
+}
+
+/**
+ * Display record for a PROVIDER chain slug.
+ *
+ * A known slug returns the curated entry, so a board pool on `"base"` wears
+ * exactly the mark the portfolio's Base rows wear. An unknown slug returns a
+ * neutral record named after the slug itself - `chainId: 0` is a deliberate
+ * non-id (no chain claims it) so nothing downstream can mistake the fallback
+ * for a catalogued chain, and `icon.kind === "fallback"` draws the monogram
+ * ring from the slug's first character.
+ */
+export function chainDisplayBySlug(slug: string): ChainDisplay {
+  const chainId = chainIdForSlug(slug);
+  if (chainId !== null) return chainDisplay(chainId);
+  const trimmed = slug.trim();
+  return {
+    chainId: 0,
+    name: trimmed === "" ? "Unknown chain" : trimmed,
+    family: "evm",
+    icon: { kind: "fallback" },
+  };
+}
