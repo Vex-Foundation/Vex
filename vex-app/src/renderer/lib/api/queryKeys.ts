@@ -285,6 +285,35 @@ export const boardIconKeys = {
 };
 
 /**
+ * Board DETAILS - the contract-safety, holder and lock read behind every
+ * card's chip and the chat card's tally.
+ *
+ * KEYED BY THE POOL SET, NOT BY THE BOARD. Two boards naming the same eight
+ * pools are the same question, and the answer is the same bytes; keying by
+ * board identity would ask the provider twice for one answer and let the two
+ * copies drift apart between refreshes. The pool keys are joined in the order
+ * the caller asks, because the answer is POSITIONAL against that order.
+ */
+export const boardDetailsKeys = {
+  all: ["board-details"] as const,
+  prefetch: (poolKeys: readonly string[]) =>
+    ["board-details", "prefetch", poolKeys.join("|")] as const,
+};
+
+/**
+ * Board SPARKLINES - one cold hydration for a whole board.
+ *
+ * Keyed by the pool set AND the resolution: the same pools at a different
+ * resolution are a different line, and serving one under the other's key would
+ * draw bars the card's label does not describe.
+ */
+export const boardSparklineKeys = {
+  all: ["board-sparkline"] as const,
+  hydrate: (poolKeys: readonly string[], resolution: string) =>
+    ["board-sparkline", "hydrate", resolution, poolKeys.join("|")] as const,
+};
+
+/**
  * Token launch (C5) — the Trench Express launch dialog.
  *
  * `preview` is keyed by the WHOLE form input, and that is the contract rather

@@ -256,6 +256,18 @@
 
   /* Scrollbar tint pairs (consumed through the runtime indirection in
    * scrollbars.css, not directly). l1 = page-level, l2 = elevated cards. */
+  /* BOARD SURFACES (Token Radar, v3). A tinted-neutral navy plate and the
+   * card that sits on it, aliased rather than mixed per component: the board
+   * modal, the preview card in the transcript and the sidebar module must
+   * paint ONE surface family, and a gradient written into three components
+   * would drift the first time one of them was touched. `board-vignette` is
+   * the soft radial the plate carries (see board.css); it is a colour, not a
+   * gradient, so the shape stays in one stylesheet. */
+  --vex-alias-board-surface: var(--color-gray-1000);
+  --vex-alias-board-card: var(--color-gray-900);
+  --vex-alias-board-card-hover: var(--color-gray-875);
+  --vex-alias-board-vignette: rgba(43, 62, 255, 0.07);
+
   --vex-alias-scrollbar-l1: rgba(255, 255, 255, 0.14);
   --vex-alias-scrollbar-l1-hover: rgba(255, 255, 255, 0.24);
   --vex-alias-scrollbar-l2: rgba(255, 255, 255, 0.2);
@@ -344,6 +356,14 @@
   );
   --vex-alias-gate-warn-text: var(--color-warning-label);
 
+  /* Board surfaces - the light theme repoints the SAME aliases; no component
+   * branches on the theme. The vignette all but disappears on a white plate,
+   * which is correct: it exists to lift a dark surface off black. */
+  --vex-alias-board-surface: var(--color-gray-50);
+  --vex-alias-board-card: var(--color-gray-0);
+  --vex-alias-board-card-hover: var(--color-gray-50);
+  --vex-alias-board-vignette: rgba(43, 62, 255, 0.04);
+
   --vex-alias-scrollbar-l1: rgba(10, 13, 24, 0.18);
   --vex-alias-scrollbar-l1-hover: rgba(10, 13, 24, 0.3);
   --vex-alias-scrollbar-l2: rgba(10, 13, 24, 0.24);
@@ -407,6 +427,10 @@
   --color-warning-wash: var(--vex-alias-state-warn-wash);
   --color-danger: var(--vex-alias-state-error);
   --color-danger-wash: var(--vex-alias-state-error-wash);
+
+  --color-board-surface: var(--vex-alias-board-surface);
+  --color-board-card: var(--vex-alias-board-card);
+  --color-board-card-hover: var(--vex-alias-board-card-hover);
 
   --color-tooltip: var(--vex-alias-tooltip-bg);
   --color-toast: var(--vex-alias-toast-bg);

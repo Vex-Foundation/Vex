@@ -34,6 +34,7 @@
 
 import { BOARD_MAX_CANDLES } from "@vex-lib/board/index.js";
 import type {
+  SingleValueData,
   CandlestickData,
   ISeriesApi,
   Time,
@@ -440,4 +441,260 @@ export function barsToPush(
 ): readonly BoardChartBar[] {
   if (sinceSec === null) return next;
   return next.filter((bar) => (bar.time as number) >= sinceSec);
+}
+
+/* ------------------------------------------------------------------ */
+/* AREA SERIES - the spotlight's line, derived from the same OHLC      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One point of the spotlight's area series, or a whitespace slot.
+ *
+ * The domain truth stays OHLC and the area DERIVES `value = close`
+ * (SPOTLIGHT-CHART-CONTRACT 1.3). Deriving at the chart boundary costs one
+ * field read; discarding the other three legs at the adapter would be
+ * irreversible, and a candle view later would have nothing to draw.
+ */
+export type BoardChartAreaPoint =
+  | SingleValueData<UTCTimestamp>
+  | WhitespaceData<UTCTimestamp>;
+
+/**
+ * A board candle as one area point.
+ *
+ * Same boundary rules as {@link toChartBar}: ONE `Math.floor(ms / 1000)`, a
+ * decimal string becoming a DISPLAY float and nothing else, and a null or
+ * non-finite close becoming WHITESPACE rather than a fabricated zero. The
+ * `drawnHigh/drawnLow` repair that `toChartBar` performs is a CANDLE concern
+ * and deliberately absent here: the close is the close, and no reported
+ * extreme is being drawn for a reader to be misled by.
+ */
+export function toChartAreaPoint(row: BoardCandleInput): BoardChartAreaPoint {
+  const time = Math.floor(row.tMs / 1000) as UTCTimestamp;
+  const close = row.c === null ? null : toDisplayPrice(row.c);
+  if (close === null) return { time };
+  return { time, value: close };
+}
+
+/** A normalized area series, with every bound it applied reported. */
+export interface NormalizedBoardArea {
+  readonly points: readonly BoardChartAreaPoint[];
+  readonly totalDistinct: number;
+  /** Older points the display budget kept off the chart. Never silent. */
+  readonly hiddenOlder: number;
+  readonly whitespaceCount: number;
+  readonly oldestTimeSec: number | null;
+  readonly newestTimeSec: number | null;
+}
+
+/**
+ * Sort, dedupe and convert a page of provider bars into an area series.
+ *
+ * Dedupe is last-write-wins on the floored second, exactly as
+ * {@link normalizeBoardBars}: the forming bar is re-emitted by design on
+ * every poll, so a duplicate is the normal case rather than a provider fault.
+ */
+export function normalizeBoardAreaPoints(
+  rows: readonly BoardCandleInput[],
+): NormalizedBoardArea {
+  const byTime = new Map<number, BoardChartAreaPoint>();
+  for (const row of rows) {
+    const point = toChartAreaPoint(row);
+    byTime.set(point.time as number, point);
+  }
+  const ordered = [...byTime.values()].sort(
+    (a, b) => (a.time as number) - (b.time as number),
+  );
+  const totalDistinct = ordered.length;
+  const hiddenOlder = Math.max(0, totalDistinct - BOARD_CHART_MAX_BARS);
+  const points = hiddenOlder === 0 ? ordered : ordered.slice(hiddenOlder);
+  let whitespaceCount = 0;
+  for (const point of points) {
+    if (!("value" in point)) whitespaceCount += 1;
+  }
+  return {
+    points,
+    totalDistinct,
+    hiddenOlder,
+    whitespaceCount,
+    oldestTimeSec: (points[0]?.time as number | undefined) ?? null,
+    newestTimeSec: (points.at(-1)?.time as number | undefined) ?? null,
+  };
+}
+
+/** What one area point carries, for a set-based comparison. */
+type AreaValue = number | null;
+
+function areaValueOf(point: BoardChartAreaPoint): AreaValue {
+  return "value" in point ? point.value : null;
+}
+
+/**
+ * What the chart must DO with a poll response, decided as a pure function.
+ *
+ * WHY THIS IS A FUNCTION AND NOT A BRANCH INSIDE AN EFFECT. Every row of the
+ * chart contract's reconciliation table is a claim about this decision, and a
+ * claim that lives inside a `useEffect` beside a canvas can only be tested by
+ * driving a canvas. Here the whole table is a table test.
+ *
+ * THE COMPARISON IS OVER TIMESTAMP SETS, not lengths (A8). A rolling window
+ * that replaced a constant number of bars would look right to a reader at the
+ * live edge and silently move a reader scrolled back into history; asking
+ * which exact timestamps left, arrived, or changed value is the only form of
+ * the question that is answerable for both.
+ */
+export type AreaReconciliation =
+  | {
+      readonly kind: "reset";
+      readonly reason:
+        | "seed"
+        | "left-trim"
+        | "interior-change"
+        | "shrink"
+        | "many-corrections";
+      readonly points: readonly BoardChartAreaPoint[];
+    }
+  | {
+      readonly kind: "incremental";
+      /** Past points whose value changed. Applied with `historicalUpdate`. */
+      readonly corrections: readonly BoardChartAreaPoint[];
+      /** The forming bar and any newly closed ones, oldest first. */
+      readonly appends: readonly BoardChartAreaPoint[];
+    }
+  | { readonly kind: "keep"; readonly reason: "empty-response" };
+
+/**
+ * Above this many corrected past points, a full `setData` is cheaper than N
+ * `historicalUpdate` calls, which the library documents as the slower path.
+ * Both are viewport-neutral, so the choice is pure cost (contract 2.2 row 6b).
+ */
+export const AREA_MAX_HISTORICAL_UPDATES = 3;
+
+export function reconcileAreaSeries(
+  held: readonly BoardChartAreaPoint[],
+  incoming: readonly BoardChartAreaPoint[],
+): AreaReconciliation {
+  if (incoming.length === 0) return { kind: "keep", reason: "empty-response" };
+  if (held.length === 0) return { kind: "reset", reason: "seed", points: incoming };
+
+  const incomingByTime = new Map<number, BoardChartAreaPoint>();
+  for (const point of incoming) incomingByTime.set(point.time as number, point);
+  const incomingOldest = incoming[0]?.time as number;
+
+  // A held point the response no longer carries is either the window sliding
+  // (it is older than everything in the response) or a genuine interior
+  // disappearance. The first is expected and the second must not be papered
+  // over by an append, so both take the full-replace path and the caller
+  // states the trim in words.
+  let trimmed = false;
+  for (const point of held) {
+    const time = point.time as number;
+    if (incomingByTime.has(time)) continue;
+    if (time < incomingOldest) {
+      trimmed = true;
+      continue;
+    }
+    return { kind: "reset", reason: "interior-change", points: incoming };
+  }
+  if (trimmed) return { kind: "reset", reason: "left-trim", points: incoming };
+
+  const newestHeld = held.at(-1)?.time as number;
+  const corrections: BoardChartAreaPoint[] = [];
+  const appends: BoardChartAreaPoint[] = [];
+  for (const point of incoming) {
+    const time = point.time as number;
+    // The bar AT the newest held time is the FORMING bar: its value is
+    // supposed to change, and it is an update rather than a correction.
+    if (time >= newestHeld) {
+      appends.push(point);
+      continue;
+    }
+    const heldPoint = held.find((candidate) => (candidate.time as number) === time);
+    if (heldPoint === undefined) {
+      // Older than the newest held point and not held: the response reaches
+      // further back than the chart does. That is a new window, not an append.
+      return { kind: "reset", reason: "shrink", points: incoming };
+    }
+    if (areaValueOf(heldPoint) !== areaValueOf(point)) corrections.push(point);
+  }
+  if (corrections.length > AREA_MAX_HISTORICAL_UPDATES) {
+    return { kind: "reset", reason: "many-corrections", points: incoming };
+  }
+  return { kind: "incremental", corrections, appends };
+}
+
+/** The sink an {@link AreaFeed} writes through. */
+export interface BoardAreaSink {
+  setData(data: BoardChartAreaPoint[]): void;
+  update(point: BoardChartAreaPoint, historicalUpdate?: boolean): void;
+}
+
+/**
+ * The spotlight's series writer, and the ONE place `setData` / `update` are
+ * called on the area series.
+ *
+ * It holds the points it wrote so reconciliation can compare timestamp SETS
+ * without a `series.data()` scan per poll, and so `oldestTimeSec` and the
+ * held count are answerable - the two facts the contract's trim condition
+ * needs and `CandleFeed` never had to provide.
+ */
+export class AreaFeed {
+  private points: readonly BoardChartAreaPoint[] = [];
+
+  constructor(private readonly series: BoardAreaSink) {}
+
+  get held(): readonly BoardChartAreaPoint[] {
+    return this.points;
+  }
+
+  get heldCount(): number {
+    return this.points.length;
+  }
+
+  get oldestTimeSec(): number | null {
+    return (this.points[0]?.time as number | undefined) ?? null;
+  }
+
+  get newestTimeSec(): number | null {
+    return (this.points.at(-1)?.time as number | undefined) ?? null;
+  }
+
+  reset(points: readonly BoardChartAreaPoint[]): void {
+    this.series.setData([...points]);
+    this.points = points;
+  }
+
+  /**
+   * Apply a reconciliation. Returns what was actually written, so a caller
+   * can report it rather than assume it.
+   */
+  apply(plan: AreaReconciliation): {
+    readonly reset: boolean;
+    readonly corrected: number;
+    readonly appended: number;
+  } {
+    if (plan.kind === "keep") return { reset: false, corrected: 0, appended: 0 };
+    if (plan.kind === "reset") {
+      this.reset(plan.points);
+      return { reset: true, corrected: 0, appended: 0 };
+    }
+    for (const point of plan.corrections) {
+      // `historicalUpdate` throws when the time does not already exist, which
+      // is exactly why the plan only ever names times the feed holds.
+      this.series.update(point, true);
+    }
+    let appended = 0;
+    const merged = new Map<number, BoardChartAreaPoint>();
+    for (const point of this.points) merged.set(point.time as number, point);
+    for (const point of plan.corrections) merged.set(point.time as number, point);
+    for (const point of plan.appends) {
+      this.series.update(point);
+      merged.set(point.time as number, point);
+      appended += 1;
+    }
+    this.points = [...merged.values()].sort(
+      (a, b) => (a.time as number) - (b.time as number),
+    );
+    return { reset: false, corrected: plan.corrections.length, appended };
+  }
 }

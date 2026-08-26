@@ -40,6 +40,12 @@ const { BookPanel } = await import("../../BookPanel.js");
 const { useUiStore } = await import("../../../../stores/uiStore.js");
 const { useToolInspectStore } = await import("../inspect/inspect-store.js");
 
+
+/** The box the inspect overlay hides: the BOOK's instruments, still mounted. */
+function instruments(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-vex-area="book-instruments"]');
+}
+
 const SESSION = "00000000-0000-4000-8000-00000000dddd";
 const OTHER_SESSION = "00000000-0000-4000-8000-00000000eeee";
 
@@ -87,7 +93,10 @@ describe("BOOK inspect mode", () => {
     ]) {
       expect(screen.getByTestId(card)).toBeTruthy();
     }
-    expect(screen.getByRole("list").classList.contains("hidden")).toBe(true);
+    // The BOOK's instruments (the Portfolio | Board tabs and the stack inside
+    // them) are the box that hides now; before the tabs it was the stack
+    // itself. Same contract, one level out: CSS hides, nothing unmounts.
+    expect(instruments()?.classList.contains("hidden")).toBe(true);
   });
 
   it("closing returns to the card stack with nothing missing", () => {
@@ -95,7 +104,7 @@ describe("BOOK inspect mode", () => {
     openCall(SESSION);
     fireEvent.click(screen.getByRole("button", { name: "Close inspect" }));
     expect(screen.queryByLabelText(/Tool call:/)).toBeNull();
-    expect(screen.getByRole("list").classList.contains("hidden")).toBe(false);
+    expect(instruments()?.classList.contains("hidden")).toBe(false);
     expect(screen.getByTestId("card-position")).toBeTruthy();
   });
 

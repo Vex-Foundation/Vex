@@ -265,6 +265,37 @@ describe("BoardCompose staging outcomes", () => {
     expect(result.output).toContain("live turn");
   });
 
+  it("ALWAYS emits the per-pool analysis key, null included", async () => {
+    // The write half of the expand-and-contract: durable boards written from
+    // now on are explicit about having no assessment, so no reader has to know
+    // the field was once absent. A staged board that omitted the key would
+    // leave the legacy default doing work forever.
+    beginPresentationScope(SESSION);
+    await handleBoardCompose({ ...VALID_INPUT }, modelContext);
+
+    const staged = consumePendingPresentation(SESSION);
+    const pool = staged?.spec.pools[0];
+    expect(pool).toBeDefined();
+    expect(pool !== undefined && "analysis" in pool).toBe(true);
+    expect(pool?.analysis).toBeNull();
+  });
+
+  it("stages the model's assessment verbatim, line breaks included", async () => {
+    beginPresentationScope(SESSION);
+    const analysis =
+      "Safety checks are clean.\nVolume is accelerating into the 24h high, and the "
+      + "LP is burned rather than time-locked.";
+    await handleBoardCompose(
+      {
+        ...VALID_INPUT,
+        pools: [{ ...VALID_INPUT.pools[0], analysis }],
+      },
+      modelContext,
+    );
+
+    expect(consumePendingPresentation(SESSION)?.spec.pools[0]?.analysis).toBe(analysis);
+  });
+
   it("stages a board at the top of every input bound, whole", async () => {
     beginPresentationScope(SESSION);
     hydrateBoard.mockResolvedValueOnce(maximalRows());

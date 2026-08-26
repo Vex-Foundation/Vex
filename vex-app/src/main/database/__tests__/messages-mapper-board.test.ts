@@ -75,6 +75,39 @@ describe("toDto - board projection (metadata -> 'board')", () => {
     expect(dto.board?.hydration.rows[0]?.iconId).toBeNull();
   });
 
+  it("normalizes a legacy pool without `analysis` to null instead of dropping the board", () => {
+    // The same expand-and-contract, one level up: durable pools written before
+    // the assessment field existed carry no key at all. A required field here
+    // would make every pre-expansion board vanish from a transcript the user
+    // can still scroll to, and the surface would show a missing element rather
+    // than the designed "No saved analysis" state.
+    const base = boardSpecFixture();
+    const templatePool = base.pools[0];
+    if (templatePool === undefined) {
+      throw new Error("board fixture pool 0 missing");
+    }
+    const { analysis: _dropped, ...legacyPool } = templatePool;
+    const dto = toDto(row("assistant", { ...base, pools: [legacyPool] }));
+    expect(dto.board).not.toBeNull();
+    expect(dto.board?.pools[0]?.analysis).toBeNull();
+    // The rest of the pool survives untouched: this is a normalization, not a
+    // rebuild.
+    expect(dto.board?.pools[0]?.caption).toBe(templatePool.caption);
+  });
+
+  it("round-trips a stored assessment verbatim, line breaks included", () => {
+    const base = boardSpecFixture();
+    const templatePool = base.pools[0];
+    if (templatePool === undefined) {
+      throw new Error("board fixture pool 0 missing");
+    }
+    const analysis = "Safety checks are clean.\nLiquidity thinned after 14:00.";
+    const dto = toDto(
+      row("assistant", { ...base, pools: [{ ...templatePool, analysis }] }),
+    );
+    expect(dto.board?.pools[0]?.analysis).toBe(analysis);
+  });
+
   it("keeps the row an ordinary assistant row - the board is not a new kind", () => {
     const dto = toDto(row("assistant", boardSpecFixture()));
     expect(dto.kind).toBe("text");

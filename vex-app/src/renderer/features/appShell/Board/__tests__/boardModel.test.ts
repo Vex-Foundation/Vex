@@ -33,8 +33,8 @@ describe("buildBoardViewModel", () => {
     const model = buildBoardViewModel(
       boardSpec({
         pools: [
-          { chain: "base", pairAddress: "0xaaa" },
-          { chain: "solana", pairAddress: "SoLbbb" },
+          { chain: "base", pairAddress: "0xaaa", analysis: null },
+          { chain: "solana", pairAddress: "SoLbbb", analysis: null },
         ],
         rows: [
           hydratedRow({ baseTokenSymbol: "FIRST" }),
@@ -53,8 +53,8 @@ describe("buildBoardViewModel", () => {
   it("keeps a card for a pool whose hydration row is missing", () => {
     const spec = boardSpec({
       pools: [
-        { chain: "base", pairAddress: "0xaaa" },
-        { chain: "base", pairAddress: "0xbbb" },
+        { chain: "base", pairAddress: "0xaaa", analysis: null },
+        { chain: "base", pairAddress: "0xbbb", analysis: null },
       ],
       rows: [hydratedRow()],
     });
@@ -178,8 +178,8 @@ describe("boardAriaLabel", () => {
     const model = buildBoardViewModel(
       boardSpec({
         pools: [
-          { chain: "base", pairAddress: "0xaaa" },
-          { chain: "base", pairAddress: "0xbbb" },
+          { chain: "base", pairAddress: "0xaaa", analysis: null },
+          { chain: "base", pairAddress: "0xbbb", analysis: null },
         ],
         rows: [hydratedRow(), hydratedRow()],
       }),

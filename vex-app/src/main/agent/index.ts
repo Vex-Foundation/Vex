@@ -11,6 +11,10 @@
 import { setBugReportSink, resetBugReportSink } from "@vex-agent/engine/support/bug-report-registry.js";
 import { registerDexScreenerTransport } from "@tools/dexscreener/transport.js";
 import { createDexScreenerBridgeTransport } from "../dexscreener-bridge/index.js";
+import { mountBoardDetailsService } from "../market/board-details-service.js";
+import { mountBoardSparklineService } from "../market/board-sparkline-service.js";
+import { mountBoardChartService } from "../market/board-chart-service.js";
+import { mountBoardLiveScheduler } from "../market/board-live-scheduler.js";
 import {
   mountBoardIconService,
   mountLaunchImageByteResolver,
@@ -98,13 +102,38 @@ export function setupAgentBridges(): () => Promise<void> {
   // bridge it borrows from, so no icon fetch can outlive its transport.
   const unmountBoardIcons = mountBoardIconService(dexScreenerBridge.transport.httpGet);
 
+
+  // Board details - the contract-safety, holder and liquidity-lock read behind
+  // the safety chip. It routes through the REGISTERED transport slot rather
+  // than a borrowed fetcher, because the endpoint modules it calls
+  // (`fetchPairDetails`, `resolvePairSubject`) take a transport, so it is
+  // mounted after the slot is claimed and drained before the slot is released.
+  const unmountBoardDetails = mountBoardDetailsService();
+
+  // Board sparklines and the board-wide scheduler. Both route through the
+  // REGISTERED transport slot, so both are mounted after the slot is claimed
+  // and drained before it is released.
+  const unmountBoardSparkline = mountBoardSparklineService();
+  const unmountBoardScheduler = mountBoardLiveScheduler();
+
+  // The spotlight chart's candle poll. Same rule as the two above: it routes
+  // through the REGISTERED transport slot, so it is mounted after the slot is
+  // claimed and drained before the slot is released. Its teardown is AWAITED
+  // below - the read cache behind it closes admission, aborts and then drains,
+  // and dropping that promise would let a bars fetch outlive the bridge.
+  const unmountBoardChart = mountBoardChartService();
+
   // AWAITED, not fired and forgotten. Unmounting closes admission and drains
-  // the icon fetches that are still running ON THIS BRIDGE'S TRANSPORT; only
-  // once that drain has settled may the bridge itself be disposed. The other
-  // two steps keep their original order: unregister the transport slot before
+  // the fetches that are still running ON THIS BRIDGE'S TRANSPORT; only once
+  // those drains have settled may the bridge itself be disposed. The other two
+  // steps keep their original order: unregister the transport slot before
   // disposing the bridge behind it.
   teardowns.push(async () => {
     await unmountBoardIcons();
+    await unmountBoardDetails();
+    await unmountBoardSparkline();
+    await unmountBoardChart();
+    await unmountBoardScheduler();
     unregisterDexScreener();
     dexScreenerBridge.dispose();
   });
