@@ -29,13 +29,16 @@ import { setupTranscriptBridge } from "./transcript-bridge.js";
 
 /**
  * Mount every agent-side bridge and return a single teardown that
- * unsubscribes all of them. Order does not matter — bridges are
- * independent subscribers on disjoint event buses. Cleanup restores
+ * unsubscribes all of them, and which the caller may await. Order does
+ * not matter BETWEEN bridges - they are independent subscribers on
+ * disjoint event buses - but it does matter INSIDE the DexScreener
+ * teardown, where the board icon service must finish draining before
+ * the bridge whose transport it borrows is disposed. Cleanup restores
  * the engine `BugReportSink` to the no-op default so test runs don't
  * inherit a stale sink from a previous main lifecycle.
  */
-export function setupAgentBridges(): () => void {
-  const teardowns: Array<() => void> = [];
+export function setupAgentBridges(): () => Promise<void> {
+  const teardowns: Array<() => void | Promise<void>> = [];
 
   teardowns.push(setupTranscriptBridge());
   teardowns.push(setupControlBridge());
@@ -95,16 +98,24 @@ export function setupAgentBridges(): () => void {
   // bridge it borrows from, so no icon fetch can outlive its transport.
   const unmountBoardIcons = mountBoardIconService(dexScreenerBridge.transport.httpGet);
 
-  teardowns.push(() => {
-    unmountBoardIcons();
+  // AWAITED, not fired and forgotten. Unmounting closes admission and drains
+  // the icon fetches that are still running ON THIS BRIDGE'S TRANSPORT; only
+  // once that drain has settled may the bridge itself be disposed. The other
+  // two steps keep their original order: unregister the transport slot before
+  // disposing the bridge behind it.
+  teardowns.push(async () => {
+    await unmountBoardIcons();
     unregisterDexScreener();
     dexScreenerBridge.dispose();
   });
 
-  return () => {
+  // Sequential rather than concurrent, because the ordering inside the teardown
+  // above is the point of it. `await` inside the try also catches a rejected
+  // async teardown, so one bad disposer still cannot poison the rest.
+  return async () => {
     for (const teardown of teardowns) {
       try {
-        teardown();
+        await teardown();
       } catch {
         // a misbehaving teardown must not poison the others
       }

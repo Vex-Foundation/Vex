@@ -119,8 +119,13 @@ const POSITIVE_CACHE_MAX = 64;
  * rare but not impossible, so "no such icon" is settled for a while rather than
  * forever. Transient failures are NEVER cached: caching an unknown would turn
  * one bad minute into ten minutes of missing logos.
+ *
+ * EXPORTED because the renderer holds the same window: a card that re-asks
+ * sooner spends an IPC round trip on an answer main already has in memory. The
+ * renderer cannot import a main-process module, so it declares its own copy
+ * (`BOARD_ICON_NOT_FOUND_STALE_MS`) and a test pins the two together.
  */
-const NEGATIVE_CACHE_TTL_MS = 600_000;
+export const BOARD_ICON_NOT_FOUND_TTL_MS = 600_000;
 
 /** What the caller gets back. Three families, deliberately not collapsed. */
 export type BoardIconResolution =
@@ -272,7 +277,7 @@ export function createBoardIconService(fetcher: BoardIconFetcher): BoardIconServ
   /** Turn one response into the resolution, cache side effects included. */
   function classify(iconId: string, response: TransportResponse): BoardIconResolution {
     if (response.status === 404) {
-      negativeUntil.set(iconId, Date.now() + NEGATIVE_CACHE_TTL_MS);
+      negativeUntil.set(iconId, Date.now() + BOARD_ICON_NOT_FOUND_TTL_MS);
       return { kind: "absent", reason: "not_found" };
     }
     if (response.status !== 200) {
@@ -390,13 +395,20 @@ let mounted: BoardIconService | null = null;
  * policy, and a second fetch path would be a second trust surface. The teardown
  * unmounts BEFORE disposing, so a call arriving during shutdown gets
  * `not_mounted` rather than racing a draining service.
+ *
+ * THE TEARDOWN IS ASYNC, AND ITS PROMISE IS THE POINT. `dispose()` drains what
+ * is in flight, and those fetches run on the DexScreener bridge's transport.
+ * Dropping this promise would let the caller dispose that bridge - Chromium
+ * session, hidden window and all - underneath fetches that are still running.
+ * Callers await it, and only then dispose the bridge it borrows from.
+ * Idempotent: a second call unmounts nothing and `dispose()` returns at once.
  */
-export function mountBoardIconService(fetcher: BoardIconFetcher): () => void {
+export function mountBoardIconService(fetcher: BoardIconFetcher): () => Promise<void> {
   const service = createBoardIconService(fetcher);
   mounted = service;
-  return () => {
+  return async () => {
     if (mounted === service) mounted = null;
-    void service.dispose();
+    await service.dispose();
   };
 }
 

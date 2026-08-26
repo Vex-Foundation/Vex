@@ -131,6 +131,7 @@ export function registerBoardLiveHandlers(): ReadonlyArray<() => void> {
         const outcome = await service.subscribe({
           target: targetFor(ctx.event.sender),
           pools: input.pools,
+          requestId: input.requestId,
         });
         if (outcome.kind === "failed") {
           // A failed first attempt is a real domain outcome with a remedy, not
@@ -172,9 +173,13 @@ export function registerBoardLiveHandlers(): ReadonlyArray<() => void> {
         const service = getBoardLiveService();
         if (service === null) return Promise.resolve(ok({ outcome: "unknown" }));
         // Ownership is decided by the SENDER's identity, never by anything the
-        // renderer put in the payload: a leaseId is a handle, not a credential.
+        // renderer put in the payload: a leaseId and a requestId are both
+        // handles, not credentials. The schema admits exactly one of the two,
+        // so the branch below is a shape read and not a precedence rule.
         const outcome = service.unsubscribe({
-          leaseId: input.leaseId,
+          ...("leaseId" in input
+            ? { leaseId: input.leaseId }
+            : { requestId: input.requestId }),
           ownerId: ctx.event.sender.id,
         });
         return Promise.resolve(ok({ outcome }));

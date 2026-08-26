@@ -34,7 +34,15 @@ const LEASE_B = "22222222-2222-4222-8222-222222222222";
  */
 interface FakeMain {
   readonly listeners: Set<(event: BoardLiveEvent) => void>;
+  /** Releases addressed by main's lease id. */
   readonly unsubscribed: string[];
+  /**
+   * Releases addressed by the RENDERER's own request id, which is the only
+   * name that exists while a subscribe is still in flight.
+   */
+  readonly cancelled: string[];
+  /** Every request id the renderer minted, in call order. */
+  readonly requestIds: string[];
   readonly subscribeCalls: number;
   emit(event: BoardLiveEvent): void;
   /** Resolve a subscribe that was deliberately left in flight. */
@@ -43,17 +51,27 @@ interface FakeMain {
 
 let supported = true;
 let holdSubscribe = false;
+/**
+ * Whether the scripted main GRANTS a lease that was cancelled before it
+ * answered. Real main aborts instead, but the two orders are a genuine race at
+ * the process boundary and the renderer has to be correct under both.
+ */
+let grantDespiteCancel = false;
 
 function installFakeMain(): FakeMain {
   const listeners = new Set<(event: BoardLiveEvent) => void>();
   const unsubscribed: string[] = [];
+  const cancelled: string[] = [];
   const pending: Array<(leaseId: string) => void> = [];
+  const requestIds: string[] = [];
   let issued = 0;
   let currentLease: string | null = null;
 
   const state = {
     listeners,
     unsubscribed,
+    cancelled,
+    requestIds,
     get subscribeCalls(): number {
       return issued;
     },
@@ -123,19 +141,45 @@ function installFakeMain(): FakeMain {
                 : "Live figures need the DexScreener site channel, which this build does not mount.",
             },
           }),
-        subscribe: () => {
+        subscribe: (input: { pools: unknown; requestId: string }) => {
           issued += 1;
           const leaseId = issued === 1 ? LEASE_A : LEASE_B;
+          const requestId = input.requestId;
+          requestIds.push(requestId);
           if (holdSubscribe) {
             return new Promise((resolve) => {
-              pending.push((released: string) => resolve(grant(released)));
+              pending.push((released: string) => {
+                // Main aborted this attempt on the pre-response cancel, so it
+                // answers with the refusal rather than a lease.
+                if (cancelled.includes(requestId) && !grantDespiteCancel) {
+                  resolve({
+                    ok: false,
+                    error: {
+                      code: "provider.unavailable",
+                      domain: "market",
+                      message: "the attempt was cancelled",
+                      retryable: false,
+                      userActionable: false,
+                      redacted: true,
+                      correlationId: "test",
+                    },
+                  });
+                  return;
+                }
+                resolve(grant(released));
+              });
             });
           }
           return Promise.resolve(grant(leaseId));
         },
-        unsubscribe: (input: { leaseId: string }) => {
-          unsubscribed.push(input.leaseId);
-          if (currentLease === input.leaseId) currentLease = null;
+        unsubscribe: (input: { leaseId?: string; requestId?: string }) => {
+          if (input.requestId !== undefined) {
+            cancelled.push(input.requestId);
+            return Promise.resolve({ ok: true, data: { outcome: "closed" } });
+          }
+          const leaseId = input.leaseId ?? "";
+          unsubscribed.push(leaseId);
+          if (currentLease === leaseId) currentLease = null;
           return Promise.resolve({ ok: true, data: { outcome: "closed" } });
         },
         onLeaseEvent: (cb: (event: BoardLiveEvent) => void) => {
@@ -204,6 +248,7 @@ let main: FakeMain;
 beforeEach(() => {
   supported = true;
   holdSubscribe = false;
+  grantDespiteCancel = false;
   main = installFakeMain();
   vi.setSystemTime(FIXTURE_FETCHED_AT + 1_000);
 });
@@ -271,8 +316,102 @@ describe("board LIVE toggle", () => {
     expect(container.textContent).toContain("9.99");
   });
 
+  it("drops a lease event whose generation is not newer than the one already applied", async () => {
+    // K-d. Main's generation is monotonic per lease, so anything at or below
+    // what this mount has already acted on describes a transition it has passed.
+    // Non-blocking by design: everything newer still lands.
+    const { container } = render(withQuery(createElement(BoardBlock, { spec: boardSpec() })));
+    await settle();
+    await clickToggle(container);
+    // The subscribe response carried generation 1 and the figures it granted.
+    expect(container.textContent).toContain("9.99");
+
+    await act(async () => {
+      main.emit({
+        kind: "degraded",
+        leaseId: LEASE_A,
+        // STALE: generation 1 was already applied by the subscribe response.
+        generation: 1,
+        reason: "provider",
+        lastGood: null,
+      });
+    });
+    expect(badgeOf(container)?.getAttribute("data-live-mode")).toBe("live-connected");
+
+    await act(async () => {
+      main.emit({
+        kind: "degraded",
+        leaseId: LEASE_A,
+        generation: 2,
+        reason: "provider",
+        lastGood: null,
+      });
+    });
+    expect(badgeOf(container)?.getAttribute("data-live-mode")).toBe("live-degraded");
+  });
+
+  it("R7-pre: unmounting while connecting cancels the in-flight attempt", async () => {
+    holdSubscribe = true;
+    const { container, unmount } = render(
+      withQuery(createElement(BoardBlock, { spec: boardSpec() })),
+    );
+    await settle();
+    const toggle = await readyToggle(container);
+    await act(async () => {
+      fireEvent.click(toggle);
+      await Promise.resolve();
+    });
+    expect(main.requestIds).toHaveLength(1);
+
+    // A session switch unmounts the row and the effect cleanup is all that
+    // runs. It must still be able to name the exchange it started.
+    unmount();
+    expect(main.cancelled).toStrictEqual([main.requestIds[0]]);
+    expect(main.unsubscribed).toStrictEqual([]);
+  });
+
+  it("R4-pre: toggling off while connecting CANCELS the in-flight attempt by request id", async () => {
+    // THE WINDOW THIS ROW IS ABOUT. Main withholds the lease id until its first
+    // fetch settles, so between the click and that response the renderer holds
+    // no handle from main at all. Without an identity of its own it could only
+    // stop drawing while main kept the exchange open to its deadline.
+    holdSubscribe = true;
+    const { container } = render(withQuery(createElement(BoardBlock, { spec: boardSpec() })));
+    await settle();
+
+    const toggle = await readyToggle(container);
+    await act(async () => {
+      fireEvent.click(toggle);
+      await Promise.resolve();
+    });
+    expect(badgeOf(container)?.getAttribute("data-live-mode")).toBe("live-connecting");
+    expect(main.requestIds).toHaveLength(1);
+
+    await act(async () => {
+      fireEvent.click(toggleOf(container)); // off, still connecting
+      await Promise.resolve();
+    });
+
+    // The cancel went out IMMEDIATELY, addressed by the only name both sides
+    // knew, and it did not wait for the response to arrive first.
+    expect(main.cancelled).toStrictEqual([main.requestIds[0]]);
+    expect(main.unsubscribed).toStrictEqual([]);
+
+    await act(async () => {
+      main.releaseSubscribe(LEASE_A);
+      await Promise.resolve();
+    });
+    await settle();
+    expect(container.textContent).not.toContain("9.99");
+    expect(badgeOf(container)).toBeNull();
+  });
+
   it("R2: discards a subscribe response that lands after the reader turned it off, and releases its lease", async () => {
     holdSubscribe = true;
+    // The race order in which main granted the lease before the cancel reached
+    // it. The generation guard still refuses to paint it, and the orphan is
+    // released by lease id.
+    grantDespiteCancel = true;
     const { container } = render(withQuery(createElement(BoardBlock, { spec: boardSpec() })));
     await settle();
 

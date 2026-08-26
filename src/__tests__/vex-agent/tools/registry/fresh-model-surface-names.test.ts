@@ -24,10 +24,13 @@
  * `route-admission-subset.test.ts`.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { EngineContext } from "@vex-agent/engine/types.js";
-import { buildPromptStack } from "@vex-agent/engine/prompts/index.js";
+import {
+  buildPromptStack,
+  resetProtocolsPromptCache,
+} from "@vex-agent/engine/prompts/index.js";
 import { PROTOCOL_TOOLS } from "@vex-agent/tools/protocols/catalog.js";
 import { getOpenAITools } from "@vex-agent/tools/registry/openai-tools.js";
 import {
@@ -94,45 +97,131 @@ function namesTaughtIn(text: string): readonly string[] {
   return PUBLIC_NAMES.filter((name) => text.includes(name));
 }
 
+/** How MANY times `name` appears in `text`, not merely whether it does. */
+function occurrencesOf(name: string, text: string): number {
+  return text.split(name).length - 1;
+}
+
 /**
- * PRE-EXISTING INVENTORY, measured 2026-08-26, NOT a whitelist.
+ * ENV POSTURE IS PART OF THE SURFACE, so the scan enumerates it explicitly.
  *
- * The scan below found that six static prompt modules outside this change's
- * scope teach a protocol publicName to a session that cannot call it, and have
- * done so since long before D-DS9: `task-shapes.ts`, `mission-run.ts`,
- * `mission-setup.ts`, `safety-contract.ts`, `identity.ts` and `tool-model.ts`.
- * Fixing them is a prompt-doctrine decision with its own budget diff (some, like
- * `tool-model.ts`'s alias-to-protocol table, may be a deliberate teaching
- * artifact rather than a defect), so it belongs to the owner and not to this
- * task. What is NOT deferred is the measurement.
- *
- * This constant is therefore a RATCHET, and it bites in both directions: the
- * union of everything the six modes teach must EQUAL it. A seventh name added
- * anywhere fails, and removing one also fails until the constant is edited down
- * with it, so the inventory can only shrink and can never quietly grow. It is
- * the whole list, no entry is elided, and each names the exact string a model
- * would copy into a call the dispatcher then refuses.
- *
- * ZERO IS THE TARGET. Delete a line when its prompt stops teaching the name;
- * delete the constant when the list is empty.
+ * The prompt layers are env-gated line by line: `mission-run.ts` only emits its
+ * Solana research pointer when `JUPITER_API_KEY` is present. A scan run under
+ * the AMBIENT environment therefore measures ONE install's surface and calls it
+ * the surface, which is how a name taught only in the keyed posture stays
+ * invisible to the ratchet. The postures below are the same two fingerprints
+ * `promptsnaps.test.ts` freezes, produced by the same mechanism: TAVILY and
+ * RETTIWT removed for the run so the gated layers render their reduced variant
+ * in both, and JUPITER toggled. The sentinel is not a credential; the
+ * availability gate tests presence only and no handler runs here.
  */
-const PRE_EXISTING_TAUGHT_NAMES: readonly string[] = [
-  "khalani__bridge_execute",
-  "khalani__order_get",
-  "khalani__orders_list",
-  "khalani__token_balances_get",
-  "khalani__tokens_search",
-  "kyberswap__swap_quote",
-  "kyberswap__token_safety_check",
-  "pools__launch_execute",
-  "pools__launch_request_form",
-  "solana__tokens_search",
-  "trench__images_list",
-  "trench__launch_execute",
-  "trench__launch_preview",
-  "trench__launch_request_form",
-  "virtuals__agent_get",
+const GATED_KEYS = ["JUPITER_API_KEY", "TAVILY_API_KEY", "RETTIWT_API_KEY"] as const;
+const SENTINEL_VALUE = "vex-eval-sentinel-not-a-credential";
+
+interface EnvPosture {
+  readonly slug: string;
+  readonly jupiter: boolean;
+  /**
+   * PRE-EXISTING INVENTORY FOR THIS POSTURE, measured 2026-08-26, NOT a
+   * whitelist. See the ratchet contract below the postures.
+   */
+  readonly occurrences: Readonly<Record<string, number>>;
+}
+
+/**
+ * THE RATCHET CONTRACT, and it bites in every direction.
+ *
+ * Static prompt modules outside this change's scope teach protocol publicNames
+ * to sessions that cannot call them, and have done so since long before D-DS9:
+ * `task-shapes.ts`, `mission-setup.ts`, `safety-contract.ts`, `identity.ts` and
+ * `tool-model.ts`. Fixing them is a prompt-doctrine decision with its own
+ * budget diff (some, like `tool-model.ts`'s alias-to-protocol table, may be a
+ * deliberate teaching artifact rather than a defect), so it belongs to the
+ * owner and not to this task. What is NOT deferred is the measurement.
+ *
+ * Each posture's map must EQUAL what that posture teaches, name for name AND
+ * count for count. A new name fails. A SECOND OCCURRENCE of an already-listed
+ * name fails too, which is the hole a name-only ratchet left open: the doctrine
+ * "do not print a callable name on the fresh surface" is violated once per
+ * printed name, not once per distinct string, so the pin has to be the count.
+ * Removing a name or lowering a count also fails until the map is edited down
+ * with it, so the inventory can only shrink and can never quietly grow.
+ *
+ * ZERO IS THE TARGET. Delete an entry when its prompt stops teaching the name;
+ * delete the maps when they are empty.
+ */
+const ENV_POSTURES: readonly EnvPosture[] = [
+  {
+    slug: "no provider keys",
+    jupiter: false,
+    occurrences: {
+    khalani__bridge_execute: 6,
+    khalani__order_get: 6,
+    khalani__orders_list: 6,
+    khalani__token_balances_get: 6,
+    khalani__tokens_search: 12,
+    kyberswap__swap_quote: 18,
+    kyberswap__token_safety_check: 6,
+    pools__launch_execute: 6,
+    pools__launch_request_form: 6,
+    solana__tokens_search: 6,
+    trench__images_list: 4,
+    trench__launch_execute: 8,
+    trench__launch_preview: 2,
+    trench__launch_request_form: 8,
+    virtuals__agent_get: 6,
+    },
+  },
+  {
+    // Measured identical to the keyless posture only BECAUSE the Solana research
+    // pointer in `mission-run.ts`, the one line this posture adds, now names a
+    // capability reached with ToolSearch instead of a raw publicName. The two
+    // maps are written out separately so a future divergence shows up as a
+    // divergence, and so editing one down can never quietly edit the other.
+    slug: "JUPITER_API_KEY present",
+    jupiter: true,
+    occurrences: {
+    khalani__bridge_execute: 6,
+    khalani__order_get: 6,
+    khalani__orders_list: 6,
+    khalani__token_balances_get: 6,
+    khalani__tokens_search: 12,
+    kyberswap__swap_quote: 18,
+    kyberswap__token_safety_check: 6,
+    pools__launch_execute: 6,
+    pools__launch_request_form: 6,
+    solana__tokens_search: 6,
+    trench__images_list: 4,
+    trench__launch_execute: 8,
+    trench__launch_preview: 2,
+    trench__launch_request_form: 8,
+    virtuals__agent_get: 6,
+    },
+  },
 ];
+
+const savedEnv: Record<string, string | undefined> = {};
+
+beforeAll(() => {
+  for (const key of GATED_KEYS) savedEnv[key] = process.env[key];
+});
+
+afterAll(() => {
+  for (const key of GATED_KEYS) {
+    if (savedEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = savedEnv[key];
+  }
+  resetProtocolsPromptCache();
+});
+
+/** Put the process into `posture` and drop every prompt cache built under the old one. */
+function applyPosture(posture: EnvPosture): void {
+  delete process.env.TAVILY_API_KEY;
+  delete process.env.RETTIWT_API_KEY;
+  if (posture.jupiter) process.env.JUPITER_API_KEY = SENTINEL_VALUE;
+  else delete process.env.JUPITER_API_KEY;
+  resetProtocolsPromptCache();
+}
 
 describe("fresh model surface teaches no protocol publicName", () => {
   it("the catalog it scans against is the real, non-empty one", () => {
@@ -152,52 +241,70 @@ describe("fresh model surface teaches no protocol publicName", () => {
    * is always visible, so every session read that instruction and every session
    * that followed it was refused. Nothing is whitelisted here and nothing may be.
    */
-  for (const subject of MODES) {
-    it(`${subject.name}: no visible tool DESCRIPTION teaches a callable protocol name`, () => {
-      clearDiscoveredTools(SESSION);
-      // The premise of the whole scan: this session has discovered nothing, so
-      // NO protocol name is callable for it.
-      expect(getDiscoveredToolIds(SESSION)).toEqual([]);
+  for (const posture of ENV_POSTURES) {
+    for (const subject of MODES) {
+      it(`${posture.slug} / ${subject.name}: no visible tool DESCRIPTION teaches a callable protocol name`, () => {
+        applyPosture(posture);
+        clearDiscoveredTools(SESSION);
+        // The premise of the whole scan: this session has discovered nothing, so
+        // NO protocol name is callable for it.
+        expect(getDiscoveredToolIds(SESSION)).toEqual([]);
 
-      const offences = getOpenAITools(subject.visibility).flatMap((tool) =>
-        namesTaughtIn(tool.function.description).map(
-          (name) => `description of "${tool.function.name}" teaches "${name}"`,
-        ),
-      );
-      expect(offences).toEqual([]);
-    });
+        const offences = getOpenAITools(subject.visibility).flatMap((tool) =>
+          namesTaughtIn(tool.function.description).map(
+            (name) => `description of "${tool.function.name}" teaches "${name}"`,
+          ),
+        );
+        expect(offences).toEqual([]);
+      });
+    }
   }
 
   /**
-   * LANE 2, RATCHETED. Same scan over the static prompt layers, against the
-   * measured inventory above rather than against zero. See that constant for
-   * why the residue is deferred and why this is not a whitelist.
+   * LANE 2, RATCHETED PER POSTURE AND PER OCCURRENCE. Same scan over the static
+   * prompt layers, against the measured inventory of THIS posture rather than
+   * against zero. See `ENV_POSTURES` for why the residue is deferred, why this
+   * is not a whitelist, and why the pin is a count and not a name.
    */
-  it("the static prompt layers teach EXACTLY the pre-existing inventory, and nothing new", () => {
-    clearDiscoveredTools(SESSION);
-    const taught = new Set<string>();
-    for (const subject of MODES) {
-      for (const layer of buildPromptStack(subject.engine).staticLayers) {
-        for (const name of namesTaughtIn(layer)) taught.add(name);
+  for (const posture of ENV_POSTURES) {
+    it(`${posture.slug}: the static prompt layers teach EXACTLY the inventory of this posture, name and count`, () => {
+      applyPosture(posture);
+      clearDiscoveredTools(SESSION);
+      const taught = new Map<string, number>();
+      for (const subject of MODES) {
+        for (const layer of buildPromptStack(subject.engine).staticLayers) {
+          for (const name of namesTaughtIn(layer)) {
+            taught.set(name, (taught.get(name) ?? 0) + occurrencesOf(name, layer));
+          }
+        }
       }
-    }
-    expect([...taught].sort()).toEqual([...PRE_EXISTING_TAUGHT_NAMES].sort());
-  });
+      // Name level, unchanged: the set may shrink, never grow.
+      expect([...taught.keys()].sort()).toEqual(Object.keys(posture.occurrences).sort());
+      // Occurrence level: a SECOND printing of an already-listed name is a new
+      // violation of the same doctrine, and must fail exactly as a new name does.
+      expect(Object.fromEntries([...taught.entries()].sort())).toEqual(
+        Object.fromEntries(Object.entries(posture.occurrences).sort()),
+      );
+    });
+  }
 
-  it("no dexscreener name survives the D-DS9 revert anywhere on the fresh surface", () => {
-    // The reverted decision's own residue, pinned at zero separately from the
-    // ratchet so a re-introduction cannot hide inside a growing inventory.
-    clearDiscoveredTools(SESSION);
-    const dexNames = PUBLIC_NAMES.filter((name) => name.startsWith("dexscreener__"));
-    expect(dexNames).toHaveLength(18);
-    for (const subject of MODES) {
-      const surface = [
-        ...buildPromptStack(subject.engine).staticLayers,
-        ...getOpenAITools(subject.visibility).map((tool) => tool.function.description),
-      ].join("\n");
-      for (const name of dexNames) {
-        expect(surface, `${subject.name} teaches "${name}"`).not.toContain(name);
+  for (const posture of ENV_POSTURES) {
+    it(`${posture.slug}: no dexscreener name survives the D-DS9 revert anywhere on the fresh surface`, () => {
+      // The reverted decision's own residue, pinned at zero separately from the
+      // ratchet so a re-introduction cannot hide inside a growing inventory.
+      applyPosture(posture);
+      clearDiscoveredTools(SESSION);
+      const dexNames = PUBLIC_NAMES.filter((name) => name.startsWith("dexscreener__"));
+      expect(dexNames).toHaveLength(18);
+      for (const subject of MODES) {
+        const surface = [
+          ...buildPromptStack(subject.engine).staticLayers,
+          ...getOpenAITools(subject.visibility).map((tool) => tool.function.description),
+        ].join("\n");
+        for (const name of dexNames) {
+          expect(surface, `${subject.name} teaches "${name}"`).not.toContain(name);
+        }
       }
-    }
-  });
+    });
+  }
 });

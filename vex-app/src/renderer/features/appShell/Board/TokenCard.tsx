@@ -40,7 +40,7 @@
  * and can be copied.
  */
 
-import type { JSX, RefObject } from "react";
+import { useState, type JSX, type RefObject } from "react";
 import {
   boardTokenIconDataUrl,
   useBoardTokenIcon,
@@ -265,6 +265,14 @@ function ChartTrigger({
  * non-image outcome (loading, absent, transport trouble) lands on the same
  * monogram, because the card's job is to show the token, not to narrate the
  * state of a decorative fetch.
+ *
+ * AND SO DOES A PICTURE THE BROWSER CANNOT DRAW. Main's validation reads magic
+ * bytes and header dimensions with no decode - no image codec ships with Vex -
+ * so bytes can be a truthful, in-bounds PNG header followed by a corrupt or
+ * truncated body and still reach here. Without `onError` that draws a broken-
+ * image glyph in a slot that has a designed state for exactly this. The failing
+ * URL is remembered rather than a bare boolean, so a LATER answer carrying
+ * different bytes gets its own attempt instead of inheriting this one's verdict.
  */
 function TokenLogo({
   iconId,
@@ -275,8 +283,9 @@ function TokenLogo({
 }): JSX.Element {
   const query = useBoardTokenIcon(iconId);
   const dataUrl = boardTokenIconDataUrl(query);
+  const [undecodableUrl, setUndecodableUrl] = useState<string | null>(null);
 
-  if (dataUrl !== null) {
+  if (dataUrl !== null && dataUrl !== undecodableUrl) {
     return (
       <img
         data-vex-area="board-token-logo"
@@ -284,6 +293,9 @@ function TokenLogo({
         src={dataUrl}
         alt=""
         aria-hidden
+        onError={() => {
+          setUndecodableUrl(dataUrl);
+        }}
         className="h-9 w-9 shrink-0 rounded-full border border-line-2 bg-surface-2 object-cover"
       />
     );

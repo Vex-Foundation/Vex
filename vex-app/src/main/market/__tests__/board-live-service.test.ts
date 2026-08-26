@@ -30,6 +30,11 @@ const { BoardLiveService } = await import("../board-live-service.js");
 const { DexScreenerSiteErrorCodes } = await import(
   "@tools/dexscreener/site-errors.js"
 );
+const { reconcileBatchRows } = await import(
+  "@tools/dexscreener/endpoints/pairs-batch.js"
+);
+type BatchIdentity =
+  import("@tools/dexscreener/endpoints/pairs-batch.js").BatchIdentity;
 type BoardLiveBatchAnswer =
   import("../board-live-service.js").BoardLiveBatchAnswer;
 type BoardLiveTarget = import("../board-live-service.js").BoardLiveTarget;
@@ -62,21 +67,67 @@ function providerRow(
   };
 }
 
+/**
+ * One batch answer, ASSEMBLED BY THE REAL ADAPTER rather than by hand.
+ *
+ * This is the seam the review found. `reconcileBatchRows` is the shipped
+ * function `fetchPairsBatch` uses to turn raw provider rows into the four
+ * fields the live service consumes, and it REPAIRS two of the divergences on
+ * the way: it removes a row nobody asked for, and it folds a second row for one
+ * identity into the first, recording each in `unrequested` and `collapsed`. A
+ * hand-built answer skipped that repair, so the old R15 cases were injecting
+ * malformed rows on the far side of the very boundary that loses the evidence,
+ * and they passed against a service that had no way to see either divergence.
+ *
+ * Driving the real function means a case here describes what the PROVIDER did,
+ * and the service is judged on the answer production would actually hand it.
+ */
+function answerFrom(
+  requested: readonly { chain: string; pairAddress: string }[],
+  providerRows: readonly unknown[],
+  fetchedAtMs = 1_000,
+): BoardLiveBatchAnswer {
+  const identities: BatchIdentity[] = requested.map((pool) => ({
+    chainId: pool.chain,
+    id: pool.pairAddress,
+    kind: "pair",
+    raw: `${pool.chain}:${pool.pairAddress}`,
+  }));
+  return { ...reconcileBatchRows(identities, providerRows), fetchedAtMs };
+}
+
+/** The ordinary case: the provider answered exactly what was asked, once each. */
 function answerFor(
   pools: readonly { chain: string; pairAddress: string }[],
   fetchedAtMs = 1_000,
   priceUsd?: string,
 ): BoardLiveBatchAnswer {
-  const rows = pools.map((pool) =>
-    providerRow(pool.chain, pool.pairAddress, priceUsd),
-  );
-  return {
-    rows,
-    resolvedKeys: new Set(
-      pools.map((pool) => `${pool.chain}:${pool.pairAddress}`.toLowerCase()),
-    ),
+  return answerFrom(
+    pools,
+    pools.map((pool) => providerRow(pool.chain, pool.pairAddress, priceUsd)),
     fetchedAtMs,
-  };
+  );
+}
+
+/**
+ * Subscribe with a renderer-minted request id, which the contract now requires.
+ *
+ * Sequential rather than random so a test that needs to name a request id it
+ * has not made yet can predict it.
+ */
+let requestCounter = 0;
+function requestId(n: number): string {
+  return `00000000-0000-4000-9000-${String(n).padStart(12, "0")}`;
+}
+function subscribeTo(
+  service: InstanceType<typeof BoardLiveService>,
+  args: {
+    readonly target: BoardLiveTarget;
+    readonly pools: readonly { chain: string; pairAddress: string }[];
+  },
+): ReturnType<InstanceType<typeof BoardLiveService>["subscribe"]> {
+  requestCounter += 1;
+  return service.subscribe({ ...args, requestId: requestId(requestCounter) });
 }
 
 interface FakeTarget {
@@ -184,9 +235,9 @@ describe("board live lease", () => {
     const a = makeTarget(1);
     const b = makeTarget(2);
 
-    const first = service.subscribe({ target: a.target, pools: POOLS });
+    const first = subscribeTo(service, { target: a.target, pools: POOLS });
     // B arrives while A's very first attempt is still in flight.
-    const second = service.subscribe({ target: b.target, pools: POOLS });
+    const second = subscribeTo(service, { target: b.target, pools: POOLS });
 
     // A is closed the moment B claims the slot, not when A's attempt lands.
     expect(kinds(a.events)).toStrictEqual(["closed:superseded"]);
@@ -209,7 +260,7 @@ describe("board live lease", () => {
     const service = makeService(() => Promise.resolve(answerFor(POOLS)));
     live = service;
     const owner = makeTarget(1);
-    const outcome = await service.subscribe({ target: owner.target, pools: POOLS });
+    const outcome = await subscribeTo(service, { target: owner.target, pools: POOLS });
     if (outcome.kind !== "subscribed") throw new Error("expected a lease");
 
     expect(
@@ -241,7 +292,7 @@ describe("board live lease", () => {
     });
     live = service;
     const owner = makeTarget(1);
-    const outcome = await service.subscribe({ target: owner.target, pools: POOLS });
+    const outcome = await subscribeTo(service, { target: owner.target, pools: POOLS });
     if (outcome.kind !== "subscribed") throw new Error("expected a lease");
 
     await vi.advanceTimersByTimeAsync(5_000); // attempt 2: fails
@@ -274,7 +325,7 @@ describe("board live lease", () => {
     });
     live = service;
     const owner = makeTarget(1);
-    await service.subscribe({ target: owner.target, pools: POOLS });
+    await subscribeTo(service, { target: owner.target, pools: POOLS });
 
     await vi.advanceTimersByTimeAsync(5_000);
     expect(kinds(owner.events)).toStrictEqual(["closed:dropped"]);
@@ -298,7 +349,7 @@ describe("board live lease", () => {
     );
     live = service;
     const owner = makeTarget(1);
-    await service.subscribe({ target: owner.target, pools: POOLS });
+    await subscribeTo(service, { target: owner.target, pools: POOLS });
 
     await vi.advanceTimersByTimeAsync(600_000);
     // Two degradations, then the third failure is terminal rather than a
@@ -326,7 +377,7 @@ describe("board live lease", () => {
     });
     live = service;
     const owner = makeTarget(1);
-    const outcome = await service.subscribe({ target: owner.target, pools: POOLS });
+    const outcome = await subscribeTo(service, { target: owner.target, pools: POOLS });
     if (outcome.kind !== "subscribed") throw new Error("expected a lease");
 
     await vi.advanceTimersByTimeAsync(5_000); // attempt 2 is now in flight
@@ -351,7 +402,7 @@ describe("board live lease", () => {
     const service = makeService(() => Promise.resolve(answerFor(POOLS)));
     live = service;
     const owner = makeTarget(1);
-    await service.subscribe({ target: owner.target, pools: POOLS });
+    await subscribeTo(service, { target: owner.target, pools: POOLS });
     expect(owner.listenerCount()).toBe(1);
 
     owner.fireGone();
@@ -377,7 +428,7 @@ describe("board live lease", () => {
       });
     });
     const owner = makeTarget(1);
-    await service.subscribe({ target: owner.target, pools: POOLS });
+    await subscribeTo(service, { target: owner.target, pools: POOLS });
     await vi.advanceTimersByTimeAsync(5_000);
 
     const stopping = service.stop();
@@ -391,7 +442,7 @@ describe("board live lease", () => {
     await service.stop();
     // A subscribe after shutdown is refused honestly rather than starting a
     // poll into a process that is going away.
-    const after = await service.subscribe({ target: owner.target, pools: POOLS });
+    const after = await subscribeTo(service, { target: owner.target, pools: POOLS });
     expect(after.kind).toBe("unsupported");
   });
 
@@ -399,7 +450,7 @@ describe("board live lease", () => {
     const service = makeService(() => Promise.resolve(answerFor(POOLS)));
     live = service;
     const owner = makeTarget(1);
-    const outcome = await service.subscribe({ target: owner.target, pools: POOLS });
+    const outcome = await subscribeTo(service, { target: owner.target, pools: POOLS });
     if (outcome.kind !== "subscribed") throw new Error("expected a lease");
 
     await vi.advanceTimersByTimeAsync(15_000);
@@ -421,29 +472,69 @@ describe("board live lease", () => {
   it.each([
     [
       "a missing identity",
-      (): BoardLiveBatchAnswer => answerFor([POOLS[0]], 9_999),
+      "incomplete",
+      // The provider answered one of the two pools and said nothing about the
+      // other. The adapter has nothing to repair; the counts simply do not
+      // match.
+      (): BoardLiveBatchAnswer =>
+        answerFrom(POOLS, [providerRow("solana", "PairAAA")], 9_999),
     ],
     [
-      "an extra identity nobody asked for",
+      "a live row for a pool this board never named",
+      "incomplete",
+      // MEASURED CLASS. A one-identity batch came back carrying a real, live
+      // row for an entirely different pool. The adapter DROPS that row and
+      // records it in `unrequested`, so the remaining answer covers exactly the
+      // requested keys and reconciles clean unless the accounting is read.
       (): BoardLiveBatchAnswer =>
-        answerFor(
-          [...POOLS, { chain: "base", pairAddress: "PairCCC" }],
+        answerFrom(
+          POOLS,
+          [
+            ...POOLS.map((pool) => providerRow(pool.chain, pool.pairAddress)),
+            providerRow("base", "PairCCC"),
+          ],
           9_999,
         ),
     ],
     [
-      "a duplicated row for one identity",
-      (): BoardLiveBatchAnswer => {
-        const answer = answerFor(POOLS, 9_999);
-        return {
-          ...answer,
-          rows: [...answer.rows, providerRow("solana", "PairAAA", "2.50")],
-        };
-      },
+      "a second row for one identity, folded by the adapter",
+      "incomplete",
+      // The adapter keeps the FIRST row and records the fold in `collapsed`.
+      // The surviving answer is a perfectly well-formed one-row-per-pool set,
+      // which is why this case is invisible without the accounting.
+      (): BoardLiveBatchAnswer =>
+        answerFrom(
+          POOLS,
+          [
+            ...POOLS.map((pool) => providerRow(pool.chain, pool.pairAddress)),
+            providerRow("solana", "PairAAA", "2.50"),
+          ],
+          9_999,
+        ),
+    ],
+    [
+      "a row whose shape the projector cannot read",
+      "provider",
+      // F6. `projectBoardRow` delegates to the surface projector, which THROWS
+      // on shape drift rather than returning nulls. Reconciliation itself is
+      // clean here: both identities resolve, nothing is unrequested and nothing
+      // collapsed. Before the projection was brought inside the classified
+      // path, this throw escaped the state machine and left an active lease
+      // with no next tick ever scheduled.
+      (): BoardLiveBatchAnswer =>
+        answerFrom(
+          POOLS,
+          POOLS.map((pool) => ({
+            ...providerRow(pool.chain, pool.pairAddress),
+            // A scalar where the projector reads a block.
+            baseToken: "not-a-token-block",
+          })),
+          9_999,
+        ),
     ],
   ])(
     "R15: rejects the WHOLE tick on %s, keeping last-good and its timestamp",
-    async (_label, makeBad) => {
+    async (_label, expectedReason, makeBad) => {
       let attempt = 0;
       const service = makeService(() => {
         attempt += 1;
@@ -452,7 +543,7 @@ describe("board live lease", () => {
       });
       live = service;
       const owner = makeTarget(1);
-      const outcome = await service.subscribe({
+      const outcome = await subscribeTo(service, {
         target: owner.target,
         pools: POOLS,
       });
@@ -467,12 +558,196 @@ describe("board live lease", () => {
       expect(kinds(owner.events)).toStrictEqual(["degraded"]);
       const event = owner.events[0];
       if (event?.kind !== "degraded") throw new Error("expected degraded");
-      expect(event.reason).toBe("incomplete");
+      expect(event.reason).toBe(expectedReason);
       expect(event.lastGood?.fetchedAtMs).toBe(1_000);
       expect(event.lastGood?.rows).toHaveLength(POOLS.length);
       expect(event.lastGood?.rows[0]?.row.priceUsd).toBe("1.25");
+
+      // AND THE LEASE IS STILL RUNNING. A degradation that forgot to arm the
+      // next attempt would leave a board frozen with an active lease and no
+      // clock, which is exactly what an escaping projection throw used to do.
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(kinds(owner.events).length).toBeGreaterThan(1);
     },
   );
+
+  it.each([
+    [
+      "a row the projector cannot read",
+      (): BoardLiveBatchAnswer =>
+        answerFrom(
+          POOLS,
+          POOLS.map((pool) => ({
+            ...providerRow(pool.chain, pool.pairAddress),
+            baseToken: "not-a-token-block",
+          })),
+        ),
+    ],
+    [
+      "an answer that does not cover the board",
+      (): BoardLiveBatchAnswer =>
+        answerFrom(POOLS, [providerRow("solana", "PairAAA")]),
+    ],
+  ])(
+    "F6: a FIRST answer of %s closes the lease instead of leaking it",
+    async (_label, makeBad) => {
+      const service = makeService(() => Promise.resolve(makeBad()));
+      live = service;
+      const owner = makeTarget(1);
+      const outcome = await subscribeTo(service, {
+        target: owner.target,
+        pools: POOLS,
+      });
+
+      // A TYPED REFUSAL, with a sentence the reader can act on. Not a thrown
+      // exception escaping the state machine, which is what an unguarded
+      // projection produced.
+      expect(outcome.kind).toBe("failed");
+      if (outcome.kind !== "failed") throw new Error("expected a failure");
+      expect(outcome.detail.length).toBeGreaterThan(0);
+
+      // AND THE LEASE IS NOT LEAKED. The slot is free, nothing is left
+      // listening on the window, and the terminal event was delivered.
+      expect(kinds(owner.events)).toStrictEqual(["closed:dropped"]);
+      expect(owner.listenerCount()).toBe(0);
+      // The proof the registry is genuinely free: a fresh subscribe claims it
+      // and is granted, which a lease stuck in `subscribing` would have
+      // superseded instead.
+      const next = await subscribeTo(service, {
+        target: makeTarget(2).target,
+        pools: POOLS,
+      });
+      expect(next.kind).toBe("failed");
+      await vi.advanceTimersByTimeAsync(60_000);
+      // No tick was ever scheduled for a lease that never became active.
+      expect(kinds(owner.events)).toStrictEqual(["closed:dropped"]);
+    },
+  );
+
+  it("R6-pre: a cancel by request id aborts the FIRST fetch before it answers", async () => {
+    // The window this test is about: main mints the lease id but does not hand
+    // it back until the first fetch settles, so for up to the attempt deadline
+    // the renderer holds no handle from main at all. The request id is the one
+    // name that exists on both sides from before the call.
+    let seenSignal: AbortSignal | null = null;
+    const release: { fn: ((answer: BoardLiveBatchAnswer) => void) | null } = {
+      fn: null,
+    };
+    const service = makeService((args) => {
+      seenSignal = args.signal;
+      return new Promise<BoardLiveBatchAnswer>((resolve) => {
+        release.fn = resolve;
+      });
+    });
+    live = service;
+    const owner = makeTarget(1);
+    const mine = requestId(9_001);
+
+    const pending = service.subscribe({
+      target: owner.target,
+      pools: POOLS,
+      requestId: mine,
+    });
+    await Promise.resolve();
+    const signal = seenSignal as AbortSignal | null;
+    if (signal === null) throw new Error("expected the first fetch to start");
+    expect(signal.aborted).toBe(false);
+
+    // THE ASSERTION THAT MATTERS is on the underlying signal, not on eventual
+    // cleanup: the exchange must end NOW, not run to its 20 s deadline for a
+    // reader who has already gone.
+    expect(service.unsubscribe({ requestId: mine, ownerId: 1 })).toBe("closed");
+    expect(signal.aborted).toBe(true);
+    expect(kinds(owner.events)).toStrictEqual(["closed:unsubscribed"]);
+
+    // The subscribe still has to settle, and it must publish nothing.
+    release.fn?.(answerFor(POOLS, 9_999));
+    const outcome = await pending;
+    expect(outcome.kind).not.toBe("subscribed");
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(kinds(owner.events)).toStrictEqual(["closed:unsubscribed"]);
+  });
+
+  it("R3-pre: a request id is a handle, not a credential", async () => {
+    // Held open, then released at the end: the point is the state DURING the
+    // first fetch, and `stop()` now genuinely drains that attempt, so a promise
+    // that never settled would hang this file's own teardown.
+    const release: { fn: ((answer: BoardLiveBatchAnswer) => void) | null } = {
+      fn: null,
+    };
+    const service = makeService(
+      () =>
+        new Promise<BoardLiveBatchAnswer>((resolve) => {
+          release.fn = resolve;
+        }),
+    );
+    live = service;
+    const owner = makeTarget(1);
+    const mine = requestId(9_002);
+    void service.subscribe({
+      target: owner.target,
+      pools: POOLS,
+      requestId: mine,
+    });
+    await Promise.resolve();
+
+    // Another window naming this request id gets the same typed refusal it
+    // would get for a lease id, and the lease is left running.
+    expect(service.unsubscribe({ requestId: mine, ownerId: 2 })).toBe(
+      "not-owner",
+    );
+    expect(owner.events).toStrictEqual([]);
+    // An id nobody minted is simply unknown.
+    expect(
+      service.unsubscribe({ requestId: requestId(9_003), ownerId: 1 }),
+    ).toBe("unknown");
+    expect(owner.events).toStrictEqual([]);
+    release.fn?.(answerFor(POOLS, 9_999));
+  });
+
+  it("R9-pre: stop() drains the FIRST fetch, not only a later poll", async () => {
+    // The initial attempt is the one cycle no tick timer schedules, so it was
+    // the one attempt shutdown could abandon in flight rather than drain.
+    let settled = false;
+    const release: { fn: ((answer: BoardLiveBatchAnswer) => void) | null } = {
+      fn: null,
+    };
+    const service = makeService(
+      () =>
+        new Promise<BoardLiveBatchAnswer>((resolve) => {
+          release.fn = (answer): void => {
+            settled = true;
+            resolve(answer);
+          };
+        }),
+    );
+    const owner = makeTarget(1);
+    const pending = service.subscribe({
+      target: owner.target,
+      pools: POOLS,
+      requestId: requestId(9_004),
+    });
+    await Promise.resolve();
+
+    const stopping = service.stop();
+    expect(kinds(owner.events)).toStrictEqual(["closed:shutdown"]);
+    expect(settled).toBe(false);
+
+    let stopResolved = false;
+    void stopping.then(() => {
+      stopResolved = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // Ordering, not timing: stop() cannot be finished while the attempt it is
+    // supposed to be draining has not settled.
+    expect(stopResolved).toBe(false);
+
+    release.fn?.(answerFor(POOLS, 9_999));
+    await stopping;
+    expect(settled).toBe(true);
+    await pending;
+    expect(kinds(owner.events)).toStrictEqual(["closed:shutdown"]);
+  });
 
   it("R11: reports live unsupported without a bridge, and refuses subscribe by name", async () => {
     const service = makeService(() => Promise.resolve(answerFor(POOLS)), {
@@ -484,7 +759,7 @@ describe("board live lease", () => {
     expect(capability.detail).not.toBeNull();
 
     const owner = makeTarget(1);
-    const outcome = await service.subscribe({ target: owner.target, pools: POOLS });
+    const outcome = await subscribeTo(service, { target: owner.target, pools: POOLS });
     expect(outcome.kind).toBe("unsupported");
     // Nothing was claimed, so nothing has to be released.
     expect(owner.listenerCount()).toBe(0);
@@ -506,7 +781,7 @@ describe("board live lease", () => {
     });
     live = service;
     const owner = makeTarget(1);
-    await service.subscribe({ target: owner.target, pools: POOLS });
+    await subscribeTo(service, { target: owner.target, pools: POOLS });
 
     await vi.advanceTimersByTimeAsync(5_000);
     elapsed += 5_000;
@@ -535,7 +810,7 @@ describe("board live lease", () => {
     });
     live = service;
     const owner = makeTarget(1);
-    const outcome = await service.subscribe({ target: owner.target, pools: POOLS });
+    const outcome = await subscribeTo(service, { target: owner.target, pools: POOLS });
     if (outcome.kind !== "subscribed") throw new Error("expected a lease");
 
     await vi.advanceTimersByTimeAsync(5_000);

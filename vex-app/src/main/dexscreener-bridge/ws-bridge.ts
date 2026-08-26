@@ -398,7 +398,11 @@ export class DexScreenerWsBridge {
       `expect:${options.expect.binaryFrames}:${options.expect.maxTotalBytes}`
     );
     if (options.coalesceScope !== undefined) {
-      hash.update(" scope:");
+      // The delimiter is written as an ESCAPE, never as the raw byte: a literal
+      // NUL in the source is invisible in a diff and unreviewable. These are
+      // the same seven bytes the digest has always mixed in (0x00 then
+      // "scope:"), pinned by `ws-bridge-coalesce-scope.test.ts`.
+      hash.update("\u0000scope:");
       hash.update(options.coalesceScope, "utf8");
     }
     return hash.digest("hex");

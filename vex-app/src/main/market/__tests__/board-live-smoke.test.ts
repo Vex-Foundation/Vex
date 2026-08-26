@@ -97,6 +97,11 @@ function answer(fetchedAtMs: number, priceUsd: string): BoardLiveBatchAnswer {
     resolvedKeys: new Set(
       POOLS.map((pool) => `${pool.chain}:${pool.pairAddress}`.toLowerCase()),
     ),
+    // The recorded run answered exactly what was asked: nothing extra came
+    // back and nothing was folded. The service refuses a tick when either list
+    // carries anything, so the archive's own emptiness is part of the fixture.
+    unrequested: [],
+    collapsed: [],
     fetchedAtMs,
   };
 }
@@ -156,7 +161,11 @@ describe("smoke-live-v1", () => {
       jitterMs: () => 0,
     });
 
-    const first = await service.subscribe({ target: target(eventsA, 1), pools: POOLS });
+    const first = await service.subscribe({
+      target: target(eventsA, 1),
+      pools: POOLS,
+      requestId: "aaaaaaaa-0000-4000-8000-000000000001",
+    });
     if (first.kind !== "subscribed") throw new Error("expected a lease");
     expect(first.snapshot.rows).toHaveLength(3);
     // The projector ran on the recorded bytes: money is TEXT, not a float.
@@ -172,7 +181,11 @@ describe("smoke-live-v1", () => {
     expect(ticksSeen).toBe(4);
 
     // A second board claims the single lease.
-    const second = await service.subscribe({ target: target(eventsB, 2), pools: POOLS });
+    const second = await service.subscribe({
+      target: target(eventsB, 2),
+      pools: POOLS,
+      requestId: "aaaaaaaa-0000-4000-8000-000000000002",
+    });
     if (second.kind !== "subscribed") throw new Error("expected the second lease");
     expect(eventsA[eventsA.length - 1]).toMatchObject({
       kind: "closed",
