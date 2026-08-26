@@ -93,19 +93,73 @@ function isErr(value: unknown): value is ErrResult {
 async function call(
   channel: string,
   payload: unknown,
-  options: { sender?: unknown } = {},
+  options: { sender?: unknown; requestId?: string } = {},
 ): Promise<OkResult | ErrResult> {
   const fn = handlers.get(channel);
   if (fn === undefined) throw new Error(`handler not registered: ${channel}`);
   return (await fn((options.sender ?? trustedSender) as TestIpcEvent, {
-    requestId: REQUEST_ID,
+    requestId: options.requestId ?? REQUEST_ID,
     payload,
   })) as OkResult | ErrResult;
 }
 
+/** Let already-resolved promise jobs run. No wall clock is involved. */
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 24; index += 1) await Promise.resolve();
+}
+
+/** A read this test holds open, so a cut can be observed mid-flight. */
+function heldRead(): {
+  readonly impl: (...args: unknown[]) => Promise<unknown>;
+  signal: () => AbortSignal | undefined;
+  release: () => void;
+} {
+  let seen: AbortSignal | undefined;
+  let release = (): void => undefined;
+  return {
+    impl: async (...args: unknown[]): Promise<unknown> => {
+      // The five services differ: some take a positional signal, some take an
+      // options object carrying one. Both are the same fact for this test.
+      seen = args
+        .flatMap((arg) =>
+          arg instanceof AbortSignal
+            ? [arg]
+            : typeof arg === "object" && arg !== null
+              ? Object.values(arg)
+              : [],
+        )
+        .find((value): value is AbortSignal => value instanceof AbortSignal);
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { kind: "unavailable", reason: "cancelled" };
+    },
+    signal: () => seen,
+    release: () => {
+      release();
+    },
+  };
+}
+
 let teardown: ReadonlyArray<() => void> = [];
 
+
+/**
+ * A REAL scheduler is mounted for these tests, not a stub.
+ *
+ * Admission is the property under test on this channel now: a handler that
+ * reached the service without passing the board's two-exchange ceiling is the
+ * defect these suites exist to catch, and a mocked scheduler would prove only
+ * that glue called glue.
+ */
+const { mountBoardLiveScheduler } = await import(
+  "../../market/board-live-scheduler.js"
+);
+const { getCancelController } = await import("../register-handler.js");
+let stopScheduler: () => Promise<void> = async (): Promise<void> => undefined;
+
 beforeEach(() => {
+  stopScheduler = mountBoardLiveScheduler();
   spotlightService = {
     topTraders,
     momentum,
@@ -118,7 +172,8 @@ beforeEach(() => {
   teardown = registerBoardSpotlightHandlers();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await stopScheduler();
   for (const off of teardown) off();
   handlers.clear();
   vi.clearAllMocks();
@@ -399,5 +454,86 @@ describe("the output schema is a gate on main's own bugs", () => {
     topTraders.mockResolvedValue({ kind: "traders", rows: "not-an-array" });
     const result = await call(CH.boardSpotlight.topTraders, { subject: SUBJECT });
     expect(isErr(result)).toBe(true);
+  });
+});
+
+
+/* ------------------------------------------------------------------ */
+/* Admission - the ceiling and the cut, through the real handlers      */
+/* ------------------------------------------------------------------ */
+
+describe("the cut reaches the provider", () => {
+  it.each([
+    ["tapePoll", "the tape", () => tapePoll],
+    ["topTraders", "the traders panel", () => topTraders],
+  ])("aborts the SERVICE's own signal on %s (%s)", async (channelKey, _label, pick) => {
+    // END TO END through the real handler: `vex:cancel` fires `ctx.signal`,
+    // admission links it to the run's controller, and the run's signal is what
+    // the service was handed. Asserted on the SIGNAL, not on a call count.
+    const held = heldRead();
+    pick().mockImplementation(held.impl);
+    const channel =
+      channelKey === "tapePoll"
+        ? CH.boardSpotlight.tapePoll
+        : CH.boardSpotlight.topTraders;
+    const payload =
+      channelKey === "tapePoll" ? { subject: SUBJECT, reset: true } : { subject: SUBJECT };
+
+    const pending = call(channel, payload);
+    await flushMicrotasks();
+    expect(held.signal()).toBeInstanceOf(AbortSignal);
+    expect(held.signal()?.aborted).toBe(false);
+
+    getCancelController(REQUEST_ID)?.abort();
+    expect(held.signal()?.aborted).toBe(true);
+
+    held.release();
+    await pending;
+  });
+});
+
+describe("the board-wide ceiling is enforced on the real handlers", () => {
+  it("never lets a third spotlight read reach a service while two are in flight", async () => {
+    // THE DEFECT THIS PINS. Every one of these reads used to go straight to
+    // its service, past the scheduler that was mounted and never called. Three
+    // concurrent requests then meant three provider exchanges on a bridge that
+    // gives the board two and the agent the other two.
+    // DESTRUCTURED, so each is a definite value rather than an index lookup
+    // the compiler has to treat as possibly absent. `mockImplementation` takes
+    // no `undefined`, and answering that with `?.` only moves the problem into
+    // the argument.
+    const [first, second, third] = [heldRead(), heldRead(), heldRead()];
+    const held = [first, second, third];
+    topTraders.mockImplementation(first.impl);
+    momentum.mockImplementation(second.impl);
+    otherPools.mockImplementation(third.impl);
+
+    const pending = [
+      call(CH.boardSpotlight.topTraders, { subject: SUBJECT }, { requestId: REQUEST_ID }),
+      call(
+        CH.boardSpotlight.momentum,
+        { subject: SUBJECT },
+        { requestId: "22222222-2222-4333-8444-555555555555" },
+      ),
+      call(
+        CH.boardSpotlight.otherPools,
+        { subject: SUBJECT },
+        { requestId: "33333333-2222-4333-8444-555555555555" },
+      ),
+    ];
+    await flushMicrotasks();
+
+    const started = held.filter((read) => read.signal() !== undefined).length;
+    expect(started).toBe(2);
+
+    // Freeing one slot admits the third, and never before. The read released
+    // here is one that actually STARTED: which two those are is the priority
+    // table's decision, not this test's.
+    held.find((read) => read.signal() !== undefined)?.release();
+    await flushMicrotasks();
+    expect(held.filter((read) => read.signal() !== undefined).length).toBe(3);
+
+    for (const read of held) read.release();
+    await Promise.all(pending);
   });
 });

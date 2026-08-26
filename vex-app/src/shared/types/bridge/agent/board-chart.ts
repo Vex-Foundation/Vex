@@ -1,4 +1,4 @@
-import type { Result } from "../../../ipc/result.js";
+import type { AbortableInvocation } from "../common.js";
 import type {
   BoardChartPollInput,
   BoardChartPollResult,
@@ -18,6 +18,13 @@ import type {
  * stops the timer and cuts the request in flight, which is why the surface that
  * can be left is the surface that owns the thing that stops.
  *
+ * ABORTABLE, and that is what makes the cut above real. Leaving the spotlight,
+ * switching pill or closing the modal fires `cancel`, which fires main's own
+ * `ctx.signal`; without it a cut would stop the renderer LISTENING while main
+ * ran the provider read to its deadline for a surface nobody is watching. The
+ * renderer still cannot name a timeout or a budget: `cancel` says only "I have
+ * stopped waiting".
+ *
  * EVERY POLL IS A FRESH READ. Nothing on this channel is served from a positive
  * cache: a forming bar is the whole reason the chart polls.
  */
@@ -32,5 +39,5 @@ export interface BoardChartBridge {
    */
   readonly poll: (
     input: BoardChartPollInput,
-  ) => Promise<Result<BoardChartPollResult>>;
+  ) => AbortableInvocation<BoardChartPollResult>;
 }

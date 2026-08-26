@@ -14,6 +14,7 @@ import { createDexScreenerBridgeTransport } from "../dexscreener-bridge/index.js
 import { mountBoardDetailsService } from "../market/board-details-service.js";
 import { mountBoardSparklineService } from "../market/board-sparkline-service.js";
 import { mountBoardChartService } from "../market/board-chart-service.js";
+import { mountBoardSpotlightService } from "../market/board-spotlight-service.js";
 import { mountBoardLiveScheduler } from "../market/board-live-scheduler.js";
 import {
   mountBoardIconService,
@@ -123,6 +124,14 @@ export function setupAgentBridges(): () => Promise<void> {
   // and dropping that promise would let a bars fetch outlive the bridge.
   const unmountBoardChart = mountBoardChartService();
 
+  // The spotlight's own reads - top traders, momentum, other pools, narratives,
+  // context and the trade tape. Same rule again: registered transport slot, so
+  // mounted after the slot is claimed and drained before it is released. It is
+  // mounted HERE and not lazily on first IPC because every spotlight handler
+  // answers `not_mounted` when the process slot is empty, which in a packaged
+  // build is a permanent refusal rather than a transient one.
+  const unmountBoardSpotlight = mountBoardSpotlightService();
+
   // AWAITED, not fired and forgotten. Unmounting closes admission and drains
   // the fetches that are still running ON THIS BRIDGE'S TRANSPORT; only once
   // those drains have settled may the bridge itself be disposed. The other two
@@ -133,6 +142,7 @@ export function setupAgentBridges(): () => Promise<void> {
     await unmountBoardDetails();
     await unmountBoardSparkline();
     await unmountBoardChart();
+    await unmountBoardSpotlight();
     await unmountBoardScheduler();
     unregisterDexScreener();
     dexScreenerBridge.dispose();

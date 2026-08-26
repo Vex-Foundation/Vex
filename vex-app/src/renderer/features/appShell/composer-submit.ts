@@ -406,6 +406,20 @@ export function useComposerSubmit(
     async (message: string): Promise<void> => {
       const target = sessionId;
       if (target === null || message.length === 0) return;
+      // THE MISSION GATE IS FIRST AND IT IS UNCONDITIONAL. Free text is
+      // refused while a mission run is active - mission controls live in the
+      // MissionControls strip above, not in the composer - and steering or
+      // queueing is still free text reaching that run. Ordering the gate
+      // AFTER the in-flight branch left exactly one hole: a mission run with a
+      // foreground turn in flight took a board Ask VEX hand-off as an
+      // interrupt, because that surface enters here rather than through
+      // `onSubmit`. A4 requires Ask VEX to obey the same rules as a typed
+      // message, and the only way that holds for every caller is for the gate
+      // to sit above every other branch.
+      if (freeTextGate) {
+        setNotice({ tone: "error", text: gatedReason(runStatus) });
+        return;
+      }
       // A submit while a turn is already in flight STEERS the live turn
       // (A33): the engine persists the message as an interrupt the loop
       // reads at its next tool-step boundary, and the transcript shows the
@@ -418,12 +432,6 @@ export function useComposerSubmit(
           return;
         }
         enqueueMessage(target, message);
-        return;
-      }
-      // Free text is gated while a mission run is active - mission controls
-      // live in the MissionControls strip above, not in the composer.
-      if (freeTextGate) {
-        setNotice({ tone: "error", text: gatedReason(runStatus) });
         return;
       }
       await runChatSubmit(message);
@@ -450,11 +458,14 @@ export function useComposerSubmit(
       }
       // The GATED case keeps the draft: a message refused by the mission gate
       // was never sent, so clearing the field would delete what the user
-      // wrote. Every other branch is on its way to the agent, so the field
-      // clears optimistically and `runChatSubmit` owns restoring it on a
-      // failure that cannot retry.
-      const busy = submitPending || inFlightRef.current.has(sessionId);
-      if (!busy && freeTextGate) {
+      // wrote. This branch is BUSY-INDEPENDENT and must stay so. The gate now
+      // sits at the top of `dispatchMessage`, so a gated message is refused
+      // whether or not a turn is in flight; a guard that still let the busy
+      // case through would clear the field and then have the dispatch refuse
+      // it, which deletes what the user typed. Every other branch is on its
+      // way to the agent, so the field clears optimistically and
+      // `runChatSubmit` owns restoring it on a failure that cannot retry.
+      if (freeTextGate) {
         setNotice({ tone: "error", text: gatedReason(runStatus) });
         return;
       }
@@ -468,7 +479,6 @@ export function useComposerSubmit(
       freeTextGate,
       openCreateSession,
       runStatus,
-      submitPending,
       setDraft,
       dispatchMessage,
     ],

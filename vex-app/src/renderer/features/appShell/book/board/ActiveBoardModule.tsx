@@ -42,6 +42,23 @@ import { buildBoardViewModel } from "../../Board/boardModel.js";
 /** How many token rows the rail shows. The rest are counted, not drawn. */
 const ROW_COUNT = 3;
 
+/**
+ * The four states the rail can honestly be in about its figures, and the word
+ * for each.
+ *
+ * ONE WORD PER FACT. `LIVE` is reserved for `live-connected`, the only mode in
+ * which a tick has actually landed. `Connecting` and `Reconnecting` are
+ * BoardBlock's own words for the same two modes (`BoardBlock.tsx`, LiveBadge),
+ * so the tab, the block and the preview card never describe one socket three
+ * different ways.
+ */
+const LIVE_STATE_LABEL = {
+  snapshot: "Snapshot",
+  connecting: "Connecting",
+  reconnecting: "Reconnecting",
+  live: "LIVE",
+} as const;
+
 /** What the module says when this session has composed no board yet. */
 export const ACTIVE_BOARD_EMPTY = "No board yet - ask VEX to compose one";
 
@@ -108,7 +125,25 @@ function ActiveBoard({ board }: { readonly board: BoardRef }): JSX.Element {
     [spec, readout.mode, publication],
   );
 
+  // HOLDING A LEASE IS NOT A LANDED TICK, and the rail used to say it was:
+  // one `held` boolean painted the green LIVE pill for `live-connecting` and
+  // `live-degraded` alike, so a board that had asked for a socket and a board
+  // whose socket had dropped both read as figures arriving right now. `held`
+  // still decides whether this is the LIVE PATH at all (snapshot versus not,
+  // which is what `data-live` has always meant); `mode` decides what is said.
+  // The vocabulary is BoardBlock's and BoardPreviewCard's, deliberately: three
+  // surfaces inventing three words for the same socket state is three chances
+  // for the reader to be told different things about the same second.
   const held = isBoardLiveHeld(model.mode);
+  const connected = model.mode === "live-connected";
+  const liveState = !held
+    ? "snapshot"
+    : connected
+      ? "live"
+      : model.mode === "live-degraded"
+        ? "reconnecting"
+        : "connecting";
+  const liveLabel = LIVE_STATE_LABEL[liveState];
   const clock = formatBoardUtcClock(model.marketDataFetchedAt);
   const rows = model.cards.slice(0, ROW_COUNT);
   const overflow = model.cards.length - rows.length;
@@ -128,6 +163,7 @@ function ActiveBoard({ board }: { readonly board: BoardRef }): JSX.Element {
       data-vex-area="active-board"
       data-state="board"
       data-live={held ? "true" : "false"}
+      data-live-state={liveState}
       aria-label={`Active board: ${board.title}`}
       className="flex flex-col gap-2.5 rounded-xl border border-line-2 bg-surface-1 px-3 py-3"
     >
@@ -150,20 +186,29 @@ function ActiveBoard({ board }: { readonly board: BoardRef }): JSX.Element {
         </div>
         <span
           data-vex-area="active-board-mode"
-          data-mode={held ? "live" : "snapshot"}
+          data-mode={liveState}
+          data-live-mode={model.mode}
           className={cn(
             "flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-semibold leading-[15px]",
-            held ? "text-success" : "text-ink-tertiary",
+            connected ? "text-success" : held ? "text-warning-label" : "text-ink-tertiary",
           )}
         >
+          {/* The dot pulses ONLY for a lease that is actually delivering
+            * ticks. A pulse on a connecting or dropped socket would be motion
+            * standing in for an event that has not happened. The WORD beside
+            * it carries the whole meaning on its own. */}
           <span
             aria-hidden
             className={cn(
               "h-[5px] w-[5px] rounded-full",
-              held ? "bg-success motion-safe:animate-pulse" : "bg-ink-dimmed",
+              connected
+                ? "bg-success motion-safe:animate-pulse"
+                : held
+                  ? "bg-warning"
+                  : "bg-ink-dimmed",
             )}
           />
-          {held ? "LIVE" : "Snapshot"}
+          {liveLabel}
         </span>
       </div>
 
@@ -172,9 +217,13 @@ function ActiveBoard({ board }: { readonly board: BoardRef }): JSX.Element {
         * assistive tech, and whether prices are updating changes what they
         * mean. */}
       <p aria-live="polite" className="sr-only" data-vex-area="active-board-live-region">
-        {held
+        {liveState === "live"
           ? `${board.title}: live figures`
-          : `${board.title}: snapshot figures${clock === null ? "" : ` read at ${clock}`}`}
+          : liveState === "connecting"
+            ? `${board.title}: connecting to live figures, still showing figures${clock === null ? "" : ` read at ${clock}`}`
+            : liveState === "reconnecting"
+              ? `${board.title}: reconnecting, figures may be behind${clock === null ? "" : `, last read at ${clock}`}`
+              : `${board.title}: snapshot figures${clock === null ? "" : ` read at ${clock}`}`}
       </p>
 
       <ul data-vex-area="active-board-rows" className="flex flex-col gap-1">

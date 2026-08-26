@@ -22,6 +22,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import type { ReactNode } from "react";
+import type { UTCTimestamp } from "lightweight-charts";
 
 /* ------------------------------------------------------------------ */
 /* The library double                                                  */
@@ -44,6 +45,17 @@ interface ChartRecord {
   priceToCoordinateCalls: number;
   barsAfter: number;
   visibleRange: { from: number; to: number };
+  appliedChartOptions: Record<string, unknown>[];
+  /** What the library says is on screen, in bar indices. */
+  visibleLogicalRange: { from: number; to: number } | null;
+  setVisibleLogicalRangeCalls: { from: number; to: number }[];
+  /**
+   * The library returns null from `timeToCoordinate` for a time outside the
+   * visible range. The double flips this off when the range is moved, which
+   * is what "bring the bar into view first" has to achieve.
+   */
+  offscreen: boolean;
+  tickMarkFormatter: ((time: unknown, type: number) => string) | null;
 }
 
 const charts: ChartRecord[] = [];
@@ -53,6 +65,8 @@ vi.mock("lightweight-charts", () => {
   return {
     AreaSeries,
     CrosshairMode: { Normal: 0, Magnet: 1, Hidden: 2, MagnetOHLC: 3 },
+    // The real enum's members, by value (typings.d.ts:167).
+    TickMarkType: { Year: 0, Month: 1, DayOfMonth: 2, Time: 3, TimeWithSeconds: 4 },
     LastPriceAnimationMode: { Disabled: 0, Continuous: 1, OnDataUpdate: 2 },
     createChart: (_el: HTMLElement, options: Record<string, unknown>) => {
       const record: ChartRecord = {
@@ -72,6 +86,13 @@ vi.mock("lightweight-charts", () => {
         priceToCoordinateCalls: 0,
         barsAfter: 0,
         visibleRange: { from: 0, to: 0 },
+        appliedChartOptions: [],
+        visibleLogicalRange: { from: 0, to: 10 },
+        setVisibleLogicalRangeCalls: [],
+        offscreen: false,
+        tickMarkFormatter:
+          (options.timeScale as { tickMarkFormatter?: (time: unknown, type: number) => string } | undefined)
+            ?.tickMarkFormatter ?? null,
       };
       charts.push(record);
       const series = {
@@ -95,19 +116,26 @@ vi.mock("lightweight-charts", () => {
           record.seriesOptions = seriesOptions;
           return series;
         },
-        applyOptions: () => {},
+        applyOptions: (next: Record<string, unknown>) => {
+          record.appliedChartOptions.push(next);
+        },
         timeScale: () => ({
           fitContent: () => {
             record.fitContentCalls += 1;
           },
-          getVisibleLogicalRange: () => ({ from: 0, to: 10 }),
+          getVisibleLogicalRange: () => record.visibleLogicalRange,
           getVisibleRange: () => record.visibleRange,
           setVisibleRange: (range: unknown) => {
             record.setVisibleRangeCalls.push(range);
           },
+          setVisibleLogicalRange: (range: { from: number; to: number }) => {
+            record.setVisibleLogicalRangeCalls.push(range);
+            record.visibleLogicalRange = range;
+            record.offscreen = false;
+          },
           timeToCoordinate: () => {
             record.timeToCoordinateCalls += 1;
-            return 100;
+            return record.offscreen ? null : 100;
           },
         }),
         subscribeCrosshairMove: (handler: (param: unknown) => void) => {
@@ -131,6 +159,16 @@ vi.mock("lightweight-charts", () => {
 });
 
 const { SpotlightChart } = await import("../SpotlightChart.js");
+const { utcTickMarkFormatter, utcTimeFormatter, tooltipStamp } = await import(
+  "../spotlightChartTime.js"
+);
+const { placeSpotlightTooltip } = await import(
+  "../spotlightChartTooltipPlacement.js"
+);
+const { spotlightChartSurfaceState } = await import("../spotlightChartState.js");
+const { CHART_ATTRIBUTION_LABEL, CHART_ATTRIBUTION_URL } = await import(
+  "@shared/chart-attribution.js"
+);
 const { useBoardSurfaceStore, BOARD_FILTER_NONE } = await import(
   "../board-surface-store.js"
 );
@@ -140,6 +178,8 @@ const { useBoardSurfaceStore, BOARD_FILTER_NONE } = await import(
 /* ------------------------------------------------------------------ */
 
 const poll = vi.fn();
+/** Every read the channel asked main to cancel. */
+const cancels: unknown[] = [];
 
 const SUBJECT = {
   chain: "base",
@@ -218,9 +258,12 @@ function bindStore(): void {
 }
 
 async function settle(): Promise<void> {
+  // Several event-loop turns, not two: the channel's call now goes through a
+  // cancellation wrapper, so the answer lands a couple of microtasks deeper
+  // than it used to. This yields until the queue is quiet rather than
+  // counting turns by hand.
   await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
   });
 }
 
@@ -235,10 +278,24 @@ beforeEach(() => {
   poll.mockReset();
   poll.mockResolvedValue(okSeries());
   bindStore();
+  cancels.length = 0;
   Object.defineProperty(window, "vex", {
     configurable: true,
     writable: true,
-    value: { boardChart: { poll } },
+    // THE BRIDGE HANDS BACK A CANCELLABLE INVOCATION, not a bare promise:
+    // the channel wires `cancel` to its own abort so a cut stops main's read
+    // rather than merely ignoring the answer. `poll` still resolves the
+    // payload, so every fixture below reads the same.
+    value: {
+      boardChart: {
+        poll: (args: unknown) => ({
+          promise: poll(args) as Promise<unknown>,
+          cancel: () => {
+            cancels.push(args);
+          },
+        }),
+      },
+    },
   });
 });
 
@@ -439,16 +496,15 @@ describe("the readouts", () => {
     const handler = chart?.crosshairHandlers[0];
     expect(handler).toBeDefined();
 
-    const seriesData = new Map<unknown, unknown>();
-    // The handler reads the series it created; the double hands the same
-    // object back from `addSeries`, so the map is keyed on identity here.
+    // The double's handler takes `unknown`: the map-like `seriesData` only
+    // needs the `get` the component reads for the series it created.
     await act(async () => {
       handler?.({
         time: Math.floor(BASE_MS / 1000),
         point: { x: 5, y: 5 },
         seriesData: {
           get: () => ({ time: Math.floor(BASE_MS / 1000), value: 0.0000104 }),
-        } as unknown as typeof seriesData,
+        },
       });
     });
     const tooltip = document.querySelector(
@@ -588,5 +644,499 @@ describe("teardown", () => {
     expect(charts).toHaveLength(1);
     expect(charts[0]?.removed).toBe(false);
     expect(charts[0]?.setDataCalls.length).toBeGreaterThan(0);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* F4a: the axis is UTC, not the viewer's timezone                     */
+/* ------------------------------------------------------------------ */
+
+describe("the UTC axis", () => {
+  const originalTz = process.env.TZ;
+
+  beforeEach(() => {
+    // A NON-UTC ZONE ON PURPOSE. Every one of these assertions passes by
+    // accident on a UTC CI box, which is exactly how an axis nine hours off
+    // the tooltip beside it shipped behind a green suite.
+    process.env.TZ = "Asia/Tokyo";
+  });
+
+  afterEach(() => {
+    process.env.TZ = originalTz;
+  });
+
+  // 26 Aug 2026 22:00:07 UTC is 27 Aug 07:00 in Tokyo: every field below
+  // differs between the two, so a local-time formatter cannot pass.
+  /**
+   * `UTCTimestamp` is the library's NOMINAL brand over `number`, and the
+   * library exports no constructor for it. One documented cast in one helper
+   * is the whole surface of that fact in this file; the alternative is the
+   * same cast repeated at eight call sites.
+   */
+  const utcSec = (seconds: number): UTCTimestamp => seconds as UTCTimestamp;
+
+  const CROSS_MIDNIGHT = utcSec(Math.floor(Date.UTC(2026, 7, 26, 22, 0, 7) / 1000));
+  // 31 Dec 2026 22:00 UTC is 1 Jan 2027 in Tokyo.
+  const CROSS_YEAR = utcSec(Math.floor(Date.UTC(2026, 11, 31, 22, 0, 0) / 1000));
+
+  it("formats every TickMarkType in UTC", () => {
+    expect(new Date().getTimezoneOffset()).not.toBe(0); // the zone really applied
+
+    expect(utcTickMarkFormatter(CROSS_MIDNIGHT, 3)).toBe("22:00");
+    expect(utcTickMarkFormatter(CROSS_MIDNIGHT, 4)).toBe("22:00:07");
+    expect(utcTickMarkFormatter(CROSS_MIDNIGHT, 2)).toBe("26 Aug");
+    expect(utcTickMarkFormatter(CROSS_YEAR, 1)).toBe("Dec");
+    expect(utcTickMarkFormatter(CROSS_YEAR, 0)).toBe("2026");
+  });
+
+  it("agrees with the crosshair label and the tooltip stamp", () => {
+    expect(utcTimeFormatter(CROSS_MIDNIGHT)).toBe("22:00");
+    expect(tooltipStamp(CROSS_MIDNIGHT)).toBe("26 Aug - 22:00");
+    expect(utcTickMarkFormatter(CROSS_MIDNIGHT, 3)).toBe(
+      utcTimeFormatter(CROSS_MIDNIGHT),
+    );
+  });
+
+  it("reports an unusable time rather than printing 1970", () => {
+    expect(utcTickMarkFormatter(utcSec(Number.NaN), 3)).toBe("");
+    expect(utcTimeFormatter(utcSec(Number.NaN))).toBe("");
+    expect(tooltipStamp(utcSec(Number.NaN))).toBe("unknown time");
+  });
+
+  it("installs the tick formatter on the instance it creates", async () => {
+    mount();
+    await settle();
+    const formatter = charts[0]?.tickMarkFormatter;
+    expect(formatter).not.toBeNull();
+    expect(formatter?.(CROSS_MIDNIGHT, 2)).toBe("26 Aug");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* F4b: a failed refresh keeps the last good bars                      */
+/* ------------------------------------------------------------------ */
+
+describe("a failed refresh over good bars", () => {
+  it("keeps the bars, says the refresh failed, and shows the LAST GOOD clock", async () => {
+    vi.useFakeTimers();
+    mount(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const chart = charts[0];
+    expect(chart?.setDataCalls.length).toBeGreaterThan(0);
+    const stampWhenGood = document.querySelector(
+      '[data-vex-area="spotlight-chart-status"]',
+    )?.textContent;
+
+    // The next poll fails outright.
+    poll.mockResolvedValue({ ok: false, error: { code: "transport" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+
+    // The bars stay: nothing cleared the series, and the instance is intact.
+    expect(charts).toHaveLength(1);
+    expect(chart?.removed).toBe(false);
+    // And no absence panel is covering them.
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart-absent"]'),
+    ).toBeNull();
+
+    const figure = document.querySelector('[data-vex-area="spotlight-chart"]');
+    expect(figure?.getAttribute("data-state")).toBe("degraded");
+
+    // Announced, not merely coloured.
+    const degraded = document.querySelector(
+      '[data-vex-area="spotlight-chart-degraded"]',
+    );
+    expect(degraded?.getAttribute("aria-live")).toBe("polite");
+    expect(degraded?.textContent).toContain("Refresh failed");
+    expect(degraded?.textContent).toContain("last good read");
+
+    // The clock is the clock OF THESE BARS, not of the attempt that failed.
+    const status = document.querySelector(
+      '[data-vex-area="spotlight-chart-status"]',
+    );
+    expect(status?.textContent).toBe(stampWhenGood);
+    expect(status?.getAttribute("data-degraded")).toBe("true");
+    // And the surface does not claim to be streaming while degraded.
+    expect(status?.getAttribute("data-live")).toBe("false");
+  });
+
+  it("shows the absence panel when the failure has nothing good behind it", async () => {
+    poll.mockResolvedValue({ ok: false, error: { code: "transport" } });
+    mount();
+    await settle();
+    const absent = document.querySelector('[data-vex-area="spotlight-chart-absent"]');
+    expect(absent).not.toBeNull();
+    expect(absent?.getAttribute("data-reason")).toBe("transport");
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart-degraded"]'),
+    ).toBeNull();
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart"]')?.getAttribute("data-state"),
+    ).toBe("absent");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* F4b + F4d: the surface state machine, as a table                    */
+/* ------------------------------------------------------------------ */
+
+describe("the surface state", () => {
+  function page(resolution: "1m" | "15m" | "2h" | "8h", fetchedAtMs = BASE_MS) {
+    return {
+      kind: "series" as const,
+      fetchedAtMs,
+      forResolution: resolution,
+      series: {
+        bars: bars(3),
+        lastBarPartial: false,
+        coveredRange: { fromMs: BASE_MS, toMs: BASE_MS },
+        resolution,
+        truncated: false,
+      },
+      requestedBars: 96,
+      providerBars: 3,
+      undrawableBars: 0,
+      windowedOutBars: 0,
+    };
+  }
+
+  it("is a skeleton while pending", () => {
+    expect(
+      spotlightChartSurfaceState({ read: { status: "pending" }, resolution: "15m" }).kind,
+    ).toBe("skeleton");
+  });
+
+  it("is a SKELETON for a page of another pill, never ready", () => {
+    // The one frame a pill click can produce. Deriving from `read.status`
+    // alone made this "ready", which is old bars under a new pill.
+    const state = spotlightChartSurfaceState({
+      read: { status: "ready", value: page("15m"), fetchedAtMs: BASE_MS },
+      resolution: "8h",
+    });
+    expect(state.kind).toBe("skeleton");
+  });
+
+  it("is degraded when a failure carries last-good bars of this pill", () => {
+    const state = spotlightChartSurfaceState({
+      read: {
+        status: "unavailable",
+        reason: "transport",
+        lastGood: { value: page("15m", BASE_MS - 60_000), fetchedAtMs: BASE_MS - 60_000 },
+      },
+      resolution: "15m",
+    });
+    expect(state.kind).toBe("degraded");
+    if (state.kind === "degraded") {
+      expect(state.fetchedAtMs).toBe(BASE_MS - 60_000);
+      expect(state.reason).toBe("transport");
+    }
+  });
+
+  it("is absent when the failure carries nothing, or last-good of another pill", () => {
+    expect(
+      spotlightChartSurfaceState({
+        read: { status: "unavailable", reason: "unknown_pair", lastGood: null },
+        resolution: "15m",
+      }).kind,
+    ).toBe("absent");
+    expect(
+      spotlightChartSurfaceState({
+        read: {
+          status: "unavailable",
+          reason: "transport",
+          lastGood: { value: page("1m"), fetchedAtMs: BASE_MS },
+        },
+        resolution: "8h",
+      }).kind,
+    ).toBe("absent");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* F4c: the licence notice is not conditional                          */
+/* ------------------------------------------------------------------ */
+
+describe("the TradingView attribution", () => {
+  function anchor(): HTMLAnchorElement | null {
+    return document.querySelector(
+      '[data-vex-area="spotlight-chart-attribution"] a',
+    );
+  }
+
+  it("renders on a COMPLETE AND CLOSED chart with nothing to caveat", async () => {
+    poll.mockResolvedValue(
+      okSeries({ count: 96, providerBars: 96, lastBarPartial: false }),
+    );
+    mount();
+    await settle();
+    // Nothing to say: no notes element at all, and the credit is still there.
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart-notes"]'),
+    ).toBeNull();
+    const link = anchor();
+    expect(link?.getAttribute("href")).toBe(CHART_ATTRIBUTION_URL);
+    expect(link?.getAttribute("href")).toContain("tradingview.com");
+    expect(link?.textContent).toBe(CHART_ATTRIBUTION_LABEL);
+    expect(link?.textContent).toBe("TradingView Lightweight Charts");
+    expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(link?.getAttribute("target")).toBe("_blank");
+  });
+
+  it("renders while pending, while degraded, and while absent", async () => {
+    poll.mockReturnValue(new Promise(() => undefined));
+    const pendingView = mount();
+    await settle();
+    expect(anchor()).not.toBeNull();
+    pendingView.unmount();
+
+    poll.mockResolvedValue({ ok: false, error: { code: "transport" } });
+    const absentView = mount();
+    await settle();
+    expect(anchor()).not.toBeNull();
+    absentView.unmount();
+
+    vi.useFakeTimers();
+    poll.mockResolvedValue(okSeries());
+    mount(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    poll.mockResolvedValue({ ok: false, error: { code: "transport" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart-degraded"]'),
+    ).not.toBeNull();
+    expect(anchor()).not.toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* F4d: no frame of the old series under the new pill                  */
+/* ------------------------------------------------------------------ */
+
+describe("the resolution transition", () => {
+  it("covers the canvas and writes nothing of the old page under the new pill", async () => {
+    mount();
+    await settle();
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart-skeleton"]'),
+    ).toBeNull();
+
+    poll.mockReturnValue(new Promise(() => undefined));
+    await act(async () => {
+      fireEvent.click(
+        document.querySelector(
+          '[data-vex-area="spotlight-chart-pill"][data-resolution="8h"]',
+        ) as HTMLElement,
+      );
+    });
+
+    expect(
+      document
+        .querySelector('[data-vex-area="spotlight-chart-pill"][data-resolution="8h"]')
+        ?.getAttribute("data-selected"),
+    ).toBe("true");
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart"]')?.getAttribute("data-state"),
+    ).toBe("skeleton");
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart-skeleton"]'),
+    ).not.toBeNull();
+    // Nothing of the old page was written into the series for the new pill.
+    expect(charts[0]?.setDataCalls).toHaveLength(1);
+    // NOTE: React commits inside `act`, so the single frame between the click
+    // and the channel's reset is not observable from here. The claim that no
+    // such frame can render old bars is carried by the state table above
+    // ("is a SKELETON for a page of another pill"), which is the derivation
+    // this surface actually renders from.
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Known issue 1: a theme flip keeps the instance and the viewport     */
+/* ------------------------------------------------------------------ */
+
+describe("a theme change", () => {
+  it("repaints the LIVE instance and never rebuilds it", async () => {
+    vi.useFakeTimers();
+    mount(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const chart = charts[0];
+    const fitsBefore = chart?.fitContentCalls;
+    const rangeCallsBefore = chart?.setVisibleRangeCalls.length;
+    const seriesAppliesBefore = chart?.appliedSeriesOptions.length ?? 0;
+
+    await act(async () => {
+      document.documentElement.setAttribute("data-vex-theme", "light");
+      await Promise.resolve();
+    });
+
+    // The reader's chart is the same chart, with the same viewport.
+    expect(charts).toHaveLength(1);
+    expect(chart?.removed).toBe(false);
+    expect(chart?.fitContentCalls).toBe(fitsBefore);
+    expect(chart?.setVisibleRangeCalls.length).toBe(rangeCallsBefore);
+    expect(chart?.setDataCalls).toHaveLength(1);
+
+    // The palette reached it through applyOptions instead.
+    const applied = chart?.appliedChartOptions ?? [];
+    expect(
+      applied.some((options) => "layout" in options || "grid" in options),
+    ).toBe(true);
+    expect(chart?.appliedSeriesOptions.length ?? 0).toBeGreaterThan(
+      seriesAppliesBefore,
+    );
+    document.documentElement.removeAttribute("data-vex-theme");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Known issue 2: the tooltip stays inside the chart                   */
+/* ------------------------------------------------------------------ */
+
+describe("the tooltip's placement", () => {
+  const CONTAINER = { width: 600, height: 300 };
+  const CARD = { width: 120, height: 48 };
+  const GEOMETRY = { container: CONTAINER, tooltip: CARD, gap: 14, margin: 8 };
+
+  function inside(place: { left: number; top: number }): boolean {
+    return (
+      place.left >= 8 &&
+      place.top >= 8 &&
+      place.left + CARD.width <= CONTAINER.width - 8 &&
+      place.top + CARD.height <= CONTAINER.height - 8
+    );
+  }
+
+  it("centres on the anchor when there is room", () => {
+    const place = placeSpotlightTooltip({
+      ...GEOMETRY,
+      anchor: { x: 300, y: 200 },
+    });
+    expect(place.left).toBe(240);
+    expect(place.top).toBe(200 - 14 - 48);
+    expect(place.clampedX).toBe(false);
+    expect(place.flippedY).toBe(false);
+    expect(inside(place)).toBe(true);
+  });
+
+  it("clamps at the LEFT edge instead of hanging outside", () => {
+    const place = placeSpotlightTooltip({ ...GEOMETRY, anchor: { x: 4, y: 200 } });
+    expect(place.left).toBe(8);
+    expect(place.clampedX).toBe(true);
+    expect(inside(place)).toBe(true);
+  });
+
+  it("clamps at the RIGHT edge, which is where the newest bar sits", () => {
+    const place = placeSpotlightTooltip({ ...GEOMETRY, anchor: { x: 598, y: 200 } });
+    expect(place.left).toBe(CONTAINER.width - CARD.width - 8);
+    expect(place.clampedX).toBe(true);
+    expect(inside(place)).toBe(true);
+  });
+
+  it("FLIPS below the crosshair at the top of the range", () => {
+    const place = placeSpotlightTooltip({ ...GEOMETRY, anchor: { x: 300, y: 10 } });
+    expect(place.flippedY).toBe(true);
+    expect(place.top).toBe(24);
+    expect(inside(place)).toBe(true);
+  });
+
+  it("stays inside at the bottom of the range too", () => {
+    const place = placeSpotlightTooltip({ ...GEOMETRY, anchor: { x: 300, y: 298 } });
+    expect(inside(place)).toBe(true);
+  });
+
+  it("writes the placement onto the card the crosshair raised", async () => {
+    mount();
+    await settle();
+    const handler = charts[0]?.crosshairHandlers[0];
+    await act(async () => {
+      handler?.({
+        time: Math.floor(BASE_MS / 1000),
+        point: { x: 5, y: 5 },
+        seriesData: { get: () => ({ time: Math.floor(BASE_MS / 1000), value: 0.0000104 }) },
+      });
+    });
+    const tooltip = document.querySelector(
+      '[data-vex-area="spotlight-chart-tooltip"]',
+    ) as HTMLElement | null;
+    expect(tooltip).not.toBeNull();
+    // jsdom measures every box as zero, so the value is not the subject here;
+    // that the card is POSITIONED BY THE SOLVER rather than by a transform is.
+    expect(tooltip?.dataset.side).toBeDefined();
+    expect(tooltip?.style.left).not.toBe("");
+    expect(tooltip?.className).not.toContain("-translate-x-1/2");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Known issue 3: the keyboard cursor on an offscreen bar              */
+/* ------------------------------------------------------------------ */
+
+describe("the keyboard cursor off screen", () => {
+  it("brings the bar into view and reads THAT bar, not a blank", async () => {
+    mount();
+    await settle();
+    const chart = charts[0];
+    if (chart !== undefined) {
+      // The reader has scrolled to the newest bars; `Home` is off screen.
+      chart.visibleLogicalRange = { from: 3, to: 4 };
+      chart.offscreen = true;
+    }
+    const canvas = document.querySelector(
+      '[data-vex-area="spotlight-chart-canvas"]',
+    ) as HTMLElement;
+
+    await act(async () => {
+      fireEvent.keyDown(canvas, { key: "Home" });
+    });
+
+    // The window moved to include bar 0, keeping its width.
+    expect(chart?.setVisibleLogicalRangeCalls).toHaveLength(1);
+    expect(chart?.setVisibleLogicalRangeCalls[0]).toEqual({ from: 0, to: 1 });
+    // And the readout describes the OLDEST bar, at its own stamp.
+    const readout = document.querySelector(
+      '[data-vex-area="spotlight-chart-readout"]',
+    );
+    expect(readout?.textContent).toContain(
+      `26 Aug - ${new Date(BASE_MS).getUTCHours() < 10 ? "0" : ""}${String(new Date(BASE_MS).getUTCHours())}:00`,
+    );
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart-tooltip"]'),
+    ).not.toBeNull();
+  });
+
+  it("never parks the card at 0,0 when the pane has no coordinate", async () => {
+    mount();
+    await settle();
+    const chart = charts[0];
+    if (chart !== undefined) {
+      // Off screen AND the range cannot be moved to help: the library still
+      // refuses a coordinate.
+      chart.visibleLogicalRange = null;
+      chart.offscreen = true;
+    }
+    const canvas = document.querySelector(
+      '[data-vex-area="spotlight-chart-canvas"]',
+    ) as HTMLElement;
+    await act(async () => {
+      fireEvent.keyDown(canvas, { key: "End" });
+    });
+    // No card, because a card at 0,0 would describe the wrong bar - but the
+    // readout is still right, because it comes from the held bar.
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart-tooltip"]'),
+    ).toBeNull();
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart-readout"]')?.textContent,
+    ).toContain("26 Aug");
   });
 });

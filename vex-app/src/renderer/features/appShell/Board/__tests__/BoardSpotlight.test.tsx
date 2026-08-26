@@ -304,6 +304,14 @@ async function settle(): Promise<void> {
   });
 }
 
+/** One scripted promise as the abortable invocation the bridge now returns. */
+function abortable<T>(promise: Promise<T>): {
+  readonly promise: Promise<T>;
+  readonly cancel: () => void;
+} {
+  return { promise, cancel: vi.fn() };
+}
+
 beforeEach(() => {
   useBoardLiveOverlayStore.setState({ published: null });
   for (const fn of [
@@ -335,15 +343,19 @@ beforeEach(() => {
       boardDetails: {
         // The bridge returns an ABORTABLE invocation; the scripted promise is
         // wrapped so every scenario keeps scripting plain outcomes.
-        read: (input: unknown) => ({ promise: readDetails(input), cancel: vi.fn() }),
+        read: (input: unknown) => abortable(readDetails(input)),
         prefetch: vi.fn(),
       },
+      // ABORTABLE, exactly like `boardDetails.read` above and for the same
+      // reason: a cut must reach main's own provider read, not merely stop
+      // this side listening. Wrapped here so every scenario below goes on
+      // scripting plain outcomes.
       boardSpotlight: {
-        topTraders: readTopTraders,
-        momentum: readMomentum,
-        otherPools: readOtherPools,
-        context: readContext,
-        tapePoll: readTapePoll,
+        topTraders: (input: unknown) => abortable(readTopTraders(input)),
+        momentum: (input: unknown) => abortable(readMomentum(input)),
+        otherPools: (input: unknown) => abortable(readOtherPools(input)),
+        context: (input: unknown) => abortable(readContext(input)),
+        tapePoll: (input: unknown) => abortable(readTapePoll(input)),
       },
     },
   });
@@ -443,11 +455,11 @@ describe("the mockup's elements", () => {
     const board = boardRef();
     bindStore(board);
     const seen: unknown[] = [];
-    const Chart = (props: { subject: unknown; live: boolean }): ReactNode => {
+    const Chart: NonNullable<Parameters<typeof BoardSpotlight>[0]["chartSlot"]> = (props) => {
       seen.push(props);
       return <div data-vex-area="test-chart" />;
     };
-    mountSpotlight(board, Chart as never);
+    mountSpotlight(board, Chart);
     await settle();
     expect(document.querySelector('[data-vex-area="test-chart"]')).not.toBeNull();
     expect(seen[0]).toMatchObject({

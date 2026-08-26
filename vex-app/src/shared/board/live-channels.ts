@@ -33,6 +33,14 @@ import type { BoardChartResolution } from "@vex-lib/board/index.js";
  *
  * Frozen with A0. A channel not on this list cannot be armed, which is what
  * keeps "the board is polling something" an enumerable fact.
+ *
+ * `spotlight-momentum` and `spotlight-other-pools` were added when the two
+ * panels SHIPPED without an entry here: a channel absent from this list is a
+ * read the ceiling, the priority order and the cut cannot see, which is the
+ * exact failure the enumeration exists to prevent. Every id below must also
+ * appear in {@link BOARD_LIVE_CHANNEL_PRIORITY} and
+ * {@link BOARD_LIVE_CHANNEL_OWNER}; a table test over this array enforces it,
+ * so a future channel cannot be added to one table and forgotten in the other.
  */
 export const BOARD_LIVE_CHANNEL_IDS = [
   "cards-batch",
@@ -42,6 +50,8 @@ export const BOARD_LIVE_CHANNEL_IDS = [
   "spotlight-trades",
   "spotlight-traders",
   "spotlight-context",
+  "spotlight-momentum",
+  "spotlight-other-pools",
 ] as const;
 export type BoardLiveChannelId = (typeof BOARD_LIVE_CHANNEL_IDS)[number];
 
@@ -63,6 +73,19 @@ export type BoardLiveChannelOwner = "modal" | "spotlight";
  * to.
  */
 export const BOARD_LIVE_MAX_IN_FLIGHT = 2;
+
+/**
+ * Board reads WAITING for one of those two slots at once, board-wide.
+ *
+ * A ceiling with an unbounded waiting line is not a ceiling, it is a delay: a
+ * surface that kept asking would pile requests behind two slots and every one
+ * of them would hold a renderer promise open. Thirty-two is sized from what a
+ * board can honestly want at once - eight cards each with a sparkline and a
+ * details read, plus the spotlight's own handful of one-shots - with headroom,
+ * so reaching it means a defect or an attack rather than a busy board. Past
+ * it a caller is REFUSED, honestly and typed, rather than queued forever.
+ */
+export const BOARD_LIVE_ADMISSION_QUEUE_MAX = 32;
 
 /**
  * Card metrics for the open modal.
@@ -102,6 +125,32 @@ export const CADENCE_TRADERS_MS = 30_000;
 export const CADENCE_DETAILS_MS = 60_000;
 
 /**
+ * The spotlight momentum panel.
+ *
+ * Thirty seconds, for the same reason the traders panel is thirty: the four
+ * windows it shows are m5/h1/h6/h24 AGGREGATES the provider recomputes on its
+ * own clock, so the shortest of them cannot move meaningfully inside five
+ * seconds and polling faster would buy nothing but load on a bridge shared
+ * with the agent. It is a separate constant from
+ * {@link CADENCE_TRADERS_MS} because the two panels are separate product
+ * claims: if the traders leaderboard is ever re-sized, the momentum windows
+ * must not silently follow it.
+ */
+export const CADENCE_MOMENTUM_MS = 30_000;
+
+/**
+ * The spotlight "other pools" panel.
+ *
+ * A ONE-SHOT, which is why this constant is `null` rather than a number. The
+ * panel answers "where else does this token trade", read from a CAPPED
+ * relevance window; that set is a property of the token's listing history and
+ * not of the last five seconds, so re-reading it on a timer would spend the
+ * board's ceiling to redraw the same rows. The reader who wants it again
+ * re-enters the spotlight, which re-arms it.
+ */
+export const CADENCE_OTHER_POOLS_MS: null = null;
+
+/**
  * The spotlight chart's poll cadence for one resolution pill.
  *
  * The rule is "roughly a third of a bar, floored at the card cadence": a
@@ -123,9 +172,14 @@ export function chartCadenceMsFor(resolution: BoardChartResolution): number {
  * Cards first because they are what the reader is looking at and what the
  * "LIVE" dot claims about. Then the chart they deliberately opened, then the
  * tape, then the traders panel, whose figures move slowest of the four.
- * One-shots (`card-sparkline`, `pair-details`, `spotlight-context`) sit between
+ * One-shots (`card-sparkline`, `pair-details`, `spotlight-context`,
+ * `spotlight-other-pools`) sit between
  * the chart and the tape: they finish and stop, so making them wait behind a
  * repeating poll would leave a card blank for the whole of that poll's cadence.
+ * `spotlight-momentum` shares the traders panel's LAST place because it shares
+ * its cadence and its reason for it: both are thirty-second aggregate panels,
+ * and neither may push the tape - the only section of the spotlight that goes
+ * visibly stale in seconds - behind it.
  */
 export const BOARD_LIVE_CHANNEL_PRIORITY: Readonly<
   Record<BoardLiveChannelId, number>
@@ -135,8 +189,10 @@ export const BOARD_LIVE_CHANNEL_PRIORITY: Readonly<
   "card-sparkline": 2,
   "pair-details": 2,
   "spotlight-context": 2,
+  "spotlight-other-pools": 2,
   "spotlight-trades": 3,
   "spotlight-traders": 4,
+  "spotlight-momentum": 4,
 };
 
 /** Which surface each channel belongs to, and therefore what cuts it. */
@@ -150,4 +206,6 @@ export const BOARD_LIVE_CHANNEL_OWNER: Readonly<
   "spotlight-trades": "spotlight",
   "spotlight-traders": "spotlight",
   "spotlight-context": "spotlight",
+  "spotlight-momentum": "spotlight",
+  "spotlight-other-pools": "spotlight",
 };

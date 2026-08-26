@@ -34,7 +34,7 @@
  * lives in main and is not addressable from here.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Result } from "@shared/ipc/result.js";
 import type { BoardCandleSeries } from "@vex-lib/board/index.js";
 import type {
@@ -43,8 +43,13 @@ import type {
 } from "@shared/schemas/board-chart.js";
 import type {
   BoardDetailsBundle,
+  BoardDetailsOutcome,
   BoardDetailsReadResult,
 } from "@shared/schemas/board-details.js";
+import {
+  boardSafetyEvidenceFrom,
+  lastGoodFromBundle,
+} from "@shared/board/safety-evidence.js";
 import type {
   BoardMomentumPanel,
   BoardOtherPoolsPanel,
@@ -56,11 +61,12 @@ import type {
 } from "./spotlight-channel-types.js";
 import {
   CADENCE_DETAILS_MS,
+  CADENCE_MOMENTUM_MS,
+  CADENCE_OTHER_POOLS_MS,
   CADENCE_TAPE_MS,
   CADENCE_TRADERS_MS,
   chartCadenceMsFor,
   classifyBoardSafety,
-  safetyChecksFromBundle,
   type BoardSafetyEvidence,
   type BoardSafetyVerdict,
   type PairSubject,
@@ -82,12 +88,60 @@ import {
  * nothing", and a section that showed the second while the first was true
  * would tell the reader to give up on a read that is still running.
  */
+/**
+ * The last answer this channel actually got, kept across a failed refresh.
+ *
+ * A11's evidence model is explicit that `lastGood` and `lastAttempt` are two
+ * separate facts, and that a failure of the second must not delete the first.
+ * Without this a single bad second replaced a chart, a panel or a safety chip
+ * with an absence panel while perfectly good figures were in hand, which is
+ * both a worse surface and a less honest one: the reader was told "nothing"
+ * when the truth was "this, as of a minute ago".
+ */
+export interface SpotlightLastGood<T> {
+  readonly value: T;
+  readonly fetchedAtMs: number;
+}
+
 export type SpotlightRead<T> =
   | { readonly status: "pending" }
   | { readonly status: "ready"; readonly value: T; readonly fetchedAtMs: number }
-  | { readonly status: "unavailable"; readonly reason: string };
+  | {
+      readonly status: "unavailable";
+      readonly reason: string;
+      /**
+       * What was on screen when the refresh failed, or null when nothing ever
+       * landed. `null` is A11 row 2 (`unavailable`); non-null is row 10
+       * (`stale`, rendered from last-good with an honest clock).
+       */
+      readonly lastGood: SpotlightLastGood<T> | null;
+    };
 
 const PENDING = { status: "pending" } as const;
+
+/**
+ * The absence arm, carrying forward whatever the channel already held.
+ *
+ * Written as a state UPDATER rather than a value because the previous read is
+ * the only place the last-good lives: two consecutive failures must keep the
+ * bars from the last SUCCESS, not lose them on the second failure.
+ */
+function unavailableKeeping<T>(reason: string) {
+  return (previous: SpotlightRead<T>): SpotlightRead<T> => {
+    if (previous.status === "ready") {
+      return {
+        status: "unavailable",
+        reason,
+        lastGood: { value: previous.value, fetchedAtMs: previous.fetchedAtMs },
+      };
+    }
+    return {
+      status: "unavailable",
+      reason,
+      lastGood: previous.status === "unavailable" ? previous.lastGood : null,
+    };
+  };
+}
 
 /** A panel shape: everything main sends carries its own read clock. */
 interface Panel {
@@ -195,16 +249,33 @@ function useSpotlightChannel<
    */
   const answeredSubject = useRef<string | null>(null);
 
+  /**
+   * THE RESET IS SYNCHRONOUS, AND THAT IS THE WHOLE POINT OF IT BEING HERE.
+   *
+   * This used to live in the effect below, which is passive: React committed
+   * one frame in which the PREVIOUS subject's answer was still on screen
+   * underneath the new subject's heading. On the chart that is the defect A8
+   * names by hand - "stare bary nigdy nie podpisane nowym pillem", old bars
+   * never labelled with a new pill - and on a pool switch it is the previous
+   * token's figures under the new token's name.
+   *
+   * Adjusting state during render is React's own answer to exactly this: the
+   * re-render happens before the browser is given anything to paint, so the
+   * old value never reaches a screen. `answeredSubject` is cleared with it
+   * because it is bookkeeping about an answer that no longer applies, and
+   * clearing it is idempotent under StrictMode's double render.
+   */
+  const [heldSubject, setHeldSubject] = useState(subjectKey);
+  if (heldSubject !== subjectKey) {
+    setHeldSubject(subjectKey);
+    answeredSubject.current = null;
+    setRead(PENDING);
+  }
+
   useEffect(() => {
     if (!active) {
       setRead(PENDING);
       return;
-    }
-    if (answeredSubject.current !== null && answeredSubject.current !== subjectKey) {
-      // A NEW POOL is a new question: the previous pool's answer must not be
-      // on screen for even one commit while this one is read.
-      answeredSubject.current = null;
-      setRead(PENDING);
     }
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -270,12 +341,12 @@ function useSpotlightChannel<
       // own request is still perfectly healthy.
       if (result.ok && acceptRef.current?.(result.data) === false) return;
       if (!result.ok) {
-        setRead({ status: "unavailable", reason: "transport" });
+        setRead(unavailableKeeping<TPanel>("transport"));
         return;
       }
       const outcome = result.data.outcome;
       if (isChannelUnavailable(outcome)) {
-        setRead({ status: "unavailable", reason: outcome.reason });
+        setRead(unavailableKeeping<TPanel>(outcome.reason));
         return;
       }
       answeredSubject.current = subjectKey;
@@ -288,7 +359,7 @@ function useSpotlightChannel<
 
     const publishUnavailable = (reason: string): void => {
       if (stale()) return;
-      setRead({ status: "unavailable", reason });
+      setRead(unavailableKeeping<TPanel>(reason));
     };
 
     if (repeats || answeredSubject.current !== subjectKey) {
@@ -305,6 +376,37 @@ function useSpotlightChannel<
   }, [id, subjectKey, active, repeats, cadenceMs, generation]);
 
   return read;
+}
+
+/**
+ * CONSUMING THE TICK'S SIGNAL IS WHAT ARMS THE CANCEL.
+ *
+ * The runner already creates an `AbortController` per tick and aborts it on a
+ * cut, but an abort only reaches MAIN if the bridge call has a `cancel` and
+ * something fires it. Until the chart and spotlight preload methods became
+ * abortable, this side could do nothing but stop listening: main went on
+ * talking to the provider, to its own deadline, for a surface the reader had
+ * already left. `boardDetails.read` was the one channel that had it right, and
+ * this helper is that same pattern named once instead of copied six times.
+ *
+ * `{ once: true }` and the `finally` removal keep the listener's lifetime
+ * exactly the request's, so a long-lived signal cannot accumulate one
+ * listener per tick.
+ */
+async function withCancel<T>(
+  invocation: { readonly promise: Promise<T>; readonly cancel: () => void },
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) {
+    invocation.cancel();
+    return invocation.promise;
+  }
+  signal.addEventListener("abort", invocation.cancel, { once: true });
+  try {
+    return await invocation.promise;
+  } finally {
+    signal.removeEventListener("abort", invocation.cancel);
+  }
 }
 
 function subjectOf(subject: PairSubject): BoardSpotlightSubject {
@@ -390,23 +492,82 @@ export function useSpotlightDetails(args: {
     call,
   });
 
-  if (read.status === "ready") {
-    const bundle = read.value.bundle;
-    const evidence: BoardSafetyEvidence = {
-      lastGood: {
-        bundle: safetyChecksFromBundle(bundle),
-        fetchedAtMs: bundle.fetchedAtMs,
-      },
-      lastAttempt: { status: "ok", atMs: bundle.fetchedAtMs },
-      lastGoodExpired: false,
-    };
+  // THE COMBINING RULE IS `boardSafetyEvidenceFrom`'s, NOT A SECOND COPY OF
+  // IT. The grid seam (`board-safety-surface.ts`) already routes its outcomes
+  // through that module for exactly this reason, and the spotlight reading its
+  // own pool must reach the same verdict for the same evidence or the chip in
+  // the spotlight and the chip on the card behind it would disagree.
+  //
+  // `Date.now()` inside the memo mirrors that seam: `lastGoodExpired` is a
+  // comparison against the PROVIDER's own `expiresAtMs`, so it needs a clock,
+  // and the memo is keyed on the read so the clock is sampled once per answer
+  // rather than once per unrelated render.
+  return useMemo((): SpotlightRead<SpotlightDetails> => {
+    const nowMs = Date.now();
+    if (read.status === "pending") return read;
+
+    if (read.status === "ready") {
+      const bundle = read.value.bundle;
+      const evidence = boardSafetyEvidenceFrom({
+        outcome: { kind: "details", bundle },
+        previous: null,
+        previousExpiresAtMs: null,
+        nowMs,
+      });
+      return {
+        status: "ready",
+        value: { bundle, verdict: classifyBoardSafety(evidence) },
+        fetchedAtMs: read.fetchedAtMs,
+      };
+    }
+
+    // A FAILED REFRESH IS NOT AN ERASURE (A11 rows 2 and 10). The bundle the
+    // channel still holds becomes `previous`, the failure becomes the attempt,
+    // and the classifier is what decides between `stale` and `unavailable` -
+    // this function never names either state itself.
+    const held = read.lastGood;
+    const evidence = boardSafetyEvidenceFrom({
+      outcome: detailsOutcomeForReason(read.reason),
+      previous: held === null ? null : lastGoodFromBundle(held.value.bundle),
+      previousExpiresAtMs: held?.value.bundle.expiresAtMs ?? null,
+      nowMs,
+    });
+    const verdict = classifyBoardSafety(evidence);
     return {
-      status: "ready",
-      value: { bundle, verdict: classifyBoardSafety(evidence) },
-      fetchedAtMs: read.fetchedAtMs,
+      status: "unavailable",
+      reason: read.reason,
+      lastGood:
+        held === null
+          ? null
+          : {
+              value: { bundle: held.value.bundle, verdict },
+              fetchedAtMs: held.fetchedAtMs,
+            },
     };
+  }, [read]);
+}
+
+/**
+ * The channel's flattened reason string back into the outcome the evidence
+ * seam takes.
+ *
+ * The `call` above flattens `absent` to the string `"unknown_pair"` so the
+ * classifier can tell a settled absence from an unknown one; this is the exact
+ * inverse, and keeping the two beside each other is what stops them drifting.
+ * An unrecognised reason is treated as a transport failure, which is the
+ * conservative direction: it never turns an unreadable document green.
+ */
+function detailsOutcomeForReason(reason: string): BoardDetailsOutcome {
+  if (reason === "unknown_pair") return { kind: "absent", reason: "unknown_pair" };
+  if (
+    reason === "provider" ||
+    reason === "busy" ||
+    reason === "not_mounted" ||
+    reason === "cancelled"
+  ) {
+    return { kind: "unavailable", reason };
   }
-  return read;
+  return { kind: "unavailable", reason: "transport" };
 }
 
 interface DetailsPanel extends Panel {
@@ -426,6 +587,14 @@ export function verdictForRead(
   read: SpotlightRead<SpotlightDetails>,
 ): BoardSafetyVerdict {
   if (read.status === "ready") return read.value.verdict;
+  // A FAILED REFRESH THAT STILL HOLDS A BUNDLE has already been classified by
+  // `useSpotlightDetails` against the whole evidence pair, and that verdict is
+  // A11 row 10 (`stale`). Re-deriving it here from `lastGood: null` is what
+  // used to turn every degraded spotlight into `unavailable`, discarding
+  // evidence the surface was still holding in its hand.
+  if (read.status === "unavailable" && read.lastGood !== null) {
+    return read.lastGood.value.verdict;
+  }
   const evidence: BoardSafetyEvidence =
     read.status === "pending"
       ? { lastGood: null, lastAttempt: { status: "in-flight" }, lastGoodExpired: false }
@@ -452,8 +621,11 @@ export function useSpotlightTraders(args: {
   readonly live: boolean;
 }): SpotlightRead<BoardTopTradersPanel> {
   const call = useCallback(
-    (subject: BoardSpotlightSubject) =>
-      window.vex.boardSpotlight.topTraders({ subject }),
+    (
+      subject: BoardSpotlightSubject,
+      _firstOfArming: boolean,
+      signal: AbortSignal,
+    ) => withCancel(window.vex.boardSpotlight.topTraders({ subject }), signal),
     [],
   );
   return useSpotlightChannel<BoardTopTradersPanel>({
@@ -479,15 +651,22 @@ export function useSpotlightMomentum(args: {
   readonly live: boolean;
 }): SpotlightRead<BoardMomentumPanel> {
   const call = useCallback(
-    (subject: BoardSpotlightSubject) =>
-      window.vex.boardSpotlight.momentum({ subject }),
+    (
+      subject: BoardSpotlightSubject,
+      _firstOfArming: boolean,
+      signal: AbortSignal,
+    ) => withCancel(window.vex.boardSpotlight.momentum({ subject }), signal),
     [],
   );
   return useSpotlightChannel<BoardMomentumPanel>({
     id: "spotlight-momentum",
     subject: subjectOf(args.subject),
     active: args.active,
-    cadenceMs: CADENCE_TRADERS_MS,
+    // ITS OWN CONSTANT, even though it currently equals the traders cadence.
+    // The vocabulary module is where "how often does the board ask for this"
+    // is decided, and a channel that borrowed a sibling's number would move
+    // the day that sibling moved, silently and for no reason of its own.
+    cadenceMs: CADENCE_MOMENTUM_MS,
     live: args.live,
     call,
   });
@@ -499,8 +678,11 @@ export function useSpotlightContext(args: {
   readonly active: boolean;
 }): SpotlightRead<BoardSpotlightContextPanel> {
   const call = useCallback(
-    (subject: BoardSpotlightSubject) =>
-      window.vex.boardSpotlight.context({ subject }),
+    (
+      subject: BoardSpotlightSubject,
+      _firstOfArming: boolean,
+      signal: AbortSignal,
+    ) => withCancel(window.vex.boardSpotlight.context({ subject }), signal),
     [],
   );
   return useSpotlightChannel<BoardSpotlightContextPanel>({
@@ -519,15 +701,18 @@ export function useSpotlightOtherPools(args: {
   readonly active: boolean;
 }): SpotlightRead<BoardOtherPoolsPanel> {
   const call = useCallback(
-    (subject: BoardSpotlightSubject) =>
-      window.vex.boardSpotlight.otherPools({ subject }),
+    (
+      subject: BoardSpotlightSubject,
+      _firstOfArming: boolean,
+      signal: AbortSignal,
+    ) => withCancel(window.vex.boardSpotlight.otherPools({ subject }), signal),
     [],
   );
   return useSpotlightChannel<BoardOtherPoolsPanel>({
     id: "spotlight-other-pools",
     subject: subjectOf(args.subject),
     active: args.active,
-    cadenceMs: null,
+    cadenceMs: CADENCE_OTHER_POOLS_MS,
     live: false,
     call,
   });
@@ -568,8 +753,11 @@ export function useSpotlightTape(args: {
   const [dropped, setDropped] = useState(0);
 
   const call = useCallback(
-    (subject: BoardSpotlightSubject, firstOfArming: boolean) =>
-      window.vex.boardSpotlight.tapePoll({ subject, reset: firstOfArming }),
+    (subject: BoardSpotlightSubject, firstOfArming: boolean, signal: AbortSignal) =>
+      withCancel(
+        window.vex.boardSpotlight.tapePoll({ subject, reset: firstOfArming }),
+        signal,
+      ),
     [],
   );
 
@@ -597,16 +785,33 @@ export function useSpotlightTape(args: {
     setDropped(0);
   }, [subjectKey]);
 
-  if (read.status !== "ready") return read;
+  if (read.status === "pending") return read;
+  // MAPPED, NOT PASSED THROUGH. A tick and a tape are structurally alike, so
+  // returning the raw read would typecheck while quietly swapping the
+  // ACCUMULATED refusal counter for the last tick's own. The data notes state
+  // how many rows this visit refused; a degraded tape that reset that number
+  // to one tick's worth would under-report a silent loss, which is the exact
+  // thing the counter exists to make visible.
+  const asTape = (tick: BoardTapeTick): SpotlightTape => ({
+    rows: tick.rows,
+    gapBefore: tick.gapBefore,
+    droppedIncompleteIdentity: dropped,
+    fetchedAtMs: tick.fetchedAtMs,
+  });
+  if (read.status === "unavailable") {
+    return {
+      status: "unavailable",
+      reason: read.reason,
+      lastGood:
+        read.lastGood === null
+          ? null
+          : { value: asTape(read.lastGood.value), fetchedAtMs: read.lastGood.fetchedAtMs },
+    };
+  }
   return {
     status: "ready",
     fetchedAtMs: read.fetchedAtMs,
-    value: {
-      rows: read.value.rows,
-      gapBefore: read.value.gapBefore,
-      droppedIncompleteIdentity: dropped,
-      fetchedAtMs: read.value.fetchedAtMs,
-    },
+    value: asTape(read.value),
   };
 }
 
@@ -673,8 +878,13 @@ export function useSpotlightCandles(args: {
   const call = useCallback(
     async (
       subject: BoardSpotlightSubject,
+      _firstOfArming: boolean,
+      signal: AbortSignal,
     ): Promise<Result<ChartEnvelope>> => {
-      const result = await window.vex.boardChart.poll({ subject, resolution });
+      const result = await withCancel(
+        window.vex.boardChart.poll({ subject, resolution }),
+        signal,
+      );
       if (!result.ok) return result;
       const { outcome } = result.data;
       if (outcome.kind !== "series") {

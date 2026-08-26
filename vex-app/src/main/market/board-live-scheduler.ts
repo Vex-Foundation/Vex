@@ -54,6 +54,15 @@
  *     so the scope is handed to every run and used by the ones that ride a
  *     socket.
  *
+ *  6. TWO WAYS IN, ONE CEILING. `arm` owns a repeating channel and its clock;
+ *     `admit` runs ONE read for a caller that already owns its own clock (the
+ *     board's IPC handlers, timed by the renderer's surface scopes). They are
+ *     not two schedulers: an admitted read is an entry in the SAME map,
+ *     counted by the SAME in-flight counter, ordered by the SAME priority
+ *     table and fenced by the SAME per-slot generation counter. Two ceilings
+ *     would be no ceiling, because neither would know about the other's
+ *     exchanges.
+ *
  * THE RENDERER HAS NO NETWORK AUTHORITY HERE. Surfaces arm channels by ID and
  * hand over a subject; the cadence, the priority, the deadline, the ceiling and
  * the scope are all constants in this process. There is no knob on this seam
@@ -61,6 +70,8 @@
  */
 
 import {
+  BOARD_LIVE_ADMISSION_QUEUE_MAX,
+  BOARD_LIVE_CHANNEL_PRIORITY,
   BOARD_LIVE_MAX_IN_FLIGHT,
   type BoardLiveChannelId,
   type BoardLiveChannelOwner,
@@ -121,16 +132,90 @@ export type BoardChannelRun<TSubject = unknown> = (
   context: BoardChannelRunContext<TSubject>,
 ) => Promise<void>;
 
+/**
+ * One read asking to be ADMITTED, as the IPC handler that owns it describes
+ * it.
+ *
+ * There is no cadence here and no deadline: an admitted read runs ONCE, when a
+ * slot frees, and everything about how long it may take belongs to the service
+ * behind it. The renderer supplies none of these fields; the handler names its
+ * own channel from the frozen vocabulary.
+ */
+export interface BoardAdmissionRequest {
+  readonly id: BoardLiveChannelId;
+  readonly owner: BoardLiveChannelOwner;
+  /** The same discriminator `arm` uses: eight sparklines, eight slots. */
+  readonly key?: string;
+  /**
+   * The CALLER's cancellation - `ctx.signal` on an IPC handler.
+   *
+   * Linked to the run's own controller, so a renderer that stopped waiting
+   * aborts the provider read rather than only the wait for it.
+   */
+  readonly signal?: AbortSignal;
+}
+
+/**
+ * What admission produced.
+ *
+ * The refusal reasons are the ones the board's own outcome unions already
+ * speak (`busy`, `not_mounted`, `cancelled`), so a handler maps this onto its
+ * channel's `unavailable` member rather than inventing a second vocabulary for
+ * the same three facts:
+ *
+ *  - `busy` - the waiting line for the two board slots is at its bound. The
+ *    read was never started, so nothing is known about the resource and a
+ *    retry is cheap.
+ *  - `not_mounted` - the scheduler is stopping or stopped. No board read may
+ *    start behind a teardown that is already draining.
+ *  - `cancelled` - the caller aborted, or the channel was cut, before this
+ *    answer could be published. A fenced answer is DROPPED, never returned:
+ *    that is the whole point of the generation.
+ */
+export type BoardAdmission<T> =
+  | { readonly kind: "ran"; readonly value: T }
+  | {
+      readonly kind: "refused";
+      readonly reason: "busy" | "not_mounted" | "cancelled";
+    };
+
 export interface BoardLiveSchedulerDeps {
   readonly now: () => number;
   readonly maxInFlight: number;
+  /** Admitted reads that may WAIT for a slot before a caller is refused. */
+  readonly admissionQueueMax: number;
   readonly setTimer: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
   readonly clearTimer: (handle: ReturnType<typeof setTimeout>) => void;
 }
 
-/** The scheduler's view of one armed channel. */
+/** The scheduler's view of one armed channel or one admitted read. */
 interface Channel {
+  /**
+   * THE IDENTITY OF THIS ENTRY in the `channels` map.
+   *
+   * For an ARMED channel it is the slot key, which is what makes re-arming one
+   * slot supersede it. For an ADMITTED read it carries the generation too, so
+   * two concurrent details reads for two different pools do not cut each
+   * other: superseding is the right answer for a repeating poll and the wrong
+   * answer for two independent one-shots that both have a caller waiting.
+   */
+  readonly entryKey: string;
+  /**
+   * The identity the GENERATION and the coalescence scope belong to.
+   *
+   * Armed and admitted runs of the same channel share it, which is what makes
+   * `cutChannel` and the monotonic counter cover both.
+   */
   readonly slotKey: string;
+  /** True for a read admitted through `admit`, false for an armed channel. */
+  readonly admitted: boolean;
+  /**
+   * Settle the admitted caller when this entry is cut BEFORE it ever ran.
+   *
+   * A cut that reached a waiting admission would otherwise leave its caller's
+   * promise pending forever: nothing else is ever going to run its body.
+   */
+  readonly abandon: (() => void) | null;
   descriptor: BoardChannelDescriptor<unknown>;
   run: BoardChannelRun<unknown>;
   /** Bumped by every cut. A run holding an older value publishes nothing. */
@@ -157,6 +242,25 @@ export interface BoardLiveScheduler {
     descriptor: BoardChannelDescriptor<TSubject>,
     run: BoardChannelRun<TSubject>,
   ): () => void;
+  /**
+   * Run ONE read under the same ceiling, the same priority order and the same
+   * generation fence an armed channel gets, then hand its value back.
+   *
+   * THIS IS THE ADMISSION SEAM, and it is why the ceiling is a fact rather
+   * than an intention. The renderer owns WHEN a board read happens - its own
+   * timers, cut by its own teardown scopes - and main owns WHETHER it may
+   * happen now. A read that reached a provider without passing through here
+   * would be a third exchange on a pipe sized for two, taken from the agent
+   * the user is talking to.
+   *
+   * The run receives the same {@link BoardChannelRunContext} an armed run
+   * does, including a `signal` that fires on `cutSurface`, `cutChannel`,
+   * `stop` and the caller's own abort.
+   */
+  admit<T>(
+    request: BoardAdmissionRequest,
+    run: (context: BoardChannelRunContext<undefined>) => Promise<T>,
+  ): Promise<BoardAdmission<T>>;
   /** Cut every channel owned by one surface. The reader left it. */
   cutSurface(owner: BoardLiveChannelOwner): void;
   /** Cut every armed instance of one channel id. */
@@ -172,6 +276,7 @@ export interface BoardLiveScheduler {
 const defaultDeps: BoardLiveSchedulerDeps = {
   now: Date.now,
   maxInFlight: BOARD_LIVE_MAX_IN_FLIGHT,
+  admissionQueueMax: BOARD_LIVE_ADMISSION_QUEUE_MAX,
   setTimer: (fn, ms) => setTimeout(fn, ms),
   clearTimer: (handle) => {
     clearTimeout(handle);
@@ -202,6 +307,19 @@ export function createBoardLiveScheduler(
     return descriptor.key === undefined
       ? descriptor.id
       : `${descriptor.id}#${descriptor.key}`;
+  }
+
+  /**
+   * The next generation for a slot, from the counter that OUTLIVES the slot.
+   *
+   * Both arming and admission mint here, so a poll and a one-shot on the same
+   * channel can never be handed the same coalescence scope, and neither can a
+   * re-arm that follows a cut.
+   */
+  function nextGenerationFor(slotKey: string): number {
+    const next = (generations.get(slotKey) ?? 0) + 1;
+    generations.set(slotKey, next);
+    return next;
   }
 
   /**
@@ -275,13 +393,13 @@ export function createBoardLiveScheduler(
         !stopped &&
         !channel.disarmed &&
         channel.generation === generation &&
-        channels.get(channel.slotKey) === channel,
+        channels.get(channel.entryKey) === channel,
       publish: <T>(value: T, sink: (value: T) => void): boolean => {
         if (
           stopped ||
           channel.disarmed ||
           channel.generation !== generation ||
-          channels.get(channel.slotKey) !== channel
+          channels.get(channel.entryKey) !== channel
         ) {
           return false;
         }
@@ -309,8 +427,8 @@ export function createBoardLiveScheduler(
         // up again and so `armedCount` stops claiming it is running.
         if (channel.descriptor.cadenceMs === null) {
           channel.disarmed = true;
-          if (channels.get(channel.slotKey) === channel) {
-            channels.delete(channel.slotKey);
+          if (channels.get(channel.entryKey) === channel) {
+            channels.delete(channel.entryKey);
           }
         } else if (
           !channel.disarmed &&
@@ -353,10 +471,14 @@ export function createBoardLiveScheduler(
       deps.clearTimer(channel.timer);
       channel.timer = null;
     }
+    const neverStarted = channel.inFlight === null;
     channel.controller?.abort();
-    if (channels.get(channel.slotKey) === channel) {
-      channels.delete(channel.slotKey);
+    if (channels.get(channel.entryKey) === channel) {
+      channels.delete(channel.entryKey);
     }
+    // A run that never started has no `finally` coming, so a caller waiting on
+    // it is settled HERE or not at all.
+    if (neverStarted) channel.abandon?.();
   }
 
   return {
@@ -379,13 +501,14 @@ export function createBoardLiveScheduler(
       const previous = channels.get(slotKey);
       if (previous !== undefined) cut(previous);
 
-      const nextGeneration = (generations.get(slotKey) ?? 0) + 1;
-      generations.set(slotKey, nextGeneration);
       const channel: Channel = {
+        entryKey: slotKey,
         slotKey,
+        admitted: false,
+        abandon: null,
         descriptor: descriptor as BoardChannelDescriptor<unknown>,
         run: run as BoardChannelRun<unknown>,
-        generation: nextGeneration,
+        generation: nextGenerationFor(slotKey),
         controller: null,
         inFlight: null,
         timer: null,
@@ -400,6 +523,121 @@ export function createBoardLiveScheduler(
         if (channels.get(slotKey) === channel) cut(channel);
         else channel.disarmed = true;
       };
+    },
+
+    async admit<T>(
+      request: BoardAdmissionRequest,
+      run: (context: BoardChannelRunContext<undefined>) => Promise<T>,
+    ): Promise<BoardAdmission<T>> {
+      if (stopped) return { kind: "refused", reason: "not_mounted" };
+      if (request.signal?.aborted === true) {
+        return { kind: "refused", reason: "cancelled" };
+      }
+      // THE BOUND IS ON THE WAITING LINE, not on the reads in flight: those
+      // are already bounded by `maxInFlight`. A ceiling with an unbounded
+      // queue behind it is a delay, not a ceiling.
+      const waiting = [...channels.values()].filter(
+        (channel) =>
+          channel.admitted && !channel.disarmed && channel.inFlight === null,
+      ).length;
+      if (waiting >= deps.admissionQueueMax) {
+        return { kind: "refused", reason: "busy" };
+      }
+
+      const slotKey =
+        request.key === undefined ? request.id : `${request.id}#${request.key}`;
+      const generation = nextGenerationFor(slotKey);
+
+      /**
+       * A THROW BELONGS TO THE CALLER, NOT TO ADMISSION.
+       *
+       * `registerHandler` classifies a handler's error - an AbortError becomes
+       * `internal.cancelled` - so swallowing it here and answering
+       * `unavailable` instead would hide a cancelled request behind an
+       * ordinary outcome. The error is preserved and re-thrown after the run
+       * has released its slot.
+       */
+      // A ONE-SLOT BOX RATHER THAN A NULLABLE BINDING, and not for style.
+      // The assignment below happens inside a callback the compiler cannot see
+      // run, so it narrows the binding to `null` and then to `never` at the
+      // read, and the only way to keep a plain `let` compiling is a cast that
+      // silences exactly the fact this needs to be true. An array slot is not
+      // narrowed away, so the check stays real.
+      const failure: Array<{ readonly error: unknown }> = [];
+      let settle: (admission: BoardAdmission<T>) => void = () => undefined;
+      const answer = new Promise<BoardAdmission<T>>((resolve) => {
+        settle = resolve;
+      });
+
+      const channelRun: BoardChannelRun<unknown> = async (context) => {
+        try {
+          const value = await run(context as BoardChannelRunContext<undefined>);
+          // FENCED AT PUBLICATION. A value produced for a surface that has
+          // since been cut is dropped here rather than travelling back to a
+          // handler that would paint it.
+          settle(
+            context.isCurrent()
+              ? { kind: "ran", value }
+              : { kind: "refused", reason: "cancelled" },
+          );
+        } catch (error) {
+          failure.push({ error });
+          settle({
+            kind: "refused",
+            reason: context.signal.aborted ? "cancelled" : "not_mounted",
+          });
+          // Re-thrown so the scheduler's own logging still sees it.
+          throw error;
+        }
+      };
+
+      const channel: Channel = {
+        entryKey: `${slotKey}@${generation}`,
+        slotKey,
+        admitted: true,
+        abandon: () => {
+          settle({ kind: "refused", reason: "cancelled" });
+        },
+        descriptor: {
+          id: request.id,
+          owner: request.owner,
+          // A ONE-SHOT by construction: `cadenceMs: null` is what makes the
+          // shared `finally` disarm and remove this entry instead of arming a
+          // next tick for a read nobody asked to repeat.
+          cadenceMs: null,
+          priority: BOARD_LIVE_CHANNEL_PRIORITY[request.id],
+          subject: undefined,
+          key: request.key,
+        },
+        run: channelRun,
+        generation,
+        controller: null,
+        inFlight: null,
+        timer: null,
+        due: true,
+        disarmed: false,
+      };
+      channels.set(channel.entryKey, channel);
+
+      // THE CALLER'S ABORT CUTS THIS ENTRY, which is what turns a renderer
+      // that stopped waiting into a provider read that actually stops. `cut`
+      // is idempotent and identity-guarded, so a late abort after the run
+      // settled changes nothing.
+      const onCallerAbort = (): void => {
+        if (channels.get(channel.entryKey) === channel) cut(channel);
+        else channel.controller?.abort();
+      };
+      request.signal?.addEventListener("abort", onCallerAbort, { once: true });
+
+      schedulePump();
+      try {
+        const admission = await answer;
+        const failed = failure[0];
+        if (failed !== undefined) throw failed.error;
+        return admission;
+      } finally {
+        request.signal?.removeEventListener("abort", onCallerAbort);
+      }
     },
 
     cutSurface(owner: BoardLiveChannelOwner): void {
@@ -420,6 +658,10 @@ export function createBoardLiveScheduler(
       [...channels.values()].filter(
         (channel) =>
           !channel.disarmed &&
+          // An admitted read is not "armed": it has no cadence and no timer,
+          // and counting it here would make `armedCount` report a number that
+          // changes with traffic rather than with what a surface set up.
+          !channel.admitted &&
           (owner === undefined || channel.descriptor.owner === owner),
       ).length,
 

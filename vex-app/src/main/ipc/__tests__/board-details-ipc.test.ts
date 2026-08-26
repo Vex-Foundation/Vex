@@ -100,16 +100,38 @@ function expectErr(value: OkResult | ErrResult, code: string): ErrResult {
 
 let teardown: ReadonlyArray<() => void> = [];
 
+
+/**
+ * A REAL scheduler is mounted for these tests, not a stub.
+ *
+ * Admission is the property under test on this channel now: a handler that
+ * reached the service without passing the board's two-exchange ceiling is the
+ * defect these suites exist to catch, and a mocked scheduler would prove only
+ * that glue called glue.
+ */
+const { mountBoardLiveScheduler } = await import(
+  "../../market/board-live-scheduler.js"
+);
+const { getCancelController } = await import("../register-handler.js");
+let stopScheduler: () => Promise<void> = async (): Promise<void> => undefined;
+
 beforeEach(() => {
   service = { read, prefetch, dispose: vi.fn() };
+  stopScheduler = mountBoardLiveScheduler();
   teardown = registerBoardDetailsHandlers();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await stopScheduler();
   for (const off of teardown) off();
   handlers.clear();
   vi.clearAllMocks();
 });
+
+/** Let already-resolved promise jobs run. No wall clock is involved. */
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 6; index += 1) await Promise.resolve();
+}
 
 describe("read - the positive path", () => {
   it("echoes the subject and forwards the outcome", async () => {
@@ -195,6 +217,56 @@ describe("read - cancellation", () => {
     read.mockRejectedValue(abort);
     const result = await call(CH.boardDetails.read, { subject: SUBJECT });
     expectErr(result, "internal.cancelled");
+  });
+});
+
+describe("read - the cut reaches the provider", () => {
+  it("aborts the SERVICE's own signal when the request is cancelled", async () => {
+    // END TO END through the real handler: the renderer's `vex:cancel` fires
+    // `ctx.signal`, admission links it to the run's controller, and the run's
+    // signal is what the service was handed. The assertion is on that SIGNAL,
+    // not on a call count: a mock that was called proves nothing about whether
+    // the provider read actually stopped.
+    let seen: AbortSignal | undefined;
+    let release: (() => void) | undefined;
+    read.mockImplementation(async (_subject: unknown, signal: AbortSignal) => {
+      seen = signal;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { kind: "unavailable", reason: "cancelled" };
+    });
+
+    const pending = call(CH.boardDetails.read, { subject: SUBJECT });
+    await flushMicrotasks();
+    expect(seen).toBeInstanceOf(AbortSignal);
+    expect(seen?.aborted).toBe(false);
+
+    getCancelController(REQUEST_ID)?.abort();
+    expect(seen?.aborted).toBe(true);
+
+    release?.();
+    await pending;
+  });
+
+  it("aborts the prefetch fan-out's signal when the board closes", async () => {
+    let seen: AbortSignal | undefined;
+    let release: (() => void) | undefined;
+    prefetch.mockImplementation(async (_pools: unknown, signal: AbortSignal) => {
+      seen = signal;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return [];
+    });
+
+    const pending = call(CH.boardDetails.prefetch, { pools: [SUBJECT] });
+    await flushMicrotasks();
+    expect(seen?.aborted).toBe(false);
+    getCancelController(REQUEST_ID)?.abort();
+    expect(seen?.aborted).toBe(true);
+    release?.();
+    await pending;
   });
 });
 

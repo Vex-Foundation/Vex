@@ -423,7 +423,7 @@ export function createBoardSpotlightService(
 
   function cacheFor<T>(capacity = CACHE_CAPACITY): BoardReadCache<T | {
     readonly kind: "unavailable";
-    readonly reason: "busy" | "not_mounted";
+    readonly reason: "busy" | "not_mounted" | "cancelled";
   }> {
     return createBoardReadCache({
       capacity,

@@ -129,7 +129,7 @@ function document(overrides: Partial<PairDetailsDocument> = {}): PairDetailsDocu
       },
       analyzedAtMs: FETCHED - 60_000,
       unprojectedKeys: [],
-    } as unknown as PairDetailsDocument["goPlus"],
+    },
     quickIntel: {
       contractVerified: true,
       isScam: false,
@@ -155,7 +155,7 @@ function document(overrides: Partial<PairDetailsDocument> = {}): PairDetailsDocu
       },
       analyzedAtMs: FETCHED - 60_000,
       unprojectedKeys: [],
-    } as unknown as PairDetailsDocument["quickIntel"],
+    },
     holders: null,
     lpHolders: null,
     tokenAuthority: null,
@@ -168,7 +168,7 @@ function document(overrides: Partial<PairDetailsDocument> = {}): PairDetailsDocu
       // `lockedPct` is exactly that burn. Dropping it would report 0 percent
       // locked for a pool whose LP can never be pulled.
       rows: [{ tag: "Burned", share: percent("99.99", 99.99) }],
-    } as unknown as PairDetailsDocument["liquidityLocks"],
+    },
     profile: {
       chainId: "ethereum",
       name: "ETHCATE",
@@ -182,7 +182,7 @@ function document(overrides: Partial<PairDetailsDocument> = {}): PairDetailsDocu
       createdAtMs: null,
       updatedAtMs: null,
       unprojectedKeys: [],
-    } as unknown as PairDetailsDocument["profile"],
+    },
     listings: [],
     presentButUnprojected: [],
     coverage: [
@@ -276,7 +276,7 @@ describe("the projection is faithful to the measured document", () => {
               isLocked: null,
             },
           ],
-        } as unknown as PairDetailsDocument["holders"],
+        },
       }),
     });
     expect(native.holders).toEqual({

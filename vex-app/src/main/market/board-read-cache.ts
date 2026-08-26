@@ -57,16 +57,19 @@ export interface BoardReadCacheOptions<T> {
   readonly queueMax: number;
   readonly now: () => number;
   /** What a refusal looks like for this cache's value type. */
-  readonly refusal: (reason: "busy" | "not_mounted") => T;
+  readonly refusal: (reason: "busy" | "not_mounted" | "cancelled") => T;
 }
 
 export interface BoardReadCache<T> {
   /**
    * Serve `key` from cache, join a read in flight, or start one.
    *
-   * `signal` cancels THIS caller's wait. It deliberately does not cancel the
-   * shared read: a second caller may still be waiting on it, and one reader
-   * leaving must not take the answer away from the other.
+   * `signal` cancels THIS caller's wait. A read another caller is still
+   * waiting on CONTINUES: one reader closing a modal must not take the answer
+   * away from a card that is still on screen. When the aborting caller was the
+   * LAST one, though, there is nobody left to take it away from, and the load
+   * itself is cancelled - otherwise "cancel" would mean nothing more than
+   * looking away while the provider read ran to completion for no one.
    */
   read(
     key: string,
@@ -90,11 +93,24 @@ interface QueueEntry {
   readonly admit: (admitted: boolean) => void;
 }
 
+/**
+ * One load in flight and everyone waiting on it.
+ *
+ * The waiter COUNT is the whole reason this is a record rather than a bare
+ * promise: cancelling a shared load is correct exactly when the count reaches
+ * zero, and that is a fact only the cache can hold.
+ */
+interface InFlightLoad<T> {
+  promise: Promise<T>;
+  readonly controller: AbortController;
+  waiters: number;
+}
+
 export function createBoardReadCache<T>(
   options: BoardReadCacheOptions<T>,
 ): BoardReadCache<T> {
   const entries = new Map<string, CacheEntry<T>>();
-  const inFlight = new Map<string, Promise<T>>();
+  const inFlight = new Map<string, InFlightLoad<T>>();
   const controllers = new Set<AbortController>();
   const queue: QueueEntry[] = [];
   let active = 0;
@@ -153,6 +169,7 @@ export function createBoardReadCache<T>(
   async function runLoad(
     key: string,
     load: (signal: AbortSignal) => Promise<BoardReadOutcome<T>>,
+    controller: AbortController,
   ): Promise<T> {
     const admitted = await acquireSlot();
     if (!admitted) return options.refusal(closed ? "not_mounted" : "busy");
@@ -161,7 +178,9 @@ export function createBoardReadCache<T>(
       releaseSlot();
       return options.refusal("not_mounted");
     }
-    const controller = new AbortController();
+    // The controller is the CALLER-FACING one, created before the slot was
+    // asked for, so a last waiter that gives up while this load is still
+    // queued has something to abort.
     controllers.add(controller);
     try {
       const outcome = await load(controller.signal);
@@ -187,31 +206,68 @@ export function createBoardReadCache<T>(
       // the same tick; without this the same document is fetched eight times.
       let running = inFlight.get(key);
       if (running === undefined) {
-        running = runLoad(key, load).finally(() => {
-          inFlight.delete(key);
+        const controller = new AbortController();
+        const record: InFlightLoad<T> = {
+          promise: Promise.resolve(options.refusal("not_mounted")),
+          controller,
+          waiters: 0,
+        };
+        record.promise = runLoad(key, load, controller).finally(() => {
+          // Identity-guarded: a `finally` from a superseded load must not
+          // delete the record that replaced it.
+          if (inFlight.get(key) === record) inFlight.delete(key);
         });
-        inFlight.set(key, running);
+        inFlight.set(key, record);
+        running = record;
       }
-      if (signal === undefined) return running;
-      // This caller's own cancellation. The shared read continues, because
-      // another caller may still be waiting on it: one reader closing a modal
-      // must not take the answer away from a card that is still on screen.
-      return Promise.race([
-        running,
-        new Promise<T>((resolve) => {
-          if (signal.aborted) {
-            resolve(options.refusal("not_mounted"));
-            return;
-          }
-          signal.addEventListener(
-            "abort",
-            () => {
-              resolve(options.refusal("not_mounted"));
-            },
-            { once: true },
-          );
-        }),
-      ]);
+
+      // EVERY joiner is counted, abortable or not. A caller with no signal
+      // never leaves, which is exactly why it must be counted: it is the
+      // reason an aborting sibling may not cancel the load.
+      const load_ = running;
+      load_.waiters += 1;
+      let released = false;
+      const release = (): void => {
+        if (released) return;
+        released = true;
+        load_.waiters -= 1;
+      };
+
+      if (signal === undefined) {
+        return await load_.promise.finally(release);
+      }
+
+      // This caller's own cancellation. ONE listener does both halves - stop
+      // waiting, and decide whether anyone is left - so the two can never
+      // disagree about the count.
+      let stopWaiting: (value: T) => void = () => undefined;
+      const abandoned = new Promise<T>((resolve) => {
+        stopWaiting = resolve;
+      });
+      const onAbort = (): void => {
+        release();
+        // LAST-WAITER CANCELLATION. Nobody is left to receive this answer, so
+        // the provider read is stopped rather than run to completion for an
+        // audience that has gone. With a waiter still joined, the count is
+        // above zero and the load is untouched.
+        if (load_.waiters === 0) load_.controller.abort();
+        // The caller left; saying "not mounted" would blame the service for
+        // the caller's own decision, so the refusal names the real cause.
+        stopWaiting(options.refusal("cancelled"));
+      };
+      if (signal.aborted) {
+        onAbort();
+        return options.refusal("cancelled");
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+      try {
+        return await Promise.race([load_.promise, abandoned]);
+      } finally {
+        // The listener is removed on the settled path so a long-lived signal
+        // does not accumulate one entry per read it outlived.
+        signal.removeEventListener("abort", onAbort);
+        release();
+      }
     },
 
     peek(key): T | null {
@@ -233,7 +289,9 @@ export function createBoardReadCache<T>(
       for (const controller of controllers) controller.abort();
       // DRAIN rather than abandon: every in-flight read settles before this
       // resolves, so no read outlives the transport it borrows.
-      await Promise.allSettled([...inFlight.values()]);
+      await Promise.allSettled(
+        [...inFlight.values()].map((running) => running.promise),
+      );
       inFlight.clear();
       controllers.clear();
       entries.clear();

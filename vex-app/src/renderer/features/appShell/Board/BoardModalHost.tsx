@@ -44,6 +44,7 @@ import {
   DialogClose,
   DialogHeadlessHeader,
 } from "../../../components/ui/dialog.js";
+import { boardKeyOf } from "./board-surface-contracts.js";
 import type {
   BoardAskSlotProps,
   BoardGridSlotProps,
@@ -104,6 +105,23 @@ export function BoardModalHost({
   );
 
   const open = board !== null;
+  /**
+   * THE IDENTITY EVERY SLOT IS KEYED BY.
+   *
+   * Rebinding board A to board B does not unmount this host, and React reuses
+   * a child of the same type at the same position: without a key the header
+   * chrome, the grid and the spotlight all survive the change of subject with
+   * board A's state still in them. That is not a theoretical hazard - the
+   * chrome holds the live lease and publishes rows to the overlay under
+   * whatever `boardKey` it is currently given, so a retained row from A was
+   * being published under B's key.
+   *
+   * Keying is the structural fix rather than a guard each slot has to
+   * remember: a new board is a new component instance, so there is no retained
+   * state for a slot to leak, and every slot's own unmount cleanup runs before
+   * the replacement mounts.
+   */
+  const boardKey = board === null ? null : boardKeyOf(board);
   // The spec is the bound: a stored selection cannot address a pool that this
   // board does not have (a pinned selection outliving a shorter board).
   // Lower bound last, so a board with NO pools clamps to 0 rather than to the
@@ -148,7 +166,9 @@ export function BoardModalHost({
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-3">
-                {HeaderSlot === undefined ? null : <HeaderSlot board={board} />}
+                {HeaderSlot === undefined ? null : (
+                  <HeaderSlot key={boardKey} board={board} />
+                )}
                 <DialogClose
                   aria-label="Close the board"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-tertiary hover:bg-interactive-active hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -171,17 +191,28 @@ export function BoardModalHost({
                 {view === "spotlight"
                   ? SpotlightSlot === undefined
                     ? null
-                    : <SpotlightSlot board={board} poolIndex={poolIndex} />
+                    : (
+                        /* The spotlight's subject is the POOL, not the board:
+                         * selecting a different token on the same board is the
+                         * same change of subject, and A8 forbids the previous
+                         * token's figures being on screen under the new one's
+                         * name for even one commit. */
+                        <SpotlightSlot
+                          key={`${String(boardKey)}:${String(poolIndex)}`}
+                          board={board}
+                          poolIndex={poolIndex}
+                        />
+                      )
                   : GridSlot === undefined
                     ? null
-                    : <GridSlot board={board} />}
+                    : <GridSlot key={boardKey} board={board} />}
               </div>
               {askPanelOpen && AskSlot !== undefined ? (
                 <aside
                   className="w-[360px] shrink-0 overflow-y-auto border-l border-line-1 px-5 pb-6"
                   data-vex-area="board-ask"
                 >
-                  <AskSlot board={board} poolIndex={poolIndex} />
+                  <AskSlot key={boardKey} board={board} poolIndex={poolIndex} />
                 </aside>
               ) : null}
             </DialogBody>

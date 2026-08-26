@@ -9,6 +9,10 @@
  *    with THAT board visible is the reader having seen it, and a dot for a
  *    different board is left alone.
  *  - THE EMPTY STATE IS DESIGNED. No board yet is a sentence, not a blank.
+ *  - IT NEVER CALLS A SOCKET "LIVE" BEFORE A TICK LANDS. Holding a lease and
+ *    receiving figures are two different facts; `live-connecting` and
+ *    `live-degraded` get their own word, their own state attribute and their
+ *    own spoken sentence, and only `live-connected` is the green pill.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +21,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { ACTIVE_BOARD_EMPTY, ActiveBoardModule } from "../ActiveBoardModule.js";
 import { useBoardSurfaceStore } from "../../../Board/board-surface-store.js";
+import { useBoardLiveOverlayStore } from "../../../Board/board-live-overlay.js";
+import type { BoardDataMode } from "../../../../../lib/api/board-live.js";
 import {
   boardKeyOf,
   boardRefOf,
@@ -69,6 +75,25 @@ function resetStore(): void {
     view: "grid",
     selectedPoolIndex: 0,
     askPanelOpen: false,
+  });
+  useBoardLiveOverlayStore.setState({ published: null });
+}
+
+/**
+ * What the modal's lease holder would have published for THIS board.
+ *
+ * The module holds no lease of its own, so the overlay is the only way its
+ * live state can be driven, and driving it through the real store is what
+ * makes these cases evidence about production rather than about a prop.
+ */
+function publishMode(board: BoardRef, mode: BoardDataMode): void {
+  useBoardLiveOverlayStore.getState().publishBoardLive({
+    boardKey: boardKeyOf(board),
+    mode,
+    rowsByKey: null,
+    fetchedAtMs: FIXTURE_FETCHED_AT,
+    notice: null,
+    canToggle: true,
   });
 }
 
@@ -215,5 +240,69 @@ describe("ActiveBoardModule", () => {
     useBoardSurfaceStore.setState({ unseenBoardKey: boardKeyOf(shown) });
     view.rerender(<ActiveBoardModule />);
     expect(useBoardSurfaceStore.getState().unseenBoardKey).toBeNull();
+  });
+});
+
+describe("the rail's live state is the socket's, one word per fact", () => {
+  const cases: readonly (readonly [string, BoardDataMode | null, string, string, string])[] = [
+    ["snapshot", null, "snapshot", "Snapshot", "snapshot figures"],
+    ["live-connecting", "live-connecting", "connecting", "Connecting", "connecting to live figures"],
+    ["live-connected", "live-connected", "live", "LIVE", "live figures"],
+    ["live-degraded", "live-degraded", "reconnecting", "Reconnecting", "reconnecting, figures may be behind"],
+  ];
+
+  it.each(cases)(
+    "%s renders its own copy, state attribute and spoken sentence",
+    (_name, mode, state, label, spoken) => {
+      const board = fourPoolBoard();
+      useBoardSurfaceStore.setState({ latestBoard: board });
+      if (mode !== null) publishMode(board, mode);
+      render(<ActiveBoardModule />, { wrapper });
+      const chip = document.querySelector('[data-vex-area="active-board-mode"]');
+      expect(chip?.getAttribute("data-mode")).toBe(state);
+      expect(chip?.textContent).toBe(label);
+      expect(
+        document.querySelector('[data-vex-area="active-board"]')
+          ?.getAttribute("data-live-state"),
+      ).toBe(state);
+      expect(
+        document.querySelector('[data-vex-area="active-board-live-region"]')?.textContent,
+      ).toContain(spoken);
+    },
+  );
+
+  it("RED ON REVERT of the one-boolean live pill: connecting and degraded are never the word LIVE", () => {
+    // The defect. `isBoardLiveHeld` is true for all three live modes, so a
+    // rail that painted the pill from it told the reader that figures were
+    // arriving while the socket was still opening or had just dropped. On a
+    // surface whose whole job is "what is on the board right now", that is the
+    // one sentence that must not be guessed.
+    for (const mode of ["live-connecting", "live-degraded"] as const) {
+      const board = fourPoolBoard();
+      useBoardSurfaceStore.setState({ latestBoard: board });
+      publishMode(board, mode);
+      render(<ActiveBoardModule />, { wrapper });
+      const chip = document.querySelector('[data-vex-area="active-board-mode"]');
+      expect(chip?.textContent).not.toBe("LIVE");
+      expect(chip?.getAttribute("data-mode")).not.toBe("live");
+      expect(chip?.getAttribute("data-live-mode")).toBe(mode);
+      expect(
+        document.querySelector('[data-vex-area="active-board-live-region"]')?.textContent,
+      ).not.toContain(": live figures");
+      cleanup();
+      resetStore();
+    }
+  });
+
+  it("keeps the live PATH distinct from the landed tick: data-live stays true while connecting", () => {
+    // `data-live` has always meant "this board is on the live path, not the
+    // composed snapshot", and the fix must not quietly redefine it.
+    const board = fourPoolBoard();
+    useBoardSurfaceStore.setState({ latestBoard: board });
+    publishMode(board, "live-connecting");
+    render(<ActiveBoardModule />, { wrapper });
+    const section = document.querySelector('[data-vex-area="active-board"]');
+    expect(section?.getAttribute("data-live")).toBe("true");
+    expect(section?.getAttribute("data-live-state")).toBe("connecting");
   });
 });

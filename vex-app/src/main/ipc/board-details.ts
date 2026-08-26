@@ -29,6 +29,18 @@
  * caller's wait; a shared read that another card is still waiting on continues,
  * because one reader leaving must not take the answer away from another.
  *
+ * ADMISSION, NOT SCHEDULING. Both handlers pass through the board live
+ * scheduler's `admit` under the `pair-details` channel, so they contend for
+ * the SAME two board exchanges, in the SAME priority order, as the cards, the
+ * chart and the spotlight. A read that reached the provider without passing
+ * through there would be an extra exchange on a pipe sized for two and shared
+ * with the agent. `read` is admitted per POOL (the pool key is the
+ * discriminator, exactly as eight sparklines take eight slots); `prefetch` is
+ * one board-wide unit of work and takes one turn, because it owns its own
+ * internal fan-out and a per-pool admission inside it would wait on the slot
+ * its own caller is holding. A scheduler that is not mounted is answered
+ * `not_mounted`, exactly as a missing service is.
+ *
  * LOGGING records the outcome KIND and the correlation id. Never a pool
  * address (it identifies a token a user is looking at), never a URL, never a
  * provider payload.
@@ -47,6 +59,7 @@ import {
   type BoardDetailsReadResult,
 } from "@shared/schemas/board-details.js";
 import { getBoardDetailsService } from "../market/board-details-service.js";
+import { getBoardLiveScheduler } from "../market/board-live-scheduler.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
 
@@ -71,10 +84,25 @@ export function registerBoardDetailsHandlers(): ReadonlyArray<() => void> {
       outputSchema: boardDetailsReadResultSchema,
       handle: async (input, ctx): Promise<Result<BoardDetailsReadResult>> => {
         const service = getBoardDetailsService();
-        const outcome =
-          service === null
-            ? NOT_MOUNTED
-            : await service.read(input.subject, ctx.signal);
+        const scheduler = getBoardLiveScheduler();
+        let outcome: BoardDetailsOutcome = NOT_MOUNTED;
+        if (service !== null && scheduler !== null) {
+          const admission = await scheduler.admit(
+            {
+              id: "pair-details",
+              owner: "modal",
+              key: boardPoolKey(input.subject),
+              signal: ctx.signal,
+            },
+            // The RUN's signal, not the caller's: it fires on the caller's
+            // abort AND on a surface cut.
+            async (run) => service.read(input.subject, run.signal),
+          );
+          outcome =
+            admission.kind === "ran"
+              ? admission.value
+              : { kind: "unavailable", reason: admission.reason };
+        }
         if (outcome.kind !== "details") {
           log.info(
             `[ipc:vex:boardDetails:read] ${outcome.kind} reason=${outcome.reason} ` +
@@ -105,7 +133,33 @@ export function registerBoardDetailsHandlers(): ReadonlyArray<() => void> {
             })),
           });
         }
-        const entries = await service.prefetch(input.pools, ctx.signal);
+        const scheduler = getBoardLiveScheduler();
+        if (scheduler === null) {
+          return ok({
+            entries: input.pools.map((subject) => ({
+              key: boardPoolKey(subject),
+              subject,
+              outcome: NOT_MOUNTED,
+            })),
+          });
+        }
+        const admission = await scheduler.admit(
+          { id: "pair-details", owner: "modal", signal: ctx.signal },
+          async (run) => service.prefetch(input.pools, run.signal),
+        );
+        if (admission.kind === "refused") {
+          // EVERY POOL STILL GETS AN ENTRY, for the same reason as above: the
+          // counter accounts for the whole board, and admission's reason is a
+          // member of this channel's own `unavailable` union.
+          return ok({
+            entries: input.pools.map((subject) => ({
+              key: boardPoolKey(subject),
+              subject,
+              outcome: { kind: "unavailable", reason: admission.reason } as const,
+            })),
+          });
+        }
+        const entries = admission.value;
         const unread = entries.filter((entry) => entry.outcome.kind !== "details");
         if (unread.length > 0) {
           log.info(

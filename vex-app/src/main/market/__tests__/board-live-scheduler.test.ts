@@ -73,6 +73,20 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/**
+ * The signal a run was actually handed.
+ *
+ * A cast is not the tool here. The compiler narrows `runSignal` to `null`
+ * because it cannot see that the callback which assigns it has already run, so
+ * an `as unknown as` would be silencing the compiler about the very thing the
+ * test needs to be true. A real runtime check proves it instead, and fails
+ * with a sentence rather than with `aborted` of undefined.
+ */
+function startedWith(signal: AbortSignal | null): AbortSignal {
+  if (signal === null) throw new Error("the admitted run never started");
+  return signal;
+}
+
 describe("the in-flight ceiling", () => {
   it("R19: never runs more than two board reads at once, whatever is due", async () => {
     // The bridge's cap of four is SHARED with the agent. The property under
@@ -458,5 +472,328 @@ describe("teardown", () => {
     expect(starts).toBe(1);
 
     await scheduler.stop();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Admission - the seam every real board read passes through          */
+/* ------------------------------------------------------------------ */
+
+describe("admission", () => {
+  it("holds excess admitted reads at the ceiling and admits them as slots free", async () => {
+    // THE DEFECT THIS PINS. The scheduler was mounted and never called: every
+    // real board read went renderer timer -> IPC -> service, past the cap. If
+    // `admit` stops enforcing the ceiling, this observes five concurrent
+    // provider reads where two are allowed.
+    const scheduler = createBoardLiveScheduler();
+    const gates = [0, 1, 2, 3, 4].map(() => deferred<void>());
+    let concurrent = 0;
+    let peak = 0;
+    const startedOrder: number[] = [];
+
+    const answers = gates.map((gate, index) =>
+      scheduler.admit(
+        { id: "pair-details", owner: "modal", key: `pool-${String(index)}` },
+        async () => {
+          startedOrder.push(index);
+          concurrent += 1;
+          peak = Math.max(peak, concurrent);
+          await gate.promise;
+          concurrent -= 1;
+          return index;
+        },
+      ),
+    );
+
+    await flush();
+    expect(peak).toBe(2);
+    expect(scheduler.inFlightCount()).toBe(2);
+    expect(startedOrder).toHaveLength(2);
+
+    // Freeing one slot admits exactly one more, never the whole backlog.
+    gates[0]?.resolve();
+    await flush();
+    expect(peak).toBe(2);
+    expect(startedOrder).toHaveLength(3);
+
+    for (const gate of gates) gate.resolve();
+    await flush();
+    const settled = await Promise.all(answers);
+    expect(settled.map((admission) => admission.kind)).toEqual(
+      Array.from({ length: 5 }, () => "ran"),
+    );
+    expect(peak).toBe(2);
+  });
+
+  it("contends with an ARMED channel on the same counter, not a second one", async () => {
+    // ONE CEILING. An armed poll holding one slot must leave exactly one for
+    // admission; two ceilings would let three exchanges run on a pipe sized
+    // for two and shared with the agent.
+    const scheduler = createBoardLiveScheduler();
+    const armedGate = deferred<void>();
+    const admittedGates = [deferred<void>(), deferred<void>()];
+    let concurrent = 0;
+    let peak = 0;
+
+    scheduler.arm(descriptor({ id: "cards-batch", priority: 0 }), async () => {
+      concurrent += 1;
+      peak = Math.max(peak, concurrent);
+      await armedGate.promise;
+      concurrent -= 1;
+    });
+    const answers = admittedGates.map((gate, index) =>
+      scheduler.admit(
+        { id: "pair-details", owner: "modal", key: `pool-${String(index)}` },
+        async () => {
+          concurrent += 1;
+          peak = Math.max(peak, concurrent);
+          await gate.promise;
+          concurrent -= 1;
+          return index;
+        },
+      ),
+    );
+
+    await flush();
+    expect(scheduler.inFlightCount()).toBe(2);
+    expect(peak).toBe(2);
+
+    armedGate.resolve();
+    for (const gate of admittedGates) gate.resolve();
+    await flush();
+    await Promise.all(answers);
+    expect(peak).toBe(2);
+  });
+
+  it("cuts an admitted read in flight and refuses to publish its answer", async () => {
+    const scheduler = createBoardLiveScheduler();
+    const gate = deferred<void>();
+    let runSignal: AbortSignal | null = null;
+
+    const answer = scheduler.admit(
+      { id: "spotlight-trades", owner: "spotlight" },
+      async (run) => {
+        runSignal = run.signal;
+        await gate.promise;
+        return "tape rows";
+      },
+    );
+    await flush();
+    expect(runSignal).not.toBeNull();
+
+    scheduler.cutSurface("spotlight");
+    expect(startedWith(runSignal).aborted).toBe(true);
+
+    // The read settles anyway, as a real provider read would. Its VALUE is
+    // dropped: the surface it was for has moved on.
+    gate.resolve();
+    await expect(answer).resolves.toEqual({
+      kind: "refused",
+      reason: "cancelled",
+    });
+  });
+
+  it("cutChannel aborts the admitted read of that channel id", async () => {
+    const scheduler = createBoardLiveScheduler();
+    const gate = deferred<void>();
+    let runSignal: AbortSignal | null = null;
+    const answer = scheduler.admit(
+      { id: "card-sparkline", owner: "modal", key: "pool-a" },
+      async (run) => {
+        runSignal = run.signal;
+        await gate.promise;
+        return "series";
+      },
+    );
+    await flush();
+
+    scheduler.cutChannel("card-sparkline");
+    expect(startedWith(runSignal).aborted).toBe(true);
+    gate.resolve();
+    await expect(answer).resolves.toEqual({
+      kind: "refused",
+      reason: "cancelled",
+    });
+  });
+
+  it("aborts the run when the CALLER's own signal fires", async () => {
+    // This is the path an IPC handler takes: `ctx.signal` is the renderer
+    // saying "I stopped waiting", and it must reach the provider read.
+    const scheduler = createBoardLiveScheduler();
+    const caller = new AbortController();
+    const gate = deferred<void>();
+    let runSignal: AbortSignal | null = null;
+
+    const answer = scheduler.admit(
+      { id: "spotlight-candles", owner: "spotlight", signal: caller.signal },
+      async (run) => {
+        runSignal = run.signal;
+        await gate.promise;
+        return "bars";
+      },
+    );
+    await flush();
+    caller.abort();
+    expect(startedWith(runSignal).aborted).toBe(true);
+    gate.resolve();
+    await expect(answer).resolves.toEqual({
+      kind: "refused",
+      reason: "cancelled",
+    });
+  });
+
+  it("refuses a caller whose signal already aborted, without starting a read", async () => {
+    const scheduler = createBoardLiveScheduler();
+    const caller = new AbortController();
+    caller.abort();
+    // TYPED AS THE RUN IT STANDS IN FOR, so the assertion below is about
+    // behaviour rather than about a cast. A spy whose signature already
+    // matches needs no escape.
+    const run = vi.fn(async (): Promise<string> => "never");
+    await expect(
+      scheduler.admit(
+        { id: "pair-details", owner: "modal", signal: caller.signal },
+        run,
+      ),
+    ).resolves.toEqual({ kind: "refused", reason: "cancelled" });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("settles a read cut BEFORE it ever started, rather than leaving its caller waiting", async () => {
+    const scheduler = createBoardLiveScheduler();
+    const blockers = [deferred<void>(), deferred<void>()];
+    for (const [index, gate] of blockers.entries()) {
+      void scheduler.admit(
+        { id: "cards-batch", owner: "modal", key: `block-${String(index)}` },
+        async () => gate.promise,
+      );
+    }
+    const waiting = vi.fn();
+    const answer = scheduler.admit(
+      { id: "spotlight-traders", owner: "spotlight" },
+      async () => {
+        waiting();
+      },
+    );
+    await flush();
+    // Both slots are held, so this one never started.
+    expect(waiting).not.toHaveBeenCalled();
+
+    scheduler.cutSurface("spotlight");
+    await expect(answer).resolves.toEqual({
+      kind: "refused",
+      reason: "cancelled",
+    });
+    expect(waiting).not.toHaveBeenCalled();
+    for (const gate of blockers) gate.resolve();
+    await flush();
+  });
+
+  it("refuses `busy` past the waiting bound rather than queueing forever", async () => {
+    const scheduler = createBoardLiveScheduler({ admissionQueueMax: 1 });
+    const blockers = [deferred<void>(), deferred<void>()];
+    for (const [index, gate] of blockers.entries()) {
+      void scheduler.admit(
+        { id: "cards-batch", owner: "modal", key: `block-${String(index)}` },
+        async () => gate.promise,
+      );
+    }
+    await flush();
+    // One may wait; the second is refused.
+    void scheduler.admit({ id: "pair-details", owner: "modal", key: "a" }, async () =>
+      undefined,
+    );
+    await expect(
+      scheduler.admit({ id: "pair-details", owner: "modal", key: "b" }, async () =>
+        undefined,
+      ),
+    ).resolves.toEqual({ kind: "refused", reason: "busy" });
+
+    for (const gate of blockers) gate.resolve();
+    await flush();
+  });
+
+  it("refuses `not_mounted` once the scheduler stopped", async () => {
+    const scheduler = createBoardLiveScheduler();
+    await scheduler.stop();
+    await expect(
+      scheduler.admit({ id: "pair-details", owner: "modal" }, async () => "value"),
+    ).resolves.toEqual({ kind: "refused", reason: "not_mounted" });
+  });
+
+  it("stop DRAINS an admitted read rather than abandoning it", async () => {
+    const scheduler = createBoardLiveScheduler();
+    const gate = deferred<void>();
+    let finished = false;
+    const answer = scheduler.admit(
+      { id: "pair-details", owner: "modal" },
+      async () => {
+        await gate.promise;
+        finished = true;
+        return "bundle";
+      },
+    );
+    await flush();
+
+    const stopping = scheduler.stop();
+    let stopped = false;
+    void stopping.then(() => {
+      stopped = true;
+    });
+    await flush();
+    expect(stopped).toBe(false);
+
+    gate.resolve();
+    await stopping;
+    expect(finished).toBe(true);
+    expect(stopped).toBe(true);
+    await expect(answer).resolves.toEqual({
+      kind: "refused",
+      reason: "cancelled",
+    });
+  });
+
+  it("mints a distinct coalescence scope for an armed run and an admitted run of one channel", async () => {
+    // The generation counter is shared, so a poll and a one-shot on the same
+    // channel can never join each other's exchange on the bridge.
+    const scheduler = createBoardLiveScheduler();
+    const scopes: string[] = [];
+    const gate = deferred<void>();
+    scheduler.arm(descriptor({ id: "pair-details", cadenceMs: null }), async (run) => {
+      scopes.push(run.coalesceScope);
+      await gate.promise;
+    });
+    const answer = scheduler.admit(
+      { id: "pair-details", owner: "modal" },
+      async (run) => {
+        scopes.push(run.coalesceScope);
+        return null;
+      },
+    );
+    await flush();
+    gate.resolve();
+    await answer;
+    await flush();
+    expect(scopes).toHaveLength(2);
+    expect(new Set(scopes).size).toBe(2);
+    expect(scopes.every((scope) => scope.startsWith("board-pair-details:"))).toBe(
+      true,
+    );
+  });
+
+  it("does not let two admitted reads of one channel supersede each other", async () => {
+    // `arm` supersedes a slot on purpose. Admission must NOT: two pools'
+    // details reads are two independent questions with two callers waiting.
+    const scheduler = createBoardLiveScheduler();
+    const first = scheduler.admit(
+      { id: "pair-details", owner: "modal", key: "pool-a" },
+      async () => "a",
+    );
+    const second = scheduler.admit(
+      { id: "pair-details", owner: "modal", key: "pool-a" },
+      async () => "b",
+    );
+    await expect(first).resolves.toEqual({ kind: "ran", value: "a" });
+    await expect(second).resolves.toEqual({ kind: "ran", value: "b" });
   });
 });

@@ -47,6 +47,17 @@
  * SUPPRESSES the move event, so the readout is updated directly rather than
  * waiting for a subscription that will not fire.
  *
+ * WHAT LIVES ELSEWHERE, and why. This file is the IMPERATIVE KERNEL: the
+ * instance, the feed, the crosshair subscription, the bar cursor and the
+ * teardown, all of which share one lifecycle owner and are not split by line
+ * count. Four things around it do not share that lifecycle and have their own
+ * names and their own tests: the pill vocabulary (`spotlightChartPills`), the
+ * UTC time vocabulary the axis and the tooltip both speak
+ * (`spotlightChartTime`), the tooltip's placement geometry
+ * (`spotlightChartTooltipPlacement`) and the surface state machine
+ * (`spotlightChartState`). The caption, which carries the licence notice in
+ * every state, is `SpotlightChartCaption`.
+ *
  * TEARDOWN ORDER IS FIXED (contract 6.1): the FEED is cut before anything
  * imperative is released, because a response landing between a primitive
  * detach and `chart.remove()` would write to a half-disposed series. Leaving
@@ -77,10 +88,6 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { BoardChartPillResolution } from "@shared/schemas/board-chart.js";
-import {
-  CHART_ATTRIBUTION_LABEL,
-  CHART_ATTRIBUTION_URL,
-} from "@shared/chart-attribution.js";
 import { cn } from "../../../lib/utils.js";
 import {
   AreaFeed,
@@ -96,40 +103,36 @@ import {
   readBoardChartPalette,
 } from "./boardChartTheme.js";
 import { formatBoardUtcClock } from "./boardFormat.js";
+import {
+  tooltipStamp,
+  utcTickMarkFormatter,
+  utcTimeFormatter,
+} from "./spotlightChartTime.js";
+import { placeSpotlightTooltip } from "./spotlightChartTooltipPlacement.js";
+import {
+  spotlightChartSurfaceState,
+  type SpotlightChartSurfaceState,
+} from "./spotlightChartState.js";
+import { SpotlightChartCaption } from "./SpotlightChartCaption.js";
+import {
+  PILL_LABEL,
+  SPOTLIGHT_CHART_DEFAULT_PILL,
+  SPOTLIGHT_PILLS,
+} from "./spotlightChartPills.js";
 import type { BoardSpotlightChartSlotProps } from "./BoardSpotlight.js";
-import { useSpotlightCandles } from "./spotlight-channels.js";
+import { useSpotlightCandles, type SpotlightCandles } from "./spotlight-channels.js";
 
 /* ------------------------------------------------------------------ */
 /* The pills                                                           */
 /* ------------------------------------------------------------------ */
 
-/**
- * The mockup's four windows and the bucket each reads at.
- *
- * The buckets are the coordinator's frozen decision (1H -> 1m, 24H -> 15m,
- * 7D -> 2h, 30D -> 8h) and the bar counts they imply are main's, echoed back
- * on every answer. A pill is therefore a closed vocabulary on both sides: a
- * mistyped resolution is a compile error, not a chart that quietly polls
- * something else.
- */
-export const SPOTLIGHT_PILLS: readonly {
-  readonly label: string;
-  readonly resolution: BoardChartPillResolution;
-}[] = [
-  { label: "1H", resolution: "1m" },
-  { label: "24H", resolution: "15m" },
-  { label: "7D", resolution: "2h" },
-  { label: "30D", resolution: "8h" },
-];
-
-export const SPOTLIGHT_CHART_DEFAULT_PILL: BoardChartPillResolution = "15m";
-
-const PILL_LABEL: Readonly<Record<BoardChartPillResolution, string>> = {
-  "1m": "1H",
-  "15m": "24H",
-  "2h": "7D",
-  "8h": "30D",
-};
+// Re-exported at the surface's own entry point: the vocabulary moved to its
+// own module, the public gate did not move.
+export {
+  PILL_LABEL,
+  SPOTLIGHT_CHART_DEFAULT_PILL,
+  SPOTLIGHT_PILLS,
+} from "./spotlightChartPills.js";
 
 const CHART_ABSENT_COPY: Readonly<Record<string, string>> = {
   no_drawable_bars: "This pool has no drawable price history at this resolution yet.",
@@ -151,6 +154,27 @@ interface Tooltip {
   readonly x: number;
   readonly y: number;
 }
+
+/**
+ * The card's clearances, in CSS pixels.
+ *
+ * These are GEOMETRY, not design values: the gap is how far the card sits off
+ * the dot it describes and the margin is how close it may come to the pane's
+ * edge. Every colour, radius and type size around them is still a token.
+ */
+const TOOLTIP_GAP_PX = 14;
+const TOOLTIP_MARGIN_PX = 8;
+
+/** What a failed refresh is called, when there are last-good bars to keep. */
+const CHART_DEGRADED_COPY: Readonly<Record<string, string>> = {
+  transport: "Could not reach the provider for the latest candles.",
+  provider: "The provider did not answer the latest read.",
+  busy: "The board is busy with other reads; this refresh is retried.",
+  cancelled: "The latest refresh was cancelled.",
+  unknown_pair: "The provider stopped indexing this pool.",
+  no_drawable_bars: "The latest read had no drawable buckets.",
+  not_mounted: "The chart feed is not available in this build.",
+};
 
 export function SpotlightChart({
   subject,
@@ -192,11 +216,21 @@ export function SpotlightChart({
   const poolKey = `${subject.chain}/${subject.pairAddress}`;
   const gradientId = `vex-spotlight-glow-${useId().replace(/:/g, "")}`;
 
+  /**
+   * WHAT THIS SURFACE IS SHOWING, as one closed state.
+   *
+   * `degraded` is the state A8 and A11 both require and the surface used to
+   * lack: a failed refresh over bars that are still real. The last-good page
+   * and its clock belong to the CHANNEL (`SpotlightRead.lastGood`), which is
+   * where they survive consecutive failures; this only decides what to draw.
+   */
+  const surface: SpotlightChartSurfaceState = spotlightChartSurfaceState({
+    read,
+    resolution,
+  });
+
   // The page on screen must be OF the pill on screen. See `forResolution`.
-  const series =
-    read.status === "ready" && read.value.forResolution === resolution
-      ? read.value.series
-      : null;
+  const series = surface.kind === "ready" ? surface.page.series : null;
   const normalized = useMemo(
     () => normalizeBoardAreaPoints(series?.bars ?? []),
     [series],
@@ -262,7 +296,16 @@ export function SpotlightChart({
       // THE MOCKUP'S AXIS IS ON THE LEFT and there is no right-hand rail.
       leftPriceScale: { visible: true, borderVisible: false },
       rightPriceScale: { visible: false },
-      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+      timeScale: {
+        borderVisible: false,
+        timeVisible: true,
+        secondsVisible: false,
+        // THE AXIS, IN UTC. `localization.timeFormatter` below formats the
+        // CROSSHAIR label only; the tick marks are this formatter's, and the
+        // library's default for them is the VIEWER'S LOCAL TIMEZONE. Both are
+        // set, from one module, so the axis and the tooltip cannot disagree.
+        tickMarkFormatter: utcTickMarkFormatter,
+      },
       crosshair: { mode: CrosshairMode.Magnet },
       // EXPLICIT UTC. An unlabelled axis is read as local time by everyone,
       // and this chart is compared against a UTC-stamped board header.
@@ -343,7 +386,23 @@ export function SpotlightChart({
     };
     chart.subscribeCrosshairMove(onCrosshair);
 
+    // A THEME FLIP IS AN `applyOptions`, NEVER A REBUILD. Recreating the
+    // instance would throw away the reader's zoom and pan for a colour
+    // change, so the aliases are re-read and pushed into the LIVE chart and
+    // series exactly as `BoardChart` does. The epoch is bumped only so the
+    // effects that derive from the palette re-run; the creation effect does
+    // NOT depend on it.
     const themeObserver = new MutationObserver(() => {
+      const next = readBoardChartPalette(container);
+      chart.applyOptions({
+        layout: { textColor: next.ink },
+        grid: { horzLines: { color: next.grid } },
+      });
+      areaSeries.applyOptions({
+        lineColor: next.up,
+        topColor: withAlpha(next.up, 0.28),
+        bottomColor: withAlpha(next.up, 0),
+      });
       setPaletteEpoch((epoch) => epoch + 1);
     });
     themeObserver.observe(document.documentElement, {
@@ -369,7 +428,7 @@ export function SpotlightChart({
     // `decimals` is deliberately NOT a dependency: a precision change is an
     // `applyOptions` below, never a rebuilt instance (contract 7.2, 7.5).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasEverDrawn, poolKey, paletteEpoch]);
+  }, [hasEverDrawn, poolKey]);
 
   /* ---------------- data: the reconciliation ------------------------ */
 
@@ -430,7 +489,7 @@ export function SpotlightChart({
         ? LastPriceAnimationMode.OnDataUpdate
         : LastPriceAnimationMode.Disabled,
     });
-  }, [live, hasEverDrawn, paletteEpoch]);
+  }, [live, hasEverDrawn, instanceEpoch, paletteEpoch]);
 
   useEffect(() => {
     const areaSeries = seriesRef.current;
@@ -460,9 +519,22 @@ export function SpotlightChart({
    */
   useEffect(() => {
     const node = tooltipElRef.current;
-    if (node === null || tooltip === null) return;
-    node.style.left = `${String(tooltip.x)}px`;
-    node.style.top = `${String(tooltip.y)}px`;
+    const container = containerRef.current;
+    if (node === null || container === null || tooltip === null) return;
+    const placement = placeSpotlightTooltip({
+      anchor: { x: tooltip.x, y: tooltip.y },
+      container: {
+        width: container.clientWidth,
+        height: container.clientHeight,
+      },
+      tooltip: { width: node.offsetWidth, height: node.offsetHeight },
+      gap: TOOLTIP_GAP_PX,
+      margin: TOOLTIP_MARGIN_PX,
+    });
+    node.style.left = `${String(placement.left)}px`;
+    node.style.top = `${String(placement.top)}px`;
+    node.dataset.side = placement.flippedY ? "below" : "above";
+    node.dataset.clampedX = placement.clampedX ? "true" : "false";
   }, [tooltip]);
 
   /* ---------------- the keyboard readout ---------------------------- */
@@ -490,17 +562,54 @@ export function SpotlightChart({
       const time = point.time as UTCTimestamp;
       if (!("value" in point)) {
         setReadout(`${tooltipStamp(time)}: no price reported for this bucket`);
+        setTooltip(null);
         return;
       }
+
+      /**
+       * BRING THE BAR INTO VIEW BEFORE READING ITS COORDINATES.
+       *
+       * `End` and `Home` mean the newest and the oldest bar, and a reader who
+       * has scrolled into history is asking to be taken there. Clamping the
+       * cursor to what happens to be visible instead would answer `Home` with
+       * some middle bar and call it the first, which is a worse lie than a
+       * moved viewport - and outside the visible logical range
+       * `timeToCoordinate` returns null, so the readout and the tooltip had no
+       * coordinates to work with anyway. The WIDTH of the range is preserved,
+       * so this is a scroll, not a zoom, and it happens only on the reader's
+       * own key press (A8's "viewport resets are a user gesture only").
+       */
+      const timeScale = chart.timeScale();
+      const logical = timeScale.getVisibleLogicalRange();
+      if (logical !== null) {
+        const from = logical.from as number;
+        const to = logical.to as number;
+        if (next < from || next > to) {
+          const width = to - from;
+          const start = next < from ? next : next - width;
+          timeScale.setVisibleLogicalRange({ from: start, to: start + width });
+        }
+      }
+
       chart.setCrosshairPosition(point.value, time, areaSeries);
       const spoken = `${priceText(point.value)} at ${tooltipStamp(time)}`;
+      // The readout is written from the HELD BAR, so it is right whether or
+      // not the pane could give a coordinate for it.
       setReadout(spoken);
-      setTooltip({
-        priceText: priceText(point.value),
-        timeText: tooltipStamp(time),
-        x: chart.timeScale().timeToCoordinate(time) ?? 0,
-        y: areaSeries.priceToCoordinate(point.value) ?? 0,
-      });
+      const x = timeScale.timeToCoordinate(time);
+      const y = areaSeries.priceToCoordinate(point.value);
+      // No coordinate, no card: a tooltip parked at 0,0 describes the wrong
+      // bar, and the live region above already carries the figures.
+      setTooltip(
+        x === null || y === null
+          ? null
+          : {
+              priceText: priceText(point.value),
+              timeText: tooltipStamp(time),
+              x,
+              y,
+            },
+      );
     },
     [priceText],
   );
@@ -540,17 +649,30 @@ export function SpotlightChart({
 
   /* ---------------- render ------------------------------------------ */
 
-  const showSkeleton = read.status === "pending";
-  const showAbsence = read.status === "unavailable";
+  const showSkeleton = surface.kind === "skeleton";
+  const degraded = surface.kind === "degraded";
+  // The absence panel is for the case where there is NOTHING GOOD TO SHOW.
+  // A failed refresh over last-good bars is a degraded chart, not an empty
+  // one, and covering real bars with an absence panel would be the lie A8
+  // and A11 both forbid.
+  const showAbsence = surface.kind === "absent";
+  // The clock is the clock OF THE BARS ON SCREEN - the last good read while
+  // degraded, never the moment the failed attempt happened.
   const stamp = formatBoardUtcClock(
-    read.status === "ready" ? read.value.fetchedAtMs : fetchedAtMs,
+    surface.kind === "ready" || surface.kind === "degraded"
+      ? surface.fetchedAtMs
+      : fetchedAtMs,
   );
-  const streaming = live && read.status === "ready";
+  // A degraded chart is NOT streaming, whatever the lease says.
+  const streaming = live && surface.kind === "ready";
+  const notesPage: SpotlightCandles | null =
+    surface.kind === "ready" || surface.kind === "degraded" ? surface.page : null;
 
   return (
     <figure
       data-vex-area="spotlight-chart"
       data-resolution={resolution}
+      data-state={surface.kind}
       className="flex min-w-0 flex-col gap-2"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -589,11 +711,27 @@ export function SpotlightChart({
         <span
           data-vex-area="spotlight-chart-status"
           data-live={streaming ? "true" : "false"}
+          data-degraded={degraded ? "true" : "false"}
           className="text-[12px] leading-[16px] text-ink-tertiary"
         >
           {stamp === null ? "read at an unknown time" : `as of ${stamp}`}
         </span>
       </div>
+
+      {/* THE DEGRADED LINE. Visible AND announced: a reader who cannot see
+        * the muted stamp still learns that these bars are the last good ones
+        * rather than the current market. */}
+      {surface.kind === "degraded" ? (
+        <p
+          data-vex-area="spotlight-chart-degraded"
+          data-reason={surface.reason}
+          role="status"
+          aria-live="polite"
+          className="text-[12px] leading-[16px] text-warning"
+        >
+          {`Refresh failed. ${CHART_DEGRADED_COPY[surface.reason] ?? "The provider did not answer the latest read."} These bars are the last good read${stamp === null ? "" : `, from ${stamp}`}.`}
+        </p>
+      ) : null}
 
       <div className="relative min-w-0">
         {/* THE GLOW is a targeted underlay behind the line, not a shadow on
@@ -610,7 +748,7 @@ export function SpotlightChart({
           data-vex-area="spotlight-chart-canvas"
           tabIndex={0}
           role="img"
-          aria-label={`Price chart for ${subject.baseTokenSymbol ?? subject.pairAddress} over ${PILL_LABEL[resolution]}. Use the arrow keys to read individual bars.`}
+          aria-label={`Price chart for ${subject.baseTokenSymbol ?? subject.pairAddress} over ${PILL_LABEL[resolution]}. Use the arrow keys to read individual bars.${degraded ? " The latest refresh failed; these are the last bars that were successfully read." : ""}`}
           onKeyDown={onKeyDown}
           onBlur={() => {
             chartRef.current?.clearCrosshairPosition();
@@ -633,10 +771,12 @@ export function SpotlightChart({
         {showAbsence ? (
           <p
             data-vex-area="spotlight-chart-absent"
-            data-reason={read.reason}
+            data-reason={surface.kind === "absent" ? surface.reason : ""}
             className="absolute inset-0 flex items-center justify-center rounded-lg bg-board-card px-6 text-center text-[13px] text-ink-tertiary"
           >
-            {CHART_ABSENT_COPY[read.reason] ?? "These candles are unavailable."}
+            {(surface.kind === "absent"
+              ? CHART_ABSENT_COPY[surface.reason]
+              : undefined) ?? "These candles are unavailable."}
           </p>
         ) : null}
 
@@ -650,7 +790,10 @@ export function SpotlightChart({
             // it must never intercept the crosshair it is describing.
             aria-hidden
             ref={tooltipElRef}
-            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-[calc(100%+14px)] rounded-lg border border-line-2 bg-surface-1 px-2.5 py-1.5 shadow-lv2"
+            // NO TRANSFORM: the card's top-left corner is placed outright by
+            // `placeSpotlightTooltip`, which is what lets it be clamped into
+            // the pane and flipped below the crosshair near the top edge.
+            className="pointer-events-none absolute left-0 top-0 z-10 rounded-lg border border-line-2 bg-surface-1 px-2.5 py-1.5 shadow-lv2"
           >
             <span className="block text-[13px] font-semibold tabular-nums text-ink-primary">
               {tooltip.priceText}
@@ -673,8 +816,9 @@ export function SpotlightChart({
         {readout}
       </p>
 
-      <ChartNotes
-        read={read}
+      {/* UNCONDITIONAL, in every state: it carries the licence notice. */}
+      <SpotlightChartCaption
+        page={notesPage}
         hiddenOlder={normalized.hiddenOlder}
         resolution={resolution}
       />
@@ -683,107 +827,8 @@ export function SpotlightChart({
 }
 
 /* ------------------------------------------------------------------ */
-/* Notes                                                               */
-/* ------------------------------------------------------------------ */
-
-/**
- * What the chart could not draw, in words.
- *
- * Every bound this surface applied is named with its count. A short provider
- * page is NOT a cut and does not say "truncated": a pool a day old genuinely
- * has three bars at the 30D pill, and calling that a truncation would blame
- * the app for the market's age.
- */
-function ChartNotes({
-  read,
-  hiddenOlder,
-  resolution,
-}: {
-  readonly read: ReturnType<typeof useSpotlightCandles>;
-  readonly hiddenOlder: number;
-  readonly resolution: BoardChartPillResolution;
-}): JSX.Element | null {
-  if (read.status !== "ready") return null;
-  const value = read.value;
-  const notes: string[] = [];
-  if (value.providerBars < value.requestedBars) {
-    notes.push(
-      `The provider had ${String(value.providerBars)} of the ${String(value.requestedBars)} buckets this range asks for.`,
-    );
-  }
-  if (value.undrawableBars > 0) {
-    notes.push(
-      `${String(value.undrawableBars)} buckets carried no USD price and are not drawn.`,
-    );
-  }
-  if (value.windowedOutBars > 0) {
-    notes.push(
-      `${String(value.windowedOutBars)} older buckets sit outside this range.`,
-    );
-  }
-  if (hiddenOlder > 0) {
-    notes.push(`${String(hiddenOlder)} older bars are beyond the chart's budget.`);
-  }
-  if (value.series.lastBarPartial) {
-    notes.push(`The newest ${PILL_LABEL[resolution]} bucket is still forming.`);
-  }
-  if (notes.length === 0) return null;
-  return (
-    <figcaption
-      data-vex-area="spotlight-chart-notes"
-      data-count={notes.length}
-      className="flex flex-col gap-0.5 text-[11.5px] leading-[15px] text-ink-tertiary"
-    >
-      {notes.map((note) => (
-        <span key={note}>{note}</span>
-      ))}
-      <ChartAttribution />
-    </figcaption>
-  );
-}
-
-function ChartAttribution(): JSX.Element {
-  return (
-    <span data-vex-area="spotlight-chart-attribution" className="text-[10px] text-ink-caption">
-      Charting by{" "}
-      <a
-        href={CHART_ATTRIBUTION_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="underline decoration-dotted underline-offset-2 hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-      >
-        {CHART_ATTRIBUTION_LABEL}
-      </a>
-    </span>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /* Formatting helpers                                                  */
 /* ------------------------------------------------------------------ */
-
-const UTC_MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-] as const;
-
-/** The tooltip's stamp, exactly the mockup's `26 Aug - 04:15`, in UTC. */
-export function tooltipStamp(timeSec: UTCTimestamp): string {
-  const at = new Date((timeSec as number) * 1000);
-  if (Number.isNaN(at.getTime())) return "unknown time";
-  const pad = (value: number): string => String(value).padStart(2, "0");
-  const month = UTC_MONTHS[at.getUTCMonth()] ?? "";
-  return `${String(at.getUTCDate())} ${month} - ${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}`;
-}
-
-/** The time axis, in UTC and said so by the label above it. */
-function utcTimeFormatter(time: Time): string {
-  const seconds = typeof time === "number" ? time : Number(time);
-  if (!Number.isFinite(seconds)) return "";
-  const at = new Date(seconds * 1000);
-  const pad = (value: number): string => String(value).padStart(2, "0");
-  return `${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}`;
-}
 
 /**
  * Re-alpha a resolved token colour for the area gradient.

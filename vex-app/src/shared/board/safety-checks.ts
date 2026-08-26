@@ -106,11 +106,110 @@ export interface SafetyCheckSet {
   readonly unansweredCheckIds: readonly string[];
 }
 
-/** A percent's established value, or null when its scale is unknown. */
-function measured(value: BoardPercent | null): number | null {
-  if (value === null || value.unit === "unverified") return null;
-  return value.normalizedPct;
+/**
+ * Where a provider's percent sits against a threshold, or that it could not be
+ * read at all.
+ *
+ * FOUR OUTCOMES, NOT THREE. "The provider sent something this file cannot read
+ * as a decimal" is not `below`, and collapsing it into one would turn an
+ * unreadable tax into a passing check.
+ */
+type ThresholdComparison = "below" | "equal" | "above" | "unreadable";
+
+/**
+ * A decimal string split at the point, after the scale shift, with no float in
+ * the path.
+ *
+ * WHY NOT `normalizedPct`. That field is `parseFloat(raw) * 100` for a
+ * `fraction`, and `0.05 * 100` is `5.000000000000001` in IEEE-754. Comparing
+ * that against 5 would report a tax of exactly five percent as strictly above
+ * five, which is the difference between a clean chip and a caution chip on a
+ * money surface. The digits the provider actually sent carry no such error, so
+ * the comparison is made on them.
+ *
+ * `shift` moves the decimal point right by that many places (2 for a
+ * `fraction`, 0 for a value already in percent) and is applied to the DIGIT
+ * STRING by moving the index of the point, never by multiplying.
+ *
+ * `raw` is whatever the endpoint's `percent()` carried through: a provider
+ * string, a JSON lexeme, or `String(value)`, which can be exponent notation
+ * (`5e-7`), so the exponent is part of the grammar rather than an edge case.
+ */
+const DECIMAL_RAW = /^([+-])?(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/;
+
+/**
+ * A bound on the shifted point index. A percent whose exponent runs past this
+ * is not a figure any auditor reports; it is a malformed value, and it is
+ * reported as unreadable rather than being expanded into a huge digit string.
+ */
+const MAX_POINT_SHIFT = 1_000;
+
+function splitShiftedDecimal(
+  raw: string,
+  shift: number,
+): { readonly negative: boolean; readonly whole: string; readonly fraction: string } | null {
+  const match = DECIMAL_RAW.exec(raw.trim());
+  if (match === null) return null;
+  const wholeDigits = match[2] ?? "";
+  const fractionDigits = match[3] ?? "";
+  if (wholeDigits === "" && fractionDigits === "") return null;
+  const exponent = match[4] === undefined ? 0 : Number(match[4]);
+  if (!Number.isSafeInteger(exponent)) return null;
+  const move = exponent + shift;
+  if (Math.abs(move) > MAX_POINT_SHIFT) return null;
+
+  const digits = wholeDigits + fractionDigits;
+  let pointIndex = wholeDigits.length + move;
+  let padded = digits;
+  // Zero padding, not truncation: every digit the provider sent survives, the
+  // point simply lands outside the string it was written for.
+  if (pointIndex < 0) {
+    padded = "0".repeat(-pointIndex) + digits;
+    pointIndex = 0;
+  } else if (pointIndex > padded.length) {
+    padded = digits + "0".repeat(pointIndex - digits.length);
+  }
+  return {
+    negative: match[1] === "-",
+    whole: padded.slice(0, pointIndex),
+    fraction: padded.slice(pointIndex),
+  };
 }
+
+/** A digit string without its leading zeros, and never empty. */
+function withoutLeadingZeros(digits: string): string {
+  const first = digits.search(/[1-9]/);
+  return first === -1 ? "0" : digits.slice(first);
+}
+
+/**
+ * Compare a provider percent against a NON-NEGATIVE INTEGER threshold, exactly.
+ *
+ * No floating point and no epsilon: the whole parts are compared as digit
+ * strings (longer wins, then lexicographically, which is correct once leading
+ * zeros are gone) and the fractional part only decides the tie.
+ */
+function compareToThreshold(
+  value: BoardPercent,
+  threshold: number,
+): ThresholdComparison {
+  const parts = splitShiftedDecimal(value.raw, value.unit === "fraction" ? 2 : 0);
+  if (parts === null) return "unreadable";
+  const fractionIsZero = !/[1-9]/.test(parts.fraction);
+  const whole = withoutLeadingZeros(parts.whole);
+  if (parts.negative && !(whole === "0" && fractionIsZero)) return "below";
+
+  const target = String(threshold);
+  if (whole.length !== target.length) return whole.length < target.length ? "below" : "above";
+  if (whole !== target) return whole < target ? "below" : "above";
+  return fractionIsZero ? "equal" : "above";
+}
+
+/**
+ * Which side of the threshold fails. A11 rows 7 and 8 spell both: the hard tax
+ * and the concentration rows read `>=`, the elevated-tax rows read `>`.
+ */
+type PercentFailMode = "at-or-above" | "strictly-above";
 
 /**
  * One boolean flag as a check. `null` (the provider did not say) produces no
@@ -145,18 +244,31 @@ function verifiabilityCheck(
 /** The sources whose answer is an AUDIT of the contract. */
 export const AUDIT_SOURCES: ReadonlySet<string> = new Set(["goplus", "quickintel"]);
 
-/** One percent as a check against a threshold, honouring the unit. */
+/**
+ * One percent as a check against a threshold, honouring the unit.
+ *
+ * A RAW THIS FILE CANNOT READ IS `unverified`, NOT A PASS. It is the same
+ * judgement the header states for `unit: "unverified"`: a percent whose value
+ * could not be established is not turned into a number and compared, and it
+ * must not fall back to `normalizedPct`, whose float is the hazard this
+ * comparison exists to avoid. It reaches the classifier's `unverified` row,
+ * which is a caution chip, so an unreadable tax is visible rather than silently
+ * clean.
+ */
 function percentCheck(
   id: string,
   source: string,
   value: BoardPercent | null,
-  failAtOrAbove: number,
+  threshold: number,
+  failWhen: PercentFailMode,
 ): SafetyCheckRow | null {
   if (value === null) return null;
   if (value.unit === "unverified") return { id, source, verdict: "unverified" };
-  const pct = measured(value);
-  if (pct === null) return null;
-  return { id, source, verdict: pct >= failAtOrAbove ? "fail" : "pass" };
+  const comparison = compareToThreshold(value, threshold);
+  if (comparison === "unreadable") return { id, source, verdict: "unverified" };
+  const fails =
+    failWhen === "at-or-above" ? comparison !== "below" : comparison === "above";
+  return { id, source, verdict: fails ? "fail" : "pass" };
 }
 
 /**
@@ -185,16 +297,16 @@ export function safetyChecksFromBundle(bundle: BoardDetailsBundle): SafetyCheckS
       flagCheck("slippageModifiable", "goplus", goPlus.slippageModifiable),
       flagCheck("isProxy", "goplus", goPlus.isProxy),
       verifiabilityCheck("isOpenSource", "goplus", goPlus.isOpenSource),
-      percentCheck("buyTax", "goplus", goPlus.buyTaxPct, TAX_HARD_PCT),
-      percentCheck("sellTax", "goplus", goPlus.sellTaxPct, TAX_HARD_PCT),
-      percentCheck("ownerShare", "goplus", goPlus.ownerShare, CONCENTRATION_PCT),
-      percentCheck("creatorShare", "goplus", goPlus.creatorShare, CONCENTRATION_PCT),
+      percentCheck("buyTax", "goplus", goPlus.buyTaxPct, TAX_HARD_PCT, "at-or-above"),
+      percentCheck("sellTax", "goplus", goPlus.sellTaxPct, TAX_HARD_PCT, "at-or-above"),
+      percentCheck("ownerShare", "goplus", goPlus.ownerShare, CONCENTRATION_PCT, "at-or-above"),
+      percentCheck("creatorShare", "goplus", goPlus.creatorShare, CONCENTRATION_PCT, "at-or-above"),
     );
     // The RISK tax band, kept as its own check so a 6 percent tax is a
     // failing check rather than an invisible one under the hard threshold.
     rows.push(
-      percentCheck("buyTaxElevated", "goplus", goPlus.buyTaxPct, TAX_RISK_PCT + 0.0000001),
-      percentCheck("sellTaxElevated", "goplus", goPlus.sellTaxPct, TAX_RISK_PCT + 0.0000001),
+      percentCheck("buyTaxElevated", "goplus", goPlus.buyTaxPct, TAX_RISK_PCT, "strictly-above"),
+      percentCheck("sellTaxElevated", "goplus", goPlus.sellTaxPct, TAX_RISK_PCT, "strictly-above"),
     );
   }
 
@@ -212,11 +324,11 @@ export function safetyChecksFromBundle(bundle: BoardDetailsBundle): SafetyCheckS
       flagCheck("hasGeneralVulnerabilities", "quickintel", quickIntel.hasGeneralVulnerabilities),
       flagCheck("hasFeeWarning", "quickintel", quickIntel.hasFeeWarning),
       verifiabilityCheck("contractVerified", "quickintel", quickIntel.contractVerified),
-      percentCheck("buyTax", "quickintel", quickIntel.buyTaxPct, TAX_HARD_PCT),
-      percentCheck("sellTax", "quickintel", quickIntel.sellTaxPct, TAX_HARD_PCT),
-      percentCheck("transferTax", "quickintel", quickIntel.transferTaxPct, TAX_HARD_PCT),
-      percentCheck("buyTaxElevated", "quickintel", quickIntel.buyTaxPct, TAX_RISK_PCT + 0.0000001),
-      percentCheck("sellTaxElevated", "quickintel", quickIntel.sellTaxPct, TAX_RISK_PCT + 0.0000001),
+      percentCheck("buyTax", "quickintel", quickIntel.buyTaxPct, TAX_HARD_PCT, "at-or-above"),
+      percentCheck("sellTax", "quickintel", quickIntel.sellTaxPct, TAX_HARD_PCT, "at-or-above"),
+      percentCheck("transferTax", "quickintel", quickIntel.transferTaxPct, TAX_HARD_PCT, "at-or-above"),
+      percentCheck("buyTaxElevated", "quickintel", quickIntel.buyTaxPct, TAX_RISK_PCT, "strictly-above"),
+      percentCheck("sellTaxElevated", "quickintel", quickIntel.sellTaxPct, TAX_RISK_PCT, "strictly-above"),
       // CARRIED, NEVER SUBSTITUTED. `lpBurnedPct` never stands in for a lock
       // share; it is here because it is the one field measured arriving with
       // `unit: "unverified"`, and an unverified decision figure is a state.

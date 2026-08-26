@@ -104,12 +104,29 @@ async function call(
 
 let teardown: ReadonlyArray<() => void> = [];
 
+
+/**
+ * A REAL scheduler is mounted for these tests, not a stub.
+ *
+ * Admission is the property under test on this channel now: a handler that
+ * reached the service without passing the board's two-exchange ceiling is the
+ * defect these suites exist to catch, and a mocked scheduler would prove only
+ * that glue called glue.
+ */
+const { mountBoardLiveScheduler } = await import(
+  "../../market/board-live-scheduler.js"
+);
+const { getCancelController } = await import("../register-handler.js");
+let stopScheduler: () => Promise<void> = async (): Promise<void> => undefined;
+
 beforeEach(() => {
   chartService = { poll };
+  stopScheduler = mountBoardLiveScheduler();
   teardown = registerBoardChartHandlers();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await stopScheduler();
   for (const off of teardown) off();
   handlers.clear();
   vi.clearAllMocks();
@@ -282,5 +299,42 @@ describe("the output schema is a gate on main's own bugs", () => {
     poll.mockResolvedValue({ ...SERIES, series: { ...SERIES.series, bars: "nope" } });
     const result = await call({ subject: SUBJECT, resolution: "1m" });
     expect(isErr(result)).toBe(true);
+  });
+});
+
+
+/* ------------------------------------------------------------------ */
+/* Admission - the cut reaches the provider                            */
+/* ------------------------------------------------------------------ */
+
+describe("the cut reaches the provider", () => {
+  it("aborts the SERVICE's own signal when the request is cancelled", async () => {
+    // END TO END through the real handler: `vex:cancel` fires `ctx.signal`,
+    // admission links it to the run's controller, and the run's signal is what
+    // the chart service was handed. The assertion is on that SIGNAL, not on a
+    // call count - a mock that was called proves nothing about whether the
+    // provider read actually stopped. Before the preload half of this fix the
+    // renderer could not even fire the cancel; before the admission half the
+    // read did not travel through anything that could link it.
+    let seen: AbortSignal | undefined;
+    let release = (): void => undefined;
+    poll.mockImplementation(async (args: { signal: AbortSignal }) => {
+      seen = args.signal;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { kind: "unavailable", reason: "cancelled" };
+    });
+
+    const pending = call({ subject: SUBJECT, resolution: "1m" });
+    for (let index = 0; index < 24; index += 1) await Promise.resolve();
+    expect(seen).toBeInstanceOf(AbortSignal);
+    expect(seen?.aborted).toBe(false);
+
+    getCancelController(REQUEST_ID)?.abort();
+    expect(seen?.aborted).toBe(true);
+
+    release();
+    await pending;
   });
 });

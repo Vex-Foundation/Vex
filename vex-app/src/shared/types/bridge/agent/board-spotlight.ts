@@ -1,4 +1,4 @@
-import type { Result } from "../../../ipc/result.js";
+import type { AbortableInvocation } from "../common.js";
 import type {
   BoardMomentumInput,
   BoardMomentumResult,
@@ -23,6 +23,14 @@ import type {
  *
  * EVERY METHOD IS A ONE-SHOT THAT THE SURFACE OWNS. Leaving the spotlight cuts
  * them; none of them keeps running behind a view the reader has left.
+ *
+ * EVERY METHOD IS THEREFORE ABORTABLE, because that sentence is only true if
+ * the cut can reach main. `cancel` fires main's own `ctx.signal`, which is
+ * where the provider read is actually stopped; without it, leaving the
+ * spotlight would stop the renderer LISTENING while five reads ran on to their
+ * deadlines for a surface nobody is watching. What the renderer gains is the
+ * ability to say "I have stopped waiting" and nothing else: it still cannot
+ * name a timeout, a budget, a cadence or a limit.
  */
 export interface BoardSpotlightBridge {
   /**
@@ -33,18 +41,18 @@ export interface BoardSpotlightBridge {
    */
   readonly topTraders: (
     input: BoardTopTradersInput,
-  ) => Promise<Result<BoardTopTradersResult>>;
+  ) => AbortableInvocation<BoardTopTradersResult>;
   /** The m5/h1/h6/h24 windows, read at view time and duration-normalized. */
   readonly momentum: (
     input: BoardMomentumInput,
-  ) => Promise<Result<BoardMomentumResult>>;
+  ) => AbortableInvocation<BoardMomentumResult>;
   /**
    * The token's other pools, from a CAPPED relevance window with the current
    * pair excluded before ranking. The copy says "seen", not "all".
    */
   readonly otherPools: (
     input: BoardOtherPoolsInput,
-  ) => Promise<Result<BoardOtherPoolsResult>>;
+  ) => AbortableInvocation<BoardOtherPoolsResult>;
   /**
    * Promotion and narrative context. `boostsActive` comes from the pair row,
    * never from the bounded global spotlight feed: a token measured carrying
@@ -52,7 +60,7 @@ export interface BoardSpotlightBridge {
    */
   readonly context: (
     input: BoardSpotlightContextInput,
-  ) => Promise<Result<BoardSpotlightContextResult>>;
+  ) => AbortableInvocation<BoardSpotlightContextResult>;
   /**
    * One tape tick. Publication is atomic per tick and a batch that could not
    * reach its overlap block carries an explicit `gapBefore` marker, so a gap in
@@ -60,5 +68,5 @@ export interface BoardSpotlightBridge {
    */
   readonly tapePoll: (
     input: BoardTapePollInput,
-  ) => Promise<Result<BoardTapePollResult>>;
+  ) => AbortableInvocation<BoardTapePollResult>;
 }

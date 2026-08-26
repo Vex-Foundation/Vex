@@ -24,6 +24,15 @@
  * queue admitting the pools behind them, so closing a board does not leave
  * eight reads running for a surface nobody is looking at.
  *
+ * ADMISSION, NOT SCHEDULING. The batch passes through the board live
+ * scheduler's `admit` under the `card-sparkline` channel, so it contends for
+ * the SAME two board exchanges, in the SAME priority order, as every other
+ * board read. It takes ONE turn for the whole board rather than one per pool:
+ * it owns its own progressive queue and budget internally, and a per-pool
+ * admission inside it would wait on the slot its own caller is holding. A
+ * scheduler that is not mounted is answered `not_mounted`, exactly as a
+ * missing service is.
+ *
  * LOGGING records counts and the correlation id. Never a pool address (it
  * identifies a token a user is looking at), never a URL, never bars.
  */
@@ -35,6 +44,7 @@ import {
   boardSparklineHydrateResultSchema,
   type BoardSparklineHydrateResult,
 } from "@shared/schemas/board-sparkline.js";
+import { getBoardLiveScheduler } from "../market/board-live-scheduler.js";
 import {
   getBoardSparklineService,
   sparklineKey,
@@ -66,11 +76,46 @@ export function registerBoardSparklineHandlers(): ReadonlyArray<() => void> {
           });
         }
 
-        const result = await service.hydrate({
-          pools: input.pools,
-          resolution: input.resolution,
-          signal: ctx.signal,
-        });
+        const scheduler = getBoardLiveScheduler();
+        if (scheduler === null) {
+          return ok({
+            entries: input.pools.map((subject) => ({
+              key: sparklineKey(subject),
+              subject,
+              outcome: { kind: "unavailable", reason: "not_mounted" } as const,
+            })),
+            deadlineHit: false,
+          });
+        }
+        const admission = await scheduler.admit(
+          { id: "card-sparkline", owner: "modal", signal: ctx.signal },
+          // The RUN's signal, not the caller's: it fires on the caller's abort
+          // AND on a surface cut.
+          async (run) =>
+            service.hydrate({
+              pools: input.pools,
+              resolution: input.resolution,
+              signal: run.signal,
+            }),
+        );
+        if (admission.kind === "refused") {
+          // `busy` HAS NO MEMBER on this channel and must not be smuggled in as
+          // `not_mounted`, which would say the service is missing when it is
+          // running. `deadline` is the honest neighbour: it already means "the
+          // board's own budget expired before this pool's turn, so the pool was
+          // never asked and a retry is cheap", which is exactly what a full
+          // admission queue means here.
+          const reason = admission.reason === "busy" ? "deadline" : admission.reason;
+          return ok({
+            entries: input.pools.map((subject) => ({
+              key: sparklineKey(subject),
+              subject,
+              outcome: { kind: "unavailable", reason } as const,
+            })),
+            deadlineHit: reason === "deadline",
+          });
+        }
+        const result = admission.value;
         const drawn = result.entries.filter(
           (entry) => entry.outcome.kind === "series",
         ).length;

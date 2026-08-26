@@ -16,10 +16,19 @@
  *   5. a retryable failure arms Retry with the SAME envelope,
  *   6. an intent for another session is DROPPED, never sent,
  *   7. StrictMode's double effect sends once.
+ *
+ * Scenario 4 was the one with a hole. The gate used to be read AFTER the
+ * in-flight branch, so it only decided anything for an IDLE session: a mission
+ * run that also had a foreground turn in flight took the board's question as a
+ * steering interrupt and fed the run the free text it is supposed to refuse.
+ * The gate is unconditional now, and the case that proves it is 4b below.
  */
 
+import type { FormEvent } from "react";
+import type { SessionListItem } from "@shared/schemas/sessions.js";
+import { makeSessionRows } from "./AppShell/_appshell-render.js";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { createElement, StrictMode, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { readQueue, resetComposerQueueForTest } from "../../../lib/composer-queue.js";
@@ -48,10 +57,23 @@ const { useComposerSubmit } = await import("../composer-submit.js");
 const SESSION = "00000000-0000-4000-8000-000000000001";
 const OTHER_SESSION = "00000000-0000-4000-8000-000000000002";
 
-const AGENT_SESSION = {
-  id: SESSION,
-  mode: "agent",
-} as unknown as Parameters<typeof useComposerSubmit>[1];
+const [SESSION_ROW] = makeSessionRows();
+if (SESSION_ROW === undefined) throw new Error("session fixture rows are empty");
+/** A real SessionListItem, re-identified for this suite. */
+const AGENT_SESSION: SessionListItem = { ...SESSION_ROW, id: SESSION, mode: "agent" };
+
+/**
+ * Submit through a REAL form so `onSubmit` receives React's own synthetic
+ * event instead of a hand-made partial: the hook is exercised exactly as the
+ * composer's `<form>` exercises it.
+ */
+function submitThrough(onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>): void {
+  const harness = render(<form onSubmit={onSubmit} />);
+  const form = harness.container.querySelector("form");
+  if (form === null) throw new Error("submit harness rendered no form");
+  fireEvent.submit(form);
+  harness.unmount();
+}
 
 /** A finished Ask VEX envelope, as `AskVexPanel` would have built it. */
 const ENVELOPE = [
@@ -115,6 +137,7 @@ function runtimeState(status: string | null): void {
 beforeEach(() => {
   vi.clearAllMocks();
   submitPending = false;
+  latestComposer = null;
   resetComposerQueueForTest();
   resetDraftsForTest();
   runtimeState(null);
@@ -209,6 +232,26 @@ describe("board Ask VEX through the resident composer", () => {
     expect(readQueue(SESSION)).toHaveLength(0);
   });
 
+  it("4b. a mission run WITH a turn in flight refuses the question, and does not steer or queue it", async () => {
+    // The regression. `submitPending` sends a typed message down the steering
+    // branch; before the fix that branch returned before the gate was ever
+    // read, so the mission run received the board's free text as an interrupt.
+    // Refusal is the whole point of the gate and it cannot depend on whether a
+    // turn happens to be running.
+    submitPending = true;
+    runtimeState("running");
+    const { result } = mountComposer();
+    await act(async () => {
+      useBoardAskIntentStore.getState().publishBoardAskIntent(askIntent());
+    });
+    await waitFor(() => {
+      expect(result.current.notice?.tone).toBe("error");
+    });
+    expect(mockSteer).not.toHaveBeenCalled();
+    expect(readQueue(SESSION)).toHaveLength(0);
+    expect(mockMutateAsync).not.toHaveBeenCalled();
+  });
+
   it("5. a retryable failure arms Retry with the SAME envelope", async () => {
     mockMutateAsync.mockResolvedValue({
       ok: false,
@@ -280,11 +323,12 @@ describe("the typed-message path is unchanged by the hand-off", () => {
     act(() => {
       result.current.setDraft("hello");
     });
-    await act(async () =>
-      result.current.onSubmit({
-        preventDefault: vi.fn(),
-      } as unknown as Parameters<typeof result.current.onSubmit>[0]),
-    );
+    // Outside any enclosing act: `render` and `fireEvent` wrap themselves, and
+    // a nested async act would hold the harness commit until it exits.
+    submitThrough(result.current.onSubmit);
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(result.current.notice?.tone).toBe("error");
     expect(result.current.draft).toBe("hello");
     expect(mockMutateAsync).not.toHaveBeenCalled();
@@ -295,11 +339,12 @@ describe("the typed-message path is unchanged by the hand-off", () => {
     act(() => {
       result.current.setDraft("hello");
     });
-    await act(async () =>
-      result.current.onSubmit({
-        preventDefault: vi.fn(),
-      } as unknown as Parameters<typeof result.current.onSubmit>[0]),
-    );
+    // Outside any enclosing act: `render` and `fireEvent` wrap themselves, and
+    // a nested async act would hold the harness commit until it exits.
+    submitThrough(result.current.onSubmit);
+    await act(async () => {
+      await Promise.resolve();
+    });
     await waitFor(() => {
       expect(mockMutateAsync).toHaveBeenCalledTimes(1);
     });
@@ -307,3 +352,54 @@ describe("the typed-message path is unchanged by the hand-off", () => {
   });
 });
 
+/**
+ * The composer's REAL entry path for a typed message: a form whose `onSubmit`
+ * is the hook's own, driven by a submit event rather than a hand-built object.
+ * The draft assertions below are about what stays in the field the user typed
+ * into, so the field is real too.
+ */
+let latestComposer: ReturnType<typeof useComposerSubmit> | null = null;
+
+function ComposerForm() {
+  const composer = useComposerSubmit(SESSION, AGENT_SESSION, false, null);
+  latestComposer = composer;
+  return createElement(
+    "form",
+    { onSubmit: composer.onSubmit, "data-testid": "composer-form" },
+    createElement("input", {
+      "aria-label": "message",
+      value: composer.draft,
+      onChange: (event: { readonly target: { readonly value: string } }) => {
+        composer.setDraft(event.target.value);
+      },
+    }),
+  );
+}
+
+async function typeAndSubmit(text: string): Promise<void> {
+  const field = screen.getByLabelText("message");
+  fireEvent.change(field, { target: { value: text } });
+  await act(async () => {
+    fireEvent.submit(screen.getByTestId("composer-form"));
+  });
+}
+
+describe("a gated send never eats the draft, busy or idle", () => {
+  it.each([
+    ["idle", false],
+    ["with a foreground turn in flight", true],
+  ])("keeps the typed text when a mission run gates the send %s", async (_label, busy) => {
+    // The busy row is the second half of the same defect. Moving the gate to
+    // the top of the dispatch means the busy path is refused too, so a guard
+    // that still cleared the field first would delete what the user wrote.
+    submitPending = busy;
+    runtimeState("running");
+    render(createElement(ComposerForm), { wrapper });
+    await typeAndSubmit("hello");
+    expect(latestComposer?.notice?.tone).toBe("error");
+    expect(latestComposer?.draft).toBe("hello");
+    expect(mockMutateAsync).not.toHaveBeenCalled();
+    expect(mockSteer).not.toHaveBeenCalled();
+    expect(readQueue(SESSION)).toHaveLength(0);
+  });
+});

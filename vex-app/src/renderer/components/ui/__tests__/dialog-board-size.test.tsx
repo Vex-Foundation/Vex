@@ -17,10 +17,9 @@ import {
 } from "../dialog.js";
 
 beforeAll(() => {
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-  };
+  // jsdom ships HTMLDialogElement without showModal/close; lib.dom already
+  // types both, so the polyfill assigns real methods with no cast.
+  const proto = HTMLDialogElement.prototype;
   if (typeof proto.showModal !== "function") {
     proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
       this.setAttribute("open", "");

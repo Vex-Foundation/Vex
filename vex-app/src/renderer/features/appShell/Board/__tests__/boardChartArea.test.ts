@@ -15,6 +15,7 @@
  * their own rows.
  */
 
+import type { UTCTimestamp } from "lightweight-charts";
 import { describe, expect, it, vi } from "vitest";
 import {
   AREA_MAX_HISTORICAL_UPDATES,
@@ -39,7 +40,7 @@ function row(minute: number, close: string | null) {
 }
 
 function point(minute: number, value: number | null): BoardChartAreaPoint {
-  const time = Math.floor((BASE + minute * MINUTE) / 1000) as never;
+  const time = Math.floor((BASE + minute * MINUTE) / 1000) as UTCTimestamp;
   return value === null ? { time } : { time, value };
 }
 

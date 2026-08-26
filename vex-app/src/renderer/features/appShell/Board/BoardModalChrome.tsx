@@ -41,7 +41,10 @@ import {
   boardKeyOf,
   type BoardHeaderSlotProps,
 } from "./board-surface-contracts.js";
-import { useBoardSurfaceStore } from "./board-surface-store.js";
+import {
+  registerBoardSurfaceTeardown,
+  useBoardSurfaceStore,
+} from "./board-surface-store.js";
 
 /** The helper line under the switch. Frozen copy, one line per state. */
 export const BOARD_LIVE_HELPER_OFF = "Refreshes in real time";
@@ -102,6 +105,33 @@ export function BoardModalChrome({ board }: BoardHeaderSlotProps): JSX.Element {
     if (appliedIntent.current !== true) return;
     setBoardLive(false);
   }, [liveRequested, live.mode, unsupported, setBoardLive]);
+
+  // THE LEASE IS CUT BY THE STORE'S OWN CLOSE PATH, NOT ONLY BY REACT.
+  //
+  // `openBoardModal` documents that rebinding is a close: it runs the
+  // `spotlight` and `modal` teardowns and invalidates both generations BEFORE
+  // the new board is bound. The live lease was the one feed that was NOT in
+  // that registry, so the one thing the rebind could not cut was the network
+  // conversation with the most authority behind it. Registering here puts the
+  // lease under the same close path as every other feed, which is what makes
+  // "released before B subscribes" a store-ordering fact rather than a
+  // consequence of React's commit order.
+  //
+  // Idempotent both ways: `toggle` is a no-op when nothing is held, and the
+  // React cleanup below still runs for the unmount paths the store never sees.
+  // `cut` rather than `toggle`, and the difference is the whole safety of it:
+  // `toggle` on a board that holds nothing would SUBSCRIBE, so wiring a toggle
+  // into a close path would start a lease during a teardown. `cut` only ever
+  // stops.
+  const cutLive = useRef(live.cut);
+  cutLive.current = live.cut;
+  useEffect(
+    () =>
+      registerBoardSurfaceTeardown("modal", `board-live:${boardKey}`, () => {
+        cutLive.current();
+      }),
+    [boardKey],
+  );
 
   // PUBLISH, and CLEAR ON UNMOUNT. The cleanup is what stops a closed board's
   // last tick from being painted under the next board that opens: the store
