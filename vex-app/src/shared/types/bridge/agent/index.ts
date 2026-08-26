@@ -24,6 +24,7 @@ import type { MessagesBridge } from "./messages.js";
 import type { MissionBridge } from "./mission.js";
 import type { ModelsBridge } from "./models.js";
 import type { BoardIconsBridge } from "./board-icons.js";
+import type { BoardLiveBridge } from "./board-live.js";
 import type { ImagesBridge } from "./images.js";
 import type { PortfolioBridge } from "./portfolio.js";
 import type { ProjectsBridge } from "./projects.js";
@@ -45,6 +46,7 @@ export type { MessagesBridge } from "./messages.js";
 export type { MissionBridge } from "./mission.js";
 export type { ModelsBridge } from "./models.js";
 export type { BoardIconsBridge } from "./board-icons.js";
+export type { BoardLiveBridge } from "./board-live.js";
 export type { ImagesBridge } from "./images.js";
 export type { PortfolioBridge } from "./portfolio.js";
 export type { ProjectsBridge } from "./projects.js";
@@ -87,6 +89,13 @@ export interface VexAgentBridge {
    * absence is the ordinary answer rather than a failure.
    */
   readonly boardIcons: BoardIconsBridge;
+  /**
+   * Board LIVE - a user-held lease that refreshes an open board's card metrics
+   * while the reader holds the toggle on. Owned by one window, never
+   * persisted, ended on every exit path, and it never edits the persisted
+   * board.
+   */
+  readonly boardLive: BoardLiveBridge;
   /**
    * Token launch (C5). `preview` and `myLaunches` are live; `submit` and
    * `cancel` are mounted but refuse in words, pending the C0 authorization

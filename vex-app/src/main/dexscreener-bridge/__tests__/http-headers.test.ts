@@ -65,15 +65,19 @@ describe("checkHttpUrl - the CDN path prefix", () => {
 
 // ── siteHttpGet: the captured-request proof ────────────────────────────────
 
-/** Minimal Headers-like object satisfying the `forEach(value, key)` the code reads. */
-function fakeHeaders(entries: ReadonlyArray<readonly [string, string]>): {
-  forEach: (cb: (value: string, key: string) => void) => void;
-} {
-  return {
-    forEach(cb: (value: string, key: string) => void): void {
-      for (const [key, value] of entries) cb(value, key);
-    },
-  };
+/**
+ * A real WHATWG `Response` (global in the node test environment, the same
+ * shape Electron's `net.fetch` resolves to), so the code under test reads
+ * real `Headers`, a real `status`, and a real streaming `body` with no cast
+ * anywhere. A `ReadableStream` body keeps its chunk boundaries and propagates
+ * `cancel()` back to the source, which is exactly what the bounded-read tests
+ * measure.
+ */
+function realResponse(
+  headers: Record<string, string>,
+  body: ReadableStream<Uint8Array> | null = null,
+): Response {
+  return new Response(body, { status: 200, headers });
 }
 
 function fakeSession(
@@ -102,13 +106,7 @@ describe("siteHttpGet - captured headers differ by host exactly as requestHeader
     let captured: RequestInit | undefined;
     const session = fakeSession(async (_url, init) => {
       captured = init;
-      return {
-        url: "",
-        status: 200,
-        headers: fakeHeaders([["content-type", "application/json"]]) as unknown as Headers,
-        body: null,
-        arrayBuffer: async () => new ArrayBuffer(0),
-      } as unknown as Response;
+      return realResponse({ "content-type": "application/json" });
     });
 
     await siteHttpGet(session, "https://io.dexscreener.com/dex/search/v12/pairs?q=CAT", baseOptions());
@@ -122,13 +120,7 @@ describe("siteHttpGet - captured headers differ by host exactly as requestHeader
     let captured: RequestInit | undefined;
     const session = fakeSession(async (_url, init) => {
       captured = init;
-      return {
-        url: "",
-        status: 200,
-        headers: fakeHeaders([["content-type", "image/png"]]) as unknown as Headers,
-        body: null,
-        arrayBuffer: async () => new ArrayBuffer(0),
-      } as unknown as Response;
+      return realResponse({ "content-type": "image/png" });
     });
 
     await siteHttpGet(session, "https://cdn.dexscreener.com/cms/images/abc", baseOptions());
@@ -178,17 +170,11 @@ describe("siteHttpGet - the response body is bounded DURING the read", () => {
     const chunks = [new Uint8Array(40), new Uint8Array(40), new Uint8Array(40), new Uint8Array(40)];
     const { stream, emittedCount, cancelled } = trackedStream(chunks);
 
-    const session = fakeSession(async () => {
-      return {
-        url: "",
-        status: 200,
-        headers: fakeHeaders([]) as unknown as Headers,
-        body: stream,
-        arrayBuffer: async () => {
-          throw new Error("must not buffer the whole body when maxBytes is set");
-        },
-      } as unknown as Response;
-    });
+    // A real Response over the tracked stream: if the implementation buffered
+    // the whole body (arrayBuffer-style) it would drain EVERY chunk before
+    // refusing, so the emitted-count and cancelled assertions below are the
+    // proof that the bound is enforced during the read.
+    const session = fakeSession(async () => realResponse({}, stream));
 
     await expect(
       siteHttpGet(session, "https://cdn.dexscreener.com/cms/images/abc", baseOptions({ maxBytes: 50 })),
@@ -205,15 +191,7 @@ describe("siteHttpGet - the response body is bounded DURING the read", () => {
     const chunks = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5])];
     const { stream } = trackedStream(chunks);
 
-    const session = fakeSession(async () => {
-      return {
-        url: "",
-        status: 200,
-        headers: fakeHeaders([]) as unknown as Headers,
-        body: stream,
-        arrayBuffer: async () => new ArrayBuffer(0),
-      } as unknown as Response;
-    });
+    const session = fakeSession(async () => realResponse({}, stream));
 
     const result = await siteHttpGet(
       session,

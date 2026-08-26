@@ -116,7 +116,23 @@ beforeEach(() => {
   Object.defineProperty(window, "vex", {
     configurable: true,
     writable: true,
-    value: { boardIcons: { read: readBoardIcon } },
+    // `boardLive` is answered but never used by these cases: the toggle is OFF
+    // on every mount, so this suite still tests the SNAPSHOT board. Its live
+    // behaviour is covered in `BoardLiveToggle.test.tsx`, and the capability
+    // reported here is the honest one for a build with no site bridge.
+    value: {
+      boardIcons: { read: readBoardIcon },
+      boardLive: {
+        capability: () =>
+          Promise.resolve({
+            ok: true,
+            data: { supported: false, detail: "no site bridge in this test" },
+          }),
+        subscribe: () => Promise.reject(new Error("not subscribed in this suite")),
+        unsubscribe: () => Promise.resolve({ ok: true, data: { outcome: "unknown" } }),
+        onLeaseEvent: () => () => undefined,
+      },
+    },
   });
   vi.useFakeTimers();
   // Freeze the staleness clock: a board is a snapshot and these assertions

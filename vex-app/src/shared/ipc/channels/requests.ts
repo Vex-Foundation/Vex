@@ -393,6 +393,25 @@ export const CH = {
   },
 
   /**
+   * Board LIVE - a user-held lease that refreshes an open board's card metrics.
+   *
+   * Separate from `boardIcons` because the lifetimes are opposite: an icon is a
+   * cached byte string with no owner and no end, while a lease is owned by one
+   * window, ends on every exit path, and is the only thing in this app a
+   * renderer can ask main to keep polling on its behalf. `capability` is asked
+   * BEFORE the toggle renders so a build with no site bridge shows a disabled
+   * control with an honest label rather than one that fails on first click.
+   *
+   * The subscribe response CARRIES the first snapshot, so there is no race
+   * between claiming the lease and hearing its first tick.
+   */
+  boardLive: {
+    capability: "vex:boardLive:capability",
+    subscribe: "vex:boardLive:subscribe",
+    unsubscribe: "vex:boardLive:unsubscribe",
+  },
+
+  /**
    * Trench Express token launch — the host-mediated form path.
    *
    * `preview` is the AUTHORITATIVE main-side cost read: the creation fee comes

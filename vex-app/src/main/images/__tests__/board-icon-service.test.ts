@@ -109,6 +109,11 @@ function scriptedFetcher(
     calls.push({ url, options });
     const answer = answers[Math.min(index, answers.length - 1)];
     index += 1;
+    if (answer === undefined) {
+      // Unreachable while at least one answer is scripted; named so an empty
+      // script fails loudly instead of resolving undefined.
+      throw new Error("scriptedFetcher: no answers were scripted");
+    }
     if (answer instanceof Error) throw answer;
     return answer;
   };

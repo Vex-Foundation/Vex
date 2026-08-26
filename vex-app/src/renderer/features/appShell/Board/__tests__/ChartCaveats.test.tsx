@@ -33,7 +33,9 @@ const PROVENANCE = {
   sourceObservation: "dexscreener pairs batch read at 2026-08-26T10:00:00Z",
 } as const;
 
-function renderCaveats(): void {
+const CHART_FETCHED_AT = Date.UTC(2026, 7, 26, 9, 30, 0);
+
+function renderCaveats(fetchedAtMs: number | null = CHART_FETCHED_AT): void {
   render(
     createElement(ChartCaveats, {
       resolution: "1h" as const,
@@ -44,6 +46,7 @@ function renderCaveats(): void {
       lastBarPartial: true,
       truncated: true,
       provenance: PROVENANCE,
+      fetchedAtMs,
     }),
   );
 }
@@ -75,6 +78,7 @@ describe("ChartCaveats status line", () => {
         lastBarPartial: false,
         truncated: false,
         provenance: null,
+        fetchedAtMs: null,
       }),
     );
     expect(screen.queryByRole("button")).toBeNull();
@@ -85,7 +89,15 @@ describe("ChartCaveats status line", () => {
     renderCaveats();
     const line = screen.getByRole("button").parentElement;
     if (line === null) throw new Error("status line missing");
-    expect(line.textContent).toBe("1h200 barsData notes (6)");
+    // The always-visible register holds exactly three facts and the
+    // disclosure: what the chart IS (resolution), how much of it is drawn, and
+    // WHEN it was read. The clock joined this line in the live arc, when the
+    // cards above it gained the ability to move and the chart did not; it is a
+    // fact about the drawing, not the diagnostic prose this case exists to keep
+    // out. The time itself is locale-formatted, so it is matched by shape.
+    expect(line.textContent).toMatch(
+      /^1h200 barschart as of [\d:\s APM.\u202f\u00a0]+Data notes \(6\)$/,
+    );
   });
 });
 
@@ -206,5 +218,24 @@ describe("buildChartDataNotes", () => {
     expect(notes[0]?.text).toContain("1 older bar exists");
     expect(notes[1]?.text).toContain("1 bucket reported");
     expect(notes[2]?.text).toContain("1 bar has an open or close");
+  });
+});
+
+describe("ChartCaveats chart clock", () => {
+  it("states when the candles were read, in the always-visible register", () => {
+    renderCaveats();
+    const asOf = document.querySelector('[data-vex-area="board-chart-asof"]');
+    // The chart is a SNAPSHOT in this arc, and it carries its own clock so it
+    // never inherits a freshness from live cards beside it that it does not
+    // have. Live candles are a declared future gate.
+    expect(asOf?.textContent).toContain("chart as of");
+    expect(asOf?.textContent).toMatch(/\d/);
+  });
+
+  it("says nothing rather than inventing a clock it does not have", () => {
+    renderCaveats(null);
+    expect(
+      document.querySelector('[data-vex-area="board-chart-asof"]'),
+    ).toBeNull();
   });
 });

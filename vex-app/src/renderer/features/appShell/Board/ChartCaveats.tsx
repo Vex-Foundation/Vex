@@ -34,6 +34,7 @@
 import { useId, useRef, useState, type JSX } from "react";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import { BOARD_CHART_MAX_BARS } from "./boardChartFeed.js";
+import { formatBoardClock } from "./boardFormat.js";
 import type { BoardChartResolution } from "@vex-lib/board/index.js";
 
 /** Where the hydration bytes came from, as the spec records it. */
@@ -56,6 +57,20 @@ export interface ChartCaveatsProps {
    * has ever rendered, which is why it belongs here rather than nowhere.
    */
   readonly provenance: BoardChartProvenance | null;
+  /**
+   * When these candles were read, as an epoch, or null when unusable.
+   *
+   * ALWAYS the clock the board was COMPOSED with, even while the cards above
+   * are live. The board's live lease refreshes card metrics only: there is no
+   * push channel for candles and the chart feed can append and update bars but
+   * cannot retract them, so a live candle stream without a reconciliation
+   * contract would leave bars on screen that the toggle could not take back.
+   * The chart is therefore an honest snapshot and SAYS SO with its own clock,
+   * rather than inheriting a freshness it does not have from the cards beside
+   * it. Live candles are a declared future gate whose named prerequisite is
+   * that reconciliation contract.
+   */
+  readonly fetchedAtMs: number | null;
 }
 
 /** One data note: a stable key and the WHOLE sentence. */
@@ -76,7 +91,12 @@ export function buildChartDataNotes({
   lastBarPartial,
   truncated,
   provenance,
-}: Omit<ChartCaveatsProps, "resolution" | "drawn">): readonly DataNote[] {
+}: Omit<
+  ChartCaveatsProps,
+  // The clock is a fact about the drawing, not a data NOTE: it belongs to the
+  // always-visible line and never inside the disclosure.
+  "resolution" | "drawn" | "fetchedAtMs"
+>): readonly DataNote[] {
   const notes: DataNote[] = [];
   if (hiddenOlder > 0) {
     notes.push({
@@ -126,10 +146,12 @@ export function ChartCaveats({
   lastBarPartial,
   truncated,
   provenance,
+  fetchedAtMs,
 }: ChartCaveatsProps): JSX.Element {
   const regionId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const chartClock = fetchedAtMs === null ? null : formatBoardClock(fetchedAtMs);
   const notes = buildChartDataNotes({
     hiddenOlder,
     whitespaceCount,
@@ -154,6 +176,11 @@ export function ChartCaveats({
         <span className="tabular-nums">
           {drawn} {drawn === 1 ? "bar" : "bars"}
         </span>
+        {chartClock === null ? null : (
+          <span data-vex-area="board-chart-asof" className="tabular-nums">
+            chart as of {chartClock}
+          </span>
+        )}
         {notes.length > 0 ? (
           <button
             ref={triggerRef}

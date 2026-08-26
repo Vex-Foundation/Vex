@@ -21,6 +21,8 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type JSX } from "react";
 import type { BoardSpecV1 } from "@vex-lib/board/index.js";
+import { useBoardLive, type BoardDataMode } from "../../../lib/api/board-live.js";
+import { cn } from "../../../lib/utils.js";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import { BoardChart } from "./BoardChart.js";
 import { BoardNotes } from "./BoardNotes.js";
@@ -64,7 +66,29 @@ export function BoardBlock({ spec }: BoardBlockProps): JSX.Element {
     return () => clearTimeout(timer);
   }, [staleAt]);
 
-  const model = useMemo(() => buildBoardViewModel(spec, now), [spec, now]);
+  // THE LEASE. Default OFF on every mount and never persisted: a board is a
+  // document, and a document that reconnected to a market feed by itself would
+  // spend a reader's provider budget without being asked. The pools identity is
+  // memoized because it is the hook's stability contract, not a convenience.
+  const livePools = useMemo(
+    () =>
+      spec.pools.map((pool) => ({
+        chain: pool.chain,
+        pairAddress: pool.pairAddress,
+      })),
+    [spec],
+  );
+  const live = useBoardLive(livePools);
+
+  const model = useMemo(
+    () =>
+      buildBoardViewModel(spec, now, {
+        mode: live.mode,
+        rowsByKey: live.rowsByKey,
+        fetchedAtMs: live.fetchedAtMs,
+      }),
+    [spec, now, live.mode, live.rowsByKey, live.fetchedAtMs],
+  );
   const annotationRows = useMemo(() => buildAnnotationRows(spec), [spec]);
   const unmatchedMarkers = useMemo(
     () => new Set(spec.hydration.unmatchedMarkerAtMs ?? []),
@@ -92,18 +116,28 @@ export function BoardBlock({ spec }: BoardBlockProps): JSX.Element {
           <h3 className="min-w-0 font-display text-[16px] font-extrabold leading-tight tracking-[-0.02em] text-ink-primary">
             {model.title}
           </h3>
-          {/* The honest badge, kept in these exact words and promoted out of
-            * the clock run so it is the first thing read about the figures
-            * rather than the last. It appears only once the data has actually
-            * outlived its window - it is a statement, never decoration. */}
-          {model.stale ? (
-            <span
-              data-vex-area="board-stale-note"
-              className="vex-micro-label shrink-0 rounded-md border border-line-2 bg-surface-1 px-1.5 py-0.5 uppercase text-warning-label"
-            >
-              Snapshot, not live.
-            </span>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-2">
+            {/* The honest badge, kept in these exact words. It appears only
+              * once the data has actually outlived its window AND nothing is
+              * refreshing it - a lease that is connected or reconnecting is
+              * already making the opposite statement one element to the right,
+              * and showing both at once would say two things about the same
+              * figures. It is a statement, never decoration. */}
+            {model.stale && !isLiveHeld(live.mode) ? (
+              <span
+                data-vex-area="board-stale-note"
+                className="vex-micro-label rounded-md border border-line-2 bg-surface-1 px-1.5 py-0.5 uppercase text-warning-label"
+              >
+                Snapshot, not live.
+              </span>
+            ) : null}
+            <LiveBadge mode={live.mode} />
+            <LiveToggle
+              mode={live.mode}
+              canToggle={live.canToggle}
+              onToggle={live.toggle}
+            />
+          </div>
         </div>
         <BoardClocks
           analysisCreatedAt={model.analysisCreatedAt}
@@ -127,6 +161,16 @@ export function BoardBlock({ spec }: BoardBlockProps): JSX.Element {
             : null
         }
       />
+
+      {live.notice === null ? null : (
+        <p
+          data-vex-area="board-live-notice"
+          role="status"
+          className="text-[11px] text-ink-tertiary"
+        >
+          {live.notice}
+        </p>
+      )}
 
       <BoardNotes notes={model.notes} />
     </section>
@@ -191,6 +235,10 @@ export function BoardBlock({ spec }: BoardBlockProps): JSX.Element {
               // data-notes disclosure is where it belongs, beside the other
               // statements about what these bytes are.
               provenance={spec.hydration.provenance}
+              // The PERSISTED clock, deliberately, and not `model`'s. While a
+              // lease is live the cards move and this chart does not, so it
+              // carries the clock of the candles that are actually drawn.
+              fetchedAtMs={spec.hydration.marketDataFetchedAt}
         />
       </ExpandRegion>
     );
@@ -234,5 +282,102 @@ function BoardClocks({
         </span>
       ) : null}
     </p>
+  );
+}
+
+/** Whether the reader currently holds a lease, in either of its two live states. */
+function isLiveHeld(mode: BoardDataMode): boolean {
+  return (
+    mode === "live-connecting" ||
+    mode === "live-connected" ||
+    mode === "live-degraded"
+  );
+}
+
+/**
+ * The LIVE control.
+ *
+ * A REAL BUTTON with `aria-pressed`, so it is in the tab order, Enter and Space
+ * operate it with no key handler of our own, and its state reaches assistive
+ * tech as state rather than as a colour. The accessible name states the ACTION,
+ * which is what a reader needs from a control they have not yet pressed.
+ *
+ * DISABLED, NOT HIDDEN, when the build cannot reach the market channel. Hiding
+ * it would mean a reader never learns the capability exists; a control that
+ * looks live and fails on its first click is worse still. So capability is
+ * asked BEFORE this renders, and an unsupported build gets a disabled control
+ * whose title says why.
+ */
+function LiveToggle({
+  mode,
+  canToggle,
+  onToggle,
+}: {
+  readonly mode: BoardDataMode;
+  readonly canToggle: boolean;
+  readonly onToggle: () => void;
+}): JSX.Element {
+  const held = isLiveHeld(mode);
+  const unsupported = mode === "live-unsupported";
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={held}
+      aria-label={held ? "Stop live figures" : "Show live figures"}
+      disabled={!canToggle && !held}
+      data-vex-area="board-live-toggle"
+      title={
+        unsupported
+          ? "Live figures need the DexScreener site channel, which this build does not mount."
+          : undefined
+      }
+      className={cn(
+        "vex-micro-label rounded-md border px-2 py-1 uppercase transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary motion-reduce:transition-none",
+        held
+          ? "border-line-1 bg-interactive-hover text-ink-primary"
+          : "border-line-2 text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary",
+        !canToggle && !held && "cursor-not-allowed opacity-50",
+      )}
+    >
+      Live
+    </button>
+  );
+}
+
+/**
+ * What the lease is doing, in words plus one dot.
+ *
+ * The dot pulses ONLY while a lease is actually delivering ticks, and the
+ * animation is the honest one: this is the single surface in the board that has
+ * earned motion, because something really is arriving. `motion-reduce` stills
+ * it for a reader who asked for that, and the WORD beside it carries the whole
+ * meaning on its own - the dot never says anything the text does not.
+ */
+function LiveBadge({ mode }: { readonly mode: BoardDataMode }): JSX.Element | null {
+  if (mode === "snapshot" || mode === "live-off" || mode === "live-unsupported") {
+    return null;
+  }
+  const connected = mode === "live-connected";
+  return (
+    <span
+      data-vex-area="board-live-badge"
+      data-live-mode={mode}
+      className={cn(
+        "vex-micro-label flex items-center gap-1.5 rounded-md border border-line-2 bg-surface-1 px-1.5 py-0.5 uppercase",
+        connected ? "text-success" : "text-warning-label",
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "h-[5px] w-[5px] rounded-full",
+          connected
+            ? "animate-pulse bg-success motion-reduce:animate-none"
+            : "bg-warning",
+        )}
+      />
+      {connected ? "Live" : mode === "live-degraded" ? "Reconnecting" : "Connecting"}
+    </span>
   );
 }

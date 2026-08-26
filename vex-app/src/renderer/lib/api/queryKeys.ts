@@ -273,6 +273,12 @@ export const imageKeys = {
  * handle are the same bytes either way. Keying by board or by card would fetch
  * one asset once per place it is shown.
  */
+export const boardLiveKeys = {
+  all: ["board-live"] as const,
+  /** Whether live figures are reachable at all in this build. Asked once. */
+  capability: () => ["board-live", "capability"] as const,
+};
+
 export const boardIconKeys = {
   all: ["board-icons"] as const,
   icon: (iconId: string) => ["board-icons", iconId] as const,

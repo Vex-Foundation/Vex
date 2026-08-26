@@ -131,6 +131,12 @@ export interface BoardChartProps {
    * notes region simply has one fewer sentence.
    */
   readonly provenance?: BoardChartProvenance | null;
+  /**
+   * When these candles were read. The board's PERSISTED market-data clock, even
+   * when the cards above are live: this chart is a snapshot in this arc and its
+   * status line says so in its own words.
+   */
+  readonly fetchedAtMs?: number | null;
 }
 
 const CHART_HEIGHT_CLASS = "h-64";
@@ -148,6 +154,7 @@ export function BoardChart({
   lastBarPartial,
   truncated,
   provenance = null,
+  fetchedAtMs = null,
 }: BoardChartProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -420,6 +427,7 @@ export function BoardChart({
         lastBarPartial={lastBarPartial}
         truncated={truncated}
         provenance={provenance}
+        fetchedAtMs={fetchedAtMs}
       />
       <AnnotationLegend rows={annotationRows} />
       <ChartAttribution />
