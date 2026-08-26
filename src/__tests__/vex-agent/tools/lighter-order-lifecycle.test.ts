@@ -189,12 +189,14 @@ function deps(overrides: Partial<LighterOrderLifecycleExecutionDeps> = {}): Ligh
       markApiAccepted: vi.fn().mockResolvedValue(intent({ executionState: "api_accepted" })),
       markProviderOutcome: vi.fn().mockResolvedValue(intent({ executionState: "completed" })),
       markAmbiguous: vi.fn().mockResolvedValue(intent({ executionState: "ambiguous" })),
+      markClosePositionChangedBeforeSubmissionWith: vi.fn().mockResolvedValue(intent({ executionState: "rejected" })),
     },
     nonceState: {
       recordExecutionObserved: vi.fn().mockResolvedValue({ status: "observed" }),
       reserveObservedWith: vi.fn().mockResolvedValue({ reservedNonce: "9", reservationId: `lighter-lifecycle:${intent().intentId}` }),
     },
     transaction: vi.fn(async (fn) => fn({} as never)) as typeof import("@vex-agent/db/client.js").withTransaction,
+    acquireSessionControlLock: vi.fn().mockResolvedValue(undefined),
     now: () => NOW,
     wait: vi.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -543,7 +545,18 @@ describe("Lighter reduce-only position close lifecycle", () => {
     };
     Object.assign(dependencies.client, {
       getAccount: vi.fn()
-        .mockResolvedValueOnce({ code: 200, accounts: [{ index: 42, positions: [longPosition] }] })
+        .mockResolvedValueOnce({
+          code: 200,
+          accounts: [{
+            index: 42,
+            positions: [{
+              ...longPosition,
+              position_value: "50.250000",
+              unrealized_pnl: "5.250000",
+              liquidation_price: "30.01",
+            }],
+          }],
+        })
         .mockResolvedValue({ code: 200, accounts: [{ index: 42, positions: [{ ...longPosition, position: "0.0000" }] }] }),
       getMarkets: vi.fn().mockResolvedValue({ code: 200, order_books: [market] }),
       getOrderBookOrders: vi.fn().mockResolvedValue({ code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [bid] }),
@@ -609,5 +622,54 @@ describe("Lighter reduce-only position close lifecycle", () => {
       signerExpiryMs: null,
     }));
     expect(dependencies.client.sendTx).toHaveBeenCalledTimes(1);
+  });
+
+  it("terminalizes a true position-size drift before nonce reservation or signing", async () => {
+    const dependencies = deps();
+    Object.assign(dependencies.client, {
+      getAccount: vi.fn().mockResolvedValue({
+        code: 200,
+        accounts: [{ index: 42, positions: [{ ...longPosition, position: "0.9000" }] }],
+      }),
+      getMarkets: vi.fn().mockResolvedValue({ code: 200, order_books: [market] }),
+      getOrderBookOrders: vi.fn().mockResolvedValue({
+        code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [bid],
+      }),
+    });
+    const closeIntent = intent({
+      actionType: "close_position",
+      marketIndex: 0,
+      providerOrderId: null,
+      requestedBaseAmountInteger: "10000",
+      requestedPriceInteger: "4950",
+      requestedSide: "sell",
+      reduceOnly: true,
+      providerSnapshotJson: {
+        position: {
+          marketIndex: 0, symbol: "ETH", sign: 1, side: "long", position: "1.0000",
+          averageEntryPrice: "45.00", positionValue: "50.000000", unrealizedPnl: "5.000000",
+          liquidationPrice: "30.00",
+        },
+        marketSizeDecimals: 4,
+        marketPriceDecimals: 2,
+        maxSlippageBps: 100,
+      },
+    });
+
+    await expect(executeApprovedLighterClosePosition(closeIntent, dependencies))
+      .rejects.toThrow("No lifecycle transaction was signed or submitted");
+
+    expect(dependencies.intents.markClosePositionChangedBeforeSubmissionWith).toHaveBeenCalledWith(
+      expect.anything(),
+      { intentId: closeIntent.intentId, sessionId: closeIntent.sessionId },
+    );
+    expect(dependencies.acquireSessionControlLock).toHaveBeenCalledWith(
+      expect.anything(),
+      closeIntent.sessionId,
+    );
+    expect(dependencies.intents.markPreSubmitRevalidated).not.toHaveBeenCalled();
+    expect(dependencies.nonceState.reserveObservedWith).not.toHaveBeenCalled();
+    expect(dependencies.authSigner.signCreateOrder).not.toHaveBeenCalled();
+    expect(dependencies.client.sendTx).not.toHaveBeenCalled();
   });
 });

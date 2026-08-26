@@ -227,6 +227,166 @@ export async function findAnyLiveOrderMutation(input: {
   return row === null ? null : mapRow(row);
 }
 
+/**
+ * An expired lifecycle preparation may be replaced only before any nonce,
+ * signature, submission, or provider-outcome evidence exists. Approved rows
+ * keep their historical approval status; retiring them changes only the
+ * execution state so the old approval can never be replayed.
+ */
+export function isSafelyExpirablePreSubmit(
+  intent: LighterOrderLifecycleIntentRow,
+  nowMs = Date.now(),
+): boolean {
+  const pending = intent.approvalStatus === "approval_pending"
+    && intent.executionState === "approval_pending"
+    && intent.approvalId === null
+    && intent.decidedAt === null
+    && intent.preSubmitRevalidationJson === null
+    && intent.preSubmitRevalidatedAt === null;
+  const approved = intent.approvalStatus === "approved"
+    && intent.approvalId !== null
+    && intent.decidedAt !== null
+    && (
+      (intent.executionState === "approved"
+        && intent.preSubmitRevalidationJson === null
+        && intent.preSubmitRevalidatedAt === null)
+      || (intent.executionState === "pre_submit_revalidated"
+        && intent.preSubmitRevalidationJson !== null
+        && intent.preSubmitRevalidatedAt !== null)
+    );
+  return (pending || approved)
+    && intent.nonceReservationId === null
+    && intent.nonceValue === null
+    && intent.signerExpiryMs === null
+    && intent.signerTxHash === null
+    && intent.submittedTxHash === null
+    && intent.submitCode === null
+    && intent.submitMessage === null
+    && intent.predictedExecutionTimeMs === null
+    && intent.volumeQuotaRemaining === null
+    && intent.providerOutcomeJson === null
+    && intent.providerOutcomeCheckedAt === null
+    && intent.ambiguousReason === null
+    && Number.isFinite(Date.parse(intent.expiresAt))
+    && Date.parse(intent.expiresAt) <= nowMs;
+}
+
+export async function expireStalePreSubmitWith(
+  client: PoolClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly matchHash: string;
+    readonly environment: LighterEnvironment;
+    readonly accountIndex: number;
+    readonly actionType: LighterOrderLifecycleAction;
+    readonly marketIndex: number | null;
+    readonly providerOrderId: string | null;
+  },
+): Promise<LighterOrderLifecycleIntentRow | null> {
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
+    `UPDATE lighter_order_lifecycle_intents
+        SET approval_status = CASE
+              WHEN approval_status = 'approval_pending' THEN 'expired'
+              ELSE approval_status
+            END,
+            execution_state = 'expired',
+            decision_reason = CASE
+              WHEN approval_status = 'approval_pending'
+                THEN 'Prepared Lighter lifecycle action expired before approval or submission.'
+              ELSE decision_reason
+            END,
+            decided_at = COALESCE(decided_at, NOW()),
+            updated_at = NOW()
+      WHERE intent_id = $1 AND session_id = $2 AND match_hash = $3
+        AND environment = $4 AND account_index = $5 AND action_type = $6
+        AND market_index IS NOT DISTINCT FROM $7
+        AND provider_order_id IS NOT DISTINCT FROM $8
+        AND expires_at <= NOW()
+        AND (
+          (approval_status = 'approval_pending' AND execution_state = 'approval_pending'
+            AND approval_id IS NULL AND decided_at IS NULL
+            AND pre_submit_revalidation_json IS NULL AND pre_submit_revalidated_at IS NULL)
+          OR
+          (approval_status = 'approved' AND approval_id IS NOT NULL AND decided_at IS NOT NULL
+            AND (
+              (execution_state = 'approved'
+                AND pre_submit_revalidation_json IS NULL AND pre_submit_revalidated_at IS NULL)
+              OR
+              (execution_state = 'pre_submit_revalidated'
+                AND pre_submit_revalidation_json IS NOT NULL AND pre_submit_revalidated_at IS NOT NULL)
+            ))
+        )
+        AND nonce_reservation_id IS NULL AND nonce_value IS NULL
+        AND signer_expiry_ms IS NULL AND signer_tx_hash IS NULL
+        AND submitted_tx_hash IS NULL AND submit_code IS NULL AND submit_message IS NULL
+        AND predicted_execution_time_ms IS NULL AND volume_quota_remaining IS NULL
+        AND provider_outcome_json IS NULL AND provider_outcome_checked_at IS NULL
+        AND ambiguous_reason IS NULL
+      RETURNING ${COLUMNS}`,
+    [input.intentId, input.sessionId, input.matchHash, input.environment, input.accountIndex,
+      input.actionType, input.marketIndex, input.providerOrderId],
+  );
+  return row === null ? null : mapRow(row);
+}
+
+/** Terminalize a true live-position drift before any close transaction exists. */
+export async function markClosePositionChangedBeforeSubmissionWith(
+  client: Executor,
+  input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  },
+): Promise<LighterOrderLifecycleIntentRow | null> {
+  return transition(
+    `UPDATE lighter_order_lifecycle_intents
+        SET execution_state = 'rejected',
+            provider_outcome_json = jsonb_build_object(
+              'kind', 'lighter_close_position_changed_before_submission',
+              'transactionSubmitted', false
+            ),
+            provider_outcome_checked_at = NOW(), updated_at = NOW()
+      WHERE intent_id = $1 AND session_id = $2
+        AND action_type = 'close_position'
+        AND approval_status = 'approved' AND execution_state = 'approved'
+        AND pre_submit_revalidation_json IS NULL AND pre_submit_revalidated_at IS NULL
+        AND nonce_reservation_id IS NULL AND nonce_value IS NULL
+        AND signer_expiry_ms IS NULL AND signer_tx_hash IS NULL
+        AND submitted_tx_hash IS NULL AND submit_code IS NULL AND submit_message IS NULL
+        AND predicted_execution_time_ms IS NULL AND volume_quota_remaining IS NULL
+        AND provider_outcome_json IS NULL AND provider_outcome_checked_at IS NULL
+        AND ambiguous_reason IS NULL
+      RETURNING ${COLUMNS}`,
+    [input.intentId, input.sessionId],
+    client,
+  );
+}
+
+/**
+ * User-driven status includes expired pre-submit rows so they cannot disappear
+ * behind a signed/submitted-only repair filter.
+ */
+export async function listStatusCandidates(
+  environment?: LighterEnvironment,
+  limit = 100,
+): Promise<LighterOrderLifecycleIntentRow[]> {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+    throw new Error("lighter_order_lifecycle_intents: limit must be from 1 through 500");
+  }
+  const rows = await query<Record<string, unknown>>(
+    `SELECT ${COLUMNS} FROM lighter_order_lifecycle_intents
+      WHERE (
+        execution_state IN ('nonce_reserved','signed','submission_staged','api_accepted','sequencer_pending','ambiguous')
+        OR (execution_state IN ('approval_pending','approved','pre_submit_revalidated') AND expires_at <= NOW())
+      )
+        AND ($1::text IS NULL OR environment = $1)
+      ORDER BY updated_at ASC LIMIT $2`,
+    [environment ?? null, limit],
+  );
+  return rows.map(mapRow);
+}
+
 export async function markApprovalDecision(input: {
   readonly intentId: string;
   readonly decision: "approved" | "rejected" | "expired";

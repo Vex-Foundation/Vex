@@ -34,6 +34,8 @@ const NEVER_SUBMITTED_REASONS = new Set([
 
 export type LighterOrderLifecycleRepairResolution =
   | "already_terminal"
+  | "stale_pre_submit"
+  | "awaiting_submission"
   | "provider_evidence"
   | "nonce_consumed_outcome_pending"
   | "nonce_released_never_submitted"
@@ -71,7 +73,7 @@ export interface LighterOrderLifecycleRepairDeps {
   >;
   readonly lifecycleIntents: Pick<
     typeof lifecycleIntentsRepo,
-    "findByIntentIdAnySession" | "listStreamWatchable" | "markStreamEvidence"
+    "findByIntentIdAnySession" | "listStatusCandidates" | "listStreamWatchable" | "markStreamEvidence"
   >;
   readonly orderIntents: Pick<typeof orderIntentsRepo, "listStreamWatchable" | "markStreamOutcome">;
   readonly nonceState: Pick<
@@ -100,9 +102,8 @@ export async function repairUnresolvedLighterOrderLifecycles(
   input: { readonly environment: LighterEnvironment; readonly limit?: number },
   deps: LighterOrderLifecycleRepairDeps = defaultLighterOrderLifecycleRepairDeps(),
 ): Promise<LighterOrderLifecycleRepairReport[]> {
-  const rows = await deps.lifecycleIntents.listStreamWatchable(
+  const rows = await deps.lifecycleIntents.listStatusCandidates(
     input.environment,
-    undefined,
     Math.max(1, Math.min(input.limit ?? 10, 100)),
   );
   const reports: LighterOrderLifecycleRepairReport[] = [];
@@ -117,6 +118,22 @@ export async function repairLighterOrderLifecycleIntent(
   if (isTerminal(intent.executionState)) {
     return report(intent, intent, "already_terminal", null, null, false, false,
       `Lifecycle action is already ${intent.executionState}; no repair was needed.`);
+  }
+  if (isPreSubmit(intent.executionState)) {
+    const expired = Number.isFinite(Date.parse(intent.expiresAt))
+      && Date.parse(intent.expiresAt) <= deps.now();
+    return report(
+      intent,
+      intent,
+      expired ? "stale_pre_submit" : "awaiting_submission",
+      null,
+      null,
+      false,
+      false,
+      expired
+        ? "This lifecycle action expired before any nonce, signature, or submission was recorded. Prepare a fresh action; the preparation path will retire it only if the database still proves it is pre-submit."
+        : "This lifecycle action is still awaiting approval or pre-submit execution. It has no nonce, signature, or submission evidence yet.",
+    );
   }
 
   let liveNextNonce: number;
@@ -187,6 +204,10 @@ export async function repairLighterOrderLifecycleIntent(
     releaseAt === null
       ? "The provider outcome remains ambiguous and no signer expiry is durable. Keep the nonce reserved and do not retry."
       : `The provider outcome remains ambiguous. Keep the nonce reserved and check again after ${new Date(releaseAt).toISOString()}; do not retry.`);
+}
+
+function isPreSubmit(state: LighterOrderLifecycleIntentRow["executionState"]): boolean {
+  return state === "approval_pending" || state === "approved" || state === "pre_submit_revalidated";
 }
 
 async function reconcileProviderEvidence(

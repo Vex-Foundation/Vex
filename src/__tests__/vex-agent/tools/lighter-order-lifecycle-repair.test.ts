@@ -108,6 +108,7 @@ function deps(initial: LighterOrderLifecycleIntentRow, provider: {
     client,
     lifecycleIntents: {
       findByIntentIdAnySession: vi.fn(async () => current),
+      listStatusCandidates: vi.fn(async () => [current]),
       listStreamWatchable: vi.fn(async () => [current]),
       markStreamEvidence,
     },
@@ -127,6 +128,42 @@ function deps(initial: LighterOrderLifecycleIntentRow, provider: {
 }
 
 describe("Lighter order lifecycle repair", () => {
+  it("reports an expired approved pre-submit close instead of hiding it from status", async () => {
+    const row = intent({
+      actionType: "close_position",
+      providerOrderId: null,
+      requestedBaseAmountInteger: "10000",
+      requestedPriceInteger: "4950",
+      requestedSide: "sell",
+      reduceOnly: true,
+      approvalStatus: "approved",
+      executionState: "approved",
+      nonceReservationId: null,
+      nonceValue: null,
+      signerExpiryMs: null,
+      signerTxHash: null,
+      submittedTxHash: null,
+      submitCode: null,
+      submitMessage: null,
+      ambiguousReason: null,
+      expiresAt: "2026-08-19T21:59:00.000Z",
+    });
+    const d = deps(row);
+
+    const report = await repairLighterOrderLifecycleIntent(row, d);
+
+    expect(report).toMatchObject({
+      resolution: "stale_pre_submit",
+      stateBefore: "approved",
+      stateAfter: "approved",
+      nonceBlockedBefore: false,
+      nonceBlockedAfter: false,
+    });
+    expect(report.guidance).toContain("Prepare a fresh action");
+    expect(d.client.getNextNonce).not.toHaveBeenCalled();
+    expect(d.resolveAuth).not.toHaveBeenCalled();
+  });
+
   it("resolves a reduce-only close from exact terminal order and full flat account snapshot", async () => {
     const matchHash = "c".repeat(64);
     const clientOrderId = deriveVexAssignedClientOrderIndex(matchHash);

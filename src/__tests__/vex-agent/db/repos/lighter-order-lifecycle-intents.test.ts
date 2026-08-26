@@ -40,6 +40,39 @@ const base = {
   expiresAt: "2026-08-19T22:00:00.000Z",
 };
 
+function row(overrides: Record<string, unknown> = {}) {
+  return {
+    ...base,
+    protocolExecutionId: null,
+    approvalId: "approval-1",
+    requestedBaseAmountInteger: null,
+    requestedPriceInteger: null,
+    requestedSide: null,
+    reduceOnly: false,
+    approvalStatus: "approved",
+    executionState: "approved",
+    decisionReason: "user approved",
+    decidedAt: "2026-08-19T21:58:00.000Z",
+    preSubmitRevalidationJson: null,
+    preSubmitRevalidatedAt: null,
+    nonceReservationId: null,
+    nonceValue: null,
+    signerExpiryMs: null,
+    signerTxHash: null,
+    submittedTxHash: null,
+    submitCode: null,
+    submitMessage: null,
+    predictedExecutionTimeMs: null,
+    volumeQuotaRemaining: null,
+    providerOutcomeJson: null,
+    providerOutcomeCheckedAt: null,
+    ambiguousReason: null,
+    createdAt: "2026-08-19T21:57:00.000Z",
+    updatedAt: "2026-08-19T21:58:00.000Z",
+    ...overrides,
+  } as unknown as import("@vex-agent/db/repos/lighter-order-lifecycle-intents.js").LighterOrderLifecycleIntentRow;
+}
+
 beforeEach(resetMocks);
 
 describe("Lighter order lifecycle intent repository", () => {
@@ -115,5 +148,56 @@ describe("Lighter order lifecycle intent repository", () => {
       expect.stringContaining("execution_state IN ('signed','submission_staged','api_accepted','sequencer_pending','ambiguous')"),
       expect.arrayContaining([base.intentId, "rhc", 42, "completed"]),
     );
+  });
+
+  it("recognizes only expired pre-submit rows with no nonce, signature, or submission evidence", () => {
+    const now = Date.parse("2026-08-19T22:00:01.000Z");
+    expect(repo.isSafelyExpirablePreSubmit(row(), now)).toBe(true);
+    expect(repo.isSafelyExpirablePreSubmit(row({
+      approvalStatus: "approval_pending",
+      executionState: "approval_pending",
+      approvalId: null,
+      decisionReason: null,
+      decidedAt: null,
+    }), now)).toBe(true);
+    expect(repo.isSafelyExpirablePreSubmit(row({ expiresAt: "2026-08-19T22:00:02.000Z" }), now)).toBe(false);
+    expect(repo.isSafelyExpirablePreSubmit(row({ nonceReservationId: "lighter-lifecycle:one", nonceValue: "9" }), now)).toBe(false);
+    expect(repo.isSafelyExpirablePreSubmit(row({ signerTxHash: "signed" }), now)).toBe(false);
+    expect(repo.isSafelyExpirablePreSubmit(row({ submittedTxHash: "submitted" }), now)).toBe(false);
+  });
+
+  it("uses a full evidence-free compare-and-set to expire stale pre-submit work", async () => {
+    await repo.expireStalePreSubmitWith({} as never, {
+      intentId: base.intentId,
+      sessionId: base.sessionId,
+      matchHash: base.matchHash,
+      environment: base.environment,
+      accountIndex: base.accountIndex,
+      actionType: "cancel_one",
+      marketIndex: base.marketIndex,
+      providerOrderId: base.providerOrderId,
+    });
+
+    const sql = mockQueryOneWith.mock.calls[0]?.[1] ?? "";
+    expect(sql).toContain("execution_state = 'expired'");
+    expect(sql).toContain("expires_at <= NOW()");
+    expect(sql).toContain("nonce_reservation_id IS NULL");
+    expect(sql).toContain("signer_tx_hash IS NULL");
+    expect(sql).toContain("submitted_tx_hash IS NULL");
+    expect(sql).toContain("provider_outcome_json IS NULL");
+  });
+
+  it("terminalizes a changed close only from the pristine approved state", async () => {
+    await repo.markClosePositionChangedBeforeSubmissionWith({} as never, {
+      intentId: base.intentId,
+      sessionId: base.sessionId,
+    });
+
+    const sql = mockQueryOneWith.mock.calls[0]?.[1] ?? "";
+    expect(sql).toContain("action_type = 'close_position'");
+    expect(sql).toContain("execution_state = 'approved'");
+    expect(sql).toContain("execution_state = 'rejected'");
+    expect(sql).toContain("nonce_reservation_id IS NULL");
+    expect(sql).toContain("transactionSubmitted");
   });
 });

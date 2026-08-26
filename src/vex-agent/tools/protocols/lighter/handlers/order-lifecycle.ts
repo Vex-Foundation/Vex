@@ -6,7 +6,10 @@ import {
 } from "@tools/lighter/trading-credentials.js";
 import * as intentsRepo from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
 import type { LighterOrderLifecycleIntentRow } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
-import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import {
+  withSessionControlLock,
+  withSessionControlLocks,
+} from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../types.js";
 import type { ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
@@ -465,6 +468,36 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
     }
+    const createInput: intentsRepo.CreateLighterOrderLifecycleIntentInput = {
+      intentId: `lighter-lifecycle-${randomUUID()}`,
+      sessionId: context.sessionId,
+      matchHash: prepared.matchHash,
+      environment: prepared.environment,
+      accountIndex: prepared.accountIndex,
+      apiKeyIndex: prepared.apiKeyIndex,
+      actionType: "close_position",
+      marketIndex: prepared.marketIndex,
+      providerOrderId: null,
+      requestedBaseAmountInteger: prepared.baseAmountInteger,
+      requestedPriceInteger: prepared.priceInteger,
+      requestedSide: prepared.closingSide,
+      reduceOnly: true,
+      providerSnapshotJson: {
+        position: prepared.position,
+        closingSide: prepared.closingSide,
+        baseAmount: prepared.baseAmount,
+        worstAcceptablePrice: prepared.worstAcceptablePrice,
+        maxSlippageBps: prepared.maxSlippageBps,
+        marketSizeDecimals: prepared.sizeDecimals,
+        marketPriceDecimals: prepared.priceDecimals,
+        bookEvidence: prepared.bookEvidence,
+        orderType: "market",
+        timeInForce: "immediate-or-cancel",
+        reduceOnly: true,
+      },
+      credentialRefJson: readiness.reference,
+      expiresAt: new Date(Date.now() + PREPARE_TTL_MS).toISOString(),
+    };
     const existing = await intentsRepo.findAnyLiveOrderMutation({
       environment: environment.value,
       accountIndex: scope.value.accountIndex,
@@ -476,40 +509,38 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
           preparedActionFollowUp: closePositionFollowUp(existing),
         };
       }
+      if (intentsRepo.isSafelyExpirablePreSubmit(existing)) {
+        try {
+          const replacement = await withSessionControlLocks(
+            [existing.sessionId, context.sessionId],
+            async (dbClient) => {
+              const retired = await intentsRepo.expireStalePreSubmitWith(
+                dbClient,
+                lifecycleIdentity(existing),
+              );
+              if (retired === null) return null;
+              const created = await intentsRepo.createApprovalPendingWith(dbClient, createInput);
+              if (created === null) throw new Error("Replacement close intent was not created.");
+              return created;
+            },
+          );
+          if (replacement !== null) {
+            return {
+              ...ok(preparedPayload(replacement, "approval_prepared")),
+              preparedActionFollowUp: closePositionFollowUp(replacement),
+            };
+          }
+        } catch {
+          return fail(
+            "The expired Lighter lifecycle action could not be safely retired. "
+            + "Nothing was signed or submitted; check its exact status before retrying.",
+          );
+        }
+      }
       return fail(`A live Lighter ${existing.actionType} action already exists for this account in state ${existing.executionState}.`);
     }
-    const expiresAt = new Date(Date.now() + PREPARE_TTL_MS).toISOString();
     const created = await withSessionControlLock(context.sessionId, (dbClient) =>
-      intentsRepo.createApprovalPendingWith(dbClient, {
-        intentId: `lighter-lifecycle-${randomUUID()}`,
-        sessionId: context.sessionId!,
-        matchHash: prepared.matchHash,
-        environment: prepared.environment,
-        accountIndex: prepared.accountIndex,
-        apiKeyIndex: prepared.apiKeyIndex,
-        actionType: "close_position",
-        marketIndex: prepared.marketIndex,
-        providerOrderId: null,
-        requestedBaseAmountInteger: prepared.baseAmountInteger,
-        requestedPriceInteger: prepared.priceInteger,
-        requestedSide: prepared.closingSide,
-        reduceOnly: true,
-        providerSnapshotJson: {
-          position: prepared.position,
-          closingSide: prepared.closingSide,
-          baseAmount: prepared.baseAmount,
-          worstAcceptablePrice: prepared.worstAcceptablePrice,
-          maxSlippageBps: prepared.maxSlippageBps,
-          marketSizeDecimals: prepared.sizeDecimals,
-          marketPriceDecimals: prepared.priceDecimals,
-          bookEvidence: prepared.bookEvidence,
-          orderType: "market",
-          timeInForce: "immediate-or-cancel",
-          reduceOnly: true,
-        },
-        credentialRefJson: readiness.reference,
-        expiresAt,
-      }),
+      intentsRepo.createApprovalPendingWith(dbClient, createInput),
     );
     if (created === null) return fail("The exact Lighter position-close intent could not be persisted.");
     return {
@@ -537,12 +568,17 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
       return fail(error instanceof Error ? error.message : String(error));
     }
     if (Date.parse(intent.expiresAt) <= Date.now()) {
-      await intentsRepo.markApprovalDecision({
-        intentId: intent.intentId,
-        decision: "expired",
-        approvalId: context.approvalId,
-        reason: "approved position close resumed after expiry",
-      });
+      if (intent.approvalStatus === "approval_pending") {
+        await intentsRepo.markApprovalDecision({
+          intentId: intent.intentId,
+          decision: "expired",
+          approvalId: context.approvalId,
+          reason: "approved position close resumed after expiry",
+        });
+      } else if (intentsRepo.isSafelyExpirablePreSubmit(intent)) {
+        await withSessionControlLock(context.sessionId, (dbClient) =>
+          intentsRepo.expireStalePreSubmitWith(dbClient, lifecycleIdentity(intent)));
+      }
       return fail("The exact Lighter position-close approval expired. Prepare it again from fresh position and book state.");
     }
     const approved = await intentsRepo.markApprovalDecision({
@@ -568,6 +604,28 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     }
   },
 };
+
+function lifecycleIdentity(intent: LighterOrderLifecycleIntentRow): {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly matchHash: string;
+  readonly environment: LighterOrderLifecycleIntentRow["environment"];
+  readonly accountIndex: number;
+  readonly actionType: LighterOrderLifecycleIntentRow["actionType"];
+  readonly marketIndex: number | null;
+  readonly providerOrderId: string | null;
+} {
+  return {
+    intentId: intent.intentId,
+    sessionId: intent.sessionId,
+    matchHash: intent.matchHash,
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+    actionType: intent.actionType,
+    marketIndex: intent.marketIndex,
+    providerOrderId: intent.providerOrderId,
+  };
+}
 
 function cancelFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
   const snapshot = intent.providerSnapshotJson;

@@ -1447,7 +1447,9 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         (report) =>
           report.resolution === "awaiting_provider"
           || report.resolution === "degraded"
-          || report.resolution === "nonce_consumed_outcome_pending",
+          || report.resolution === "nonce_consumed_outcome_pending"
+          || report.resolution === "stale_pre_submit"
+          || report.resolution === "awaiting_submission",
       ).length;
       return ok({
         source: "vex_lighter_local_order_repair",

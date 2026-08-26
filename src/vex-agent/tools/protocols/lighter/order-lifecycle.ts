@@ -40,6 +40,7 @@ import { withTransaction } from "@vex-agent/db/client.js";
 import * as intentsRepo from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
 import type { LighterOrderLifecycleIntentRow } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
 import * as nonceRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
+import { acquireSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 
 const AUTH_TTL_SECONDS = 10 * 60;
 const SIGNER_EXPIRY_MS = 60_000;
@@ -218,9 +219,11 @@ export interface LighterOrderLifecycleExecutionDeps {
     | "markApiAccepted"
     | "markProviderOutcome"
     | "markAmbiguous"
+    | "markClosePositionChangedBeforeSubmissionWith"
   >;
   readonly nonceState: Pick<typeof nonceRepo, "recordExecutionObserved" | "reserveObservedWith">;
   readonly transaction: typeof withTransaction;
+  readonly acquireSessionControlLock: typeof acquireSessionControlLock;
   readonly now: () => number;
   readonly wait: (delayMs: number) => Promise<void>;
 }
@@ -250,6 +253,7 @@ export function defaultLighterOrderLifecycleExecutionDeps(input: {
     intents: intentsRepo,
     nonceState: nonceRepo,
     transaction: withTransaction,
+    acquireSessionControlLock,
     now: Date.now,
     wait: (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
   };
@@ -1143,8 +1147,23 @@ export async function executeApprovedLighterClosePosition(
   ) throw blocked("The Lighter close market or precision changed before submission.");
   const position = exactOpenPosition(account.positions ?? [], intent.marketIndex!);
   const livePosition = positionSnapshotOf(position);
-  if (lifecycleMatchHash(livePosition) !== lifecycleMatchHash(context.position)) {
-    throw blocked("The approved Lighter position changed before close submission.");
+  if (!sameApprovedClosePosition(livePosition, context.position)) {
+    const rejected = await deps.transaction(async (client) => {
+      await deps.acquireSessionControlLock(client, intent.sessionId);
+      return deps.intents.markClosePositionChangedBeforeSubmissionWith(client, {
+        intentId: intent.intentId,
+        sessionId: intent.sessionId,
+      });
+    });
+    if (rejected === null) {
+      throw blocked(
+        "The approved Lighter position changed while its lifecycle state advanced concurrently. Reconcile it before any retry.",
+      );
+    }
+    throw blocked(
+      "The approved Lighter position size, side, or entry changed before close submission. "
+      + "No lifecycle transaction was signed or submitted. Prepare a fresh close from current position and book state.",
+    );
   }
   assertCloseDepthAtApprovedPrice({
     side: intent.requestedSide!,
@@ -1452,6 +1471,24 @@ function positionSnapshotOf(position: LighterAccountPosition): LighterPositionSn
     unrealizedPnl: position.unrealized_pnl,
     liquidationPrice: position.liquidation_price,
   };
+}
+
+/**
+ * Bind execution to the economic position the user approved. Position value,
+ * unrealized PnL, and liquidation price are mark-driven display facts that can
+ * move every tick without changing exposure; the approved slippage ceiling is
+ * enforced separately against the refreshed order book.
+ */
+function sameApprovedClosePosition(
+  live: LighterPositionSnapshot,
+  approved: LighterPositionSnapshot,
+): boolean {
+  return live.marketIndex === approved.marketIndex
+    && live.symbol === approved.symbol
+    && live.sign === approved.sign
+    && live.side === approved.side
+    && live.position === approved.position
+    && live.averageEntryPrice === approved.averageEntryPrice;
 }
 
 function computeCloseBookEvidence(input: {
