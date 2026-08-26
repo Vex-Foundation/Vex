@@ -1431,7 +1431,7 @@ button.lit-market-select > .lit-market-symbol[data-symbol-length="long"] { min-w
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
   overflow-x: auto;
 }
 

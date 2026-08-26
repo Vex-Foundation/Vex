@@ -8,6 +8,10 @@ const css = readFileSync(
 );
 
 describe("Light it up responsive market metrics", () => {
+  it("keeps the bottom tabs in a breathable compact cluster", () => {
+    expect(css).toMatch(/\.lit-bottom-tabs\s*\{[^}]*gap: 8px;/s);
+  });
+
   it("uses explicit product and metric identities instead of DOM positions", () => {
     expect(css).toContain(
       '.lit-market-bar[data-market-type="perp"] .lit-market-metric[data-metric="funding"]',

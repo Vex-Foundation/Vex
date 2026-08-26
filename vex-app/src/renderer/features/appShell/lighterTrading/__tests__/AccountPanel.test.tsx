@@ -44,28 +44,36 @@ beforeEach(() => {
 });
 
 describe("TradingBottomPanel", () => {
-  it("keeps account auth dormant on the public tape and wires tab semantics", () => {
+  it("loads positions by default, keeps the requested tab order, and wires tab semantics", () => {
     renderPanel();
 
-    expect(mocks.useAccount).toHaveBeenLastCalledWith("rhc", false);
+    expect(mocks.useAccount).toHaveBeenLastCalledWith("rhc", true);
+    expect(screen.getAllByRole("tab").map((item) => item.textContent)).toEqual([
+      "Positions",
+      "Recent trades",
+      "Open orders",
+      "Assets",
+    ]);
+    const positionsTab = screen.getByRole("tab", { name: "Positions" });
+    const positionsPanel = screen.getByRole("tabpanel", { name: "Positions" });
+    expect(positionsTab.getAttribute("aria-controls")).toBe("lit-bottom-panel-positions");
+    expect(positionsPanel.id).toBe("lit-bottom-panel-positions");
+    expect(positionsPanel.getAttribute("aria-labelledby")).toBe("lit-bottom-tab-positions");
+
     const tradesTab = screen.getByRole("tab", { name: "Recent trades" });
+    fireEvent.click(tradesTab);
+
+    expect(mocks.useAccount).toHaveBeenLastCalledWith("rhc", false);
     const tradesPanel = screen.getByRole("tabpanel", { name: "Recent trades" });
     expect(tradesTab.getAttribute("aria-controls")).toBe("lit-bottom-panel-trades");
     expect(tradesPanel.id).toBe("lit-bottom-panel-trades");
     expect(tradesPanel.getAttribute("aria-labelledby")).toBe("lit-bottom-tab-trades");
     expect(screen.getByText("4200")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("tab", { name: /^Positions/ }));
-
-    expect(mocks.useAccount).toHaveBeenLastCalledWith("rhc", true);
-    expect(screen.getByRole("tabpanel", { name: "Positions" }).id)
-      .toBe("lit-bottom-panel-positions");
   });
 
   it("renders account loading, provider error, and unavailable states", () => {
     mocks.useAccount.mockReturnValue({ data: undefined, isLoading: true });
     const view = renderPanel();
-    fireEvent.click(screen.getByRole("tab", { name: "Positions" }));
     expect(screen.getByText("Loading account…")).toBeTruthy();
 
     mocks.useAccount.mockReturnValue({
@@ -93,7 +101,6 @@ describe("TradingBottomPanel", () => {
     });
     renderPanel();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Positions" }));
     expect(screen.getByText("No open positions.")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Open orders" }));
     expect(screen.getByText("No open orders.")).toBeTruthy();
@@ -138,7 +145,6 @@ describe("TradingBottomPanel", () => {
     });
     renderPanel();
 
-    fireEvent.click(screen.getByRole("tab", { name: /^Positions/ }));
     expect(screen.getByText("Long")).toBeTruthy();
     expect(screen.getByText("41,000")).toBeTruthy();
 

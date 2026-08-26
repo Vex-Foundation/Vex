@@ -10,7 +10,7 @@ import { formatDecimalString, formatRetrievedAt } from "./format.js";
 
 type BottomTab = "trades" | "positions" | "orders" | "assets";
 
-const ACCOUNT_TABS: readonly BottomTab[] = ["trades", "positions", "orders", "assets"];
+const ACCOUNT_TABS: readonly BottomTab[] = ["positions", "trades", "orders", "assets"];
 const TAB_LABEL: Record<BottomTab, string> = {
   trades: "Recent trades",
   positions: "Positions",
@@ -44,10 +44,9 @@ export function TradingBottomPanel({
   readonly tradesStatus?: LighterTradingCandleConnectionStatus;
   readonly tradesReceivedAt?: number | null;
 }): JSX.Element {
-  const [tab, setTab] = useState<BottomTab>("trades");
-  // Only derive the authenticated account read once the user opens an account
-  // tab — the live tape needs no auth, so a viewer who never leaves it never
-  // triggers a token derivation.
+  const [tab, setTab] = useState<BottomTab>("positions");
+  // Account tabs use the existing read-only account snapshot. The public tape
+  // still needs no account authorization when it is the active view.
   const accountTabActive = tab !== "trades";
   const accountQuery = useLighterTradingAccount(environment, open && accountTabActive);
   const account = accountQuery.data?.ok === true ? accountQuery.data.data : null;
