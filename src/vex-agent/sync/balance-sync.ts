@@ -15,6 +15,7 @@ import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 import { hasPendingActivityForWallets } from "@vex-agent/db/repos/agent-activity.js";
 import { resolveChainHint } from "./chains.js";
+import { computeBalanceUsd, fillMissingKhalaniPrices } from "./khalani-price-fallback.js";
 import { syncLocalChainForWallet } from "./local-chain-balance-sync.js";
 import { syncSolanaWalletBalances } from "./solana-balance-sync.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../constants/solana-chain.js";
@@ -117,10 +118,16 @@ export async function syncWalletBalances(
   // its empty-chain cleanup would DELETE the rows just written.
   let solanaTokens = 0;
   let solanaChainsUpdated = 0;
+  // Chains whose PRIMARY read was skipped this cycle. The Khalani fallback may
+  // WRITE such a chain when it actually returns rows for it, but it must never
+  // replace it with NOTHING: the last-good rows are the only thing standing
+  // between a skipped read and a $0 panel. See `syncKhalaniWalletBalances`.
+  const lastGoodProtectedChainIds: number[] = [];
   if (solanaRpc) {
     const solana = await syncSolanaWalletBalances(address);
     if (solana.skipped) {
       skipKhalani = false;
+      lastGoodProtectedChainIds.push(solana.chainId);
     } else {
       solanaTokens = solana.tokensUpdated;
       solanaChainsUpdated = 1;
@@ -140,7 +147,12 @@ export async function syncWalletBalances(
       totalUsd: walletBalances.reduce((sum, b) => sum + (b.balanceUsd ?? 0), 0),
     };
   } else {
-    base = await syncKhalaniWalletBalances(family, address, khalaniChainIds);
+    base = await syncKhalaniWalletBalances(
+      family,
+      address,
+      khalaniChainIds,
+      lastGoodProtectedChainIds,
+    );
   }
 
   return {
@@ -277,14 +289,23 @@ async function partitionChainScope(
 }
 
 /**
- * Sync balances for one wallet family via Khalani (byte-identical to the
- * pre-Wave-2 `syncWalletBalances`). Uses transactional full-replace per chain —
- * tokens absent from the response are removed.
+ * Sync balances for one wallet family via Khalani. Uses transactional
+ * full-replace per chain - tokens absent from the response are removed.
+ *
+ * `lastGoodProtectedChainIds` names chains whose PRIMARY (non-Khalani) read was
+ * skipped this cycle, so Khalani is standing in as a fallback for them. Khalani
+ * reports such a chain as SCANNED even when it can enumerate nothing on it
+ * (Solana: `scannedChainIds = [20011000000]`, zero tokens), and the empty-chain
+ * cleanup below would then replace the chain with an empty row set and erase
+ * the last-good rows the skip existed to preserve. For a protected chain the
+ * cleanup is suppressed: the chain is written ONLY from rows Khalani actually
+ * returned for it. Every other chain behaves exactly as before.
  */
 async function syncKhalaniWalletBalances(
   family: ChainFamily,
   address: string,
   chainIds?: number[],
+  lastGoodProtectedChainIds: readonly number[] = [],
 ): Promise<SyncResult> {
   // `address` is supplied by the caller (inventory iteration). Address-only —
   // the sync path never touches key material.
@@ -303,16 +324,31 @@ async function syncKhalaniWalletBalances(
     byChain.set(token.chainId, existing);
   }
 
+  // Khalani's own price wins wherever it exists; this only fills the nulls it
+  // started returning on 2026-08-26. Runs BEFORE the empty-chain cleanup and
+  // the Pendle merge, so it sees exactly the rows Khalani produced and nothing
+  // synthesized. Fail-soft: an unpriceable chain keeps its rows untouched.
+  await fillMissingKhalaniPrices(byChain);
+
   // Get previously known chains — if Khalani now returns nothing for a chain,
   // we must replace with empty to remove stale "ghost" balances
   const previousChains = await balancesRepo.getBalancesByChain(address);
   const refreshedChainIds = new Set(scan.scannedChainIds);
+  const protectedChainIds = new Set(lastGoodProtectedChainIds);
   for (const prev of previousChains) {
     // Only clean chains that the scanner actually refreshed successfully.
     if (!refreshedChainIds.has(prev.chainId)) continue;
-    if (!byChain.has(prev.chainId)) {
-      byChain.set(prev.chainId, []); // empty = delete all tokens for this chain
+    if (byChain.has(prev.chainId)) continue;
+    if (protectedChainIds.has(prev.chainId)) {
+      // Khalani is only the fallback here and it returned nothing for this
+      // chain. Nothing is not an answer about what the wallet holds.
+      logger.info("sync.balance.fallback_kept_last_good", {
+        chainId: prev.chainId,
+        reason: "primary_read_skipped_and_fallback_returned_no_rows",
+      });
+      continue;
     }
+    byChain.set(prev.chainId, []); // empty = delete all tokens for this chain
   }
 
   // Pendle enrichment (P2) — merge tracked PT balances into EACH Pendle chain the
@@ -524,16 +560,9 @@ function mapTokenToBalance(family: ChainFamily, walletAddress: string, token: Kh
   const priceUsdStr = token.extensions?.price?.usd;
   const priceUsd = priceUsdStr ? parseFloat(priceUsdStr) : null;
 
-  // Calculate USD value: balance in human units * price
-  let balanceUsd: number | null = null;
-  if (priceUsd !== null && balanceRaw !== "0") {
-    try {
-      const balanceHuman = Number(BigInt(balanceRaw)) / Math.pow(10, token.decimals);
-      balanceUsd = balanceHuman * priceUsd;
-    } catch {
-      // BigInt parse failure — skip USD calculation
-    }
-  }
+  // Same arithmetic the DexScreener price fallback uses, so a row priced by
+  // either source computes its USD value identically.
+  const balanceUsd = computeBalanceUsd(balanceRaw, token.decimals, priceUsd);
 
   return {
     walletFamily: family,

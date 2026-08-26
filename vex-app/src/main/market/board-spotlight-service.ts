@@ -148,9 +148,6 @@ const NARRATIVE_CATALOG_TTL_MS = 300_000;
 /** The display cap on the other-pools list, after ranking by depth. */
 const OTHER_POOLS_MAX = 8;
 
-/** Rows the smart-money panel shows. */
-const TOP_TRADERS_MAX = 5;
-
 /** The frozen heading the leaderboard must be shown under. */
 const TRADERS_WINDOW_LABEL = `${TOP_TRADERS_LOOKBACK_DAYS_MAX}-day pair-local cash flow`;
 
@@ -284,7 +281,9 @@ function unavailableFrom(error: unknown): {
 function toTopTrader(row: TopTraderRow): BoardTopTrader {
   return {
     maker: row.maker,
-    label: row.label === null ? null : row.label.slice(0, 120),
+    // WHOLE, never cut. A provider label is text a human reads; a silent
+    // 120-character cut would show a different name than the provider sent.
+    label: row.label,
     buys: row.buys,
     sells: row.sells,
     // Renamed to say what the column MEASURES. The provider calls these
@@ -517,9 +516,14 @@ export function createBoardSpotlightService(
             return {
               value: {
                 kind: "traders",
-                // FROZEN AT READ TIME: the provider's own order, cut to the
-                // panel size, never re-ranked here.
-                rows: document.rows.slice(0, TOP_TRADERS_MAX).map(toTopTrader),
+                // FROZEN AT READ TIME: the provider's own order, EVERY row it
+                // returned, never re-ranked and never cut here. The provider's
+                // own leaderboard window is the bound (up to
+                // TOP_TRADERS_PROVIDER_WINDOW = 100 rows,
+                // `src/tools/dexscreener/endpoints/top-traders.ts:87`) and it
+                // has no offset, cursor or page, so a row dropped here would be
+                // a row no caller could ever ask for again.
+                rows: document.rows.map(toTopTrader),
                 rowsAvailable: document.rows.length,
                 lookbackDays: TOP_TRADERS_LOOKBACK_DAYS_MAX,
                 windowLabel: TRADERS_WINDOW_LABEL,

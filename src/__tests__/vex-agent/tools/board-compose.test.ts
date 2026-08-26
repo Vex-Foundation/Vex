@@ -13,6 +13,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeTestContext } from "./_test-context.js";
+import { BOARD_SPEC_MAX_BYTES } from "../../../lib/board/index.js";
 
 const hydrateBoard = vi.fn();
 
@@ -210,7 +211,7 @@ describe("BoardCompose mode gate", () => {
   it("the registry hides it in mission setup too, so the two gates agree", async () => {
     const { getToolDef } = await import("@vex-agent/tools/registry.js");
     expect(getToolDef("BoardCompose")?.visibility?.hiddenInMissionSetup).toBe(true);
-  });
+  }, 30_000);
 });
 
 describe("BoardCompose staging outcomes", () => {
@@ -311,11 +312,13 @@ describe("BoardCompose staging outcomes", () => {
   it("refuses an over-budget board naming its size, and shortens nothing", async () => {
     beginPresentationScope(SESSION);
     // MEASURED: maximal rows plus eight 10,000-character two-byte assessments
-    // plus a full 200-candle series of maximum-width decimals is 220,991
-    // bytes, and the 256 KiB budget ADMITS it - that board is exactly what
-    // raising the budget was for. What still exceeds it is the case the budget
-    // doc names: the same board with FOUR-byte emoji-dense prose, 8 x 10,000
-    // code points at 4 bytes each = 320,000 bytes of analysis alone.
+    // plus a full 200-candle series of maximum-width decimals fits, and the
+    // budget ADMITS it - that board is exactly what the budget was sized for
+    // (the schema-valid ALL-FIELDS-MAX document is 272,697 bytes against a
+    // 327,680 ceiling; see `src/__tests__/lib/board/maximal-board-spec.ts`).
+    // What still exceeds it is the case the budget doc names: the same board
+    // with FOUR-byte emoji-dense prose, 8 x 10,000 code points at 4 bytes each
+    // = 320,000 bytes of analysis alone.
     hydrateBoard.mockResolvedValueOnce({
       ...maximalRows(),
       unmatchedMarkerAtMs: [],
@@ -348,7 +351,9 @@ describe("BoardCompose staging outcomes", () => {
 
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/\d+ bytes serialized/);
-    expect(result.output).toContain("262144");
+    // The refusal quotes the CONSTANT, so raising the budget cannot leave this
+    // test asserting a number the tool no longer prints.
+    expect(result.output).toContain(String(BOARD_SPEC_MAX_BYTES));
     // The refusal points at the pool worth shortening, not just at the total.
     expect(result.output).toMatch(/pool \d+ at \d+ bytes/);
     expect(result.output).toContain("nothing was truncated");

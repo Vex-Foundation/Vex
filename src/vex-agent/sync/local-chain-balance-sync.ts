@@ -116,6 +116,10 @@ export async function syncLocalChainForWallet(
     address: walletAddress.slice(0, 10) + "...",
     tokens: count,
     scanned: tokenAddrs.length,
+    // WHY each price was chosen: tier 0 is a stablecoin-quoted pool, tier 1 is
+    // wrapped-native-quoted x our native price, and `unpriced` is what our own
+    // rule refused rather than guessed at.
+    priceTiers: read.priceTiers,
   });
   return { chainId, tokensUpdated: count, skipped: false };
 }

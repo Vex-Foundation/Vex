@@ -266,4 +266,55 @@ describe("single-flight and teardown are unchanged by the waiter count", () => {
       throw new Error("must not run");
     })).resolves.toEqual({ kind: "refused", text: "not_mounted" });
   });
+
+  it("DRAINS a load a last waiter aborted, even though it is no longer joinable", async () => {
+    // THE DEFECT. Last-waiter abort unpublishes the record so a later caller
+    // cannot inherit a cancellation it never asked for. Unpublishing at abort
+    // time also removed it from the only collection `dispose` awaited, so
+    // `dispose` could resolve while the aborted provider read was still
+    // unwinding - a read outliving the transport it borrows.
+    const cache = createCache();
+    const gate = deferred<void>();
+    const loadSignals: AbortSignal[] = [];
+    let settled = 0;
+    const caller = new AbortController();
+
+    const answer = cache.read(
+      "solana:pool-a",
+      async (signal) => {
+        loadSignals.push(signal);
+        await gate.promise;
+        settled += 1;
+        return {
+          value: { kind: "value", text: "bundle" } as Answer,
+          expiresAtMs: 2_000,
+        };
+      },
+      caller.signal,
+    );
+    await flush();
+
+    caller.abort();
+    expect(latest(loadSignals).aborted).toBe(true);
+    await expect(answer).resolves.toEqual({
+      kind: "refused",
+      text: "cancelled",
+    });
+
+    // Dispose while the aborted read is still held open by the gate.
+    const disposing = cache.dispose();
+    let disposed = false;
+    void disposing.then(() => {
+      disposed = true;
+    });
+    await flush();
+    expect(disposed).toBe(false);
+    expect(settled).toBe(0);
+
+    gate.resolve();
+    await disposing;
+    expect(disposed).toBe(true);
+    // Nothing is left running behind the disposed cache.
+    expect(settled).toBe(1);
+  });
 });

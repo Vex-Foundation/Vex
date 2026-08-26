@@ -38,7 +38,7 @@ beforeEach(() => {
   readBoardIcon.mockReset();
   readBoardIcon.mockResolvedValue({
     ok: true,
-    data: { iconId: "abcd1234", icon: { kind: "not_found" } },
+    data: { iconId: "abcd1234", icon: { kind: "absent", reason: "not_found" } },
   });
   Object.defineProperty(window, "vex", {
     configurable: true,
@@ -175,6 +175,124 @@ describe("TokenCardV3 - the mockup's anatomy", () => {
     render(mount({ card: card({ row: hydratedRow({ iconId: null }) }) }));
     expect(area("board-token-photo").getAttribute("data-state")).toBe("monogram");
     expect(readBoardIcon).not.toHaveBeenCalled();
+  });
+
+  /**
+   * THE PHOTO SLOT'S FOUR STATES. The row that matters is the last: a read
+   * that failed for a transport-class reason, or a query that threw, must not
+   * settle to letters, because the monogram's note ("no image published") is
+   * a claim about the token that only the provider can make. Rows: what the
+   * icon bridge answers, the `data-state` the slot must carry, the text it may
+   * show, and which of the two notes (absence / unavailable) is announced.
+   */
+  describe.each<{
+    readonly label: string;
+    readonly answer: () => unknown;
+    readonly state: string;
+    readonly letters: string;
+    readonly absenceNote: boolean;
+    readonly unavailableNote: boolean;
+  }>([
+    {
+      label: "in flight",
+      answer: () => new Promise(() => undefined),
+      state: "loading",
+      letters: "",
+      absenceNote: false,
+      unavailableNote: false,
+    },
+    {
+      label: "image",
+      answer: () =>
+        Promise.resolve({
+          ok: true,
+          data: { iconId: "abcd1234", icon: { kind: "image", dataUrl: "data:image/png;base64,AAAA" } },
+        }),
+      state: "image",
+      letters: "",
+      absenceNote: false,
+      unavailableNote: false,
+    },
+    {
+      label: "absent (provider 404)",
+      answer: () =>
+        Promise.resolve({
+          ok: true,
+          data: { iconId: "abcd1234", icon: { kind: "absent", reason: "not_found" } },
+        }),
+      state: "monogram",
+      letters: "U",
+      absenceNote: true,
+      unavailableNote: false,
+    },
+    {
+      label: "unavailable (transport)",
+      answer: () =>
+        Promise.resolve({
+          ok: true,
+          data: { iconId: "abcd1234", icon: { kind: "unavailable", reason: "transport" } },
+        }),
+      state: "unavailable",
+      letters: "",
+      absenceNote: false,
+      unavailableNote: true,
+    },
+    {
+      label: "Result error (input or sender rejected)",
+      answer: () =>
+        Promise.resolve({
+          ok: false,
+          error: {
+            code: "validation.invalid_input",
+            domain: "data",
+            message: "Not a board token icon id.",
+            retryable: false,
+            userActionable: false,
+            redacted: true,
+            correlationId: "00000000-0000-4000-8000-0000000000ff",
+          },
+        }),
+      state: "unavailable",
+      letters: "",
+      absenceNote: false,
+      unavailableNote: true,
+    },
+    {
+      label: "query threw",
+      answer: () => Promise.reject(new Error("bridge missing")),
+      state: "unavailable",
+      letters: "",
+      absenceNote: false,
+      unavailableNote: true,
+    },
+  ])("photo slot - $label", ({ answer, state, letters, absenceNote, unavailableNote }) => {
+    it(`settles to data-state=${state}`, async () => {
+      readBoardIcon.mockImplementation(answer);
+      render(
+        mount({ card: card({ row: hydratedRow({ iconId: "abcd1234", baseTokenSymbol: "UBERCAT" }) }) }),
+      );
+      await waitFor(() => {
+        expect(area("board-token-photo").getAttribute("data-state")).toBe(state);
+      });
+      const photo = area("board-token-photo");
+      expect(photo.textContent).toBe(letters);
+      expect(photo.className).not.toMatch(/\bborder\b|ring-/);
+      // The absence note is the provider's claim; the unavailable note is
+      // ours. Exactly the announced one is present, never both.
+      expect(document.querySelector('[data-vex-area="board-token-photo-absence"]') !== null).toBe(
+        absenceNote,
+      );
+      expect(
+        document.querySelector('[data-vex-area="board-token-photo-unavailable"]') !== null,
+      ).toBe(unavailableNote);
+      if (unavailableNote) {
+        expect(photo.getAttribute("title")).toBe("Image could not be loaded");
+        expect(document.body.textContent).not.toContain("No image published");
+      }
+      if (absenceNote) {
+        expect(photo.getAttribute("title")).toBe("No image published for this token yet");
+      }
+    });
   });
 
   it("puts no ring on any photo state", async () => {

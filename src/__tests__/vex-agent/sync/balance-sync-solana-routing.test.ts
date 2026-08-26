@@ -92,6 +92,7 @@ beforeEach(() => {
     Promise.resolve({ chainId, tokensUpdated: 0, skipped: true }),
   );
   mockGetBalances.mockResolvedValue([]);
+  mockGetBalancesByChain.mockResolvedValue([]);
   mockListWallets.mockImplementation((family: string) =>
     family === "solana" ? [{ address: SOL_WALLET }] : [{ address: EVM_WALLET }],
   );
@@ -135,6 +136,87 @@ describe("solana routing in syncWalletBalances", () => {
       chainIds: undefined,
     });
     expect(result.chainsUpdated).toBe(0);
+  });
+
+  it("keeps the last-good Solana rows when the RPC skipped and Khalani scanned EMPTY", async () => {
+    // The exact live shape: the RPC read was skipped (so Khalani is the
+    // fallback), Khalani reports Solana as SCANNED and returns zero tokens, and
+    // the wallet already has last-good Solana rows in proj_balances. Replacing
+    // the chain with nothing here is the $0-panel bug this guards.
+    mockSolanaSync.mockResolvedValue({
+      chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+      tokensUpdated: 0,
+      skipped: true,
+    });
+    mockGetBalancesByChain.mockResolvedValue([
+      { chainId: SOLANA_SYNTHETIC_CHAIN_ID, totalUsd: 1234.5 },
+    ]);
+
+    await syncWalletBalances("solana", SOL_WALLET);
+
+    expect(mockKhalaniScan).toHaveBeenCalledTimes(1);
+    // THE ABSENCE ASSERTION: no replace at all for the Solana chain, so the
+    // last-good rows survive the cycle untouched.
+    expect(mockReplaceBalances).not.toHaveBeenCalled();
+  });
+
+  it("writes the Solana chain from the Khalani fallback when it DOES return rows", async () => {
+    mockSolanaSync.mockResolvedValue({
+      chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+      tokensUpdated: 0,
+      skipped: true,
+    });
+    mockGetBalancesByChain.mockResolvedValue([
+      { chainId: SOLANA_SYNTHETIC_CHAIN_ID, totalUsd: 1234.5 },
+    ]);
+    mockKhalaniScan.mockResolvedValue({
+      tokens: [
+        {
+          chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+          address: "So11111111111111111111111111111111111111112",
+          symbol: "SOL",
+          name: "Solana",
+          decimals: 9,
+          extensions: { balance: "1500000000", price: { usd: "200" } },
+        },
+      ],
+      scannedChainIds: [SOLANA_SYNTHETIC_CHAIN_ID],
+      chainErrors: [],
+    });
+    mockReplaceBalances.mockResolvedValue(1);
+
+    const result = await syncWalletBalances("solana", SOL_WALLET);
+
+    expect(mockReplaceBalances).toHaveBeenCalledTimes(1);
+    const [address, chainId, rows] = mockReplaceBalances.mock.calls[0] ?? [];
+    expect(address).toBe(SOL_WALLET);
+    expect(chainId).toBe(SOLANA_SYNTHETIC_CHAIN_ID);
+    expect(rows).toHaveLength(1);
+    expect(result.tokensUpdated).toBe(1);
+  });
+
+  it("still cleans an EMPTY non-protected chain on the same fallback cycle", async () => {
+    // The protection is per chain id, not a family-wide switch: chain 1 is not
+    // protected, so its stale rows are still removed while Solana is kept.
+    mockSolanaSync.mockResolvedValue({
+      chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+      tokensUpdated: 0,
+      skipped: true,
+    });
+    mockGetBalancesByChain.mockResolvedValue([
+      { chainId: SOLANA_SYNTHETIC_CHAIN_ID, totalUsd: 1234.5 },
+      { chainId: 1, totalUsd: 7 },
+    ]);
+    mockKhalaniScan.mockResolvedValue({
+      tokens: [],
+      scannedChainIds: [SOLANA_SYNTHETIC_CHAIN_ID, 1],
+      chainErrors: [],
+    });
+
+    await syncWalletBalances("solana", SOL_WALLET);
+
+    expect(mockReplaceBalances).toHaveBeenCalledTimes(1);
+    expect(mockReplaceBalances).toHaveBeenCalledWith(SOL_WALLET, 1, []);
   });
 
   it("routes an explicit Solana chain id to the RPC reader", async () => {

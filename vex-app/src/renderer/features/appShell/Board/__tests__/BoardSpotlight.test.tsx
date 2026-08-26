@@ -333,7 +333,7 @@ beforeEach(() => {
   readTapePoll.mockResolvedValue(okTape());
   readBoardIcon.mockResolvedValue({
     ok: true,
-    data: { iconId: "abcd1234", icon: { kind: "not_found" } },
+    data: { iconId: "abcd1234", icon: { kind: "absent", reason: "not_found" } },
   });
   Object.defineProperty(window, "vex", {
     configurable: true,
@@ -501,7 +501,7 @@ describe("the mockup's elements", () => {
     cleanup();
     readBoardIcon.mockResolvedValue({
       ok: true,
-      data: { iconId: "abcd1234", icon: { kind: "not_found" } },
+      data: { iconId: "abcd1234", icon: { kind: "absent", reason: "not_found" } },
     });
     mountSpotlight(board);
     await settle();
@@ -517,6 +517,39 @@ describe("the mockup's elements", () => {
     expect(
       document.querySelector('[data-vex-area="board-spotlight-photo"]')?.textContent,
     ).toBe("P");
+  });
+
+  it("never claims a token has no image when the icon read failed", async () => {
+    const board = boardRefOf(
+      "session-1",
+      12,
+      boardSpec({
+        pools: [{ chain: "base", pairAddress: "0xaaa111", analysis: null }],
+        rows: [hydratedRow({ iconId: "abcd1234" })],
+      }),
+    );
+    bindStore(board);
+    readBoardIcon.mockResolvedValue({
+      ok: true,
+      data: { iconId: "abcd1234", icon: { kind: "unavailable", reason: "transport" } },
+    });
+    mountSpotlight(board);
+    await settle();
+    await waitFor(() => {
+      expect(
+        document.querySelector('[data-vex-area="board-spotlight-photo"]')?.getAttribute("data-state"),
+      ).toBe("unavailable");
+    });
+    const photo = document.querySelector('[data-vex-area="board-spotlight-photo"]');
+    // A failed read is OUR fact, said on the frame; the provider's "no image"
+    // line is absent because the provider was never heard.
+    expect(photo?.textContent).toBe("");
+    expect(photo?.getAttribute("title")).toBe("Image could not be loaded");
+    expect(
+      document.querySelector('[data-vex-area="board-spotlight-photo-unavailable"]')?.textContent,
+    ).toBe("Image could not be loaded");
+    expect(document.querySelector('[data-vex-area="board-spotlight-no-image"]')).toBeNull();
+    expect(document.body.textContent).not.toContain("No image published");
   });
 
   it("renders the provider's description whole under the identity, and nothing when absent", async () => {

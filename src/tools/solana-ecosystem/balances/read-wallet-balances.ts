@@ -29,10 +29,18 @@
  *
  * ## Pricing order (owner decision 2026-08-26)
  *
- * 1. DexScreener best-liquidity pair per mint, via the shared selection rule
- *    in `dexscreener/best-liquidity-price.ts` with base58 case treated as
+ * 1. DexScreener, via the shared QUOTE-TIERED selection rule in
+ *    `dexscreener/best-liquidity-price.ts` with base58 case treated as
  *    IDENTITY (the provider echoes the canonical mint in `baseToken.address`,
- *    and `proj_balances` compares `token_address` without `LOWER()`).
+ *    and `proj_balances` compares `token_address` without `LOWER()`). Only a
+ *    pool quoted in a stablecoin (tier 0) or in wSOL (tier 1), above the
+ *    shared liquidity floor, may price a mint, and the deepest such pool wins
+ *    whichever class it is. MEASURED 2026-08-26: the old "deepest liquidity wins regardless of
+ *    quote" rule priced JUP at $1136.11 off a JUP/MET pool whose $176M depth
+ *    is denominated in a token the provider itself misprices; the tiered rule
+ *    answers $0.2170 from JUP/USDC. A mint the representative pool list leaves
+ *    unpriced gets ONE extra full-pool-list read per mint, sequentially and
+ *    capped (`dexscreener/unpriced-pool-fallback.ts`).
  * 2. Khalani's `extensions.price.usd`, read ONLY for mints DexScreener could
  *    not price. It is a price map here and NEVER a balance source.
  * 3. null. The row is still returned and the caller counts it as unpriced;
@@ -43,22 +51,40 @@
  * No NFT classification, no compressed NFTs (DAS), no stake accounts, and no
  * Token-2022 transfer-fee / interest-bearing adjustment: a transfer-fee mint's
  * `amount` is the pre-fee balance, which is what the account holds. `getBalance`
- * answers lamports as a JSON number, so a balance above 2^53 lamports (about
- * 9.0 million SOL) would lose precision; that is the provider's own encoding
- * and is not reachable for a user wallet.
+ * answers lamports as a JSON number, so a value above 2^53 cannot be trusted;
+ * rather than let a lossy or non-numeric value through, the reader validates it
+ * (non-negative safe integer) and FAILS the read otherwise.
+ *
+ * ## Retry and cancellation ownership
+ *
+ * This module owns NO retry. `Connection`'s own transport already retries HTTP
+ * 429 with exponential backoff (`@solana/web3.js@1.98.4`
+ * `lib/index.esm.js:5024-5046`), and it is the single retry owner on this path;
+ * a second outer retry only doubles the load on the provider and can leave two
+ * requests in flight at once. What this module DOES own is the deadline, and
+ * the deadline CANCELS: the reader's transport is built with a custom `fetch`
+ * that forwards the reader's `AbortSignal` to the HTTP request, so an expired
+ * deadline aborts the request instead of abandoning it.
  */
 
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, type Commitment, type FetchFn } from "@solana/web3.js";
 import { z } from "zod";
 
-import { createBestLiquidityPriceAccumulator } from "../../dexscreener/best-liquidity-price.js";
+import {
+  createBestLiquidityPriceAccumulator,
+  summarizeUnpricedReasons,
+  type PriceTierCounts,
+} from "../../dexscreener/best-liquidity-price.js";
 import { readTokensPairs } from "../../dexscreener/price-read.js";
+import { addPoolListsForUnpricedAddresses } from "../../dexscreener/unpriced-pool-fallback.js";
 import { getTokenBalancesAcrossChains } from "../../khalani/balances.js";
 import { getJupiterTokensByMint } from "../jupiter/jupiter-tokens/service.js";
 import { jupiterMintInformationToMetadata } from "../jupiter/jupiter-tokens/types.js";
 import { solanaPubkey } from "../shared/schemas.js";
+import { createSolanaConnection } from "../shared/solana-transaction/connection.js";
 import {
   SOL_MINT,
+  SOLANA_QUOTE_ASSET_POLICY,
   SPL_TOKEN_PROGRAM_ID,
   TOKEN_2022_PROGRAM_ID,
   getWellKnownSolanaTokenByMint,
@@ -68,7 +94,11 @@ import logger from "../../../utils/logger.js";
 
 /** DexScreener tokens/v1 caps at 30 addresses per request. */
 const DEXSCREENER_TOKENS_BATCH = 30;
-/** Deadline this reader owns for ONE RPC call, retry excluded. */
+/**
+ * Deadline this reader owns for ONE RPC call, INCLUDING whatever rate-limit
+ * backoff the transport performs inside it. There is no outer retry, so this is
+ * the whole budget for the call, and reaching it aborts the HTTP request.
+ */
 const RPC_DEADLINE_MS = 10_000;
 /** DexScreener's own chain slug for Solana. */
 const SOLANA_DEXSCREENER_SLUG = "solana";
@@ -100,7 +130,12 @@ const parsedTokenAccountSchema = z.object({
       tokenAmount: z.object({
         /** u64 as a decimal string. Never parsed into a float. */
         amount: z.string().regex(/^\d+$/, "expected a u64 decimal string"),
-        decimals: z.number().int().min(0).max(32),
+        /**
+         * The SPL Token / Token-2022 Mint account stores `decimals` as a `u8`,
+         * so 0..255 is the whole on-chain range. Anything outside it did not
+         * come from a mint and is refused.
+         */
+        decimals: z.number().int().min(0).max(255),
       }),
     }),
   }),
@@ -153,16 +188,34 @@ export interface TokenAccountProjection {
  *    is no reliable classifier here and suppressing it would hide a holding;
  *  - a frozen account is kept and counted; the tokens are still held;
  *  - two accounts claiming DIFFERENT decimals for one mint is impossible
- *    on-chain, so it fails closed rather than picking a winner.
+ *    on-chain, so it fails closed rather than picking a winner. The decimals
+ *    agreement is checked across EVERY validated account of the mint, ZERO
+ *    ONES INCLUDED, and before the zero-skip: a zero account that disagrees
+ *    with a non-zero account of the same mint still means the response cannot
+ *    be trusted, and skipping it first would let that response through with a
+ *    holding written at whichever decimals happened to arrive first.
+ *
+ * The pass over the entries is therefore twofold: pass one validates and
+ * records the first decimals seen per mint, pass two folds the accounts that
+ * agree with it. A conflicting account is a FAILURE and is never also counted
+ * as zero-skipped or frozen - it contributes nothing but the failure.
  */
 export function projectTokenAccounts(
   entries: readonly RawTokenAccountEntry[],
 ): TokenAccountProjection {
-  const byMint = new Map<string, SolanaMintHolding & { amount: bigint }>();
   const failures: SolanaTokenAccountFailure[] = [];
-  let zeroSkipped = 0;
-  let frozenAccounts = 0;
 
+  interface ValidatedAccount {
+    pubkey: string;
+    mint: string;
+    amountRaw: string;
+    decimals: number;
+    frozen: boolean;
+  }
+
+  // Pass 1: validate, and record the first decimals spelling seen per mint.
+  const validated: ValidatedAccount[] = [];
+  const decimalsByMint = new Map<string, number>();
   for (const entry of entries) {
     const parsed = parsedTokenAccountSchema.safeParse(entry.data);
     if (!parsed.success) {
@@ -170,33 +223,48 @@ export function projectTokenAccounts(
       continue;
     }
     const info = parsed.data.parsed.info;
-    const amount = BigInt(info.tokenAmount.amount);
-    const frozen = info.state === "frozen";
-    if (frozen) frozenAccounts += 1;
+    const account: ValidatedAccount = {
+      pubkey: entry.pubkey,
+      mint: info.mint,
+      amountRaw: info.tokenAmount.amount,
+      decimals: info.tokenAmount.decimals,
+      frozen: info.state === "frozen",
+    };
+    validated.push(account);
+    if (!decimalsByMint.has(account.mint)) decimalsByMint.set(account.mint, account.decimals);
+  }
+
+  // Pass 2: fold the accounts whose decimals agree with their mint's.
+  const byMint = new Map<string, SolanaMintHolding & { amount: bigint }>();
+  let zeroSkipped = 0;
+  let frozenAccounts = 0;
+  for (const account of validated) {
+    if (decimalsByMint.get(account.mint) !== account.decimals) {
+      failures.push({ pubkey: account.pubkey, reason: "mint-decimals-conflict" });
+      continue;
+    }
+    if (account.frozen) frozenAccounts += 1;
+    const amount = BigInt(account.amountRaw);
     if (amount === 0n) {
       zeroSkipped += 1;
       continue;
     }
 
-    const existing = byMint.get(info.mint);
+    const existing = byMint.get(account.mint);
     if (!existing) {
-      byMint.set(info.mint, {
-        mint: info.mint,
+      byMint.set(account.mint, {
+        mint: account.mint,
         amount,
-        amountRaw: info.tokenAmount.amount,
-        decimals: info.tokenAmount.decimals,
-        frozen,
+        amountRaw: account.amountRaw,
+        decimals: account.decimals,
+        frozen: account.frozen,
         accountCount: 1,
       });
       continue;
     }
-    if (existing.decimals !== info.tokenAmount.decimals) {
-      failures.push({ pubkey: entry.pubkey, reason: "mint-decimals-conflict" });
-      continue;
-    }
     existing.amount += amount;
     existing.amountRaw = existing.amount.toString();
-    existing.frozen = existing.frozen || frozen;
+    existing.frozen = existing.frozen || account.frozen;
     existing.accountCount += 1;
   }
 
@@ -226,11 +294,20 @@ export interface SolanaWalletBalancesRead {
     frozenAccounts: number;
     metadataMissing: number;
     unpriced: number;
+    /**
+     * Which quote tier priced each mint in the pricing set, and how many
+     * stayed unpriced. Public prices only - never a secret - and the sync logs
+     * it so a wrong portfolio number can be traced to the rule behind it.
+     */
+    priceTiers: PriceTierCounts;
   };
 }
 
 export interface ReadSolanaWalletBalancesOptions {
-  /** Injected RPC seam. Defaults to the shared `getSolanaConnection()`. */
+  /**
+   * Injected RPC seam. Defaults to a reader-owned, deadline-cancelling
+   * transport (`createDeadlineBoundSolanaRpc`), never the shared singleton.
+   */
   readonly rpc?: SolanaBalanceRpc;
 }
 
@@ -247,15 +324,26 @@ export async function readSolanaWalletBalances(
   options: ReadSolanaWalletBalancesOptions = {},
 ): Promise<SolanaWalletBalancesRead> {
   const owner = new PublicKey(solanaPubkey.parse(ownerAddress));
-  const rpc = options.rpc ?? (await defaultRpc());
+  const rpc = options.rpc ?? createDeadlineBoundSolanaRpc();
 
-  const lamports = await callRpc("getBalance", () => rpc.getBalance(owner));
-  const splAccounts = await callRpc("getTokenAccountsByOwner.spl", () =>
-    rpc.getParsedTokenAccountsByOwner(owner, { programId: new PublicKey(SPL_TOKEN_PROGRAM_ID) }),
-  );
-  const token2022Accounts = await callRpc("getTokenAccountsByOwner.token2022", () =>
-    rpc.getParsedTokenAccountsByOwner(owner, { programId: new PublicKey(TOKEN_2022_PROGRAM_ID) }),
-  );
+  // Lamports are validated before anything derives from them: the sync owner
+  // WRITES this value, so a NaN or a lossy number must fail the read, not the row.
+  const rawLamports = await rpc.getBalance(owner);
+  const parsedLamports = lamportsSchema.safeParse(rawLamports);
+  if (!parsedLamports.success) {
+    throw new SolanaRpcResponseInvalidError(
+      "getBalance",
+      parsedLamports.error.issues.map((issue) => issue.message).join("; "),
+    );
+  }
+  const lamports = parsedLamports.data;
+
+  const splAccounts = await rpc.getParsedTokenAccountsByOwner(owner, {
+    programId: new PublicKey(SPL_TOKEN_PROGRAM_ID),
+  });
+  const token2022Accounts = await rpc.getParsedTokenAccountsByOwner(owner, {
+    programId: new PublicKey(TOKEN_2022_PROGRAM_ID),
+  });
 
   const entries: RawTokenAccountEntry[] = [...splAccounts.value, ...token2022Accounts.value].map(
     (account) => ({ pubkey: account.pubkey.toBase58(), data: account.account.data }),
@@ -275,6 +363,7 @@ export async function readSolanaWalletBalances(
         frozenAccounts: projection.frozenAccounts,
         metadataMissing: 0,
         unpriced: 0,
+        priceTiers: { tier0: 0, tier1: 0, unpriced: 0 },
       },
     };
   }
@@ -283,10 +372,11 @@ export async function readSolanaWalletBalances(
   const metadata = await loadMintMetadata(mints);
   // wSOL prices native SOL, so it joins the pricing set even when the wallet
   // holds no wSOL token account.
-  const priceByMint = await priceMints(
+  const pricing = await priceMints(
     [SOL_MINT, ...mints.filter((mint) => mint !== SOL_MINT)],
     ownerAddress,
   );
+  const priceByMint = pricing.priceByMint;
 
   let metadataMissing = 0;
   let unpriced = 0;
@@ -314,68 +404,108 @@ export async function readSolanaWalletBalances(
       frozenAccounts: projection.frozenAccounts,
       metadataMissing,
       unpriced,
+      priceTiers: pricing.tiers,
     },
   };
 }
 
 // ── RPC plumbing ────────────────────────────────────────────────────
 
-async function defaultRpc(): Promise<SolanaBalanceRpc> {
-  const { getSolanaConnection } = await import("../shared/solana-transaction/connection.js");
-  return getSolanaConnection();
+/**
+ * A provider response this reader refuses to project. Fail-closed: the sync
+ * owner treats a throw as "read skipped", which keeps the last-good rows,
+ * whereas a NaN or a lossy lamports value would be WRITTEN as a balance.
+ */
+export class SolanaRpcResponseInvalidError extends Error {
+  override readonly name = "SolanaRpcResponseInvalidError";
+  constructor(
+    /** Which call produced it. Never carries the response body or the RPC URL. */
+    readonly call: string,
+    detail: string,
+  ) {
+    super(`invalid ${call} response: ${detail}`);
+  }
+}
+
+/** The deadline this reader owns fired and the HTTP request was aborted. */
+export class SolanaRpcDeadlineExceededError extends Error {
+  override readonly name = "SolanaRpcDeadlineExceeded";
+  constructor(readonly call: string) {
+    super(`${call} exceeded the ${RPC_DEADLINE_MS}ms reader deadline`);
+  }
 }
 
 /**
- * One RPC call under a deadline this module owns, with AT MOST one retry.
- *
- * Retry is transport-shaped only: a response the provider actually produced
- * (`SolanaJSONRPCError`, i.e. a JSON-RPC error object) is an answer, not a
- * hiccup, and repeating it only doubles the load. Reads are idempotent, so a
- * retry cannot double an effect. Jitter keeps a fleet of clients from
- * retrying in lockstep.
- *
- * The deadline is enforced by the caller's own signal because `Connection`
- * accepts no `AbortSignal`; the underlying HTTP request is therefore abandoned
- * rather than cancelled (declared gap, bounded by the retry cap of one).
+ * `getBalance` answers lamports as a JSON number. A u64 above 2^53 cannot
+ * survive that encoding, and a malformed body could deliver NaN, a float or a
+ * negative. Only a non-negative safe integer is a balance.
  */
-async function callRpc<T>(label: string, operation: () => Promise<T>): Promise<T> {
-  try {
-    return await withDeadline(operation);
-  } catch (err) {
-    if (!isRetryableRpcError(err)) throw err;
-    logger.debug("solana.balances.rpc_retry", {
-      call: label,
-      error: err instanceof Error ? err.name : "unknown",
-    });
-    await sleep(120 + Math.floor(Math.random() * 180));
-    return await withDeadline(operation);
-  }
+const lamportsSchema = z
+  .number()
+  .int("lamports must be an integer")
+  .min(0, "lamports must not be negative")
+  .max(Number.MAX_SAFE_INTEGER, "lamports exceeds the safe-integer range");
+
+export interface DeadlineBoundRpcOptions {
+  /** Overrides `config.solana.rpcUrl`. */
+  readonly rpcUrl?: string;
+  /** Overrides `config.solana.commitment`. */
+  readonly commitment?: Commitment;
+  /** Underlying transport. Defaults to `globalThis.fetch`, which is web3.js's own default. */
+  readonly fetch?: FetchFn;
 }
 
-async function withDeadline<T>(operation: () => Promise<T>): Promise<T> {
-  const signal = AbortSignal.timeout(RPC_DEADLINE_MS);
-  let onAbort: (() => void) | undefined;
-  const deadline = new Promise<never>((_resolve, reject) => {
-    onAbort = (): void => reject(new Error("SolanaRpcDeadlineExceeded"));
-    signal.addEventListener("abort", onAbort, { once: true });
+/**
+ * The reader's own transport: a `Connection` whose `fetch` forwards THIS
+ * reader's per-call `AbortSignal` to the HTTP request, so an expired deadline
+ * CANCELS the request rather than abandoning it while the socket stays open.
+ *
+ * OWNERSHIP AND CONCURRENCY: the returned object serves ONE call at a time,
+ * because the in-flight signal is per-transport state. The reader is strictly
+ * sequential, and a reentrant call is rejected rather than silently sharing
+ * another call's deadline. Do not share one of these between wallets.
+ *
+ * It is deliberately NOT the shared `getSolanaConnection()` singleton: binding
+ * a mutable abort signal into the process-wide connection would let one
+ * caller's deadline cancel another caller's request.
+ */
+export function createDeadlineBoundSolanaRpc(
+  options: DeadlineBoundRpcOptions = {},
+): SolanaBalanceRpc {
+  const baseFetch: FetchFn = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  let inFlight: AbortController | null = null;
+
+  const connection = createSolanaConnection({
+    rpcUrl: options.rpcUrl,
+    commitment: options.commitment,
+    fetch: (input, init) => baseFetch(input, { ...init, signal: inFlight?.signal }),
   });
-  try {
-    return await Promise.race([operation(), deadline]);
-  } finally {
-    if (onAbort) signal.removeEventListener("abort", onAbort);
+
+  async function callRpc<T>(label: string, operation: () => Promise<T>): Promise<T> {
+    if (inFlight !== null) {
+      throw new Error(`solana balance rpc is sequential; ${label} overlapped another call`);
+    }
+    const controller = new AbortController();
+    inFlight = controller;
+    const timer = setTimeout(() => controller.abort(), RPC_DEADLINE_MS);
+    try {
+      return await operation();
+    } catch (err) {
+      if (controller.signal.aborted) throw new SolanaRpcDeadlineExceededError(label);
+      throw err;
+    } finally {
+      clearTimeout(timer);
+      inFlight = null;
+    }
   }
-}
 
-function isRetryableRpcError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  // A JSON-RPC error object means the node answered. Its class name is stable
-  // across web3.js versions and is checked by name so this module does not
-  // depend on the error class's identity.
-  return err.name !== "SolanaJSONRPCError";
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return {
+    getBalance: (publicKey) => callRpc("getBalance", () => connection.getBalance(publicKey)),
+    getParsedTokenAccountsByOwner: (owner, filter) =>
+      callRpc(`getTokenAccountsByOwner:${filter.programId.toBase58()}`, () =>
+        connection.getParsedTokenAccountsByOwner(owner, filter),
+      ),
+  };
 }
 
 // ── Metadata ────────────────────────────────────────────────────────
@@ -429,10 +559,20 @@ async function loadMintMetadata(mints: readonly string[]): Promise<Map<string, M
 
 // ── Pricing ─────────────────────────────────────────────────────────
 
+/** One pricing pass: the map plus the tier census that explains it. */
+interface SolanaPricing {
+  readonly priceByMint: Map<string, number>;
+  readonly tiers: PriceTierCounts;
+}
+
 /**
- * Mint -> USD price. DexScreener first (our own read), Khalani's price map as
- * the fallback for whatever it could not price, null last. Both legs are
- * fail-soft: an unpriced mint keeps its row with a null USD value.
+ * Mint -> USD price. DexScreener first (our own read, quote-tiered), Khalani's
+ * price map as the fallback for whatever it could not price, null last. Every
+ * leg is fail-soft: an unpriced mint keeps its row with a null USD value.
+ *
+ * The tier census counts the DEXSCREENER decision only. A mint the Khalani
+ * fallback rescues still counts as `unpriced` there, which is what the log is
+ * for: it says how well OUR rule did, not how many rows ended up with a number.
  *
  * Base58 case is IDENTITY here. The provider echoes the canonical mint back in
  * `baseToken.address` even when the request lowercased it (probed 2026-08-26),
@@ -442,13 +582,15 @@ async function loadMintMetadata(mints: readonly string[]): Promise<Map<string, M
 async function priceMints(
   mints: readonly string[],
   ownerAddress: string,
-): Promise<Map<string, number>> {
-  if (mints.length === 0) return new Map<string, number>();
-
+): Promise<SolanaPricing> {
   const accumulator = createBestLiquidityPriceAccumulator({
     wanted: mints,
     normalizeAddress: (address) => address,
+    quotePolicy: SOLANA_QUOTE_ASSET_POLICY,
   });
+  if (mints.length === 0) {
+    return { priceByMint: new Map<string, number>(), tiers: accumulator.countTiers() };
+  }
 
   for (let i = 0; i < mints.length; i += DEXSCREENER_TOKENS_BATCH) {
     const batch = mints.slice(i, i + DEXSCREENER_TOKENS_BATCH);
@@ -462,14 +604,36 @@ async function priceMints(
     }
   }
 
+  // Second, bounded pass. `/tokens/v1` answers the pool the PROVIDER considers
+  // representative, and it picks by a depth denominated in the quote asset - so
+  // for a mint whose quote asset the provider misprices, the representative
+  // pool is exactly the tier-2 pool the rule refuses. JUP is that mint.
+  const fallback = await addPoolListsForUnpricedAddresses(
+    { accumulator, chainSlug: SOLANA_DEXSCREENER_SLUG, addresses: mints },
+    (address) => address,
+    (mint, err) => {
+      logger.debug("solana.balances.pool_fallback_failed", {
+        mint,
+        error: err instanceof Error ? err.name : "unknown",
+      });
+    },
+  );
+  if (fallback.attempted > 0 || fallback.skipped > 0) {
+    logger.debug("solana.balances.pool_fallback", fallback);
+  }
+
   const prices = accumulator.toPriceMap();
+  const tiers = accumulator.countTiers();
+  if (tiers.unpriced > 0) {
+    logger.debug("solana.balances.unpriced_reasons", summarizeUnpricedReasons(accumulator));
+  }
   const stillUnpriced = mints.filter((mint) => !prices.has(mint));
-  if (stillUnpriced.length === 0) return prices;
+  if (stillUnpriced.length === 0) return { priceByMint: prices, tiers };
 
   for (const [mint, price] of await khalaniPriceMap(stillUnpriced, ownerAddress)) {
     prices.set(mint, price);
   }
-  return prices;
+  return { priceByMint: prices, tiers };
 }
 
 /**

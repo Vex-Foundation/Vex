@@ -8,7 +8,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App.js";
 import { queryClient } from "./app/queryClient.js";
 import type { CreateBugReportInput } from "@shared/schemas/bug-reports.js";
-import { registerZodLocale } from "@vex-lib/zod-locale.js";
+import { probeZodLocale, registerZodLocale } from "@vex-lib/zod-locale.js";
 import { rendererReportDedupe } from "./lib/report-dedupe.js";
 
 /**
@@ -37,6 +37,31 @@ function safeSentryReport(input: {
   void window.vex?.telemetry
     ?.reportRendererError(input)
     .catch(() => undefined);
+}
+
+/**
+ * Boot probe for the registration above. Two jobs, both load-bearing:
+ *
+ * 1. Runtime: if a bundler change ever drops the locale again, a real zod parse
+ *    is the only thing that notices, and it says so through the renderer's
+ *    existing telemetry sink (`window.vex.telemetry.reportRendererError`, the
+ *    same path `safeSentryReport` uses everywhere else here) plus `console.error`
+ *    for a developer running the app locally.
+ * 2. Build: the probe CONSUMES `ZOD_LOCALE_MARKER` in a value that reaches a
+ *    call, so the literal survives renderer minification and
+ *    `scripts/check-privileged-bundles.mjs` can assert its presence in
+ *    `dist/renderer/assets/*.js`. Without a consumer the marker is dead code and
+ *    the gate has nothing unique to look for.
+ *
+ * Never throws: a broken locale must not stop the app from mounting.
+ */
+const zodLocaleProbe = probeZodLocale();
+if (!zodLocaleProbe.localized) {
+  const message =
+    `zod locale not registered in renderer (${zodLocaleProbe.marker}); ` +
+    `validation messages will read "${zodLocaleProbe.sampleMessage}"`;
+  console.error(message);
+  safeSentryReport({ kind: "caught", message, componentStack: null });
 }
 
 // Promise rejections bypass React's error boundary entirely — wire a top-level

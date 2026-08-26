@@ -13,6 +13,7 @@ import {
   TRANSCRIPT_APPEND_EVENT_TYPE,
 } from "../messages.js";
 import { BOARD_SPEC_MAX_BYTES } from "@vex-lib/board/index.js";
+import { maximalBoardSpec } from "../../../../../src/__tests__/lib/board/maximal-board-spec.js";
 
 const ISO = "2026-05-21T10:00:00.000Z";
 const SESSION = "00000000-0000-4000-8000-000000000001";
@@ -309,6 +310,29 @@ describe("messages schemas", () => {
     expect(TOOL_ARGS_DISPLAY_CEILING - BOARD_SPEC_MAX_BYTES).toBeGreaterThan(
       BOARD_SPEC_MAX_BYTES / 2,
     );
+  });
+
+  it("clears the envelope MEASURED from the largest board the contract admits", () => {
+    // The comparison above is the conservative form: it holds a UTF-16 length
+    // against a UTF-8 byte budget, which is safe but is not the real envelope.
+    // This is the real one. `maximalBoardSpec()` is the schema-valid
+    // all-fields-max document that `BOARD_SPEC_MAX_BYTES` itself is derived
+    // from, and the mapper serializes a tool call's args with
+    // `JSON.stringify(value, null, 2)` (see
+    // `vex-app/src/main/database/messages/redaction.ts`), so the figure the
+    // ceiling must clear is that pretty-printed string's length - indentation,
+    // key names and escaping included.
+    //
+    // Deriving it from the SAME generator is what keeps the two constants
+    // honest together: raising a board bound moves this number, and this test
+    // is where a ceiling that no longer covers it fails.
+    const spec = maximalBoardSpec();
+    const envelope = JSON.stringify(spec, null, 2).length;
+    expect(envelope).toBeGreaterThan(0);
+    expect(TOOL_ARGS_DISPLAY_CEILING).toBeGreaterThan(envelope);
+    // Real headroom, not a squeeze: the ceiling is a corruption guard, so no
+    // legitimate producer should sit anywhere near it.
+    expect(TOOL_ARGS_DISPLAY_CEILING - envelope).toBeGreaterThan(envelope);
   });
 
   it("rejects a toolCalls array over the 32-entry cap", () => {

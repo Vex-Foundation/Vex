@@ -298,7 +298,7 @@ export function BoardSpotlight({
             {ChartSlot === undefined ? (
               <p
                 data-vex-area="board-spotlight-chart-absent"
-                className="flex h-[300px] items-center justify-center text-center text-[13px] text-ink-tertiary"
+                className="flex h-[280px] items-center justify-center text-center text-[13px] text-ink-tertiary"
               >
                 {SPOTLIGHT_CHART_ABSENT}
               </p>
@@ -429,8 +429,10 @@ function Hero(props: {
           <ChainSlugIcon chainSlug={props.chain} size={20} />
           <span className="sr-only">{props.chain}</span>
         </span>
-        {/* A settled absence is SAID, never in the loading state: the read
-          * has not answered yet, and a claim of absence would be untrue. */}
+        {/* A settled absence is SAID, and ONLY a settled absence: not while
+          * the read is in flight, and not when it failed (`unavailable`),
+          * because in both the provider has not been heard and a claim of
+          * absence would be untrue. The frame itself names a failed read. */}
         {photo.state === "monogram" ? (
           <span
             data-vex-area="board-spotlight-no-image"

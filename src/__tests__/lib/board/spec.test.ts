@@ -15,11 +15,18 @@ import { describe, expect, it } from "vitest";
 
 import { BAR_RESOLUTIONS } from "../../../tools/dexscreener/endpoints/bars.js";
 import {
+  BOARD_ANALYSIS_RULE,
+  BOARD_CAPTION_RULE,
   BOARD_CHART_RESOLUTIONS,
+  BOARD_DESCRIPTION_RULE,
+  BOARD_ICON_ID_MAX_CHARS,
   BOARD_MARKER_MAX_MS,
   BOARD_MAX_CANDLES,
   BOARD_MAX_POOLS,
   BOARD_MARKER_MIN_MS,
+  BOARD_MAX_ANNOTATIONS,
+  BOARD_MAX_NOTES,
+  BOARD_NOTE_RULE,
   BOARD_SPEC_MAX_BYTES,
   BOARD_STALE_AFTER_MS,
   boardAnnotationSchema,
@@ -30,6 +37,12 @@ import {
   describeBoardByteBudgetFailure,
   type BoardComposeInput,
 } from "../../../lib/board/index.js";
+import {
+  MAXIMAL_LATIN_DOCUMENT_BYTES,
+  MAXIMAL_TWO_BYTE_DOCUMENT_BYTES,
+  MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES,
+  maximalBoardSpec,
+} from "./maximal-board-spec.js";
 
 const ZWSP = String.fromCodePoint(0x200b);
 const RLO = String.fromCodePoint(0x202e);
@@ -712,7 +725,7 @@ describe("hydrated row - the token icon handle", () => {
     const budget = checkBoardSpecByteBudget(spec);
     expect(budget.withinBudget).toBe(true);
     // Stated as a real ratio rather than "it fits": the handles must be a
-    // rounding error against the 256 KiB ceiling, not a squeeze past it.
+    // rounding error against the document ceiling, not a squeeze past it.
     expect(budget.byteLength).toBeLessThan(BOARD_SPEC_MAX_BYTES / 2);
   });
 });
@@ -810,78 +823,151 @@ describe("per-pool analysis - the model's own assessment", () => {
     const emoji = "\u{1F680}".repeat(10_000);
     expect(boardComposeInputSchema.safeParse(poolWith(emoji)).success).toBe(true);
   });
+});
 
-  it.each([
-    ["latin prose, one byte per character", "a"],
-    ["a two-byte script, which is what the budget is sized against", "\u0434"],
-  ])(
-    "stays inside the 256 KiB document budget at the worst case the bounds admit (%s)",
-    (_label, filler) => {
-    // Eight pools, each with the longest assessment and the longest caption
-    // the contract allows, plus a full hydration. The budget is a REFUSAL
-    // threshold, so the point of this case is that a board of eight FULLY
-    // written assessments, WITH a chart, cannot be made unpresentable by its
-    // own length.
-    const pools = Array.from({ length: BOARD_MAX_POOLS }, () => ({
-      chain: "solana",
-      pairAddress: "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2",
-      caption: "c".repeat(140),
-      analysis: filler.repeat(10_000),
-    }));
-    const spec = boardSpecV1Schema.safeParse({
-      version: 1,
-      title: "SOL majors",
-      pools,
-      hydration: hydrationFor(BOARD_MAX_POOLS, false),
-    });
-    expect(spec.success).toBe(true);
-    if (!spec.success) return;
-    const budget = checkBoardSpecByteBudget(spec.data);
-    expect(budget.withinBudget).toBe(true);
-    expect(budget.byteLength).toBeLessThan(BOARD_SPEC_MAX_BYTES);
-  },
-  );
+/**
+ * THE BYTE BUDGET AS A MEASUREMENT, not as arithmetic.
+ *
+ * `BOARD_SPEC_MAX_BYTES` is a REFUSAL threshold, so the only defensible way to
+ * choose it is to build the largest document the schema actually admits and
+ * put the ceiling above it. The previous figure was hand arithmetic over a
+ * SUBSET of the fields (it left out the provider descriptions at their bound,
+ * the maximum-width hydration labels, the widest decimals and the full
+ * annotation set) and understated the real worst case by about 19 KiB, which
+ * meant a board the schema ACCEPTED could still be refused with nothing the
+ * model authored that it could shorten.
+ *
+ * These tests measure `maximalBoardSpec()`, which is generated from the
+ * contract's own constants. Raising any bound moves that document, moves these
+ * figures, and fails here until the budget is re-derived.
+ */
+describe("the all-fields-max document", () => {
+  it("is SCHEMA-VALID, which is the whole claim the measurement rests on", () => {
+    const parsed = boardSpecV1Schema.safeParse(maximalBoardSpec());
+    if (!parsed.success) {
+      throw new Error(
+        `the generated maximum is not a legal board: ${JSON.stringify(parsed.error.issues)}`,
+      );
+    }
+    expect(parsed.success).toBe(true);
+  });
 
-  it("stays inside the budget with eight full assessments AND a full chart", () => {
-    // The exact combination the budget doc claims fits: 8 x 10000 two-byte
-    // assessments (160,000 bytes) plus the authored rest plus a 200-bar series
-    // of maximum-width decimal strings. The previous budget refused this, and
-    // the whole point of raising it was that a fully written board with a
-    // chart is a board a user should be able to keep.
-    const pools = Array.from({ length: BOARD_MAX_POOLS }, () => ({
-      chain: "solana",
-      pairAddress: "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2",
-      caption: "c".repeat(140),
-      analysis: "\u0434".repeat(10_000),
-    }));
-    const hydration = hydrationFor(BOARD_MAX_POOLS, true) as Record<string, unknown>;
-    const spec = boardSpecV1Schema.safeParse({
-      version: 1,
-      title: "SOL majors",
-      pools,
-      chart: { poolIndex: 0, resolution: "1h" },
+  it("really does sit at every bound the contract admits", () => {
+    // A generator that quietly stopped filling a field would produce a small
+    // document and a budget chosen from nothing. This is the guard on the
+    // guard: the shape is checked against the same constants the schema uses.
+    const spec = maximalBoardSpec() as {
+      pools: readonly { analysis: string; caption: string }[];
+      notes: readonly string[];
+      chart: { annotations: readonly unknown[] };
       hydration: {
-        ...hydration,
-        unmatchedMarkerAtMs: [],
-        candles: {
-          bars: Array.from({ length: BOARD_MAX_CANDLES }, (_unused, i) => ({
-            tMs: 1_756_000_000_000 + i * 3_600_000,
-            o: `1.${"9".repeat(38)}`,
-            h: `2.${"9".repeat(38)}`,
-            l: `0.${"9".repeat(38)}`,
-            c: `1.${"8".repeat(38)}`,
-          })),
-          lastBarPartial: false,
-          coveredRange: { fromMs: 1_756_000_000_000, toMs: 1_756_716_400_000 },
-          resolution: "1h",
-          truncated: true,
-        },
-      },
-    });
-    expect(spec.success).toBe(true);
-    if (!spec.success) return;
-    const budget = checkBoardSpecByteBudget(spec.data);
+        rows: readonly { description: string; iconId: string }[];
+        candles: { bars: readonly unknown[] };
+      };
+    };
+    expect(spec.pools).toHaveLength(BOARD_MAX_POOLS);
+    expect(spec.notes).toHaveLength(BOARD_MAX_NOTES);
+    expect(spec.chart.annotations).toHaveLength(BOARD_MAX_ANNOTATIONS);
+    expect(spec.hydration.candles.bars).toHaveLength(BOARD_MAX_CANDLES);
+    expect(spec.hydration.rows).toHaveLength(BOARD_MAX_POOLS);
+    for (const pool of spec.pools) {
+      expect([...pool.analysis]).toHaveLength(BOARD_ANALYSIS_RULE.maxChars);
+      expect([...pool.caption]).toHaveLength(BOARD_CAPTION_RULE.maxChars);
+    }
+    for (const note of spec.notes) {
+      expect([...note]).toHaveLength(BOARD_NOTE_RULE.maxChars);
+    }
+    // The two fields the old arithmetic forgot, present on EVERY row.
+    for (const row of spec.hydration.rows) {
+      expect([...row.description]).toHaveLength(BOARD_DESCRIPTION_RULE.maxChars);
+      expect([...row.iconId]).toHaveLength(BOARD_ICON_ID_MAX_CHARS);
+    }
+  });
+
+  it("fits the budget in a two-byte script, which is the case it is sized against", () => {
+    // Cyrillic, Greek and Hebrew are ordinary scripts a user may ask for
+    // analysis in, and a board written in one costs twice a Latin board. THIS
+    // is the measurement behind the constant; the exact figure is printed so a
+    // reviewer reading a failure sees the new worst case, not just a boolean.
+    const budget = checkBoardSpecByteBudget(maximalBoardSpec({ script: "twoByte" }));
     expect(budget.withinBudget).toBe(true);
+    expect(budget.byteLength).toBe(MAXIMAL_TWO_BYTE_DOCUMENT_BYTES);
+    expect(BOARD_SPEC_MAX_BYTES - budget.byteLength).toBe(
+      MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES,
+    );
+    // Stated as real headroom rather than "it fits": a budget that admits the
+    // worst case by a handful of bytes is a budget about to be wrong again.
+    expect(MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES).toBeGreaterThan(32 * 1024);
+  });
+
+  it("costs about half as much in Latin, which is what the two-byte sizing buys", () => {
+    const budget = checkBoardSpecByteBudget(maximalBoardSpec({ script: "latin" }));
+    expect(budget.withinBudget).toBe(true);
+    expect(budget.byteLength).toBe(MAXIMAL_LATIN_DOCUMENT_BYTES);
+  });
+
+  /**
+   * THE REFUSAL, and the reason the budget is not simply raised until nothing
+   * is ever refused.
+   *
+   * `BOARD_ANALYSIS_RULE` counts CODE POINTS, so eight assessments of 10,000
+   * emoji are legal prose and 320,000 bytes of document. That board cannot be
+   * stored, and the contract's answer is to refuse it WHOLE with its measured
+   * size and its heaviest pool named - never to cut an assessment the model
+   * wrote, under the model's name, for a reader who cannot tell.
+   */
+  it("is refused, whole and by name, once the assessments become 4-byte emoji", () => {
+    const overflowing = maximalBoardSpec({ analysisScript: "fourByte" });
+    // It really is a LEGAL board; only its size disqualifies it.
+    expect(boardSpecV1Schema.safeParse(overflowing).success).toBe(true);
+
+    const budget = checkBoardSpecByteBudget(overflowing);
+    expect(budget.withinBudget).toBe(false);
+    expect(budget.byteLength).toBeGreaterThan(BOARD_SPEC_MAX_BYTES);
+    expect(budget.largestPool).not.toBeNull();
+
+    const message = describeBoardByteBudgetFailure(budget);
+    expect(message).toContain(String(budget.byteLength));
+    expect(message).toContain(String(BOARD_SPEC_MAX_BYTES));
+    expect(message).toContain(`pool ${budget.largestPool?.index}`);
+    expect(message).toContain("nothing was truncated");
+  });
+
+  it("crosses from accepted to refused one assessment at a time, naming a converted pool", () => {
+    // The step across the threshold, walked rather than asserted. Each pool
+    // whose assessment turns from two-byte prose to 4-byte emoji costs the
+    // document another 20,000 bytes, and the headroom absorbs the first
+    // few - which is the point of having headroom. The refusal, when it comes,
+    // must name a pool that actually grew, or the model would be told to
+    // shorten work it had already written at the right size.
+    const spec = maximalBoardSpec() as { pools: { analysis: string }[] };
+    const emoji = "\u{1F680}".repeat(BOARD_ANALYSIS_RULE.maxChars);
+
+    let converted = 0;
+    let refusedAt: number | null = null;
+    for (const pool of spec.pools) {
+      pool.analysis = emoji;
+      converted += 1;
+      // Still a LEGAL board at every step; only its size ever disqualifies it.
+      expect(boardSpecV1Schema.safeParse(spec).success).toBe(true);
+      if (!checkBoardSpecByteBudget(spec).withinBudget) {
+        refusedAt = converted;
+        break;
+      }
+    }
+
+    expect(refusedAt).not.toBeNull();
+    // The headroom is real: a single emoji assessment does not sink the board.
+    expect(refusedAt).toBeGreaterThan(1);
+
+    const budget = checkBoardSpecByteBudget(spec);
+    expect(budget.byteLength).toBeGreaterThan(BOARD_SPEC_MAX_BYTES);
+    const named = budget.largestPool?.index;
+    expect(named).toBeDefined();
+    // The heaviest pool is one of the ones that grew, and it is named.
+    expect(named).toBeLessThan(refusedAt ?? 0);
+    expect(describeBoardByteBudgetFailure(budget)).toContain(`pool ${named}`);
+    expect(describeBoardByteBudgetFailure(budget)).toContain("nothing was truncated");
   });
 });
 

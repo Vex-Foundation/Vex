@@ -104,7 +104,7 @@ describe("sanitizeToolArgs ships the WHOLE sanitized serialization", () => {
 
   it("round-trips a board at the TOP of the spec budget, whole", () => {
     // The regression this pairs with: the analysis field now admits 10,000
-    // characters per pool and the board budget is 256 KiB, so the largest
+    // characters per pool and the board budget is 320 KiB, so the largest
     // legal BoardCompose args are a quarter of a megabyte of the model's own
     // prose. The display ceiling has to clear that WITH the call envelope, or
     // the user sees a tool call with no arguments and no explanation.

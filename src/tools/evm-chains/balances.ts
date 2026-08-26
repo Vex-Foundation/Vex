@@ -5,14 +5,19 @@
  * `WalletBalances` tool (`vex-agent/tools/internal/wallet/read.ts`).
  *
  * Reads batch through the canonical Multicall3; USD prices come from
- * DexScreener (the same throttled client the market tools use). A wanted token
- * is priced from EITHER pair side: a baseToken match uses `priceUsd` directly;
- * a quoteToken match derives USD-per-quote as `priceUsd / priceNative`
- * (`priceNative` is the base price expressed in the quote token). The quote
- * side matters on thin new chains — on the live robinhood index the wrapped
- * native (WETH) appears ONLY as a quote token, so base-only matching left
- * native ETH permanently unpriced. A token without a price keeps its balance
- * with a null USD value — it is never dropped.
+ * DexScreener through the shared QUOTE-TIERED rule
+ * (`dexscreener/best-liquidity-price.ts`) with this chain's own
+ * `quoteAssetPolicy`. Only a pool quoted in a stablecoin we recognise (tier 0)
+ * or in the chain's wrapped native (tier 1) may price a token, and only above
+ * the shared liquidity floor; among those the DEEPEST pool wins whichever class
+ * it is. Anything quoted in something else prices nothing at any depth, because
+ * provider depth denominated in an asset the provider itself misprices is not
+ * evidence. A token left unpriced by the
+ * representative pool list gets ONE extra full-pool-list read
+ * (`dexscreener/unpriced-pool-fallback.ts`) - measured 2026-08-26, $VEX's
+ * representative pool on robinhood is VEX/VIRTUAL (tier 2) while its
+ * full pool list carries VEX/USDG at $0.002747. A token still without a price
+ * keeps its balance with a null USD value - it is never dropped.
  *
  * This module is RPC/pricing only: no DB access, no fail-soft policy. RPC and
  * pricing errors PROPAGATE (DexScreener failures excepted — pricing is
@@ -21,8 +26,13 @@
 
 import { getAddress, type Chain, type PublicClient, type Transport } from "viem";
 
-import { createBestLiquidityPriceAccumulator } from "../dexscreener/best-liquidity-price.js";
+import {
+  createBestLiquidityPriceAccumulator,
+  summarizeUnpricedReasons,
+  type PriceTierCounts,
+} from "../dexscreener/best-liquidity-price.js";
 import { readTokensPairs } from "../dexscreener/price-read.js";
+import { addPoolListsForUnpricedAddresses } from "../dexscreener/unpriced-pool-fallback.js";
 import { ERC20_READ_ABI } from "./erc20-reads.js";
 import { getLocalPublicClient } from "./evm-client.js";
 import type { LocalChainConfig } from "./registry.js";
@@ -79,6 +89,12 @@ export interface LocalChainBalancesRead {
    * balance produces no row either way, so its missing decimals lose nothing.
    */
   tokenFailures: LocalChainTokenReadFailure[];
+  /**
+   * Which quote tier priced each scanned token, and how many stayed unpriced.
+   * Public prices only - never a secret - and the sync logs it so a wrong
+   * portfolio number can be traced to the rule that produced it.
+   */
+  priceTiers: PriceTierCounts;
 }
 
 /**
@@ -96,12 +112,11 @@ export async function readLocalChainBalances(
   const meta = await loadTokenMetadata(client, config.id, tokenAddrs);
   const balances = await readErc20Balances(client, walletAddress, tokenAddrs);
   const nativeWei = await client.getBalance({ address: getAddress(walletAddress) });
-  const priceByLower = await fetchPricesByLowerAddress(config, tokenAddrs);
+  const { priceByLower, tiers } = await fetchPricesByLowerAddress(config, tokenAddrs);
 
-  const wrappedNativeLower = config.seedTokens
-    .find((token) => token.label.toUpperCase() === `W${config.nativeCurrency.symbol.toUpperCase()}`)
-    ?.address.toLowerCase();
-  const nativePriceUsd = wrappedNativeLower ? priceByLower.get(wrappedNativeLower) ?? null : null;
+  // The wrapped native IS the chain's native coin for pricing purposes, and the
+  // quote policy already names it - no label-matching heuristic needed.
+  const nativePriceUsd = priceByLower.get(config.quoteAssetPolicy.wrappedNative) ?? null;
 
   const tokens: LocalChainTokenRead[] = [];
   const tokenFailures: LocalChainTokenReadFailure[] = [];
@@ -127,7 +142,7 @@ export async function readLocalChainBalances(
     });
   }
 
-  return { nativeWei, nativePriceUsd, tokens, tokenFailures };
+  return { nativeWei, nativePriceUsd, tokens, tokenFailures, priceTiers: tiers };
 }
 
 // ── On-chain reads ──────────────────────────────────────────────────
@@ -191,28 +206,39 @@ async function readErc20Balances(
 
 // ── Pricing ─────────────────────────────────────────────────────────
 
+/** What one pricing pass produced: the map plus why, for the sync log. */
+interface LocalChainPricing {
+  /** Lowercase token address -> USD price. Absent means unpriced. */
+  readonly priceByLower: Map<string, number>;
+  readonly tiers: PriceTierCounts;
+}
+
 /**
- * Best-liquidity DexScreener USD price per token (lowercase address → price).
- * The selection rule itself (base-vs-quote matching + deepest-pool tie-break,
- * accumulated ACROSS batches) lives in `dexscreener/best-liquidity-price.ts`,
- * shared with the Solana wallet read; this function owns only the batching,
- * the chain slug and the fail-soft policy: any error (incl. a chain slug
- * DexScreener doesn't index) leaves those addresses unpriced, and priceless
- * tokens simply keep a null USD value downstream.
+ * Quote-tiered DexScreener USD price per token (lowercase address -> price).
+ *
+ * The selection rule itself (quote tiers, deepest-pool tie-break WITHIN a tier,
+ * nativeUsd derivation, accumulated ACROSS batches) lives in
+ * `dexscreener/best-liquidity-price.ts`, shared with the Solana wallet read;
+ * this function owns only the batching, the chain slug, the chain's quote
+ * policy and the fail-soft policy: any error (incl. a chain slug DexScreener
+ * doesn't index) leaves those addresses unpriced, and priceless tokens simply
+ * keep a null USD value downstream.
  */
 async function fetchPricesByLowerAddress(
   config: LocalChainConfig,
   tokenAddrs: readonly `0x${string}`[],
-): Promise<Map<string, number>> {
-  if (tokenAddrs.length === 0) return new Map<string, number>();
-
-  // EVM addresses are case-insensitive, so the injected identity policy is
-  // lowercase and the returned map is keyed by lowercase address, exactly as
-  // every caller of this function already reads it.
+): Promise<LocalChainPricing> {
   const accumulator = createBestLiquidityPriceAccumulator({
+    // EVM addresses are case-insensitive, so the injected identity policy is
+    // lowercase and the returned map is keyed by lowercase address, exactly as
+    // every caller of this function already reads it.
     wanted: tokenAddrs,
     normalizeAddress: (address) => address.toLowerCase(),
+    quotePolicy: config.quoteAssetPolicy,
   });
+  if (tokenAddrs.length === 0) {
+    return { priceByLower: new Map<string, number>(), tiers: accumulator.countTiers() };
+  }
 
   for (let i = 0; i < tokenAddrs.length; i += DEXSCREENER_TOKENS_BATCH) {
     const batch = tokenAddrs.slice(i, i + DEXSCREENER_TOKENS_BATCH);
@@ -225,7 +251,36 @@ async function fetchPricesByLowerAddress(
       });
     }
   }
-  return accumulator.toPriceMap();
+
+  // Second, bounded pass: the provider's representative pool for a token can be
+  // the very tier-2 pool the rule refuses to price from, while the token's full
+  // pool list carries a tier-0 one.
+  const fallback = await addPoolListsForUnpricedAddresses(
+    { accumulator, chainSlug: config.dexscreenerSlug, addresses: tokenAddrs },
+    (address) => address.toLowerCase(),
+    (address, err) => {
+      logger.debug("evm_chains.balances.pool_fallback_failed", {
+        slug: config.dexscreenerSlug,
+        token: address,
+        error: err instanceof Error ? err.name : "unknown",
+      });
+    },
+  );
+  if (fallback.attempted > 0 || fallback.skipped > 0) {
+    logger.debug("evm_chains.balances.pool_fallback", {
+      slug: config.dexscreenerSlug,
+      ...fallback,
+    });
+  }
+
+  const tiers = accumulator.countTiers();
+  if (tiers.unpriced > 0) {
+    logger.debug("evm_chains.balances.unpriced_reasons", {
+      slug: config.dexscreenerSlug,
+      ...summarizeUnpricedReasons(accumulator),
+    });
+  }
+  return { priceByLower: accumulator.toPriceMap(), tiers };
 }
 
 /** Test-only: clear the in-process metadata cache. */

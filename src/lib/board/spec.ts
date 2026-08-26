@@ -148,10 +148,11 @@ export const BOARD_ANALYSIS_RULE: BoardTextRule = {
  *    at all for WETH. 1000 covers the observed distribution with room.
  *  - BUDGET: this field is the one board string the MODEL CANNOT SHORTEN. At
  *    8 pools in a two-byte script, every 1000 characters here costs 16,000
- *    bytes of {@link BOARD_SPEC_MAX_BYTES}, and the measured worst case leaves
- *    only ~10 KiB of headroom at this bound. A larger ceiling would let the
- *    PROVIDER's marketing copy push a board the agent composed correctly over
- *    the budget, refusing work the model had no way to make smaller.
+ *    bytes of {@link BOARD_SPEC_MAX_BYTES}. This field is counted in the
+ *    all-fields-max measurement behind that budget, so its cost is admitted
+ *    rather than assumed. A much larger ceiling would let the PROVIDER's
+ *    marketing copy push a board the agent composed correctly over the budget,
+ *    refusing work the model had no way to make smaller.
  *
  * So an unusually long blurb costs the reader a blurb, never the board.
  *
@@ -180,46 +181,84 @@ export const BOARD_MAX_ANNOTATIONS = 12;
 /** Maximum candles carried in one hydrated board. */
 export const BOARD_MAX_CANDLES = 200;
 
+/* ------------------------------------------------------------------ */
+/* Identity and hydration field widths                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The character ceilings on the non-prose fields: the pool identity the model
+ * names and the provider labels the runtime writes beside it.
+ *
+ * They are NAMED CONSTANTS rather than literals inside the schema for one
+ * reason: the byte budget below is a MEASURED figure, and the thing that
+ * measures it (`src/__tests__/lib/board/maximal-board-spec.ts`) builds the
+ * schema-valid all-fields-max document from this table. A width spelled twice,
+ * once in a `.max()` and once in a fixture, is a budget derived from a number
+ * nothing enforces.
+ */
+/** DexScreener chain slug, and the `chainId` the provider echoes back. */
+export const BOARD_CHAIN_SLUG_MAX_CHARS = 32;
+/** Pool address as the provider spells it: base58, or hex without the prefix. */
+export const BOARD_PAIR_ADDRESS_MAX_CHARS = 128;
+/** Token symbol or name as the provider reports it. Untrusted provider text. */
+export const BOARD_TOKEN_LABEL_MAX_CHARS = 512;
+/** DexScreener DEX slug, e.g. `raydium`, `uniswap-v3`. */
+export const BOARD_DEX_ID_MAX_CHARS = 64;
+/** The transport name recorded in provenance, e.g. `http`, `site_bridge`. */
+export const BOARD_PROVENANCE_TRANSPORT_MAX_CHARS = 64;
+/** The observation sentence recorded in provenance. */
+export const BOARD_PROVENANCE_OBSERVATION_MAX_CHARS = 512;
+
 /**
  * Serialized ceiling for one persisted board document, in BYTES of UTF-8.
  *
- * 256 KiB. This is a REFUSAL threshold, never a trimming threshold: a board
+ * 320 KiB. This is a REFUSAL threshold, never a trimming threshold: a board
  * over budget is refused with its measured size AND the pool that contributed
  * most named, because silently dropping pools, notes or candles would show the
  * user a board the agent did not compose. See {@link checkBoardSpecByteBudget}.
  *
- * THE ARITHMETIC, at the bounds the field rules admit:
+ * THE NUMBER IS MEASURED, AND THE MEASUREMENT IS A TEST. The generator
+ * `maximalBoardSpec()` in `src/__tests__/lib/board/maximal-board-spec.ts`
+ * builds the schema-valid ALL-FIELDS-MAX document from the constants above:
+ * every prose field at its code-point bound, all {@link BOARD_MAX_POOLS}
+ * pools, all {@link BOARD_MAX_NOTES} notes, every optional hydration field at its
+ * width, all {@link BOARD_MAX_ANNOTATIONS} annotations as zones (the heaviest
+ * member of the union), and a full {@link BOARD_MAX_CANDLES}-bar series of
+ * maximum-width decimals - and `spec.test.ts` measures it:
  *
- *  - analysis: {@link BOARD_MAX_POOLS} x {@link BOARD_ANALYSIS_RULE}.maxChars
- *    = 8 x 10,000 = 80,000 characters. Latin prose costs 80,000 bytes; prose
- *    in a two-byte script (Cyrillic, Greek, Hebrew) costs 160,000 bytes, and
- *    that two-byte figure is the one this budget is sized against.
- *  - notes: {@link BOARD_MAX_NOTES} x {@link BOARD_NOTE_RULE}.maxChars = 12 x
- *    600 = 7,200 characters, or 14,400 bytes in the same two-byte script.
- *  - descriptions: 8 x {@link BOARD_DESCRIPTION_RULE}.maxChars = 8,000
- *    characters of PROVIDER prose, 16,000 bytes in the same script.
- *  - the rest of an authored board: title (80), 8 captions (140 each), 12
- *    annotation labels (60 each) and the 8 hydration rows the runtime writes
- *    (token names and symbols dominate). Call it 16 KiB.
- *  - a full chart: 200 candles of maximum-width decimal strings, ~32 KiB.
+ *   - two-byte script (Cyrillic, Greek, Hebrew): 272,697 bytes;
+ *   - Latin: 161,945 bytes.
  *
- * MEASURED, NOT ESTIMATED. Every field at its bound, in a two-byte script,
- * with a full chart: 251,963 bytes, inside 256 KiB with ~10 KiB spare. Without
- * the chart: 208,556. The same board with NO provider descriptions: 235,979
- * with a chart. Those are the figures the bounds above actually produce, and
- * the description ceiling was chosen FROM this table rather than before it.
+ * 327,680 admits the two-byte worst case with 54,983 bytes of headroom. The
+ * two-byte figure is the one the budget is sized against, because a user may
+ * ask for analysis in such a script and the board must not become unstorable
+ * for it.
  *
- * What can still exceed the budget is 4-byte emoji-dense prose at the same
- * bounds (8 x 10,000 code points at 4 bytes each is 320,000 bytes of analysis
- * alone), and that board is REFUSED WHOLE with its size and heaviest pool
- * named, never trimmed to fit.
+ * WHY THE PREVIOUS 262,144 WAS WRONG. It was chosen from hand arithmetic over
+ * a SUBSET of the fields, and the doc claimed a worst case of 251,963 bytes.
+ * That figure omitted the provider descriptions at their bound together with
+ * the maximum-width hydration labels, the widest decimals and the widest
+ * annotation set; the real all-fields-max document is 272,697 bytes. A board
+ * the schema ACCEPTED could therefore be refused by the budget with nothing
+ * the model had authored that it could shorten. Any bound raised above now
+ * moves the generated document, which moves the measured figure, which fails
+ * `spec.test.ts` until this constant is re-derived.
+ *
+ * WHAT IS STILL REFUSED, deliberately: emoji-dense assessments at the same
+ * bounds. `BOARD_ANALYSIS_RULE` counts CODE POINTS, so eight 10,000-code-point
+ * assessments of 4-byte emoji are 320,000 bytes of analysis alone and the
+ * document lands past this ceiling. That board is refused WHOLE, with its
+ * measured size and heaviest pool named, and is never trimmed to fit.
  *
  * DOWNSTREAM INVARIANT: `TOOL_ARGS_DISPLAY_CEILING` in
  * `vex-app/src/shared/schemas/messages.ts` must stay ABOVE this budget plus
  * the BoardCompose args envelope, or a legal board's tool args would fall off
- * the transcript as `null`.
+ * the transcript as `null`. That invariant is pinned in
+ * `vex-app/src/shared/schemas/__tests__/messages.test.ts` against the SAME
+ * generator, so raising this constant re-measures the envelope rather than
+ * re-guessing it.
  */
-export const BOARD_SPEC_MAX_BYTES = 262_144;
+export const BOARD_SPEC_MAX_BYTES = 327_680;
 
 /**
  * Staleness horizon for hydrated market data, in milliseconds.
@@ -293,7 +332,18 @@ const CHAIN_SLUG_PATTERN = /^[a-z0-9-]+$/;
  * file's only legal dependency is zod (see the header), which is what keeps it
  * loadable in the untrusted renderer.
  */
-export const BOARD_ICON_ID_PATTERN = /^[A-Za-z0-9_-]{4,128}$/;
+/** Shortest handle the provider mints. */
+export const BOARD_ICON_ID_MIN_CHARS = 4;
+/** Longest handle the provider mints, and the width the byte budget charges for it. */
+export const BOARD_ICON_ID_MAX_CHARS = 128;
+/**
+ * Built from the two bounds above rather than spelled twice, so the width the
+ * budget's all-fields-max document uses is the width this pattern enforces.
+ * `.source` is unchanged: `^[A-Za-z0-9_-]{4,128}$`.
+ */
+export const BOARD_ICON_ID_PATTERN = new RegExp(
+  `^[A-Za-z0-9_-]{${BOARD_ICON_ID_MIN_CHARS},${BOARD_ICON_ID_MAX_CHARS}}$`,
+);
 
 /** Pool identity as the provider spells it. Base58 or hex-without-prefix. */
 const PAIR_ADDRESS_PATTERN = /^[A-Za-z0-9]+$/;
@@ -371,8 +421,12 @@ export function compareDecimalStrings(left: string, right: string): -1 | 0 | 1 {
 /** One pool the agent chose to display. */
 export const boardPoolInputSchema = z
   .object({
-    chain: z.string().min(1).max(32).regex(CHAIN_SLUG_PATTERN),
-    pairAddress: z.string().min(1).max(128).regex(PAIR_ADDRESS_PATTERN),
+    chain: z.string().min(1).max(BOARD_CHAIN_SLUG_MAX_CHARS).regex(CHAIN_SLUG_PATTERN),
+    pairAddress: z
+      .string()
+      .min(1)
+      .max(BOARD_PAIR_ADDRESS_MAX_CHARS)
+      .regex(PAIR_ADDRESS_PATTERN),
     caption: boardText(BOARD_CAPTION_RULE).optional(),
     /**
      * The model's full assessment of this token, or null when it wrote none.
@@ -518,11 +572,11 @@ const hydratedSignedDecimal = z
 /** The provider snapshot for one pool, as of `marketDataFetchedAt`. */
 export const boardHydratedRowSchema = z
   .object({
-    baseTokenSymbol: z.string().min(1).max(512).nullable(),
-    baseTokenName: z.string().min(1).max(512).nullable(),
-    quoteTokenSymbol: z.string().min(1).max(512).nullable(),
-    chainId: z.string().min(1).max(32).nullable(),
-    dexId: z.string().min(1).max(64).nullable(),
+    baseTokenSymbol: z.string().min(1).max(BOARD_TOKEN_LABEL_MAX_CHARS).nullable(),
+    baseTokenName: z.string().min(1).max(BOARD_TOKEN_LABEL_MAX_CHARS).nullable(),
+    quoteTokenSymbol: z.string().min(1).max(BOARD_TOKEN_LABEL_MAX_CHARS).nullable(),
+    chainId: z.string().min(1).max(BOARD_CHAIN_SLUG_MAX_CHARS).nullable(),
+    dexId: z.string().min(1).max(BOARD_DEX_ID_MAX_CHARS).nullable(),
     priceUsd: hydratedDecimal,
     priceChange: z
       .object({
@@ -568,7 +622,7 @@ export const boardHydratedRowSchema = z
       .string()
       .regex(
         BOARD_ICON_ID_PATTERN,
-        "must be a DexScreener CMS icon handle: 4 to 128 characters of A-Z, a-z, 0-9, hyphen or underscore",
+        `must be a DexScreener CMS icon handle: ${BOARD_ICON_ID_MIN_CHARS} to ${BOARD_ICON_ID_MAX_CHARS} characters of A-Z, a-z, 0-9, hyphen or underscore`,
       )
       .nullable()
       .default(null),
@@ -631,8 +685,8 @@ export const boardCandleSeriesSchema = z
 /** Where the hydration bytes came from. */
 export const boardProvenanceSchema = z
   .object({
-    transport: z.string().min(1).max(64),
-    sourceObservation: z.string().min(1).max(512),
+    transport: z.string().min(1).max(BOARD_PROVENANCE_TRANSPORT_MAX_CHARS),
+    sourceObservation: z.string().min(1).max(BOARD_PROVENANCE_OBSERVATION_MAX_CHARS),
   })
   .strict();
 

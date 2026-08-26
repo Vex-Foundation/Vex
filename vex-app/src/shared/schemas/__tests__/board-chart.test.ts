@@ -109,6 +109,66 @@ describe("the result carries the resolution it was read at", () => {
   });
 });
 
+describe("the volume histogram's count is checked against the array it counts", () => {
+  function seriesResult(
+    volumes: readonly (string | null)[],
+    volumelessBars: number,
+  ): unknown {
+    return {
+      subject: SUBJECT,
+      resolution: "2h",
+      outcome: {
+        kind: "series",
+        series: {
+          bars: volumes.map((_, index) => ({
+            tMs: 1_787_700_000_000 + index * 7_200_000,
+            o: "1.5",
+            h: "1.9",
+            l: "1.4",
+            c: "1.8",
+          })),
+          lastBarPartial: false,
+          coveredRange: {
+            fromMs: 1_787_700_000_000,
+            toMs: 1_787_700_000_000 + volumes.length * 7_200_000,
+          },
+          resolution: "2h",
+          truncated: false,
+        },
+        requestedBars: volumes.length,
+        providerBars: volumes.length,
+        undrawableBars: 0,
+        windowedOutBars: 0,
+        volumes,
+        volumelessBars,
+        fetchedAtMs: 1_787_741_000_000,
+      },
+    };
+  }
+
+  it("accepts a count that equals the nulls in `volumes`", () => {
+    expect(
+      boardChartPollResultSchema.safeParse(
+        seriesResult(["10", null, "30", null], 2),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("refuses a count that UNDERSTATES the whitespace the histogram will show", () => {
+    expect(
+      boardChartPollResultSchema.safeParse(
+        seriesResult(["10", null, "30", null], 1),
+      ).success,
+    ).toBe(false);
+  });
+
+  it("refuses a count that overstates it", () => {
+    expect(
+      boardChartPollResultSchema.safeParse(seriesResult(["10", "20"], 1)).success,
+    ).toBe(false);
+  });
+});
+
 describe("the identity key", () => {
   it("lower-cases both halves, because providers vary case", () => {
     expect(boardChartKey({ chain: "Solana", pairAddress: "AbC" })).toBe("solana:abc");

@@ -115,6 +115,10 @@ export async function syncSolanaWalletBalances(
     frozen: read.stats.frozenAccounts,
     zeroSkipped: read.stats.zeroSkipped,
     metadataMissing: read.stats.metadataMissing,
+    // WHY each price was chosen, not just how many are missing: tier 0 is a
+    // stablecoin-quoted pool, tier 1 is wSOL-quoted x our SOL price, and
+    // `unpriced` is what our own rule refused rather than guessed at.
+    priceTiers: read.stats.priceTiers,
   });
   return { chainId: SOLANA_SYNTHETIC_CHAIN_ID, tokensUpdated: count, skipped: false };
 }

@@ -22,7 +22,10 @@ import type { NarrativeIdentity } from "@tools/dexscreener/endpoints/metas.js";
 import type { TopTraderRow } from "@tools/dexscreener/endpoints/top-traders.js";
 import { DexScreenerSiteErrorCodes } from "@tools/dexscreener/site-errors.js";
 import { SCREEN_WINDOWS } from "@tools/dexscreener/screen-core/request.js";
-import { boardMomentumWindows } from "@shared/schemas/board-spotlight.js";
+import {
+  boardMomentumWindows,
+  boardTopTradersPanelSchema,
+} from "@shared/schemas/board-spotlight.js";
 import {
   createBoardSpotlightService,
   type BoardSpotlightServiceDeps,
@@ -167,15 +170,36 @@ describe("smart money is a 30-day pair-local cash flow panel and says so", () =>
     await service.dispose();
   });
 
-  it("keeps the provider's ranking FROZEN and reports how many rows existed", async () => {
+  it("delivers EVERY row the provider returned, in its frozen order", async () => {
+    // The provider's leaderboard is the bound and it has no offset, cursor or
+    // page: a row dropped here is a row no caller could ever ask for again.
     const service = build();
     const outcome = await service.topTraders(SUBJECT);
     expect(outcome.kind).toBe("traders");
     if (outcome.kind !== "traders") return;
-    // Cut to the panel size, never re-ranked here.
-    expect(outcome.rows.map((row) => row.providerRank)).toEqual([1, 2, 3, 4, 5]);
-    // And the count is honest about what was withheld by the cut.
+    expect(outcome.rows.map((row) => row.providerRank)).toEqual([
+      1, 2, 3, 4, 5, 6, 7,
+    ]);
+    // The echoed count matches what was delivered: nothing was withheld.
     expect(outcome.rowsAvailable).toBe(7);
+    expect(outcome.rows).toHaveLength(outcome.rowsAvailable);
+    await service.dispose();
+  });
+
+  it("carries a provider label WHOLE, however long it is", async () => {
+    const label = `Whale ${"x".repeat(400)} desk`;
+    const service = build({
+      fetchTraders: async () => ({
+        rows: [traderRow(1, { label })],
+        fetchedAtMs: 1_787_741_000_000,
+      }),
+    });
+    const outcome = await service.topTraders(SUBJECT);
+    expect(outcome.kind).toBe("traders");
+    if (outcome.kind !== "traders") return;
+    expect(outcome.rows[0]?.label).toBe(label);
+    // And the contract accepts it: a bound here may reject, never cut.
+    expect(boardTopTradersPanelSchema.parse(outcome).rows[0]?.label).toBe(label);
     await service.dispose();
   });
 

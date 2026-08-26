@@ -18,6 +18,8 @@ import splResponse from "../../../fixtures/solana/spl-response.json" with { type
 import token2022Response from "../../../fixtures/solana/t22-response.json" with { type: "json" };
 import frozenFixture from "../../../fixtures/solana/frozen-account.json" with { type: "json" };
 import malformedFixture from "../../../fixtures/solana/malformed-amount-account.json" with { type: "json" };
+import u8DecimalsFixture from "../../../fixtures/solana/u8-decimals-account.json" with { type: "json" };
+import zeroConflictFixture from "../../../fixtures/solana/zero-amount-decimals-conflict.json" with { type: "json" };
 
 /**
  * The fixtures are read through a schema rather than a cast: a fixture that
@@ -138,6 +140,61 @@ describe("projectTokenAccounts (live probe fixtures)", () => {
     expect(projection.failures).toEqual([
       { pubkey: "CoNf1ictAccountPubkey11111111111111111111111", reason: "mint-decimals-conflict" },
     ]);
+  });
+
+  it("accepts decimals at the top of the SPL mint's u8 range (255)", () => {
+    // The Mint account stores `decimals` as a u8, so 255 is legal on-chain. The
+    // old <= 32 cap would have turned this account into a schema failure, and a
+    // failure makes the sync owner skip the WHOLE chain.
+    const projection = projectTokenAccounts([entryOf(u8DecimalsFixture)]);
+    expect(projection.failures).toEqual([]);
+    expect(projection.holdings).toEqual([
+      {
+        mint: "5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm",
+        amountRaw: "7",
+        decimals: 255,
+        frozen: false,
+        accountCount: 1,
+      },
+    ]);
+  });
+
+  it("rejects decimals above the u8 range as a schema failure", () => {
+    const entry = entryOf(u8DecimalsFixture);
+    const mutable = tokenAccountDataSchema.parse(structuredClone(entry.data));
+    mutable.parsed.info.tokenAmount.decimals = 256;
+    const projection = projectTokenAccounts([{ pubkey: entry.pubkey, data: mutable }]);
+    expect(projection.failures).toEqual([
+      { pubkey: entry.pubkey, reason: "schema-parse-failed" },
+    ]);
+    expect(projection.holdings).toEqual([]);
+  });
+
+  it("reports a ZERO account whose decimals conflict with a held account of the same mint", () => {
+    // The zero account used to be skipped before the agreement check, so this
+    // self-contradicting response passed as a clean read.
+    const projection = projectTokenAccounts([entryOf(frozenFixture), entryOf(zeroConflictFixture)]);
+    expect(projection.failures).toEqual([
+      { pubkey: "ZeroConf1ictAccountPubkey111111111111111111", reason: "mint-decimals-conflict" },
+    ]);
+    // A conflicting account is a failure and NOTHING else: never zero-skipped.
+    expect(projection.zeroSkipped).toBe(0);
+    expect(projection.holdings).toEqual([
+      { mint: BONK, amountRaw: "250000", decimals: 5, frozen: true, accountCount: 1 },
+    ]);
+  });
+
+  it("reports the conflict in the same way when the ZERO account arrives FIRST", () => {
+    // Order independence matters: the first account seen sets the mint's
+    // decimals, and either ordering must still fail closed rather than write a
+    // holding at whichever spelling happened to arrive first.
+    const projection = projectTokenAccounts([entryOf(zeroConflictFixture), entryOf(frozenFixture)]);
+    expect(projection.failures).toEqual([
+      { pubkey: "CKMW8Bz4GMqQ4rN49AswqiEaQiCSXJ6tk5933e5HTmoc", reason: "mint-decimals-conflict" },
+    ]);
+    expect(projection.holdings).toEqual([]);
+    expect(projection.zeroSkipped).toBe(1);
+    expect(projection.frozenAccounts).toBe(0);
   });
 
   it("rejects an account whose parsed type is not a token account", () => {

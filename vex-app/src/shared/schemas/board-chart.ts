@@ -126,7 +126,19 @@ export const boardChartOutcomeSchema = z.discriminatedUnion("kind", [
     .refine((value) => value.volumes.length === value.series.bars.length, {
       message: "volumes must be aligned one-to-one with series.bars",
       path: ["volumes"],
-    }),
+    })
+    .refine(
+      (value) =>
+        value.volumelessBars ===
+        value.volumes.filter((volume) => volume === null).length,
+      {
+        // The count is a CLAIM about the array beside it, and a claim that can
+        // drift from what it counts is worse than no claim: the histogram would
+        // show whitespace the footer says is not there.
+        message: "volumelessBars must equal the number of null volumes",
+        path: ["volumelessBars"],
+      },
+    ),
   z
     .object({
       kind: z.literal("absent"),
