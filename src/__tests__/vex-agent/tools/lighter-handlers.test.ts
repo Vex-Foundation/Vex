@@ -570,9 +570,62 @@ describe("Lighter agent read handlers", () => {
       toolId: null,
       params: null,
     });
-    expect(data.userGuidance).toContain("How much USDC do you want to deposit?");
+    expect(data.userGuidance).toContain("Use this as a concise sample draft");
+    expect(data.userGuidance).toContain("Deposit required to activate Lighter trading");
+    expect(data.userGuidance).toContain("first USDC deposit");
+    expect(data.userGuidance).toContain("Lighter Core trading account");
+    expect(data.userGuidance).toContain("Minimum deposit: 1 USDC");
+    expect(data.userGuidance).toContain("Available in your wallet: 5 USDC");
+    expect(data.userGuidance).toContain("How much USDC would you like to deposit?");
+    expect(data.userGuidance).toContain("nothing moves without your confirmation");
+    expect(data.userGuidance).toContain("Do not say the deposit alone activates trading");
+    expect(data.userGuidance).toContain("do not prepare a deposit until the user supplies the amount");
     expect(data.userGuidance).not.toContain("provide your account index");
     expect(data.userGuidance).not.toContain("choose an API-key index");
+  });
+
+  it("drafts the same required-deposit priority with RHC and USDG live values", async () => {
+    mocks.onboarding.resolveStatus.mockResolvedValue({
+      environment: "rhc",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      walletSettlementUnits: "12000000",
+      walletCanAcquireSettlement: false,
+      accountExists: false,
+      accountIndex: null,
+      accountCollateralUnits: "0",
+      tradingKeyRegistered: false,
+      requiredCollateralUnits: "1000000",
+      minimumDepositUnits: "1000000",
+      plan: {
+        legs: [
+          { kind: "approve_settlement_asset", reason: "approval" },
+          { kind: "deposit", reason: "first deposit" },
+          { kind: "register_trading_key", reason: "secure setup" },
+        ],
+        ready: false,
+        blocked: null,
+        depositUnits: "1000000",
+        acquireUnits: null,
+      },
+    });
+
+    const data = await callJson("lighter.account.onboarding.status", {
+      environment: "rhc",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+    });
+
+    expect(data.fundingRoute).toEqual({
+      kind: "ask_for_deposit_amount",
+      toolId: null,
+      params: null,
+    });
+    expect(data.userGuidance).toContain("first USDG deposit");
+    expect(data.userGuidance).toContain("Lighter RHC trading account");
+    expect(data.userGuidance).toContain("Minimum deposit: 1 USDG");
+    expect(data.userGuidance).toContain("Available in your wallet: 12 USDG");
+    expect(data.userGuidance).toContain("How much USDG would you like to deposit?");
+    expect(data.userGuidance).not.toContain("Lighter Core trading account");
+    expect(data.userGuidance).not.toContain("USDC");
   });
 
   it("routes a known trade shortfall directly to the deposit approval card", async () => {
