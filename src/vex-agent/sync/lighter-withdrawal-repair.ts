@@ -2,7 +2,10 @@
 
 import { getLighterClient } from "@tools/lighter/client.js";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
-import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
+import {
+  getUniswapHistoricalPublicClient,
+  getUniswapPublicClient,
+} from "@tools/uniswap/evm-client.js";
 import * as leasesRepo from "@vex-agent/db/repos/lighter-evm-execution-leases.js";
 import * as claimsRepo from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
 import * as intentsRepo from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
@@ -33,6 +36,7 @@ export async function repairUnresolvedLighterWithdrawals(): Promise<LighterWithd
       const deployment = getUniswapDeployment(intent.settlementChainId);
       if (deployment === undefined) throw new Error("Settlement network is unavailable for Lighter withdrawal repair.");
       const publicClient = getUniswapPublicClient(deployment);
+      const historicalPublicClient = getUniswapHistoricalPublicClient(deployment);
       const claim = await claimsRepo.findLatestForWithdrawalIntent(intent.intentId);
       if (claim?.state === "prepared" && Date.parse(claim.expiresAt) <= Date.now()) {
         await withSessionControlLocks([intent.sessionId, claim.sessionId], (db) =>
@@ -57,7 +61,13 @@ export async function repairUnresolvedLighterWithdrawals(): Promise<LighterWithd
         awaitingVault += 1;
         continue;
       }
-      const reconciled = await reconcileLighterWithdrawal({ intent, client, privilegedAuth: auth, publicClient });
+      const reconciled = await reconcileLighterWithdrawal({
+        intent,
+        client,
+        privilegedAuth: auth,
+        publicClient,
+        historicalPublicClient,
+      });
       if (reconciled.executionState === intent.executionState) awaitingEvidence += 1;
       else advanced += 1;
     } catch (error) {

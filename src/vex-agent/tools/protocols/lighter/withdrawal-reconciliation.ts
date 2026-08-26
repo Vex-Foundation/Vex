@@ -35,6 +35,7 @@ export async function reconcileLighterCoreWithdrawal(input: {
   readonly client: Pick<LighterClient, "getTx" | "getWithdrawHistory">;
   readonly privilegedAuth: LighterPrivilegedAccountAuth;
   readonly publicClient: PublicClient;
+  readonly historicalPublicClient?: PublicClient;
   readonly intents?: Pick<typeof intentsRepo, "recordReconciliation">;
   readonly claims?: Pick<typeof claimsRepo, "markReconciledOutcome">;
 }): Promise<LighterWithdrawalIntentRow> {
@@ -49,6 +50,7 @@ export async function reconcileLighterWithdrawal(input: {
   readonly client: Pick<LighterClient, "getTx" | "getWithdrawHistory">;
   readonly privilegedAuth: LighterPrivilegedAccountAuth;
   readonly publicClient: PublicClient;
+  readonly historicalPublicClient?: PublicClient;
   readonly intents?: Pick<typeof intentsRepo, "recordReconciliation">;
   readonly claims?: Pick<typeof claimsRepo, "markReconciledOutcome">;
 }): Promise<LighterWithdrawalIntentRow> {
@@ -66,6 +68,7 @@ export async function reconcileLighterWithdrawal(input: {
   if (input.privilegedAuth.accountIndex !== intent.accountIndex) {
     throw invalid(`Read-only ${profile.sourceName} authorization does not match the withdrawal account.`);
   }
+  const historicalPublicClient = input.historicalPublicClient ?? input.publicClient;
 
   const [tx, history, pendingBalance, settlement] = await Promise.all([
     input.client.getTx(intent.environment, { by: "hash", value: intent.signerTxHash }),
@@ -76,7 +79,7 @@ export async function reconcileLighterWithdrawal(input: {
       functionName: "getPendingBalance",
       args: [intent.destinationAddress as `0x${string}`, profile.assetIndex],
     }),
-    scanSettlement(input.publicClient, intent),
+    scanSettlement(historicalPublicClient, intent),
   ]);
   const l2 = proveLighterCoreWithdrawalL2Transaction({
     tx,
@@ -140,7 +143,7 @@ export async function reconcileLighterWithdrawal(input: {
     }
     return reconcileDestinationTransaction({
       intent,
-      publicClient: input.publicClient,
+      publicClient: historicalPublicClient,
       repo,
       pendingBalance,
       common,
@@ -199,7 +202,7 @@ export async function reconcileLighterWithdrawal(input: {
   }
   return reconcileDestinationTransaction({
     intent,
-    publicClient: input.publicClient,
+    publicClient: historicalPublicClient,
     repo,
     pendingBalance,
     common,

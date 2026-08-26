@@ -28,7 +28,10 @@ vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", ()
 }));
 vi.mock("@tools/lighter/client.js", () => ({ getLighterClient: vi.fn(() => ({})) }));
 vi.mock("@tools/uniswap/deployments.js", () => ({ getUniswapDeployment: vi.fn(() => ({ chainId: 1 })) }));
-vi.mock("@tools/uniswap/evm-client.js", () => ({ getUniswapPublicClient: vi.fn(() => ({})) }));
+vi.mock("@tools/uniswap/evm-client.js", () => ({
+  getUniswapPublicClient: vi.fn(() => ({ purpose: "latest" })),
+  getUniswapHistoricalPublicClient: vi.fn(() => ({ purpose: "historical" })),
+}));
 
 const { repairUnresolvedLighterWithdrawals } = await import(
   "@vex-agent/sync/lighter-withdrawal-repair.js"
@@ -64,6 +67,10 @@ describe("background Lighter withdrawal repair", () => {
       examined: 1, advanced: 1, awaitingVault: 0, errors: 0,
     });
     expect(mocks.reconcile).toHaveBeenCalledTimes(1);
+    expect(mocks.reconcile).toHaveBeenCalledWith(expect.objectContaining({
+      publicClient: { purpose: "latest" },
+      historicalPublicClient: { purpose: "historical" },
+    }));
   });
 
   it("uses RHC read authorization and settlement identity for RHC candidates", async () => {

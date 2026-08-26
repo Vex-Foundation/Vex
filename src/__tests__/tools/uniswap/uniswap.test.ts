@@ -35,6 +35,12 @@ function tok(address: Address, isNative = false): UniswapToken {
 // ── Deployment registry + spender allowlist ─────────────────────────────────
 
 describe("uniswap deployment registry", () => {
+  it("pins a separate historical evidence RPC for Ethereum", () => {
+    const ethereum = getUniswapDeployment(1);
+    expect(ethereum?.defaultRpcUrl).toBe("https://ethereum-rpc.publicnode.com");
+    expect(ethereum?.historicalRpcUrl).toBe("https://eth.drpc.org");
+  });
+
   it("has the on-chain-verified Robinhood 4663 deployment", () => {
     expect(ROBINHOOD.chainId).toBe(4663);
     expect(ROBINHOOD.v2?.router02.toLowerCase()).toBe("0x89e5db8b5aa49aa85ac63f691524311aeb649eba");

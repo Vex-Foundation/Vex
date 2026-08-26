@@ -22,7 +22,11 @@ import { decimalToBaseUnits } from "@tools/lighter/wallet-funding/onboarding-pla
 import { acquireLighterDepositExecutionLease } from "@tools/lighter/wallet-funding/execution-lease.js";
 import { signStageBroadcast } from "@tools/evm-chains/staged-broadcast.js";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
-import { getUniswapEvmClients, getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
+import {
+  getUniswapEvmClients,
+  getUniswapHistoricalPublicClient,
+  getUniswapPublicClient,
+} from "@tools/uniswap/evm-client.js";
 import * as withdrawalIntentsRepo from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
 import * as withdrawalClaimsRepo from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
 import type { LighterWithdrawalIntentRow } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
@@ -366,6 +370,7 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
           client: getLighterClient(),
           privilegedAuth,
           publicClient: getUniswapPublicClient(settlement),
+          historicalPublicClient: getUniswapHistoricalPublicClient(settlement),
         });
       } catch {
         return ok({

@@ -77,6 +77,12 @@ export interface UniswapDeployment {
    * matches `tools/kyberswap/evm/config.ts` DEFAULT_RPC (publicnode).
    */
   readonly defaultRpcUrl: string;
+  /**
+   * Optional read-only RPC proven to serve historical receipts and event logs.
+   * This is deliberately separate from the normal quote/broadcast transport so
+   * evidence repair cannot silently change an execution provider.
+   */
+  readonly historicalRpcUrl?: string;
 }
 
 const STANDARD_V3_FEE_TIERS = [100, 500, 3000, 10000] as const;
@@ -130,6 +136,9 @@ const ETHEREUM: UniswapDeployment = {
     feeTiers: STANDARD_V3_FEE_TIERS,
   },
   defaultRpcUrl: "https://ethereum-rpc.publicnode.com",
+  // Live-verified 2026-08-26: serves the exact Lighter gateway receipt and
+  // owner-filtered logs that PublicNode rejected as an archive request.
+  historicalRpcUrl: "https://eth.drpc.org",
 };
 
 // ── Base (8453) ── verified 2026-07-05 (V2 factory allPairsLength=3030579) ──

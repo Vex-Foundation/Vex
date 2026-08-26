@@ -337,6 +337,31 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
     }));
   });
 
+  it("uses the historical evidence client for settlement logs and receipts", async () => {
+    const d = reconciliationDeps({ pendingBalance: 0n });
+    d.publicClient.getLogs.mockRejectedValue(new Error("archive requests require a personal token"));
+    const historicalPublicClient = {
+      getBlockNumber: vi.fn(async () => 111n),
+      getLogs: vi.fn(async () => [{
+        args: { owner: OWNER, assetIndex: 3, baseAmount: 2_000_000n },
+        transactionHash: TX_HASH,
+      }]),
+      getTransactionReceipt: vi.fn(async () => receipt()),
+      getBlock: vi.fn(async () => ({ hash: BLOCK_HASH })),
+    };
+
+    const reconciled = await reconcileLighterCoreWithdrawal({
+      ...d,
+      historicalPublicClient,
+    } as never);
+
+    expect(reconciled.executionState).toBe("destination_confirmed");
+    expect(d.publicClient.readContract).toHaveBeenCalledTimes(1);
+    expect(d.publicClient.getLogs).not.toHaveBeenCalled();
+    expect(historicalPublicClient.getLogs).toHaveBeenCalledTimes(1);
+    expect(historicalPublicClient.getTransactionReceipt).toHaveBeenCalledWith({ hash: TX_HASH });
+  });
+
   it("turns a provider tx regression after proven execution into ambiguity", async () => {
     const d = reconciliationDeps({ state: "secure_waiting", l2Status: 1 });
     await reconcileLighterCoreWithdrawal(d as never);

@@ -65,6 +65,27 @@ export function getUniswapPublicClient(
   }) as PublicClient<Transport, Chain>;
 }
 
+/**
+ * Read-only client for durable receipt and event-log evidence.
+ *
+ * It never signs or broadcasts. Deployments without a separately reviewed
+ * historical endpoint retain the normal public-client behavior.
+ */
+export function getUniswapHistoricalPublicClient(
+  deployment: UniswapDeployment,
+): PublicClient<Transport, Chain> {
+  if (deployment.historicalRpcUrl === undefined) {
+    return getUniswapPublicClient(deployment);
+  }
+  return createPublicClient({
+    chain: toViemChain(deployment),
+    transport: http(deployment.historicalRpcUrl, {
+      timeout: RPC_TIMEOUT_MS,
+      retryCount: RPC_RETRY_COUNT,
+    }),
+  }) as PublicClient<Transport, Chain>;
+}
+
 /** Public + wallet clients for broadcast. Decrypts nothing beyond the passed key. */
 export function getUniswapEvmClients(
   deployment: UniswapDeployment,
