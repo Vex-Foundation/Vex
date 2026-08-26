@@ -218,8 +218,8 @@ describe("injected schemas", () => {
   }
 
   it("are appended POSITIONALLY LAST, after the internal tools", () => {
-    // D-DS9: dexscreener is always injected, so the DISCOVERY-appended probe
-    // uses a namespace outside the always-injected set.
+    // The stable internal block first, the volatile discovered block last: the
+    // longest possible prefix for a provider that prefix-caches tool defs.
     const before = getOpenAITools(ctx());
     const manifest = PROTOCOL_TOOLS.find(
       (m) => m.namespace === "uniswap" && !m.mutating,
@@ -234,19 +234,20 @@ describe("injected schemas", () => {
     expect(last.function.name).toBe(toInjectedToolName(manifest.toolId));
   });
 
-  it("carries EXACTLY the always-injected block when nothing was discovered (D-DS9)", () => {
+  it("carries NO injected tool at all when nothing was discovered (D-DS9-R)", () => {
+    // The restored law: the tools array is the DISCOVERED set intersected with
+    // the visibility gates, so a fresh session is offered zero protocol tools
+    // and every one it IS offered has already been recorded as callable by
+    // `dispatcher/protocol-route.ts`'s admission check. D-DS9 broke that
+    // subset property by widening injection without widening admission; this
+    // assertion is what goes red if it is reintroduced.
     const withSession = getOpenAITools(ctx());
     const withoutSession = getOpenAITools(defaultVisibilityContext());
     expect(withSession).toEqual(withoutSession);
-    // The only injected-shaped names with an empty working set are the
-    // always-injected dexscreener block - present in full, and nothing else.
-    const injectedShaped = withSession
-      .map((t) => t.function.name)
-      .filter((n) => isInjectedToolNameShape(n));
-    const dexscreener = PROTOCOL_TOOLS.filter((m) => m.namespace === "dexscreener");
-    expect(injectedShaped.sort()).toEqual(
-      dexscreener.map((m) => m.publicName).sort(),
-    );
+    expect(buildInjectedProtocolTools(ctx())).toEqual([]);
+    expect(
+      withSession.map((t) => t.function.name).filter((n) => isInjectedToolNameShape(n)),
+    ).toEqual([]);
   });
 });
 
@@ -292,30 +293,19 @@ describe("injection gates", () => {
     // whether the tool exists.
     recordDiscoveredTools(SESSION, ["uniswap.swap.quote", "uniswap.swap.execute"]);
     const names = buildInjectedProtocolTools(ctx()).map((t) => t.function.name);
-    // D-DS9 prepends the always-injected dexscreener block; the discovered
-    // pair still appears, in discovery order, after it.
-    expect(names.slice(-2)).toEqual(["uniswap__swap_quote", "uniswap__swap_execute"]);
+    // EXACTLY the discovered pair, in discovery order, and nothing else: the
+    // injected block is the working set, never a superset of it.
+    expect(names).toEqual(["uniswap__swap_quote", "uniswap__swap_execute"]);
   });
 
-  it("injects every dexscreener tool with an EMPTY working set (owner decision D-DS9)", () => {
-    // No discovery at all: the market-research namespace is still fully
-    // present, in catalog order, so the agent can call it from its first
-    // token. Reversal of D-DS9 is deleting the namespace from
-    // ALWAYS_INJECTED_NAMESPACES, at which point this test goes with it.
-    const names = buildInjectedProtocolTools(ctx()).map((t) => t.function.name);
-    const dexscreener = PROTOCOL_TOOLS.filter((m) => m.namespace === "dexscreener");
-    expect(dexscreener.length).toBeGreaterThan(0);
-    for (const manifest of dexscreener) {
-      expect(names).toContain(manifest.publicName);
-    }
-    expect(names).toHaveLength(dexscreener.length);
-  });
-
-  it("does not duplicate an always-injected tool the session also discovered", () => {
+  it("injects a discovered tool exactly once, in discovery order", () => {
     recordDiscoveredTools(SESSION, ["dexscreener.candles", "uniswap.swap.quote"]);
+    recordDiscoveredTools(SESSION, ["dexscreener.candles"]);
     const names = buildInjectedProtocolTools(ctx()).map((t) => t.function.name);
-    expect(names.filter((n) => n === "dexscreener__candles_list")).toHaveLength(1);
-    expect(names[names.length - 1]).toBe("uniswap__swap_quote");
+    // Re-discovery refreshes position rather than duplicating the schema: a
+    // provider `tools` array with the same function twice is a malformed
+    // request, not a harmless repeat.
+    expect(names).toEqual(["uniswap__swap_quote", "dexscreener__candles_list"]);
   });
 
   it("drops mutating manifests at the pressure barrier, and restores them under the C8 bypass", () => {
@@ -323,10 +313,6 @@ describe("injection gates", () => {
     assert.ok(mutating);
     recordDiscoveredTools(SESSION, [mutating.toolId]);
 
-    // D-DS9: the read-only always-injected dexscreener block survives every
-    // pressure band, so the assertion is about the MUTATING manifest's
-    // presence, not the array being empty.
-    const dexCount = PROTOCOL_TOOLS.filter((m) => m.namespace === "dexscreener").length;
     const name = toInjectedToolName(mutating.toolId);
     const at = (band?: "barrier" | "critical", bypass?: boolean) =>
       buildInjectedProtocolTools(
@@ -335,10 +321,12 @@ describe("injection gates", () => {
 
     expect(at("barrier")).not.toContain(name);
     expect(at("critical")).not.toContain(name);
-    expect(at("barrier")).toHaveLength(dexCount);
+    // The working set held exactly this one manifest, so the barrier leaves an
+    // EMPTY array rather than a shorter one.
+    expect(at("barrier")).toHaveLength(0);
     expect(at("barrier", true)).toContain(name);
     expect(at()).toContain(name);
-    expect(at()).toHaveLength(dexCount + 1);
+    expect(at()).toHaveLength(1);
   });
 });
 

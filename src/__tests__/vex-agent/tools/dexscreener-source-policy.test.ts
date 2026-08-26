@@ -52,29 +52,35 @@ describe("DexScreener agent source policy", () => {
     expect(section).toContain("canonical identity from a ticker");
     expect(section).toContain("not a fresh executable quote");
     expect(section).toContain("executable price");
-    // CONTRACT CHANGE, source-hierarchy card (owner order 2026-08-25). This
-    // used to assert the declaration teaches NO tool name, on the rationale
-    // that a DexScreener tool becomes callable only through `ToolSearch`.
-    // D-DS9 made that rationale false: every dexscreener schema is injected
-    // into each request's tools array, so the declaration now MUST teach the
-    // publicNames or the model pays a discovery round it never needed. The
-    // new pin: the "Always loaded" line exists and lists EXACTLY the
-    // advertised dexscreener publicNames, in catalog order, so the prompt can
-    // never advertise a tool the tools array does not carry. Dotted toolIds
-    // (an identity the catalog rejects as a call) remain banned.
+    // CONTRACT CHANGE, D-DS9 REVERTED (owner order 2026-08-26). D-DS9 injected
+    // every dexscreener schema into each request's tools array, and this
+    // assertion was relaxed to let the declaration teach the publicNames. That
+    // widened VISIBILITY without widening ADMISSION: `protocol-route.ts` admits
+    // a protocol call only when the session's discovered set contains it, and
+    // ToolSearch is the only writer, so the model called the names the prompt
+    // taught it and was refused. Both pins are back, and they are the pair that
+    // matters: no callable publicName (`dexscreener__...`) and no dotted toolId
+    // (`dexscreener.pair.get`) may appear in the static card. What replaces
+    // them is a CAPABILITY-AREA line, which routes a ToolSearch query without
+    // naming anything the dispatcher would refuse.
     expect(section).not.toMatch(/dexscreener\.[a-z]/);
+    expect(section).not.toMatch(/dexscreener__/);
     const advertisedNames = PROTOCOL_TOOLS
       .filter((tool) => tool.namespace === "dexscreener")
       .map((tool) => tool.publicName);
     expect(advertisedNames).toHaveLength(18);
-    const alwaysLoadedLine = section
-      .split("\n")
-      .find((line) => line.startsWith("always loaded:"));
-    expect(alwaysLoadedLine).toBeDefined();
-    for (const name of advertisedNames) {
-      expect(alwaysLoadedLine).toContain(`\`${name}\``);
+
+    const facetLine = section.split("\n").find((line) => line.startsWith("capability areas:"));
+    expect(facetLine).toBeDefined();
+    const declaration = MARKET_PROTOCOL_NAVIGATION
+      .find((entry) => entry.namespace === "dexscreener")?.declaration;
+    expect(declaration?.advertiseFacetsInPrompt).toBe(true);
+    expect(declaration?.facets).toHaveLength(9);
+    for (const facet of declaration?.facets ?? []) {
+      expect(facetLine).toContain(facet.toLowerCase());
     }
-    expect(alwaysLoadedLine).toContain("no toolsearch round needed");
+    // The line's whole job is to end at ToolSearch, not at a call.
+    expect(facetLine).toContain("toolsearch query on this namespace");
 
     const research = (prompt.split("### Research\n")[1]?.split("\n### ")[0] ?? "").toLowerCase();
     expect(research).toContain("dexscreener indexing lags by minutes to hours for brand-new tokens");

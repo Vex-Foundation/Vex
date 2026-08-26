@@ -374,6 +374,13 @@ export class DexScreenerWsBridge {
    * as bytes, text frames as text, and the expectations are included because a
    * caller asking for two frames must not be handed a one-frame result
    * collected for somebody else.
+   *
+   * `coalesceScope` joins the digest when the caller sets one, because WHO owns
+   * the socket decides whose signal and whose deadline control it. A scoped
+   * caller therefore never joins an unscoped one and never joins a differently
+   * scoped one. An ABSENT scope contributes nothing at all - not an empty
+   * string, not a marker - so the digest of every call that existed before this
+   * option is byte-identical to what it was.
    */
   private exchangeDigest(options: WsExchangeOptions): string {
     const hash = createHash("sha256");
@@ -390,6 +397,10 @@ export class DexScreenerWsBridge {
     hash.update(
       `expect:${options.expect.binaryFrames}:${options.expect.maxTotalBytes}`
     );
+    if (options.coalesceScope !== undefined) {
+      hash.update(" scope:");
+      hash.update(options.coalesceScope, "utf8");
+    }
     return hash.digest("hex");
   }
 

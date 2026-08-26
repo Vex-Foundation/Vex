@@ -185,6 +185,16 @@ export interface BatchOptions {
   /** Hard deadline for ONE chunk attempt, in milliseconds. */
   readonly timeoutMs: number;
   readonly signal?: AbortSignal;
+  /**
+   * Forwarded verbatim to the transport as `WsExchangeOptions.coalesceScope`.
+   *
+   * A caller that owns a long-lived loop (the board's live poll) passes its own
+   * scope so its exchanges are never joined to, and never join, an unrelated
+   * caller's socket - the joiner would otherwise inherit the leader's signal
+   * and deadline. Absent means the shared pool, which is what every existing
+   * caller passes and therefore leaves the wire behaviour unchanged.
+   */
+  readonly coalesceScope?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -489,6 +499,9 @@ async function fetchOnePage(
         },
         timeoutMs: options.timeoutMs,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.coalesceScope === undefined
+          ? {}
+          : { coalesceScope: options.coalesceScope }),
       });
     } catch (error) {
       if (isDexScreenerSiteError(error)) throw error;

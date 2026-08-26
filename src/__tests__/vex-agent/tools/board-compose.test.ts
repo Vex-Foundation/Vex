@@ -161,6 +161,58 @@ describe("BoardCompose input contract", () => {
   });
 });
 
+/**
+ * MISSION SETUP CANNOT PRESENT (owner decision K5, 2026-08-26).
+ *
+ * `registry/board.ts` hides `BoardCompose` in mission setup, but a catalog
+ * filter is visibility, not enforcement: a stale tools array or a model that
+ * remembers the name from an earlier turn still emits the call. Setup is
+ * Capability Orientation, and this handler reads live market data on every
+ * call, so it refuses there itself. These cases are what go red if the handler
+ * gate is removed and only the registry flag is left.
+ */
+describe("BoardCompose mode gate", () => {
+  const setupContext = makeTestContext({
+    sessionId: SESSION,
+    sessionKind: "mission",
+    missionRunId: null,
+    modelOriginated: true,
+  });
+  const runContext = makeTestContext({
+    sessionId: SESSION,
+    sessionKind: "mission",
+    missionRunId: "run-1",
+    modelOriginated: true,
+  });
+
+  it("refuses in mission setup, before reading any market data", async () => {
+    beginPresentationScope(SESSION);
+    const result = await handleBoardCompose({ ...VALID_INPUT }, setupContext);
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("mission setup");
+    // The refusal names the real cause and the way forward rather than being an
+    // unexpected error, and it costs the provider nothing.
+    expect(result.output).toContain("Nothing was staged and no market data was read");
+    expect(hydrateBoard).not.toHaveBeenCalled();
+    expect(hasPendingPresentation(SESSION)).toBe(false);
+  });
+
+  it("allows an ACTIVE mission run, which is not setup", async () => {
+    beginPresentationScope(SESSION);
+    const result = await handleBoardCompose({ ...VALID_INPUT }, runContext);
+
+    expect(result.success).toBe(true);
+    expect(hasPendingPresentation(SESSION)).toBe(true);
+    consumePendingPresentation(SESSION);
+  });
+
+  it("the registry hides it in mission setup too, so the two gates agree", async () => {
+    const { getToolDef } = await import("@vex-agent/tools/registry.js");
+    expect(getToolDef("BoardCompose")?.visibility?.hiddenInMissionSetup).toBe(true);
+  });
+});
+
 describe("BoardCompose staging outcomes", () => {
   it("stages nothing when the market data cannot be read, and says why", async () => {
     beginPresentationScope(SESSION);

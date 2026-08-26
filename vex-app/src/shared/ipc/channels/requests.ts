@@ -375,6 +375,43 @@ export const CH = {
   },
 
   /**
+   * Board token icons - one logo for one card of an agent-composed board.
+   *
+   * Deliberately NOT a member of `images` above: that domain is the user's own
+   * launch locker, persisted on disk and on the signing path, while this one is
+   * an in-memory cache over a public CDN with no durable state and nothing to
+   * delete. Sharing a namespace would put two unrelated lifetimes and two
+   * unrelated trust stories behind one name.
+   *
+   * The renderer sends an opaque handle it read out of a persisted board and
+   * gets back a `data:` URL or a NAMED ABSENCE - never a URL, a host or raw
+   * bytes. Around half of all pools have no artwork, so absence is the ordinary
+   * answer here and the card draws a monogram instead.
+   */
+  boardIcons: {
+    read: "vex:boardIcons:read",
+  },
+
+  /**
+   * Board LIVE - a user-held lease that refreshes an open board's card metrics.
+   *
+   * Separate from `boardIcons` because the lifetimes are opposite: an icon is a
+   * cached byte string with no owner and no end, while a lease is owned by one
+   * window, ends on every exit path, and is the only thing in this app a
+   * renderer can ask main to keep polling on its behalf. `capability` is asked
+   * BEFORE the toggle renders so a build with no site bridge shows a disabled
+   * control with an honest label rather than one that fails on first click.
+   *
+   * The subscribe response CARRIES the first snapshot, so there is no race
+   * between claiming the lease and hearing its first tick.
+   */
+  boardLive: {
+    capability: "vex:boardLive:capability",
+    subscribe: "vex:boardLive:subscribe",
+    unsubscribe: "vex:boardLive:unsubscribe",
+  },
+
+  /**
    * Trench Express token launch — the host-mediated form path.
    *
    * `preview` is the AUTHORITATIVE main-side cost read: the creation fee comes

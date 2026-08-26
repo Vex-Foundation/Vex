@@ -25,6 +25,8 @@ import { memoryInspector } from "./memory-inspector.js";
 import { messages } from "./messages.js";
 import { mission } from "./mission.js";
 import { models } from "./models.js";
+import { boardIcons } from "./board-icons.js";
+import { boardLive } from "./board-live.js";
 import { images } from "./images.js";
 import { portfolio } from "./portfolio.js";
 import { projects } from "./projects.js";
@@ -52,6 +54,8 @@ export const agentBridge = {
   portfolio,
   projects,
   images,
+  boardIcons,
+  boardLive,
   poolsLaunch,
   tokenLaunch,
   engine,

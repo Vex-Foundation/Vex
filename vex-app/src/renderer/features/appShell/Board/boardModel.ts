@@ -17,7 +17,8 @@
  * card would misrepresent what the agent actually put on the board.
  */
 
-import type { BoardSpecV1 } from "@vex-lib/board/index.js";
+import type { BoardHydratedRow, BoardSpecV1 } from "@vex-lib/board/index.js";
+import type { BoardDataMode } from "../../../lib/api/board-live.js";
 import {
   boardTrend,
   isBoardMarketDataStale,
@@ -54,22 +55,63 @@ export interface BoardAnnotationRow {
   readonly note: string | null;
 }
 
+/**
+ * The live figures drawn OVER a board, and the mode they were drawn in.
+ *
+ * A separate argument rather than a field of the spec, because the spec is a
+ * durable document and live figures are a lease the reader is holding right
+ * now. Nothing here is ever written back: toggle the lease off and the model
+ * rebuilds from the persisted rows alone.
+ *
+ * Rows are keyed `chain:pairAddress` rather than positioned, because the
+ * provider's batch channel RANKS its answer and a positional pairing would put
+ * one token's price on another token's card the moment that ranking moved.
+ */
+export interface BoardLiveOverlay {
+  readonly mode: BoardDataMode;
+  readonly rowsByKey: ReadonlyMap<string, BoardHydratedRow> | null;
+  /** The clock the live rows were read at, or null when none have landed. */
+  readonly fetchedAtMs: number | null;
+}
+
 export interface BoardViewModel {
   readonly title: string;
   readonly cards: readonly BoardCardModel[];
   readonly notes: readonly string[];
+  /**
+   * Whether the figures ON SCREEN have outlived their freshness window.
+   *
+   * Measured against the clock of whatever is actually being shown: the live
+   * fetch when live rows are up, the persisted fetch otherwise. It stays a
+   * SEPARATE axis from `mode` on purpose - a lease can be connected while its
+   * first tick is still in flight, and the figures under it are still the
+   * composed ones and still aging.
+   */
   readonly stale: boolean;
   readonly analysisCreatedAt: number;
+  /**
+   * The clock of the figures on screen. Advances with a live tick; the
+   * persisted `spec.hydration.marketDataFetchedAt` is never touched.
+   */
   readonly marketDataFetchedAt: number;
+  readonly mode: BoardDataMode;
 }
 
 export function buildBoardViewModel(
   spec: BoardSpecV1,
   now: number,
+  live?: BoardLiveOverlay,
 ): BoardViewModel {
   const rows = spec.hydration.rows;
+  const liveRows = live?.rowsByKey ?? null;
   const cards: BoardCardModel[] = spec.pools.map((pool, index) => {
-    const row = rows[index] ?? null;
+    const persisted = rows[index] ?? null;
+    // The live row REPLACES the persisted one whole, never field by field: a
+    // card assembled from two epochs would show a price from one moment beside
+    // a liquidity figure from another, and nothing on screen would say so.
+    const row =
+      liveRows?.get(`${pool.chain}:${pool.pairAddress}`.toLowerCase()) ??
+      persisted;
     return {
       key: `${pool.chain}/${pool.pairAddress}/${index}`,
       chain: pool.chain,
@@ -80,17 +122,18 @@ export function buildBoardViewModel(
       trendH24: boardTrend(row?.priceChange.h24 ?? null),
     };
   });
+  const fetchedAt =
+    liveRows === null || live?.fetchedAtMs == null
+      ? spec.hydration.marketDataFetchedAt
+      : live.fetchedAtMs;
   return {
     title: spec.title,
     cards,
     notes: spec.notes ?? [],
-    stale: isBoardMarketDataStale(
-      spec.hydration.marketDataFetchedAt,
-      spec.hydration.staleAfterMs,
-      now,
-    ),
+    stale: isBoardMarketDataStale(fetchedAt, spec.hydration.staleAfterMs, now),
     analysisCreatedAt: spec.hydration.analysisCreatedAt,
-    marketDataFetchedAt: spec.hydration.marketDataFetchedAt,
+    marketDataFetchedAt: fetchedAt,
+    mode: live?.mode ?? "snapshot",
   };
 }
 
@@ -161,7 +204,34 @@ export function buildAnnotationRows(
 export function boardAriaLabel(model: BoardViewModel): string {
   const count = model.cards.length;
   const pools = `${count} ${count === 1 ? "pool" : "pools"}`;
-  return `Board: ${model.title}, ${pools}${
+  return `Board: ${model.title}, ${pools}${liveClause(model.mode)}${
     model.stale ? ", market data delayed" : ""
   }`;
+}
+
+/**
+ * The live state as WORDS for the accessible name.
+ *
+ * A reader on assistive tech has no access to the pulsing dot, and whether the
+ * figures in front of them are updating is exactly the kind of fact this
+ * surface refuses to leave to a pixel.
+ */
+function liveClause(mode: BoardDataMode): string {
+  switch (mode) {
+    case "live-connecting":
+      return ", connecting to live figures";
+    case "live-connected":
+      return ", live figures";
+    case "live-degraded":
+      return ", live figures interrupted, reconnecting";
+    case "live-unsupported":
+      return ", live figures unavailable in this build";
+    case "snapshot":
+    case "live-off":
+      return "";
+    default: {
+      const unreachable: never = mode;
+      throw new Error(`board data mode not handled: ${String(unreachable)}`);
+    }
+  }
 }

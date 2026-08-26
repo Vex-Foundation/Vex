@@ -11,7 +11,10 @@
 import { setBugReportSink, resetBugReportSink } from "@vex-agent/engine/support/bug-report-registry.js";
 import { registerDexScreenerTransport } from "@tools/dexscreener/transport.js";
 import { createDexScreenerBridgeTransport } from "../dexscreener-bridge/index.js";
-import { mountLaunchImageByteResolver } from "../images/index.js";
+import {
+  mountBoardIconService,
+  mountLaunchImageByteResolver,
+} from "../images/index.js";
 import { createAgentBugReportSink } from "../support/agent-bug-report-sink.js";
 import { setupCompactionPreparationBridge } from "./compaction-preparation-bridge.js";
 import { setupControlBridge } from "./control-bridge.js";
@@ -84,7 +87,16 @@ export function setupAgentBridges(): () => void {
   const unregisterDexScreener = registerDexScreenerTransport(
     dexScreenerBridge.transport,
   );
+
+  // Board token icons - the renderer's `data:` URLs for board card logos. It
+  // borrows the bridge's OWN `httpGet` rather than opening a second fetch path,
+  // so the host allowlist, the header policy and the streaming byte bound are
+  // the bridge's in both cases. Mounted here, and torn down below BEFORE the
+  // bridge it borrows from, so no icon fetch can outlive its transport.
+  const unmountBoardIcons = mountBoardIconService(dexScreenerBridge.transport.httpGet);
+
   teardowns.push(() => {
+    unmountBoardIcons();
     unregisterDexScreener();
     dexScreenerBridge.dispose();
   });

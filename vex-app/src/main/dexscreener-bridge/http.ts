@@ -20,7 +20,7 @@ import type {
   HttpGetOptions,
   TransportResponse,
 } from "@tools/dexscreener/transport.js";
-import { checkHttpUrl, DEXSCREENER_ORIGIN } from "./allowlist.js";
+import { checkHttpUrl, DEXSCREENER_ORIGIN, sendsSiteOrigin } from "./allowlist.js";
 import type { BridgeSession } from "./ws-bridge.js";
 
 /**
@@ -31,22 +31,102 @@ export const CHROME_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
 /**
- * The measured header set for the API hosts. The SSR navigation header set
- * (Sec-Fetch-Dest/Mode/Site/User, Upgrade-Insecure-Requests) is deliberately
- * absent: the SSR route was deleted from this design, and these requests are
- * XHR-shaped, which is what the site's own client sends.
+ * The header set for one request, CONDITIONED ON THE HOST.
+ *
+ * The API hosts get the measured set that gets a 200 out of the site's edge.
+ * The SSR navigation headers (Sec-Fetch-Dest/Mode/Site/User,
+ * Upgrade-Insecure-Requests) are deliberately absent: the SSR route was deleted
+ * from this design, and these requests are XHR-shaped, which is what the site's
+ * own client sends.
+ *
+ * The image CDN gets the same client identity and NO `Origin`/`Referer`
+ * ({@link sendsSiteOrigin} carries the reason). This used to be unconditional,
+ * which meant every host the allowlist ever gained would inherit a site origin
+ * it had no need for. The decision is a pure function of the host so a test can
+ * capture the real request for both hosts and assert the difference.
+ *
+ * Exported for that test. It is not a general-purpose helper: `siteHttpGet`
+ * below is the only production caller.
  */
-function requestHeaders(accept: string | undefined): Record<string, string> {
-  return {
+export function requestHeaders(
+  accept: string | undefined,
+  host: string,
+): Record<string, string> {
+  const headers: Record<string, string> = {
     "User-Agent": CHROME_USER_AGENT,
     Accept: accept ?? "*/*",
     "Accept-Language": "en-US,en;q=0.9",
-    Origin: DEXSCREENER_ORIGIN,
-    Referer: `${DEXSCREENER_ORIGIN}/`,
     "sec-ch-ua": '"Chromium";v="148", "Not(A:Brand";v="24", "Google Chrome";v="148"',
     "sec-ch-ua-mobile": "?0",
     "sec-ch-ua-platform": '"Windows"',
   };
+  if (sendsSiteOrigin(host)) {
+    headers["Origin"] = DEXSCREENER_ORIGIN;
+    headers["Referer"] = `${DEXSCREENER_ORIGIN}/`;
+  }
+  return headers;
+}
+
+/**
+ * Read a response body while COUNTING BYTES, and stop the transfer the moment
+ * the caller's cap is passed.
+ *
+ * Why streaming rather than `arrayBuffer()` then a length check: the buffered
+ * form pulls the WHOLE body into memory before it is allowed to have an
+ * opinion about its size, so a host that answered with a gigabyte would be
+ * fully downloaded and only then rejected. The cap is meant to bound what this
+ * process reads, and a bound applied after the read is not a bound. The reader
+ * is cancelled as soon as the running total passes the cap, so nothing beyond
+ * roughly one chunk past the limit is ever pulled.
+ *
+ * This is a REJECTION, never a truncation: the over-cap body is refused whole,
+ * with its measured size named, and no caller ever receives a short body that
+ * looks complete. A response with no body at all reads as zero bytes.
+ *
+ * `maxBytes` undefined means the caller accepts whatever the endpoint returns,
+ * which is the contract `HttpGetOptions` already declares.
+ */
+async function readBoundedBody(
+  response: { readonly body: ReadableStream<Uint8Array> | null; arrayBuffer: () => Promise<ArrayBuffer> },
+  maxBytes: number | undefined,
+  host: string,
+): Promise<Uint8Array> {
+  if (maxBytes === undefined) return new Uint8Array(await response.arrayBuffer());
+  const stream = response.body;
+  if (stream === null) return new Uint8Array(0);
+
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value === undefined) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        throw siteError(
+          DexScreenerSiteErrorCodes.RESPONSE_OVER_CAP,
+          `Response body from ${host} passed the caller's cap of ${maxBytes} bytes after ${total} bytes and the transfer was stopped`,
+          "Raise maxBytes or request a narrower window; the body was rejected whole, not truncated.",
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    // Idempotent and safe after a completed read; on the over-cap path this is
+    // what actually stops the transfer rather than letting it drain.
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
 }
 
 /**
@@ -87,16 +167,9 @@ export async function siteHttpGet(
       redirect: "error",
       signal: controller.signal,
       credentials: "omit",
-      headers: requestHeaders(options.accept),
+      headers: requestHeaders(options.accept, decision.url.host),
     });
-    const body = new Uint8Array(await response.arrayBuffer());
-    if (options.maxBytes !== undefined && body.byteLength > options.maxBytes) {
-      throw siteError(
-        DexScreenerSiteErrorCodes.RESPONSE_OVER_CAP,
-        `Response body from ${decision.url.host} is ${body.byteLength} bytes, over the caller's cap of ${options.maxBytes} bytes`,
-        "Raise maxBytes or request a narrower window; the body was rejected whole, not truncated."
-      );
-    }
+    const body = await readBoundedBody(response, options.maxBytes, decision.url.host);
     const headers = new Map<string, string>();
     response.headers.forEach((value: string, key: string) =>
       headers.set(key.toLowerCase(), value)

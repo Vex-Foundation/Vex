@@ -186,7 +186,19 @@ export function toChartBar(row: BoardCandleInput): BoardChartBar {
  */
 export const CHART_MIN_MOVE_MAX_DECIMALS = 15;
 
-export function chartMinMove(rows: readonly BoardCandleInput[]): number {
+/**
+ * Decimal places this series actually uses: the longest fractional part any
+ * of its decimal strings carries, bounded at
+ * {@link CHART_MIN_MOVE_MAX_DECIMALS}.
+ *
+ * It is the SINGLE precision fact about a series, and both consumers derive
+ * from it rather than computing their own: {@link chartMinMove} turns it into
+ * the library's tick, and {@link createChartAxisPriceFormatter} uses it as the
+ * hard ceiling on how many places an axis label may print. A second
+ * derivation would be a second source of truth, and the axis defect this
+ * bounds is exactly what happens when the label is allowed to outrun the tick.
+ */
+export function chartPriceDecimals(rows: readonly BoardCandleInput[]): number {
   let decimals = 0;
   for (const row of rows) {
     for (const leg of [row.o, row.h, row.l, row.c]) {
@@ -197,10 +209,22 @@ export function chartMinMove(rows: readonly BoardCandleInput[]): number {
       if (used > decimals) decimals = used;
     }
   }
-  if (decimals > CHART_MIN_MOVE_MAX_DECIMALS) decimals = CHART_MIN_MOVE_MAX_DECIMALS;
-  // `Number("1e-13")` rather than `10 ** -13`: the exponent literal is exact
-  // to the nearest double, the repeated multiplication is not.
+  return decimals > CHART_MIN_MOVE_MAX_DECIMALS
+    ? CHART_MIN_MOVE_MAX_DECIMALS
+    : decimals;
+}
+
+/**
+ * The library tick for a given decimal precision. `Number("1e-13")` rather
+ * than `10 ** -13`: the exponent literal is exact to the nearest double, the
+ * repeated multiplication is not.
+ */
+export function minMoveForDecimals(decimals: number): number {
   return Number(`1e-${decimals}`);
+}
+
+export function chartMinMove(rows: readonly BoardCandleInput[]): number {
+  return minMoveForDecimals(chartPriceDecimals(rows));
 }
 
 /** True when a bar carries real prices rather than reserving a slot. */
@@ -276,24 +300,56 @@ export function toDisplayTimeSec(atMs: number): UTCTimestamp | null {
 }
 
 /**
- * Price-axis label formatter for a `PriceFormatCustom`.
+ * Build the price-axis label formatter for a `PriceFormatCustom`, bounded by
+ * the decimal precision the SERIES itself uses ({@link chartPriceDecimals}).
  *
- * The built-in `{ type: 'price', precision: 2, minMove: 0.01 }` default
- * renders a 1e-13 memecoin price as `0.00` on every axis tick, which makes
- * the whole chart read as blank. The library's value guard bounds MAGNITUDE
- * (roughly +/-9.007e13) and imposes no lower bound, so tiny prices are
- * accepted and only the formatting has to be right.
+ * WHY IT IS BOUND TO THE SERIES, and it is a production defect, not a
+ * refinement. The library's tick loop walks the visible range by repeated
+ * subtraction of the span, and the default `rightPriceScale.scaleMargins`
+ * extrapolate that range BELOW zero whenever the series' max exceeds roughly
+ * 7.96x its min at our chart height. The bottom tick therefore lands on
+ * floating-point residue near zero rather than on zero. Measured family:
+ * min 0.00100, max 0.02362 at 256px yields a tick of
+ * -5.204170427930421e-18. A formatter that expands by MAGNITUDE alone renders
+ * that residue as `-0.000000000000000005`, an eighteen-decimal negative price
+ * on a series whose own strings carry five. The scale margins are a
+ * deliberate design choice and are unchanged; the label is what was lying.
+ *
+ * So the ceiling is the series' own precision: a tick finer than any price
+ * the series expresses cannot say anything true, and every value inside that
+ * residue band collapses to the honest `0`. The `-0.000...` and `0.000...`
+ * forms are normalized to `0` for the same reason - a negative sign on a
+ * value the series cannot distinguish from zero is noise presented as a fact.
+ *
+ * The magnitude ladder below still matters at the other end: the built-in
+ * `{ precision: 2, minMove: 0.01 }` default renders a 1e-13 memecoin price as
+ * `0.00` on every tick, which makes the whole chart read as blank. The
+ * library's value guard bounds MAGNITUDE (roughly +/-9.007e13) and imposes no
+ * lower bound, so tiny prices are accepted and only the formatting has to be
+ * right.
  *
  * Axis labels only - never a figure a user acts on financially.
  */
-export function formatChartAxisPrice(value: number): string {
-  if (!Number.isFinite(value)) return "";
-  if (value === 0) return "0";
-  const abs = Math.abs(value);
-  if (abs >= 1) return value.toFixed(2);
-  if (abs >= 0.01) return value.toFixed(4);
-  const decimals = Math.min(18, Math.ceil(-Math.log10(abs)) + 3);
-  return value.toFixed(decimals);
+export function createChartAxisPriceFormatter(
+  maxDecimals: number,
+): (value: number) => string {
+  const ceiling = Math.max(
+    0,
+    Math.min(CHART_MIN_MOVE_MAX_DECIMALS, Math.floor(maxDecimals)),
+  );
+  return (value: number): string => {
+    if (!Number.isFinite(value)) return "";
+    const abs = Math.abs(value);
+    let decimals: number;
+    if (abs >= 1) decimals = 2;
+    else if (abs >= 0.01) decimals = 4;
+    else if (abs === 0) decimals = 0;
+    else decimals = Math.ceil(-Math.log10(abs)) + 3;
+    const text = value.toFixed(Math.min(decimals, ceiling));
+    // `-0`, `-0.00000` and `0.0000` all mean "below anything this series can
+    // express". One honest zero, never a signed one.
+    return /^-?0(?:\.0*)?$/.test(text) ? "0" : text;
+  };
 }
 
 /** What `CandleFeed.push` did with a bar, so callers can assert on it. */

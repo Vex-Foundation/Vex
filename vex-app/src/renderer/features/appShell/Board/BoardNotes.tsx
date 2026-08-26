@@ -24,14 +24,14 @@ export function BoardNotes({ notes }: BoardNotesProps): JSX.Element | null {
       data-vex-area="board-notes"
       data-count={notes.length}
       aria-label="Board notes"
-      className="flex flex-col gap-1.5"
+      className="flex flex-col gap-2 rounded-lg border border-line-2 bg-surface-1 p-2.5"
     >
       {notes.map((note, index) => (
         <li
           // Notes have no identity of their own and are not reordered, so the
           // index plus the text is the stable key.
           key={`${index}/${note}`}
-          className="whitespace-pre-wrap break-words border-l-2 border-line-2 pl-2 text-[12px] leading-snug text-ink-secondary"
+          className="whitespace-pre-wrap break-words border-l-2 border-line-2 pl-2.5 text-[12px] leading-relaxed text-ink-secondary"
         >
           {note}
         </li>

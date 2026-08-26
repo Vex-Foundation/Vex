@@ -151,6 +151,21 @@ export const BOARD_DECIMAL_MAX_CHARS = 40;
 /** DexScreener chain slug, e.g. `solana`, `base`, `arbitrum-one`. */
 const CHAIN_SLUG_PATTERN = /^[a-z0-9-]+$/;
 
+/**
+ * The DexScreener CMS icon reference, as the provider spells it.
+ *
+ * It is an OPAQUE handle, never a URL and never a path: the only thing any
+ * consumer may do with it is name it to the one main-process owner that knows
+ * which host serves it. The character class is deliberately narrow (the
+ * unreserved URL-safe set, no dot and no slash), so an id can never carry a
+ * path segment, a scheme, a query, or a traversal even before the fetcher's
+ * own host-and-prefix allowlist runs. This pattern is repeated verbatim by the
+ * IPC input schema in the desktop app, and this module cannot import it: this
+ * file's only legal dependency is zod (see the header), which is what keeps it
+ * loadable in the untrusted renderer.
+ */
+export const BOARD_ICON_ID_PATTERN = /^[A-Za-z0-9_-]{4,128}$/;
+
 /** Pool identity as the provider spells it. Base58 or hex-without-prefix. */
 const PAIR_ADDRESS_PATTERN = /^[A-Za-z0-9]+$/;
 
@@ -377,6 +392,39 @@ export const boardHydratedRowSchema = z
       })
       .strict(),
     pairAgeSeconds: z.number().int().min(0).nullable(),
+    /**
+     * The base token's DexScreener CMS icon handle, or null when the token has
+     * no profile artwork this board may show.
+     *
+     * OPTIONAL ON READ, ALWAYS WRITTEN. This is the one field on this schema
+     * that is optional rather than required-and-nullable, and the asymmetry is
+     * the expand half of an expand-and-contract, not an oversight. Boards
+     * composed before this field existed are ALREADY PERSISTED in transcript
+     * rows, and `boardSpecV1Schema` is what re-parses those rows on every read;
+     * a required key would turn every one of them into a parse failure, which
+     * the DB mapper renders as a board that silently vanished. So a missing key
+     * parses and lands as `null` through the default below, which is the same
+     * value the reader would have seen anyway: "no icon".
+     *
+     * Writers (`vex-agent/tools/internal/board/hydrate.ts`) always emit the
+     * key, null included, so every board written from now on is explicit. The
+     * contract half that may be made required later is exactly that: once no
+     * durable row predates the field, `.default(null)` becomes `.nullable()`
+     * and nothing else changes.
+     *
+     * NOT A URL. See {@link BOARD_ICON_ID_PATTERN}: the renderer hands this
+     * handle to the main process, which owns the host, the transport, the byte
+     * bound and the image validation. Nothing on this path lets a persisted
+     * document name an origin.
+     */
+    iconId: z
+      .string()
+      .regex(
+        BOARD_ICON_ID_PATTERN,
+        "must be a DexScreener CMS icon handle: 4 to 128 characters of A-Z, a-z, 0-9, hyphen or underscore",
+      )
+      .nullable()
+      .default(null),
   })
   .strict();
 

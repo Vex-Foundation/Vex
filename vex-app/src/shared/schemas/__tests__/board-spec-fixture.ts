@@ -36,6 +36,10 @@ export function boardSpecFixture(
           quoteTokenSymbol: "USDC",
           chainId: "solana",
           dexId: "raydium",
+          // Current writers always emit iconId (null when the provider has no
+          // profile). Legacy rows lacking the key entirely are exercised by the
+          // dedicated normalization test in messages-mapper-board.test.ts.
+          iconId: null,
           priceUsd: "184.2213",
           priceChange: { h1: "-0.42", h24: "3.10" },
           liquidityUsd: "8421330.55",

@@ -31,6 +31,17 @@ import {
   formatTokenPriceUsd,
 } from "../../../lib/format.js";
 
+/**
+ * This rail widget's plate. `Board/TokenCard.tsx` once held a verbatim copy of
+ * this string and a comment calling the two cards siblings whose geometry had
+ * to stay in step. THEY HAVE FORKED, deliberately (board v2): the board card
+ * grew a logo, a hero price treatment and a stat block, so it owns its own
+ * padding and rhythm now. Changing this line no longer implies changing that
+ * one, and the invariant that used to be claimed here is gone rather than
+ * quietly false. What the two still share is the GRAMMAR - the same surface,
+ * hairline and radius tokens, the same micro-label register, the same display
+ * numerals, the same semantic delta tones - so they still read as one family.
+ */
 const CARD_CLASS =
   "rounded-xl border border-line-2 bg-surface-1 px-3 py-2.5";
 

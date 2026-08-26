@@ -523,3 +523,63 @@ adapter per CHART-PLAYBOOK; T5 S11a engine price-consumer swaps
 Coordinator assembles (old-client deletion at measured zero consumers),
 commits in 4 reviewable slices, pushes, then CODEX VERIFICATION on thread
 harness-vex-board (4 fan-out lenses) per the ROOT's final section.
+
+## BOARD + S11: GREEN LIGHT AND SHIPPED (2026-08-25 night)
+
+Codex final review turn 2: GREEN LIGHT ("no reachable money or
+decision-path defect remains"). Branch feat/vex-board (off
+feat/dexscreener-site) pushed with 7 commits: A0 contract+engine, A1
+app+renderer, S11a, S11b+old-client deletion, review fix round
+(production routing, chart truth trio, terminal-gate provenance,
+attribution, staleness), post-review polish. Known issues documented in
+the review artifact (unmatched-marker recompute before B1, minMove
+viewport reset kept as B1 gate, Studio MCP exclusion + first
+bridge-environment BoardCompose live run remain integration gates).
+PR options for the owner: stacked (dexscreener-site -> main, vex-board ->
+dexscreener-site) or single vex-board -> main.
+
+## D-DS9 REVERTED, AND THE TWO "Unknown tool" ERRORS DIAGNOSED (2026-08-26)
+
+The owner reported two `Unknown tool` failures against the freshly shipped
+DexScreener surface. They are ONE defect with two entry points, and neither is
+a naming or catalog problem.
+
+THE DIAGNOSIS. A protocol tool passes through two independent gates.
+`registry/injected-protocol-tools.ts` decides what enters a request's `tools`
+array (visibility). `dispatcher/protocol-route.ts` decides what may run
+(admission), and it admits by membership in the session's discovered set,
+whose only writers are `tool-search.ts` and `tool-search-select.ts`. The two
+gates are supposed to read the same set, which makes visible a subset of
+callable.
+
+- ERROR 1 came from D-DS9. It widened the visibility gate to the whole
+  dexscreener namespace and left admission alone. All 18 schemas were in every
+  tools array; the discovered set was empty; the prompt's "Always loaded" line
+  told the model to call them directly with "no ToolSearch round needed". It
+  did, and the dispatcher refused all of them by name.
+- ERROR 2 came from `registry/khalani.ts`. `TokenFind` is always visible and
+  its description instructed the model to reach `khalani__chains_list` and
+  `dexscreener__pairs_search`. Same shape, same refusal, and it predates
+  D-DS9 by a long way. After the revert it was a ready-made repeat of error 1,
+  which is why it is fixed in the same change.
+
+WHY NOTHING CAUGHT IT. There was no cross-gate test in either direction: no
+suite ever asked whether a name in the tools array is admissible, and no suite
+ever scanned the fresh model-visible surface for names the session cannot call.
+Both now exist (`route-admission-subset.test.ts` drives the real route;
+`registry/fresh-model-surface-names.test.ts` scans the static prompt plus every
+visible tool description against the whole catalog).
+
+THE REPLACEMENT CARD. The dexscreener prompt card now carries a CAPABILITY-AREA
+line: the nine facet labels and one sentence pointing at ToolSearch. It gives
+the model what the name list was really for (which of nine unrelated areas to
+aim a query at) without naming anything the dispatcher would refuse. It is
+opt-in per declaration (`advertiseFacetsInPrompt`), set on dexscreener only.
+
+OPEN, FOR AN OWNER DECISION. The new fresh-surface scan found 15 further
+protocol publicNames taught by static prompt modules outside this change's
+scope (`task-shapes.ts`, `mission-run.ts`, `mission-setup.ts`,
+`safety-contract.ts`, `identity.ts`, `tool-model.ts`). They are the same class
+of defect, some are arguably deliberate teaching artifacts (the alias-to-
+protocol table in `tool-model.ts`), and each fix carries its own budget diff.
+They are held as a ratcheted inventory in the test, which can only shrink.

@@ -50,6 +50,7 @@ import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
 import { setupVexMarketService } from "./market/vex-market-service.js";
+import { setupBoardLiveService } from "./market/board-live-owner.js";
 import { isSecretSessionUnlocked, lockSecretSession } from "./secrets/session.js";
 import { shutdownStudioMcpHost, startStudioMcpHost } from "./studio/mcp-host.js";
 import { disposeStudioApprovalBroker } from "./studio/approval-broker.js";
@@ -249,6 +250,16 @@ async function initializeMainRuntime(): Promise<void> {
   const stopMarketService = setupVexMarketService();
   globalCleanup.add(async () => {
     await stopMarketService();
+  });
+
+  // 6a-board-live. Own the board's LIVE lease service (T4). It polls nothing
+  // until a reader turns a board's toggle on, and at most one lease exists at a
+  // time. Its idempotent async stop closes every lease with `shutdown` and
+  // drains the in-flight cycle BEFORE the windows go away, so a terminal event
+  // is never sent into a destroyed webContents.
+  const stopBoardLiveService = setupBoardLiveService();
+  globalCleanup.add(async () => {
+    await stopBoardLiveService();
   });
 
   // 6b. Register lifecycle-driven cleanup. ALL workers must drain in-flight

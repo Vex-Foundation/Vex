@@ -35,6 +35,8 @@ import { registerMessagesHandlers } from "./messages.js";
 import { registerMissionHandlers } from "./mission.js";
 import { registerModelsHandlers } from "./models.js";
 import { registerOnboardingHandlers } from "./onboarding.js";
+import { registerBoardIconHandlers } from "./board-icons.js";
+import { registerBoardLiveHandlers } from "./board-live.js";
 import { registerImagesHandlers } from "./images.js";
 import { registerPoolsLaunchHandlers } from "./pools-launch.js";
 import { registerTokenLaunchHandlers } from "./token-launch.js";
@@ -111,6 +113,11 @@ export function registerAllIpcHandlers(): void {
   // DTO. Renderer supplies only scope (+ sessionId); addresses never cross.
   teardowns.push(...registerPortfolioHandlers());
   teardowns.push(...registerImagesHandlers());
+  teardowns.push(...registerBoardIconHandlers());
+  // T4: the board's LIVE lease. Unlike every other push channel here, its
+  // events go to the ONE window that owns the lease; the poll, the cadence and
+  // the transport are owned by the board live service, started in index.ts.
+  teardowns.push(...registerBoardLiveHandlers());
   // Token-launch IPC (plan C5): preview, submit (Deploy = consent), cancel and
   // myLaunches are all real; the agent-requested form flow authorizes the
   // drafted intent and resumes the parked turn.

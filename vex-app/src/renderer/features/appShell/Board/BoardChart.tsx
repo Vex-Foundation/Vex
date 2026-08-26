@@ -36,6 +36,16 @@
  * markers carry no text. The words live in the React legend rendered below
  * the canvas, where they are selectable, translatable and reachable by a
  * screen reader.
+ *
+ * WHAT THIS FILE OWNS, AND WHAT IT NO LONGER DOES. The chart instance, its
+ * data writes and its annotation geometry are one lifecycle and they live
+ * here. The two things BELOW the canvas are not: `ChartCaveats` owns the
+ * status line and the data-notes disclosure (its own open state, its own
+ * trigger, its own accessibility contract), and `AnnotationLegend` owns the
+ * presentation of model-authored text. They were extracted because they are
+ * separate reasons to change - a wording or composition edit should not put a
+ * hand anywhere near the imperative chart lifecycle - and because this file
+ * had grown four owners into one 535-line module.
  */
 
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
@@ -50,16 +60,21 @@ import {
   type Time,
 } from "lightweight-charts";
 import {
-  BOARD_CHART_MAX_BARS,
   CandleFeed,
   barsToPush,
-  chartMinMove,
-  formatChartAxisPrice,
+  chartPriceDecimals,
+  createChartAxisPriceFormatter,
+  minMoveForDecimals,
   normalizeBoardBars,
   toDisplayPrice,
   toDisplayTimeSec,
   type BoardCandleInput,
 } from "./boardChartFeed.js";
+import {
+  ChartCaveats,
+  type BoardChartProvenance,
+} from "./ChartCaveats.js";
+import { AnnotationLegend } from "./AnnotationLegend.js";
 import {
   prefersReducedMotion,
   readBoardChartPalette,
@@ -110,6 +125,18 @@ export interface BoardChartProps {
   readonly lastBarPartial: boolean;
   /** True when the provider itself bounded the range it returned. */
   readonly truncated: boolean;
+  /**
+   * The spec's `hydration.provenance`, disclosed inside the chart's own data
+   * notes. Optional because a caller may hold a spec that carries none; the
+   * notes region simply has one fewer sentence.
+   */
+  readonly provenance?: BoardChartProvenance | null;
+  /**
+   * When these candles were read. The board's PERSISTED market-data clock, even
+   * when the cards above are live: this chart is a snapshot in this arc and its
+   * status line says so in its own words.
+   */
+  readonly fetchedAtMs?: number | null;
 }
 
 const CHART_HEIGHT_CLASS = "h-64";
@@ -126,6 +153,8 @@ export function BoardChart({
   label,
   lastBarPartial,
   truncated,
+  provenance = null,
+  fetchedAtMs = null,
 }: BoardChartProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -147,9 +176,14 @@ export function BoardChart({
   // identity, so a parent re-render does not re-sort a 200-row array.
   const normalized = useMemo(() => normalizeBoardBars(bars), [bars]);
 
-  // Set ONCE at chart creation with the rest of `priceFormat`, so it is part
-  // of the creation effect's dependency set rather than an applyOptions call.
-  const minMove = useMemo(() => chartMinMove(bars), [bars]);
+  // THE SERIES' OWN PRECISION, computed once and used by BOTH halves of
+  // `priceFormat`. The tick and the label ceiling are the same fact: a label
+  // allowed to print more places than the tick can express is how the axis
+  // rendered floating-point residue as `-0.000000000000000005`. Set ONCE at
+  // chart creation, so it is part of the creation effect's dependency set
+  // rather than an applyOptions call (passing `priceFormat` through
+  // applyOptions forces a full chart update).
+  const decimals = useMemo(() => chartPriceDecimals(bars), [bars]);
 
   // A series with no bars is a real outcome (the provider had no candles for
   // this pool at this resolution), and it is NOT a chart. Creating one would
@@ -209,11 +243,13 @@ export function BoardChart({
       // Finite and positive, derived from this series' own decimal precision.
       // `minMove: 0` makes the library's base Infinity, which collapses the
       // degenerate-range extension to zero and renders a FLAT series as a
-      // blank scale. See `chartMinMove`.
+      // blank scale. See `minMoveForDecimals`. The FORMATTER is built from the
+      // same `decimals`, so no axis label can print a place the tick cannot
+      // express - see `createChartAxisPriceFormatter`.
       priceFormat: {
         type: "custom",
-        formatter: formatChartAxisPrice,
-        minMove,
+        formatter: createChartAxisPriceFormatter(decimals),
+        minMove: minMoveForDecimals(decimals),
       },
     });
 
@@ -286,7 +322,7 @@ export function BoardChart({
       priceLinesRef.current = [];
       fittedSubjectRef.current = null;
     };
-  }, [open, hasSeries, subjectKey, minMove]);
+  }, [open, hasSeries, subjectKey, decimals]);
 
   // ── Data. setData on a subject change, update on a refresh. ────────────
   useEffect(() => {
@@ -390,118 +426,12 @@ export function BoardChart({
         incoherentCount={normalized.incoherentCount}
         lastBarPartial={lastBarPartial}
         truncated={truncated}
+        provenance={provenance}
+        fetchedAtMs={fetchedAtMs}
       />
       <AnnotationLegend rows={annotationRows} />
       <ChartAttribution />
     </figure>
-  );
-}
-
-/**
- * What the chart is NOT showing, in words. A display bound that bites is
- * reported rather than hidden: the reader is told how many older bars exist
- * beyond the drawn window, that a leg-less bucket reserved its slot without a
- * candle, and that the newest bar is still forming.
- */
-function ChartCaveats({
-  resolution,
-  drawn,
-  hiddenOlder,
-  whitespaceCount,
-  incoherentCount,
-  lastBarPartial,
-  truncated,
-}: {
-  readonly resolution: BoardChartResolution;
-  readonly drawn: number;
-  readonly hiddenOlder: number;
-  readonly whitespaceCount: number;
-  readonly incoherentCount: number;
-  readonly lastBarPartial: boolean;
-  readonly truncated: boolean;
-}): JSX.Element {
-  const caveats: string[] = [];
-  if (hiddenOlder > 0) {
-    caveats.push(
-      `${hiddenOlder} older ${hiddenOlder === 1 ? "bar" : "bars"} beyond the ${BOARD_CHART_MAX_BARS}-bar window`,
-    );
-  }
-  if (whitespaceCount > 0) {
-    caveats.push(
-      `${whitespaceCount} ${whitespaceCount === 1 ? "bucket" : "buckets"} with no price`,
-    );
-  }
-  if (incoherentCount > 0) {
-    // Disclosure, not a footnote: the drawn wick is not the number the
-    // provider called the high or the low on these bars.
-    caveats.push(
-      `${incoherentCount} ${incoherentCount === 1 ? "bar" : "bars"} with open or close outside the reported high/low; wicks span all four values`,
-    );
-  }
-  if (lastBarPartial) caveats.push("newest bar still forming");
-  if (truncated) caveats.push("provider bounded the range");
-
-  return (
-    <figcaption
-      data-vex-area="board-chart-caveats"
-      className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-tertiary"
-    >
-      <span className="vex-micro-label uppercase text-ink-secondary">
-        {resolution}
-      </span>
-      <span className="tabular-nums">
-        {drawn} {drawn === 1 ? "bar" : "bars"}
-      </span>
-      {caveats.map((caveat) => (
-        <span key={caveat}>{caveat}</span>
-      ))}
-    </figcaption>
-  );
-}
-
-/**
- * The agent's annotations as text. Rendering nothing when there are none
- * keeps the block inert rather than showing an empty heading.
- */
-function AnnotationLegend({
-  rows,
-}: {
-  readonly rows: readonly BoardAnnotationRow[];
-}): JSX.Element | null {
-  if (rows.length === 0) return null;
-  return (
-    <ul
-      data-vex-area="board-chart-annotations"
-      aria-label="Chart annotations"
-      // A board decimal may be 40 characters wide. The list scrolls inside its
-      // OWN container so a long coordinate never widens the transcript column;
-      // nothing is clipped, because the row scrolls rather than truncating.
-      className="flex max-w-full flex-col gap-1 overflow-x-auto"
-    >
-      {rows.map((row) => (
-        <li
-          key={row.key}
-          data-annotation-kind={row.kind}
-          className="flex w-max items-baseline gap-2 whitespace-nowrap text-[11px]"
-        >
-          <span className="vex-micro-label uppercase text-ink-secondary">
-            {row.kind}
-          </span>
-          <span className="text-ink-primary">{row.label}</span>
-          <span className="tabular-nums text-ink-tertiary">
-            {row.coordinate}
-          </span>
-          {row.note !== null ? (
-            <span
-              data-vex-area="board-annotation-note"
-              className="text-warning-label"
-            >
-              {row.note}
-            </span>
-          ) : null}
-        </li>
-      ))}
-    </ul>
   );
 }
 
