@@ -51,6 +51,8 @@ const { registerBoardLiveHandlers } = await import("../board-live.js");
 
 const REQUEST_ID = "11111111-2222-4333-8444-555555555555";
 const LEASE_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+/** The renderer's own name for one subscribe attempt. Minted before the call. */
+const CANCEL_REQUEST_ID = "99999999-8888-4777-8666-555555555555";
 const POOLS = [{ chain: "solana", pairAddress: "PairAAA" }];
 
 const SNAPSHOT = {
@@ -85,7 +87,17 @@ interface OkShape {
   readonly data: Record<string, unknown>;
 }
 
-const trustedSender = createTrustedSender({ sender: createTestWebContents() });
+/**
+ * A REAL id on the fake webContents, and that is load-bearing.
+ *
+ * The shared helper does not carry one, so an ownership assertion read through
+ * it was comparing `undefined` to `undefined` and would have passed against a
+ * handler that made the owner id up. Naming the id here makes the two
+ * ownership tests below say something.
+ */
+const TRUSTED_SENDER_ID = 4242;
+const trustedWebContents = { ...createTestWebContents(), id: TRUSTED_SENDER_ID };
+const trustedSender = createTrustedSender({ sender: trustedWebContents });
 const untrustedSender = { senderFrame: createMainFrame("https://evil.example/") };
 
 async function call(
@@ -124,7 +136,7 @@ afterEach(() => {
 
 describe("board live IPC", () => {
   it("claims a lease and returns the FIRST snapshot with it", async () => {
-    const result = await call(CH.boardLive.subscribe, { pools: POOLS });
+    const result = await call(CH.boardLive.subscribe, { pools: POOLS, requestId: CANCEL_REQUEST_ID });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     // No event race: the rows are in the response the toggle already awaited.
@@ -138,12 +150,17 @@ describe("board live IPC", () => {
     ["more pools than a board can hold", { pools: Array(9).fill(POOLS[0]) }],
     ["a pool with no address", { pools: [{ chain: "solana" }] }],
     ["a chain slug outside the contract", { pools: [{ chain: "so lana", pairAddress: "A" }] }],
-    ["an extra field the contract does not name", { pools: POOLS, cadenceMs: 1 }],
+    ["an extra field the contract does not name", { pools: POOLS, requestId: CANCEL_REQUEST_ID, cadenceMs: 1 }],
     [
       "a caption smuggled in beside the identity",
       { pools: [{ ...POOLS[0], caption: "buy this" }] },
     ],
     ["not an object at all", "pools"],
+    // The cancellation identity is REQUIRED, not optional. A subscribe without
+    // one would be uncancellable until main chose to answer it, which is the
+    // exact window this contract exists to close.
+    ["no cancellation identity", { pools: POOLS }],
+    ["a cancellation identity that is not an id", { pools: POOLS, requestId: "soon" }],
   ])("refuses %s without reaching the service", async (_label, payload) => {
     const result = await call(CH.boardLive.subscribe, payload);
     expect(result.ok).toBe(false);
@@ -153,7 +170,7 @@ describe("board live IPC", () => {
   it("refuses an untrusted sender and leaks nothing about it", async () => {
     const result = await call(
       CH.boardLive.subscribe,
-      { pools: POOLS },
+      { pools: POOLS, requestId: CANCEL_REQUEST_ID },
       { sender: untrustedSender },
     );
     expect(result.ok).toBe(false);
@@ -169,7 +186,7 @@ describe("board live IPC", () => {
       retryable: true,
       detail: "The market channel could not be reached, so live figures were not started.",
     });
-    const result = await call(CH.boardLive.subscribe, { pools: POOLS });
+    const result = await call(CH.boardLive.subscribe, { pools: POOLS, requestId: CANCEL_REQUEST_ID });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     // Not "unexpected error": the cause and the remedy both survive.
@@ -185,7 +202,7 @@ describe("board live IPC", () => {
     expect(asked.ok).toBe(true);
     if (asked.ok) expect(asked.data["supported"]).toBe(false);
 
-    const result = await call(CH.boardLive.subscribe, { pools: POOLS });
+    const result = await call(CH.boardLive.subscribe, { pools: POOLS, requestId: CANCEL_REQUEST_ID });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.data["kind"]).toBe("unsupported");
   });
@@ -203,17 +220,50 @@ describe("board live IPC", () => {
     expect(args.leaseId).toBe(LEASE_ID);
     // The owner id came from the trusted sender object, not from anything the
     // renderer wrote: a leaseId is a handle, not a credential.
-    expect(args.ownerId).toBe(
-      (trustedSender as unknown as { sender: { id: number } }).sender.id,
-    );
+    expect(args.ownerId).toBe(TRUSTED_SENDER_ID);
   });
 
-  it("refuses an unsubscribe payload that is not a lease id", async () => {
-    for (const payload of [{}, { leaseId: "" }, { leaseId: "not-a-uuid" }, { leaseId: LEASE_ID, ownerId: 7 }]) {
+  it("refuses an unsubscribe payload that names neither identity, or both", async () => {
+    for (const payload of [
+      {},
+      { leaseId: "" },
+      { leaseId: "not-a-uuid" },
+      { leaseId: LEASE_ID, ownerId: 7 },
+      { requestId: "not-a-uuid" },
+      // BOTH is refused rather than resolved by precedence: a payload that
+      // names two different exchanges is a caller bug, and answering it would
+      // mean picking one by a rule no reader of this file can see.
+      { leaseId: LEASE_ID, requestId: CANCEL_REQUEST_ID },
+    ]) {
       const result = await call(CH.boardLive.unsubscribe, payload);
       expect(result.ok).toBe(false);
     }
     expect(unsubscribe).not.toHaveBeenCalled();
+  });
+
+  it("carries a pre-response cancel to the service under the request id", async () => {
+    unsubscribe.mockReturnValue("closed");
+    const result = await call(CH.boardLive.unsubscribe, {
+      requestId: CANCEL_REQUEST_ID,
+    });
+    expect(result.ok).toBe(true);
+
+    const args = unsubscribe.mock.calls[0]?.[0] as {
+      requestId?: string;
+      leaseId?: string;
+      ownerId: number;
+    };
+    expect(args.requestId).toBe(CANCEL_REQUEST_ID);
+    // No lease id is invented for it, and ownership still comes from the
+    // sender rather than from anything the renderer wrote.
+    expect(args.leaseId).toBeUndefined();
+    expect(args.ownerId).toBe(TRUSTED_SENDER_ID);
+  });
+
+  it("passes the renderer's cancellation identity through to the service", async () => {
+    await call(CH.boardLive.subscribe, { pools: POOLS, requestId: CANCEL_REQUEST_ID });
+    const args = subscribe.mock.calls[0]?.[0] as { requestId: string };
+    expect(args.requestId).toBe(CANCEL_REQUEST_ID);
   });
 
   it("answers honestly when no live service is running in this process", async () => {
@@ -222,7 +272,7 @@ describe("board live IPC", () => {
     expect(asked.ok).toBe(true);
     if (asked.ok) expect(asked.data["supported"]).toBe(false);
 
-    const started = await call(CH.boardLive.subscribe, { pools: POOLS });
+    const started = await call(CH.boardLive.subscribe, { pools: POOLS, requestId: CANCEL_REQUEST_ID });
     expect(started.ok).toBe(true);
     if (started.ok) expect(started.data["kind"]).toBe("unsupported");
 
@@ -248,7 +298,7 @@ describe("board live IPC", () => {
         ],
       },
     });
-    const result = await call(CH.boardLive.subscribe, { pools: POOLS });
+    const result = await call(CH.boardLive.subscribe, { pools: POOLS, requestId: CANCEL_REQUEST_ID });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("internal.contract_violation");
   });

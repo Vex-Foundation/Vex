@@ -21,6 +21,9 @@
  * The fake window stands in for Chromium exactly as `ws-bridge.test.ts` does.
  */
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({
@@ -385,5 +388,44 @@ describe("R14: coalesceScope isolates exchange ownership", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * The scope delimiter is a DIGEST INPUT, so its exact bytes are a contract.
+ *
+ * `exchangeDigest` separates the scope from the expectation string with one NUL
+ * followed by "scope:". Those seven bytes decide which callers single-flight
+ * together, and they used to be spelled with a LITERAL NUL in the source, which
+ * a reviewer cannot see and a diff cannot show. The delimiter is now written as
+ * the escape "\u0000scope:"; the emitted bytes are unchanged. This pins both
+ * halves, so a future silent change to either is caught: the byte sequence
+ * itself, and the fact that the source spells it visibly.
+ */
+describe("R14: the scope delimiter bytes are pinned", () => {
+  const SOURCE = readFileSync(
+    fileURLToPath(new URL("../ws-bridge.ts", import.meta.url)),
+    "utf8",
+  );
+
+  it("mixes in exactly NUL followed by \"scope:\"", () => {
+    expect([...Buffer.from("\u0000scope:", "utf8")]).toStrictEqual([
+      0x00, 0x73, 0x63, 0x6f, 0x70, 0x65, 0x3a,
+    ]);
+  });
+
+  it("spells that delimiter as a reviewable escape in the source", () => {
+    expect(SOURCE).toContain('hash.update("\\u0000scope:");');
+  });
+
+  it("carries no raw control byte a reader cannot see", () => {
+    // Tab, newline and carriage return are the only control characters a source
+    // file legitimately contains; anything else is an invisible literal.
+    const invisible = [...SOURCE].filter((character) => {
+      if (character === "\t" || character === "\n" || character === "\r") return false;
+      const code = character.codePointAt(0) ?? 0;
+      return code < 0x20 || code === 0x7f;
+    });
+    expect(invisible.map((character) => character.codePointAt(0))).toStrictEqual([]);
   });
 });

@@ -134,14 +134,47 @@ export function useBoardLive(pools: readonly BoardLivePool[]): BoardLiveState {
   const generation = useRef(0);
   const leaseId = useRef<string | null>(null);
 
+  /**
+   * The id this mount minted for a subscribe that has not answered yet.
+   *
+   * Main withholds the lease id until its FIRST fetch settles, which is up to
+   * the attempt deadline. Without a handle of our own, a reader who toggled off
+   * inside that window could only stop drawing: main kept the exchange open to
+   * the end for a board nobody was watching. This id exists from before the
+   * call, so the cancel is addressable at the instant the decision is made.
+   */
+  const pendingRequestId = useRef<string | null>(null);
+
+  /**
+   * The highest lease generation this mount has acted on, or -1 before any.
+   *
+   * Main's generation is monotonic per lease and rides every event. Anything at
+   * or below what we have already applied describes a transition we have passed,
+   * so it is dropped rather than painted. Cheap, and it is the only defence
+   * against an out-of-order delivery on the event channel.
+   */
+  const appliedGeneration = useRef(-1);
+
   const release = useCallback((): void => {
     const id = leaseId.current;
+    const requestId = pendingRequestId.current;
     leaseId.current = null;
-    if (id === null) return;
+    pendingRequestId.current = null;
+    appliedGeneration.current = -1;
     // Fire and forget by design: nothing on screen depends on the answer, and
     // `unknown` (the lease already ended) is an ordinary outcome. Failures are
     // main's to log; the renderer has already stopped drawing live figures.
-    void window.vex.boardLive.unsubscribe({ leaseId: id });
+    if (id !== null) {
+      void window.vex.boardLive.unsubscribe({ leaseId: id });
+      return;
+    }
+    // PRE-RESPONSE CANCELLATION. No lease id yet means the subscribe is still
+    // in flight, and the request id is the only name both sides know. Main
+    // aborts the lease's controller on it, which ends the exchange now rather
+    // than at its deadline.
+    if (requestId !== null) {
+      void window.vex.boardLive.unsubscribe({ requestId });
+    }
   }, []);
 
   // LEASE EVENTS. Attached for the whole mount, BEFORE any subscribe can be
@@ -150,6 +183,11 @@ export function useBoardLive(pools: readonly BoardLivePool[]): BoardLiveState {
   useEffect(() => {
     const off = window.vex.boardLive.onLeaseEvent((event) => {
       if (leaseId.current !== event.leaseId) return;
+      // The generation guard. Non-blocking by design: it drops what is stale
+      // and applies everything else, so a delivery order that never goes wrong
+      // costs nothing and one that does cannot repaint a transition we left.
+      if (event.generation <= appliedGeneration.current) return;
+      appliedGeneration.current = event.generation;
       if (event.kind === "tick") {
         setRowsByKey(indexRows(event.snapshot));
         setFetchedAtMs(event.snapshot.fetchedAtMs);
@@ -164,6 +202,8 @@ export function useBoardLive(pools: readonly BoardLivePool[]): BoardLiveState {
         return;
       }
       leaseId.current = null;
+      pendingRequestId.current = null;
+      appliedGeneration.current = -1;
       generation.current += 1;
       setMode("live-off");
       setRowsByKey(null);
@@ -191,7 +231,11 @@ export function useBoardLive(pools: readonly BoardLivePool[]): BoardLiveState {
     // not leave, and the generation guard below is exactly what makes leaving
     // it safe: the response that eventually lands is discarded and its lease
     // released.
-    if (leaseId.current !== null || mode === "live-connecting") {
+    if (
+      leaseId.current !== null ||
+      pendingRequestId.current !== null ||
+      mode === "live-connecting"
+    ) {
       // Turning it OFF. The generation moves first, so a subscribe response
       // still in flight can no longer publish anything.
       generation.current += 1;
@@ -217,16 +261,23 @@ export function useBoardLive(pools: readonly BoardLivePool[]): BoardLiveState {
 
     generation.current += 1;
     const requested = generation.current;
+    // Minted BEFORE the call, and published to the ref in the same synchronous
+    // step, so a toggle-off on the very next tick of the event loop already has
+    // a name to cancel with.
+    const requestId = crypto.randomUUID();
+    pendingRequestId.current = requestId;
     setMode("live-connecting");
     setNotice(null);
     setBusy(true);
     void window.vex.boardLive
-      .subscribe({ pools: [...pools] })
+      .subscribe({ pools: [...pools], requestId })
       .then((result) => {
         if (generation.current !== requested) {
-          // R2. The reader moved on while this was in flight. If a lease was
-          // nevertheless granted, RELEASE IT: leaving it would have main
-          // polling a provider for a board that is no longer listening.
+          // R2. The reader moved on while this was in flight. The cancel has
+          // already been sent by `release` under the request id, so main has
+          // normally closed this lease before the response even lands. If it
+          // was nevertheless granted first, RELEASE IT: leaving it would have
+          // main polling a provider for a board that is no longer listening.
           if (result.ok && result.data.kind === "subscribed") {
             void window.vex.boardLive.unsubscribe({
               leaseId: result.data.leaseId,
@@ -234,6 +285,7 @@ export function useBoardLive(pools: readonly BoardLivePool[]): BoardLiveState {
           }
           return;
         }
+        pendingRequestId.current = null;
         if (!result.ok) {
           setMode("live-off");
           setNotice(result.error.message);
@@ -245,6 +297,7 @@ export function useBoardLive(pools: readonly BoardLivePool[]): BoardLiveState {
           return;
         }
         leaseId.current = result.data.leaseId;
+        appliedGeneration.current = result.data.generation;
         setRowsByKey(indexRows(result.data.snapshot));
         setFetchedAtMs(result.data.snapshot.fetchedAtMs);
         setMode("live-connected");

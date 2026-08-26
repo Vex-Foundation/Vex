@@ -69,7 +69,10 @@ export function buildMissionRunPrompt(
   // Recommending it in an install without the key sends the model at a tool the
   // dispatcher will refuse — same availability predicate the registry uses.
   if (isProtocolNamespaceAvailable("solana")) {
-    lines.push("- For fresh/newly-launched Solana tokens, prefer solana__tokens_discover with category=recent (or solana__tokens_search) — Jupiter surfaces richer signal (organic score, verification, holder/audit data) than the free DexScreener feed");
+    // Capability + ToolSearch, never a raw protocol publicName: a FRESH session
+    // has discovered nothing, so a name printed here is one the dispatcher
+    // refuses. Same treatment `TokenFind`'s description already got.
+    lines.push("- For fresh/newly-launched Solana tokens, prefer the solana namespace's recent-token discovery (its category=recent listing) or its token search, both reached with ToolSearch - Jupiter surfaces richer signal (organic score, verification, holder/audit data) than the free DexScreener feed");
   }
   lines.push("- Log significant decisions with rationale for audit trail");
   lines.push("");

@@ -23,6 +23,7 @@ import type { TransportResponse } from "@tools/dexscreener/transport.js";
 import {
   BOARD_ICON_MAX_BYTES,
   BOARD_ICON_MAX_DIMENSION,
+  BOARD_ICON_NOT_FOUND_TTL_MS,
   createBoardIconService,
   mountBoardIconService,
   resolveBoardIcon,
@@ -442,17 +443,101 @@ describe("mountBoardIconService / resolveBoardIcon", () => {
       const outcome = await resolveBoardIcon(ID);
       expect(outcome.kind).toBe("image");
     } finally {
-      teardown();
+      await teardown();
     }
   });
 
   it("the returned teardown unmounts - a later call answers not_mounted again", async () => {
     const { fetcher } = scriptedFetcher([response(200, "image/png", pngFixture(64, 64))]);
     const teardown = mountBoardIconService(fetcher);
-    teardown();
+    await teardown();
     expect(await resolveBoardIcon(`${ID}-after-teardown`)).toEqual({
       kind: "unavailable",
       reason: "not_mounted",
     });
+  });
+
+  /**
+   * THE PRODUCTION TEARDOWN ORDER, asserted by sequence rather than by a timer.
+   *
+   * `setupAgentBridges` disposes the DexScreener bridge - Chromium session,
+   * hidden window and all - in the same teardown that unmounts this service,
+   * and icon fetches run on THAT bridge's transport. So the mounted teardown
+   * has to be awaitable and its drain has to complete before the bridge step
+   * runs. The recorded order is the whole assertion: a teardown that dropped
+   * its dispose promise would push "bridge-disposed" first, with a fetch still
+   * live on a transport that is being torn down underneath it.
+   */
+  it("the mounted teardown drains in-flight work BEFORE the caller disposes the bridge", async () => {
+    const order: string[] = [];
+    const { fetcher, pendingCount } = deferredFetcher();
+    const teardown = mountBoardIconService(fetcher);
+
+    const inFlight = resolveBoardIcon(ID).then((outcome) => {
+      order.push("icon-fetch-settled");
+      return outcome;
+    });
+    await Promise.resolve();
+    expect(pendingCount()).toBe(1);
+    expect(order).toEqual([]);
+
+    // Exactly the shape of the production teardown: await the unmount, THEN
+    // dispose the transport it borrowed.
+    await teardown();
+    order.push("bridge-disposed");
+
+    expect(order).toEqual(["icon-fetch-settled", "bridge-disposed"]);
+    expect(await inFlight).toEqual({ kind: "unavailable", reason: "transport" });
+  });
+
+  it("the mounted teardown is idempotent - a second call resolves without throwing", async () => {
+    const { fetcher } = scriptedFetcher([response(200, "image/png", pngFixture(64, 64))]);
+    const teardown = mountBoardIconService(fetcher);
+    await teardown();
+    await expect(teardown()).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * ONE NUMBER, TWO PROCESSES, AND A DRIFT GUARD RATHER THAN AN IMPORT.
+ *
+ * Main answers `not_found` out of its negative cache for
+ * `BOARD_ICON_NOT_FOUND_TTL_MS`; the renderer's query holds the same 404 for
+ * `BOARD_ICON_NOT_FOUND_STALE_MS` (`src/renderer/lib/api/board-icons.ts`). A
+ * renderer asking sooner spends an IPC round trip on an answer main already
+ * has; one asking later leaves newly published artwork undrawn for no reason.
+ *
+ * The two cannot be ONE declaration: a renderer module may not import a
+ * main-process one, and the reverse import would compile a `window`-using file
+ * into the main program. So each side asserts the literal against the SAME
+ * stated window, and the sibling assertion in
+ * `src/renderer/lib/api/__tests__/board-icons.test.ts` is the other half.
+ * Changing the window on one side alone turns one of the two red.
+ */
+describe("the 404 window main enforces", () => {
+  it("is the ten minutes the renderer's own staleness is written against", () => {
+    expect(BOARD_ICON_NOT_FOUND_TTL_MS).toBe(600_000);
+  });
+
+  it("is the window a cached 404 is actually served for", async () => {
+    vi.useFakeTimers();
+    try {
+      const { fetcher, calls } = scriptedFetcher([
+        response(404, undefined, new Uint8Array()),
+        response(200, "image/png", pngFixture(64, 64)),
+      ]);
+      const service = createBoardIconService(fetcher);
+
+      expect(await service.resolve(ID)).toEqual({ kind: "absent", reason: "not_found" });
+      vi.advanceTimersByTime(BOARD_ICON_NOT_FOUND_TTL_MS - 1);
+      expect(await service.resolve(ID)).toEqual({ kind: "absent", reason: "not_found" });
+      expect(calls).toHaveLength(1);
+
+      vi.advanceTimersByTime(2);
+      expect((await service.resolve(ID)).kind).toBe("image");
+      expect(calls).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

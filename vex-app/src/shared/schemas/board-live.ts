@@ -59,9 +59,29 @@ export type BoardLivePool = z.infer<typeof boardLivePoolSchema>;
 /** Opaque lease handle. Minted by main; the renderer only echoes it back. */
 export const boardLiveLeaseIdSchema = z.string().uuid();
 
+/**
+ * The RENDERER's own name for one subscribe attempt, minted before the call.
+ *
+ * WHY A SECOND IDENTITY EXISTS AT ALL. A lease id is minted by main and is not
+ * handed back until the FIRST fetch has settled, which can be up to the attempt
+ * deadline. Between the click that starts a subscribe and that response there
+ * is a window in which the renderer holds no handle, so a reader who toggles
+ * off, switches session or unmounts inside it had no way to say which exchange
+ * to stop: main kept fetching for a board nobody was watching. This id is
+ * minted by the caller, so it exists from the first instant and a cancel can be
+ * addressed the moment the decision is made.
+ *
+ * It is a HANDLE, never a credential. Ownership is still decided by the sending
+ * webContents, exactly as it is for a lease id, so naming another window's
+ * request id gets the same typed refusal.
+ */
+export const boardLiveRequestIdSchema = z.string().uuid();
+
 export const boardLiveSubscribeInputSchema = z
   .object({
     pools: z.array(boardLivePoolSchema).min(1).max(BOARD_MAX_POOLS),
+    /** Minted by the renderer so this attempt is cancellable before it answers. */
+    requestId: boardLiveRequestIdSchema,
   })
   .strict();
 export type BoardLiveSubscribeInput = z.infer<
@@ -211,9 +231,20 @@ export type BoardLiveSubscribeResult = z.infer<
   typeof boardLiveSubscribeResultSchema
 >;
 
-export const boardLiveUnsubscribeInputSchema = z
-  .object({ leaseId: boardLiveLeaseIdSchema })
-  .strict();
+/**
+ * Release by EITHER identity, and exactly one of them.
+ *
+ * `leaseId` is the ordinary case: the subscribe answered, the renderer holds
+ * main's handle. `requestId` is the pre-response case: the subscribe has not
+ * answered yet, so the only name both sides share is the one the renderer
+ * minted. Two strict members rather than one object with two optional fields,
+ * so "neither" and "both" are rejected at the boundary instead of being
+ * resolved by a precedence rule nobody can see.
+ */
+export const boardLiveUnsubscribeInputSchema = z.union([
+  z.object({ leaseId: boardLiveLeaseIdSchema }).strict(),
+  z.object({ requestId: boardLiveRequestIdSchema }).strict(),
+]);
 export type BoardLiveUnsubscribeInput = z.infer<
   typeof boardLiveUnsubscribeInputSchema
 >;

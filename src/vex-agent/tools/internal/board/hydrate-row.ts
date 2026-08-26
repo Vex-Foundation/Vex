@@ -178,10 +178,25 @@ export interface ProjectBoardRowArgs {
 /**
  * One raw provider row as the board's hydrated row.
  *
- * Never throws and never refuses: an unreadable figure becomes null, which is
- * what the row's nullable fields mean. Refusing a whole board because a pool
- * did not resolve is the CALLER's decision (compose fails closed; the live
- * loop rejects the tick), and it is taken before this function is reached.
+ * AN UNREADABLE FIGURE BECOMES NULL. That is what the row's nullable fields
+ * mean, and it is why no individual missing number is a refusal here.
+ *
+ * IT CAN STILL THROW, and the comment that used to promise otherwise was
+ * wrong. This function does not parse the provider row itself: it delegates to
+ * the surface's own `projectPairRow`, which raises when a row's SHAPE drifts
+ * from what it can read, as opposed to when a field is merely absent. Both
+ * callers must therefore treat a throw as a real outcome, and both do, with
+ * different policies because they owe the reader different things:
+ *
+ *  - COMPOSE FAILS CLOSED. The throw leaves `hydrate.ts` as a tool failure and
+ *    no durable board is written. A board is a document, and a document is
+ *    better absent than built out of rows nobody could read.
+ *  - THE LIVE LOOP REJECTS THE TICK. `board-live-service.ts` projects inside
+ *    its classified path, so the throw degrades the lease, keeps the last-good
+ *    rows and their clock, and schedules the next attempt.
+ *
+ * Refusing a whole board because a pool did not RESOLVE is a separate decision
+ * and is taken by the caller before this function is reached.
  */
 export function projectBoardRow(args: ProjectBoardRowArgs): BoardHydratedRow {
   const h24 = projectPairRow(args.source, { window: "h24", nowMs: args.nowMs });

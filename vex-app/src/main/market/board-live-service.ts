@@ -49,6 +49,15 @@
  *     live channel, p50 700 ms, max 941 ms, with no rate limiting
  *     (`board-v2-probes/live-poll.json`).
  *
+ *  5. A LEASE IS CANCELLABLE BEFORE IT HAS A NAME FROM MAIN. `leaseId` is not
+ *     handed back until the first fetch settles, so between the reader's click
+ *     and that response there was no handle either side shared and a toggle-off
+ *     inside that window could not stop the exchange. The renderer therefore
+ *     mints a `requestId` before it calls, the lease binds it in the same
+ *     synchronous critical section that claims the slot, and an unsubscribe
+ *     addressed by it aborts the in-flight first attempt at once. Ownership is
+ *     still the sender's identity: the new handle carries no authority.
+ *
  * VISIBILITY IS NOT THE SIGNAL. The transcript is not virtualized today, so a
  * board that scrolls out of view stays mounted and its lease stays open. That
  * is correct: the lease is a decision the READER made with a toggle, not a
@@ -118,12 +127,39 @@ export interface BoardLiveTarget {
   readonly onGone: (cb: () => void) => () => void;
 }
 
-/** What one batch attempt produced, before reconciliation. */
+/**
+ * What one batch attempt produced, before reconciliation.
+ *
+ * `unrequested` and `collapsed` are the batch channel's OWN accounting of the
+ * two ways a provider answer can diverge from the question, and they are
+ * carried here rather than dropped at the adapter because dropping them made
+ * the reconciliation below unfalsifiable. The channel already removes an
+ * unrequested row from `rows` and folds a duplicate into the first, so an
+ * answer that needed either repair reconciles as if it were clean: the counts
+ * match, every requested key is present, and the tick publishes. Forwarding the
+ * two lists is what lets a tick be rejected for the reason it actually had.
+ */
 export interface BoardLiveBatchAnswer {
   readonly rows: readonly unknown[];
   readonly resolvedKeys: ReadonlySet<string>;
+  /** Row keys the provider returned that this board never named. */
+  readonly unrequested: readonly string[];
+  /** Row keys that arrived more than once and were folded into the first. */
+  readonly collapsed: readonly string[];
   readonly fetchedAtMs: number;
 }
+
+/**
+ * Why one answer could not become a published tick.
+ *
+ * `incomplete` is the answer not covering exactly the subscribed pools.
+ * `provider` is the answer being unreadable: the surface projector threw on a
+ * row whose shape drifted from what it parses. The two are separated because
+ * they are different facts about the provider and the reader is told which.
+ */
+type ReconcileOutcome =
+  | { readonly ok: true; readonly snapshot: BoardLiveSnapshot }
+  | { readonly ok: false; readonly reason: BoardLiveDegradeReason };
 
 export interface BoardLiveServiceDeps {
   /** One batch attempt. Throws a typed site error on any failure. */
@@ -154,6 +190,8 @@ type LeaseState =
 
 interface Lease {
   readonly id: string;
+  /** The renderer's own name for the subscribe that created this lease. */
+  readonly requestId: string;
   readonly target: BoardLiveTarget;
   readonly pools: readonly BoardLivePool[];
   readonly identities: readonly BatchIdentity[];
@@ -246,6 +284,8 @@ async function defaultFetchBatch(args: {
   return {
     rows: batch.rows,
     resolvedKeys: batch.resolvedKeys,
+    unrequested: batch.unrequested,
+    collapsed: batch.collapsed,
     fetchedAtMs: batch.fetchedAtMs,
   };
 }
@@ -303,6 +343,12 @@ export class BoardLiveService {
   async subscribe(args: {
     readonly target: BoardLiveTarget;
     readonly pools: readonly BoardLivePool[];
+    /**
+     * The renderer's own name for this attempt, minted before the call. It is
+     * bound to the lease SYNCHRONOUSLY, before the first fetch is awaited, so a
+     * cancel that arrives while this call is still in flight can find it.
+     */
+    readonly requestId: string;
   }): Promise<BoardLiveSubscribeOutcome> {
     const capability = this.capability();
     if (!capability.supported) {
@@ -328,6 +374,7 @@ export class BoardLiveService {
 
     const lease: Lease = {
       id: this.deps.newLeaseId(),
+      requestId: args.requestId,
       target: args.target,
       pools: args.pools,
       identities,
@@ -351,15 +398,26 @@ export class BoardLiveService {
     });
     // -------------------------------------------------------------------------
 
+    // THE FIRST ATTEMPT IS TRACKED LIKE ANY OTHER CYCLE. `stop()` drains
+    // `inFlight`, and before this was recorded the ONE attempt that is not
+    // scheduled by the tick timer - this one - was the one attempt a shutdown
+    // could abandon mid-flight rather than drain.
+    const attempt = this.deps.fetchBatch({
+      identities,
+      signal: lease.controller.signal,
+      timeoutMs: this.deps.attemptTimeoutMs,
+      coalesceScope: `board-live:${lease.id}`,
+    });
+    lease.inFlight = attempt.then(
+      () => undefined,
+      () => undefined,
+    );
+
     let answer: BoardLiveBatchAnswer;
     try {
-      answer = await this.deps.fetchBatch({
-        identities,
-        signal: lease.controller.signal,
-        timeoutMs: this.deps.attemptTimeoutMs,
-        coalesceScope: `board-live:${lease.id}`,
-      });
+      answer = await attempt;
     } catch (error) {
+      lease.inFlight = null;
       // Superseded or closed while we were waiting: say nothing, publish
       // nothing. The lease that replaced us owns the board now.
       if (this.current !== lease) {
@@ -373,21 +431,27 @@ export class BoardLiveService {
         detail: describeFailure(error, permanent),
       };
     }
+    lease.inFlight = null;
 
     if (this.current !== lease) {
       return { kind: "failed", retryable: false, detail: SUPERSEDED_DETAIL };
     }
 
-    const snapshot = this.reconcile(lease, answer);
-    if (snapshot === null) {
+    const outcome = this.reconcile(lease, answer);
+    if (!outcome.ok) {
+      // A first attempt that cannot be published closes the lease rather than
+      // leaving it registered in `subscribing` forever. That is the leak this
+      // path exists to prevent: a projection that throws used to escape the
+      // whole guarded region, and the lease it belonged to stayed in the
+      // registry with no tick scheduled and no way for anyone to release it.
       this.closeLease(lease, "dropped");
       return {
         kind: "failed",
         retryable: true,
-        detail:
-          "The market channel did not return a row for every pool on this board, so no live figures were shown. The board still shows the figures it was composed with.",
+        detail: describeReconcileFailure(outcome.reason),
       };
     }
+    const snapshot = outcome.snapshot;
 
     lease.lastGood = snapshot;
     lease.state = "active";
@@ -409,11 +473,26 @@ export class BoardLiveService {
    * able to call this twice without seeing an error.
    */
   unsubscribe(args: {
-    readonly leaseId: string;
+    /** Main's handle, once the subscribe has answered. */
+    readonly leaseId?: string;
+    /**
+     * The renderer's own handle, usable BEFORE the subscribe has answered.
+     * Closing on this aborts the lease's controller, which is what cancels the
+     * initial fetch immediately rather than letting it run to its deadline.
+     */
+    readonly requestId?: string;
     readonly ownerId: number;
   }): BoardLiveUnsubscribeOutcome {
     const lease = this.current;
-    if (lease === null || lease.id !== args.leaseId) return "unknown";
+    if (lease === null) return "unknown";
+    const named =
+      args.leaseId !== undefined
+        ? lease.id === args.leaseId
+        : args.requestId !== undefined && lease.requestId === args.requestId;
+    if (!named) return "unknown";
+    // Ownership is checked for BOTH identities. A request id is a handle in
+    // exactly the sense a lease id is, so it buys no authority over another
+    // window's board.
     if (lease.target.ownerId !== args.ownerId) return "not-owner";
     this.closeLease(lease, "unsubscribed");
     return "closed";
@@ -444,32 +523,56 @@ export class BoardLiveService {
   /* ------------------------------------------------------------------ */
 
   /**
-   * Reconcile one answer EXACTLY against what the lease asked for.
+   * Reconcile one answer EXACTLY against what the lease asked for, and project
+   * it.
    *
-   * Returns null on ANY deviation: a missing identity, an identity the board
-   * never named, or a duplicate. Null means the caller must reject the whole
-   * tick, because a board showing seven fresh cards and one from five minutes
-   * ago, labelled "live", is a lie no reader can detect.
+   * Refuses on ANY deviation: a missing identity, an identity the board never
+   * named, a duplicate, or a row the projector cannot read. Refusal means the
+   * caller must reject the whole tick, because a board showing seven fresh
+   * cards and one from five minutes ago, labelled "live", is a lie no reader
+   * can detect.
+   *
+   * THE PROJECTION HAPPENS INSIDE THIS GUARD, and that placement is the point.
+   * `projectBoardRow` delegates to the surface's own row projector, which can
+   * throw when a provider row's shape drifts. Projecting outside the classified
+   * path let that throw escape the state machine entirely: on a first attempt
+   * it left a lease registered in `subscribing` with nobody able to release it,
+   * and on a later tick it left an active lease with no next tick ever
+   * scheduled. Caught here it is an ordinary `provider` failure, which the
+   * backoff, the drop budget and the last-good rule already know how to handle.
    */
   private reconcile(
     lease: Lease,
     answer: BoardLiveBatchAnswer,
-  ): BoardLiveSnapshot | null {
-    if (answer.resolvedKeys.size !== lease.requestedKeys.size) return null;
+  ): ReconcileOutcome {
+    const incomplete: ReconcileOutcome = { ok: false, reason: "incomplete" };
+
+    // THE CHANNEL'S OWN ACCOUNTING FIRST. The batch channel silently REPAIRS
+    // both of these before it returns - it drops a row nobody asked for and
+    // folds a duplicate into the first - so by the time the counts below are
+    // compared, an answer that needed either repair looks exactly like a clean
+    // one. Either list carrying anything means the provider answered a
+    // different question than the one this board asked, and this service does
+    // not publish an answer to a question it did not ask.
+    if (answer.unrequested.length > 0 || answer.collapsed.length > 0) {
+      return incomplete;
+    }
+
+    if (answer.resolvedKeys.size !== lease.requestedKeys.size) return incomplete;
     for (const key of lease.requestedKeys) {
-      if (!answer.resolvedKeys.has(key)) return null;
+      if (!answer.resolvedKeys.has(key)) return incomplete;
     }
 
     const byKey = new Map<string, unknown>();
     for (const row of answer.rows) {
       const key = rowKey(row);
-      if (key === null) return null;
+      if (key === null) return incomplete;
       // A duplicate row for one identity means the answer covers an epoch this
       // service cannot resolve between. Reject rather than pick one.
-      if (byKey.has(key)) return null;
+      if (byKey.has(key)) return incomplete;
       byKey.set(key, row);
     }
-    if (byKey.size !== lease.requestedKeys.size) return null;
+    if (byKey.size !== lease.requestedKeys.size) return incomplete;
 
     const nowMs = this.deps.now();
     const sanitized = new Set<string>();
@@ -477,18 +580,25 @@ export class BoardLiveService {
     for (const [index, pool] of lease.pools.entries()) {
       const key = `${pool.chain}:${pool.pairAddress}`.toLowerCase();
       const source = byKey.get(key);
-      if (source === undefined) return null;
-      rows.push({
-        key,
-        row: projectBoardRow({
+      if (source === undefined) return incomplete;
+      let row;
+      try {
+        row = projectBoardRow({
           source,
           nowMs,
           fieldPathPrefix: `pools[${index}]`,
           sanitizedFieldPaths: sanitized,
-        }),
-      });
+        });
+      } catch (error) {
+        log.warn(
+          `[board-live] lease ${lease.id}: the market channel returned a row this build cannot read`,
+          error instanceof Error ? error.message : String(error),
+        );
+        return { ok: false, reason: "provider" };
+      }
+      rows.push({ key, row });
     }
-    return { fetchedAtMs: answer.fetchedAtMs, rows };
+    return { ok: true, snapshot: { fetchedAtMs: answer.fetchedAtMs, rows } };
   }
 
   /**
@@ -545,14 +655,18 @@ export class BoardLiveService {
 
     if (!this.isCurrent(lease)) return;
 
-    const snapshot = this.reconcile(lease, answer);
-    if (snapshot === null) {
+    const outcome = this.reconcile(lease, answer);
+    if (!outcome.ok) {
       // The whole tick is rejected. Last-good rows AND their timestamp stay
       // exactly as they were: the age on screen is the age of the figures the
-      // reader is looking at, never the age of the last attempt.
-      this.onCycleFailure(lease, "incomplete", false);
+      // reader is looking at, never the age of the last attempt. Degrading
+      // rather than dropping is what keeps the next tick scheduled, which is
+      // the difference between a board that recovers and a board that is
+      // frozen with an active lease and no clock running.
+      this.onCycleFailure(lease, outcome.reason, false);
       return;
     }
+    const snapshot = outcome.snapshot;
 
     lease.lastGood = snapshot;
     lease.consecutiveFailures = 0;
@@ -646,6 +760,14 @@ export class BoardLiveService {
 
 const SUPERSEDED_DETAIL =
   "Another board claimed the live connection while this one was starting, so this board stays on the figures it was composed with.";
+
+/** A reader-facing sentence for a first answer that could not be published. */
+function describeReconcileFailure(reason: BoardLiveDegradeReason): string {
+  if (reason === "provider") {
+    return "The market channel returned figures this build could not read, so no live figures were shown. The board still shows the figures it was composed with.";
+  }
+  return "The market channel did not return a row for every pool on this board, so no live figures were shown. The board still shows the figures it was composed with.";
+}
 
 /** A reader-facing sentence for a failed first attempt. Never a raw provider payload. */
 function describeFailure(error: unknown, permanent: boolean): string {
