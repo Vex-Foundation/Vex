@@ -37,4 +37,3 @@ export const PILL_LABEL: Readonly<Record<BoardChartPillResolution, string>> = {
   "2h": "7D",
   "8h": "30D",
 };
-

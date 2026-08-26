@@ -111,4 +111,3 @@ function ChartAttribution(): JSX.Element {
     </span>
   );
 }
-
