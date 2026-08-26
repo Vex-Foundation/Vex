@@ -152,6 +152,7 @@ function hooks() {
   const staged: unknown[] = [];
   let acceptedCalled = false;
   return {
+    onNonceReserved: vi.fn(async (request: { nodePendingNonce: number }) => request.nodePendingNonce),
     onHashStaged: vi.fn(async (handles: unknown) => {
       staged.push(handles);
     }),

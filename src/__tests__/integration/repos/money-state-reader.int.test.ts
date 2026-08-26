@@ -253,7 +253,7 @@ describe("getUnresolvedMoneyStateForSession", () => {
     expect(await kindsFor(sessionId)).toEqual(["wallet_intent_live"]);
   });
 
-  for (const status of ["failed", "audit_failed"] as const) {
+  for (const status of ["review_required", "audit_failed"] as const) {
     it(`blocks on a '${status}' wallet intent CARRYING a tx hash`, async () => {
       await insertWalletIntent(sessionId, { status, txHash: "0xdeadbeef" });
       const state = await readMoneyState(sessionId);

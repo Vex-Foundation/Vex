@@ -1,0 +1,23 @@
+{
+  "fixture": "bars-http-bbn-anchored-uniswap-ethereum.bin.b64",
+  "encoding": "dsavro",
+  "dsavroSchema": "PL_BARS_RESPONSE",
+  "endpoint": "https://io.dexscreener.com/dex/chart/amm/v3/uniswap/bars/ethereum/0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f?res=60&cb=48&q=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2&bbn=25178614",
+  "requestParams": {
+    "res": "60",
+    "cb": 48,
+    "q": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "bbn": 25178614
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 6949,
+  "sha256": "bfa9d522836b6262b518bcaddb110f76670d9aeeed3bd875b82faea41d14c29f",
+  "capturedBy": "live recon probe (curl_cffi impersonate=chrome), 2026-08-24 09:38-09:46Z; archived under scratchpad/live-turn2/chart-flow with run.jsonl, per-request meta and sha256",
+  "note": "The block-anchored window: bbn = anchorBlock + 1 returned the target 09:00 bar 17 months back in one request."
+}

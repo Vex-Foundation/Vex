@@ -71,8 +71,8 @@ export type VexDomain =
   | "portfolio"
   /**
    * T1 — read-only VEX market snapshot for the welcome-screen price widget
-   * (`market.getVexSnapshot`). Main owns the external poll (DexScreener /
-   * GeckoTerminal / Virtuals) and broadcasts sanitized snapshots on
+   * (`market.getVexSnapshot`). Main owns the external poll (DexScreener
+   * price and candles, Virtuals holders) and broadcasts sanitized snapshots on
    * `EV.market.vex`; the renderer never fetches. The handler only reads the
    * in-memory cache, so failures map to `internal.unexpected`.
    */
@@ -120,6 +120,16 @@ export type VexDomain =
    * separate follow-up.
    */
   | "sessions"
+  /**
+   * Vex Studio projects (stage P). A project is a folder under the projects
+   * root plus one backing `sessions` row (`mode = 'agent'`,
+   * `scope = 'vex_studio'`). The domain owns the project entity itself:
+   * creation, reads, and scope edits (permission, wallet selection, agent
+   * roster). It grants no authority of its own - a project's permission and
+   * wallet scope are enforced by the same session-keyed gates every agent
+   * session goes through.
+   */
+  | "projects"
   /** Used by the preload boundary when input fails its own Zod schema before reaching main. */
   | "preload"
   /** Reserved for unexpected internal errors that don't fit a specific domain. */
@@ -328,6 +338,56 @@ export type VexErrorCode =
   | "tokenLaunch.value_ceiling_exceeded"
   | "tokenLaunch.launch_count_exceeded"
   | "tokenLaunch.ceiling_not_set"
+  /**
+   * Vex Studio project refusals (stage P). Every one names the real cause and
+   * the remedy; none of them is an "unexpected error".
+   *
+   *  - `projects.root_changed`     - the configured projects root no longer
+   *    matches the root recorded in `studio_settings` at first creation, and
+   *    projects already exist under the recorded one. Every projects operation
+   *    fails closed rather than silently re-homing rows whose `root_path` is
+   *    relative to the old root. Remedy: restore the configured root. Moving
+   *    the root is a separate explicit workflow.
+   *    `retryable: false, userActionable: true`.
+   *
+   *  - `projects.root_unavailable` - the projects root could not be created or
+   *    resolved on disk (permissions, a file where the directory belongs, a
+   *    dangling mount). Nothing was written. `retryable: true`.
+   *
+   *  - `projects.slug_taken`       - the directory `<root>/<slug>` already
+   *    exists. The create path claims it with an exclusive `mkdir` and NEVER
+   *    replaces or renames an existing path, so an occupied slug is a refusal,
+   *    not an overwrite. `retryable: false, userActionable: true`.
+   *
+   *  - `projects.not_found`        - no project with that id.
+   *
+   *  - `projects.scope_conflict`   - the optimistic `expectedScopeVersion` did
+   *    not match the row's current `scope_version`: someone else edited the
+   *    project scope first. Nothing was written; the caller re-reads and
+   *    re-applies. `retryable: false, userActionable: true`.
+   *
+   *  - `projects.wallet_drift`     - a stored wallet selection no longer
+   *    resolves to the same address in the wallet inventory (the id vanished,
+   *    or was force re-imported over a different key). The read fails closed
+   *    rather than handing back a selection that would sign with a key the user
+   *    never chose. Remedy: re-select the wallet in project settings.
+   *    `retryable: false, userActionable: true`.
+   *
+   *  - `projects.backing_session_integrity` - a scope edit's mirror UPDATE on
+   *    the project's backing session matched a row count other than one: the
+   *    session is missing, or is no longer a `vex_studio` session. The edit is
+   *    rolled back so the project and its session cannot disagree about
+   *    permission or wallet scope. The stored state is inconsistent and stage P
+   *    implements no repair, so this is not retryable.
+   *    `retryable: false, userActionable: true`.
+   */
+  | "projects.root_changed"
+  | "projects.root_unavailable"
+  | "projects.slug_taken"
+  | "projects.not_found"
+  | "projects.scope_conflict"
+  | "projects.wallet_drift"
+  | "projects.backing_session_integrity"
   | "internal.contract_violation"
   | "internal.cancelled"
   | "internal.unexpected";

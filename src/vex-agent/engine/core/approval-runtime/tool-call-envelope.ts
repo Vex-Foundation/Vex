@@ -36,8 +36,9 @@
  * EXCLUDED: description churn is constant in this repo and must never strand a
  * queued approval.
  *
- * HISTORICAL ROWS ARE UNTOUCHED. A row without the `vex` block is replayed
- * exactly as before — no fingerprint, no identity check, same dispatch.
+ * Historical agent rows without the `vex` block keep their prior replay
+ * behavior. Studio additionally requires its versioned authority digest, so a
+ * pre-authority-digest Studio row is refused and must be requested again.
  */
 
 import { z } from "zod";
@@ -47,6 +48,7 @@ import type { ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
 import { getProtocolManifest } from "@vex-agent/tools/protocols/catalog.js";
 import { resolveInjectedProtocolTool } from "@vex-agent/tools/registry/injected-protocol-tools.js";
 import { resolveToolName } from "@vex-agent/tools/registry/name-resolution.js";
+import type { IntentPreview } from "../approval-intent-preview.js";
 
 /**
  * Current envelope-metadata version.
@@ -96,10 +98,18 @@ const envelopeMetadataSchema = z.object({
 export function buildApprovalToolCall(
   toolName: string,
   toolArgs: Record<string, unknown>,
+  binding?: ApprovalProposalBinding,
 ): Record<string, unknown> {
   const canonicalName = resolveToolName(toolName);
   const manifest = resolveInjectedProtocolTool(canonicalName);
-  if (!manifest) return { command: canonicalName, args: toolArgs };
+  // The binding is a SIBLING of `vex`, not a member of it: `vex` is the
+  // protocol-manifest identity block, whose schema is versioned and whose
+  // absence means "historical row". A proposal binding is a different fact
+  // about a different lane (an internal tool with no manifest at all), and
+  // folding it into that block would make every bound approval look like a
+  // manifest envelope to `checkApprovalManifestIdentity`.
+  const boundBlock = binding === undefined ? {} : { proposalBinding: proposalBindingBlock(binding) };
+  if (!manifest) return { command: canonicalName, args: toolArgs, ...boundBlock };
 
   return {
     command: "execute_tool",
@@ -109,7 +119,81 @@ export function buildApprovalToolCall(
       originalToolName: toolName,
       manifestFingerprint: computeManifestFingerprint(manifest),
     },
+    ...boundBlock,
   };
+}
+
+/**
+ * What an approval for a PREPARED PROPOSAL is bound to, as it is stored.
+ *
+ * It is inside the envelope on purpose. `computeRequestDigest` hashes the whole
+ * stored envelope, so putting the proposal digest here is what makes the
+ * approval identify the exact transaction the human read - rather than
+ * `{walletFamily, intentId}`, which names WHICH row and says nothing about what
+ * it does. Storing it also makes it READABLE at resume: the confirm handler
+ * compares the intent it is about to consume against THIS value, never against
+ * whatever digest currently sits beside the row.
+ */
+export interface ApprovalProposalBinding {
+  /**
+   * The CANONICAL card the human was shown, carried whole.
+   *
+   * It is stored because the card the user read is part of what the approval
+   * authorizes, and the durable card row (`approval_intents.preview_json`) is
+   * rendered FROM this value: keeping the canonical form here lets a resume
+   * re-derive it from the intent and compare both, so an edit to either the
+   * envelope or the card is caught before anything is signed. It also rides
+   * into `computeRequestDigest` for free, which is what binds the sentence to
+   * the Studio dispatch check rather than only to the confirm handler.
+   */
+  readonly preview: {
+    readonly label: string;
+    readonly criticalArgs: Record<string, string | number | boolean | null>;
+  };
+  readonly proposalDigest: string;
+  readonly proposalDigestVersion: string;
+  readonly resource: { readonly table: string; readonly intentId: string };
+}
+
+const proposalBindingSchema = z.object({
+  preview: z.object({
+    label: z.string().min(1),
+    criticalArgs: z.record(
+      z.string(),
+      z.union([z.string(), z.number(), z.boolean(), z.null()]),
+    ),
+  }),
+  proposalDigest: z.string().min(1),
+  proposalDigestVersion: z.string().min(1),
+  resource: z.object({ table: z.string().min(1), intentId: z.string().min(1) }),
+});
+
+function proposalBindingBlock(binding: ApprovalProposalBinding): Record<string, unknown> {
+  return {
+    preview: {
+      label: binding.preview.label,
+      criticalArgs: { ...binding.preview.criticalArgs },
+    },
+    proposalDigest: binding.proposalDigest,
+    proposalDigestVersion: binding.proposalDigestVersion,
+    resource: { table: binding.resource.table, intentId: binding.resource.intentId },
+  };
+}
+
+/**
+ * The binding recorded on a stored approval, or `null` when the row carries
+ * none (every lane but the generic signing confirm, and every historical row).
+ *
+ * A MALFORMED block reads as `null` rather than throwing: the caller's own
+ * contract decides what an absent binding means, and on the money path that
+ * decision is "refuse", which is strictly safer than an exception escaping a
+ * read.
+ */
+export function readApprovalProposalBinding(
+  rawToolCall: Record<string, unknown>,
+): ApprovalProposalBinding | null {
+  const parsed = proposalBindingSchema.safeParse(rawToolCall.proposalBinding);
+  return parsed.success ? parsed.data : null;
 }
 
 export type ApprovalManifestIdentity =
@@ -273,4 +357,193 @@ function buildIdentityRefusal(cause: string): string {
     `Approved action refused: ${cause}. Nothing was executed and no funds moved. ` +
     `Call the tool again with the parameters you want and request a fresh approval.`
   );
+}
+
+/**
+ * The REQUEST DIGEST - sha256 over the canonical JSON of the envelope
+ * `buildApprovalToolCall` produced.
+ *
+ * ONE OWNER, ON PURPOSE. The digest exists so a Studio dispatch can prove at
+ * commit time that it is about to execute the exact envelope the human saw on
+ * the approval card. If the digest were computed over the CALL (tool name plus
+ * raw arguments) it would canonicalize the same value twice, in two places,
+ * with two chances to disagree - and the half that dispatches is the half that
+ * matters. So the input is the stored envelope itself: the digest is taken at
+ * enqueue over the value written to `approval_queue.tool_call`, and recomputed
+ * at commit over the value read back from that column.
+ *
+ * Key order is canonicalized recursively because JSONB does not preserve it;
+ * ARRAY order is preserved because it is meaningful in tool arguments. Values
+ * `undefined` cannot survive a JSONB round trip and are dropped on both sides,
+ * so dropping them here keeps enqueue and commit in agreement.
+ */
+/**
+ * Does the stored envelope still hash to the digest recorded at enqueue?
+ *
+ * ONE OWNER for the COMPARISON as well as for the hash, because the null rule is
+ * policy and not a formatting detail: a `null` stored digest is a row written
+ * before this column existed, and refusing those would refuse historical
+ * approvals that nothing has tampered with. Every lane that dispatches an
+ * approved call asks THIS function, so the two lanes cannot drift into two
+ * different answers about what an unrecorded digest means.
+ */
+export function approvalRequestDigestMatches(
+  rawToolCall: Record<string, unknown>,
+  storedDigest: string | null,
+): boolean {
+  if (storedDigest === null) return true;
+  return computeRequestDigest(rawToolCall) === storedDigest;
+}
+
+/** Current preimage contract for a Studio approval's complete authority card. */
+export const STUDIO_AUTHORITY_DIGEST_VERSION = "studio-authority-v1";
+
+export interface StudioAuthorityDigestInput {
+  readonly envelope: Record<string, unknown>;
+  readonly preview: unknown;
+  readonly expiresAt: string;
+  readonly sessionId: string;
+  readonly projectId: string;
+  readonly scopeVersion: number;
+  readonly permission: "restricted" | "full";
+}
+
+/**
+ * Bind every fact the Studio approval UI and resume path treat as authority.
+ * The version is part of both the stored prefix and the hashed preimage, so a
+ * future contract cannot accidentally validate a digest created under this
+ * field set. Manifest metadata is included explicitly as well as through the
+ * envelope to make its role in the authority contract reviewable.
+ */
+export function computeStudioAuthorityDigest(
+  input: StudioAuthorityDigestInput,
+): string {
+  const preimage = {
+    version: STUDIO_AUTHORITY_DIGEST_VERSION,
+    origin: "studio_mcp",
+    sessionId: input.sessionId,
+    projectId: input.projectId,
+    scopeVersion: input.scopeVersion,
+    permission: input.permission,
+    expiresAt: input.expiresAt,
+    preview: input.preview,
+    envelope: input.envelope,
+    manifestIdentity: studioManifestIdentity(input.envelope),
+  };
+  const hash = createHash("sha256")
+    .update(JSON.stringify(canonicalizeJsonValue(preimage)))
+    .digest("hex");
+  return `${STUDIO_AUTHORITY_DIGEST_VERSION}:${hash}`;
+}
+
+/** A historical envelope-only or missing digest never authorizes Studio. */
+export function studioAuthorityDigestMatches(
+  input: StudioAuthorityDigestInput,
+  storedDigest: string | null,
+): boolean {
+  if (
+    storedDigest === null
+    || !storedDigest.startsWith(`${STUDIO_AUTHORITY_DIGEST_VERSION}:`)
+  ) {
+    return false;
+  }
+  return computeStudioAuthorityDigest(input) === storedDigest;
+}
+
+/**
+ * Exact JSON equality for the complete renderer card. Recursive key sorting is
+ * only to neutralize JSONB object-key order; arrays retain their order and an
+ * added or removed field always changes the comparison.
+ */
+export function approvalPreviewExactlyMatches(
+  expected: IntentPreview,
+  stored: unknown,
+): boolean {
+  return (
+    JSON.stringify(canonicalizeJsonValue(expected))
+    === JSON.stringify(canonicalizeJsonValue(stored))
+  );
+}
+
+export interface StudioApprovalToolCall {
+  readonly toolName: string;
+  readonly toolArgs: Record<string, unknown>;
+  readonly toolCallId: string;
+}
+
+/**
+ * Recover the public Studio call from its durable envelope. Protocol approvals
+ * are stored as the internal `execute_tool` restart envelope, but Studio
+ * admission deliberately keeps that internal name closed. The manifest block
+ * retains the original public name, and the nested params are the exact args
+ * that name received. A malformed shape returns null and is refused.
+ */
+export function readStudioApprovalToolCall(
+  rawToolCall: Record<string, unknown>,
+  fallbackToolCallId: string,
+): StudioApprovalToolCall | null {
+  const metadata = envelopeMetadataSchema.safeParse(rawToolCall.vex);
+  if (metadata.success) {
+    if (!isPlainRecord(rawToolCall.args)) return null;
+    if (!isPlainRecord(rawToolCall.args.params)) return null;
+    return {
+      toolName: metadata.data.originalToolName,
+      toolArgs: rawToolCall.args.params,
+      toolCallId: fallbackToolCallId,
+    };
+  }
+  if (rawToolCall.vex !== undefined) return null;
+
+  const name = rawToolCall.command ?? rawToolCall.name;
+  const args = rawToolCall.args ?? rawToolCall.arguments ?? {};
+  if (typeof name !== "string" || name.length === 0 || !isPlainRecord(args)) {
+    return null;
+  }
+  return { toolName: name, toolArgs: args, toolCallId: fallbackToolCallId };
+}
+
+function studioManifestIdentity(
+  envelope: Record<string, unknown>,
+): Record<string, unknown> {
+  if (envelope.vex !== undefined) {
+    return { kind: "protocol", metadata: envelope.vex };
+  }
+  return {
+    kind: "internal",
+    command:
+      typeof envelope.command === "string"
+        ? envelope.command
+        : typeof envelope.name === "string"
+          ? envelope.name
+          : null,
+  };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function computeRequestDigest(envelope: Record<string, unknown>): string {
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalizeJsonValue(envelope)))
+    .digest("hex");
+}
+
+/**
+ * Recursive key-sorted projection. Objects become key-sorted objects, arrays
+ * keep their order, scalars pass through. Anything JSON cannot represent
+ * (`undefined`, a function) is omitted exactly as `JSON.stringify` would omit
+ * it, so the digest describes what is actually stored.
+ */
+function canonicalizeJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJsonValue);
+  if (value === null || typeof value !== "object") return value;
+  const source = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(source).sort(compareStrings)) {
+    const projected = canonicalizeJsonValue(source[key]);
+    if (projected === undefined) continue;
+    out[key] = projected;
+  }
+  return out;
 }

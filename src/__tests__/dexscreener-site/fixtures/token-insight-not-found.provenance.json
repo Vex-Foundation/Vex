@@ -1,0 +1,20 @@
+{
+  "encoding": "protobuf",
+  "protobufMessage": "dex_feed.WSMessage",
+  "endpoint": "wss://io.dexscreener.com/feed/ws",
+  "requestParams": {
+    "command": "getTokenInsight",
+    "cid": 30,
+    "chainId": "ethereum",
+    "tokenId": "0x6982508145454Ce325dDbE47a25d4ec3d2311933"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-08-24T12:23:11+00:00",
+  "httpStatus": 101,
+  "capturedBy": "live capture for S3 (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-08-24; capture script scratchpad/s3-capture.py",
+  "fixture": "token-insight-not-found.bin.b64",
+  "bytes": 6,
+  "sha256": "fd993c52a9ea9be38c3fa238ed54fc554977cca9913919eb2543ae534e7cb0d4"
+}

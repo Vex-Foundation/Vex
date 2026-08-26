@@ -70,19 +70,16 @@ const REVIEWED_NON_CHARGING_SITES = new Map<string, string>([
     "protocol:pools.tokens :: feeRecipientAddress",
     "read-only launchpad screening filter; sets no fee and directs no payment",
   ],
-  // The two DexScreener endpoint selectors added by the Batch 2 merges. `feed`
-  // matches /fee/i by SPELLING only: its closed enum picks which read-only
-  // provider URL fills the rows (latest | recentUpdates, latest | top) on read
-  // tools that reach no signing path, charge nothing, and carry no recipient of
-  // any kind. A future MUTATING tool spelling a param `feed` is NOT covered by
-  // these entries and must face this sweep on its own.
+  // The S3 spotlight tool's feed selector, same spelling collision and same
+  // reasoning: `feed` picks which of the three feeds inside ONE already-fetched
+  // read-only provider document is projected (topBoosts | recentBoosts |
+  // latestProfiles | all). It reaches no signing path, charges nothing, and
+  // names no recipient. The "boost amounts" in the rows it selects are money
+  // OTHER people already spent on the provider, reported as data; nothing here
+  // can direct a payment of ours.
   [
-    "protocol:dexscreener.profiles :: feed",
-    "read-only provider endpoint selector, closed enum; sets no fee and directs no payment",
-  ],
-  [
-    "protocol:dexscreener.boosts :: feed",
-    "read-only provider endpoint selector, closed enum; sets no fee and directs no payment",
+    "protocol:dexscreener.spotlight :: feed",
+    "read-only provider feed selector, closed enum; sets no fee and directs no payment",
   ],
 ]);
 

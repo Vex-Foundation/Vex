@@ -27,6 +27,7 @@ import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
 import {
   createAgentActivityIntent,
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
   confirmLaunchWithOutputIdentity,
   fillLaunchOutputIdentityOnConfirmed,
@@ -106,6 +107,7 @@ export async function broadcastLaunch(x: BroadcastLaunchInput): Promise<ToolResu
   let outcome: StagedBroadcastOutcome;
   try {
     outcome = await signStageBroadcast(x.publicClient, x.walletClient, x.plan.txParams, {
+      onNonceReserved: (request) => reserveActivityEvmNonce(launchRowId, request),
       onHashStaged: async (handles) => {
         signedLocally = true;
         const res = await markActivityBroadcast(launchRowId, handles);
@@ -484,7 +486,7 @@ async function chargeVexFee(
       plan,
       feeRowId,
       publicClient: x.publicClient,
-      walletClient: x.walletClient,
+      signer: x.walletClient,
       // Anchor the fee's gas estimate on the block the launch confirmed in —
       // the same dependent-leg discipline the approve→sell path uses.
       priorLeg: priorLegAnchorFrom(outcome.receipt.blockNumber),

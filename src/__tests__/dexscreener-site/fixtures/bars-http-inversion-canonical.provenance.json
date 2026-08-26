@@ -1,0 +1,22 @@
+{
+  "fixture": "bars-http-inversion-canonical.bin.b64",
+  "encoding": "dsavro",
+  "dsavroSchema": "PL_BARS_RESPONSE",
+  "endpoint": "https://io.dexscreener.com/dex/chart/amm/v3/uniswap/bars/ethereum/0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f?res=60&cb=1&q=<correct quote>",
+  "requestParams": {
+    "res": "60",
+    "cb": 1,
+    "q": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 446,
+  "sha256": "bca5ee14293cf0662552f749c096347cb6aefa61126c7153f75b672b511139a5",
+  "capturedBy": "live recon probe (curl_cffi impersonate=chrome), 2026-08-24 09:38-09:46Z; archived under scratchpad/live-turn2/chart-flow with run.jsonl, per-request meta and sha256",
+  "note": "Correct quote token: the canonical orientation."
+}

@@ -1,0 +1,183 @@
+/**
+ * The site MARKET-CONTEXT family: 1 read-only tool, narratives.
+ *
+ * `dexscreener.trending` is a RECLAIMED toolId. The public-API narratives tool
+ * that held it was retired whole in S3.5 (owner decision D-DS2, total and
+ * alias-free); this tool answers the same question off the website's Avro
+ * narratives channel, and BOTH identities are preserved deliberately, toolId
+ * and publicName alike, because the question did not change. What changed is
+ * the answer: the retired tool could only list narratives globally, this one
+ * aggregates them PER CHAIN. No deprecation alias row exists and none is
+ * wanted.
+ *
+ * WHY ITS OWN MODULE. Every other tool in this namespace projects
+ * `dex_screener_schema.Pair` rows through `screen-core/`. This one does not:
+ * its rows are narrative aggregates off a different endpoint with a different
+ * codec, so it has its own row vocabulary, its own field groups, and its own
+ * reasons to change.
+ *
+ * THE CROSS-REFERENCE THIS TOOL EXISTS TO CARRY. Every row's `id` is the exact
+ * value the screening family's `metaIds` filter accepts. The site's `slug` is
+ * NOT (measured: slug "ai" matched 0 pairs, its id matched 243). Both
+ * descriptions state the handoff, so theme discovery drills into the theme's
+ * pairs instead of dead-ending.
+ *
+ * Every `description` here begins from the model-visible draft in
+ * `tool-surface-spec/dexscreener-site/tool-descriptions-v1.md` section 14
+ * (owner decision D-DS7) and extends it only with units, if-omitted semantics
+ * and the shared honesty clauses. No sentence of the draft is dropped or
+ * reworded.
+ */
+
+import type { ProtocolToolManifest, ProtocolParamDef } from "../../types.js";
+import { CANONICAL_CHAIN_SENTENCE } from "../../conventions.js";
+import { DEXSCREENER_MARKET_CONTEXT_DISCOVERY } from "../../embeddings/dexscreener/market-context.js";
+import { SCREEN_WINDOW_VALUES } from "./screen-params.js";
+import { SCREEN_SOURCE_OBSERVATION_CLAUSE } from "./screen-params/clauses.js";
+import {
+  NARRATIVE_FIELD_GROUPS,
+  NARRATIVE_LIMIT_DEFAULT,
+  NARRATIVE_LIMIT_MIN,
+  NARRATIVE_SORT_KEYS,
+  NARRATIVE_MAX_ENRICHED_DEFAULT,
+  NARRATIVE_MAX_ENRICHED_MIN,
+  NARRATIVE_TOP_TOKENS_MIN,
+} from "./market-context-params.js";
+
+const NARRATIVES_PARAMS: readonly ProtocolParamDef[] = [
+  {
+    key: "chain",
+    type: "string",
+    description:
+      "Chain slug to aggregate the narratives for, for example solana, bsc, base or ethereum. "
+      + "Omit it for the cross-chain document, which is what the site's own narratives page shows. "
+      + `${CANONICAL_CHAIN_SENTENCE} ANY chain in the catalog may be asked: aggregates were `
+      + "measured live on robinhood, ton and polygon, none of which the site gives a narratives "
+      + "page to, so the four surfaced chains are a visibility label and never a data gate. A "
+      + "chain with no narrative activity is a successful answer reading 0 of 18 active, not a "
+      + "refusal; only a slug that is not a chain at all is refused, with the nearest matches.",
+  },
+  {
+    key: "window",
+    type: "string",
+    enum: [...SCREEN_WINDOW_VALUES],
+    description:
+      "Which change window the flat marketCapChangePct and marketCapDeltaUsd fields report, and "
+      + "which one sortBy marketCapChangePct ranks on: m5, h1, h6 or h24. Defaults to h24. The "
+      + "provider always sends all four regardless of this value, so selecting one costs nothing "
+      + "and the windows field group returns every one of them; this is a projection choice, never "
+      + "a narrowing of the request.",
+  },
+  {
+    key: "sortBy",
+    type: "string",
+    enum: [...NARRATIVE_SORT_KEYS],
+    description:
+      `How to order the narratives: ${NARRATIVE_SORT_KEYS.join(", ")}. Defaults to marketCapUsd. `
+      + "Ordering runs HERE, over the complete set the provider sent, which on this channel is the "
+      + "whole population rather than a page, so the ranking is exhaustive and not a sample. "
+      + "marketCapChangePct ranks on the selected window.",
+  },
+  {
+    key: "sortDir",
+    type: "string",
+    enum: ["desc", "asc"],
+    description:
+      "Ranking direction: desc for the largest values first, asc for the smallest. Defaults to "
+      + "desc. Combine asc with marketCapChangePct to surface the narratives that are bleeding.",
+  },
+  {
+    key: "limit",
+    type: "number",
+    description:
+      `How many narratives to return, ${NARRATIVE_LIMIT_MIN} or more. Defaults to `
+      + `${NARRATIVE_LIMIT_DEFAULT}. The provider serves the entire set in one small document with `
+      + "no pagination, so returned, activeNarratives, totalNarratives and hasMore together say "
+      + "exactly how many exist, how many are active on the requested scope and how many were "
+      + "shown; a limit above the population returns the population.",
+  },
+  {
+    key: "fields",
+    type: "string",
+    description:
+      "Comma-separated row field GROUPS to return, not individual field names. Supported groups: "
+      + `${NARRATIVE_FIELD_GROUPS.join(", ")}. Defaults to core, which carries the id, name, slug, `
+      + "the aggregate market cap, liquidity, volume and token count, the selected window's change "
+      + "in percent and dollars, and the derived turnover ratio. windows adds all four change "
+      + "windows; description adds DexScreener's own blurb and the icon. An unknown group name is "
+      + "refused with the full list rather than ignored.",
+  },
+  {
+    key: "topTokens",
+    type: "number",
+    description:
+      `How many of each narrative's leading pairs to embed, ${NARRATIVE_TOP_TOKENS_MIN} or more. `
+      + "Omit it or send 0 for none, which is the default and the cheap path. There is no upper "
+      + "bound to refuse against: the enriching call already fetched a whole screener page, so a "
+      + "value above that page returns the page. What it COSTS is the enrichment itself: each "
+      + "enriched narrative is one extra WebSocket exchange on the screener channel, issued "
+      + "sequentially inside this call's deadline. How many narratives are enriched is "
+      + "maxEnrichedNarratives, and topTokensCoverage reports exactly which were enriched and "
+      + "which were not, rather than leaving a row's empty pair list ambiguous between \"no "
+      + "pairs\" and \"not asked\".",
+  },
+  {
+    key: "maxEnrichedNarratives",
+    type: "number",
+    description:
+      `How many narratives topTokens may enrich in one call, ${NARRATIVE_MAX_ENRICHED_MIN} or `
+      + `more. Defaults to ${NARRATIVE_MAX_ENRICHED_DEFAULT}. There is NO hard ceiling: raise it `
+      + "and the wider enrichment is issued, because the only real bound is this call's deadline. "
+      + "Each additional narrative is ONE additional WebSocket screener exchange against the site "
+      + "host, issued sequentially, so enriching twenty narratives is twenty exchanges and a "
+      + "timeout returns nothing rather than a partial board. It does nothing unless topTokens is "
+      + "set. topTokensCoverage.requestsIssued reports what was actually spent, and the cheaper "
+      + "route for a deep board is to call a screening tool directly with the narrative id as "
+      + "metaIds.",
+  },
+];
+
+export const MARKET_CONTEXT_TOOLS: readonly ProtocolToolManifest[] = [
+  {
+    toolId: "dexscreener.trending",
+    publicName: "dexscreener__narratives_list",
+    namespace: "dexscreener",
+    lifecycle: "active",
+    description:
+      "List the 18 DexScreener narratives with per-`chain` aggregates for the selected "
+      + "`window`: marketCapUsd, marketCapChangePct and marketCapDeltaUsd, volumeUsd, "
+      + "liquidityUsd, tokenCount, and derived turnover. Use this as the first hop for "
+      + "theme questions. Aggregates exist for any chain with narrative activity "
+      + "(measured live on robinhood, ton, and polygon too); a chain with none answers "
+      + "quietly as N of 18 active, and the four site-surfaced chains are a visibility "
+      + "label, never a data gate. Returns each narrative's `id`, "
+      + "which is the exact value the screening tools' `metaIds` parameter needs; "
+      + "optional `topTokens` embeds each narrative's leading pairs to skip the second "
+      + "call. Use this when the question is which theme, sector, meta or narrative is "
+      + "moving; reach for the screening boards when the question is which individual "
+      + "pairs are. "
+      + "USE `id` AND NOT `slug` FOR THAT HANDOFF. The site's slug is a URL segment and "
+      + "the screener matches zero pairs on it (measured: slug \"ai\" matched 0, its id "
+      + "matched 243), so passing the slug produces an empty board that looks like a real "
+      + "answer. Both are returned and the row says which is which. "
+      + "This returns NARRATIVES, not individual tokens: a row is an aggregate over every "
+      + "token DexScreener assigns to the theme, and how it assigns them is the "
+      + "provider's own opaque classification, not a measured fact. Individual pairs live "
+      + "in the screening tools, reached by passing this `id` as `metaIds`. "
+      + "The whole set arrives in one document with no pagination and no provider total, "
+      + "so `totalNarratives` is an exact count of what exists rather than an estimate, "
+      + "read from DexScreener's own narrative catalog and therefore the same number on "
+      + "every call; `activeNarratives` is how many of them had activity on the requested "
+      + "scope, `narrativesWithoutActivityOnChain` names the rest, and `hasMore` is false "
+      + "whenever the whole set was returned. "
+      + "Narrative names and descriptions are written by DexScreener rather than by a "
+      + "token issuer, so they are not issuer claims; they remain provider commentary and "
+      + "are never evidence for an action. "
+      + `${SCREEN_SOURCE_OBSERVATION_CLAUSE}`,
+    mutating: false,
+    actionKind: "read",
+    params: [...NARRATIVES_PARAMS],
+    exampleParams: { chain: "solana", window: "h24", limit: 10 },
+    discovery: DEXSCREENER_MARKET_CONTEXT_DISCOVERY["dexscreener.trending"],
+  },
+];

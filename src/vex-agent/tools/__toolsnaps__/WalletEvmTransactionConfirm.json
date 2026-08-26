@@ -1,0 +1,39 @@
+{
+  "definition": {
+    "function": {
+      "description": "Broadcast the EVM transaction that `WalletEvmTransactionPrepare` already prepared. This is the call that SPENDS REAL FUNDS: it signs with the user's wallet and sends an IRREVERSIBLE on-chain transaction. APPROVAL: in a restricted session it signs nothing, decrypts nothing and consumes nothing - it comes back asking for approval, and that approval is bound to the exact decoded proposal and to this intent's own expiry. BEFORE IT SIGNS it re-reads the session's selected wallet, re-resolves the chain, re-decodes the calldata against current chain state (which re-checks that a `data` of `0x` still targets an address with no code), re-simulates, and re-derives the proposal digest; any drift REFUSES BY NAME with nothing signed and the intent left pending. The approved fee caps are enforced on the request that is actually signed: a gas limit or price above them refuses before signing. RETURNS the outcome, txHash, chain and the echoed approvedFeeBounds, with a DISTINCT outcome for confirmed, reverted on-chain, broadcast with confirmation UNKNOWN, and failed before broadcast. Only the last is safe to prepare again: a reverted transaction is real and paid a network fee, and an unknown one may be settling right now - Vex tracks it and NEVER re-sends it, and neither should you. VEX FEE: the 25 bps fee shown on the approval card is charged ONLY if this transaction CONFIRMS, as a separate treasury transfer signed afterwards under its own bounded gas ceiling. A transaction that reverts, stays unconfirmed or refuses before broadcast is never charged. A fee that fails, reverts or cannot be confirmed leaves this transaction completely unaffected and is NEVER re-sent. The result echoes vexFee with its own outcome, the amount planned, and - only where the chain proved it - the amount collected.",
+      "name": "WalletEvmTransactionConfirm",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "The intent id that `WalletEvmTransactionPrepare` returned. It is scoped to this session and to the exact proposal that was approved.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": true,
+    "pressureSafety": "mutating",
+    "withheld": false
+  }
+}

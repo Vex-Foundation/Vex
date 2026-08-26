@@ -58,6 +58,21 @@ vi.mock("@vex-agent/inference/registry.js", () => ({
   resetProvider: () => mockResetProvider(),
 }));
 
+// A relock also advances the Vex Studio dispatch generation and refuses the
+// pending Studio intents (stage A3). Both are dynamically imported for the same
+// process-boundary reason as the registry above, and both are mocked here so
+// this file keeps testing the lock STATE MACHINE without opening a database
+// connection. Their own ordering and failure posture are pinned in
+// `session-studio-lock.test.ts`.
+vi.mock("@vex-agent/engine/core/approval-runtime.js", () => ({
+  advanceStudioDispatchGeneration: vi
+    .fn()
+    .mockResolvedValue({ ok: true, generation: "2" }),
+}));
+vi.mock("../../studio/approval-refusals.js", () => ({
+  refuseAllPendingStudioIntents: vi.fn().mockResolvedValue(0),
+}));
+
 vi.mock("../../paths/config-dir.js", () => ({
   ENV_FILE: "/tmp/vex-test-env",
   SECRETS_VAULT_FILE: "/tmp/vex-test-vault",
@@ -122,7 +137,7 @@ describe("lockSecretSession", () => {
     });
 
     const session = await loadSession();
-    const unlock = session.unlockSecretSession("correct-password");
+    const unlock = await session.unlockSecretSession("correct-password");
     expect(unlock.ok).toBe(true);
     expect(session.getSecretSessionStatus()).toEqual({
       vaultConfigured: true,
@@ -149,7 +164,7 @@ describe("lockSecretSession", () => {
     mockUnlockSecretVault.mockReturnValue({ version: 1, secrets: {} });
 
     const session = await loadSession();
-    session.unlockSecretSession("correct-password");
+    await session.unlockSecretSession("correct-password");
     await session.lockSecretSession();
     await session.lockSecretSession();
     await session.lockSecretSession();
@@ -161,7 +176,7 @@ describe("lockSecretSession", () => {
     mockUnlockSecretVault.mockReturnValue({ version: 1, secrets: {} });
 
     const session = await loadSession();
-    session.unlockSecretSession("correct-password");
+    await session.unlockSecretSession("correct-password");
     expect(session.requireUnlockedMasterPassword().ok).toBe(true);
 
     await session.lockSecretSession();
@@ -179,7 +194,7 @@ describe("lockSecretSession", () => {
     mockUnlockSecretVault.mockReturnValue({ version: 1, secrets: {} });
 
     const session = await loadSession();
-    session.unlockSecretSession("correct-password");
+    await session.unlockSecretSession("correct-password");
 
     // Simulate the vault-injected runtime: managed secrets present in env.
     process.env.VEX_MASTER_PASSWORD = "should-be-cleared";
@@ -196,7 +211,7 @@ describe("lockSecretSession", () => {
     mockUnlockSecretVault.mockReturnValue({ version: 1, secrets: {} });
 
     const session = await loadSession();
-    session.unlockSecretSession("correct-password");
+    await session.unlockSecretSession("correct-password");
 
     await session.lockSecretSession();
 
@@ -214,7 +229,7 @@ describe("lockSecretSession", () => {
       });
 
     const session = await loadSession();
-    session.unlockSecretSession("correct-password");
+    await session.unlockSecretSession("correct-password");
 
     process.env.JUPITER_API_KEY = "jk-should-be-cleared";
 
@@ -232,7 +247,7 @@ describe("unlockSecretSession error mapping", () => {
     });
 
     const session = await loadSession();
-    const result = session.unlockSecretSession("anypassword");
+    const result = await session.unlockSecretSession("anypassword");
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("wallet.vault_not_configured");
@@ -247,7 +262,7 @@ describe("unlockSecretSession error mapping", () => {
     });
 
     const session = await loadSession();
-    const result = session.unlockSecretSession("wrong");
+    const result = await session.unlockSecretSession("wrong");
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("wallet.password_invalid");
@@ -271,7 +286,7 @@ describe("unlockSecretSession error mapping", () => {
     });
 
     const session = await loadSession();
-    const result = session.unlockSecretSession("anypassword");
+    const result = await session.unlockSecretSession("anypassword");
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("wallet.vault_corrupt");
@@ -287,7 +302,7 @@ describe("unlockSecretSession error mapping", () => {
     });
 
     const session = await loadSession();
-    const result = session.unlockSecretSession("anypassword");
+    const result = await session.unlockSecretSession("anypassword");
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("wallet.vault_incompatible");

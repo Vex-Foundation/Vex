@@ -9,11 +9,13 @@
  * tool args cross the boundary.
  */
 
+import { TOOL_ARGS_DISPLAY_CEILING } from "../../../shared/schemas/messages.js";
+
 // ── Tool-call args sanitization (renderer disclosure) ─────────────────
 // The renderer reveals the params a tool was called with. Args can carry
 // sensitive material, so this is the ONLY place they cross the boundary —
-// and only as a redacted, size-capped JSON STRING (never raw JSONB). Two
-// independent layers, defense in depth:
+// and only as a redacted, WHOLE JSON STRING (never raw JSONB, never cut).
+// Two independent layers, defense in depth:
 //   1. drop any key whose NAME indicates a secret (segment-aware so common
 //      DeFi args like `tokenAddress` / `signer` are NOT false-dropped);
 //   2. hard-redact any VALUE that looks like a secret (private key, JWT,
@@ -87,11 +89,21 @@ const JWT_RE = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 const BASE58_LONG_RE = /^[1-9A-HJ-NP-Za-km-z]{50,}$/; // beyond Solana addr length
 const BASE64_LONG_RE = /^[A-Za-z0-9+/=]{60,}$/;
 
-const ARG_MAX_STRING = 256;
-const ARG_MAX_ARRAY = 50;
-const ARG_MAX_KEYS = 50;
-const ARG_MAX_DEPTH = 4;
-const ARGS_MAX_SERIALIZED = 2000;
+/*
+ * NO STRUCTURAL TRUNCATION (owner decree, applied 2026-08-26).
+ *
+ * This sweep REDACTS secrets; it never cuts legitimate content. The previous
+ * per-string (256), per-array (50), per-object (50 keys), depth (4) and
+ * whole-serialization (2000) caps were silent cuts of a persisted transcript
+ * the user must see whole, and the serialization cap shipped a measured
+ * production outage: the appended "(truncated)" suffix pushed the string past
+ * the IPC schema's bound and the whole messages page failed output validation
+ * on the first tool call large enough to hit the branch (BoardCompose).
+ * Args arrive from finite acyclic JSONB, so unbounded recursion is safe; the
+ * one remaining ceiling is `TOOL_ARGS_DISPLAY_CEILING` in the shared schema,
+ * a corruption guard sitting far above every legitimate producer, and a row
+ * that somehow exceeds it maps to null rather than to a cut string.
+ */
 
 function splitKeyWords(key: string): string[] {
   return key
@@ -133,7 +145,7 @@ function redactScalarString(value: string, hashKey: boolean): string {
   if (words.length >= 12 && words.every((w) => /^[a-z]+$/.test(w))) {
     return "[redacted:mnemonic]";
   }
-  return value.length > ARG_MAX_STRING ? `${value.slice(0, ARG_MAX_STRING)}…` : value;
+  return value;
 }
 
 /**
@@ -141,23 +153,19 @@ function redactScalarString(value: string, hashKey: boolean): string {
  * It is not inherited by nested objects or array elements — a container's name
  * says nothing about what its members hold.
  */
-function redactArgValue(value: unknown, depth: number, hashKey = false): unknown {
-  if (depth > ARG_MAX_DEPTH) return "[…]";
+function redactArgValue(value: unknown, hashKey = false): unknown {
   if (typeof value === "string") return redactScalarString(value, hashKey);
   if (typeof value === "number" || typeof value === "boolean" || value === null) {
     return value;
   }
   if (Array.isArray(value)) {
-    return value.slice(0, ARG_MAX_ARRAY).map((v) => redactArgValue(v, depth + 1));
+    return value.map((v) => redactArgValue(v));
   }
   if (typeof value === "object") {
     const out: Record<string, unknown> = {};
-    let count = 0;
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (count >= ARG_MAX_KEYS) break;
       if (isSecretKey(k)) continue; // drop secret-named keys entirely
-      out[k] = redactArgValue(v, depth + 1, isHashKey(k));
-      count += 1;
+      out[k] = redactArgValue(v, isHashKey(k));
     }
     return out;
   }
@@ -172,7 +180,7 @@ export function sanitizeToolArgs(rawArgs: unknown): string | null {
   if (rawArgs === null || typeof rawArgs !== "object" || Array.isArray(rawArgs)) {
     return null;
   }
-  const redacted = redactArgValue(rawArgs, 0);
+  const redacted = redactArgValue(rawArgs);
   if (
     redacted === null ||
     typeof redacted !== "object" ||
@@ -186,7 +194,10 @@ export function sanitizeToolArgs(rawArgs: unknown): string | null {
   } catch {
     return null;
   }
-  return serialized.length > ARGS_MAX_SERIALIZED
-    ? `${serialized.slice(0, ARGS_MAX_SERIALIZED)}\n…(truncated)`
-    : serialized;
+  // WHOLE or nothing, never a cut string (owner decree; see the block comment
+  // above). The ceiling is the shared schema's own corruption guard: no
+  // legitimate producer can reach it (the largest, BoardCompose, refuses its
+  // own spec above 49,152 bytes), so exceeding it means a corrupted row, and
+  // a corrupted row shows no args rather than misleading partial ones.
+  return serialized.length > TOOL_ARGS_DISPLAY_CEILING ? null : serialized;
 }

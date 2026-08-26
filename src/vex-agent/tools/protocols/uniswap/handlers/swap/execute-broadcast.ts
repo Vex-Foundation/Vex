@@ -22,6 +22,7 @@ import type { UniswapDecodableReceipt } from "@tools/uniswap/receipt-decoder.js"
 import { classifyUniswapRevertError, type UniswapRevertFailureCode } from "@tools/uniswap/revert-mapping.js";
 import {
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
   failActivityEvent,
   type AgentActivityEvent,
@@ -78,8 +79,15 @@ export async function runStagedBroadcast(
   priorLeg: ConfirmedPriorLeg | undefined,
 ): Promise<StageOutcome> {
   let signed: SignedUniswapTransaction;
+  let broadcastHash: Hex;
   try {
-    signed = await signUniswapTransaction(clients.publicClient, clients.walletClient, tx, priorLeg);
+    signed = await signUniswapTransaction(
+      clients.publicClient,
+      clients.walletClient,
+      tx,
+      priorLeg,
+      (request) => reserveActivityEvmNonce(event.id, request),
+    );
   } catch (err) {
     // A leg whose estimate never succeeded after an approval THIS execute
     // confirmed is not a classifiable revert — the whole point of
@@ -107,11 +115,8 @@ export async function runStagedBroadcast(
     return { kind: "failed", stage: "pre_broadcast", classification };
   }
 
-  // C14 (Codex final-review round 1, finding 1): a CAS miss here means the
-  // hash could not be durably staged — THROW so this function NEVER reaches
-  // the broadcast call with an untracked signed payload. The caller's outer
-  // catch (C18) finalizes what it can and reports failure without creating a
-  // second execution.
+  // C14: a CAS miss aborts before submit, so an untracked signed payload
+  // never reaches the network.
   const staged = await markActivityBroadcast(event.id, {
     txHash: signed.txHash,
     fromAddress: signed.fromAddress,
@@ -119,11 +124,10 @@ export async function runStagedBroadcast(
   });
   if (!staged.applied) {
     throw new Error(
-      `agent_activity: markActivityBroadcast CAS miss for event ${event.id} — refusing to broadcast an untracked transaction`,
+      `agent_activity: markActivityBroadcast CAS miss for event ${event.id} - refusing to broadcast an untracked transaction`,
     );
   }
 
-  let broadcastHash: Hex;
   try {
     broadcastHash = await broadcastUniswapTransaction(clients.publicClient, signed.serializedTransaction);
   } catch {

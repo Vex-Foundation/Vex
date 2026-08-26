@@ -1,0 +1,24 @@
+{
+  "fixture": "connect-trades-joinexit-add-uniswap.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_feed.GetTransactionsResponse",
+  "note": "REAL liquidity-ADD events, replacing a synthetic fixture that could not express their shape. The only committed joinExit fixture before this was derived by replacing a swap row's `swap` arm with `{type:\"TYPE_ADD\"}`, which cannot produce the two shapes that actually matter: a real joinExit row carries NO `swap` block at all (100 of 100 here, so price, priceNative and volumeUSD are all absent and the row belongs in no dollar bucket) and some rows carry NO `traderScreener` (3 of 100 here). It is also the capture that proves `type=add` is a Connect spelling: the request was built by the production `tradesConnectUrl` and answered HTTP 200 with 100 rows, every one carrying `joinExit.type = TYPE_ADD`.",
+  "endpoint": "https://io.dexscreener.com/feed/rpc/dex_feed.PublicService/GetTransactions?connect=v1&encoding=proto&base64=1&message=CghldGhlcmV1bRIHdW5pc3dhcBoqMHhBNDNmZTE2OTA4MjUxZWU3MEVGNzQ3MTg1NDVlNEZFNkM1Y0NFYzlmKioweEMwMmFhQTM5YjIyM0ZFOEQwQTBlNUM0RjI3ZUFEOTA4M0M3NTZDYzJSBQoDYWRk",
+  "requestParams": {
+    "ammId": "uniswap",
+    "chainId": "ethereum",
+    "pairId": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+    "quoteTokenAddress": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "type": "add"
+  },
+  "requestHeaders": {
+    "Accept": "application/proto",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-25T11:15:59+0200",
+  "httpStatus": 200,
+  "bytes": 21478,
+  "sha256": "675273efee55344b87a788f97bfe634571056efdd3b5c5947b0b26e76770b91b",
+  "capturedBy": "S8 deep-dive live smoke (curl_cffi impersonate=chrome), 2026-08-25; URL built by the production tradesConnectUrl; archived under scratchpad/s8/deep-dive with probes.json"
+}

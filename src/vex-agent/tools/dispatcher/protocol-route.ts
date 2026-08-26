@@ -28,42 +28,11 @@ import {
   isInjectedToolNameShape,
   resolveInjectedProtocolTool,
 } from "../registry/injected-protocol-tools.js";
-import type { ProtocolExecutionContext } from "../protocols/types.js";
+import { toProtocolExecutionContext } from "../protocols/execution-context.js";
 import logger from "@utils/logger.js";
 import { dispatchTargetIsMutating } from "./mutating-targets.js";
 import { handleToolSearch } from "./tool-search.js";
 import { INTERNAL_TOOL_LOADERS } from "./internal-loaders.js";
-
-/**
- * The `ProtocolExecutionContext` every protocol lane passes to
- * `executeProtocolTool` — one shape, built once, so a field added for one lane
- * (the C0 provenance trio, the Stop signal) can never be threaded through some
- * lanes and silently dropped by another.
- */
-function toProtocolExecutionContext(
-  call: ToolCallRequest,
-  context: InternalToolContext,
-): ProtocolExecutionContext {
-  return {
-    sessionPermission: context.sessionPermission,
-    approved: context.approved,
-    sessionId: context.sessionId,
-    contextUsageBand: context.contextUsageBand,
-    preparationBypassesBarrier: context.preparationBypassesBarrier === true,
-    walletResolution: context.walletResolution,
-    walletPolicy: context.walletPolicy,
-    // Trusted provenance (C0) — host-side evidence, never model input.
-    missionId: context.missionId,
-    missionRunId: context.missionRunId,
-    approvalId: context.approvalId,
-    // The call this dispatch answers. `trench.launch_request_form` parks the
-    // turn and its later result must address exactly this id (§C3b).
-    toolCallId: call.toolCallId,
-    // Operator Stop. EVERY protocol lane must carry it — passing it on only
-    // some silently un-cancels part of the protocol surface.
-    ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
-  };
-}
 
 export async function routeToolCall(
   call: ToolCallRequest,
@@ -114,7 +83,7 @@ export async function routeToolCall(
 
     return executeProtocolTool(
       { toolId, params: resolved.params },
-      toProtocolExecutionContext(call, context),
+      toProtocolExecutionContext(call, context, "in_app_form"),
     );
   }
 
@@ -170,7 +139,7 @@ export async function routeToolCall(
     }
     return executeProtocolTool(
       { toolId: manifest.toolId, params: call.args },
-      toProtocolExecutionContext(call, context),
+      toProtocolExecutionContext(call, context, "in_app_form"),
     );
   }
 
@@ -202,7 +171,7 @@ export async function routeToolCall(
     }
     return executeProtocolTool(
       { toolId: target.toolId, params: target.params },
-      toProtocolExecutionContext(call, context),
+      toProtocolExecutionContext(call, context, "in_app_form"),
     );
   }
 

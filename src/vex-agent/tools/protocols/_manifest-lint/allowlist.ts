@@ -163,8 +163,6 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "BridgeStatus", rule: "param-description", detail: "fromChain", reason: "param description predates the description template; deleted by W8" },
   { subject: "BridgeStatus", rule: "param-description", detail: "limit", reason: "param description predates the description template; deleted by W8" },
   { subject: "BridgeStatus", rule: "param-description", detail: "toChain", reason: "param description predates the description template; deleted by W8" },
-  { subject: "dexscreener.orders", rule: "param-description", detail: "tokenAddress", reason: "param description predates the description template; deleted by W8" },
-  { subject: "dexscreener.tokenPairs", rule: "param-description", detail: "tokenAddress", reason: "param description predates the description template; deleted by W8" },
   { subject: "khalani.bridge", rule: "param-description", detail: "fromToken", reason: "param description predates the description template; deleted by W8" },
   { subject: "khalani.orders.get", rule: "param-description", detail: "orderId", reason: "param description predates the description template; deleted by W8" },
   { subject: "khalani.orders.list", rule: "param-description", detail: "fromChain", reason: "param description predates the description template; deleted by W8" },

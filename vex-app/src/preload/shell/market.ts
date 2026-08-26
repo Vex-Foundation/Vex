@@ -6,7 +6,7 @@ import { invokeWithSchema, subscribe } from "../_dispatch.js";
 /**
  * vex.market.* — read-only live VEX market snapshot bridge (T1).
  *
- * Business methods only; the renderer never imports the DexScreener/Gecko/
+ * Business methods only; the renderer never imports the DexScreener or
  * Virtuals clients and never sees a raw channel. Snapshots arrive via
  * `onVexUpdate` (main-pushed, Zod-validated at the preload boundary — an
  * off-contract payload is dropped before the callback runs). Mirrors

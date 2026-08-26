@@ -21,7 +21,7 @@
 
 import { getAddress, type Chain, type PublicClient, type Transport } from "viem";
 
-import { getDexScreenerClient } from "../dexscreener/client.js";
+import { readTokensPairs } from "../dexscreener/price-read.js";
 import { ERC20_READ_ABI } from "./erc20-reads.js";
 import { getLocalPublicClient } from "./evm-client.js";
 import type { LocalChainConfig } from "./registry.js";
@@ -216,11 +216,10 @@ async function fetchPricesByLowerAddress(
     }
   };
 
-  const client = getDexScreenerClient();
   for (let i = 0; i < tokenAddrs.length; i += DEXSCREENER_TOKENS_BATCH) {
     const batch = tokenAddrs.slice(i, i + DEXSCREENER_TOKENS_BATCH);
     try {
-      const pairs = await client.getTokens(config.dexscreenerSlug, batch.join(","));
+      const pairs = await readTokensPairs(config.dexscreenerSlug, batch.join(","));
       for (const pair of pairs) {
         if (pair.priceUsd == null) continue;
         const priceUsd = Number(pair.priceUsd);

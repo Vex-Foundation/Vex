@@ -122,7 +122,7 @@ export async function trenchTradeQuoteHandler(
       `Deterministic curve quote (fee-inclusive). Trench's own 1% ETH-leg curve fee ~${formatEther(feeWei)} ETH.${impactText} ` +
       `Curve reserve ${formatEther(stats.ethReserveWei)} ETH (~${progressPct}% to graduation). ` +
       (vexFee.charged
-        ? `Vex fee ${vexFee.feeAmountEth} ETH (${vexFee.bps} bps of ${vexFee.chargedOn}), charged as a separate transfer AFTER the trade confirms.`
+        ? `Vex fee ${vexFee.feeAmountHuman} ${vexFee.nativeSymbol} (${vexFee.bps} bps of ${vexFee.chargedOn}), charged as a separate transfer AFTER the trade confirms.`
         : "No Vex fee applies at this size.");
 
     return ok({

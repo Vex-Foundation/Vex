@@ -147,9 +147,17 @@ describe("execute_tool — the live failure, end to end through the dispatcher",
       context,
     );
 
-    expect(result.success).toBe(true);
+    // CONTRACT CHANGE, S3.5: `dexscreener.search` now reaches DexScreener's own
+    // website channel, which needs the desktop bridge, so a headless run cannot
+    // reach a 200 and `success` is no longer the evidence this test wants. It
+    // never was the subject: what this test owns is that the flat envelope, the
+    // stringified array and the numeric string all reach the HANDLER intact.
+    // The proof is the failure's identity - the tool's own transport outcome,
+    // not a parameter rejection raised before the handler ever ran.
     expect(result.output).not.toContain(`Missing required parameter "query"`);
     expect(result.output).not.toContain("expected number");
+    expect(result.output).not.toContain(`"params"`);
+    expect(result.output).toContain("dexscreener__pairs_search");
   });
 
   it("answers an envelope-less call with the envelope fix", async () => {

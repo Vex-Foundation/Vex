@@ -29,7 +29,7 @@ Paths are relative to `src/vex-agent/` in the `feat/tool-surface` worktree.
   (`buildDisplacementWarning`, `protocol-route.ts:155-158`).
 - Everything in the working set is rebuilt into real function schemas on the
   next request by `buildInjectedProtocolTools`
-  (`injected-protocol-tools.ts:100-127`), appended last by `getOpenAITools`
+  (`injected-protocol-tools.ts:155-182`), appended last by `getOpenAITools`
   (`openai-tools.ts:39-41`).
 
 The defect this design addresses: the full parameter schema is stated TWICE.
@@ -133,8 +133,8 @@ Removed relative to today: `params`, `required`, `exampleParams`,
 - `params`, `required`, and `constraints` are removed because they now travel
   in the injected function schema, which is the channel a provider can
   actually enforce. `constraints` in particular is already appended to the
-  injected description by `injectedDescription`
-  (`injected-protocol-tools.ts:129-141`), so today the same sentence reaches
+  injected description by `protocolToolDescription`
+  (`registry/protocol-tool-projection.ts:46`), so today the same sentence reaches
   the model twice.
 - `exampleParams` is removed from the RESULT, not from the surface. If
   `input_examples` provider support is confirmed (S4's verification item) the
@@ -260,7 +260,7 @@ What does NOT change, and must be preserved verbatim:
   same fail-closed hidden state, with no separate denied signal to leak.
   Everywhere else in ToolSearch, rejection names the real cause.
 - Gating decides off the RESOLVED MANIFEST, never off the name
-  (`injected-protocol-tools.ts:19-23`). Select mode resolves a name to a
+  (`injected-protocol-tools.ts:39-43`). Select mode resolves a name to a
   manifest and then gates; it never gates on the string.
 
 ## 6. Doctrine relocation

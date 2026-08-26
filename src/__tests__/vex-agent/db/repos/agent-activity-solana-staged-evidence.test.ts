@@ -48,14 +48,26 @@ function resetMocks() {
 }
 resetMocks();
 
+const transactionQuery = vi.fn(async () => ({ rows: [], rowCount: 0 }));
+const TRANSACTION_CLIENT = { query: transactionQuery };
+
 vi.mock("@vex-agent/db/client.js", () => ({
   query: (sql: string, params?: unknown[]) => mockQuery(sql, params),
   queryOne: (sql: string, params?: unknown[]) => mockQueryOne(sql, params),
   execute: vi.fn(),
-  queryWith: vi.fn(),
-  queryOneWith: vi.fn(),
+  queryWith: (_c: unknown, sql: string, params?: unknown[]) => mockQuery(sql, params),
+  queryOneWith: (_c: unknown, sql: string, params?: unknown[]) => mockQueryOne(sql, params),
   executeWith: vi.fn(),
-  withTransaction: vi.fn(),
+  withTransaction: async (fn: (c: typeof TRANSACTION_CLIENT) => Promise<unknown>) =>
+    fn(TRANSACTION_CLIENT),
+}));
+
+vi.mock("@vex-agent/db/repos/wallet-transaction-intents.js", () => ({
+  getByActivityIdWith: vi.fn(async () => null),
+}));
+
+vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
+  getByActivityIdWith: vi.fn(async () => null),
 }));
 
 const repo = await import("@vex-agent/db/repos/agent-activity.js");
@@ -121,8 +133,35 @@ function activityRow(overrides: Partial<Record<string, unknown>> = {}): Record<s
   };
 }
 
+function requireParams(params: unknown[] | undefined): unknown[] {
+  if (params === undefined) throw new Error("expected query parameters");
+  return params;
+}
+
+function requireStringArrayParam(params: unknown[] | undefined, index: number): string[] {
+  const value = requireParams(params)[index];
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
+    throw new Error(`expected query parameter ${index} to be a string array`);
+  }
+  return value;
+}
+
+function requireQueryCall(
+  call: [sql: string, params?: unknown[]] | undefined,
+): [sql: string, params?: unknown[]] {
+  if (call === undefined) throw new Error("expected a database call");
+  return call;
+}
+
+function requireFirstRow<T>(rows: readonly T[]): T {
+  const row = rows[0];
+  if (row === undefined) throw new Error("expected a result row");
+  return row;
+}
+
 beforeEach(() => {
   resetMocks();
+  transactionQuery.mockClear();
 });
 
 describe("markActivitySolanaBroadcast (evidence extension)", () => {
@@ -137,7 +176,7 @@ describe("markActivitySolanaBroadcast (evidence extension)", () => {
     });
 
     expect(mockQueryOne).toHaveBeenCalledTimes(1);
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireQueryCall(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("tx_hash = $2");
     expect(sql).toContain("recent_blockhash = $4");
     expect(sql).toContain("last_valid_block_height = $5");
@@ -174,19 +213,22 @@ describe("recoverStaleHashlessIntents", () => {
 
     await repo.recoverStaleHashlessIntents(15 * 60 * 1000, 50);
 
-    const [sql, params] = mockQuery.mock.calls[0]!;
+    const [sql, rawParams] = requireQueryCall(mockQuery.mock.calls[0]);
+    const params = requireParams(rawParams);
     expect(sql).toMatch(/status\s*=\s*'pending'/);
     expect(sql).toMatch(/tx_hash\s+IS\s+NULL/);
     // C7: the family predicate is DROPPED — an EVM row qualifies exactly
     // like a Solana row, discriminated only by event_role + age below.
     expect(sql).not.toMatch(/chain_family/);
-    expect(sql).toContain("SET status = 'definitively_failed'");
-    expect(sql).toContain("failure_code = 'unknown'");
-    expect(sql).toContain("created_at < NOW() - make_interval(secs => $2::float8)");
-    expect(sql).toContain("LIMIT $3");
-    expect(params).toHaveLength(4); // reason, lease-seconds, limit, allowlist — no 5th family param
-    expect(params![1]).toBe(900); // leaseMs / 1000
-    expect(params![2]).toBe(50);
+    // Discovery is read-only. Each winning terminal write runs later through
+    // the linked-row coordinator under the candidate's session lock.
+    expect(sql).toMatch(/^SELECT id, session_id/m);
+    expect(sql).not.toMatch(/UPDATE\s+agent_activity/);
+    expect(sql).toContain("created_at < NOW() - make_interval(secs => $1::float8)");
+    expect(sql).toContain("LIMIT $2");
+    expect(params).toHaveLength(3); // lease-seconds, limit, allowlist
+    expect(params[0]).toBe(900); // leaseMs / 1000
+    expect(params[1]).toBe(50);
   });
 
   // "EVM row younger than lease survives" (card ask): there is exactly ONE
@@ -200,47 +242,104 @@ describe("recoverStaleHashlessIntents", () => {
 
     await repo.recoverStaleHashlessIntents(repo.HASHLESS_INTENT_RECOVERY_LEASE_MS, 25);
 
-    const [sql] = mockQuery.mock.calls[0]!;
+    const [sql] = requireQueryCall(mockQuery.mock.calls[0]);
     const ageClauseCount = (sql.match(/created_at\s*<\s*NOW\(\)/g) ?? []).length;
     expect(ageClauseCount).toBe(1);
     expect(sql).not.toMatch(/chain_family/);
   });
 
   it("reaps and maps an EVM-family row identically to a Solana one (no JS-level family filtering)", async () => {
-    mockQuery.mockResolvedValueOnce([
-      activityRow({
-        id: 9,
-        status: "definitively_failed",
-        failure_code: "unknown",
-        event_role: "allowance",
-        chain_family: "eip155",
-        chain_id: 1,
-        chain_slug: "ethereum",
-        tx_hash: null,
-        submit_attempted_at: null,
-        recent_blockhash: null,
-        last_valid_block_height: null,
-      }),
-    ]);
+    const pending = activityRow({
+      id: 9,
+      status: "pending",
+      failure_code: null,
+      event_role: "allowance",
+      chain_family: "eip155",
+      chain_id: 1,
+      chain_slug: "ethereum",
+      tx_hash: null,
+      submit_attempted_at: null,
+      recent_blockhash: null,
+      last_valid_block_height: null,
+    });
+    const terminal = activityRow({
+      id: 9,
+      status: "definitively_failed",
+      failure_code: "unknown",
+      event_role: "allowance",
+      chain_family: "eip155",
+      chain_id: 1,
+      chain_slug: "ethereum",
+      tx_hash: null,
+      submit_attempted_at: null,
+      recent_blockhash: null,
+      last_valid_block_height: null,
+    });
+    mockQuery.mockResolvedValueOnce([{ id: 9, session_id: pending.session_id }]);
+    mockQueryOne.mockResolvedValueOnce(pending).mockResolvedValueOnce(terminal);
 
     const rows = await repo.recoverStaleHashlessIntents(repo.HASHLESS_INTENT_RECOVERY_LEASE_MS, 25);
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.id).toBe(9);
-    expect(rows[0]!.chainFamily).toBe("eip155");
-    expect(rows[0]!.status).toBe("definitively_failed");
-    expect(rows[0]!.failureCode).toBe("unknown");
+    const row = requireFirstRow(rows);
+    expect(row.id).toBe(9);
+    expect(row.chainFamily).toBe("eip155");
+    expect(row.status).toBe("definitively_failed");
+    expect(row.failureCode).toBe("unknown");
   });
 
   it("returns every finalized row, mapped", async () => {
-    mockQuery.mockResolvedValueOnce([activityRow({ id: 7, status: "definitively_failed", failure_code: "unknown", tx_hash: null, submit_attempted_at: null, recent_blockhash: null, last_valid_block_height: null })]);
+    const pending = activityRow({
+      id: 7,
+      status: "pending",
+      failure_code: null,
+      tx_hash: null,
+      submit_attempted_at: null,
+      recent_blockhash: null,
+      last_valid_block_height: null,
+    });
+    const terminal = activityRow({
+      ...pending,
+      status: "definitively_failed",
+      failure_code: "unknown",
+    });
+    mockQuery.mockResolvedValueOnce([{ id: 7, session_id: pending.session_id }]);
+    mockQueryOne.mockResolvedValueOnce(pending).mockResolvedValueOnce(terminal);
 
     const rows = await repo.recoverStaleHashlessIntents(repo.HASHLESS_INTENT_RECOVERY_LEASE_MS, 25);
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.id).toBe(7);
-    expect(rows[0]!.status).toBe("definitively_failed");
-    expect(rows[0]!.failureCode).toBe("unknown");
+    const row = requireFirstRow(rows);
+    expect(row.id).toBe(7);
+    expect(row.status).toBe("definitively_failed");
+    expect(row.failureCode).toBe("unknown");
+  });
+
+  it("does not terminalize a row whose hash was staged after candidate discovery", async () => {
+    const discovered = activityRow({
+      id: 8,
+      status: "pending",
+      tx_hash: null,
+      submit_attempted_at: null,
+    });
+    const staged = activityRow({
+      id: 8,
+      status: "pending",
+      tx_hash: "0xstaged",
+      submit_attempted_at: "2026-07-24T10:01:00.000Z",
+    });
+    mockQuery.mockResolvedValueOnce([{ id: 8, session_id: discovered.session_id }]);
+    mockQueryOne
+      .mockResolvedValueOnce(discovered)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(staged);
+
+    await expect(
+      repo.recoverStaleHashlessIntents(repo.HASHLESS_INTENT_RECOVERY_LEASE_MS, 25),
+    ).resolves.toEqual([]);
+
+    const terminalSql = mockQueryOne.mock.calls[1]?.[0] ?? "";
+    expect(terminalSql).toMatch(/status = 'pending'\s+AND tx_hash IS NULL/);
   });
 
   it("returns [] (never throws) when nothing qualifies", async () => {
@@ -261,10 +360,10 @@ describe("recoverStaleHashlessIntents", () => {
 
     await repo.recoverStaleHashlessIntents(repo.HASHLESS_INTENT_RECOVERY_LEASE_MS, 25);
 
-    const [sql, params] = mockQuery.mock.calls[0]!;
-    expect(sql).toContain("event_role = ANY($4::text[])");
+    const [sql, params] = requireQueryCall(mockQuery.mock.calls[0]);
+    expect(sql).toContain("event_role = ANY($3::text[])");
 
-    const allowedRoles = params![3] as string[];
+    const allowedRoles = requireStringArrayParam(params, 2);
     expect(allowedRoles).not.toContain("bridge_fill_expected");
     expect(allowedRoles).not.toContain("bridge_fill_observed");
     expect(allowedRoles).not.toContain("bridge_refund");
@@ -330,6 +429,11 @@ describe("recoverStaleHashlessIntents", () => {
         // transfer row is positive proof that nothing was ever sent and is
         // therefore definitively not-attempted.
         "wallet_transfer",
+        // Migration 088 (the generic EVM signing lane's Vex fee). The same
+        // dependent fee leg once more, and EVM-only by database CHECK: the
+        // Solana pair on that lane charges nothing. Locally signed, owned by no
+        // sweep, and definitively not-attempted when it is never signed.
+        "tx_vex_fee",
       ].sort(),
     );
   });
@@ -344,8 +448,8 @@ describe("recoverStaleHashlessIntents", () => {
 
     await repo.recoverStaleHashlessIntents(repo.HASHLESS_INTENT_RECOVERY_LEASE_MS, 25);
 
-    const [, params] = mockQuery.mock.calls[0]!;
-    const allowedRoles = params![3] as string[];
+    const [, params] = requireQueryCall(mockQuery.mock.calls[0]);
+    const allowedRoles = requireStringArrayParam(params, 2);
 
     // Pendle is EVM-only, so its six roles join the EVM-only column.
     const evmOnlyRoles = [
@@ -358,6 +462,10 @@ describe("recoverStaleHashlessIntents", () => {
       "swap_fee",
       // pools.fun is Robinhood Chain (4663) only, so its fee leg is EVM-only.
       "pools_fee",
+      // The generic signing lane's fee is EVM-only by DATABASE CHECK
+      // (`agent_activity_tx_vex_fee_eip155`, migration 088), not merely by
+      // where the venue happens to be deployed.
+      "tx_vex_fee",
     ];
     const solanaOnlyRoles = ["lend_deposit", "lend_withdraw", "lend_borrow_operate", "predict_buy", "predict_sell", "predict_claim", "predict_close"];
     // `bridge_fee` (migration 050) is SHARED, not bridge-EVM-only: the Vex fee

@@ -414,7 +414,30 @@ export interface ProtocolExecutionContext {
    * quota wait, and MUST NOT observe it inside a sign→broadcast→persist window.
    */
   abortSignal?: AbortSignal;
+  /**
+   * WHICH consent surface this dispatch can actually show a human.
+   *
+   * `in_app_form` - the Vex desktop turn loop. A handful of mutating tools own
+   * a richer dedicated consent FORM there, so the generic approval card is
+   * deliberately skipped for them (`runtime/gates.ts`,
+   * `FORM_IS_THE_APPROVAL_TOOLS`).
+   *
+   * `studio_mcp` - an external coding agent calling through the local Studio
+   * MCP surface. That surface has no in-app form, so the carve-out must NOT
+   * apply: those tools go through the ordinary approval card like every other
+   * mutating tool (plan v2 revision item 3).
+   *
+   * OPTIONAL, and normalized ONCE at the approval gate as
+   * `context.approvalSurface ?? "in_app_form"`. Every existing direct
+   * `executeProtocolTool` caller (internal action aliases, desktop launch
+   * paths, approval resume, typed test contexts) omits it and keeps exactly
+   * today's behaviour; only the A2 mapper sets `studio_mcp` explicitly.
+   */
+  approvalSurface?: ApprovalSurface;
 }
+
+/** The consent surfaces a protocol dispatch can be answered on. */
+export type ApprovalSurface = "in_app_form" | "studio_mcp";
 
 // ── Execute request ──────────────────────────────────────────────
 
@@ -441,6 +464,7 @@ export type CaptureSupport = "full" | "none";
 // caller's import changed.
 
 export type {
+  DiscoveryAvailabilityMode,
   ManifestRow,
   ProtocolDiscoveryItem,
   ProtocolDiscoveryListItem,

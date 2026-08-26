@@ -15,7 +15,7 @@
  * is the safety property.
  */
 
-import { formatEther, type Address, type Hex } from "viem";
+import { formatUnits, type Address, type Hex } from "viem";
 
 import {
   buildNativeFeeDisclosure,
@@ -43,8 +43,17 @@ export type ActivityWritingFeeVenue<Basis extends string> =
 /** A plain value transfer carries no calldata. */
 const EMPTY_CALLDATA = "0x" as Hex;
 
-/** The parent execution's kind - the arm of the kind/role CHECK the fee row lands on. */
-export type NativeFeeParentKind = "swap" | "launch";
+/**
+ * The parent execution's kind - the arm of the kind/role CHECK the fee row lands
+ * on.
+ *
+ * `"transaction"` is the GENERIC SIGNING lane (migration 088): a fee leg
+ * charged on the native value of a transaction Vex did not build. Its role
+ * `tx_vex_fee` is admitted on the `transaction` arm ONLY, and only with
+ * `chain_family = 'eip155'` - no Solana fee-leg runtime exists on that lane, and
+ * the database enforces the gap rather than trusting this type to describe it.
+ */
+export type NativeFeeParentKind = "swap" | "launch" | "transaction";
 
 export interface PlanNativeFeeLegInput<Basis extends string> {
   /** Which native leg the fee is charged on, and how it is named. */
@@ -94,7 +103,9 @@ export function planNativeFeeLeg<Basis extends string>(
   if (!split.charged) return null;
 
   const transfer = buildNativeFeeTransfer(venue, split.feeRaw);
-  const feeHuman = formatEther(split.feeRaw);
+  // The VENUE's own decimals, never an assumed 18: this lane now carries venues
+  // whose native is not ETH, and `amountHuman` is a figure a person reads.
+  const feeHuman = formatUnits(split.feeRaw, venue.nativeDecimals);
   return {
     feeWei: split.feeRaw,
     netWei: split.netRaw,

@@ -1,21 +1,23 @@
 /**
- * Signing-oracle guard (Sprint 3 T10) — the trading keys sign exactly two
+ * Signing-oracle guard (Sprint 3 T10) - the trading keys sign exactly three
  * fixed message shapes anywhere in this codebase: the trench.express
- * `VEX-attest:` badge attestation and the AgentScan `AgentScan Handshake v1`
- * wallet-binding proof. A new signing call site anywhere else is either a
+ * `VEX-attest:` badge attestation, the pools.fun
+ * `VEX-attest:v1:pools.fun:` badge attestation, and the AgentScan
+ * `AgentScan Handshake v1` wallet-binding proof. A new signing call site
+ * anywhere else is either a
  * duplicate signing oracle for an existing format (should reuse the owning
  * module) or an entirely new message shape (needs its own blast-radius
  * review, not a silent addition here). This is checked from three angles,
  * because any one alone is evadable:
- *   1. call-site scan — every raw signing call (`signMessage`, ed25519
+ *   1. call-site scan - every raw signing call (`signMessage`, ed25519
  *      `sign`/`sign.detached`, `signTypedData`, `signTransaction`,
- *      `SigningKey`, …) must live in one of the two owning modules, or be a
- *      documented, named transaction-signing site (see
- *      `KNOWN_TRANSACTION_SIGNING_SITES` — a real transaction signature is
+ *      `SigningKey`, ...) must live in one of the three owning modules, or be
+ *      a documented, named transaction-signing site (see
+ *      `KNOWN_TRANSACTION_SIGNING_SITES` - a real transaction signature is
  *      not a signing-oracle concern; a text-message signature is);
- *   2. import exclusivity — only the owning module may import the other
- *      module's signing entry point, so a third module cannot produce one of
- *      these two signatures by calling through the owner instead of raw;
+ *   2. import exclusivity - only an owning module may import another owning
+ *      module's signing entry point, so a fourth module cannot produce one of
+ *      these signatures by calling through an owner instead of raw;
  *   3. reserved-string exclusivity — the literal wire-format strings
  *      themselves may not be duplicated into a second module, which would
  *      let that module build a byte-identical signable payload without ever
@@ -23,11 +25,13 @@
  *
  * Scans the whole `src/` tree (not just `src/vex-agent/`, unlike the sibling
  * tests in this directory), INCLUDING `scripts/`/`e2e/` subtrees (dropped
- * from the exclusion list — `src/vex-agent/scripts` alone ships 24 real
- * files that are as capable of holding a signing call as anything else) —
- * because the two allowed modules live on either side of the
- * `vex-agent`/`tools` boundary: `src/tools/wallet/handshake-signing.ts` and
- * `src/vex-agent/tools/protocols/trench/handlers/launch/execute/attribute.ts`.
+ * from the exclusion list - `src/vex-agent/scripts` alone ships 24 real
+ * files that are as capable of holding a signing call as anything else) -
+ * because the three allowed modules live on both sides of the
+ * `vex-agent`/`tools` boundary: `src/tools/wallet/handshake-signing.ts`,
+ * `src/vex-agent/tools/protocols/trench/handlers/launch/execute/attribute.ts`
+ * and
+ * `src/vex-agent/tools/protocols/pools/handlers/launch/execute/attribute.ts`.
  *
  * Uses a recursive readdir walk, NOT `git ls-files`: on this machine the repo
  * path contains a space, which breaks the `git ls-files`-based scanners the
@@ -56,7 +60,25 @@ const TRENCH_ATTRIBUTION_SIGN_SITE = resolve(
 );
 const TRENCH_ATTRIBUTION_MESSAGE_BUILDER = resolve(ROOT, "tools/trench-express/attribution.ts");
 
-const ALLOWED_SIGNING_MODULES = [HANDSHAKE_SIGNING_MODULE, TRENCH_ATTRIBUTION_SIGN_SITE];
+/**
+ * The pools.fun badge lane, admitted 2026-08-23. It is a THIRD text-signing
+ * site, not a reuse of the trench one, and deliberately so: both launchpads
+ * live on chain 4663, so a shared `VEX-attest:<chainId>:<token>` string would
+ * let a signature produced for one venue be replayed at the other. The pools
+ * string is versioned and domain-bound (`VEX-attest:v1:pools.fun:<chainId>:
+ * <token>`), and each literal stays pinned to its own owning module below.
+ */
+const POOLS_ATTRIBUTION_SIGN_SITE = resolve(
+  ROOT,
+  "vex-agent/tools/protocols/pools/handlers/launch/execute/attribute.ts",
+);
+const POOLS_ATTRIBUTION_MESSAGE_BUILDER = resolve(ROOT, "tools/pools-fun/attribution.ts");
+
+const ALLOWED_SIGNING_MODULES = [
+  HANDSHAKE_SIGNING_MODULE,
+  TRENCH_ATTRIBUTION_SIGN_SITE,
+  POOLS_ATTRIBUTION_SIGN_SITE,
+];
 
 /**
  * Real, on-chain TRANSACTION signing (`walletClient.signTransaction`,
@@ -197,7 +219,7 @@ function findRawStringViolations(
 }
 
 describe("signing-oracle guard — only the named modules may produce VEX-attest / AgentScan Handshake signatures", () => {
-  it("no signing call site exists outside the two allowed modules or the documented transaction-signing allowlist", () => {
+  it("no signing call site exists outside the three allowed modules or the documented transaction-signing allowlist", () => {
     const files = listTsFiles(ROOT);
     expect(files.length, "no source files discovered — readdir walk broken?").toBeGreaterThan(0);
 
@@ -231,6 +253,12 @@ describe("signing-oracle guard — only the named modules may produce VEX-attest
     const attributionSource = readFileSync(TRENCH_ATTRIBUTION_MESSAGE_BUILDER, "utf-8");
     expect(attributionSource).toContain("VEX-attest:");
 
+    const poolsAttributeSource = readFileSync(POOLS_ATTRIBUTION_SIGN_SITE, "utf-8");
+    expect(poolsAttributeSource).toContain("buildPoolsAttestMessage");
+
+    const poolsAttributionSource = readFileSync(POOLS_ATTRIBUTION_MESSAGE_BUILDER, "utf-8");
+    expect(poolsAttributionSource).toContain("VEX-attest:v1:pools.fun:");
+
     const handshakeSigningSource = readFileSync(HANDSHAKE_SIGNING_MODULE, "utf-8");
     expect(handshakeSigningSource).toContain("AgentScan Handshake v1");
   });
@@ -255,6 +283,16 @@ describe("signing-oracle guard — only the named modules may produce VEX-attest
       buildAttestMessageImporters,
       `only ${TRENCH_ATTRIBUTION_SIGN_SITE} may import buildAttestMessage`,
     ).toEqual([]);
+
+    const buildPoolsAttestMessageImporters = findExclusivityViolations(
+      files,
+      "buildPoolsAttestMessage",
+      [POOLS_ATTRIBUTION_MESSAGE_BUILDER, POOLS_ATTRIBUTION_SIGN_SITE],
+    );
+    expect(
+      buildPoolsAttestMessageImporters,
+      `only ${POOLS_ATTRIBUTION_SIGN_SITE} may import buildPoolsAttestMessage`,
+    ).toEqual([]);
   });
 
   it("the reserved wire-format literals appear only in their owning modules (not even duplicated into a comment elsewhere)", () => {
@@ -265,10 +303,33 @@ describe("signing-oracle guard — only the named modules may produce VEX-attest
     ]);
     expect(handshakeLiteralElsewhere).toEqual([]);
 
+    // `VEX-attest:` is a PREFIX of the pools literal, so the pools builder is
+    // admitted here too. The narrower check below is what actually pins the
+    // pools string to one module: without it, admitting the pools builder for
+    // the shared prefix would also let it hold the bare trench form.
     const attestLiteralElsewhere = findRawStringViolations(files, "VEX-attest:", [
       TRENCH_ATTRIBUTION_MESSAGE_BUILDER,
+      POOLS_ATTRIBUTION_MESSAGE_BUILDER,
     ]);
     expect(attestLiteralElsewhere).toEqual([]);
+
+    const poolsAttestLiteralElsewhere = findRawStringViolations(
+      files,
+      "VEX-attest:v1:pools.fun:",
+      [POOLS_ATTRIBUTION_MESSAGE_BUILDER],
+    );
+    expect(poolsAttestLiteralElsewhere).toEqual([]);
+
+    // The bare trench form must NOT appear in the pools builder: the pools
+    // module may only ever build the versioned, domain-bound string, and the
+    // whole point of the split is that neither venue can produce the other's
+    // signable bytes.
+    const trenchFormInPoolsBuilder = readFileSync(POOLS_ATTRIBUTION_MESSAGE_BUILDER, "utf-8")
+      .includes("VEX-attest:${");
+    expect(
+      trenchFormInPoolsBuilder,
+      "the pools builder must not interpolate the bare `VEX-attest:<...>` trench form",
+    ).toBe(false);
   });
 
   it("catches known evasion forms in fixture strings (meta-test — proves the scan logic, not just today's file set)", () => {

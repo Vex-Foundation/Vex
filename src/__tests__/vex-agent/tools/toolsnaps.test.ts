@@ -100,7 +100,10 @@ describe("tool contract snapshots", () => {
     // small, hand-authored, and a change to it is always a reviewed contract
     // change. 34 -> 32: the ToolSearch merge deleted the `describe_tools` and
     // `execute_tool` ToolDefs (`registry/protocol.ts`).
-    expect(internal).toHaveLength(32);
+    // 32 -> 36: stage A4b registered the four generic transaction signing tools.
+    // 36 -> 37: `BoardCompose` (`registry/board.ts`), the terminal presentation
+    // tool.
+    expect(internal).toHaveLength(37);
 
     // The TOTAL is asserted STRUCTURALLY - every registered tool and every
     // manifest gets exactly one contract, and nothing else does. A literal was
@@ -125,8 +128,12 @@ describe("tool contract snapshots", () => {
     // surface, so the visible count drops by exactly one: the merged
     // `describe_tools`. 32 registered, minus `MissionDraftUpdate`, which the
     // baseline's ACTIVE RUN cannot hold at the same time as mission setup.
-    expect(internalVisibleOrder).toHaveLength(31);
-    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(71);
+    // 31 -> 35, and the worst case 71 -> 75: stage A4b registered the four
+    // generic transaction signing tools, all model-visible.
+    // 35 -> 36, worst case 75 -> 76: `BoardCompose` declares no visibility
+    // gate, so it is offered in every session the baseline can represent.
+    expect(internalVisibleOrder).toHaveLength(36);
+    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(76);
   });
 
   it("derives its env gates from the live catalogs", () => {

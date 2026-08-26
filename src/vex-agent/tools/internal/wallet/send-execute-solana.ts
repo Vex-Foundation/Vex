@@ -118,11 +118,11 @@ export async function executeSolanaTransfer(
     prepared = await prepareLegacyTx(transaction, keypair, { connection });
   } catch (cause) {
     const sum = summarizeWalletError(cause);
+    await activity.completeExecution({ kind: "failed_before_broadcast" });
     await activity.fail({
       failureCode: "broadcast_error",
       failureReason: `PreSign:${sum.errorKind}:${sum.errorHash}`,
     });
-    await activity.completeExecution({ kind: "failed_before_broadcast" });
     return preBroadcastFailed(cause);
   }
 
@@ -138,11 +138,11 @@ export async function executeSolanaTransfer(
     });
   } catch (cause) {
     const sum = summarizeWalletError(cause);
+    await activity.completeExecution({ kind: "failed_before_broadcast" });
     await activity.fail({
       failureCode: "broadcast_error",
       failureReason: `SignedNotBroadcast:${sum.errorKind}:${sum.errorHash}`,
     });
-    await activity.completeExecution({ kind: "failed_before_broadcast" });
     return preBroadcastFailed(cause);
   }
 
@@ -170,11 +170,10 @@ export async function executeSolanaTransfer(
     // DEFINITIVE. The node parsed the bytes and refused them (preflight,
     // simulation, or signature verification), so nothing reached the network.
     const sum = summarizeWalletError(submitOutcome.cause);
-    await activity.fail({
-      failureCode: "broadcast_error",
+    await activity.completeExecution({ kind: "failed_before_broadcast" });
+    await activity.failSignedNotSubmitted({
       failureReason: `SubmitRejected:${sum.errorKind}:${sum.errorHash}`,
     });
-    await activity.completeExecution({ kind: "failed_before_broadcast" });
     return preBroadcastFailed(submitOutcome.cause);
   }
 
@@ -219,11 +218,11 @@ export async function executeSolanaTransfer(
   const submission = await confirmStagedSignature(connection, prepared.signature);
 
   if (submission.phase === "chain_failed") {
+    await activity.completeExecution({ kind: "reverted", txHash: submission.signature });
     await activity.fail({
       failureCode: "mined_revert",
       failureReason: "the transfer transaction failed on-chain",
     });
-    await activity.completeExecution({ kind: "reverted", txHash: submission.signature });
     return {
       kind: "chain_failed",
       txHash: submission.signature,
@@ -268,8 +267,8 @@ export async function executeSolanaTransfer(
   // and it degrades a later report's precision rather than any money fact -
   // reporting an OBSERVATION time as a settlement time is the thing that must
   // not happen, and this avoids it.
-  await activity.confirm({ txHash: submission.signature, provenAmountRaw: plan.amountRaw });
   await activity.completeExecution({ kind: "confirmed", txHash: submission.signature });
+  await activity.confirm({ txHash: submission.signature, provenAmountRaw: plan.amountRaw });
 
   return {
     kind: "confirmed",

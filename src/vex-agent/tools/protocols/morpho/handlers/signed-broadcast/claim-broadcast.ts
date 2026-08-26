@@ -45,6 +45,7 @@ import {
   createAgentActivityPreBroadcastFailure,
   failActivityEvent,
   markActivityBroadcast,
+  reserveActivityEvmNonce,
   markBroadcastAccepted,
   settlementDecodeProvenance,
   type AgentActivityFailureCode,
@@ -268,6 +269,7 @@ export async function broadcastMorphoClaim(
     walletClient,
     { to: tx.to, data: tx.data, value: tx.value },
     {
+      onNonceReserved: (request) => reserveActivityEvmNonce(eventRow.id, request),
       onHashStaged: async (handles) => {
         const staged = await markActivityBroadcast(eventRow.id, handles);
         if (!staged.applied) {

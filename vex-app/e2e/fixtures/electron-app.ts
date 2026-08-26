@@ -30,6 +30,46 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  */
 const MAIN_BUNDLE = path.resolve(__dirname, "../../dist/main/index.js");
 
+/** How long the shell window may take to appear before the app counts as wedged. */
+const SHELL_WINDOW_DEADLINE_MS = 30_000;
+
+/**
+ * The app shell's document, in both load modes: `app://vex/index.html` when
+ * the built renderer is loaded, the Vite origin in dev.
+ */
+function isShellUrl(url: string): boolean {
+  return url.endsWith("/index.html") || url.startsWith("http://127.0.0.1:5173");
+}
+
+/**
+ * Resolve the SHELL window by URL. `firstWindow()` is a race against every
+ * hidden helper window the main process opens at boot; the shell is the one
+ * window whose identity is a contract.
+ */
+async function selectShellWindow(app: ElectronApplication): Promise<Page> {
+  const deadline = Date.now() + SHELL_WINDOW_DEADLINE_MS;
+  for (;;) {
+    for (const candidate of app.windows()) {
+      if (isShellUrl(candidate.url())) return candidate;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `no shell window within ${SHELL_WINDOW_DEADLINE_MS}ms; saw: ${app
+          .windows()
+          .map((w) => w.url())
+          .join(", ") || "none"}`,
+      );
+    }
+    const next = await Promise.race([
+      app.waitForEvent("window", { timeout: deadline - Date.now() }).catch(() => null),
+      new Promise<null>((resolve) => {
+        setTimeout(() => resolve(null), 500);
+      }),
+    ]);
+    if (next !== null && isShellUrl(next.url())) return next;
+  }
+}
+
 export interface VexElectronFixture {
   readonly app: ElectronApplication;
   readonly firstWindow: Page;
@@ -53,7 +93,12 @@ export const test = base.extend<{ vexApp: VexElectronFixture }>({
     });
     let firstWindow: Page;
     try {
-      firstWindow = await app.firstWindow();
+      // THE SHELL, not whichever BrowserWindow happens to be created first.
+      // Window creation order is not a contract: the DexScreener site bridge
+      // opens a hidden `app://vex/dexscreener-bridge` window when the market
+      // widget's boot refresh runs, and on a fast boot it wins the race.
+      // Select the shell by its document URL instead.
+      firstWindow = await selectShellWindow(app);
     } catch (cause) {
       // If the window never arrives the app is wedged — close + clean
       // before re-throwing so the test failure is the real signal, not

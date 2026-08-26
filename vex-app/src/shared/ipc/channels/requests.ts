@@ -399,6 +399,43 @@ export const CH = {
   },
 
   /**
+   * Board token icons - one logo for one card of an agent-composed board.
+   *
+   * Deliberately NOT a member of `images` above: that domain is the user's own
+   * launch locker, persisted on disk and on the signing path, while this one is
+   * an in-memory cache over a public CDN with no durable state and nothing to
+   * delete. Sharing a namespace would put two unrelated lifetimes and two
+   * unrelated trust stories behind one name.
+   *
+   * The renderer sends an opaque handle it read out of a persisted board and
+   * gets back a `data:` URL or a NAMED ABSENCE - never a URL, a host or raw
+   * bytes. Around half of all pools have no artwork, so absence is the ordinary
+   * answer here and the card draws a monogram instead.
+   */
+  boardIcons: {
+    read: "vex:boardIcons:read",
+  },
+
+  /**
+   * Board LIVE - a user-held lease that refreshes an open board's card metrics.
+   *
+   * Separate from `boardIcons` because the lifetimes are opposite: an icon is a
+   * cached byte string with no owner and no end, while a lease is owned by one
+   * window, ends on every exit path, and is the only thing in this app a
+   * renderer can ask main to keep polling on its behalf. `capability` is asked
+   * BEFORE the toggle renders so a build with no site bridge shows a disabled
+   * control with an honest label rather than one that fails on first click.
+   *
+   * The subscribe response CARRIES the first snapshot, so there is no race
+   * between claiming the lease and hearing its first tick.
+   */
+  boardLive: {
+    capability: "vex:boardLive:capability",
+    subscribe: "vex:boardLive:subscribe",
+    unsubscribe: "vex:boardLive:unsubscribe",
+  },
+
+  /**
    * Trench Express token launch — the host-mediated form path.
    *
    * `preview` is the AUTHORITATIVE main-side cost read: the creation fee comes
@@ -443,6 +480,35 @@ export const CH = {
     getAwaiting: "vex:poolsLaunch:getAwaiting",
     claimPreview: "vex:poolsLaunch:claimPreview",
     claim: "vex:poolsLaunch:claim",
+  },
+
+  /**
+   * Vex Studio projects (stage P). A project is a folder under the projects
+   * root plus one backing `sessions` row (`mode = 'agent'`,
+   * `scope = 'vex_studio'`).
+   *
+   * The renderer never sends or receives a filesystem capability here: it sends
+   * a NAME, main derives the slug and resolves the root itself, and the DTO
+   * carries only a root-relative path plus display-only label text.
+   *
+   * `updateScope` edits permission, wallet selection and the agent roster under
+   * optimistic concurrency (`expectedScopeVersion`); a mismatch is refused with
+   * `projects.scope_conflict` and writes nothing. Deletion is deliberately not
+   * part of this surface yet - removing a project means removing a folder of
+   * the user's files, which gets its own explicit workflow.
+   *
+   * `updateScope` also RENDERS the project's coding-agent config files and
+   * instruction files (stage A5b) and returns what that reconciliation did,
+   * per artifact. `repairFiles` runs the same reconciliation on demand and is
+   * the ONLY path that overwrites an artifact a human edited after Vex wrote
+   * it. There is deliberately NO delete channel: A5 never deletes files.
+   */
+  projects: {
+    create: "vex:projects:create",
+    get: "vex:projects:get",
+    list: "vex:projects:list",
+    updateScope: "vex:projects:updateScope",
+    repairFiles: "vex:projects:repairFiles",
   },
 
   // Cancellation

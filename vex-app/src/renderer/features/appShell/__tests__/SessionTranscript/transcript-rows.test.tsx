@@ -38,6 +38,7 @@ function row(
     durationMs: null,
     success: null,
     displayStatus: null,
+    board: null,
   } as unknown as TranscriptEntry;
 }
 

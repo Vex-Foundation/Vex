@@ -1,0 +1,23 @@
+{
+  "encoding": "json",
+  "note": "The capture that can tell a FRACTION from a PERCENT on the tax path. GoPlus sends gp.buyTax \"0.04\" while QuickIntel sends tokenDynamicDetails.buyTax \"4.0\" for the SAME 4 percent buy tax on this token, so the two scales are visible side by side in one document. Every previously committed pair-details fixture carries a tax of 0 or null, which cannot discriminate the two: reading a fraction as a percent renders a 4 percent tax as 0.04 percent, in the direction that makes a taxed token look clean. Corroborated on FLOKI 0xcf0C122c6b73ff809C693DB761e7BaeBe62b6a2E (gp 0.0029 / 0.003).",
+  "endpoint": "https://io.dexscreener.com/dex/pair-details/v4/ethereum/0xce3f08e664693ca792cace4af1364d5e220827b2",
+  "requestParams": {
+    "chainId": "ethereum",
+    "pairId": "0xce3f08e664693ca792cace4af1364d5e220827b2"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "responseHeaders": {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=60"
+  },
+  "capturedAt": "2026-08-24T17:17:20+00:00",
+  "httpStatus": 200,
+  "capturedBy": "live capture for the S7 verification wave (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-08-24; capture script test-wave/agent8-traders-details/pdget.py. Response headers are recorded in part: the provider's set-cookie (Cloudflare __cf_bm / __cflb session tokens) is deliberately NOT retained here.",
+  "fixture": "pair-details-goplus-fraction-tax.json",
+  "bytes": 7793,
+  "sha256": "9d18de2609df439dc4edb72b8696f99879178842804dd84eea7f8836d53e9297"
+}

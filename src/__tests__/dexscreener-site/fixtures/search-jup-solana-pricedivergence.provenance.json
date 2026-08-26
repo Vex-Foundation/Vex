@@ -1,0 +1,21 @@
+{
+  "fixture": "search-jup-solana-pricedivergence.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_search.SearchPairsResponse",
+  "endpoint": "https://io.dexscreener.com/dex/search/v12/pairs?q=JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN&chainId=solana",
+  "requestParams": {
+    "q": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+    "chainId": "solana"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-25",
+  "httpStatus": 200,
+  "bytes": 23676,
+  "sha256": "5b7acdf2c7dcbb819c517c12b0a1696db732a7b0e3b1ba75976a28582fcb3a03",
+  "capturedBy": "live wire capture (curl_cffi impersonate=chrome) taken for the S10-31b pre-limit divergence fix, 2026-08-25. Committed unmodified: the split price column IS the contract under test, so sanitizing it would remove the only thing the fixture proves.",
+  "note": "S10-31b: 30 JUP pools in one provider window, split into two price clusters that disagree by roughly 5,000x. 21 rows sit at the honest cluster (median 0.2150); 9 rows are priced through a broken quote at 1053.18 to 1109.33 and carry liquidity inflated by the same factor. THE ORDERING IS LOAD-BEARING: token_pairs_list orders by liquidityUsd desc, and the 5 deepest pools (173.79M, 94.83M, 72.05M, 36.43M, 4.60M USD) are ALL from the junk cluster and agree with each other to within 1.05x. So a divergence median taken AFTER limit:5 flags nothing at all, and after limit:10 (where junk is 8 of 10) flags the two honest pools instead. Only the full 30-row population puts the median at 0.2150 and names the 9 junk pools."
+}

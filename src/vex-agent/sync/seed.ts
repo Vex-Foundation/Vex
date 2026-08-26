@@ -69,6 +69,15 @@ const SYNC_JOBS = [
   // a badge is cosmetic, so it is not given the 30s per-tx repair urgency.
   { namespace: "_global", syncType: "launch_attribution", readToolId: null, strategy: "periodic", intervalSeconds: 120 },
 
+  // pools.fun launch ATTRIBUTION retry lane - the same catch-up for the
+  // pools.fun VEX badge, against a different partner and a different attest
+  // string. The handler does this inline on a healthy launch; this covers the
+  // app being closed, the network being down, or a partner 429/5xx. Never
+  // signs, and claims no rows at all while services.poolsFunAttestApiUrl is
+  // empty. See sync/pools-attribution.ts. 120s mirrors the trench lane above -
+  // a badge is cosmetic, so it is not given the 30s per-tx repair urgency.
+  { namespace: "_global", syncType: "pools_attribution", readToolId: null, strategy: "periodic", intervalSeconds: 120 },
+
   // Trench launch FORM EXPIRY — stamps overdue `awaiting_user_form` intents
   // `expired` and resumes the agent turn parked on them. Without it an
   // unanswered form parks a turn forever. Deadline-driven and lookup-only;

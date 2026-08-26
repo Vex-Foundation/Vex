@@ -16,7 +16,7 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 19 sync jobs", async () => {
+  it("inserts 20 sync jobs (15 global + 5 per-namespace)", async () => {
     // Agent Scan added the _global/agent_activity_repair periodic job and
     // removed the polymarket/balances post_mutation job (polymarket removed).
     // Phase-2 bridge (W4) added the _global/bridge_activity_repair periodic sweep
@@ -34,10 +34,13 @@ describe("seedSyncJobs", () => {
     // (`launch_attribution`, periodic 120s) makes 14. The AgentScan reporting
     // lane (`agentscan_report`, periodic 30s) makes 15. The AgentScan
     // token-attestation sweep (`agentscan_attest`, periodic 300s) makes 16.
-    // Evidence-only Lighter deposit crash recovery makes 17; bounded public
-    // Lighter withdrawal recovery makes 19.
+    // The pools.fun attribution retry lane (`pools_attribution`, periodic
+    // 120s) adds a SECOND badge sweep, against a different partner and
+    // a different attest string, not a widening of the trench one.
+    // Evidence-only Lighter deposit crash recovery, bounded withdrawal
+    // recovery, and bounded public order repair bring the merged total to 20.
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(19);
+    expect(mockExecute).toHaveBeenCalledTimes(20);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {

@@ -1,11 +1,9 @@
 /**
  * Wallet intent shapes — puzzle 5 phase 4 (DB-backed durable intents).
  *
- * Mirrors the `wallet_intents` table CHECK enums from migration 025. The
- * status enum carries the full lifecycle (`audit_failed` distinguishes
- * "tx on-chain, audit row broken" from generic `failed`); the renderer
- * uses `txHash` + `status` together to render "broadcast failed" vs
- * "no broadcast" (Codex puzzle-5 phase-4 review v3).
+ * Mirrors the `wallet_intents` CHECK enum through migration 093. Ambiguous
+ * broadcast, proven non-inclusion and legacy review remain distinct from a
+ * definitive failure so the renderer never implies that retry is safe.
  */
 
 import { z } from "zod";
@@ -16,8 +14,11 @@ export type WalletIntentNetwork = z.infer<typeof walletIntentNetworkSchema>;
 export const walletIntentStatusSchema = z.enum([
   "pending",
   "consuming",
+  "broadcast_unconfirmed",
   "executed",
   "failed",
+  "superseded_unproven",
+  "review_required",
   "audit_failed",
   "cancelled",
   "expired",

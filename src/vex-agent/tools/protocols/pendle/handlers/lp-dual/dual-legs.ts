@@ -6,7 +6,7 @@
 import { getAddress, type Address } from "viem";
 
 import { PENDLE_ROUTER } from "@tools/pendle/constants.js";
-import { ensurePendleAllowanceExact } from "@tools/pendle/erc20.js";
+import { ensurePendleAllowanceExact } from "@vex-agent/tools/protocols/pendle/allowance.js";
 import type { PendleConvertResponse, PendleTokenAmount } from "@tools/pendle/types.js";
 
 import { VexError, ErrorCodes } from "../../../../../../errors.js";

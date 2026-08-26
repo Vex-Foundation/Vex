@@ -600,3 +600,86 @@ describe("the A6 CAS is fenced against a stale worker", () => {
     expect(await column(id, "evm_claim_token")).toBeNull();
   });
 });
+
+/**
+ * PASS 6 / N2: a CONFIRMED same-(from, nonce) sibling is DEFINITIVE.
+ *
+ * Driven through the lane's real per-row entrypoint (`resolveEvmPendingRow`)
+ * against real Postgres, because what changed is a SQL guard and the arm that
+ * reaches it: the only stub is the chain observation itself, which stands in for
+ * the node's `eth_getTransactionCount(from, 'latest') > nonce` answer, i.e. a
+ * transaction from this sender with this nonce is already IN A BLOCK while this
+ * hash has no receipt.
+ *
+ * The contrast case is the point: the same row, the same age, the same claim,
+ * differing ONLY in whether the evidence is conclusive.
+ */
+describe("N2 - a conclusive same-nonce sibling terminalizes without the non-inclusion window", () => {
+  async function claimToken(id: number): Promise<string> {
+    const claim = await claimDuePendingEvm();
+    const token = claim.claimed.find((c) => c.row.id === id)?.claimToken;
+    if (token === undefined) throw new Error(`row ${id} was not claimed`);
+    return token;
+  }
+
+  /** The claimed row itself, as the lane receives it. */
+  async function claimedRow(id: number): Promise<{ row: unknown; token: string }> {
+    const claim = await claimDuePendingEvm();
+    const claimed = claim.claimed.find((c) => c.row.id === id);
+    if (claimed === undefined) throw new Error(`row ${id} was not claimed`);
+    return { row: claimed.row, token: claimed.claimToken };
+  }
+
+  it("terminalizes on the FIRST observation, with no non-inclusion run at all", async () => {
+    const { resolveEvmPendingRow } = await import("@vex-agent/sync/agent-activity-repair.js");
+    // Past the 90 s money gate and nothing else: the A6 clock has never run.
+    const { id } = await pendingRow(TEN_MINUTES_MS);
+    const { row, token } = await claimedRow(id);
+    expect(await column(id, "first_noninclusion_observed_at")).toBeNull();
+
+    const outcome = await resolveEvmPendingRow(
+      row as Parameters<typeof resolveEvmPendingRow>[0],
+      { observeTransaction: async () => ({ kind: "nonce_superseded" }) },
+      { claimToken: token, allowTerminalize: true },
+    );
+
+    expect(outcome).toBe("superseded");
+    expect(await column(id, "status")).toBe("superseded_unproven");
+    expect(await column(id, "pending_reason")).toBe("nonce_superseded");
+    // STILL a non-failure: nothing here says the transaction failed.
+    expect(await column(id, "failure_code")).toBeNull();
+    expect(await column(id, "evm_claim_token")).toBeNull();
+  });
+
+  it("the INCONCLUSIVE reason on the same row still waits the window out", async () => {
+    const { resolveEvmPendingRow } = await import("@vex-agent/sync/agent-activity-repair.js");
+    const { id } = await pendingRow(TEN_MINUTES_MS);
+    const { row, token } = await claimedRow(id);
+
+    const outcome = await resolveEvmPendingRow(
+      row as Parameters<typeof resolveEvmPendingRow>[0],
+      { observeTransaction: async () => ({ kind: "unknown_to_node" }) },
+      { claimToken: token, allowTerminalize: true },
+    );
+
+    expect(outcome).toBe("pending");
+    expect(await column(id, "status")).toBe("pending");
+    // The run STARTED: it is time, not evidence, that is missing.
+    expect(await column(id, "first_noninclusion_observed_at")).not.toBeNull();
+  });
+
+  it("the 90 s money gate still holds a conclusive sibling", async () => {
+    const { id } = await pendingRow(30_000);
+    const token = await claimToken(id);
+
+    const result = await markSupersededUnproven(
+      id,
+      { claimToken: token, reason: "nonce_superseded" },
+      REPAIR_CANDIDATE_AGE_MS,
+    );
+
+    expect(result.applied).toBe(false);
+    expect(result.reason).toBe("window_not_elapsed");
+    expect(await column(id, "status")).toBe("pending");
+  });
+});

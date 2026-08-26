@@ -161,7 +161,19 @@ describe("injected schemas", () => {
     const fn = injected.find((t) => t.function.name === toInjectedToolName(manifest.toolId));
     assert.ok(fn, `${manifest.toolId} was not injected`);
 
-    expect(fn.function.description).toBe(manifest.description);
+    // The injection pipeline APPENDS the manifest's cross-parameter group
+    // sentences to the description (the behaviour the next test owns), so the
+    // projection is the manifest description PLUS those sentences. This used
+    // to read `toBe(manifest.description)` and was correct only while no
+    // dexscreener manifest declared a group; `pair_get` now declares
+    // `atLeastOneOf(pairAddress, tokenAddress)` (plan 14.6 item 11), so the
+    // bare equality started failing a manifest that was behaving correctly.
+    const constraints = describeParamGroupConstraints(manifest);
+    expect(fn.function.description).toBe(
+      constraints.length === 0
+        ? manifest.description
+        : `${manifest.description} ${constraints.join(" ")}`,
+    );
     expect(fn.function.parameters).toEqual(paramsToJsonSchema(manifest.params));
     expect(fn.function.parameters.required).toEqual(
       manifest.params.filter((p) => p.required).map((p) => p.key),
@@ -169,9 +181,11 @@ describe("injected schemas", () => {
   });
 
   it("append the manifest's cross-param group rules to the description", () => {
-    // Every manifest declaring a group today is Jupiter's, and Jupiter is
-    // env-gated out of injection — so the env this assertion needs is set for
-    // the assertion, and restored after it.
+    // Jupiter declares groups and is env-gated out of injection, so the env
+    // this assertion needs is set for it and restored after. DexScreener's
+    // `pair_get` now also declares one (`atLeastOneOf`), so this no longer
+    // depends on Jupiter alone; the gate stays because the helper picks the
+    // FIRST declaring manifest in catalog order.
     const previousKey = process.env.JUPITER_API_KEY;
     process.env.JUPITER_API_KEY = "test-key";
     try {
@@ -204,8 +218,12 @@ describe("injected schemas", () => {
   }
 
   it("are appended POSITIONALLY LAST, after the internal tools", () => {
+    // The stable internal block first, the volatile discovered block last: the
+    // longest possible prefix for a provider that prefix-caches tool defs.
     const before = getOpenAITools(ctx());
-    const manifest = PROTOCOL_TOOLS.find((m) => m.namespace === "dexscreener");
+    const manifest = PROTOCOL_TOOLS.find(
+      (m) => m.namespace === "uniswap" && !m.mutating,
+    );
     assert.ok(manifest);
     recordDiscoveredTools(SESSION, [manifest.toolId]);
 
@@ -216,11 +234,20 @@ describe("injected schemas", () => {
     expect(last.function.name).toBe(toInjectedToolName(manifest.toolId));
   });
 
-  it("leave the tools array untouched when nothing was discovered", () => {
+  it("carries NO injected tool at all when nothing was discovered (D-DS9-R)", () => {
+    // The restored law: the tools array is the DISCOVERED set intersected with
+    // the visibility gates, so a fresh session is offered zero protocol tools
+    // and every one it IS offered has already been recorded as callable by
+    // `dispatcher/protocol-route.ts`'s admission check. D-DS9 broke that
+    // subset property by widening injection without widening admission; this
+    // assertion is what goes red if it is reintroduced.
     const withSession = getOpenAITools(ctx());
     const withoutSession = getOpenAITools(defaultVisibilityContext());
     expect(withSession).toEqual(withoutSession);
-    expect(withSession.every((t) => !isInjectedToolNameShape(t.function.name))).toBe(true);
+    expect(buildInjectedProtocolTools(ctx())).toEqual([]);
+    expect(
+      withSession.map((t) => t.function.name).filter((n) => isInjectedToolNameShape(n)),
+    ).toEqual([]);
   });
 });
 
@@ -265,10 +292,20 @@ describe("injection gates", () => {
     // alternatives now. Preference lives in the Tool Map doctrine, not in
     // whether the tool exists.
     recordDiscoveredTools(SESSION, ["uniswap.swap.quote", "uniswap.swap.execute"]);
-    expect(buildInjectedProtocolTools(ctx()).map((t) => t.function.name)).toEqual([
-      "uniswap__swap_quote",
-      "uniswap__swap_execute",
-    ]);
+    const names = buildInjectedProtocolTools(ctx()).map((t) => t.function.name);
+    // EXACTLY the discovered pair, in discovery order, and nothing else: the
+    // injected block is the working set, never a superset of it.
+    expect(names).toEqual(["uniswap__swap_quote", "uniswap__swap_execute"]);
+  });
+
+  it("injects a discovered tool exactly once, in discovery order", () => {
+    recordDiscoveredTools(SESSION, ["dexscreener.candles", "uniswap.swap.quote"]);
+    recordDiscoveredTools(SESSION, ["dexscreener.candles"]);
+    const names = buildInjectedProtocolTools(ctx()).map((t) => t.function.name);
+    // Re-discovery refreshes position rather than duplicating the schema: a
+    // provider `tools` array with the same function twice is a malformed
+    // request, not a harmless repeat.
+    expect(names).toEqual(["uniswap__swap_quote", "dexscreener__candles_list"]);
   });
 
   it("drops mutating manifests at the pressure barrier, and restores them under the C8 bypass", () => {
@@ -276,14 +313,20 @@ describe("injection gates", () => {
     assert.ok(mutating);
     recordDiscoveredTools(SESSION, [mutating.toolId]);
 
-    expect(buildInjectedProtocolTools(ctx({ contextUsageBand: "barrier" }))).toEqual([]);
-    expect(buildInjectedProtocolTools(ctx({ contextUsageBand: "critical" }))).toEqual([]);
-    expect(
+    const name = toInjectedToolName(mutating.toolId);
+    const at = (band?: "barrier" | "critical", bypass?: boolean) =>
       buildInjectedProtocolTools(
-        ctx({ contextUsageBand: "barrier", preparationBypassesBarrier: true }),
-      ),
-    ).toHaveLength(1);
-    expect(buildInjectedProtocolTools(ctx())).toHaveLength(1);
+        ctx({ contextUsageBand: band, preparationBypassesBarrier: bypass }),
+      ).map((tool) => tool.function.name);
+
+    expect(at("barrier")).not.toContain(name);
+    expect(at("critical")).not.toContain(name);
+    // The working set held exactly this one manifest, so the barrier leaves an
+    // EMPTY array rather than a shorter one.
+    expect(at("barrier")).toHaveLength(0);
+    expect(at("barrier", true)).toContain(name);
+    expect(at()).toContain(name);
+    expect(at()).toHaveLength(1);
   });
 });
 

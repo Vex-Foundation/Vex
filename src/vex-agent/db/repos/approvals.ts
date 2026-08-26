@@ -8,7 +8,7 @@
  * standard `approved: true` context flag).
  */
 
-import type { PoolClient } from "pg";
+import type { ClientBase, PoolClient } from "pg";
 import type { Permission } from "../../engine/types.js";
 import { query, queryOne, execute } from "../client.js";
 import { jsonb, nullableJsonb } from "../params.js";
@@ -42,10 +42,19 @@ function mapRow(r: Record<string, unknown>): ApprovalItem {
   };
 }
 
+/**
+ * `source` records WHICH SURFACE asked for the approval. It has existed since
+ * migration 001 with the default `'chat'`; the Studio MCP enqueue is the first
+ * caller to set anything else, and it passes `'studio_mcp'`. A caller that
+ * omits it writes `'chat'` exactly as before, so every existing row and every
+ * existing call site is unchanged.
+ */
+export type ApprovalSource = "chat" | "studio_mcp";
+
 const INSERT_APPROVAL_SQL = `INSERT INTO approval_queue (
   id, tool_call, reasoning, status, session_id, tool_call_id,
-  permission_at_enqueue, pending_context
-) VALUES ($1, $2::jsonb, $3, 'pending', $4, $5, $6, $7::jsonb)`;
+  permission_at_enqueue, pending_context, source
+) VALUES ($1, $2::jsonb, $3, 'pending', $4, $5, $6, $7::jsonb, $8)`;
 
 function enqueueParams(
   id: string,
@@ -54,6 +63,7 @@ function enqueueParams(
   sessionId: string,
   toolCallId: string | undefined,
   permission: Permission | undefined,
+  source: ApprovalSource | undefined,
 ): unknown[] {
   const pendingContext = nullableJsonb(toolCallId ? { toolCallId } : null);
   return [
@@ -64,6 +74,7 @@ function enqueueParams(
     toolCallId ?? null,
     permission ?? "restricted",
     pendingContext,
+    source ?? "chat",
   ];
 }
 
@@ -74,8 +85,9 @@ export async function enqueue(
   sessionId: string,
   toolCallId?: string,
   permission?: Permission,
+  source?: ApprovalSource,
 ): Promise<void> {
-  await execute(INSERT_APPROVAL_SQL, enqueueParams(id, toolCall, reasoning, sessionId, toolCallId, permission));
+  await execute(INSERT_APPROVAL_SQL, enqueueParams(id, toolCall, reasoning, sessionId, toolCallId, permission, source));
 }
 
 /**
@@ -93,8 +105,9 @@ export async function enqueueWith(
   sessionId: string,
   toolCallId?: string,
   permission?: Permission,
+  source?: ApprovalSource,
 ): Promise<void> {
-  await client.query(INSERT_APPROVAL_SQL, enqueueParams(id, toolCall, reasoning, sessionId, toolCallId, permission));
+  await client.query(INSERT_APPROVAL_SQL, enqueueParams(id, toolCall, reasoning, sessionId, toolCallId, permission, source));
 }
 
 const APPROVE_CAS_SQL =
@@ -130,7 +143,7 @@ export async function approve(
  * with the same semantics as `approve(id)` when CAS misses.
  */
 export async function approveWith(
-  client: PoolClient,
+  client: ClientBase,
   id: string,
 ): Promise<
   (ApprovalItem & { pendingContext: Record<string, unknown> | null }) | null
@@ -152,12 +165,39 @@ export async function reject(id: string): Promise<ApprovalItem | null> {
  * Transactional CAS variant for the phase-3 reject/expire decision tx.
  * Same caller contract as `approveWith`.
  */
+/**
+ * `ClientBase`, not `PoolClient`: the Vex Studio refusal owners (stage A3) run
+ * inside the privileged main process's own `pg.Client` transaction. Widening
+ * the parameter to the base class both clients extend is what let those callers
+ * reuse THIS CAS instead of growing a second spelling of "reject a queue row".
+ */
 export async function rejectWith(
-  client: PoolClient,
+  client: ClientBase,
   id: string,
 ): Promise<ApprovalItem | null> {
   const res = await client.query<Record<string, unknown>>(REJECT_CAS_SQL, [id]);
   const row = res.rows[0];
+  return row ? mapRow(row) : null;
+}
+
+/**
+ * One approval row, SESSION-SCOPED. A cross-session id misses even when it is
+ * known, for the same reason every wallet-intent read carries `session_id`: an
+ * id is not a capability.
+ *
+ * It exists for the money-path resume that must compare what it is about to
+ * sign against what was actually approved (`readApprovalProposalBinding`), so
+ * the comparison reads the stored envelope rather than trusting a value handed
+ * to the handler.
+ */
+export async function getByIdForSession(
+  approvalId: string,
+  sessionId: string,
+): Promise<ApprovalItem | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    "SELECT * FROM approval_queue WHERE id = $1 AND session_id = $2",
+    [approvalId, sessionId],
+  );
   return row ? mapRow(row) : null;
 }
 
@@ -166,17 +206,6 @@ export async function getPending(): Promise<ApprovalItem[]> {
     "SELECT * FROM approval_queue WHERE status = 'pending' ORDER BY created_at",
   );
   return rows.map(mapRow);
-}
-
-export async function getByIdForSession(
-  id: string,
-  sessionId: string,
-): Promise<ApprovalItem | null> {
-  const row = await queryOne<Record<string, unknown>>(
-    "SELECT * FROM approval_queue WHERE id = $1 AND session_id = $2",
-    [id, sessionId],
-  );
-  return row ? mapRow(row) : null;
 }
 
 export async function getPendingCount(): Promise<number> {

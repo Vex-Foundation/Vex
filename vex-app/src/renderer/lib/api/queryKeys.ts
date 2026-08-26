@@ -268,6 +268,23 @@ export const imageKeys = {
 };
 
 /**
+ * Board token icons. Keyed by the icon handle ALONE, deliberately: the same
+ * token can appear on several boards in one transcript, and the bytes behind a
+ * handle are the same bytes either way. Keying by board or by card would fetch
+ * one asset once per place it is shown.
+ */
+export const boardLiveKeys = {
+  all: ["board-live"] as const,
+  /** Whether live figures are reachable at all in this build. Asked once. */
+  capability: () => ["board-live", "capability"] as const,
+};
+
+export const boardIconKeys = {
+  all: ["board-icons"] as const,
+  icon: (iconId: string) => ["board-icons", iconId] as const,
+};
+
+/**
  * Token launch (C5) — the Trench Express launch dialog.
  *
  * `preview` is keyed by the WHOLE form input, and that is the contract rather

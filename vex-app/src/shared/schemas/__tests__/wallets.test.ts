@@ -209,12 +209,15 @@ describe("walletIntentNetworkSchema", () => {
 });
 
 describe("walletIntentStatusSchema", () => {
-  it("accepts all 7 lifecycle values", () => {
+  it("accepts all 10 lifecycle values", () => {
     for (const status of [
       "pending",
       "consuming",
+      "broadcast_unconfirmed",
       "executed",
       "failed",
+      "superseded_unproven",
+      "review_required",
       "audit_failed",
       "cancelled",
       "expired",

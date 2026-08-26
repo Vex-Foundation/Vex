@@ -13,6 +13,14 @@
  */
 
 import { z } from "zod";
+// The ONE canonical board contract, owned by the pure shared root
+// (`src/lib/board/`) so the engine that composes a board and the app that
+// persists, projects and renders it validate against the SAME schema. Importing
+// it here (rather than restating it) is what makes the two-schema drift hazard
+// structurally impossible: there is only one schema. The module is pure (zod
+// only, no privileged imports), which is why it is allow-listed in
+// `vex-app/scripts/check-process-boundaries.mjs`.
+import { boardSpecV1Schema } from "@vex-lib/board/index.js";
 
 export const MESSAGES_TAIL_DEFAULT_LIMIT = 50;
 export const MESSAGES_TAIL_MAX_LIMIT = 100;
@@ -75,12 +83,25 @@ export type MessageCursor = z.infer<typeof messageCursorSchema>;
  * One displayable tool call extracted from a `tool_call` row's
  * `messages.tool_calls` JSONB. The mapper in `messages-db.ts` is the only
  * place this is built — `toolArgs` is a SANITIZED, pre-serialized JSON string
- * (secret-like keys dropped, secret-shaped values hard-redacted, size-capped)
+ * (secret-like keys dropped, secret-shaped values hard-redacted, never cut)
  * so the untrusted renderer receives strings only, never raw JSONB. The
  * `.max()` bounds below are enforced at the IPC boundary by the read handlers'
  * `outputSchema: messagePageSchema`, so an oversize mapper output is rejected
  * rather than shipped.
  */
+/**
+ * Ceiling on the DISPLAYED tool-args string. This is a corruption guard, not
+ * a truncation budget: the mapper ships the WHOLE sanitized serialization or
+ * `null`, never a cut string (owner decree - no silent content cutting; the
+ * previous 2,000-char cap plus a "(truncated)" suffix pushed the first large
+ * BoardCompose call past the bound and failed the whole messages page in
+ * production). The largest legitimate producer is BoardCompose, which refuses
+ * its own spec above 49,152 bytes, so 131,072 sits far above every real row;
+ * only a corrupted row can exceed it, and the mapper maps that to `null`.
+ * One declaration, both sides: the mapper's guard imports THIS constant.
+ */
+export const TOOL_ARGS_DISPLAY_CEILING = 131_072;
+
 export const toolCallDisplaySchema = z
   .object({
     /** Provider tool-call id — correlates a `tool_result` back to its call. */
@@ -92,8 +113,12 @@ export const toolCallDisplaySchema = z
      * wire name (`kyberswap__swap__quote`) before it reaches this field.
      */
     toolName: z.string().min(1).max(120),
-    /** Sanitized JSON string of the call args; `null` when there were none. */
-    toolArgs: z.string().max(2000).nullable(),
+    /**
+     * Sanitized JSON string of the call args, WHOLE (secrets redacted, content
+     * never cut); `null` when there were none or the row is corrupt beyond
+     * {@link TOOL_ARGS_DISPLAY_CEILING}.
+     */
+    toolArgs: z.string().max(TOOL_ARGS_DISPLAY_CEILING).nullable(),
   })
   .strict();
 export type ToolCallDisplay = z.infer<typeof toolCallDisplaySchema>;
@@ -160,6 +185,21 @@ export const toolSuccessProjectionSchema = z.boolean();
  */
 export const toolDisplayStatusProjectionSchema = z.literal("pending");
 export type ToolDisplayStatus = z.infer<typeof toolDisplayStatusProjectionSchema>;
+
+/**
+ * Bounded projection of `messages.metadata -> 'board'` (assistant rows): the
+ * persisted `BoardSpecV1` a `board_compose` call staged and the turn's final
+ * assistant prose consumed into its own INSERT. Derived in the ROOT engine at
+ * compose time (never by the model, never in the renderer): the model supplies
+ * only the analytical input, and the engine authors the hydration block.
+ *
+ * This IS the engine's schema, imported from the pure shared root rather than
+ * restated, so an oversize/malformed JSONB projection is rejected at the mapper
+ * boundary and the two sides cannot drift. Every bound (48 KiB serialized
+ * budget, per-field caps, the reject-only text predicate) lives there.
+ */
+export const boardProjectionSchema = boardSpecV1Schema;
+export type BoardProjection = z.infer<typeof boardProjectionSchema>;
 
 /**
  * Renderer-visible message DTO. Raw `messages.metadata` JSONB is still never
@@ -232,6 +272,19 @@ export const sessionMessageDtoSchema = z
      * confirmed" and never makes a claim `success` does not support.
      */
     displayStatus: toolDisplayStatusProjectionSchema.nullable(),
+    /**
+     * Composed board for an assistant row (validated projection of
+     * `messages.metadata -> 'board'`). Required and `null` on non-assistant
+     * rows, on legacy rows written before the projection existed, on rows whose
+     * turn composed no board, AND on a row whose persisted board FAILED
+     * validation here (fail-closed, so one bad row cannot poison a page).
+     * Unlike `explorerRefs`, NO empty-value collapse is applied: a board that
+     * validates is projected exactly as persisted, so "no board" and "rejected
+     * board" are never conflated by this mapper's own arithmetic. The renderer
+     * degrades to the row's ordinary assistant prose in every null case - the
+     * prose always stands alone.
+     */
+    board: boardProjectionSchema.nullable(),
   })
   .strict();
 export type SessionMessageDto = z.infer<typeof sessionMessageDtoSchema>;

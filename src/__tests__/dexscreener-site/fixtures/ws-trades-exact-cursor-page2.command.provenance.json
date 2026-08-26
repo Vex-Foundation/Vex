@@ -1,0 +1,25 @@
+{
+  "fixture": "ws-trades-exact-cursor-page2.command.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_feed.WSCommand",
+  "endpoint": "wss://io.dexscreener.com/feed/ws (request frame)",
+  "requestParams": {
+    "cid": 12,
+    "before": {
+      "blockNumber": 25823281,
+      "transactionIndex": 5,
+      "eventIndex": 59
+    }
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 125,
+  "sha256": "03647d92bd2c11119015eb095a1bfb90b39c898a121736171b24c192abcadc55",
+  "capturedBy": "live recon probe (curl_cffi impersonate=chrome), 2026-08-24 09:38-09:46Z; archived under scratchpad/live-turn2/chart-flow with run.jsonl, per-request meta and sha256",
+  "note": "The command bytes the site's own grammar produced for an exact-cursor continuation."
+}

@@ -1,6 +1,10 @@
 /**
- * Minimal timed JSON GET for the market service's thin external clients
- * (GeckoTerminal OHLCV + Virtuals holders).
+ * Minimal timed JSON GET for the market service's one remaining thin external
+ * client (Virtuals holders).
+ *
+ * S11b: the GeckoTerminal OHLCV client that was its other caller is gone; the
+ * sparkline now reads DexScreener's own chart channel through the shared
+ * candles seam, which owns its own transport.
  *
  * Kept local + dependency-free so the app main bundle does not reach into the
  * root `@utils` HTTP stack (whose `VexError` type belongs to the agent

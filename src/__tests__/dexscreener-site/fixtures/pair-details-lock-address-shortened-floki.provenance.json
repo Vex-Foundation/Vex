@@ -1,0 +1,21 @@
+{
+  "fixture": "pair-details-lock-address-shortened-floki.json",
+  "encoding": "json",
+  "note": "The lock-row identity hazard, captured with its own contradiction inside the same document. ll.locks[0].address is \"1-0x663a5c229c09b049e36dcc11a9b0d4a8eb9db2\": chain-id-prefixed and TRUNCATED to keep 42 characters, while the same document's gp.lpHolders[0].address carries the real locker address 0x663a5c229c09b049e36dcc11a9b0d4a8eb9db214. It also carries quickiAudit.hasFeeWarning and a GoPlus buyTax/sellTax of \"0.003\" for FLOKI's published 0.3 percent tax beside QuickIntel's stale \"0.0\", so it exercises the fraction-versus-percent tax split on a second token.",
+  "endpoint": "https://io.dexscreener.com/dex/pair-details/v4/ethereum/0xcf0c122c6b73ff809c693db761e7baebe62b6a2e",
+  "requestParams": {
+    "chain": "ethereum",
+    "identifier": "0xcf0C122c6b73ff809C693DB761e7BaeBe62b6a2E",
+    "inverted": false
+  },
+  "requestHeaders": {
+    "Accept": "application/json",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-25T07:46:00+00:00",
+  "httpStatus": 200,
+  "bytes": 13264,
+  "sha256": "6deba84f62c0480337c2a80804d2bbfe46d239eab2381457b623af9191fbb345",
+  "capturedBy": "EP9 pair-details verifier wave (curl_cffi impersonate=chrome), 2026-08-25; archived as endpoint-wave/ep9-pair-details/raw-eth-floki-token.bin with SHA256SUMS.txt"
+}

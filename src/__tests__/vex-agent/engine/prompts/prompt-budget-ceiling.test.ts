@@ -21,12 +21,12 @@ function context(overrides: Partial<EngineContext>): EngineContext {
 }
 
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 53_795 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 54_496 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 60_218 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 60_237 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 58_834 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 58_649 },
+  { name: "agent / restricted", context: context({}), ceiling: 56_773 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 57_474 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 63_196 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 63_215 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 61_812 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 61_627 },
 ] as const;
 
 beforeAll(() => {
@@ -56,6 +56,132 @@ describe("static prompt byte ceilings", () => {
       );
       // Lower this ceiling whenever an intentional prompt change makes the
       // measured prefix smaller. Never raise it without a reviewed budget diff.
+      //
+      // REVIEWED BUDGET DIFF, D-DS9 REVERTED plus board doctrine (owner order
+      // 2026-08-26). NET +617 bytes in every mode, and the figure is identical
+      // in all six because every line below is a static string rendered once
+      // per mode. THIS IS A RAISE, and it is itemized rather than absorbed:
+      //
+      //   agent / restricted          56,156 -> 56,773
+      //   agent / full                56,857 -> 57,474
+      //   mission setup / restricted  62,579 -> 63,196
+      //   mission setup / full        62,598 -> 63,215
+      //   mission run / restricted    61,195 -> 61,812
+      //   mission run / full          61,010 -> 61,627
+      //
+      //   -792  D-DS9 MATERIAL REMOVED. The "Always loaded" line naming the 18
+      //         dexscreener publicNames (672 B) and the header's "Exception:
+      //         ... call those tools directly" clause (120 B). Item 1 of the
+      //         2026-08-25 diff above is REVERTED in full. It taught names the
+      //         dispatcher refuses: `protocol-route.ts` admits a protocol call
+      //         only when the session's discovered set holds it, ToolSearch is
+      //         that set's only writer, and injection was widened without
+      //         widening admission. Measured in production as a run of
+      //         "Unknown tool" answers to calls the prompt had just prescribed.
+      //   +393  CAPABILITY-AREA LINE, dexscreener only. The nine facet labels
+      //         plus one sentence sending the model to ToolSearch. It replaces
+      //         the deleted name list with the thing the name list was actually
+      //         for: knowing which of nine unrelated areas to aim a query at.
+      //         It names no callable, so it cannot recreate the defect. Opt-in
+      //         per declaration (`advertiseFacetsInPrompt`) precisely so the
+      //         other ten namespaces do not pay it; rendering all eleven was
+      //         measured at ~1,580 B and rejected.
+      //    +10  RESEARCH parenthetical: "(always loaded in your tools array,
+      //         see the Protocols section for the full name list)" became
+      //         "(reached with ToolSearch on that namespace; the Protocols
+      //         section lists its capability areas)". Item 2 of the 2026-08-25
+      //         diff, the Market Research Source Hierarchy itself, SURVIVES
+      //         unchanged: it is product doctrine about which SOURCE to prefer,
+      //         which the revert does not touch.
+      //   +119  LOGO LINE CORRECTED. It promised the model it could embed a
+      //         token logo as a Markdown image. The renderer strips every
+      //         Markdown image, so that promise was false in every reply that
+      //         acted on it. The replacement states what actually happens and
+      //         where logos really come from. A false sentence in the static
+      //         prefix is not a saving.
+      //   +887  BOARDS SECTION in Response Formatting. The owner's order: the
+      //         agent composes a board PROACTIVELY when presenting tokens,
+      //         comparisons or watchlists, and its prose must stand alone
+      //         regardless. Behaviour the model does not exhibit unprompted,
+      //         so it has to be in the static layer rather than in the tool
+      //         description alone (a tool description is read once the model is
+      //         already reaching for the tool; this decides whether it reaches).
+      //         144 of those bytes are one sentence naming mission SETUP as the
+      //         exception, because `BoardCompose` is hidden there
+      //         (`registry/board.ts`) and a static layer that renders in every
+      //         mode would otherwise prescribe a tool that mode cannot see.
+      //
+      // WHY COMPRESSION WAS INSUFFICIENT. The revert already paid for most of
+      // the additions: 792 B came back and 522 B of the 1,409 B added is spent
+      // undoing measured falsehoods (the name list, the logo promise). What is
+      // genuinely new is the 887 B board section, and it is the owner's
+      // product decision, each sentence carrying a distinct rule (when to
+      // compose, not to offer instead, prose stands alone). Shrinking another
+      // namespace's honesty clauses to fund it was ruled out on the same
+      // grounds as the S4 diff below: this budget belongs to the change that
+      // spends it. The coordinator reviews this raise.
+      //
+      // REVIEWED BUDGET DIFF, stage S8 (DexScreener endpoint-wave fix round).
+      // +74 bytes in every mode, and the number is the same in every mode
+      // because the growth is ONE static string: the DexScreener navigation
+      // coverage note. It said "Narratives exist on some chains only; one
+      // without them is refused by name", which was measured FALSE - the
+      // provider's metasEnabled flag is a site-visibility label, not a data
+      // gate, and narratives aggregate normally on chains the site does not
+      // surface (confirmed live on robinhood, ton and polygon). The tool no
+      // longer refuses those chains, so the sentence had to go.
+      //
+      // The replacement is 74 characters longer because it has to say two
+      // things the old one did not: that any chain may be asked, and that a
+      // chain with no activity answers QUIETLY rather than being refused. The
+      // second half is what stops an empty answer being read as "narratives do
+      // not exist here". 74 bytes is the price of not shipping a false
+      // statement in the static prompt, and no other prompt text grew.
+      //
+      // REVIEWED BUDGET DIFF, stage S4 (DexScreener deep-dive family).
+      //
+      //   agent / restricted          53,795 -> 54,407  (+612)
+      //   agent / full                54,496 -> 55,108  (+612)
+      //   mission setup / restricted  60,218 -> 60,830  (+612)
+      //   mission setup / full        60,237 -> 60,849  (+612)
+      //   mission run / restricted    58,834 -> 59,446  (+612)
+      //   mission run / full          58,649 -> 59,261  (+612)
+      //
+      // WHAT WAS ADDED. Exactly one thing reaches the static prefix: the
+      // DexScreener namespace DECLARATION in
+      // `protocols/navigation/entries-market/dexscreener.ts`. The four new
+      // tools themselves add NOTHING here - they are reached through
+      // ToolSearch, and no tool description, param table or embedding passage
+      // is in the static layers. The +612 bytes are the same figure in all six
+      // modes, which is the proof: the declaration renders once per mode and
+      // nothing else moved.
+      //
+      // The declaration grew because the namespace's capabilities and its
+      // LIMITS both changed, and the limits are the part that may not be
+      // dropped. It now reads contract-level and wallet-level facts for the
+      // first time, so the `read` and `whenItApplies` lines name a safety
+      // report, price history, trade history and a trader leaderboard; and
+      // `characteristicAndLimits` gained the two sentences those capabilities
+      // make mandatory under rule 90 - that a missing audit block is
+      // unavailable and never clean, and that trader figures are venue-local
+      // cash flow rather than profit. The stale "does not establish contract
+      // safety" sentence was REPLACED rather than kept, which is why the growth
+      // is +612 and not larger.
+      //
+      // WHY COMPRESSION WAS INSUFFICIENT. The three levers were tried and each
+      // one costs more than it saves:
+      //   - dropping the new limit sentences would leave the model with a
+      //     safety tool and no statement that an absent audit is not a pass,
+      //     which is the exact rule-90 failure this stage exists to avoid;
+      //   - naming the four tools instead of their capabilities is forbidden
+      //     here (the declaration teaches no tool name at all, asserted in
+      //     `dexscreener-source-policy.test.ts`);
+      //   - compressing another namespace's prose to make room was explicitly
+      //     ruled out: this budget belongs to the change that spends it, and
+      //     silently shrinking an unrelated namespace's honesty clauses to fund
+      //     it would be exactly the kind of hidden cost this ceiling exists to
+      //     surface.
+      // The coordinator reviews this diff.
       expect(bytes).toBeLessThanOrEqual(mode.ceiling);
     });
   }

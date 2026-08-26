@@ -1,0 +1,18 @@
+{
+  "fixture": "search-cat-plain.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_search.SearchPairsResponse",
+  "endpoint": "https://io.dexscreener.com/dex/search/v12/pairs?q=CAT",
+  "requestParams": {
+    "q": "CAT"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24T09:47:32.953592+00:00",
+  "httpStatus": 200,
+  "bytes": 21499,
+  "sha256": "13f3e106f88324e900da61f8cb92b9f8e07359b96c790a0111bbcbdb98ef1462",
+  "capturedBy": "live recon probe (curl_cffi impersonate=chrome), 2026-08-24; archived under scratchpad/live-turn2"
+}

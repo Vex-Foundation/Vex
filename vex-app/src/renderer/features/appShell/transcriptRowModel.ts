@@ -11,6 +11,7 @@
  */
 
 import type {
+  BoardProjection,
   ExplorerRef,
   MessageKind,
   MessageRole,
@@ -112,6 +113,19 @@ export interface TranscriptRowModel {
    * `success === false`.
    */
   readonly displayStatus?: ToolDisplayStatus | null;
+  /**
+   * ASSISTANT rows: the composed board persisted with this turn
+   * (`SessionMessageDto.board`). A board is NOT its own row variant - it is a
+   * projection of the assistant row that already carries the turn's prose, so
+   * the reader sees one message, not a message plus a detached panel, and the
+   * prose stays the standalone carrier of the finding when the board is
+   * missing, refused, or exported to Markdown.
+   *
+   * `null` on non-assistant rows, on legacy rows written before the projection
+   * existed, on turns that composed no board, and on a board the mapper
+   * refused. Every one of those degrades to the ordinary assistant document.
+   */
+  readonly board?: BoardProjection | null;
 }
 
 function assertNever(value: never): never {
@@ -281,6 +295,10 @@ export function toTranscriptRow(
     content: dto.content,
     createdAt: dto.createdAt,
     reasoning: dto.reasoning,
+    // The composed board rides the assistant text row it was committed with.
+    // Passed through verbatim: the mapper is the validating boundary, and the
+    // DTO already carries `null` for every non-assistant row.
+    board: dto.board,
     // A33: the steered mark survives into the row so the user row can wear
     // its "read at the agent's next step" register stamp.
     ...(dto.kind === "steering" ? { steering: true as const } : {}),

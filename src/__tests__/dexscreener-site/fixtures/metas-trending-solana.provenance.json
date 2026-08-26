@@ -1,0 +1,20 @@
+{
+  "fixture": "metas-trending-solana.bin.b64",
+  "encoding": "dsavro",
+  "dsavroSchema": "METAS_TRENDING",
+  "endpoint": "https://io.dexscreener.com/metas/v1/trending?chainId=solana",
+  "requestParams": {
+    "chainId": "solana"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 3212,
+  "sha256": "eb0679c0604dd186be198627d9b1de30bae864ab777cc689d8b3dee326c63131",
+  "capturedBy": "live S4 fixture capture (curl_cffi impersonate=chrome), 2026-08-24; scratchpad/s4-capture/probe_s4.py",
+  "note": "The chain-scoped narratives variant. S3.5 shipped the chainId parameter with only the cross-chain document as a fixture; this proves the parameterized form live against the same METAS_TRENDING table."
+}

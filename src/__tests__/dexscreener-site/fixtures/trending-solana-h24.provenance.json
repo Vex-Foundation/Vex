@@ -1,0 +1,19 @@
+{
+  "fixture": "trending-solana-h24.bin.b64",
+  "encoding": "dsavro",
+  "dsavroSchema": "TRENDING_V6",
+  "endpoint": "https://io.dexscreener.com/dex/trending/v6?chainId=solana&timeframeKey=h24",
+  "requestParams": {
+    "chainId": "solana",
+    "timeframeKey": "h24"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24T09:37:58.620371+00:00",
+  "httpStatus": 200,
+  "bytes": 14969,
+  "sha256": "132199c9eea6208d42de537739686ba5846b6f2a87a0798238dc8da8abc30135",
+  "capturedBy": "live recon probe (curl_cffi impersonate=chrome), 2026-08-24; archived under scratchpad/live-turn2"
+}

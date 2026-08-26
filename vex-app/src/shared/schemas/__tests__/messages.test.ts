@@ -8,6 +8,7 @@ import {
   messagesGetTailInputSchema,
   messagesListInputSchema,
   sessionMessageDtoSchema,
+  TOOL_ARGS_DISPLAY_CEILING,
   transcriptAppendEventSchema,
   TRANSCRIPT_APPEND_EVENT_TYPE,
 } from "../messages.js";
@@ -59,6 +60,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -82,6 +84,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -105,6 +108,7 @@ describe("messages schemas", () => {
       durationMs: 2314,
       success: true,
       displayStatus: null,
+      board: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -129,6 +133,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -149,6 +154,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -168,6 +174,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, reasoning: "thought…" })
@@ -200,6 +207,7 @@ describe("messages schemas", () => {
       reasoning: null,
       durationMs: null,
       success: false,
+      board: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, displayStatus: "pending" })
@@ -233,6 +241,7 @@ describe("messages schemas", () => {
       reasoning: null,
       success: null,
       displayStatus: null,
+      board: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, durationMs: -1 }).success,
@@ -249,8 +258,14 @@ describe("messages schemas", () => {
     ).toBe(true);
   });
 
-  it("rejects toolArgs over the 2000-char cap (boundary size limit)", () => {
-    const parsed = sessionMessageDtoSchema.safeParse({
+  it("admits whole large toolArgs and rejects only past the corruption ceiling", () => {
+    // Contract change (owner decree, 2026-08-26): toolArgs is the WHOLE
+    // sanitized serialization, never a cut string. The first BoardCompose call
+    // in production serialized past the old 2,000-char cap and the mapper's
+    // truncation suffix pushed it past this schema, failing the entire page.
+    // The bound is now TOOL_ARGS_DISPLAY_CEILING, a corruption guard above
+    // every legitimate producer, shared with the mapper's own null guard.
+    const row = (toolArgs: string) => ({
       id: 14,
       sessionId: SESSION,
       role: "assistant",
@@ -259,16 +274,23 @@ describe("messages schemas", () => {
       createdAt: ISO,
       toolCallId: null,
       toolName: "x:y",
-      toolCalls: [
-        { toolCallId: "c", toolName: "x:y", toolArgs: "a".repeat(2001) },
-      ],
+      toolCalls: [{ toolCallId: "c", toolName: "x:y", toolArgs }],
       explorerRefs: null,
       reasoning: null,
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     });
-    expect(parsed.success).toBe(false);
+    expect(
+      sessionMessageDtoSchema.safeParse(row("a".repeat(2001))).success,
+    ).toBe(true);
+    expect(
+      sessionMessageDtoSchema.safeParse(row("a".repeat(TOOL_ARGS_DISPLAY_CEILING))).success,
+    ).toBe(true);
+    expect(
+      sessionMessageDtoSchema.safeParse(row("a".repeat(TOOL_ARGS_DISPLAY_CEILING + 1))).success,
+    ).toBe(false);
   });
 
   it("rejects a toolCalls array over the 32-entry cap", () => {
@@ -292,6 +314,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: null,
       displayStatus: null,
+      board: null,
     });
     expect(parsed.success).toBe(false);
   });

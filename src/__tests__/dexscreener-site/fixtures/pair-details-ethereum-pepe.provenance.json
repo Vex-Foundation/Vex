@@ -1,0 +1,21 @@
+{
+  "fixture": "pair-details-ethereum-pepe.json",
+  "encoding": "json",
+  "endpoint": "https://io.dexscreener.com/dex/pair-details/v4/ethereum/0xa43fe16908251ee70ef74718545e4fe6c5ccec9f",
+  "requestParams": {
+    "chainId": "ethereum",
+    "id": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+    "route": "pair_id"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 12502,
+  "sha256": "ee9d0efbab4aec9da1cf10c9fb35d030d12837200246af3b0b2e47ad4e7b48cb",
+  "capturedBy": "live pair-level recon probe (curl_cffi impersonate=chrome), 2026-08-24; body archived at scratchpad/pair-details-ethereum.json, measurements in evidence/report-pair-level.md. Provenance reconstructed at S4 from that report: the capture predates the .provenance.json convention, so the sha256 here is over the archived body rather than recorded at capture time.",
+  "note": "EVM class and the 100x unit hazard in one document: GoPlus holder percent is the FRACTION 0.086817222047280560 (8.68 percent) while the solana fixture's holder percentage is the already-percent 5.44. GoPlus TAX values are percent-scaled in the same block. Carries GoPlus (38 fields, 10 holders, 10 lpHolders, 26 venues), QuickIntel (28 audit flags) and supply."
+}

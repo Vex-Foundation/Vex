@@ -162,6 +162,12 @@ describe("preload bridge surface", () => {
       // curated list, which is exactly the gap a manually maintained surface
       // list develops: a live bridge method nobody was pinning.
       "CH.portfolio.listAgentScan",
+      // Vex Studio projects (stage P) - folder plus backing session. No
+      // filesystem capability crosses the bridge: the renderer sends a name.
+      "CH.projects.create",
+      "CH.projects.get",
+      "CH.projects.list",
+      "CH.projects.updateScope",
       "CH.sessions.getModel",
       "CH.sessions.exportMarkdown",
       // Error-diagnostics phase (D-FOLDER) — "Open logs folder".

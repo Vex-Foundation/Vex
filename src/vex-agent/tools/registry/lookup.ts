@@ -24,11 +24,13 @@ import { MISSION_TOOLS } from "./mission.js";
 import { AUTONOMY_TOOLS } from "./autonomy.js";
 import { EVM_TOOLS } from "./evm.js";
 import { WALLET_TOOLS } from "./wallet.js";
+import { WALLET_TRANSACTION_TOOLS } from "./wallet-transaction.js";
 import { UNITS_TOOLS } from "./units.js";
 import { COMPACT_TOOLS } from "./compact.js";
 import { SESSION_MEMORY_TOOLS } from "./session-memory.js";
 import { LONG_MEMORY_TOOLS } from "./long-memory.js";
 import { PLAN_TOOLS } from "./plan.js";
+import { BOARD_TOOLS } from "./board.js";
 
 // Order matters — the LLM sees tools in this order, which can subtly bias
 // proactive selection. Protocol discovery comes first because it is the
@@ -45,11 +47,14 @@ export const TOOLS: readonly ToolDef[] = [
   ...AUTONOMY_TOOLS,
   ...EVM_TOOLS,
   ...WALLET_TOOLS,
+  ...WALLET_TRANSACTION_TOOLS,
   ...UNITS_TOOLS,
   ...COMPACT_TOOLS,
   ...SESSION_MEMORY_TOOLS,
   ...LONG_MEMORY_TOOLS,
   ...PLAN_TOOLS,
+  // Presentation, last: it ENDS a turn, so offering it late matches when it is used.
+  ...BOARD_TOOLS,
 ];
 
 // ── Registry API ─────────────────────────────────────────────────

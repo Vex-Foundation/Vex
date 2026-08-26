@@ -1,0 +1,33 @@
+{
+  "encoding": "protobuf",
+  "protobufMessage": "dex_screener.PairsSearchChannelMessage",
+  "endpoint": "wss://io.dexscreener.com/dex/screener/v8/pairs-search",
+  "requestParams": {
+    "ids": [
+      {
+        "chainId": "ethereum",
+        "id": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f"
+      },
+      {
+        "chainId": "solana",
+        "id": "Gyz6RxJfnB3yjP2J2E7HMoNojGQEKZuxEEUjurncQJ1w"
+      },
+      {
+        "chainId": "robinhood",
+        "id": "0xe35635d91eccd183aa5925c7a26bdaedef1fa07e312742689cc39afd8f04e121"
+      }
+    ],
+    "page": 1,
+    "timeframe": "TIMEFRAME_KEY_H24",
+    "rankKey": "RANK_BY_KEY_VOLUME"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-08-24T09:38:12.205422+00:00",
+  "httpStatus": 101,
+  "capturedBy": "Codex plan-review turn 2 live probe (curl_cffi impersonate=chrome), 2026-08-24; archived and sha256-verified under scratchpad/live-turn2/root, re-verified against archive-manifest.json when installed here",
+  "fixture": "v8-batch-known-three.frame.bin.b64",
+  "bytes": 3920,
+  "sha256": "f7669120b2ae4ac669ba02011b7ea3dc49eb7a5142b726502d3e4d7dee5e50ed"
+}

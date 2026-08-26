@@ -1,0 +1,26 @@
+{
+  "fixture": "bars-http-inverted-usd-transposed.bin.b64",
+  "encoding": "dsavro",
+  "dsavroSchema": "PL_BARS_RESPONSE",
+  "endpoint": "https://io.dexscreener.com/dex/chart/amm/v3/uniswap/bars/ethereum/0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f?res=60&cb=999&q=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2&i=1",
+  "requestParams": {
+    "res": "60",
+    "cb": 999,
+    "q": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "i": 1
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "responseHeaders": {
+    "content-type": "application/json"
+  },
+  "capturedAt": "2026-08-24T17:35:05+00:00",
+  "httpStatus": 200,
+  "bytes": 138411,
+  "sha256": "da8a13ef6032404ed81c848ed60f3f325355d72810c33e861691987ef0b1b741",
+  "capturedBy": "live capture for the S7 verification wave (curl_cffi impersonate=chrome via scratchpad/s7/proxy.py, Origin https://dexscreener.com), 2026-08-24; capture dir http-dbb2cdd4909ebe911222/blob0.bin",
+  "note": "The INVERTED series (i=1), where the provider transposes the USD high and low columns: measured 853 of these 999 rows carry highUSD < lowUSD, against 0 of 999 on the byte-identical non-inverted call, while the native columns are correctly ordered in both. This is the only committed capture that can prove the extremes are re-ordered before they are summarized; the canonical and wrong-quote inversion fixtures beside it are 1-bar probes about NATIVE orientation and say nothing about the USD column order."
+}

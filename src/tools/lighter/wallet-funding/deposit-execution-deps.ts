@@ -23,6 +23,14 @@ import { signStageBroadcast } from "@tools/evm-chains/staged-broadcast.js";
 import { priorLegAnchorFrom } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
 import { getUniswapEvmClients } from "@tools/uniswap/evm-client.js";
+import {
+  markLegacyEvmNonceAccepted,
+  reserveLegacyEvmNonce,
+  stageLegacyEvmNonce,
+  terminalizeLegacyEvmNonce,
+  type LegacyEvmNoncePurpose,
+  type LegacyEvmNonceReservation,
+} from "@vex-agent/db/repos/evm-nonce-reservations.js";
 import * as onboardingIntentsRepo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import {
@@ -48,6 +56,7 @@ import {
   runtimeFeeSafetyLimit,
 } from "./deposit-pre-sign.js";
 import type { LighterDepositSignedFeeCeiling } from "./deposit-pre-sign.js";
+import logger from "@utils/logger.js";
 
 const ERC20_ALLOWANCE_APPROVE_ABI = [
   {
@@ -160,6 +169,7 @@ export function buildLighterDepositExecutionDeps(
       const outcome = await runStaged(
         clients,
         { to: settlementToken, data, value: 0n },
+        "lighter_deposit_approve",
         onHashStaged,
         undefined,
         feeCeiling,
@@ -185,6 +195,7 @@ export function buildLighterDepositExecutionDeps(
       const outcome = await runStaged(
         clients,
         { to: getAddress(to), data: data as Hex, value: 0n },
+        "lighter_deposit",
         onHashStaged,
         confirmedApprovalBlockNumber,
         feeCeiling,
@@ -236,6 +247,7 @@ function rhcRpcUrl(chainId: number): string {
 async function runStaged(
   clients: ReturnType<typeof getUniswapEvmClients>,
   tx: { readonly to: Address; readonly data: Hex; readonly value: bigint },
+  noncePurpose: LegacyEvmNoncePurpose,
   onHashStaged: (transaction: LighterStagedEvmTransaction) => Promise<void>,
   confirmedPriorBlockNumber?: bigint,
   feeCeiling?: LighterDepositSignedFeeCeiling,
@@ -246,24 +258,51 @@ async function runStaged(
   readonly replacement?: import("@tools/evm-chains/receipt-guard.js").ReceiptReplacementEvidence;
   readonly reason?: string;
 }> {
+  const nonceState: { reservation: LegacyEvmNonceReservation | null } = { reservation: null };
   const result = await signStageBroadcast(
     clients.publicClient,
     clients.walletClient,
     tx,
     {
+      onNonceReserved: async (request) => {
+        if (nonceState.reservation !== null) {
+          throw new Error("Lighter settlement nonce was reserved more than once.");
+        }
+        nonceState.reservation = await reserveLegacyEvmNonce(request, noncePurpose);
+        return nonceState.reservation.nonce;
+      },
       onHashStaged: async (handles) => {
         await onHashStaged({
           txHash: handles.txHash,
           fromAddress: handles.fromAddress,
           nonce: handles.nonce,
         });
+        if (nonceState.reservation === null) {
+          throw new Error("Lighter settlement hash reached staging without a nonce reservation.");
+        }
+        await stageLegacyEvmNonce(nonceState.reservation.id, handles);
       },
-      onAccepted: async () => {},
+      onAccepted: async () => {
+        if (nonceState.reservation === null) {
+          throw new Error("Lighter settlement submit was accepted without a nonce reservation.");
+        }
+        await markLegacyEvmNonceAccepted(nonceState.reservation.id);
+      },
     },
     priorLegAnchorFrom(confirmedPriorBlockNumber),
     undefined,
     feeCeiling,
   );
+  if (result.kind !== "ambiguous" && nonceState.reservation !== null) {
+    try {
+      await terminalizeLegacyEvmNonce(nonceState.reservation.id);
+    } catch (cause) {
+      logger.warn("lighter.deposit.evm_nonce_terminal_write_failed", {
+        reservationId: nonceState.reservation.id,
+        errorKind: cause instanceof Error ? cause.name : "UnknownError",
+      });
+    }
+  }
   if (result.kind === "confirmed") {
     return {
       txHash: result.txHash,

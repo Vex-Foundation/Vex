@@ -4,7 +4,7 @@ import type { VexMarketSnapshot } from "../../../schemas/market.js";
 /**
  * `vex.market.*` — read-only live VEX market snapshot surface (T1).
  *
- * The renderer never fetches DexScreener / GeckoTerminal / Virtuals directly;
+ * The renderer never fetches DexScreener or Virtuals directly;
  * it reads the first value through `getVexSnapshot` and keeps it live via
  * `onVexUpdate` (main-pushed, Zod-validated at the preload boundary). Mirrors
  * `UpdaterBridge`'s read-once + subscribe shape.

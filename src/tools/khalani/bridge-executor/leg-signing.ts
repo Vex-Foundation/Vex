@@ -30,6 +30,7 @@ import { Connection, Keypair } from "@solana/web3.js";
 import { VexError, ErrorCodes } from "../../../errors.js";
 import { getChainRpcUrl } from "../chains.js";
 import { gasLimitForProviderHintedCall } from "@tools/evm-chains/gas-limit-headroom.js";
+import { acquireEvmNonceOwner } from "@tools/evm-chains/nonce-owner.js";
 import {
   estimateGasForPlanLeg,
   priorLegAnchorFrom,
@@ -92,6 +93,10 @@ async function signStageEvmLeg(
     );
   }
 
+  const nonceOwner = await acquireEvmNonceOwner(account.address, chain.id);
+  let txHash: Hex;
+  try {
+
   // Estimated explicitly for EVERY leg (allowance AND bridge deposit) rather
   // than signing either Khalani's `tx.gas` verbatim or viem's bare estimate —
   // both are the out-of-gas defect `gasLimitWithHeadroom` documents. Same call
@@ -123,17 +128,29 @@ async function signStageEvmLeg(
     gas: gasLimit,
     ...(tx.nonce !== undefined ? { nonce: tx.nonce } : {}),
   });
+  const nodePendingNonce = request.nonce;
+  if (nodePendingNonce === undefined) {
+    throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Prepared Khalani transaction has no nonce.");
+  }
+  const nonce = await hooks.onNonceReserved({
+    fromAddress: account.address,
+    chainId: chain.id,
+    nodePendingNonce,
+  });
+  if (!Number.isSafeInteger(nonce) || nonce < nodePendingNonce) {
+    throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Durable Khalani nonce reservation is invalid.");
+  }
   // Re-asserted on the request that is actually serialized: when fees/nonce
   // still need filling, viem may route preparation through the node's
   // `wallet_fillTransaction`, whose reply overwrites `gas` with the node's own
   // unbuffered figure. The signed bytes are what the chain enforces, so the
   // limit has to survive to exactly here.
-  const serializedTransaction = await walletClient.signTransaction({ ...request, gas: gasLimit });
-  const txHash = keccak256(serializedTransaction);
-  const nonce = request.nonce;
-  if (nonce === undefined) {
-    throw new VexError(ErrorCodes.KHALANI_DEPOSIT_FAILED, "Prepared Khalani transaction has no nonce.");
-  }
+  const serializedTransaction = await walletClient.signTransaction({
+    ...request,
+    gas: gasLimit,
+    nonce,
+  });
+  txHash = keccak256(serializedTransaction);
 
   await hooks.onHashStaged({ txHash, fromAddress: account.address, nonce });
 
@@ -141,6 +158,12 @@ async function signStageEvmLeg(
     await publicClient.sendRawTransaction({ serializedTransaction });
   } catch {
     return { kind: "ambiguous", txHash, stage: "send" };
+  } finally {
+    nonceOwner.release();
+  }
+  } catch (cause) {
+    nonceOwner.release();
+    throw cause;
   }
 
   try {

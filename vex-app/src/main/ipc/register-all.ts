@@ -6,6 +6,18 @@
  */
 
 import { setupAgentBridges } from "../agent/index.js";
+import { configureStudioMcpHost } from "../studio/mcp-host.js";
+import { runStudioCall } from "../studio/approval-service.js";
+import { loadProjectScopeSnapshot } from "../database/projects/scope-snapshot.js";
+import {
+  configureStudioApprovalBroker,
+  studioCorrelationId,
+  type StudioWithdrawalReason,
+} from "../studio/approval-broker.js";
+import {
+  refuseStudioIntent,
+  type StudioRefusalReason,
+} from "../studio/approval-refusals.js";
 import { globalCleanup } from "../lifecycle/cleanup-registry.js";
 import { registerApprovalsHandlers } from "./approvals.js";
 import { registerCancelHandler } from "./cancel.js";
@@ -24,10 +36,13 @@ import { registerMessagesHandlers } from "./messages.js";
 import { registerMissionHandlers } from "./mission.js";
 import { registerModelsHandlers } from "./models.js";
 import { registerOnboardingHandlers } from "./onboarding.js";
+import { registerBoardIconHandlers } from "./board-icons.js";
+import { registerBoardLiveHandlers } from "./board-live.js";
 import { registerImagesHandlers } from "./images.js";
 import { registerPoolsLaunchHandlers } from "./pools-launch.js";
 import { registerTokenLaunchHandlers } from "./token-launch.js";
 import { registerPortfolioHandlers } from "./portfolio.js";
+import { registerProjectsHandlers } from "./projects/index.js";
 import { registerAgentCoreHandler } from "./onboarding/agent-core.js";
 import { registerApiKeysHandler } from "./onboarding/api-keys.js";
 import { registerEmbeddingHandler } from "./onboarding/embedding.js";
@@ -85,6 +100,7 @@ export function registerAllIpcHandlers(): void {
   teardowns.push(registerSessionsDeleteHandler());
   teardowns.push(registerSessionsExportMarkdownHandler());
   teardowns.push(...registerSessionPlanHandlers());
+  teardowns.push(...registerProjectsHandlers());
   // Agent integration puzzle 1: typed bridge surface for the chat panel,
   // runtime control, mission contract/commands, approvals, wallet scope,
   // the global model, and usage meter. Read-only handlers serve real DB
@@ -98,6 +114,11 @@ export function registerAllIpcHandlers(): void {
   // DTO. Renderer supplies only scope (+ sessionId); addresses never cross.
   teardowns.push(...registerPortfolioHandlers());
   teardowns.push(...registerImagesHandlers());
+  teardowns.push(...registerBoardIconHandlers());
+  // T4: the board's LIVE lease. Unlike every other push channel here, its
+  // events go to the ONE window that owns the lease; the poll, the cadence and
+  // the transport are owned by the board live service, started in index.ts.
+  teardowns.push(...registerBoardLiveHandlers());
   // Token-launch IPC (plan C5): preview, submit (Deploy = consent), cancel and
   // myLaunches are all real; the agent-requested form flow authorizes the
   // drafted intent and resumes the parked turn.
@@ -131,6 +152,53 @@ export function registerAllIpcHandlers(): void {
   // Subscribes the in-process transcript bus to the IPC broadcaster so
   // committed `messages` INSERTs surface as `EV.engine.transcriptAppend`.
   teardowns.push(setupAgentBridges());
+  // Vex Studio A3 - install the approval broker's collaborators before any MCP
+  // call can block on one. The broker owns no policy: the refusal owner and the
+  // engine's expiry entry point are injected here, which is also what keeps the
+  // ordering (refuse durably, THEN release the waiter) testable.
+  configureStudioApprovalBroker({
+    refuseIntent: (approvalId, reason) =>
+      refuseStudioIntent(approvalId, toStudioRefusalReason(reason)),
+    expireIntent: async (approvalId) => {
+      const { expireApproval } = await import(
+        "@vex-agent/engine/core/approval-runtime.js"
+      );
+      await expireApproval(approvalId);
+    },
+    // The lost-wakeup close: one durable read per waiter, right after it
+    // registers, so a settlement that committed during the enqueue window
+    // still releases the blocked call.
+    readSettlement: async (approvalId) => {
+      const { getStudioSettlementByApprovalId } = await import(
+        "@vex-agent/db/repos/approval-intents.js"
+      );
+      return getStudioSettlementByApprovalId(approvalId);
+    },
+  });
+  // NO TEARDOWN HERE. Broker disposal releases every blocked waiter, and it
+  // must run AFTER the durable `vex_quit` refusal has made each waiter's row
+  // terminal. `globalCleanup` runs its tasks CONCURRENTLY, so a teardown
+  // registered here would race that ordering. The ONE ordered owner is the
+  // quit task in `index.ts`: host shutdown -> durable refusals -> broker
+  // disposal -> poison-retry disposal, in that order.
+  // Vex Studio A4a - install the MCP host's collaborators. The listener itself
+  // is NOT started here: it exists only while the secret session is unlocked
+  // and the readiness barrier reports ready, so `unlockSecretSession` starts it
+  // and `lockSecretSession` closes it. Both dependencies are injected so the
+  // host owns no policy: `runStudioCall` is the one owner of the per-call
+  // atomic scope snapshot, and the handshake's existence check is explicitly
+  // NON-AUTHORITATIVE - its answer is discarded the moment the ack is written.
+  configureStudioMcpHost({
+    runCall: (projectId, call, options) => runStudioCall(projectId, call, options),
+    projectExists: async (projectId) => {
+      const snapshot = await loadProjectScopeSnapshot(projectId, studioCorrelationId());
+      return snapshot.kind !== "unknown_project";
+    },
+  });
+  // NO TEARDOWN HERE either, and for the same reason: shutting the host down
+  // is step one of that ordered sequence, and a concurrent copy of it would
+  // destroy sockets - releasing waiters through their abort chain - while the
+  // durable refusal pass was still running.
   teardowns.push(...registerSettingsHandlers());
   teardowns.push(registerTelemetryHandler());
   teardowns.push(registerSupportHandler());
@@ -142,4 +210,23 @@ export function registerAllIpcHandlers(): void {
   globalCleanup.add(() => {
     for (const t of teardowns) t();
   });
+}
+
+/**
+ * The broker's withdrawal causes -> the closed set migration 086 accepts.
+ *
+ * The four TRUSTED teardown causes (`StudioCancelCause`: an MCP cancellation,
+ * a transport disconnect, a Vex lock, application quit) are all valid
+ * `refusal_reason` values and pass through UNCHANGED, so the durable audit
+ * column names the cause the teardown owner actually named. That is what lets
+ * a later reader tell "the user locked Vex" apart from "the client hung up".
+ *
+ * `expired` is the only other value the broker can withdraw with, and it is not
+ * a refusal at all: the intent's own TTL fired and the engine's expiry path
+ * owns that row and stamps `refusal_reason = 'expired'` itself. It is recorded
+ * here as `cancelled`, the honest fact for the blocked CALL, and the row is not
+ * re-stamped by this path.
+ */
+function toStudioRefusalReason(reason: StudioWithdrawalReason): StudioRefusalReason {
+  return reason === "expired" ? "cancelled" : reason;
 }

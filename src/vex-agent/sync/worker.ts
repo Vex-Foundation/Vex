@@ -109,9 +109,13 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         rowsAffected = settlementResult.closed;
       } else if (syncType === "agent_activity_repair") {
         const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
-        const repairResult = await repairPendingActivity(buildProductionRepairDeps());
+        const repairResult = await repairPendingActivity(
+          buildProductionRepairDeps(),
+          { includeAuxiliaryState: true },
+        );
         result = { ...repairResult };
-        rowsAffected = repairResult.confirmed + repairResult.failed;
+        rowsAffected = repairResult.confirmed + repairResult.failed
+          + (repairResult.nonceReservations?.terminalized ?? 0);
       } else if (syncType === "lighter_deposit_repair") {
         const { repairUnresolvedLighterDeposits } = await import("./lighter-deposit-repair.js");
         const repairResult = await repairUnresolvedLighterDeposits();
@@ -162,6 +166,14 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const attributionResult = await attributeLaunchedTokens(buildProductionLaunchAttributionDeps());
         result = { ...attributionResult };
         rowsAffected = attributionResult.attributed;
+      } else if (syncType === "pools_attribution") {
+        // pools.fun attribution retry lane - see sync/pools-attribution.ts.
+        // Keyless POST only; holds no signer.
+        const { attributePoolsLaunches } = await import("./pools-attribution.js");
+        const { buildProductionPoolsAttributionDeps } = await import("./pools-attribution-production-deps.js");
+        const poolsAttributionResult = await attributePoolsLaunches(buildProductionPoolsAttributionDeps());
+        result = { ...poolsAttributionResult };
+        rowsAffected = poolsAttributionResult.attributed;
       } else if (syncType === "launch_form_expiry") {
         const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
         const expiryResult = await expireOverdueLaunchForms();
@@ -253,8 +265,16 @@ export async function processNextRun(): Promise<boolean> {
       await syncRepo.completeRun(run.id, { ...settlementResult }, settlementResult.closed);
     } else if (job.syncType === "agent_activity_repair") {
       const { repairPendingActivity, buildProductionRepairDeps } = await import("./agent-activity-repair.js");
-      const repairResult = await repairPendingActivity(buildProductionRepairDeps());
-      await syncRepo.completeRun(run.id, { ...repairResult }, repairResult.confirmed + repairResult.failed);
+      const repairResult = await repairPendingActivity(
+        buildProductionRepairDeps(),
+        { includeAuxiliaryState: true },
+      );
+      await syncRepo.completeRun(
+        run.id,
+        { ...repairResult },
+        repairResult.confirmed + repairResult.failed
+          + (repairResult.nonceReservations?.terminalized ?? 0),
+      );
     } else if (job.syncType === "lighter_deposit_repair") {
       const { repairUnresolvedLighterDeposits } = await import("./lighter-deposit-repair.js");
       const repairResult = await repairUnresolvedLighterDeposits();
@@ -295,6 +315,14 @@ export async function processNextRun(): Promise<boolean> {
       const { attributeLaunchedTokens, buildProductionLaunchAttributionDeps } = await import("./launch-attribution.js");
       const attributionResult = await attributeLaunchedTokens(buildProductionLaunchAttributionDeps());
       await syncRepo.completeRun(run.id, { ...attributionResult }, attributionResult.attributed);
+    } else if (job.syncType === "pools_attribution") {
+      // pools.fun attribution retry lane - BOTH dispatchers need this branch;
+      // the bridge job shipped with one missing and its timer silently fired
+      // nothing for weeks. See sync/pools-attribution.ts.
+      const { attributePoolsLaunches } = await import("./pools-attribution.js");
+      const { buildProductionPoolsAttributionDeps } = await import("./pools-attribution-production-deps.js");
+      const poolsAttributionResult = await attributePoolsLaunches(buildProductionPoolsAttributionDeps());
+      await syncRepo.completeRun(run.id, { ...poolsAttributionResult }, poolsAttributionResult.attributed);
     } else if (job.syncType === "launch_form_expiry") {
       const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
       const expiryResult = await expireOverdueLaunchForms();

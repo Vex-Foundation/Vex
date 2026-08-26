@@ -1,0 +1,24 @@
+{
+  "fixture": "pair-details-solana-live.json",
+  "encoding": "json",
+  "endpoint": "https://io.dexscreener.com/dex/pair-details/v4/solana/g8kgi7aupex8evr8vmkrth9skev5bietwc33ujaiimgh",
+  "requestParams": {
+    "chainId": "solana",
+    "id": "G8kgi7aUpeX8EVR8VMkrth9SKEv5BietWC33UjAiiMGh",
+    "route": "pair_id"
+  },
+  "requestHeaders": {
+    "Accept": "*/*",
+    "Origin": "https://dexscreener.com",
+    "Referer": "https://dexscreener.com/"
+  },
+  "capturedAt": "2026-08-24",
+  "httpStatus": 200,
+  "bytes": 8950,
+  "sha256": "33d572f578a135cfb92aa391c85e8ea8e706238ee6b04ddf820618a095743d4e",
+  "capturedBy": "live S4 fixture capture (curl_cffi impersonate=chrome), 2026-08-24; scratchpad/s4-capture/probe_pd.py, index.json records url, params, status, cache-control and sha256",
+  "responseHeaders": {
+    "cache-control": "public, max-age=60"
+  },
+  "note": "Solana class: holders (40 rows, percentages already in percent), lpHolders (30 rows, a block the first recon pass recorded as always null), liquidity locks at 98.13 percent, chain authority, supply, CoinMarketCap identity and the issuer profile. No GoPlus and no QuickIntel on this chain."
+}

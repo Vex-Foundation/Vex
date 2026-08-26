@@ -66,9 +66,22 @@ function renderDeclaration(namespace: ProtocolNamespace): string[] {
     throw new Error(`Protocol declaration "${namespace}" has neither runtime coverage nor coverageNote.`);
   }
 
+  // Capability AREAS, for the one namespace that opts in (D-DS9-R). They say
+  // what kinds of question this namespace answers so the model can aim a
+  // ToolSearch query at the right area; they are never callable names, because
+  // a protocol tool is callable only after discovery records it.
+  const facetLines = declaration.advertiseFacetsInPrompt === true
+    ? [
+        `Capability areas: ${declaration.facets.join("; ")}. `
+        + "Name the area you need in a ToolSearch query on this namespace; the tools it returns "
+        + "become callable by name.",
+      ]
+    : [];
+
   const lines = [
     `### ${namespace}`,
     declaration.identity,
+    ...facetLines,
     `Read: ${declaration.read}`,
     `Quote: ${declaration.quote}`,
     `Act: ${declaration.act}`,

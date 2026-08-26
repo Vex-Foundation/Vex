@@ -1,0 +1,4376 @@
+[
+ {
+  "slug": "solana",
+  "nativeChainId": 1399811149,
+  "name": "Solana",
+  "blockExplorer": {
+   "accountURL": "https://solscan.io/account/{{address}}",
+   "assetURL": "https://solscan.io/token/{{token}}",
+   "txnsURL": "https://solscan.io/tx/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "pumpswap",
+   "meteora",
+   "orca",
+   "raydium",
+   "pumpfun",
+   "meteoradbc",
+   "fluxbeam",
+   "metadao",
+   "launchlab",
+   "rise",
+   "bags",
+   "printr",
+   "dexlab",
+   "zora",
+   "moonit",
+   "heaven"
+  ],
+  "wrappedNativeToken": "So11111111111111111111111111111111111111112",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "solana"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "solana"
+   },
+   "quickIntel": {
+    "isEnabled": false,
+    "networkId": "solana"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "solana-mainnet"
+   },
+   "bubblemaps": {
+    "isEnabled": false,
+    "chainId": "sol"
+   },
+   "bubblemapsV2": {
+    "isEnabled": true,
+    "chainId": "solana"
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "sol"
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "svm",
+  "features": {
+   "metas": {
+    "isEnabled": true,
+    "isVisible": true
+   }
+  }
+ },
+ {
+  "slug": "robinhood",
+  "nativeChainId": 4663,
+  "name": "Robinhood",
+  "blockExplorer": {
+   "accountURL": "https://robinhoodchain.blockscout.com/address/{{address}}",
+   "assetURL": "https://robinhoodchain.blockscout.com/token/{{token}}",
+   "txnsURL": "https://robinhoodchain.blockscout.com/tx/{{txns}}",
+   "holdersURL": "https://robinhoodchain.blockscout.com/token/{{address}}?tab=holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "uniswap",
+   "up",
+   "ramses",
+   "giga",
+   "sushiswap",
+   "alandale",
+   "flapsh",
+   "swaphood",
+   "robinswap",
+   "sheriff",
+   "catnip",
+   "pancakeswap",
+   "aeon-protocol",
+   "parity",
+   "based",
+   "robinvista",
+   "currentx",
+   "frothswap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "robinhood"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 4663
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "robinhood"
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": true,
+    "chainId": "robinhood"
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "robinhood"
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "bsc",
+  "nativeChainId": 56,
+  "name": "BSC",
+  "blockExplorer": {
+   "accountURL": "https://bscscan.com/address/{{address}}",
+   "assetURL": "https://bscscan.com/token/{{token}}",
+   "txnsURL": "https://bscscan.com/tx/{{txns}}",
+   "holdersURL": "https://bscscan.com/token/tokenholderchart/{{txns}}"
+  },
+  "dexes": [
+   "pancakeswap",
+   "flapsh",
+   "uniswap",
+   "topaz",
+   "fstswap",
+   "fourmeme",
+   "thena",
+   "biswap",
+   "unchain-x",
+   "tiktokfun",
+   "apeswap",
+   "nomiswap",
+   "babyswap",
+   "babydogeswap",
+   "orion",
+   "squadswap",
+   "dinosaureggs",
+   "bakeryswap",
+   "sushiswap",
+   "mdex",
+   "forest-protocol",
+   "safemoonswap",
+   "fraxswap",
+   "knightswap",
+   "swych",
+   "autoshark",
+   "radioshack",
+   "coinfair",
+   "planetfinance",
+   "coneexchange",
+   "hyperjump",
+   "mochiswap",
+   "w3swap",
+   "kyotoswap",
+   "jetswap",
+   "jswap",
+   "padswap",
+   "marsecosystem",
+   "saitaswap",
+   "orbitalswap",
+   "lif3",
+   "openocean",
+   "elkfinance",
+   "tidaldex",
+   "kyberswap",
+   "sphynx",
+   "traderjoe",
+   "pandora",
+   "baryonswap",
+   "diamondswap",
+   "annexfinance",
+   "empiredex",
+   "pyreswap",
+   "leonicorn",
+   "pyeswap",
+   "9mm",
+   "niob",
+   "iziswap",
+   "omni-exchange",
+   "dexswap",
+   "ethervista",
+   "aequinox",
+   "vertek"
+  ],
+  "wrappedNativeToken": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "binance-smart-chain"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 56
+   },
+   "tokenSniffer": {
+    "isEnabled": true,
+    "networkId": 56
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "bsc"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "bnb"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "bsc"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "bsc-mainnet"
+   },
+   "bubblemapsV2": {
+    "isEnabled": true,
+    "chainId": "bsc"
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "bsc"
+   },
+   "honeypotIs": {
+    "isEnabled": false,
+    "networkId": "56"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": true,
+    "isVisible": true
+   }
+  }
+ },
+ {
+  "slug": "base",
+  "nativeChainId": 8453,
+  "name": "Base",
+  "blockExplorer": {
+   "accountURL": "https://basescan.org/address/{{address}}",
+   "assetURL": "https://basescan.org/token/{{token}}",
+   "txnsURL": "https://basescan.org/tx/{{txns}}",
+   "holdersURL": "https://basescan.org/token/tokenholderchart/{{txns}}"
+  },
+  "dexes": [
+   "aerodrome",
+   "uniswap",
+   "pancakeswap",
+   "hydrex",
+   "quickswap",
+   "alien-base",
+   "solidlycom",
+   "sushiswap",
+   "baseline",
+   "rubicon",
+   "treble",
+   "equalizer",
+   "baseswap",
+   "swapbased",
+   "infusion",
+   "balancer",
+   "shark-swap",
+   "deltaswap",
+   "iziswap",
+   "rocketswap",
+   "dackieswap",
+   "9mm",
+   "synthswap",
+   "windswap",
+   "leetswap",
+   "citadelswap",
+   "basex",
+   "horizondex",
+   "omni-exchange",
+   "satori",
+   "diamondswap",
+   "derpdex",
+   "robots-farm",
+   "velocimeter",
+   "cloudbase",
+   "memebox",
+   "candy-swap",
+   "cbswap",
+   "fwx",
+   "crescentswap",
+   "basofinance",
+   "throne",
+   "moonbase",
+   "icecreamswap",
+   "kokonutswap",
+   "degenbrains",
+   "basedswap",
+   "ethervista",
+   "bakeryswap",
+   "glacier",
+   "lfgswap",
+   "oasisswap"
+  ],
+  "wrappedNativeToken": "0x4200000000000000000000000000000000000006",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 8453
+   },
+   "tokenSniffer": {
+    "isEnabled": true,
+    "networkId": 8453
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "base"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "base"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "base"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "base-mainnet"
+   },
+   "bubblemapsV2": {
+    "isEnabled": true,
+    "chainId": "base"
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "base"
+   },
+   "honeypotIs": {
+    "isEnabled": false,
+    "networkId": "8453"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": true,
+    "isVisible": true
+   }
+  }
+ },
+ {
+  "slug": "ethereum",
+  "nativeChainId": 1,
+  "name": "Ethereum",
+  "blockExplorer": {
+   "accountURL": "https://etherscan.io/address/{{address}}",
+   "assetURL": "https://etherscan.io/token/{{token}}",
+   "txnsURL": "https://etherscan.io/tx/{{txns}}",
+   "holdersURL": "https://etherscan.io/token/tokenholderchart/{{txns}}"
+  },
+  "dexes": [
+   "uniswap",
+   "curve",
+   "pancakeswap",
+   "sushiswap",
+   "balancer",
+   "supernova",
+   "shibaswap",
+   "defiswap",
+   "fraxswap",
+   "verse",
+   "9mm",
+   "ethervista",
+   "lif3",
+   "9inch",
+   "safemoonswap",
+   "orion",
+   "solidlycom",
+   "baseline",
+   "vulcandex",
+   "radioshack",
+   "blueprint",
+   "diamondswap",
+   "swapr",
+   "empiredex",
+   "kyberswap",
+   "stepn",
+   "wagmi",
+   "okxdex",
+   "memebox",
+   "pyeswap",
+   "templedao"
+  ],
+  "wrappedNativeToken": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "ethereum"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 1
+   },
+   "tokenSniffer": {
+    "isEnabled": true,
+    "networkId": 1
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "eth"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "ethereum"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "eth"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "eth-mainnet"
+   },
+   "bubblemapsV2": {
+    "isEnabled": true,
+    "chainId": "eth"
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "eth"
+   },
+   "honeypotIs": {
+    "isEnabled": false,
+    "networkId": "1"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": true,
+    "isVisible": true
+   }
+  }
+ },
+ {
+  "slug": "hyperevm",
+  "nativeChainId": 999,
+  "name": "HyperEVM",
+  "blockExplorer": {
+   "accountURL": "https://hyperevmscan.io/address/{{address}}",
+   "assetURL": "https://hyperevmscan.io/token/{{token}}",
+   "txnsURL": "https://hyperevmscan.io/tx/{{txns}}",
+   "holdersURL": "https://hyperevmscan.io/token/{{address}}#balances"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "prjx",
+   "hyperswap",
+   "nest",
+   "ramses",
+   "hybra-finance",
+   "kittenswap",
+   "hypertrade",
+   "turbo",
+   "ultrasolid",
+   "funnel",
+   "laminar",
+   "noxa",
+   "hypercat",
+   "dystohyperian-swap",
+   "dyorswap",
+   "manaswap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "hyperevm"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": true,
+    "chainId": "hyperevm"
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "hyperevm"
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "polygon",
+  "nativeChainId": 137,
+  "name": "Polygon",
+  "blockExplorer": {
+   "accountURL": "https://polygonscan.com/address/{{address}}",
+   "assetURL": "https://polygonscan.com/token/{{token}}",
+   "txnsURL": "https://polygonscan.com/tx/{{txns}}",
+   "holdersURL": "https://polygonscan.com/token/tokenholderchart/{{txns}}"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "uniswap",
+   "sushiswap",
+   "ramses",
+   "quickswap",
+   "balancer",
+   "dooar",
+   "apeswap",
+   "dfyn",
+   "retro",
+   "polycat",
+   "fraxswap",
+   "polyzap",
+   "dystopia",
+   "vulcandex",
+   "jetswap",
+   "kyberswap",
+   "dinoswap",
+   "mmfinance",
+   "radioshack",
+   "gravityfinance",
+   "lif3",
+   "pearl",
+   "comethswap",
+   "nachofinance",
+   "elkfinance",
+   "jamonswap",
+   "firebird",
+   "satin",
+   "algebra",
+   "empiredex",
+   "safemoonswap",
+   "tetuswap"
+  ],
+  "wrappedNativeToken": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "polygon-pos"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 137
+   },
+   "tokenSniffer": {
+    "isEnabled": true,
+    "networkId": 137
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "matic"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "polygon"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "polygon"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "matic-mainnet"
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": true,
+    "chainId": "polygon"
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "matic"
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "pulsechain",
+  "nativeChainId": 368,
+  "name": "PulseChain",
+  "blockExplorer": {
+   "accountURL": "https://ipfs.scan.pulsechain.com/address/{{address}}",
+   "assetURL": "https://ipfs.scan.pulsechain.com/token/{{token}}",
+   "txnsURL": "https://ipfs.scan.pulsechain.com/tx/{{txns}}",
+   "holdersURL": "https://ipfs.scan.pulsechain.com/token/{{txns}}?tab=holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "pulsex",
+   "9mm",
+   "switchx",
+   "liberty-swap",
+   "uniswap",
+   "9inch",
+   "finvesta",
+   "pulse-rate",
+   "pdex",
+   "sushiswap",
+   "dextop",
+   "sparkswap",
+   "eazyswap",
+   "velocimeter"
+  ],
+  "wrappedNativeToken": "0xa1077a294dde1b09bb078844df40758a5d0f9a27",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "pulsechain"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "pls"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "pulsechain"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "pulse"
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "ink",
+  "nativeChainId": 57073,
+  "name": "Ink",
+  "blockExplorer": {
+   "accountURL": "https://explorer.inkonchain.com/address/{{address}}",
+   "assetURL": "https://explorer.inkonchain.com/token/{{token}}",
+   "txnsURL": "https://explorer.inkonchain.com/tx/{{txns}}",
+   "holdersURL": "https://explorer.inkonchain.com/token/{{address}}?tab=holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "velodrome",
+   "dyorswap",
+   "inkyswap",
+   "squidswap",
+   "blotswap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "ink"
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "ton",
+  "name": "TON",
+  "blockExplorer": {
+   "accountURL": "https://tonviewer.com/{{address}}",
+   "assetURL": "https://tonviewer.com/{{token}}",
+   "txnsURL": "https://tonviewer.com/transaction/{{txns}}",
+   "holdersURL": "https://tonviewer.com/{{address}}?section=holders"
+  },
+  "dexes": [
+   "stonfi",
+   "dedust",
+   "uranus"
+  ],
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "the-open-network"
+   },
+   "bubblemapsV2": {
+    "isEnabled": true,
+    "chainId": "ton"
+   }
+  },
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "hyperliquid",
+  "name": "Hyperliquid",
+  "blockExplorer": {
+   "accountURL": "https://app.hyperliquid.xyz/explorer/address/{{address}}",
+   "assetURL": "https://app.hyperliquid.xyz/explorer/token/{{token}}",
+   "txnsURL": "https://app.hyperliquid.xyz/explorer/tx/{{txns}}"
+  },
+  "dexes": [
+   "hyperliquid"
+  ],
+  "isChainAndDEX": true,
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "tron",
+  "name": "Tron",
+  "blockExplorer": {
+   "accountURL": "https://tronscan.org/#/address/{{address}}",
+   "assetURL": "https://tronscan.org/#/token20/{{token}}",
+   "txnsURL": "https://tronscan.org/#/transaction/{{txns}}",
+   "holdersURL": "https://tronscan.org/#/token20/{{address}}/holders"
+  },
+  "dexes": [
+   "sunswap"
+  ],
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "tron"
+   },
+   "bubblemapsV2": {
+    "isEnabled": true,
+    "chainId": "tron"
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "tron"
+   }
+  },
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "monad",
+  "nativeChainId": 143,
+  "name": "Monad",
+  "blockExplorer": {
+   "accountURL": "https://monadscan.com/address/{{address}}",
+   "assetURL": "https://monadscan.com/token/{{token}}",
+   "txnsURL": "https://monadscan.com/tx/{{txns}}",
+   "holdersURL": "https://monadscan.com/token/{{address}}#balances"
+  },
+  "dexes": [
+   "uniswap",
+   "pancakeswap",
+   "nad-fun",
+   "traderjoe",
+   "atlantis-dex",
+   "monday-trade",
+   "noxa",
+   "pangolin",
+   "dyorswap",
+   "octoswap",
+   "zkswap",
+   "pinot",
+   "alloca",
+   "madness"
+  ],
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "monad"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 143
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "monad"
+   },
+   "bubblemaps": {
+    "isEnabled": false,
+    "chainId": "monad"
+   },
+   "bubblemapsV2": {
+    "isEnabled": true,
+    "chainId": "monad"
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "monad"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "avalanche",
+  "nativeChainId": 43114,
+  "name": "Avalanche",
+  "blockExplorer": {
+   "accountURL": "https://snowscan.xyz/address/{{address}}",
+   "assetURL": "https://snowscan.xyz/address/{{token}}",
+   "txnsURL": "https://snowscan.xyz/tx/{{txns}}",
+   "holdersURL": "https://snowtrace.io/token/{{txns}}/tokenholderchart?chainId=43114"
+  },
+  "dexes": [
+   "pharaoh",
+   "uniswap",
+   "blackhole",
+   "traderjoe",
+   "pangolin",
+   "fraxswap",
+   "arenatrade",
+   "hurricaneswap",
+   "lydiafinance",
+   "aquaspace",
+   "vapordex",
+   "kyberswap",
+   "hakuswap",
+   "radioshack",
+   "swapsicle",
+   "sushiswap",
+   "alligator",
+   "elkfinance",
+   "yetiswap",
+   "glacier",
+   "partyswap",
+   "thorus",
+   "pyreswap",
+   "diamondswap",
+   "fwx",
+   "onavax",
+   "omni-exchange",
+   "empiredex"
+  ],
+  "wrappedNativeToken": "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "avalanche"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 43114
+   },
+   "tokenSniffer": {
+    "isEnabled": true,
+    "networkId": 43114
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "avax"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "avalanche"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "avalanche"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "avalanche-mainnet"
+   },
+   "bubblemapsV2": {
+    "isEnabled": true,
+    "chainId": "avalanche"
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "avax"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "arbitrum",
+  "nativeChainId": 42161,
+  "name": "Arbitrum",
+  "blockExplorer": {
+   "accountURL": "https://arbiscan.io/address/{{address}}",
+   "assetURL": "https://arbiscan.io/token/{{token}}",
+   "txnsURL": "https://arbiscan.io/tx/{{txns}}",
+   "holdersURL": "https://arbiscan.io/token/tokenholderchart/{{txns}}"
+  },
+  "dexes": [
+   "uniswap",
+   "camelot",
+   "pancakeswap",
+   "sushiswap",
+   "traderjoe",
+   "solidlycom",
+   "ramses",
+   "deltaswap",
+   "zyberswap",
+   "spartadex",
+   "arbswap",
+   "swapr",
+   "mmfinance",
+   "solidlizard",
+   "chronos",
+   "kyberswap",
+   "arbidex",
+   "aegis",
+   "oreoswap",
+   "swapfish",
+   "mindgames",
+   "auragi",
+   "magicswap",
+   "sharkyswap",
+   "elkfinance",
+   "apeswap",
+   "fraxswap",
+   "alienfi",
+   "sterling",
+   "oasisswap",
+   "3xcalibur",
+   "arbiswap",
+   "omni-exchange",
+   "rubicon",
+   "degenbrains",
+   "dackieswap",
+   "spinaqdex",
+   "shekelswap",
+   "ethervista",
+   "crescentswap",
+   "dexfi"
+  ],
+  "wrappedNativeToken": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "arbitrum-one"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 42161
+   },
+   "tokenSniffer": {
+    "isEnabled": true,
+    "networkId": 42161
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "arb"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "arbitrum"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "arbitrum"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "arbitrum-mainnet"
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": true,
+    "chainId": "arbitrum"
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "arb"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "xrpl",
+  "name": "XRPL",
+  "blockExplorer": {
+   "accountURL": "https://xrpscan.com/account/{{address}}",
+   "assetURL": "https://xrpscan.com/account/{{token}}",
+   "txnsURL": "https://xrpscan.com/tx/{{txns}}"
+  },
+  "dexes": [
+   "xrpl"
+  ],
+  "isChainAndDEX": true,
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "sui",
+  "name": "Sui",
+  "blockExplorer": {
+   "accountURL": "https://suiscan.xyz/mainnet/account/{{address}}",
+   "assetURL": "https://suiscan.xyz/mainnet/coin/{{token}}",
+   "txnsURL": "https://suiscan.xyz/mainnet/tx/{{txns}}",
+   "holdersURL": "https://suiscan.xyz/mainnet/coin/{{address}}/holders"
+  },
+  "dexes": [
+   "cetus",
+   "turbos-finance",
+   "bluefin",
+   "magma",
+   "momentum",
+   "fullsail",
+   "steamm",
+   "aftermath",
+   "bluemove",
+   "flowx"
+  ],
+  "wrappedNativeToken": "0x2::sui::SUI",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "sui"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "sui"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "sui"
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "sui"
+   }
+  },
+  "architecture": "sui",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "abstract",
+  "nativeChainId": 2740,
+  "name": "Abstract",
+  "blockExplorer": {
+   "accountURL": "https://abscan.org/address/{{address}}",
+   "assetURL": "https://abscan.org/token/{{token}}",
+   "txnsURL": "https://abscan.org/tx/{{txns}}",
+   "holdersURL": "https://abscan.org/token/{{address}}#balances"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "aborean",
+   "abstractswap",
+   "kona",
+   "moonit"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "abstract"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 2741
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "abstract"
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "abstract"
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "stable",
+  "nativeChainId": -3,
+  "name": "Stable",
+  "blockExplorer": {
+   "accountURL": "https://stablescan.xyz/address/{{address}}",
+   "assetURL": "https://stablescan.xyz/token/{{token}}",
+   "txnsURL": "https://stablescan.xyz/tx/{{txns}}",
+   "holdersURL": "https://stablescan.xyz/token/{{address}}#balances"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "uniswap",
+   "dyorswap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 988
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "cronos",
+  "nativeChainId": 25,
+  "name": "Cronos",
+  "blockExplorer": {
+   "accountURL": "https://explorer.cronos.org/address/{{address}}",
+   "assetURL": "https://explorer.cronos.org/token/{{token}}",
+   "txnsURL": "https://explorer.cronos.org/tx/{{txns}}",
+   "holdersURL": "https://explorer.cronos.org/token/{{txns}}#tokenHolders"
+  },
+  "dexes": [
+   "vvsfinance",
+   "mmfinance",
+   "obsidian-finance",
+   "cronaswap",
+   "ebisus-bay",
+   "duckydefi",
+   "crodex",
+   "candycity",
+   "photonswap",
+   "solidex",
+   "cyborgswap",
+   "cougar",
+   "annexfinance",
+   "empiredex",
+   "smolswap",
+   "croswap",
+   "elkfinance",
+   "swapp",
+   "agilefinance",
+   "kryptodex",
+   "hopswap",
+   "omex",
+   "stabil",
+   "degenbrains",
+   "cronical"
+  ],
+  "wrappedNativeToken": "0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "cronos"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 25
+   },
+   "tokenSniffer": {
+    "isEnabled": true,
+    "networkId": 25
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "cro"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "cronos"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "cronos-mainnet"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "worldchain",
+  "nativeChainId": 479,
+  "name": "World Chain",
+  "blockExplorer": {
+   "accountURL": "https://worldchain-mainnet.explorer.alchemy.com/address/{{address}}",
+   "assetURL": "https://worldchain-mainnet.explorer.alchemy.com/token/{{token}}",
+   "txnsURL": "https://worldchain-mainnet.explorer.alchemy.com/tx/{{txns}}",
+   "holdersURL": "https://worldchain-mainnet.explorer.alchemy.com/token/{{address}}?tab=holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "uniswap",
+   "dyorswap",
+   "worldswap",
+   "realswap",
+   "multex"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "world-chain"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "worldchain"
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "plasma",
+  "nativeChainId": 9745,
+  "name": "Plasma",
+  "blockExplorer": {
+   "accountURL": "https://plasmascan.to/address/{{address}}",
+   "assetURL": "https://plasmascan.to/token/{{token}}",
+   "txnsURL": "https://plasmascan.to/tx/{{txns}}",
+   "holdersURL": "https://plasmascan.to/token/{{address}}/balances?type=erc20"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "oku",
+   "dyorswap",
+   "lithos",
+   "ionex",
+   "fuseon",
+   "gorillions"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "plasma"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "plasma"
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "near",
+  "nativeChainId": 395,
+  "name": "NEAR",
+  "blockExplorer": {
+   "accountURL": "https://nearblocks.io/address/{{address}}",
+   "assetURL": "https://nearblocks.io/token/{{token}}",
+   "txnsURL": "https://nearblocks.io/txns/{{txns}}",
+   "holdersURL": "https://nearblocks.io/token/{{txns}}#holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "rhea-finance"
+  ],
+  "wrappedNativeToken": "wrap.near",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "near"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "near-protocol"
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "sonic",
+  "nativeChainId": 146,
+  "name": "Sonic",
+  "blockExplorer": {
+   "accountURL": "https://sonicscan.org/address/{{address}}",
+   "assetURL": "https://sonicscan.org/token/{{token}}",
+   "txnsURL": "https://sonicscan.org/tx/{{txns}}",
+   "holdersURL": "https://sonicscan.org/token/{{address}}#balances"
+  },
+  "dexes": [
+   "shadow-exchange",
+   "metropolis",
+   "swapx",
+   "oku",
+   "beets",
+   "equalizer",
+   "wagmi",
+   "solidlycom",
+   "spookyswap",
+   "defive",
+   "sushiswap",
+   "silverswap",
+   "dyorswap",
+   "atlantis",
+   "mobiusdex",
+   "memebox",
+   "9mm",
+   "omni-exchange",
+   "zkswap",
+   "fat-finger",
+   "sonic-market",
+   "sonic-swap",
+   "sonicxswap"
+  ],
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "sonic"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "sonic"
+   },
+   "bubblemaps": {
+    "isEnabled": false,
+    "chainId": "sonic"
+   },
+   "bubblemapsV2": {
+    "isEnabled": true,
+    "chainId": "sonic"
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "sonic"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "mantle",
+  "nativeChainId": 5000,
+  "name": "Mantle",
+  "blockExplorer": {
+   "accountURL": "https://explorer.mantle.xyz/address/{{address}}",
+   "assetURL": "https://explorer.mantle.xyz/token/{{token}}",
+   "txnsURL": "https://explorer.mantle.xyz/tx/{{txns}}",
+   "holdersURL": "https://explorer.mantle.xyz/token/{{txns}}/token-holders"
+  },
+  "dexes": [
+   "agni",
+   "merchantmoe",
+   "oku",
+   "fusionx",
+   "swapsicle",
+   "iziswap",
+   "cleo",
+   "butter.xyz",
+   "crust",
+   "velocimeter",
+   "funny-money",
+   "methlab"
+  ],
+  "wrappedNativeToken": "0x4200000000000000000000000000000000000006",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 5000
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "mnt"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "mantle"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "mantle-mainnet"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "hedera",
+  "nativeChainId": 295,
+  "name": "Hedera",
+  "blockExplorer": {
+   "accountURL": "https://hashscan.io/mainnet/account/{{address}}",
+   "assetURL": "https://hashscan.io/mainnet/token/{{token}}",
+   "txnsURL": "https://hashscan.io/mainnet/transaction/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "saucerswap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "295"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "unichain",
+  "nativeChainId": 130,
+  "name": "Unichain",
+  "blockExplorer": {
+   "accountURL": "https://uniscan.xyz/address/{{address}}",
+   "assetURL": "https://uniscan.xyz/token/{{token}}",
+   "txnsURL": "https://uniscan.xyz/tx/{{txns}}",
+   "holdersURL": "https://uniscan.xyz/token/{{address}}#balances"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "uniswap",
+   "velodrome",
+   "dyorswap",
+   "unichainswap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "unichain"
+   },
+   "goPlus": {
+    "isEnabled": false,
+    "networkId": 130
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": true,
+    "chainId": "unichain"
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "megaeth",
+  "nativeChainId": 4326,
+  "name": "MegaETH",
+  "blockExplorer": {
+   "accountURL": "https://mega.etherscan.io/address/{{address}}",
+   "assetURL": "https://mega.etherscan.io/token/{{token}}",
+   "txnsURL": "https://mega.etherscan.io/tx/{{txns}}",
+   "holdersURL": "https://mega.etherscan.io/token/{{address}}#balances"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "kumbaya",
+   "prism",
+   "noxa",
+   "currentx"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "megaeth"
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "linea",
+  "nativeChainId": 59144,
+  "name": "Linea",
+  "blockExplorer": {
+   "accountURL": "https://lineascan.build/address/{{address}}",
+   "assetURL": "https://lineascan.build/token/{{token}}",
+   "txnsURL": "https://lineascan.build/tx/{{txns}}",
+   "holdersURL": "https://lineascan.build/token/tokenholderchart/{{txns}}"
+  },
+  "dexes": [
+   "lynex",
+   "etherex",
+   "syncswap",
+   "pancakeswap",
+   "iziswap",
+   "sushiswap",
+   "nile",
+   "kyberswap",
+   "oku",
+   "echodex",
+   "secta",
+   "metavault",
+   "horizondex",
+   "leetswap",
+   "satori",
+   "diamondswap",
+   "velocore"
+  ],
+  "wrappedNativeToken": "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "linea"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "linea"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "linea"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "linea-mainnet"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "multiversx",
+  "name": "MultiversX",
+  "blockExplorer": {
+   "accountURL": "https://explorer.multiversx.com/accounts/{{address}}",
+   "assetURL": "https://explorer.multiversx.com/tokens/{{token}}",
+   "txnsURL": "https://explorer.multiversx.com/transactions/{{txns}}",
+   "holdersURL": "https://explorer.multiversx.com/tokens/{{address}}/accounts"
+  },
+  "dexes": [
+   "xexchange",
+   "onedex"
+  ],
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "elrond"
+   }
+  },
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "optimism",
+  "nativeChainId": 10,
+  "name": "Optimism",
+  "blockExplorer": {
+   "accountURL": "https://optimistic.etherscan.io/address/{{address}}",
+   "assetURL": "https://optimistic.etherscan.io/token/{{token}}",
+   "txnsURL": "https://optimistic.etherscan.io/tx/{{txns}}",
+   "holdersURL": "https://optimistic.etherscan.io/token/tokenholderchart/{{txns}}"
+  },
+  "dexes": [
+   "velodrome",
+   "uniswap",
+   "solidlycom",
+   "sushiswap",
+   "beethovenx",
+   "fraxswap",
+   "zipswap",
+   "kyberswap",
+   "openxswap",
+   "elkfinance",
+   "rubicon",
+   "superswap",
+   "omni-exchange",
+   "dackieswap"
+  ],
+  "wrappedNativeToken": "0x4200000000000000000000000000000000000006",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "optimistic-ethereum"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 10
+   },
+   "tokenSniffer": {
+    "isEnabled": true,
+    "networkId": 10
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "op"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "optimism-ethereum"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "optimism-mainnet"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "berachain",
+  "nativeChainId": 80094,
+  "name": "Berachain",
+  "blockExplorer": {
+   "accountURL": "http://berascan.com/address/{{address}}",
+   "assetURL": "http://berascan.com/token/{{token}}",
+   "txnsURL": "http://berascan.com/tx/{{txns}}",
+   "holdersURL": "http://berascan.com/token/tokenholderchart/{{txns}}"
+  },
+  "dexes": [
+   "kodiak",
+   "beraswap",
+   "bulla",
+   "winnieswap",
+   "dyorswap",
+   "memeswap",
+   "holdstation",
+   "memetree",
+   "burrbear"
+  ],
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "berachain"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 80094
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "starknet",
+  "name": "Starknet",
+  "blockExplorer": {
+   "accountURL": "https://starkscan.co/contract/{{address}}",
+   "assetURL": "https://starkscan.co/token/{{token}}",
+   "txnsURL": "https://starkscan.co/tx/{{txns}}",
+   "holdersURL": "https://starkscan.co/token/{{txns}}#holders"
+  },
+  "dexes": [
+   "ekubo"
+  ],
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "starknet"
+   }
+  },
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "seiv2",
+  "nativeChainId": 1329,
+  "name": "Sei V2",
+  "blockExplorer": {
+   "accountURL": "https://seiscan.io/address/{{address}}",
+   "assetURL": "https://seiscan.io/token/{{token}}",
+   "txnsURL": "https://seiscan.io/tx/{{txns}}",
+   "holdersURL": "https://seiscan.io/token/{{address}}#balances"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "dragonswap",
+   "oku",
+   "yaka-finance",
+   "kura",
+   "seiport",
+   "yeiswap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "polkadot",
+  "nativeChainId": 420420417,
+  "name": "Polkadot",
+  "blockExplorer": {
+   "accountURL": "https://hydration.subscan.io/account/{{address}}",
+   "assetURL": "",
+   "txnsURL": "https://hydration.subscan.io/extrinsic/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "hydration"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "polkadot"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "fantom",
+  "nativeChainId": 250,
+  "name": "Fantom",
+  "blockExplorer": {
+   "accountURL": "https://ftmscan.com/address/{{address}}",
+   "assetURL": "https://ftmscan.com/token/{{token}}",
+   "txnsURL": "https://ftmscan.com/tx/{{txns}}",
+   "holdersURL": "https://ftmscan.com/token/tokenholderchart/{{txns}}"
+  },
+  "dexes": [
+   "spookyswap",
+   "wigoswap",
+   "spiritswap",
+   "beethovenx",
+   "velocimeter",
+   "equalizer",
+   "solidly",
+   "protofi",
+   "hyperjump",
+   "knightswap",
+   "excalibur",
+   "tombswap",
+   "soulswap",
+   "degenhaus",
+   "pyreswap",
+   "elkfinance",
+   "sushiswap",
+   "paintswap",
+   "farmtom",
+   "morpheusswap",
+   "lif3",
+   "solidlycom",
+   "bombswap",
+   "redemption",
+   "wingswap",
+   "jetswap",
+   "yoshiexchange",
+   "skullswap",
+   "kyberswap",
+   "defyswap",
+   "memebox",
+   "wagmi",
+   "empiredex",
+   "fraxswap"
+  ],
+  "wrappedNativeToken": "0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "fantom"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 250
+   },
+   "tokenSniffer": {
+    "isEnabled": true,
+    "networkId": 250
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "ftm"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "fantom"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "fantom"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "fantom-mainnet"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "icp",
+  "name": "ICP",
+  "blockExplorer": {
+   "accountURL": "https://dashboard.internetcomputer.org/account/{{address}}",
+   "assetURL": "https://dashboard.internetcomputer.org/canister/{{token}}"
+  },
+  "dexes": [
+   "icpswap"
+  ],
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "internet-computer"
+   }
+  },
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "algorand",
+  "name": "Algorand",
+  "blockExplorer": {
+   "accountURL": "https://explorer.perawallet.app/address/{{address}}/",
+   "assetURL": "https://explorer.perawallet.app/asset/{{token}}/",
+   "txnsURL": "https://explorer.perawallet.app/tx/{{txns}}/"
+  },
+  "dexes": [
+   "tinyman"
+  ],
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "algorand"
+   },
+   "goPlus": {
+    "isEnabled": false
+   }
+  },
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "aptos",
+  "name": "Aptos",
+  "blockExplorer": {
+   "accountURL": "https://explorer.aptoslabs.com/account/{{address}}",
+   "assetURL": "https://explorer.aptoslabs.com/account/{{token}}",
+   "txnsURL": "https://explorer.aptoslabs.com/txn/{{txns}}"
+  },
+  "dexes": [
+   "thala",
+   "pancakeswap",
+   "cellana",
+   "liquidswap",
+   "animeswap",
+   "aux"
+  ],
+  "wrappedNativeToken": "0x1::aptos_coin::AptosCoin",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "aptos"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "aptos"
+   }
+  },
+  "architecture": "aptos",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "apechain",
+  "nativeChainId": 33139,
+  "name": "ApeChain",
+  "blockExplorer": {
+   "accountURL": "https://apescan.io/address/{{address}}",
+   "assetURL": "https://apescan.io/token/{{token}}",
+   "txnsURL": "https://apescan.io/tx/{{txns}}",
+   "holdersURL": "https://apescan.io/token/{{address}}#balances"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "camelot",
+   "saru",
+   "dyorswap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "apechain"
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false,
+    "chainId": "apechain"
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "zksync",
+  "nativeChainId": 324,
+  "name": "zkSync",
+  "blockExplorer": {
+   "accountURL": "https://explorer.zksync.io/address/{{address}}",
+   "assetURL": "https://explorer.zksync.io/address/{{token}}",
+   "txnsURL": "https://explorer.zksync.io/tx/{{txns}}"
+  },
+  "dexes": [
+   "syncswap",
+   "koi",
+   "oku",
+   "spacefi",
+   "zkswap",
+   "pancakeswap",
+   "iziswap",
+   "velocore",
+   "ezkalibur",
+   "vesync",
+   "gemswap",
+   "wagmi",
+   "derpdex",
+   "draculafi",
+   "holdstation",
+   "gameswap"
+  ],
+  "wrappedNativeToken": "0x5aea5775959fbc2557cc8789bc1bf90a239d9a91",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "zksync"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 324
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "era"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "zksync"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "zksync"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "zksync-mainnet"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "flare",
+  "nativeChainId": 14,
+  "name": "Flare",
+  "blockExplorer": {
+   "accountURL": "https://flare-explorer.flare.network/address/{{address}}",
+   "assetURL": "https://flare-explorer.flare.network/token/{{token}}",
+   "txnsURL": "https://flare-explorer.flare.network/tx/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "sparkdex",
+   "enosys",
+   "blazeswap",
+   "pangolin"
+  ],
+  "wrappedNativeToken": "0x1D80c49BbBCd1C0911346656B529DF9E5c2F783d",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "flare-network"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "flr"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "flare"
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "flarenetworks-flare-mainnet"
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "stacks",
+  "name": "Stacks",
+  "blockExplorer": {
+   "accountURL": "https://explorer.hiro.so/txid/{{address}}",
+   "assetURL": "https://explorer.hiro.so/txid/{{token}}",
+   "txnsURL": "https://explorer.hiro.so/txid/{{txns}}"
+  },
+  "dexes": [
+   "alex",
+   "bitflow",
+   "velar",
+   "fakfun"
+  ],
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "cardano",
+  "name": "Cardano",
+  "blockExplorer": {
+   "accountURL": "https://cardanoscan.io/address/{{address}}",
+   "assetURL": "https://cardanoscan.io/token/{{token}}",
+   "txnsURL": "https://cardanoscan.io/transaction/{{txns}}",
+   "holdersURL": "https://cardanoscan.io/token/{{address}}?tab=topholders"
+  },
+  "dexes": [
+   "wingriders",
+   "sundaeswap",
+   "minswap"
+  ],
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "cardano"
+   }
+  },
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "blast",
+  "nativeChainId": 81457,
+  "name": "Blast",
+  "blockExplorer": {
+   "accountURL": "https://blastscan.io/address/{{address}}",
+   "assetURL": "https://blastscan.io/token/{{token}}",
+   "txnsURL": "https://blastscan.io/tx/{{txns}}",
+   "holdersURL": "https://blastscan.io/token/{{address}}#balances"
+  },
+  "dexes": [
+   "thruster",
+   "monoswap",
+   "blade",
+   "blaster",
+   "roguex",
+   "ring",
+   "uniswap",
+   "dyorswap",
+   "fenix",
+   "cyberblast",
+   "hyperblast",
+   "diamondswap",
+   "swapblast",
+   "sushiswap",
+   "bitdex",
+   "dackieswap",
+   "icecreamswap",
+   "ambient"
+  ],
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "blast"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 81457
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "blast"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "metis",
+  "nativeChainId": 1087,
+  "name": "Metis",
+  "blockExplorer": {
+   "accountURL": "https://explorer.metis.io/address/{{address}}",
+   "assetURL": "https://explorer.metis.io/token/{{token}}",
+   "txnsURL": "https://explorer.metis.io/tx/{{txns}}",
+   "holdersURL": "https://explorer.metis.io/token/{{txns}}#balances"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "netswap",
+   "hercules",
+   "tethys",
+   "wagmi",
+   "uni-maia",
+   "sushiswap",
+   "hermesprotocol"
+  ],
+  "wrappedNativeToken": "0x75cb093e4d61d2a2e65d8e0bbb01de8d89b53481",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "metis-andromeda"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "metis"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "metisdao"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "metis"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "metis-mainnet"
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "harmony",
+  "nativeChainId": 1666600000,
+  "name": "Harmony",
+  "blockExplorer": {
+   "accountURL": "https://explorer.harmony.one/address/{{address}}",
+   "assetURL": "https://explorer.harmony.one/address/{{token}}",
+   "txnsURL": "https://explorer.harmony.one/tx/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "sushiswap",
+   "tranquilfinance",
+   "defikingdoms",
+   "swap",
+   "viperswap",
+   "lootswap",
+   "openswap",
+   "elkfinance",
+   "sonicswap",
+   "hermesdefi",
+   "mochiswap",
+   "foxswap",
+   "bossswap",
+   "fuzzswap",
+   "wagmidao"
+  ],
+  "wrappedNativeToken": "0xcF664087a5bB0237a0BAd6742852ec6c8d69A27a",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "harmony-shard-0"
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 1666600000
+   },
+   "tokenSniffer": {
+    "isEnabled": true,
+    "networkId": 1666600000
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "hmy"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "harmony"
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "harmony-mainnet"
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "celo",
+  "nativeChainId": 42220,
+  "name": "Celo",
+  "blockExplorer": {
+   "accountURL": "https://explorer.celo.org/address/{{address}}",
+   "assetURL": "https://explorer.celo.org/token/{{token}}",
+   "txnsURL": "https://explorer.celo.org/tx/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "uniswap",
+   "velodrome",
+   "ubeswap",
+   "sushiswap"
+  ],
+  "wrappedNativeToken": "0x471EcE3750Da237f93B8E339c536989b8978a438",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "celo"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "celo"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "celo"
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "celo-mainnet"
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "opbnb",
+  "nativeChainId": 203,
+  "name": "opBNB",
+  "blockExplorer": {
+   "accountURL": "https://mainnet.opbnbscan.com/address/{{address}}",
+   "assetURL": "https://mainnet.opbnbscan.com/token/{{token}}",
+   "txnsURL": "https://mainnet.opbnbscan.com/tx/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "pancakeswap",
+   "cubiswap",
+   "derpdex",
+   "thena",
+   "fourdex",
+   "binaryswap",
+   "pixelswap",
+   "luigiswap",
+   "knightdex",
+   "diamondswap",
+   "leetswap",
+   "udex"
+  ],
+  "wrappedNativeToken": "0x4200000000000000000000000000000000000006",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 204
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "opbnb"
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "opbnb"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "bnb-opbnb-mainnet"
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "katana",
+  "nativeChainId": 747473,
+  "name": "Katana",
+  "blockExplorer": {
+   "accountURL": "https://www.katanascan.com/address/{{address}}",
+   "assetURL": "https://www.katanascan.com/token/{{token}}",
+   "txnsURL": "https://www.katanascan.com/tx/{{txns}}",
+   "holdersURL": "https://www.katanascan.com/token/{{address}}?tab=holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "sushiswap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "soneium",
+  "name": "Soneium",
+  "blockExplorer": {
+   "accountURL": "https://soneium.blockscout.com/address/{{address}}",
+   "assetURL": "https://soneium.blockscout.com/token/{{token}}",
+   "txnsURL": "https://soneium.blockscout.com/tx/{{txns}}",
+   "holdersURL": "https://soneium.blockscout.com/token/{{address}}?tab=holders"
+  },
+  "dexes": [
+   "velodrome",
+   "kyo-finance",
+   "sonex",
+   "sonefi",
+   "uniswap",
+   "sonus",
+   "dyorswap"
+  ],
+  "integrations": {
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "soneium"
+   }
+  },
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "story",
+  "nativeChainId": 1514,
+  "name": "Story",
+  "blockExplorer": {
+   "accountURL": "https://www.storyscan.xyz/address/{{address}}",
+   "assetURL": "https://www.storyscan.xyz/token/{{token}}",
+   "txnsURL": "https://www.storyscan.xyz/tx/{{txns}}",
+   "holdersURL": "https://www.storyscan.xyz/token/{{address}}?tab=holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "piperx",
+   "storyhunt",
+   "story-fun"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "flowevm",
+  "nativeChainId": 747,
+  "name": "Flow EVM",
+  "blockExplorer": {
+   "accountURL": "https://evm.flowscan.io/address/{{address}}",
+   "assetURL": "https://evm.flowscan.io/token/{{token}}",
+   "txnsURL": "https://evm.flowscan.io/tx/{{txns}}",
+   "holdersURL": "https://evm.flowscan.io/token/{{address}}?tab=holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "flowswap",
+   "punchswap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "beam",
+  "nativeChainId": 4336,
+  "name": "Beam",
+  "blockExplorer": {
+   "accountURL": "https://subnets.avax.network/beam/address/{{address}}",
+   "assetURL": "https://subnets.avax.network/beam/token/{{address}}",
+   "txnsURL": "https://subnets.avax.network/beam/tx/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "beam-swap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "beam"
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "scroll",
+  "nativeChainId": 534352,
+  "name": "Scroll",
+  "blockExplorer": {
+   "accountURL": "https://scrollscan.com/address/{{address}}",
+   "assetURL": "https://scrollscan.com/token/{{token}}",
+   "txnsURL": "https://scrollscan.com/tx/{{txns}}",
+   "holdersURL": "https://scrollscan.com/token/{{txns}}#balances"
+  },
+  "dexes": [
+   "syncswap",
+   "nuri",
+   "sushiswap",
+   "iziswap",
+   "oku",
+   "kyberswap",
+   "zebra",
+   "skydrome",
+   "spacefi",
+   "scribe",
+   "metavault",
+   "punkswap",
+   "scrollswap",
+   "zada-finance",
+   "tokan",
+   "papyrusswap",
+   "icecreamswap",
+   "cattieswap",
+   "luigiswap",
+   "leetswap",
+   "ambient"
+  ],
+  "wrappedNativeToken": "0x5300000000000000000000000000000000000004",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 534352
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "scrl"
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "scroll-mainnet"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "injective",
+  "nativeChainId": 1776,
+  "name": "Injective",
+  "blockExplorer": {
+   "accountURL": "https://explorer.injective.network/account/{{address}}/",
+   "assetURL": "https://explorer.injective.network/asset/?denom={{token}}",
+   "txnsURL": "https://explorer.injective.network/transaction/{{txns}}/",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "helix"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "injective"
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "cosmos",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "conflux",
+  "nativeChainId": 1030,
+  "name": "Conflux",
+  "blockExplorer": {
+   "accountURL": "https://evm.confluxscan.net/address/{{address}}",
+   "assetURL": "https://evm.confluxscan.net/token/{{token}}",
+   "txnsURL": "https://evm.confluxscan.net/tx/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "swappi"
+  ],
+  "wrappedNativeToken": "0x14b2D3bC65e74DAE1030EAFd8ac30c533c976A9b",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "conflux"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "cfx"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "conflux-network"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "conflux"
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "fogo",
+  "name": "Fogo",
+  "blockExplorer": {
+   "accountURL": "https://fogoscan.com/account/{{address}}",
+   "assetURL": "https://fogoscan.com/token/{{token}}",
+   "txnsURL": "https://fogoscan.com/tx/{{txns}}",
+   "holdersURL": "https://fogoscan.com/token/{{address}}#holders"
+  },
+  "dexes": [
+   "valiant"
+  ],
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "kava",
+  "nativeChainId": 2222,
+  "name": "Kava",
+  "blockExplorer": {
+   "accountURL": "https://explorer.kava.io/address/{{address}}",
+   "assetURL": "https://explorer.kava.io/address/{{token}}",
+   "txnsURL": "https://explorer.kava.io/tx/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "wagmi",
+   "equilibre",
+   "kinetix",
+   "elkfinance",
+   "surfswap",
+   "photonswap"
+  ],
+  "wrappedNativeToken": "0xc86c7C0eFbd6A49B35E8714C5f59D99De09A225b",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "kava"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "kava"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "kava"
+   },
+   "quickIntel": {
+    "isEnabled": true,
+    "networkId": "kava"
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "merlinchain",
+  "nativeChainId": 4200,
+  "name": "Merlin Chain",
+  "blockExplorer": {
+   "accountURL": "https://scan.merlinchain.io/address/{{address}}",
+   "assetURL": "https://scan.merlinchain.io/token/{{token}}",
+   "txnsURL": "https://scan.merlinchain.io/tx/{{txns}}",
+   "holdersURL": "https://scan.merlinchain.io/token/{{address}}/token-holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "merlinswap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": true,
+    "networkId": 4200
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "manta",
+  "nativeChainId": 169,
+  "name": "Manta",
+  "blockExplorer": {
+   "accountURL": "https://pacific-explorer.manta.network/address/{{address}}",
+   "assetURL": "https://pacific-explorer.manta.network/token/{{token}}",
+   "txnsURL": "https://pacific-explorer.manta.network/tx/{{txns}}",
+   "holdersURL": "https://pacific-explorer.manta.network/token/{{txns}}/token-holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "quickswap",
+   "aperture-swap",
+   "pacificswap",
+   "iziswap",
+   "gullnetwork",
+   "firefly",
+   "oku",
+   "cetoswap",
+   "leetswap"
+  ],
+  "wrappedNativeToken": "0x0Dc808adcE2099A9F62AA87D9670745AbA741746",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "manta"
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "dogechain",
+  "nativeChainId": 2000,
+  "name": "Dogechain",
+  "blockExplorer": {
+   "accountURL": "https://explorer.dogechain.dog/address/{{address}}",
+   "assetURL": "https://explorer.dogechain.dog/token/{{token}}",
+   "txnsURL": "https://explorer.dogechain.dog/tx/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "bourbondefi",
+   "dogeshrek",
+   "dogeswap",
+   "fraxswap",
+   "kibbleswap",
+   "pupswap",
+   "quickswap",
+   "yodeswap"
+  ],
+  "wrappedNativeToken": "0xB7ddC6414bf4F5515b52D8BdD69973Ae205ff101",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "dogechain"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "doge"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "dogechain"
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "fuse",
+  "nativeChainId": 122,
+  "name": "Fuse",
+  "blockExplorer": {
+   "accountURL": "https://explorer.fuse.io/address/{{address}}",
+   "assetURL": "https://explorer.fuse.io/tokens/{{token}}",
+   "txnsURL": "https://explorer.fuse.io/tx/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "voltagefinance",
+   "sushiswap",
+   "elkfinance"
+  ],
+  "wrappedNativeToken": "0x0BE9e53fd7EDaC9F859882AfdDa116645287C629",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "fuse"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "fuse"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "fuse-network"
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "movement",
+  "name": "Movement",
+  "blockExplorer": {
+   "accountURL": "https://explorer.movementlabs.xyz/account/{{address}}?network=mainnet",
+   "assetURL": "https://explorer.movementlabs.xyz/coin/{{token}}?network=mainnet",
+   "txnsURL": "https://explorer.movementlabs.xyz/txn/{{txns}}?network=mainnet"
+  },
+  "dexes": [
+   "yuzu"
+  ],
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   }
+  },
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "oasissapphire",
+  "nativeChainId": 23294,
+  "name": "Oasis Sapphire",
+  "blockExplorer": {
+   "accountURL": "https://explorer.sapphire.oasis.io/address/{{address}}",
+   "assetURL": "https://explorer.sapphire.oasis.io/address/{{token}}",
+   "txnsURL": "https://explorer.sapphire.oasis.io/tx/{{address}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "neby",
+   "illuminex"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "neonevm",
+  "nativeChainId": 245022934,
+  "name": "Neon EVM",
+  "blockExplorer": {
+   "accountURL": "https://neon.blockscout.com/address/{{address}}",
+   "assetURL": "https://neon.blockscout.com/token/{{token}}",
+   "txnsURL": "https://neon.blockscout.com/tx/{{txns}}",
+   "holdersURL": "https://neon.blockscout.com/token/{{txns}}?tab=holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "moraswap",
+   "ethervista",
+   "icecreamswap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "neon-mainnet"
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "moonriver",
+  "nativeChainId": 1285,
+  "name": "Moonriver",
+  "blockExplorer": {
+   "accountURL": "https://moonriver.moonscan.io/address/{{address}}",
+   "assetURL": "https://moonriver.moonscan.io/token/{{token}}",
+   "txnsURL": "https://moonriver.moonscan.io/tx/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "elkfinance",
+   "huckleberry",
+   "padswap",
+   "seadex",
+   "solarbeam",
+   "sushiswap",
+   "zenlink"
+  ],
+  "wrappedNativeToken": "0x98878B06940aE243284CA214f92Bb71a2b032B8A",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "moonriver"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "movr"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "moonriver"
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "moonbeam-moonriver"
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "stepnetwork",
+  "nativeChainId": 1234,
+  "name": "Step Network",
+  "blockExplorer": {
+   "accountURL": "https://stepscan.io/address/{{address}}",
+   "assetURL": "https://stepscan.io/token/{{token}}",
+   "txnsURL": "https://stepscan.io/tx/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "stepdex"
+  ],
+  "wrappedNativeToken": "0xb58a9d5920af6ac1a9522b0b10f55df16686d1b6",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "step-network"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "step"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "step"
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "avalanche-step-network"
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "vana",
+  "nativeChainId": 1478,
+  "name": "Vana",
+  "blockExplorer": {
+   "accountURL": "https://vanascan.io/address/{{address}}",
+   "assetURL": "https://vanascan.io/token/{{token}}",
+   "txnsURL": "https://vanascan.io/tx/{{txns}}",
+   "holdersURL": "https://vanascan.io/token/{{address}}?tab=holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "datadex"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": false
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "telos",
+  "nativeChainId": 39,
+  "name": "Telos",
+  "blockExplorer": {
+   "accountURL": "https://www.teloscan.io/address/{{address}}",
+   "assetURL": "https://www.teloscan.io/address/{{token}}",
+   "txnsURL": "https://www.teloscan.io/tx/{{txns}}",
+   "holdersURL": ""
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "oku",
+   "apeswap",
+   "elkfinance",
+   "icecreamswap",
+   "omnidex",
+   "sushiswap",
+   "swapsicle",
+   "zappy"
+  ],
+  "wrappedNativeToken": "0xD102cE6A4dB07D247fcc28F366A623Df0938CA9E",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "telos"
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "tlos"
+   },
+   "coinMarketCap": {
+    "isEnabled": true,
+    "networkId": "telos"
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": true,
+    "chainId": "telos-mainnet"
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "taiko",
+  "name": "Taiko",
+  "blockExplorer": {
+   "accountURL": "https://taikoscan.io/address/{{address}}",
+   "assetURL": "https://taikoscan.io/token/{{token}}",
+   "txnsURL": "https://taikoscan.io/tx/{{txns}}",
+   "holdersURL": "https://taikoscan.io/token/{{token}}#balances"
+  },
+  "dexes": [
+   "oku",
+   "kodo",
+   "ritsu"
+  ],
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": true,
+    "chainId": "taiko"
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "zkfair",
+  "nativeChainId": 42766,
+  "name": "ZKFair",
+  "blockExplorer": {
+   "accountURL": "https://scan.zkfair.io/address/{{address}}",
+   "assetURL": "https://scan.zkfair.io/token/{{token}}",
+   "txnsURL": "https://scan.zkfair.io/tx/{{txns}}",
+   "holdersURL": "https://scan.zkfair.io/token/{{txns}}?tab=holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "abstradex",
+   "sideswap"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "zkfair"
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "venom",
+  "name": "Venom",
+  "blockExplorer": {
+   "accountURL": "https://venomscan.com/accounts/{{address}}",
+   "assetURL": "https://venomscan.com/accounts/{{token}}",
+   "txnsURL": "https://venomscan.com/transactions/{{txns}}"
+  },
+  "dexes": [
+   "web3world"
+  ],
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ },
+ {
+  "slug": "mode",
+  "nativeChainId": 34443,
+  "name": "Mode",
+  "blockExplorer": {
+   "accountURL": "https://explorer.mode.network/address/{{address}}",
+   "assetURL": "https://explorer.mode.network/token/{{token}}",
+   "txnsURL": "https://explorer.mode.network/tx/{{txns}}",
+   "holdersURL": "https://explorer.mode.network/token/{{txns}}?tab=holders"
+  },
+  "rpcURL": "",
+  "shortName": "",
+  "dexes": [
+   "kim",
+   "dyorswap",
+   "dackieswap",
+   "poolshark",
+   "supswap",
+   "swapmode",
+   "velodrome"
+  ],
+  "wrappedNativeToken": "",
+  "integrations": {
+   "coinGecko": {
+    "isEnabled": false
+   },
+   "goPlus": {
+    "isEnabled": false
+   },
+   "tokenSniffer": {
+    "isEnabled": false
+   },
+   "deBank": {
+    "isEnabled": true,
+    "networkId": "mode"
+   },
+   "coinMarketCap": {
+    "isEnabled": false
+   },
+   "quickIntel": {
+    "isEnabled": false
+   },
+   "covalent": {
+    "isEnabled": false
+   },
+   "bubblemaps": {
+    "isEnabled": false
+   },
+   "bubblemapsV2": {
+    "isEnabled": false
+   },
+   "insightX": {
+    "isEnabled": false
+   },
+   "honeypotIs": {
+    "isEnabled": false
+   }
+  },
+  "architecture": "evm",
+  "features": {
+   "metas": {
+    "isEnabled": false,
+    "isVisible": false
+   }
+  }
+ }
+]

@@ -31,6 +31,7 @@ import {
 import { CompactionMarker } from "./CompactionMarker.js";
 import { MemoryMarker } from "./MemoryMarker.js";
 import { ReasonedBlock } from "./ReasonedBlock.js";
+import { BoardBlock } from "./Board/BoardBlock.js";
 import { ToolActRow } from "./ToolLedger/ToolActRow.js";
 import { ExplorerRefLinks } from "./ToolLedger/ExplorerRefLinks.js";
 import { ToolGroupRow } from "./ToolLedger/ToolGroupRow.js";
@@ -312,6 +313,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           <AssistantSpeakerLabel />
           <ReasonedBlock reasoning={row.reasoning} />
           <AssistantBody content={row.content} />
+          {row.board != null ? <BoardBlock spec={row.board} /> : null}
           <AssistantActionsTail
             createdAt={row.createdAt}
             copyText={row.content}

@@ -85,4 +85,15 @@ describe("every seeded periodic sync type is reachable", () => {
   it("includes the bounded public Lighter order repair sweep", async () => {
     expect(await seededPeriodicSyncTypes()).toContain("lighter_order_repair");
   });
+
+  /**
+   * The pools.fun badge lane is a SECOND attribution sweep with its own sync
+   * type, and the two names differ by more than a prefix - `launch_attribution`
+   * (trench) versus `pools_attribution`. The generic checks above catch a
+   * missing tick or dispatch arm; this one catches the seed row itself going
+   * missing, which would leave the other two registrations correct and inert.
+   */
+  it("includes the pools.fun launch attribution retry lane", async () => {
+    expect(await seededPeriodicSyncTypes()).toContain("pools_attribution");
+  });
 });

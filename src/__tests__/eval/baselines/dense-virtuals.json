@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-virtuals",
   "datasetVersion": "virtuals-v1",
   "status": "captured",
-  "capturedAt": "2026-08-22T14:28:16.268Z",
+  "capturedAt": "2026-08-25T16:09:24.232Z",
   "metrics": {
     "overall": {
       "count": 17,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-virtuals@virtuals-v1, mode dense, 17 cases evaluated.",
     "overall recall@1 0.882, recall@5 1, coverage@5 1, mrr@5 0.941, groupMrr@5 0.919.",
-    "First capture: no previous baseline to measure a delta against."
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

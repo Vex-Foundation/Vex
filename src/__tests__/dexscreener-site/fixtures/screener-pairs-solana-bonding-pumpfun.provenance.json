@@ -1,0 +1,24 @@
+{
+  "fixture": "screener-pairs-solana-bonding-pumpfun.bin.b64",
+  "encoding": "protobuf",
+  "protobufMessage": "dex_screener.PairsChannelMessage",
+  "endpoint": "wss://io.dexscreener.com/dex/screener/v7/pairs/h6/1?rankBy[key]=pairAge&rankBy[order]=asc&filters[chainIds][0]=solana&filters[excludedDexIds][]=&filters[dexIds][0]=pumpfun&filters[launchpadProgress][max]=99.99",
+  "requestParams": {
+    "path": "/dex/screener/v7/pairs/h6/1",
+    "query": "rankBy[key]=pairAge&rankBy[order]=asc&filters[chainIds][0]=solana&filters[excludedDexIds][]=&filters[dexIds][0]=pumpfun&filters[launchpadProgress][max]=99.99"
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-08-24T09:39:24.471310+00:00",
+  "httpStatus": 101,
+  "bytes": 57066,
+  "sha256": "f60102f6c91ac7beedf5e89fae400bfdba974ebd6ca89c271a7f949efd6461bd",
+  "capturedBy": "live WS probe (curl_cffi impersonate=chrome), 2026-08-24; archived under scratchpad/live-turn2/momentum-launch/raw/launch-pumpfun-bonding-newest",
+  "frameOrder": [
+    "latestBlock",
+    "pairs"
+  ],
+  "frameIndex": 1,
+  "note": "Binary frame 1 of the session. Frame 0 was latestBlock (18 bytes): the first binary frame is NOT the result frame."
+}

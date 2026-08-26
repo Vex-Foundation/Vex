@@ -144,12 +144,20 @@ export interface TokenPriceDeps {
   readonly listPendingPriceWatchPairs: () => Promise<readonly TokenPriceWatchPair[]>;
 }
 
-async function defaultGetTokenPairs(
+/**
+ * The provider read this watch arms on, and the one the poller must agree with.
+ *
+ * Exported so the DEFAULT wiring is testable end to end rather than only the
+ * injected one: the pool list decides which price a session wakes to trade at,
+ * so "which rows reach `selectTokenWatchPrice`" is part of this module's
+ * observable contract, not an implementation detail of its default argument.
+ */
+export async function readWatchedTokenPools(
   chainSlug: string,
   tokenAddress: string,
 ): Promise<DexPair[]> {
-  const { getDexScreenerClient } = await import("@tools/dexscreener/client.js");
-  return getDexScreenerClient().getTokenPairs(chainSlug, tokenAddress);
+  const { readTokenPools } = await import("@tools/dexscreener/price-read.js");
+  return readTokenPools(chainSlug, tokenAddress);
 }
 
 async function defaultListPendingPairs(): Promise<readonly TokenPriceWatchPair[]> {
@@ -289,7 +297,7 @@ async function assertWithinBudget(
 
 export function createTokenPriceEvaluator(
   deps: TokenPriceDeps = {
-    getTokenPairs: defaultGetTokenPairs,
+    getTokenPairs: readWatchedTokenPools,
     listPendingPriceWatchPairs: defaultListPendingPairs,
   },
 ): WakeWatchEvaluator {

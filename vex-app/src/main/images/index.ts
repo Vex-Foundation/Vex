@@ -37,6 +37,17 @@ export {
 } from "./byte-resolver.js";
 
 export {
+  BOARD_ICON_MAX_BYTES,
+  BOARD_ICON_MAX_DIMENSION,
+  createBoardIconService,
+  mountBoardIconService,
+  resolveBoardIcon,
+  type BoardIconFetcher,
+  type BoardIconResolution,
+  type BoardIconService,
+} from "./board-icon-service.js";
+
+export {
   deriveLockerImageLabel,
   validateLockerImageBytes,
   type LockerImageRejection,

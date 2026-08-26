@@ -82,7 +82,12 @@ vi.mock("@tools/uniswap/revert-mapping.js", () => ({
       : { failureCode: "unknown", failureReason: "unused" },
   ),
 }));
-vi.mock("@tools/dexscreener/client.js", () => ({ getDexScreenerClient: vi.fn() }));
+// S11a: the quote-safety liquidity check reads through the `price-read`
+// seam. An empty pool list keeps this suite's prior behaviour: the check
+// finds no liquidity and the suite's subject is elsewhere.
+vi.mock("@tools/dexscreener/price-read.js", () => ({
+  readTokensPairs: vi.fn(async () => []),
+}));
 vi.mock("@tools/evm-chains/registry.js", () => ({ getLocalChain: vi.fn() }));
 vi.mock("@tools/evm-chains/erc20-balance-guard.js", () => ({
   ensureErc20Balance: (...args: unknown[]) => ensureErc20Balance(...args),

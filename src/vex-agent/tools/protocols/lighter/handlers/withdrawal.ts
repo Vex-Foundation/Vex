@@ -21,6 +21,13 @@ import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deplo
 import { decimalToBaseUnits } from "@tools/lighter/wallet-funding/onboarding-plan.js";
 import { acquireLighterDepositExecutionLease } from "@tools/lighter/wallet-funding/execution-lease.js";
 import { signStageBroadcast } from "@tools/evm-chains/staged-broadcast.js";
+import {
+  markLegacyEvmNonceAccepted,
+  reserveLegacyEvmNonce,
+  stageLegacyEvmNonce,
+  terminalizeLegacyEvmNonce,
+  type LegacyEvmNonceReservation,
+} from "@vex-agent/db/repos/evm-nonce-reservations.js";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
 import {
   getUniswapEvmClients,
@@ -38,6 +45,7 @@ import { resolveSelectedAddress, resolveSigningWallet, walletScopeErrorToResult 
 import type { PreparedActionFollowUp } from "../../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
 import type { ProtocolHandler } from "../../types.js";
+import logger from "@utils/logger.js";
 import {
   assertLighterWithdrawalApprovalBinding,
   buildLighterWithdrawalCriticalArgs,
@@ -217,19 +225,35 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
       });
       assertLighterWithdrawalClaimPreflightWithinApproval(approved.preflightJson, fresh);
       await lease.handle.assertOwned();
+      const nonceState: { reservation: LegacyEvmNonceReservation | null } = { reservation: null };
       const outcome = await signStageBroadcast(
         clients.publicClient,
         clients.walletClient,
         { to: getAddress(approved.gatewayAddress), data: approved.calldata as Hex, value: 0n },
         {
+          onNonceReserved: async (request) => {
+            if (nonceState.reservation !== null) {
+              throw new Error("Lighter withdrawal claim nonce was reserved more than once.");
+            }
+            nonceState.reservation = await reserveLegacyEvmNonce(request, "lighter_withdrawal_claim");
+            return nonceState.reservation.nonce;
+          },
           onHashStaged: async (handles) => {
             const staged = await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markStagedWith(client, {
               claimId, sessionId, txHash: handles.txHash, fromAddress: handles.fromAddress, nonce: handles.nonce,
             }));
             if (staged === null) throw new Error("Manual claim hash could not be staged durably before broadcast.");
+            if (nonceState.reservation === null) {
+              throw new Error("Lighter withdrawal claim hash reached staging without a nonce reservation.");
+            }
+            await stageLegacyEvmNonce(nonceState.reservation.id, handles);
           },
           onAccepted: async () => {
             await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markSubmittedWith(client, claimId, sessionId));
+            if (nonceState.reservation === null) {
+              throw new Error("Lighter withdrawal claim was accepted without a nonce reservation.");
+            }
+            await markLegacyEvmNonceAccepted(nonceState.reservation.id);
           },
         },
         undefined,
@@ -241,6 +265,16 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
           maxNetworkFeeWei: BigInt(approved.networkFeeCeilingWei),
         },
       );
+      if (outcome.kind !== "ambiguous" && nonceState.reservation !== null) {
+        try {
+          await terminalizeLegacyEvmNonce(nonceState.reservation.id);
+        } catch (cause) {
+          logger.warn("lighter.withdrawal_claim.evm_nonce_terminal_write_failed", {
+            reservationId: nonceState.reservation.id,
+            errorKind: cause instanceof Error ? cause.name : "UnknownError",
+          });
+        }
+      }
       if (outcome.kind === "ambiguous") {
         await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markOutcomeWith(client, {
           claimId, sessionId, outcome: "ambiguous", reason: `manual_claim_${outcome.stage}_outcome_unknown`,

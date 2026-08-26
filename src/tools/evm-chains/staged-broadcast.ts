@@ -37,10 +37,16 @@ import type {
   WalletClient,
 } from "viem";
 import { keccak256 } from "viem";
+import { parseAccount } from "viem/accounts";
 
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
 import {
+  acquireEvmNonceOwner,
+  type EvmNonceOwnerLease,
+} from "@tools/evm-chains/nonce-owner.js";
+import {
   waitForReceiptWithReplacementEvidence,
+  waitForReceiptWithRetry,
   type ReceiptReplacementEvidence,
   type ReceiptWaitRetryOptions,
 } from "@tools/evm-chains/receipt-guard.js";
@@ -97,7 +103,215 @@ export type StagedBroadcastOutcome =
       readonly reason: string;
     };
 
+/**
+ * The APPROVED fee ceiling for this transaction, enforced on the request that is
+ * actually serialized.
+ *
+ * WHY IT IS A PARAMETER AND NOT AN ASSUMPTION. Without it,
+ * `prepareTransactionRequest` fills whatever fees the node suggests, and the
+ * signed bytes commit the user to them. On a venue path that is tolerable
+ * because the user authorized a trade, not a gas price; on the generic signing
+ * path the fee caps ARE part of what the user approved, so a request whose
+ * fields exceed them must never be signed. Omitting it keeps every existing
+ * caller's behaviour byte for byte.
+ *
+ * Every value is a `bigint` in base units: gas UNITS for `gasLimit`, wei for
+ * the prices. No floating point reaches this type.
+ */
+export type StagedFeeBounds =
+  | {
+      readonly mode: "eip1559";
+      readonly gasLimit: bigint;
+      readonly maxFeePerGasWei: bigint;
+      readonly maxPriorityFeePerGasWei: bigint;
+    }
+  | {
+      readonly mode: "legacy";
+      readonly gasLimit: bigint;
+      readonly gasPriceWei: bigint;
+    };
+
+export type StagedFeePolicy = StagedFeeBounds | StagedFeeExposureLimit;
+
+function isFeeExposureLimit(policy: StagedFeePolicy): policy is StagedFeeExposureLimit {
+  return !("mode" in policy);
+}
+
+/**
+ * A prepared request exceeded the approved ceiling, so NOTHING was signed.
+ *
+ * Its own error type because the caller's answer is specific: this is not an
+ * RPC failure and not a revert, it is a refusal, and the transaction may be
+ * prepared again under caps the user chooses. `field` names which cap was
+ * exceeded, and both values travel as decimal strings.
+ */
+export class StagedFeeBoundsExceededError extends Error {
+  readonly field: string;
+  readonly actual: string;
+  readonly approved: string;
+
+  constructor(field: string, actual: bigint, approved: bigint) {
+    super(
+      `Refusing to sign: the prepared transaction's ${field} is ${actual.toString()}, above the `
+      + `approved ceiling of ${approved.toString()}. Nothing was signed and nothing was broadcast.`,
+    );
+    this.name = "StagedFeeBoundsExceededError";
+    this.field = field;
+    this.actual = actual.toString();
+    this.approved = approved.toString();
+  }
+}
+
+/**
+ * Refuse any prepared field above its ceiling. Called on the request that is
+ * about to be serialized, so what is checked is what would be signed.
+ *
+ * A field the request does not carry is not a hole: viem fills exactly one
+ * pricing mode, and the mode the caller authorized is the mode it asked for. An
+ * absent field means the node priced the transaction the other way, which is a
+ * mismatch the caps cannot cover, so it refuses too.
+ */
+function assertWithinFeeBounds(
+  request: { gas?: bigint; maxFeePerGas?: bigint; maxPriorityFeePerGas?: bigint; gasPrice?: bigint },
+  bounds: StagedFeeBounds,
+): void {
+  const gas = request.gas;
+  if (gas === undefined || gas > bounds.gasLimit) {
+    throw new StagedFeeBoundsExceededError("gas limit", gas ?? 0n, bounds.gasLimit);
+  }
+  if (bounds.mode === "eip1559") {
+    const maxFee = request.maxFeePerGas;
+    const priority = request.maxPriorityFeePerGas;
+    if (maxFee === undefined || maxFee > bounds.maxFeePerGasWei) {
+      throw new StagedFeeBoundsExceededError("maxFeePerGas", maxFee ?? 0n, bounds.maxFeePerGasWei);
+    }
+    if (priority === undefined || priority > bounds.maxPriorityFeePerGasWei) {
+      throw new StagedFeeBoundsExceededError(
+        "maxPriorityFeePerGas",
+        priority ?? 0n,
+        bounds.maxPriorityFeePerGasWei,
+      );
+    }
+    return;
+  }
+  const gasPrice = request.gasPrice;
+  if (gasPrice === undefined || gasPrice > bounds.gasPriceWei) {
+    throw new StagedFeeBoundsExceededError("gasPrice", gasPrice ?? 0n, bounds.gasPriceWei);
+  }
+}
+
+/**
+ * THE DEFERRED SIGNER ARM - key material is resolved only after every awaited
+ * preparation call has finished and the caller's own pre-sign gate has passed.
+ *
+ * WHY IT EXISTS. The eager arm takes a key-bearing `walletClient`, so the key is
+ * materialized before the gas estimate, before the request preparation and
+ * before the fee-bound check - a window of several network round trips in which
+ * a revocation cannot stop the signature that follows. The generic signing path
+ * has an authority that the user can change mid-flight (a project wallet-scope
+ * edit, or locking Vex), so it needs the key to appear as late as the design
+ * allows.
+ *
+ * THE ORDER IS THE CONTRACT, and it is what the tests assert:
+ *
+ *   0. THE NONCE OWNER for `(address, chain.id)` is taken FIRST, before the
+ *      nonce is filled, and held through step 5 and the submit
+ *      (`./nonce-owner.ts`, which also documents the lock order against the
+ *      session control lock the fence takes inside this hold).
+ *   1. KEYLESS PREPARATION. `address` + `chain` are the preparation identity -
+ *      enough for `eth_estimateGas`, for `prepareTransactionRequest` (nonce and
+ *      fees) and for the fee-bound refusal, and never enough to sign.
+ *   2. `onBeforeSign` runs EXACTLY ONCE, after every awaited preparation
+ *      operation and before any key is loaded. A throw from it signs, stages and
+ *      submits NOTHING.
+ *   3. `createSigner` resolves and decrypts the CURRENTLY authorized wallet.
+ *   4. The resulting signer's account and chain must EXACTLY match the prepared
+ *      request; a mismatch throws before signing.
+ *   5. NO PROVIDER CALL AT ALL happens between `onBeforeSign` and the
+ *      cryptographic signature - not one, and this is enforced rather than
+ *      asserted by reading the code.
+ *
+ *      viem's `signTransaction` WALLET ACTION is not usable here for exactly
+ *      that reason: it unconditionally awaits `eth_chainId` before it reaches
+ *      the local account's signer (`viem/actions/wallet/signTransaction.js`),
+ *      which is a provider round trip sitting between the authority fence and
+ *      the signature - the window this whole arm exists to close, reopened by
+ *      the library. So the deferred arm signs OFFLINE: it calls the local
+ *      account's OWN `signTransaction` with the chain's own transaction
+ *      serializer, exactly as the action's local-account branch does, and takes
+ *      the chain id from PREPARATION instead of re-reading it. The eager arm
+ *      still goes through the action and is byte-identical to before.
+ */
+export interface DeferredEvmSigner {
+  readonly kind: "deferred";
+  /** The keyless preparation identity: the address the transaction is prepared for. */
+  readonly address: Address;
+  /** The chain the request is prepared and signed for. */
+  readonly chain: Chain;
+  /**
+   * The caller's pre-sign gate. Runs EXACTLY ONCE, after all preparation and
+   * before `createSigner`. Throwing aborts with nothing signed.
+   */
+  readonly onBeforeSign: () => Promise<void>;
+  /** Resolve and decrypt the currently authorized wallet. Throwing aborts. */
+  readonly createSigner: () => Promise<WalletClient<Transport, Chain, Account>>;
+}
+
+/**
+ * Who signs. The EAGER arm is the account-bound `WalletClient` every existing
+ * venue passes and its behaviour is unchanged in every respect; the DEFERRED arm
+ * is used only by the generic wallet-transaction confirm.
+ */
+export type StagedSigner = WalletClient<Transport, Chain, Account> | DeferredEvmSigner;
+
+function isDeferred(signer: StagedSigner): signer is DeferredEvmSigner {
+  // viem clients carry `type`/`key`/`uid`, never `kind`, so this discriminates
+  // structurally without a cast and without touching the eager path.
+  return "kind" in signer && signer.kind === "deferred";
+}
+
+/** A deferred signer resolved to a wallet that is not the one the request was prepared for. */
+export class DeferredSignerIdentityError extends Error {
+  constructor(field: "account" | "chain") {
+    super(
+      `Refusing to sign: the wallet resolved for signing does not match the ${field} the `
+      + "transaction was prepared for. Nothing was signed and nothing was broadcast.",
+    );
+    this.name = "DeferredSignerIdentityError";
+  }
+}
+
+/**
+ * The deferred arm resolved an account that cannot sign locally.
+ *
+ * Only a LOCAL account can produce the signature without asking a provider, and
+ * the whole point of this arm is that no provider is asked after the fence. A
+ * remote or JSON-RPC account would have to be signed through the node, which is
+ * the window this arm exists to close - so it is refused rather than silently
+ * downgraded to the action that reopens it.
+ */
+export class DeferredOfflineSignerUnavailableError extends Error {
+  constructor() {
+    super(
+      "Refusing to sign: this transaction must be signed locally, and the wallet resolved for "
+      + "signing cannot produce a signature without contacting the network. Nothing was signed and "
+      + "nothing was broadcast.",
+    );
+    this.name = "DeferredOfflineSignerUnavailableError";
+  }
+}
+
 export interface StagedBroadcastHooks {
+  /**
+   * Reserve the nonce durably before any signature exists. The request carries
+   * the node's pending count; the durable allocator may return a larger value
+   * when another unresolved Vex transaction already owns that nonce.
+   */
+  readonly onNonceReserved: (request: {
+    readonly fromAddress: Address;
+    readonly chainId: number;
+    readonly nodePendingNonce: number;
+  }) => Promise<number>;
   /**
    * Called AFTER the transaction is signed and its hash computed, BEFORE it
    * is sent to the network. The caller persists the hash here
@@ -125,6 +339,12 @@ export interface StagedBroadcastHooks {
  * estimate. Either way a leg whose estimate never succeeds is still refused
  * before anything is signed.
  *
+ * `bounds` is the APPROVED fee ceiling. Supplied, the fee fields are set from it
+ * rather than left to the node's suggestion, and the request that is about to be
+ * serialized is re-checked against it: a field above the ceiling throws
+ * `StagedFeeBoundsExceededError` BEFORE anything is signed, staged or
+ * broadcast. Omitted, every existing caller keeps its exact prior behaviour.
+ *
  * `walletClient` is typed `WalletClient<Transport, Chain, Account>` — an
  * ACCOUNT-BOUND client, required at the TYPE level. This is a compile-time
  * guarantee, not a runtime signal: an accountless client cannot reach the
@@ -134,14 +354,53 @@ export interface StagedBroadcastHooks {
  */
 export async function signStageBroadcast(
   publicClient: PublicClient<Transport, Chain>,
-  walletClient: WalletClient<Transport, Chain, Account>,
+  signer: StagedSigner,
   txParams: StagedTxParams,
   hooks: StagedBroadcastHooks,
   priorLeg?: ConfirmedPriorLeg,
   receiptWaitRetry?: ReceiptWaitRetryOptions,
-  feeExposureLimit?: StagedFeeExposureLimit,
+  feePolicy?: StagedFeePolicy,
 ): Promise<StagedBroadcastOutcome> {
-  const account = walletClient.account;
+  // One owner covers both signer arms. The durable reservation performed below
+  // makes the allocation survive restart; this live owner prevents concurrent
+  // callers in the one signing process from doing redundant preparation work.
+  const ownerAddress = isDeferred(signer) ? signer.address : signer.account.address;
+  const ownerChainId = isDeferred(signer) ? signer.chain.id : signer.chain.id;
+  const nonceOwner = await acquireEvmNonceOwner(ownerAddress, ownerChainId);
+  try {
+    return await runStagedBroadcast(
+      publicClient, signer, txParams, hooks, nonceOwner, priorLeg, receiptWaitRetry, feePolicy,
+    );
+  } finally {
+    nonceOwner.release();
+  }
+}
+
+/**
+ * The staged sequence itself. `nonceOwner` is released the instant the submit settles, so
+ * the bounded receipt wait never serializes one wallet's next transaction on
+ * block time.
+ */
+async function runStagedBroadcast(
+  publicClient: PublicClient<Transport, Chain>,
+  signer: StagedSigner,
+  txParams: StagedTxParams,
+  hooks: StagedBroadcastHooks,
+  nonceOwner: EvmNonceOwnerLease,
+  priorLeg?: ConfirmedPriorLeg,
+  receiptWaitRetry?: ReceiptWaitRetryOptions,
+  feePolicy?: StagedFeePolicy,
+): Promise<StagedBroadcastOutcome> {
+  const deferred = isDeferred(signer) ? signer : null;
+  const eager: WalletClient<Transport, Chain, Account> | null =
+    deferred === null ? (signer as WalletClient<Transport, Chain, Account>) : null;
+  // The preparation identity. On the eager arm it IS the wallet client's own
+  // account, exactly as before; on the deferred arm it is an address-only
+  // account that cannot sign.
+  const account: Account = eager === null
+    ? parseAccount((deferred as DeferredEvmSigner).address)
+    : eager.account;
+  const chain: Chain = eager === null ? (deferred as DeferredEvmSigner).chain : eager.chain;
   const value = txParams.value ?? 0n;
 
   // Estimated explicitly rather than left to `prepareTransactionRequest`,
@@ -155,9 +414,20 @@ export async function signStageBroadcast(
     priorLeg,
   );
 
+  // With approved bounds, the ceiling wins over the headroom: the headroom
+  // exists to survive an estimate that is slightly low, and the cap is a number
+  // the user authorized. A headroomed estimate ABOVE the cap is not silently
+  // trimmed - `assertWithinFeeBounds` below refuses it, because a transaction
+  // that needs more gas than was approved is a transaction nobody approved.
   const gasLimit = gasLimitWithHeadroom(gasEstimate);
 
-  let signedFees: { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } | undefined;
+  const feeExposureLimit = feePolicy !== undefined && isFeeExposureLimit(feePolicy)
+    ? feePolicy
+    : undefined;
+  const bounds = feePolicy !== undefined && !isFeeExposureLimit(feePolicy)
+    ? feePolicy
+    : undefined;
+  let exposureFees: { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } | undefined;
   if (feeExposureLimit !== undefined) {
     const estimatedFees = await publicClient.estimateFeesPerGas({
       chain: publicClient.chain,
@@ -173,54 +443,85 @@ export async function signStageBroadcast(
         "Refusing to sign: live gas or EIP-1559 fees exceed the approved transaction ceiling.",
       );
     }
-    signedFees = estimatedFees;
+    exposureFees = estimatedFees;
   }
 
-  const request = await walletClient.prepareTransactionRequest({
+  // The fee fields are supplied EXPLICITLY when bounds exist, so
+  // `prepareTransactionRequest` cannot fill them from the node's own suggestion:
+  // the signed bytes must commit the user to the ceiling they approved and
+  // nothing above it. The assertion after it is the fail-closed half - viem may
+  // still route preparation through the node, and only the request that is
+  // actually serialized proves what would be signed.
+  // Prepared on the WALLET client when one exists (byte-identical to the prior
+  // behaviour) and on the PUBLIC client otherwise - the same viem action, and
+  // nonce/fee filling needs no key.
+  const prepareArgs = {
     account,
-    chain: walletClient.chain,
+    chain,
     to: txParams.to,
     data: txParams.data,
     value,
     gas: gasLimit,
-    ...signedFees,
+    ...(exposureFees !== undefined
+      ? exposureFees
+      : bounds === undefined
+        ? {}
+        : bounds.mode === "eip1559"
+          ? {
+              maxFeePerGas: bounds.maxFeePerGasWei,
+              maxPriorityFeePerGas: bounds.maxPriorityFeePerGasWei,
+            }
+          : { gasPrice: bounds.gasPriceWei }),
+  } as const;
+  const request = eager === null
+    ? await publicClient.prepareTransactionRequest(prepareArgs)
+    : await eager.prepareTransactionRequest(prepareArgs);
+  const nodePendingNonce = request.nonce;
+  if (nodePendingNonce === undefined) {
+    throw new Error("signStageBroadcast: prepared transaction request has no nonce");
+  }
+  const nonce = await hooks.onNonceReserved({
+    fromAddress: account.address,
+    chainId: chain.id,
+    nodePendingNonce,
   });
+  if (!Number.isSafeInteger(nonce) || nonce < nodePendingNonce) {
+    throw new Error("signStageBroadcast: durable nonce reservation returned an invalid nonce");
+  }
+  const reservedRequest = { ...request, nonce };
+  if (bounds !== undefined) {
+    assertWithinFeeBounds({ ...reservedRequest, gas: gasLimit }, bounds);
+  }
   // Re-asserted on the request that is actually serialized: when fees/nonce
   // still need filling, viem may route preparation through the node's
   // `wallet_fillTransaction`, whose reply overwrites `gas` with the node's own
   // unbuffered figure. The signed bytes are what the chain enforces, so the
   // headroom has to survive to exactly here.
-  if (
-    feeExposureLimit !== undefined
-    && (
-      request.maxFeePerGas === undefined
-      || request.maxPriorityFeePerGas === undefined
-      || request.maxFeePerGas > feeExposureLimit.maxFeePerGas
-      || request.maxPriorityFeePerGas > feeExposureLimit.maxPriorityFeePerGas
-      || gasLimit * request.maxFeePerGas > feeExposureLimit.maxNetworkFeeWei
-    )
-  ) {
+  if (feeExposureLimit !== undefined && (
+    reservedRequest.maxFeePerGas === undefined
+    || reservedRequest.maxPriorityFeePerGas === undefined
+    || reservedRequest.maxFeePerGas > feeExposureLimit.maxFeePerGas
+    || reservedRequest.maxPriorityFeePerGas > feeExposureLimit.maxPriorityFeePerGas
+    || gasLimit * reservedRequest.maxFeePerGas > feeExposureLimit.maxNetworkFeeWei
+  )) {
     throw new Error(
       "Refusing to sign: prepared EIP-1559 fees exceed the approved transaction ceiling.",
     );
   }
-  const nonce = request.nonce;
-  if (nonce === undefined) {
-    throw new Error("signStageBroadcast: prepared transaction request has no nonce");
-  }
-  const serializedTransaction = signedFees === undefined
-    ? await walletClient.signTransaction({ ...request, gas: gasLimit })
-    : await walletClient.signTransaction({
-        account,
-        chain: walletClient.chain,
-        type: "eip1559",
-        nonce,
-        to: txParams.to,
-        data: txParams.data,
-        value,
-        gas: gasLimit,
-        ...signedFees,
-      });
+  // THE PRE-SIGN GATE, then the key, then the signature - with nothing awaited
+  // in between that could reach a provider. See `DeferredEvmSigner`.
+  const walletClient = eager ?? await resolveDeferredSigner(
+    deferred as DeferredEvmSigner,
+    account,
+    chain,
+  );
+
+  // THE SIGNATURE. The eager arm keeps viem's wallet action verbatim; the
+  // deferred arm signs offline so that nothing at all reaches a provider between
+  // `onBeforeSign` and this line. See `DeferredEvmSigner` step 5.
+  const serializedTransaction = deferred === null
+    ? await walletClient.signTransaction({ ...reservedRequest, gas: gasLimit })
+    : await signPreparedTransactionOffline(walletClient, chain, { ...reservedRequest, gas: gasLimit });
   const txHash = keccak256(serializedTransaction);
 
   await hooks.onHashStaged({
@@ -233,6 +534,13 @@ export async function signStageBroadcast(
     await publicClient.sendRawTransaction({ serializedTransaction });
   } catch (err) {
     return { kind: "ambiguous", txHash, stage: "send", reason: describeFailureForLog(err) };
+  } finally {
+    // THE SUBMIT HAS SETTLED, in either direction. The raw transaction either
+    // reached the node - which moves the pending count the next preparation
+    // reads - or it did not, and in both cases this wallet's nonce is no longer
+    // being decided here. Released before the receipt wait for exactly that
+    // reason; the caller's `finally` makes a second release a no-op.
+    nonceOwner.release();
   }
 
   // Best-effort bookkeeping (per this function's contract) — a throw here
@@ -249,6 +557,12 @@ export async function signStageBroadcast(
   // transient wait failure left an already-mined swap recorded `pending`.
   // The broadcast above is never re-sent — only this read repeats.
   try {
+    if (feeExposureLimit === undefined) {
+      const receipt = await waitForReceiptWithRetry(publicClient, txHash, receiptWaitRetry);
+      return receipt.status === "success"
+        ? { kind: "confirmed", txHash, receipt }
+        : { kind: "reverted", txHash, receipt };
+    }
     const waited = await waitForReceiptWithReplacementEvidence(
       publicClient,
       txHash,
@@ -266,18 +580,13 @@ export async function signStageBroadcast(
         || replacement.to.toLowerCase() !== txParams.to.toLowerCase()
         || replacement.data.toLowerCase() !== txParams.data.toLowerCase()
         || replacement.value !== value
-        || feeExposureLimit === undefined
-        || (
-          feeExposureLimit !== undefined && (
-            replacement.maxFeePerGas === null
-            || replacement.maxPriorityFeePerGas === null
-            || replacement.gas > feeExposureLimit.gasLimit
-            || replacement.maxFeePerGas > feeExposureLimit.maxFeePerGas
-            || replacement.maxPriorityFeePerGas > feeExposureLimit.maxPriorityFeePerGas
-            || replacement.gas * replacement.maxFeePerGas
-              > feeExposureLimit.maxNetworkFeeWei
-          )
-        )
+        || replacement.maxFeePerGas === null
+        || replacement.maxPriorityFeePerGas === null
+        || replacement.gas > feeExposureLimit.gasLimit
+        || replacement.maxFeePerGas > feeExposureLimit.maxFeePerGas
+        || replacement.maxPriorityFeePerGas > feeExposureLimit.maxPriorityFeePerGas
+        || replacement.gas * replacement.maxFeePerGas
+          > feeExposureLimit.maxNetworkFeeWei
       )
     ) {
       return {
@@ -294,4 +603,68 @@ export async function signStageBroadcast(
   } catch (err) {
     return { kind: "ambiguous", txHash, stage: "confirm", reason: describeFailureForLog(err) };
   }
+}
+
+/**
+ * Steps 2 to 4 of the deferred contract: the caller's gate, then the key, then
+ * the identity proof. Kept in one function so no call site can reorder them.
+ */
+async function resolveDeferredSigner(
+  deferred: DeferredEvmSigner,
+  preparedAccount: Account,
+  preparedChain: Chain,
+): Promise<WalletClient<Transport, Chain, Account>> {
+  await deferred.onBeforeSign();
+  const walletClient = await deferred.createSigner();
+  if (walletClient.account.address.toLowerCase() !== preparedAccount.address.toLowerCase()) {
+    throw new DeferredSignerIdentityError("account");
+  }
+  if (walletClient.chain.id !== preparedChain.id) {
+    throw new DeferredSignerIdentityError("chain");
+  }
+  return walletClient;
+}
+
+/**
+ * Step 5 of the deferred contract: the signature itself, with ZERO provider
+ * calls.
+ *
+ * This is viem's own local-account branch, taken directly instead of through the
+ * wallet action that prefixes it with `eth_chainId`:
+ *
+ *   - the CHAIN ID comes from PREPARATION, not from the node. The prepared
+ *     request already carries one (viem fills `chainId` by default), and it is
+ *     asserted equal to the chain the request was prepared and identity-checked
+ *     against rather than trusted - a request prepared for another chain is a
+ *     `DeferredSignerIdentityError`, not something to sign;
+ *   - the SERIALIZER is the prepared chain's own
+ *     (`chain.serializers.transaction`), which is precisely what viem would have
+ *     passed. A chain that declares none gets viem's default serializer inside
+ *     the account, exactly as before, so no chain type loses coverage here;
+ *   - `account` and `chain` are stripped from the request for the same reason
+ *     viem's action destructures them out: they are client identity, not
+ *     transaction fields.
+ */
+async function signPreparedTransactionOffline(
+  walletClient: WalletClient<Transport, Chain, Account>,
+  preparedChain: Chain,
+  request: Parameters<WalletClient<Transport, Chain, Account>["signTransaction"]>[0],
+): Promise<Hex> {
+  const account = walletClient.account;
+  if (account.type !== "local") throw new DeferredOfflineSignerUnavailableError();
+
+  const { account: _unusedAccount, chain: _unusedChain, ...transaction } = request;
+  const preparedChainId = (transaction as { chainId?: unknown }).chainId;
+  if (preparedChainId !== undefined && preparedChainId !== preparedChain.id) {
+    throw new DeferredSignerIdentityError("chain");
+  }
+
+  return await account.signTransaction(
+    // The account's signer takes the serializable transaction; the request came
+    // out of viem's own `prepareTransactionRequest` and every field it carries
+    // is one that function produced, so this narrows a structural union rather
+    // than asserting an unvalidated shape.
+    { ...transaction, chainId: preparedChain.id } as Parameters<typeof account.signTransaction>[0],
+    { serializer: preparedChain.serializers?.transaction },
+  );
 }

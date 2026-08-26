@@ -69,6 +69,9 @@ import {
   persistBatchTranscript,
 } from "./turn-loop-tool-batch/results.js";
 import { parkTurnOnUserForm } from "./turn-loop-tool-batch/user-form-stop.js";
+import { evaluatePresentationGate } from "./turn-loop-tool-batch/presentation-gate.js";
+import { hasPendingPresentation } from "./board-presentation.js";
+import logger from "@utils/logger.js";
 import {
   evaluateBatchDeadlines,
   type BatchDeadlines,
@@ -154,7 +157,36 @@ export async function processTurnToolBatch(args: {
     }
   }
 
-  for (let i = 0; i < turnResult.toolCalls.length; i++) {
+  // ── Board presentation gate, BEFORE any dispatch ──
+  // Two rules, both pre-dispatch (see `./turn-loop-tool-batch/presentation-gate.ts`):
+  // `BoardCompose` must be the sole call in its batch, and once a board is
+  // staged nothing dispatches until the turn's final prose consumes it. A
+  // refusal drains the WHOLE batch with the gate's model-visible instruction,
+  // so the pairing invariant holds exactly as it does for every other drain,
+  // and `toolCallsExecuted` stays 0 because nothing ran.
+  const presentationGate = evaluatePresentationGate({
+    toolCalls: turnResult.toolCalls,
+    hasPendingPresentation: hasPendingPresentation(context.sessionId),
+  });
+  if (presentationGate.kind === "refuse_batch") {
+    logger.info("board.presentation.batch_refused", {
+      sessionId: context.sessionId,
+      missionRunId: context.missionRunId ?? null,
+      reason: presentationGate.reason,
+      callsRefused: turnResult.toolCalls.length,
+    });
+    drainUndispatchedCalls(0, presentationGate.output);
+  }
+
+  // The gate's refusal is expressed in the loop CONDITION rather than by
+  // wrapping the body: the body owns the per-call stop/deadline/approval
+  // ordering, and re-indenting it under a branch would obscure that ordering
+  // for a decision that is already made before the first iteration.
+  for (
+    let i = 0;
+    presentationGate.kind === "proceed" && i < turnResult.toolCalls.length;
+    i++
+  ) {
     const toolCall = turnResult.toolCalls[i];
     // `i < turnResult.toolCalls.length` guarantees this index is populated;
     // the guard exists only to satisfy `noUncheckedIndexedAccess` (vex-app's

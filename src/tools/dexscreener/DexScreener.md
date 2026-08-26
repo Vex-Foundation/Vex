@@ -1,340 +1,190 @@
-# DexScreener Module Map — Multi-Chain DEX Analytics & Narratives
+# DexScreener lane
 
-This document maps every `.ts` file in `src/tools/dexscreener/` to the data it
-provides for token research, pair analytics, trending narratives, attention
-signals, and community takeovers, plus how the
-agent reaches it.
+**Last updated: 2026-08-25 (S11).**
 
-**Last updated: 2026-08-03**
+This directory holds TWO surfaces that no longer overlap. Read the split first;
+almost every stale assumption about this lane comes from conflating them.
 
-**LLM maintainers:** If you modify any file in this folder, update this document
-to reflect the change — add/remove endpoints, update types, fix stale references.
+| Surface | Files | Who calls it |
+|---|---|---|
+| **Site surface** (current) | `transport.ts`, `site-errors.ts`, `sanitize.ts`, `codec/`, `endpoints/`, `screen-core/` | Every one of the 18 agent tools in `src/vex-agent/tools/protocols/dexscreener/` |
+| **Public-API seam** (non-agent consumers) | `price-read.ts`, `candles-read.ts`, `types.ts`, `throttle.ts`, `errors.ts`, `validation/` | No agent tool. The wake price-watch poller, the `$VEX` banner, Uniswap quote safety, EVM balance valuation, and the desktop market widget. |
 
-**Docs:** https://docs.dexscreener.com/api/reference
-**Base URL**: `https://api.dexscreener.com`
-**Auth**: None required (open API)
-**Rate limits**: 60 req/min (profiles, boosts, CTO, ads, orders, metas), 300
-req/min (search, pairs, tokens, token-pairs). Enforced client-side per process by
-`throttle.ts` (see below).
+`token-watch-price.ts` and `token-watch-price/` sit on the public-API side:
+they derive the one canonical USD price of a watched token from the pool list
+`/token-pairs/v1` returns.
 
----
-
-## What DexScreener Does
-
-DexScreener is a multi-chain DEX analytics platform. It automatically tracks
-every token listed on any DEX with at least one transaction. The API provides:
-
-- **Pair/token data**: price, volume, liquidity, transactions, FDV, market cap across all chains
-- **Token profiles**: projects with descriptions, icons, social links; plus a recent-updates change feed
-- **Token boosts**: promoted tokens with boost amounts (paid visibility)
-- **Trending narratives (metas)**: trending themes/categories (AI, dogs, "knockoff legends") with aggregate stats, and a drill-down to the pairs inside one narrative
-- **Community takeovers (CTO)**: tokens where community has reclaimed control — strong trading signal
-- **Ads**: paid promotional placements with impressions and duration
-- **Orders**: verification of paid promotional orders per token
-
-All read-only. No wallet, signing, or API key needed.
-
-### Documented vs live-but-undocumented surface
-
-The metas endpoints (`/metas/trending/v1`, `/metas/meta/v1/{slug}`) and the
-profile recent-updates feed (`/token-profiles/recent-updates/v1`) are
-**live-verified but absent from the official reference**. They are implemented
-behind TOLERANT validators (unknown fields pass, missing fields become null) and
-their agent tools degrade to a clear "feed unavailable" result on any error
-(HTTP 4xx/5xx, drift) rather than throwing through the namespace. Their tool
-descriptions are marked "live but undocumented API surface — may change".
-
-Note: a bad narrative slug on `/metas/meta/v1/{slug}` returns **HTTP 500** (not
-404); the tolerant handler surfaces "feed unavailable" for it.
+There is no `src/commands/dexscreener` CLI, and there is no DexScreener
+WebSocket client on the public-API side.
 
 ---
 
-## File Map (`src/tools/dexscreener/`)
+## The site surface
 
-| File | Role |
-|------|------|
-| `client.ts` | `DexScreenerClient` — 13 REST methods, singleton via `getDexScreenerClient()`. Every request runs through the throttle/cache. |
-| `throttle.ts` | `DexScreenerThrottle` — per-process token buckets (300/min + 60/min), TTL cache (fast 30s / slow 60s), in-flight dedupe, bounded cache, `Retry-After` honoring. |
-| `types.ts` | TypeScript interfaces: `DexPair`, `DexTokenProfile`, `DexBoost`, `DexCommunityTakeover`, `DexAd`, `DexOrder`, `DexTrendingItem`, `DexMeta`/`DexMetaDetail`, `DexProfileUpdate` |
-| `validation.ts` | Barrel re-exporting the 14 documented-surface validators (pairs/search/tokens, profiles, boosts, orders, community/ads, websocket) |
-| `validation/metas.ts` | Tolerant validators for `/metas/trending/v1` and `/metas/meta/v1/{slug}` |
-| `validation/profiles.ts` | `validateProfilesResponse` + tolerant `validateProfilesRecentResponse` |
-| `validation/pairs.ts` | Pair/search/token validators; exports `parsePair` (reused by metas detail) |
-| `errors.ts` | `mapDexScreenerError()` + `mapTransportError()` — HTTP status to typed `VexError` |
+The agent tools do not talk to `api.dexscreener.com`. They talk to the two
+hosts the website itself uses:
 
-There is **no** `src/commands/dexscreener` CLI. The agent reaches DexScreener
-exclusively through the protocol tools in
-`src/vex-agent/tools/protocols/dexscreener/` (see "Agent Tools" below).
+- `io.dexscreener.com` - screener and pair channels (WebSocket), search,
+  spotlight, narratives, bars, trades, Connect-RPC endpoints;
+- `dd.dexscreener.com` - the chains catalog and the dexes catalog.
 
----
+### Transport seam (`transport.ts`)
 
-## REST Endpoints (13 methods)
+Both hosts sit behind Cloudflare, which blocks on the TLS and HTTP/2
+fingerprint: Node `fetch`, `undici` and every Node WebSocket client get 403.
+The site surface is therefore reachable only through the desktop bridge, which
+drives a real browser context. A headless caller reaches the default public-API
+transport and gets a typed `SITE_TRANSPORT_UNAVAILABLE` naming the remedy,
+which is the honest answer rather than an empty result. Never "fix" a site
+endpoint by pointing it at Node `fetch`.
 
-| Method | Endpoint | Rate class | Surface |
-|--------|----------|-----------|---------|
-| `search(query)` | `GET /latest/dex/search?q={query}` | fast (300/min) | documented |
-| `getPairs(chainId, pairId)` | `GET /latest/dex/pairs/{chainId}/{pairId}` | fast | documented |
-| `getTokens(chainId, addresses)` | `GET /tokens/v1/{chainId}/{addresses}` | fast | documented |
-| `getTokenPairs(chainId, address)` | `GET /token-pairs/v1/{chainId}/{address}` | fast | documented |
-| `getProfiles()` | `GET /token-profiles/latest/v1` | slow (60/min) | documented |
-| `getProfilesRecentUpdates()` | `GET /token-profiles/recent-updates/v1` | slow | **undocumented** |
-| `getBoosts()` | `GET /token-boosts/latest/v1` | slow | documented |
-| `getTopBoosts()` | `GET /token-boosts/top/v1` | slow | documented |
-| `getCommunityTakeovers()` | `GET /community-takeovers/latest/v1` | slow | documented |
-| `getMetasTrending()` | `GET /metas/trending/v1` | slow | **undocumented** |
-| `getMeta(slug)` | `GET /metas/meta/v1/{slug}` | slow | **undocumented** |
-| `getAds()` | `GET /ads/latest/v1` | slow | documented |
-| `getOrders(chainId, address)` | `GET /orders/v1/{chainId}/{address}` | slow | documented |
+Every response carries its headers lowercased. Pass them to
+`readCacheObservation` (`screen-core/envelope.ts`): the edge's
+`cf-cache-status` and `age` are the only evidence of how stale an answer is,
+and a hardcoded `"not_cached"` was measured asserting freshness for documents
+Cloudflare had held for up to 25 seconds. `"not_cached"` is correct ONLY for a
+WebSocket channel, where no cache sits between a frame and its socket.
 
-### WebSocket
+### Codecs (`codec/`)
 
-None. `ws-client.ts` was deleted (SPEC §2.5 W2f) — it had zero importers for its
-whole life, so no tool ever streamed. The REST feeds above, throttled and cached,
-are the only DexScreener surface. The `validateWs*` parsers still exported by
-`validation.ts` are likewise consumer-free and are flagged for a separate
-dead-code pass.
+The site speaks three wire formats and lies about all of them in
+`content-type`, which is usually `application/json`:
 
----
+- **protobuf** over Connect-RPC and over the WebSocket channels, decoded
+  through a captured descriptor set with a NAME ALLOWLIST (`protobuf.ts`); a
+  message not on the list is refused by name.
+- **DexScreener's own Avro dialect** (`dsavro.ts` plus the schema tables in
+  `dsavro-schemas.ts`) for `/metas/v1/*`, `/dex/trending/v6`, bars and
+  top-makers. Field ORDER is the schema; a table that drifts fails the decode
+  loudly rather than mis-projecting.
+- **plain JSON** for the `dd.dexscreener.com` catalogs.
 
-## Throttle & Cache (`throttle.ts`)
+### Endpoints and their owners (`endpoints/`)
 
-Every `DexScreenerClient.request()` runs through a per-instance
-`DexScreenerThrottle` (constructed once per process via the client singleton).
-**Per-process only — no cross-process coordination.**
+| Module | Provider surface |
+|---|---|
+| `screener.ts`, `tokens-screener.ts` | the screener WebSocket channel: every board tool (trending, top, gainers, losers, new, launchpad) and `tokens_screen` |
+| `pair-live.ts`, `pair-subject.ts`, `pair-details.ts` | one pair: live snapshot, subject resolution, the audit and safety document |
+| `pairs-batch.ts` | the v8 batch channel for watchlists |
+| `search.ts` | `/dex/search/v12/pairs` |
+| `bars.ts`, `trades.ts`, `top-traders.ts` | candles, trade history, per-trader aggregates |
+| `spotlight.ts` | boosts and the newest token profiles |
+| `metas.ts` | narratives: `/metas/v1/all` (the catalog) and `/metas/v1/trending` |
+| `chains-catalog.ts` | the 74-chain vocabulary, behind a 24 hour TTL |
 
-- **Token bucket per rate class**: `fast` (300/min) for search/pairs/tokens/token-pairs, `slow` (60/min) for everything else. `acquire()` waits for a token before a fetch fires.
-- **TTL cache** keyed by the normalized request URL: `fast` 30s (matches the provider's own `cache-control: max-age=30`), `slow` 60s. Bounded (256 entries, oldest-first eviction).
-- **In-flight dedupe**: concurrent identical requests share one promise (one fetch, one token).
-- **`Retry-After` honoring**: on a 429 the client calls `throttle.penalize(rateClass, ms)`, parking the whole rate class until the delay elapses.
+`screen-core/` is shared by every module that projects a
+`dex_screener_schema.Pair`: request building, field groups, row projection,
+the response envelope and its source observation.
 
-Errors are never cached and never left in the in-flight map.
+### Two provider facts that keep being re-learned
 
----
-
-## Agent Tools (`src/vex-agent/tools/protocols/dexscreener/`)
-
-14 read-only tools. Typical research flow: **search → tokenPairs (pick deepest
-pool) → pairs (deep stats)**; discovery flow: **trending (narratives) → meta
-(drill into one)**.
-
-| Tool ID | Backing method | Notes |
-|---------|----------------|-------|
-| `dexscreener.search` | `search` | Optional `chainIds` / `minLiquidityUsd` / `limit` client-side filters; relevance order (the provider's), not a liquidity sort |
-| `dexscreener.pairs` | `getPairs` | Concise pair for one pool |
-| `dexscreener.tokens` | `getTokens` | Batch (≤30) concise pairs |
-| `dexscreener.tokenPairs` | `getTokenPairs` | Up to 30 provider-selected pools for a token (Vex sorts deepest-first); canonical pool resolver |
-| `dexscreener.profiles` | `getProfiles` | Latest profiles |
-| `dexscreener.profiles.recent` | `getProfilesRecentUpdates` | **undocumented** — recently updated profiles + `updatedAt`/`cto` (emitted agent-side as `communityTakeover`) |
-| `dexscreener.boosts` | `getBoosts` | Latest boosts |
-| `dexscreener.boosts.top` | `getTopBoosts` | Top boosts |
-| `dexscreener.communityTakeovers` | `getCommunityTakeovers` | CTO events |
-| `dexscreener.attention` | `getProfiles` + `getBoosts` | Synthetic merge (boost + profile), ranked. NOT the trending feed. |
-| `dexscreener.trending` | `getMetasTrending` | **undocumented** — official trending NARRATIVES/themes (not tokens) |
-| `dexscreener.meta` | `getMeta(slug)` | **undocumented** — one narrative + its pairs; `slug` is a NARRATIVE slug from `dexscreener.trending`, not a chain slug |
-| `dexscreener.orders` | `getOrders` | Paid-order verification |
-| `dexscreener.ads` | `getAds` | Latest ads |
-
-The market-data tools (search/pairs/tokens/tokenPairs) and the metas-detail
-pairs return the **unified concise projection** (`projectors.ts`) — a flat row
-keeping chainId/dexId/pairAddress, base/quote token, priceUsd/priceNative,
-liquidityUsd, fdv/marketCap, volumeH24, priceChangeH1/H24, txnsH24, pairCreatedAt,
-labels — and dropping `info`/`url`/`boosts` and the non-h24 timeframe windows
-(context economy). The renderer's link/image features read those dropped fields
-off the raw client responses, not off this projected tool output.
-
-Chain slugs are DexScreener string ids: `ethereum`, `base`, `solana`, `bsc`,
-`arbitrum`, `polygon`, `avalanche`, `optimism`, `robinhood` (chainId 4663), and
-more.
+- **`features.metas.isEnabled` is a website visibility label, not a data
+  gate.** It is true on solana, bsc, base and ethereum only, and the
+  narratives endpoint still serves real aggregates elsewhere (measured
+  2026-08-25: robinhood 7 narratives led by cat at $253.8 M over 15 tokens, ton
+  3, polygon 1). A chain with no narrative activity answers HTTP 200 with an
+  empty array: that is a QUIET chain, reported as "0 of 18 active", never a
+  refusal.
+- **Explorer placeholder NAMES do not identify their slots.** Substitute by the
+  FIELD the template came from. Measured: `holdersURL` wants a token address on
+  the 21 chains that spell it `{{txns}}`, `taiko.holdersURL` spells the same
+  slot `{{token}}`, `beam.assetURL` spells a token slot `{{address}}`, and
+  `oasissapphire.txnsURL` spells a TRANSACTION HASH slot `{{address}}`.
 
 ---
 
-## Data Types
+## The public-API seam
 
-### DexPair (core schema)
+The old 13-method REST client (`client.ts`) was DELETED in S11 at measured zero
+consumers, together with `validation.ts` and the `validateWs*` parsers it fed.
+What replaced it is one narrow owner per question:
 
-```typescript
-{
-  chainId: string;           // "solana", "ethereum", "bsc", "robinhood", etc.
-  dexId: string;             // "raydium", "uniswap", etc.
-  url: string;               // DexScreener URL
-  pairAddress: string;       // Pool contract address
-  labels: string[] | null;   // ["v2"], ["v3"], etc.
-  baseToken: { address, name, symbol };
-  quoteToken: { address, name, symbol }; // nullable fields
-  priceNative: string;       // Price in quote token
-  priceUsd: string | null;   // USD price
-  txns: { h24: { buys, sells }, m5: {...}, h1: {...}, h6: {...} };
-  volume: { h24: number, h6: number, h1: number, m5: number };
-  priceChange: { h24: number, h6: number, h1: number, m5: number } | null;
-  liquidity: { usd: number | null, base: number, quote: number } | null;
-  fdv: number | null;        // Fully diluted valuation
-  marketCap: number | null;  // Market cap (uses circulating supply if available)
-  pairCreatedAt: number | null; // Unix timestamp ms
-  info: { imageUrl, websites[], socials[] } | null;
-  boosts: { active: number } | null;
-}
-```
+| Module | Reads | Who calls it |
+|---|---|---|
+| `price-read.ts` | `/token-pairs/v1`, `/latest/dex/pairs`, `/tokens/v1` | wake token-price watches and the poller (through `token-watch-price.ts`), the `$VEX` own-token banner, Uniswap swap quote safety, `src/tools/evm-chains/balances.ts`, the desktop `$VEX` market widget |
+| `candles-read.ts` | the site `bars` channel | the desktop market widget's chart, board hydration |
 
-### DexMeta / DexMetaDetail (metas / narratives)
+`throttle.ts` survives underneath both (per-process token buckets, 300/min fast
+and 60/min slow, TTL cache, in-flight dedupe, `Retry-After` honouring).
 
-```typescript
-// /metas/trending/v1 → DexMeta[]
-{
-  slug: string | null;       // narrative slug, e.g. "knockoff-legends"
-  name: string | null;
-  description: string | null;
-  icon: { type: string | null, value: string | null } | null; // e.g. {type:"emoji", value:"🎨"}
-  marketCap: number | null;  // aggregate across the narrative
-  liquidity: number | null;
-  volume: number | null;
-  tokenCount: number | null;
-  marketCapChange: { m5, h1, h6, h24 } | null; // percent
-  marketCapDelta:  { m5, h1, h6, h24 } | null; // absolute USD
-}
-// /metas/meta/v1/{slug} → DexMetaDetail = DexMeta & { pairs: DexPair[] }
-```
+TRANSPORT, and the two halves differ on purpose. `price-read.ts` names
+`defaultPublicApiTransport` DIRECTLY rather than asking the registry: its three
+reads are all on `api.dexscreener.com`, which is ungated, and the registered
+transport inside the desktop app is the site bridge, whose allowlist admits
+`io.` and `dd.` only - so routing them through the registry threw before the
+network in the shipped app while passing headless. `candles-read.ts` reads
+`io.dexscreener.com`, which IS gated, so it keeps asking the registry and the
+bridge serves it.
 
-### DexProfileUpdate (recent-updates feed)
+The other ten old methods (`search`, `getProfiles`,
+`getProfilesRecentUpdates`, `getBoosts`, `getTopBoosts`,
+`getCommunityTakeovers`, `getMetasTrending`, `getMeta`, `getAds`, `getOrders`)
+went with the client; the agent asks those questions over the site surface.
 
-```typescript
-// /token-profiles/recent-updates/v1 → DexProfileUpdate[]
-// Superset of DexTokenProfile:
-{ url, chainId, tokenAddress, icon, header, description, links,
-  updatedAt: string | null,  // ISO 8601
-  cto: boolean | null }
-```
-
-### DexTokenProfile
-
-```typescript
-{ url, chainId, tokenAddress, icon, header: string | null,
-  description: string | null, links: Array<{ type, label, url }> | null }
-```
-
-### DexBoost
-
-```typescript
-{ url, chainId, tokenAddress,
-  amount: number | null, totalAmount: number | null,
-  icon: string | null, header: string | null, description: string | null,
-  links: Array<{ type, label, url }> | null }
-```
-
-One shape serves both boost endpoints, and both amounts are nullable.
-`/token-boosts/latest/v1` sends `amount` on every row; `/token-boosts/top/v1`
-sends it on none (live-verified 2026-07-27 — requiring it made
-`dexscreener.boosts.top` throw on 100% of calls). `null` means "the endpoint
-did not report it", which is not the same as a boost of zero.
-
-`validateBoostsResponse` returns `{ boosts, skipped }`, not a bare array: a row
-that fails to parse is dropped and COUNTED rather than throwing the feed away.
-
-### DexCommunityTakeover
-
-```typescript
-{ url, chainId, tokenAddress, icon, header, description, links,
-  claimDate: string /* ISO 8601 */ }
-```
-
-### DexAd
-
-```typescript
-{ url, chainId, tokenAddress, date /* ISO 8601 */, type,
-  durationHours: number | null, impressions: number | null }
-```
-
-### DexOrdersResponse
-
-`/orders/v1/{chainId}/{tokenAddress}` answers with an **object**, not an array
-(live-verified 2026-07-27). It carries the paid-order history AND the
-boost-payment ledger for the same token; both are returned.
-
-```typescript
-// GET /orders/v1/{chainId}/{tokenAddress} → { orders: [...], boosts: [...] }
-{ orders: DexOrder[];
-  boostPayments: DexBoostPayment[];
-  skippedOrders: number;         // rows dropped because they did not parse
-  skippedBoostPayments: number }
-```
-
-```typescript
-// DexOrder
-{ chainId, tokenAddress,
-  type: string;    // observed: "tokenProfile" | "communityTakeover" | "tokenAd" | "trendingBarAd"
-  status: string;  // documented: "processing" | "cancelled" | "on-hold" | "approved" | "rejected"
-  paymentTimestampMs: number | null }
-
-// DexBoostPayment — one boost PURCHASE; a different shape from DexBoost
-{ chainId, tokenAddress,
-  id: string | null;             // opaque DexScreener payment id
-  amount: number | null;
-  paymentTimestampMs: number | null }
-```
-
-`type` and `status` are plain strings, not closed unions: DexScreener adds
-promotional products, and a membership check would throw on the first new one.
-The comments above document the observed vocabulary; the values are echoed to
-the agent, never branched on.
+Useful public-API facts that are still true and still cost money when forgotten:
+`priceChange.*` is ALREADY a percentage, `pairCreatedAt` and
+`paymentTimestampMs` are milliseconds, and DexScreener computes
+`FDV = (total supply - burned supply) * price` with market cap equal to FDV
+unless the token reports a circulating supply.
 
 ---
 
-## Value Formats
+## Named omissions
 
-| Field | Format | Example | Display |
-|-------|--------|---------|---------|
-| `priceUsd` | String, USD | `"152.34"` | `$152.34` |
-| `priceNative` | String, quote token | `"1.0"` | Native denomination |
-| `volume.h24` | Number, USD | `1234567.89` | `$1.23M` |
-| `liquidity.usd` | Number, USD | `5678901.23` | `$5.68M` |
-| `fdv` / `marketCap` | Number, USD | `89000000000` | `$89.00B` |
-| `priceChange.h24` | **Already percentage** | `2.5` = 2.5% | Display as `+2.50%` — do NOT multiply by 100 |
-| `txns.h24.buys` / `sells` | Integer | `1234` | Transaction count |
-| `pairCreatedAt` | Unix timestamp **ms** | `1672531200000` | `new Date(value)` |
-| `paymentTimestampMs` | Unix timestamp **milliseconds** | `1785076668204` | `new Date(value)` — do NOT multiply by 1000 |
-| `updatedAt` / `claimDate` / ad `date` | ISO 8601 string | `"2026-07-04T13:43:41.745Z"` | Date display |
-| `meta.marketCapChange.*` | **Already percentage** | `24.21` = 24.21% | Aggregate narrative change |
+Under the provider-depth decree every unconsumed provider surface is declared
+with a measured reason.
+
+- **`/dex/trending/v6` and Connect `dex_trending.GetTrendingPairs`** are not
+  consumed. The screener's `trendingScore{TF}` board reproduces their order
+  exactly (re-verified 4/4 boards, 30/30 rows, 2026-08-25) and every trending
+  field is a strict subset of the screener row, including `tokenIconId`
+  (identical on 30/30). They are capped at 30 rows with no pagination, are edge
+  cached about 30 seconds, and were measured disagreeing with each other on
+  marketCap and priceChange. Their DECODERS are kept on purpose (`TRENDING_V6`,
+  the two `dex_trending.*` allowlist names) as the independent oracle for the
+  homepage-ordering claim the trending tool makes and cannot verify from its
+  own board. Both halves have a committed fixture and a decode test; the
+  removal condition is written at `TRENDING_PAIR` in `dsavro-schemas.ts`.
+- **`/ds-data/dexes`** is not consumed. It is the only MACHINE source of the
+  dex label vocabulary (25 values including the uppercase variants V1/V2/V3,
+  which `recon.md`'s hand-written list of 22 omits), plus dex display names and
+  swap-deeplink templates. The `labels` parameter teaches that vocabulary by
+  example and matches case-insensitively, so nothing false is claimed today;
+  wiring this catalog in would turn `labels` into a validated closed set.
+- **`/ds-data/v4/tokens/latest`** is not consumed, and the assumption that
+  spotlight's `latestProfiles` covers it is FALSE: measured within 8 minutes of
+  each other, both feeds carried exactly 36 rows and their (chain, address)
+  sets were DISJOINT, with the ds-data feed lagging about 7 hours. It is
+  omitted on freshness, not on redundancy.
+- **`/ds-data/v2/chains/by-txns`** is a public, differently ranked view of the
+  same 74 chains. No tool has an ordering contract, so it buys nothing.
+- **`/metas/v1/by-slug`** is not consumed: its record is a strict subset of
+  `/metas/v1/all`, which is fetched whole. It answers an unknown or empty slug
+  with HTTP 500 and an empty body.
+
+`chains/by-trending` ordering carries no meaning. The rank is live and drifts:
+two reads nine minutes apart showed 20+ adjacent transpositions in the tail,
+and each chain's own `dexes[]` churned inside two minutes. Membership is stable
+at 74; order is not, and a 24 hour cached copy can hand out a day-old one.
 
 ---
 
-## Error Handling
+## Verification discipline
 
-| HTTP | Error Code | Retryable | Hint |
-|------|-----------|-----------|------|
-| 429 | `DEXSCREENER_RATE_LIMITED` | Yes | 60/min or 300/min per class; `Retry-After` honored by the throttle |
-| 404 | `DEXSCREENER_NOT_FOUND` | No | Check chainId and address |
-| 5xx | `DEXSCREENER_API_ERROR` | Yes | Server error, retry later (also the bad-slug response on `/metas/meta`) |
-| Timeout | `DEXSCREENER_TIMEOUT` | Yes | Request timed out |
-| Parse fail | `DEXSCREENER_INVALID_RESPONSE` | No | Unexpected response shape (documented endpoints only) |
+Rule 10 governs this lane: when the endpoint is reachable, the endpoint is the
+specification. Fixtures are real captured bytes under
+`src/__tests__/dexscreener-site/fixtures/`, each with a `.provenance.json`
+naming the endpoint, request, capture time and sha256; the loader re-hashes on
+every read, so an edited fixture fails loudly. Every optional field a
+projection reads must be present in at least one fixture, and every declared
+response variant needs one that exercises it (which is why the quiet-chain
+one-byte narratives body and the metasEnabled-false robinhood body are both
+committed).
 
-The undocumented metas / recent-updates tools do NOT surface these errors to the
-agent — they degrade to `{ available: false, reason: "…" }` instead.
+Wire names, enum members and field spellings come from the checked-in
+descriptor and schema artifacts, never from convention. Tests live in
+`src/__tests__/dexscreener-site/`; the older `src/__tests__/dexscreener/`
+protects the public-API seam.
 
----
-
-## Trading Agent Integration
-
-DexScreener is the research layer. The agent uses it read-only, then executes
-via other protocols:
-
-```
-1. DISCOVERY
-   dexscreener.search (name/symbol/address, optional chain + liquidity filters)
-   dexscreener.trending (trending narratives) → dexscreener.meta (tokens in a narrative)
-   dexscreener.attention / boosts / profiles / communityTakeovers (attention signals)
-
-2. ANALYSIS
-   dexscreener.tokens / dexscreener.pairs (price, volume, liquidity, FDV, txns)
-   dexscreener.tokenPairs (all pools, find deepest liquidity → pool address)
-   dexscreener.orders (paid-promotion SPEND record — not a legitimacy signal)
-
-3. EXECUTE (via other protocol namespaces)
-   → Solana tokens: solana.swap.*
-   → EVM tokens:    kyberswap.swap.* (and uniswap.* on Robinhood chain)
-   → Cross-chain:   khalani.* / relay.*
-```
-
-## FDV and Market Cap
-
-DexScreener formula: `FDV = (total supply - burned supply) * price`. Market cap
-equals FDV unless the token reports a circulating supply (Enhanced Token Info or
-CoinGecko), in which case market cap uses circulating supply.
+**If you change a file in this directory, update this document in the same
+change.**

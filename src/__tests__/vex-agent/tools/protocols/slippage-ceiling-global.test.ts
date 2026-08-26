@@ -76,6 +76,23 @@ const CASES = [
   },
 ] as const;
 
+// The Uniswap quote path reads ERC-20 metadata from a LIVE public client
+// BEFORE any wallet is resolved, so without this mock the legal-tolerance
+// cases depend on whatever the machine's RPC does that second - an answer, an
+// odd answer, or a stall past the test timeout, three different verdicts for
+// one behavior. The metadata reader is not this suite's subject (the ceiling
+// gate is), so it fails fast and offline, the same downstream-failure shape
+// the wallet stub below produces for the Solana arms.
+vi.mock("@tools/uniswap/erc20.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tools/uniswap/erc20.js")>()),
+  readUniswapErc20Metadata: () => {
+    throw new VexError(
+      ErrorCodes.KYBER_TOKEN_NOT_FOUND,
+      "metadata unavailable in this suite",
+    );
+  },
+}));
+
 beforeEach(() => {
   vi.spyOn(walletResolve, "resolveSelectedAddress").mockImplementation(() => {
     throw new VexError(ErrorCodes.WALLET_NOT_CONFIGURED, "no wallet configured");
@@ -114,11 +131,21 @@ describe("the Vex slippage ceiling binds on Jupiter and Uniswap, not only KyberS
     });
 
     it(`${toolId} does NOT refuse a legal tolerance — the gate is a ceiling, not a block`, async () => {
-      // The call still fails downstream (no wallet, no network in this suite);
-      // what matters is that it is never the ceiling that stopped it.
-      const legal = await run(50);
+      // The call still fails downstream, and HOW it fails is environment
+      // noise this test must not depend on: with no network the wallet stub
+      // refuses, but on a machine where the RPC answers (or answers oddly, a
+      // live `readContract` reading token metadata) the handler can THROW
+      // instead of returning a result. Both are the same fact for this test -
+      // something after the gate stopped the call - so a throw is folded into
+      // an inspectable shape and the one assertion that matters stays: it is
+      // never the ceiling that refused.
+      const settle = (p: Promise<{ output?: string }>) =>
+        p.catch((err: unknown) => ({
+          output: err instanceof Error ? err.message : String(err),
+        }));
+      const legal = await settle(run(50));
       expect(legal.output).not.toContain("must not exceed");
-      const atCeiling = await run(VEX_MAX_SLIPPAGE_BPS);
+      const atCeiling = await settle(run(VEX_MAX_SLIPPAGE_BPS));
       expect(atCeiling.output).not.toContain("must not exceed");
     });
   }
