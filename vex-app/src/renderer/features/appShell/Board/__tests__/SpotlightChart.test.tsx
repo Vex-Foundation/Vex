@@ -56,18 +56,42 @@ interface ChartRecord {
    */
   offscreen: boolean;
   tickMarkFormatter: ((time: unknown, type: number) => string) | null;
+  /** The volume histogram's own writes and options. */
+  volumeOptions: Record<string, unknown>;
+  volumeSetDataCalls: unknown[][];
+  volumeUpdateCalls: { point: unknown; historical: boolean | undefined }[];
+  appliedVolumeOptions: Record<string, unknown>[];
+  /** `chart.priceScale(id).applyOptions(...)`, by id. */
+  priceScaleOptions: Record<string, Record<string, unknown>[]>;
+  /** What was released, in order, so the teardown order is an assertion. */
+  disposeOrder: string[];
+  markersCreatedOn: "candle" | "volume" | null;
 }
 
 const charts: ChartRecord[] = [];
+/** Which record a series object belongs to, for the markers plugin. */
+const seriesOwner = new Map<unknown, { record: ChartRecord; kind: "candle" | "volume" }>();
 
 vi.mock("lightweight-charts", () => {
-  const AreaSeries = { type: "Area" };
+  const CandlestickSeries = { type: "Candlestick" };
+  const HistogramSeries = { type: "Histogram" };
   return {
-    AreaSeries,
+    CandlestickSeries,
+    HistogramSeries,
     CrosshairMode: { Normal: 0, Magnet: 1, Hidden: 2, MagnetOHLC: 3 },
     // The real enum's members, by value (typings.d.ts:167).
     TickMarkType: { Year: 0, Month: 1, DayOfMonth: 2, Time: 3, TimeWithSeconds: 4 },
-    LastPriceAnimationMode: { Disabled: 0, Continuous: 1, OnDataUpdate: 2 },
+    createSeriesMarkers: (series: unknown, markers?: unknown[]) => {
+      const owner = seriesOwner.get(series);
+      if (owner !== undefined) owner.record.markersCreatedOn = owner.kind;
+      return {
+        setMarkers: () => undefined,
+        markers: () => markers ?? [],
+        detach: () => {
+          owner?.record.disposeOrder.push("markers");
+        },
+      };
+    },
     createChart: (_el: HTMLElement, options: Record<string, unknown>) => {
       const record: ChartRecord = {
         removed: false,
@@ -93,29 +117,58 @@ vi.mock("lightweight-charts", () => {
         tickMarkFormatter:
           (options.timeScale as { tickMarkFormatter?: (time: unknown, type: number) => string } | undefined)
             ?.tickMarkFormatter ?? null,
+        volumeOptions: {},
+        volumeSetDataCalls: [],
+        volumeUpdateCalls: [],
+        appliedVolumeOptions: [],
+        priceScaleOptions: {},
+        disposeOrder: [],
+        markersCreatedOn: null,
       };
       charts.push(record);
-      const series = {
-        setData: (data: unknown[]) => {
-          record.setDataCalls.push(data);
-        },
-        update: (point: unknown, historical?: boolean) => {
-          record.updateCalls.push({ point, historical });
-        },
-        applyOptions: (next: Record<string, unknown>) => {
-          record.appliedSeriesOptions.push(next);
-        },
-        priceToCoordinate: () => {
-          record.priceToCoordinateCalls += 1;
-          return 42;
-        },
-        barsInLogicalRange: () => ({ barsBefore: 0, barsAfter: record.barsAfter }),
+      const makeSeries = (kind: "candle" | "volume") => {
+        const series = {
+          setData: (data: unknown[]) => {
+            (kind === "candle" ? record.setDataCalls : record.volumeSetDataCalls).push(data);
+          },
+          update: (point: unknown, historical?: boolean) => {
+            (kind === "candle" ? record.updateCalls : record.volumeUpdateCalls).push({
+              point,
+              historical,
+            });
+          },
+          applyOptions: (next: Record<string, unknown>) => {
+            (kind === "candle" ? record.appliedSeriesOptions : record.appliedVolumeOptions).push(
+              next,
+            );
+          },
+          priceToCoordinate: () => {
+            record.priceToCoordinateCalls += 1;
+            return 42;
+          },
+          barsInLogicalRange: () => ({ barsBefore: 0, barsAfter: record.barsAfter }),
+        };
+        seriesOwner.set(series, { record, kind });
+        return series;
       };
+      const candle = makeSeries("candle");
+      const volume = makeSeries("volume");
       return {
-        addSeries: (_def: unknown, seriesOptions: Record<string, unknown>) => {
+        addSeries: (def: { type: string }, seriesOptions: Record<string, unknown>) => {
+          if (def.type === "Histogram") {
+            record.volumeOptions = seriesOptions;
+            return volume;
+          }
           record.seriesOptions = seriesOptions;
-          return series;
+          return candle;
         },
+        priceScale: (id: string) => ({
+          applyOptions: (next: Record<string, unknown>) => {
+            const list = record.priceScaleOptions[id] ?? [];
+            list.push(next);
+            record.priceScaleOptions[id] = list;
+          },
+        }),
         applyOptions: (next: Record<string, unknown>) => {
           record.appliedChartOptions.push(next);
         },
@@ -143,6 +196,7 @@ vi.mock("lightweight-charts", () => {
         },
         unsubscribeCrosshairMove: () => {
           record.unsubscribed += 1;
+          record.disposeOrder.push("unsubscribe");
         },
         setCrosshairPosition: (price: unknown, time: unknown) => {
           record.crosshairPositions.push({ price, time });
@@ -152,6 +206,7 @@ vi.mock("lightweight-charts", () => {
         },
         remove: () => {
           record.removed = true;
+          record.disposeOrder.push("remove");
         },
       };
     },
@@ -159,9 +214,9 @@ vi.mock("lightweight-charts", () => {
 });
 
 const { SpotlightChart } = await import("../SpotlightChart.js");
-const { utcTickMarkFormatter, utcTimeFormatter, tooltipStamp } = await import(
-  "../spotlightChartTime.js"
-);
+const { utcTickMarkFormatter, utcTickMarkFormatterFor, utcTimeFormatter, tooltipStamp, tooltipStampUtc } =
+  await import("../spotlightChartTime.js");
+const { spotlightChartNotes } = await import("../SpotlightChartCaption.js");
 const { placeSpotlightTooltip } = await import(
   "../spotlightChartTooltipPlacement.js"
 );
@@ -212,9 +267,12 @@ function okSeries(options: {
   from?: number;
   providerBars?: number;
   lastBarPartial?: boolean;
+  /** Positional volumes; defaults to a decimal per bar. */
+  volumes?: (string | null)[];
 } = {}) {
   const count = options.count ?? 5;
   const rows = bars(count, options.from ?? 0);
+  const volumes = options.volumes ?? rows.map((_row, index) => `${String(1000 + index)}.25`);
   return {
     ok: true as const,
     data: {
@@ -233,6 +291,8 @@ function okSeries(options: {
         providerBars: options.providerBars ?? count,
         undrawableBars: 0,
         windowedOutBars: 0,
+        volumes,
+        volumelessBars: volumes.filter((volume) => volume === null).length,
         fetchedAtMs: BASE_MS,
       },
     },
@@ -275,6 +335,7 @@ function mount(live = false): ReturnType<typeof render> {
 
 beforeEach(() => {
   charts.length = 0;
+  seriesOwner.clear();
   poll.mockReset();
   poll.mockResolvedValue(okSeries());
   bindStore();
@@ -340,26 +401,99 @@ describe("creation and the series", () => {
     const series = charts[0]?.seriesOptions;
     expect(series?.priceLineVisible).toBe(false);
     expect(series?.lastValueVisible).toBe(false);
-    expect(series?.crosshairMarkerVisible).toBe(true);
+    expect(charts[0]?.volumeOptions.priceLineVisible).toBe(false);
+    expect(charts[0]?.volumeOptions.lastValueVisible).toBe(false);
   });
 
-  it("animates the last price only when live, and never on a snapshot", async () => {
-    mount(false);
+  /** Brief D3: a REAL candlestick series on the left scale, palette colours only. */
+  it("draws CANDLES on the left scale with the palette's six colours and a custom price format", async () => {
+    mount();
     await settle();
-    const applied = charts[0]?.appliedSeriesOptions ?? [];
+    const series = charts[0]?.seriesOptions ?? {};
+    expect(series.priceScaleId).toBe("left");
+    expect(series.borderVisible).toBe(true);
+    expect(series.wickVisible).toBe(true);
+    // jsdom resolves no tokens, so the bridge's neutral fallbacks are what
+    // the palette IS here; the claim is that every colour came from it.
+    expect(series.upColor).toBe("rgba(31, 185, 84, 1)");
+    expect(series.downColor).toBe("rgba(242, 109, 109, 1)");
+    expect(series.borderUpColor).toBe(series.upColor);
+    expect(series.borderDownColor).toBe(series.downColor);
+    expect(series.wickUpColor).toBe(series.upColor);
+    expect(series.wickDownColor).toBe(series.downColor);
+    const priceFormat = series.priceFormat as Record<string, unknown>;
+    expect(priceFormat.type).toBe("custom");
+    expect(typeof priceFormat.formatter).toBe("function");
+    expect(priceFormat.minMove).toBeGreaterThan(0);
+    // And no library animation exists on a candlestick: nothing ever asks for one.
     expect(
-      applied.some((options) => options.lastPriceAnimation === 2),
+      (charts[0]?.appliedSeriesOptions ?? []).some((o) => "lastPriceAnimation" in o),
     ).toBe(false);
+    expect("lastPriceAnimation" in series).toBe(false);
+  });
+
+  /** Brief D3: the volume is an OVERLAY histogram, not a second pane. */
+  it("draws the VOLUME as a histogram overlay on its own invisible scale, under the candles", async () => {
+    mount();
+    await settle();
+    const chart = charts[0];
+    expect(chart?.volumeOptions.priceScaleId).toBe("spotlight-volume");
+    expect(chart?.volumeOptions.base).toBe(0);
+    expect(chart?.priceScaleOptions["spotlight-volume"]).toEqual([
+      { scaleMargins: { top: 0.78, bottom: 0 } },
+    ]);
+    expect(chart?.priceScaleOptions.left).toEqual([
+      { scaleMargins: { top: 0.08, bottom: 0.28 } },
+    ]);
+    // Still one axis: the right scale is hidden and the overlay has no rail.
+    const options = chart?.options as Record<string, Record<string, unknown>>;
+    expect(options.rightPriceScale?.visible).toBe(false);
+    // Seeded in lockstep with the candles.
+    expect(chart?.volumeSetDataCalls).toHaveLength(1);
+    const volumes = chart?.volumeSetDataCalls[0] as Record<string, unknown>[];
+    expect(volumes).toHaveLength(5);
+    expect(volumes.every((v) => "value" in v && typeof v.color === "string")).toBe(true);
+  });
+
+  /** Brief D1: a null volume is WHITESPACE in the histogram, never a zero bar. */
+  it("leaves a whitespace slot in the histogram for a bar with no reported volume", async () => {
+    poll.mockResolvedValue(okSeries({ volumes: ["1.5", null, "2.5", null, "3.5"] }));
+    mount();
+    await settle();
+    const volumes = charts[0]?.volumeSetDataCalls[0] as Record<string, unknown>[];
+    expect(volumes.map((v) => "value" in v)).toEqual([true, false, true, false, true]);
+    expect(volumes.some((v) => v.value === 0)).toBe(false);
+    // The candles are all still drawn.
+    const candles = charts[0]?.setDataCalls[0] as Record<string, unknown>[];
+    expect(candles.every((c) => "open" in c)).toBe(true);
+  });
+
+  /** Brief D6: the forming bar is visible AS forming, on the candle itself. */
+  it("tints the newest bar while forming and draws it fully once closed", async () => {
+    poll.mockResolvedValue(okSeries({ lastBarPartial: true }));
+    mount();
+    await settle();
+    const forming = charts[0]?.setDataCalls[0] as Record<string, unknown>[];
+    expect(forming.slice(0, -1).every((c) => !("color" in c))).toBe(true);
+    const newest = forming.at(-1) ?? {};
+    expect(newest.color).toBe("rgba(31, 185, 84, 0.55)");
+    expect(newest.borderColor).toBe(newest.color);
+    expect(newest.wickColor).toBe(newest.color);
+    expect("open" in newest).toBe(true);
 
     cleanup();
     charts.length = 0;
-    mount(true);
+    poll.mockResolvedValue(okSeries({ lastBarPartial: false }));
+    mount();
     await settle();
-    expect(
-      (charts[0]?.appliedSeriesOptions ?? []).some(
-        (options) => options.lastPriceAnimation === 2,
-      ),
-    ).toBe(true);
+    const closed = charts[0]?.setDataCalls[0] as Record<string, unknown>[];
+    expect(closed.every((c) => !("color" in c))).toBe(true);
+  });
+
+  it("wires the markers seam to the CANDLE series only", async () => {
+    mount();
+    await settle();
+    expect(charts[0]?.markersCreatedOn).toBe("candle");
   });
 });
 
@@ -397,6 +531,28 @@ describe("the resolution pills", () => {
     expect(charts[0]?.removed).toBe(false);
     expect(charts[0]?.fitContentCalls).toBe(2);
     expect(charts[0]?.setDataCalls).toHaveLength(2);
+  });
+
+  /** Brief D5: the axis vocabulary follows the pill, through applyOptions. */
+  it("re-applies the pill's own tick vocabulary on a switch, without a rebuild", async () => {
+    mount();
+    await settle();
+    poll.mockResolvedValue(okSeries({ resolution: "8h" }));
+    await act(async () => {
+      fireEvent.click(
+        document.querySelector('[data-vex-area="spotlight-chart-pill"][data-resolution="8h"]') as HTMLElement,
+      );
+    });
+    await settle();
+    const applied = charts[0]?.appliedChartOptions ?? [];
+    const withFormatter = applied
+      .map((o) => (o.timeScale as { tickMarkFormatter?: (t: unknown, k: number) => string } | undefined)?.tickMarkFormatter)
+      .filter((f): f is (t: unknown, k: number) => string => typeof f === "function");
+    expect(withFormatter.length).toBeGreaterThan(0);
+    const latest = withFormatter.at(-1);
+    // A time-of-day tick on the 30D pill reads by DAY.
+    expect(latest?.(Math.floor(BASE_MS / 1000), 3)).toBe("26 Aug");
+    expect(charts).toHaveLength(1);
   });
 
   it("REFUSES an answer whose echoed resolution is not the pill on screen", async () => {
@@ -445,6 +601,31 @@ describe("polling and reconciliation", () => {
     expect(chart?.setDataCalls).toHaveLength(1);
     expect(chart?.updateCalls.length).toBeGreaterThanOrEqual(1);
     expect(chart?.updateCalls.at(-1)?.historical).toBeUndefined();
+    // The histogram moves in lockstep: one series never holds a bar the
+    // other does not.
+    expect(chart?.volumeSetDataCalls).toHaveLength(1);
+    expect(chart?.volumeUpdateCalls.length).toBe(chart?.updateCalls.length);
+  });
+
+  /** Brief D7: a poll that only moved a PAST bar's high is a correction, not "unchanged". */
+  it("applies a high-only move on a past bar as a historical update", async () => {
+    vi.useFakeTimers();
+    mount(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const chart = charts[0];
+    const moved = okSeries();
+    const past = moved.data.outcome.series.bars[1];
+    if (past !== undefined) past.h = "0.0009999";
+    poll.mockResolvedValue(moved);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(chart?.setDataCalls).toHaveLength(1);
+    const historical = chart?.updateCalls.filter((call) => call.historical === true) ?? [];
+    expect(historical).toHaveLength(1);
+    expect((historical[0]?.point as { high: number }).high).toBe(0.0009999);
   });
 
   it("restores the visible TIME range when a trim replaces the series under a scrolled reader", async () => {
@@ -503,7 +684,13 @@ describe("the readouts", () => {
         time: Math.floor(BASE_MS / 1000),
         point: { x: 5, y: 5 },
         seriesData: {
-          get: () => ({ time: Math.floor(BASE_MS / 1000), value: 0.0000104 }),
+          get: () => ({
+            time: Math.floor(BASE_MS / 1000),
+            open: 0.0000100,
+            high: 0.0000100,
+            low: 0.0000100,
+            close: 0.0000100,
+          }),
         },
       });
     });
@@ -513,9 +700,57 @@ describe("the readouts", () => {
     expect(tooltip).not.toBeNull();
     expect(tooltip?.getAttribute("data-x")).toBe("100");
     expect(tooltip?.getAttribute("data-y")).toBe("42");
-    expect(tooltip?.textContent).toContain("26 Aug - 11:00");
+    expect(tooltip?.textContent).toContain("26 Aug - 11:00 UTC");
     expect(chart?.timeToCoordinateCalls).toBeGreaterThan(0);
     expect(chart?.priceToCoordinateCalls).toBeGreaterThan(0);
+  });
+
+  /** Brief D8: four lines, prices through the axis formatter, volume through the board's. */
+  it("shows O, H / L, C, Vol and the UTC stamp, with the close coloured by direction", async () => {
+    poll.mockResolvedValue(okSeries({ volumes: ["1234567.5", "2", "3", "4", "5"] }));
+    mount();
+    await settle();
+    const handler = charts[0]?.crosshairHandlers[0];
+    const t = Math.floor(BASE_MS / 1000);
+    await act(async () => {
+      handler?.({
+        time: t,
+        point: { x: 5, y: 5 },
+        seriesData: {
+          get: () => ({ time: t, open: 0.00001, high: 0.00001, low: 0.00001, close: 0.00001, value: 1234567.5 }),
+        },
+      });
+    });
+    const text = (selector: string): string | null | undefined =>
+      document.querySelector(`[data-vex-area="spotlight-chart-tooltip-${selector}"]`)?.textContent;
+    expect(text("open")).toBe("O 0.0000100");
+    expect(text("range")).toBe("H 0.0000100 / L 0.0000100");
+    expect(text("close")).toBe("C 0.0000100");
+    expect(text("volume")).toBe("Vol $1.2M");
+    expect(text("time")).toBe("26 Aug - 11:00 UTC");
+    // A flat bar reads as up.
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart-tooltip-close"]')?.getAttribute("data-direction"),
+    ).toBe("up");
+  });
+
+  it("says when the bar under the cursor carried no volume", async () => {
+    poll.mockResolvedValue(okSeries({ volumes: [null, "2", "3", "4", "5"] }));
+    mount();
+    await settle();
+    const handler = charts[0]?.crosshairHandlers[0];
+    const t = Math.floor(BASE_MS / 1000);
+    await act(async () => {
+      handler?.({
+        time: t,
+        point: { x: 5, y: 5 },
+        // The histogram item at that time is WHITESPACE: no `value`.
+        seriesData: { get: () => ({ time: t, open: 1, high: 1, low: 1, close: 1 }) },
+      });
+    });
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart-tooltip-volume"]')?.textContent,
+    ).toBe("Vol no volume reported");
   });
 
   it("hides on the library's empty event rather than sticking", async () => {
@@ -544,6 +779,10 @@ describe("the readouts", () => {
     const readout = document.querySelector('[data-vex-area="spotlight-chart-readout"]');
     expect(readout?.getAttribute("aria-live")).toBe("polite");
     expect(readout?.textContent).toContain("26 Aug");
+    // Brief D8: the readout speaks open, high, low, close, volume, at UTC.
+    expect(readout?.textContent).toMatch(
+      /^open .+, high .+, low .+, close .+, volume \$.+, at 26 Aug - \d\d:\d\d UTC$/,
+    );
     // The library suppresses its own event for a programmatic crosshair, so
     // the readout above proves we wrote it rather than waited for one.
     expect(charts[0]?.crosshairPositions).toHaveLength(1);
@@ -576,6 +815,38 @@ describe("honest notes and absences", () => {
     expect(notes?.textContent).toContain("still forming");
   });
 
+  /** Brief D11: the two notes candles owe that the area line did not. */
+  it("discloses volumeless buckets and derived extremes, with their counts", async () => {
+    const answer = okSeries({ volumes: ["1", null, "3", null, "5"] });
+    // Bar 2's close sits above its reported high: the candle draws the true extreme.
+    const bar2 = answer.data.outcome.series.bars[2];
+    if (bar2 !== undefined) bar2.c = "0.0009000";
+    poll.mockResolvedValue(answer);
+    mount();
+    await settle();
+    const notes = document.querySelector('[data-vex-area="spotlight-chart-notes"]');
+    expect(notes?.textContent).toContain("2 of the 5 drawn buckets carried no reported volume.");
+    expect(notes?.textContent).toContain(
+      "1 buckets reported a high or low that did not span their own open and close; the chart drew the true extremes.",
+    );
+    expect(notes?.className).toBe("flex flex-col gap-0.5");
+    expect(
+      document.querySelector('[data-vex-area="spotlight-chart-caption"]')?.className,
+    ).toContain("text-[12px] leading-[16px]");
+  });
+
+  it("lists the notes as a table, in reading order", () => {
+    const page = { ...okSeries({ count: 3, providerBars: 3 }).data.outcome, forResolution: "15m" as const };
+    expect(
+      spotlightChartNotes(page, { hiddenOlder: 0, incoherentCount: 2, volumelessCount: 1 }, "15m"),
+    ).toEqual([
+      "The provider had 3 of the 96 buckets this range asks for.",
+      "1 of the 3 drawn buckets carried no reported volume.",
+      "2 buckets reported a high or low that did not span their own open and close; the chart drew the true extremes.",
+      "The newest 24H bucket is still forming.",
+    ]);
+  });
+
   it("keeps the frame and names the absence for a pool with no history", async () => {
     poll.mockResolvedValue({
       ok: true,
@@ -590,6 +861,47 @@ describe("honest notes and absences", () => {
     const absent = document.querySelector('[data-vex-area="spotlight-chart-absent"]');
     expect(absent?.getAttribute("data-reason")).toBe("no_drawable_bars");
     expect(absent?.textContent).toContain("no drawable price history");
+    // The sentence sits centred inside a box that never collapses.
+    expect(absent?.className).toContain("text-[13px] leading-[18px] text-ink-tertiary");
+    expect(absent?.parentElement?.className).toContain("h-[280px]");
+  });
+
+  /**
+   * THE CANCELLED-PILL DEFECT, at the surface. A cancelled first read is a
+   * skeleton that gets asked again, never "This read was cancelled." as the
+   * terminal state of the default pill.
+   */
+  it("never shows a cancelled read as a settled absence", async () => {
+    poll
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          subject: { chain: SUBJECT.chain, pairAddress: SUBJECT.pairAddress },
+          resolution: "15m",
+          outcome: { kind: "unavailable", reason: "cancelled" },
+        },
+      })
+      .mockResolvedValue(okSeries());
+    mount();
+    await settle();
+    expect(document.querySelector('[data-vex-area="spotlight-chart-absent"]')).toBeNull();
+    expect(document.body.textContent).not.toContain("This read was cancelled");
+    expect(charts).toHaveLength(1);
+    expect(poll).toHaveBeenCalledTimes(2);
+  });
+
+  it("styles the selected pill as a wash with a ring, not a solid fill", async () => {
+    mount();
+    await settle();
+    const selected = document.querySelector(
+      '[data-vex-area="spotlight-chart-pill"][data-selected="true"]',
+    );
+    expect(selected?.className).toContain("bg-accent-wash text-accent-primary ring-1 ring-inset ring-accent-primary/40");
+    expect(selected?.className).not.toContain("bg-accent-primary ");
+    const unselected = document.querySelector(
+      '[data-vex-area="spotlight-chart-pill"][data-selected="false"]',
+    );
+    expect(unselected?.className).toContain("text-ink-tertiary hover:bg-interactive-hover");
   });
 });
 
@@ -606,6 +918,8 @@ describe("teardown", () => {
     view.unmount();
     expect(chart?.unsubscribed).toBe(1);
     expect(chart?.removed).toBe(true);
+    // Brief D10: subscription, then the markers plugin, then the instance.
+    expect(chart?.disposeOrder).toEqual(["unsubscribe", "markers", "remove"]);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
@@ -687,6 +1001,22 @@ describe("the UTC axis", () => {
     expect(utcTickMarkFormatter(CROSS_MIDNIGHT, 2)).toBe("26 Aug");
     expect(utcTickMarkFormatter(CROSS_YEAR, 1)).toBe("Dec");
     expect(utcTickMarkFormatter(CROSS_YEAR, 0)).toBe("2026");
+  });
+
+  /** Brief D5: one vocabulary per pill, branched in the time module only. */
+  it("reads a time-of-day tick in each pill's own vocabulary", () => {
+    expect(utcTickMarkFormatterFor("1m")(CROSS_MIDNIGHT, 3)).toBe("22:00");
+    expect(utcTickMarkFormatterFor("15m")(CROSS_MIDNIGHT, 3)).toBe("22:00");
+    expect(utcTickMarkFormatterFor("2h")(CROSS_MIDNIGHT, 3)).toBe("26 Aug 22:00");
+    expect(utcTickMarkFormatterFor("8h")(CROSS_MIDNIGHT, 3)).toBe("26 Aug");
+    // Coarser ticks read the same on every pill.
+    for (const pill of ["1m", "15m", "2h", "8h"] as const) {
+      expect(utcTickMarkFormatterFor(pill)(CROSS_MIDNIGHT, 2)).toBe("26 Aug");
+      expect(utcTickMarkFormatterFor(pill)(CROSS_YEAR, 1)).toBe("Dec");
+      expect(utcTickMarkFormatterFor(pill)(CROSS_YEAR, 0)).toBe("2026");
+    }
+    expect(tooltipStampUtc(CROSS_MIDNIGHT)).toBe("26 Aug - 22:00 UTC");
+    expect(tooltipStampUtc(utcSec(Number.NaN))).toBe("unknown time");
   });
 
   it("agrees with the crosshair label and the tooltip stamp", () => {
@@ -801,6 +1131,8 @@ describe("the surface state", () => {
       providerBars: 3,
       undrawableBars: 0,
       windowedOutBars: 0,
+      volumes: ["1", "2", "3"],
+      volumelessBars: 0,
     };
   }
 
@@ -834,6 +1166,26 @@ describe("the surface state", () => {
       expect(state.fetchedAtMs).toBe(BASE_MS - 60_000);
       expect(state.reason).toBe("transport");
     }
+  });
+
+  it("is a SKELETON, never absent, for a cancellation with nothing behind it", () => {
+    expect(
+      spotlightChartSurfaceState({
+        read: { status: "unavailable", reason: "cancelled", lastGood: null },
+        resolution: "15m",
+      }).kind,
+    ).toBe("skeleton");
+    // With last-good bars of this pill it is the ordinary degraded arm.
+    expect(
+      spotlightChartSurfaceState({
+        read: {
+          status: "unavailable",
+          reason: "cancelled",
+          lastGood: { value: page("15m"), fetchedAtMs: BASE_MS },
+        },
+        resolution: "15m",
+      }).kind,
+    ).toBe("degraded");
   });
 
   it("is absent when the failure carries nothing, or last-good of another pill", () => {
@@ -994,6 +1346,12 @@ describe("a theme change", () => {
     expect(chart?.appliedSeriesOptions.length ?? 0).toBeGreaterThan(
       seriesAppliesBefore,
     );
+    // Brief D10: six candle colours plus the volume tint, via applyOptions.
+    const last = chart?.appliedSeriesOptions.at(-1) ?? {};
+    expect(Object.keys(last).sort()).toEqual(
+      ["borderDownColor", "borderUpColor", "downColor", "upColor", "wickDownColor", "wickUpColor"],
+    );
+    expect(chart?.appliedVolumeOptions.at(-1)).toEqual({ color: "rgba(31, 185, 84, 0.35)" });
     document.documentElement.removeAttribute("data-vex-theme");
   });
 });
@@ -1062,7 +1420,9 @@ describe("the tooltip's placement", () => {
       handler?.({
         time: Math.floor(BASE_MS / 1000),
         point: { x: 5, y: 5 },
-        seriesData: { get: () => ({ time: Math.floor(BASE_MS / 1000), value: 0.0000104 }) },
+        seriesData: {
+          get: () => ({ time: Math.floor(BASE_MS / 1000), open: 1, high: 1, low: 1, close: 1 }),
+        },
       });
     });
     const tooltip = document.querySelector(

@@ -127,6 +127,31 @@ export interface BoardChannelRunContext<TSubject = unknown> {
   readonly isCurrent: () => boolean;
 }
 
+/**
+ * The class of a failed read: the error's constructor name, or the typeof a
+ * thrown non-error.
+ *
+ * Paired with {@link errorCode} rather than used alone. Every refusal on this
+ * path arrives as one `VexError`, so the class NAME carries no diagnostic
+ * information at all; the typed code is the part that says which read failed
+ * and why, and a log line that printed only the name erased it.
+ */
+function errorClass(cause: unknown): string {
+  return cause instanceof Error ? cause.name : typeof cause;
+}
+
+/**
+ * The typed code a bridge refusal carries, or the class name when the value is
+ * not a coded error. Same shape as the helper in `images/board-icon-service`.
+ */
+function errorCode(cause: unknown): string {
+  if (typeof cause === "object" && cause !== null && "code" in cause) {
+    const { code } = cause;
+    if (typeof code === "string") return code;
+  }
+  return errorClass(cause);
+}
+
 /** One channel's read. Throwing is an ordinary outcome; the scheduler logs it. */
 export type BoardChannelRun<TSubject = unknown> = (
   context: BoardChannelRunContext<TSubject>,
@@ -416,7 +441,7 @@ export function createBoardLiveScheduler(
         // here retries by itself, and nothing here throws at the scheduler.
         log.info(
           `[board-scheduler] ${channel.slotKey} read produced no result: ` +
-            (error instanceof Error ? error.name : typeof error),
+            `${errorClass(error)} (${errorCode(error)})`,
         );
       })
       .finally(() => {

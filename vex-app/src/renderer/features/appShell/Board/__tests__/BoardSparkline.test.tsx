@@ -63,7 +63,7 @@ describe("sparklineState", () => {
       segment.points.map(([, y]) => y),
     );
     expect(new Set(ys).size).toBe(1);
-    expect(ys[0]).toBe(17);
+    expect(ys[0]).toBe(22);
   });
 
   it("draws ONE point as a single coordinate at mid-height", () => {
@@ -72,7 +72,7 @@ describe("sparklineState", () => {
     expect(state.kind).toBe("flat");
     if (state.kind === "pending" || state.kind === "unavailable") throw new Error("unreachable");
     expect(state.segments).toHaveLength(1);
-    expect(state.segments[0]?.points).toEqual([[60, 17]]);
+    expect(state.segments[0]?.points).toEqual([[60, 22]]);
   });
 
   it("SPLITS the line at a gap instead of bridging it", () => {
@@ -103,7 +103,7 @@ describe("sparklineState", () => {
     const state = sparklineState({ status: "bars", bars: bars(["1", "2"]) });
     if (state.kind === "pending" || state.kind === "unavailable") throw new Error("unreachable");
     const points = state.segments[0]?.points ?? [];
-    expect(points[0]?.[1]).toBe(31);
+    expect(points[0]?.[1]).toBe(41);
     expect(points[1]?.[1]).toBe(3);
   });
 });
@@ -129,17 +129,34 @@ describe("BoardSparkline", () => {
     ).not.toBeNull();
   });
 
-  it("draws a line and its area for an ordinary series", () => {
+  it("draws a line and ONLY a line for an ordinary series", () => {
+    // The mockup's sparkline is a bare 1.5 line: no wash under it, so there is
+    // no gradient, no `<defs>` and no document-global id to keep distinct.
     const { container } = render(
       <BoardSparkline
         data={{ status: "bars", bars: bars(["1", "3", "2", "5"]) }}
         trend="up"
       />,
     );
-    expect(container.querySelector("polyline")).not.toBeNull();
+    const line = container.querySelector("polyline");
+    expect(line).not.toBeNull();
+    expect(line?.getAttribute("stroke-width")).toBe("1.5");
     expect(
       container.querySelector('[data-vex-area="board-sparkline-area"]'),
-    ).not.toBeNull();
+    ).toBeNull();
+    expect(container.querySelector("defs")).toBeNull();
+  });
+
+  it("draws into the card's 44px price-row slot", () => {
+    const { container } = render(
+      <BoardSparkline
+        data={{ status: "bars", bars: bars(["1", "2"]) }}
+        trend="up"
+      />,
+    );
+    const svg = container.querySelector("svg");
+    expect(svg?.getAttribute("viewBox")).toBe("0 0 120 44");
+    expect(svg?.getAttribute("preserveAspectRatio")).toBe("none");
   });
 
   it("draws a DOT for a one-point segment, which a polyline cannot show", () => {
@@ -150,34 +167,6 @@ describe("BoardSparkline", () => {
       container.querySelector('[data-vex-area="board-sparkline-point"]'),
     ).not.toBeNull();
     expect(container.querySelector("polyline")).toBeNull();
-  });
-
-  it("gives every instance a DISTINCT gradient id", () => {
-    // An SVG `<defs>` id is DOCUMENT-global. With a hardcoded id, eight cards
-    // on one board would all resolve their area fill to whichever card
-    // rendered last - a real defect, invisible in a single-card test.
-    const { container } = render(
-      <>
-        <BoardSparkline
-          data={{ status: "bars", bars: bars(["1", "2"]) }}
-          trend="up"
-        />
-        <BoardSparkline
-          data={{ status: "bars", bars: bars(["2", "1"]) }}
-          trend="down"
-        />
-      </>,
-    );
-    const ids = [...container.querySelectorAll("linearGradient")].map((node) =>
-      node.getAttribute("id"),
-    );
-    expect(ids).toHaveLength(2);
-    expect(new Set(ids).size).toBe(2);
-    for (const id of ids) {
-      // A colon is legal in an id attribute but not in a bare `url(#...)`
-      // fragment, so React's own separator must not survive into it.
-      expect(id).not.toContain(":");
-    }
   });
 
   it("is decorative: no accessible name, because the card already has one", () => {

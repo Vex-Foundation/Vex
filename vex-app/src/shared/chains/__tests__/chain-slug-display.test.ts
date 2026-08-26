@@ -2,7 +2,7 @@
  * PROVIDER CHAIN SLUGS -> the curated chain marks.
  *
  * A table test, because the failure this guards is silent: a slug that stops
- * resolving does not throw, it just draws a monogram ring where a brand logo
+ * resolving does not throw, it just draws a monogram where a brand logo
  * used to be, and nothing in a type or a build catches that. Every row below
  * is a slug a board pool actually arrives on.
  *
@@ -25,15 +25,17 @@ import {
 } from "../display.js";
 
 const ROWS: readonly (readonly [string, number, string])[] = [
-  ["ethereum", ETHEREUM_CHAIN_ID, "thesvg"],
-  ["eth", ETHEREUM_CHAIN_ID, "thesvg"],
-  ["solana", SOLANA_CHAIN_ID, "thesvg"],
-  ["sol", SOLANA_CHAIN_ID, "thesvg"],
+  // Ethereum, Solana and Polygon ship as local FLAT assets: the package's
+  // default variants sit on a filled disc, and no chain mark renders on one.
+  ["ethereum", ETHEREUM_CHAIN_ID, "asset"],
+  ["eth", ETHEREUM_CHAIN_ID, "asset"],
+  ["solana", SOLANA_CHAIN_ID, "asset"],
+  ["sol", SOLANA_CHAIN_ID, "asset"],
   // Base and Arbitrum ship as local assets: `@thesvg` has no arbitrum mark and
   // its base mark proved unreliable across versions.
   ["base", BASE_CHAIN_ID, "asset"],
   ["arbitrum", ARBITRUM_CHAIN_ID, "asset"],
-  ["polygon", 137, "thesvg"],
+  ["polygon", 137, "asset"],
   ["optimism", 10, "thesvg"],
   ["bsc", 56, "thesvg"],
   ["bnbchain", 56, "thesvg"],
@@ -57,7 +59,7 @@ describe("chainDisplayBySlug", () => {
     const display = chainDisplayBySlug("sui");
     expect(chainIdForSlug("sui")).toBeNull();
     expect(display.icon.kind).toBe("fallback");
-    // Named after the slug itself, so the monogram ring draws the chain the
+    // Named after the slug itself, so the monogram draws the chain the
     // pool is actually on rather than a "C" for "Chain 0".
     expect(display.name).toBe("sui");
     // A deliberate non-id: no chain claims 0, so nothing downstream can

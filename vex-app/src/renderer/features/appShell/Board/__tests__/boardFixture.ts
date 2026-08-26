@@ -40,6 +40,7 @@ export function hydratedRow(
     // half of pools carry no DexScreener profile, so the monogram placeholder
     // is what most cards wear. A test that wants the image state overrides it.
     iconId: null,
+    description: null,
     ...overrides,
   };
 }

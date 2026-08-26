@@ -33,20 +33,20 @@ export function familyForChainId(chainId: number): ChainFamily {
   return chainId === SOLANA_CHAIN_ID ? "solana" : "evm";
 }
 
-/** `@thesvg/react` icon keys VERIFIED present in the installed package. */
-export type ChainSvgKey =
-  | "ethereum"
-  | "solana"
-  | "robinhood"
-  | "polygon"
-  | "optimism"
-  | "bnb-chain";
+/**
+ * `@thesvg/react` icon keys VERIFIED present in the installed package AND
+ * whose default variant is a bare mark. Ethereum, Solana and Polygon are also
+ * in the package but their default variants sit on a filled disc, so those
+ * three ship as local flat assets instead.
+ */
+export type ChainSvgKey = "robinhood" | "optimism" | "bnb-chain";
 
 /**
  * Where a chain's icon comes from:
  *  - `thesvg` — a key resolved to a `@thesvg/react` component in ChainIcon;
  *  - `asset`  — a path under the renderer publicDir (Arbitrum: `@thesvg` has
- *    no arbitrum icon, so a local SVG is shipped instead);
+ *    no arbitrum icon; Ethereum, Solana, Polygon: the package mark is on a
+ *    disc, and every chain mark renders bare);
  *  - `fallback` — unknown chain → ChainIcon draws a neutral monogram.
  */
 export type ChainIconSource =
@@ -66,7 +66,10 @@ const CHAIN_DISPLAY: Readonly<Record<number, ChainDisplay>> = {
     chainId: ETHEREUM_CHAIN_ID,
     name: "Ethereum",
     family: "evm",
-    icon: { kind: "thesvg", key: "ethereum" },
+    // The `@thesvg` default variant paints the diamond on a filled disc with
+    // a drop shadow; the flat brand mark ships as a local asset so a chain
+    // mark is never on a disc (owner decree 2026-08-26).
+    icon: { kind: "asset", src: "/logo/ethereum.svg" },
   },
   [ROBINHOOD_CHAIN_ID]: {
     chainId: ROBINHOOD_CHAIN_ID,
@@ -94,7 +97,8 @@ const CHAIN_DISPLAY: Readonly<Record<number, ChainDisplay>> = {
     chainId: 137,
     name: "Polygon",
     family: "evm",
-    icon: { kind: "thesvg", key: "polygon" },
+    // Flat brand mark as a local asset: the `@thesvg` default is on a disc.
+    icon: { kind: "asset", src: "/logo/polygon.svg" },
   },
   10: {
     chainId: 10,
@@ -112,7 +116,8 @@ const CHAIN_DISPLAY: Readonly<Record<number, ChainDisplay>> = {
     chainId: SOLANA_CHAIN_ID,
     name: "Solana",
     family: "solana",
-    icon: { kind: "thesvg", key: "solana" },
+    // Flat brand mark as a local asset: the `@thesvg` default is on a disc.
+    icon: { kind: "asset", src: "/logo/solana.svg" },
   },
 };
 
@@ -166,7 +171,7 @@ export const DEFAULT_EVM_CHAIN_ID = ETHEREUM_CHAIN_ID;
  * (`bsc` / `bnbchain` / `bnb-chain`), because the provider's own spelling has
  * varied across endpoints. An unlisted slug is not an error: it resolves to a
  * neutral display whose name is the slug itself, so the mark falls back to a
- * monogram ring of the chain the pool is actually on, never to a blank box
+ * monogram of the chain the pool is actually on, never to a blank box
  * and never to another chain's logo.
  */
 const CHAIN_ID_BY_SLUG: Readonly<Record<string, number>> = {
@@ -207,7 +212,7 @@ export function chainIdForSlug(slug: string): number | null {
  * neutral record named after the slug itself - `chainId: 0` is a deliberate
  * non-id (no chain claims it) so nothing downstream can mistake the fallback
  * for a catalogued chain, and `icon.kind === "fallback"` draws the monogram
- * ring from the slug's first character.
+ * from the slug's first character.
  */
 export function chainDisplayBySlug(slug: string): ChainDisplay {
   const chainId = chainIdForSlug(slug);

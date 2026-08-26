@@ -4,9 +4,9 @@
  *
  * WHY THEY ARE HERE AND NOT IN THE COMPONENT. Three of them are decisions
  * about honesty rather than about layout - what a lock share may be called,
- * what a buy/sell split is when nobody traded, and which part of the model's
- * assessment may stand under a safety chip - and a decision of that kind
- * belongs somewhere a table test can drive it directly. The component then
+ * what a buy/sell split is when nobody traded, and what a provider's check
+ * row is called and whether an unanswered one is shown - and a decision of
+ * that kind belongs somewhere a table test can drive it directly. The component then
  * has no branch of its own to get wrong.
  *
  * MONEY THAT ARRIVES AS TEXT STAYS TEXT. The provider's decimal strings are
@@ -17,11 +17,13 @@
  */
 
 import type {
+  BoardDetailsBundle,
   BoardLiquidityLocks,
   BoardPercent,
 } from "@shared/schemas/board-details.js";
 import type { BoardMomentumRow } from "@shared/schemas/board-spotlight.js";
 import { BOARD_EMPTY } from "./boardFormat.js";
+import { safetyChecksFromBundle } from "./board-surface-contracts.js";
 
 /* ------------------------------------------------------------------ */
 /* Liquidity lock                                                      */
@@ -168,30 +170,16 @@ function safeCount(value: number | null): number {
 /* ------------------------------------------------------------------ */
 
 /**
- * The FIRST fragment of the model's assessment, for the line under the safety
- * chip.
+ * Every fragment of the assessment, in order, for the section that renders it
+ * WHOLE. There is no per-field character cap on the assessment; the whole
+ * board's byte budget is the only bound, and no other surface takes a
+ * fragment of it (the line that used to stand under the safety chip is gone,
+ * because the assessment is the model's reading and the safety section is
+ * the provider's checks, and one must not be dressed as the other).
  *
- * The mockup carries one short muted sentence there and the assessment itself
- * is up to 600 characters of prose (A9), so the line takes the first fragment
- * of the middle-dot style the compose tool teaches. NOTHING IS HIDDEN BY
- * THIS: the whole assessment is rendered, unabridged, by the "VEX assessment"
- * section on the same screen, which is what makes taking a fragment here a
- * layout choice rather than a truncation (the fragment is a complete unit the
- * writer separated, and the rest is one scroll away on the same surface).
- *
- * Fragments are separated by the middle dot the tool teaches or by a line
- * break; a single-fragment assessment returns whole.
+ * Fragments are separated by the middle dot the compose tool teaches or by a
+ * line break; a single-fragment assessment returns whole.
  */
-export function analysisLead(analysis: string | null): string | null {
-  if (analysis === null) return null;
-  const trimmed = analysis.trim();
-  if (trimmed === "") return null;
-  const [first] = trimmed.split(/\s*[·\n]\s*/u);
-  const lead = (first ?? "").trim();
-  return lead === "" ? null : lead;
-}
-
-/** Every fragment of the assessment, in order, for the full section. */
 export function analysisFragments(analysis: string | null): readonly string[] {
   if (analysis === null) return [];
   const trimmed = analysis.trim();
@@ -200,6 +188,113 @@ export function analysisFragments(analysis: string | null): readonly string[] {
     .split(/\s*[·\n]\s*/u)
     .map((part) => part.trim())
     .filter((part) => part !== "");
+}
+
+/* ------------------------------------------------------------------ */
+/* Safety checks                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The reader's name for a provider-spelled check id.
+ *
+ * A FROZEN TABLE, and an id it does not know renders as the provider's own id
+ * in the mono register rather than being dropped or prettified by a regex: a
+ * check the provider added yesterday is still a check the reader is shown,
+ * and it is shown as exactly what the provider called it.
+ */
+const SAFETY_CHECK_LABELS: Readonly<Record<string, string>> = {
+  isHoneypot: "Honeypot",
+  contractVerified: "Contract verified",
+  isOpenSource: "Open source",
+  cannotSellAll: "Cannot sell all",
+  canMint: "Mintable",
+  canBlacklist: "Blacklist",
+  canPauseTrading: "Trading pausable",
+  hiddenOwner: "Hidden owner",
+  canTakeBackOwnership: "Ownership retrievable",
+  slippageModifiable: "Slippage modifiable",
+  isProxy: "Proxy contract",
+  isScam: "Scam flag",
+  hasObfuscatedAddressRisk: "Obfuscated address",
+  hasExternalContractRisk: "External contract risk",
+  hasGeneralVulnerabilities: "General vulnerabilities",
+  hasFeeWarning: "Fee warning",
+  tax: "Buy/sell tax",
+  buyTax: "Buy tax",
+  sellTax: "Sell tax",
+  transferTax: "Transfer tax",
+  buyTaxElevated: "Buy tax elevated",
+  sellTaxElevated: "Sell tax elevated",
+  concentration: "Top-holder concentration",
+  ownerShare: "Owner share",
+  creatorShare: "Creator share",
+  pairAge: "Pair age",
+  lockedPct: "Lock share",
+  lpBurnedPct: "LP burned share",
+  solanaBridgeMintOnly: "Bridge mint only",
+  solanaMintable: "Mint authority",
+  solanaFreezable: "Freeze authority",
+};
+
+export interface SpotlightSafetyCheckLabel {
+  readonly text: string;
+  /** True when `text` is the provider's own id, to be set in the mono face. */
+  readonly mono: boolean;
+}
+
+export function safetyCheckLabel(id: string): SpotlightSafetyCheckLabel {
+  const known = SAFETY_CHECK_LABELS[id];
+  return known === undefined ? { text: id, mono: true } : { text: known, mono: false };
+}
+
+export type SpotlightSafetyVerdict = "pass" | "fail" | "unverified";
+
+/** One row of the safety section: a check, its source and its verdict. */
+export interface SpotlightSafetyRow {
+  readonly key: string;
+  readonly id: string;
+  readonly label: SpotlightSafetyCheckLabel;
+  /** The provider that answered, or null for a required check nobody did. */
+  readonly source: string | null;
+  readonly verdict: SpotlightSafetyVerdict;
+  /** False for a required check the document did not answer. */
+  readonly answered: boolean;
+}
+
+/** The verdict word beside the dot. Frozen here beside the rows. */
+export const SAFETY_VERDICT_WORD: Readonly<Record<SpotlightSafetyVerdict, string>> = {
+  pass: "Pass",
+  fail: "Fail",
+  unverified: "Unverified",
+};
+
+/**
+ * The safety section's rows, from the SAME projection the classifier reads.
+ *
+ * Every check the bundle produced, in the projection's own order, and then
+ * every REQUIRED check it did not answer as an unverified row: an unanswered
+ * honeypot check is the single most important fact on the section and must
+ * never be omitted for being absent. No prose, no threshold decided here.
+ */
+export function safetyRowsView(bundle: BoardDetailsBundle): readonly SpotlightSafetyRow[] {
+  const set = safetyChecksFromBundle(bundle);
+  const answered: SpotlightSafetyRow[] = set.checks.map((check) => ({
+    key: `${check.source}:${check.id}`,
+    id: check.id,
+    label: safetyCheckLabel(check.id),
+    source: check.source,
+    verdict: check.verdict,
+    answered: true,
+  }));
+  const unanswered: SpotlightSafetyRow[] = set.unansweredCheckIds.map((id) => ({
+    key: `unanswered:${id}`,
+    id,
+    label: safetyCheckLabel(id),
+    source: null,
+    verdict: "unverified",
+    answered: false,
+  }));
+  return [...answered, ...unanswered];
 }
 
 /* ------------------------------------------------------------------ */

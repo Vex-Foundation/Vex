@@ -2,6 +2,7 @@
 
 import type { JSX } from "react";
 import type { GlyphProps } from "./props.js";
+import { OUTLINE_WEIGHT, ringPath } from "./paths.js";
 
 export const IconCheck = ({ size = 16, className }: GlyphProps): JSX.Element => (
   <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -213,52 +214,79 @@ export const IconDislikeFill = ({ size = 16, className }: GlyphProps): JSX.Eleme
   </svg>
 );
 
-/* The ringed state marks below are drawn native on the 24 grid with a 1.5
- * stroke, which matches the ring weight of the filled outlines above. */
+/* The state marks below are drawn native on the 24 grid as FILLED OUTLINES
+ * (rings as evenodd paths at the shared 1.5 weight, no `stroke` attribute),
+ * so they share one drawing language with the filled outlines above. */
+
+const RING = ringPath(12, 12, 8.75, OUTLINE_WEIGHT);
 
 export const IconInfo = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <circle cx="12" cy="12" r="8.75" />
-    <path d="M12 11.25v4.9" />
-    <circle cx="12" cy="7.9" r="1.05" fill="currentColor" stroke="none" />
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path fillRule="evenodd" clipRule="evenodd" d={RING} fill="currentColor" />
+    <rect x="11.25" y="11" width="1.5" height="5.5" rx="0.75" fill="currentColor" />
+    <circle cx="12" cy="7.9" r="1.05" fill="currentColor" />
   </svg>
 );
 
 export const IconCircleAlert = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <circle cx="12" cy="12" r="8.75" />
-    <path d="M12 7.5v4.9" />
-    <circle cx="12" cy="16.1" r="1.05" fill="currentColor" stroke="none" />
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path fillRule="evenodd" clipRule="evenodd" d={RING} fill="currentColor" />
+    <rect x="11.25" y="7.25" width="1.5" height="5.5" rx="0.75" fill="currentColor" />
+    <circle cx="12" cy="16.1" r="1.05" fill="currentColor" />
   </svg>
 );
 
 export const IconCircleCheck = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <circle cx="12" cy="12" r="8.75" />
-    <path d="m7.9 12.2 2.9 2.9 5.3-6.2" />
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path fillRule="evenodd" clipRule="evenodd" d={RING} fill="currentColor" />
+    <path d="M8.45 11.65l2.35 2.35 4.75-5.55 1.14.98-5.8 6.77-3.5-3.5 1.06-1.05Z" fill="currentColor" />
   </svg>
 );
 
 export const IconCircleStop = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <circle cx="12" cy="12" r="8.75" />
-    <rect x="9" y="9" width="6" height="6" rx="1.25" />
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path fillRule="evenodd" clipRule="evenodd" d={RING} fill="currentColor" />
+    <rect x="8.75" y="8.75" width="6.5" height="6.5" rx="1.25" fill="currentColor" />
   </svg>
 );
 
 export const IconTarget = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <circle cx="12" cy="12" r="8.75" />
-    <circle cx="12" cy="12" r="5" />
-    <circle cx="12" cy="12" r="1.75" fill="currentColor" stroke="none" />
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path fillRule="evenodd" clipRule="evenodd" d={RING} fill="currentColor" />
+    <path fillRule="evenodd" clipRule="evenodd" d={ringPath(12, 12, 5, OUTLINE_WEIGHT)} fill="currentColor" />
+    <circle cx="12" cy="12" r="1.75" fill="currentColor" />
   </svg>
 );
 
 /* Octagonal seal around a check: the confirmation mark of the wizard's review
  * step, distinct from the plain ringed check above. */
 export const IconBadgeCheck = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <path d="M8.3 3h7.4L21 8.3v7.4L15.7 21H8.3L3 15.7V8.3L8.3 3Z" />
-    <path d="m8.25 12.15 2.75 2.75 4.75-5.6" />
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M8.3 3h7.4L21 8.3v7.4L15.7 21H8.3L3 15.7V8.3L8.3 3Zm.62 1.5L4.5 8.92v6.16l4.42 4.42h6.16l4.42-4.42V8.92L15.08 4.5H8.92Z"
+      fill="currentColor"
+    />
+    <path d="M8.8 11.6l2.2 2.2 4.2-4.9 1.15 1-5.35 6.2-3.3-3.3 1.1-1.2Z" fill="currentColor" />
+  </svg>
+);
+
+/* The shield: the safety section's own mark, and the clean-checks chip's. A
+ * plain outline for the section, the same outline with a check inside for a
+ * verdict that passed. */
+const SHIELD =
+  "M12 2.5l7.5 2.8v6.2c0 4.3-3 7.9-7.5 9.9-4.5-2-7.5-5.6-7.5-9.9V5.3L12 2.5Zm0 1.6L6 6.35v5.15c0 3.5 2.4 6.5 6 8.3 3.6-1.8 6-4.8 6-8.3V6.35L12 4.1Z";
+
+export const IconShield = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path fillRule="evenodd" clipRule="evenodd" d={SHIELD} fill="currentColor" />
+  </svg>
+);
+
+export const IconShieldCheck = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path fillRule="evenodd" clipRule="evenodd" d={SHIELD} fill="currentColor" />
+    <path d="M8.9 11.9l2.2 2.2 4-4.7 1.15 1-5.15 6-3.3-3.3 1.1-1.2Z" fill="currentColor" />
   </svg>
 );

@@ -95,8 +95,16 @@ export const boardTopTraderSchema = z
   .object({
     /** The wallet, provider-spelled. Never re-cased: it is an identity. */
     maker: z.string().min(1).max(128),
-    /** A provider display label when it sent one. Issuer-independent. */
-    label: z.string().max(120).nullable(),
+    /**
+     * A provider display label when it sent one. Issuer-independent.
+     *
+     * WHOLE, never cut. The ceiling is reject-only and deliberately far above
+     * anything the provider has been seen to send (`label` was empty on 100
+     * percent of 1,300 live rows, `src/tools/dexscreener/endpoints/
+     * top-traders.ts` header fact 7); it bounds the channel without ever
+     * showing the reader a name the provider did not send.
+     */
+    label: z.string().max(4096).nullable(),
     buys: z.number().int().min(0).nullable(),
     sells: z.number().int().min(0).nullable(),
     /** Dollars in and dollars out, as the provider computed them. */
@@ -121,6 +129,16 @@ export type BoardTopTrader = z.infer<typeof boardTopTraderSchema>;
 export const boardTopTradersPanelSchema = z
   .object({
     kind: z.literal("traders"),
+    /**
+     * Every row the provider returned, in its own order.
+     *
+     * The bound is the PROVIDER'S own leaderboard window,
+     * `TOP_TRADERS_PROVIDER_WINDOW = 100` in
+     * `src/tools/dexscreener/endpoints/top-traders.ts:87` (measured "up to 100
+     * rows"), repeated here as a literal because a shared schema may not import
+     * from the agent tool tree. That leaderboard has no offset, cursor or page,
+     * so nothing behind it is reachable and nothing is cut on the way here.
+     */
     rows: z.array(boardTopTraderSchema).max(100),
     /** How many rows the provider's bounded leaderboard returned in total. */
     rowsAvailable: z.number().int().min(0),

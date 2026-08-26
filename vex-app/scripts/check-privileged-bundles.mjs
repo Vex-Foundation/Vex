@@ -11,6 +11,11 @@
  * NOT the same thing as `scripts/check-process-boundaries.mjs` — that reads
  * SOURCE imports; this reads BUILT output.
  *
+ * ONE exception to the "privileged only" scope: the zod-locale check also
+ * reads `dist/renderer/assets/*.js`, because the locale is one registration
+ * with one owner (`src/lib/zod-locale.ts`) and splitting its proof across two
+ * scripts would let a renderer regression pass a green privileged gate.
+ *
  * `check-build-artifacts.mjs` owns the runner, the reporting, and the exit
  * code. Each entry below is `{ label, run(root) }` and throws on violation.
  */
@@ -34,6 +39,86 @@ const POSTGRES_RUNTIME_EXTERNALS = [
  * is excluded by construction. Non-global so `.test()` stays stateless.
  */
 const BARE_FILENAME_RE = /\b__filename\b/;
+
+/**
+ * Marker emitted by `src/lib/zod-locale.ts` (`ZOD_LOCALE_MARKER`). It exists
+ * only if `registerZodLocale()` is still reachable from the bundle entry.
+ */
+const ZOD_LOCALE_MARKER = "vex-zod-locale:en";
+
+/**
+ * A message template that lives in zod's English locale module
+ * (`zod/v4/locales/en.js`).
+ *
+ * SECONDARY signal only, and deliberately labelled as such: the phrase is NOT
+ * unique to a registered locale. It also appears in unrelated vendored text and
+ * in chunks that merely CONTAIN the locale module, so a bundle whose
+ * `config(en())` call was tree-shaken out still carries it. It can prove the
+ * locale module is absent; it can never prove registration happened. Only
+ * `ZOD_LOCALE_MARKER` does that.
+ */
+const ZOD_EN_LOCALE_TEXT = "Too big: expected ";
+
+/**
+ * Every bundle set that must carry the marker. The renderer is on this list
+ * because renderer form and schema validation degrades to "Invalid input" in
+ * exactly the same way, and its entry is minified - only a value the entry
+ * actually USES survives, which is what `probeZodLocale()` in
+ * `src/renderer/main.tsx` guarantees.
+ */
+const ZOD_LOCALE_REQUIRED_BUNDLES = Object.freeze([
+  "dist/main",
+  "dist/preload/index.cjs",
+  "dist/renderer/assets",
+]);
+
+/**
+ * Pure matcher for the zod-locale gate: no filesystem, no paths, just the text
+ * of the emitted chunks. Exported so the negative cases (locale phrase present
+ * but marker absent; marker in the privileged bundles but not the renderer)
+ * are provable by unit test instead of by a build.
+ *
+ * @param {ReadonlyArray<{ name: string, sources: ReadonlyArray<string> }>} bundles
+ *   One entry per bundle set, `sources` being the full text of each emitted
+ *   chunk in that set.
+ * @returns {{ ok: boolean, violations: string[] }} `ok` is true only when every
+ *   required bundle set is present, non-empty, and carries the unique marker.
+ */
+export function evaluateZodLocaleBundles(bundles) {
+  const violations = [];
+  const byName = new Map(bundles.map((bundle) => [bundle.name, bundle]));
+
+  for (const required of ZOD_LOCALE_REQUIRED_BUNDLES) {
+    if (!byName.has(required)) {
+      violations.push(`${required}: bundle set was not scanned at all`);
+    }
+  }
+
+  for (const { name, sources } of bundles) {
+    if (sources.length === 0) {
+      violations.push(`${name}: no built files to scan`);
+      continue;
+    }
+    const hasMarker = sources.some((src) => src.includes(ZOD_LOCALE_MARKER));
+    const hasLocaleText = sources.some((src) => src.includes(ZOD_EN_LOCALE_TEXT));
+    if (!hasMarker) {
+      violations.push(
+        `${name}: no \`${ZOD_LOCALE_MARKER}\` marker - registerZodLocale() was tree-shaken out or never called from the entry` +
+          (hasLocaleText
+            ? ` (the locale module IS bundled - \`${ZOD_EN_LOCALE_TEXT}\` is present - which alone proves nothing)`
+            : "")
+      );
+    }
+    if (!hasLocaleText) {
+      violations.push(
+        `${name}: zod English locale text (\`${ZOD_EN_LOCALE_TEXT}\`) is absent - the locale module itself is not in the bundle`
+      );
+    }
+  }
+
+  return { ok: violations.length === 0, violations };
+}
+
 
 /**
  * Whole-line comment: `//…`, `/*…`, or a JSDoc continuation `*…`. The main
@@ -281,6 +366,50 @@ export const privilegedBundleChecks = [
         throw new Error(
           `bare \`__filename\` in ESM main chunk(s) — poisons Error.prepareStackTrace at runtime.\n` +
             `    Set \`define: { __filename: "import.meta.filename" }\` in vite.main.config.ts (NEVER __dirname).\n    ${violations.join("\n    ")}`
+        );
+      }
+    },
+  },
+  {
+    // zod 4.4.3 ships `"sideEffects": false` and registers its English error
+    // map as a module-level side effect in `zod/v4/classic/external.js`
+    // (`config(en());`). Rollup/rolldown drops that statement, and every zod
+    // issue in the bundled process then degrades to the generic core message
+    // `"Invalid input"` - a model or a user is told a field is wrong but never
+    // WHY. Measured: 32 stored tool outputs carried the generic message and
+    // zero carried a specific one; the pre-fix preload bundle contained no
+    // English locale text at all.
+    // Fix if this trips: call `registerZodLocale()` from `src/lib/zod-locale.ts`
+    // at the composition root of the affected process. NEVER a bare
+    // side-effect-only import - the same tree-shaking drops it again.
+    label: "zod english locale registered in every bundle (main + preload + renderer)",
+    run(root) {
+      const bundleSets = [
+        { name: "dist/main", files: mainChunkFiles(root) },
+        {
+          name: "dist/preload/index.cjs",
+          files: [path.join(root, "dist", "preload", "index.cjs")],
+        },
+        {
+          name: "dist/renderer/assets",
+          files: walkFiles(path.join(root, "dist", "renderer", "assets"), (f) =>
+            f.endsWith(".js")
+          ),
+        },
+      ];
+
+      const { ok, violations } = evaluateZodLocaleBundles(
+        bundleSets.map(({ name, files }) => ({
+          name,
+          sources: files
+            .filter((file) => existsSync(file))
+            .map((file) => readFileSync(file, "utf8")),
+        }))
+      );
+
+      if (!ok) {
+        throw new Error(
+          `zod English locale is not registered in every bundle; validation failures there would read "Invalid input":\n    ${violations.join("\n    ")}`
         );
       }
     },

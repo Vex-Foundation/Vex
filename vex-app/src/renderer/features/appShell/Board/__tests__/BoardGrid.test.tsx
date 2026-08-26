@@ -222,6 +222,29 @@ describe("BoardGrid", () => {
     ).toHaveLength(0);
   });
 
+  it("does not render the filter row at all when no axis has two values", () => {
+    const single = boardRefOf("session-1", 14, boardSpec({ title: "One" }));
+    render(mount(single));
+    expect(document.querySelector('[data-vex-area="board-grid-bar"]')).toBeNull();
+    expect(document.querySelector('[data-vex-area="board-filter-label"]')).toBeNull();
+  });
+
+  it("labels the filter row visibly and seats it INSIDE the plate as its first row", () => {
+    render(mount(twoChainBoard()));
+    const plate = document.querySelector('[data-vex-area="board-grid-plate"]');
+    const bar = document.querySelector('[data-vex-area="board-grid-bar"]');
+    expect(bar).not.toBeNull();
+    expect(plate?.firstElementChild).toBe(bar);
+    const label = bar?.querySelector('[data-vex-area="board-filter-label"]');
+    expect(label?.textContent).toBe("Show");
+    expect(label?.className).not.toContain("sr-only");
+    // The chips are pressable filters, never bare verdict labels.
+    for (const chip of bar?.querySelectorAll('[data-vex-area="board-filter-chain"]') ?? []) {
+      expect(chip.tagName).toBe("BUTTON");
+      expect(chip.getAttribute("aria-pressed")).toBe("false");
+    }
+  });
+
   it("filters the CARDS without shrinking what the board is said to hold", () => {
     render(mount(twoChainBoard()));
     act(() => {
@@ -291,6 +314,13 @@ describe("BoardGrid - every authored string stays reachable", () => {
     ).toContain("matches no candle");
     expect(text).toContain("Analysis composed");
     expect(text).toContain("Figures read");
+    // The safety states PRESENT on the board, each with its chip label and
+    // its bucket, so the legend's words are explained where they are read.
+    const states = [
+      ...document.querySelectorAll('[data-vex-area="board-note-safety-state"]'),
+    ];
+    expect(states.length).toBeGreaterThan(0);
+    expect(states[0]?.textContent).toContain("counted as");
   });
 
   it("says a legacy board has no saved analysis rather than hiding the section", () => {

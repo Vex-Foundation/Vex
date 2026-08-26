@@ -16,6 +16,7 @@ import {
   BOARD_SPEC_MAX_BYTES,
   checkBoardSpecByteBudget,
 } from "@vex-lib/board/index.js";
+import { maximalBoardSpec } from "../../../../../src/__tests__/lib/board/maximal-board-spec.js";
 import {
   MESSAGE_ROW_COLUMNS,
   toDto,
@@ -73,6 +74,54 @@ describe("toDto - board projection (metadata -> 'board')", () => {
     const dto = toDto(row("assistant", legacySpec));
     expect(dto.board).not.toBeNull();
     expect(dto.board?.hydration.rows[0]?.iconId).toBeNull();
+  });
+
+  it("normalizes a legacy v1 row without `description` to null instead of dropping the board", () => {
+    // The description field is the SAME expand-and-contract as iconId above,
+    // added later still, so a durable row can be missing iconId, description,
+    // or both. Each absence must parse and land as null; a required key here
+    // would make every board written before this field vanish from a
+    // transcript the user can still scroll to.
+    const base = boardSpecFixture();
+    const templateRow = base.hydration.rows[0];
+    if (templateRow === undefined) {
+      throw new Error("board fixture hydration row 0 missing");
+    }
+    const { description: _noDescription, ...withoutDescription } = templateRow;
+    const { iconId: _noIcon, ...withoutEither } = withoutDescription;
+    for (const legacyRow of [withoutDescription, withoutEither]) {
+      const dto = toDto(
+        row("assistant", { ...base, hydration: { ...base.hydration, rows: [legacyRow] } }),
+      );
+      expect(dto.board).not.toBeNull();
+      expect(dto.board?.hydration.rows[0]?.description).toBeNull();
+    }
+  });
+
+  it("keeps the provider's real blurb on a hydrated row, whole", () => {
+    // The live shape, quoted from `board-v4-probes/description-vex.json`: the
+    // provider served 546 code points of `cmsProfile.description` for VEX on
+    // robinhood. It is UNTRUSTED text and it round-trips as TEXT, uncut.
+    const blurb =
+      "VEX is a self custodial AI agent runtime for onchain finance. AI "
+      + "proposes strategies, but VEX controls what actually executes through "
+      + "wallet permissions, mission rules, position limits, protocol checks, "
+      + "and local signing.";
+    const base = boardSpecFixture();
+    const templateRow = base.hydration.rows[0];
+    if (templateRow === undefined) {
+      throw new Error("board fixture hydration row 0 missing");
+    }
+    const dto = toDto(
+      row("assistant", {
+        ...base,
+        hydration: {
+          ...base.hydration,
+          rows: [{ ...templateRow, description: blurb }],
+        },
+      }),
+    );
+    expect(dto.board?.hydration.rows[0]?.description).toBe(blurb);
   });
 
   it("normalizes a legacy pool without `analysis` to null instead of dropping the board", () => {
@@ -169,48 +218,21 @@ describe("toDto - board projection (metadata -> 'board')", () => {
   });
 
   it("rejects a structurally valid board that is over the byte budget", () => {
-    // The field bounds alone still admit a board of roughly 60 KiB, and this
-    // mapper reads a DURABLE row that some other writer may have produced. The
-    // budget is therefore rechecked here with the same function `BoardCompose`
-    // refuses with, so a page cannot carry a board the contract caps out.
-    const base = boardSpecFixture();
-    const templateRow = base.hydration.rows[0];
-    if (templateRow === undefined) {
-      throw new Error("board fixture hydration row 0 missing");
-    }
-    const oversize = {
-      ...base,
-      notes: Array.from({ length: 6 }, () => "n".repeat(280)),
-      pools: Array.from({ length: 8 }, (_, i) => ({
-        chain: "solana",
-        pairAddress: `Pool${i}`,
-        caption: "c".repeat(140),
-      })),
-      chart: { poolIndex: 0, resolution: "1h" as const },
-      hydration: {
-        ...base.hydration,
-        rows: Array.from({ length: 8 }, () => ({
-          ...templateRow,
-          baseTokenSymbol: "S".repeat(512),
-          baseTokenName: "N".repeat(512),
-          quoteTokenSymbol: "Q".repeat(512),
-        })),
-        unmatchedMarkerAtMs: [],
-        candles: {
-          bars: Array.from({ length: 200 }, (_, i) => ({
-            tMs: 1_756_000_000_000 + i * 3_600_000,
-            o: `1.${"9".repeat(38)}`,
-            h: `2.${"9".repeat(38)}`,
-            l: `0.${"9".repeat(38)}`,
-            c: `1.${"8".repeat(38)}`,
-          })),
-          lastBarPartial: false,
-          coveredRange: { fromMs: 1_756_000_000_000, toMs: 1_756_716_400_000 },
-          resolution: "1h" as const,
-          truncated: true,
-        },
-      },
-    };
+    // The field bounds alone still admit a board past BOARD_SPEC_MAX_BYTES,
+    // and this mapper reads a DURABLE row that some other writer may have
+    // produced. The budget is therefore rechecked here with the same function
+    // `BoardCompose` refuses with, so a page cannot carry a board the contract
+    // caps out.
+    //
+    // THE FIXTURE IS GENERATED, not hand-assembled: `maximalBoardSpec()` is
+    // the schema-valid all-fields-max document the budget itself is derived
+    // from, and turning its assessments into FOUR-byte emoji prose is the one
+    // axis that pushes a legal board past the ceiling (the analysis bound
+    // counts CODE POINTS, so 8 x 10,000 emoji is 320,000 bytes of analysis on
+    // its own). Raising a board bound moves this fixture too, so it can never
+    // quietly stop being oversize.
+    const oversize = maximalBoardSpec({ analysisScript: "fourByte" });
+
     // It really is a valid document; only its SIZE disqualifies it.
     expect(boardProjectionSchema.safeParse(oversize).success).toBe(true);
     expect(

@@ -23,6 +23,7 @@ vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+const { log } = await import("../../logger/index.js");
 const { createBoardLiveScheduler } = await import("../board-live-scheduler.js");
 type BoardChannelDescriptor =
   import("../board-live-scheduler.js").BoardChannelDescriptor;
@@ -241,6 +242,47 @@ describe("the poll loop", () => {
     expect(starts).toBe(1);
     await vi.advanceTimersByTimeAsync(5_000);
     expect(starts).toBe(2);
+
+    await scheduler.stop();
+  });
+
+  it("logs the typed CODE of a refusal, not just its class name", async () => {
+    // Every refusal on this path arrives as one `VexError`, so a line that
+    // printed only the class name said "VexError" for a rate limit, a bad
+    // response and a timeout alike, and told an operator nothing.
+    const scheduler = createBoardLiveScheduler();
+    const refusal = Object.assign(new Error("provider refused"), {
+      name: "VexError",
+      code: "market.rate_limited",
+    });
+    scheduler.arm(descriptor({ cadenceMs: null }), async () => {
+      throw refusal;
+    });
+
+    await flush();
+
+    const lines = vi.mocked(log.info).mock.calls.map((call) => String(call[0]));
+    const line = lines.find((entry) => entry.includes("read produced no result"));
+    expect(line).toBeDefined();
+    expect(line).toContain("market.rate_limited");
+    expect(line).toContain("VexError");
+    // The message itself is a provider payload and stays out of the log.
+    expect(line).not.toContain("provider refused");
+
+    await scheduler.stop();
+  });
+
+  it("falls back to the class name when a thrown value carries no code", async () => {
+    const scheduler = createBoardLiveScheduler();
+    scheduler.arm(descriptor({ cadenceMs: null }), async () => {
+      throw new TypeError("boom");
+    });
+
+    await flush();
+
+    const lines = vi.mocked(log.info).mock.calls.map((call) => String(call[0]));
+    const line = lines.find((entry) => entry.includes("read produced no result"));
+    expect(line).toContain("TypeError (TypeError)");
 
     await scheduler.stop();
   });

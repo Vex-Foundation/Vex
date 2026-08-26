@@ -4,7 +4,7 @@
  * The live channel exists to refresh figures. It has no business carrying the
  * agent's authored text across it, and the guarantee has to survive the pool
  * shape GROWING: this schema was once "the pool minus caption", and under that
- * subtractive rule the `analysis` field - up to 600 characters of model prose -
+ * subtractive rule the `analysis` field - the model's full written assessment -
  * would have become admissible on this channel the moment it was added, with
  * nothing failing to say so.
  *

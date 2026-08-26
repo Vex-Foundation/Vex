@@ -19,8 +19,8 @@
  * surface is unchanged.
  *
  * THE MODEL'S PROSE NEVER REACHES THIS FILE, and that is a product invariant.
- * `spec.analysis` is up to 600 characters the model wrote; it is displayed
- * beside the chip and can never move it. A classifier that could be talked into
+ * `spec.analysis` is the model's own assessment, written at whatever length
+ * it takes; it is displayed beside the chip and can never move it. A classifier that could be talked into
  * green by fluent wording would be a self-custodial crypto app taking safety
  * direction from a language model.
  *

@@ -30,7 +30,9 @@
  *  4. DISPOSE IS AWAITED. Closing admission first, then aborting, then DRAINING
  *     what is in flight, is what keeps a fetch from outliving the transport it
  *     borrows. A dropped teardown promise lets the bridge - Chromium session,
- *     hidden window and all - be disposed underneath a running read.
+ *     hidden window and all - be disposed underneath a running read. The drain
+ *     covers BOTH halves of the graph: what is still joinable, and what a
+ *     last-waiter abort unpublished and has not finished unwinding.
  *
  * THE LRU IS THE MEMORY BOUND AND NOTHING ELSE. Expiry decides correctness;
  * the capacity decides how much a board may hold. An insertion-ordered `Map`
@@ -111,6 +113,15 @@ export function createBoardReadCache<T>(
 ): BoardReadCache<T> {
   const entries = new Map<string, CacheEntry<T>>();
   const inFlight = new Map<string, InFlightLoad<T>>();
+  /**
+   * Loads that were UNPUBLISHED by a last-waiter abort and have not unwound.
+   *
+   * A tombstone is not joinable - that is the whole point of unpublishing at
+   * abort time - but it is still a promise borrowing the transport, so
+   * `dispose` has to wait for it exactly as it waits for a joinable one.
+   * Without this set an aborted read outlives the bridge it reads through.
+   */
+  const draining = new Set<Promise<T>>();
   const controllers = new Set<AbortController>();
   const queue: QueueEntry[] = [];
   let active = 0;
@@ -216,6 +227,9 @@ export function createBoardReadCache<T>(
           // Identity-guarded: a `finally` from a superseded load must not
           // delete the record that replaced it.
           if (inFlight.get(key) === record) inFlight.delete(key);
+          // The load has unwound, so it is no longer something `dispose` must
+          // wait for. Harmless when it was never tombstoned.
+          draining.delete(record.promise);
         });
         inFlight.set(key, record);
         running = record;
@@ -250,7 +264,23 @@ export function createBoardReadCache<T>(
         // the provider read is stopped rather than run to completion for an
         // audience that has gone. With a waiter still joined, the count is
         // above zero and the load is untouched.
-        if (load_.waiters === 0) load_.controller.abort();
+        if (load_.waiters === 0) {
+          load_.controller.abort();
+          // UNPUBLISHED AT ABORT TIME, not at settle time. An aborted load
+          // that stayed joinable until its `finally` ran handed a caller who
+          // arrived in that window the corpse's `cancelled` answer - a read
+          // that caller never asked to cancel. The identity guard keeps a
+          // record that already replaced this one in place; the `finally`
+          // above is the same guard and is a no-op afterwards.
+          if (inFlight.get(key) === load_) {
+            inFlight.delete(key);
+            // UNPUBLISHED IS NOT UNOWNED. Abort asks for cancellation; it does
+            // not prove the read has unwound. The load leaves the joinable map
+            // and enters the non-joinable drain set, so `dispose` still waits
+            // for it and no read outlives the transport it borrows.
+            draining.add(load_.promise);
+          }
+        }
         // The caller left; saying "not mounted" would blame the service for
         // the caller's own decision, so the refusal names the real cause.
         stopWaiting(options.refusal("cancelled"));
@@ -288,11 +318,15 @@ export function createBoardReadCache<T>(
       for (const waiting of queue.splice(0)) waiting.admit(false);
       for (const controller of controllers) controller.abort();
       // DRAIN rather than abandon: every in-flight read settles before this
-      // resolves, so no read outlives the transport it borrows.
-      await Promise.allSettled(
-        [...inFlight.values()].map((running) => running.promise),
-      );
+      // resolves, so no read outlives the transport it borrows. BOTH halves of
+      // the graph are awaited - what is still joinable, and what a last-waiter
+      // abort already unpublished but has not finished unwinding.
+      await Promise.allSettled([
+        ...[...inFlight.values()].map((running) => running.promise),
+        ...draining,
+      ]);
       inFlight.clear();
+      draining.clear();
       controllers.clear();
       entries.clear();
     },

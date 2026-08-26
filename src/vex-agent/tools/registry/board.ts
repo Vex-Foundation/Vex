@@ -46,10 +46,15 @@ export const BOARD_TOOLS: readonly ToolDef[] = [
       + "for this reader, in your own words, rather than reaching for a generic heading. "
       + "The pool caption is your one-line takeaway about that pool, not a "
       + "restatement of its price. "
-      + "The pool ANALYSIS is the full assessment, up to 600 characters, and it is the field that "
-      + "carries your thinking: for every token worth a closer look, write what is moving the price, "
-      + "the key levels you would watch, and your read of the risk. Lead with the safety sentence - "
-      + "the first fragment is shown on its own beside the safety chip, so it must stand alone. "
+      + "The pool ANALYSIS is the field that carries your thinking, and you write it IN FULL: for "
+      + "every token worth a closer look, say what is moving the price, the key levels you would "
+      + "watch, and your read of the risk, at whatever length that assessment actually takes. "
+      + "Do not compress it into a caption and do not stop early to save room. Your assessment "
+      + "renders WHOLE in its own section on the board; NOTHING is excerpted anywhere, and the "
+      + "Safety panel beside it shows the runtime's own factual check rows rather than your prose. "
+      + "Still lead with the safety read: safety sentence, thesis, what moves the price, the levels "
+      + "with their numbers, risk and invalidation, what to watch. That order is what a reader needs "
+      + "first, not a constraint about what fits somewhere. "
       + "OBSERVATIONS, NEVER ADVICE: describe what the figures show and what would change the "
       + "picture; never tell the reader to buy, sell, hold or size a position. Your prose never "
       + "colours the safety chip: that chip is decided from the contract and liquidity checks the "
@@ -66,7 +71,7 @@ export const BOARD_TOOLS: readonly ToolDef[] = [
       + "next thing you write must be your final reply, as plain prose. The board is attached to that "
       + "message, so write the reply as the analysis it accompanies rather than as a caption for it. "
       + "You supply ONLY your analysis: the board title, which pools to show (chain plus the pool "
-      + "address as the provider spells it), an optional caption per pool, up to 6 notes, and for the "
+      + "address as the provider spells it), an optional caption per pool, your notes, and for the "
       + "chart the resolution plus up to 12 annotations you drew yourself (a price level, a price zone, "
       + "or a time marker, each with a label). "
       + "You do NOT supply market data: prices, liquidity, volume, trade counts, token names and candles "
@@ -75,8 +80,9 @@ export const BOARD_TOOLS: readonly ToolDef[] = [
       + "results; they are drawn as your marks, never as measurements. "
       + "There is no field for a URL, HTML, markdown, a colour, a chart option, a fee or a destination, "
       + "and an unknown field is refused by name. Text is checked and refused, never silently altered. "
-      + "A board that would exceed 48 KiB serialized is refused with its size named; nothing is cut to "
-      + "make one fit. Call it once, when your analysis is finished. "
+      + "A board too large to store is refused whole, with its measured size and the pool that "
+      + "contributed most named so you know which assessment to shorten; nothing is ever cut for "
+      + "you. Call it once, when your analysis is finished. "
       + "Your reply must STAND ALONE: a reader who never sees the board (a markdown export, an "
       + "older client, a row whose board failed to load) must still get the finding from your prose. "
       + "The board shows the figures; the prose says what they mean.",
@@ -111,11 +117,26 @@ export const BOARD_TOOLS: readonly ToolDef[] = [
               analysis: {
                 type: "string",
                 description:
-                  "Your full assessment of this token, 1-600 characters. Line breaks are allowed. "
-                  + "Write what is moving the price, the levels that matter, and the risk read - "
-                  + "observations, never advice. The first fragment is shown beside the safety "
-                  + "chip, so start with the safety sentence. Optional; omit it for a pool you "
-                  + "have nothing substantive to say about.",
+                  "REAL INSIGHT about this token, in your own words. Not a summary of the "
+                  + "figures beside it: the reader can already see the price, the volume and the "
+                  + "liquidity on the card, so a paragraph that restates them has said nothing. "
+                  + "Write, in this order: (1) the SAFETY SENTENCE first, because safety is what "
+                  + "a reader needs before anything else; "
+                  + "(2) your THESIS in one line - what this token actually is right now; "
+                  + "(3) WHAT IS MOVING THE PRICE - the flows, the holder behaviour, how the "
+                  + "liquidity is behaving, what the tape shows, not that the price went up; "
+                  + "(4) THE LEVELS THAT MATTER, with their numbers; (5) THE RISK READ and what "
+                  + "would INVALIDATE your thesis; (6) WHAT TO WATCH NEXT. This assessment "
+                  + "renders WHOLE in its own section and nothing is excerpted anywhere, so that "
+                  + "order is about what the reader needs first, not about what fits in a chip. "
+                  + "Observations, never "
+                  + "advice: describe what the figures show and what would change the picture, "
+                  + "and never tell the reader to buy, sell, hold or size a position. Line breaks "
+                  + "are allowed and two to five paragraphs is normal. Optional; omit it for a "
+                  + "pool you have nothing substantive to say about, because an empty assessment "
+                  + "is more honest than a padded one. Refused above 10000 characters, which is a "
+                  + "refusal threshold and NEVER a target - length is not the product, insight "
+                  + "is; nothing is ever trimmed to fit, the whole board is refused instead.",
               },
             },
             required: ["chain", "pairAddress"],
@@ -183,7 +204,12 @@ export const BOARD_TOOLS: readonly ToolDef[] = [
         notes: {
           type: "array",
           description:
-            "Up to 6 analysis notes, each 1-280 characters. Line breaks are allowed here.",
+            "The risks and caveats behind your read: thin liquidity, a locked or unlocked LP, "
+            + "an unverified contract, an indexing lag, a holder concentration worth naming. "
+            + "Write as many as the board actually warrants and give each one the room its "
+            + "point needs; line breaks are allowed. Refused above 12 notes or 600 characters "
+            + "in one note - both are refusal thresholds, not targets, and neither is a length "
+            + "to write towards.",
           items: { type: "string" },
         },
       },

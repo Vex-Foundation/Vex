@@ -33,8 +33,7 @@
  * GAPS ARE HOLES, NOT STRAIGHT LINES. A bar the provider had no close for is
  * a break in the series, and joining across it would draw a confident
  * interpolation the data never contained. So a run of nulls SPLITS the line
- * into segments, each with its own polyline and its own area, and the gap is
- * simply empty.
+ * into segments, each with its own polyline, and the gap is simply empty.
  *
  * NO DECIMAL BECOMES A FLOAT ANYWHERE ELSE. Closes arrive as decimal strings
  * and cross into numbers once, through `toDisplayPrice`, the money boundary
@@ -46,7 +45,7 @@
  * everything this glyph encodes. A second reading would say it twice.
  */
 
-import { useId, type JSX } from "react";
+import type { JSX } from "react";
 import { cn } from "../../../lib/utils.js";
 import { toDisplayPrice } from "./boardChartFeed.js";
 import type { BoardTrend } from "./boardFormat.js";
@@ -71,7 +70,7 @@ export type BoardSparklineData =
 
 /** The viewBox. Fixed, so the path arithmetic is resolution independent. */
 const VIEW_W = 120;
-const VIEW_H = 34;
+const VIEW_H = 44;
 /** Breathing room so the extreme bars are not clipped by the stroke width. */
 const PAD_Y = 3;
 
@@ -92,15 +91,6 @@ export function BoardSparkline({
   trend,
   className,
 }: BoardSparklineProps): JSX.Element {
-  // COLLISION-FREE GRADIENT ID. Eight cards mount eight sparklines and an SVG
-  // `<defs>` id is DOCUMENT-global: a hardcoded id would have every card's
-  // area fill resolve to whichever card rendered its `<defs>` last. `useId`
-  // is per-instance and stable across re-renders, which is exactly the
-  // lifetime this reference needs. The colon React puts in it is legal in an
-  // id but not in a bare `url(#...)` fragment, so it is stripped.
-  const rawId = useId();
-  const gradientId = `vex-spark-${rawId.replace(/:/g, "")}`;
-
   const stroke =
     trend === "down"
       ? "var(--vex-alias-state-error)"
@@ -117,7 +107,7 @@ export function BoardSparkline({
         data-state="pending"
         aria-hidden
         className={cn(
-          "block h-[34px] w-full rounded-[3px] bg-surface-skeleton",
+          "block h-[44px] w-full rounded-[3px] bg-surface-skeleton",
           // The shimmer is the app's own pending register, and it is stilled
           // outright for a reader who asked for reduced motion - the block is
           // fully legible as a placeholder with no animation at all.
@@ -136,14 +126,8 @@ export function BoardSparkline({
       focusable={false}
       viewBox={`0 0 ${String(VIEW_W)} ${String(VIEW_H)}`}
       preserveAspectRatio="none"
-      className={cn("block h-[34px] w-full", className)}
+      className={cn("block h-[44px] w-full", className)}
     >
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={stroke} stopOpacity="0.28" />
-          <stop offset="100%" stopColor={stroke} stopOpacity="0" />
-        </linearGradient>
-      </defs>
       {state.kind === "unavailable" ? (
         <line
           data-vex-area="board-sparkline-baseline"
@@ -162,7 +146,6 @@ export function BoardSparkline({
               key={`${String(index)}/${String(segment.points[0]?.[0] ?? 0)}`}
               segment={segment}
               stroke={stroke}
-              gradientId={gradientId}
             />
           ))
         : null}
@@ -171,7 +154,11 @@ export function BoardSparkline({
 }
 
 /**
- * One run of priced bars: its area fill and its line.
+ * One run of priced bars: a line, and only a line.
+ *
+ * No area fill under it (the mockup draws a bare line, and a wash under eight
+ * card sparklines is what made the grid read as a chart wall), so there is
+ * no gradient and no document-global `<defs>` id to keep collision-free.
  *
  * A single-point run draws a DOT rather than a zero-length polyline, which
  * renders as nothing at all in every browser and would silently delete the
@@ -180,11 +167,9 @@ export function BoardSparkline({
 function SegmentShape({
   segment,
   stroke,
-  gradientId,
 }: {
   readonly segment: Segment;
   readonly stroke: string;
-  readonly gradientId: string;
 }): JSX.Element | null {
   const points = segment.points;
   const first = points[0];
@@ -201,27 +186,17 @@ function SegmentShape({
     );
   }
   const line = points.map(([x, y]) => `${fixed(x)},${fixed(y)}`).join(" ");
-  const last = points[points.length - 1];
-  if (last === undefined) return null;
-  const area = `${fixed(first[0])},${fixed(VIEW_H)} ${line} ${fixed(last[0])},${fixed(VIEW_H)}`;
   return (
-    <>
-      <polygon
-        data-vex-area="board-sparkline-area"
-        points={area}
-        fill={`url(#${gradientId})`}
-      />
-      <polyline
-        data-vex-area="board-sparkline-line"
-        points={line}
-        fill="none"
-        stroke={stroke}
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        vectorEffect="non-scaling-stroke"
-      />
-    </>
+    <polyline
+      data-vex-area="board-sparkline-line"
+      points={line}
+      fill="none"
+      stroke={stroke}
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      vectorEffect="non-scaling-stroke"
+    />
   );
 }
 

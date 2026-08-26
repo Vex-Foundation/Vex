@@ -1,0 +1,206 @@
+/**
+ * The reader's RPC transport: ONE retry owner, and a deadline that CANCELS.
+ *
+ * What this suite guards, and why each assertion exists:
+ *  - the reader used to wrap every call in its own retry while `Connection`'s
+ *    transport already retries HTTP 429 (`@solana/web3.js@1.98.4`
+ *    `lib/index.esm.js:5024-5046`), and the deadline only ABANDONED the first
+ *    request, so a slow provider could see two requests in flight for one read.
+ *    The absence assertion below ("exactly one request was issued") is the
+ *    regression for that;
+ *  - the deadline now reaches the HTTP request through `ConnectionConfig.fetch`
+ *    (`lib/index.d.ts:3180`, `FetchFn` at :3158), so the signal the transport
+ *    received must actually be ABORTED when the deadline fires. A deadline that
+ *    rejects while the socket stays open is the defect this catches;
+ *  - a JSON-RPC error is an ANSWER from the node, and must propagate exactly as
+ *    the SDK produced it: not retried, not reclassified into a deadline error.
+ *    MEASURED, because it differs per method: `getTokenAccountsByOwner` throws
+ *    `SolanaJSONRPCError` (`lib/index.cjs.js:6299`), while `getBalance` catches
+ *    and re-wraps it in a plain `Error` (`lib/index.cjs.js:6156`). Both are
+ *    asserted for what they actually are, not for what convention suggests.
+ *
+ * The transport is driven with a scripted `fetch`, so no network is involved
+ * and nothing global is patched.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { PublicKey } from "@solana/web3.js";
+import { z } from "zod";
+
+vi.mock("@utils/logger.js", () => ({
+  default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
+}));
+
+vi.mock("../../../../config/store.js", () => ({
+  loadConfig: () => ({ solana: { rpcUrl: "https://rpc.invalid.test", commitment: "confirmed" } }),
+}));
+
+const { createDeadlineBoundSolanaRpc } = await import(
+  "@tools/solana-ecosystem/balances/read-wallet-balances.js"
+);
+
+const OWNER = new PublicKey("BfvP43eVzM7xAu6Pm7yYbqp8RVkbP8R8dCfTvgPp64Pg");
+const SPL_TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+
+/** The reader's deadline. Kept in one place so the fake clock advances past it. */
+const RPC_DEADLINE_MS = 10_000;
+
+const requestIdSchema = z.object({ id: z.union([z.string(), z.number()]) });
+
+/**
+ * The JSON-RPC client matches responses to requests by `id`, so a scripted
+ * answer has to echo the id the client actually generated. Reading it back out
+ * of the request body is what makes these responses indistinguishable from a
+ * real node's, which is the whole point of driving the real `Connection`.
+ */
+function echoId(init: RequestInit | undefined): string | number {
+  const body = init?.body;
+  if (typeof body !== "string") throw new Error("expected a JSON-RPC request body");
+  return requestIdSchema.parse(JSON.parse(body)).id;
+}
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("createDeadlineBoundSolanaRpc", () => {
+  it("aborts the in-flight fetch when the deadline fires, and issues no second request", async () => {
+    const signals: AbortSignal[] = [];
+    let requests = 0;
+
+    const rpc = createDeadlineBoundSolanaRpc({
+      fetch: (_input, init) => {
+        requests += 1;
+        const signal = init?.signal;
+        if (!signal) throw new Error("the transport received no AbortSignal");
+        signals.push(signal);
+        // A request that never answers: only the deadline can end this call.
+        return new Promise<Response>((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("aborted", "AbortError")),
+            { once: true },
+          );
+        });
+      },
+    });
+
+    const call = rpc.getBalance(OWNER);
+    const settled = call.then(
+      () => ({ ok: true as const }),
+      (err: unknown) => ({ ok: false as const, err }),
+    );
+
+    await vi.advanceTimersByTimeAsync(RPC_DEADLINE_MS + 1);
+    const outcome = await settled;
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) throw new Error("the deadline did not reject");
+    expect(outcome.err).toBeInstanceOf(Error);
+    expect((outcome.err as Error).name).toBe("SolanaRpcDeadlineExceeded");
+
+    // THE CANCELLATION ASSERTION: the signal the transport actually received
+    // is aborted, so the HTTP request was cancelled, not abandoned.
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(true);
+    // THE ABSENCE ASSERTION: no outer retry, so exactly one request existed.
+    expect(requests).toBe(1);
+  });
+
+  it("issues exactly one request for a call the provider answers", async () => {
+    let requests = 0;
+    const rpc = createDeadlineBoundSolanaRpc({
+      fetch: (_input, init) => {
+        requests += 1;
+        return Promise.resolve(
+          jsonResponse({
+            jsonrpc: "2.0",
+            id: echoId(init),
+            result: { context: { apiVersion: "4.2.0", slot: 441912462 }, value: 96740111 },
+          }),
+        );
+      },
+    });
+
+    await expect(rpc.getBalance(OWNER)).resolves.toBe(96740111);
+    expect(requests).toBe(1);
+  });
+
+  it("propagates the node's JSON-RPC error from getTokenAccountsByOwner untouched", async () => {
+    let requests = 0;
+    const rpc = createDeadlineBoundSolanaRpc({
+      fetch: (_input, init) => {
+        requests += 1;
+        return Promise.resolve(
+          jsonResponse({
+            jsonrpc: "2.0",
+            id: echoId(init),
+            error: { code: -32602, message: "Invalid param: WrongSize" },
+          }),
+        );
+      },
+    });
+
+    const err = await rpc
+      .getParsedTokenAccountsByOwner(OWNER, { programId: SPL_TOKEN_PROGRAM })
+      .catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).name).toBe("SolanaJSONRPCError");
+    // Not reclassified as a deadline, and issued once: no outer retry exists.
+    expect(requests).toBe(1);
+  });
+
+  it("does not reclassify getBalance's own wrapped JSON-RPC error as a deadline", async () => {
+    // `Connection.getBalance` re-wraps every failure in a plain `Error`
+    // (`lib/index.cjs.js:6156`). The reader must not paper over that with its
+    // own name: only a real deadline produces SolanaRpcDeadlineExceeded.
+    let requests = 0;
+    const rpc = createDeadlineBoundSolanaRpc({
+      fetch: (_input, init) => {
+        requests += 1;
+        return Promise.resolve(
+          jsonResponse({
+            jsonrpc: "2.0",
+            id: echoId(init),
+            error: { code: -32602, message: "Invalid param: WrongSize" },
+          }),
+        );
+      },
+    });
+
+    const err = await rpc.getBalance(OWNER).catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).name).not.toBe("SolanaRpcDeadlineExceeded");
+    expect((err as Error).message).toContain("Invalid param: WrongSize");
+    expect(requests).toBe(1);
+  });
+
+  it("refuses an overlapping call rather than sharing another call's deadline", async () => {
+    const rpc = createDeadlineBoundSolanaRpc({
+      fetch: (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+    });
+
+    const first = rpc.getBalance(OWNER).catch(() => undefined);
+    await expect(rpc.getBalance(OWNER)).rejects.toThrow(/sequential/);
+
+    await vi.advanceTimersByTimeAsync(RPC_DEADLINE_MS + 1);
+    await first;
+  });
+});

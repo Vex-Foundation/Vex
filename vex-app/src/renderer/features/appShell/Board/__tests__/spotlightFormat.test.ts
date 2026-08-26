@@ -11,7 +11,9 @@
  *    number and never a filled bar (C3, A11 row 9);
  *  - a window with no trades has NO split, because "0% / 0%" claims a market
  *    was measured and found empty;
- *  - the two halves of the split always sum to 100.
+ *  - the two halves of the split always sum to 100;
+ *  - a required safety check nobody answered is an unverified ROW, never an
+ *    omission, and an unknown check id is shown as the provider spelled it.
  */
 
 import { describe, expect, it } from "vitest";
@@ -24,8 +26,8 @@ import {
   LOCK_NONE_REPORTED_TEXT,
   LOCK_NOT_COVERED_TEXT,
   LOCK_UNVERIFIED_TEXT,
+  SAFETY_VERDICT_WORD,
   analysisFragments,
-  analysisLead,
   buySellView,
   formatBoardPercentUnit,
   formatSignedUsdNumber,
@@ -35,8 +37,11 @@ import {
   lockView,
   momentumBaseline,
   momentumView,
+  safetyCheckLabel,
+  safetyRowsView,
   tapeSideLabel,
 } from "../spotlightFormat.js";
+import type { BoardDetailsBundle } from "@shared/schemas/board-details.js";
 
 function percent(
   normalizedPct: number | null,
@@ -176,13 +181,9 @@ describe("buySellView", () => {
   });
 });
 
-describe("analysisLead and analysisFragments", () => {
+describe("analysisFragments", () => {
   const assessment =
     "Price is up on thin liquidity · LP is burned, so the pool cannot be pulled · Holders are concentrated";
-
-  it("takes the first middle-dot fragment for the line under the chip", () => {
-    expect(analysisLead(assessment)).toBe("Price is up on thin liquidity");
-  });
 
   it("keeps every fragment, in order, for the section that renders it whole", () => {
     expect(analysisFragments(assessment)).toEqual([
@@ -196,14 +197,176 @@ describe("analysisLead and analysisFragments", () => {
     expect(analysisFragments("one\ntwo")).toEqual(["one", "two"]);
   });
 
-  it("returns a single-fragment assessment whole", () => {
-    expect(analysisLead("Just one observation")).toBe("Just one observation");
+  it("returns a single-fragment assessment whole, however long", () => {
+    const long = "A".repeat(4000);
+    expect(analysisFragments(long)).toEqual([long]);
   });
 
   it("has nothing to say about an absent or empty assessment", () => {
-    expect(analysisLead(null)).toBeNull();
-    expect(analysisLead("   ")).toBeNull();
     expect(analysisFragments(null)).toEqual([]);
+    expect(analysisFragments("   ")).toEqual([]);
+  });
+});
+
+function bundle(overrides: Partial<BoardDetailsBundle> = {}): BoardDetailsBundle {
+  return {
+    subject: { chain: "base", pairAddress: "0xaaa111" },
+    baseTokenAddress: "0xtoken",
+    baseTokenSymbol: "PEPE",
+    holders: { count: 982, source: "goplus", shareUnit: "fraction" },
+    liquidityLocks: null,
+    safety: {
+      coverage: { state: "complete", presentBlocks: ["security"], absentBlocks: [] },
+      goplus: null,
+      quickintel: null,
+      tokenAuthority: null,
+      conflicts: [],
+    },
+    auditedTokenCheck: {
+      auditedTokenAddress: "0xtoken",
+      auditedTokenSymbol: "PEPE",
+      addressesAgree: true,
+      symbolsAgree: true,
+      mismatch: false,
+    },
+    providerWindow: { cacheMaxAgeSeconds: 60, cacheAgeSeconds: 1 },
+    fetchedAtMs: 1_783_000_000_000,
+    expiresAtMs: 1_783_000_060_000,
+    metaIds: [],
+    ...overrides,
+  };
+}
+
+describe("safetyCheckLabel", () => {
+  it.each([
+    ["isHoneypot", "Honeypot"],
+    ["contractVerified", "Contract verified"],
+    ["tax", "Buy/sell tax"],
+    ["buyTax", "Buy tax"],
+    ["concentration", "Top-holder concentration"],
+    ["ownerShare", "Owner share"],
+    ["pairAge", "Pair age"],
+  ])("names %s as %s", (id, text) => {
+    expect(safetyCheckLabel(id)).toEqual({ text, mono: false });
+  });
+
+  it("shows an unknown id as the provider spelled it, in the mono face", () => {
+    expect(safetyCheckLabel("someNewProviderFlag")).toEqual({
+      text: "someNewProviderFlag",
+      mono: true,
+    });
+  });
+});
+
+describe("safetyRowsView", () => {
+  it("lists every unanswered REQUIRED check as an unverified row, never omitted", () => {
+    // Every provider silent: the projection has no checks and both required
+    // ids are unanswered. The section must still show both, as unverified.
+    const rows = safetyRowsView(bundle());
+    expect(rows.map((row) => [row.id, row.verdict, row.answered, row.source])).toEqual([
+      ["isHoneypot", "unverified", false, null],
+      ["contractVerified", "unverified", false, null],
+    ]);
+  });
+
+  it("carries pass, fail and unverified rows with their source", () => {
+    const rows = safetyRowsView(
+      bundle({
+        safety: {
+          coverage: { state: "complete", presentBlocks: ["security"], absentBlocks: [] },
+          goplus: null,
+          quickintel: {
+            isHoneypot: true,
+            isScam: false,
+            hasObfuscatedAddressRisk: null,
+            canMint: null,
+            canBlacklist: null,
+            canPauseTrading: null,
+            hiddenOwner: null,
+            isProxy: null,
+            hasExternalContractRisk: null,
+            hasGeneralVulnerabilities: null,
+            hasFeeWarning: null,
+            contractVerified: true,
+            buyTaxPct: null,
+            sellTaxPct: null,
+            transferTaxPct: null,
+            lpBurnedPct: { raw: "0.5", normalizedPct: null, unit: "unverified" },
+          },
+          tokenAuthority: null,
+          conflicts: [],
+        },
+      }),
+    );
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    expect(byId.get("isHoneypot")).toMatchObject({
+      verdict: "fail",
+      source: "quickintel",
+      answered: true,
+      label: { text: "Honeypot", mono: false },
+    });
+    expect(byId.get("isScam")).toMatchObject({ verdict: "pass" });
+    expect(byId.get("contractVerified")).toMatchObject({ verdict: "pass" });
+    expect(byId.get("lpBurnedPct")).toMatchObject({ verdict: "unverified", answered: true });
+    // Both required ids were answered, so no unanswered row is appended.
+    expect(rows.filter((row) => !row.answered)).toHaveLength(0);
+  });
+
+  it("keys every row uniquely even when two providers answer the same id", () => {
+    const rows = safetyRowsView(
+      bundle({
+        safety: {
+          coverage: { state: "complete", presentBlocks: ["security"], absentBlocks: [] },
+          goplus: {
+            isHoneypot: false,
+            cannotSellAll: null,
+            isMintable: null,
+            isBlacklisted: null,
+            transferPausable: null,
+            hiddenOwner: null,
+            canTakeBackOwnership: null,
+            slippageModifiable: null,
+            isProxy: null,
+            isOpenSource: null,
+            buyTaxPct: null,
+            sellTaxPct: null,
+            ownerShare: null,
+            creatorShare: null,
+          },
+          quickintel: {
+            isHoneypot: false,
+            isScam: null,
+            hasObfuscatedAddressRisk: null,
+            canMint: null,
+            canBlacklist: null,
+            canPauseTrading: null,
+            hiddenOwner: null,
+            isProxy: null,
+            hasExternalContractRisk: null,
+            hasGeneralVulnerabilities: null,
+            hasFeeWarning: null,
+            contractVerified: null,
+            buyTaxPct: null,
+            sellTaxPct: null,
+            transferTaxPct: null,
+            lpBurnedPct: null,
+          },
+          tokenAuthority: null,
+          conflicts: [],
+        },
+      }),
+    );
+    const keys = rows.map((row) => row.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(rows.filter((row) => row.id === "isHoneypot")).toHaveLength(2);
+  });
+
+  it("names the three verdict words", () => {
+    expect(SAFETY_VERDICT_WORD).toEqual({
+      pass: "Pass",
+      fail: "Fail",
+      unverified: "Unverified",
+    });
   });
 });
 

@@ -170,7 +170,7 @@ export function BoardModalChrome({ board }: BoardHeaderSlotProps): JSX.Element {
       data-vex-area="board-chrome"
       className="flex flex-col items-end gap-1"
     >
-      <div className="flex items-center gap-3">
+      <div className="flex h-8 items-center gap-3">
         <span
           data-vex-area="board-mode-snapshot"
           className={cn(
@@ -228,16 +228,16 @@ export function BoardModalChrome({ board }: BoardHeaderSlotProps): JSX.Element {
           className={cn(
             "inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
             pinned
-              ? "border-accent-primary/50 bg-accent-wash text-accent-primary"
+              ? "border-accent-primary/40 bg-accent-wash text-accent-primary"
               : "border-line-2 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary",
           )}
         >
-          <IconBookOpen size={15} />
+          <IconBookOpen size={16} />
         </button>
       </div>
       <p
         data-vex-area="board-live-helper"
-        className="text-[13px] leading-[18px] text-ink-tertiary"
+        className="text-right text-[12px] leading-[16px] text-ink-tertiary"
       >
         {/* The lease's own sentence wins when it has one to say: an
           * unsupported build or a terminal close is a fact about THIS board,

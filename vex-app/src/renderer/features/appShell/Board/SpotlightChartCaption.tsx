@@ -19,25 +19,85 @@ import {
 import type { SpotlightCandles } from "./spotlight-channels.js";
 import { PILL_LABEL } from "./spotlightChartPills.js";
 
+/** What the ADAPTER derived while drawing, beside what the page reported. */
+export interface SpotlightChartDrawingFacts {
+  /** Older bars the chart's own budget kept off screen. */
+  readonly hiddenOlder: number;
+  /**
+   * Drawn buckets whose reported high or low did not span their own open and
+   * close, so the candle shows the true extremes rather than the reported
+   * pair. BLOCKING honesty: a candle DRAWS the extremes, which the area line
+   * never did, so this count is now a fact about what is on screen.
+   */
+  readonly incoherentCount: number;
+  /** Drawn buckets that carried no reported volume; their histogram slot is empty. */
+  readonly volumelessCount: number;
+}
+
 export function SpotlightChartCaption({
   page,
-  hiddenOlder,
+  drawing,
   resolution,
 }: {
   /** The page the bars on screen came from, degraded or fresh; null if none. */
   readonly page: SpotlightCandles | null;
-  readonly hiddenOlder: number;
+  readonly drawing: SpotlightChartDrawingFacts;
   readonly resolution: BoardChartPillResolution;
 }): JSX.Element {
   return (
     <figcaption
       data-vex-area="spotlight-chart-caption"
-      className="flex flex-col gap-0.5 text-[11.5px] leading-[15px] text-ink-tertiary"
+      className="flex flex-col gap-0.5 text-[12px] leading-[16px] text-ink-tertiary"
     >
-      <ChartNotes page={page} hiddenOlder={hiddenOlder} resolution={resolution} />
+      <ChartNotes page={page} drawing={drawing} resolution={resolution} />
       <ChartAttribution />
     </figcaption>
   );
+}
+
+/**
+ * The notes, as a pure list: every bound the surface applied and every
+ * derivation the drawing made, each with its count. Exported so the
+ * vocabulary is a table test rather than a DOM scrape.
+ */
+export function spotlightChartNotes(
+  page: SpotlightCandles,
+  drawing: SpotlightChartDrawingFacts,
+  resolution: BoardChartPillResolution,
+): readonly string[] {
+  const notes: string[] = [];
+  if (page.providerBars < page.requestedBars) {
+    notes.push(
+      `The provider had ${String(page.providerBars)} of the ${String(page.requestedBars)} buckets this range asks for.`,
+    );
+  }
+  if (page.undrawableBars > 0) {
+    notes.push(
+      `${String(page.undrawableBars)} buckets carried no USD price and are not drawn.`,
+    );
+  }
+  if (page.windowedOutBars > 0) {
+    notes.push(
+      `${String(page.windowedOutBars)} older buckets sit outside this range.`,
+    );
+  }
+  if (drawing.hiddenOlder > 0) {
+    notes.push(`${String(drawing.hiddenOlder)} older bars are beyond the chart's budget.`);
+  }
+  if (drawing.volumelessCount > 0) {
+    notes.push(
+      `${String(drawing.volumelessCount)} of the ${String(page.series.bars.length)} drawn buckets carried no reported volume.`,
+    );
+  }
+  if (drawing.incoherentCount > 0) {
+    notes.push(
+      `${String(drawing.incoherentCount)} buckets reported a high or low that did not span their own open and close; the chart drew the true extremes.`,
+    );
+  }
+  if (page.series.lastBarPartial) {
+    notes.push(`The newest ${PILL_LABEL[resolution]} bucket is still forming.`);
+  }
+  return notes;
 }
 
 /**
@@ -50,38 +110,15 @@ export function SpotlightChartCaption({
  */
 function ChartNotes({
   page,
-  hiddenOlder,
+  drawing,
   resolution,
 }: {
-  /** The page the bars on screen came from, degraded or fresh; null if none. */
   readonly page: SpotlightCandles | null;
-  readonly hiddenOlder: number;
+  readonly drawing: SpotlightChartDrawingFacts;
   readonly resolution: BoardChartPillResolution;
 }): JSX.Element | null {
   if (page === null) return null;
-  const value = page;
-  const notes: string[] = [];
-  if (value.providerBars < value.requestedBars) {
-    notes.push(
-      `The provider had ${String(value.providerBars)} of the ${String(value.requestedBars)} buckets this range asks for.`,
-    );
-  }
-  if (value.undrawableBars > 0) {
-    notes.push(
-      `${String(value.undrawableBars)} buckets carried no USD price and are not drawn.`,
-    );
-  }
-  if (value.windowedOutBars > 0) {
-    notes.push(
-      `${String(value.windowedOutBars)} older buckets sit outside this range.`,
-    );
-  }
-  if (hiddenOlder > 0) {
-    notes.push(`${String(hiddenOlder)} older bars are beyond the chart's budget.`);
-  }
-  if (value.series.lastBarPartial) {
-    notes.push(`The newest ${PILL_LABEL[resolution]} bucket is still forming.`);
-  }
+  const notes = spotlightChartNotes(page, drawing, resolution);
   if (notes.length === 0) return null;
   return (
     <span

@@ -69,6 +69,8 @@ const SERIES = {
   providerBars: 1,
   undrawableBars: 0,
   windowedOutBars: 0,
+  volumes: ["12.5"],
+  volumelessBars: 0,
   fetchedAtMs: 1_787_741_000_000,
 };
 

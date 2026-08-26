@@ -21,6 +21,7 @@
  */
 
 import { defineChain, type Chain } from "viem";
+import type { QuoteAssetPolicy } from "../dexscreener/best-liquidity-price.js";
 import { loadConfig } from "../../config/store.js";
 
 /** Only EVM (eip155) chains live here today. Kept explicit for future families. */
@@ -53,6 +54,12 @@ export interface LocalChainConfig {
   /** DexScreener chain slug used for price lookups (tokens/v1). */
   dexscreenerSlug: string;
   /**
+   * Which DexScreener quote assets may price a token on this chain. Addresses
+   * are LOWERCASE, matching the EVM caller's address-identity policy. See
+   * `tools/dexscreener/best-liquidity-price.ts` for the tier rule.
+   */
+  quoteAssetPolicy: QuoteAssetPolicy;
+  /**
    * Lowercased `_tradeCapture.chain` values that map to this chain, used by the
    * tracked-token derivation to find spot trades recorded on this chain. Kept
    * explicit so the 2c swap/bridge tools have one place to align their slug.
@@ -65,6 +72,27 @@ export interface LocalChainConfig {
 //
 // Arbitrum Orbit L2 settling to Ethereum. Native gas token is ETH (18 decimals).
 // Endpoint + explorer live-probed 2026-07-05; chain id confirmed 0x1237 (4663).
+/** WETH on 4663. On-chain symbol/decimals verified 2026-07-05. */
+const ROBINHOOD_WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" as const;
+/**
+ * USDG (Global Dollar) on 4663 - the chain's USD stablecoin, and the ONLY one
+ * this policy trusts. On-chain symbol/decimals verified 2026-07-05 (6 decimals),
+ * and live-verified as a real quote asset on 2026-08-26 against
+ * `api.dexscreener.com` (archived under `scratchpad/board-v4-probes/`):
+ * `tokens/v1/robinhood/<WETH>` answered WETH/USDG at `priceUsd` 2471.98 with
+ * $6.07M liquidity, and `token-pairs/v1/robinhood/<VEX>` carries VEX/USDG at
+ * $0.002747.
+ *
+ * DECLARED OMISSION: the same probe found a token labelled USDC at
+ * `0x39643636c4b629732947a24a705FC5F41E4489cE` on this chain. It is NOT in this
+ * set: its only indexed pool is a $5.6k USDC/CRCL pair, it has never appeared
+ * as a quote asset, and unlike USDG its contract has not been on-chain verified
+ * here. Trusting an unverified address as a DOLLAR is exactly the mistake this
+ * policy exists to prevent. Adding it later is additive and needs one on-chain
+ * `symbol()`/`decimals()` read.
+ */
+const ROBINHOOD_USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168" as const;
+
 const ROBINHOOD_CHAIN: LocalChainConfig = {
   id: 4663,
   name: "Robinhood Chain",
@@ -78,13 +106,17 @@ const ROBINHOOD_CHAIN: LocalChainConfig = {
   // Robinhood docs' "L2 Multicall" 0x2cAC2D89... which is a Multicall2.
   multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11",
   dexscreenerSlug: "robinhood",
+  quoteAssetPolicy: {
+    stables: new Set([ROBINHOOD_USDG.toLowerCase()]),
+    wrappedNative: ROBINHOOD_WETH.toLowerCase(),
+  },
   activityChainKeys: ["robinhood", "robinhood chain", "robinhoodchain", "rhc", "4663"],
   seedTokens: [
     // On-chain symbol/decimals verified 2026-07-05.
-    { address: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73", label: "WETH" }, // WETH, 18 decimals
+    { address: ROBINHOOD_WETH, label: "WETH" }, // WETH, 18 decimals
     { address: "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b", label: "VEX" }, // $VEX (Vex's own token), 18 decimals
     { address: "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31", label: "VIRTUAL" }, // VIRTUAL, 18 decimals
-    { address: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168", label: "USDG" }, // USDG, 6 decimals
+    { address: ROBINHOOD_USDG, label: "USDG" }, // USDG, 6 decimals
   ],
 };
 

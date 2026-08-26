@@ -158,20 +158,28 @@ export function BoardModalHost({
               {/* The heading is the MODEL's own title for this board. The
                * host never prints a product label of its own over it. */}
               <div className="min-w-0">
-                <p className="text-[20px] font-medium leading-7 text-ink-primary">
+                {/* WRAPS, never truncates: the title is the model's own words
+                 * and every one of them is shown. The width cap keeps a long
+                 * line readable, not short. */}
+                <p
+                  data-vex-area="board-title"
+                  className="max-w-[60ch] whitespace-normal break-words font-display text-[22px] font-semibold leading-[28px] tracking-[-0.01em] text-ink-primary"
+                >
                   {board.title}
                 </p>
                 {SubtitleSlot === undefined ? null : (
                   <SubtitleSlot board={board} />
                 )}
               </div>
-              <div className="flex shrink-0 items-center gap-3">
+              {/* `items-start`: the chrome is a control row over a helper
+               * line, and the close button sits on the CONTROL row. */}
+              <div className="flex shrink-0 items-start gap-3">
                 {HeaderSlot === undefined ? null : (
                   <HeaderSlot key={boardKey} board={board} />
                 )}
                 <DialogClose
                   aria-label="Close the board"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-tertiary hover:bg-interactive-active hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-tertiary hover:bg-interactive-active hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <IconClose size={16} />
                 </DialogClose>

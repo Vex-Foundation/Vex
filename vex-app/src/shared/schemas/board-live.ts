@@ -59,8 +59,8 @@ import {
  * WHY A PICK RATHER THAN AN OMIT. This used to be the board's pool shape minus
  * `caption`, which is a subtractive rule: every field ADDED to the pool shape
  * later would silently become admissible on this channel. `analysis` is
- * exactly that field - the model's own assessment of a token, up to 600
- * characters of prose - and under the old rule it would have crossed a live
+ * exactly that field - the model's own assessment of a token, its full
+ * written prose - and under the old rule it would have crossed a live
  * poll boundary that has no business carrying authored text at all. A pick
  * names what may cross, so a new pool field is inadmissible until somebody
  * writes it in here on purpose.

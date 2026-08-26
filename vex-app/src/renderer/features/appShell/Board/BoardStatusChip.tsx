@@ -24,9 +24,9 @@
 
 import type { JSX } from "react";
 import {
-  IconBadgeCheck,
   IconCircleAlert,
   IconInfo,
+  IconShieldCheck,
   IconWarning,
 } from "../../../components/icons/index.js";
 import { Pill } from "../../../components/ui/pill.js";
@@ -54,7 +54,7 @@ const VARIANT_BY_TONE: Readonly<Record<BoardSafetyTone, PillVariant>> = {
 function ToneIcon({ tone }: { readonly tone: BoardSafetyTone }): JSX.Element {
   switch (tone) {
     case "positive":
-      return <IconBadgeCheck size={14} />;
+      return <IconShieldCheck size={14} />;
     case "danger":
       return <IconCircleAlert size={14} />;
     case "caution":
@@ -94,6 +94,9 @@ export function BoardStatusChip({
       data-chip={newPair ? "new-pair" : "safety"}
       data-tone={tone}
       data-safety-state={verdict.state}
+      // The whole label on hover, because the visible run is `truncate`d by
+      // CSS on a narrow card: the string itself is never cut.
+      title={label}
       className={cn("font-medium", className)}
     >
       <ToneIcon tone={tone} />

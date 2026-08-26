@@ -15,6 +15,9 @@ vi.mock("@utils/logger.js", () => ({
 const mockGetTokens = vi.fn();
 vi.mock("@tools/dexscreener/price-read.js", () => ({
   readTokensPairs: (...a: unknown[]) => mockGetTokens(...a),
+  // The pricing pass re-reads the full pool list for anything still unpriced.
+  // Nothing extra here, so a priceless token stays priceless.
+  readTokenPools: () => Promise.resolve([]),
 }));
 
 // A real viem public client with the two RPC-backed actions this suite drives
@@ -112,7 +115,11 @@ beforeEach(() => {
   // NEW has no pair (priceless).
   mockGetTokens.mockResolvedValue([
     { chainId: "robinhood", baseToken: { address: SEED.VIRTUAL }, quoteToken: { address: SEED.WETH }, priceUsd: "1.5", priceNative: "0.0005", liquidity: { usd: 1_000_000 } },
-    { chainId: "robinhood", baseToken: { address: SEED.VEX }, quoteToken: { address: SEED.VIRTUAL }, priceUsd: "0.5", priceNative: "0.3333", liquidity: { usd: 50_000 } },
+    // CHANGED 2026-08-26: VEX is quoted in USDG, robinhood's only recognised
+    // dollar. It used to be quoted in VIRTUAL here, which the quote rule now
+    // refuses to price from - that is exactly the live shape that priced JUP
+    // at $1136 on Solana. `priceNative` is kept consistent with `priceUsd`.
+    { chainId: "robinhood", baseToken: { address: SEED.VEX }, quoteToken: { address: SEED.USDG }, priceUsd: "0.5", priceNative: "0.5", liquidity: { usd: 50_000 } },
   ]);
   mockTracked.mockResolvedValue([]);
 });

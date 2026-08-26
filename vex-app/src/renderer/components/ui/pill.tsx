@@ -29,15 +29,15 @@ const pillVariants = cva(
         // ring is the LAST class in the string on purpose - `cn` runs
         // tailwind-merge over the whole result, so it resolves the base
         // `border-0` deterministically rather than by source order luck.
-        positive: "bg-success-wash text-success border border-success/30",
-        caution: "bg-warning-wash text-warning-label border border-warning/35",
+        positive: "bg-success-wash text-success border border-success/40",
+        caution: "bg-warning-wash text-warning-label border border-warning/40",
         info: "bg-surface-2 text-ink-secondary border border-line-2",
       },
       size: {
         md: "h-6 px-2 text-[12px] leading-[18px]",
         sm: "h-5 px-1.5 text-[11px] leading-[14px]",
         // The board card's status chip: a taller capsule with room for a
-        // leading glyph, sized against the 64px medallion beside it.
+        // leading glyph, sized against the 64px token photo beside it.
         lg: "h-7 gap-1.5 px-2.5 text-[12.5px] leading-[20px]",
       },
     },
@@ -47,6 +47,15 @@ const pillVariants = cva(
     },
   },
 );
+
+/**
+ * The ACTIVE treatment of a filter or view pill: the accent wash under an
+ * inset accent ring, never a solid accent fill. One string, so a chain
+ * filter, a safety filter and the spotlight crumb cannot each invent their
+ * own version of "selected".
+ */
+export const PILL_ACTIVE_CLASS =
+  "bg-accent-wash text-accent-primary ring-1 ring-inset ring-accent-primary/40";
 
 /**
  * ATTRIBUTES REACH BOTH ELEMENTS.

@@ -21,6 +21,7 @@ import {
   TOOL_ARGS_DISPLAY_CEILING,
   toolCallDisplaySchema,
 } from "../../../shared/schemas/messages.js";
+import { BOARD_SPEC_MAX_BYTES } from "@vex-lib/board/index.js";
 
 /** A BoardCompose-shaped call: the real producer that exposed the outage. */
 function boardComposeSizedArgs(): Record<string, unknown> {
@@ -99,6 +100,45 @@ describe("sanitizeToolArgs ships the WHOLE sanitized serialization", () => {
       toolArgs: serialized,
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it("round-trips a board at the TOP of the spec budget, whole", () => {
+    // The regression this pairs with: the analysis field now admits 10,000
+    // characters per pool and the board budget is 320 KiB, so the largest
+    // legal BoardCompose args are a quarter of a megabyte of the model's own
+    // prose. The display ceiling has to clear that WITH the call envelope, or
+    // the user sees a tool call with no arguments and no explanation.
+    const insight =
+      "Depth has been rebuilding on the bid since the 14:00 candle and the "
+      + "single maker that carried the move stepped back without the book "
+      + "thinning, which is the part that makes this different from the "
+      + "unconfirmed leg two days ago. The 0.0125 shelf is where yesterday's "
+      + "accumulation sat and it has held twice. Invalidation is a close "
+      + "under it on rising sell count. ";
+    const analysis = insight.repeat(Math.ceil(10_000 / insight.length)).normalize();
+    const args = {
+      ...boardComposeSizedArgs(),
+      pools: Array.from({ length: 8 }, (_, i) => ({
+        chain: "robinhood",
+        pairAddress: `0x${String(i).repeat(40)}`,
+        analysis,
+      })),
+    };
+    const out = sanitizeToolArgs(args);
+    expect(out).not.toBeNull();
+    const serialized = out as string;
+    // Proof it is really board-budget-class rather than a small fixture.
+    expect(serialized.length).toBeGreaterThan(BOARD_SPEC_MAX_BYTES / 4);
+    expect(serialized).toContain("0.0125 shelf");
+    expect(serialized).not.toContain("(truncated)");
+    expect(serialized).not.toContain("[…]");
+    expect(
+      toolCallDisplaySchema.safeParse({
+        toolCallId: "call_board",
+        toolName: "BoardCompose",
+        toolArgs: serialized,
+      }).success,
+    ).toBe(true);
   });
 
   it("maps a row beyond the corruption ceiling to null, never to a cut string", () => {

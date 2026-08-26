@@ -13,10 +13,11 @@
  * lift the plate off flat black and give the eye a centre, never enough to
  * read as a coloured background of its own.
  *
- * NOTHING HERE ANIMATES, so the reduced-motion block guards the one thing
- * that does: the pending shimmer a card's sparkline wears while its bars are
- * in flight. It is stilled rather than merely slowed, because a placeholder
- * is fully legible standing still. */
+ * TWO THINGS ANIMATE, and the reduced-motion block stills both outright: the
+ * pending shimmer a card's sparkline wears while its bars are in flight, and
+ * the tick wash a card's price row flashes when a live figure changes. A
+ * placeholder is fully legible standing still, and a changed figure is
+ * still a changed figure without the flash. */
 
 .vex-board-surface {
   background-color: var(--vex-alias-board-surface);
@@ -39,9 +40,32 @@
   box-shadow: none;
 }
 
+/* THE LIVE TICK. A card's price row is stamped `data-tick` (a fresh value
+ * per change) when `priceUsd` or the 24h delta moves under a held lease; the
+ * attribute change restarts this one-shot wash from the accent alias down to
+ * transparent. Keyframes live here rather than in a React `style` attribute
+ * because the renderer's CSP has no `unsafe-inline`. The chip and the delta
+ * colour are never animated: a tone is a fact, not a flash. */
+@keyframes vex-board-tick {
+  from {
+    background-color: var(--vex-alias-accent-wash);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+[data-tick] {
+  animation: vex-board-tick 600ms ease-out 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .vex-board-surface,
   .vex-board-card {
     transition: none;
+  }
+
+  [data-tick] {
+    animation: none;
   }
 }

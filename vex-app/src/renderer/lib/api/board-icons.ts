@@ -106,13 +106,79 @@ export function useBoardTokenIcon(
 }
 
 /**
+ * What the photo slot may truthfully say about one card's icon.
+ *
+ * FOUR outcomes, and the two that are NOT `image` are kept apart on purpose:
+ * `absent` is a claim about the token (the provider was asked and has no
+ * picture, or nothing was ever asked because the pool carries no handle);
+ * `unavailable` is a claim about THIS READ (nothing was learned). A card that
+ * draws its "no image" note over a transport failure states as fact something
+ * the provider never said, which is the defect this union exists to prevent.
+ */
+export type BoardTokenIconOutcome =
+  | { readonly kind: "loading" }
+  | { readonly kind: "image"; readonly dataUrl: string }
+  | { readonly kind: "absent" }
+  | { readonly kind: "unavailable" };
+
+/**
+ * Reads the icon query into a {@link BoardTokenIconOutcome}.
+ *
+ *   loading      a handle exists and no answer of any kind has landed. Only
+ *                the FIRST flight: a paced re-ask of an `unavailable` or
+ *                `not_found` answer keeps showing the answer it is refreshing,
+ *                so the slot does not blink on every cadence tick;
+ *   image        the bytes are in hand;
+ *   absent       `iconId === null` (nothing was asked; the common case), or the
+ *                read settled `absent` for any reason: main answered
+ *                `not_found` from the provider, or bytes it could not identify
+ *                as an image. Both are settled facts about the handle;
+ *   unavailable  the read settled `unavailable` (busy, transport, not mounted),
+ *                the `Result` failed (input or sender rejected), or the query
+ *                itself errored. In none of these was anything learned about
+ *                the picture. Recovery, where it exists, is the hook's own
+ *                cadence: an `unavailable` answer is re-asked every
+ *                {@link BOARD_ICON_TRANSIENT_STALE_MS}; a failed `Result` and a
+ *                thrown query are held until remount, because asking twice
+ *                changes neither and `retry: false` is deliberate.
+ *
+ * The union is closed and switched exhaustively, so a wire shape this module
+ * does not know cannot masquerade as an answer: it falls to `unavailable`.
+ */
+export function boardTokenIconOutcome(
+  iconId: string | null,
+  query: Pick<UseQueryResult<Result<BoardIconReadResult>>, "data" | "isError">,
+): BoardTokenIconOutcome {
+  if (iconId === null) return { kind: "absent" };
+  if (query.isError) return { kind: "unavailable" };
+  const result = query.data;
+  if (result === undefined) return { kind: "loading" };
+  if (!result.ok) return { kind: "unavailable" };
+  const { icon } = result.data;
+  switch (icon.kind) {
+    case "image":
+      return { kind: "image", dataUrl: icon.dataUrl };
+    case "absent":
+      return { kind: "absent" };
+    case "unavailable":
+      return { kind: "unavailable" };
+    default: {
+      const exhaustive: never = icon;
+      void exhaustive;
+      return { kind: "unavailable" };
+    }
+  }
+}
+
+/**
  * The `data:` URL for a card, or null when there is none to draw.
  *
  * Collapses every non-image outcome - no handle, still loading, absent,
- * unavailable, a failed `Result` - into the ONE question the card asks: is
- * there a picture? The card's placeholder is a designed first-class state
- * rather than an error surface, so it does not need to tell a 404 from a busy
- * queue; main's log does, and it records it.
+ * unavailable, a failed `Result` - into the ONE question the compact rows ask:
+ * is there a picture? Those surfaces (preview card, book row) draw a neutral
+ * placeholder and make NO claim about why, so the collapse is honest there.
+ * A surface that SAYS anything about the absence reads
+ * {@link boardTokenIconOutcome} instead.
  */
 export function boardTokenIconDataUrl(
   query: UseQueryResult<Result<BoardIconReadResult>>,

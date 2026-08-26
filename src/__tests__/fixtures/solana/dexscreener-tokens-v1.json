@@ -1,0 +1,384 @@
+[
+  {
+    "chainId": "solana",
+    "dexId": "orca",
+    "url": "https://dexscreener.com/solana/czfq3xzzdmsdgduyrnltrhgc47cxcztlg4crryfu44ze",
+    "pairAddress": "Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE",
+    "labels": [
+      "wp"
+    ],
+    "baseToken": {
+      "address": "So11111111111111111111111111111111111111112",
+      "name": "Wrapped SOL",
+      "symbol": "SOL"
+    },
+    "quoteToken": {
+      "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "96.07660",
+    "priceUsd": "96.076",
+    "txns": {
+      "m5": {
+        "buys": 260,
+        "sells": 147
+      },
+      "h1": {
+        "buys": 2543,
+        "sells": 2373
+      },
+      "h6": {
+        "buys": 16382,
+        "sells": 15539
+      },
+      "h24": {
+        "buys": 48159,
+        "sells": 46883
+      }
+    },
+    "volume": {
+      "h24": 177614811.8,
+      "h6": 69383584.95,
+      "h1": 7081506.28,
+      "m5": 543746.04
+    },
+    "priceChange": {
+      "m5": 0.08,
+      "h1": -0.08,
+      "h6": -1.45,
+      "h24": -1.72
+    },
+    "liquidity": {
+      "usd": 25185768.84,
+      "base": 140288,
+      "quote": 11707367
+    },
+    "pairCreatedAt": 1688106058000,
+    "info": {
+      "imageUrl": "https://cdn.dexscreener.com/cms/images/fcfb87378d3198fe753ca08ba51a5552a84f34cf48cd09d83971aa195bdf00d2?width=800&height=800&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/7a8b9d77ffff37a36144cdebff51443a7c35bd737e8f327fc03f1121357731dd?width=1500&height=500&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/So11111111111111111111111111111111111111112?timestamp=1787763900000",
+      "websites": [
+        {
+          "url": "https://solana.com",
+          "label": "Website"
+        }
+      ],
+      "socials": [
+        {
+          "url": "https://x.com/solana",
+          "type": "twitter"
+        }
+      ]
+    }
+  },
+  {
+    "chainId": "solana",
+    "dexId": "orca",
+    "url": "https://dexscreener.com/solana/4tga77vundatadqgjyhjyt1qf8nnukxfgohoxr3tzpau",
+    "pairAddress": "4tgA77vUnDaTADqGJYhJYT1Qf8nnukxFGohoXR3tzPau",
+    "labels": [
+      "wp"
+    ],
+    "baseToken": {
+      "address": "JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD",
+      "name": "Jupiter USD",
+      "symbol": "JupUSD"
+    },
+    "quoteToken": {
+      "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "0.9997",
+    "priceUsd": "0.9997",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 0,
+        "sells": 1
+      },
+      "h6": {
+        "buys": 0,
+        "sells": 13
+      },
+      "h24": {
+        "buys": 31,
+        "sells": 151
+      }
+    },
+    "volume": {
+      "h24": 703142.34,
+      "h6": 13841.24,
+      "h1": 0.37,
+      "m5": 0
+    },
+    "priceChange": {},
+    "liquidity": {
+      "usd": 3848089.06,
+      "base": 2252942,
+      "quote": 1595730
+    },
+    "fdv": 3799502,
+    "marketCap": 64541707,
+    "pairCreatedAt": 1767629112000
+  },
+  {
+    "chainId": "solana",
+    "dexId": "meteora",
+    "url": "https://dexscreener.com/solana/5shjdacvwtox5ny8kpwnyyacewjttg8c6l821d9gtpjf",
+    "pairAddress": "5SHjDACvwtox5nY8kpWNYyaceWjtTG8C6L821D9Gtpjf",
+    "labels": [
+      "DLMM"
+    ],
+    "baseToken": {
+      "address": "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4",
+      "name": "Jupiter Perps LP",
+      "symbol": "JLP"
+    },
+    "quoteToken": {
+      "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "4.2877",
+    "priceUsd": "4.28",
+    "txns": {
+      "m5": {
+        "buys": 9,
+        "sells": 20
+      },
+      "h1": {
+        "buys": 185,
+        "sells": 330
+      },
+      "h6": {
+        "buys": 1566,
+        "sells": 2424
+      },
+      "h24": {
+        "buys": 5670,
+        "sells": 8098
+      }
+    },
+    "volume": {
+      "h24": 4269891.24,
+      "h6": 1434605.01,
+      "h1": 169292.49,
+      "m5": 8241.01
+    },
+    "priceChange": {
+      "m5": 0.06,
+      "h1": -0.08,
+      "h6": -0.84,
+      "h24": -1
+    },
+    "liquidity": {
+      "usd": 459406.39,
+      "base": 79321,
+      "quote": 119299
+    },
+    "fdv": 1652331640,
+    "marketCap": 842709941,
+    "pairCreatedAt": 1716129451000
+  },
+  {
+    "chainId": "solana",
+    "dexId": "orca",
+    "url": "https://dexscreener.com/solana/ezafu8ht4x4stnvkjkmqky98q2x8tz3jbzbzbp5xyk1d",
+    "pairAddress": "EZafu8hT4X4STnVKJKmQKy98q2X8tz3JBzBzbP5xyK1D",
+    "labels": [
+      "wp"
+    ],
+    "baseToken": {
+      "address": "9BEcn9aPEmhSPbPQeFGjidRiEKki46fVQDyPpSQXPA2D",
+      "name": "jupiter lend USDC",
+      "symbol": "jlUSDC"
+    },
+    "quoteToken": {
+      "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "priceNative": "1.05877",
+    "priceUsd": "1.058",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 1,
+        "sells": 0
+      },
+      "h6": {
+        "buys": 20,
+        "sells": 1
+      },
+      "h24": {
+        "buys": 33,
+        "sells": 11
+      }
+    },
+    "volume": {
+      "h24": 5.45,
+      "h6": 3.03,
+      "h1": 0.11,
+      "m5": 0
+    },
+    "priceChange": {
+      "h1": 0.03,
+      "h6": 0.14,
+      "h24": 0.49
+    },
+    "liquidity": {
+      "usd": 43.26,
+      "base": 10.3079,
+      "quote": 32.3474
+    },
+    "fdv": 1381431,
+    "marketCap": 1381431,
+    "pairCreatedAt": 1755740690000
+  },
+  {
+    "chainId": "solana",
+    "dexId": "orca",
+    "url": "https://dexscreener.com/solana/4fuuiyxtq6qcrdsq9oubyctm7bqswytsyluegzlty4t4",
+    "pairAddress": "4fuUiYxTQ6QCrdSq9ouBYcTM7bqSwYTSyLueGZLTy4T4",
+    "labels": [
+      "wp"
+    ],
+    "baseToken": {
+      "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "quoteToken": {
+      "address": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+      "name": "USDT",
+      "symbol": "USDT"
+    },
+    "priceNative": "0.9999",
+    "priceUsd": "0.9999",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 1
+      },
+      "h1": {
+        "buys": 16,
+        "sells": 17
+      },
+      "h6": {
+        "buys": 756,
+        "sells": 55
+      },
+      "h24": {
+        "buys": 3261,
+        "sells": 320
+      }
+    },
+    "volume": {
+      "h24": 1208809.52,
+      "h6": 165456.41,
+      "h1": 1794.92,
+      "m5": 3.38
+    },
+    "priceChange": {
+      "m5": -0.02,
+      "h1": -0.02,
+      "h6": -0.02
+    },
+    "liquidity": {
+      "usd": 1104060.44,
+      "base": 640522,
+      "quote": 463564
+    },
+    "fdv": 9342511575,
+    "marketCap": 73705753269,
+    "pairCreatedAt": 1669603219000,
+    "info": {
+      "imageUrl": "https://cdn.dexscreener.com/cms/images/913e72ef4901644569197a61dd198656ab488e9cd648a326fc2fca21b0d2521d?width=800&height=800&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/913e72ef4901644569197a61dd198656ab488e9cd648a326fc2fca21b0d2521d?width=1500&height=500&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v?timestamp=1787763900000",
+      "websites": [],
+      "socials": []
+    }
+  },
+  {
+    "chainId": "solana",
+    "dexId": "pumpswap",
+    "url": "https://dexscreener.com/solana/26x9bxjw8qy9n27n9rewewgu2dfpln98f2jlihrwkbug",
+    "pairAddress": "26X9BXjW8Qy9N27n9rEwEwGu2dFpLN98F2jLihrwKbug",
+    "baseToken": {
+      "address": "2H5yWbfB3u2KZwZj4RsBrfTXL8KB2YNE8i2Yb7cvpump",
+      "name": "Rich Baby Daddy",
+      "symbol": "BABYDADDY"
+    },
+    "quoteToken": {
+      "address": "So11111111111111111111111111111111111111112",
+      "name": "Wrapped SOL",
+      "symbol": "SOL"
+    },
+    "priceNative": "0.00000002604",
+    "priceUsd": "0.000002522",
+    "txns": {
+      "m5": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 0,
+        "sells": 0
+      },
+      "h6": {
+        "buys": 0,
+        "sells": 1
+      },
+      "h24": {
+        "buys": 0,
+        "sells": 1
+      }
+    },
+    "volume": {
+      "h24": 1.35,
+      "h6": 1.35,
+      "h1": 0,
+      "m5": 0
+    },
+    "priceChange": {},
+    "liquidity": {
+      "usd": 4523.88,
+      "base": 891303123,
+      "quote": 23.4974
+    },
+    "fdv": 2521,
+    "marketCap": 2521,
+    "pairCreatedAt": 1781865085000,
+    "info": {
+      "imageUrl": "https://cdn.dexscreener.com/cms/images/ciG89UpGbRmozqY8?width=800&height=800&quality=95&format=auto",
+      "header": "https://cdn.dexscreener.com/cms/images/rtcnqwYU2wkjNnAm?width=1500&height=500&quality=95&format=auto",
+      "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/2H5yWbfB3u2KZwZj4RsBrfTXL8KB2YNE8i2Yb7cvpump?timestamp=1787763900000",
+      "websites": [
+        {
+          "url": "https://richbabydaddy.xyz",
+          "label": "Website"
+        }
+      ],
+      "socials": [
+        {
+          "url": "https://x.com/BABYDADDYONSOL",
+          "type": "twitter"
+        },
+        {
+          "url": "https://t.me/RichBabyDaddyPortal",
+          "type": "telegram"
+        }
+      ]
+    }
+  }
+]

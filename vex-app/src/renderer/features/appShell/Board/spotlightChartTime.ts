@@ -22,6 +22,7 @@
  */
 
 import { TickMarkType, type Time, type UTCTimestamp } from "lightweight-charts";
+import type { BoardChartPillResolution } from "@shared/schemas/board-chart.js";
 
 export const UTC_MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -49,11 +50,29 @@ function utcMonthName(at: Date): string {
   return UTC_MONTHS[at.getUTCMonth()] ?? "";
 }
 
+function dayMonth(at: Date): string {
+  return `${String(at.getUTCDate())} ${utcMonthName(at)}`;
+}
+
+function hoursMinutes(at: Date): string {
+  return `${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}`;
+}
+
 /** The tooltip's stamp, exactly the mockup's `26 Aug - 04:15`, in UTC. */
 export function tooltipStamp(timeSec: UTCTimestamp): string {
   const at = utcDateOf(timeSec);
   if (at === null) return "unknown time";
-  return `${String(at.getUTCDate())} ${utcMonthName(at)} - ${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}`;
+  return `${dayMonth(at)} - ${hoursMinutes(at)}`;
+}
+
+/**
+ * The tooltip's and the readout's LAST line: the stamp with its zone said
+ * out loud, because a chart read beside a UTC-stamped header must not leave
+ * the reader guessing which clock the card is on.
+ */
+export function tooltipStampUtc(timeSec: UTCTimestamp): string {
+  const stamp = tooltipStamp(timeSec);
+  return stamp === "unknown time" ? stamp : `${stamp} UTC`;
 }
 
 /** The CROSSHAIR time label (`localization.timeFormatter`), in UTC. */
@@ -75,19 +94,53 @@ export function utcTickMarkFormatter(
   time: Time,
   tickMarkType: TickMarkType,
 ): string {
-  const at = utcDateOf(time);
-  if (at === null) return "";
-  switch (tickMarkType) {
-    case TickMarkType.Year:
-      return String(at.getUTCFullYear());
-    case TickMarkType.Month:
-      return utcMonthName(at);
-    case TickMarkType.DayOfMonth:
-      return `${String(at.getUTCDate())} ${utcMonthName(at)}`;
-    case TickMarkType.TimeWithSeconds:
-      return `${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}:${pad(at.getUTCSeconds())}`;
-    case TickMarkType.Time:
-    default:
-      return `${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}`;
-  }
+  return utcTickMarkFormatterFor(SPOTLIGHT_AXIS_DEFAULT_PILL)(time, tickMarkType);
+}
+
+/**
+ * How a TIME-OF-DAY tick reads on each pill. The two intraday pills say the
+ * clock alone; a week of two-hour bars needs the day beside it or every
+ * "12:00" looks like every other; a month of eight-hour bars is read by day.
+ * Year, month and day-of-month ticks read the same on every pill.
+ */
+const TIME_TICK_FORM: Readonly<
+  Record<BoardChartPillResolution, "clock" | "day-clock" | "day">
+> = {
+  "1m": "clock",
+  "15m": "clock",
+  "2h": "day-clock",
+  "8h": "day",
+};
+
+/** The pill the zero-argument formatter speaks for: the densest vocabulary. */
+const SPOTLIGHT_AXIS_DEFAULT_PILL: BoardChartPillResolution = "1m";
+
+/**
+ * The AXIS TICK MARKS for ONE pill, in UTC, at whatever granularity the
+ * library asks for. The pill decides only what a time-of-day tick carries;
+ * the branch on `TickMarkType` lives here and nowhere else.
+ */
+export function utcTickMarkFormatterFor(
+  resolution: BoardChartPillResolution,
+): (time: Time, tickMarkType: TickMarkType) => string {
+  const form = TIME_TICK_FORM[resolution];
+  return (time: Time, tickMarkType: TickMarkType): string => {
+    const at = utcDateOf(time);
+    if (at === null) return "";
+    switch (tickMarkType) {
+      case TickMarkType.Year:
+        return String(at.getUTCFullYear());
+      case TickMarkType.Month:
+        return utcMonthName(at);
+      case TickMarkType.DayOfMonth:
+        return dayMonth(at);
+      case TickMarkType.TimeWithSeconds:
+        return `${hoursMinutes(at)}:${pad(at.getUTCSeconds())}`;
+      case TickMarkType.Time:
+      default:
+        if (form === "day") return dayMonth(at);
+        if (form === "day-clock") return `${dayMonth(at)} ${hoursMinutes(at)}`;
+        return hoursMinutes(at);
+    }
+  };
 }
