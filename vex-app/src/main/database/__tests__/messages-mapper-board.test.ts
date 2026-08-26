@@ -54,6 +54,27 @@ describe("toDto - board projection (metadata -> 'board')", () => {
     expect(dto.board).toEqual(spec);
   });
 
+  it("normalizes a legacy v1 row without iconId to iconId: null instead of dropping the board", () => {
+    // Durable rows written before the iconId expand-contract lack the key
+    // entirely. The read schema must keep parsing them (a required field here
+    // would make every pre-expansion board vanish from the transcript) and
+    // normalize the missing key to null, the same value current writers emit
+    // for a pool with no provider profile.
+    const base = boardSpecFixture();
+    const templateRow = base.hydration.rows[0];
+    if (templateRow === undefined) {
+      throw new Error("board fixture hydration row 0 missing");
+    }
+    const { iconId: _dropped, ...legacyRow } = templateRow;
+    const legacySpec = {
+      ...base,
+      hydration: { ...base.hydration, rows: [legacyRow] },
+    };
+    const dto = toDto(row("assistant", legacySpec));
+    expect(dto.board).not.toBeNull();
+    expect(dto.board?.hydration.rows[0]?.iconId).toBeNull();
+  });
+
   it("keeps the row an ordinary assistant row - the board is not a new kind", () => {
     const dto = toDto(row("assistant", boardSpecFixture()));
     expect(dto.kind).toBe("text");

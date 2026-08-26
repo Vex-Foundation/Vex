@@ -21,7 +21,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createElement } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement, type ReactNode } from "react";
 import { BOARD_STALE_AFTER_MS, boardSpecV1Schema } from "@vex-lib/board/index.js";
 import { BoardBlock } from "../BoardBlock.js";
 import { boardSpec, candle, hydratedRow, FIXTURE_FETCHED_AT } from "./boardFixture.js";
@@ -89,8 +90,34 @@ vi.mock("lightweight-charts", () => {
   };
 });
 
+/**
+ * The board icon bridge, faked at the WINDOW boundary rather than by mocking
+ * the hook. That keeps the real query hook, the real key, the real enabled/
+ * disabled decision and the real "is there a picture" projection in the test,
+ * so what is stubbed is exactly the process boundary and nothing above it.
+ *
+ * The default answers `absent`, which is the ORDINARY case on a real board
+ * (roughly half of pools carry no artwork) and therefore the right default for
+ * a fixture: every card wears its monogram unless a test says otherwise.
+ */
+const readBoardIcon = vi.fn();
+
+/** A 1x1 PNG, as a `data:` URL of the shape the IPC contract admits. */
+const ICON_DATA_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
 beforeEach(() => {
   chartInstances.length = 0;
+  readBoardIcon.mockReset();
+  readBoardIcon.mockResolvedValue({
+    ok: true,
+    data: { iconId: "abcd1234", icon: { kind: "absent", reason: "not_found" } },
+  });
+  Object.defineProperty(window, "vex", {
+    configurable: true,
+    writable: true,
+    value: { boardIcons: { read: readBoardIcon } },
+  });
   vi.useFakeTimers();
   // Freeze the staleness clock: a board is a snapshot and these assertions
   // are about which side of the freshness window it sits on.
@@ -102,8 +129,21 @@ afterEach(() => {
   cleanup();
 });
 
+/**
+ * A board inside a real QueryClient. The token cards fetch their own logos
+ * through TanStack Query, so a provider is part of the composition under test
+ * rather than scaffolding; `retry: false` keeps a stubbed refusal from turning
+ * into a retry loop inside a fake-timer test.
+ */
+function withQuery(ui: ReactNode): ReactNode {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  return createElement(QueryClientProvider, { client }, ui);
+}
+
 function renderBoard(spec = boardSpec()): HTMLElement {
-  const { container } = render(createElement(BoardBlock, { spec }));
+  const { container } = render(withQuery(createElement(BoardBlock, { spec })));
   return container;
 }
 
@@ -132,6 +172,24 @@ function tokenCardAt(cards: NodeListOf<Element>, index: number): Element {
   const card = cards[index];
   if (card === undefined) throw new Error(`board token card ${index} missing`);
   return card;
+}
+
+/**
+ * Open the chart's "Data notes" disclosure and return the region.
+ *
+ * The full caveat sentences are no longer in the always-visible caption: the
+ * status line keeps the resolution and the bar count, and everything that
+ * describes what the chart is NOT sits one keystroke away in this region. The
+ * sentences are unchanged in substance and complete in the DOM once opened,
+ * which is what these assertions check.
+ */
+function openDataNotes(container: HTMLElement): HTMLElement {
+  const trigger = container.querySelector(
+    '[data-vex-area="board-chart-notes-trigger"]',
+  );
+  if (trigger === null) throw new Error("chart data-notes trigger not found");
+  fireEvent.click(trigger);
+  return boardArea(container, "board-chart-notes");
 }
 
 function chartAt(index: number): ChartRecord {
@@ -290,9 +348,18 @@ describe("BoardBlock staleness", () => {
 
   it("clears its freshness timeout on unmount", () => {
     vi.setSystemTime(FIXTURE_FETCHED_AT + 1_000);
-    const { unmount } = render(createElement(BoardBlock, { spec: boardSpec() }));
+    const { unmount } = render(
+      withQuery(createElement(BoardBlock, { spec: boardSpec() })),
+    );
     expect(vi.getTimerCount()).toBe(1);
     unmount();
+    // Unmounting a query observer schedules its own zero-delay garbage
+    // collection, so flush that one turn before counting. The board's freshness
+    // timeout is aimed a minute out and would survive this advance, which is
+    // what keeps the assertion strict: a leaked board timer still reads as 1.
+    act(() => {
+      vi.advanceTimersByTime(0);
+    });
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -353,14 +420,14 @@ describe("BoardBlock chart disclosure", () => {
 
   it("creates exactly one chart instance when the region opens", () => {
     renderBoard(withChart());
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     expect(chartInstances).toHaveLength(1);
     expect(chartAt(0).removed).toBe(false);
   });
 
   it("removes the chart when the region collapses again", () => {
     renderBoard(withChart());
-    const trigger = screen.getByRole("button", { name: "Show chart" });
+    const trigger = screen.getByRole("button", { name: "Chart" });
     fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("button", { name: "Hide chart" }));
     expect(chartAt(0).removed).toBe(true);
@@ -368,14 +435,14 @@ describe("BoardBlock chart disclosure", () => {
 
   it("removes the chart on unmount", () => {
     renderBoard(withChart());
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     cleanup();
     expect(chartAt(0).removed).toBe(true);
   });
 
   it("disables the library's own attribution anchor and renders owned credit", () => {
     const container = renderBoard(withChart());
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     const layout = chartAt(0).options["layout"] as {
       attributionLogo: boolean;
     };
@@ -386,7 +453,7 @@ describe("BoardBlock chart disclosure", () => {
 
   it("sets a custom price format so a sub-cent price is not rendered as 0.00", () => {
     renderBoard(withChart());
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     const priceFormat = chartAt(0).seriesOptions["priceFormat"] as {
       type: string;
     };
@@ -397,7 +464,7 @@ describe("BoardBlock chart disclosure", () => {
     // `minMove: 0` makes the library's base Infinity, which zeroes the
     // degenerate-range extension and renders a flat series as a blank scale.
     renderBoard(withChart());
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     const priceFormat = chartAt(0).seriesOptions["priceFormat"] as {
       minMove: number;
     };
@@ -416,7 +483,7 @@ describe("BoardBlock chart disclosure", () => {
       ),
     });
     renderBoard(flat);
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
 
     const priceFormat = chartAt(0).seriesOptions["priceFormat"] as {
       minMove: number;
@@ -449,20 +516,21 @@ describe("BoardBlock chart disclosure", () => {
         ],
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
-    expect(
-      boardArea(container, "board-chart-caveats")
-        .textContent,
-    ).toContain("open or close outside the reported high/low");
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
+    expect(openDataNotes(container).textContent).toContain(
+      "1 bar has an open or close outside the high and low the provider reported for the same bar",
+    );
   });
 
   it("says nothing about divergence when every bar is coherent", () => {
     const container = renderBoard(withChart());
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
+    // A coherent series has nothing to disclose on this axis. Asserted on the
+    // whole figure, so the sentence is absent whether or not the region is
+    // open - and the trigger's own count would have named it if it existed.
     expect(
-      boardArea(container, "board-chart-caveats")
-        .textContent,
-    ).not.toContain("outside the reported high/low");
+      boardArea(container, "board-chart-caveats").textContent,
+    ).not.toContain("outside the high and low the provider reported");
   });
 
   it("omits a marker that matches no candle and names it in the legend", () => {
@@ -479,7 +547,7 @@ describe("BoardBlock chart disclosure", () => {
         ],
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
 
     // One marker drawn, and it is the one that landed on a bar.
     expect(chartAt(0).markers).toHaveLength(1);
@@ -502,7 +570,7 @@ describe("BoardBlock chart disclosure", () => {
 
   it("recolors existing levels, zones and markers when the theme flips", async () => {
     const container = renderBoard(withChart());
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     const before = chartAt(0).priceLineTitles.length;
     const markersBefore = chartAt(0).markers.length;
     expect(before).toBeGreaterThan(0);
@@ -530,7 +598,7 @@ describe("BoardBlock chart disclosure", () => {
         ],
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     expect(chartAt(0).markers).toHaveLength(1);
     expect(
       container.querySelector('[data-vex-area="board-annotation-note"]'),
@@ -539,19 +607,19 @@ describe("BoardBlock chart disclosure", () => {
 
   it("fits the viewport exactly once for the subject, not per render", () => {
     renderBoard(withChart());
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     expect(chartAt(0).fitContentCalls).toBe(1);
   });
 
   it("draws price lines with NO library-drawn title", () => {
     renderBoard(withChart());
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     expect(chartAt(0).priceLineTitles).toStrictEqual([""]);
   });
 
   it("gives markers no text, so no agent-authored string reaches the canvas", () => {
     renderBoard(withChart());
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     for (const marker of chartAt(0).markers) {
       expect(marker).not.toHaveProperty("text");
     }
@@ -559,7 +627,7 @@ describe("BoardBlock chart disclosure", () => {
 
   it("lists every annotation label as DOM text with its coordinate", () => {
     const container = renderBoard(withChart());
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     const legend = boardArea(container, "board-chart-annotations");
     expect(legend.getAttribute("aria-label")).toBe("Chart annotations");
     expect(legend.textContent).toContain("resistance");
@@ -571,27 +639,30 @@ describe("BoardBlock chart disclosure", () => {
 
   it("names the forming bar and the resolution in the caveats", () => {
     const container = renderBoard(withChart());
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
+    // The two facts that describe what the chart IS stay on the always-visible
+    // status line; the sentence about what it is NOT sits in the disclosure.
     const caveats = boardArea(container, "board-chart-caveats");
     expect(caveats.textContent).toContain("1h");
     expect(caveats.textContent).toContain("3 bars");
-    expect(caveats.textContent).toContain("newest bar still forming");
+    expect(openDataNotes(container).textContent).toContain(
+      "The newest bar is still forming, so its close is the price at the moment of the read, not the bar's final close.",
+    );
   });
 
   it("reports the provider's own bound when the series was truncated", () => {
     const container = renderBoard(
       boardSpec({ truncated: true, annotations: [] }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
-    expect(
-      boardArea(container, "board-chart-caveats")
-        .textContent,
-    ).toContain("provider bounded the range");
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
+    expect(openDataNotes(container).textContent).toContain(
+      "The provider bounded the range it returned, so history older than the first bar exists but was not sent.",
+    );
   });
 
   it("keeps the trigger and the region wired for assistive tech", () => {
     const container = renderBoard(withChart());
-    const trigger = screen.getByRole("button", { name: "Show chart" });
+    const trigger = screen.getByRole("button", { name: "Chart" });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     const regionId = trigger.getAttribute("aria-controls");
     if (regionId === null) throw new Error("chart trigger has no aria-controls");
@@ -610,13 +681,13 @@ describe("BoardBlock chart disclosure", () => {
 
   it("renders no disclosure at all when the board carries no chart", () => {
     renderBoard(boardSpec());
-    expect(screen.queryByRole("button", { name: "Show chart" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Chart" })).toBeNull();
   });
 
   it("names the chart, with its delay, for a screen reader", () => {
     vi.setSystemTime(FIXTURE_FETCHED_AT + 4 * 3_600_000);
     renderBoard(withChart());
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     const figure = screen.getByRole("img");
     expect(figure.getAttribute("aria-label")).toContain("0xaaa111");
     expect(figure.getAttribute("aria-label")).toContain("market data delayed");
@@ -626,7 +697,7 @@ describe("BoardBlock chart disclosure", () => {
 describe("BoardBlock chart degradation", () => {
   it("creates NO chart and states the gap when the series is empty", () => {
     const container = renderBoard(boardSpec({ bars: [] }));
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     expect(chartInstances).toHaveLength(0);
     const empty = boardArea(container, "board-chart-empty");
     expect(empty.textContent).toContain("No candles for this pool at 1h.");
@@ -639,7 +710,7 @@ describe("BoardBlock chart degradation", () => {
         annotations: [{ kind: "level", price: "0.0000013", label: "resistance" }],
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
     expect(
       boardArea(container, "board-chart-annotations")
         .textContent,
@@ -653,10 +724,202 @@ describe("BoardBlock chart budget reporting", () => {
       candle(FIXTURE_FETCHED_AT - (205 - i) * 3_600_000),
     );
     const container = renderBoard(boardSpec({ bars }));
-    fireEvent.click(screen.getByRole("button", { name: "Show chart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
+    expect(openDataNotes(container).textContent).toContain(
+      "5 older bars exist beyond the 200-bar display window and are not drawn.",
+    );
+  });
+});
+
+/**
+ * THE CHART IS ANCHORED TO THE CARD IT IS ABOUT.
+ *
+ * A board's chart describes ONE pool (`chart.poolIndex`). Rendered as a
+ * detached footer under the whole grid it left the reader to work out which
+ * card it belonged to, and on an eight-pool board that is a real question. So
+ * the owning card carries the trigger and the panel opens inside that card's
+ * own grid cell.
+ *
+ * The list semantics are part of the contract, not a detail: the grid must
+ * still have exactly one item per pool, because the accessible name states the
+ * count. An extra full-width `<li>` for the panel would have made that count a
+ * lie, which is why the cell widens instead.
+ */
+describe("BoardBlock chart anchoring", () => {
+  function twoPoolBoardChartingTheSecond() {
+    return boardSpec({
+      pools: [
+        { chain: "base", pairAddress: "0xaaa111" },
+        { chain: "base", pairAddress: "0xbbb222" },
+      ],
+      rows: [
+        hydratedRow({ baseTokenSymbol: "PEPE" }),
+        hydratedRow({ baseTokenSymbol: "BRETT" }),
+      ],
+      chart: { poolIndex: 1, resolution: "1h" },
+    });
+  }
+
+  it("puts the one trigger on the card whose pool the chart is about", () => {
+    const container = renderBoard(twoPoolBoardChartingTheSecond());
+    const cards = container.querySelectorAll('[data-vex-area="board-token-card"]');
+    expect(cards).toHaveLength(2);
+    expect(tokenCardAt(cards, 0).getAttribute("data-has-chart")).toBe("false");
+    expect(tokenCardAt(cards, 1).getAttribute("data-has-chart")).toBe("true");
+    // Exactly one, so a reader is never offered two ways into one chart.
     expect(
-      boardArea(container, "board-chart-caveats")
-        .textContent,
-    ).toContain("5 older bars");
+      container.querySelectorAll('[data-vex-area="board-chart-trigger"]'),
+    ).toHaveLength(1);
+    expect(tokenCardAt(cards, 1).querySelector('[data-vex-area="board-chart-trigger"]'))
+      .not.toBeNull();
+  });
+
+  it("renders the chart inside the owning card's own grid cell", () => {
+    const container = renderBoard(twoPoolBoardChartingTheSecond());
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
+    const host = boardArea(container, "board-chart-host");
+    // The host cell is the SECOND list item, and the figure lives inside it.
+    const items = container.querySelectorAll(
+      '[data-vex-area="board-token-grid"] > li',
+    );
+    expect(items).toHaveLength(2);
+    expect(items[1]).toBe(host);
+    expect(host.querySelector('[data-vex-area="board-chart-caveats"]')).not.toBeNull();
+  });
+
+  it("keeps one list item per pool whether the chart is open or closed", () => {
+    // The accessible name states the pool count, so the count must stay true.
+    const container = renderBoard(twoPoolBoardChartingTheSecond());
+    const grid = boardArea(container, "board-token-grid");
+    expect(grid.getAttribute("aria-label")).toBe("2 pools on this board");
+    expect(grid.querySelectorAll(":scope > li")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
+    expect(grid.getAttribute("aria-label")).toBe("2 pools on this board");
+    expect(grid.querySelectorAll(":scope > li")).toHaveLength(2);
+  });
+
+  it("spans the host cell across the grid only while the chart is open", () => {
+    const container = renderBoard(twoPoolBoardChartingTheSecond());
+    const host = boardArea(container, "board-chart-host");
+    expect(host.getAttribute("data-chart-open")).toBe("false");
+    expect(host.className).not.toContain("sm:col-span-2");
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
+    expect(host.getAttribute("data-chart-open")).toBe("true");
+    expect(host.className).toContain("sm:col-span-2");
+  });
+
+  it("keeps the trigger and its region wired to each other on the card", () => {
+    const container = renderBoard(twoPoolBoardChartingTheSecond());
+    const trigger = boardArea(container, "board-chart-trigger");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    const regionId = trigger.getAttribute("aria-controls");
+    expect(regionId).not.toBeNull();
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    // Same element, still the trigger: opening must not move focus or replace
+    // the control the reader just operated.
+    expect(document.getElementById(regionId ?? "")).not.toBeNull();
+  });
+
+  it("gives a board with no chart no trigger and no host cell", () => {
+    const container = renderBoard(boardSpec());
+    expect(container.querySelector('[data-vex-area="board-chart-trigger"]')).toBeNull();
+    expect(container.querySelector('[data-vex-area="board-chart-host"]')).toBeNull();
+    expect(
+      screen.getByRole("article").getAttribute("data-has-chart"),
+    ).toBe("false");
+  });
+});
+
+/**
+ * THE TOKEN LOGO, whose absent state is the ordinary one.
+ *
+ * Around half of the pools a board can carry have no profile artwork, so the
+ * monogram is not an error surface - it is what most cards wear. These tests
+ * pin both states and, more importantly, pin that a card with no handle never
+ * asks main for anything: a disabled query is the difference between a quiet
+ * board and one IPC round trip per gap.
+ */
+describe("BoardBlock token logo", () => {
+  it("draws the monogram from the symbol when the row carries no handle", async () => {
+    const container = renderBoard();
+    const logo = boardArea(container, "board-token-logo");
+    expect(logo.getAttribute("data-state")).toBe("monogram");
+    expect(logo.textContent).toBe("PE");
+    // Nothing was asked of main: there is no handle to ask about.
+    expect(readBoardIcon).not.toHaveBeenCalled();
+  });
+
+  it("draws the fetched image when the row carries a handle", async () => {
+    readBoardIcon.mockResolvedValue({
+      ok: true,
+      data: { iconId: "abcd1234", icon: { kind: "image", dataUrl: ICON_DATA_URL } },
+    });
+    const container = renderBoard(
+      boardSpec({ rows: [hydratedRow({ iconId: "abcd1234" })] }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const logo = boardArea(container, "board-token-logo");
+    expect(logo.getAttribute("data-state")).toBe("image");
+    expect(logo.getAttribute("src")).toBe(ICON_DATA_URL);
+    expect(readBoardIcon).toHaveBeenCalledWith({ iconId: "abcd1234" });
+  });
+
+  it("falls back to the monogram when main reports the icon absent", async () => {
+    const container = renderBoard(
+      boardSpec({ rows: [hydratedRow({ iconId: "abcd1234" })] }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const logo = boardArea(container, "board-token-logo");
+    expect(logo.getAttribute("data-state")).toBe("monogram");
+    expect(logo.textContent).toBe("PE");
+  });
+
+  it("falls back to the monogram when the channel itself refuses", async () => {
+    // A failed Result is a boundary failure, not a statement about the token.
+    // The card still shows the token; it simply has no picture.
+    readBoardIcon.mockResolvedValue({
+      ok: false,
+      error: { code: "validation.invalid_input", domain: "images" },
+    });
+    const container = renderBoard(
+      boardSpec({ rows: [hydratedRow({ iconId: "abcd1234" })] }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(boardArea(container, "board-token-logo").getAttribute("data-state")).toBe(
+      "monogram",
+    );
+  });
+
+  it("keeps the logo out of the accessible name, which the symbol already carries", async () => {
+    readBoardIcon.mockResolvedValue({
+      ok: true,
+      data: { iconId: "abcd1234", icon: { kind: "image", dataUrl: ICON_DATA_URL } },
+    });
+    const container = renderBoard(
+      boardSpec({ rows: [hydratedRow({ iconId: "abcd1234" })] }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const logo = boardArea(container, "board-token-logo");
+    // Decorative beside the visible ticker: announcing both reads the token
+    // twice, and "image" on its own tells a screen-reader user nothing.
+    expect(logo.getAttribute("aria-hidden")).toBe("true");
+    expect(logo.getAttribute("alt")).toBe("");
+    expect(screen.getByRole("article").getAttribute("aria-label")).toContain("PEPE");
+  });
+
+  it("uses a neutral mark rather than a letter it does not have", () => {
+    const container = renderBoard(
+      boardSpec({ rows: [hydratedRow({ baseTokenSymbol: null })] }),
+    );
+    expect(boardArea(container, "board-token-logo").textContent).toBe("?");
   });
 });

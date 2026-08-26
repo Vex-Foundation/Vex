@@ -17,6 +17,7 @@ import { BAR_RESOLUTIONS } from "../../../tools/dexscreener/endpoints/bars.js";
 import {
   BOARD_CHART_RESOLUTIONS,
   BOARD_MARKER_MAX_MS,
+  BOARD_MAX_POOLS,
   BOARD_MARKER_MIN_MS,
   BOARD_SPEC_MAX_BYTES,
   BOARD_STALE_AFTER_MS,
@@ -538,5 +539,108 @@ describe("the serialized byte budget", () => {
     expect(message).toContain("51200");
     expect(message).toContain(String(BOARD_SPEC_MAX_BYTES));
     expect(message).toContain("nothing was truncated");
+  });
+});
+
+
+/**
+ * THE ICON HANDLE, and the compatibility it exists to preserve.
+ *
+ * `iconId` is the one field on the hydrated row that is optional rather than
+ * required-and-nullable. That asymmetry is a durable-data decision: boards
+ * composed before the field existed are ALREADY PERSISTED in transcript rows,
+ * and this schema is what re-parses them on every read. The first test below is
+ * the regression that goes red the moment someone "tidies" the field into a
+ * required one - and red there means every board already in a user's history
+ * renders as nothing.
+ */
+describe("hydrated row - the token icon handle", () => {
+  function rowWith(iconId: unknown): unknown {
+    const hydration = hydrationFor(1, false) as {
+      rows: Array<Record<string, unknown>>;
+    };
+    const row = hydration.rows[0] as Record<string, unknown>;
+    row["iconId"] = iconId;
+    return hydration;
+  }
+
+  function specWith(hydration: unknown): unknown {
+    return { version: 1, ...minimalInput(), hydration };
+  }
+
+  it("parses a legacy row that carries no iconId key at all, and reads it as null", () => {
+    // `hydrationFor` deliberately builds the PRE-FIELD row shape, which is
+    // exactly what a durable v1 board holds.
+    const parsed = boardSpecV1Schema.safeParse(specWith(hydrationFor(1, false)));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const row = parsed.data.hydration.rows[0];
+    expect(row).toBeDefined();
+    // The reader gets a definite "no icon", never `undefined`, so no consumer
+    // has to know the field was once absent.
+    expect(row?.iconId).toBeNull();
+    expect(row !== undefined && "iconId" in row).toBe(true);
+  });
+
+  it("accepts an explicit null, which is what every writer emits when there is no icon", () => {
+    const parsed = boardSpecV1Schema.safeParse(specWith(rowWith(null)));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.hydration.rows[0]?.iconId).toBeNull();
+  });
+
+  it("accepts a provider-shaped handle verbatim", () => {
+    const parsed = boardSpecV1Schema.safeParse(specWith(rowWith("Ab3-_zZ09")));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.hydration.rows[0]?.iconId).toBe("Ab3-_zZ09");
+  });
+
+  it("accepts the handle at both length bounds", () => {
+    expect(boardSpecV1Schema.safeParse(specWith(rowWith("abcd"))).success).toBe(true);
+    expect(
+      boardSpecV1Schema.safeParse(specWith(rowWith("a".repeat(128)))).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["one character under the minimum", "abc"],
+    ["one character over the maximum", "a".repeat(129)],
+    ["a path separator", "abc/def"],
+    ["a parent-directory hop", "../secrets"],
+    ["a dot, which would let a handle end in a file extension", "icon.png"],
+    ["an absolute URL", "https://evil.example/x"],
+    ["a protocol-relative URL", "//evil.example/x"],
+    ["a query string that would re-point the CDN parameters", "abcd?width=99999"],
+    ["whitespace", "ab cd"],
+    ["a percent escape", "abcd%2Fef"],
+    ["an embedded NUL", "abc\u0000d"],
+    ["a newline", "abcd\nefgh"],
+    ["the empty string", ""],
+    ["a number rather than a string", 1234],
+  ])("refuses %s", (_label, iconId) => {
+    expect(boardSpecV1Schema.safeParse(specWith(rowWith(iconId))).success).toBe(false);
+  });
+
+  it("keeps a full board of icon-bearing rows far inside the byte budget", () => {
+    // The field's COST is the thing to prove: 8 pools, each with a maximum
+    // length handle, must not push a realistic board anywhere near a refusal.
+    const pools = Array.from({ length: BOARD_MAX_POOLS }, (_unused, index) => ({
+      chain: "solana",
+      pairAddress: `pool${index}${"a".repeat(40)}`,
+      caption: "Holding the range it broke out of.",
+    }));
+    const hydration = hydrationFor(BOARD_MAX_POOLS, false) as {
+      rows: Array<Record<string, unknown>>;
+    };
+    for (const row of hydration.rows) row["iconId"] = "i".repeat(128);
+    const spec = { version: 1, title: "SOL majors", pools, hydration };
+
+    expect(boardSpecV1Schema.safeParse(spec).success).toBe(true);
+    const budget = checkBoardSpecByteBudget(spec);
+    expect(budget.withinBudget).toBe(true);
+    // Stated as a real ratio rather than "it fits": the handles must be a
+    // rounding error against the 48 KiB ceiling, not a squeeze past it.
+    expect(budget.byteLength).toBeLessThan(BOARD_SPEC_MAX_BYTES / 2);
   });
 });

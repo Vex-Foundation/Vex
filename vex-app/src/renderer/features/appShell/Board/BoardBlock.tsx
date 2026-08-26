@@ -80,36 +80,71 @@ export function BoardBlock({ spec }: BoardBlockProps): JSX.Element {
       data-vex-area="board-block"
       data-stale={model.stale ? "true" : "false"}
       aria-label={boardAriaLabel(model)}
-      className="flex flex-col gap-3 rounded-xl border border-line-2 bg-surface-2 p-3"
+      className="flex flex-col gap-3.5 rounded-xl border border-line-2 bg-surface-2 p-3.5"
     >
-      <header className="flex flex-col gap-0.5">
-        <h3 className="font-display text-[14px] font-extrabold leading-tight tracking-[-0.02em] text-ink-primary">
-          {model.title}
-        </h3>
+      {/* The header owns the board's identity and its two clocks, and the
+        * hairline below it separates the agent's framing from the market
+        * figures that follow. The title is the display voice one step up from
+        * a card's heading, so a board reads as a composed object rather than as
+        * a run of cards that happen to sit together. */}
+      <header className="flex flex-col gap-1.5 border-b border-line-2 pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <h3 className="min-w-0 font-display text-[16px] font-extrabold leading-tight tracking-[-0.02em] text-ink-primary">
+            {model.title}
+          </h3>
+          {/* The honest badge, kept in these exact words and promoted out of
+            * the clock run so it is the first thing read about the figures
+            * rather than the last. It appears only once the data has actually
+            * outlived its window - it is a statement, never decoration. */}
+          {model.stale ? (
+            <span
+              data-vex-area="board-stale-note"
+              className="vex-micro-label shrink-0 rounded-md border border-line-2 bg-surface-1 px-1.5 py-0.5 uppercase text-warning-label"
+            >
+              Snapshot, not live.
+            </span>
+          ) : null}
+        </div>
         <BoardClocks
           analysisCreatedAt={model.analysisCreatedAt}
           marketDataFetchedAt={model.marketDataFetchedAt}
-          stale={model.stale}
         />
       </header>
 
-      <TokenCardGrid cards={model.cards} stale={model.stale} />
+      <TokenCardGrid
+        cards={model.cards}
+        stale={model.stale}
+        chart={
+          chart !== null && chartPool !== null && candles !== null
+            ? {
+                poolIndex: chart.poolIndex,
+                open: chartOpen,
+                regionId,
+                triggerRef,
+                onToggle: () => setChartOpen((open) => !open),
+                panel: renderChart(),
+              }
+            : null
+        }
+      />
 
       <BoardNotes notes={model.notes} />
+    </section>
+  );
 
-      {chart !== null && chartPool !== null && candles !== null ? (
-        <div className="flex flex-col gap-2">
-          <button
-            ref={triggerRef}
-            type="button"
-            aria-expanded={chartOpen}
-            aria-controls={regionId}
-            onClick={() => setChartOpen((open) => !open)}
-            className="vex-micro-label self-start rounded-md px-1.5 py-1 uppercase text-ink-secondary hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-          >
-            {chartOpen ? "Hide chart" : "Show chart"}
-          </button>
-          <ExpandRegion id={regionId} open={chartOpen} triggerRef={triggerRef}>
+  /**
+   * The chart panel, built here and handed to the grid to PLACE.
+   *
+   * The split is deliberate: this component owns the disclosure state and
+   * everything the chart needs from the spec, while the grid owns where a
+   * full-width panel lands relative to the card that claims it. Neither knows
+   * the other's job, and `BoardChart` stays mount-agnostic - it is told whether
+   * its region is open and nothing about where it sits.
+   */
+  function renderChart(): JSX.Element | null {
+    if (chart === null || chartPool === null || candles === null) return null;
+    return (
+      <ExpandRegion id={regionId} open={chartOpen} triggerRef={triggerRef}>
             <BoardChart
               subjectKey={boardChartSubjectKey(
                 chartPool.chain,
@@ -151,12 +186,15 @@ export function BoardBlock({ spec }: BoardBlockProps): JSX.Element {
               }`}
               lastBarPartial={candles.lastBarPartial}
               truncated={candles.truncated}
-            />
-          </ExpandRegion>
-        </div>
-      ) : null}
-    </section>
-  );
+              // The hydration's own provenance sentence. The board has always
+              // persisted it and no surface had ever rendered it; the chart's
+              // data-notes disclosure is where it belongs, beside the other
+              // statements about what these bytes are.
+              provenance={spec.hydration.provenance}
+        />
+      </ExpandRegion>
+    );
+  }
 }
 
 /**
@@ -168,24 +206,31 @@ export function BoardBlock({ spec }: BoardBlockProps): JSX.Element {
 function BoardClocks({
   analysisCreatedAt,
   marketDataFetchedAt,
-  stale,
 }: {
   readonly analysisCreatedAt: number;
   readonly marketDataFetchedAt: number;
-  readonly stale: boolean;
 }): JSX.Element {
   const analysis = formatBoardClock(analysisCreatedAt);
   const market = formatBoardClock(marketDataFetchedAt);
   return (
     <p
       data-vex-area="board-clocks"
-      className="flex flex-wrap items-center gap-x-2 text-[11px] text-ink-tertiary"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-tertiary"
     >
-      {analysis !== null ? <span>Analysis {analysis}</span> : null}
-      {market !== null ? <span>Market data {market}</span> : null}
-      {stale ? (
-        <span data-vex-area="board-stale-note" className="text-warning-label">
-          Snapshot, not live.
+      {analysis !== null ? (
+        <span className="tabular-nums">
+          <span className="vex-micro-label uppercase text-ink-secondary">
+            Analysis
+          </span>{" "}
+          {analysis}
+        </span>
+      ) : null}
+      {market !== null ? (
+        <span className="tabular-nums">
+          <span className="vex-micro-label uppercase text-ink-secondary">
+            Market data
+          </span>{" "}
+          {market}
         </span>
       ) : null}
     </p>

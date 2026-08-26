@@ -46,6 +46,7 @@ import {
 } from "@tools/dexscreener/site-errors.js";
 import { getDexScreenerTransport } from "@tools/dexscreener/transport.js";
 import {
+  BOARD_ICON_ID_PATTERN,
   BOARD_MAX_CANDLES,
   BOARD_STALE_AFTER_MS,
   type BoardCandle,
@@ -113,6 +114,48 @@ function issuerText(
   if (clean === null) return null;
   const trimmed = clean.trim();
   return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * The base token's CMS icon handle for one raw batch row, or null.
+ *
+ * WHERE IT COMES FROM. `cmsProfile` rides the raw v8 batch row and is read
+ * here with the same access pattern `screen-core/profile.ts` uses for the same
+ * block. Measured 2026-08-25 on the live channel (probe archive
+ * `board-v2-probes/{live-poll.json,base-orient.json}`): `cmsProfile.iconId` is
+ * present on profiled pairs and is the icon of the BASE token in the
+ * provider's canonical orientation, which is the same orientation this row's
+ * `baseTokenSymbol` comes from. The logo and the symbol on a card therefore
+ * always name the same token. Roughly half of solana pairs carry no profile at
+ * all, so null is the ORDINARY answer here, not a failure.
+ *
+ * THE NSFW POLICY, and it is a policy rather than a filter: when the provider
+ * flags the profile `nsfw`, this returns null and the board renders its
+ * monogram placeholder. Flagged issuer artwork is never fetched and never
+ * rendered. Deciding it HERE, at the stamp, rather than in the renderer or the
+ * fetcher is what makes it structural: a flagged id is never written into the
+ * durable document, so no later reader, cache, or IPC caller can reach one.
+ * Nothing about the card is otherwise suppressed - the pool, its figures and
+ * the agent's caption are facts and still shown.
+ *
+ * Anything malformed (absent block, non-string id, an id outside the contract's
+ * character class) is null. This never throws: an unreadable icon reference is
+ * a missing picture, not a reason to refuse a board of real market figures.
+ *
+ * Exported for the same reason `unmatchedMarkerInstants` below is: it is a pure
+ * decision over a provider row, and the policy it carries deserves a table test
+ * driven by real row shapes rather than an assertion made through a whole
+ * network-shaped hydration.
+ */
+export function boardIconIdFromRow(source: unknown): string | null {
+  if (typeof source !== "object" || source === null) return null;
+  const profile = (source as Record<string, unknown>)["cmsProfile"];
+  if (typeof profile !== "object" || profile === null) return null;
+  const block = profile as Record<string, unknown>;
+  if (block["nsfw"] === true) return null;
+  const iconId = block["iconId"];
+  if (typeof iconId !== "string") return null;
+  return BOARD_ICON_ID_PATTERN.test(iconId) ? iconId : null;
 }
 
 export interface HydrateArgs {
@@ -205,6 +248,9 @@ export async function hydrateBoard(args: HydrateArgs): Promise<BoardHydration> {
       },
       pairAgeSeconds:
         h24.pairAgeSeconds === null ? null : Math.max(0, Math.floor(h24.pairAgeSeconds)),
+      // Always emitted, null included: the schema reads the key as optional
+      // only so boards persisted before this field existed still parse.
+      iconId: boardIconIdFromRow(source),
     };
   });
 
