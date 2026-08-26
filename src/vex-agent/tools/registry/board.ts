@@ -26,9 +26,29 @@ export const BOARD_TOOLS: readonly ToolDef[] = [
     mutating: false,
     pressureSafety: "safe_at_barrier",
     actionKind: "local_write",
+    // MISSION SETUP CANNOT PRESENT. Setup is Capability Orientation: the agent
+    // is drafting a mission, not reporting on a market, and the research
+    // doctrine forbids the operational market reads this tool performs on every
+    // call (it fetches pair state and candles itself). Hiding it here is the
+    // soft half; `internal/board/compose.ts` refuses the same call, so a model
+    // that emits the name anyway spends no provider bytes.
+    visibility: { hiddenInMissionSetup: true },
     description:
-      "Present market analysis as a VISUAL BOARD attached to your final reply: pool cards with live "
-      + "figures, your own notes, and optionally one annotated price chart. "
+      "Present market analysis as a VISUAL BOARD attached to your final reply: pool cards, your own "
+      + "notes, and optionally one annotated price chart. "
+      + "The board is a SNAPSHOT, not a live ticker: every figure on it is read once, when you call "
+      + "this, and stamped with the moment it was read. Say so if the age matters. "
+      + "WHEN TO COMPOSE ONE. Compose PROACTIVELY, without being asked, whenever your reply presents "
+      + "tokens, pools, a market comparison or a watchlist, and for a single token you are examining "
+      + "in depth, where the chart carries the argument. Do not offer a board as an option and do not "
+      + "hand-type a table of the same figures instead. "
+      + "WHAT MAKES A GOOD ONE. The pool caption is your one-line takeaway about that pool, not a "
+      + "restatement of its price. Every annotation must carry ANALYSIS: a support or resistance "
+      + "level, a range or accumulation zone, a marker on the event that explains a move. NEVER "
+      + "annotate the current price; it is already on the card and on the chart, and a level that "
+      + "only repeats it teaches the reader nothing. Add the chart when the candles inform the "
+      + "argument, and leave it off when they do not. Notes carry the risks and caveats: thin "
+      + "liquidity, a locked or unlocked LP, an unverified contract, an indexing lag. "
       + "TWO RULES, both enforced before dispatch. (1) BoardCompose must be the ONLY tool call in its "
       + "batch. (2) Once it returns \"staged\", every further tool call in this turn is refused: the very "
       + "next thing you write must be your final reply, as plain prose. The board is attached to that "

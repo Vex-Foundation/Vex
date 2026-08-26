@@ -36,12 +36,20 @@ describe("prompt-stack — layer composition", () => {
           // heading title-cased). Present in every mode — GFM/image rules pinned.
           expect(joined).toContain("# Response Formatting");
           expect(joined).toContain("GitHub-Flavored Markdown");
-          // Bounded markdown-affordances steering: token logos only from a
-          // tool-provided logoUrl/imageUrl (never invented), explorer/dexscreener
-          // links allowed. Replaces the old blanket "do not embed images" line.
-          expect(joined).toContain("token logo as a Markdown image");
-          expect(joined).toContain("never invent or guess an image URL");
-          expect(joined).not.toContain("do not embed images");
+          // CONTRACT CHANGE 2026-08-26. This used to pin "token logo as a
+          // Markdown image" plus "never invent or guess an image URL", from a
+          // line that told the model it MAY embed a tool-provided logo URL as a
+          // Markdown image. The renderer strips every Markdown image, so the
+          // affordance never existed and every reply that used it lost content
+          // silently. The layer now states that, and the pin follows the truth
+          // rather than the sentence. Explorer/dexscreener links are unaffected
+          // and still allowed.
+          expect(joined).toContain("Markdown images are NOT rendered");
+          expect(joined).toContain("Never write one.");
+          // The board doctrine lives in the same layer and is the replacement
+          // affordance: logos reach the reader through a board, not through
+          // markdown the renderer discards.
+          expect(joined).toContain("## Boards");
           // Tools-are-internal presentation law (user-ordered after the live
           // hypervexing entry dumped an alias cheat-sheet at the user): tool
           // names/aliases are never enumerated to the user, in any mode.

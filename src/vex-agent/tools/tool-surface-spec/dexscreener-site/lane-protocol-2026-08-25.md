@@ -197,3 +197,24 @@ Also: detectPriceDivergence survives as a second exported entry with the
 same documented full-population precondition.
 
 ## LANE CLOSED with this commit
+
+## D-DS10 WITHDRAWN; D-DS9 REVERTED (owner, 2026-08-26)
+
+D-DS10 is WITHDRAWN. It was reasoned on top of D-DS9, and the revert removes
+its premise.
+
+Specifically, the dense-floor DISMISSAL recorded under D-DS10 is invalidated.
+It was argued that a retrieval floor mattered less because the dexscreener
+tools were in every tools array regardless of what discovery returned. They are
+not any more: after D-DS9-R a dexscreener tool is callable ONLY once ToolSearch
+has returned it, so retrieval quality is again the single thing standing
+between the model and the market-research surface.
+
+That is a reopened question, not a decided one. Recalibrating the dense floors
+stays OUTSIDE this arc and remains the owner's decision. The release gate in
+the meantime is unchanged and is the discovery-routing goldens (62 queries),
+which are green after the revert.
+
+STUDIO MCP EXCLUSION OF BoardCompose: DONE, on origin. Recorded here because
+this protocol still listed it as outstanding. `src/vex-agent/mcp/export-scope.ts`
+line 58 excludes it; no further work is owed.
