@@ -7,6 +7,15 @@ import type { TokenMetadata } from "./types.js";
 export const SOL_MINT = "So11111111111111111111111111111111111111112";
 export const SOL_DECIMALS = 9;
 export const SPL_TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+/**
+ * Token-2022 program id. A wallet's holdings are split across BOTH programs -
+ * `getTokenAccountsByOwner` filters by exactly one program id, so a balance
+ * read that queries only `SPL_TOKEN_PROGRAM_ID` silently misses every
+ * Token-2022 position (5 of the 12 accounts on the wallet probed 2026-08-26).
+ * The parsed account shape is identical to the classic program's, plus an
+ * `info.extensions[]` array.
+ */
+export const TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
 
 export const WELL_KNOWN_SOLANA_TOKENS: readonly TokenMetadata[] = [
   { chain: "solana", address: SOL_MINT, symbol: "SOL", name: "Solana", decimals: 9 },

@@ -259,3 +259,23 @@ export function formatBoardTradeTotal(
   if (parts.length === 0) return BOARD_EMPTY;
   return formatBoardCount(parts.reduce((sum, value) => sum + value, 0));
 }
+
+/* ------------------------------------------------------------------ */
+/* The provider's own page for a pool                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The DexScreener page for a pool, built from the board's OWN chain slug and
+ * pair address and from nothing else.
+ *
+ * The spec carries no URL field by design: a persisted document must never
+ * name an origin, and a model-authored link would be a phishing surface. Both
+ * path segments are encoded, so a slug or an address that failed to be a
+ * plain token cannot escape the path. Main routes the click through the
+ * external-link allowlist (`dexscreener.com` is on it) and `shell.openExternal`.
+ */
+export const DEXSCREENER_ORIGIN = "https://dexscreener.com";
+
+export function dexscreenerPairUrl(chainSlug: string, pairAddress: string): string {
+  return `${DEXSCREENER_ORIGIN}/${encodeURIComponent(chainSlug.trim().toLowerCase())}/${encodeURIComponent(pairAddress.trim())}`;
+}

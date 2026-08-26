@@ -1,91 +1,188 @@
 /**
- * The token photo, or the monogram that stands in for it - ONE component for
- * the 64px grid card and the 88px Spotlight hero, so the fetch policy, the
- * fallback and the browser-decode guard cannot drift between surfaces.
+ * The token photo, its loading skeleton, or the monogram that stands in for
+ * it - ONE component for the 64px grid card and the 88px Spotlight hero, so
+ * the fetch policy, the fallback and the browser-decode guard cannot drift
+ * between surfaces.
  *
- * `iconId === null` DISABLES the query outright - no request is made for the
- * roughly half of pools that carry no artwork. Every other non-image outcome
- * (loading, absent, transport trouble) lands on the same monogram: the job is
- * to show the token, not to narrate a decorative fetch.
+ * THREE STATES, and the middle one is the reason there are three:
  *
- * AND SO DOES A PICTURE THE BROWSER CANNOT DRAW. Main validates icon bytes by
- * reading magic bytes and header dimensions with NO decode - no image codec
- * ships with Vex - so a truthful, in-bounds PNG header followed by a corrupt
- * body passes every check main can make and fails here. Without `onError`
- * that paints a broken-image glyph in a slot that has a designed state for
- * exactly this. The failing URL is remembered rather than a bare boolean, so
- * a LATER answer carrying different bytes gets its own attempt instead of
- * inheriting this one's verdict.
+ *   loading   a handle exists and its read has not answered. A skeleton disc,
+ *             no letters: a letter here would claim the token has no picture
+ *             before anyone has looked.
+ *   image     the bytes are in hand and the browser could draw them.
+ *   monogram  settled absent. `iconId === null` (nothing was asked, the
+ *             common case), a non-image answer, a failed read, or bytes the
+ *             browser could not decode. ONE leading letter, the same
+ *             treatment the market provider's own cards use for a token with
+ *             no artwork, and the slot SAYS so: a title and a screen-reader
+ *             sentence on the card, a visible line on the hero.
+ *
+ * NO RING ON ANY STATE. The photo sits on the `surface-2` disc and nothing
+ * else; that disc is the one round container the board keeps, because it IS
+ * the photo placeholder rather than decoration around an icon.
+ *
+ * A PICTURE THE BROWSER CANNOT DRAW IS A MONOGRAM. Main validates icon bytes
+ * by reading magic bytes and header dimensions with NO decode - no image
+ * codec ships with Vex - so a truthful, in-bounds PNG header followed by a
+ * corrupt body passes every check main can make and fails here. Without
+ * `onError` that paints a broken-image glyph in a slot that has a designed
+ * state for exactly this. The failing URL is remembered rather than a bare
+ * boolean, so a LATER answer carrying different bytes gets its own attempt
+ * instead of inheriting this one's verdict.
+ *
+ * THE STATE IS A HOOK, the frame a component. The Spotlight hero needs to
+ * know the state to print its "no image" line under the ticker, and reading
+ * it from one hook keeps the decode-failure memory in one place rather than
+ * in a second query observer that would not know about it.
  */
 
 import { useState, type JSX } from "react";
 import {
   boardTokenIconDataUrl,
+  isBoardTokenIconPending,
   useBoardTokenIcon,
 } from "../../../lib/api/board-icons.js";
 
 export type TokenPhotoSize = "card" | "hero";
+export type TokenPhotoState = "loading" | "image" | "monogram";
+
+/** The card's word for a settled absence. Frozen beside the state. */
+export const BOARD_NO_IMAGE_TITLE = "No image published for this token yet";
 
 const SIZE_CLASS: Record<TokenPhotoSize, { readonly frame: string; readonly glyph: string }> = {
-  card: { frame: "h-16 w-16", glyph: "text-[20px]" },
-  hero: { frame: "h-[88px] w-[88px]", glyph: "text-[26px]" },
+  card: { frame: "h-16 w-16", glyph: "text-[18px]" },
+  hero: { frame: "h-[88px] w-[88px]", glyph: "text-[24px]" },
 };
+
+export interface TokenPhotoView {
+  readonly state: TokenPhotoState;
+  /** The URL to draw; non-null only in the `image` state. */
+  readonly dataUrl: string | null;
+  /** The browser could not draw these bytes: settle this URL to the monogram. */
+  readonly onUndecodable: () => void;
+}
+
+export function useTokenPhoto(iconId: string | null): TokenPhotoView {
+  const query = useBoardTokenIcon(iconId);
+  const dataUrl = boardTokenIconDataUrl(query);
+  const [undecodableUrl, setUndecodableUrl] = useState<string | null>(null);
+  if (dataUrl !== null && dataUrl !== undecodableUrl) {
+    return {
+      state: "image",
+      dataUrl,
+      onUndecodable: () => {
+        setUndecodableUrl(dataUrl);
+      },
+    };
+  }
+  return {
+    state: isBoardTokenIconPending(iconId, query) ? "loading" : "monogram",
+    dataUrl: null,
+    onUndecodable: () => undefined,
+  };
+}
 
 export function TokenPhoto({
   iconId,
   symbol,
   size = "card",
   area = "board-token-photo",
+  announceAbsence = true,
 }: {
   readonly iconId: string | null;
   readonly symbol: string | null;
   readonly size?: TokenPhotoSize;
   readonly area?: string;
+  /**
+   * Whether the monogram carries its own title and screen-reader sentence.
+   * The card says it here; the hero says it in a visible line instead, so
+   * the same fact is not announced twice.
+   */
+  readonly announceAbsence?: boolean;
 }): JSX.Element {
-  const query = useBoardTokenIcon(iconId);
-  const dataUrl = boardTokenIconDataUrl(query);
-  const [undecodableUrl, setUndecodableUrl] = useState<string | null>(null);
-  const sizing = SIZE_CLASS[size];
+  const view = useTokenPhoto(iconId);
+  return (
+    <TokenPhotoFrame
+      view={view}
+      symbol={symbol}
+      size={size}
+      area={area}
+      announceAbsence={announceAbsence}
+    />
+  );
+}
 
-  if (dataUrl !== null && dataUrl !== undecodableUrl) {
+export function TokenPhotoFrame({
+  view,
+  symbol,
+  size,
+  area,
+  announceAbsence,
+}: {
+  readonly view: TokenPhotoView;
+  readonly symbol: string | null;
+  readonly size: TokenPhotoSize;
+  readonly area: string;
+  readonly announceAbsence: boolean;
+}): JSX.Element {
+  const sizing = SIZE_CLASS[size];
+  if (view.state === "image" && view.dataUrl !== null) {
     return (
       <img
         data-vex-area={area}
         data-state="image"
-        src={dataUrl}
+        src={view.dataUrl}
         alt=""
         aria-hidden
-        onError={() => {
-          setUndecodableUrl(dataUrl);
-        }}
-        className={`${sizing.frame} shrink-0 rounded-full border border-line-2 bg-surface-2 object-cover`}
+        onError={view.onUndecodable}
+        className={`${sizing.frame} shrink-0 rounded-full bg-surface-2 object-cover`}
+      />
+    );
+  }
+  if (view.state === "loading") {
+    return (
+      <span
+        data-vex-area={area}
+        data-state="loading"
+        aria-hidden
+        className={`block ${sizing.frame} shrink-0 rounded-full bg-surface-skeleton animate-pulse motion-reduce:animate-none`}
       />
     );
   }
   return (
-    <span
-      data-vex-area={area}
-      data-state="monogram"
-      aria-hidden
-      className={`flex ${sizing.frame} shrink-0 items-center justify-center rounded-full border border-line-2 bg-surface-2 font-display ${sizing.glyph} font-bold leading-none tracking-[-0.02em] text-ink-secondary`}
-    >
-      {monogram(symbol)}
-    </span>
+    <>
+      <span
+        data-vex-area={area}
+        data-state="monogram"
+        aria-hidden
+        title={announceAbsence ? BOARD_NO_IMAGE_TITLE : undefined}
+        className={`flex ${sizing.frame} shrink-0 items-center justify-center rounded-full bg-surface-2 font-display ${sizing.glyph} font-semibold leading-none text-ink-tertiary`}
+      >
+        {monogram(symbol)}
+      </span>
+      {announceAbsence ? (
+        <span data-vex-area={`${area}-absence`} className="sr-only">
+          {BOARD_NO_IMAGE_TITLE}
+        </span>
+      ) : null}
+    </>
   );
 }
 
 /**
- * One or two characters standing for the token.
+ * ONE character standing for the token.
  *
- * Taken from the symbol's own leading characters rather than from a hash, so
- * the monogram is recognisably the token. Read with `Array.from` so a symbol
- * whose first character is an astral-plane glyph is not cut in half into a
- * broken surrogate. A pool with no symbol gets a neutral mark rather than a
+ * Taken from the symbol's own leading character rather than from a hash, so
+ * the monogram is recognisably the token, and one character rather than two
+ * because that is the treatment the market provider's own token cards use for
+ * a pair with no artwork. Read with `Array.from` so a symbol whose first
+ * character is an astral-plane glyph is not cut in half into a broken
+ * surrogate. A pool with no symbol gets a neutral mark rather than a
  * fabricated letter.
  */
 export function monogram(symbol: string | null): string {
   if (symbol === null) return "?";
-  const characters = Array.from(symbol.replace(/^\$/, "").trim());
-  if (characters.length === 0) return "?";
-  return characters.slice(0, 2).join("").toUpperCase();
+  const [first] = Array.from(symbol.replace(/^\$/, "").trim());
+  if (first === undefined) return "?";
+  return first.toUpperCase();
 }

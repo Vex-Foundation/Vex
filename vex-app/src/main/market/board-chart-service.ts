@@ -200,15 +200,38 @@ const defaultDeps: BoardChartServiceDeps = {
   now: Date.now,
 };
 
-/** One provider bar as a board candle, or null when it cannot be drawn. */
-function toCandle(bar: ProjectedBar): BoardCandle | null {
+/**
+ * One drawable bar: the durable candle plus the volume that rides BESIDE it.
+ *
+ * The volume is not a field of `BoardCandle` on purpose - that is a persisted,
+ * strict schema - so the two travel as a pair here and as positional arrays
+ * on the wire.
+ */
+interface DrawableBar {
+  readonly candle: BoardCandle;
+  /**
+   * USD volume as the provider spelled it, or null when it reported none.
+   * MEASURED (chart-volume-probe, 2026-08-26): non-null on every bar of every
+   * pill on both transports (HTTP `volumeUsd`, feed socket `volumeUSD`, both
+   * projected to `volumeUsd` by `endpoints/bars.ts`); the null arm exists
+   * because the projection declares it, and it is COUNTED, never drawn as a
+   * zero.
+   */
+  readonly volumeUsd: string | null;
+}
+
+/** One provider bar as a board candle with its volume, or null when it cannot be drawn. */
+function toDrawableBar(bar: ProjectedBar): DrawableBar | null {
   const o = decimalFromProvider(bar.openUsd);
   const h = decimalFromProvider(bar.highUsd);
   const l = decimalFromProvider(bar.lowUsd);
   const c = decimalFromProvider(bar.closeUsd);
   if (o === null || h === null || l === null || c === null) return null;
   if (!Number.isSafeInteger(bar.timestampMs)) return null;
-  return { tMs: bar.timestampMs, o, h, l, c };
+  return {
+    candle: { tMs: bar.timestampMs, o, h, l, c },
+    volumeUsd: decimalFromProvider(bar.volumeUsd),
+  };
 }
 
 function siteCodeOf(error: unknown): string | null {
@@ -296,9 +319,22 @@ export function createBoardChartService(
    */
   interface Flight {
     readonly controller: AbortController;
+    /**
+     * The single-flight key THIS flight is published under in the read cache.
+     *
+     * It carries a monotonic epoch, so an aborted flight can never be joined
+     * through the cache either: `joinFlight` already refuses an aborted
+     * controller, and the cache key now expresses the same refusal. Without
+     * it the two single-flight owners disagreed - this map dropped the flight
+     * at abort time while the cache kept its record until the aborted load
+     * settled - and a caller arriving in that window joined a dying read and
+     * inherited a `cancelled` it never asked for.
+     */
+    readonly cacheKey: string;
     waiters: number;
   }
   const inFlight = new Map<string, Flight>();
+  let nextFlightEpoch = 1;
 
   function joinFlight(key: string): Flight {
     const existing = inFlight.get(key);
@@ -306,7 +342,13 @@ export function createBoardChartService(
       existing.waiters += 1;
       return existing;
     }
-    const fresh: Flight = { controller: new AbortController(), waiters: 1 };
+    const epoch = nextFlightEpoch;
+    nextFlightEpoch += 1;
+    const fresh: Flight = {
+      controller: new AbortController(),
+      cacheKey: `${key}#${String(epoch)}`,
+      waiters: 1,
+    };
     inFlight.set(key, fresh);
     return fresh;
   }
@@ -338,14 +380,18 @@ export function createBoardChartService(
         signal: args.signal,
       });
 
-      const drawable: BoardCandle[] = [];
+      const drawable: DrawableBar[] = [];
       for (const bar of page.bars) {
-        const candle = toCandle(bar);
-        if (candle !== null) drawable.push(candle);
+        const projected = toDrawableBar(bar);
+        if (projected !== null) drawable.push(projected);
       }
       const undrawableBars = page.bars.length - drawable.length;
-      const bars = drawable.slice(Math.max(0, drawable.length - countBack));
-      const windowedOutBars = drawable.length - bars.length;
+      // The window keeps the NEWEST bars; what it cut is counted below.
+      const windowed = drawable.slice(Math.max(0, drawable.length - countBack));
+      const windowedOutBars = drawable.length - windowed.length;
+      const bars = windowed.map((row) => row.candle);
+      const volumes = windowed.map((row) => row.volumeUsd);
+      const volumelessBars = volumes.filter((volume) => volume === null).length;
 
       const first = bars[0];
       const last = bars[bars.length - 1];
@@ -375,6 +421,8 @@ export function createBoardChartService(
         providerBars: page.bars.length,
         undrawableBars,
         windowedOutBars,
+        volumes,
+        volumelessBars,
         fetchedAtMs: page.fetchedAtMs,
       };
     } catch (error) {
@@ -383,82 +431,107 @@ export function createBoardChartService(
     }
   }
 
+  /**
+   * One attempt at a poll: join or start the flight for this pool and pill,
+   * wait on it for as long as the caller stays, and cut it when the last
+   * caller leaves.
+   */
+  async function attempt(args: {
+    readonly subject: BoardChartSubject;
+    readonly resolution: BoardChartPillResolution;
+    readonly signal?: AbortSignal;
+  }): Promise<BoardChartOutcome> {
+    // Read through a function rather than a narrowed expression: the caller's
+    // signal can fire DURING the await below, and a narrowing from the guard
+    // here would make the compiler treat that later read as impossible.
+    const callerGone = (): boolean => args.signal?.aborted ?? false;
+    if (callerGone()) {
+      return { kind: "unavailable", reason: "cancelled" };
+    }
+    // SINGLE-FLIGHT, NEVER A POSITIVE CACHE. `expiresAtMs: null` on every
+    // load is what makes each poll a fresh read: two callers in one tick join
+    // one exchange, and the answer is discarded the moment they have it.
+    const key = `board-chart:${boardChartKey(args.subject)}:${args.resolution}:${runId}`;
+    const flight = joinFlight(key);
+    let left = false;
+    const leave = (): void => {
+      if (left) return;
+      left = true;
+      // THE READ IS CUT WHEN ITS LAST READER LEAVES, and not before. One
+      // surface closing must not take the answer away from another that is
+      // still waiting on the same flight, which is why this counts rather
+      // than aborting on the first departure.
+      flight.waiters -= 1;
+      if (flight.waiters <= 0) {
+        flight.controller.abort();
+        if (inFlight.get(key) === flight) inFlight.delete(key);
+      }
+    };
+    args.signal?.addEventListener("abort", leave, { once: true });
+    try {
+      const outcome = await flights.read(
+        flight.cacheKey,
+        async (cacheSignal) => {
+          // The cache's own signal is how DISPOSE reaches this read. Chained
+          // into the flight controller so teardown cuts the provider call
+          // rather than merely stopping the wait for it.
+          if (cacheSignal.aborted) flight.controller.abort();
+          else {
+            cacheSignal.addEventListener(
+              "abort",
+              () => {
+                flight.controller.abort();
+              },
+              { once: true },
+            );
+          }
+          return {
+            value: await read({
+              subject: args.subject,
+              resolution: args.resolution,
+              signal: flight.controller.signal,
+            }),
+            expiresAtMs: null,
+          };
+        },
+        args.signal,
+      );
+      // THE CALLER'S OWN CANCELLATION IS NAMED AS SUCH. The read cache
+      // answers a departed caller with its generic refusal, and reporting a
+      // reader who left the spotlight as a service that is not mounted would
+      // be describing a failure that did not happen.
+      return callerGone()
+        ? { kind: "unavailable", reason: "cancelled" }
+        : outcome;
+    } finally {
+      args.signal?.removeEventListener("abort", leave);
+      leave();
+    }
+  }
+
   return {
     async poll(args): Promise<BoardChartOutcome> {
-      // Read through a function rather than a narrowed expression: the caller's
-      // signal can fire DURING the await below, and a narrowing from the guard
-      // here would make the compiler treat that later read as impossible.
-      const callerGone = (): boolean => args.signal?.aborted ?? false;
-      if (callerGone()) {
-        return { kind: "unavailable", reason: "cancelled" };
+      let settled = await attempt(args);
+      // A READ CANCELLED BY SOMEBODY ELSE IS NOT A RESULT ABOUT THE MARKET.
+      // The epoch above makes joining a dying flight impossible, so this is
+      // belt and braces for the one remaining way a live caller can be told
+      // "cancelled": the flight it joined was cut from the cache's own side
+      // (dispose) between admission and settlement. One fresh attempt, never
+      // a loop, and never for a caller who has itself gone.
+      if (
+        settled.kind === "unavailable" &&
+        settled.reason === "cancelled" &&
+        !(args.signal?.aborted ?? false)
+      ) {
+        settled = await attempt(args);
       }
-      // SINGLE-FLIGHT, NEVER A POSITIVE CACHE. `expiresAtMs: null` on every
-      // load is what makes each poll a fresh read: two callers in one tick join
-      // one exchange, and the answer is discarded the moment they have it.
-      const key = `board-chart:${boardChartKey(args.subject)}:${args.resolution}:${runId}`;
-      const flight = joinFlight(key);
-      let left = false;
-      const leave = (): void => {
-        if (left) return;
-        left = true;
-        // THE READ IS CUT WHEN ITS LAST READER LEAVES, and not before. One
-        // surface closing must not take the answer away from another that is
-        // still waiting on the same flight, which is why this counts rather
-        // than aborting on the first departure.
-        flight.waiters -= 1;
-        if (flight.waiters <= 0) {
-          flight.controller.abort();
-          if (inFlight.get(key) === flight) inFlight.delete(key);
-        }
-      };
-      args.signal?.addEventListener("abort", leave, { once: true });
-      try {
-        const outcome = await flights.read(
-          key,
-          async (cacheSignal) => {
-            // The cache's own signal is how DISPOSE reaches this read. Chained
-            // into the flight controller so teardown cuts the provider call
-            // rather than merely stopping the wait for it.
-            if (cacheSignal.aborted) flight.controller.abort();
-            else {
-              cacheSignal.addEventListener(
-                "abort",
-                () => {
-                  flight.controller.abort();
-                },
-                { once: true },
-              );
-            }
-            return {
-              value: await read({
-                subject: args.subject,
-                resolution: args.resolution,
-                signal: flight.controller.signal,
-              }),
-              expiresAtMs: null,
-            };
-          },
-          args.signal,
+      if (settled.kind !== "series") {
+        log.info(
+          `[board-chart] ${args.resolution} produced ${settled.kind}` +
+            `/${settled.reason}`,
         );
-        // THE CALLER'S OWN CANCELLATION IS NAMED AS SUCH. The read cache
-        // answers a departed caller with its generic refusal, and reporting a
-        // reader who left the spotlight as a service that is not mounted would
-        // be describing a failure that did not happen.
-        const settled: BoardChartOutcome =
-          callerGone()
-            ? { kind: "unavailable", reason: "cancelled" }
-            : outcome;
-        if (settled.kind !== "series") {
-          log.info(
-            `[board-chart] ${args.resolution} produced ${settled.kind}` +
-              `/${settled.reason}`,
-          );
-        }
-        return settled;
-      } finally {
-        args.signal?.removeEventListener("abort", leave);
-        leave();
       }
+      return settled;
     },
 
     async dispose(): Promise<void> {

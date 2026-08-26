@@ -69,6 +69,11 @@ export function spotlightChartSurfaceState(args: {
   if (read.status === "unavailable") {
     const lastGood = read.lastGood;
     if (lastGood === null || lastGood.value.forResolution !== resolution) {
+      // A CANCELLATION WITH NOTHING BEHIND IT IS NOT AN ABSENCE. "Cancelled"
+      // says the read was cut, not that the market has nothing; the channel
+      // re-issues it, so the honest picture is "still waiting". A cancelled
+      // refresh over last-good bars is still the degraded arm below.
+      if (read.reason === "cancelled") return { kind: "skeleton" };
       return { kind: "absent", reason: read.reason };
     }
     return {

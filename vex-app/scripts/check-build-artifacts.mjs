@@ -6,8 +6,9 @@
  *   1. dist/main/index.js exists and matches package.json `main` field.
  *   2. The privileged process bundles — preload exposure surface plus every
  *      emitted dist/main/*.js chunk (bundler-config regressions, bundled
- *      Postgres runtime, no bare `__filename`). Those live in
- *      scripts/check-privileged-bundles.mjs and run through this runner.
+ *      Postgres runtime, no bare `__filename`, zod's English locale surviving
+ *      tree-shaking). Those live in scripts/check-privileged-bundles.mjs and
+ *      run through this runner.
  *   3. dist/renderer/index.html has strict CSP — no `'unsafe-inline'`, no `'unsafe-eval'`,
  *      and `script-src`/`connect-src` parse to EXACTLY `'self'`. `img-src` is now
  *      pinned to EXACTLY `'self' data:` (remote images DISABLED for launch to

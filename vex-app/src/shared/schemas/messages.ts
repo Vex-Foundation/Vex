@@ -95,12 +95,27 @@ export type MessageCursor = z.infer<typeof messageCursorSchema>;
  * `null`, never a cut string (owner decree - no silent content cutting; the
  * previous 2,000-char cap plus a "(truncated)" suffix pushed the first large
  * BoardCompose call past the bound and failed the whole messages page in
- * production). The largest legitimate producer is BoardCompose, which refuses
- * its own spec above 49,152 bytes, so 131,072 sits far above every real row;
- * only a corrupted row can exceed it, and the mapper maps that to `null`.
+ * production).
+ *
+ * THE INVARIANT, and the reason this number is not chosen freely:
+ *
+ *     TOOL_ARGS_DISPLAY_CEILING > BOARD_SPEC_MAX_BYTES + BoardCompose args envelope
+ *
+ * The largest legitimate producer is BoardCompose. Its own spec is refused
+ * above `BOARD_SPEC_MAX_BYTES` (`src/lib/board/spec.ts`, 262,144 bytes), and
+ * the args this mapper serializes are that payload plus the call's envelope
+ * (tool name, JSON key names, the escaping the serializer adds). If this
+ * ceiling ever sat at or below the board budget, a board the compose tool
+ * ACCEPTED would have its args fall off the transcript as `null`, and the
+ * user would see a tool call with no arguments at all - a silent loss dressed
+ * as an empty field. 524,288 is twice the board budget, which leaves the
+ * envelope and any future growth of it far inside the guard.
+ *
+ * Raising `BOARD_SPEC_MAX_BYTES` therefore REQUIRES re-checking this constant.
+ * Only a corrupted row can exceed it, and the mapper maps that to `null`.
  * One declaration, both sides: the mapper's guard imports THIS constant.
  */
-export const TOOL_ARGS_DISPLAY_CEILING = 131_072;
+export const TOOL_ARGS_DISPLAY_CEILING = 524_288;
 
 export const toolCallDisplaySchema = z
   .object({
@@ -195,7 +210,7 @@ export type ToolDisplayStatus = z.infer<typeof toolDisplayStatusProjectionSchema
  *
  * This IS the engine's schema, imported from the pure shared root rather than
  * restated, so an oversize/malformed JSONB projection is rejected at the mapper
- * boundary and the two sides cannot drift. Every bound (48 KiB serialized
+ * boundary and the two sides cannot drift. Every bound (256 KiB serialized
  * budget, per-field caps, the reject-only text predicate) lives there.
  */
 export const boardProjectionSchema = boardSpecV1Schema;

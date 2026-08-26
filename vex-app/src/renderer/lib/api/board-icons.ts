@@ -106,6 +106,25 @@ export function useBoardTokenIcon(
 }
 
 /**
+ * True while the icon read is IN FLIGHT: a handle exists, and no answer of any
+ * kind has landed for it yet.
+ *
+ * The photo slot has three states, not two, and this is the fact that
+ * separates them. `iconId === null` is a settled absence (the query is
+ * disabled, nothing was asked) and draws the monogram at once; a handle whose
+ * read has not answered draws a skeleton, never a letter, because a letter
+ * there would be a claim of absence the read has not yet made. A `Result`
+ * error or a non-image outcome are both answers and both settle to the
+ * monogram.
+ */
+export function isBoardTokenIconPending(
+  iconId: string | null,
+  query: UseQueryResult<Result<BoardIconReadResult>>,
+): boolean {
+  return iconId !== null && query.data === undefined && !query.isError;
+}
+
+/**
  * The `data:` URL for a card, or null when there is none to draw.
  *
  * Collapses every non-image outcome - no handle, still loading, absent,

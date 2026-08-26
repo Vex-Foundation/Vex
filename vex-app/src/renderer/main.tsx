@@ -8,7 +8,17 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App.js";
 import { queryClient } from "./app/queryClient.js";
 import type { CreateBugReportInput } from "@shared/schemas/bug-reports.js";
+import { registerZodLocale } from "@vex-lib/zod-locale.js";
 import { rendererReportDedupe } from "./lib/report-dedupe.js";
+
+/**
+ * zod declares `sideEffects: false` and registers its English error map as a
+ * module-level side effect, which Rollup drops from the renderer bundle. Form
+ * and schema validation in the UI would then report "Invalid input" for every
+ * field. Explicit call, because a bare side-effect import is dropped the same
+ * way.
+ */
+registerZodLocale();
 
 // Fire-and-forget helper: every renderer-auto-report path goes through here so
 // a failed report (preload validation reject, IPC unavailable, main throws)

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <g fill="#627EEA">
+    <path d="M12.06 0 4.69 12.22l7.37 4.36 7.36-4.35L12.06 0Z"/>
+    <path d="M11.94 17.97 4.58 13.62 11.94 24l7.37-10.38-7.37 4.35Z"/>
+  </g>
+  <g fill="#FFF">
+    <path fill-opacity=".6" d="M12.06 0v8.87l7.36 3.35L12.06 0Z"/>
+    <path fill-opacity=".6" d="M11.94 17.97V24l7.37-10.38-7.37 4.35Z"/>
+    <path fill-opacity=".2" d="M12.06 16.58l7.36-4.36-7.36-3.35v7.71Z"/>
+    <path fill-opacity=".6" d="M4.69 12.22l7.37 4.36V8.87l-7.37 3.35Z"/>
+  </g>
+</svg>

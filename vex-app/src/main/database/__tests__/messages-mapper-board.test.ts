@@ -75,6 +75,54 @@ describe("toDto - board projection (metadata -> 'board')", () => {
     expect(dto.board?.hydration.rows[0]?.iconId).toBeNull();
   });
 
+  it("normalizes a legacy v1 row without `description` to null instead of dropping the board", () => {
+    // The description field is the SAME expand-and-contract as iconId above,
+    // added later still, so a durable row can be missing iconId, description,
+    // or both. Each absence must parse and land as null; a required key here
+    // would make every board written before this field vanish from a
+    // transcript the user can still scroll to.
+    const base = boardSpecFixture();
+    const templateRow = base.hydration.rows[0];
+    if (templateRow === undefined) {
+      throw new Error("board fixture hydration row 0 missing");
+    }
+    const { description: _noDescription, ...withoutDescription } = templateRow;
+    const { iconId: _noIcon, ...withoutEither } = withoutDescription;
+    for (const legacyRow of [withoutDescription, withoutEither]) {
+      const dto = toDto(
+        row("assistant", { ...base, hydration: { ...base.hydration, rows: [legacyRow] } }),
+      );
+      expect(dto.board).not.toBeNull();
+      expect(dto.board?.hydration.rows[0]?.description).toBeNull();
+    }
+  });
+
+  it("keeps the provider's real blurb on a hydrated row, whole", () => {
+    // The live shape, quoted from `board-v4-probes/description-vex.json`: the
+    // provider served 546 code points of `cmsProfile.description` for VEX on
+    // robinhood. It is UNTRUSTED text and it round-trips as TEXT, uncut.
+    const blurb =
+      "VEX is a self custodial AI agent runtime for onchain finance. AI "
+      + "proposes strategies, but VEX controls what actually executes through "
+      + "wallet permissions, mission rules, position limits, protocol checks, "
+      + "and local signing.";
+    const base = boardSpecFixture();
+    const templateRow = base.hydration.rows[0];
+    if (templateRow === undefined) {
+      throw new Error("board fixture hydration row 0 missing");
+    }
+    const dto = toDto(
+      row("assistant", {
+        ...base,
+        hydration: {
+          ...base.hydration,
+          rows: [{ ...templateRow, description: blurb }],
+        },
+      }),
+    );
+    expect(dto.board?.hydration.rows[0]?.description).toBe(blurb);
+  });
+
   it("normalizes a legacy pool without `analysis` to null instead of dropping the board", () => {
     // The same expand-and-contract, one level up: durable pools written before
     // the assessment field existed carry no key at all. A required field here
@@ -169,10 +217,15 @@ describe("toDto - board projection (metadata -> 'board')", () => {
   });
 
   it("rejects a structurally valid board that is over the byte budget", () => {
-    // The field bounds alone still admit a board of roughly 60 KiB, and this
-    // mapper reads a DURABLE row that some other writer may have produced. The
-    // budget is therefore rechecked here with the same function `BoardCompose`
-    // refuses with, so a page cannot carry a board the contract caps out.
+    // The field bounds alone still admit a board past 256 KiB - eight maximal
+    // assessments in FOUR-byte emoji-dense prose (8 x 10,000 code points at 4
+    // bytes each is 320,000 bytes of analysis on its own) - and this mapper
+    // reads a DURABLE row that some other writer may have produced. The budget
+    // is therefore rechecked here with the same function `BoardCompose`
+    // refuses with, so a page cannot carry a board the contract caps out. The
+    // weight is grown on the AUTHORED text, which is where a real oversize
+    // board comes from; the candle schema is durable and stays exactly at its
+    // own bound.
     const base = boardSpecFixture();
     const templateRow = base.hydration.rows[0];
     if (templateRow === undefined) {
@@ -180,11 +233,12 @@ describe("toDto - board projection (metadata -> 'board')", () => {
     }
     const oversize = {
       ...base,
-      notes: Array.from({ length: 6 }, () => "n".repeat(280)),
+      notes: Array.from({ length: 12 }, () => "n".repeat(600)),
       pools: Array.from({ length: 8 }, (_, i) => ({
         chain: "solana",
         pairAddress: `Pool${i}`,
         caption: "c".repeat(140),
+        analysis: "\u{1F680}".repeat(10_000),
       })),
       chart: { poolIndex: 0, resolution: "1h" as const },
       hydration: {

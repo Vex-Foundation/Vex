@@ -605,10 +605,27 @@ priceFormat change requires chart recreation; mandates inline-SVG sparklines).
 Decisions that bind the surface:
 - The board heading is the MODEL-AUTHORED spec.title; the subtitle is derived
   (pools, date, UTC clock). No fixed product label.
-- spec.analysis (additive optional per pool, <= 600 chars, notes-class
+- spec.analysis (additive optional per pool, <= 10000 chars, notes-class
   predicate, legacy -> null, writers always emit) is the model's FULL
-  per-token assessment, rendered whole in Spotlight; its first fragment is
-  the line under the Safety chip; the chip NEVER colors from prose.
+  per-token assessment - thesis, what moves the price, the levels with their
+  numbers, the risk read and its invalidation - rendered whole in Spotlight;
+  its first fragment is the line under the Safety chip; the chip NEVER colors
+  from prose. The 10000 is a REFUSAL threshold, never a target.
+- Notes: <= 12 per board, <= 600 chars each (both refusal thresholds; raised
+  from 6 x 280 after a production board of 7 real notes was refused whole).
+- Document byte budget: BOARD_SPEC_MAX_BYTES = 262,144 (256 KiB), reject-only.
+  Measured worst case with every field at its bound in a two-byte script and a
+  full chart: 251,963 bytes. An over-budget board is refused whole, naming its
+  measured size AND the heaviest pool; nothing is ever trimmed. Downstream
+  invariant: TOOL_ARGS_DISPLAY_CEILING (524,288) must stay above this budget
+  plus the BoardCompose args envelope, or a legal board's args vanish from the
+  transcript.
+- hydration.rows[].description (additive optional, <= 1000 chars, notes-class
+  predicate, legacy -> null, writers always emit) is the PROVIDER's CMS blurb
+  from cmsProfile.description, dropped to null on the same nsfw gate as
+  iconId; untrusted text, rendered as text, never HTML, never read by the
+  safety classifier. Bound sized from the live distribution (VEX served 546
+  chars) and from the byte budget, because the model cannot shorten it.
 - Safety chip = a pure first-match-wins classifier (shared/board/) over the
   pair-details evidence model {lastGood, lastAttempt}: pending / clear /
   flagged / conflict / identity-mismatch / unverified / not-indexed /

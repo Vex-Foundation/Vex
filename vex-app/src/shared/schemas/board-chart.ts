@@ -35,9 +35,25 @@
 import { z } from "zod";
 import {
   BOARD_CHART_RESOLUTIONS,
+  BOARD_DECIMAL_MAX_CHARS,
   boardCandleSeriesSchema,
   boardPoolInputSchema,
 } from "@vex-lib/board/index.js";
+
+/**
+ * A per-bar USD volume as the provider spells it: a non-negative decimal
+ * string, never a float. The same grammar the board's own candle legs use
+ * (`src/lib/board/spec.ts`), restated here because that module keeps its
+ * decimal primitive private and its persisted candle schema is deliberately
+ * NOT extended: volume travels on this live channel only.
+ */
+const volumeDecimalString = z
+  .string()
+  .max(BOARD_DECIMAL_MAX_CHARS)
+  .regex(
+    /^[0-9]+(\.[0-9]+)?$/,
+    "must be a non-negative decimal number written as digits, optionally with a single decimal point",
+  );
 
 /**
  * The four resolutions the spotlight's pills select, in pill order.
@@ -92,9 +108,25 @@ export const boardChartOutcomeSchema = z.discriminatedUnion("kind", [
       undrawableBars: z.number().int().min(0),
       /** Drawable bars beyond the resolution's window, cut from the tail end. */
       windowedOutBars: z.number().int().min(0),
+      /**
+       * Per-bar USD volume, POSITIONALLY aligned with `series.bars`: index i
+       * is the volume of bar i, or null when the provider reported none.
+       *
+       * On this live channel and NOT on the durable candle. `boardCandleSchema`
+       * is a persisted, strict format; a new key there would be rejected by
+       * every already-written reader. A null here is a whitespace slot in the
+       * volume histogram, never a zero bar.
+       */
+      volumes: z.array(volumeDecimalString.nullable()),
+      /** Drawn bars whose volume is null. Counted beside `undrawableBars`. */
+      volumelessBars: z.number().int().min(0),
       fetchedAtMs: z.number().int().nonnegative(),
     })
-    .strict(),
+    .strict()
+    .refine((value) => value.volumes.length === value.series.bars.length, {
+      message: "volumes must be aligned one-to-one with series.bars",
+      path: ["volumes"],
+    }),
   z
     .object({
       kind: z.literal("absent"),

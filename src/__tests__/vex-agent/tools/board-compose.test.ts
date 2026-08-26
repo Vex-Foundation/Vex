@@ -305,13 +305,17 @@ describe("BoardCompose staging outcomes", () => {
     expect(result.success).toBe(true);
     const staged = consumePendingPresentation(SESSION)?.spec;
     expect(staged?.pools).toHaveLength(8);
-    expect(staged?.notes).toHaveLength(6);
+    expect(staged?.notes).toHaveLength(12);
   });
 
   it("refuses an over-budget board naming its size, and shortens nothing", async () => {
     beginPresentationScope(SESSION);
-    // Maximal rows PLUS a full 200-candle series of maximum-length decimal
-    // strings: the one combination the field bounds still allow past 48 KiB.
+    // MEASURED: maximal rows plus eight 10,000-character two-byte assessments
+    // plus a full 200-candle series of maximum-width decimals is 220,991
+    // bytes, and the 256 KiB budget ADMITS it - that board is exactly what
+    // raising the budget was for. What still exceeds it is the case the budget
+    // doc names: the same board with FOUR-byte emoji-dense prose, 8 x 10,000
+    // code points at 4 bytes each = 320,000 bytes of analysis alone.
     hydrateBoard.mockResolvedValueOnce({
       ...maximalRows(),
       unmatchedMarkerAtMs: [],
@@ -331,13 +335,22 @@ describe("BoardCompose staging outcomes", () => {
     });
 
     const result = await handleBoardCompose(
-      { ...maximalInput(), chart: { poolIndex: 0, resolution: "1h" } },
+      {
+        ...maximalInput(),
+        pools: maximalInput().pools.map((pool) => ({
+          ...pool,
+          analysis: "\u{1F680}".repeat(10_000),
+        })),
+        chart: { poolIndex: 0, resolution: "1h" },
+      },
       modelContext,
     );
 
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/\d+ bytes serialized/);
-    expect(result.output).toContain("49152");
+    expect(result.output).toContain("262144");
+    // The refusal points at the pool worth shortening, not just at the total.
+    expect(result.output).toMatch(/pool \d+ at \d+ bytes/);
     expect(result.output).toContain("nothing was truncated");
     // Refused whole: no shortened board is left behind for the reply to carry.
     expect(hasPendingPresentation(SESSION)).toBe(false);
@@ -365,7 +378,15 @@ function maximalRows() {
   };
 }
 
-/** Model input at the top of every bound the input schema allows. */
+/**
+ * Model input at the top of every bound the input schema allows.
+ *
+ * The assessments are written in a TWO-BYTE script on purpose: the document
+ * budget is sized against that cost (see `BOARD_SPEC_MAX_BYTES`), so a
+ * worst-case input that used Latin filler would understate the real weight of
+ * eight fully written assessments by half. Eight of these plus a full chart is
+ * the case the budget is sized to ADMIT.
+ */
 function maximalInput() {
   return {
     title: "t".repeat(80),
@@ -373,7 +394,8 @@ function maximalInput() {
       chain: "solana",
       pairAddress: `Pool${i}`,
       caption: "c".repeat(140),
+      analysis: "\u0434".repeat(10_000),
     })),
-    notes: Array.from({ length: 6 }, () => "n".repeat(280)),
+    notes: Array.from({ length: 12 }, () => "\u0434".repeat(600)),
   };
 }

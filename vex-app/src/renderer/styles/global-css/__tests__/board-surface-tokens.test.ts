@@ -90,8 +90,26 @@ describe("board surface tokens", () => {
     expect(boardCss).toContain("radial-gradient");
   });
 
-  it("guards its one animated surface behind reduced motion", () => {
+  it("guards its animated surfaces behind reduced motion", () => {
     expect(boardCss).toContain("@media (prefers-reduced-motion: reduce)");
+  });
+
+  it("flashes the live tick from the accent alias, in build-time keyframes", () => {
+    const keyframes = ruleBody(boardCss, "@keyframes vex-board-tick");
+    expect(keyframes).toContain("var(--vex-alias-accent-wash)");
+    expect(keyframes).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(ruleBody(boardCss, "[data-tick]")).toContain("vex-board-tick");
+  });
+
+  it("stills the tick outright under reduced motion", () => {
+    const at = boardCss.indexOf("@media (prefers-reduced-motion: reduce)");
+    const block = boardCss.slice(at);
+    expect(block).toMatch(/\[data-tick\]\s*\{\s*animation:\s*none;/);
+  });
+
+  it("paints no colour literal anywhere but the inset hairline", () => {
+    const withoutHairline = boardCss.replace(/rgba\(255, 255, 255, 0\.03\)/g, "");
+    expect(withoutHairline).not.toMatch(/#[0-9a-f]{3,8}\b/i);
   });
 
   it("is imported by the manifest, unlayered like every other sheet", () => {

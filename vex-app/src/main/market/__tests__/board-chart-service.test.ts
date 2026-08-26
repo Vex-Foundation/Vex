@@ -19,6 +19,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ProjectedBar } from "@tools/dexscreener/endpoints/bars.js";
 
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -78,7 +79,7 @@ const PAIR = {
 const NOW = 1_787_741_000_000;
 
 /** `count` drawable one-minute bars ending `endsAtMs`, oldest first. */
-function bars(count: number, endsAtMs = NOW - 60_000, stepMs = 60_000) {
+function bars(count: number, endsAtMs = NOW - 60_000, stepMs = 60_000): ProjectedBar[] {
   return Array.from({ length: count }, (_unused, index) => ({
     timestampMs: endsAtMs - (count - 1 - index) * stepMs,
     openUsd: "1.5",
@@ -318,6 +319,65 @@ describe("single-flight without a positive cache", () => {
   });
 });
 
+// ── Volume rides beside the candle, positionally ─────────────────────────
+
+describe("volume", () => {
+  it("carries each drawn bar's volume at the same index, and counts the volumeless", async () => {
+    const rows = bars(4, NOW - 60_000);
+    const withVolume = rows.map((row, index) => ({
+      ...row,
+      volumeUsd: index === 1 ? null : `${String(100 + index)}.5`,
+      // The third bar has no close: undrawable, so it drops out of BOTH
+      // arrays together and the alignment survives.
+      closeUsd: index === 2 ? null : row.closeUsd,
+    }));
+    fetchBarsPage.mockResolvedValue(page(withVolume));
+    const service = createBoardChartService({ now: () => NOW });
+    const outcome = await service.poll({ subject: SUBJECT, resolution: "1m" });
+    expect(outcome.kind).toBe("series");
+    if (outcome.kind !== "series") return;
+    expect(outcome.series.bars).toHaveLength(3);
+    expect(outcome.volumes).toEqual(["100.5", null, "103.5"]);
+    expect(outcome.volumelessBars).toBe(1);
+    expect(outcome.undrawableBars).toBe(1);
+    // The durable candle is untouched: no volume key on it.
+    expect(Object.keys(outcome.series.bars[0] ?? {})).toEqual(["tMs", "o", "h", "l", "c"]);
+    await service.dispose();
+  });
+
+  it("keeps volumes aligned with the WINDOWED bars, not the provider page", async () => {
+    const rows = bars(62, NOW - 60_000).map((row, index) => ({
+      ...row,
+      volumeUsd: String(index),
+    }));
+    fetchBarsPage.mockResolvedValue(page(rows));
+    const service = createBoardChartService({ now: () => NOW });
+    const outcome = await service.poll({ subject: SUBJECT, resolution: "1m" });
+    if (outcome.kind !== "series") throw new Error("expected series");
+    expect(outcome.series.bars).toHaveLength(60);
+    expect(outcome.windowedOutBars).toBe(2);
+    expect(outcome.volumes).toHaveLength(60);
+    expect(outcome.volumes[0]).toBe("2");
+    expect(outcome.volumes[59]).toBe("61");
+    expect(outcome.volumelessBars).toBe(0);
+    await service.dispose();
+  });
+
+  it("refuses a volume that is not the provider's decimal grammar rather than guessing", async () => {
+    const rows = bars(2, NOW - 60_000).map((row, index) => ({
+      ...row,
+      volumeUsd: index === 0 ? "1e5" : "",
+    }));
+    fetchBarsPage.mockResolvedValue(page(rows));
+    const service = createBoardChartService({ now: () => NOW });
+    const outcome = await service.poll({ subject: SUBJECT, resolution: "1m" });
+    if (outcome.kind !== "series") throw new Error("expected series");
+    expect(outcome.volumes).toEqual([null, null]);
+    expect(outcome.volumelessBars).toBe(2);
+    await service.dispose();
+  });
+});
+
 // ── Cancellation and teardown ────────────────────────────────────────────
 
 describe("cancellation", () => {
@@ -397,6 +457,58 @@ describe("cancellation", () => {
     release();
     expect((await stayingResult).kind).toBe("series");
     expect(fetchBarsPage).toHaveBeenCalledTimes(1);
+    await service.dispose();
+  });
+
+  /**
+   * THE CANCELLED-PILL DEFECT. Two single-flight owners disagreed about when
+   * an aborted flight stops being joinable: the service deleted its flight at
+   * abort time, the cache deleted its record only when the aborted load
+   * SETTLED. A caller arriving in that window joined a corpse and was told
+   * "cancelled" about a read it never asked to cancel - which the renderer
+   * then drew as "This read was cancelled." on the default pill.
+   */
+  it("a caller that arrives AFTER the last caller left does not inherit its cancellation", async () => {
+    const first = new AbortController();
+    const releases: (() => void)[] = [];
+    let started = (): void => undefined;
+    const startedAt = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    fetchBarsPage.mockImplementation(
+      async (args: { signal: AbortSignal }) =>
+        new Promise((resolve, reject) => {
+          releases.push(() => {
+            resolve(page(bars(3, NOW)));
+          });
+          args.signal.addEventListener("abort", () => {
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+          });
+          started();
+        }),
+    );
+    const service = createBoardChartService({ now: () => NOW });
+    const departing = service.poll({
+      subject: SUBJECT,
+      resolution: "15m",
+      signal: first.signal,
+    });
+    await startedAt;
+    first.abort();
+    // The next caller arrives in the SAME turn: the aborted read has not
+    // settled yet, which is exactly the window the defect lived in.
+    const fresh = new AbortController();
+    const arriving = service.poll({
+      subject: SUBJECT,
+      resolution: "15m",
+      signal: fresh.signal,
+    });
+    expect(await departing).toEqual({ kind: "unavailable", reason: "cancelled" });
+    for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+    for (const release of releases) release();
+    expect((await arriving).kind).toBe("series");
+    // A fresh read for the fresh caller, not the corpse of the first one.
+    expect(fetchBarsPage).toHaveBeenCalledTimes(2);
     await service.dispose();
   });
 });

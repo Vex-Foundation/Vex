@@ -162,7 +162,7 @@ describe("read - the positive path", () => {
 describe("read - invalid input never reaches the service", () => {
   it.each([
     ["an agent caption, which has no business on a live read channel", { ...SUBJECT, caption: "deepest pool" }],
-    ["the model's 600-character assessment", { ...SUBJECT, analysis: "Safety checks are clean." }],
+    ["the model's written assessment", { ...SUBJECT, analysis: "Safety checks are clean." }],
     ["a host the caller tried to name", { ...SUBJECT, origin: "https://evil.example" }],
     ["a timeout knob", { ...SUBJECT, timeoutMs: 1 }],
     ["a provider field group", { ...SUBJECT, fields: "security" }],

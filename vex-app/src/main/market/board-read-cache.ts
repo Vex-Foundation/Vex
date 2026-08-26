@@ -250,7 +250,16 @@ export function createBoardReadCache<T>(
         // the provider read is stopped rather than run to completion for an
         // audience that has gone. With a waiter still joined, the count is
         // above zero and the load is untouched.
-        if (load_.waiters === 0) load_.controller.abort();
+        if (load_.waiters === 0) {
+          load_.controller.abort();
+          // UNPUBLISHED AT ABORT TIME, not at settle time. An aborted load
+          // that stayed joinable until its `finally` ran handed a caller who
+          // arrived in that window the corpse's `cancelled` answer - a read
+          // that caller never asked to cancel. The identity guard keeps a
+          // record that already replaced this one in place; the `finally`
+          // above is the same guard and is a no-op afterwards.
+          if (inFlight.get(key) === load_) inFlight.delete(key);
+        }
         // The caller left; saying "not mounted" would blame the service for
         // the caller's own decision, so the refusal names the real cause.
         stopWaiting(options.refusal("cancelled"));

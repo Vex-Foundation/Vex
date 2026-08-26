@@ -36,6 +36,20 @@ const POSTGRES_RUNTIME_EXTERNALS = [
 const BARE_FILENAME_RE = /\b__filename\b/;
 
 /**
+ * Marker emitted by `src/lib/zod-locale.ts` (`ZOD_LOCALE_MARKER`). It exists
+ * only if `registerZodLocale()` is still reachable from the bundle entry.
+ */
+const ZOD_LOCALE_MARKER = "vex-zod-locale:en";
+
+/**
+ * A message template that lives ONLY in zod's English locale module
+ * (`zod/v4/locales/en.js`). zod core's fallback map has no such string, so its
+ * absence means the locale module itself never made it into the bundle.
+ */
+const ZOD_EN_LOCALE_TEXT = "Too big: expected ";
+
+
+/**
  * Whole-line comment: `//…`, `/*…`, or a JSDoc continuation `*…`. The main
  * bundle is emitted with `minify: false`, so our own source comments survive
  * into it — and the log redactor's note about this very incident legitimately
@@ -281,6 +295,61 @@ export const privilegedBundleChecks = [
         throw new Error(
           `bare \`__filename\` in ESM main chunk(s) — poisons Error.prepareStackTrace at runtime.\n` +
             `    Set \`define: { __filename: "import.meta.filename" }\` in vite.main.config.ts (NEVER __dirname).\n    ${violations.join("\n    ")}`
+        );
+      }
+    },
+  },
+  {
+    // zod 4.4.3 ships `"sideEffects": false` and registers its English error
+    // map as a module-level side effect in `zod/v4/classic/external.js`
+    // (`config(en());`). Rollup/rolldown drops that statement, and every zod
+    // issue in the bundled process then degrades to the generic core message
+    // `"Invalid input"` - a model or a user is told a field is wrong but never
+    // WHY. Measured: 32 stored tool outputs carried the generic message and
+    // zero carried a specific one; the pre-fix preload bundle contained no
+    // English locale text at all.
+    // Fix if this trips: call `registerZodLocale()` from `src/lib/zod-locale.ts`
+    // at the composition root of the affected process. NEVER a bare
+    // side-effect-only import - the same tree-shaking drops it again.
+    label: "zod english locale registered in privileged bundles (main + preload)",
+    run(root) {
+      const bundleSets = [
+        { name: "dist/main", files: mainChunkFiles(root) },
+        {
+          name: "dist/preload/index.cjs",
+          files: [path.join(root, "dist", "preload", "index.cjs")],
+        },
+      ];
+
+      const violations = [];
+      for (const { name, files } of bundleSets) {
+        const present = files.filter((file) => existsSync(file));
+        if (present.length === 0) {
+          violations.push(`${name}: no built files to scan`);
+          continue;
+        }
+        let hasMarker = false;
+        let hasLocaleText = false;
+        for (const file of present) {
+          const src = readFileSync(file, "utf8");
+          if (src.includes(ZOD_LOCALE_MARKER)) hasMarker = true;
+          if (src.includes(ZOD_EN_LOCALE_TEXT)) hasLocaleText = true;
+        }
+        if (!hasMarker) {
+          violations.push(
+            `${name}: no \`${ZOD_LOCALE_MARKER}\` marker - registerZodLocale() was tree-shaken out or never called from the entry`
+          );
+        }
+        if (!hasLocaleText) {
+          violations.push(
+            `${name}: zod English locale text (\`${ZOD_EN_LOCALE_TEXT}\`) is absent - the locale module itself is not in the bundle`
+          );
+        }
+      }
+
+      if (violations.length > 0) {
+        throw new Error(
+          `zod English locale is not registered in the privileged bundles; every validation failure would read "Invalid input":\n    ${violations.join("\n    ")}`
         );
       }
     },

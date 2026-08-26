@@ -17,7 +17,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { BoardDetailsBundle } from "@shared/schemas/board-details.js";
@@ -421,7 +421,7 @@ describe("the mockup's elements", () => {
     expect(screen.getByText("982")).toBeTruthy();
   });
 
-  it("renders the three medallion cards with their figures", async () => {
+  it("renders the three factual sections with their figures", async () => {
     const board = boardRef();
     bindStore(board);
     mountSpotlight(board);
@@ -449,6 +449,152 @@ describe("the mockup's elements", () => {
       document.querySelector('[data-vex-area="board-spotlight-safety"]'),
     ).not.toBeNull();
     expect(document.querySelector('[data-vex-area="board-status-chip"]')).not.toBeNull();
+  });
+
+  it("renders the Spotlight control as a PRESSED button that returns to the grid", async () => {
+    const board = boardRef();
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+    const toggle = document.querySelector('[data-vex-area="board-spotlight-toggle"]');
+    expect(toggle?.tagName).toBe("BUTTON");
+    expect(toggle?.getAttribute("aria-pressed")).toBe("true");
+    expect(toggle?.querySelector("svg")).not.toBeNull();
+    await act(async () => {
+      (toggle as HTMLButtonElement).click();
+      await Promise.resolve();
+    });
+    expect(useBoardSurfaceStore.getState().view).toBe("grid");
+  });
+
+  it("links every token to its own DexScreener page, built from the board's slug and pair", async () => {
+    const board = boardRef();
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+    const link = document.querySelector(
+      '[data-vex-area="board-spotlight-hero"] [data-vex-area="board-token-dexscreener-link"]',
+    );
+    expect(link?.getAttribute("href")).toBe("https://dexscreener.com/base/0xaaa111");
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("says a token has no published image only once the read settled absent", async () => {
+    const board = boardRefOf(
+      "session-1",
+      12,
+      boardSpec({
+        pools: [{ chain: "base", pairAddress: "0xaaa111", analysis: null }],
+        rows: [hydratedRow({ iconId: "abcd1234" })],
+      }),
+    );
+    bindStore(board);
+    readBoardIcon.mockReturnValue(new Promise(() => undefined));
+    mountSpotlight(board);
+    await settle();
+    expect(
+      document.querySelector('[data-vex-area="board-spotlight-photo"]')?.getAttribute("data-state"),
+    ).toBe("loading");
+    expect(document.querySelector('[data-vex-area="board-spotlight-no-image"]')).toBeNull();
+
+    cleanup();
+    readBoardIcon.mockResolvedValue({
+      ok: true,
+      data: { iconId: "abcd1234", icon: { kind: "not_found" } },
+    });
+    mountSpotlight(board);
+    await settle();
+    await waitFor(() => {
+      expect(
+        document.querySelector('[data-vex-area="board-spotlight-photo"]')?.getAttribute("data-state"),
+      ).toBe("monogram");
+    });
+    expect(
+      document.querySelector('[data-vex-area="board-spotlight-no-image"]')?.textContent,
+    ).toBe("No image published on DexScreener yet");
+    // ONE letter, the provider's own treatment.
+    expect(
+      document.querySelector('[data-vex-area="board-spotlight-photo"]')?.textContent,
+    ).toBe("P");
+  });
+
+  it("renders the provider's description whole under the identity, and nothing when absent", async () => {
+    const long = "A".repeat(900) + "\nsecond paragraph";
+    const board = boardRefOf(
+      "session-1",
+      12,
+      boardSpec({
+        pools: [{ chain: "base", pairAddress: "0xaaa111", analysis: null }],
+        rows: [hydratedRow({ description: long })],
+      }),
+    );
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+    const description = document.querySelector('[data-vex-area="board-spotlight-description"]');
+    expect(description?.textContent).toBe(long);
+    expect(description?.className).toContain("whitespace-pre-line");
+    expect(description?.className).not.toContain("truncate");
+
+    cleanup();
+    mountSpotlight(boardRef());
+    await settle();
+    expect(document.querySelector('[data-vex-area="board-spotlight-description"]')).toBeNull();
+  });
+
+  it("puts every section icon in a bare slot, never on a filled disc", async () => {
+    const board = boardRef();
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+    const icons = [
+      ...document.querySelectorAll('[data-vex-area="board-spotlight-section-icon"]'),
+    ];
+    expect(icons.length).toBeGreaterThanOrEqual(8);
+    for (const icon of icons) {
+      expect(icon.className).not.toMatch(/rounded-full|border|bg-/);
+      expect(icon.parentElement?.className).not.toContain("rounded-full");
+    }
+  });
+
+  it("draws no bordered child inside any section body", async () => {
+    readTopTraders.mockResolvedValue(
+      okTraders([
+        {
+          maker: "0xwallet1",
+          label: null,
+          buys: 12,
+          sells: 3,
+          boughtUsd: 41_000,
+          soldUsd: 12_000,
+          netCashFlowUsd: -29_000,
+          providerRank: 1,
+        },
+      ]),
+    );
+    const board = boardRef("One observation");
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+    const sections = [
+      ...document.querySelectorAll('[data-vex-area="board-spotlight"] section[data-vex-area]'),
+    ];
+    expect(sections.length).toBeGreaterThanOrEqual(8);
+    for (const section of sections) {
+      // The body is everything after the header row. A hairline (`border-b`,
+      // `border-l`, `divide-`) is allowed; a boxed child (`rounded-*` with a
+      // `border` or a fill) is the card-in-card this layout forbids.
+      const body = [...section.children].slice(1);
+      for (const child of body) {
+        for (const node of [child, ...child.querySelectorAll("*")]) {
+          const cls = node.className;
+          if (typeof cls !== "string") continue;
+          const boxed = /\brounded-(?:lg|xl|2xl)\b/.test(cls) && /\bborder\b/.test(cls);
+          expect(boxed, `${section.getAttribute("data-vex-area") ?? ""}: ${cls}`).toBe(false);
+        }
+      }
+    }
   });
 
   it("mounts the chart into its slot, and says so honestly when there is none", async () => {
@@ -601,11 +747,51 @@ describe("the model's assessment", () => {
     ]);
     expect(section?.textContent).toMatch(/composed \d{2}:\d{2} UTC/);
 
-    // And the FIRST fragment, and only that, stands under the safety chip.
+    // The assessment text occurs EXACTLY ONCE in the spotlight DOM: no lead
+    // under the safety chip, no second copy anywhere.
+    const whole = document.querySelector('[data-vex-area="board-spotlight"]')?.textContent ?? "";
+    expect(whole.split("Price is up on thin liquidity")).toHaveLength(2);
+    expect(document.querySelector('[data-vex-area="board-spotlight-safety-lead"]')).toBeNull();
     expect(
-      document.querySelector('[data-vex-area="board-spotlight-safety-lead"]')
+      document.querySelector('[data-vex-area="board-spotlight-safety"]')?.textContent,
+    ).not.toContain("Price is up");
+
+    // Every fragment at the PRIMARY register, whole, no cap.
+    for (const node of document.querySelectorAll(
+      '[data-vex-area="board-spotlight-assessment-fragment"]',
+    )) {
+      expect(node.className).toContain("text-ink-primary");
+      expect(node.className).not.toContain("truncate");
+    }
+    // Ask VEX is the assessment's own header action.
+    expect(section?.querySelector('[data-vex-area="board-spotlight-ask"]')).not.toBeNull();
+  });
+
+  it("renders a very long assessment whole, with no character cap", async () => {
+    const long = "L".repeat(3000);
+    const board = boardRef(long);
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+    expect(
+      document.querySelector('[data-vex-area="board-spotlight-assessment-fragment"]')
         ?.textContent,
-    ).toBe("Price is up on thin liquidity");
+    ).toBe(long);
+  });
+
+  it("places the assessment BEFORE Buy / Sell in DOM order", async () => {
+    const board = boardRef("One observation");
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+    const assessment = document.querySelector('[data-vex-area="board-spotlight-assessment"]');
+    const buySell = document.querySelector('[data-vex-area="board-spotlight-buysell"]');
+    if (assessment === null || buySell === null) {
+      throw new Error("assessment or buy/sell section did not render");
+    }
+    expect(
+      assessment.compareDocumentPosition(buySell) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("keeps the section and says so when a board carries no assessment", async () => {
@@ -618,10 +804,89 @@ describe("the model's assessment", () => {
     );
     expect(section?.getAttribute("data-state")).toBe("absent");
     expect(section?.textContent).toContain("No saved analysis");
+    // And the safety section says nothing about it: it is facts only.
     expect(
-      document.querySelector('[data-vex-area="board-spotlight-safety-lead"]')
-        ?.textContent,
-    ).toBe("No saved analysis");
+      document.querySelector('[data-vex-area="board-spotlight-safety"]')?.textContent,
+    ).not.toContain("No saved analysis");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 4b. Safety checks: rows, never prose                                */
+/* ------------------------------------------------------------------ */
+
+describe("the safety checks section", () => {
+  it("lists every check row with its source and verdict, unanswered ones included", async () => {
+    readDetails.mockResolvedValue(
+      okDetails(
+        detailsBundle({
+          safety: {
+            coverage: { state: "complete", presentBlocks: ["security"], absentBlocks: [] },
+            goplus: null,
+            quickintel: {
+              contractVerified: true,
+              isScam: false,
+              isHoneypot: null,
+              isProxy: null,
+              hiddenOwner: null,
+              canMint: null,
+              canBlacklist: null,
+              canPauseTrading: null,
+              hasFeeWarning: null,
+              hasExternalContractRisk: null,
+              hasGeneralVulnerabilities: null,
+              hasObfuscatedAddressRisk: null,
+              buyTaxPct: null,
+              sellTaxPct: null,
+              transferTaxPct: null,
+              lpBurnedPct: null,
+            },
+            tokenAuthority: null,
+            conflicts: [],
+          },
+        }),
+      ),
+    );
+    const board = boardRef("Model prose that must not appear under Safety");
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+
+    const rows = [
+      ...document.querySelectorAll('[data-vex-area="board-spotlight-safety-row"]'),
+    ];
+    const summary = rows.map((row) => [
+      row.getAttribute("data-check"),
+      row.getAttribute("data-verdict"),
+      row.getAttribute("data-answered"),
+      row.querySelector('[data-vex-area="board-spotlight-safety-source"]')?.textContent,
+    ]);
+    // The projection's own order (quickintel: isScam before contractVerified),
+    // then the required check nobody answered as a row, never an omission.
+    expect(summary).toEqual([
+      ["isScam", "pass", "true", "quickintel"],
+      ["contractVerified", "pass", "true", "quickintel"],
+      ["isHoneypot", "unverified", "false", "not answered"],
+    ]);
+    expect(rows[1]?.textContent).toContain("Contract verified");
+    expect(rows[1]?.textContent).toContain("Pass");
+    expect(rows[2]?.textContent).toContain("Honeypot");
+    expect(rows[2]?.textContent).toContain("Unverified");
+
+    const safety = document.querySelector('[data-vex-area="board-spotlight-safety"]');
+    expect(safety?.textContent).not.toContain("Model prose");
+    expect(safety?.querySelector('[data-vex-area="board-status-chip"]')).not.toBeNull();
+  });
+
+  it("shows the pending register while the details read is in flight", () => {
+    readDetails.mockReturnValue(new Promise(() => undefined));
+    const board = boardRef();
+    bindStore(board);
+    mountSpotlight(board);
+    expect(
+      document
+        .querySelector('[data-vex-area="board-spotlight-safety"] [data-state="pending"]'),
+    ).not.toBeNull();
   });
 });
 
@@ -669,6 +934,10 @@ describe("the SPOTLIGHT+ sections", () => {
     expect(
       document.querySelectorAll('[data-vex-area="board-spotlight-trader"]'),
     ).toHaveLength(1);
+    expect(
+      document.querySelector('[data-vex-area="board-spotlight-smart-money-window"]')
+        ?.textContent,
+    ).toBe("30-day pair-local cash flow");
 
     // Momentum shows all four windows on one axis.
     const windows = [
@@ -692,6 +961,32 @@ describe("the SPOTLIGHT+ sections", () => {
     ).toBe("3 other pools seen");
   });
 
+  it("smart money renders EVERY ranked row, never a cut of five", async () => {
+    const rows = Array.from({ length: 12 }, (_, index) => ({
+      maker: `0xwallet${String(index)}`,
+      label: null,
+      buys: 1,
+      sells: 1,
+      boughtUsd: 1000 + index,
+      soldUsd: 500,
+      netCashFlowUsd: 500 + index,
+      providerRank: index + 1,
+    }));
+    readTopTraders.mockResolvedValue(okTraders(rows));
+    const board = boardRef();
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+    expect(
+      document.querySelectorAll('[data-vex-area="board-spotlight-trader"]'),
+    ).toHaveLength(12);
+    const list = document.querySelector('[data-vex-area="board-spotlight-traders"]');
+    expect(list?.getAttribute("data-count")).toBe("12");
+    // The list scrolls inside a capped surface rather than cutting rows.
+    expect(list?.className).toContain("overflow-y-auto");
+    expect(list?.className).toContain("max-h-");
+  });
+
   it("every section has a pending state before its read lands", () => {
     for (const fn of [readTopTraders, readMomentum, readOtherPools, readContext, readTapePoll]) {
       fn.mockReturnValue(new Promise(() => undefined));
@@ -713,7 +1008,10 @@ describe("the SPOTLIGHT+ sections", () => {
     readMomentum.mockResolvedValue(unavailable("provider"));
     readOtherPools.mockResolvedValue(unavailable("busy"));
     readContext.mockResolvedValue(unavailable("not_mounted"));
-    readTapePoll.mockResolvedValue(unavailable("cancelled"));
+    // Not `cancelled`: the channel treats a cancel by another caller as a
+    // non-result (it keeps the previous read and re-issues once), so the
+    // settled absence is what puts a sentence on screen.
+    readTapePoll.mockResolvedValue(unavailable("unknown_pair"));
     const board = boardRef();
     bindStore(board);
     mountSpotlight(board);

@@ -1,30 +1,38 @@
 /**
- * SPOTLIGHT CHART - the live area chart of the owner's mockup, and the ONLY
- * imperative writer of its series.
+ * SPOTLIGHT CHART - the live CANDLESTICK chart with its volume histogram,
+ * and the ONLY imperative writer of its two series.
+ *
+ * WHY CANDLES. The owner's spotlight mockup drew an area line and the first
+ * build followed it; the owner's later, explicit words ("WYKRES ŚWIECZKOWY")
+ * override the mockup for the SERIES TYPE only. Everything else in the frame
+ * stays: pills top-left, "as of HH:MM UTC" top-right, one left price axis,
+ * caption and attribution below. The volume rides as a histogram OVERLAY on
+ * its own invisible price scale in the bottom of the same pane, not as a
+ * second pane: a pane would need a second lifecycle and steal height from a
+ * fixed-height canvas.
  *
  * WHY A DEDICATED COMPONENT AND NOT AN OPTION ON `BoardChart`. They are two
  * products. `BoardChart` draws a PERSISTED analyst snapshot: candles the
  * agent composed, annotations it authored, a fixed range, no feed. This draws
- * a LIVE line: one derived value per bucket, a resolution the reader picks, a
- * poll on a timer, a reconciliation contract, a crosshair readout and a
- * teardown on three different exits. Folding the second into the first would
- * put a feed lifecycle inside a component whose whole contract is that it has
- * none (A8).
+ * a LIVE series: a resolution the reader picks, a poll on a timer, a
+ * reconciliation contract, a crosshair readout and a teardown on three
+ * different exits. Folding the second into the first would put a feed
+ * lifecycle inside a component whose whole contract is that it has none (A8).
  *
- * THE SERIES HAS ONE WRITER. `AreaFeed` is created here, held in a ref, and
- * every `setData` / `update` goes through it. Nothing else in the renderer
- * may touch the series, which is what makes the reconciliation table below a
- * complete account of what the chart can do.
+ * THE SERIES HAVE ONE WRITER. `SpotlightFeed` is created here, held in a ref,
+ * and every `setData` / `update` on BOTH series goes through it. Nothing else
+ * in the renderer may touch them, which is what makes the reconciliation
+ * table a complete account of what the chart can do.
  *
  * WHAT THE RECONCILIATION PRESERVES, and why it is by TIMESTAMP SET rather
  * than by length. A rolling window that replaced a constant number of bars
  * looks correct to a reader sitting at the live edge and silently drags a
  * reader who has scrolled back into history. So a poll is compared against
- * what is held as SETS OF TIMES (`reconcileAreaSeries`): times that left,
- * times that arrived, times whose value changed. When the plan is a full
- * replace AND the reader is not at the edge, the VISIBLE TIME RANGE is
- * captured before the write and restored after it, so the bars they were
- * reading stay under their eyes.
+ * what is held as SETS OF TIMES (`reconcileSpotlightBars`): times that left,
+ * times that arrived, times whose values changed - ALL FOUR LEGS AND THE
+ * VOLUME, because a poll that only moved the high is still a change. When the
+ * plan is a full replace AND the reader is not at the edge, the VISIBLE TIME
+ * RANGE is captured before the write and restored after it.
  *
  * "SCROLLED BACK" IS A LIBRARY FACT, NOT A GUESS:
  * `series.barsInLogicalRange(...).barsAfter > 0` means the newest bar is off
@@ -41,11 +49,18 @@
  * the escape hatch fires at most once per subject and never while the
  * crosshair is up.
  *
+ * NO LIBRARY ANIMATION. `lastPriceAnimation` exists on Area, Line and
+ * Baseline options and nowhere on candlestick options (typings.d.ts
+ * 855-920), so the pulse the area chart had is gone rather than ported. The
+ * one inertial behaviour left, kinetic scroll, stays gated on
+ * `prefers-reduced-motion`.
+ *
  * THE KEYBOARD READOUT IS A REAL FEATURE, not an ARIA label. The chart region
  * is focusable, the arrow keys move a bar cursor, and the same figures the
- * tooltip shows are written into a polite live region. `setCrosshairPosition`
- * SUPPRESSES the move event, so the readout is updated directly rather than
- * waiting for a subscription that will not fire.
+ * tooltip shows - open, high, low, close, volume, the UTC stamp - are written
+ * into a polite live region. `setCrosshairPosition` SUPPRESSES the move
+ * event, so the readout is updated directly rather than waiting for a
+ * subscription that will not fire.
  *
  * WHAT LIVES ELSEWHERE, and why. This file is the IMPERATIVE KERNEL: the
  * instance, the feed, the crosshair subscription, the bar cursor and the
@@ -55,21 +70,24 @@
  * UTC time vocabulary the axis and the tooltip both speak
  * (`spotlightChartTime`), the tooltip's placement geometry
  * (`spotlightChartTooltipPlacement`) and the surface state machine
- * (`spotlightChartState`). The caption, which carries the licence notice in
- * every state, is `SpotlightChartCaption`.
+ * (`spotlightChartState`). The per-bar colours are decided in the ADAPTER
+ * (`boardChartFeed.styleSpotlightBar`), where they are a table test. The
+ * caption, which carries the licence notice in every state, is
+ * `SpotlightChartCaption`.
  *
- * TEARDOWN ORDER IS FIXED (contract 6.1): the FEED is cut before anything
- * imperative is released, because a response landing between a primitive
- * detach and `chart.remove()` would write to a half-disposed series. Leaving
- * the spotlight and closing the modal unmount this component; the lease
- * ending only cuts the feed, because the bars already drawn are real data
- * that was really fetched and clearing them would be a lie about the market.
+ * TEARDOWN ORDER IS FIXED (contract 6.1, brief D10): the FEED is cut before
+ * anything imperative is released - the channel hook is declared first, so
+ * React runs its cleanup first - then the crosshair subscription, the
+ * tooltip, the theme observer, the markers plugin, and only then
+ * `chart.remove()`, which disposes both series and every scale. Leaving the
+ * spotlight and closing the modal unmount this component; the lease ending
+ * only cuts the feed, because the bars already drawn are real data that was
+ * really fetched and clearing them would be a lie about the market.
  */
 
 import {
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -77,12 +95,14 @@ import {
   type KeyboardEvent,
 } from "react";
 import {
-  AreaSeries,
+  CandlestickSeries,
   CrosshairMode,
-  LastPriceAnimationMode,
+  HistogramSeries,
   createChart,
+  createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
   type MouseEventParams,
   type Time,
   type UTCTimestamp,
@@ -90,22 +110,28 @@ import {
 import type { BoardChartPillResolution } from "@shared/schemas/board-chart.js";
 import { cn } from "../../../lib/utils.js";
 import {
-  AreaFeed,
+  SPOTLIGHT_VOLUME_ALPHA,
+  SpotlightFeed,
   chartPriceDecimals,
   createChartAxisPriceFormatter,
+  isDrawnSpotlightBar,
   minMoveForDecimals,
-  normalizeBoardAreaPoints,
-  reconcileAreaSeries,
-  type BoardChartAreaPoint,
+  normalizeSpotlightBars,
+  reconcileSpotlightBars,
+  type SpotlightBarStyle,
+  type SpotlightChartBar,
+  type SpotlightDrawnBar,
 } from "./boardChartFeed.js";
 import {
   prefersReducedMotion,
   readBoardChartPalette,
+  withAlpha,
+  type BoardChartPalette,
 } from "./boardChartTheme.js";
-import { formatBoardUtcClock } from "./boardFormat.js";
+import { formatBoardUsdCompact, formatBoardUtcClock } from "./boardFormat.js";
 import {
-  tooltipStamp,
-  utcTickMarkFormatter,
+  tooltipStampUtc,
+  utcTickMarkFormatterFor,
   utcTimeFormatter,
 } from "./spotlightChartTime.js";
 import { placeSpotlightTooltip } from "./spotlightChartTooltipPlacement.js";
@@ -134,6 +160,11 @@ export {
   SPOTLIGHT_PILLS,
 } from "./spotlightChartPills.js";
 
+/**
+ * What an absence is called. `cancelled` is deliberately NOT here: a read
+ * somebody else cut is re-issued by the channel and drawn as a skeleton, never
+ * as a settled absence (`spotlightChartState`).
+ */
 const CHART_ABSENT_COPY: Readonly<Record<string, string>> = {
   no_drawable_bars: "This pool has no drawable price history at this resolution yet.",
   unknown_pair: "The provider does not index this pool.",
@@ -141,15 +172,21 @@ const CHART_ABSENT_COPY: Readonly<Record<string, string>> = {
   provider: "The provider did not answer this read.",
   busy: "The board is busy with other reads. This one is retried.",
   not_mounted: "The chart feed is not available in this build.",
-  cancelled: "This read was cancelled.",
 };
 
 /* ------------------------------------------------------------------ */
 /* Component                                                           */
 /* ------------------------------------------------------------------ */
 
+/** The four lines the crosshair card shows, and where to put it. */
 interface Tooltip {
-  readonly priceText: string;
+  readonly openText: string;
+  readonly highText: string;
+  readonly lowText: string;
+  readonly closeText: string;
+  /** The close is coloured by direction; the other three are neutral. */
+  readonly closeUp: boolean;
+  readonly volumeText: string;
   readonly timeText: string;
   readonly x: number;
   readonly y: number;
@@ -159,11 +196,27 @@ interface Tooltip {
  * The card's clearances, in CSS pixels.
  *
  * These are GEOMETRY, not design values: the gap is how far the card sits off
- * the dot it describes and the margin is how close it may come to the pane's
+ * the bar it describes and the margin is how close it may come to the pane's
  * edge. Every colour, radius and type size around them is still a token.
  */
 const TOOLTIP_GAP_PX = 14;
 const TOOLTIP_MARGIN_PX = 8;
+
+/**
+ * The overlay price scale the volume histogram autoscales on. Any id other
+ * than `left` / `right` is an overlay (typings.d.ts 4044), always auto-scaled
+ * and never drawn, which is what keeps the frame to one left axis.
+ */
+const VOLUME_SCALE_ID = "spotlight-volume";
+
+/**
+ * Where each series lives in the pane, as fractions of its height. The
+ * candles keep the upper 72 percent, the volume columns the lower 22, with a
+ * gap between so a tall column never runs into a low wick. Each margin is
+ * >= 0 and < 1 (typings.d.ts 3695-3704).
+ */
+const PRICE_SCALE_MARGINS = { top: 0.08, bottom: 0.28 } as const;
+const VOLUME_SCALE_MARGINS = { top: 0.78, bottom: 0 } as const;
 
 /** What a failed refresh is called, when there are last-good bars to keep. */
 const CHART_DEGRADED_COPY: Readonly<Record<string, string>> = {
@@ -176,6 +229,25 @@ const CHART_DEGRADED_COPY: Readonly<Record<string, string>> = {
   not_mounted: "The chart feed is not available in this build.",
 };
 
+/** The six candle colours, from one palette. Applied at creation and on a theme flip. */
+function candleColours(palette: BoardChartPalette): {
+  readonly upColor: string;
+  readonly downColor: string;
+  readonly borderUpColor: string;
+  readonly borderDownColor: string;
+  readonly wickUpColor: string;
+  readonly wickDownColor: string;
+} {
+  return {
+    upColor: palette.up,
+    downColor: palette.down,
+    borderUpColor: palette.up,
+    borderDownColor: palette.down,
+    wickUpColor: palette.up,
+    wickDownColor: palette.down,
+  };
+}
+
 export function SpotlightChart({
   subject,
   live,
@@ -184,12 +256,18 @@ export function SpotlightChart({
   const [resolution, setResolution] = useState<BoardChartPillResolution>(
     SPOTLIGHT_CHART_DEFAULT_PILL,
   );
+  // DECLARED FIRST ON PURPOSE: its cleanup is the feed cut, and React runs
+  // cleanups in declaration order, so the cut lands before the instance is
+  // released below (D10).
   const read = useSpotlightCandles({ subject, active: true, live, resolution });
 
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<"Area", Time> | null>(null);
-  const feedRef = useRef<AreaFeed | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<"Candlestick", Time> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram", Time> | null>(null);
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const feedRef = useRef<SpotlightFeed | null>(null);
+  const paletteRef = useRef<BoardChartPalette | null>(null);
   const fittedSubjectRef = useRef<string | null>(null);
   const decimalsRef = useRef<number | null>(null);
   const decimalsSubjectRef = useRef<string | null>(null);
@@ -210,11 +288,9 @@ export function SpotlightChart({
   const [readout, setReadout] = useState<string>("");
   const tooltipElRef = useRef<HTMLDivElement>(null);
   const cursorRef = useRef<number | null>(null);
-  const [paletteEpoch, setPaletteEpoch] = useState(0);
 
   const subjectKey = `${subject.chain}/${subject.pairAddress}/${resolution}`;
   const poolKey = `${subject.chain}/${subject.pairAddress}`;
-  const gradientId = `vex-spotlight-glow-${useId().replace(/:/g, "")}`;
 
   /**
    * WHAT THIS SURFACE IS SHOWING, as one closed state.
@@ -229,12 +305,21 @@ export function SpotlightChart({
     resolution,
   });
 
-  // The page on screen must be OF the pill on screen. See `forResolution`.
-  const series = surface.kind === "ready" ? surface.page.series : null;
+  // The page on screen must be OF the pill on screen (see `forResolution`):
+  // the fresh one while ready, the last good one while degraded. A degraded
+  // read carries the SAME page object it held while ready, so this memo does
+  // not recompute on the failure and the series is not touched by it.
+  const page: SpotlightCandles | null =
+    surface.kind === "ready" || surface.kind === "degraded" ? surface.page : null;
   const normalized = useMemo(
-    () => normalizeBoardAreaPoints(series?.bars ?? []),
-    [series],
+    () => normalizeSpotlightBars(page?.series.bars ?? [], page?.volumes ?? []),
+    [page],
   );
+  // The newest bar's forming state travels with the page; the styler needs
+  // it on every write and the theme observer needs it outside render.
+  const lastBarPartial = page?.series.lastBarPartial ?? false;
+  const lastBarPartialRef = useRef(lastBarPartial);
+  lastBarPartialRef.current = lastBarPartial;
 
   /**
    * The instance exists from the first landed page of THIS POOL onward.
@@ -253,13 +338,13 @@ export function SpotlightChart({
     decimalsSubjectRef.current = null;
   }, [poolKey]);
   useEffect(() => {
-    if (normalized.points.length > 0) setHasEverDrawn(true);
+    if (normalized.bars.length > 0) setHasEverDrawn(true);
   }, [normalized]);
 
   // The seed's precision, fixed for the life of this subject (contract 7.3).
-  if (decimalsSubjectRef.current !== subjectKey && series !== null) {
+  if (decimalsSubjectRef.current !== subjectKey && page !== null) {
     decimalsSubjectRef.current = subjectKey;
-    decimalsRef.current = chartPriceDecimals(series.bars);
+    decimalsRef.current = chartPriceDecimals(page.series.bars);
   }
   const decimals = decimalsRef.current ?? 6;
 
@@ -269,6 +354,38 @@ export function SpotlightChart({
     [decimals],
   );
 
+  /**
+   * The four figures of one HELD bar, as text. The prices go through the
+   * axis formatter so the card and the axis can never disagree; the volume
+   * goes through the board's compact USD formatter over the provider's OWN
+   * decimal string, so no float is ever turned back into money text.
+   */
+  const describeBar = useCallback(
+    (bar: SpotlightDrawnBar): Omit<Tooltip, "x" | "y"> => ({
+      openText: priceText(bar.open),
+      highText: priceText(bar.high),
+      lowText: priceText(bar.low),
+      closeText: priceText(bar.close),
+      closeUp: bar.close >= bar.open,
+      volumeText:
+        bar.volumeUsd === null
+          ? "no volume reported"
+          : formatBoardUsdCompact(bar.volumeUsd),
+      timeText: tooltipStampUtc(bar.time),
+    }),
+    [priceText],
+  );
+
+  /** The style every write uses: the live palette and the page's forming flag. */
+  const styleNow = useCallback((): SpotlightBarStyle => {
+    const palette = paletteRef.current ?? readBoardChartPalette(containerRef.current);
+    return {
+      up: palette.up,
+      down: palette.down,
+      lastBarPartial: lastBarPartialRef.current,
+    };
+  }, []);
+
   /* ---------------- the instance, its handlers, its teardown -------- */
 
   useEffect(() => {
@@ -277,7 +394,9 @@ export function SpotlightChart({
     if (container === null) return;
 
     const palette = readBoardChartPalette(container);
+    paletteRef.current = palette;
     const reduced = prefersReducedMotion();
+    const seedDecimals = decimalsRef.current ?? decimals;
     const chart = createChart(container, {
       autoSize: true,
       layout: {
@@ -293,18 +412,24 @@ export function SpotlightChart({
         vertLines: { visible: false },
         horzLines: { color: palette.grid, style: 2 },
       },
-      // THE MOCKUP'S AXIS IS ON THE LEFT and there is no right-hand rail.
-      leftPriceScale: { visible: true, borderVisible: false },
+      // THE MOCKUP'S AXIS IS ON THE LEFT and there is no right-hand rail. The
+      // volume's overlay scale is never visible, so the frame stays one axis.
+      leftPriceScale: {
+        visible: true,
+        borderVisible: false,
+        scaleMargins: PRICE_SCALE_MARGINS,
+      },
       rightPriceScale: { visible: false },
       timeScale: {
         borderVisible: false,
         timeVisible: true,
         secondsVisible: false,
-        // THE AXIS, IN UTC. `localization.timeFormatter` below formats the
-        // CROSSHAIR label only; the tick marks are this formatter's, and the
-        // library's default for them is the VIEWER'S LOCAL TIMEZONE. Both are
-        // set, from one module, so the axis and the tooltip cannot disagree.
-        tickMarkFormatter: utcTickMarkFormatter,
+        // THE AXIS, IN UTC, IN THE PILL'S OWN VOCABULARY. `localization
+        // .timeFormatter` below formats the CROSSHAIR label only; the tick
+        // marks are this formatter's, and the library's default for them is
+        // the VIEWER'S LOCAL TIMEZONE. Both come from one module, so the axis
+        // and the tooltip cannot disagree. Re-applied on a pill switch below.
+        tickMarkFormatter: utcTickMarkFormatterFor(resolution),
       },
       crosshair: { mode: CrosshairMode.Magnet },
       // EXPLICIT UTC. An unlabelled axis is read as local time by everyone,
@@ -314,47 +439,70 @@ export function SpotlightChart({
       handleScale: { axisPressedMouseMove: { time: true, price: false } },
     });
 
-    const areaSeries = chart.addSeries(AreaSeries, {
-      lineColor: palette.up,
-      topColor: withAlpha(palette.up, 0.28),
-      bottomColor: withAlpha(palette.up, 0),
-      lineWidth: 2,
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      priceScaleId: "left",
+      ...candleColours(palette),
+      borderVisible: true,
+      wickVisible: true,
       priceLineVisible: false,
       lastValueVisible: false,
-      crosshairMarkerVisible: true,
-      crosshairMarkerRadius: 4,
-      pointMarkersVisible: false,
-      lastPriceAnimation: LastPriceAnimationMode.Disabled,
+      // The formatter and the tick share ONE precision, which is the
+      // invariant that stopped an axis from printing floating-point residue.
+      // `minMove` is never 0: see `minMoveForDecimals`.
       priceFormat: {
-        type: "price",
-        precision: decimalsRef.current ?? decimals,
-        minMove: minMoveForDecimals(decimalsRef.current ?? decimals),
+        type: "custom",
+        formatter: createChartAxisPriceFormatter(seedDecimals),
+        minMove: minMoveForDecimals(seedDecimals),
       },
     });
-    // The formatter and the tick share ONE precision, which is the invariant
-    // that stopped an axis from printing floating-point residue.
-    chart.applyOptions({
-      localization: {
-        timeFormatter: utcTimeFormatter,
-        priceFormatter: createChartAxisPriceFormatter(decimalsRef.current ?? decimals),
-      },
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      priceScaleId: VOLUME_SCALE_ID,
+      base: 0,
+      // The option colour is the fallback; every column carries its own
+      // direction tint as per-item data (`styleSpotlightBar`).
+      color: withAlpha(palette.up, SPOTLIGHT_VOLUME_ALPHA),
+      priceLineVisible: false,
+      lastValueVisible: false,
     });
+    chart.priceScale(VOLUME_SCALE_ID).applyOptions({
+      scaleMargins: VOLUME_SCALE_MARGINS,
+    });
+    chart.priceScale("left").applyOptions({ scaleMargins: PRICE_SCALE_MARGINS });
+    // THE MARKERS SEAM, on the candle series only. Nothing is drawn today;
+    // the plugin is created here so the one place markers could ever come
+    // from is also the one place they are detached (before `remove()`).
+    const markers = createSeriesMarkers(candleSeries, []);
 
     chartRef.current = chart;
-    seriesRef.current = areaSeries;
-    feedRef.current = new AreaFeed({
-      setData: (data) => {
-        areaSeries.setData(data);
+    candleSeriesRef.current = candleSeries;
+    volumeSeriesRef.current = volumeSeries;
+    markersRef.current = markers;
+    feedRef.current = new SpotlightFeed({
+      candle: {
+        setData: (data) => {
+          candleSeries.setData(data);
+        },
+        update: (point, historicalUpdate) => {
+          candleSeries.update(point, historicalUpdate);
+        },
       },
-      update: (point, historicalUpdate) => {
-        areaSeries.update(point, historicalUpdate);
+      volume: {
+        setData: (data) => {
+          volumeSeries.setData(data);
+        },
+        update: (point, historicalUpdate) => {
+          volumeSeries.update(point, historicalUpdate);
+        },
       },
     });
 
     /**
      * The crosshair handler. ANCHORED IN CHART COORDINATES, not at the
-     * pointer: the crosshair is magnetic, so it snaps to the series value,
-     * and a tooltip placed at the mouse would sit off the dot it describes.
+     * pointer: the crosshair is magnetic, so it snaps to the close, and a
+     * card placed at the mouse would sit off the bar it describes. The
+     * figures come from the HELD bar at that time (the provider's own
+     * decimal volume lives there); the library's own item is what says a
+     * candle exists under the cursor at all.
      */
     const onCrosshair = (param: MouseEventParams<Time>): void => {
       const time = param.time;
@@ -362,24 +510,30 @@ export function SpotlightChart({
         setTooltip(null);
         return;
       }
-      const point = param.seriesData.get(areaSeries);
-      const value =
-        point !== undefined && "value" in point ? (point.value as number) : null;
-      if (value === null) {
+      const item = param.seriesData.get(candleSeries);
+      if (item === undefined || !("open" in item)) {
+        setTooltip(null);
+        return;
+      }
+      const column = param.seriesData.get(volumeSeries);
+      const hasColumn = column !== undefined && "value" in column;
+      const held = feedRef.current?.held.find((bar) => bar.time === time);
+      if (held === undefined || !isDrawnSpotlightBar(held)) {
         setTooltip(null);
         return;
       }
       const x = chart.timeScale().timeToCoordinate(time);
-      const y = areaSeries.priceToCoordinate(value);
+      const y = candleSeries.priceToCoordinate(item.close);
       if (x === null || y === null) {
         setTooltip(null);
         return;
       }
+      const described = describeBar(held);
       setTooltip({
-        priceText: createChartAxisPriceFormatter(decimalsRef.current ?? decimals)(
-          value,
-        ),
-        timeText: tooltipStamp(time as UTCTimestamp),
+        ...described,
+        // The histogram is the authority on whether a column is DRAWN; the
+        // held string is the authority on what it says.
+        volumeText: hasColumn ? described.volumeText : "no volume reported",
         x,
         y,
       });
@@ -389,21 +543,30 @@ export function SpotlightChart({
     // A THEME FLIP IS AN `applyOptions`, NEVER A REBUILD. Recreating the
     // instance would throw away the reader's zoom and pan for a colour
     // change, so the aliases are re-read and pushed into the LIVE chart and
-    // series exactly as `BoardChart` does. The epoch is bumped only so the
-    // effects that derive from the palette re-run; the creation effect does
-    // NOT depend on it.
+    // series exactly as `BoardChart` does. The per-item tints (volume
+    // columns, the forming bar) are DATA, so when the two direction colours
+    // actually changed the held bars are re-written re-tinted through the
+    // feed - a `setData`, viewport-neutral, not a rebuild. Nothing here
+    // touches `priceFormat`: a colour change is never a full update.
     const themeObserver = new MutationObserver(() => {
       const next = readBoardChartPalette(container);
+      const previous = paletteRef.current;
+      paletteRef.current = next;
       chart.applyOptions({
         layout: { textColor: next.ink },
         grid: { horzLines: { color: next.grid } },
       });
-      areaSeries.applyOptions({
-        lineColor: next.up,
-        topColor: withAlpha(next.up, 0.28),
-        bottomColor: withAlpha(next.up, 0),
+      candleSeries.applyOptions(candleColours(next));
+      volumeSeries.applyOptions({
+        color: withAlpha(next.up, SPOTLIGHT_VOLUME_ALPHA),
       });
-      setPaletteEpoch((epoch) => epoch + 1);
+      if (previous === null || previous.up !== next.up || previous.down !== next.down) {
+        feedRef.current?.restyle({
+          up: next.up,
+          down: next.down,
+          lastBarPartial: lastBarPartialRef.current,
+        });
+      }
     });
     themeObserver.observe(document.documentElement, {
       attributes: true,
@@ -412,21 +575,29 @@ export function SpotlightChart({
     setInstanceEpoch((epoch) => epoch + 1);
 
     return () => {
-      // ORDER IS THE CONTRACT'S. Admission closes first: the feed hook owns
-      // the timer and the generation, and this component's own imperative
-      // handles are released only after the crosshair subscription is gone.
+      // ORDER IS THE CONTRACT'S (D10). Admission closed first: the feed hook
+      // above owns the timer and the generation and its cleanup has already
+      // run. Then the crosshair subscription, the card, the observer, the
+      // markers plugin, and only then the instance - `remove()` disposes both
+      // series and every scale, so nothing removes a series first.
       chart.unsubscribeCrosshairMove(onCrosshair);
       setTooltip(null);
       themeObserver.disconnect();
+      markers.detach();
       chart.remove();
       chartRef.current = null;
-      seriesRef.current = null;
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+      markersRef.current = null;
       feedRef.current = null;
+      paletteRef.current = null;
       fittedSubjectRef.current = null;
       cursorRef.current = null;
     };
-    // `decimals` is deliberately NOT a dependency: a precision change is an
-    // `applyOptions` below, never a rebuilt instance (contract 7.2, 7.5).
+    // `decimals` and `resolution` are deliberately NOT dependencies: a
+    // precision change is an `applyOptions` below, never a rebuilt instance
+    // (contract 7.2, 7.5), and a pill switch re-applies the tick formatter
+    // the same way.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasEverDrawn, poolKey]);
 
@@ -435,29 +606,30 @@ export function SpotlightChart({
   useEffect(() => {
     const feed = feedRef.current;
     const chart = chartRef.current;
-    const areaSeries = seriesRef.current;
-    if (feed === null || chart === null || areaSeries === null) return;
-    if (normalized.points.length === 0) return;
+    const candleSeries = candleSeriesRef.current;
+    if (feed === null || chart === null || candleSeries === null) return;
+    if (normalized.bars.length === 0) return;
+    const style = styleNow();
 
     if (fittedSubjectRef.current !== subjectKey) {
       // A PILL CLICK IS A GESTURE, and the only sanctioned viewport reset.
-      feed.reset(normalized.points);
+      feed.reset(normalized.bars, style);
       chart.timeScale().fitContent();
       fittedSubjectRef.current = subjectKey;
       cursorRef.current = null;
       return;
     }
 
-    const plan = reconcileAreaSeries(feed.held, normalized.points);
+    const plan = reconcileSpotlightBars(feed.held, normalized.bars);
     // Captured BEFORE the write, and only when the reader is not at the live
     // edge: `barsAfter > 0` is the library's own "the newest bar is off
     // screen", so this asks the chart rather than guessing.
     const logical = chart.timeScale().getVisibleLogicalRange();
-    const bars = logical === null ? null : areaSeries.barsInLogicalRange(logical);
+    const bars = logical === null ? null : candleSeries.barsInLogicalRange(logical);
     const scrolledBack = (bars?.barsAfter ?? 0) > 0;
     const visibleBefore = scrolledBack ? chart.timeScale().getVisibleRange() : null;
 
-    const applied = feed.apply(plan);
+    const applied = feed.apply(plan, style);
 
     if (applied.reset && visibleBefore !== null) {
       const oldest = feed.oldestTimeSec;
@@ -474,35 +646,33 @@ export function SpotlightChart({
         }
       }
     }
-  }, [normalized, subjectKey, instanceEpoch]);
+  }, [normalized, subjectKey, instanceEpoch, styleNow]);
 
   /* ---------------- options that change without a rebuild ----------- */
 
+  // THE AXIS VOCABULARY FOLLOWS THE PILL (D5): a week of two-hour bars needs
+  // the day beside the clock, a month of eight-hour bars is read by day. An
+  // `applyOptions` on the live instance, never a rebuild.
   useEffect(() => {
-    const areaSeries = seriesRef.current;
-    if (areaSeries === null) return;
-    // Doubly gated (contract 5.4): a pulse implying fresh data while the feed
-    // is cut is the same lie as a relative clock that keeps ticking.
-    const animate = live && !prefersReducedMotion();
-    areaSeries.applyOptions({
-      lastPriceAnimation: animate
-        ? LastPriceAnimationMode.OnDataUpdate
-        : LastPriceAnimationMode.Disabled,
+    const chart = chartRef.current;
+    if (chart === null) return;
+    chart.applyOptions({
+      timeScale: { tickMarkFormatter: utcTickMarkFormatterFor(resolution) },
     });
-  }, [live, hasEverDrawn, instanceEpoch, paletteEpoch]);
+  }, [resolution, instanceEpoch]);
 
   useEffect(() => {
-    const areaSeries = seriesRef.current;
-    if (areaSeries === null) return;
+    const candleSeries = candleSeriesRef.current;
+    if (candleSeries === null) return;
     // The escape hatch, and it is guarded twice: never while the crosshair is
     // up (the numbers would re-scale under the reader's eyes), and never as a
     // recreation - `applyOptions` repaints at full invalidation and leaves the
     // viewport alone (contract 7.2).
     if (tooltipRef.current !== null) return;
-    areaSeries.applyOptions({
+    candleSeries.applyOptions({
       priceFormat: {
-        type: "price",
-        precision: decimals,
+        type: "custom",
+        formatter: createChartAxisPriceFormatter(decimals),
         minMove: minMoveForDecimals(decimals),
       },
     });
@@ -544,24 +714,25 @@ export function SpotlightChart({
    *
    * `setCrosshairPosition` SUPPRESSES the crosshair-move event by design, so
    * the readout is written here rather than left to the subscription. The
-   * live region carries exactly what the tooltip shows.
+   * live region carries exactly what the tooltip shows: open, high, low,
+   * close, volume, and the UTC stamp.
    */
   const moveCursor = useCallback(
     (delta: number): void => {
       const feed = feedRef.current;
       const chart = chartRef.current;
-      const areaSeries = seriesRef.current;
-      if (feed === null || chart === null || areaSeries === null) return;
+      const candleSeries = candleSeriesRef.current;
+      if (feed === null || chart === null || candleSeries === null) return;
       const held = feed.held;
       if (held.length === 0) return;
       const current = cursorRef.current ?? held.length - 1;
       const next = Math.max(0, Math.min(held.length - 1, current + delta));
       cursorRef.current = next;
-      const point: BoardChartAreaPoint | undefined = held[next];
-      if (point === undefined) return;
-      const time = point.time as UTCTimestamp;
-      if (!("value" in point)) {
-        setReadout(`${tooltipStamp(time)}: no price reported for this bucket`);
+      const bar: SpotlightChartBar | undefined = held[next];
+      if (bar === undefined) return;
+      const time = bar.time;
+      if (!isDrawnSpotlightBar(bar)) {
+        setReadout(`${tooltipStampUtc(time)}: no price reported for this bucket`);
         setTooltip(null);
         return;
       }
@@ -591,27 +762,22 @@ export function SpotlightChart({
         }
       }
 
-      chart.setCrosshairPosition(point.value, time, areaSeries);
-      const spoken = `${priceText(point.value)} at ${tooltipStamp(time)}`;
+      chart.setCrosshairPosition(bar.close, time, candleSeries);
+      const described = describeBar(bar);
+      const spoken =
+        `open ${described.openText}, high ${described.highText}, ` +
+        `low ${described.lowText}, close ${described.closeText}, ` +
+        `volume ${described.volumeText}, at ${described.timeText}`;
       // The readout is written from the HELD BAR, so it is right whether or
       // not the pane could give a coordinate for it.
       setReadout(spoken);
       const x = timeScale.timeToCoordinate(time);
-      const y = areaSeries.priceToCoordinate(point.value);
+      const y = candleSeries.priceToCoordinate(bar.close);
       // No coordinate, no card: a tooltip parked at 0,0 describes the wrong
       // bar, and the live region above already carries the figures.
-      setTooltip(
-        x === null || y === null
-          ? null
-          : {
-              priceText: priceText(point.value),
-              timeText: tooltipStamp(time),
-              x,
-              y,
-            },
-      );
+      setTooltip(x === null || y === null ? null : { ...described, x, y });
     },
-    [priceText],
+    [describeBar],
   );
 
   const onKeyDown = useCallback(
@@ -665,8 +831,6 @@ export function SpotlightChart({
   );
   // A degraded chart is NOT streaming, whatever the lease says.
   const streaming = live && surface.kind === "ready";
-  const notesPage: SpotlightCandles | null =
-    surface.kind === "ready" || surface.kind === "degraded" ? surface.page : null;
 
   return (
     <figure
@@ -699,8 +863,8 @@ export function SpotlightChart({
                 className={cn(
                   "rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
                   selected
-                    ? "bg-accent-primary text-ink-on-accent"
-                    : "text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary",
+                    ? "bg-accent-wash text-accent-primary ring-1 ring-inset ring-accent-primary/40"
+                    : "text-ink-tertiary hover:bg-interactive-hover",
                 )}
               >
                 {pill.label}
@@ -733,29 +897,22 @@ export function SpotlightChart({
         </p>
       ) : null}
 
-      <div className="relative min-w-0">
-        {/* THE GLOW is a targeted underlay behind the line, not a shadow on
-          * the container: a container filter would blur the grid and the axis
-          * labels drawn on the same canvas. */}
-        <div
-          aria-hidden
-          data-vex-area="spotlight-chart-glow"
-          data-gradient={gradientId}
-          className="pointer-events-none absolute inset-x-8 bottom-8 h-24 rounded-full bg-success opacity-[0.16] blur-2xl motion-reduce:opacity-[0.08]"
-        />
+      {/* A FIXED-HEIGHT BOX THAT NEVER COLLAPSES: the frame is the same
+        * height whether it holds candles, a skeleton or a sentence. */}
+      <div className="relative h-[280px] min-w-0">
         <div
           ref={containerRef}
           data-vex-area="spotlight-chart-canvas"
           tabIndex={0}
           role="img"
-          aria-label={`Price chart for ${subject.baseTokenSymbol ?? subject.pairAddress} over ${PILL_LABEL[resolution]}. Use the arrow keys to read individual bars.${degraded ? " The latest refresh failed; these are the last bars that were successfully read." : ""}`}
+          aria-label={`Candlestick chart with volume for ${subject.baseTokenSymbol ?? subject.pairAddress} over ${PILL_LABEL[resolution]}. Use the arrow keys to read individual bars.${degraded ? " The latest refresh failed; these are the last bars that were successfully read." : ""}`}
           onKeyDown={onKeyDown}
           onBlur={() => {
             chartRef.current?.clearCrosshairPosition();
             cursorRef.current = null;
             setTooltip(null);
           }}
-          className="relative h-[300px] w-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative h-full w-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
 
         {showSkeleton ? (
@@ -772,7 +929,7 @@ export function SpotlightChart({
           <p
             data-vex-area="spotlight-chart-absent"
             data-reason={surface.kind === "absent" ? surface.reason : ""}
-            className="absolute inset-0 flex items-center justify-center rounded-lg bg-board-card px-6 text-center text-[13px] text-ink-tertiary"
+            className="absolute inset-0 flex items-center justify-center rounded-lg bg-board-card px-6 text-center text-[13px] leading-[18px] text-ink-tertiary"
           >
             {(surface.kind === "absent"
               ? CHART_ABSENT_COPY[surface.reason]
@@ -795,10 +952,38 @@ export function SpotlightChart({
             // the pane and flipped below the crosshair near the top edge.
             className="pointer-events-none absolute left-0 top-0 z-10 rounded-lg border border-line-2 bg-surface-1 px-2.5 py-1.5 shadow-lv2"
           >
-            <span className="block text-[13px] font-semibold tabular-nums text-ink-primary">
-              {tooltip.priceText}
+            <span
+              data-vex-area="spotlight-chart-tooltip-open"
+              className="block text-[12px] leading-[16px] tabular-nums text-ink-secondary"
+            >
+              {`O ${tooltip.openText}`}
             </span>
-            <span className="block text-[11.5px] tabular-nums text-ink-tertiary">
+            <span
+              data-vex-area="spotlight-chart-tooltip-range"
+              className="block text-[12px] leading-[16px] tabular-nums text-ink-secondary"
+            >
+              {`H ${tooltip.highText} / L ${tooltip.lowText}`}
+            </span>
+            <span
+              data-vex-area="spotlight-chart-tooltip-close"
+              data-direction={tooltip.closeUp ? "up" : "down"}
+              className={cn(
+                "block text-[13px] leading-[18px] font-semibold tabular-nums",
+                tooltip.closeUp ? "text-success" : "text-error",
+              )}
+            >
+              {`C ${tooltip.closeText}`}
+            </span>
+            <span
+              data-vex-area="spotlight-chart-tooltip-volume"
+              className="block text-[12px] leading-[16px] tabular-nums text-ink-secondary"
+            >
+              {`Vol ${tooltip.volumeText}`}
+            </span>
+            <span
+              data-vex-area="spotlight-chart-tooltip-time"
+              className="block text-[11.5px] leading-[15px] tabular-nums text-ink-tertiary"
+            >
               {tooltip.timeText}
             </span>
           </div>
@@ -818,31 +1003,14 @@ export function SpotlightChart({
 
       {/* UNCONDITIONAL, in every state: it carries the licence notice. */}
       <SpotlightChartCaption
-        page={notesPage}
-        hiddenOlder={normalized.hiddenOlder}
+        page={page}
+        drawing={{
+          hiddenOlder: normalized.hiddenOlder,
+          incoherentCount: normalized.incoherentCount,
+          volumelessCount: normalized.volumelessCount,
+        }}
         resolution={resolution}
       />
     </figure>
   );
-}
-
-/* ------------------------------------------------------------------ */
-/* Formatting helpers                                                  */
-/* ------------------------------------------------------------------ */
-
-/**
- * Re-alpha a resolved token colour for the area gradient.
- *
- * The palette bridge hands back whatever the stylesheet computed, which is an
- * `rgb()` or `rgba()` string in every browser this ships on. Anything else is
- * passed through unchanged rather than mangled: a colour we cannot parse is
- * better drawn opaque than dropped.
- */
-function withAlpha(color: string, alpha: number): string {
-  const match = /^rgba?\(([^)]+)\)$/i.exec(color.trim());
-  if (match === null) return color;
-  const parts = (match[1] ?? "").split(/[\s,/]+/).filter((part) => part !== "");
-  const [r, g, b] = parts;
-  if (r === undefined || g === undefined || b === undefined) return color;
-  return `rgba(${r}, ${g}, ${b}, ${String(alpha)})`;
 }

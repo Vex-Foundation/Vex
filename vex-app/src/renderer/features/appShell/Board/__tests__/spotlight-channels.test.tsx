@@ -30,17 +30,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import {
+  useSpotlightCandles,
   useSpotlightDetails,
   useSpotlightTraders,
   verdictForRead,
   type SpotlightRead,
 } from "../spotlight-channels.js";
+import { spotlightChartSurfaceState } from "../spotlightChartState.js";
 import { BOARD_FILTER_NONE, useBoardSurfaceStore } from "../board-surface-store.js";
 import type { PairSubject } from "../board-surface-contracts.js";
 import { cleanBundle } from "@shared/board/__tests__/board-safety-fixtures.js";
 
 const topTraders = vi.fn();
 const detailsRead = vi.fn();
+const chartPoll = vi.fn();
 
 /** A whole subject, declared rather than cast: the type is small and real. */
 function subject(pairAddress: string): PairSubject {
@@ -125,6 +128,7 @@ beforeEach(() => {
   cancels = 0;
   topTraders.mockReset();
   detailsRead.mockReset();
+  chartPoll.mockReset();
   Object.defineProperty(window, "vex", {
     configurable: true,
     writable: true,
@@ -137,6 +141,9 @@ beforeEach(() => {
       },
       boardDetails: {
         read: (input: unknown) => abortable(detailsRead(input)),
+      },
+      boardChart: {
+        poll: (input: unknown) => abortable(chartPoll(input)),
       },
     },
   });
@@ -445,6 +452,69 @@ describe("a cut reaches MAIN, not just this side", () => {
     await waitFor(() => {
       expect(cancels).toBeGreaterThan(0);
     });
+  });
+
+  /**
+   * THE CANCELLED-PILL DEFECT, renderer half. A `cancelled` outcome that
+   * arrives for a channel that is NOT stale is a read somebody else cut, not a
+   * fact about the market. Publishing it as `unavailable` with no last-good
+   * put "This read was cancelled." on the default pill as a terminal state,
+   * and with Live off nothing ever asked again.
+   */
+  it("a cancelled answer for the pill on screen is not a settled absence", async () => {
+    const seriesAnswer = {
+      ok: true,
+      data: {
+        subject: { chain: SUBJECT_A.chain, pairAddress: SUBJECT_A.pairAddress },
+        resolution: "15m",
+        outcome: {
+          kind: "series",
+          series: {
+            bars: [{ tMs: FETCHED_AT, o: "1", h: "1", l: "1", c: "1" }],
+            lastBarPartial: true,
+            coveredRange: { fromMs: FETCHED_AT, toMs: FETCHED_AT },
+            resolution: "15m",
+            truncated: false,
+          },
+          requestedBars: 96,
+          providerBars: 1,
+          undrawableBars: 0,
+          windowedOutBars: 0,
+          volumes: [null],
+          volumelessBars: 1,
+          fetchedAtMs: FETCHED_AT,
+        },
+      },
+    };
+    chartPoll
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          subject: { chain: SUBJECT_A.chain, pairAddress: SUBJECT_A.pairAddress },
+          resolution: "15m",
+          outcome: { kind: "unavailable", reason: "cancelled" },
+        },
+      })
+      .mockResolvedValue(seriesAnswer);
+
+    const surfaces: string[] = [];
+    const { result } = renderHook(() => {
+      const read = useSpotlightCandles({
+        subject: SUBJECT_A,
+        active: true,
+        live: false,
+        resolution: "15m",
+      });
+      surfaces.push(spotlightChartSurfaceState({ read, resolution: "15m" }).kind);
+      return read;
+    });
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+    // Never a settled absence on the way there, and a second poll was issued
+    // without waiting for a cadence that, with Live off, never comes.
+    expect(surfaces).not.toContain("absent");
+    expect(chartPoll).toHaveBeenCalledTimes(2);
   });
 
   /** And an UNMOUNT cuts it too: React is the other owner of this lifetime. */

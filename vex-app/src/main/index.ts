@@ -18,6 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ELECTRON_STATE_DIR } from "./paths/config-dir.js";
 import { loadProviderDotenv } from "@vex-lib/runtime-env.js";
+import { probeZodLocale, registerZodLocale } from "@vex-lib/zod-locale.js";
 import { configureLogger, log } from "./logger/index.js";
 import { acquireSingleInstanceLock } from "./lifecycle/single-instance.js";
 import { installWindowAllClosedHook } from "./lifecycle/window-all-closed.js";
@@ -75,6 +76,26 @@ mkdirSync(ELECTRON_STATE_DIR, { recursive: true });
 app.setPath("userData", ELECTRON_STATE_DIR);
 
 configureLogger();
+
+/**
+ * zod's English error map is registered as a module-level side effect inside
+ * `zod` itself, and zod declares `sideEffects: false`, so rolldown drops it
+ * from this bundle: without an explicit call every validation failure in main
+ * reads "Invalid input" instead of naming the constraint. The probe is a real
+ * parse; a failure is logged and never thrown, because a degraded error
+ * message must not stop the app from starting.
+ */
+registerZodLocale();
+{
+  const probe = probeZodLocale();
+  if (!probe.localized) {
+    log.error(
+      "zod.locale.missing",
+      "zod English locale did not register; validation errors will be generic",
+      { marker: probe.marker, sampleMessage: probe.sampleMessage }
+    );
+  }
+}
 
 /**
  * Engine runtime logs (winston → stderr only) additionally forward into the

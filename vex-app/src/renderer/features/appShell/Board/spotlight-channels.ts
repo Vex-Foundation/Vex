@@ -299,8 +299,20 @@ function useSpotlightChannel<
     };
     const unregister = registerBoardSurfaceTeardown("spotlight", id, cut);
 
+    /**
+     * Whether this arming already answered a foreign cancellation with a
+     * fresh read. ONE re-issue per settled answer, never a loop: a second
+     * `cancelled` in a row leaves the previous read exactly as it is and
+     * waits for the cadence, which is the bounded-retry discipline every
+     * other failure on this channel already lives under.
+     */
+    let reissuedAfterCancel = false;
+
     const schedule = (): void => {
       if (stopped || !repeats || cadenceMs === null) return;
+      // One chain, not two: a re-issued tick settles after the tick that
+      // re-issued it, and both reach here.
+      if (timer !== null) clearTimeout(timer);
       timer = setTimeout(() => {
         void tick();
       }, cadenceMs);
@@ -346,9 +358,25 @@ function useSpotlightChannel<
       }
       const outcome = result.data.outcome;
       if (isChannelUnavailable(outcome)) {
+        // A READ CANCELLED BY SOMEBODY ELSE IS NOT A RESULT. This channel is
+        // not stale (checked above), so the cut was not ours: main answered
+        // "cancelled" for a flight another caller took down. Publishing that
+        // as `unavailable` put "This read was cancelled." on screen as a
+        // terminal state, with nothing to ask again while Live was off. The
+        // previous read stays - pending stays pending, ready stays ready -
+        // and one fresh read is issued now rather than at the next cadence.
+        if (outcome.reason === "cancelled") {
+          if (!reissuedAfterCancel) {
+            reissuedAfterCancel = true;
+            void tick();
+          }
+          return;
+        }
+        reissuedAfterCancel = false;
         setRead(unavailableKeeping<TPanel>(outcome.reason));
         return;
       }
+      reissuedAfterCancel = false;
       answeredSubject.current = subjectKey;
       setRead({
         status: "ready",
@@ -838,6 +866,10 @@ export interface SpotlightCandles extends Panel {
   readonly providerBars: number;
   readonly undrawableBars: number;
   readonly windowedOutBars: number;
+  /** Per-bar USD volume, positionally aligned with `series.bars`; null = none reported. */
+  readonly volumes: readonly (string | null)[];
+  /** Drawn bars whose volume is null. A count, disclosed in the caption. */
+  readonly volumelessBars: number;
 }
 
 /**

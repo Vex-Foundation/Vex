@@ -16,6 +16,8 @@ import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 import { hasPendingActivityForWallets } from "@vex-agent/db/repos/agent-activity.js";
 import { resolveChainHint } from "./chains.js";
 import { syncLocalChainForWallet } from "./local-chain-balance-sync.js";
+import { syncSolanaWalletBalances } from "./solana-balance-sync.js";
+import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../constants/solana-chain.js";
 import { enrichPendleBalances, seedPendleChainBalances } from "./pendle-enrichment.js";
 import { PENDLE_SUPPORTED_CHAIN_IDS } from "@tools/pendle/chains.js";
 import { runSingleFlightBalanceSync } from "./balance-sync/single-flight.js";
@@ -82,10 +84,11 @@ export async function syncWalletBalances(
   address: string,
   chainIds?: number[],
 ): Promise<SyncResult> {
-  const { khalaniChainIds, localChainIds, pendleSeedChainIds, skipKhalani } = await partitionChainScope(
-    family,
-    chainIds,
-  );
+  const scope = await partitionChainScope(family, chainIds);
+  const { khalaniChainIds, localChainIds, pendleSeedChainIds, solanaRpc } = scope;
+  // Mutable: a SKIPPED Solana RPC read re-opens the Khalani path as the
+  // fallback for this cycle (see the Solana branch below).
+  let skipKhalani = scope.skipKhalani;
 
   // Local chains FIRST so the Khalani path's final total-USD read (which sums
   // ALL of the wallet's proj_balances) already includes freshly-written local rows.
@@ -108,6 +111,22 @@ export async function syncWalletBalances(
     if (!seeded.skipped) pendleSeedChainsUpdated += 1;
   }
 
+  // Solana: direct RPC is the PRIMARY source (owner decision 2026-08-26).
+  // Khalani stays as the FALLBACK and runs only when the RPC read was skipped,
+  // because the Khalani scan reports Solana as "scanned" with zero tokens and
+  // its empty-chain cleanup would DELETE the rows just written.
+  let solanaTokens = 0;
+  let solanaChainsUpdated = 0;
+  if (solanaRpc) {
+    const solana = await syncSolanaWalletBalances(address);
+    if (solana.skipped) {
+      skipKhalani = false;
+    } else {
+      solanaTokens = solana.tokensUpdated;
+      solanaChainsUpdated = 1;
+    }
+  }
+
   let base: SyncResult;
   if (skipKhalani) {
     // Only local / Pendle-seed chains were requested — do NOT call Khalani (an
@@ -126,8 +145,8 @@ export async function syncWalletBalances(
 
   return {
     ...base,
-    tokensUpdated: base.tokensUpdated + localTokens + pendleSeedTokens,
-    chainsUpdated: base.chainsUpdated + localChainsUpdated + pendleSeedChainsUpdated,
+    tokensUpdated: base.tokensUpdated + localTokens + pendleSeedTokens + solanaTokens,
+    chainsUpdated: base.chainsUpdated + localChainsUpdated + pendleSeedChainsUpdated + solanaChainsUpdated,
   };
 }
 
@@ -147,6 +166,9 @@ export async function syncWalletBalances(
  * - `chainIds` provided  → the local + Pendle-seed subsets go direct-RPC; the
  *   rest go to Khalani. When nothing is left for Khalani, `skipKhalani` is set so
  *   the Khalani scan (whose empty filter means "all chains") is skipped entirely.
+ * - Family "solana" never reaches the EVM partition at all: the chain is read
+ *   direct from its own RPC (`solanaRpc`), and Khalani is suppressed unless
+ *   that read is skipped, in which case it is the fallback.
  * - Fail-open: if the Khalani registry fetch itself fails (`khalaniIds === null`),
  *   partition on local-registry membership alone and seed NOTHING — a standalone
  *   Pendle replace could delete cached Khalani rows for a chain Khalani actually
@@ -160,11 +182,44 @@ async function partitionChainScope(
   khalaniChainIds: number[] | undefined;
   localChainIds: number[];
   pendleSeedChainIds: number[];
+  /** Read the Solana chain direct from its own RPC instead of via Khalani. */
+  solanaRpc: boolean;
   skipKhalani: boolean;
 }> {
+  if (family === "solana") {
+    // The Solana chain is in scope when no filter was given (empty array means
+    // "no filter" for this family - `resolveChainHint` returns exactly that)
+    // or when the synthetic id is explicitly listed. A Solana-family request
+    // naming OTHER ids keeps today's Khalani behavior untouched.
+    const solanaInScope =
+      chainIds === undefined || chainIds.length === 0 || chainIds.includes(SOLANA_SYNTHETIC_CHAIN_ID);
+    if (solanaInScope) {
+      return {
+        khalaniChainIds: undefined,
+        localChainIds: [],
+        pendleSeedChainIds: [],
+        solanaRpc: true,
+        skipKhalani: true,
+      };
+    }
+    return {
+      khalaniChainIds: chainIds,
+      localChainIds: [],
+      pendleSeedChainIds: [],
+      solanaRpc: false,
+      skipKhalani: false,
+    };
+  }
+
   if (family !== "eip155") {
     // No local / Pendle chains outside EVM — preserve existing behavior exactly.
-    return { khalaniChainIds: chainIds, localChainIds: [], pendleSeedChainIds: [], skipKhalani: false };
+    return {
+      khalaniChainIds: chainIds,
+      localChainIds: [],
+      pendleSeedChainIds: [],
+      solanaRpc: false,
+      skipKhalani: false,
+    };
   }
 
   const localRegistryIds = new Set(listLocalChains("eip155").map((chain) => chain.id));
@@ -191,16 +246,34 @@ async function partitionChainScope(
   if (chainIds === undefined) {
     const localChainIds = [...localRegistryIds].filter((id) => isLocalOnly(id));
     const pendleSeedChainIds = [...pendleIds].filter((id) => isPendleSeed(id));
-    return { khalaniChainIds: undefined, localChainIds, pendleSeedChainIds, skipKhalani: false };
+    return {
+      khalaniChainIds: undefined,
+      localChainIds,
+      pendleSeedChainIds,
+      solanaRpc: false,
+      skipKhalani: false,
+    };
   }
 
   const localChainIds = chainIds.filter((id) => isLocalOnly(id));
   const pendleSeedChainIds = chainIds.filter((id) => isPendleSeed(id));
   const khalaniRemaining = chainIds.filter((id) => !isLocalOnly(id) && !isPendleSeed(id));
   if (khalaniRemaining.length === 0) {
-    return { khalaniChainIds: undefined, localChainIds, pendleSeedChainIds, skipKhalani: true };
+    return {
+      khalaniChainIds: undefined,
+      localChainIds,
+      pendleSeedChainIds,
+      solanaRpc: false,
+      skipKhalani: true,
+    };
   }
-  return { khalaniChainIds: khalaniRemaining, localChainIds, pendleSeedChainIds, skipKhalani: false };
+  return {
+    khalaniChainIds: khalaniRemaining,
+    localChainIds,
+    pendleSeedChainIds,
+    solanaRpc: false,
+    skipKhalani: false,
+  };
 }
 
 /**

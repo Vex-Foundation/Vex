@@ -21,7 +21,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { TokenCardV3 } from "../TokenCardV3.js";
@@ -152,10 +152,45 @@ describe("TokenCardV3 - the mockup's anatomy", () => {
     expect(within(chain).getByText("solana")).toBeTruthy();
   });
 
-  it("draws the monogram when the token has no artwork", () => {
-    render(mount());
+  it("draws a ONE-letter monogram once the icon read settled absent", async () => {
+    render(mount({ card: card({ row: hydratedRow({ iconId: "abcd1234", baseTokenSymbol: "UBERCAT" }) }) }));
+    // `not_found` is the scripted answer, so the read settles absent: the
+    // slot moves from its skeleton to the monogram.
+    await waitFor(() => {
+      expect(area("board-token-photo").getAttribute("data-state")).toBe("monogram");
+    });
+    // ONE letter, the market provider's own treatment, never two.
+    expect(area("board-token-photo").textContent).toBe("U");
+  });
+
+  it("shows a skeleton, not letters, while the icon read is in flight", () => {
+    readBoardIcon.mockReturnValue(new Promise(() => undefined));
+    render(mount({ card: card({ row: hydratedRow({ iconId: "abcd1234", baseTokenSymbol: "UBERCAT" }) }) }));
+    const photo = area("board-token-photo");
+    expect(photo.getAttribute("data-state")).toBe("loading");
+    expect(photo.textContent).toBe("");
+  });
+
+  it("draws the monogram at once, with no read, when the pool has no artwork handle", () => {
+    render(mount({ card: card({ row: hydratedRow({ iconId: null }) }) }));
     expect(area("board-token-photo").getAttribute("data-state")).toBe("monogram");
-    expect(area("board-token-photo").textContent).toBe("UB");
+    expect(readBoardIcon).not.toHaveBeenCalled();
+  });
+
+  it("puts no ring on any photo state", async () => {
+    render(mount());
+    await waitFor(() => {
+      expect(area("board-token-photo").getAttribute("data-state")).toBe("monogram");
+    });
+    expect(area("board-token-photo").className).not.toMatch(/\bborder\b|ring-/);
+  });
+
+  it("renders the chain mark with no circle and no ring", () => {
+    render(mount());
+    const chain = area("board-token-chain");
+    expect(chain.querySelector("circle")).toBeNull();
+    expect(chain.querySelector(".rounded-full")).toBeNull();
+    expect(chain.innerHTML).not.toContain("border");
   });
 });
 
@@ -220,6 +255,17 @@ describe("TokenCardV3 - chip precedence", () => {
       document.querySelectorAll('[data-vex-area="board-status-chip"]'),
     ).toHaveLength(1);
   });
+
+  it("carries its tone as data and its whole label as a title", () => {
+    // The chip's CONTRACT is the tone it reports, not the utility classes the
+    // design composes (the file's own rule); the title keeps the whole label
+    // reachable on a card narrow enough to clamp it.
+    render(mount({ verdict: boardSafetyVerdict("flagged"), card: card({ row: hydratedRow({ pairAgeSeconds: 259_200 }) }) }));
+    const chip = area("board-status-chip");
+    expect(chip.getAttribute("data-tone")).toBe("danger");
+    expect(chip.getAttribute("title")).toBe("High risk");
+    expect(chip.querySelector("svg")).not.toBeNull();
+  });
 });
 
 describe("TokenCardV3 - equal cards and designed data states", () => {
@@ -250,13 +296,54 @@ describe("TokenCardV3 - equal cards and designed data states", () => {
   });
 });
 
+describe("TokenCardV3 - the live tick", () => {
+  function rerenderWith(view: ReturnType<typeof render>, price: string, change: string, live: boolean): void {
+    view.rerender(
+      mount({
+        live,
+        card: card({ row: hydratedRow({ priceUsd: price, priceChange: { h1: "1", h24: change } }) }),
+      }),
+    );
+  }
+
+  it("stamps the price row on a live change and not on an unchanged rerender", () => {
+    const view = render(mount({ live: true }));
+    const row = () => area("board-token-price-row");
+    expect(row().hasAttribute("data-tick")).toBe(false);
+
+    rerenderWith(view, "0.0001324", "532.42", true);
+    expect(row().hasAttribute("data-tick")).toBe(false);
+
+    rerenderWith(view, "0.0001400", "532.42", true);
+    const first = row().getAttribute("data-tick");
+    expect(first).not.toBeNull();
+
+    rerenderWith(view, "0.0001400", "532.42", true);
+    expect(row().getAttribute("data-tick")).toBe(first);
+
+    rerenderWith(view, "0.0001400", "540.00", true);
+    expect(row().getAttribute("data-tick")).not.toBe(first);
+  });
+
+  it("never ticks a snapshot board", () => {
+    const view = render(mount({ live: false }));
+    rerenderWith(view, "0.0009999", "1", false);
+    expect(area("board-token-price-row").hasAttribute("data-tick")).toBe(false);
+  });
+});
+
 describe("TokenCardV3 - actions", () => {
-  it("makes Spotlight a BUTTON with a pressed state, not a switch", () => {
+  it("makes Spotlight a BUTTON with a pressed state and the fullscreen glyph, not a switch", () => {
     render(mount({ selected: true }));
     const button = area("board-card-spotlight");
     expect(button.tagName).toBe("BUTTON");
     expect(button.getAttribute("role")).toBeNull();
     expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(button.querySelector("svg")).not.toBeNull();
+    expect(button.textContent).toContain("Spotlight");
+    // The pressed state is the accent wash, never a solid accent fill.
+    expect(button.className).toContain("bg-accent-wash");
+    expect(button.className).not.toContain("bg-accent-primary");
   });
 
   it("calls its handlers, and names the token in both labels", () => {

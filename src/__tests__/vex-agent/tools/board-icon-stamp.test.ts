@@ -24,6 +24,7 @@
 
 import { describe, expect, it } from "vitest";
 import { boardIconIdFromRow } from "@vex-agent/tools/internal/board/hydrate.js";
+import { boardDescriptionFromRow } from "@vex-agent/tools/internal/board/hydrate-row.js";
 
 /** A raw batch row shaped the way the live channel sends one. */
 function rowWithProfile(profile: unknown): unknown {
@@ -115,5 +116,109 @@ describe("the board icon stamp", () => {
     const longest = "a".repeat(128);
     expect(boardIconIdFromRow(rowWithProfile({ iconId: longest }))).toBe(longest);
     expect(boardIconIdFromRow(rowWithProfile({ iconId: "A-b_9Z" }))).toBe("A-b_9Z");
+  });
+});
+
+
+/**
+ * The description stamp, the icon stamp's sibling on the same provider block.
+ *
+ * The literal below is the REAL blurb the live provider served for VEX on
+ * robinhood, quoted from `board-v4-probes/description-vex.json` (546 code
+ * points, `cmsProfile.description`, nsfw false). It is here so the table is
+ * driven by a shape the provider actually sends rather than by an invented one.
+ */
+const LIVE_VEX_DESCRIPTION =
+  "VEX is a self custodial AI agent runtime for onchain finance. AI proposes "
+  + "strategies, but VEX controls what actually executes through wallet "
+  + "permissions, mission rules, position limits, protocol checks, and local "
+  + "signing. Every action and outcome is recorded through AgentScan, creating "
+  + "a complete and verifiable trading history that anyone can inspect. Users "
+  + "can build agents, deploy strategies, and prove real performance without "
+  + "giving up control of their assets. Accessible. Verifiable. Tradable. The "
+  + "AI agent you can trust with your capital.";
+
+describe("the board description stamp", () => {
+  it("carries the provider's real blurb, whole", () => {
+    expect(
+      boardDescriptionFromRow(
+        rowWithProfile({ iconId: "abcd1234", description: LIVE_VEX_DESCRIPTION, nsfw: false }),
+      ),
+    ).toBe(LIVE_VEX_DESCRIPTION);
+  });
+
+  it("REFUSES the blurb when the provider flagged the profile nsfw", () => {
+    // Same gate as the artwork, and for the same reason: a flagged profile is
+    // a profile this board carries NOTHING from, picture or prose.
+    expect(
+      boardDescriptionFromRow(
+        rowWithProfile({ description: LIVE_VEX_DESCRIPTION, nsfw: true }),
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps the blurb when the flag is false, absent, or a truthy non-boolean", () => {
+    // Strict `=== true`, exactly as the icon gate is, so the gate can neither
+    // fire by accident nor be dodged with something truthy-but-not-true.
+    for (const nsfw of [false, null, undefined, "true"]) {
+      expect(
+        boardDescriptionFromRow(rowWithProfile({ description: "pistacio", nsfw })),
+      ).toBe("pistacio");
+    }
+  });
+
+  it.each([
+    ["no profile block at all", { chainId: "solana", pairAddress: "abc" }],
+    ["a null profile", rowWithProfile(null)],
+    ["a profile with no description key", rowWithProfile({ iconId: "abcd1234" })],
+    ["a non-string description", rowWithProfile({ description: 42 })],
+    ["a null description", rowWithProfile({ description: null })],
+    ["a row that is not an object", "not a row"],
+  ])("answers null for %s, and never throws", (_label, row) => {
+    // Measured live: WETH on ethereum carries `cmsProfile` with `iconId` and
+    // `nsfw` and NO description key at all, so this is the common case rather
+    // than an error case.
+    expect(boardDescriptionFromRow(row)).toBeNull();
+  });
+
+  it("DROPS a blurb carrying a forbidden code point rather than cleaning it", () => {
+    // Built with `fromCodePoint`: a bidi override pasted as a literal is
+    // invisible to a reviewer. A cleaned blurb would be a sentence the project
+    // did not write, so the honest answer is no blurb.
+    const RIGHT_TO_LEFT_OVERRIDE = String.fromCodePoint(0x202e);
+    const ZERO_WIDTH_SPACE = String.fromCodePoint(0x200b);
+    for (const forbidden of [RIGHT_TO_LEFT_OVERRIDE, ZERO_WIDTH_SPACE, "\u0000"]) {
+      expect(
+        boardDescriptionFromRow(rowWithProfile({ description: `VEX${forbidden}runtime` })),
+      ).toBeNull();
+    }
+  });
+
+  it("allows the line breaks a CMS blurb really carries", () => {
+    const twoParagraphs = "VEX is a self custodial agent runtime.\n\nIt signs locally.";
+    expect(
+      boardDescriptionFromRow(rowWithProfile({ description: twoParagraphs })),
+    ).toBe(twoParagraphs);
+  });
+
+  it("accepts 1000 code points and DROPS 1001, rather than cutting one", () => {
+    // The bound is sized from the live distribution (VEX served 546) AND from
+    // the document budget: this is the one board string the model cannot
+    // shorten, so a bigger ceiling would let provider copy refuse the agent's
+    // work. An over-long blurb costs the reader a blurb, never the board.
+    const atBound = "a".repeat(1000);
+    expect(boardDescriptionFromRow(rowWithProfile({ description: atBound }))).toBe(atBound);
+    expect(
+      boardDescriptionFromRow(rowWithProfile({ description: "a".repeat(1001) })),
+    ).toBeNull();
+  });
+
+  it("counts code points, so an emoji-dense blurb is measured as the reader sees it", () => {
+    const emoji = "\u{1F680}".repeat(1000);
+    expect(boardDescriptionFromRow(rowWithProfile({ description: emoji }))).toBe(emoji);
+  });
+
+  it("refuses the empty string rather than storing a blurb that says nothing", () => {
+    expect(boardDescriptionFromRow(rowWithProfile({ description: "" }))).toBeNull();
   });
 });

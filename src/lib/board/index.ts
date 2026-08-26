@@ -14,6 +14,7 @@
 
 export {
   BOARD_ANALYSIS_RULE,
+  BOARD_DESCRIPTION_RULE,
   BOARD_ANNOTATION_LABEL_RULE,
   BOARD_CAPTION_RULE,
   BOARD_CHART_RESOLUTIONS,
@@ -58,6 +59,7 @@ export type {
   BoardComposeInput,
   BoardHydratedRow,
   BoardHydration,
+  BoardPoolByteWeight,
   BoardPoolInput,
   BoardSpecV1,
 } from "./spec.js";

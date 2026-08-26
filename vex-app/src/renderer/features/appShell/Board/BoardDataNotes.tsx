@@ -33,12 +33,35 @@ import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import { cn } from "../../../lib/utils.js";
 import { formatBoardUtcClock, formatBoardUtcDate } from "./boardFormat.js";
 import type { BoardAuthoredContent } from "./boardModel.js";
+import {
+  BOARD_SAFETY_CHIP,
+  type BoardSafetyState,
+  type BoardSafetyVerdict,
+} from "./board-surface-contracts.js";
 
 export interface BoardDataNotesProps {
   readonly content: BoardAuthoredContent;
+  /**
+   * The board's verdicts, in pool order, for the "Safety states on this
+   * board" group: each state PRESENT on the board, with the label its chip
+   * wears and the bucket it counts in. The chip's copy is the classifier's
+   * frozen table, and this is where a reader learns what the copy means.
+   */
+  readonly verdicts?: readonly BoardSafetyVerdict[];
 }
 
-export function BoardDataNotes({ content }: BoardDataNotesProps): JSX.Element {
+/** The distinct states present, in first-appearance order. */
+export function safetyStatesPresent(
+  verdicts: readonly BoardSafetyVerdict[],
+): readonly BoardSafetyState[] {
+  return [...new Set(verdicts.map((verdict) => verdict.state))];
+}
+
+export function BoardDataNotes({
+  content,
+  verdicts = [],
+}: BoardDataNotesProps): JSX.Element {
+  const safetyStates = safetyStatesPresent(verdicts);
   const [open, setOpen] = useState(false);
   const regionId = useId();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -162,6 +185,31 @@ export function BoardDataNotes({ content }: BoardDataNotesProps): JSX.Element {
                 )}
               </p>
             ))}
+          </Group>
+        ) : null}
+
+        {safetyStates.length > 0 ? (
+          <Group title="Safety states on this board">
+            <dl
+              data-vex-area="board-note-safety-states"
+              className="grid grid-cols-1 gap-1 text-[12.5px] leading-relaxed text-ink-secondary"
+            >
+              {safetyStates.map((state) => (
+                <div
+                  key={state}
+                  data-vex-area="board-note-safety-state"
+                  data-safety-state={state}
+                  className="flex gap-2"
+                >
+                  <dt className="shrink-0 font-semibold text-ink-primary">
+                    {BOARD_SAFETY_CHIP[state].label}
+                  </dt>
+                  <dd className="min-w-0 break-words text-ink-tertiary">
+                    counted as {BOARD_SAFETY_CHIP[state].bucket}
+                  </dd>
+                </div>
+              ))}
+            </dl>
           </Group>
         ) : null}
 

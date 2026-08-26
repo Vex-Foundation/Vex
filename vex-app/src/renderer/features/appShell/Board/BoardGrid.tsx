@@ -28,6 +28,7 @@ import { BoardGridBar } from "./BoardGridBar.js";
 import { TokenCardV3 } from "./TokenCardV3.js";
 import {
   boardLiveReadout,
+  isBoardLiveHeld,
   selectBoardLivePublication,
   useBoardLiveOverlayStore,
 } from "./board-live-overlay.js";
@@ -128,18 +129,22 @@ export function BoardGrid({ board }: BoardGridSlotProps): JSX.Element {
       }}
       className="min-h-0"
     >
-      <BoardGridBar
-        filter={filter}
-        chains={chains}
-        safetyStates={safetyStates}
-        onFilter={setBoardFilter}
-      />
       <div
         data-vex-area="board-grid-plate"
         data-count={total}
         data-visible={visible.length}
-        className="vex-board-surface rounded-2xl border border-line-1 p-4"
+        className="vex-board-surface flex flex-col gap-4 rounded-2xl border border-line-1 p-4"
       >
+        {/* THE FILTER IS THE PLATE'S FIRST ROW, labelled, and only when it
+          * can change something. It used to float unlabelled at the top
+          * right of the view, where "Unverified / High risk" read as a pair
+          * of floating verdict chips rather than as the control it is. */}
+        <BoardGridBar
+          filter={filter}
+          chains={chains}
+          safetyStates={safetyStates}
+          onFilter={setBoardFilter}
+        />
         {visible.length === 0 ? (
           <p
             data-vex-area="board-grid-empty"
@@ -161,6 +166,7 @@ export function BoardGrid({ board }: BoardGridSlotProps): JSX.Element {
                   verdict={verdicts[index] ?? boardSafetyVerdict("pending")}
                   sparkline={sparklines[index] ?? BOARD_SPARKLINE_PENDING}
                   selected={view === "spotlight" && selectedPoolIndex === index}
+                  live={isBoardLiveHeld(readout.mode)}
                   onSpotlight={() => {
                     openBoardSpotlight(index);
                   }}
@@ -178,7 +184,7 @@ export function BoardGrid({ board }: BoardGridSlotProps): JSX.Element {
           </ul>
         )}
       </div>
-      <BoardDataNotes content={authored} />
+      <BoardDataNotes content={authored} verdicts={verdicts} />
     </div>
   );
 }

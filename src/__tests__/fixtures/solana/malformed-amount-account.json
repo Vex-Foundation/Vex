@@ -1,0 +1,27 @@
+{
+  "note": "Hand-built: `tokenAmount.amount` is NOT a u64 decimal string. Rejected by the schema, so the account becomes a read FAILURE and can never be mistaken for a zero balance.",
+  "account": {
+    "pubkey": "B3S5sj9HLTTNT2eAYN8UFgA49utunRnmtVuXgfTGBvqs",
+    "account": {
+      "data": {
+        "program": "spl-token",
+        "parsed": {
+          "info": {
+            "isNative": false,
+            "mint": "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
+            "owner": "BfvP43eVzM7xAu6Pm7yYbqp8RVkbP8R8dCfTvgPp64Pg",
+            "state": "initialized",
+            "tokenAmount": {
+              "amount": "1.5",
+              "decimals": 6,
+              "uiAmount": null,
+              "uiAmountString": "1.5"
+            }
+          },
+          "type": "account"
+        },
+        "space": 165
+      }
+    }
+  }
+}

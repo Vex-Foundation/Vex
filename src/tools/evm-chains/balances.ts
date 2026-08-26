@@ -21,6 +21,7 @@
 
 import { getAddress, type Chain, type PublicClient, type Transport } from "viem";
 
+import { createBestLiquidityPriceAccumulator } from "../dexscreener/best-liquidity-price.js";
 import { readTokensPairs } from "../dexscreener/price-read.js";
 import { ERC20_READ_ABI } from "./erc20-reads.js";
 import { getLocalPublicClient } from "./evm-client.js";
@@ -192,51 +193,31 @@ async function readErc20Balances(
 
 /**
  * Best-liquidity DexScreener USD price per token (lowercase address → price).
- * See the module doc for the base-vs-quote-side pricing rule. Fail-soft: any
- * error (incl. a chain slug DexScreener doesn't index) yields an empty map,
- * and priceless tokens simply keep a null USD value downstream.
+ * The selection rule itself (base-vs-quote matching + deepest-pool tie-break,
+ * accumulated ACROSS batches) lives in `dexscreener/best-liquidity-price.ts`,
+ * shared with the Solana wallet read; this function owns only the batching,
+ * the chain slug and the fail-soft policy: any error (incl. a chain slug
+ * DexScreener doesn't index) leaves those addresses unpriced, and priceless
+ * tokens simply keep a null USD value downstream.
  */
 async function fetchPricesByLowerAddress(
   config: LocalChainConfig,
   tokenAddrs: readonly `0x${string}`[],
 ): Promise<Map<string, number>> {
-  const priceByLower = new Map<string, number>();
-  if (tokenAddrs.length === 0) return priceByLower;
+  if (tokenAddrs.length === 0) return new Map<string, number>();
 
-  const wanted = new Set(tokenAddrs.map((address) => address.toLowerCase()));
-  // Track the deepest liquidity seen per token so the chosen price is the
-  // best-liquidity venue rather than an arbitrary pair (both sides compete
-  // through the same comparison — the deepest pool wins regardless of side).
-  const bestLiquidity = new Map<string, number>();
-  const consider = (lower: string, price: number, liquidity: number): void => {
-    if (!Number.isFinite(price) || price < 0) return;
-    if (!priceByLower.has(lower) || liquidity > (bestLiquidity.get(lower) ?? -Infinity)) {
-      priceByLower.set(lower, price);
-      bestLiquidity.set(lower, liquidity);
-    }
-  };
+  // EVM addresses are case-insensitive, so the injected identity policy is
+  // lowercase and the returned map is keyed by lowercase address, exactly as
+  // every caller of this function already reads it.
+  const accumulator = createBestLiquidityPriceAccumulator({
+    wanted: tokenAddrs,
+    normalizeAddress: (address) => address.toLowerCase(),
+  });
 
   for (let i = 0; i < tokenAddrs.length; i += DEXSCREENER_TOKENS_BATCH) {
     const batch = tokenAddrs.slice(i, i + DEXSCREENER_TOKENS_BATCH);
     try {
-      const pairs = await readTokensPairs(config.dexscreenerSlug, batch.join(","));
-      for (const pair of pairs) {
-        if (pair.priceUsd == null) continue;
-        const priceUsd = Number(pair.priceUsd);
-        if (!Number.isFinite(priceUsd) || priceUsd < 0) continue;
-        const liquidity = pair.liquidity?.usd ?? 0;
-
-        const base = pair.baseToken?.address?.toLowerCase();
-        if (base && wanted.has(base)) consider(base, priceUsd, liquidity);
-
-        const quote = pair.quoteToken?.address?.toLowerCase();
-        if (quote && wanted.has(quote)) {
-          const priceNative = Number(pair.priceNative);
-          if (Number.isFinite(priceNative) && priceNative > 0) {
-            consider(quote, priceUsd / priceNative, liquidity);
-          }
-        }
-      }
+      accumulator.addPairs(await readTokensPairs(config.dexscreenerSlug, batch.join(",")));
     } catch (err) {
       logger.debug("evm_chains.balances.price_batch_failed", {
         slug: config.dexscreenerSlug,
@@ -244,7 +225,7 @@ async function fetchPricesByLowerAddress(
       });
     }
   }
-  return priceByLower;
+  return accumulator.toPriceMap();
 }
 
 /** Test-only: clear the in-process metadata cache. */

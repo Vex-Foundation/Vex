@@ -12,6 +12,7 @@ import {
   transcriptAppendEventSchema,
   TRANSCRIPT_APPEND_EVENT_TYPE,
 } from "../messages.js";
+import { BOARD_SPEC_MAX_BYTES } from "@vex-lib/board/index.js";
 
 const ISO = "2026-05-21T10:00:00.000Z";
 const SESSION = "00000000-0000-4000-8000-000000000001";
@@ -291,6 +292,23 @@ describe("messages schemas", () => {
     expect(
       sessionMessageDtoSchema.safeParse(row("a".repeat(TOOL_ARGS_DISPLAY_CEILING + 1))).success,
     ).toBe(false);
+  });
+
+  it("keeps the display ceiling ABOVE the board budget plus its args envelope", () => {
+    // THE invariant that makes the ceiling a corruption guard rather than a
+    // content cut. BoardCompose is the largest legitimate producer: it accepts
+    // a spec up to BOARD_SPEC_MAX_BYTES, and the mapper serializes that
+    // payload PLUS the call envelope. If this ever inverted, a board the
+    // compose tool accepted would have its args shipped as `null` and the user
+    // would see a tool call with no arguments - a silent loss dressed as an
+    // empty field. This test is what fails when someone raises the board
+    // budget without re-checking this constant.
+    expect(TOOL_ARGS_DISPLAY_CEILING).toBeGreaterThan(BOARD_SPEC_MAX_BYTES);
+    // Not merely greater: the envelope, key names and JSON escaping all ride
+    // along, so the guard keeps real headroom rather than a single byte of it.
+    expect(TOOL_ARGS_DISPLAY_CEILING - BOARD_SPEC_MAX_BYTES).toBeGreaterThan(
+      BOARD_SPEC_MAX_BYTES / 2,
+    );
   });
 
   it("rejects a toolCalls array over the 32-entry cap", () => {
