@@ -77,6 +77,7 @@ function fullEnvState(): unknown {
       tavilyConfigured: false,
       rettiwtConfigured: false,
       relayConfigured: false,
+      indexifyConfigured: false,
     },
     embeddings: {
       configured: true,
@@ -148,6 +149,7 @@ describe("completeSetup", () => {
         tavilyConfigured: false,
         rettiwtConfigured: false,
         relayConfigured: false,
+        indexifyConfigured: false,
       },
       embeddings: {
         configured: false,

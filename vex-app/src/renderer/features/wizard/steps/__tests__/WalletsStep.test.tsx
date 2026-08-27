@@ -191,6 +191,7 @@ function envQueryFor(walletStatus: {
           tavilyConfigured: false,
           rettiwtConfigured: false,
           relayConfigured: false,
+          indexifyConfigured: false,
         },
         embeddings: {
           configured: false,

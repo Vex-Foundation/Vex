@@ -82,6 +82,7 @@ function envState(allConfigured: boolean): EnvState {
       tavilyConfigured: false,
       rettiwtConfigured: false,
       relayConfigured: false,
+      indexifyConfigured: false,
     },
     embeddings: {
       configured: allConfigured,
