@@ -35,6 +35,12 @@ import { registerMessagesHandlers } from "./messages.js";
 import { registerMissionHandlers } from "./mission.js";
 import { registerModelsHandlers } from "./models.js";
 import { registerOnboardingHandlers } from "./onboarding.js";
+import { registerBoardIconHandlers } from "./board-icons.js";
+import { registerBoardLiveHandlers } from "./board-live.js";
+import { registerBoardDetailsHandlers } from "./board-details.js";
+import { registerBoardSparklineHandlers } from "./board-sparkline.js";
+import { registerBoardSpotlightHandlers } from "./board-spotlight.js";
+import { registerBoardChartHandlers } from "./board-chart.js";
 import { registerImagesHandlers } from "./images.js";
 import { registerPoolsLaunchHandlers } from "./pools-launch.js";
 import { registerTokenLaunchHandlers } from "./token-launch.js";
@@ -111,6 +117,33 @@ export function registerAllIpcHandlers(): void {
   // DTO. Renderer supplies only scope (+ sessionId); addresses never cross.
   teardowns.push(...registerPortfolioHandlers());
   teardowns.push(...registerImagesHandlers());
+  teardowns.push(...registerBoardIconHandlers());
+  // T4: the board's LIVE lease. Unlike every other push channel here, its
+  // events go to the ONE window that owns the lease; the poll, the cadence and
+  // the transport are owned by the board live service, started in index.ts.
+  teardowns.push(...registerBoardLiveHandlers());
+  // T4: the board's contract-safety, holder and lock read. Cached and
+  // single-flighted in main so eight cards mounting in one tick cost one
+  // provider exchange per pool, and `prefetch` answers a whole board at once
+  // because the CHAT CARD states its counts before any modal opens.
+  teardowns.push(...registerBoardDetailsHandlers());
+  // T4: the cold candle hydration behind the card price rows. One call per
+  // board rather than one per card, because the progressive queue, the
+  // board-wide deadline and the concurrency share negotiated with the agent
+  // cannot be owned by a renderer issuing eight requests nothing can stop
+  // together.
+  teardowns.push(...registerBoardSparklineHandlers());
+  // T4: the spotlight's own reads - the 30-day pair-local trader leaderboard,
+  // the momentum windows, the token's other pools, its promotion and narrative
+  // context, and the live trade tape. Separate from the details channel
+  // because the lifetimes are: every one of these belongs to one open
+  // spotlight and is cut the instant the reader leaves it.
+  teardowns.push(...registerBoardSpotlightHandlers());
+  // T4b: the spotlight chart's candle poll. Its own channel rather than a
+  // parameter on the sparkline one, because it is renderer-timed, belongs to
+  // one open spotlight, and is deliberately served from no positive cache: a
+  // forming bar is the whole reason it polls.
+  teardowns.push(...registerBoardChartHandlers());
   // Token-launch IPC (plan C5): preview, submit (Deploy = consent), cancel and
   // myLaunches are all real; the agent-requested form flow authorizes the
   // drafted intent and resumes the parked turn.

@@ -23,6 +23,12 @@ import type { MemoryInspectorBridge } from "./memory-inspector.js";
 import type { MessagesBridge } from "./messages.js";
 import type { MissionBridge } from "./mission.js";
 import type { ModelsBridge } from "./models.js";
+import type { BoardIconsBridge } from "./board-icons.js";
+import type { BoardLiveBridge } from "./board-live.js";
+import type { BoardDetailsBridge } from "./board-details.js";
+import type { BoardSparklineBridge } from "./board-sparkline.js";
+import type { BoardSpotlightBridge } from "./board-spotlight.js";
+import type { BoardChartBridge } from "./board-chart.js";
 import type { ImagesBridge } from "./images.js";
 import type { PortfolioBridge } from "./portfolio.js";
 import type { ProjectsBridge } from "./projects.js";
@@ -43,6 +49,8 @@ export type { MemoryInspectorBridge } from "./memory-inspector.js";
 export type { MessagesBridge } from "./messages.js";
 export type { MissionBridge } from "./mission.js";
 export type { ModelsBridge } from "./models.js";
+export type { BoardIconsBridge } from "./board-icons.js";
+export type { BoardLiveBridge } from "./board-live.js";
 export type { ImagesBridge } from "./images.js";
 export type { PortfolioBridge } from "./portfolio.js";
 export type { ProjectsBridge } from "./projects.js";
@@ -79,6 +87,42 @@ export interface VexAgentBridge {
   readonly projects: ProjectsBridge;
   /** Image locker (C2) — the GLOBAL library of pre-staged token-launch images. */
   readonly images: ImagesBridge;
+  /**
+   * Board token icons - one logo per card of an agent-composed board. Separate
+   * from `images` on purpose: no durable state, no signing path, and an
+   * absence is the ordinary answer rather than a failure.
+   */
+  readonly boardIcons: BoardIconsBridge;
+  /**
+   * Board LIVE - a user-held lease that refreshes an open board's card metrics
+   * while the reader holds the toggle on. Owned by one window, never
+   * persisted, ended on every exit path, and it never edits the persisted
+   * board.
+   */
+  readonly boardLive: BoardLiveBridge;
+  /**
+   * Board DETAILS - safety, holders and liquidity locks for one pool or one
+   * whole board. Evidence, never a verdict: the chip is decided by the shared
+   * classifier over what this returns.
+   */
+  readonly boardDetails: BoardDetailsBridge;
+  /**
+   * Board SPARKLINE - the cold candle lines behind the card price rows. One
+   * call per board; main owns the queue, the deadline and the bar count.
+   */
+  readonly boardSparkline: BoardSparklineBridge;
+  /**
+   * Board SPOTLIGHT - the trader leaderboard, momentum windows, other pools,
+   * promotion and narrative context, and the live trade tape. Every one is a
+   * one-shot the spotlight surface owns and cuts on exit.
+   */
+  readonly boardSpotlight: BoardSpotlightBridge;
+  /**
+   * Board CHART - the spotlight chart's candle poll. Four pill resolutions,
+   * renderer-timed on main's own cadence vocabulary, cut when the reader leaves
+   * the spotlight, and never served from a positive cache.
+   */
+  readonly boardChart: BoardChartBridge;
   /**
    * Token launch (C5). `preview` and `myLaunches` are live; `submit` and
    * `cancel` are mounted but refuse in words, pending the C0 authorization

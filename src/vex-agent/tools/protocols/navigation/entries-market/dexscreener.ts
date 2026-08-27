@@ -94,6 +94,12 @@ export const DEXSCREENER_NAVIGATION: ProtocolNamespaceNavigation = {
       "trade history",
       "top traders",
     ],
+    // The one namespace that advertises its facets in the static prompt card
+    // (see `advertiseFacetsInPrompt`): it is the market-research backbone, its
+    // surface spans nine unrelated capability areas, and a model that cannot
+    // see them writes a ToolSearch query for the one area it happens to
+    // remember. Areas only - no callable name reaches the prompt.
+    advertiseFacetsInPrompt: true,
     facets: [
       "Market screening and leaderboards",
       "Search and token pools",

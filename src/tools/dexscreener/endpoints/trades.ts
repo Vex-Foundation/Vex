@@ -368,6 +368,23 @@ export interface TradesPageOptions {
   readonly correlationId?: number;
   readonly timeoutMs: number;
   readonly signal?: AbortSignal;
+  /**
+   * Forwarded verbatim to the transport as `WsExchangeOptions.coalesceScope`.
+   *
+   * The same additive mechanic `BatchOptions` already carries, and it is on
+   * this channel for the same lifecycle reason: the board's spotlight tape
+   * owns a long-lived poll, and an identical exchange issued by an agent tool
+   * must neither join it nor be joined by it. A joiner inherits the LEADER's
+   * signal and deadline, so a spotlight teardown that aborted a shared socket
+   * would kill an agent call that knows nothing about the modal, and a tape
+   * poll that joined the agent's could not be aborted on exit at all.
+   *
+   * Absent means the shared, unscoped pool, which is what every existing
+   * caller passes and is therefore byte-for-byte the previous behaviour. Only
+   * the socket-routed page can coalesce; a Connect page is a plain HTTP read
+   * and the transport single-flights nothing there.
+   */
+  readonly coalesceScope?: string;
 }
 
 /**
@@ -579,6 +596,9 @@ async function fetchTradesWs(options: TradesPageOptions): Promise<TradesPage> {
     expect: { binaryFrames: TRADES_FRAMES, maxTotalBytes: TRADES_MAX_BYTES },
     timeoutMs: options.timeoutMs,
     ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(options.coalesceScope === undefined
+      ? {}
+      : { coalesceScope: options.coalesceScope }),
   });
 
   const trades = readTradesFrames(frames, cid);

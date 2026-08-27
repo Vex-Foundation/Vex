@@ -21,20 +21,25 @@ function context(overrides: Partial<EngineContext>): EngineContext {
 }
 
 const MODES = [
-  // REVIEWED BUDGET DIFF, Indexify integration (2026-08-26): +1,956 bytes in
-  // every mode, identical across the six because the addition is one static
-  // block rendered once per mode — the `### indexify` declaration (identity,
-  // read/quote/act, when-it-applies, the custodial characteristics-and-limits
-  // paragraph, the Solana coverage line, and the partial-gating mutation
-  // marker). The custody paragraph is the block's largest piece and is
-  // deliberately not shortened: it is the only place the model learns this
-  // venue trades a custodial account rather than the session wallet.
-  { name: "agent / restricted", context: context({}), ceiling: 58_112 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 58_813 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 64_535 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 64_554 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 63_151 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 62_966 },
+  // REVIEWED BUDGET DIFF, merge of the Indexify integration onto post-D-DS9
+  // main (2026-08-28). Two independent reviewed diffs compose here:
+  //  - Indexify (2026-08-26): +1,956 bytes in every mode — one static block
+  //    rendered once per mode (the `### indexify` declaration with its
+  //    custodial characteristics paragraph, Solana coverage line, and the
+  //    partial-gating mutation marker). The custody paragraph is deliberately
+  //    not shortened: it is the only place the model learns this venue trades
+  //    a custodial account rather than the session wallet.
+  //  - Upstream D-DS9 revert (dexscreener back to ToolSearch with a rich
+  //    protocol card): main's own ceilings moved to 56,773/57,474/… before
+  //    this merge.
+  // The six values below are MEASURED on the merged tree, not summed from the
+  // two diffs.
+  { name: "agent / restricted", context: context({}), ceiling: 58_729 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 59_430 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_152 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_171 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 63_768 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 63_583 },
 ] as const;
 
 beforeAll(() => {
@@ -65,31 +70,69 @@ describe("static prompt byte ceilings", () => {
       // Lower this ceiling whenever an intentional prompt change makes the
       // measured prefix smaller. Never raise it without a reviewed budget diff.
       //
-      // REVIEWED BUDGET DIFF, source-hierarchy card (owner order 2026-08-25).
-      // +1,675 bytes in every mode, and the number is the same in all six
-      // because both additions are static strings rendered once per mode:
+      // REVIEWED BUDGET DIFF, D-DS9 REVERTED plus board doctrine (owner order
+      // 2026-08-26). NET +617 bytes in every mode, and the figure is identical
+      // in all six because every line below is a static string rendered once
+      // per mode. THIS IS A RAISE, and it is itemized rather than absorbed:
       //
-      //   1. The "Always loaded" line in the dexscreener declaration: the 18
-      //      publicNames, rendered from the SAME catalog the D-DS9 injection
-      //      reads, in the same order. Under D-DS9 every dexscreener schema
-      //      is already in each request's tools array, so the old header
-      //      doctrine ("reach a protocol tool through ToolSearch") was
-      //      routing the model into a discovery round it never needed. The
-      //      names must be visible in the static prompt for the model to
-      //      call them directly; the owner ordered exactly this.
-      //   2. The "Market Research Source Hierarchy" section in Research:
-      //      DexScreener, WebResearch and TwitterAccount are the primary
-      //      research sources; other market namespaces answer research
-      //      questions only as fallback; executable prices still come from
-      //      venue quotes only.
+      //   agent / restricted          56,156 -> 56,773
+      //   agent / full                56,857 -> 57,474
+      //   mission setup / restricted  62,579 -> 63,196
+      //   mission setup / full        62,598 -> 63,215
+      //   mission run / restricted    61,195 -> 61,812
+      //   mission run / full          61,010 -> 61,627
       //
-      // WHY COMPRESSION WAS INSUFFICIENT. Listing fewer names would
-      // advertise a subset while the tools array carries all 18, recreating
-      // the drift this line exists to remove; the hierarchy section is the
-      // owner's explicit product doctrine and each sentence carries a
-      // distinct rule. The ~66k-token tools-array cost of D-DS9 was measured
-      // and accepted separately; these 1,675 bytes are the prompt-side share.
-      // The coordinator authored and reviewed this diff.
+      //   -792  D-DS9 MATERIAL REMOVED. The "Always loaded" line naming the 18
+      //         dexscreener publicNames (672 B) and the header's "Exception:
+      //         ... call those tools directly" clause (120 B). Item 1 of the
+      //         2026-08-25 diff above is REVERTED in full. It taught names the
+      //         dispatcher refuses: `protocol-route.ts` admits a protocol call
+      //         only when the session's discovered set holds it, ToolSearch is
+      //         that set's only writer, and injection was widened without
+      //         widening admission. Measured in production as a run of
+      //         "Unknown tool" answers to calls the prompt had just prescribed.
+      //   +393  CAPABILITY-AREA LINE, dexscreener only. The nine facet labels
+      //         plus one sentence sending the model to ToolSearch. It replaces
+      //         the deleted name list with the thing the name list was actually
+      //         for: knowing which of nine unrelated areas to aim a query at.
+      //         It names no callable, so it cannot recreate the defect. Opt-in
+      //         per declaration (`advertiseFacetsInPrompt`) precisely so the
+      //         other ten namespaces do not pay it; rendering all eleven was
+      //         measured at ~1,580 B and rejected.
+      //    +10  RESEARCH parenthetical: "(always loaded in your tools array,
+      //         see the Protocols section for the full name list)" became
+      //         "(reached with ToolSearch on that namespace; the Protocols
+      //         section lists its capability areas)". Item 2 of the 2026-08-25
+      //         diff, the Market Research Source Hierarchy itself, SURVIVES
+      //         unchanged: it is product doctrine about which SOURCE to prefer,
+      //         which the revert does not touch.
+      //   +119  LOGO LINE CORRECTED. It promised the model it could embed a
+      //         token logo as a Markdown image. The renderer strips every
+      //         Markdown image, so that promise was false in every reply that
+      //         acted on it. The replacement states what actually happens and
+      //         where logos really come from. A false sentence in the static
+      //         prefix is not a saving.
+      //   +887  BOARDS SECTION in Response Formatting. The owner's order: the
+      //         agent composes a board PROACTIVELY when presenting tokens,
+      //         comparisons or watchlists, and its prose must stand alone
+      //         regardless. Behaviour the model does not exhibit unprompted,
+      //         so it has to be in the static layer rather than in the tool
+      //         description alone (a tool description is read once the model is
+      //         already reaching for the tool; this decides whether it reaches).
+      //         144 of those bytes are one sentence naming mission SETUP as the
+      //         exception, because `BoardCompose` is hidden there
+      //         (`registry/board.ts`) and a static layer that renders in every
+      //         mode would otherwise prescribe a tool that mode cannot see.
+      //
+      // WHY COMPRESSION WAS INSUFFICIENT. The revert already paid for most of
+      // the additions: 792 B came back and 522 B of the 1,409 B added is spent
+      // undoing measured falsehoods (the name list, the logo promise). What is
+      // genuinely new is the 887 B board section, and it is the owner's
+      // product decision, each sentence carrying a distinct rule (when to
+      // compose, not to offer instead, prose stands alone). Shrinking another
+      // namespace's honesty clauses to fund it was ruled out on the same
+      // grounds as the S4 diff below: this budget belongs to the change that
+      // spends it. The coordinator reviews this raise.
       //
       // REVIEWED BUDGET DIFF, stage S8 (DexScreener endpoint-wave fix round).
       // +74 bytes in every mode, and the number is the same in every mode

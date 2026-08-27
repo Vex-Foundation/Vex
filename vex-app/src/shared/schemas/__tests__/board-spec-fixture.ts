@@ -25,6 +25,10 @@ export function boardSpecFixture(
         chain: "solana",
         pairAddress: "AbC123pairAddress",
         caption: "deepest pool",
+        // Emitted explicitly, null included, exactly as writers do. Legacy
+        // pools lacking the key are exercised in the spec suite's own
+        // normalization case.
+        analysis: null,
       },
     ],
     notes: ["Liquidity thinned out after the 14:00 candle."],
@@ -36,6 +40,12 @@ export function boardSpecFixture(
           quoteTokenSymbol: "USDC",
           chainId: "solana",
           dexId: "raydium",
+          // Current writers always emit iconId and description (null when the
+          // provider has no profile, or no blurb on it). Legacy rows lacking
+          // either key entirely are exercised by the dedicated normalization
+          // tests in messages-mapper-board.test.ts.
+          iconId: null,
+          description: null,
           priceUsd: "184.2213",
           priceChange: { h1: "-0.42", h24: "3.10" },
           liquidityUsd: "8421330.55",

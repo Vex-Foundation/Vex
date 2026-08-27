@@ -83,12 +83,47 @@ export type MessageCursor = z.infer<typeof messageCursorSchema>;
  * One displayable tool call extracted from a `tool_call` row's
  * `messages.tool_calls` JSONB. The mapper in `messages-db.ts` is the only
  * place this is built — `toolArgs` is a SANITIZED, pre-serialized JSON string
- * (secret-like keys dropped, secret-shaped values hard-redacted, size-capped)
+ * (secret-like keys dropped, secret-shaped values hard-redacted, never cut)
  * so the untrusted renderer receives strings only, never raw JSONB. The
  * `.max()` bounds below are enforced at the IPC boundary by the read handlers'
  * `outputSchema: messagePageSchema`, so an oversize mapper output is rejected
  * rather than shipped.
  */
+/**
+ * Ceiling on the DISPLAYED tool-args string. This is a corruption guard, not
+ * a truncation budget: the mapper ships the WHOLE sanitized serialization or
+ * `null`, never a cut string (owner decree - no silent content cutting; the
+ * previous 2,000-char cap plus a "(truncated)" suffix pushed the first large
+ * BoardCompose call past the bound and failed the whole messages page in
+ * production).
+ *
+ * THE INVARIANT, and the reason this number is not chosen freely:
+ *
+ *     TOOL_ARGS_DISPLAY_CEILING > BOARD_SPEC_MAX_BYTES + BoardCompose args envelope
+ *
+ * The largest legitimate producer is BoardCompose. Its own spec is refused
+ * above `BOARD_SPEC_MAX_BYTES` (`src/lib/board/spec.ts`, 327,680 bytes), and
+ * the args this mapper serializes are that payload plus the call's envelope
+ * (tool name, JSON key names, the pretty-print indentation and escaping the
+ * serializer adds). If this ceiling ever sat at or below the board budget, a
+ * board the compose tool ACCEPTED would have its args fall off the transcript
+ * as `null`, and the user would see a tool call with no arguments at all - a
+ * silent loss dressed as an empty field.
+ *
+ * MEASURED, not assumed: the schema-valid all-fields-max board serializes to
+ * 180,476 characters in the mapper's own pretty-printed form, so 524,288
+ * clears the real envelope by better than a factor of two. Both the
+ * conservative byte comparison and that measured figure are pinned in
+ * `./__tests__/messages.test.ts` against the generator
+ * `src/__tests__/lib/board/maximal-board-spec.ts`, which is the same document
+ * `BOARD_SPEC_MAX_BYTES` is derived from.
+ *
+ * Raising `BOARD_SPEC_MAX_BYTES` therefore REQUIRES re-checking this constant.
+ * Only a corrupted row can exceed it, and the mapper maps that to `null`.
+ * One declaration, both sides: the mapper's guard imports THIS constant.
+ */
+export const TOOL_ARGS_DISPLAY_CEILING = 524_288;
+
 export const toolCallDisplaySchema = z
   .object({
     /** Provider tool-call id — correlates a `tool_result` back to its call. */
@@ -100,8 +135,12 @@ export const toolCallDisplaySchema = z
      * wire name (`kyberswap__swap__quote`) before it reaches this field.
      */
     toolName: z.string().min(1).max(120),
-    /** Sanitized JSON string of the call args; `null` when there were none. */
-    toolArgs: z.string().max(2000).nullable(),
+    /**
+     * Sanitized JSON string of the call args, WHOLE (secrets redacted, content
+     * never cut); `null` when there were none or the row is corrupt beyond
+     * {@link TOOL_ARGS_DISPLAY_CEILING}.
+     */
+    toolArgs: z.string().max(TOOL_ARGS_DISPLAY_CEILING).nullable(),
   })
   .strict();
 export type ToolCallDisplay = z.infer<typeof toolCallDisplaySchema>;
@@ -178,8 +217,9 @@ export type ToolDisplayStatus = z.infer<typeof toolDisplayStatusProjectionSchema
  *
  * This IS the engine's schema, imported from the pure shared root rather than
  * restated, so an oversize/malformed JSONB projection is rejected at the mapper
- * boundary and the two sides cannot drift. Every bound (48 KiB serialized
- * budget, per-field caps, the reject-only text predicate) lives there.
+ * boundary and the two sides cannot drift. Every bound (the 320 KiB serialized
+ * document budget, per-field caps, the reject-only text predicate) lives
+ * there.
  */
 export const boardProjectionSchema = boardSpecV1Schema;
 export type BoardProjection = z.infer<typeof boardProjectionSchema>;

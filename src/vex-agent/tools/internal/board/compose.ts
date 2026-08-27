@@ -110,6 +110,28 @@ export async function handleBoardCompose(
     );
   }
 
+  // MODE GATE, still before a single provider byte is spent.
+  //
+  // `registry/board.ts` hides this tool in mission setup, but a catalog filter
+  // is a visibility decision, not enforcement (rule 09): a resumed batch, a
+  // stale tools array, or a model that remembers the name from an earlier turn
+  // can still emit the call. Mission SETUP is Capability Orientation - the
+  // agent is drafting a mission, and the research doctrine forbids the
+  // operational market reads `hydrateBoard` performs unconditionally. The
+  // refusal names the real cause and the way forward rather than failing as an
+  // unexpected error, and nothing is fetched or staged.
+  //
+  // Setup is `sessionKind === "mission"` with NO active run; an active mission
+  // run and every agent session may present normally.
+  if (context.sessionKind === "mission" && context.missionRunId === null) {
+    return fail(
+      "BoardCompose: a board cannot be composed during mission setup. Setup is for identifying "
+      + "which tools and venues the mission will use, not for reading live market data, and this "
+      + "tool fetches pool state and candles on every call. Nothing was staged and no market data "
+      + "was read. Describe the plan in prose; compose the board during the mission run, or in chat.",
+    );
+  }
+
   const nowMs = Date.now();
   let hydration;
   try {

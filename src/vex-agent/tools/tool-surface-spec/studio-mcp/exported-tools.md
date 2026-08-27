@@ -51,7 +51,7 @@ preconditions appear inside the first 2000 bytes.
 | SwapQuote | Quote a token swap | internal | yes | no | yes | - | 1321 |
 | SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 656 |
 | TokenCheck | Check an EVM token for honeypot and tax | internal | yes | no | yes | - | 553 |
-| TokenFind | Find a token's address and decimals | internal | yes | no | yes | - | 1051 |
+| TokenFind | Find a token's address and decimals | internal | yes | no | yes | - | 1142 |
 | TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 2803 |
 | UnitsConvert | Convert token amounts and units | internal | yes | no | yes | - | 1397 |
 | WalletBalances | Read wallet balances across chains | internal | yes | no | yes | - | 1576 |

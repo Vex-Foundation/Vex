@@ -12,6 +12,23 @@
  * decides; `http.ts` and `ws-bridge.ts` execute.
  */
 
+/**
+ * The image CDN host, and the only path prefix on it the bridge may fetch.
+ *
+ * Measured 2026-08-25: `https://cdn.dexscreener.com/cms/images/{iconId}` with
+ * `width`/`height`/`fit`/`quality`/`format` answers 200 `image/png` (2,684
+ * bytes for the probed icon) and honours the size parameters, and an unknown
+ * id answers a clean 404. It is a CDN for issuer-uploaded artwork, NOT an API
+ * host: it is not behind the Cloudflare fingerprint gate that the site hosts
+ * are, and it wants no site Origin (see {@link sendsSiteOrigin}).
+ *
+ * The prefix is `/cms/images/` and nothing wider. Board token icons are the
+ * only reason this host is reachable at all, and the icon service composes the
+ * URL itself from a pattern-checked opaque id, so no caller upstream can point
+ * this capability at another path.
+ */
+export const DEXSCREENER_CDN_HOST = "cdn.dexscreener.com";
+
 /** Hosts the bridge may fetch over HTTPS, each with its allowed path prefixes. */
 const HTTP_ALLOW: ReadonlyMap<string, readonly string[]> = new Map([
   [
@@ -19,6 +36,7 @@ const HTTP_ALLOW: ReadonlyMap<string, readonly string[]> = new Map([
     ["/dex/", "/metas/", "/feed/", "/hype/"],
   ],
   ["dd.dexscreener.com", ["/ds-data/"]],
+  [DEXSCREENER_CDN_HOST, ["/cms/images/"]],
 ]);
 
 /** WebSocket channels the bridge may open. */
@@ -85,6 +103,27 @@ function decide(
     };
   }
   return { allowed: true, url };
+}
+
+/**
+ * Does a request to this host carry the site's `Origin` and `Referer`?
+ *
+ * The API hosts do: the measured 200 from `io.dexscreener.com` depends on
+ * presenting as the site's own XHR client, which is what the header set in
+ * `http.ts` exists for.
+ *
+ * The image CDN does NOT, and that is a privacy decision as much as a protocol
+ * one. Nothing about serving a static icon needs to know which page asked, so
+ * sending `Origin: https://dexscreener.com` on an icon fetch would hand the CDN
+ * a correlation signal for no functional gain. The CDN answers these requests
+ * without it (measured); the header is therefore not "harmless default", it is
+ * data we decline to send.
+ *
+ * Pure and exported so the header decision is provable in a unit test against
+ * a captured request rather than asserted in prose.
+ */
+export function sendsSiteOrigin(host: string): boolean {
+  return host !== DEXSCREENER_CDN_HOST;
 }
 
 /** Is this HTTPS URL one the bridge may fetch? */

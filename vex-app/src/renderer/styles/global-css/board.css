@@ -1,0 +1,71 @@
+/* BOARD SURFACE - the plate the Token Radar is painted on.
+ *
+ * BUILD-TIME CSS, and that is a constraint rather than a preference. The
+ * renderer runs under a strict CSP with no `unsafe-inline`, so a radial
+ * gradient written as a React `style` attribute is not a style choice that
+ * happens to be inline - it is a rule the browser refuses to apply. The
+ * shape therefore lives here and the components carry a class.
+ *
+ * ONE SHAPE, TWO THEMES. Every colour below resolves through a
+ * `--vex-alias-board-*` token, so the light theme repoints the same aliases
+ * and nothing in this file branches on the theme attribute. The vignette is
+ * a single soft radial in the accent's own hue at very low alpha: enough to
+ * lift the plate off flat black and give the eye a centre, never enough to
+ * read as a coloured background of its own.
+ *
+ * TWO THINGS ANIMATE, and the reduced-motion block stills both outright: the
+ * pending shimmer a card's sparkline wears while its bars are in flight, and
+ * the tick wash a card's price row flashes when a live figure changes. A
+ * placeholder is fully legible standing still, and a changed figure is
+ * still a changed figure without the flash. */
+
+.vex-board-surface {
+  background-color: var(--vex-alias-board-surface);
+  background-image: radial-gradient(
+    120% 90% at 50% 0%,
+    var(--vex-alias-board-vignette) 0%,
+    transparent 62%
+  );
+  background-repeat: no-repeat;
+}
+
+/* The card plate's own edge highlight. A hairline INSIDE the border, which is
+ * what keeps a dark card from reading as a flat hole on a dark plate; the
+ * border itself stays a token so hover can move it. */
+.vex-board-card {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.03);
+}
+
+[data-vex-theme="celeris"] .vex-board-card {
+  box-shadow: none;
+}
+
+/* THE LIVE TICK. A card's price row is stamped `data-tick` (a fresh value
+ * per change) when `priceUsd` or the 24h delta moves under a held lease; the
+ * attribute change restarts this one-shot wash from the accent alias down to
+ * transparent. Keyframes live here rather than in a React `style` attribute
+ * because the renderer's CSP has no `unsafe-inline`. The chip and the delta
+ * colour are never animated: a tone is a fact, not a flash. */
+@keyframes vex-board-tick {
+  from {
+    background-color: var(--vex-alias-accent-wash);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+[data-tick] {
+  animation: vex-board-tick 600ms ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-board-surface,
+  .vex-board-card {
+    transition: none;
+  }
+
+  [data-tick] {
+    animation: none;
+  }
+}

@@ -38,13 +38,16 @@ import {
   type ProjectedBar,
 } from "@tools/dexscreener/endpoints/bars.js";
 import { resolvePairSubject } from "@tools/dexscreener/endpoints/pair-subject.js";
-import { projectPairRow } from "@tools/dexscreener/screen-core/project.js";
-import { sanitizeIssuerField } from "@tools/dexscreener/sanitize.js";
 import {
   DexScreenerSiteErrorCodes,
   siteError,
 } from "@tools/dexscreener/site-errors.js";
 import { getDexScreenerTransport } from "@tools/dexscreener/transport.js";
+import {
+  BOARD_BATCH_RANK_KEY,
+  decimalFromProvider,
+  projectBoardRow,
+} from "./hydrate-row.js";
 import {
   BOARD_MAX_CANDLES,
   BOARD_STALE_AFTER_MS,
@@ -58,62 +61,17 @@ import {
 /** Deadline for one provider exchange on these channels. */
 const CHANNEL_TIMEOUT_MS = 25_000;
 
-/** The window the batch channel is asked to rank by. Rows are matched by identity. */
-const BATCH_RANK_KEY = "RANK_BY_KEY_VOLUME";
-
-/** Shape a decimal string must have to be storable. Mirrors the spec's own. */
-const DECIMAL_PATTERN = /^[0-9]+(\.[0-9]+)?$/;
-const SIGNED_DECIMAL_PATTERN = /^-?[0-9]+(\.[0-9]+)?$/;
-
-/**
- * Render a provider double as a plain decimal string.
+/*
+ * THE ROW PROJECTION LIVES IN `./hydrate-row.ts`.
  *
- * `toLocaleString` with grouping off is used rather than `String(value)`
- * because the latter emits exponent form at both ends of the range
- * (`1e+21`, `1e-7`), and an exponent is not a decimal string. Twenty
- * fraction digits is the maximum the formatter accepts and is far past any
- * figure this surface reports.
- *
- * Returns null for a value the schema could not hold anyway (not finite, or
- * negative where the field is unsigned). A null here means "no figure", which
- * is exactly what the row's nullable money fields mean.
+ * It was extracted so the desktop app's live board poll refreshes card metrics
+ * through the SAME projector this compose path uses. Two projections of one
+ * provider row would mean a card could change its figures when the LIVE toggle
+ * flipped without any market having moved. `boardIconIdFromRow` is re-exported
+ * here because it was published from this module before the extraction and has
+ * callers (and a table test) that name this path.
  */
-function decimalFromNumber(value: number | null, signed: boolean): string | null {
-  if (value === null || !Number.isFinite(value)) return null;
-  if (!signed && value < 0) return null;
-  const rendered = value.toLocaleString("en-US", {
-    useGrouping: false,
-    maximumFractionDigits: 20,
-  });
-  const pattern = signed ? SIGNED_DECIMAL_PATTERN : DECIMAL_PATTERN;
-  return pattern.test(rendered) ? rendered : null;
-}
-
-/** A provider decimal string, forwarded verbatim or refused. Never reshaped. */
-function decimalFromProvider(value: string | null): string | null {
-  if (value === null) return null;
-  return DECIMAL_PATTERN.test(value) ? value : null;
-}
-
-/** A provider uint64 count as an exact integer, or null when it is not one. */
-function countFromProvider(value: string | null): number | null {
-  if (value === null) return null;
-  if (!/^[0-9]+$/.test(value)) return null;
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) ? parsed : null;
-}
-
-/** Non-empty sanitized issuer text, bounded to what the row schema holds. */
-function issuerText(
-  value: string | null,
-  fieldPath: string,
-  sanitized: Set<string>,
-): string | null {
-  const clean = sanitizeIssuerField(value, fieldPath, sanitized);
-  if (clean === null) return null;
-  const trimmed = clean.trim();
-  return trimmed === "" ? null : trimmed;
-}
+export { boardIconIdFromRow } from "./hydrate-row.js";
 
 export interface HydrateArgs {
   readonly input: BoardComposeInput;
@@ -143,7 +101,7 @@ export async function hydrateBoard(args: HydrateArgs): Promise<BoardHydration> {
     {
       identities,
       window: "h24",
-      rankKey: BATCH_RANK_KEY,
+      rankKey: BOARD_BATCH_RANK_KEY,
       rankOrder: "desc",
     },
     {
@@ -173,40 +131,14 @@ export async function hydrateBoard(args: HydrateArgs): Promise<BoardHydration> {
     );
   }
 
-  const rows: BoardHydratedRow[] = args.input.pools.map((pool, index) => {
-    const source = byKey.get(`${pool.chain}:${pool.pairAddress}`.toLowerCase());
-    const h24 = projectPairRow(source, { window: "h24", nowMs: args.nowMs });
-    const h1 = projectPairRow(source, { window: "h1", nowMs: args.nowMs });
-    const path = `pools[${index}]`;
-    return {
-      baseTokenSymbol: issuerText(
-        h24.baseToken.symbol,
-        `${path}.baseToken.symbol`,
-        sanitized,
-      ),
-      baseTokenName: issuerText(h24.baseToken.name, `${path}.baseToken.name`, sanitized),
-      quoteTokenSymbol: issuerText(
-        h24.quoteToken.symbol,
-        `${path}.quoteToken.symbol`,
-        sanitized,
-      ),
-      chainId: h24.chainId,
-      dexId: h24.dexId,
-      priceUsd: decimalFromProvider(h24.priceUsd),
-      priceChange: {
-        h1: decimalFromNumber(h1.priceChangePct, true),
-        h24: decimalFromNumber(h24.priceChangePct, true),
-      },
-      liquidityUsd: decimalFromNumber(h24.liquidityUsd, false),
-      volumeH24Usd: decimalFromNumber(h24.volumeUsd, false),
-      txns: {
-        buys: countFromProvider(h24.buys),
-        sells: countFromProvider(h24.sells),
-      },
-      pairAgeSeconds:
-        h24.pairAgeSeconds === null ? null : Math.max(0, Math.floor(h24.pairAgeSeconds)),
-    };
-  });
+  const rows: BoardHydratedRow[] = args.input.pools.map((pool, index) =>
+    projectBoardRow({
+      source: byKey.get(`${pool.chain}:${pool.pairAddress}`.toLowerCase()),
+      nowMs: args.nowMs,
+      fieldPathPrefix: `pools[${index}]`,
+      sanitizedFieldPaths: sanitized,
+    }),
+  );
 
   const candles =
     args.input.chart === undefined

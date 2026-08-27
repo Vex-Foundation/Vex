@@ -138,6 +138,28 @@ export interface WsExchangeOptions {
   /** Hard deadline for open + send + collect, in milliseconds. */
   readonly timeoutMs: number;
   readonly signal?: AbortSignal;
+  /**
+   * Coalescence scope: an opaque owner label that partitions the transport's
+   * single-flight table.
+   *
+   * WHY IT EXISTS, and it is a lifecycle fact rather than a preference. The
+   * site bridge single-flights identical exchanges (same URL, same frames, same
+   * expectations) onto the FIRST caller's promise, so the first caller's signal
+   * and deadline are the ones that control the socket. That is correct for the
+   * case it was built for (the same snapshot asked for twice by the same kind
+   * of caller) and wrong for a long-lived poller: a board's live loop that
+   * joined an agent tool's exchange could neither abort it on toggle-off nor
+   * impose its own deadline, and an agent tool that joined the board's could be
+   * killed by a toggle it knows nothing about.
+   *
+   * Two callers coalesce only when their scopes are EQUAL. Absent means the
+   * shared, unscoped pool: leaving it out is byte-for-byte the behaviour that
+   * existed before this option, which is what makes it additive.
+   *
+   * The degraded public-API transport ignores it: it opens no sockets and
+   * single-flights nothing, so there is nothing to partition.
+   */
+  readonly coalesceScope?: string;
 }
 
 export interface WsExpectation {

@@ -36,6 +36,11 @@ export function hydratedRow(
     volumeH24Usd: "464284.04",
     txns: { buys: 1235, sells: 856 },
     pairAgeSeconds: 259_200,
+    // Null by default because that is the COMMON case on a real board: roughly
+    // half of pools carry no DexScreener profile, so the monogram placeholder
+    // is what most cards wear. A test that wants the image state overrides it.
+    iconId: null,
+    description: null,
     ...overrides,
   };
 }
@@ -60,7 +65,9 @@ export interface BoardSpecOverrides {
 
 export function boardSpec(overrides: BoardSpecOverrides = {}): BoardSpecV1 {
   const pools = overrides.pools ?? [
-    { chain: "base", pairAddress: "0xaaa111" },
+    // `analysis` is emitted explicitly, null included, for the same reason
+    // `iconId` is above: current writers always emit the key.
+    { chain: "base", pairAddress: "0xaaa111", analysis: null },
   ];
   const rows = overrides.rows ?? pools.map(() => hydratedRow());
   const chart =

@@ -36,6 +36,12 @@ import { SessionPanel } from "./SessionPanel.js";
 import { SessionsList } from "./SessionsList.js";
 import { GlobalApprovals } from "./GlobalApprovals.js";
 import { AgentLaunchFormHost } from "./token-launch/AgentLaunchFormHost.js";
+import { BoardModalHost } from "./Board/BoardModalHost.js";
+import { BoardGrid } from "./Board/BoardGrid.js";
+import { BoardModalChrome } from "./Board/BoardModalChrome.js";
+import { BoardSubtitle } from "./Board/BoardSubtitle.js";
+import { BoardSpotlightWithChart } from "./Board/BoardSpotlightWithChart.js";
+import { AskVexPanel } from "./Board/AskVexPanel.js";
 import { ConnectionBanner } from "../../components/ui/connection-banner.js";
 import { useNetworkOnline } from "../../lib/use-network-online.js";
 import { GlobalErrorBanner } from "./GlobalErrorBanner.js";
@@ -303,6 +309,18 @@ function ShellFrame({
         * dialog opens ITSELF, centered, over the whole shell. Mounted at
         * frame level because the agent can ask while the BOOK is collapsed. */}
       <AgentLaunchFormHost sessionId={activeSessionId} />
+
+      {/* THE board modal, mounted once for the whole shell. A transcript card
+        * binds it through `board-surface-store`; it renders nothing until one
+        * does. Frame level, like the launch form, because a board must stay
+        * open while its originating message scrolls out of the transcript. */}
+      <BoardModalHost
+        headerSlot={BoardModalChrome}
+        subtitleSlot={BoardSubtitle}
+        gridSlot={BoardGrid}
+        spotlightSlot={BoardSpotlightWithChart}
+        askSlot={AskVexPanel}
+      />
     </div>
   );
 }

@@ -192,3 +192,90 @@ export function formatBoardClock(epochMs: number): string | null {
     minute: "2-digit",
   });
 }
+
+/**
+ * The board header's UTC clock, e.g. `11:11 UTC`.
+ *
+ * EXPLICITLY UTC, and explicitly NOT the reader's locale, unlike
+ * {@link formatBoardClock} above. A board header is stamped beside a
+ * composed analysis and beside a live feed, and those two clocks are compared
+ * by the reader constantly; a locale time would make the same instant read
+ * differently in a screenshot than in the transcript that produced it. The
+ * suffix is printed rather than implied, because an unlabelled time is read
+ * as local by everyone.
+ */
+export function formatBoardUtcClock(epochMs: number): string | null {
+  if (!Number.isFinite(epochMs)) return null;
+  const date = new Date(epochMs);
+  if (Number.isNaN(date.getTime())) return null;
+  const hours = String(date.getUTCHours()).padStart(2, "0");
+  const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${hours}:${minutes} UTC`;
+}
+
+const UTC_MONTHS: readonly string[] = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/** The board header's date, e.g. `26 Aug`. UTC, for the reason above. */
+export function formatBoardUtcDate(epochMs: number): string | null {
+  if (!Number.isFinite(epochMs)) return null;
+  const date = new Date(epochMs);
+  if (Number.isNaN(date.getTime())) return null;
+  const month = UTC_MONTHS[date.getUTCMonth()];
+  if (month === undefined) return null;
+  return `${String(date.getUTCDate())} ${month}`;
+}
+
+/**
+ * The card's `Trades` figure: buys and sells as ONE tally.
+ *
+ * The mockup's stat block has four columns and the fourth is not "buys /
+ * sells" - it is the count of trades in the window. Summed here rather than
+ * at the call site so the null policy is decided once: a row that reported
+ * neither side has no trade count at all and renders the empty dash, while a
+ * row that reported ONE side reports that side's count rather than a
+ * fabricated zero for the other. The buy/sell SPLIT is not lost - the
+ * spotlight's Buy/Sell bar is where it belongs, at a size that can carry it.
+ */
+export function formatBoardTradeTotal(
+  buys: number | null,
+  sells: number | null,
+): string {
+  const parts = [buys, sells].filter(
+    (value): value is number => value !== null && Number.isFinite(value),
+  );
+  if (parts.length === 0) return BOARD_EMPTY;
+  return formatBoardCount(parts.reduce((sum, value) => sum + value, 0));
+}
+
+/* ------------------------------------------------------------------ */
+/* The provider's own page for a pool                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The DexScreener page for a pool, built from the board's OWN chain slug and
+ * pair address and from nothing else.
+ *
+ * The spec carries no URL field by design: a persisted document must never
+ * name an origin, and a model-authored link would be a phishing surface. Both
+ * path segments are encoded, so a slug or an address that failed to be a
+ * plain token cannot escape the path. Main routes the click through the
+ * external-link allowlist (`dexscreener.com` is on it) and `shell.openExternal`.
+ */
+export const DEXSCREENER_ORIGIN = "https://dexscreener.com";
+
+export function dexscreenerPairUrl(chainSlug: string, pairAddress: string): string {
+  return `${DEXSCREENER_ORIGIN}/${encodeURIComponent(chainSlug.trim().toLowerCase())}/${encodeURIComponent(pairAddress.trim())}`;
+}

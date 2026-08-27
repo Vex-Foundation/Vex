@@ -85,3 +85,22 @@ export function prefersReducedMotion(): boolean {
   }
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
+
+/**
+ * Re-alpha a resolved token colour.
+ *
+ * The palette bridge hands back whatever the stylesheet computed, which is an
+ * `rgb()` or `rgba()` string in every browser this ships on. Anything else is
+ * passed through unchanged rather than mangled: a colour we cannot parse is
+ * better drawn opaque than dropped. Used for the volume tint and the forming
+ * bar's tint, which are per-item data colours the series options cannot
+ * express.
+ */
+export function withAlpha(color: string, alpha: number): string {
+  const match = /^rgba?\(([^)]+)\)$/i.exec(color.trim());
+  if (match === null) return color;
+  const parts = (match[1] ?? "").split(/[\s,/]+/).filter((part) => part !== "");
+  const [r, g, b] = parts;
+  if (r === undefined || g === undefined || b === undefined) return color;
+  return `rgba(${r}, ${g}, ${b}, ${String(alpha)})`;
+}

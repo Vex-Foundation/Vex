@@ -375,6 +375,104 @@ export const CH = {
   },
 
   /**
+   * Board token icons - one logo for one card of an agent-composed board.
+   *
+   * Deliberately NOT a member of `images` above: that domain is the user's own
+   * launch locker, persisted on disk and on the signing path, while this one is
+   * an in-memory cache over a public CDN with no durable state and nothing to
+   * delete. Sharing a namespace would put two unrelated lifetimes and two
+   * unrelated trust stories behind one name.
+   *
+   * The renderer sends an opaque handle it read out of a persisted board and
+   * gets back a `data:` URL or a NAMED ABSENCE - never a URL, a host or raw
+   * bytes. Around half of all pools have no artwork, so absence is the ordinary
+   * answer here and the card draws a monogram instead.
+   */
+  boardIcons: {
+    read: "vex:boardIcons:read",
+  },
+
+  /**
+   * Board LIVE - a user-held lease that refreshes an open board's card metrics.
+   *
+   * Separate from `boardIcons` because the lifetimes are opposite: an icon is a
+   * cached byte string with no owner and no end, while a lease is owned by one
+   * window, ends on every exit path, and is the only thing in this app a
+   * renderer can ask main to keep polling on its behalf. `capability` is asked
+   * BEFORE the toggle renders so a build with no site bridge shows a disabled
+   * control with an honest label rather than one that fails on first click.
+   *
+   * The subscribe response CARRIES the first snapshot, so there is no race
+   * between claiming the lease and hearing its first tick.
+   */
+  boardLive: {
+    capability: "vex:boardLive:capability",
+    subscribe: "vex:boardLive:subscribe",
+    unsubscribe: "vex:boardLive:unsubscribe",
+  },
+
+  /**
+   * Board DETAILS - the contract-safety, holder and liquidity-lock read behind
+   * a card's chip and the spotlight's bottom row.
+   *
+   * `read` is one pool; `prefetch` is a whole board in one call, because the
+   * CHAT CARD states "3 clean checks - 2 high risk" before anything opens the
+   * modal, and a card that opened eight IPC conversations of its own to say
+   * that would be eight round trips for one sentence. Both are cached,
+   * single-flighted and abortable in main; the renderer names a chain slug and
+   * a pool address and nothing else - no host, route, deadline or field group
+   * exists on this channel for a caller to turn.
+   */
+  boardDetails: {
+    read: "vex:boardDetails:read",
+    prefetch: "vex:boardDetails:prefetch",
+  },
+
+  /**
+   * Board SPOTLIGHT - the per-pool reads the spotlight surface adds on top of
+   * the card figures: the 30-day pair-local trader leaderboard, the volume and
+   * buyer-pressure windows, the token's other pools, its promotion and
+   * narrative context, and the live trade tape.
+   *
+   * Separate from `boardDetails` because the LIFETIMES differ: a details
+   * bundle belongs to an open board, while every channel here belongs to one
+   * open spotlight and is cut the instant the reader leaves it.
+   */
+  boardSpotlight: {
+    topTraders: "vex:boardSpotlight:topTraders",
+    momentum: "vex:boardSpotlight:momentum",
+    otherPools: "vex:boardSpotlight:otherPools",
+    context: "vex:boardSpotlight:context",
+    tapePoll: "vex:boardSpotlight:tapePoll",
+  },
+
+  /**
+   * Board CHART - the spotlight chart's view-time candle feed.
+   *
+   * One pool, one of FOUR pill resolutions (1H, 24H, 7D, 30D as `1m`, `15m`,
+   * `2h`, `8h`), one fresh page of bars. Separate from `boardSparkline`
+   * because the LIFETIMES and the policies differ: a sparkline is one cold
+   * batch for a whole board, while this is a renderer-timed poll belonging to
+   * one open spotlight, cut the instant the reader leaves it, and served from
+   * NO positive cache because a forming bar is the reason it polls at all.
+   */
+  boardChart: {
+    poll: "vex:boardChart:poll",
+  },
+
+  /**
+   * Board SPARKLINE - the cold candle hydration behind the card price rows.
+   *
+   * One call per board, answered progressively in main. Measured: eight pools
+   * strictly sequential cost 18.2 s and a progressive queue of width two cost
+   * 11.5 s, which is why the pipeline lives in main with its own deadline
+   * rather than as eight renderer-driven requests.
+   */
+  boardSparkline: {
+    hydrate: "vex:boardSparkline:hydrate",
+  },
+
+  /**
    * Trench Express token launch — the host-mediated form path.
    *
    * `preview` is the AUTHORITATIVE main-side cost read: the creation fee comes

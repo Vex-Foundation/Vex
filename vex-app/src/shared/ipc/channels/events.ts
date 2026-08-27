@@ -27,6 +27,20 @@ export const EV = {
   market: {
     vex: "vex:event:market:vex",
   },
+
+  /**
+   * Board live lease events (ticks, degradation, terminal close).
+   *
+   * Unlike every other channel here, this one is NOT a broadcast: main sends it
+   * to the single window that owns the lease, because a lease is owned rather
+   * than observed. The payload is validated with `boardLiveEventSchema` at the
+   * preload boundary and an off-contract payload is dropped before it reaches
+   * the renderer. Nothing durable is involved: a lease exists only while the
+   * reader holds the toggle on.
+   */
+  board: {
+    live: "vex:event:board:live",
+  },
   updater: {
     // Full `UpdateStatus` discriminated union pushed on every updater state
     // transition (checking → available → downloading → downloaded → … |

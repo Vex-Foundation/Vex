@@ -1707,3 +1707,42 @@ Decisions taken for the fix round:
     access over the context savings. Reversal is one line; a curated subset
     is the named fallback if the occupancy proves heavy in practice.
 
+
+19. **D-DS9-R (owner, 2026-08-26): D-DS9 is REVERTED. The tools array is the
+    session's ToolSearch-discovered set again**, intersected with the
+    visibility gates, and nothing else. `ALWAYS_INJECTED_NAMESPACES`,
+    `isAlwaysInjectedNamespace` and the prompt's "Always loaded" name list are
+    deleted; `buildInjectedProtocolTools` iterates `getDiscoveredToolIds`
+    directly.
+
+    TWO REASONS, and the second is the one that makes this a defect fix rather
+    than a cost decision.
+
+    - COST. The measured ~66k tokens of tools-array occupancy per request was
+      accepted at the decision and judged not worth it in practice.
+    - THE TWO-GATE DEFECT, measured in production. Injection is a VISIBILITY
+      decision; admission is a separate one. `dispatcher/protocol-route.ts`
+      admits a protocol call only when the session's discovered set contains
+      the resolved toolId, and the only writers of that set are
+      `tool-search.ts` and `tool-search-select.ts`. D-DS9 widened the first
+      gate to a whole namespace and left the second untouched, so all 18
+      schemas were visible and none was callable. The prompt then told the
+      model "no ToolSearch round needed", the model obeyed, and every call came
+      back "Unknown tool". No test compared the two sets, in either direction,
+      before this revert; `route-admission-subset.test.ts` now does, by driving
+      the real route rather than by comparing two collections.
+
+    WHAT REPLACES THE NAME LIST. A capability-area line on the dexscreener
+    prompt card: the nine facet labels plus one sentence directing the model to
+    a ToolSearch query on the namespace (393 B). It is opt-in per declaration
+    (`ProtocolNamespaceDeclaration.advertiseFacetsInPrompt`, set today on
+    dexscreener alone) because `facets` exists on all 11 namespaces and
+    rendering every one was measured at ~1,580 B. It names no callable, which
+    is what keeps it from recreating the defect it replaces.
+
+    RELATED FIX IN THE SAME CHANGE. `TokenFind`'s always-visible description
+    had been teaching `khalani__chains_list` and `dexscreener__pairs_search`
+    since long before D-DS9 - the identical defect, on a surface every session
+    reads. Both pointers are now capability plus ToolSearch. The
+    discovery-only manifest (`khalani.tokens.search`) keeps its publicNames,
+    because its reader is already inside a discovery round.

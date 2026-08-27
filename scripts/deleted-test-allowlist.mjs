@@ -22,18 +22,16 @@
 
 export const DELETED_TEST_ALLOWLIST = [
   {
-    path: "src/__tests__/dexscreener/client-request-options.test.ts",
+    path: "vex-app/src/renderer/features/appShell/Board/__tests__/boardChartArea.test.ts",
     reason:
-      "Subject removed by S11b (feat/vex-board, commit 99d69df8): the REST client's per-request options surface went with the client itself once every non-agent price consumer had moved onto the price-read seam (S11a) and the market widget onto the new surface.",
-    covered:
-      "The seam's own contract is proven in `src/__tests__/dexscreener/price-read.test.ts`, and every migrated consumer's observable behavior is pinned unchanged in `src/__tests__/dexscreener/s11a-consumer-characterization.test.ts`.",
-  },
-  {
-    path: "src/__tests__/dexscreener/dexscreener-error-surface.test.ts",
-    reason:
-      "Subject removed by S11b (feat/vex-board, commit 99d69df8): the suite drove the OLD REST client's HTTP failures end to end through that client's error mapper; the client and its request path are deleted.",
-    covered:
-      "Error mapping itself survives in `src/__tests__/dexscreener/dexscreener-errors.test.ts`, and the site surface's failure taxonomy is proven end to end in `src/__tests__/dexscreener-site/` against the handler chain that replaced the client.",
+      "The spotlight chart's AREA adapter (toChartAreaPoint, normalizeBoardAreaPoints, " +
+      "reconcileAreaSeries, AreaFeed) was removed when the owner ruled the spotlight " +
+      "main chart a candlestick series with a volume histogram (2026-08-26); no code " +
+      "is left for this suite to exercise.",
+    coveredBy:
+      "vex-app/src/renderer/features/appShell/Board/__tests__/boardChartSpotlight.test.ts " +
+      "(the candle-plus-volume adapter, the same reconciliation table over all five " +
+      "fields, the per-bar colours and the two-series feed).",
   },
 ];
 

@@ -18,6 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ELECTRON_STATE_DIR } from "./paths/config-dir.js";
 import { loadProviderDotenv } from "@vex-lib/runtime-env.js";
+import { probeZodLocale, registerZodLocale } from "@vex-lib/zod-locale.js";
 import { configureLogger, log } from "./logger/index.js";
 import { acquireSingleInstanceLock } from "./lifecycle/single-instance.js";
 import { installWindowAllClosedHook } from "./lifecycle/window-all-closed.js";
@@ -50,6 +51,7 @@ import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
 import { setupVexMarketService } from "./market/vex-market-service.js";
+import { setupBoardLiveService } from "./market/board-live-owner.js";
 import { isSecretSessionUnlocked, lockSecretSession } from "./secrets/session.js";
 import { shutdownStudioMcpHost, startStudioMcpHost } from "./studio/mcp-host.js";
 import { disposeStudioApprovalBroker } from "./studio/approval-broker.js";
@@ -74,6 +76,26 @@ mkdirSync(ELECTRON_STATE_DIR, { recursive: true });
 app.setPath("userData", ELECTRON_STATE_DIR);
 
 configureLogger();
+
+/**
+ * zod's English error map is registered as a module-level side effect inside
+ * `zod` itself, and zod declares `sideEffects: false`, so rolldown drops it
+ * from this bundle: without an explicit call every validation failure in main
+ * reads "Invalid input" instead of naming the constraint. The probe is a real
+ * parse; a failure is logged and never thrown, because a degraded error
+ * message must not stop the app from starting.
+ */
+registerZodLocale();
+{
+  const probe = probeZodLocale();
+  if (!probe.localized) {
+    log.error(
+      "zod.locale.missing",
+      "zod English locale did not register; validation errors will be generic",
+      { marker: probe.marker, sampleMessage: probe.sampleMessage }
+    );
+  }
+}
 
 /**
  * Engine runtime logs (winston → stderr only) additionally forward into the
@@ -249,6 +271,16 @@ async function initializeMainRuntime(): Promise<void> {
   const stopMarketService = setupVexMarketService();
   globalCleanup.add(async () => {
     await stopMarketService();
+  });
+
+  // 6a-board-live. Own the board's LIVE lease service (T4). It polls nothing
+  // until a reader turns a board's toggle on, and at most one lease exists at a
+  // time. Its idempotent async stop closes every lease with `shutdown` and
+  // drains the in-flight cycle BEFORE the windows go away, so a terminal event
+  // is never sent into a destroyed webContents.
+  const stopBoardLiveService = setupBoardLiveService();
+  globalCleanup.add(async () => {
+    await stopBoardLiveService();
   });
 
   // 6b. Register lifecycle-driven cleanup. ALL workers must drain in-flight

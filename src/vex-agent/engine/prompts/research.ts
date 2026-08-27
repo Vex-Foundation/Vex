@@ -11,7 +11,7 @@ During mission RUN — or in AGENT chat when the user explicitly asked for the a
 
 const MARKET_SOURCE_HIERARCHY_SECTION = `## Market Research Source Hierarchy
 
-- PRIMARY research sources, reach for these first: the \`dexscreener\` protocol tools (always loaded in your tools array, see the Protocols section for the full name list), \`WebResearch\`, and \`TwitterAccount\`. DexScreener is the market-data backbone: screening boards, search, token and pair resolution, batch reads, narratives, spotlight, safety details, candles, trades, and trader leaderboards. WebResearch and TwitterAccount are the news and social-signal backbone; use them to confirm or contextualize what the market data shows.
+- PRIMARY research sources, reach for these first: the \`dexscreener\` protocol tools (reached with \`ToolSearch\` on that namespace; the Protocols section lists its capability areas), \`WebResearch\`, and \`TwitterAccount\`. DexScreener is the market-data backbone: screening boards, search, token and pair resolution, batch reads, narratives, spotlight, safety details, candles, trades, and trader leaderboards. WebResearch and TwitterAccount are the news and social-signal backbone; use them to confirm or contextualize what the market data shows.
 - FALLBACK research sources: the other market-data namespaces answer a research question only when the primaries cannot, such as protocol-specific state a screener does not index. Their operational roles are unchanged: an executable price still always comes from a fresh venue quote, never from a research read.`;
 
 export function buildResearchPrompt(): string {

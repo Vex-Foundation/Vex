@@ -268,6 +268,52 @@ export const imageKeys = {
 };
 
 /**
+ * Board token icons. Keyed by the icon handle ALONE, deliberately: the same
+ * token can appear on several boards in one transcript, and the bytes behind a
+ * handle are the same bytes either way. Keying by board or by card would fetch
+ * one asset once per place it is shown.
+ */
+export const boardLiveKeys = {
+  all: ["board-live"] as const,
+  /** Whether live figures are reachable at all in this build. Asked once. */
+  capability: () => ["board-live", "capability"] as const,
+};
+
+export const boardIconKeys = {
+  all: ["board-icons"] as const,
+  icon: (iconId: string) => ["board-icons", iconId] as const,
+};
+
+/**
+ * Board DETAILS - the contract-safety, holder and lock read behind every
+ * card's chip and the chat card's tally.
+ *
+ * KEYED BY THE POOL SET, NOT BY THE BOARD. Two boards naming the same eight
+ * pools are the same question, and the answer is the same bytes; keying by
+ * board identity would ask the provider twice for one answer and let the two
+ * copies drift apart between refreshes. The pool keys are joined in the order
+ * the caller asks, because the answer is POSITIONAL against that order.
+ */
+export const boardDetailsKeys = {
+  all: ["board-details"] as const,
+  prefetch: (poolKeys: readonly string[]) =>
+    ["board-details", "prefetch", poolKeys.join("|")] as const,
+};
+
+/**
+ * Board SPARKLINES - one cold hydration for a whole board.
+ *
+ * Keyed by the pool set AND the resolution: the same pools at a different
+ * resolution are a different line, and serving one under the other's key would
+ * draw bars the card's label does not describe.
+ */
+export const boardSparklineKeys = {
+  all: ["board-sparkline"] as const,
+  hydrate: (poolKeys: readonly string[], resolution: string) =>
+    ["board-sparkline", "hydrate", resolution, poolKeys.join("|")] as const,
+};
+
+/**
  * Token launch (C5) — the Trench Express launch dialog.
  *
  * `preview` is keyed by the WHOLE form input, and that is the contract rather

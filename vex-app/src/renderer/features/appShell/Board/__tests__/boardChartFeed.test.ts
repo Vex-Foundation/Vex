@@ -24,9 +24,10 @@ import {
   CHART_MIN_MOVE_MAX_DECIMALS,
   CandleFeed,
   chartMinMove,
+  chartPriceDecimals,
   barsToPush,
   boardChartSubjectKey,
-  formatChartAxisPrice,
+  createChartAxisPriceFormatter,
   normalizeBoardBars,
   toChartBar,
   toDisplayPrice,
@@ -267,24 +268,94 @@ describe("annotation coordinate conversion", () => {
   });
 });
 
-describe("formatChartAxisPrice", () => {
+describe("createChartAxisPriceFormatter", () => {
   it.each([
-    [1234.5, "1234.50"],
-    [0.5, "0.5000"],
-    [0.00042, "0.0004200"],
-    // Four significant digits past the zero run: 13 leading zeros + 3.
-    [1.234e-13, "0.0000000000001234"],
-    [0, "0"],
-  ])("formats %j as %j", (value, expected) => {
-    expect(formatChartAxisPrice(value)).toBe(expected);
-  });
+    [15, 1234.5, "1234.50"],
+    [15, 0.5, "0.5000"],
+    [15, 0.00042, "0.0004200"],
+    // Four significant digits past the zero run would want 16 places; the
+    // absolute ceiling is CHART_MIN_MOVE_MAX_DECIMALS, because past ~15
+    // significant digits a double cannot represent the difference anyway.
+    [CHART_MIN_MOVE_MAX_DECIMALS, 1.234e-13, "0.000000000000123"],
+    [99, 1.234e-13, "0.000000000000123"],
+    [15, 0, "0"],
+    // The ceiling BITES: a series that expresses 5 places cannot report a
+    // sixth, so the value below its own tick is the honest zero.
+    [5, 1.234e-13, "0"],
+    [5, 0.00042, "0.00042"],
+    [2, 1234.5, "1234.50"],
+    [0, 1234.5, "1235"],
+  ])(
+    "with %j decimals formats %j as %j",
+    (decimals, value, expected) => {
+      expect(createChartAxisPriceFormatter(decimals)(value)).toBe(expected);
+    },
+  );
 
   it("never renders a sub-cent price as the default 0.00", () => {
-    expect(formatChartAxisPrice(1e-13)).not.toBe("0.00");
+    expect(createChartAxisPriceFormatter(15)(1e-13)).not.toBe("0.00");
   });
 
   it("returns an empty label for a non-finite value", () => {
-    expect(formatChartAxisPrice(Number.NaN)).toBe("");
+    expect(createChartAxisPriceFormatter(15)(Number.NaN)).toBe("");
+  });
+
+  it("never signs a zero, at any precision", () => {
+    for (const decimals of [0, 2, 5, 15]) {
+      const format = createChartAxisPriceFormatter(decimals);
+      for (const value of [-0, -1e-30, -5.204170427930421e-18]) {
+        expect(format(value)).toBe("0");
+      }
+    }
+  });
+});
+
+/**
+ * THE PRODUCTION DEFECT, reproduced numerically.
+ *
+ * A memecoin board rendered a bottom price-axis tick of
+ * `-0.000000000000000005`. The cause chain was measured, not guessed: the
+ * default `rightPriceScale.scaleMargins.bottom` of 0.1 extrapolates the
+ * visible range BELOW zero once the series max exceeds roughly 7.96x its min
+ * at the chart's 256px height, and the library's tick loop (repeated span
+ * subtraction) then lands on floating-point residue near 1e-18 instead of on
+ * zero. The formatter expanded that residue by MAGNITUDE, to eighteen
+ * decimals, on a series whose own decimal strings carry five.
+ *
+ * The scale margins are unchanged by design - the bottom breathing room is a
+ * deliberate look and an honest `0` tick is allowed. What is fixed is the
+ * label: its ceiling is the series' own precision.
+ *
+ * This block goes red the moment the ceiling is removed.
+ */
+describe("F5 axis-residue reproduction family", () => {
+  // The exact family from the measurement: min 0.00100, max 0.02362 at 256px.
+  const SERIES: readonly BoardCandleInput[] = [
+    { tMs: 1_000, o: "0.00100", h: "0.00100", l: "0.00100", c: "0.00100" },
+    { tMs: 2_000, o: "0.02362", h: "0.02362", l: "0.02362", c: "0.02362" },
+  ];
+  // Ticks the SDK's subtraction loop produced for that range, including the
+  // residue tick that produced the reported label.
+  const TICKS: readonly number[] = [
+    -5.204170427930421e-18, 0.005, 0.01, 0.015, 0.02, 0.02362,
+  ];
+
+  it("derives a 5-decimal precision from the series' own strings", () => {
+    expect(chartPriceDecimals(SERIES)).toBe(5);
+  });
+
+  it("prints no label finer than the series precision, and no signed zero", () => {
+    const format = createChartAxisPriceFormatter(chartPriceDecimals(SERIES));
+    for (const tick of TICKS) {
+      const label = format(tick);
+      expect(label).toMatch(/^-?\d+(?:\.\d{1,5})?$/);
+      expect(label.startsWith("-0")).toBe(false);
+    }
+  });
+
+  it("renders the residue tick as a plain zero", () => {
+    const format = createChartAxisPriceFormatter(chartPriceDecimals(SERIES));
+    expect(format(-5.204170427930421e-18)).toBe("0");
   });
 });
 

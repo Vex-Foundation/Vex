@@ -35,11 +35,12 @@
 import { BOARD_MAX_CANDLES } from "@vex-lib/board/index.js";
 import type {
   CandlestickData,
-  ISeriesApi,
+  HistogramData,
   Time,
   UTCTimestamp,
   WhitespaceData,
 } from "lightweight-charts";
+import { withAlpha } from "./boardChartTheme.js";
 
 /**
  * One bar exactly as board hydration carries it: epoch MILLISECONDS and
@@ -186,7 +187,19 @@ export function toChartBar(row: BoardCandleInput): BoardChartBar {
  */
 export const CHART_MIN_MOVE_MAX_DECIMALS = 15;
 
-export function chartMinMove(rows: readonly BoardCandleInput[]): number {
+/**
+ * Decimal places this series actually uses: the longest fractional part any
+ * of its decimal strings carries, bounded at
+ * {@link CHART_MIN_MOVE_MAX_DECIMALS}.
+ *
+ * It is the SINGLE precision fact about a series, and both consumers derive
+ * from it rather than computing their own: {@link chartMinMove} turns it into
+ * the library's tick, and {@link createChartAxisPriceFormatter} uses it as the
+ * hard ceiling on how many places an axis label may print. A second
+ * derivation would be a second source of truth, and the axis defect this
+ * bounds is exactly what happens when the label is allowed to outrun the tick.
+ */
+export function chartPriceDecimals(rows: readonly BoardCandleInput[]): number {
   let decimals = 0;
   for (const row of rows) {
     for (const leg of [row.o, row.h, row.l, row.c]) {
@@ -197,10 +210,22 @@ export function chartMinMove(rows: readonly BoardCandleInput[]): number {
       if (used > decimals) decimals = used;
     }
   }
-  if (decimals > CHART_MIN_MOVE_MAX_DECIMALS) decimals = CHART_MIN_MOVE_MAX_DECIMALS;
-  // `Number("1e-13")` rather than `10 ** -13`: the exponent literal is exact
-  // to the nearest double, the repeated multiplication is not.
+  return decimals > CHART_MIN_MOVE_MAX_DECIMALS
+    ? CHART_MIN_MOVE_MAX_DECIMALS
+    : decimals;
+}
+
+/**
+ * The library tick for a given decimal precision. `Number("1e-13")` rather
+ * than `10 ** -13`: the exponent literal is exact to the nearest double, the
+ * repeated multiplication is not.
+ */
+export function minMoveForDecimals(decimals: number): number {
   return Number(`1e-${decimals}`);
+}
+
+export function chartMinMove(rows: readonly BoardCandleInput[]): number {
+  return minMoveForDecimals(chartPriceDecimals(rows));
 }
 
 /** True when a bar carries real prices rather than reserving a slot. */
@@ -276,24 +301,56 @@ export function toDisplayTimeSec(atMs: number): UTCTimestamp | null {
 }
 
 /**
- * Price-axis label formatter for a `PriceFormatCustom`.
+ * Build the price-axis label formatter for a `PriceFormatCustom`, bounded by
+ * the decimal precision the SERIES itself uses ({@link chartPriceDecimals}).
  *
- * The built-in `{ type: 'price', precision: 2, minMove: 0.01 }` default
- * renders a 1e-13 memecoin price as `0.00` on every axis tick, which makes
- * the whole chart read as blank. The library's value guard bounds MAGNITUDE
- * (roughly +/-9.007e13) and imposes no lower bound, so tiny prices are
- * accepted and only the formatting has to be right.
+ * WHY IT IS BOUND TO THE SERIES, and it is a production defect, not a
+ * refinement. The library's tick loop walks the visible range by repeated
+ * subtraction of the span, and the default `rightPriceScale.scaleMargins`
+ * extrapolate that range BELOW zero whenever the series' max exceeds roughly
+ * 7.96x its min at our chart height. The bottom tick therefore lands on
+ * floating-point residue near zero rather than on zero. Measured family:
+ * min 0.00100, max 0.02362 at 256px yields a tick of
+ * -5.204170427930421e-18. A formatter that expands by MAGNITUDE alone renders
+ * that residue as `-0.000000000000000005`, an eighteen-decimal negative price
+ * on a series whose own strings carry five. The scale margins are a
+ * deliberate design choice and are unchanged; the label is what was lying.
+ *
+ * So the ceiling is the series' own precision: a tick finer than any price
+ * the series expresses cannot say anything true, and every value inside that
+ * residue band collapses to the honest `0`. The `-0.000...` and `0.000...`
+ * forms are normalized to `0` for the same reason - a negative sign on a
+ * value the series cannot distinguish from zero is noise presented as a fact.
+ *
+ * The magnitude ladder below still matters at the other end: the built-in
+ * `{ precision: 2, minMove: 0.01 }` default renders a 1e-13 memecoin price as
+ * `0.00` on every tick, which makes the whole chart read as blank. The
+ * library's value guard bounds MAGNITUDE (roughly +/-9.007e13) and imposes no
+ * lower bound, so tiny prices are accepted and only the formatting has to be
+ * right.
  *
  * Axis labels only - never a figure a user acts on financially.
  */
-export function formatChartAxisPrice(value: number): string {
-  if (!Number.isFinite(value)) return "";
-  if (value === 0) return "0";
-  const abs = Math.abs(value);
-  if (abs >= 1) return value.toFixed(2);
-  if (abs >= 0.01) return value.toFixed(4);
-  const decimals = Math.min(18, Math.ceil(-Math.log10(abs)) + 3);
-  return value.toFixed(decimals);
+export function createChartAxisPriceFormatter(
+  maxDecimals: number,
+): (value: number) => string {
+  const ceiling = Math.max(
+    0,
+    Math.min(CHART_MIN_MOVE_MAX_DECIMALS, Math.floor(maxDecimals)),
+  );
+  return (value: number): string => {
+    if (!Number.isFinite(value)) return "";
+    const abs = Math.abs(value);
+    let decimals: number;
+    if (abs >= 1) decimals = 2;
+    else if (abs >= 0.01) decimals = 4;
+    else if (abs === 0) decimals = 0;
+    else decimals = Math.ceil(-Math.log10(abs)) + 3;
+    const text = value.toFixed(Math.min(decimals, ceiling));
+    // `-0`, `-0.00000` and `0.0000` all mean "below anything this series can
+    // express". One honest zero, never a signed one.
+    return /^-?0(?:\.0*)?$/.test(text) ? "0" : text;
+  };
 }
 
 /** What `CandleFeed.push` did with a bar, so callers can assert on it. */
@@ -384,4 +441,434 @@ export function barsToPush(
 ): readonly BoardChartBar[] {
   if (sinceSec === null) return next;
   return next.filter((bar) => (bar.time as number) >= sinceSec);
+}
+
+/* ------------------------------------------------------------------ */
+/* SPOTLIGHT SERIES - candles plus a volume histogram, one bar model   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One spotlight bar: the four legs in DISPLAY floats with the chart-only
+ * extremes repair of {@link toChartBar} applied, the USD volume as BOTH a
+ * display float (what the histogram draws) and the provider's own decimal
+ * string (what the tooltip prints, through the board's compact formatter, so
+ * no second money formatter and no float-to-text round trip), or a whitespace
+ * slot that reserves its time and draws nothing in either series.
+ */
+export interface SpotlightDrawnBar {
+  readonly time: UTCTimestamp;
+  readonly open: number;
+  readonly high: number;
+  readonly low: number;
+  readonly close: number;
+  /** Display float, or null when the provider reported no volume. */
+  readonly volume: number | null;
+  /** The provider's decimal string, kept for the tooltip. */
+  readonly volumeUsd: string | null;
+  /** The reported high/low did not span the open/close; extremes are derived. */
+  readonly incoherent: boolean;
+}
+
+export type SpotlightChartBar = SpotlightDrawnBar | WhitespaceData<UTCTimestamp>;
+
+/** True for a bar with prices; a whitespace slot has only its time. */
+export function isDrawnSpotlightBar(bar: SpotlightChartBar): bar is SpotlightDrawnBar {
+  return "open" in bar;
+}
+
+/**
+ * A board candle and the volume that rode beside it as one spotlight bar.
+ *
+ * Same boundary rules as {@link toChartBar}: ONE `Math.floor(ms / 1000)`, a
+ * decimal string becoming a DISPLAY float and nothing else, and a row that
+ * cannot yield four finite prices becoming WHITESPACE rather than a
+ * fabricated zero. A volume that is null or not a finite decimal is a null
+ * volume on a drawn bar: the candle draws, the histogram leaves the slot.
+ */
+export function toSpotlightBar(
+  row: BoardCandleInput,
+  volumeUsd: string | null,
+): SpotlightChartBar {
+  const { bar, incoherent } = convertBar(row);
+  if (!isDrawnBar(bar)) return { time: bar.time };
+  const volume = volumeUsd === null ? null : toDisplayPrice(volumeUsd);
+  return {
+    time: bar.time,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume,
+    volumeUsd: volume === null ? null : volumeUsd,
+    incoherent,
+  };
+}
+
+/** A normalized spotlight page, with every bound and every derivation reported. */
+export interface NormalizedSpotlightBars {
+  readonly bars: readonly SpotlightChartBar[];
+  readonly totalDistinct: number;
+  /** Older bars the display budget kept off the chart. Never silent. */
+  readonly hiddenOlder: number;
+  readonly whitespaceCount: number;
+  /** Drawn bars whose extremes were derived rather than reported. */
+  readonly incoherentCount: number;
+  /** Drawn bars that carry no volume and leave their histogram slot empty. */
+  readonly volumelessCount: number;
+  readonly oldestTimeSec: number | null;
+  readonly newestTimeSec: number | null;
+}
+
+/**
+ * Sort, dedupe and convert a page of provider bars and their POSITIONAL
+ * volumes into spotlight bars.
+ *
+ * `volumes[i]` is the volume of `rows[i]`, exactly as the chart channel
+ * carries them; a volumes array shorter than the rows leaves the tail with
+ * null volumes rather than throwing, and that shortfall shows up in
+ * `volumelessCount`. Dedupe is last-write-wins on the floored second, as in
+ * {@link normalizeBoardBars}: the forming bar is re-emitted by design.
+ */
+export function normalizeSpotlightBars(
+  rows: readonly BoardCandleInput[],
+  volumes: readonly (string | null)[],
+): NormalizedSpotlightBars {
+  const byTime = new Map<number, SpotlightChartBar>();
+  rows.forEach((row, index) => {
+    const bar = toSpotlightBar(row, volumes[index] ?? null);
+    byTime.set(bar.time as number, bar);
+  });
+  const ordered = [...byTime.values()].sort(
+    (a, b) => (a.time as number) - (b.time as number),
+  );
+  const totalDistinct = ordered.length;
+  const hiddenOlder = Math.max(0, totalDistinct - BOARD_CHART_MAX_BARS);
+  const bars = hiddenOlder === 0 ? ordered : ordered.slice(hiddenOlder);
+  let whitespaceCount = 0;
+  let incoherentCount = 0;
+  let volumelessCount = 0;
+  for (const bar of bars) {
+    if (!isDrawnSpotlightBar(bar)) {
+      whitespaceCount += 1;
+      continue;
+    }
+    if (bar.incoherent) incoherentCount += 1;
+    if (bar.volume === null) volumelessCount += 1;
+  }
+  return {
+    bars,
+    totalDistinct,
+    hiddenOlder,
+    whitespaceCount,
+    incoherentCount,
+    volumelessCount,
+    oldestTimeSec: (bars[0]?.time as number | undefined) ?? null,
+    newestTimeSec: (bars.at(-1)?.time as number | undefined) ?? null,
+  };
+}
+
+/**
+ * Whether two bars at the same time carry the same values.
+ *
+ * ALL FOUR LEGS AND THE VOLUME. A single-value comparison was correct for the
+ * area line it was written for; on a candle it would drop a poll that only
+ * moved the high as "unchanged" and leave a wick short of the truth.
+ */
+function sameSpotlightBar(a: SpotlightChartBar, b: SpotlightChartBar): boolean {
+  if (!isDrawnSpotlightBar(a) || !isDrawnSpotlightBar(b)) {
+    return !isDrawnSpotlightBar(a) && !isDrawnSpotlightBar(b);
+  }
+  return (
+    a.open === b.open &&
+    a.high === b.high &&
+    a.low === b.low &&
+    a.close === b.close &&
+    a.volume === b.volume
+  );
+}
+
+/**
+ * What the chart must DO with a poll response, decided as a pure function.
+ *
+ * WHY THIS IS A FUNCTION AND NOT A BRANCH INSIDE AN EFFECT. Every row of the
+ * chart contract's reconciliation table is a claim about this decision, and a
+ * claim that lives inside a `useEffect` beside a canvas can only be tested by
+ * driving a canvas. Here the whole table is a table test.
+ *
+ * THE COMPARISON IS OVER TIMESTAMP SETS, not lengths (A8). A rolling window
+ * that replaced a constant number of bars would look right to a reader at the
+ * live edge and silently move a reader scrolled back into history; asking
+ * which exact timestamps left, arrived, or changed value is the only form of
+ * the question that is answerable for both.
+ */
+export type SpotlightReconciliation =
+  | {
+      readonly kind: "reset";
+      readonly reason:
+        | "seed"
+        | "left-trim"
+        | "interior-change"
+        | "shrink"
+        | "many-corrections";
+      readonly bars: readonly SpotlightChartBar[];
+    }
+  | {
+      readonly kind: "incremental";
+      /** Past bars whose values changed. Applied with `historicalUpdate`. */
+      readonly corrections: readonly SpotlightChartBar[];
+      /** The forming bar and any newly closed ones, oldest first. */
+      readonly appends: readonly SpotlightChartBar[];
+    }
+  | { readonly kind: "keep"; readonly reason: "empty-response" };
+
+/**
+ * Above this many corrected past bars, a full `setData` is cheaper than N
+ * `historicalUpdate` calls, which the library documents as the slower path
+ * (contract 2.2 row 6b). Re-derived for a two-series bar: a correction now
+ * costs one historical update on EACH series and a reset costs one `setData`
+ * on each, so both sides of the comparison scaled by the same factor and the
+ * crossover in corrections is unchanged. Both paths are viewport-neutral.
+ */
+export const SPOTLIGHT_MAX_HISTORICAL_UPDATES = 3;
+
+export function reconcileSpotlightBars(
+  held: readonly SpotlightChartBar[],
+  incoming: readonly SpotlightChartBar[],
+): SpotlightReconciliation {
+  if (incoming.length === 0) return { kind: "keep", reason: "empty-response" };
+  if (held.length === 0) return { kind: "reset", reason: "seed", bars: incoming };
+
+  const incomingByTime = new Map<number, SpotlightChartBar>();
+  for (const bar of incoming) incomingByTime.set(bar.time as number, bar);
+  const incomingOldest = incoming[0]?.time as number;
+
+  // A held bar the response no longer carries is either the window sliding
+  // (it is older than everything in the response) or a genuine interior
+  // disappearance. The first is expected and the second must not be papered
+  // over by an append, so both take the full-replace path and the caller
+  // states the trim in words.
+  let trimmed = false;
+  for (const bar of held) {
+    const time = bar.time as number;
+    if (incomingByTime.has(time)) continue;
+    if (time < incomingOldest) {
+      trimmed = true;
+      continue;
+    }
+    return { kind: "reset", reason: "interior-change", bars: incoming };
+  }
+  if (trimmed) return { kind: "reset", reason: "left-trim", bars: incoming };
+
+  const heldByTime = new Map<number, SpotlightChartBar>();
+  for (const bar of held) heldByTime.set(bar.time as number, bar);
+  const newestHeld = held.at(-1)?.time as number;
+  const corrections: SpotlightChartBar[] = [];
+  const appends: SpotlightChartBar[] = [];
+  for (const bar of incoming) {
+    const time = bar.time as number;
+    // The bar AT the newest held time is the FORMING bar: its values are
+    // supposed to change, and it is an update rather than a correction.
+    if (time >= newestHeld) {
+      appends.push(bar);
+      continue;
+    }
+    const heldBar = heldByTime.get(time);
+    if (heldBar === undefined) {
+      // Older than the newest held bar and not held: the response reaches
+      // further back than the chart does. That is a new window, not an append.
+      return { kind: "reset", reason: "shrink", bars: incoming };
+    }
+    if (!sameSpotlightBar(heldBar, bar)) corrections.push(bar);
+  }
+  if (corrections.length > SPOTLIGHT_MAX_HISTORICAL_UPDATES) {
+    return { kind: "reset", reason: "many-corrections", bars: incoming };
+  }
+  return { kind: "incremental", corrections, appends };
+}
+
+/* ---------------- styling: the per-item colours, decided here ----- */
+
+export type SpotlightCandlePoint =
+  | CandlestickData<UTCTimestamp>
+  | WhitespaceData<UTCTimestamp>;
+export type SpotlightVolumePoint =
+  | HistogramData<UTCTimestamp>
+  | WhitespaceData<UTCTimestamp>;
+
+/** The alpha of a volume column against the candles it sits under. */
+export const SPOTLIGHT_VOLUME_ALPHA = 0.35;
+/** The alpha of the newest bar while its bucket is still forming. */
+export const SPOTLIGHT_FORMING_ALPHA = 0.55;
+
+/**
+ * What the styler needs: the two palette colours and whether the newest bar
+ * is still forming. Colours arrive resolved from the theme bridge; nothing
+ * here names a colour of its own.
+ */
+export interface SpotlightBarStyle {
+  readonly up: string;
+  readonly down: string;
+  readonly lastBarPartial: boolean;
+}
+
+/**
+ * One bar as the two data items the series draw.
+ *
+ * DECIDED IN THE ADAPTER so it is a table test rather than a canvas fact:
+ * the volume column takes the candle's direction at {@link SPOTLIGHT_VOLUME_ALPHA};
+ * the newest bar, while forming, is drawn in the same direction colour at
+ * {@link SPOTLIGHT_FORMING_ALPHA} on body, border and wick, so a partial
+ * bucket is visibly partial and never hidden and never whitespace; a null
+ * volume is a whitespace slot in the histogram, NEVER a zero column.
+ */
+export function styleSpotlightBar(
+  bar: SpotlightChartBar,
+  newest: boolean,
+  style: SpotlightBarStyle,
+): { readonly candle: SpotlightCandlePoint; readonly volume: SpotlightVolumePoint } {
+  if (!isDrawnSpotlightBar(bar)) {
+    return { candle: { time: bar.time }, volume: { time: bar.time } };
+  }
+  const direction = bar.close >= bar.open ? style.up : style.down;
+  const forming = newest && style.lastBarPartial;
+  const tint = withAlpha(direction, SPOTLIGHT_FORMING_ALPHA);
+  const candle: CandlestickData<UTCTimestamp> = {
+    time: bar.time,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    ...(forming ? { color: tint, borderColor: tint, wickColor: tint } : {}),
+  };
+  const volume: SpotlightVolumePoint =
+    bar.volume === null
+      ? { time: bar.time }
+      : {
+          time: bar.time,
+          value: bar.volume,
+          color: withAlpha(direction, SPOTLIGHT_VOLUME_ALPHA),
+        };
+  return { candle, volume };
+}
+
+/* ---------------- the writer ------------------------------------- */
+
+/** One series the feed writes through: the library's surface, narrowed. */
+export interface SpotlightSeriesSink<TPoint> {
+  setData(data: TPoint[]): void;
+  update(point: TPoint, historicalUpdate?: boolean): void;
+}
+
+export interface SpotlightSeriesSinks {
+  readonly candle: SpotlightSeriesSink<SpotlightCandlePoint>;
+  readonly volume: SpotlightSeriesSink<SpotlightVolumePoint>;
+}
+
+/**
+ * The spotlight's series writer, and the ONE place `setData` / `update` are
+ * called on the candle and volume series.
+ *
+ * It holds the bars it wrote so reconciliation can compare timestamp SETS
+ * without a `series.data()` scan per poll, and so `oldestTimeSec` and the
+ * held count are answerable - the two facts the contract's trim condition
+ * needs. Every write goes to BOTH series in the same call, so the histogram
+ * can never hold a bar the candles do not.
+ */
+export class SpotlightFeed {
+  private bars: readonly SpotlightChartBar[] = [];
+
+  constructor(private readonly sinks: SpotlightSeriesSinks) {}
+
+  get held(): readonly SpotlightChartBar[] {
+    return this.bars;
+  }
+
+  get heldCount(): number {
+    return this.bars.length;
+  }
+
+  get oldestTimeSec(): number | null {
+    return (this.bars[0]?.time as number | undefined) ?? null;
+  }
+
+  get newestTimeSec(): number | null {
+    return (this.bars.at(-1)?.time as number | undefined) ?? null;
+  }
+
+  /**
+   * Full replace. Does NOT touch the viewport: `setData` preserves
+   * `barSpacing` and `rightOffset`, and restoring or resetting the visible
+   * range is the caller's deliberate decision.
+   */
+  reset(bars: readonly SpotlightChartBar[], style: SpotlightBarStyle): void {
+    const candles: SpotlightCandlePoint[] = [];
+    const volumes: SpotlightVolumePoint[] = [];
+    const newestTime = bars.at(-1)?.time;
+    for (const bar of bars) {
+      const styled = styleSpotlightBar(bar, bar.time === newestTime, style);
+      candles.push(styled.candle);
+      volumes.push(styled.volume);
+    }
+    this.sinks.candle.setData(candles);
+    this.sinks.volume.setData(volumes);
+    this.bars = bars;
+  }
+
+  /**
+   * Re-write the held bars with a new style and nothing else: the theme
+   * flipped, so the per-item tints have to follow. A `setData` is
+   * viewport-neutral, so the reader keeps their zoom.
+   */
+  restyle(style: SpotlightBarStyle): void {
+    if (this.bars.length === 0) return;
+    this.reset(this.bars, style);
+  }
+
+  /**
+   * Apply a reconciliation. Returns what was actually written, so a caller
+   * can report it rather than assume it.
+   *
+   * The previously newest bar is always part of `appends` (the bar AT the
+   * newest held time is the forming bar), so when a newer bar arrives it is
+   * re-written in its settled colour by the same pass that appends the new
+   * forming bar: a bucket that closed stops looking partial on the poll that
+   * closes it.
+   */
+  apply(
+    plan: SpotlightReconciliation,
+    style: SpotlightBarStyle,
+  ): {
+    readonly reset: boolean;
+    readonly corrected: number;
+    readonly appended: number;
+  } {
+    if (plan.kind === "keep") return { reset: false, corrected: 0, appended: 0 };
+    if (plan.kind === "reset") {
+      this.reset(plan.bars, style);
+      return { reset: true, corrected: 0, appended: 0 };
+    }
+    const newestTime = plan.appends.at(-1)?.time ?? this.bars.at(-1)?.time;
+    for (const bar of plan.corrections) {
+      // `historicalUpdate` throws when the time does not already exist, which
+      // is exactly why the plan only ever names times the feed holds.
+      const styled = styleSpotlightBar(bar, false, style);
+      this.sinks.candle.update(styled.candle, true);
+      this.sinks.volume.update(styled.volume, true);
+    }
+    let appended = 0;
+    const merged = new Map<number, SpotlightChartBar>();
+    for (const bar of this.bars) merged.set(bar.time as number, bar);
+    for (const bar of plan.corrections) merged.set(bar.time as number, bar);
+    for (const bar of plan.appends) {
+      const styled = styleSpotlightBar(bar, bar.time === newestTime, style);
+      this.sinks.candle.update(styled.candle);
+      this.sinks.volume.update(styled.volume);
+      merged.set(bar.time as number, bar);
+      appended += 1;
+    }
+    this.bars = [...merged.values()].sort(
+      (a, b) => (a.time as number) - (b.time as number),
+    );
+    return { reset: false, corrected: plan.corrections.length, appended };
+  }
 }

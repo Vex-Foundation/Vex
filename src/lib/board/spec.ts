@@ -66,31 +66,199 @@ export const BOARD_ANNOTATION_LABEL_RULE: BoardTextRule = {
   multiline: false,
 };
 
-/** One analysis note. Multi-line: prose paragraphs are the point of the block. */
+/**
+ * One analysis note: a risk, a caveat, a caveat's evidence.
+ *
+ * Multi-line, because prose paragraphs are the point of the block. 600
+ * characters is a REFUSAL threshold, never a target: a note that needs a
+ * paragraph gets one, and a note that fits in a line stays a line. The old 280
+ * was a tweet-shaped number with nothing behind it, and it made the model
+ * compress caveats that deserved the room.
+ */
 export const BOARD_NOTE_RULE: BoardTextRule = {
   minChars: 1,
-  maxChars: 280,
+  maxChars: 600,
+  multiline: true,
+};
+
+/**
+ * The model's own assessment of ONE token on the board. Multi-line.
+ *
+ * NOT a caption. A caption is the one-line takeaway that fits on a card; this
+ * is the FULL read the spotlight surface shows under "VEX assessment": the
+ * thesis, what is actually moving the price, the levels that matter with their
+ * numbers, the risk read and what would invalidate it. The field exists so the
+ * model can present REAL INSIGHT about a token, and the contract must not turn
+ * that into an editing exercise.
+ *
+ * 10000 CHARACTERS IS A REFUSAL THRESHOLD, NEVER A TARGET. Length is not the
+ * product; insight is. A model that pads to the bound has misread the field as
+ * badly as one that stops at a sentence, and two to five paragraphs is what a
+ * real assessment costs.
+ *
+ * THE ONLY REASON A BOUND EXISTS HERE IS {@link BOARD_SPEC_MAX_BYTES}. The
+ * document is persisted whole in one JSONB row, so per-field bounds are what
+ * keep a legal board from being an unstorable one; the number is derived from
+ * that budget, not from an opinion about how much the model should say.
+ *
+ * BOTH BOUNDS ARE REJECT-ONLY. This one refuses a longer assessment with its
+ * class named, and the byte budget refuses an oversize board with its measured
+ * size and its largest pool named. NOTHING ANYWHERE IS SLICED: a trimmed
+ * assessment would say something the model did not write, under the model's
+ * name, to a user who cannot tell it was cut.
+ *
+ * Line breaks are allowed, exactly as they are for a note, because an
+ * assessment that separates its thesis, its evidence and its risk reads as
+ * several paragraphs. Every other forbidden class (controls, bidi, tag blocks,
+ * zero-width) is rejected here on the same table.
+ *
+ * IT IS PROSE, AND PROSE NEVER COLOURS A CHIP. The safety chip is decided by
+ * the pure classifier over provider evidence
+ * (`vex-app/src/shared/board/safety-classifier.ts`); this string is displayed
+ * beside it and can never move it. That separation is the whole reason the
+ * field is allowed to be free text at all.
+ */
+export const BOARD_ANALYSIS_RULE: BoardTextRule = {
+  minChars: 1,
+  maxChars: 10_000,
+  multiline: true,
+};
+
+/**
+ * The PROVIDER's blurb for a token, from its DexScreener CMS profile.
+ *
+ * UNTRUSTED PROVIDER TEXT, and the opposite of {@link BOARD_ANALYSIS_RULE} in
+ * every way that matters: the analysis is the model's own reading, this is a
+ * string a token's own marketing team wrote about itself. It is carried so the
+ * surface can show what the project claims to be, and it is never evidence of
+ * anything. It NEVER reaches an HTML sink, never reaches the safety
+ * classifier, and never influences a figure.
+ *
+ * Bounded REJECT-ONLY at 1000 characters, on the same forbidden code-point
+ * table as every other board string (controls, bidi, tag blocks, zero-width).
+ * A blurb past the bound, or one carrying a forbidden class, is dropped to
+ * `null` by the hydrator rather than cut: half a description is a sentence the
+ * project did not write, and the honest rendering of "we could not carry this"
+ * is no description at all.
+ *
+ * WHY 1000 AND NOT MORE. Two measurements, not a preference:
+ *
+ *  - LIVE (`board-v4-probes/description-vex.json`): the provider served 546
+ *    code points for VEX on robinhood, 8 for Pistacio, and NO description key
+ *    at all for WETH. 1000 covers the observed distribution with room.
+ *  - BUDGET: this field is the one board string the MODEL CANNOT SHORTEN. At
+ *    8 pools in a two-byte script, every 1000 characters here costs 16,000
+ *    bytes of {@link BOARD_SPEC_MAX_BYTES}. This field is counted in the
+ *    all-fields-max measurement behind that budget, so its cost is admitted
+ *    rather than assumed. A much larger ceiling would let the PROVIDER's
+ *    marketing copy push a board the agent composed correctly over the budget,
+ *    refusing work the model had no way to make smaller.
+ *
+ * So an unusually long blurb costs the reader a blurb, never the board.
+ *
+ * Multi-line, because CMS blurbs routinely carry paragraph breaks.
+ */
+export const BOARD_DESCRIPTION_RULE: BoardTextRule = {
+  minChars: 1,
+  maxChars: 1000,
   multiline: true,
 };
 
 /** Maximum pools on one board. Order in the array is display order. */
 export const BOARD_MAX_POOLS = 8;
-/** Maximum analysis notes. */
-export const BOARD_MAX_NOTES = 6;
+/**
+ * Maximum analysis notes.
+ *
+ * A REFUSAL threshold. Raised from 6 after a production refusal: the model
+ * composed 7 notes of real content and the whole board was rejected, which
+ * traded a page of insight for a limit that was defending nothing. 12 notes at
+ * {@link BOARD_NOTE_RULE}.maxChars is 14,400 bytes in a two-byte script, which
+ * the document budget below absorbs without argument.
+ */
+export const BOARD_MAX_NOTES = 12;
 /** Maximum chart annotations. */
 export const BOARD_MAX_ANNOTATIONS = 12;
 /** Maximum candles carried in one hydrated board. */
 export const BOARD_MAX_CANDLES = 200;
 
+/* ------------------------------------------------------------------ */
+/* Identity and hydration field widths                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The character ceilings on the non-prose fields: the pool identity the model
+ * names and the provider labels the runtime writes beside it.
+ *
+ * They are NAMED CONSTANTS rather than literals inside the schema for one
+ * reason: the byte budget below is a MEASURED figure, and the thing that
+ * measures it (`src/__tests__/lib/board/maximal-board-spec.ts`) builds the
+ * schema-valid all-fields-max document from this table. A width spelled twice,
+ * once in a `.max()` and once in a fixture, is a budget derived from a number
+ * nothing enforces.
+ */
+/** DexScreener chain slug, and the `chainId` the provider echoes back. */
+export const BOARD_CHAIN_SLUG_MAX_CHARS = 32;
+/** Pool address as the provider spells it: base58, or hex without the prefix. */
+export const BOARD_PAIR_ADDRESS_MAX_CHARS = 128;
+/** Token symbol or name as the provider reports it. Untrusted provider text. */
+export const BOARD_TOKEN_LABEL_MAX_CHARS = 512;
+/** DexScreener DEX slug, e.g. `raydium`, `uniswap-v3`. */
+export const BOARD_DEX_ID_MAX_CHARS = 64;
+/** The transport name recorded in provenance, e.g. `http`, `site_bridge`. */
+export const BOARD_PROVENANCE_TRANSPORT_MAX_CHARS = 64;
+/** The observation sentence recorded in provenance. */
+export const BOARD_PROVENANCE_OBSERVATION_MAX_CHARS = 512;
+
 /**
  * Serialized ceiling for one persisted board document, in BYTES of UTF-8.
  *
- * 48 KiB. This is a REFUSAL threshold, never a trimming threshold: a board
- * over budget is refused with its measured size named, because silently
- * dropping pools, notes or candles would show the user a board the agent did
- * not compose. See {@link checkBoardSpecByteBudget}.
+ * 320 KiB. This is a REFUSAL threshold, never a trimming threshold: a board
+ * over budget is refused with its measured size AND the pool that contributed
+ * most named, because silently dropping pools, notes or candles would show the
+ * user a board the agent did not compose. See {@link checkBoardSpecByteBudget}.
+ *
+ * THE NUMBER IS MEASURED, AND THE MEASUREMENT IS A TEST. The generator
+ * `maximalBoardSpec()` in `src/__tests__/lib/board/maximal-board-spec.ts`
+ * builds the schema-valid ALL-FIELDS-MAX document from the constants above:
+ * every prose field at its code-point bound, all {@link BOARD_MAX_POOLS}
+ * pools, all {@link BOARD_MAX_NOTES} notes, every optional hydration field at its
+ * width, all {@link BOARD_MAX_ANNOTATIONS} annotations as zones (the heaviest
+ * member of the union), and a full {@link BOARD_MAX_CANDLES}-bar series of
+ * maximum-width decimals - and `spec.test.ts` measures it:
+ *
+ *   - two-byte script (Cyrillic, Greek, Hebrew): 272,697 bytes;
+ *   - Latin: 161,945 bytes.
+ *
+ * 327,680 admits the two-byte worst case with 54,983 bytes of headroom. The
+ * two-byte figure is the one the budget is sized against, because a user may
+ * ask for analysis in such a script and the board must not become unstorable
+ * for it.
+ *
+ * WHY THE PREVIOUS 262,144 WAS WRONG. It was chosen from hand arithmetic over
+ * a SUBSET of the fields, and the doc claimed a worst case of 251,963 bytes.
+ * That figure omitted the provider descriptions at their bound together with
+ * the maximum-width hydration labels, the widest decimals and the widest
+ * annotation set; the real all-fields-max document is 272,697 bytes. A board
+ * the schema ACCEPTED could therefore be refused by the budget with nothing
+ * the model had authored that it could shorten. Any bound raised above now
+ * moves the generated document, which moves the measured figure, which fails
+ * `spec.test.ts` until this constant is re-derived.
+ *
+ * WHAT IS STILL REFUSED, deliberately: emoji-dense assessments at the same
+ * bounds. `BOARD_ANALYSIS_RULE` counts CODE POINTS, so eight 10,000-code-point
+ * assessments of 4-byte emoji are 320,000 bytes of analysis alone and the
+ * document lands past this ceiling. That board is refused WHOLE, with its
+ * measured size and heaviest pool named, and is never trimmed to fit.
+ *
+ * DOWNSTREAM INVARIANT: `TOOL_ARGS_DISPLAY_CEILING` in
+ * `vex-app/src/shared/schemas/messages.ts` must stay ABOVE this budget plus
+ * the BoardCompose args envelope, or a legal board's tool args would fall off
+ * the transcript as `null`. That invariant is pinned in
+ * `vex-app/src/shared/schemas/__tests__/messages.test.ts` against the SAME
+ * generator, so raising this constant re-measures the envelope rather than
+ * re-guessing it.
  */
-export const BOARD_SPEC_MAX_BYTES = 49_152;
+export const BOARD_SPEC_MAX_BYTES = 327_680;
 
 /**
  * Staleness horizon for hydrated market data, in milliseconds.
@@ -150,6 +318,32 @@ export const BOARD_DECIMAL_MAX_CHARS = 40;
 
 /** DexScreener chain slug, e.g. `solana`, `base`, `arbitrum-one`. */
 const CHAIN_SLUG_PATTERN = /^[a-z0-9-]+$/;
+
+/**
+ * The DexScreener CMS icon reference, as the provider spells it.
+ *
+ * It is an OPAQUE handle, never a URL and never a path: the only thing any
+ * consumer may do with it is name it to the one main-process owner that knows
+ * which host serves it. The character class is deliberately narrow (the
+ * unreserved URL-safe set, no dot and no slash), so an id can never carry a
+ * path segment, a scheme, a query, or a traversal even before the fetcher's
+ * own host-and-prefix allowlist runs. This pattern is repeated verbatim by the
+ * IPC input schema in the desktop app, and this module cannot import it: this
+ * file's only legal dependency is zod (see the header), which is what keeps it
+ * loadable in the untrusted renderer.
+ */
+/** Shortest handle the provider mints. */
+export const BOARD_ICON_ID_MIN_CHARS = 4;
+/** Longest handle the provider mints, and the width the byte budget charges for it. */
+export const BOARD_ICON_ID_MAX_CHARS = 128;
+/**
+ * Built from the two bounds above rather than spelled twice, so the width the
+ * budget's all-fields-max document uses is the width this pattern enforces.
+ * `.source` is unchanged: `^[A-Za-z0-9_-]{4,128}$`.
+ */
+export const BOARD_ICON_ID_PATTERN = new RegExp(
+  `^[A-Za-z0-9_-]{${BOARD_ICON_ID_MIN_CHARS},${BOARD_ICON_ID_MAX_CHARS}}$`,
+);
 
 /** Pool identity as the provider spells it. Base58 or hex-without-prefix. */
 const PAIR_ADDRESS_PATTERN = /^[A-Za-z0-9]+$/;
@@ -227,9 +421,31 @@ export function compareDecimalStrings(left: string, right: string): -1 | 0 | 1 {
 /** One pool the agent chose to display. */
 export const boardPoolInputSchema = z
   .object({
-    chain: z.string().min(1).max(32).regex(CHAIN_SLUG_PATTERN),
-    pairAddress: z.string().min(1).max(128).regex(PAIR_ADDRESS_PATTERN),
+    chain: z.string().min(1).max(BOARD_CHAIN_SLUG_MAX_CHARS).regex(CHAIN_SLUG_PATTERN),
+    pairAddress: z
+      .string()
+      .min(1)
+      .max(BOARD_PAIR_ADDRESS_MAX_CHARS)
+      .regex(PAIR_ADDRESS_PATTERN),
     caption: boardText(BOARD_CAPTION_RULE).optional(),
+    /**
+     * The model's full assessment of this token, or null when it wrote none.
+     *
+     * OPTIONAL ON READ, ALWAYS WRITTEN - the same expand-and-contract half
+     * `iconId` documents on the hydrated row, and for the same durable reason.
+     * Boards composed before this field existed are already persisted in
+     * transcript rows, and this schema re-parses those rows on every read; a
+     * required key would turn each of them into a parse failure, which the DB
+     * mapper renders as a board that silently vanished. A missing key
+     * therefore lands as `null` through the default, which is exactly what the
+     * reader would have seen anyway ("No saved analysis"), and writers emit
+     * the key on every board from now on.
+     *
+     * It is IMMUTABLE and HONESTLY DATED: it was written at compose time
+     * against the figures of that moment, and the surface stamps it with the
+     * board's own compose clock rather than the live one.
+     */
+    analysis: boardText(BOARD_ANALYSIS_RULE).nullable().default(null),
   })
   .strict();
 
@@ -356,11 +572,11 @@ const hydratedSignedDecimal = z
 /** The provider snapshot for one pool, as of `marketDataFetchedAt`. */
 export const boardHydratedRowSchema = z
   .object({
-    baseTokenSymbol: z.string().min(1).max(512).nullable(),
-    baseTokenName: z.string().min(1).max(512).nullable(),
-    quoteTokenSymbol: z.string().min(1).max(512).nullable(),
-    chainId: z.string().min(1).max(32).nullable(),
-    dexId: z.string().min(1).max(64).nullable(),
+    baseTokenSymbol: z.string().min(1).max(BOARD_TOKEN_LABEL_MAX_CHARS).nullable(),
+    baseTokenName: z.string().min(1).max(BOARD_TOKEN_LABEL_MAX_CHARS).nullable(),
+    quoteTokenSymbol: z.string().min(1).max(BOARD_TOKEN_LABEL_MAX_CHARS).nullable(),
+    chainId: z.string().min(1).max(BOARD_CHAIN_SLUG_MAX_CHARS).nullable(),
+    dexId: z.string().min(1).max(BOARD_DEX_ID_MAX_CHARS).nullable(),
     priceUsd: hydratedDecimal,
     priceChange: z
       .object({
@@ -377,6 +593,58 @@ export const boardHydratedRowSchema = z
       })
       .strict(),
     pairAgeSeconds: z.number().int().min(0).nullable(),
+    /**
+     * The base token's DexScreener CMS icon handle, or null when the token has
+     * no profile artwork this board may show.
+     *
+     * OPTIONAL ON READ, ALWAYS WRITTEN. This is the one field on this schema
+     * that is optional rather than required-and-nullable, and the asymmetry is
+     * the expand half of an expand-and-contract, not an oversight. Boards
+     * composed before this field existed are ALREADY PERSISTED in transcript
+     * rows, and `boardSpecV1Schema` is what re-parses those rows on every read;
+     * a required key would turn every one of them into a parse failure, which
+     * the DB mapper renders as a board that silently vanished. So a missing key
+     * parses and lands as `null` through the default below, which is the same
+     * value the reader would have seen anyway: "no icon".
+     *
+     * Writers (`vex-agent/tools/internal/board/hydrate.ts`) always emit the
+     * key, null included, so every board written from now on is explicit. The
+     * contract half that may be made required later is exactly that: once no
+     * durable row predates the field, `.default(null)` becomes `.nullable()`
+     * and nothing else changes.
+     *
+     * NOT A URL. See {@link BOARD_ICON_ID_PATTERN}: the renderer hands this
+     * handle to the main process, which owns the host, the transport, the byte
+     * bound and the image validation. Nothing on this path lets a persisted
+     * document name an origin.
+     */
+    iconId: z
+      .string()
+      .regex(
+        BOARD_ICON_ID_PATTERN,
+        `must be a DexScreener CMS icon handle: ${BOARD_ICON_ID_MIN_CHARS} to ${BOARD_ICON_ID_MAX_CHARS} characters of A-Z, a-z, 0-9, hyphen or underscore`,
+      )
+      .nullable()
+      .default(null),
+
+    /**
+     * The base token's DexScreener CMS description, or null when the token has
+     * no profile blurb this board may show.
+     *
+     * OPTIONAL ON READ, ALWAYS WRITTEN, for exactly the reason `iconId` above
+     * is: this is the expand half of an expand-and-contract over a schema that
+     * re-parses DURABLE transcript rows. Boards persisted before this field
+     * existed carry no key, a required key would turn each of them into a
+     * parse failure, and the DB mapper renders a parse failure as a board that
+     * silently vanished. A missing key therefore lands as `null`, which is the
+     * same thing the reader would have seen anyway.
+     *
+     * UNTRUSTED PROVIDER PROSE. See {@link BOARD_DESCRIPTION_RULE}: it is the
+     * token's own marketing copy, it is bounded reject-only rather than cut,
+     * and it is rendered as TEXT. Nothing on this path may hand it to an HTML
+     * sink, and the safety classifier never reads it.
+     */
+    description: boardText(BOARD_DESCRIPTION_RULE).nullable().default(null),
   })
   .strict();
 
@@ -417,8 +685,8 @@ export const boardCandleSeriesSchema = z
 /** Where the hydration bytes came from. */
 export const boardProvenanceSchema = z
   .object({
-    transport: z.string().min(1).max(64),
-    sourceObservation: z.string().min(1).max(512),
+    transport: z.string().min(1).max(BOARD_PROVENANCE_TRANSPORT_MAX_CHARS),
+    sourceObservation: z.string().min(1).max(BOARD_PROVENANCE_OBSERVATION_MAX_CHARS),
   })
   .strict();
 
@@ -581,12 +849,62 @@ export type BoardSpecV1 = z.infer<typeof boardSpecV1Schema>;
 /* The serialized byte budget                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The serialized weight of ONE pool: its authored entry plus the hydration row
+ * the runtime wrote for it. Named so an over-budget refusal can point at the
+ * pool worth shortening instead of leaving the model to guess.
+ */
+export interface BoardPoolByteWeight {
+  /** Index into `spec.pools`, which is also the display order. */
+  readonly index: number;
+  /** UTF-8 bytes of `pools[index]` plus `hydration.rows[index]`. */
+  readonly byteLength: number;
+}
+
 /** The measured size of a candidate board against {@link BOARD_SPEC_MAX_BYTES}. */
 export interface BoardByteBudgetResult {
   readonly withinBudget: boolean;
   /** UTF-8 bytes of the JSON the row would store. */
   readonly byteLength: number;
   readonly maxBytes: number;
+  /**
+   * The heaviest pool, or `null` when the value carries no readable `pools`
+   * array (a malformed candidate, or a non-board object measured directly).
+   * Ties resolve to the lowest index, so the figure is deterministic.
+   */
+  readonly largestPool: BoardPoolByteWeight | null;
+}
+
+function utf8Bytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).length;
+}
+
+/**
+ * Find the heaviest pool of a candidate board.
+ *
+ * Reads defensively rather than through the schema: this runs on values that
+ * have NOT necessarily parsed (the compose path measures a serialized round
+ * trip, the DB mapper measures a durable row), and a measurement helper must
+ * never be the thing that throws on a malformed document.
+ */
+function heaviestPool(spec: unknown): BoardPoolByteWeight | null {
+  if (typeof spec !== "object" || spec === null) return null;
+  const pools: unknown = "pools" in spec ? spec.pools : undefined;
+  if (!Array.isArray(pools) || pools.length === 0) return null;
+
+  const hydration: unknown = "hydration" in spec ? spec.hydration : undefined;
+  const rows: unknown =
+    typeof hydration === "object" && hydration !== null && "rows" in hydration
+      ? hydration.rows
+      : undefined;
+  const hydrationRows: readonly unknown[] = Array.isArray(rows) ? rows : [];
+
+  let heaviest: BoardPoolByteWeight = { index: 0, byteLength: 0 };
+  pools.forEach((pool: unknown, index: number) => {
+    const byteLength = utf8Bytes(pool) + (index < hydrationRows.length ? utf8Bytes(hydrationRows[index]) : 0);
+    if (byteLength > heaviest.byteLength) heaviest = { index, byteLength };
+  });
+  return heaviest;
 }
 
 /**
@@ -597,19 +915,22 @@ export interface BoardByteBudgetResult {
  * board written in a non-Latin script by up to a factor of three.
  *
  * This function only MEASURES. The compose tool refuses an over-budget board
- * and names the size in the refusal; nothing anywhere drops a pool, a note or
- * a candle to make a board fit, because a silently shortened board is a board
- * the agent did not compose and the user cannot tell was shortened.
+ * and names both the size and the heaviest pool in the refusal; nothing
+ * anywhere drops a pool, a note or a candle to make a board fit, because a
+ * silently shortened board is a board the agent did not compose and the user
+ * cannot tell was shortened.
  *
- * `TextEncoder` is used rather than `Buffer.byteLength` so the function runs
- * unchanged in the renderer, which has no Node globals.
+ * PURE: no clock, no I/O, no mutation of the argument. `TextEncoder` is used
+ * rather than `Buffer.byteLength` so the function runs unchanged in the
+ * renderer, which has no Node globals.
  */
 export function checkBoardSpecByteBudget(spec: unknown): BoardByteBudgetResult {
-  const byteLength = new TextEncoder().encode(JSON.stringify(spec)).length;
+  const byteLength = utf8Bytes(spec);
   return {
     withinBudget: byteLength <= BOARD_SPEC_MAX_BYTES,
     byteLength,
     maxBytes: BOARD_SPEC_MAX_BYTES,
+    largestPool: heaviestPool(spec),
   };
 }
 
@@ -617,5 +938,9 @@ export function checkBoardSpecByteBudget(spec: unknown): BoardByteBudgetResult {
 export function describeBoardByteBudgetFailure(
   result: BoardByteBudgetResult
 ): string {
-  return `board is ${result.byteLength} bytes serialized, over the ${result.maxBytes} byte limit; compose a smaller board (fewer pools, shorter notes, or no chart) - nothing was truncated`;
+  const culprit =
+    result.largestPool === null
+      ? ""
+      : `; the largest single contribution is pool ${result.largestPool.index} at ${result.largestPool.byteLength} bytes`;
+  return `board is ${result.byteLength} bytes serialized, over the ${result.maxBytes} byte limit${culprit}; compose a smaller board (fewer pools, a shorter assessment on that pool, or no chart) - nothing was truncated`;
 }

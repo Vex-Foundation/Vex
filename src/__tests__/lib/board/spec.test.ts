@@ -15,9 +15,18 @@ import { describe, expect, it } from "vitest";
 
 import { BAR_RESOLUTIONS } from "../../../tools/dexscreener/endpoints/bars.js";
 import {
+  BOARD_ANALYSIS_RULE,
+  BOARD_CAPTION_RULE,
   BOARD_CHART_RESOLUTIONS,
+  BOARD_DESCRIPTION_RULE,
+  BOARD_ICON_ID_MAX_CHARS,
   BOARD_MARKER_MAX_MS,
+  BOARD_MAX_CANDLES,
+  BOARD_MAX_POOLS,
   BOARD_MARKER_MIN_MS,
+  BOARD_MAX_ANNOTATIONS,
+  BOARD_MAX_NOTES,
+  BOARD_NOTE_RULE,
   BOARD_SPEC_MAX_BYTES,
   BOARD_STALE_AFTER_MS,
   boardAnnotationSchema,
@@ -28,6 +37,12 @@ import {
   describeBoardByteBudgetFailure,
   type BoardComposeInput,
 } from "../../../lib/board/index.js";
+import {
+  MAXIMAL_LATIN_DOCUMENT_BYTES,
+  MAXIMAL_TWO_BYTE_DOCUMENT_BYTES,
+  MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES,
+  maximalBoardSpec,
+} from "./maximal-board-spec.js";
 
 const ZWSP = String.fromCodePoint(0x200b);
 const RLO = String.fromCodePoint(0x202e);
@@ -36,7 +51,7 @@ const TAG_A = String.fromCodePoint(0xe0041);
 function minimalInput(): BoardComposeInput {
   return {
     title: "SOL majors",
-    pools: [{ chain: "solana", pairAddress: "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2" }],
+    pools: [{ chain: "solana", pairAddress: "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2", analysis: null }],
   };
 }
 
@@ -54,6 +69,9 @@ function hydrationFor(poolCount: number, withCandles: boolean): unknown {
       volumeH24Usd: "48120993.02",
       txns: { buys: 41233, sells: 39812 },
       pairAgeSeconds: 90123456,
+      // Current writers always emit both profile fields, null included.
+      iconId: null,
+      description: null,
     })),
     candles: withCandles
       ? {
@@ -128,12 +146,14 @@ describe("boardComposeInputSchema - bounds", () => {
     }
   });
 
-  it("accepts 0 and 6 notes and refuses 7", () => {
-    for (const count of [0, 6]) {
+  it("accepts 0 and 12 notes and refuses 13", () => {
+    // 7 is in the table on purpose: a production board of 7 real notes was
+    // refused whole under the old cap of 6, which is the defect that moved it.
+    for (const count of [0, 6, 7, 12]) {
       const input = { ...minimalInput(), notes: Array.from({ length: count }, () => "n") };
       expect(boardComposeInputSchema.safeParse(input).success).toBe(true);
     }
-    const tooMany = { ...minimalInput(), notes: Array.from({ length: 7 }, () => "n") };
+    const tooMany = { ...minimalInput(), notes: Array.from({ length: 13 }, () => "n") };
     expect(boardComposeInputSchema.safeParse(tooMany).success).toBe(false);
   });
 
@@ -174,8 +194,8 @@ describe("boardComposeInputSchema - bounds", () => {
     }
   });
 
-  it("bounds a note at 1 and 280 characters", () => {
-    for (const [note, ok] of [["n", true], ["n".repeat(280), true], ["", false], ["n".repeat(281), false]] as const) {
+  it("bounds a note at 1 and 600 characters", () => {
+    for (const [note, ok] of [["n", true], ["n".repeat(600), true], ["", false], ["n".repeat(601), false]] as const) {
       expect(boardComposeInputSchema.safeParse({ ...minimalInput(), notes: [note] }).success).toBe(ok);
     }
   });
@@ -532,11 +552,485 @@ describe("the serialized byte budget", () => {
   it("refuses by naming the measured size, and says nothing was truncated", () => {
     const message = describeBoardByteBudgetFailure({
       withinBudget: false,
-      byteLength: 51_200,
+      byteLength: 270_000,
       maxBytes: BOARD_SPEC_MAX_BYTES,
+      largestPool: null,
     });
-    expect(message).toContain("51200");
+    expect(message).toContain("270000");
     expect(message).toContain(String(BOARD_SPEC_MAX_BYTES));
     expect(message).toContain("nothing was truncated");
+  });
+
+  it("names the heaviest pool so the model knows which assessment to shorten", () => {
+    const message = describeBoardByteBudgetFailure({
+      withinBudget: false,
+      byteLength: 270_000,
+      maxBytes: BOARD_SPEC_MAX_BYTES,
+      largestPool: { index: 3, byteLength: 44_000 },
+    });
+    expect(message).toContain("pool 3");
+    expect(message).toContain("44000");
+    expect(message).toContain("nothing was truncated");
+  });
+
+  describe("the heaviest pool", () => {
+    function boardOf(pools: readonly unknown[], rows: readonly unknown[]): unknown {
+      return { version: 1, title: "t", pools, hydration: { rows } };
+    }
+
+    it("charges a pool its authored entry PLUS its own hydration row", () => {
+      // The row is what makes a pool expensive in practice (token names), so a
+      // weight that counted only the authored entry would point at the wrong
+      // pool whenever one row carries a long name.
+      const result = checkBoardSpecByteBudget(
+        boardOf(
+          [{ analysis: "a".repeat(10) }, { analysis: "b".repeat(10) }],
+          [{ n: "x".repeat(10) }, { n: "y".repeat(400) }],
+        ),
+      );
+      expect(result.largestPool?.index).toBe(1);
+    });
+
+    it.each([
+      ["the only pool", [{ a: "a".repeat(50) }], [], 0],
+      ["the last pool", [{ a: "a" }, { a: "a" }, { a: "a".repeat(80) }], [], 2],
+      ["the first pool", [{ a: "a".repeat(80) }, { a: "a" }], [], 0],
+    ])("picks %s", (_label, pools, rows, expected) => {
+      expect(checkBoardSpecByteBudget(boardOf(pools, rows)).largestPool?.index).toBe(
+        expected,
+      );
+    });
+
+    it("resolves a tie to the lowest index, so the figure is deterministic", () => {
+      const pools = [{ a: "a".repeat(50) }, { a: "b".repeat(50) }];
+      expect(checkBoardSpecByteBudget(boardOf(pools, [])).largestPool?.index).toBe(0);
+    });
+
+    it.each([
+      ["a value that is not an object", 42],
+      ["an object with no pools key", { version: 1 }],
+      ["a pools value that is not an array", { pools: "eight" }],
+      ["an empty pools array", { pools: [] }],
+    ])("reports no pool for %s, rather than throwing", (_label, candidate) => {
+      // This helper runs on values that have not necessarily parsed: the DB
+      // mapper measures a durable row, and a measurement must never be the
+      // thing that fails on a malformed document.
+      expect(checkBoardSpecByteBudget(candidate).largestPool).toBeNull();
+    });
+
+    it("survives a hydration block shorter than the pools array", () => {
+      const result = checkBoardSpecByteBudget(
+        boardOf([{ a: "a" }, { a: "a".repeat(90) }], [{ n: "x" }]),
+      );
+      expect(result.largestPool?.index).toBe(1);
+    });
+  });
+});
+
+
+/**
+ * THE ICON HANDLE, and the compatibility it exists to preserve.
+ *
+ * `iconId` is the one field on the hydrated row that is optional rather than
+ * required-and-nullable. That asymmetry is a durable-data decision: boards
+ * composed before the field existed are ALREADY PERSISTED in transcript rows,
+ * and this schema is what re-parses them on every read. The first test below is
+ * the regression that goes red the moment someone "tidies" the field into a
+ * required one - and red there means every board already in a user's history
+ * renders as nothing.
+ */
+describe("hydrated row - the token icon handle", () => {
+  function rowWith(iconId: unknown): unknown {
+    const hydration = hydrationFor(1, false) as {
+      rows: Array<Record<string, unknown>>;
+    };
+    const row = hydration.rows[0] as Record<string, unknown>;
+    row["iconId"] = iconId;
+    return hydration;
+  }
+
+  function specWith(hydration: unknown): unknown {
+    return { version: 1, ...minimalInput(), hydration };
+  }
+
+  it("parses a legacy row that carries no iconId key at all, and reads it as null", () => {
+    // `hydrationFor` deliberately builds the PRE-FIELD row shape, which is
+    // exactly what a durable v1 board holds.
+    const parsed = boardSpecV1Schema.safeParse(specWith(hydrationFor(1, false)));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const row = parsed.data.hydration.rows[0];
+    expect(row).toBeDefined();
+    // The reader gets a definite "no icon", never `undefined`, so no consumer
+    // has to know the field was once absent.
+    expect(row?.iconId).toBeNull();
+    expect(row !== undefined && "iconId" in row).toBe(true);
+  });
+
+  it("accepts an explicit null, which is what every writer emits when there is no icon", () => {
+    const parsed = boardSpecV1Schema.safeParse(specWith(rowWith(null)));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.hydration.rows[0]?.iconId).toBeNull();
+  });
+
+  it("accepts a provider-shaped handle verbatim", () => {
+    const parsed = boardSpecV1Schema.safeParse(specWith(rowWith("Ab3-_zZ09")));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.hydration.rows[0]?.iconId).toBe("Ab3-_zZ09");
+  });
+
+  it("accepts the handle at both length bounds", () => {
+    expect(boardSpecV1Schema.safeParse(specWith(rowWith("abcd"))).success).toBe(true);
+    expect(
+      boardSpecV1Schema.safeParse(specWith(rowWith("a".repeat(128)))).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["one character under the minimum", "abc"],
+    ["one character over the maximum", "a".repeat(129)],
+    ["a path separator", "abc/def"],
+    ["a parent-directory hop", "../secrets"],
+    ["a dot, which would let a handle end in a file extension", "icon.png"],
+    ["an absolute URL", "https://evil.example/x"],
+    ["a protocol-relative URL", "//evil.example/x"],
+    ["a query string that would re-point the CDN parameters", "abcd?width=99999"],
+    ["whitespace", "ab cd"],
+    ["a percent escape", "abcd%2Fef"],
+    ["an embedded NUL", "abc\u0000d"],
+    ["a newline", "abcd\nefgh"],
+    ["the empty string", ""],
+    ["a number rather than a string", 1234],
+  ])("refuses %s", (_label, iconId) => {
+    expect(boardSpecV1Schema.safeParse(specWith(rowWith(iconId))).success).toBe(false);
+  });
+
+  it("keeps a full board of icon-bearing rows far inside the byte budget", () => {
+    // The field's COST is the thing to prove: 8 pools, each with a maximum
+    // length handle, must not push a realistic board anywhere near a refusal.
+    const pools = Array.from({ length: BOARD_MAX_POOLS }, (_unused, index) => ({
+      chain: "solana",
+      pairAddress: `pool${index}${"a".repeat(40)}`,
+      caption: "Holding the range it broke out of.",
+    }));
+    const hydration = hydrationFor(BOARD_MAX_POOLS, false) as {
+      rows: Array<Record<string, unknown>>;
+    };
+    for (const row of hydration.rows) row["iconId"] = "i".repeat(128);
+    const spec = { version: 1, title: "SOL majors", pools, hydration };
+
+    expect(boardSpecV1Schema.safeParse(spec).success).toBe(true);
+    const budget = checkBoardSpecByteBudget(spec);
+    expect(budget.withinBudget).toBe(true);
+    // Stated as a real ratio rather than "it fits": the handles must be a
+    // rounding error against the document ceiling, not a squeeze past it.
+    expect(budget.byteLength).toBeLessThan(BOARD_SPEC_MAX_BYTES / 2);
+  });
+});
+
+describe("per-pool analysis - the model's own assessment", () => {
+  function poolWith(analysis: unknown): unknown {
+    return {
+      ...minimalInput(),
+      pools: [
+        {
+          chain: "solana",
+          pairAddress: "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2",
+          ...(analysis === undefined ? {} : { analysis }),
+        },
+      ],
+    };
+  }
+
+  it("reads a legacy pool that carries no analysis key at all as null", () => {
+    // A durable board written before the field existed. It must still parse:
+    // a parse failure here is a board that silently vanishes from a
+    // transcript the user can still see.
+    const parsed = boardComposeInputSchema.safeParse(minimalInput());
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const pool = parsed.data.pools[0];
+    expect(pool?.analysis).toBeNull();
+    expect(pool !== undefined && "analysis" in pool).toBe(true);
+  });
+
+  it("carries the legacy normalization through the ASSEMBLED persisted document", () => {
+    const spec = boardSpecV1Schema.safeParse({
+      version: 1,
+      ...minimalInput(),
+      hydration: hydrationFor(1, false),
+    });
+    expect(spec.success).toBe(true);
+    if (!spec.success) return;
+    expect(spec.data.pools[0]?.analysis).toBeNull();
+  });
+
+  it("accepts an explicit null, which is what a writer emits for a pool it said nothing about", () => {
+    const parsed = boardComposeInputSchema.safeParse(poolWith(null));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.pools[0]?.analysis).toBeNull();
+  });
+
+  it("keeps a full assessment verbatim, line breaks included", () => {
+    const text = "Safety checks are clean.\nVolume is accelerating into the 24h high.";
+    const parsed = boardComposeInputSchema.safeParse(poolWith(text));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.pools[0]?.analysis).toBe(text);
+  });
+
+  it("accepts 10000 characters and refuses 10001", () => {
+    // The bound exists only to keep a legal board a STORABLE one; it is a
+    // refusal threshold, not a length the model should be writing towards.
+    expect(
+      boardComposeInputSchema.safeParse(poolWith("a".repeat(10_000))).success,
+    ).toBe(true);
+    expect(
+      boardComposeInputSchema.safeParse(poolWith("a".repeat(10_001))).success,
+    ).toBe(false);
+  });
+
+  it("refuses the empty string rather than storing an assessment that says nothing", () => {
+    expect(boardComposeInputSchema.safeParse(poolWith("")).success).toBe(false);
+  });
+
+  it.each([
+    ["a zero-width character", `clean${ZWSP}checks`],
+    ["a bidi override", `clean${RLO}checks`],
+    ["a unicode tag character", `clean${TAG_A}checks`],
+    ["a carriage return", "clean\rchecks"],
+    ["a tab", "clean\tchecks"],
+  ])("refuses %s, and refuses rather than cleaning it", (_label, value) => {
+    const parsed = boardComposeInputSchema.safeParse(poolWith(value));
+    expect(parsed.success).toBe(false);
+    if (parsed.success) return;
+    // The message names the class and never echoes the payload back into a
+    // model-visible and reader-visible string.
+    const message = parsed.error.issues.map((issue) => issue.message).join(" ");
+    expect(message).not.toContain(value);
+  });
+
+  it("refuses a non-string", () => {
+    expect(boardComposeInputSchema.safeParse(poolWith(42)).success).toBe(false);
+  });
+
+  it("counts code points, so an emoji costs one character of the budget", () => {
+    // 10000 astral code points is 20000 UTF-16 units: a length check written
+    // against `String.prototype.length` would refuse this.
+    const emoji = "\u{1F680}".repeat(10_000);
+    expect(boardComposeInputSchema.safeParse(poolWith(emoji)).success).toBe(true);
+  });
+});
+
+/**
+ * THE BYTE BUDGET AS A MEASUREMENT, not as arithmetic.
+ *
+ * `BOARD_SPEC_MAX_BYTES` is a REFUSAL threshold, so the only defensible way to
+ * choose it is to build the largest document the schema actually admits and
+ * put the ceiling above it. The previous figure was hand arithmetic over a
+ * SUBSET of the fields (it left out the provider descriptions at their bound,
+ * the maximum-width hydration labels, the widest decimals and the full
+ * annotation set) and understated the real worst case by about 19 KiB, which
+ * meant a board the schema ACCEPTED could still be refused with nothing the
+ * model authored that it could shorten.
+ *
+ * These tests measure `maximalBoardSpec()`, which is generated from the
+ * contract's own constants. Raising any bound moves that document, moves these
+ * figures, and fails here until the budget is re-derived.
+ */
+describe("the all-fields-max document", () => {
+  it("is SCHEMA-VALID, which is the whole claim the measurement rests on", () => {
+    const parsed = boardSpecV1Schema.safeParse(maximalBoardSpec());
+    if (!parsed.success) {
+      throw new Error(
+        `the generated maximum is not a legal board: ${JSON.stringify(parsed.error.issues)}`,
+      );
+    }
+    expect(parsed.success).toBe(true);
+  });
+
+  it("really does sit at every bound the contract admits", () => {
+    // A generator that quietly stopped filling a field would produce a small
+    // document and a budget chosen from nothing. This is the guard on the
+    // guard: the shape is checked against the same constants the schema uses.
+    const spec = maximalBoardSpec() as {
+      pools: readonly { analysis: string; caption: string }[];
+      notes: readonly string[];
+      chart: { annotations: readonly unknown[] };
+      hydration: {
+        rows: readonly { description: string; iconId: string }[];
+        candles: { bars: readonly unknown[] };
+      };
+    };
+    expect(spec.pools).toHaveLength(BOARD_MAX_POOLS);
+    expect(spec.notes).toHaveLength(BOARD_MAX_NOTES);
+    expect(spec.chart.annotations).toHaveLength(BOARD_MAX_ANNOTATIONS);
+    expect(spec.hydration.candles.bars).toHaveLength(BOARD_MAX_CANDLES);
+    expect(spec.hydration.rows).toHaveLength(BOARD_MAX_POOLS);
+    for (const pool of spec.pools) {
+      expect([...pool.analysis]).toHaveLength(BOARD_ANALYSIS_RULE.maxChars);
+      expect([...pool.caption]).toHaveLength(BOARD_CAPTION_RULE.maxChars);
+    }
+    for (const note of spec.notes) {
+      expect([...note]).toHaveLength(BOARD_NOTE_RULE.maxChars);
+    }
+    // The two fields the old arithmetic forgot, present on EVERY row.
+    for (const row of spec.hydration.rows) {
+      expect([...row.description]).toHaveLength(BOARD_DESCRIPTION_RULE.maxChars);
+      expect([...row.iconId]).toHaveLength(BOARD_ICON_ID_MAX_CHARS);
+    }
+  });
+
+  it("fits the budget in a two-byte script, which is the case it is sized against", () => {
+    // Cyrillic, Greek and Hebrew are ordinary scripts a user may ask for
+    // analysis in, and a board written in one costs twice a Latin board. THIS
+    // is the measurement behind the constant; the exact figure is printed so a
+    // reviewer reading a failure sees the new worst case, not just a boolean.
+    const budget = checkBoardSpecByteBudget(maximalBoardSpec({ script: "twoByte" }));
+    expect(budget.withinBudget).toBe(true);
+    expect(budget.byteLength).toBe(MAXIMAL_TWO_BYTE_DOCUMENT_BYTES);
+    expect(BOARD_SPEC_MAX_BYTES - budget.byteLength).toBe(
+      MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES,
+    );
+    // Stated as real headroom rather than "it fits": a budget that admits the
+    // worst case by a handful of bytes is a budget about to be wrong again.
+    expect(MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES).toBeGreaterThan(32 * 1024);
+  });
+
+  it("costs about half as much in Latin, which is what the two-byte sizing buys", () => {
+    const budget = checkBoardSpecByteBudget(maximalBoardSpec({ script: "latin" }));
+    expect(budget.withinBudget).toBe(true);
+    expect(budget.byteLength).toBe(MAXIMAL_LATIN_DOCUMENT_BYTES);
+  });
+
+  /**
+   * THE REFUSAL, and the reason the budget is not simply raised until nothing
+   * is ever refused.
+   *
+   * `BOARD_ANALYSIS_RULE` counts CODE POINTS, so eight assessments of 10,000
+   * emoji are legal prose and 320,000 bytes of document. That board cannot be
+   * stored, and the contract's answer is to refuse it WHOLE with its measured
+   * size and its heaviest pool named - never to cut an assessment the model
+   * wrote, under the model's name, for a reader who cannot tell.
+   */
+  it("is refused, whole and by name, once the assessments become 4-byte emoji", () => {
+    const overflowing = maximalBoardSpec({ analysisScript: "fourByte" });
+    // It really is a LEGAL board; only its size disqualifies it.
+    expect(boardSpecV1Schema.safeParse(overflowing).success).toBe(true);
+
+    const budget = checkBoardSpecByteBudget(overflowing);
+    expect(budget.withinBudget).toBe(false);
+    expect(budget.byteLength).toBeGreaterThan(BOARD_SPEC_MAX_BYTES);
+    expect(budget.largestPool).not.toBeNull();
+
+    const message = describeBoardByteBudgetFailure(budget);
+    expect(message).toContain(String(budget.byteLength));
+    expect(message).toContain(String(BOARD_SPEC_MAX_BYTES));
+    expect(message).toContain(`pool ${budget.largestPool?.index}`);
+    expect(message).toContain("nothing was truncated");
+  });
+
+  it("crosses from accepted to refused one assessment at a time, naming a converted pool", () => {
+    // The step across the threshold, walked rather than asserted. Each pool
+    // whose assessment turns from two-byte prose to 4-byte emoji costs the
+    // document another 20,000 bytes, and the headroom absorbs the first
+    // few - which is the point of having headroom. The refusal, when it comes,
+    // must name a pool that actually grew, or the model would be told to
+    // shorten work it had already written at the right size.
+    const spec = maximalBoardSpec() as { pools: { analysis: string }[] };
+    const emoji = "\u{1F680}".repeat(BOARD_ANALYSIS_RULE.maxChars);
+
+    let converted = 0;
+    let refusedAt: number | null = null;
+    for (const pool of spec.pools) {
+      pool.analysis = emoji;
+      converted += 1;
+      // Still a LEGAL board at every step; only its size ever disqualifies it.
+      expect(boardSpecV1Schema.safeParse(spec).success).toBe(true);
+      if (!checkBoardSpecByteBudget(spec).withinBudget) {
+        refusedAt = converted;
+        break;
+      }
+    }
+
+    expect(refusedAt).not.toBeNull();
+    // The headroom is real: a single emoji assessment does not sink the board.
+    expect(refusedAt).toBeGreaterThan(1);
+
+    const budget = checkBoardSpecByteBudget(spec);
+    expect(budget.byteLength).toBeGreaterThan(BOARD_SPEC_MAX_BYTES);
+    const named = budget.largestPool?.index;
+    expect(named).toBeDefined();
+    // The heaviest pool is one of the ones that grew, and it is named.
+    expect(named).toBeLessThan(refusedAt ?? 0);
+    expect(describeBoardByteBudgetFailure(budget)).toContain(`pool ${named}`);
+    expect(describeBoardByteBudgetFailure(budget)).toContain("nothing was truncated");
+  });
+});
+
+describe("the hydrated row's provider description", () => {
+  function rowWith(description: unknown): Record<string, unknown> {
+    const hydration = hydrationFor(1, false) as { rows: Array<Record<string, unknown>> };
+    const row = hydration.rows[0];
+    if (row === undefined) throw new Error("hydration fixture row 0 missing");
+    if (description === undefined) delete row["description"];
+    else row["description"] = description;
+    return { version: 1, ...minimalInput(), hydration };
+  }
+
+  it("reads a legacy row that carries no description key at all as null", () => {
+    // The expand half of an expand-and-contract, exactly as `iconId` is. A
+    // board persisted before this field existed must still PARSE; a required
+    // key would render each of those rows as a board that silently vanished.
+    const parsed = boardSpecV1Schema.safeParse(rowWith(undefined));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const row = parsed.data.hydration.rows[0];
+    expect(row?.description).toBeNull();
+    expect(row !== undefined && "description" in row).toBe(true);
+  });
+
+  it("carries the provider's real blurb through the persisted document, whole", () => {
+    const blurb =
+      "VEX is a self custodial AI agent runtime for onchain finance. "
+      + "Accessible. Verifiable. Tradable.";
+    const parsed = boardSpecV1Schema.safeParse(rowWith(blurb));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.hydration.rows[0]?.description).toBe(blurb);
+  });
+
+  it("accepts an explicit null, which is what a writer emits for a token with no blurb", () => {
+    const parsed = boardSpecV1Schema.safeParse(rowWith(null));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.hydration.rows[0]?.description).toBeNull();
+  });
+
+  it("allows the paragraph breaks a CMS blurb really carries", () => {
+    const twoParagraphs = "VEX is an agent runtime.\n\nIt signs locally.";
+    expect(boardSpecV1Schema.safeParse(rowWith(twoParagraphs)).success).toBe(true);
+  });
+
+  it("accepts 1000 code points and refuses 1001, rather than cutting one", () => {
+    expect(boardSpecV1Schema.safeParse(rowWith("a".repeat(1000))).success).toBe(true);
+    expect(boardSpecV1Schema.safeParse(rowWith("a".repeat(1001))).success).toBe(false);
+  });
+
+  it.each([
+    ["a zero-width character", `VEX${ZWSP}runtime`],
+    ["a bidi override", `VEX${RLO}runtime`],
+    ["a unicode tag character", `VEX${TAG_A}runtime`],
+    ["a carriage return", "VEX\rruntime"],
+    ["a tab", "VEX\truntime"],
+    ["the empty string", ""],
+    ["a non-string", 42],
+  ])("refuses provider prose carrying %s", (_label, value) => {
+    // UNTRUSTED PROVIDER TEXT held to the same forbidden-code-point table as
+    // the model's own prose, and refused rather than cleaned.
+    expect(boardSpecV1Schema.safeParse(rowWith(value)).success).toBe(false);
   });
 });

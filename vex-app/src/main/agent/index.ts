@@ -11,7 +11,15 @@
 import { setBugReportSink, resetBugReportSink } from "@vex-agent/engine/support/bug-report-registry.js";
 import { registerDexScreenerTransport } from "@tools/dexscreener/transport.js";
 import { createDexScreenerBridgeTransport } from "../dexscreener-bridge/index.js";
-import { mountLaunchImageByteResolver } from "../images/index.js";
+import { mountBoardDetailsService } from "../market/board-details-service.js";
+import { mountBoardSparklineService } from "../market/board-sparkline-service.js";
+import { mountBoardChartService } from "../market/board-chart-service.js";
+import { mountBoardSpotlightService } from "../market/board-spotlight-service.js";
+import { mountBoardLiveScheduler } from "../market/board-live-scheduler.js";
+import {
+  mountBoardIconService,
+  mountLaunchImageByteResolver,
+} from "../images/index.js";
 import { createAgentBugReportSink } from "../support/agent-bug-report-sink.js";
 import { setupCompactionPreparationBridge } from "./compaction-preparation-bridge.js";
 import { setupControlBridge } from "./control-bridge.js";
@@ -26,13 +34,16 @@ import { setupTranscriptBridge } from "./transcript-bridge.js";
 
 /**
  * Mount every agent-side bridge and return a single teardown that
- * unsubscribes all of them. Order does not matter — bridges are
- * independent subscribers on disjoint event buses. Cleanup restores
+ * unsubscribes all of them, and which the caller may await. Order does
+ * not matter BETWEEN bridges - they are independent subscribers on
+ * disjoint event buses - but it does matter INSIDE the DexScreener
+ * teardown, where the board icon service must finish draining before
+ * the bridge whose transport it borrows is disposed. Cleanup restores
  * the engine `BugReportSink` to the no-op default so test runs don't
  * inherit a stale sink from a previous main lifecycle.
  */
-export function setupAgentBridges(): () => void {
-  const teardowns: Array<() => void> = [];
+export function setupAgentBridges(): () => Promise<void> {
+  const teardowns: Array<() => void | Promise<void>> = [];
 
   teardowns.push(setupTranscriptBridge());
   teardowns.push(setupControlBridge());
@@ -84,15 +95,66 @@ export function setupAgentBridges(): () => void {
   const unregisterDexScreener = registerDexScreenerTransport(
     dexScreenerBridge.transport,
   );
-  teardowns.push(() => {
+
+  // Board token icons - the renderer's `data:` URLs for board card logos. It
+  // borrows the bridge's OWN `httpGet` rather than opening a second fetch path,
+  // so the host allowlist, the header policy and the streaming byte bound are
+  // the bridge's in both cases. Mounted here, and torn down below BEFORE the
+  // bridge it borrows from, so no icon fetch can outlive its transport.
+  const unmountBoardIcons = mountBoardIconService(dexScreenerBridge.transport.httpGet);
+
+
+  // Board details - the contract-safety, holder and liquidity-lock read behind
+  // the safety chip. It routes through the REGISTERED transport slot rather
+  // than a borrowed fetcher, because the endpoint modules it calls
+  // (`fetchPairDetails`, `resolvePairSubject`) take a transport, so it is
+  // mounted after the slot is claimed and drained before the slot is released.
+  const unmountBoardDetails = mountBoardDetailsService();
+
+  // Board sparklines and the board-wide scheduler. Both route through the
+  // REGISTERED transport slot, so both are mounted after the slot is claimed
+  // and drained before it is released.
+  const unmountBoardSparkline = mountBoardSparklineService();
+  const unmountBoardScheduler = mountBoardLiveScheduler();
+
+  // The spotlight chart's candle poll. Same rule as the two above: it routes
+  // through the REGISTERED transport slot, so it is mounted after the slot is
+  // claimed and drained before the slot is released. Its teardown is AWAITED
+  // below - the read cache behind it closes admission, aborts and then drains,
+  // and dropping that promise would let a bars fetch outlive the bridge.
+  const unmountBoardChart = mountBoardChartService();
+
+  // The spotlight's own reads - top traders, momentum, other pools, narratives,
+  // context and the trade tape. Same rule again: registered transport slot, so
+  // mounted after the slot is claimed and drained before it is released. It is
+  // mounted HERE and not lazily on first IPC because every spotlight handler
+  // answers `not_mounted` when the process slot is empty, which in a packaged
+  // build is a permanent refusal rather than a transient one.
+  const unmountBoardSpotlight = mountBoardSpotlightService();
+
+  // AWAITED, not fired and forgotten. Unmounting closes admission and drains
+  // the fetches that are still running ON THIS BRIDGE'S TRANSPORT; only once
+  // those drains have settled may the bridge itself be disposed. The other two
+  // steps keep their original order: unregister the transport slot before
+  // disposing the bridge behind it.
+  teardowns.push(async () => {
+    await unmountBoardIcons();
+    await unmountBoardDetails();
+    await unmountBoardSparkline();
+    await unmountBoardChart();
+    await unmountBoardSpotlight();
+    await unmountBoardScheduler();
     unregisterDexScreener();
     dexScreenerBridge.dispose();
   });
 
-  return () => {
+  // Sequential rather than concurrent, because the ordering inside the teardown
+  // above is the point of it. `await` inside the try also catches a rejected
+  // async teardown, so one bad disposer still cannot poison the rest.
+  return async () => {
     for (const teardown of teardowns) {
       try {
-        teardown();
+        await teardown();
       } catch {
         // a misbehaving teardown must not poison the others
       }

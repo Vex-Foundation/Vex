@@ -36,6 +36,7 @@ import {
   useRef,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
+  type JSX,
   type ReactEventHandler,
   type ReactNode,
 } from "react";
@@ -84,7 +85,24 @@ export function Dialog({ open, onOpenChange, children }: DialogProps): JSX.Eleme
   return <DialogContext.Provider value={value}>{children}</DialogContext.Provider>;
 }
 
+/**
+ * How wide the dialog box is allowed to get.
+ *
+ * ADDITIVE. `default` is the 380px prompt column every existing consumer
+ * renders and its classes are unchanged. `board` is the Token Radar surface:
+ * nine tenths of the viewport, capped at 1280px, with the same 85vh height
+ * bound so the body stays the single scroll region.
+ */
+export type DialogSize = "default" | "board";
+
+const DIALOG_WIDTH_CLASS: Readonly<Record<DialogSize, string>> = {
+  default: "w-full max-w-[380px]",
+  board: "w-[90vw] max-w-[1280px]",
+};
+
 export interface DialogContentProps extends HTMLAttributes<HTMLDialogElement> {
+  /** Width family; omitted means the 380px prompt column. */
+  readonly size?: DialogSize;
   /**
    * When true (default) the dialog closes on backdrop click. Set to
    * false for destructive prompts that require an explicit choice.
@@ -119,6 +137,7 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
       onClick,
       onCancel,
       closeOnBackdropClick = true,
+      size = "default",
       ...rest
     },
     ref,
@@ -216,7 +235,10 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
           // Center the dialog box itself — keeps backdrop-target clicks
           // on the dialog element, not the inner content (so the
           // currentTarget check above is reliable).
-          "fixed inset-0 m-auto max-h-[85vh] w-full max-w-[380px] overflow-hidden",
+          // The width family is interpolated rather than appended, so the
+          // default case emits the byte-identical class string every existing
+          // 380px consumer already renders.
+          `fixed inset-0 m-auto max-h-[85vh] ${DIALOG_WIDTH_CLASS[size]} overflow-hidden`,
           // Tokens-v2 chrome: solid layer-2 card, the system's boldest
           // radius (24), lv3 elevation (its 1px layer draws the edge on
           // dark). The backdrop mask + blur ride the .vex-dialog class in
@@ -284,6 +306,36 @@ export const DialogDescription = forwardRef<
   );
 });
 DialogDescription.displayName = "DialogDescription";
+
+export interface DialogHeadlessHeaderProps {
+  readonly title: string;
+  readonly description: string;
+}
+
+/**
+ * HEADLESS HEADER - an accessible name for a dialog that paints its own.
+ *
+ * ADDITIVE, and it does not remove anything: a surface with a bespoke sticky
+ * header (Token Radar) still owes the screen reader a real heading and a real
+ * description carrying the context ids that `<dialog aria-labelledby>` and
+ * `aria-describedby` point at. Rendering nothing there would leave the dialog
+ * announced as "dialog" with no name at all.
+ *
+ * So the elements are REAL `DialogTitle` / `DialogDescription` nodes with the
+ * context ids, visually hidden by `sr-only` rather than by `display:none` -
+ * a hidden element cannot be an accessible name.
+ */
+export function DialogHeadlessHeader({
+  title,
+  description,
+}: DialogHeadlessHeaderProps): JSX.Element {
+  return (
+    <div className="sr-only">
+      <DialogTitle>{title}</DialogTitle>
+      <DialogDescription>{description}</DialogDescription>
+    </div>
+  );
+}
 
 export const DialogBody = forwardRef<
   HTMLDivElement,

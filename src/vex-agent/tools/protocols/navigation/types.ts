@@ -22,6 +22,24 @@ export interface ProtocolNamespaceDeclaration {
   readonly characteristicAndLimits: string;
   readonly retrievalTerms: readonly string[];
   readonly facets: readonly string[];
+  /**
+   * Opt in to rendering `facets` as a line of the namespace's static prompt
+   * card (`engine/prompts/protocol-capabilities.ts`).
+   *
+   * OFF BY DEFAULT AND DELIBERATELY PER-NAMESPACE. `facets` exists on all 11
+   * declarations; rendering every one costs about 1580 bytes of the static
+   * prefix to tell the model what a ToolSearch query would tell it anyway. The
+   * flag exists so ONE namespace whose surface is broad enough that the model
+   * cannot guess the shape of a useful query - dexscreener, the market-research
+   * backbone - can advertise its sub-areas without any other namespace paying
+   * for it. Adding a second one is a reviewed budget decision
+   * (`prompt-budget-ceiling.test.ts`), not a default.
+   *
+   * It advertises CAPABILITY AREAS, never callable names: a tool becomes
+   * callable only through ToolSearch discovery, and naming one here would teach
+   * a name the dispatcher refuses (owner decision D-DS9-R).
+   */
+  readonly advertiseFacetsInPrompt?: true;
   /** Used only when no runtime-owned chain projection exists. */
   readonly coverageNote?: string;
 }

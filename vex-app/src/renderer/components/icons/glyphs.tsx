@@ -13,4 +13,5 @@ export * from "./glyphs/navigation.js";
 export * from "./glyphs/actions.js";
 export * from "./glyphs/status.js";
 export * from "./glyphs/objects.js";
+export * from "./glyphs/market.js";
 export * from "./glyphs/theme.js";

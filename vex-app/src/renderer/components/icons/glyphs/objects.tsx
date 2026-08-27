@@ -2,6 +2,7 @@
 
 import type { JSX } from "react";
 import type { GlyphProps } from "./props.js";
+import { OUTLINE_WEIGHT, ringPath } from "./paths.js";
 
 export const IconNewChat = ({ size = 16, className }: GlyphProps): JSX.Element => (
   <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -152,14 +153,21 @@ export const IconLock = ({ size = 16, className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
-/* The domain marks below are drawn native on the 24 grid with a 1.5 stroke,
- * which matches the ring weight of the filled outlines above. */
+/* The domain marks below are drawn native on the 24 grid. IconWallet and
+ * IconBookOpen are filled outlines at the shared 1.5 weight like the ported
+ * set above; the developer-tool marks that follow IconKey are still stroked
+ * at 1.5 and are named in the glyph gate's allow-list until they are redrawn. */
 
 export const IconWallet = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <rect x="3.25" y="6" width="17.5" height="12.75" rx="2.5" />
-    <path d="M16 6v12.75" />
-    <circle cx="18.35" cy="12.4" r="1.1" fill="currentColor" stroke="none" />
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M5.75 6h12.5a2.5 2.5 0 0 1 2.5 2.5v7.75a2.5 2.5 0 0 1-2.5 2.5H5.75a2.5 2.5 0 0 1-2.5-2.5V8.5A2.5 2.5 0 0 1 5.75 6Zm0 1.5a1 1 0 0 0-1 1v7.75a1 1 0 0 0 1 1h12.5a1 1 0 0 0 1-1V8.5a1 1 0 0 0-1-1H5.75Z"
+      fill="currentColor"
+    />
+    <rect x="15.25" y="6.75" width="1.5" height="11.25" fill="currentColor" />
+    <circle cx="18.35" cy="12.4" r="1.1" fill="currentColor" />
   </svg>
 );
 
@@ -186,10 +194,13 @@ export const IconFile = ({ size = 16, className }: GlyphProps): JSX.Element => (
 );
 
 export const IconBookOpen = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <path d="M12 7.5v12.25" />
-    <path d="M12 7.5c-1.4-1.6-3.6-2.25-7.25-2.25v12.25c3.65 0 5.85.65 7.25 2.25" />
-    <path d="M12 7.5c1.4-1.6 3.6-2.25 7.25-2.25v12.25c-3.65 0-5.85.65-7.25 2.25" />
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M4.75 4.5c3.4 0 5.7.6 7.25 2.1 1.55-1.5 3.85-2.1 7.25-2.1h.75v13.9h-.75c-3.3 0-5.3.5-6.6 1.6l-.65.55-.65-.55c-1.3-1.1-3.3-1.6-6.6-1.6H4V4.5h.75Zm.75 1.52v10.9c2.7.07 4.6.5 5.75 1.4V7.7c-1.05-1.1-2.9-1.6-5.75-1.68Zm7.25 1.68v10.62c1.15-.9 3.05-1.33 5.75-1.4V6.02c-2.85.08-4.7.58-5.75 1.68Z"
+      fill="currentColor"
+    />
   </svg>
 );
 
@@ -252,10 +263,12 @@ export const IconWifi = ({ size = 16, className }: GlyphProps): JSX.Element => (
 );
 
 export const IconWaypoints = ({ size = 16, className }: GlyphProps): JSX.Element => (
-  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <circle cx="12" cy="4.75" r="2.5" />
-    <circle cx="5" cy="18.5" r="2.5" />
-    <circle cx="19" cy="18.5" r="2.5" />
-    <path d="M10.85 7 6.15 16.25M13.15 7l4.7 9.25M7.5 18.5h9" />
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path fillRule="evenodd" clipRule="evenodd" d={ringPath(12, 4.75, 2.75, OUTLINE_WEIGHT)} fill="currentColor" />
+    <path fillRule="evenodd" clipRule="evenodd" d={ringPath(5, 18.5, 2.75, OUTLINE_WEIGHT)} fill="currentColor" />
+    <path fillRule="evenodd" clipRule="evenodd" d={ringPath(19, 18.5, 2.75, OUTLINE_WEIGHT)} fill="currentColor" />
+    <path d="M10.2 7.1l1.35.65-4.35 8.6-1.35-.65 4.35-8.6Z" fill="currentColor" />
+    <path d="M13.8 7.1l-1.35.65 4.35 8.6 1.35-.65-4.35-8.6Z" fill="currentColor" />
+    <rect x="7.75" y="17.75" width="8.5" height="1.5" fill="currentColor" />
   </svg>
 );

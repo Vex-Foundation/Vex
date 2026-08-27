@@ -62,6 +62,11 @@ const PURE_VEX_LIB_MODULES = new Set([
   "@vex-lib/agent-config.js",
   "@vex-lib/embedding-constants.js",
   "@vex-lib/diagnostics/bug-report-schema.js",
+  // Registers zod's English locale, which zod's own `sideEffects: false`
+  // lets the bundler tree-shake away. Imports NOTHING but `zod`, exactly like
+  // bug-report-schema above, and must stay ONE definition across the engine,
+  // main, preload and renderer so all four report the same wording.
+  "@vex-lib/zod-locale.js",
   // The on-chain token metadata text policy. It must be ONE definition across
   // the agent runtime, the IPC schema and the renderer form, and it is pure by
   // construction (no imports at all) so the renderer may hold it.

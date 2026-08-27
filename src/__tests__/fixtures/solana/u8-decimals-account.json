@@ -1,0 +1,27 @@
+{
+  "note": "Hand-built: a mint whose `decimals` is 255, the top of the SPL Mint account's `u8` field. No live probe carried a value above 9, so the 0..255 bound is asserted against nothing without this fixture. The reader used to cap at 32, which would have refused a legal on-chain mint and turned the whole read into a failure.",
+  "account": {
+    "pubkey": "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin",
+    "account": {
+      "data": {
+        "program": "spl-token-2022",
+        "parsed": {
+          "info": {
+            "isNative": false,
+            "mint": "5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm",
+            "owner": "BfvP43eVzM7xAu6Pm7yYbqp8RVkbP8R8dCfTvgPp64Pg",
+            "state": "initialized",
+            "tokenAmount": {
+              "amount": "7",
+              "decimals": 255,
+              "uiAmount": null,
+              "uiAmountString": "7"
+            }
+          },
+          "type": "account"
+        },
+        "space": 182
+      }
+    }
+  }
+}

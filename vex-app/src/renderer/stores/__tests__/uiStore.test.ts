@@ -36,6 +36,7 @@ function resetStoreToDefaults(): void {
     hideDustBalances: true,
       notificationsEnabled: true,
     bookSectionOrder: [],
+    bookTab: "portfolio",
   });
 }
 
@@ -283,6 +284,7 @@ describe("uiStore", () => {
       hideDustBalances: true,
       notificationsEnabled: true,
       bookSectionOrder: [],
+      bookTab: "portfolio",
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialTurn).toBeUndefined();
@@ -475,6 +477,63 @@ describe("uiStore", () => {
     }
   });
 
+  /**
+   * THE BOOK'S SELECTED TAB (A13).
+   *
+   * A rail preference in the class of `bookOpen`: it persists, it survives a
+   * tampered payload, and the v14 migration seeds it for installs that predate
+   * it. What it must NEVER be is written by anything but the tab control -
+   * that invariant is proven in `board-surface-store.test.ts`, where a live
+   * board arrival leaves this field alone.
+   */
+  it("bookTab defaults to portfolio, and setBookTab is the only writer", () => {
+    expect(useUiStore.getState().bookTab).toBe("portfolio");
+    useUiStore.getState().setBookTab("board");
+    expect(useUiStore.getState().bookTab).toBe("board");
+    useUiStore.getState().setBookTab("portfolio");
+    expect(useUiStore.getState().bookTab).toBe("portfolio");
+  });
+
+  it("bookTab persists the user's choice", () => {
+    useUiStore.getState().setBookTab("board");
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw === null) throw new Error("nothing was persisted");
+    expect(JSON.parse(raw).state.bookTab).toBe("board");
+  });
+
+  it("seeds bookTab on upgrade from a payload that predates it (v14)", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { themePreference: "system", bookOpen: true },
+        version: 13,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().bookTab).toBe("portfolio");
+  });
+
+  it("coerces every off-union persisted bookTab back to portfolio", async () => {
+    for (const bookTab of ["nope", 1, null, {}, ["board"], undefined]) {
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ state: { themePreference: "system", bookTab }, version: 14 }),
+      );
+      await useUiStore.persist.rehydrate();
+      expect(useUiStore.getState().bookTab).toBe("portfolio");
+    }
+    // The one legal off-default value survives untouched.
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { themePreference: "system", bookTab: "board" },
+        version: 14,
+      }),
+    );
+    await useUiStore.persist.rehydrate();
+    expect(useUiStore.getState().bookTab).toBe("board");
+  });
+
   it("setSessionModeFilter mutates and reflects new value", () => {
     useUiStore.getState().setSessionModeFilter("mission");
     expect(useUiStore.getState().sessionModeFilter).toBe("mission");
@@ -558,6 +617,7 @@ describe("uiStore", () => {
       hideDustBalances: true,
       notificationsEnabled: true,
       bookSectionOrder: [],
+      bookTab: "portfolio",
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();

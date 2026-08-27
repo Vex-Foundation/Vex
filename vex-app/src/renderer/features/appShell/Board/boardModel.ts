@@ -17,9 +17,12 @@
  * card would misrepresent what the agent actually put on the board.
  */
 
-import type { BoardSpecV1 } from "@vex-lib/board/index.js";
+import type { BoardHydratedRow, BoardSpecV1 } from "@vex-lib/board/index.js";
+import type { BoardDataMode } from "../../../lib/api/board-live.js";
 import {
   boardTrend,
+  formatBoardUtcClock,
+  formatBoardUtcDate,
   isBoardMarketDataStale,
   type BoardTrend,
 } from "./boardFormat.js";
@@ -54,22 +57,63 @@ export interface BoardAnnotationRow {
   readonly note: string | null;
 }
 
+/**
+ * The live figures drawn OVER a board, and the mode they were drawn in.
+ *
+ * A separate argument rather than a field of the spec, because the spec is a
+ * durable document and live figures are a lease the reader is holding right
+ * now. Nothing here is ever written back: toggle the lease off and the model
+ * rebuilds from the persisted rows alone.
+ *
+ * Rows are keyed `chain:pairAddress` rather than positioned, because the
+ * provider's batch channel RANKS its answer and a positional pairing would put
+ * one token's price on another token's card the moment that ranking moved.
+ */
+export interface BoardLiveOverlay {
+  readonly mode: BoardDataMode;
+  readonly rowsByKey: ReadonlyMap<string, BoardHydratedRow> | null;
+  /** The clock the live rows were read at, or null when none have landed. */
+  readonly fetchedAtMs: number | null;
+}
+
 export interface BoardViewModel {
   readonly title: string;
   readonly cards: readonly BoardCardModel[];
   readonly notes: readonly string[];
+  /**
+   * Whether the figures ON SCREEN have outlived their freshness window.
+   *
+   * Measured against the clock of whatever is actually being shown: the live
+   * fetch when live rows are up, the persisted fetch otherwise. It stays a
+   * SEPARATE axis from `mode` on purpose - a lease can be connected while its
+   * first tick is still in flight, and the figures under it are still the
+   * composed ones and still aging.
+   */
   readonly stale: boolean;
   readonly analysisCreatedAt: number;
+  /**
+   * The clock of the figures on screen. Advances with a live tick; the
+   * persisted `spec.hydration.marketDataFetchedAt` is never touched.
+   */
   readonly marketDataFetchedAt: number;
+  readonly mode: BoardDataMode;
 }
 
 export function buildBoardViewModel(
   spec: BoardSpecV1,
   now: number,
+  live?: BoardLiveOverlay,
 ): BoardViewModel {
   const rows = spec.hydration.rows;
+  const liveRows = live?.rowsByKey ?? null;
   const cards: BoardCardModel[] = spec.pools.map((pool, index) => {
-    const row = rows[index] ?? null;
+    const persisted = rows[index] ?? null;
+    // The live row REPLACES the persisted one whole, never field by field: a
+    // card assembled from two epochs would show a price from one moment beside
+    // a liquidity figure from another, and nothing on screen would say so.
+    const row =
+      liveRows?.get(`${pool.chain}:${pool.pairAddress}`.toLowerCase()) ??
+      persisted;
     return {
       key: `${pool.chain}/${pool.pairAddress}/${index}`,
       chain: pool.chain,
@@ -80,17 +124,18 @@ export function buildBoardViewModel(
       trendH24: boardTrend(row?.priceChange.h24 ?? null),
     };
   });
+  const fetchedAt =
+    liveRows === null || live?.fetchedAtMs == null
+      ? spec.hydration.marketDataFetchedAt
+      : live.fetchedAtMs;
   return {
     title: spec.title,
     cards,
     notes: spec.notes ?? [],
-    stale: isBoardMarketDataStale(
-      spec.hydration.marketDataFetchedAt,
-      spec.hydration.staleAfterMs,
-      now,
-    ),
+    stale: isBoardMarketDataStale(fetchedAt, spec.hydration.staleAfterMs, now),
     analysisCreatedAt: spec.hydration.analysisCreatedAt,
-    marketDataFetchedAt: spec.hydration.marketDataFetchedAt,
+    marketDataFetchedAt: fetchedAt,
+    mode: live?.mode ?? "snapshot",
   };
 }
 
@@ -161,7 +206,141 @@ export function buildAnnotationRows(
 export function boardAriaLabel(model: BoardViewModel): string {
   const count = model.cards.length;
   const pools = `${count} ${count === 1 ? "pool" : "pools"}`;
-  return `Board: ${model.title}, ${pools}${
+  return `Board: ${model.title}, ${pools}${liveClause(model.mode)}${
     model.stale ? ", market data delayed" : ""
   }`;
+}
+
+/**
+ * The live state as WORDS for the accessible name.
+ *
+ * A reader on assistive tech has no access to the pulsing dot, and whether the
+ * figures in front of them are updating is exactly the kind of fact this
+ * surface refuses to leave to a pixel.
+ */
+function liveClause(mode: BoardDataMode): string {
+  switch (mode) {
+    case "live-connecting":
+      return ", connecting to live figures";
+    case "live-connected":
+      return ", live figures";
+    case "live-degraded":
+      return ", live figures interrupted, reconnecting";
+    case "live-unsupported":
+      return ", live figures unavailable in this build";
+    case "snapshot":
+    case "live-off":
+      return "";
+    default: {
+      const unreachable: never = mode;
+      throw new Error(`board data mode not handled: ${String(unreachable)}`);
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Board surfaces v3 - derivations shared by the card, grid and header */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The board's subtitle, DERIVED - never authored.
+ *
+ * `spec.title` is the model's own words (A2); this line underneath is the
+ * runtime's, and it carries only facts the runtime owns: how many pools the
+ * board holds and WHEN its figures were read, in UTC. The mockup's example
+ * subtitle names a composition preset ("Top movers"); the persisted spec
+ * carries no preset field, so inventing one here would be putting words in
+ * the model's mouth. The pool count is the honest substitute and it is the
+ * fact a reader actually needs beside a clock.
+ */
+export function boardSubtitle(model: BoardViewModel): string {
+  const count = model.cards.length;
+  const parts = [`${count} ${count === 1 ? "pool" : "pools"}`];
+  const date = formatBoardUtcDate(model.marketDataFetchedAt);
+  if (date !== null) parts.push(date);
+  const clock = formatBoardUtcClock(model.marketDataFetchedAt);
+  if (clock !== null) parts.push(clock);
+  return parts.join(" · ");
+}
+
+/**
+ * The DURABLE authored content of a board, gathered for the modal's
+ * "Composed analysis / Data notes" disclosure (A2).
+ *
+ * THE REGRESSION THIS EXISTS TO PREVENT. The v3 surfaces replaced the
+ * in-transcript block, and every string the model or the runtime wrote into a
+ * persisted board had to stay REACHABLE: captions, per-pool assessments,
+ * board notes, annotation labels with their unmatched-marker reasons, the
+ * provenance of the bytes and both composition clocks. Gathering them in one
+ * derivation - rather than letting each surface remember to render its own -
+ * is what makes "every authored string is reachable" a testable claim about a
+ * single function instead of a hope about five components.
+ */
+export interface BoardAuthoredContent {
+  readonly captions: readonly {
+    readonly key: string;
+    readonly heading: string;
+    readonly caption: string;
+  }[];
+  readonly assessments: readonly {
+    readonly key: string;
+    readonly heading: string;
+    readonly analysis: string;
+  }[];
+  readonly notes: readonly string[];
+  readonly annotations: readonly BoardAnnotationRow[];
+  readonly provenance: BoardSpecV1["hydration"]["provenance"];
+  readonly analysisCreatedAt: number;
+  readonly marketDataFetchedAt: number;
+  /** True when the board carries no authored prose at all (a legacy board). */
+  readonly empty: boolean;
+}
+
+export function buildBoardAuthoredContent(
+  spec: BoardSpecV1,
+): BoardAuthoredContent {
+  const rows = spec.hydration.rows;
+  const heading = (index: number): string => {
+    const pool = spec.pools[index];
+    if (pool === undefined) return `pool ${String(index + 1)}`;
+    return rows[index]?.baseTokenSymbol ?? pool.pairAddress;
+  };
+  const captions = spec.pools.flatMap((pool, index) =>
+    pool.caption === undefined || pool.caption === null
+      ? []
+      : [
+          {
+            key: `caption/${String(index)}`,
+            heading: heading(index),
+            caption: pool.caption,
+          },
+        ],
+  );
+  const assessments = spec.pools.flatMap((pool, index) =>
+    pool.analysis === null || pool.analysis === undefined
+      ? []
+      : [
+          {
+            key: `analysis/${String(index)}`,
+            heading: heading(index),
+            analysis: pool.analysis,
+          },
+        ],
+  );
+  const notes = spec.notes ?? [];
+  const annotations = buildAnnotationRows(spec);
+  return {
+    captions,
+    assessments,
+    notes,
+    annotations,
+    provenance: spec.hydration.provenance,
+    analysisCreatedAt: spec.hydration.analysisCreatedAt,
+    marketDataFetchedAt: spec.hydration.marketDataFetchedAt,
+    empty:
+      captions.length === 0 &&
+      assessments.length === 0 &&
+      notes.length === 0 &&
+      annotations.length === 0,
+  };
 }

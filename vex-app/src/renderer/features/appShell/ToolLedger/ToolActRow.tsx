@@ -28,10 +28,18 @@
  * (`<pre>` pre-wrap) — never HTML, and the friendly header never replaces the
  * ability to read them. The reveal is the shared `ExpandRegion` primitive:
  * build-time CSS height interpolation, collapsed to a hard cut under
- * prefers-reduced-motion.
+ * prefers-reduced-motion. The OUTPUT section rides a second region of its own
+ * so a result that lands later unfolds instead of popping in.
  */
 
-import { useId, useMemo, useRef, useState, type JSX } from "react";
+import {
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode,
+} from "react";
 import {
   IconChevronRight,
   IconCircleCheck,
@@ -130,7 +138,7 @@ function DurationChip({ text }: { readonly text: string }): JSX.Element {
   return (
     <span
       data-vex-tool-duration=""
-      className="flex-none tabular-nums text-[11px] text-[var(--vex-text-3)]"
+      className="flex-none tabular-nums text-[11px] text-ink-tertiary"
     >
       {text}
     </span>
@@ -146,27 +154,77 @@ function DurationChip({ text }: { readonly text: string }): JSX.Element {
  * `displayStatus === "pending"` is deliberately excluded: an ambiguous
  * broadcast is unresolved, not failed, and `ToolLegLine` already labels it.
  */
-function errorSummaryLine(act: ToolCallActView): string | null {
+function errorSummaryLine(
+  act: ToolCallActView,
+  displayTitle: string,
+): string | null {
   if (act.success !== false) return null;
   if (act.displayStatus === "pending") return null;
   if (act.output === null) return null;
   const newline = act.output.indexOf("\n");
   const first = (newline === -1 ? act.output : act.output.slice(0, newline)).trim();
-  return first.length === 0 ? null : first;
+  const summary = stripToolNamePrefix(first, [displayTitle, act.toolName]).trim();
+  return summary.length === 0 ? null : summary;
 }
 
-/** Section label inside the expanded well — mono microtype (10px floor).
- * Sticky against the section's own scroll so the label stays readable while
- * its payload scrolls underneath. */
+/**
+ * SUMMARY-ONLY derivation, not a cut of content: the header already prints the
+ * tool's title, so a failure line that begins with that same name followed by
+ * ":" ("BoardCompose: notes: ...") would read the name twice on one line. The
+ * known prefix is removed from the collapsed summary alone; the expanded
+ * OUTPUT body renders the whole output text untouched, prefix included. Only
+ * a case-sensitive match on the row's display title or its raw tool id counts
+ * - no other text is ever dropped.
+ */
+function stripToolNamePrefix(
+  line: string,
+  names: readonly string[],
+): string {
+  for (const name of names) {
+    if (name.length === 0) continue;
+    const prefix = `${name}:`;
+    if (line.startsWith(prefix)) return line.slice(prefix.length);
+  }
+  return line;
+}
+
+/**
+ * Section label of the expanded well - mono microtype (10px floor, a
+ * documented register). It is a STATIC label rendered ABOVE its section's
+ * scroll surface, never inside it: a sticky label inside the scroller let
+ * scrolled payload show through the well's padding around it (owner QA
+ * screenshot). `SectionScroll` is the only element that scrolls.
+ */
 function SectionHeading({
   children,
 }: {
   readonly children: string;
 }): JSX.Element {
   return (
-    <span className="sticky top-0 block bg-[var(--vex-surface-down)] font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--vex-text-3)]">
+    <div className="px-4 pb-1 pt-3">
+      <span
+        data-vex-tool-section-label=""
+        className="block font-mono text-[10px] uppercase tracking-[0.3em] text-ink-tertiary"
+      >
+        {children}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The section's capped scroll surface. Caps and scrolls alone so a long
+ * input never buries a short output; the label sits above it as a sibling, so
+ * no text can pass under or beside the label.
+ */
+function SectionScroll({ children }: { readonly children: ReactNode }): JSX.Element {
+  return (
+    <div
+      data-vex-tool-section-scroll=""
+      className="max-h-[220px] overflow-y-auto px-4 pb-3"
+    >
       {children}
-    </span>
+    </div>
   );
 }
 
@@ -205,7 +263,7 @@ function SectionBody({
   );
   if (text === null || text.length === 0) {
     return (
-      <span className="font-mono text-[11px] leading-relaxed text-[var(--vex-text-3)]">
+      <span className="font-mono text-[11px] leading-relaxed text-ink-tertiary">
         {emptyHint}
       </span>
     );
@@ -291,7 +349,7 @@ export function ToolActRow({
   // wins and the failure line takes the slot on every other row - which is
   // where deepseek's argument actually bites, since a bare title told the
   // reader nothing about what went wrong.
-  const failureLine = errorSummaryLine(act);
+  const failureLine = errorSummaryLine(act, identity.title);
   const summary =
     legs !== null ? (
       <ToolLegLine legs={legs} />
@@ -382,31 +440,45 @@ export function ToolActRow({
           chips with no owner" in the QA screenshot. Inert when nothing
           resolves. */}
       <ExplorerRefLinks refs={act.explorerRefs} />
-      {/* ioCard: l1 hairline, r12, the recessed code surface; each section
-          caps and scrolls alone so a long input never buries a short output.
-          It rides the shared expand primitive - the card is the INNER box, so
-          the animated outer box carries none of its margin or border, and the
-          entrance keyframe is gone (an expand is not also a mount). */}
+      {/* ioCard: l1 hairline, r12, the recessed code surface (`surface-deep`,
+          the shell's code-well token); each section is a static label over
+          its own capped scroll surface. It rides the shared expand primitive
+          - the card is the INNER box, so the animated outer box carries none
+          of its margin or border, and the entrance keyframe is gone (an
+          expand is not also a mount). */}
       <ExpandRegion
         id={bodyId}
         open={open}
         triggerRef={triggerRef}
-        className="ml-1 mt-1 flex flex-col overflow-hidden rounded-[12px] border border-line-1 bg-[var(--vex-surface-down)]"
+        className="ml-1 mt-1 flex flex-col overflow-hidden rounded-[12px] border border-line-1 bg-surface-deep"
       >
-        <div className="max-h-[150px] overflow-y-auto px-4 py-3">
+        <div data-vex-tool-section="args">
           <SectionHeading>Args</SectionHeading>
-          <SectionBody text={act.toolArgs} emptyHint="(no parameters)" />
+          <SectionScroll>
+            <SectionBody text={act.toolArgs} emptyHint="(no parameters)" />
+          </SectionScroll>
         </div>
-        {/* Output renders ONLY when a result actually merged (null = none). */}
-        {act.output !== null ? (
-          <>
-            <div aria-hidden className="h-px flex-none bg-line-2" />
-            <div className="max-h-[150px] overflow-y-auto px-4 py-3">
-              <SectionHeading>Output</SectionHeading>
+        {/* Output exists ONLY once a result actually merged (null = none), and
+            its ARRIVAL is a reveal, not a pop: the section rides its own
+            ExpandRegion (lazy first mount, so nothing renders while null;
+            stays mounted after) and unfolds with the same curve as the well
+            and the thinking block. Reduced motion is honoured by the
+            primitive's stylesheet, not here. The hairline divider belongs to
+            the revealed section, so it unfolds with it. No trigger: this
+            region opens on data, not on a click. */}
+        <ExpandRegion
+          id={`${bodyId}-output`}
+          open={act.output !== null}
+          className="flex flex-col"
+        >
+          <div aria-hidden className="h-px flex-none bg-line-2" />
+          <div data-vex-tool-section="output">
+            <SectionHeading>Output</SectionHeading>
+            <SectionScroll>
               <SectionBody text={act.output} emptyHint="(no output)" />
-            </div>
-          </>
-        ) : null}
+            </SectionScroll>
+          </div>
+        </ExpandRegion>
       </ExpandRegion>
     </div>
   );
