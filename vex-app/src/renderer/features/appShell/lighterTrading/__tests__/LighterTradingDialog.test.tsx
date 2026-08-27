@@ -6,7 +6,14 @@ import type {
 } from "@shared/schemas/lighter-trading.js";
 import { LighterTradingDialog } from "../LighterTradingDialog.js";
 
-const mocks = vi.hoisted(() => ({ onOpenChange: vi.fn(), onCreateSession: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  onOpenChange: vi.fn(),
+  onCreateSession: vi.fn(),
+  refetchSnapshot: vi.fn(),
+  snapshotState: "ready" as "ready" | "pending",
+  candleStatus: "live" as "live" | "connecting",
+  publicStatus: "live" as "live" | "connecting",
+}));
 
 const MARKET_LIST: LighterTradingMarketList = {
   environment: "rhc",
@@ -55,11 +62,21 @@ vi.mock("../../../../lib/api/lighter-trading.js", () => ({
     data: { ok: true, data: MARKET_LIST },
     isLoading: false,
   }),
-  useLighterTradingSnapshot: () => ({
-    data: { ok: true, data: { ...SNAPSHOT, retrievedAt: Date.now() } },
-    isLoading: false,
-    refetch: vi.fn(),
-  }),
+  useLighterTradingSnapshot: () => mocks.snapshotState === "pending"
+    ? {
+        data: undefined,
+        isLoading: false,
+        isFetching: true,
+        isError: false,
+        refetch: mocks.refetchSnapshot,
+      }
+    : {
+        data: { ok: true, data: { ...SNAPSHOT, retrievedAt: Date.now() } },
+        isLoading: false,
+        isFetching: false,
+        isError: false,
+        refetch: mocks.refetchSnapshot,
+      },
   useLighterTradingAccount: () => ({
     data: {
       ok: true,
@@ -90,7 +107,7 @@ vi.mock("../MarketChart.js", () => ({
 vi.mock("../useLighterCandleStream.js", () => ({
   useLighterCandleStream: () => ({
     candles: SNAPSHOT.candles,
-    status: "live",
+    status: mocks.candleStatus,
     providerTimestamp: SNAPSHOT.retrievedAt,
     receivedAt: SNAPSHOT.retrievedAt,
   }),
@@ -98,10 +115,10 @@ vi.mock("../useLighterCandleStream.js", () => ({
 
 vi.mock("../useLighterPublicMarketStream.js", () => ({
   useLighterPublicMarketStream: () => ({
-    status: "live",
-    bookStatus: "live",
-    tradesStatus: "live",
-    statsStatus: "live",
+    status: mocks.publicStatus,
+    bookStatus: mocks.publicStatus,
+    tradesStatus: mocks.publicStatus,
+    statsStatus: mocks.publicStatus,
     book: null,
     trades: SNAPSHOT.trades,
     stats: null,
@@ -122,6 +139,9 @@ vi.mock("../../SessionPanel.js", () => ({
 describe("Light it up dialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.snapshotState = "ready";
+    mocks.candleStatus = "live";
+    mocks.publicStatus = "live";
     HTMLDialogElement.prototype.showModal = function showModal(): void {
       this.setAttribute("open", "");
     };
@@ -129,6 +149,20 @@ describe("Light it up dialog", () => {
       this.removeAttribute("open");
       this.dispatchEvent(new Event("close"));
     };
+  });
+
+  it("keeps the desk mounted and reports loading while a market switch is in flight", async () => {
+    mocks.snapshotState = "pending";
+    mocks.candleStatus = "connecting";
+    mocks.publicStatus = "connecting";
+
+    renderDialog();
+
+    expect(await screen.findByTestId("real-chart-host")).toBeTruthy();
+    expect(screen.queryByText("Market data unavailable")).toBeNull();
+    expect(screen.getByText("Loading BTC")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Selected market summary" }).getAttribute("aria-busy"))
+      .toBe("true");
   });
 
   it("partitions provider markets into enabled Perps, Stocks, and Spot sections", async () => {

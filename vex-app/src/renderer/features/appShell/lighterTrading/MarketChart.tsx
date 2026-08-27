@@ -57,6 +57,9 @@ export interface MarketChartProps {
   readonly resolution?: LighterTradingResolution;
   readonly pricePrecision?: number;
   readonly priceMinMove?: number;
+  readonly snapshotFailed?: boolean;
+  readonly onRetry?: () => void;
+  readonly onChooseMarket?: () => void;
 }
 
 function CandleChartLoading({ symbol }: { readonly symbol: string }): JSX.Element {
@@ -83,7 +86,10 @@ function CandleChartLoading({ symbol }: { readonly symbol: string }): JSX.Elemen
         <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="604" y1="40" x2="604" y2="118" /><rect x="594" y="60" width="20" height="34" rx="2" /></g>
         <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="646" y1="24" x2="646" y2="102" /><rect x="636" y="44" width="20" height="34" rx="2" /></g>
       </svg>
-      <span>Building live candles…</span>
+      <span>
+        <b>Loading {symbol} market</b>
+        <small>Pulling in the latest chart, prices, and order book.</small>
+      </span>
     </div>
   );
 }
@@ -228,6 +234,9 @@ export function MarketChart({
   resolution,
   pricePrecision,
   priceMinMove,
+  snapshotFailed = false,
+  onRetry,
+  onChooseMarket,
 }: MarketChartProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -579,9 +588,27 @@ export function MarketChart({
       ) : null}
       {loading ? <CandleChartLoading symbol={symbol} /> : null}
       {candles.length === 0 && !loading ? (
-        <div className="lit-chart-empty" role="status">
-          <span>{status === "unavailable" ? "Candle data is unavailable." : `No candle history is available for ${symbol}.`}</span>
-          <span>{status === "unavailable" ? "Try another interval or reopen this market." : "No trades have been recorded for this interval yet."}</span>
+        <div
+          className="lit-chart-empty"
+          data-state={snapshotFailed ? "failed" : "unavailable"}
+          role={snapshotFailed ? "alert" : "status"}
+        >
+          <b>{snapshotFailed ? `Couldn’t load ${symbol}` : `No live data for ${symbol}`}</b>
+          <span>
+            {snapshotFailed
+              ? "The market feed didn’t respond."
+              : "Choose another market to continue."}
+          </span>
+          {onRetry !== undefined || onChooseMarket !== undefined ? (
+            <span className="lit-chart-empty-actions">
+              {snapshotFailed && onRetry !== undefined ? (
+                <button type="button" onClick={onRetry}>Try again</button>
+              ) : null}
+              {onChooseMarket !== undefined ? (
+                <button type="button" onClick={onChooseMarket}>Choose another market</button>
+              ) : null}
+            </span>
+          ) : null}
         </div>
       ) : null}
     </>

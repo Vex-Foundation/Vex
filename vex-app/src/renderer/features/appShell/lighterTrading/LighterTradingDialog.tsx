@@ -236,15 +236,8 @@ export function LighterTradingDialog({
                 />
               ) : null}
             </div>
-            {market === null || (snapshotQuery.isLoading && candleStream.candles.length === 0) ? (
-              <WorkspaceLoading label="Building the live market view…" />
-            ) : snapshot === null && candleStream.candles.length === 0 ? (
-              <WorkspaceError
-                title="Market data unavailable"
-                message={snapshotQuery.data?.ok === false
-                  ? snapshotQuery.data.error.message
-                  : "Lighter has not returned market data yet."}
-              />
+            {market === null ? (
+              <WorkspaceLoading label="Choosing a market…" />
             ) : (
               <div className="lit-workspace" data-session-active={activeSessionId !== null || undefined}>
                 <section className="lit-panel lit-chart-panel" aria-labelledby="lit-chart-title">
@@ -291,6 +284,9 @@ export function LighterTradingDialog({
                       resolution={resolution}
                       pricePrecision={market.decimals.price}
                       priceMinMove={10 ** -market.decimals.price}
+                      snapshotFailed={snapshotQuery.isError || snapshotQuery.data?.ok === false}
+                      onRetry={() => { void snapshotQuery.refetch(); }}
+                      onChooseMarket={() => setMarketPickerOpen(true)}
                     />
                   </div>
                   <footer className="lit-chart-footer">
@@ -496,12 +492,16 @@ function MarketBar({
   const low = liveStats?.daily.priceLow ?? snapshot?.detail.daily.priceLow ?? null;
   const fundingTimestamp = liveStats?.funding.timestamp ?? null;
   const statsAsOf = streamReceivedAt ?? snapshot?.retrievedAt ?? null;
+  const marketDataLoading = statsAsOf === null
+    && (streamStatus === "connecting" || streamStatus === "reconnecting");
   return (
     <section
       className="lit-market-bar"
       data-market-type={market?.marketType}
       data-market-section={classification?.section}
+      data-loading={marketDataLoading || undefined}
       aria-label="Selected market summary"
+      aria-busy={marketDataLoading}
     >
       <button
         type="button"
@@ -572,18 +572,21 @@ function MarketBar({
         role="status"
         aria-live="polite"
       >
-        <i aria-hidden="true" /> {streamStatusLabel(streamStatus)}
+        <i aria-hidden="true" /> {streamStatusLabel(streamStatus, market?.symbol)}
         {statsAsOf === null ? "" : ` · ${formatRetrievedAt(statsAsOf)}`}
       </span>
     </section>
   );
 }
 
-function streamStatusLabel(status: LighterTradingCandleConnectionStatus): string {
+function streamStatusLabel(
+  status: LighterTradingCandleConnectionStatus,
+  symbol?: string,
+): string {
   switch (status) {
     case "live": return "Live";
-    case "connecting": return "Connecting";
-    case "reconnecting": return "Reconnecting";
+    case "connecting": return symbol === undefined ? "Loading market" : `Loading ${symbol}`;
+    case "reconnecting": return symbol === undefined ? "Reloading market" : `Reloading ${symbol}`;
     case "delayed": return "Delayed";
     case "unavailable": return "Unavailable";
     case "stopped": return "Waiting";

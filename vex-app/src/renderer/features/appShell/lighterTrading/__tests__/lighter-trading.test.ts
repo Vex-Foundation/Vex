@@ -210,6 +210,8 @@ describe("Light it up chart adapter", () => {
     );
 
     expect(screen.getByRole("status", { name: "Building ETH candle chart" })).toBeTruthy();
+    expect(screen.getByText("Loading ETH market")).toBeTruthy();
+    expect(screen.getByText("Pulling in the latest chart, prices, and order book.")).toBeTruthy();
     expect(screen.queryByText("No candle history is available for ETH.")).toBeNull();
     expect(chartHarness.createChart).toHaveBeenCalledTimes(1);
     expect(chartHarness.createChart).toHaveBeenCalledWith(
@@ -241,7 +243,8 @@ describe("Light it up chart adapter", () => {
     expect(chartHarness.setVisibleLogicalRange).toHaveBeenLastCalledWith({ from: 0, to: 7 });
   });
 
-  it("shows a recovery message only after candle loading becomes unavailable", () => {
+  it("shows a genuine no-data state only after candle loading becomes unavailable", () => {
+    const onChooseMarket = vi.fn();
     render(createElement(MarketChart, {
       candles: [],
       status: "unavailable",
@@ -250,11 +253,35 @@ describe("Light it up chart adapter", () => {
       environment: "core",
       marketId: 7,
       resolution: "1h",
+      onChooseMarket,
     }));
 
     expect(screen.queryByRole("status", { name: "Building ETH candle chart" })).toBeNull();
-    expect(screen.getByText("Candle data is unavailable.")).toBeTruthy();
-    expect(screen.getByText("Try another interval or reopen this market.")).toBeTruthy();
+    expect(screen.getByText("No live data for ETH")).toBeTruthy();
+    expect(screen.getByText("Choose another market to continue.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Choose another market" }));
+    expect(onChooseMarket).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers retry after the snapshot and candle feed both fail", () => {
+    const onRetry = vi.fn();
+    render(createElement(MarketChart, {
+      candles: [],
+      status: "unavailable",
+      symbol: "ETH",
+      theme: "chronos",
+      environment: "core",
+      marketId: 7,
+      resolution: "1h",
+      snapshotFailed: true,
+      onRetry,
+    }));
+
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByText("Couldn’t load ETH")).toBeTruthy();
+    expect(screen.getByText("The market feed didn’t respond.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
   it("shows the latest 100 bars once and follows only an already-live range", () => {

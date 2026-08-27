@@ -455,6 +455,22 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 .lit-market-metric[data-tone="positive"] b { color: var(--lit-positive); }
 .lit-market-metric[data-tone="negative"] b { color: var(--lit-negative); }
 
+.lit-market-bar[data-loading="true"] .lit-market-metric b {
+  position: relative;
+  width: min(64px, 72%);
+  min-width: 38px;
+  color: transparent;
+}
+
+.lit-market-bar[data-loading="true"] .lit-market-metric b::after {
+  position: absolute;
+  inset: 3px 0;
+  border-radius: 4px;
+  background: var(--lit-line-strong);
+  content: "";
+  opacity: 0.58;
+}
+
 .lit-live-status {
   display: inline-flex;
   align-items: center;
@@ -874,9 +890,39 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   text-align: center;
 }
 
-.lit-chart-empty span:last-child {
+.lit-chart-empty > b {
+  color: var(--lit-ink);
+  font-size: 14px;
+}
+
+.lit-chart-empty > span:not(.lit-chart-empty-actions) {
   color: var(--lit-ink-muted);
   font-size: 12px;
+}
+
+.lit-chart-empty-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.lit-chart-empty-actions button {
+  min-height: 34px;
+  border: 1px solid var(--lit-line-strong);
+  border-radius: 8px;
+  background: var(--lit-panel-raised);
+  padding: 0 12px;
+  color: var(--lit-ink-secondary);
+  font-size: 12px;
+  font-weight: 650;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.lit-chart-empty-actions button:hover {
+  border-color: var(--lit-focus);
+  background: var(--lit-hover);
+  color: var(--lit-ink);
 }
 
 .lit-chart-loading {
@@ -943,10 +989,23 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 .lit-chart-loading > span {
   position: absolute;
   bottom: 10%;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 3px;
+  text-align: center;
+}
+
+.lit-chart-loading > span b {
+  color: var(--lit-ink-secondary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.lit-chart-loading > span small {
   color: var(--lit-ink-muted);
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 500;
 }
 
 @keyframes lit-chart-candle-build {
