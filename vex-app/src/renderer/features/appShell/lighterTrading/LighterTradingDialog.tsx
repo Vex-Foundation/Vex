@@ -373,19 +373,22 @@ function LighterConversation({
   ].join(" ");
   const prompts = [
     {
-      label: "Read the chart",
-      detail: "Structure, momentum, and invalidation",
-      message: `${marketContext} Analyze the current chart. Identify market structure, momentum, support, resistance, and clear invalidation levels. Do not execute anything.`,
+      code: "Chart",
+      label: "Mark the chart",
+      detail: "Structure, liquidity, key levels, and invalidation",
+      message: `${marketContext} Mark the current chart. Identify market structure, liquidity, key levels, and clear invalidation. Separate observed facts from inference. Do not execute anything.`,
     },
     {
-      label: "Explain the move",
-      detail: "Price action and order-book context",
-      message: `${marketContext} Explain the latest price action using the refreshed Lighter chart and order book. Separate observed facts from inference.`,
+      code: "Flow",
+      label: "Read the tape",
+      detail: "Aggression, absorption, and order-book pressure",
+      message: `${marketContext} Read the latest price action, recent trades, and order book. Assess aggression, possible absorption, and order-book pressure. Separate observed facts from inference. Do not execute anything.`,
     },
     {
-      label: "Build a trade plan",
-      detail: "Entry, risk, targets, and stop",
-      message: `${marketContext} Help me build a risk-managed trade plan. Include entry logic, invalidation, stop, targets, and position-risk considerations. Do not execute anything.`,
+      code: "Risk",
+      label: "Build the play",
+      detail: "Entry trigger, stop, targets, and risk-to-reward",
+      message: `${marketContext} Help me build a risk-managed trade play. Include the entry trigger, invalidation, stop, targets, risk-to-reward, and position-risk considerations. Do not execute anything.`,
     },
   ] as const;
 
@@ -396,7 +399,9 @@ function LighterConversation({
     >
       <header className="lit-panel-header lit-chat-heading">
         <span>
-          <h3 id="lit-chat-title">Chat with Vex</h3>
+          <h3 id="lit-chat-title">
+            {activeSessionId === null ? "Vex trading desk" : "Chat with Vex"}
+          </h3>
           <small>
             {activeSessionId === null
               ? "No active session"
@@ -407,36 +412,46 @@ function LighterConversation({
           className="lit-chat-live"
           data-active={activeSessionId !== null || undefined}
         >
-          <i aria-hidden="true" /> {activeSessionId === null ? "Start session" : "Active"}
+          <i aria-hidden="true" /> {activeSessionId === null ? "Desk ready" : "Active"}
         </span>
       </header>
       {!open ? null : activeSessionId === null ? (
         <div className="lit-chat-empty">
           <div className="lit-chat-empty-content">
-            <div className="lit-chat-empty-mark" aria-hidden="true">
-              <img src="./protocols/lighter.svg" alt="" width="44" height="44" />
+            <div className="lit-chat-empty-lead">
+              <div className="lit-chat-empty-mark" aria-hidden="true">
+                <img src="./protocols/lighter.svg" alt="" width="44" height="44" />
+              </div>
+              <div className="lit-chat-empty-copy">
+                <h4>Build the {marketSymbol} trade from the tape.</h4>
+                <p>
+                  Work from the live {resolution} chart, order book, and recent
+                  flow—all inside one focused session.
+                </p>
+              </div>
             </div>
-            <b>Analyze {marketSymbol} without leaving the live tape.</b>
-            <p>
-              Start a session here and the chart, depth, conversation, and any
-              approval card stay together in this workspace.
-            </p>
-            <div className="lit-chat-starters" aria-label="Suggested market analysis prompts">
+            <div className="lit-chat-starters" role="group" aria-label="Trading desk prompts">
               {prompts.map((prompt) => (
                 <button
                   type="button"
                   key={prompt.label}
                   onClick={() => onCreateSession(prompt.message)}
                 >
-                  <span><b>{prompt.label}</b><small>{prompt.detail}</small></span>
-                  <span aria-hidden="true"><IconArrowUpRight size={17} /></span>
+                  <span className="lit-chat-starter-code" aria-hidden="true">{prompt.code}</span>
+                  <span className="lit-chat-starter-copy">
+                    <b>{prompt.label}</b>
+                    <small>{prompt.detail}</small>
+                  </span>
+                  <span className="lit-chat-starter-arrow" aria-hidden="true">
+                    <IconArrowUpRight size={17} />
+                  </span>
                 </button>
               ))}
             </div>
           </div>
           <div className="lit-chat-start-dock">
             <button type="button" onClick={() => onCreateSession()}>
-              Start a Vex session
+              Open the {marketSymbol} desk
             </button>
             <small>Read-only until you separately review and approve a trade.</small>
           </div>

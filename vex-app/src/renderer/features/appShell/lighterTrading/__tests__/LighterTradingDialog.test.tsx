@@ -267,13 +267,40 @@ describe("Light it up dialog", () => {
       />,
     );
 
-    expect(await screen.findByText("Analyze BTC without leaving the live tape.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Read the chart/i }));
+    expect(await screen.findByRole("heading", { name: "Vex trading desk" })).toBeTruthy();
+    expect(screen.getByText("Desk ready")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Build the BTC trade from the tape." }))
+      .toBeTruthy();
+    expect(screen.getByText(
+      "Work from the live 5m chart, order book, and recent flow—all inside one focused session.",
+    )).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Trading desk prompts" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: /Mark the chart.*Structure, liquidity, key levels, and invalidation/i,
+    }));
     expect(mocks.onCreateSession).toHaveBeenCalledWith(expect.stringContaining(
       "environment=rhc, marketId=1, marketType=perp, symbol=BTC, candleInterval=5m",
     ));
+    expect(mocks.onCreateSession).toHaveBeenLastCalledWith(expect.stringContaining(
+      "market structure, liquidity, key levels, and clear invalidation",
+    ));
 
-    fireEvent.click(screen.getByRole("button", { name: "Start a Vex session" }));
+    fireEvent.click(screen.getByRole("button", {
+      name: /Read the tape.*Aggression, absorption, and order-book pressure/i,
+    }));
+    expect(mocks.onCreateSession).toHaveBeenLastCalledWith(expect.stringContaining(
+      "Assess aggression, possible absorption, and order-book pressure",
+    ));
+
+    fireEvent.click(screen.getByRole("button", {
+      name: /Build the play.*Entry trigger, stop, targets, and risk-to-reward/i,
+    }));
+    expect(mocks.onCreateSession).toHaveBeenLastCalledWith(expect.stringContaining(
+      "entry trigger, invalidation, stop, targets, risk-to-reward",
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Open the BTC desk" }));
     expect(mocks.onCreateSession).toHaveBeenLastCalledWith();
   });
 
