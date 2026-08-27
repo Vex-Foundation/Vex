@@ -33,11 +33,16 @@ import {
   INDEXIFY_ENDPOINTS,
   INDEXIFY_HISTORY_LIMIT_CAP,
   INDEXIFY_LIST_LIMIT_CAP,
+  INDEXIFY_MAX_STACK_TOKENS,
+  INDEXIFY_WEIGHT_SUM,
 } from "./constants.js";
 import { mapIndexifyHttpError, mapIndexifyTransportError } from "./errors.js";
 import type {
   IndexifyCreateStackParams,
   IndexifyCreateStackResult,
+  IndexifyEditAllocationResult,
+  IndexifyTradability,
+  IndexifyVersionHistory,
   IndexifyFeeBounds,
   IndexifyFeeCalculation,
   IndexifyHistoryPage,
@@ -64,6 +69,9 @@ import type {
 import {
   validateCreateStack,
   validateDescriptionCheck,
+  validateEditAllocation,
+  validateTradingInfo,
+  validateVersionHistory,
   validateFeeBounds,
   validateFeeCalculation,
   validateHistoryPage,
@@ -430,6 +438,88 @@ export class IndexifyClient {
       ...options, auth: false, body: { description },
     });
     return validateDescriptionCheck(raw);
+  }
+
+  // ── Allocation sync (Z500 workflow surface — NOT agent tools) ────
+  //
+  // These four exist for the Z500 allocation-sync workflow
+  // (sync/z500-allocation-sync). They are deliberately NOT exposed as agent
+  // tools: editing a live stack's allocation is a creator operation the
+  // exposure policy keeps away from the model; the workflow is code with a
+  // pinned stack id, not a model choosing arguments. Per the workflow spec,
+  // this client still wraps NO trading or rebalance endpoint — there is no
+  // `txn.php?action=rebalance` method here to miswire.
+
+  /** The stack's allocation version history (auth). */
+  async versionHistory(stackId: number, options: IndexifyRequestOptions = {}): Promise<IndexifyVersionHistory> {
+    const raw = await this.send(INDEXIFY_ENDPOINTS.stackInfo, "version_history", {
+      ...options, auth: true, body: { stack_id: stackId },
+    });
+    return validateVersionHistory(raw);
+  }
+
+  /**
+   * Support + tradability verdict for ONE mint. A 404 answers
+   * `{found: false}` — for an eligibility scan, "Indexify does not know this
+   * token" is a verdict, not a failure.
+   */
+  async tradability(mintAddress: string, options: IndexifyRequestOptions = {}): Promise<IndexifyTradability> {
+    try {
+      const raw = await this.send(INDEXIFY_ENDPOINTS.tokenTrading, "get_trading_info", {
+        ...options, auth: false, body: { token_address: mintAddress },
+      });
+      return { found: true, ...validateTradingInfo(raw) };
+    } catch (err) {
+      if (err instanceof VexError && err.code === ErrorCodes.INDEXIFY_NOT_FOUND) {
+        return { found: false };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Replace ONE stack's allocation via `stack_info.php?action=edit_allocation`
+   * (auth; creator-only server-side). Weights are validated locally first —
+   * integers summing to exactly 100, 1-12 tokens — so a malformed allocation
+   * is refused before any request exists.
+   */
+  async editAllocation(
+    stackId: number,
+    allocations: Readonly<Record<string, number>>,
+    creatorNote: string,
+    options: IndexifyRequestOptions = {},
+  ): Promise<IndexifyEditAllocationResult> {
+    const entries = Object.entries(allocations);
+    if (entries.length < 1 || entries.length > INDEXIFY_MAX_STACK_TOKENS) {
+      throw new VexError(
+        ErrorCodes.INDEXIFY_INVALID_REQUEST,
+        `editAllocation: ${entries.length} tokens (allowed 1-${INDEXIFY_MAX_STACK_TOKENS})`,
+        "The allocation holds an unsupported number of tokens.",
+      );
+    }
+    let sum = 0;
+    for (const [, weight] of entries) {
+      if (!Number.isInteger(weight) || weight < 1 || weight > 99) {
+        throw new VexError(
+          ErrorCodes.INDEXIFY_INVALID_REQUEST,
+          "editAllocation: weights must be integers 1-99",
+          "An allocation weight is not a whole percent.",
+        );
+      }
+      sum += weight;
+    }
+    if (sum !== INDEXIFY_WEIGHT_SUM) {
+      throw new VexError(
+        ErrorCodes.INDEXIFY_INVALID_REQUEST,
+        `editAllocation: weights sum to ${sum}, expected ${INDEXIFY_WEIGHT_SUM}`,
+        "The allocation weights do not sum to 100.",
+      );
+    }
+    const raw = await this.send(INDEXIFY_ENDPOINTS.stackInfo, "edit_allocation", {
+      ...options, auth: true,
+      body: { stack_id: stackId, stackTokenInfo: allocations, creator_note: creatorNote },
+    });
+    return validateEditAllocation(raw);
   }
 
   /** Create a stack under the linked account. Free (no funds move), public forever. */

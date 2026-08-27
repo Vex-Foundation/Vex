@@ -47,6 +47,7 @@ export function indexifyStackUrl(slug: string): string {
 export const INDEXIFY_ENDPOINTS = {
   stackInfo: "/api/stack_info.php",
   tokenInfo: "/api/token_info.php",
+  tokenTrading: "/api/token_trading.php",
   search: "/api/search.php",
   txn: "/api/txn.php",
   orders: "/api/orders.php",

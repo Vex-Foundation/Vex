@@ -305,3 +305,45 @@ export interface IndexifyCreateStackResult {
   success: boolean;
   stack_id: number;
 }
+
+// ── Allocation sync (Z500 workflow surface) ────────────────────────
+
+/** One allocation entry inside a version-history version. */
+export interface IndexifyVersionAllocation {
+  address: string;
+  weight: number;
+  symbol?: string | null;
+  name?: string | null;
+}
+
+/** One version from `stack_info.php?action=version_history`. */
+export interface IndexifyAllocationVersion {
+  version: number;
+  is_current?: boolean;
+  created_at?: string | number | null;
+  creator_note?: string | null;
+  allocation: readonly IndexifyVersionAllocation[];
+}
+
+export interface IndexifyVersionHistory {
+  stack_id: number;
+  current_version: number;
+  versions: readonly IndexifyAllocationVersion[];
+}
+
+/**
+ * Support/tradability verdict for ONE mint, from
+ * `token_trading.php?action=get_trading_info`. A 404 is a verdict
+ * (unsupported), not an error — eligibility scans walk many mints.
+ */
+export type IndexifyTradability =
+  | { found: false }
+  | { found: true; tradingEnabled: boolean; archived: boolean; symbol: string | null };
+
+/** `stack_info.php?action=edit_allocation` result. */
+export interface IndexifyEditAllocationResult {
+  success: boolean;
+  stack_id: number;
+  version: number;
+  message?: string | null;
+}

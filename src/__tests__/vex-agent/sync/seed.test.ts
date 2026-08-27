@@ -16,7 +16,7 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 17 sync jobs (11 global + 6 per-namespace)", async () => {
+  it("inserts 18 sync jobs (12 global + 6 per-namespace)", async () => {
     // Agent Scan added the _global/agent_activity_repair periodic job and
     // removed the polymarket/balances post_mutation job (polymarket removed).
     // Phase-2 bridge (W4) added the _global/bridge_activity_repair periodic sweep
@@ -36,9 +36,11 @@ describe("seedSyncJobs", () => {
     // token-attestation sweep (`agentscan_attest`, periodic 300s) makes 16.
     // The pools.fun attribution retry lane (`pools_attribution`, periodic
     // 120s) makes 17 - a SECOND badge sweep, against a different partner and
-    // a different attest string, not a widening of the trench one.
+    // a different attest string, not a widening of the trench one. The Z500
+    // allocation sync (`z500_allocation_sync`, periodic 300s check over a
+    // daily 00:00 UTC window claim, indexiy-ansem.md) makes 18.
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(17);
+    expect(mockExecute).toHaveBeenCalledTimes(18);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {

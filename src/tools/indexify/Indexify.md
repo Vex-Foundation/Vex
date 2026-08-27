@@ -54,6 +54,7 @@ ledger (`orders.php`, `transaction_history.php`). Consequences:
 | 5 | `fee.php?action=min_buy` docs claim micro-USDC; wire serves human USDC (`5` = $5) |
 | 6 | `stack_info?action=fetch` docs say auth optional; live it 401s keyless — `fetchStack` sends the key `if-present` and `indexify.stack` is requiresEnv-gated |
 | 7 | `user_info?action=public_profile` docs type `created_at` as string; wire serves a unix-seconds number |
+| 8 | `stack_info?action=edit_allocation` answers 401 to the SAME key that created the stack and that `action=update` accepts (probed 2026-08-28) — allocation edits are gated beyond API-key auth on the venue side. The Z500 sync classifies that 401 as a definitive refusal (`mutation_rejected`, stack untouched); the Indexify team enabling the action for API keys is zero-code here |
 
 ## Files
 
@@ -66,7 +67,13 @@ client.ts      — the API client; auth per call, singleton via getIndexifyClien
 ```
 
 Consumed by `src/vex-agent/tools/protocols/indexify/` (13 tools: 10 reads,
-`trade_execute`, `order_resolve`, `stack_create`).
+`trade_execute`, `order_resolve`, `stack_create`), and by the Z500
+allocation-sync workflow (`src/vex-agent/sync/z500-allocation-sync/`,
+spec `indexiy-ansem.md`), which uses four client methods that are
+DELIBERATELY NOT agent tools: `versionHistory`, `tradability`,
+`fetchStack`, and `editAllocation` — the one allocation mutation, pinned by
+the workflow to stack 28440. The client still wraps NO `rebalance`, and a
+test asserts that absence.
 
 ## Facts worth not re-measuring
 

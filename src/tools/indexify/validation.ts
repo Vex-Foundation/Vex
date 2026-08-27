@@ -18,6 +18,8 @@ import { z } from "zod";
 import { VexError, ErrorCodes } from "../../errors.js";
 import type {
   IndexifyCreateStackResult,
+  IndexifyEditAllocationResult,
+  IndexifyVersionHistory,
   IndexifyFeeBounds,
   IndexifyFeeCalculation,
   IndexifyHistoryPage,
@@ -448,4 +450,74 @@ const createStack = z.object({ success: z.boolean(), stack_id: z.number().int() 
 
 export function validateCreateStack(raw: unknown): IndexifyCreateStackResult {
   return parseOrThrow(createStack, raw);
+}
+
+// ── Allocation sync (Z500 workflow surface) ────────────────────────
+
+const versionAllocation = z
+  .object({
+    address: solanaAddress,
+    // Weight arrives as a NUMBER here (measured live on version_history),
+    // unlike the stack row's parallel string array — both are integers.
+    weight: z.number(),
+    symbol: displayString,
+    name: displayString,
+  })
+  .loose();
+
+const allocationVersion = z
+  .object({
+    version: z.number().int(),
+    is_current: z.boolean().optional(),
+    created_at: z.union([z.string(), z.number()]).nullish().transform((v) => v ?? null),
+    creator_note: displayString,
+    allocation: z.array(versionAllocation),
+  })
+  .loose();
+
+const versionHistory = z
+  .object({
+    stack_id: z.number().int(),
+    current_version: z.number().int(),
+    versions: z.array(allocationVersion),
+  })
+  .loose();
+
+export function validateVersionHistory(raw: unknown): IndexifyVersionHistory {
+  return parseOrThrow(versionHistory, raw) as IndexifyVersionHistory;
+}
+
+const tradingInfo = z
+  .object({
+    trading_enabled: z.boolean(),
+    token: z
+      .object({
+        archived: z.union([z.boolean(), z.number()]).nullish(),
+        symbol: displayString,
+      })
+      .loose()
+      .nullish(),
+  })
+  .loose();
+
+export function validateTradingInfo(raw: unknown): { tradingEnabled: boolean; archived: boolean; symbol: string | null } {
+  const parsed = parseOrThrow(tradingInfo, raw);
+  return {
+    tradingEnabled: parsed.trading_enabled,
+    archived: Boolean(parsed.token?.archived),
+    symbol: parsed.token?.symbol ?? null,
+  };
+}
+
+const editAllocation = z
+  .object({
+    success: z.boolean(),
+    stack_id: z.number().int(),
+    version: z.number().int(),
+    message: displayString,
+  })
+  .loose();
+
+export function validateEditAllocation(raw: unknown): IndexifyEditAllocationResult {
+  return parseOrThrow(editAllocation, raw) as IndexifyEditAllocationResult;
 }

@@ -243,6 +243,18 @@ export async function syncTick(): Promise<void> {
         const attestResult = await runAgentscanAttest(buildProductionAgentscanAttestDeps());
         const runId = await syncRepo.enqueueRun(job.id);
         await syncRepo.completeRun(runId, { ...attestResult, periodic: true }, attestResult.attested);
+      } else if (job.syncType === "z500_allocation_sync") {
+        // Z500 allocation sync (indexiy-ansem.md) — periodic driver,
+        // mirroring the branch above exactly (the C1 lesson). The tick fires
+        // every intervalSeconds; the ONCE-PER-DAY semantics live in the
+        // workflow's own window claim (z500_sync_runs.window_id UNIQUE), so
+        // a completed window makes this a single cheap SELECT. Reads Ansem +
+        // Indexify, mutates ONLY stack 28440's allocation via
+        // edit_allocation; never trades, never rebalances, never signs.
+        const { runZ500AllocationSyncTick, buildProductionZ500Deps } = await import("./z500-allocation-sync/index.js");
+        const z500Result = await runZ500AllocationSyncTick(buildProductionZ500Deps());
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(runId, { ...z500Result, periodic: true }, z500Result.evaluated ? 1 : 0);
       } else {
         logger.debug("sync.tick.unknown_periodic", { syncType: job.syncType });
       }
