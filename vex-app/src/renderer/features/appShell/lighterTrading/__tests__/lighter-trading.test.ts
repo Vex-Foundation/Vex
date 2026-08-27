@@ -200,6 +200,7 @@ describe("Light it up chart adapter", () => {
     const { rerender } = render(
       createElement(MarketChart, {
         candles: [],
+        status: "connecting",
         symbol: "ETH",
         theme: "chronos",
         environment: "core",
@@ -208,6 +209,8 @@ describe("Light it up chart adapter", () => {
       }),
     );
 
+    expect(screen.getByRole("status", { name: "Building ETH candle chart" })).toBeTruthy();
+    expect(screen.queryByText("No candle history is available for ETH.")).toBeNull();
     expect(chartHarness.createChart).toHaveBeenCalledTimes(1);
     expect(chartHarness.createChart).toHaveBeenCalledWith(
       expect.any(HTMLElement),
@@ -220,6 +223,7 @@ describe("Light it up chart adapter", () => {
     const liveCandles = [candle({ timestamp: 1_720_000_000, close: 102 })];
     rerender(createElement(MarketChart, {
       candles: liveCandles,
+      status: "live",
       symbol: "ETH",
       theme: "chronos",
       environment: "core",
@@ -233,7 +237,24 @@ describe("Light it up chart adapter", () => {
       expect.objectContaining({ time: 1_720_000_000, close: 102 }),
       false,
     );
+    expect(screen.queryByRole("status", { name: "Building ETH candle chart" })).toBeNull();
     expect(chartHarness.setVisibleLogicalRange).toHaveBeenLastCalledWith({ from: 0, to: 7 });
+  });
+
+  it("shows a recovery message only after candle loading becomes unavailable", () => {
+    render(createElement(MarketChart, {
+      candles: [],
+      status: "unavailable",
+      symbol: "ETH",
+      theme: "chronos",
+      environment: "core",
+      marketId: 7,
+      resolution: "1h",
+    }));
+
+    expect(screen.queryByRole("status", { name: "Building ETH candle chart" })).toBeNull();
+    expect(screen.getByText("Candle data is unavailable.")).toBeTruthy();
+    expect(screen.getByText("Try another interval or reopen this market.")).toBeTruthy();
   });
 
   it("shows the latest 100 bars once and follows only an already-live range", () => {

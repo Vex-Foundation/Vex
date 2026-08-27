@@ -254,9 +254,12 @@ export function LighterTradingDialog({
                         {market.symbol} · {selectedMarketProduct}
                       </h3>
                       <small>
-                        {candleStream.receivedAt === null
-                          ? "Trade-price REST history"
-                          : `Trade-price candles · ${streamStatusLabel(candleStream.status)}`}{" "}
+                        {candleStream.candles.length === 0
+                          && candleStream.status !== "unavailable"
+                          ? "Building live candle history"
+                          : candleStream.receivedAt === null
+                            ? "Trade-price REST history"
+                            : `Trade-price candles · ${streamStatusLabel(candleStream.status)}`}{" "}
                         {formatRetrievedAt(
                           candleStream.receivedAt
                           ?? snapshot?.retrievedAt
@@ -280,6 +283,7 @@ export function LighterTradingDialog({
                   <div className="lit-chart-body">
                     <MarketChart
                       candles={candleStream.candles}
+                      status={candleStream.status}
                       symbol={market.symbol}
                       theme={theme}
                       environment={environment}

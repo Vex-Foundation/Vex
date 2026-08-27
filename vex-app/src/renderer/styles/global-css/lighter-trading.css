@@ -837,6 +837,91 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   font-size: 12px;
 }
 
+.lit-chart-loading {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  pointer-events: none;
+}
+
+.lit-chart-loading::after {
+  position: absolute;
+  right: 7%;
+  bottom: 18%;
+  left: 7%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--lit-line-strong), transparent);
+  content: "";
+  opacity: 0.48;
+}
+
+.lit-chart-loading svg {
+  width: min(76%, 720px);
+  height: min(62%, 360px);
+  overflow: visible;
+  filter: saturate(0.78);
+  mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent);
+}
+
+.lit-chart-loading-candle {
+  animation: lit-chart-candle-build 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  opacity: 0.14;
+  transform: scaleY(0.18);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.lit-chart-loading-candle line {
+  stroke: currentColor;
+  stroke-width: 3;
+}
+
+.lit-chart-loading-candle rect { fill: currentColor; }
+.lit-chart-loading-candle--up { color: var(--lit-positive); }
+.lit-chart-loading-candle--down { color: var(--lit-negative); }
+
+.lit-chart-loading-candle:nth-child(2) { animation-delay: 70ms; }
+.lit-chart-loading-candle:nth-child(3) { animation-delay: 140ms; }
+.lit-chart-loading-candle:nth-child(4) { animation-delay: 210ms; }
+.lit-chart-loading-candle:nth-child(5) { animation-delay: 280ms; }
+.lit-chart-loading-candle:nth-child(6) { animation-delay: 350ms; }
+.lit-chart-loading-candle:nth-child(7) { animation-delay: 420ms; }
+.lit-chart-loading-candle:nth-child(8) { animation-delay: 490ms; }
+.lit-chart-loading-candle:nth-child(9) { animation-delay: 560ms; }
+.lit-chart-loading-candle:nth-child(10) { animation-delay: 630ms; }
+.lit-chart-loading-candle:nth-child(11) { animation-delay: 700ms; }
+.lit-chart-loading-candle:nth-child(12) { animation-delay: 770ms; }
+.lit-chart-loading-candle:nth-child(13) { animation-delay: 840ms; }
+.lit-chart-loading-candle:nth-child(14) { animation-delay: 910ms; }
+.lit-chart-loading-candle:nth-child(15) { animation-delay: 980ms; }
+
+.lit-chart-loading > span {
+  position: absolute;
+  bottom: 10%;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+@keyframes lit-chart-candle-build {
+  0%, 10% {
+    opacity: 0.12;
+    transform: scaleY(0.18);
+  }
+  42%, 72% {
+    opacity: 0.58;
+    transform: scaleY(1);
+  }
+  100% {
+    opacity: 0.16;
+    transform: scaleY(0.72);
+  }
+}
+
 .lit-chart-footer {
   display: flex;
   min-height: 34px;
@@ -1648,6 +1733,11 @@ button.lit-market-select > .lit-market-symbol[data-symbol-length="long"] { min-w
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+
+  .lit-chart-loading-candle {
+    opacity: 0.38;
+    transform: scaleY(1);
   }
 }
 

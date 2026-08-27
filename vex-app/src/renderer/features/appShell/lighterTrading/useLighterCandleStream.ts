@@ -174,10 +174,22 @@ export function useLighterCandleStream({
     };
   }, [enabled, environment, identity, marketId, resolution]);
 
+  // State resets in an effect, so an identity change otherwise exposes one
+  // render of the prior market's candles and status. Project the new identity
+  // synchronously while its subscription is being installed.
+  const currentCandles = state.identity === identity
+    ? state.candles
+    : upsertChartCandles([], restRows(restCandles));
+  const currentStatus = state.identity === identity
+    ? state.status
+    : enabled && marketId !== null ? "connecting" : "stopped";
+  const currentProviderTimestamp = state.identity === identity ? state.providerTimestamp : null;
+  const currentReceivedAt = state.identity === identity ? state.receivedAt : null;
+
   return useMemo(() => ({
-    candles: state.candles,
-    status: state.status,
-    providerTimestamp: state.providerTimestamp,
-    receivedAt: state.receivedAt,
-  }), [state.candles, state.providerTimestamp, state.receivedAt, state.status]);
+    candles: currentCandles,
+    status: currentStatus,
+    providerTimestamp: currentProviderTimestamp,
+    receivedAt: currentReceivedAt,
+  }), [currentCandles, currentProviderTimestamp, currentReceivedAt, currentStatus]);
 }

@@ -16,6 +16,7 @@ import {
 } from "lightweight-charts";
 import type {
   LighterTradingCandle,
+  LighterTradingCandleConnectionStatus,
   LighterTradingEnvironment,
   LighterTradingResolution,
 } from "@shared/schemas/lighter-trading.js";
@@ -48,6 +49,7 @@ interface AppliedChartData {
 
 export interface MarketChartProps {
   readonly candles: readonly LighterTradingCandle[];
+  readonly status?: LighterTradingCandleConnectionStatus;
   readonly symbol: string;
   readonly theme: "chronos" | "celeris";
   readonly environment?: LighterTradingEnvironment;
@@ -55,6 +57,35 @@ export interface MarketChartProps {
   readonly resolution?: LighterTradingResolution;
   readonly pricePrecision?: number;
   readonly priceMinMove?: number;
+}
+
+function CandleChartLoading({ symbol }: { readonly symbol: string }): JSX.Element {
+  return (
+    <div
+      className="lit-chart-loading"
+      role="status"
+      aria-label={`Building ${symbol} candle chart`}
+    >
+      <svg viewBox="0 0 720 280" aria-hidden="true" focusable="false">
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="58" y1="136" x2="58" y2="214" /><rect x="48" y="158" width="20" height="34" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="100" y1="124" x2="100" y2="194" /><rect x="90" y="140" width="20" height="34" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="142" y1="146" x2="142" y2="226" /><rect x="132" y="164" width="20" height="38" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="184" y1="130" x2="184" y2="210" /><rect x="174" y="150" width="20" height="38" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="226" y1="104" x2="226" y2="180" /><rect x="216" y="124" width="20" height="34" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="268" y1="92" x2="268" y2="168" /><rect x="258" y="110" width="20" height="36" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="310" y1="112" x2="310" y2="192" /><rect x="300" y="132" width="20" height="38" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="352" y1="80" x2="352" y2="160" /><rect x="342" y="100" width="20" height="36" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="394" y1="66" x2="394" y2="148" /><rect x="384" y="86" width="20" height="38" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="436" y1="92" x2="436" y2="176" /><rect x="426" y="112" width="20" height="40" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="478" y1="72" x2="478" y2="152" /><rect x="468" y="92" width="20" height="36" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="520" y1="46" x2="520" y2="128" /><rect x="510" y="68" width="20" height="36" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="562" y1="58" x2="562" y2="142" /><rect x="552" y="78" width="20" height="40" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="604" y1="40" x2="604" y2="118" /><rect x="594" y="60" width="20" height="34" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="646" y1="24" x2="646" y2="102" /><rect x="636" y="44" width="20" height="34" rx="2" /></g>
+      </svg>
+      <span>Building live candles…</span>
+    </div>
+  );
 }
 
 function timestampToLocalDate(time: Time): Date | null {
@@ -189,6 +220,7 @@ function getChartColors(host: HTMLElement): {
 
 export function MarketChart({
   candles,
+  status,
   symbol,
   theme,
   environment,
@@ -207,6 +239,10 @@ export function MarketChart({
   const [legend, setLegend] = useState<ChartLegendValues | null>(null);
   const identity = `${environment ?? "unknown"}:${marketId ?? symbol}:${resolution ?? "unknown"}`;
   const precision = resolvePriceFormat(pricePrecision, priceMinMove).precision;
+  const loading = candles.length === 0
+    && status !== undefined
+    && status !== "unavailable"
+    && status !== "stopped";
 
   const zoomVisibleRange = (factor: number): void => {
     const chart = chartRef.current;
@@ -541,10 +577,11 @@ export function MarketChart({
           <span><b>Vol</b> {legend.volume.toLocaleString()}</span>
         </div>
       ) : null}
-      {candles.length === 0 ? (
+      {loading ? <CandleChartLoading symbol={symbol} /> : null}
+      {candles.length === 0 && !loading ? (
         <div className="lit-chart-empty" role="status">
-          <span>No candle history is available for {symbol}.</span>
-          <span>The chart stays empty rather than displaying simulated data.</span>
+          <span>{status === "unavailable" ? "Candle data is unavailable." : `No candle history is available for ${symbol}.`}</span>
+          <span>{status === "unavailable" ? "Try another interval or reopen this market." : "No trades have been recorded for this interval yet."}</span>
         </div>
       ) : null}
     </>
