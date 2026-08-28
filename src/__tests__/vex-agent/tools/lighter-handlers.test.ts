@@ -471,6 +471,8 @@ function approvalIntentAuditRow(overrides: Record<string, unknown> = {}) {
         side: "buy",
         baseAmountInteger: "10000",
         priceInteger: "300000",
+        triggerPriceDisplay: null,
+        triggerPriceInteger: null,
         orderType: "market",
         timeInForce: "immediate-or-cancel",
         reduceOnly: false,
@@ -1587,6 +1589,44 @@ describe("Lighter agent read handlers", () => {
     expect(mocks.executionIntentsRepo.markApprovalDecision).not.toHaveBeenCalled();
   });
 
+  it("refuses a protective create when the approved trigger integer differs from the intent", async () => {
+    mocks.executionIntentsRepo.findByIntentId.mockResolvedValueOnce(executionIntentRow({
+      side: "sell",
+      priceInteger: "280000",
+      orderType: "stop-loss",
+      reduceOnly: true,
+      triggerPriceInteger: "290000",
+    }));
+    const approvedAudit = approvalIntentAuditRow();
+    const approvedPreview = approvedAudit.previewJson as Record<string, unknown>;
+    const approvedCriticalArgs = approvedPreview.criticalArgs as Record<string, unknown>;
+    mocks.approvalIntentsRepo.getByApprovalId.mockResolvedValueOnce(approvalIntentAuditRow({
+      previewJson: {
+        ...approvedPreview,
+        criticalArgs: {
+          ...approvedCriticalArgs,
+          orderSummary: "Sell 1 ETH with a stop-loss trigger at 2900 and execution bound 2800.",
+          side: "sell",
+          priceDisplay: "2800",
+          priceInteger: "280000",
+          triggerPriceDisplay: "2900",
+          triggerPriceInteger: "290001",
+          orderType: "stop-loss",
+          reduceOnly: true,
+        },
+      },
+    }));
+
+    const result = await LIGHTER_HANDLERS["lighter.order.create"]!({
+      intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+    }, APPROVED_CTX);
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("approval record does not match");
+    expect(result.output).toContain("No order was signed or submitted.");
+    expect(mocks.executionIntentsRepo.markApprovalDecision).not.toHaveBeenCalled();
+  });
+
   it("refuses approved Lighter create when unsigned signer order assembly no longer matches policy", async () => {
     mocks.executionIntentsRepo.findByIntentId.mockResolvedValueOnce(executionIntentRow());
     mocks.executionIntentsRepo.markApprovalDecision.mockResolvedValueOnce(executionIntentRow({
@@ -2062,6 +2102,92 @@ describe("Lighter agent read handlers", () => {
     expect((data.preview as Record<string, unknown>).symbol).toBe("ETH-USD");
     expect(((data.preview as Record<string, unknown>).baseAmount as Record<string, unknown>).integer).toBe("2500");
     expect(((data.preview as Record<string, unknown>).price as Record<string, unknown>).integer).toBe("349999");
+  });
+
+  it("creates a standalone reduce-only perpetual stop-loss preview with no silent partial order", async () => {
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200,
+      order_book_details: [DETAIL],
+      spot_order_book_details: [],
+    });
+    mocks.client.getOrderBookOrders.mockResolvedValue({
+      code: 200,
+      total_asks: 1,
+      asks: [order(1, "3500.50")],
+      total_bids: 1,
+      bids: [order(2, "3499.50")],
+    });
+    mocks.client.getAccount.mockResolvedValue({ code: 200, accounts: [ACCOUNT] });
+    mocks.client.getApiKeys.mockRejectedValue(new Error("read unavailable"));
+    mocks.previewsRepo.create.mockResolvedValue(undefined);
+
+    const data = await callJson("lighter.order.preview", {
+      environment: "rhc",
+      accountIndex: 42,
+      marketId: 0,
+      marketType: "perp",
+      side: "sell",
+      baseAmountIn: "0.25",
+      price: "3300",
+      triggerPrice: "3400",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+      readonly preview: {
+        readonly identity: { readonly orderType: string; readonly triggerPriceInteger: string };
+        readonly preview: {
+          readonly triggerPrice: { readonly display: string };
+          readonly price: { readonly role: string };
+        };
+      };
+    };
+    expect(persisted.preview.identity).toMatchObject({
+      orderType: "stop-loss",
+      triggerPriceInteger: "340000",
+    });
+    expect(persisted.preview.preview.triggerPrice.display).toBe("3400");
+    expect(persisted.preview.preview.price.role).toBe("trigger_execution_bound");
+    expect(data.approvalReady).toBe(false);
+    expect((data.previewSummary as Record<string, unknown>).rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ parameter: "Execution bound", value: "$3,300 per ETH" }),
+      expect.objectContaining({ parameter: "Trigger price", value: "$3,400 per ETH" }),
+    ]));
+  });
+
+  it("refuses incomplete protective intent before any provider read", async () => {
+    const missingTrigger = await callFail("lighter.order.preview", {
+      environment: "rhc",
+      marketId: 0,
+      marketType: "perp",
+      side: "sell",
+      baseAmountIn: "0.25",
+      price: "3300",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+      orderExpiryOffsetMinutes: 30,
+    });
+    expect(missingTrigger).toContain("requires an explicit triggerPrice");
+
+    const notReduceOnly = await callFail("lighter.order.preview", {
+      environment: "rhc",
+      marketId: 0,
+      marketType: "perp",
+      side: "sell",
+      baseAmountIn: "0.25",
+      price: "3300",
+      triggerPrice: "3400",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: false,
+      orderExpiryOffsetMinutes: 30,
+    });
+    expect(notReduceOnly).toContain("requires reduceOnly=true");
+    expect(mocks.client.getMarketDetails).not.toHaveBeenCalled();
   });
 
   it.each([

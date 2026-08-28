@@ -279,6 +279,61 @@ describe("Lighter order preview", () => {
     expect(result.preview.marketData.priceComparison).toBe("crossing_or_taker");
   });
 
+  it("previews a reduce-only perpetual stop-loss with distinct trigger and execution bound", () => {
+    const result = preview({
+      side: "sell",
+      baseAmount: "1.25",
+      price: "2800",
+      triggerPrice: "2900",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+    });
+
+    expect(result.preview.price.role).toBe("trigger_execution_bound");
+    expect(result.preview.triggerPrice.display).toBe("2900");
+    expect(result.preview.positionContext.positionSide).toBe("long");
+    expect(result.preview.riskNotes.join(" ")).toContain("hard execution bound");
+  });
+
+  it("fails closed for malformed or non-reducing protective orders", () => {
+    expect(() => preview({
+      side: "sell",
+      price: "2800",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+    })).toThrow("explicit triggerPrice");
+
+    expect(() => preview({
+      side: "sell",
+      price: "3100",
+      triggerPrice: "2900",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+    })).toThrow("execution bound");
+
+    expect(() => preview({
+      side: "sell",
+      price: "3000",
+      triggerPrice: "3100",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+    })).toThrow("below the live reference");
+
+    expect(() => preview({
+      side: "sell",
+      baseAmount: "1.5001",
+      price: "2800",
+      triggerPrice: "2900",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+    })).toThrow("exceeds the live position size");
+  });
+
   it("refuses reduce-only orders that do not reduce the live position", () => {
     expect(() => preview({ reduceOnly: true, side: "buy" })).toThrowError(
       expect.objectContaining({ code: ErrorCodes.LIGHTER_INVALID_REQUEST }),
@@ -290,6 +345,43 @@ describe("Lighter order preview", () => {
       marketPosition: "1.5",
       positionSide: "long",
     });
+  });
+
+  it("binds protective position checks to the exact approved account", () => {
+    const otherAccount = {
+      ...first(ACCOUNT.accounts),
+      index: 41,
+      positions: [{
+        ...first(first(ACCOUNT.accounts).positions ?? []),
+        position: "99",
+      }],
+    };
+    const approvedAccount = {
+      ...first(ACCOUNT.accounts),
+      index: 42,
+      positions: [{
+        ...first(first(ACCOUNT.accounts).positions ?? []),
+        position: "0.5",
+      }],
+    };
+
+    expect(() => buildLighterOrderPreview(
+      {
+        ...INPUT,
+        side: "sell",
+        baseAmount: "1",
+        price: "2800",
+        triggerPrice: "2900",
+        orderType: "stop-loss",
+        timeInForce: "immediate-or-cancel",
+        reduceOnly: true,
+      },
+      {
+        market: MARKET,
+        orderBook: ORDER_BOOK,
+        account: { code: 200, total: 2, accounts: [otherAccount, approvedAccount] },
+      },
+    )).toThrow("exceeds the live position size 0.5");
   });
 
   it("refuses integer amounts that exceed Lighter signer wire bounds", () => {

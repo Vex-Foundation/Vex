@@ -18,7 +18,7 @@ export interface LighterOrderPreSubmitRevalidationEvidence {
   readonly symbol: string;
   readonly bestBid: string | null;
   readonly bestAsk: string | null;
-  readonly priceComparison: "resting" | "crossing_or_taker";
+  readonly priceComparison: "resting" | "crossing_or_taker" | "unknown";
   readonly positionVerified: boolean;
   readonly positionSide: "long" | "short" | "flat" | "unknown";
   readonly checks: readonly [
@@ -87,7 +87,8 @@ export function revalidateApprovedLighterOrder(input: {
   }
 
   const currentBehavior = fresh.preview.marketData.priceComparison;
-  if (currentBehavior === "unknown") {
+  const protective = plan.orderType === "stop-loss";
+  if (currentBehavior === "unknown" && !protective) {
     throw blocked("The live Lighter order book has no usable best-price evidence.");
   }
   assertApprovedPriceBehavior(plan, stored.priceComparison, fresh.preview);
@@ -148,6 +149,13 @@ function assertApprovedPriceBehavior(
   fresh: LighterOrderPreview["preview"],
 ): void {
   const currentBehavior = fresh.marketData.priceComparison;
+  if (plan.orderType === "stop-loss") {
+    // buildLighterOrderPreview already re-proved the live position, reducing
+    // side, trigger direction, market type, precision, and exact bound. A
+    // conditional order is intentionally not classified as resting/taking
+    // before its trigger fires.
+    return;
+  }
   if (plan.orderType === "market") {
     const liveOppositePrice = plan.side === "buy"
       ? fresh.marketData.bestAsk

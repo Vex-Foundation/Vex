@@ -225,7 +225,8 @@ function previewSummary(
 } {
   const preview = orderPreview.preview;
   const baseSymbol = preview.symbol.split("-")[0] ?? preview.symbol;
-  const orderExpiry = preview.timeInForce === "good-till-time"
+  const protective = preview.orderType === "stop-loss";
+  const orderExpiry = preview.orderType !== "market"
     ? new Date(Number(orderPreview.identity.expiryMs))
     : null;
   const price = formatUsd(preview.price.display);
@@ -237,6 +238,8 @@ function previewSummary(
     + `${formatUsd(preview.minimumChecks.minQuoteAmountDisplay)} quote minimum`;
   const marketNote = preview.orderType === "market"
     ? "Execution is refused if the live opposite-side price moves beyond this bound after approval."
+    : protective
+      ? "Hard execution bound after the trigger fires; this is not the trigger price."
     : preview.marketData.priceComparison === "crossing_or_taker"
       ? "The limit price is marketable against the current book if submitted."
       : preview.marketData.priceComparison === "resting"
@@ -265,10 +268,21 @@ function previewSummary(
         notes: `Passes minimum: ${formatAsset(preview.minimumChecks.minBaseAmountDisplay, baseSymbol)}`,
       },
       {
-        parameter: preview.orderType === "market" ? "Worst price" : "Limit price",
+        parameter: preview.orderType === "market"
+          ? "Worst price"
+          : protective
+            ? "Execution bound"
+            : "Limit price",
         value: `${price} per ${baseSymbol}`,
         notes: marketNote,
       },
+      ...(protective && preview.triggerPrice.display !== null
+        ? [{
+            parameter: "Trigger price",
+            value: `${formatUsd(preview.triggerPrice.display)} per ${baseSymbol}`,
+            notes: `Lighter activates this ${preview.orderType} only at the approved trigger.`,
+          }]
+        : []),
       {
         parameter: "Quote notional",
         value: quote,
@@ -1182,6 +1196,9 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         side: previewParams.value.side,
         baseAmount: previewParams.value.baseAmount,
         price: previewParams.value.price,
+        ...(previewParams.value.triggerPrice === undefined
+          ? {}
+          : { triggerPrice: previewParams.value.triggerPrice }),
         orderType: previewParams.value.orderType,
         timeInForce: previewParams.value.timeInForce,
         reduceOnly: previewParams.value.reduceOnly,

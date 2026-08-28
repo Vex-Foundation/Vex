@@ -905,6 +905,130 @@ describe("Lighter approved create execution pipeline", () => {
     expect(JSON.stringify(result)).not.toContain(AUTH_TOKEN);
   });
 
+  it("revalidates and submits the exact approved reduce-only stop-loss through the same guarded pipeline", async () => {
+    const protectiveAccount: LighterAccountResponse = {
+      ...ACCOUNT,
+      accounts: [{
+        ...first(ACCOUNT.accounts),
+        positions: [{
+          market_id: 0,
+          symbol: "ETH",
+          initial_margin_fraction: "5.00",
+          open_order_count: 0,
+          pending_order_count: 0,
+          position_tied_order_count: 0,
+          sign: 1,
+          position: "1.5",
+          avg_entry_price: "3000",
+          position_value: "4500",
+          unrealized_pnl: "0",
+          realized_pnl: "0",
+          liquidation_price: "2000",
+          margin_mode: 0,
+          allocated_margin: "0",
+        }],
+      }],
+    };
+    const protectivePreview = buildLighterOrderPreview({
+      sessionId: PLAN.sessionId,
+      environment: PLAN.environment,
+      accountIndex: PLAN.accountIndex,
+      apiKeyIndex: PLAN.apiKeyIndex,
+      marketId: PLAN.marketIndex,
+      side: "sell",
+      baseAmount: "1",
+      price: "2800",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+      triggerPrice: "2900",
+      orderExpiry: PLAN.orderExpiryMs,
+      clientOrderIndexPolicy: PLAN.clientOrderIndexPolicy,
+      nowMs: NOW,
+    }, { market: MARKET, orderBook: ORDER_BOOK, account: protectiveAccount });
+    const protectivePlan: LighterOrderReadyForSignerPlan = {
+      ...PLAN,
+      previewId: protectivePreview.previewId,
+      matchHash: protectivePreview.matchHash,
+      side: "sell",
+      baseAmountInteger: protectivePreview.identity.baseAmountInteger,
+      priceInteger: protectivePreview.identity.priceInteger,
+      orderType: "stop-loss",
+      reduceOnly: true,
+      triggerPriceInteger: protectivePreview.identity.triggerPriceInteger,
+    };
+    const protectiveRow = {
+      ...APPROVED_PREVIEW_ROW,
+      previewId: protectivePlan.previewId,
+      matchHash: protectivePlan.matchHash,
+      side: protectivePlan.side,
+      baseAmountInteger: protectivePlan.baseAmountInteger,
+      priceInteger: protectivePlan.priceInteger,
+      orderType: protectivePlan.orderType,
+      reduceOnly: protectivePlan.reduceOnly,
+      triggerPriceInteger: protectivePlan.triggerPriceInteger,
+      previewJson: { ...protectivePreview.preview },
+    };
+    const unsigned = buildLighterUnsignedCreateOrderRequest(protectivePlan);
+    const base = deps();
+    const d = deps({
+      client: {
+        ...base.client,
+        getAccount: vi.fn(async () => protectiveAccount),
+      },
+      previews: { findFreshById: vi.fn(async () => protectiveRow) },
+      reserveNonce: vi.fn(async () => ({
+        kind: "lighter_order_nonce_reservation",
+        intentId: protectivePlan.intentId,
+        sessionId: protectivePlan.sessionId,
+        reservationId: `lighter-order:${protectivePlan.intentId}`,
+        nonceValue: "0",
+        environment: protectivePlan.environment,
+        accountIndex: protectivePlan.accountIndex,
+        apiKeyIndex: protectivePlan.apiKeyIndex,
+      })),
+      intents: {
+        ...base.intents,
+        markPreSubmitRevalidated: vi.fn(async () => ({
+          ...APPROVED_INTENT_ROW,
+          previewId: protectivePlan.previewId,
+          matchHash: protectivePlan.matchHash,
+          side: protectivePlan.side,
+          baseAmountInteger: protectivePlan.baseAmountInteger,
+          priceInteger: protectivePlan.priceInteger,
+          orderType: protectivePlan.orderType,
+          reduceOnly: protectivePlan.reduceOnly,
+          triggerPriceInteger: protectivePlan.triggerPriceInteger,
+        })),
+      },
+    });
+
+    const result = await executeApprovedLighterCreateOrder({
+      plan: protectivePlan,
+      unsignedOrder: unsigned,
+      deps: d,
+    });
+
+    expect(d.intents.markPreSubmitRevalidated).toHaveBeenCalledWith(expect.objectContaining({
+      evidence: expect.objectContaining({
+        priceComparison: "unknown",
+        positionVerified: true,
+        positionSide: "long",
+      }),
+    }));
+    expect(d.signer.signCreateOrder).toHaveBeenCalledWith(expect.objectContaining({
+      order: expect.objectContaining({
+        orderTypeCode: 2,
+        timeInForceCode: 0,
+        reduceOnly: true,
+        triggerPriceInteger: "290000",
+        priceInteger: "280000",
+      }),
+    }));
+    expect(d.client.sendTx).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: "sequencer_pending" });
+  });
+
   it("records active provider order evidence when the submitted client order is visible", async () => {
     const d = deps({
       client: {

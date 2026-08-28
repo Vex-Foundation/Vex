@@ -101,6 +101,22 @@ describe("Lighter unsigned signer order request", () => {
     expect(gttLimit.orderExpiryMs).toBe(1893456000000);
   });
 
+  it("maps an approved protective order with a non-nil trigger expiry", () => {
+    const request = buildLighterUnsignedCreateOrderRequest(plan({
+      side: "sell",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+      triggerPriceInteger: "290000",
+      orderExpiryMs: 1893456000000,
+    }));
+
+    expect(request.orderTypeCode).toBe(2);
+    expect(request.triggerPriceInteger).toBe("290000");
+    expect(request.orderExpiryMs).toBe(1893456000000);
+
+  });
+
   it("derives a nonzero uint48 client order index from the match hash", () => {
     expect(deriveVexAssignedClientOrderIndex(`${"0".repeat(12)}${"1".repeat(52)}`)).toBe("1");
     expect(deriveVexAssignedClientOrderIndex(`${"f".repeat(12)}${"1".repeat(52)}`))

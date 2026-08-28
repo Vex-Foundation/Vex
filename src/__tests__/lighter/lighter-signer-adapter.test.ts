@@ -80,6 +80,20 @@ describe("Lighter official signer adapter boundary", () => {
       ...gttOrder,
       orderExpiryMs: 0,
     })).toThrow("positive order expiry");
+
+    const protectiveOrder = buildLighterUnsignedCreateOrderRequest(plan({
+      side: "sell",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+      triggerPriceInteger: "290000",
+    }));
+    expect(protectiveOrder.orderExpiryMs).toBe(1893456000000);
+    expect(() => assertUnsignedCreateOrderFitsOfficialSigner(protectiveOrder)).not.toThrow();
+    expect(() => assertUnsignedCreateOrderFitsOfficialSigner({
+      ...protectiveOrder,
+      triggerPriceInteger: "0",
+    })).toThrow("positive trigger price");
   });
 
   it("creates bounded canonical account auth for the exact credential scope", async () => {

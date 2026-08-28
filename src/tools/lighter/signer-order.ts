@@ -5,6 +5,7 @@ import type { LighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/
 export const LIGHTER_SIGNER_ORDER_TYPE_CODES = {
   limit: 0,
   market: 1,
+  "stop-loss": 2,
 } as const;
 
 export const LIGHTER_SIGNER_TIME_IN_FORCE_CODES = {
@@ -23,7 +24,7 @@ export interface LighterUnsignedCreateOrderRequest {
   readonly baseAmountInteger: string;
   readonly priceInteger: string;
   readonly isAsk: boolean;
-  readonly orderTypeCode: 0 | 1;
+  readonly orderTypeCode: 0 | 1 | 2;
   readonly timeInForceCode: 0 | 1 | 2;
   readonly reduceOnly: boolean;
   readonly triggerPriceInteger: string;
@@ -34,8 +35,13 @@ export interface LighterUnsignedCreateOrderRequest {
 export function buildLighterUnsignedCreateOrderRequest(
   plan: LighterOrderReadyForSignerPlan,
 ): LighterUnsignedCreateOrderRequest {
-  if (plan.triggerPriceInteger !== null) {
-    throw invalidRequest("Trigger-price Lighter create-order signing is not enabled in this wave.");
+  const protective = plan.orderType === "stop-loss";
+  if (protective !== (plan.triggerPriceInteger !== null)) {
+    throw invalidRequest(
+      protective
+        ? "Protective Lighter create-order signing requires an approved trigger price."
+        : "Trigger-price input is accepted only for protective Lighter create orders.",
+    );
   }
   if (plan.clientOrderIndexPolicy !== LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT) {
     throw invalidRequest("Unsupported Lighter client-order-index policy for signing.");
@@ -48,7 +54,8 @@ export function buildLighterUnsignedCreateOrderRequest(
   // order fails the official signer with ErrOrderExpiryInvalid. The plan/intent
   // keep the original expiry for approval binding; only the signed order is nilled.
   const orderExpiryMs =
-    timeInForceCode === LIGHTER_SIGNER_TIME_IN_FORCE_CODES["immediate-or-cancel"]
+    !protective
+    && timeInForceCode === LIGHTER_SIGNER_TIME_IN_FORCE_CODES["immediate-or-cancel"]
       ? 0
       : plan.orderExpiryMs;
 
@@ -65,7 +72,7 @@ export function buildLighterUnsignedCreateOrderRequest(
     orderTypeCode: LIGHTER_SIGNER_ORDER_TYPE_CODES[plan.orderType],
     timeInForceCode,
     reduceOnly: plan.reduceOnly,
-    triggerPriceInteger: "0",
+    triggerPriceInteger: plan.triggerPriceInteger ?? "0",
     orderExpiryMs,
     matchHash: plan.matchHash,
   };

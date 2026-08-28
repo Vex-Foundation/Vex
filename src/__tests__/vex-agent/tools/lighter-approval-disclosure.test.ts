@@ -75,6 +75,7 @@ describe("Lighter order approval disclosure", () => {
       marketType: "perp",
       baseAmountDisplay: "1.25",
       priceDisplay: "2999.99",
+      triggerPriceDisplay: null,
       notionalDisplay: "3749.9875",
       orderExpiryIso: "2030-01-01T00:00:00.000Z",
       orderSummary: expect.stringContaining("Buy 1.25 ETH at limit price 2999.99"),
@@ -85,6 +86,30 @@ describe("Lighter order approval disclosure", () => {
     expect(disclosure.orderSummary).toContain("good-till-time");
     expect(disclosure.orderSummary).toContain("API acceptance is not final execution.");
     expect(disclosure.orderSummary).not.toContain("reduce-only");
+  });
+
+  it("discloses the trigger separately from the hard execution bound", () => {
+    const disclosure = buildLighterOrderApprovalDisclosure(
+      intentRow({
+        side: "sell",
+        orderType: "stop-loss",
+        timeInForce: "immediate-or-cancel",
+        reduceOnly: true,
+        triggerPriceInteger: "290000",
+      }),
+      previewRow({
+        side: "sell",
+        orderType: "stop-loss",
+        timeInForce: "immediate-or-cancel",
+        reduceOnly: true,
+        triggerPriceInteger: "290000",
+      }),
+    );
+
+    expect(disclosure.triggerPriceDisplay).toBe("2900");
+    expect(disclosure.orderSummary).toContain("hard execution bound 2999.99");
+    expect(disclosure.orderSummary).toContain("stop-loss trigger 2900");
+    expect(disclosure.orderSummary).toContain("reduce-only");
   });
 
   it("names Core explicitly and labels a market order's worst acceptable price", () => {

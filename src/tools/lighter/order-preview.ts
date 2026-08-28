@@ -14,7 +14,11 @@ import type {
 export const LIGHTER_ORDER_PREVIEW_PROVIDER_VERSION = "lighter-order-preview-v1";
 export const LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT = "vex_assigned_uint48";
 
-export const LIGHTER_ORDER_TYPES = ["limit", "market"] as const;
+export const LIGHTER_ORDER_TYPES = [
+  "limit",
+  "market",
+  "stop-loss",
+] as const;
 export const LIGHTER_ORDER_SIDES = ["buy", "sell"] as const;
 export const LIGHTER_ORDER_TIME_IN_FORCE = [
   "good-till-time",
@@ -94,7 +98,7 @@ export interface LighterOrderPreview {
       readonly display: string;
       readonly integer: string;
       readonly decimals: number;
-      readonly role: "limit_price" | "worst_acceptable_price";
+      readonly role: "limit_price" | "worst_acceptable_price" | "trigger_execution_bound";
     };
     readonly triggerPrice: {
       readonly display: string | null;
@@ -172,7 +176,7 @@ export function buildLighterOrderPreview(
   assertAccountContainsIndex(input, context.account);
   assertQuoteScale(context.market);
   assertExpiry(input.orderExpiry, nowMs);
-  assertOrderCombination(input);
+  assertOrderCombination(input, context.market);
 
   const baseAmountInteger = decimalToLighterInteger(
     input.baseAmount,
@@ -243,15 +247,23 @@ export function buildLighterOrderPreview(
     quoteNotionalInteger,
   );
 
-  const positionContext = readPositionContext(context.account, input.marketId);
+  const positionContext = readPositionContext(
+    context.account,
+    input.accountIndex,
+    input.marketId,
+  );
   if (input.reduceOnly && !isReduceOnlyVerifiable(input.side, positionContext)) {
     throw invalidRequest(
       "Lighter order preview refused: reduce-only intent cannot be verified against the live account position.",
     );
   }
+  if (isProtectiveOrderType(input.orderType)) {
+    assertProtectiveSizeWithinPosition(input.baseAmount, positionContext);
+  }
 
   const bestBid = bestPrice(context.orderBook.bids, "bid");
   const bestAsk = bestPrice(context.orderBook.asks, "ask");
+  assertProtectiveTriggerDirection(input, triggerPriceInteger, bestBid, bestAsk);
   const priceComparison = classifyPriceComparison(input.side, input.orderType, input.price, bestBid, bestAsk);
 
   const identity: LighterOrderPreviewIdentity = {
@@ -300,7 +312,11 @@ export function buildLighterOrderPreview(
         display: formatInteger(priceInteger, context.market.supported_price_decimals),
         integer: priceInteger.toString(),
         decimals: context.market.supported_price_decimals,
-        role: input.orderType === "market" ? "worst_acceptable_price" : "limit_price",
+        role: input.orderType === "market"
+          ? "worst_acceptable_price"
+          : isProtectiveOrderType(input.orderType)
+            ? "trigger_execution_bound"
+            : "limit_price",
       },
       triggerPrice: {
         display: triggerPriceInteger === null
@@ -339,6 +355,11 @@ export function buildLighterOrderPreview(
       riskNotes: [
         "Preview only. No order was signed, submitted, placed, cancelled, deposited, withdrawn, or transferred.",
         "A later API acceptance is not final execution; order outcome must be proven by Lighter order or transaction evidence.",
+        ...(isProtectiveOrderType(input.orderType)
+          ? [
+              "This reduce-only protective order can execute only after Lighter observes the approved trigger price; its price is a hard execution bound, not the trigger itself.",
+            ]
+          : []),
         ...(spotInventoryContext === null
           ? []
           : [
@@ -453,7 +474,10 @@ function assertExpiry(orderExpiry: number, nowMs: number): void {
   }
 }
 
-function assertOrderCombination(input: LighterOrderPreviewInput): void {
+function assertOrderCombination(
+  input: LighterOrderPreviewInput,
+  market: LighterMarketDetail,
+): void {
   if (input.orderType === "market" && input.timeInForce !== "immediate-or-cancel") {
     throw invalidRequest("Market order previews require immediate-or-cancel time in force.");
   }
@@ -463,9 +487,68 @@ function assertOrderCombination(input: LighterOrderPreviewInput): void {
   if (input.timeInForce === "post-only" && input.orderType !== "limit") {
     throw invalidRequest("Post-only previews are supported only for limit orders.");
   }
-  if (input.triggerPrice !== undefined && input.triggerPrice !== null) {
-    throw invalidRequest("Trigger-price order previews are not supported in this wave.");
+  if (isProtectiveOrderType(input.orderType)) {
+    if (market.market_type !== "perp") {
+      throw invalidRequest("Stop-loss orders are supported only for Lighter perpetual markets.");
+    }
+    if (input.timeInForce !== "immediate-or-cancel") {
+      throw invalidRequest("Stop-loss orders require immediate-or-cancel time in force.");
+    }
+    if (!input.reduceOnly) {
+      throw invalidRequest("Stop-loss orders must be reduce-only in Vex.");
+    }
+    if (input.triggerPrice === undefined || input.triggerPrice === null) {
+      throw invalidRequest("Stop-loss orders require an explicit triggerPrice.");
+    }
+    return;
   }
+  if (input.triggerPrice !== undefined && input.triggerPrice !== null) {
+    throw invalidRequest("Trigger price is accepted only for stop-loss orders.");
+  }
+}
+
+function assertProtectiveTriggerDirection(
+  input: LighterOrderPreviewInput,
+  triggerPriceInteger: bigint | null,
+  bestBid: string | null,
+  bestAsk: string | null,
+): void {
+  if (!isProtectiveOrderType(input.orderType)) return;
+  if (triggerPriceInteger === null) {
+    throw invalidRequest("Protective order trigger price is unavailable.");
+  }
+  const triggerPrice = input.triggerPrice;
+  if (triggerPrice === undefined || triggerPrice === null) {
+    throw invalidRequest("Protective order trigger price is unavailable.");
+  }
+  const reference = input.side === "sell" ? bestBid : bestAsk;
+  if (reference === null) {
+    throw invalidRequest("Protective order preview requires a live opposite-side reference price.");
+  }
+  const comparison = compareDecimalStrings(triggerPrice, reference);
+  const valid = input.side === "sell" ? comparison < 0 : comparison > 0;
+  if (!valid) {
+    const position = input.side === "sell" ? "long" : "short";
+    const direction = input.side === "sell" ? "below" : "above";
+    throw invalidRequest(
+      `${input.orderType} for a ${position} position requires triggerPrice ${direction} the live reference price ${reference}.`,
+    );
+  }
+  const boundComparison = compareDecimalStrings(input.price, triggerPrice);
+  if (
+    (input.side === "sell" && boundComparison > 0)
+    || (input.side === "buy" && boundComparison < 0)
+  ) {
+    throw invalidRequest(
+      `Protective ${input.side} execution bound must be ${input.side === "sell" ? "at or below" : "at or above"} triggerPrice ${triggerPrice}.`,
+    );
+  }
+}
+
+export function isProtectiveOrderType(
+  orderType: LighterOrderType,
+): orderType is "stop-loss" {
+  return orderType === "stop-loss";
 }
 
 function assertSpotOrderInventory(
@@ -620,9 +703,12 @@ function accountIndexOf(account: LighterAccount): number | null {
 
 function readPositionContext(
   account: LighterAccountResponse,
+  accountIndex: number,
   marketId: number,
 ): LighterOrderPreview["preview"]["positionContext"] {
-  const owner = account.accounts.find((row) => Array.isArray(row.positions));
+  const owner = account.accounts.find(
+    (row) => accountIndexOf(row) === accountIndex && Array.isArray(row.positions),
+  );
   const positions = owner && Array.isArray(owner.positions) ? owner.positions : [];
   const position = positions.find((row) => {
     if (!isRecord(row)) return false;
@@ -657,6 +743,20 @@ function isReduceOnlyVerifiable(
   return false;
 }
 
+function assertProtectiveSizeWithinPosition(
+  baseAmount: string,
+  position: LighterOrderPreview["preview"]["positionContext"],
+): void {
+  if (position.marketPosition === null || decimalParts(position.marketPosition) === null) {
+    throw invalidRequest("Protective order preview requires an exact live position size.");
+  }
+  if (compareDecimalStrings(baseAmount, position.marketPosition) > 0) {
+    throw invalidRequest(
+      `Protective order size ${baseAmount} exceeds the live position size ${position.marketPosition}.`,
+    );
+  }
+}
+
 function bestPrice(orders: readonly LighterSimpleOrder[], side: "ask" | "bid"): string | null {
   const prices = orders
     .map((order) => stringValue(order.price))
@@ -686,6 +786,7 @@ function classifyPriceComparison(
   bestAsk: string | null,
 ): "resting" | "crossing_or_taker" | "unknown" {
   if (orderType === "market") return "crossing_or_taker";
+  if (isProtectiveOrderType(orderType)) return "unknown";
   if (side === "buy") {
     if (bestAsk === null || decimalParts(price) === null || decimalParts(bestAsk) === null) return "unknown";
     return compareDecimalStrings(price, bestAsk) >= 0 ? "crossing_or_taker" : "resting";

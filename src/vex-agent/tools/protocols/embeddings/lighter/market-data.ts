@@ -133,13 +133,13 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.order.preview": {
     embeddingText: embeddingText(
-      `Create a read-only Lighter Phase 1 IOC market-order preview using live market detail, order book, and account data. ` +
-      `Use when: the user asks to preview or check an IOC market order without placing it. Price is the worst acceptable execution price. Resting limit and post-only orders are unavailable. Pass named assets as market symbols. Unspecified requests default to RHC; preserve Core or RHC after selection. ` +
-      `Returns exact amounts, minimum checks, best bid/ask, position context, and risk notes. When managed trading is ready, it prepares the exact durable intent and displays the separate approval card directly; it never signs or submits without that explicit approval. ` +
-      `Example queries: preview an IOC market buy of 0.001 ETH with worst price 3000, preflight an RHC market buy.`,
+      `Create a live-data-backed Lighter preview for an IOC market order or one standalone reduce-only perpetual stop-loss order. ` +
+      `Use when: the user asks to preview a market order or protect an existing perpetual position with a stop loss. Market orders require a worst acceptable price. Stop-loss orders require an explicit trigger, hard execution-price bound, reduceOnly=true, and a side and size that reduce the exact live position. Resting limit, take-profit, post-only, paired TP/SL, entry-plus-protection, and grouped orders are unavailable and must not be partially previewed. Pass named assets as market symbols. Unspecified requests default to RHC; preserve Core or RHC after selection. ` +
+      `Returns exact amounts, minimum checks, best bid/ask, position context, trigger disclosure, and risk notes. When managed trading is ready, it prepares the exact durable intent and displays the separate approval card directly; it never signs or submits without that explicit approval. ` +
+      `Example queries: preview an IOC market buy of 0.001 ETH with worst price 3000, protect my 0.1 ETH long with a stop loss at 2900 and execution bound 2850.`,
     ),
-    aliases: ["lighter order preview", "preview order", "order preflight", "lighter_order"],
-    exampleIntents: ["show me an IOC market buy preview for 0.001 ETH with worst price 3000", "preview lighter market order", "preflight rhc market buy", "check core reduce-only market sell"],
+    aliases: ["lighter order preview", "preview order", "order preflight", "lighter stop loss", "lighter_order"],
+    exampleIntents: ["show me an IOC market buy preview for 0.001 ETH with worst price 3000", "protect my lighter long with a stop loss", "preview lighter market order", "check core reduce-only market sell"],
     ecosystems: ["lighter", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",

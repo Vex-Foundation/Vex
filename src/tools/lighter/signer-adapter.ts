@@ -209,16 +209,28 @@ export function assertUnsignedCreateOrderFitsOfficialSigner(
   requireDecimalInteger("triggerPriceInteger", order.triggerPriceInteger, LIGHTER_SIGNER_UINT32_MAX, {
     allowZero: true,
   });
-  // Lighter's nil order expiry is 0, required for immediate-or-cancel orders and
-  // forbidden for good-till-time / post-only. Enforce that invariant here so a
-  // mismatched order is rejected before it reaches the signer.
+  // Ordinary IOC market/limit orders use nil expiry. Native stop-loss and
+  // stop-loss orders are also IOC, but Lighter requires a positive expiry
+  // because they may remain dormant until the trigger fires.
   const isImmediateOrCancel =
     order.timeInForceCode === LIGHTER_SIGNER_TIME_IN_FORCE_CODES["immediate-or-cancel"];
+  const isProtective = order.orderTypeCode === 2;
   // Bounds only: 0 is Lighter's nil expiry. The expiry-vs-time-in-force invariant
   // below owns whether 0 is actually allowed for this order.
   requireDecimalInteger("orderExpiryMs", String(order.orderExpiryMs), LIGHTER_SIGNER_INT64_MAX, {
     allowZero: true,
   });
+  if (isProtective) {
+    if (!isImmediateOrCancel || order.orderExpiryMs === 0 || order.triggerPriceInteger === "0") {
+      throw invalidRequest(
+        "Protective Lighter orders require IOC, a positive trigger price, and a positive order expiry.",
+      );
+    }
+    return;
+  }
+  if (order.triggerPriceInteger !== "0") {
+    throw invalidRequest("Trigger price is accepted only for protective Lighter orders.");
+  }
   if (isImmediateOrCancel && order.orderExpiryMs !== 0) {
     throw invalidRequest("Immediate-or-cancel Lighter orders must use a zero (nil) order expiry.");
   }

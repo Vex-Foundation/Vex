@@ -116,17 +116,21 @@ the configured privileged execution path. A `code=200` response
 means API acceptance only; final open/fill/cancel/reject state still requires
 provider evidence.
 
-The order-create product surface exposes only market orders with
-`immediate-or-cancel` time in force.
-The required price is the user's worst acceptable execution price, and Vex
-revalidates the live opposite-side price after approval before any credential
-or vault access. Resting limit, good-till-time, and post-only orders are refused
-at parameter parsing, approval preparation, execution-plan construction, and
-the privileged submit boundary. Phase 2 now provides production approval-gated
-cancel and modify machinery, but the create gate remains closed until retained
-real-provider canary evidence proves both operations end-to-end on a separately
-approved resting order. The lower-level signer keeps the provider's broader order-type
-encoding for future phases, but those modes are not reachable from the product.
+The order-create product surface exposes ordinary market orders and standalone
+reduce-only perpetual stop-loss orders. Both use Lighter's
+`immediate-or-cancel` time in force. Ordinary market orders require a worst
+acceptable execution price. Stop-loss orders require both an explicit trigger
+and a hard execution-price bound; Vex verifies the reducing side, exact live
+position size, trigger direction, and bound direction before preview and again
+after approval before any credential or vault access. A trigger that is already
+crossed at revalidation is refused.
+
+Resting limit, good-till-time, post-only, take-profit, trigger-limit, TWAP, and
+native grouped order creation remain unavailable. A request for paired TP/SL protection or an
+entry with attached protection must be refused as a whole rather than silently
+placing one leg. The pinned official signer supports the standalone trigger
+encoding locally, but no live protective order is claimed verified until a
+separately approved retained real-provider canary completes.
 
 ## Production Deposit Boundary
 

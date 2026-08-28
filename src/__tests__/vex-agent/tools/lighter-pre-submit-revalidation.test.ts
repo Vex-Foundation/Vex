@@ -130,7 +130,9 @@ function approvedFixture(overrides: Partial<LighterOrderPreviewInput> = {}) {
     orderType: input.orderType,
     timeInForce: input.timeInForce,
     reduceOnly: input.reduceOnly,
-    triggerPriceInteger: null,
+    triggerPriceInteger: preview.identity.triggerPriceInteger.length === 0
+      ? null
+      : preview.identity.triggerPriceInteger,
     orderExpiryMs: input.orderExpiry,
     clientOrderIndexPolicy: input.clientOrderIndexPolicy,
     providerVersion: preview.identity.providerVersion,
@@ -278,6 +280,55 @@ describe("Lighter post-approval pre-submit revalidation", () => {
       },
       nowMs: NOW + 60_000,
     })).toThrow("moved beyond the approved market-order worst price");
+  });
+
+  it("revalidates an unchanged protective trigger against the live position and book", () => {
+    const { row, plan } = approvedFixture({
+      side: "sell",
+      price: "2800",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+      triggerPrice: "2900",
+    });
+
+    const evidence = revalidateApprovedLighterOrder({
+      plan,
+      approvedPreview: row,
+      context: { market: MARKET, orderBook: ORDER_BOOK, account: ACCOUNT },
+      nowMs: NOW + 60_000,
+    });
+
+    expect(evidence).toMatchObject({
+      priceComparison: "unknown",
+      positionVerified: true,
+      positionSide: "long",
+    });
+  });
+
+  it("refuses a protective order whose trigger was crossed while approval was pending", () => {
+    const { row, plan } = approvedFixture({
+      side: "sell",
+      price: "2800",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+      triggerPrice: "2900",
+    });
+
+    expect(() => revalidateApprovedLighterOrder({
+      plan,
+      approvedPreview: row,
+      context: {
+        market: MARKET,
+        orderBook: {
+          ...ORDER_BOOK,
+          bids: [{ ...first(ORDER_BOOK.bids), price: "2899.99" }],
+        },
+        account: ACCOUNT,
+      },
+      nowMs: NOW + 60_000,
+    })).toThrow("No trading key was loaded, no nonce was reserved, and no order was signed or submitted");
   });
 
   it("refuses a post-only limit that would now cross the live book", () => {

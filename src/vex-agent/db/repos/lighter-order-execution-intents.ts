@@ -43,7 +43,7 @@ export interface LighterOrderExecutionIntentRow {
   readonly side: "buy" | "sell";
   readonly baseAmountInteger: string;
   readonly priceInteger: string;
-  readonly orderType: "limit" | "market";
+  readonly orderType: "limit" | "market" | "stop-loss";
   readonly timeInForce: "good-till-time" | "immediate-or-cancel" | "post-only";
   readonly reduceOnly: boolean;
   readonly triggerPriceInteger: string | null;
@@ -962,7 +962,7 @@ function mapRow(row: Record<string, unknown>): LighterOrderExecutionIntentRow {
     side: row.side as "buy" | "sell",
     baseAmountInteger: row.base_amount_integer as string,
     priceInteger: row.price_integer as string,
-    orderType: row.order_type as "limit" | "market",
+    orderType: row.order_type as LighterOrderExecutionIntentRow["orderType"],
     timeInForce: row.time_in_force as "good-till-time" | "immediate-or-cancel" | "post-only",
     reduceOnly: row.reduce_only as boolean,
     triggerPriceInteger: (row.trigger_price_integer as string | null) ?? null,

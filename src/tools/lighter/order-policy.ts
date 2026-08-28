@@ -4,18 +4,20 @@ import type {
   LighterOrderType,
 } from "./order-preview.js";
 
-export const LIGHTER_PHASE_ONE_ORDER_TYPES = ["market"] as const;
+export const LIGHTER_PHASE_ONE_ORDER_TYPES = ["market", "stop-loss"] as const;
 export const LIGHTER_PHASE_ONE_TIME_IN_FORCE = ["immediate-or-cancel"] as const;
 
 const PHASE_ONE_ORDER_POLICY_REASON =
-  "Lighter Phase 1 permits market orders with immediate-or-cancel time in force only. "
-  + "Resting limit, good-till-time, and post-only orders remain unavailable until approval-gated cancel and modify both complete retained real-provider canaries.";
+  "Lighter Phase 1 permits market orders with immediate-or-cancel; Vex additionally permits reduce-only stop-loss orders with the same time in force. "
+  + "Resting limit, good-till-time, and post-only orders remain unavailable; trigger-limit, TWAP, and grouped order creation also remain gated until their retained real-provider canaries complete.";
 
 export function lighterPhaseOneOrderPolicyFailure(
   orderType: LighterOrderType,
   timeInForce: LighterOrderTimeInForce,
 ): string | null {
-  return orderType === "market" && timeInForce === "immediate-or-cancel"
+  return LIGHTER_PHASE_ONE_ORDER_TYPES.includes(
+    orderType as (typeof LIGHTER_PHASE_ONE_ORDER_TYPES)[number],
+  ) && timeInForce === "immediate-or-cancel"
     ? null
     : PHASE_ONE_ORDER_POLICY_REASON;
 }

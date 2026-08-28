@@ -67,6 +67,7 @@ export interface LighterOrderPreviewParams {
   readonly side: LighterOrderSide;
   readonly baseAmount: string;
   readonly price: string;
+  readonly triggerPrice?: string;
   readonly orderType: LighterOrderType;
   readonly timeInForce: LighterOrderTimeInForce;
   readonly reduceOnly: boolean;
@@ -356,6 +357,7 @@ export function readLighterOrderPreviewParams(
   if (!baseAmount.ok) return baseAmount;
   const price = readRequiredString(params, "price");
   if (!price.ok) return price;
+  const triggerPrice = readString(params, "triggerPrice");
   const orderExpiry = readOrderExpiry(params, nowMs);
   if (!orderExpiry.ok) return orderExpiry;
   const reduceOnly = readBoolean(params, "reduceOnly");
@@ -370,6 +372,20 @@ export function readLighterOrderPreviewParams(
     resolvedTimeInForce,
   );
   if (policyFailure !== null) return { ok: false, reason: policyFailure };
+  const protective = resolvedOrderType === "stop-loss";
+  if (protective) {
+    if (triggerPrice === undefined) {
+      return { ok: false, reason: `${resolvedOrderType} requires an explicit triggerPrice.` };
+    }
+    if (reduceOnly !== true) {
+      return { ok: false, reason: `${resolvedOrderType} requires reduceOnly=true.` };
+    }
+    if (marketType.value === "spot") {
+      return { ok: false, reason: `${resolvedOrderType} is supported only for Lighter perpetual markets.` };
+    }
+  } else if (triggerPrice !== undefined) {
+    return { ok: false, reason: "triggerPrice requires orderType=stop-loss." };
+  }
   const clientOrderIndexPolicy =
     readString(params, "clientOrderIndexPolicy") ?? LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT;
   return {
@@ -383,6 +399,7 @@ export function readLighterOrderPreviewParams(
       side: side.value as LighterOrderSide,
       baseAmount: baseAmount.value,
       price: price.value,
+      ...(triggerPrice === undefined ? {} : { triggerPrice }),
       orderType: resolvedOrderType,
       timeInForce: resolvedTimeInForce,
       reduceOnly: reduceOnly ?? false,

@@ -16,6 +16,7 @@ export interface LighterOrderApprovalDisclosure {
   readonly marketType: "perp" | "spot";
   readonly baseAmountDisplay: string;
   readonly priceDisplay: string;
+  readonly triggerPriceDisplay: string | null;
   readonly notionalDisplay: string;
   readonly orderExpiryIso: string;
   readonly orderSummary: string;
@@ -53,6 +54,12 @@ export function buildLighterOrderApprovalDisclosure(
     parseWireInteger(intent.priceInteger, "priceInteger"),
     stored.priceDecimals,
   );
+  const triggerPriceDisplay = intent.triggerPriceInteger === null
+    ? null
+    : formatLighterIntegerAmount(
+        parseWireInteger(intent.triggerPriceInteger, "triggerPriceInteger"),
+        stored.priceDecimals,
+      );
   const notionalDisplay = formatLighterIntegerAmount(
     parseWireInteger(intent.baseAmountInteger, "baseAmountInteger")
       * parseWireInteger(intent.priceInteger, "priceInteger"),
@@ -63,12 +70,18 @@ export function buildLighterOrderApprovalDisclosure(
     throw disclosureUnavailable("The prepared Lighter order expiry is invalid.");
   }
 
-  const priceLabel = intent.orderType === "market" ? "worst acceptable price" : "limit price";
+  const protective = intent.orderType === "stop-loss";
+  const priceLabel = intent.orderType === "market"
+    ? "worst acceptable price"
+    : protective
+      ? "hard execution bound"
+      : "limit price";
   const environmentLabel = ENVIRONMENT_LABELS[intent.environment];
   const productLabel = stored.marketType === "spot" ? "spot" : "perpetual";
   const orderSummary =
     `${intent.side === "buy" ? "Buy" : "Sell"} ${baseAmountDisplay} ${stored.symbol} `
     + `at ${priceLabel} ${priceDisplay} (est. notional ${notionalDisplay}) `
+    + (protective ? `after ${intent.orderType} trigger ${triggerPriceDisplay}; ` : "")
     + `on the ${productLabel} market on ${environmentLabel} (${intent.environment}); ${intent.timeInForce}`
     + `${intent.reduceOnly ? "; reduce-only" : ""}; expires ${orderExpiryIso}. `
     + `${intent.timeInForce === "immediate-or-cancel" ? "Any unfilled remainder is canceled immediately. " : ""}`
@@ -79,6 +92,7 @@ export function buildLighterOrderApprovalDisclosure(
     marketType: stored.marketType,
     baseAmountDisplay,
     priceDisplay,
+    triggerPriceDisplay,
     notionalDisplay,
     orderExpiryIso,
     orderSummary,

@@ -234,6 +234,7 @@ const LIGHTER_PREVIEW_KEYS = [
   "marketType",
   "baseAmountDisplay",
   "priceDisplay",
+  "triggerPriceDisplay",
   "notionalDisplay",
   "orderExpiryIso",
   "toolId",
@@ -245,6 +246,7 @@ const LIGHTER_PREVIEW_KEYS = [
   "side",
   "baseAmountInteger",
   "priceInteger",
+  "triggerPriceInteger",
   "orderType",
   "timeInForce",
   "reduceOnly",
@@ -819,13 +821,34 @@ function validateLighterOrderCreateFollowUp(
     !/^[1-9][0-9]*$/.test(criticalArgs.baseAmountInteger) ||
     typeof criticalArgs.priceInteger !== "string" ||
     !/^[1-9][0-9]*$/.test(criticalArgs.priceInteger) ||
-    (criticalArgs.orderType !== "limit" && criticalArgs.orderType !== "market") ||
+    !(
+      criticalArgs.triggerPriceInteger === null
+      || (typeof criticalArgs.triggerPriceInteger === "string"
+        && /^[1-9][0-9]*$/.test(criticalArgs.triggerPriceInteger))
+    ) ||
+    !(
+      criticalArgs.triggerPriceDisplay === null
+      || (typeof criticalArgs.triggerPriceDisplay === "string"
+        && LIGHTER_DISPLAY_AMOUNT_RE.test(criticalArgs.triggerPriceDisplay))
+    ) ||
+    (
+      criticalArgs.orderType !== "limit"
+      && criticalArgs.orderType !== "market"
+      && criticalArgs.orderType !== "stop-loss"
+    ) ||
     !(
       criticalArgs.timeInForce === "good-till-time" ||
       criticalArgs.timeInForce === "immediate-or-cancel" ||
       criticalArgs.timeInForce === "post-only"
     ) ||
     typeof criticalArgs.reduceOnly !== "boolean" ||
+    (criticalArgs.orderType === "stop-loss"
+      ? criticalArgs.timeInForce !== "immediate-or-cancel"
+        || criticalArgs.reduceOnly !== true
+        || criticalArgs.marketType !== "perp"
+        || criticalArgs.triggerPriceInteger === null
+        || criticalArgs.triggerPriceDisplay === null
+      : criticalArgs.triggerPriceInteger !== null || criticalArgs.triggerPriceDisplay !== null) ||
     typeof criticalArgs.previewId !== "string" ||
     criticalArgs.previewId.length === 0 ||
     typeof criticalArgs.matchHash !== "string" ||

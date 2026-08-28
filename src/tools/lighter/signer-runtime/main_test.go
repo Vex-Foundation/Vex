@@ -130,6 +130,47 @@ func TestSignCreateOrderAcceptsMarketIOCWithNilExpiry(t *testing.T) {
 	}
 }
 
+func TestSignCreateOrderAcceptsReduceOnlyStopLossWithTriggerExpiry(t *testing.T) {
+	request, err := readRequest(strings.NewReader(`{
+		"operation": "signCreateOrder",
+		"privateKey": "11111111111111111111111111111111111111111111111111111111111111111111111111111111",
+		"chainId": 466324,
+		"accountIndex": "42",
+		"apiKeyIndex": 7,
+		"nonce": "0",
+		"order": {
+			"marketIndex": 0,
+			"clientOrderIndex": "281474976710655",
+			"baseAmount": "1000",
+			"price": "280000",
+			"isAsk": 1,
+			"orderType": 2,
+			"timeInForce": 0,
+			"reduceOnly": 1,
+			"triggerPrice": "290000",
+			"orderExpiry": "1893456000000"
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("readRequest() error = %v", err)
+	}
+
+	response, err := signCreateOrder(request)
+	if err != nil {
+		t.Fatalf("signCreateOrder() stop-loss error = %v", err)
+	}
+	if !response.OK || response.TxType != 14 || response.TxInfo == "" || response.TxHash == "" {
+		t.Fatalf("stop-loss order did not produce a signed create-order transaction")
+	}
+	var txInfo map[string]any
+	if err := json.Unmarshal([]byte(response.TxInfo), &txInfo); err != nil {
+		t.Fatalf("stop-loss TxInfo is not JSON: %v", err)
+	}
+	if txInfo["Type"] != float64(2) || txInfo["TriggerPrice"] != float64(290000) {
+		t.Fatalf("stop-loss TxInfo lost type or trigger price: %#v", txInfo)
+	}
+}
+
 func TestSignCreateSpotOrderPreservesOfficialMarketIndexRange(t *testing.T) {
 	for _, marketIndex := range []int16{txtypes.MinSpotMarketIndex, txtypes.MaxSpotMarketIndex} {
 		t.Run(fmt.Sprintf("market-%d", marketIndex), func(t *testing.T) {

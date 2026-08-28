@@ -88,6 +88,26 @@ describe("Lighter order execution plan", () => {
     });
   });
 
+  it("preserves the exact approved protective-order trigger for the signer path", () => {
+    const plan = buildLighterOrderReadyForSignerPlan(intent({
+      side: "sell",
+      priceInteger: "280000",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+      triggerPriceInteger: "290000",
+    }), Date.parse("2026-08-12T00:02:00.000Z"));
+
+    expect(plan).toMatchObject({
+      side: "sell",
+      priceInteger: "280000",
+      orderType: "stop-loss",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+      triggerPriceInteger: "290000",
+    });
+  });
+
   it("refuses unapproved, expired, replayed, or mismatched intents before any signer path", () => {
     expect(() => buildLighterOrderReadyForSignerPlan(intent({ approvalStatus: "approval_pending" })))
       .toThrow("is not approved");
