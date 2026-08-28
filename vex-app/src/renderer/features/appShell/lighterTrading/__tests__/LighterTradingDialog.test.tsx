@@ -4,6 +4,11 @@ import type {
   LighterTradingMarketList,
   LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
+import {
+  readDraft,
+  resetDraftsForTest,
+  writeDraft,
+} from "../../../../lib/composer-drafts.js";
 import { LighterTradingDialog } from "../LighterTradingDialog.js";
 
 const mocks = vi.hoisted(() => ({
@@ -139,6 +144,7 @@ vi.mock("../../SessionPanel.js", () => ({
 describe("Light it up dialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetDraftsForTest();
     mocks.snapshotState = "ready";
     mocks.candleStatus = "live";
     mocks.publicStatus = "live";
@@ -250,6 +256,47 @@ describe("Light it up dialog", () => {
     expect(screen.queryByTestId("active-session-chat")).toBeNull();
   });
 
+  it("places supported Lighter order controls beside the desk without remounting chat", async () => {
+    renderDialog();
+
+    const tabs = screen.getByRole("group", { name: "Lighter workspace view" });
+    fireEvent.click(within(tabs).getByRole("button", { name: "Trade" }));
+
+    expect(screen.getByRole("heading", { name: "Trade ticket" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Order type" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Stop loss" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Take profit" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "SL + TP" })).toBeTruthy();
+    expect(screen.getByTestId("active-session-chat")).toBeTruthy();
+    expect(screen.getByTestId("active-session-chat").closest("[hidden]")).not.toBeNull();
+  });
+
+  it("drafts exact OCO protection into chat and preserves an existing user draft", async () => {
+    renderDialog();
+    fireEvent.click(await screen.findByRole("button", { name: "Trade" }));
+    fireEvent.click(screen.getByRole("button", { name: "SL + TP" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sell" }));
+    fireEvent.change(screen.getByLabelText("Base size"), { target: { value: "0.1" } });
+    fireEvent.change(screen.getByLabelText("Stop loss trigger price"), { target: { value: "2900" } });
+    fireEvent.change(screen.getByLabelText("Stop loss minimum sell price"), { target: { value: "2850" } });
+    fireEvent.change(screen.getByLabelText("Take profit trigger price"), { target: { value: "3300" } });
+    fireEvent.change(screen.getByLabelText("Take profit minimum sell price"), { target: { value: "3250" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review SL + TP protection" }));
+
+    expect(readDraft("session-1")).toContain("native Lighter stop-loss plus take-profit protection");
+    expect(readDraft("session-1")).toContain("marketId=1");
+    expect(readDraft("session-1")).toContain("one native OCO group");
+    expect(within(screen.getByRole("group", { name: "Lighter workspace view" }))
+      .getByRole("button", { name: "Desk" }).getAttribute("aria-pressed")).toBe("true");
+    expect(mocks.onCreateSession).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Trade" }));
+    writeDraft("session-1", "Keep my position analysis draft");
+    fireEvent.click(screen.getByRole("button", { name: "Review SL + TP protection" }));
+    expect(readDraft("session-1")).toBe("Keep my position analysis draft");
+    expect(screen.getByRole("alert").textContent).toContain("current chat draft is preserved");
+  });
+
   it("starts on Lighter's live 5m interval and does not expose unsupported weekly streaming", async () => {
     renderDialog();
 
@@ -302,7 +349,7 @@ describe("Light it up dialog", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Vex trading desk" })).toBeTruthy();
-    expect(screen.getByText("Desk ready")).toBeTruthy();
+    expect(screen.getByText("No active session")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Build the BTC trade from the tape." }))
       .toBeTruthy();
     expect(screen.getByText(

@@ -101,6 +101,7 @@ describe("Light it up deterministic review handoff", () => {
       environment: "rhc",
       market: MARKET,
       draft: {
+        mode: "market",
         side: "buy",
         baseAmount: "0.02",
         worstPrice: "3210.50",
@@ -121,6 +122,75 @@ describe("Light it up deterministic review handoff", () => {
     expect(message).toContain("display the approval card directly");
     expect(message).toContain("Nothing may execute without the user's explicit approval");
     expect(message).not.toMatch(/order (?:was|is) (?:placed|submitted|filled)/i);
+  });
+
+  it("binds a standalone stop loss to its trigger, hard bound, and reduce-only policy", () => {
+    const message = buildLighterReviewMessage({
+      environment: "core",
+      market: MARKET,
+      draft: {
+        mode: "stop-loss",
+        side: "sell",
+        baseAmount: "0.1",
+        triggerPrice: "2900",
+        worstPrice: "2850",
+        reduceOnly: true,
+      },
+    });
+
+    expect(message).toContain("marketType=perp");
+    expect(message).toContain("orderType=stop-loss");
+    expect(message).toContain("triggerPrice=2900");
+    expect(message).toContain("price=2850");
+    expect(message).toContain("reduceOnly=true");
+    expect(message).toContain("orderExpiryOffsetMinutes=1440");
+    expect(message).toContain("preview only");
+  });
+
+  it("binds a standalone take profit to its trigger and hard execution bound", () => {
+    const message = buildLighterReviewMessage({
+      environment: "rhc",
+      market: MARKET,
+      draft: {
+        mode: "take-profit",
+        side: "sell",
+        baseAmount: "0.1",
+        triggerPrice: "3300",
+        worstPrice: "3250",
+        reduceOnly: true,
+      },
+    });
+
+    expect(message).toContain("orderType=take-profit");
+    expect(message).toContain("triggerPrice=3300");
+    expect(message).toContain("price=3250");
+    expect(message).toContain("reduceOnly=true");
+    expect(message).toContain("approval card directly");
+  });
+
+  it("binds both protection legs into one native OCO review request", () => {
+    const message = buildLighterReviewMessage({
+      environment: "rhc",
+      market: MARKET,
+      draft: {
+        mode: "oco",
+        side: "sell",
+        baseAmount: "0.1",
+        stopLossTriggerPrice: "2900",
+        stopLossPrice: "2850",
+        takeProfitTriggerPrice: "3300",
+        takeProfitPrice: "3250",
+      },
+    });
+
+    expect(message).toContain("native Lighter stop-loss plus take-profit protection");
+    expect(message).toContain("stopLossTriggerPrice=2900");
+    expect(message).toContain("stopLossPrice=2850");
+    expect(message).toContain("takeProfitTriggerPrice=3300");
+    expect(message).toContain("takeProfitPrice=3250");
+    expect(message).toContain("exactly one native OCO group");
+    expect(message).toContain("two same-size reduce-only children");
+    expect(message).toContain("one approval card");
   });
 });
 

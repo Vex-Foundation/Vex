@@ -32,10 +32,20 @@ import {
   useLighterTradingSnapshot,
 } from "../../../lib/api/lighter-trading.js";
 import { useUiStore } from "../../../stores/uiStore.js";
+import {
+  draftKeyFor,
+  readDraft,
+  writeDraft,
+} from "../../../lib/composer-drafts.js";
 import { SessionPanel } from "../SessionPanel.js";
 import { MarketChart } from "./MarketChart.js";
-import { OrderBook } from "./OrderBook.js";
+import { OrderBook, type LighterOrderBookData } from "./OrderBook.js";
 import { TradingBottomPanel } from "./AccountPanel.js";
+import {
+  buildLighterReviewMessage,
+  TradeTicket,
+  type TradeDraft,
+} from "./TradeTicket.js";
 import { MarketSymbol } from "./MarketSymbol.js";
 import {
   classifyLighterMarket,
@@ -303,7 +313,13 @@ export function LighterTradingDialog({
                 <LighterConversation
                   open={open}
                   activeSessionId={activeSessionId}
-                  marketSymbol={market.symbol}
+                  market={market}
+                  book={publicMarketStream.book ?? snapshot?.book ?? EMPTY_BOOK}
+                  dataFresh={
+                    (snapshot !== null || publicMarketStream.bookReceivedAt !== null)
+                    && publicMarketStream.bookStatus !== "delayed"
+                    && publicMarketStream.bookStatus !== "unavailable"
+                  }
                   environment={environment}
                   marketId={market.marketId}
                   marketType={market.marketType}
@@ -334,7 +350,9 @@ export function LighterTradingDialog({
 function LighterConversation({
   open,
   activeSessionId,
-  marketSymbol,
+  market,
+  book,
+  dataFresh,
   environment,
   marketId,
   marketType,
@@ -347,7 +365,9 @@ function LighterConversation({
 }: {
   readonly open: boolean;
   readonly activeSessionId: string | null;
-  readonly marketSymbol: string;
+  readonly market: LighterTradingMarket;
+  readonly book: LighterOrderBookData;
+  readonly dataFresh: boolean;
   readonly environment: LighterTradingEnvironment;
   readonly marketId: number;
   readonly marketType: "perp" | "spot";
@@ -358,6 +378,41 @@ function LighterConversation({
   readonly tradesReceivedAt: number | null;
   readonly onCreateSession: (initialMessage?: string) => void;
 }): JSX.Element {
+  const [view, setView] = useState<"desk" | "trade">("desk");
+  const [handoffError, setHandoffError] = useState<string | null>(null);
+  const [focusComposer, setFocusComposer] = useState(false);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const marketSymbol = market.symbol;
+
+  useEffect(() => {
+    setHandoffError(null);
+  }, [market.marketId, view]);
+
+  useEffect(() => {
+    if (view !== "desk" || !focusComposer) return;
+    panelRef.current
+      ?.querySelector<HTMLTextAreaElement>('textarea[aria-label="Session draft"]')
+      ?.focus({ preventScroll: true });
+    setFocusComposer(false);
+  }, [focusComposer, view]);
+
+  const reviewInChat = (draft: TradeDraft): void => {
+    const message = buildLighterReviewMessage({ environment, market, draft });
+    if (activeSessionId === null) {
+      onCreateSession(message);
+      return;
+    }
+    const key = draftKeyFor(activeSessionId);
+    if (readDraft(key).trim().length > 0) {
+      setHandoffError("Your current chat draft is preserved. Send or clear it before opening this order review.");
+      return;
+    }
+    writeDraft(key, message);
+    setHandoffError(null);
+    setFocusComposer(true);
+    setView("desk");
+  };
+
   const marketContext = [
     `Use this exact Lighter scope: environment=${environment}, marketId=${marketId},`,
     `marketType=${marketType}, symbol=${marketSymbol}, candleInterval=${resolution},`,
@@ -390,72 +445,113 @@ function LighterConversation({
 
   return (
     <section
+      ref={panelRef}
       className="lit-panel lit-chat-panel"
-      aria-labelledby="lit-chat-title"
+      aria-labelledby="lit-workspace-panel-title"
     >
       <header className="lit-panel-header lit-chat-heading">
         <span>
-          <h3 id="lit-chat-title">
-            {activeSessionId === null ? "Vex trading desk" : "Chat with Vex"}
+          <h3 id="lit-workspace-panel-title">
+            {view === "trade"
+              ? "Trade ticket"
+              : activeSessionId === null ? "Vex trading desk" : "Chat with Vex"}
           </h3>
           <small>
-            {activeSessionId === null
+            {view === "trade"
+              ? "Preview first · approval stays in chat"
+              : activeSessionId === null
               ? "No active session"
               : "Active session · approvals stay in chat"}
           </small>
         </span>
-        <span
-          className="lit-chat-live"
-          data-active={activeSessionId !== null || undefined}
-        >
-          <i aria-hidden="true" /> {activeSessionId === null ? "Desk ready" : "Active"}
-        </span>
+        <div className="lit-panel-view-tabs" role="group" aria-label="Lighter workspace view">
+          <button
+            type="button"
+            id="lit-workspace-desk-tab"
+            aria-pressed={view === "desk"}
+            aria-controls="lit-workspace-desk-panel"
+            onClick={() => setView("desk")}
+          >
+            Desk
+          </button>
+          <button
+            type="button"
+            id="lit-workspace-trade-tab"
+            aria-pressed={view === "trade"}
+            aria-controls="lit-workspace-trade-panel"
+            onClick={() => setView("trade")}
+          >
+            Trade
+          </button>
+        </div>
       </header>
-      {!open ? null : activeSessionId === null ? (
-        <div className="lit-chat-empty">
-          <div className="lit-chat-empty-content">
-            <div className="lit-chat-empty-lead">
-              <div className="lit-chat-empty-mark" aria-hidden="true">
-                <img src="./protocols/lighter.svg" alt="" width="44" height="44" />
+      {!open ? null : (
+        <>
+          <div
+            className="lit-workspace-desk"
+            role="region"
+            id="lit-workspace-desk-panel"
+            aria-label="Vex trading desk"
+            hidden={view !== "desk"}
+          >
+            {activeSessionId === null ? (
+              <div className="lit-chat-empty">
+                <div className="lit-chat-empty-content">
+                  <div className="lit-chat-empty-lead">
+                    <div className="lit-chat-empty-mark" aria-hidden="true">
+                      <img src="./protocols/lighter.svg" alt="" width="44" height="44" />
+                    </div>
+                    <div className="lit-chat-empty-copy">
+                      <h4>Build the {marketSymbol} trade from the tape.</h4>
+                      <p>
+                        Work from the live {resolution} chart, order book, and recent
+                        flow—all inside one focused session.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="lit-chat-starters" role="group" aria-label="Trading desk prompts">
+                    {prompts.map((prompt) => (
+                      <button
+                        type="button"
+                        key={prompt.label}
+                        onClick={() => onCreateSession(prompt.message)}
+                      >
+                        <span className="lit-chat-starter-code" aria-hidden="true">{prompt.code}</span>
+                        <span className="lit-chat-starter-copy">
+                          <b>{prompt.label}</b>
+                          <small>{prompt.detail}</small>
+                        </span>
+                        <span className="lit-chat-starter-arrow" aria-hidden="true">
+                          <IconArrowUpRight size={17} />
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="lit-chat-start-dock">
+                  <button type="button" onClick={() => onCreateSession()}>
+                    Open the {marketSymbol} desk
+                  </button>
+                  <small>Read-only until you separately review and approve a trade.</small>
+                </div>
               </div>
-              <div className="lit-chat-empty-copy">
-                <h4>Build the {marketSymbol} trade from the tape.</h4>
-                <p>
-                  Work from the live {resolution} chart, order book, and recent
-                  flow—all inside one focused session.
-                </p>
+            ) : (
+              <div className="lit-chat-shell">
+                <SessionPanel surface="embedded" />
               </div>
-            </div>
-            <div className="lit-chat-starters" role="group" aria-label="Trading desk prompts">
-              {prompts.map((prompt) => (
-                <button
-                  type="button"
-                  key={prompt.label}
-                  onClick={() => onCreateSession(prompt.message)}
-                >
-                  <span className="lit-chat-starter-code" aria-hidden="true">{prompt.code}</span>
-                  <span className="lit-chat-starter-copy">
-                    <b>{prompt.label}</b>
-                    <small>{prompt.detail}</small>
-                  </span>
-                  <span className="lit-chat-starter-arrow" aria-hidden="true">
-                    <IconArrowUpRight size={17} />
-                  </span>
-                </button>
-              ))}
-            </div>
+            )}
           </div>
-          <div className="lit-chat-start-dock">
-            <button type="button" onClick={() => onCreateSession()}>
-              Open the {marketSymbol} desk
-            </button>
-            <small>Read-only until you separately review and approve a trade.</small>
-          </div>
-        </div>
-      ) : (
-        <div className="lit-chat-shell">
-          <SessionPanel surface="embedded" />
-        </div>
+          <TradeTicket
+            market={market}
+            book={book}
+            activeSession={activeSessionId !== null}
+            dataFresh={dataFresh}
+            submitting={false}
+            handoffError={handoffError}
+            hidden={view !== "trade"}
+            onReview={reviewInChat}
+          />
+        </>
       )}
     </section>
   );
