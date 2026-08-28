@@ -26,7 +26,7 @@ import { emitMissionPausedErrorReport } from "./bug-report-emit.js";
  * message is free text from a provider or an SDK and lands in a durable row,
  * a bug-report description and a log line.
  */
-const ERROR_MESSAGE_LIMIT = 4096;
+export const ERROR_MESSAGE_LIMIT = 4096;
 
 export async function finalizeMissionRunError(
   missionId: string,
@@ -136,7 +136,21 @@ export async function finalizeMissionRunError(
   }
 }
 
+/**
+ * Bound the error text WITHOUT hiding that it was bounded.
+ *
+ * A bare slice is forbidden here: an error message is content the operator
+ * and the support record must be able to read honestly, so a cut that leaves
+ * no trace would make a partial provider message look like the whole one.
+ * When the message is cut, the stored text NAMES the cut and the original
+ * length, so the reader can tell exactly how much is missing. Under the
+ * limit the message is stored verbatim and carries no marker.
+ */
+export function boundErrorMessage(raw: string): string {
+  if (raw.length <= ERROR_MESSAGE_LIMIT) return raw;
+  return `${raw.slice(0, ERROR_MESSAGE_LIMIT)}\n[truncated: first ${ERROR_MESSAGE_LIMIT} of ${raw.length} characters shown]`;
+}
+
 function formatErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message.slice(0, ERROR_MESSAGE_LIMIT);
-  return String(err).slice(0, ERROR_MESSAGE_LIMIT);
+  return boundErrorMessage(err instanceof Error ? err.message : String(err));
 }
