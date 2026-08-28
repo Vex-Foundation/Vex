@@ -70,7 +70,7 @@ export function buildLighterOrderApprovalDisclosure(
     throw disclosureUnavailable("The prepared Lighter order expiry is invalid.");
   }
 
-  const protective = intent.orderType === "stop-loss";
+  const protective = intent.orderType === "stop-loss" || intent.orderType === "take-profit";
   const priceLabel = intent.orderType === "market"
     ? "worst acceptable price"
     : protective

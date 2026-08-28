@@ -43,7 +43,7 @@ export interface LighterOrderExecutionIntentRow {
   readonly side: "buy" | "sell";
   readonly baseAmountInteger: string;
   readonly priceInteger: string;
-  readonly orderType: "limit" | "market" | "stop-loss";
+  readonly orderType: "limit" | "market" | "stop-loss" | "take-profit";
   readonly timeInForce: "good-till-time" | "immediate-or-cancel" | "post-only";
   readonly reduceOnly: boolean;
   readonly triggerPriceInteger: string | null;

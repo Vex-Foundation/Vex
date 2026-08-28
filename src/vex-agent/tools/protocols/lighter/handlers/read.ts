@@ -225,7 +225,7 @@ function previewSummary(
 } {
   const preview = orderPreview.preview;
   const baseSymbol = preview.symbol.split("-")[0] ?? preview.symbol;
-  const protective = preview.orderType === "stop-loss";
+  const protective = preview.orderType === "stop-loss" || preview.orderType === "take-profit";
   const orderExpiry = preview.orderType !== "market"
     ? new Date(Number(orderPreview.identity.expiryMs))
     : null;

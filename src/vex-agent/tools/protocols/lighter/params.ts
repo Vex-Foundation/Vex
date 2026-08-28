@@ -372,7 +372,7 @@ export function readLighterOrderPreviewParams(
     resolvedTimeInForce,
   );
   if (policyFailure !== null) return { ok: false, reason: policyFailure };
-  const protective = resolvedOrderType === "stop-loss";
+  const protective = resolvedOrderType === "stop-loss" || resolvedOrderType === "take-profit";
   if (protective) {
     if (triggerPrice === undefined) {
       return { ok: false, reason: `${resolvedOrderType} requires an explicit triggerPrice.` };
@@ -384,7 +384,7 @@ export function readLighterOrderPreviewParams(
       return { ok: false, reason: `${resolvedOrderType} is supported only for Lighter perpetual markets.` };
     }
   } else if (triggerPrice !== undefined) {
-    return { ok: false, reason: "triggerPrice requires orderType=stop-loss." };
+    return { ok: false, reason: "triggerPrice requires orderType=stop-loss or orderType=take-profit." };
   }
   const clientOrderIndexPolicy =
     readString(params, "clientOrderIndexPolicy") ?? LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT;

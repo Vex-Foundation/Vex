@@ -210,11 +210,11 @@ export function assertUnsignedCreateOrderFitsOfficialSigner(
     allowZero: true,
   });
   // Ordinary IOC market/limit orders use nil expiry. Native stop-loss and
-  // stop-loss orders are also IOC, but Lighter requires a positive expiry
+  // stop-loss and take-profit orders are also IOC, but Lighter requires a positive expiry
   // because they may remain dormant until the trigger fires.
   const isImmediateOrCancel =
     order.timeInForceCode === LIGHTER_SIGNER_TIME_IN_FORCE_CODES["immediate-or-cancel"];
-  const isProtective = order.orderTypeCode === 2;
+  const isProtective = order.orderTypeCode === 2 || order.orderTypeCode === 4;
   // Bounds only: 0 is Lighter's nil expiry. The expiry-vs-time-in-force invariant
   // below owns whether 0 is actually allowed for this order.
   requireDecimalInteger("orderExpiryMs", String(order.orderExpiryMs), LIGHTER_SIGNER_INT64_MAX, {

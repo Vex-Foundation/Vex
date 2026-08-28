@@ -186,14 +186,14 @@ const ORDER_PRICE_PARAM: ProtocolParamDef = {
   type: "string",
   required: true,
   description:
-    "Hard execution-price bound as a human decimal string. For a market order this is the immediate worst acceptable price. For stop-loss it is the worst price Lighter may execute after the trigger fires; it is not the trigger price.",
+    "Hard execution-price bound as a human decimal string. For a market order this is the immediate worst acceptable price. For stop-loss or take-profit it is the worst price Lighter may execute after the trigger fires; it is not the trigger price.",
 };
 
 const TRIGGER_PRICE_PARAM: ProtocolParamDef = {
   key: "triggerPrice",
   type: "string",
   description:
-    "Required for stop-loss orders and forbidden for ordinary market orders. Human decimal trigger price. Vex verifies it is on the protective side of the live market for the current perpetual position.",
+    "Required for stop-loss and take-profit orders and forbidden for ordinary market orders. Human decimal trigger price. Vex verifies it is on the protective side of the live market for the current perpetual position.",
 };
 
 const ORDER_TYPE_PARAM: ProtocolParamDef = {
@@ -201,7 +201,7 @@ const ORDER_TYPE_PARAM: ProtocolParamDef = {
   type: "string",
   enum: LIGHTER_PHASE_ONE_ORDER_TYPES,
   description:
-    "Optional order type. Enabled values are market and stop-loss. Stop-loss is perpetual-only, reduce-only, and requires triggerPrice. Resting limit, take-profit, trigger-limit, TWAP, and grouped creation remain release-gated.",
+    "Optional order type. Enabled values are market, stop-loss, and take-profit. Stop-loss and take-profit are perpetual-only, reduce-only protective orders and require triggerPrice. Resting limit, trigger-limit, TWAP, and grouped creation remain release-gated.",
 };
 
 const TIME_IN_FORCE_PARAM: ProtocolParamDef = {
@@ -403,7 +403,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Create a live-data-backed Lighter order preview for an ordinary IOC market order or one standalone reduce-only perpetual stop-loss order. Prefer marketSymbol over marketId when the user names an asset and include marketType whenever stated; Vex refuses a product mismatch instead of silently switching markets. Stop-loss requires an explicit triggerPrice, hard execution-price bound, reduceOnly=true, and a side that reduces the live position; if any required value is missing, ask instead of guessing. Take-profit, combined entry-plus-protection, and paired TP/SL requests remain unavailable, so never silently preview only part of such a request. Returns the exact persisted preview and, when managed trading is ready, one approval card. Previewing never signs or submits anything.",
+      "Create a live-data-backed Lighter order preview for an ordinary IOC market order or one standalone reduce-only perpetual stop-loss/take-profit order. Prefer marketSymbol over marketId when the user names an asset and include marketType whenever stated; Vex refuses a product mismatch instead of silently switching markets. Protective orders require an explicit triggerPrice, hard execution-price bound, reduceOnly=true, and a side that reduces the live position; if any required value is missing, ask instead of guessing. Combined entry-plus-protection and paired TP/SL requests remain unavailable until native grouped-order execution is complete, so never silently preview only part of such a request. Returns the exact persisted preview and, when managed trading is ready, one approval card. Previewing never signs or submits anything.",
     mutating: false,
     actionKind: "read",
     params: [

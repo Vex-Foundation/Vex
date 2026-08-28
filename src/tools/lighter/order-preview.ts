@@ -18,6 +18,7 @@ export const LIGHTER_ORDER_TYPES = [
   "limit",
   "market",
   "stop-loss",
+  "take-profit",
 ] as const;
 export const LIGHTER_ORDER_SIDES = ["buy", "sell"] as const;
 export const LIGHTER_ORDER_TIME_IN_FORCE = [
@@ -489,21 +490,21 @@ function assertOrderCombination(
   }
   if (isProtectiveOrderType(input.orderType)) {
     if (market.market_type !== "perp") {
-      throw invalidRequest("Stop-loss orders are supported only for Lighter perpetual markets.");
+      throw invalidRequest("Stop-loss and take-profit orders are supported only for Lighter perpetual markets.");
     }
     if (input.timeInForce !== "immediate-or-cancel") {
-      throw invalidRequest("Stop-loss orders require immediate-or-cancel time in force.");
+      throw invalidRequest("Stop-loss and take-profit orders require immediate-or-cancel time in force.");
     }
     if (!input.reduceOnly) {
-      throw invalidRequest("Stop-loss orders must be reduce-only in Vex.");
+      throw invalidRequest("Stop-loss and take-profit orders must be reduce-only in Vex.");
     }
     if (input.triggerPrice === undefined || input.triggerPrice === null) {
-      throw invalidRequest("Stop-loss orders require an explicit triggerPrice.");
+      throw invalidRequest("Stop-loss and take-profit orders require an explicit triggerPrice.");
     }
     return;
   }
   if (input.triggerPrice !== undefined && input.triggerPrice !== null) {
-    throw invalidRequest("Trigger price is accepted only for stop-loss orders.");
+    throw invalidRequest("Trigger price is accepted only for stop-loss or take-profit orders.");
   }
 }
 
@@ -526,10 +527,14 @@ function assertProtectiveTriggerDirection(
     throw invalidRequest("Protective order preview requires a live opposite-side reference price.");
   }
   const comparison = compareDecimalStrings(triggerPrice, reference);
-  const valid = input.side === "sell" ? comparison < 0 : comparison > 0;
+  const valid = input.orderType === "stop-loss"
+    ? input.side === "sell" ? comparison < 0 : comparison > 0
+    : input.side === "sell" ? comparison > 0 : comparison < 0;
   if (!valid) {
     const position = input.side === "sell" ? "long" : "short";
-    const direction = input.side === "sell" ? "below" : "above";
+    const direction = input.orderType === "stop-loss"
+      ? input.side === "sell" ? "below" : "above"
+      : input.side === "sell" ? "above" : "below";
     throw invalidRequest(
       `${input.orderType} for a ${position} position requires triggerPrice ${direction} the live reference price ${reference}.`,
     );
@@ -547,8 +552,8 @@ function assertProtectiveTriggerDirection(
 
 export function isProtectiveOrderType(
   orderType: LighterOrderType,
-): orderType is "stop-loss" {
-  return orderType === "stop-loss";
+): orderType is "stop-loss" | "take-profit" {
+  return orderType === "stop-loss" || orderType === "take-profit";
 }
 
 function assertSpotOrderInventory(

@@ -87,7 +87,7 @@ export function revalidateApprovedLighterOrder(input: {
   }
 
   const currentBehavior = fresh.preview.marketData.priceComparison;
-  const protective = plan.orderType === "stop-loss";
+  const protective = plan.orderType === "stop-loss" || plan.orderType === "take-profit";
   if (currentBehavior === "unknown" && !protective) {
     throw blocked("The live Lighter order book has no usable best-price evidence.");
   }
@@ -149,7 +149,7 @@ function assertApprovedPriceBehavior(
   fresh: LighterOrderPreview["preview"],
 ): void {
   const currentBehavior = fresh.marketData.priceComparison;
-  if (plan.orderType === "stop-loss") {
+  if (plan.orderType === "stop-loss" || plan.orderType === "take-profit") {
     // buildLighterOrderPreview already re-proved the live position, reducing
     // side, trigger direction, market type, precision, and exact bound. A
     // conditional order is intentionally not classified as resting/taking

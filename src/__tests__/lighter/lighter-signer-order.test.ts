@@ -115,6 +115,16 @@ describe("Lighter unsigned signer order request", () => {
     expect(request.triggerPriceInteger).toBe("290000");
     expect(request.orderExpiryMs).toBe(1893456000000);
 
+    const takeProfit = buildLighterUnsignedCreateOrderRequest(plan({
+      side: "sell",
+      orderType: "take-profit",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+      triggerPriceInteger: "320000",
+      orderExpiryMs: 1893456000000,
+    }));
+    expect(takeProfit.orderTypeCode).toBe(4);
+    expect(takeProfit.triggerPriceInteger).toBe("320000");
   });
 
   it("derives a nonzero uint48 client order index from the match hash", () => {

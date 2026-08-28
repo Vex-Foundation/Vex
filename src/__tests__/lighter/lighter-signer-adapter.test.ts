@@ -83,10 +83,10 @@ describe("Lighter official signer adapter boundary", () => {
 
     const protectiveOrder = buildLighterUnsignedCreateOrderRequest(plan({
       side: "sell",
-      orderType: "stop-loss",
+      orderType: "take-profit",
       timeInForce: "immediate-or-cancel",
       reduceOnly: true,
-      triggerPriceInteger: "290000",
+      triggerPriceInteger: "320000",
     }));
     expect(protectiveOrder.orderExpiryMs).toBe(1893456000000);
     expect(() => assertUnsignedCreateOrderFitsOfficialSigner(protectiveOrder)).not.toThrow();

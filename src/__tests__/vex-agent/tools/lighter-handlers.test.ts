@@ -2158,6 +2158,53 @@ describe("Lighter agent read handlers", () => {
     ]));
   });
 
+  it("creates a standalone reduce-only perpetual take-profit preview", async () => {
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200,
+      order_book_details: [DETAIL],
+      spot_order_book_details: [],
+    });
+    mocks.client.getOrderBookOrders.mockResolvedValue({
+      code: 200,
+      total_asks: 1,
+      asks: [order(1, "3500.50")],
+      total_bids: 1,
+      bids: [order(2, "3499.50")],
+    });
+    mocks.client.getAccount.mockResolvedValue({ code: 200, accounts: [ACCOUNT] });
+    mocks.client.getApiKeys.mockRejectedValue(new Error("read unavailable"));
+    mocks.previewsRepo.create.mockResolvedValue(undefined);
+
+    const data = await callJson("lighter.order.preview", {
+      environment: "rhc",
+      accountIndex: 42,
+      marketId: 0,
+      marketType: "perp",
+      side: "sell",
+      baseAmountIn: "0.25",
+      price: "3550",
+      triggerPrice: "3600",
+      orderType: "take-profit",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+      readonly preview: {
+        readonly identity: { readonly orderType: string; readonly triggerPriceInteger: string };
+      };
+    };
+    expect(persisted.preview.identity).toMatchObject({
+      orderType: "take-profit",
+      triggerPriceInteger: "360000",
+    });
+    expect((data.previewSummary as Record<string, unknown>).rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ parameter: "Execution bound", value: "$3,550 per ETH" }),
+      expect.objectContaining({ parameter: "Trigger price", value: "$3,600 per ETH" }),
+    ]));
+  });
+
   it("refuses incomplete protective intent before any provider read", async () => {
     const missingTrigger = await callFail("lighter.order.preview", {
       environment: "rhc",

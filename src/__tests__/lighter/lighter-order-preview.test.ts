@@ -296,6 +296,23 @@ describe("Lighter order preview", () => {
     expect(result.preview.riskNotes.join(" ")).toContain("hard execution bound");
   });
 
+  it("previews a reduce-only perpetual take-profit above a live long position", () => {
+    const result = preview({
+      side: "sell",
+      baseAmount: "1.25",
+      price: "3050",
+      triggerPrice: "3100",
+      orderType: "take-profit",
+      timeInForce: "immediate-or-cancel",
+      reduceOnly: true,
+    });
+
+    expect(result.identity.orderType).toBe("take-profit");
+    expect(result.preview.triggerPrice.display).toBe("3100");
+    expect(result.preview.price.display).toBe("3050");
+    expect(result.preview.positionContext.positionSide).toBe("long");
+  });
+
   it("fails closed for malformed or non-reducing protective orders", () => {
     expect(() => preview({
       side: "sell",

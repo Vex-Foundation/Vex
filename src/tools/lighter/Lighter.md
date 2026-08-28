@@ -117,16 +117,16 @@ means API acceptance only; final open/fill/cancel/reject state still requires
 provider evidence.
 
 The order-create product surface exposes ordinary market orders and standalone
-reduce-only perpetual stop-loss orders. Both use Lighter's
+reduce-only perpetual stop-loss or take-profit orders. All three use Lighter's
 `immediate-or-cancel` time in force. Ordinary market orders require a worst
-acceptable execution price. Stop-loss orders require both an explicit trigger
+acceptable execution price. Protective orders require both an explicit trigger
 and a hard execution-price bound; Vex verifies the reducing side, exact live
 position size, trigger direction, and bound direction before preview and again
 after approval before any credential or vault access. A trigger that is already
 crossed at revalidation is refused.
 
-Resting limit, good-till-time, post-only, take-profit, trigger-limit, TWAP, and
-native grouped order creation remain unavailable. A request for paired TP/SL protection or an
+Resting limit, good-till-time, post-only, trigger-limit, TWAP, and native grouped
+order creation remain unavailable. A request for paired TP/SL protection or an
 entry with attached protection must be refused as a whole rather than silently
 placing one leg. The pinned official signer supports the standalone trigger
 encoding locally, but no live protective order is claimed verified until a

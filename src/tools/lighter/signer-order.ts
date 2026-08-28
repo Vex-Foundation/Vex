@@ -6,6 +6,7 @@ export const LIGHTER_SIGNER_ORDER_TYPE_CODES = {
   limit: 0,
   market: 1,
   "stop-loss": 2,
+  "take-profit": 4,
 } as const;
 
 export const LIGHTER_SIGNER_TIME_IN_FORCE_CODES = {
@@ -24,7 +25,7 @@ export interface LighterUnsignedCreateOrderRequest {
   readonly baseAmountInteger: string;
   readonly priceInteger: string;
   readonly isAsk: boolean;
-  readonly orderTypeCode: 0 | 1 | 2;
+  readonly orderTypeCode: 0 | 1 | 2 | 4;
   readonly timeInForceCode: 0 | 1 | 2;
   readonly reduceOnly: boolean;
   readonly triggerPriceInteger: string;
@@ -35,7 +36,7 @@ export interface LighterUnsignedCreateOrderRequest {
 export function buildLighterUnsignedCreateOrderRequest(
   plan: LighterOrderReadyForSignerPlan,
 ): LighterUnsignedCreateOrderRequest {
-  const protective = plan.orderType === "stop-loss";
+  const protective = plan.orderType === "stop-loss" || plan.orderType === "take-profit";
   if (protective !== (plan.triggerPriceInteger !== null)) {
     throw invalidRequest(
       protective

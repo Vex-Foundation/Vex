@@ -835,6 +835,7 @@ function validateLighterOrderCreateFollowUp(
       criticalArgs.orderType !== "limit"
       && criticalArgs.orderType !== "market"
       && criticalArgs.orderType !== "stop-loss"
+      && criticalArgs.orderType !== "take-profit"
     ) ||
     !(
       criticalArgs.timeInForce === "good-till-time" ||
@@ -842,7 +843,7 @@ function validateLighterOrderCreateFollowUp(
       criticalArgs.timeInForce === "post-only"
     ) ||
     typeof criticalArgs.reduceOnly !== "boolean" ||
-    (criticalArgs.orderType === "stop-loss"
+    ((criticalArgs.orderType === "stop-loss" || criticalArgs.orderType === "take-profit")
       ? criticalArgs.timeInForce !== "immediate-or-cancel"
         || criticalArgs.reduceOnly !== true
         || criticalArgs.marketType !== "perp"

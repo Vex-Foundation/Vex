@@ -9,6 +9,7 @@ describe("Lighter Phase 1 order policy", () => {
   it("permits IOC market and protective orders", () => {
     expect(lighterPhaseOneOrderPolicyFailure("market", "immediate-or-cancel")).toBeNull();
     expect(lighterPhaseOneOrderPolicyFailure("stop-loss", "immediate-or-cancel")).toBeNull();
+    expect(lighterPhaseOneOrderPolicyFailure("take-profit", "immediate-or-cancel")).toBeNull();
     expect(() => assertLighterPhaseOneOrderPolicy("market", "immediate-or-cancel")).not.toThrow();
   });
 
