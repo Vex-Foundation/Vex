@@ -19,8 +19,9 @@
  *    keeps its eligibility rather than burning it on a transport failure.
  * 5. **A conflict is SURFACED, never merged.** Two readings of the same money
  *    disagreeing is a defect to report, not to resolve by last-write-wins.
- * 6. **An unmapped protocol declines BY NAME** rather than falling through to a
- *    "generic" decode — which was disproven on the owner's own swap.
+ * 6. **An unmapped protocol DEFERS** rather than concluding `amounts_undecodable`.
+ *    "No adapter" is not "we proved no amounts are coming"; a generic decode
+ *    is still forbidden. The named decline is only for a decoder that RAN.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -30,6 +31,7 @@ import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 
 const mockListCandidates = vi.fn();
 const mockFill = vi.fn();
+const mockFillLaunch = vi.fn();
 const mockDeclined = vi.fn();
 const mockNoteVersion = vi.fn();
 
@@ -39,6 +41,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", async (importOriginal) => {
     ...actual,
     listAmountCorrectionCandidates: (...a: unknown[]) => mockListCandidates(...a),
     fillExecutedAmountsOnConfirmed: (...a: unknown[]) => mockFill(...a),
+    fillLaunchOutputIdentityOnConfirmed: (...a: unknown[]) => mockFillLaunch(...a),
     noteSettlementDeclined: (...a: unknown[]) => mockDeclined(...a),
     noteSettlementDecodeVersion: (...a: unknown[]) => mockNoteVersion(...a),
   };
@@ -105,6 +108,7 @@ function deps(logs: unknown = KYBER.logs) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockFill.mockResolvedValue({ outcome: "applied", row: legacyRow() });
+  mockFillLaunch.mockResolvedValue(true);
   mockDeclined.mockResolvedValue({ applied: true });
 });
 
@@ -175,14 +179,49 @@ describe("the role contract is imported, never restated", () => {
 });
 
 describe("declines are named, and only then marked", () => {
-  it("declines by name for a protocol with no wired decoder — never a generic decode", async () => {
-    mockListCandidates.mockResolvedValue([legacyRow({ protocol: "jupiter" })]);
+  it("DEFERS a protocol with no wired decoder — never a generic decode, never a false conclusion", async () => {
+    mockListCandidates.mockResolvedValue([legacyRow({ protocol: "unknown-venue" })]);
 
     const result = await repairMissingExecutedAmounts(deps());
 
-    expect(result.declined).toBe(1);
-    expect(mockDeclined).toHaveBeenCalledWith(7, "amounts_undecodable");
-    expect(mockNoteVersion).toHaveBeenCalledWith(7, SETTLEMENT_DECODER_SET_VERSION);
+    expect(result).toMatchObject({ declined: 0, deferred: 1, filled: 0 });
+    expect(mockFill).not.toHaveBeenCalled();
+    expect(mockDeclined).not.toHaveBeenCalled();
+    expect(mockNoteVersion).not.toHaveBeenCalled();
+  });
+
+  it("fills a confirmed Uniswap ERC-20 swap the status sweep left amountless", async () => {
+    const vex = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
+    const virtual = "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984";
+    const wallet = "0xaaaabbbbccccddddeeeeffff0000111122223333";
+    const topic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    const pad = (a: string) => `0x${"0".repeat(24)}${a.slice(2).toLowerCase()}`;
+    const word = (n: bigint) => `0x${n.toString(16).padStart(64, "0")}`;
+    mockListCandidates.mockResolvedValue([
+      legacyRow({
+        protocol: "uniswap",
+        chainId: 4663,
+        walletAddress: wallet,
+        tokenInAddress: vex,
+        tokenOutAddress: virtual,
+        txHash: "0xuni",
+      }),
+    ]);
+
+    const result = await repairMissingExecutedAmounts({
+      fetchReceiptLogs: vi.fn().mockResolvedValue([
+        { address: vex, topics: [topic, pad(wallet), pad(virtual)], data: word(30480n) },
+        { address: virtual, topics: [topic, pad(virtual), pad(wallet)], data: word(12000n) },
+      ]),
+      fetchTransaction: vi.fn().mockResolvedValue(null),
+      fetchReceiptStatus: vi.fn().mockResolvedValue("success"),
+    });
+
+    expect(result).toMatchObject({ filled: 1, declined: 0 });
+    expect(mockFill).toHaveBeenCalledWith(expect.objectContaining({
+      amounts: { executedAmountInRaw: "30480", executedAmountOutRaw: "12000" },
+    }));
+    expect(mockFillLaunch).not.toHaveBeenCalled();
   });
 
   it("declines when the receipt's evidence does not establish both legs", async () => {

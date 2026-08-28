@@ -29,23 +29,14 @@
  *
  * ── DECLINES ARE NAMED ─────────────────────────────────────────────────────
  *
- * `amounts_undecodable` — we had the inputs and the evidence did not establish
- * the amounts. `amounts_incomplete` — the decoder produced SOME legs but not
- * every leg this row's role requires. The `detail` string is for OUR logs and
- * never for a user surface; the stored fact is the named reason.
+ * `amounts_undecodable` — a wired decoder RAN and the evidence did not
+ * establish the amounts. An unmapped protocol DEFERS instead: "no adapter" is
+ * not a conclusion that no amounts are coming. `amounts_incomplete` — the
+ * decoder produced SOME legs but not every leg this row's role requires.
  */
 
 import { decodeKyberSwapSettlement } from "@tools/kyberswap/evm-utils.js";
-import {
-  decodeUniswapExecutedLegs,
-  type DecodedUniswapLegs,
-} from "@tools/uniswap/receipt-decoder.js";
 import { decodeCurveBuy, decodeCurveSell } from "@tools/trench-express/evm/settlement.js";
-import {
-  decodeMorphoBorrowSettlement,
-  decodeMorphoSettlement,
-  readMorphoBorrowRouteProvenance,
-} from "../morpho-settlement-decoder.js";
 import { TRENCH_DIAMOND_ADDRESS } from "@tools/trench-express/constants.js";
 import { getAddress, type Address } from "viem";
 import {
@@ -60,6 +51,9 @@ import type { SettlementDecodeHint } from "@vex-agent/db/repos/agent-activity.js
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 import type { ConfirmActivityEventInput } from "@vex-agent/db/repos/agent-activity.js";
 import type { SettlementDeclineReason } from "@vex-agent/db/repos/agent-activity.js";
+import { decodeUniswapRow } from "./venue-dispatch-uniswap.js";
+import { decodePendleRow } from "./venue-dispatch-pendle.js";
+import { decodePoolsLaunchRow, decodeTrenchLaunchRow } from "./venue-dispatch-launch.js";
 
 /** One mined log, in the shape every venue decoder already accepts. */
 export interface VenueDecodeLog {
@@ -80,8 +74,19 @@ export interface VenueDecodeInput {
   readonly deps: DepositEvidenceDeps;
 }
 
+export type LaunchIdentity = {
+  readonly tokenOutAddress: string;
+  readonly tokenOutSymbol?: string;
+  readonly tokenOutDecimals?: number | null;
+};
+
 export type VenueDecodeResult =
-  | { readonly kind: "decoded"; readonly amounts: ConfirmActivityEventInput }
+  | {
+    readonly kind: "decoded";
+    readonly amounts: ConfirmActivityEventInput;
+    /** Present when a launch decoder proved the created token. */
+    readonly launchIdentity?: LaunchIdentity;
+  }
   | {
     readonly kind: "declined";
     readonly reason: SettlementDeclineReason;
@@ -109,19 +114,24 @@ export type VenueDecodeResult =
 /**
  * Route the row to its venue's decoder.
  *
- * An unmapped protocol declines by NAME rather than falling through to a
- * "generic" decode. A generic wallet-relative decode was tried on paper and
- * DISPROVEN on the owner's own swap: the native output arrives as a WETH-clone
- * burn with no Withdrawal, and the router's `spentAmount` would have been wrong
- * for the input because the Vex fee sits inside it.
+ * An unmapped protocol DEFERS rather than concluding `amounts_undecodable`.
+ * "No adapter" is not proof that no amounts are coming; a generic wallet-
+ * relative decode is still forbidden (disproven on the owner's Kyber native-out
+ * swap). A named decline is only for a decoder that actually ran.
  */
 export async function decodeVenueSettlement(input: VenueDecodeInput): Promise<VenueDecodeResult> {
   const protocol = input.row.protocol?.toLowerCase() ?? "";
+  const role = input.row.eventRole;
   if (protocol === "kyberswap") return decodeKyberRow(input);
   if (protocol === "uniswap") return decodeUniswapRow(input);
-  if (protocol === "trench") return decodeTrenchRow(input);
+  if (protocol === "pendle") return decodePendleRow(input);
+  if (protocol === "trench") {
+    if (role === "token_launch") return decodeTrenchLaunchRow(input);
+    return decodeTrenchRow(input);
+  }
+  if (protocol === "pools" && role === "token_launch") return decodePoolsLaunchRow(input);
   if (protocol === "morpho") return decodeMorphoRow(input);
-  if ((protocol === "relay" || protocol === "khalani") && input.row.eventRole === "bridge_deposit") {
+  if ((protocol === "relay" || protocol === "khalani") && role === "bridge_deposit") {
     return decodeBridgeDepositRow(input);
   }
   if (
@@ -131,8 +141,7 @@ export async function decodeVenueSettlement(input: VenueDecodeInput): Promise<Ve
     return decodeWrapRow(input, input.row.eventRole);
   }
   return {
-    kind: "declined",
-    reason: "amounts_undecodable",
+    kind: "deferred",
     detail: `no settlement decoder is wired for protocol "${protocol}"`,
   };
 }
@@ -203,71 +212,6 @@ function decodeKyberRow(input: VenueDecodeInput): VenueDecodeResult {
     amounts: {
       executedAmountInRaw: decoded.amountInRaw,
       executedAmountOutRaw: decoded.amountOutRaw,
-    },
-  };
-}
-
-/**
- * A Uniswap swap confirmed without amounts. The rule for what the receipt
- * proves is `@tools/uniswap/receipt-decoder.ts` - the SAME function the
- * immediate path runs in `finalize-confirmed.ts`; this branch only resolves its
- * inputs from the row's validated columns.
- *
- * A NATIVE LEG IS PASSED AS `null`, not as a sentinel address. That is the
- * decoder's own contract for "read this leg from the WETH Deposit/Withdrawal
- * event the router emitted", and it is why this branch needs neither the
- * declared value nor a wrapped-native lookup: the decoder resolves both from
- * the chain's own verified deployment registry, bound to a registered router.
- *
- * Takes no chain read, so it never DEFERS. A deployment this build does not
- * know, or a receipt that proves only one leg, declines by name.
- */
-function decodeUniswapRow(input: VenueDecodeInput): VenueDecodeResult {
-  const { row } = input;
-  const tokenInAddress = row.tokenInAddress;
-  const tokenOutAddress = row.tokenOutAddress;
-  const walletAddress = row.walletAddress;
-  if (!tokenInAddress || !tokenOutAddress || !walletAddress) {
-    return {
-      kind: "declined",
-      reason: "amounts_undecodable",
-      detail: "the row is missing a token or wallet address the decoder requires",
-    };
-  }
-
-  let decoded: DecodedUniswapLegs;
-  try {
-    decoded = decodeUniswapExecutedLegs({
-      receipt: { logs: input.logs },
-      chainId: row.chainId,
-      walletAddress,
-      tokenInAddress: isNativeAddress(tokenInAddress) ? null : tokenInAddress,
-      tokenOutAddress: isNativeAddress(tokenOutAddress) ? null : tokenOutAddress,
-    });
-  } catch {
-    // The decoder checksums addresses and reads the deployment registry; a
-    // malformed column or an unknown chain is a NAMED decline, never a throw
-    // that would kill the whole sweep pass.
-    return {
-      kind: "declined",
-      reason: "amounts_undecodable",
-      detail: "the row's addresses or chain could not be resolved for the uniswap decoder",
-    };
-  }
-
-  if (decoded.executedAmountInRaw === undefined || decoded.executedAmountOutRaw === undefined) {
-    return {
-      kind: "declined",
-      reason: "amounts_undecodable",
-      detail: "the venue decoder could not establish both legs from this receipt",
-    };
-  }
-
-  return {
-    kind: "decoded",
-    amounts: {
-      executedAmountInRaw: decoded.executedAmountInRaw.toString(),
-      executedAmountOutRaw: decoded.executedAmountOutRaw.toString(),
     },
   };
 }
@@ -519,7 +463,10 @@ async function decodeTrenchRow(input: VenueDecodeInput): Promise<VenueDecodeResu
  * reach here too, and the decoder declines them by role: an approval moves
  * nothing, so no net delta could confirm one.
  */
-function decodeMorphoRow(input: VenueDecodeInput): VenueDecodeResult {
+async function decodeMorphoRow(input: VenueDecodeInput): Promise<VenueDecodeResult> {
+  const { decodeMorphoSettlement, readMorphoBorrowRouteProvenance } = await import(
+    "../morpho-settlement-decoder.js"
+  );
   const { row } = input;
   if (!row.walletAddress) {
     return { kind: "declined", reason: "amounts_undecodable", detail: "the row carries no wallet address" };
@@ -582,7 +529,10 @@ function decodeMorphoRow(input: VenueDecodeInput): VenueDecodeResult {
  *
  * Takes no chain read, so it never DEFERS - same reason as the vault branch.
  */
-function decodeMorphoBorrowRow(input: VenueDecodeInput, walletAddress: string): VenueDecodeResult {
+async function decodeMorphoBorrowRow(input: VenueDecodeInput, walletAddress: string): Promise<VenueDecodeResult> {
+  const { decodeMorphoBorrowSettlement, readMorphoBorrowRouteProvenance } = await import(
+    "../morpho-settlement-decoder.js"
+  );
   const { row } = input;
   const decoded = decodeMorphoBorrowSettlement({
     logs: input.logs,

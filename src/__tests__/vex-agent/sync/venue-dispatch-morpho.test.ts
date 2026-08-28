@@ -5,7 +5,7 @@
  * THREE THINGS ARE PINNED, and the third is the one that would have gone unnoticed:
  *
  * 1. A confirmed-but-amountless Morpho row DECODES from its own receipt. Before
- *    a branch existed, `morpho` fell through to the unmapped-protocol decline
+ *    a branch existed, `morpho` fell through the unmapped-protocol path
  *    and every repaired row stayed amountless forever, which reads as "the
  *    settlement was unreadable" when the truth is "nobody wired the decoder".
  * 2. A row it cannot prove DECLINES BY NAME (`amounts_undecodable`), rather than
@@ -253,7 +253,7 @@ describe("venue dispatch: morpho", () => {
     expect(result.kind).not.toBe("deferred");
   });
 
-  it("still declines an UNMAPPED protocol by name, which is the fallback morpho used to hit", async () => {
+  it("DEFERS an UNMAPPED protocol rather than concluding amounts_undecodable", async () => {
     const result = await decodeVenueSettlement({
       row: morphoRow({ protocol: "aave" }),
       logs: [],
@@ -261,7 +261,7 @@ describe("venue dispatch: morpho", () => {
       deps,
     });
 
-    expect(result).toMatchObject({ kind: "declined", reason: "amounts_undecodable" });
+    expect(result).toMatchObject({ kind: "deferred" });
     expect((result as { detail: string }).detail).toContain("aave");
   });
 });

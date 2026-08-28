@@ -42,6 +42,7 @@
 
 import {
   fillExecutedAmountsOnConfirmed,
+  fillLaunchOutputIdentityOnConfirmed,
   listAmountCorrectionCandidates,
   noteSettlementDecodeVersion,
   noteSettlementDeclined,
@@ -63,6 +64,7 @@ import {
 import {
   decodeVenueSettlement,
   type VenueDecodeLog,
+  type VenueDecodeResult,
 } from "./executed-amount-fallback/venue-dispatch.js";
 import { assessRepairedFill } from "./executed-amount-fallback/approved-floor.js";
 import type {
@@ -78,7 +80,7 @@ import type {
  * thing that makes a row eligible again — a timestamp could only re-run the same
  * decode against the same immutable receipt forever.
  */
-export const SETTLEMENT_DECODER_SET_VERSION = "2026-08-28.uniswap-venue-branch";
+export const SETTLEMENT_DECODER_SET_VERSION = "2026-08-29.uniswap-pendle-launch";
 
 /** Bounded per pass — this shares the sync worker with the balance and bridge sweeps. */
 export const AMOUNT_CORRECTION_BATCH_LIMIT = 10;
@@ -373,14 +375,7 @@ async function repairOneRow(
     return "declined";
   }
 
-  const result = await fillExecutedAmountsOnConfirmed({
-    id: row.id,
-    // The decode is bound to the row's OWN hash and chain, so a decode of the
-    // wrong transaction can never land on it.
-    expectedTxHash: txHash,
-    expectedChainId: row.chainId,
-    amounts: decoded.amounts,
-  });
+  const result = await applyDecodedAmounts(row, txHash, decoded);
 
   if (result.outcome === "applied") {
     logger.info("sync.amount_fallback.filled", { id: row.id, protocol: row.protocol });
@@ -416,4 +411,39 @@ async function repairOneRow(
   }
   // `already_complete` / `not_eligible`: someone else finished the row first.
   return "deferred";
+}
+
+async function applyDecodedAmounts(
+  row: AgentActivityEvent,
+  txHash: string,
+  decoded: Extract<VenueDecodeResult, { kind: "decoded" }>,
+): Promise<{ outcome: "applied" | "conflict" | "already_complete" | "not_eligible" }> {
+  const identity = decoded.launchIdentity;
+  if (identity && row.eventRole === "token_launch" && row.tokenOutAddress === null) {
+    const inRaw = decoded.amounts.executedAmountInRaw;
+    const outRaw = decoded.amounts.executedAmountOutRaw;
+    if (inRaw && outRaw) {
+      const filled = await fillLaunchOutputIdentityOnConfirmed(row.id, {
+        executedAmountInRaw: inRaw,
+        executedAmountOutRaw: outRaw,
+        ...(decoded.amounts.executedAmountInHuman !== undefined
+          ? { executedAmountInHuman: decoded.amounts.executedAmountInHuman }
+          : {}),
+        ...(decoded.amounts.executedAmountOutHuman !== undefined
+          ? { executedAmountOutHuman: decoded.amounts.executedAmountOutHuman }
+          : {}),
+        tokenOutAddress: identity.tokenOutAddress,
+        ...(identity.tokenOutSymbol !== undefined ? { tokenOutSymbol: identity.tokenOutSymbol } : {}),
+        ...(identity.tokenOutDecimals !== undefined ? { tokenOutDecimals: identity.tokenOutDecimals } : {}),
+      });
+      if (filled) return { outcome: "applied" };
+    }
+  }
+
+  return fillExecutedAmountsOnConfirmed({
+    id: row.id,
+    expectedTxHash: txHash,
+    expectedChainId: row.chainId,
+    amounts: decoded.amounts,
+  });
 }
