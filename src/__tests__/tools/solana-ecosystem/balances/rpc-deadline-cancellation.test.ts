@@ -185,6 +185,86 @@ describe("createDeadlineBoundSolanaRpc", () => {
     expect(requests).toBe(1);
   });
 
+  /**
+   * THE 429, driven through the REAL `Connection` transport.
+   *
+   * MEASURED default (`@solana/web3.js@1.98.4` `lib/index.cjs.js:5053-5075`):
+   * five attempts, sleeping 500+1000+2000+4000 = 7.5 s of this reader's 10 s
+   * budget, with a `console.error` per retry. The call would then usually
+   * surface as a TIMEOUT - our network reported slow when the provider had
+   * answered, promptly, that we were over quota.
+   *
+   * Every assertion below is one half of that:
+   *  - EXACTLY ONE fetch: `disableRetryOnRateLimit` is passed, so the library's
+   *    retry loop breaks on the first 429 and no second request exists;
+   *  - NO retry sleep: the clock is never advanced, so a suite that hung here
+   *    would prove the sleeps still ran;
+   *  - NO `console.error`: the library writes one per retry, and there are none;
+   *  - `SolanaRpcRateLimited`, not `SolanaRpcDeadlineExceeded`.
+   */
+  it("reports a 429 as rate_limited, with one request, no retry sleep and no console noise", async () => {
+    let requests = 0;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const rpc = createDeadlineBoundSolanaRpc({
+        fetch: () => {
+          requests += 1;
+          return Promise.resolve(
+            new Response("rate limit exceeded", {
+              status: 429,
+              statusText: "Too Many Requests",
+            }),
+          );
+        },
+      });
+
+      const err = await rpc.getBalance(OWNER).catch((caught: unknown) => caught);
+
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).name).toBe("SolanaRpcRateLimited");
+      expect(requests).toBe(1);
+      expect(consoleError).not.toHaveBeenCalled();
+      // The provider's body never rides along in the reader's own error.
+      expect((err as Error).message).not.toContain("rate limit exceeded");
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  /**
+   * THE RACE. A 429 that lands as the deadline fires must still be reported as
+   * a rate limit: the endpoint ANSWERED, and classifying it as a timeout would
+   * send a reader looking for a slow network. Classification order in
+   * `callRpc` is what decides this, and this test is that order's proof.
+   */
+  it("lets rate_limited win the deadline race", async () => {
+    const rpc = createDeadlineBoundSolanaRpc({
+      fetch: (_input, init) =>
+        new Promise<Response>((resolve, reject) => {
+          // The 429 is delivered by the abort itself: the response arrives at
+          // the same instant the deadline cancels the request.
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              resolve(new Response("slow down", { status: 429, statusText: "Too Many Requests" }));
+            },
+            { once: true },
+          );
+          // Nothing else can settle this call.
+          void reject;
+        }),
+    });
+
+    const settled = rpc
+      .getBalance(OWNER)
+      .then(() => null, (caught: unknown) => caught);
+    await vi.advanceTimersByTimeAsync(RPC_DEADLINE_MS + 1);
+    const err = await settled;
+
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).name).toBe("SolanaRpcRateLimited");
+  });
+
   it("refuses an overlapping call rather than sharing another call's deadline", async () => {
     const rpc = createDeadlineBoundSolanaRpc({
       fetch: (_input, init) =>

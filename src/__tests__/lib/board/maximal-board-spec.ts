@@ -59,6 +59,15 @@ import {
  * written in one of them costs twice a Latin board. Latin is carried beside it
  * so a test can state the ratio rather than assert "it fits".
  *
+ * THREE BYTES was UNMEASURED until this filler existed, and it is the case
+ * that matters most. A CJK ideograph is three UTF-8 bytes and ONE UTF-16 unit,
+ * so unlike the four-byte emoji it is schema-valid on EVERY field, including
+ * the provider labels and provenance strings that zod bounds by UTF-16 units.
+ * A whole-document CJK fill is therefore a board the schema fully admits, and
+ * it is the true worst case: a reader asking for analysis in Chinese, Japanese
+ * or Korean is an ordinary request, not a corner. See
+ * {@link MAXIMAL_THREE_BYTE_DOCUMENT_BYTES} for what it measures.
+ *
  * FOUR BYTES is the case the budget deliberately REFUSES. Emoji-dense prose at
  * every bound cannot be stored, and the contract's answer is to refuse the
  * whole board naming its heaviest pool, never to cut it to fit.
@@ -66,6 +75,8 @@ import {
 export const BOARD_FILLER = {
   latin: "a",
   twoByte: "д",
+  /** U+6587 CJK IDEOGRAPH "文": 3 UTF-8 bytes, 1 UTF-16 unit. */
+  threeByte: "文",
   fourByte: "\u{1F680}",
 } as const;
 
@@ -220,3 +231,28 @@ export const MAXIMAL_LATIN_DOCUMENT_BYTES = 161_945;
 
 /** Bytes of `BOARD_SPEC_MAX_BYTES` left unspent by the two-byte worst case. */
 export const MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES = 54_983;
+
+/**
+ * UTF-8 bytes of `maximalBoardSpec({ script: "threeByte" })`, as MEASURED by
+ * the generator on 2026-08-28.
+ *
+ * THE FIGURE THIS WHOLE FILLER EXISTS TO PRODUCE, and it does not fit. The
+ * budget is `BOARD_SPEC_MAX_BYTES = 327,680`, so a fully schema-valid CJK
+ * board is {@link MAXIMAL_THREE_BYTE_DOCUMENT_OVERSHOOT_BYTES} bytes over it,
+ * with NOTHING the model could shorten: every field is already at its own
+ * bound, and the bounds count characters while the budget counts bytes.
+ *
+ * Unlike the four-byte case, this is not a corner the contract chose to
+ * refuse. A CJK ideograph is one UTF-16 unit, so it is legal on the provider
+ * labels and provenance strings too, and a reader asking for analysis in
+ * Chinese, Japanese or Korean is an ordinary request.
+ *
+ * NO BUDGET CONSTANT MOVES ON THE STRENGTH OF THIS MEASUREMENT. Choosing the
+ * ceiling is the owner's decision and it is now made WITH the number rather
+ * than before it; `./spec.test.ts` keeps the measurement executable so the
+ * figure in front of that decision cannot go stale.
+ */
+export const MAXIMAL_THREE_BYTE_DOCUMENT_BYTES = 383_449;
+
+/** How far {@link MAXIMAL_THREE_BYTE_DOCUMENT_BYTES} exceeds the budget. */
+export const MAXIMAL_THREE_BYTE_DOCUMENT_OVERSHOOT_BYTES = 55_769;

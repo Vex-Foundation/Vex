@@ -13,13 +13,14 @@
  * a board can carry have no profile artwork at all, so "there is no icon" is
  * the ORDINARY outcome of this call, not a failure of it. Modelling it as a
  * `Result` error would make the common case look broken to every caller and
- * would flatten three genuinely different facts into one. They stay apart:
+ * would flatten four genuinely different facts into one. They stay apart:
  *
- *   image        the bytes were fetched, identified and are inside the bounds;
- *   absent       settled for this id: the provider has no such icon, or the
- *                bytes it served are not an image this app can identify;
- *   unavailable  nothing was learned. The transport failed, the service was
- *                busy, or it was not mounted yet. Asking again may answer.
+ *   image              the bytes were fetched, identified and are in bounds;
+ *   absent             settled: the provider has no such icon;
+ *   refused_by_policy  settled: the provider HAS one and this app declined it
+ *                      (bytes it cannot identify, or past the byte ceiling);
+ *   unavailable        nothing was learned. The transport failed, the service
+ *                      was busy, or it was not mounted yet. Asking may answer.
  *
  * A `Result` ERROR from this channel therefore means only what it should: the
  * input did not validate, or the sender was not trusted.
@@ -52,10 +53,22 @@ export const boardIconReadInputSchema = z
   .strict();
 export type BoardIconReadInput = z.infer<typeof boardIconReadInputSchema>;
 
-/** Settled outcomes: the same id would answer the same way. */
+/** Settled ABSENCE: the provider has nothing under this handle. */
 export const BOARD_ICON_ABSENT_REASONS = [
   /** The CDN has no icon under this handle (HTTP 404). */
   "not_found",
+] as const;
+
+/**
+ * Settled REFUSAL: the provider served something and this app declined it.
+ *
+ * A third class, and not a flavour of either neighbour, because it makes a
+ * different claim from both. `absent` says the token has no picture, which is
+ * false here - the provider published one. `unavailable` says nothing was
+ * learned and asking again may answer, which is also false: the verdict is
+ * deterministic for these bytes, so re-asking only re-downloads them.
+ */
+export const BOARD_ICON_REFUSED_REASONS = [
   /** Served bytes whose declared type, magic bytes or dimensions do not hold up. */
   "unsupported_image",
   /** The body passed the byte ceiling and the transfer was stopped. */
@@ -85,6 +98,12 @@ export const boardIconSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("absent"),
       reason: z.enum(BOARD_ICON_ABSENT_REASONS),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("refused_by_policy"),
+      reason: z.enum(BOARD_ICON_REFUSED_REASONS),
     })
     .strict(),
   z

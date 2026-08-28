@@ -40,6 +40,8 @@ import {
 import {
   MAXIMAL_LATIN_DOCUMENT_BYTES,
   MAXIMAL_TWO_BYTE_DOCUMENT_BYTES,
+  MAXIMAL_THREE_BYTE_DOCUMENT_BYTES,
+  MAXIMAL_THREE_BYTE_DOCUMENT_OVERSHOOT_BYTES,
   MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES,
   maximalBoardSpec,
 } from "./maximal-board-spec.js";
@@ -898,6 +900,37 @@ describe("the all-fields-max document", () => {
     // Stated as real headroom rather than "it fits": a budget that admits the
     // worst case by a handful of bytes is a budget about to be wrong again.
     expect(MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES).toBeGreaterThan(32 * 1024);
+  });
+
+  /**
+   * THE MEASUREMENT THE BUDGET DECISION WAITS ON, kept executable.
+   *
+   * A three-byte CJK ideograph is ONE UTF-16 unit, so unlike the four-byte
+   * emoji it is legal on every field the schema bounds with zod's `.max()` -
+   * the provider labels and the provenance strings included. A whole-document
+   * CJK board is therefore fully schema-valid AND over the budget, with
+   * nothing the model could shorten: every field already sits on its own
+   * bound, and the bounds count characters while the budget counts bytes. That
+   * combination does not exist for any other script.
+   *
+   * This test RECORDS the number. It does not move `BOARD_SPEC_MAX_BYTES`:
+   * choosing the ceiling is the owner's decision, and this arc's job was to
+   * put a measured figure in front of it instead of a derived one. When the
+   * ceiling does move, this test goes red with the new relationship in the
+   * diff, which is exactly when it should be re-read.
+   */
+  it("MEASURES the schema-valid CJK worst case, which does NOT fit today's budget", () => {
+    const cjk = maximalBoardSpec({ script: "threeByte" });
+    // A LEGAL board on every field, which is what makes the overshoot a defect
+    // in the ceiling rather than a corner the contract chose to refuse.
+    expect(boardSpecV1Schema.safeParse(cjk).success).toBe(true);
+
+    const budget = checkBoardSpecByteBudget(cjk);
+    expect(budget.byteLength).toBe(MAXIMAL_THREE_BYTE_DOCUMENT_BYTES);
+    expect(budget.withinBudget).toBe(false);
+    expect(budget.byteLength - BOARD_SPEC_MAX_BYTES).toBe(
+      MAXIMAL_THREE_BYTE_DOCUMENT_OVERSHOOT_BYTES,
+    );
   });
 
   it("costs about half as much in Latin, which is what the two-byte sizing buys", () => {

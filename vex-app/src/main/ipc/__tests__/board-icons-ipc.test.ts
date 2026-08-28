@@ -164,21 +164,21 @@ describe("absent is a success, not an error", () => {
     });
   });
 
-  it("answers ok with kind: absent, reason: unsupported_image", async () => {
-    resolveBoardIcon.mockResolvedValue({ kind: "absent", reason: "unsupported_image" });
+  it("answers ok with kind: refused_by_policy, reason: unsupported_image", async () => {
+    resolveBoardIcon.mockResolvedValue({ kind: "refused_by_policy", reason: "unsupported_image" });
     const result = await call({ iconId: VALID_ID });
     expect(result).toEqual({
       ok: true,
-      data: { iconId: VALID_ID, icon: { kind: "absent", reason: "unsupported_image" } },
+      data: { iconId: VALID_ID, icon: { kind: "refused_by_policy", reason: "unsupported_image" } },
     });
   });
 
-  it("answers ok with kind: absent, reason: over_cap", async () => {
-    resolveBoardIcon.mockResolvedValue({ kind: "absent", reason: "over_cap" });
+  it("answers ok with kind: refused_by_policy, reason: over_cap", async () => {
+    resolveBoardIcon.mockResolvedValue({ kind: "refused_by_policy", reason: "over_cap" });
     const result = await call({ iconId: VALID_ID });
     expect(result).toEqual({
       ok: true,
-      data: { iconId: VALID_ID, icon: { kind: "absent", reason: "over_cap" } },
+      data: { iconId: VALID_ID, icon: { kind: "refused_by_policy", reason: "over_cap" } },
     });
   });
 });

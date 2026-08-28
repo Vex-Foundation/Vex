@@ -249,6 +249,8 @@ export function createBoardTapeService(
   const controllers = new Set<AbortController>();
   const inFlight = new Set<Promise<unknown>>();
   let closed = false;
+  /** The one drain. Every `dispose()` caller joins it (see `dispose`). */
+  let pendingDispose: Promise<void> | undefined;
 
   function stateFor(key: string): TapeState {
     const existing = states.get(key);
@@ -475,16 +477,22 @@ export function createBoardTapeService(
       states.delete(boardSpotlightKey(subject));
     },
 
-    async dispose(): Promise<void> {
-      if (closed) return;
-      // Admission first, then abort, then DRAIN: a poll must not outlive the
-      // transport it borrows.
-      closed = true;
-      for (const controller of controllers) controller.abort();
-      await Promise.allSettled([...inFlight]);
-      inFlight.clear();
-      controllers.clear();
-      states.clear();
+    dispose(): Promise<void> {
+      // MEMOIZED, not early-returned. `if (closed) return;` resolved a second
+      // caller IMMEDIATELY while the first was still draining, so an awaited
+      // teardown could report done with a poll still on the transport. Every
+      // caller joins the SAME drain.
+      pendingDispose ??= (async () => {
+        // Admission first, then abort, then DRAIN: a poll must not outlive the
+        // transport it borrows.
+        closed = true;
+        for (const controller of controllers) controller.abort();
+        await Promise.allSettled([...inFlight]);
+        inFlight.clear();
+        controllers.clear();
+        states.clear();
+      })();
+      return pendingDispose;
     },
   };
 }

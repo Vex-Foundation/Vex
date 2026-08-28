@@ -79,6 +79,7 @@ import { readTokensPairs } from "../../dexscreener/price-read.js";
 import { addPoolListsForUnpricedAddresses } from "../../dexscreener/unpriced-pool-fallback.js";
 import { getTokenBalancesAcrossChains } from "../../khalani/balances.js";
 import { getJupiterTokensByMint } from "../jupiter/jupiter-tokens/service.js";
+import { resolveJupiterApiKey } from "../shared/jupiter-auth.js";
 import { jupiterMintInformationToMetadata } from "../jupiter/jupiter-tokens/types.js";
 import { solanaPubkey } from "../shared/schemas.js";
 import { createSolanaConnection } from "../shared/solana-transaction/connection.js";
@@ -369,7 +370,18 @@ export async function readSolanaWalletBalances(
   }
 
   const mints = projection.holdings.map((holding) => holding.mint);
-  const metadata = await loadMintMetadata(mints);
+  const metadataResult = await loadMintMetadata(mints);
+  const metadata = metadataResult.labels;
+  if (metadataResult.status === "missing_key") {
+    // ONCE per wallet read - which is once per sync - and named as the
+    // unavailable capability it is, not as one failure per mint. Nothing here
+    // retries: a key that is absent stays absent until the user configures it.
+    logger.warn("solana.balances.metadata_capability_unavailable", {
+      capability: "jupiter_tokens_api",
+      reason: "JUPITER_API_KEY is not configured",
+      mints: metadataResult.missing,
+    });
+  }
   // wSOL prices native SOL, so it joins the pricing set even when the wallet
   // holds no wSOL token account.
   const pricing = await priceMints(
@@ -436,6 +448,24 @@ export class SolanaRpcDeadlineExceededError extends Error {
 }
 
 /**
+ * The RPC provider answered HTTP 429 for this call.
+ *
+ * A DISTINCT OUTCOME FROM THE DEADLINE, and the distinction is the point. The
+ * provider was reached and it declined to serve, which is a quota fact about
+ * the endpoint; a deadline is a fact about our own budget. Collapsing the two
+ * sends a reader looking for a slow network when the answer is a rate limit.
+ *
+ * NOTHING RETRIES ON IT. The reader stops and reports; whoever owns the
+ * deadline owns the decision to ask again, with fresh budget.
+ */
+export class SolanaRpcRateLimitedError extends Error {
+  override readonly name = "SolanaRpcRateLimited";
+  constructor(readonly call: string) {
+    super(`${call} was rate limited by the RPC provider (HTTP 429)`);
+  }
+}
+
+/**
  * `getBalance` answers lamports as a JSON number. A u64 above 2^53 cannot
  * survive that encoding, and a malformed body could deliver NaN, a float or a
  * negative. Only a non-negative safe integer is a balance.
@@ -474,11 +504,34 @@ export function createDeadlineBoundSolanaRpc(
 ): SolanaBalanceRpc {
   const baseFetch: FetchFn = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   let inFlight: AbortController | null = null;
+  /**
+   * Whether the ACTIVE call saw an HTTP 429. Per-call state exactly like
+   * `inFlight`, cleared with it, and only ever read by the call that set it -
+   * the transport is single-call by contract, which is what makes this safe.
+   */
+  let rateLimited = false;
 
   const connection = createSolanaConnection({
     rpcUrl: options.rpcUrl,
     commitment: options.commitment,
-    fetch: (input, init) => baseFetch(input, { ...init, signal: inFlight?.signal }),
+    fetch: async (input, init) => {
+      const response = await baseFetch(input, { ...init, signal: inFlight?.signal });
+      // Recorded here because this is the only place the STATUS is visible:
+      // web3.js turns a non-ok response into `Error("429 Too Many Requests:
+      // <body>")`, and matching on that message would be matching on provider
+      // text. The status is the fact.
+      if (response.status === 429) rateLimited = true;
+      return response;
+    },
+    // MEASURED (`@solana/web3.js@1.98.4` `lib/index.cjs.js:5053-5075`): the
+    // default retries a 429 five times, sleeping 500+1000+2000+4000 = 7.5 s,
+    // and writes a `console.error` per attempt. This reader's whole budget is
+    // RPC_DEADLINE_MS, so the library would spend most of it and the call would
+    // then surface as a TIMEOUT for what was a rate limit. Turning the retry
+    // off does not add one anywhere: it hands the decision to the deadline
+    // owner, which is the only party that knows whether asking again is worth
+    // the remaining budget.
+    disableRetryOnRateLimit: true,
   });
 
   async function callRpc<T>(label: string, operation: () => Promise<T>): Promise<T> {
@@ -487,15 +540,22 @@ export function createDeadlineBoundSolanaRpc(
     }
     const controller = new AbortController();
     inFlight = controller;
+    rateLimited = false;
     const timer = setTimeout(() => controller.abort(), RPC_DEADLINE_MS);
     try {
       return await operation();
     } catch (err) {
+      // RATE LIMIT IS CLASSIFIED FIRST, and the order is load-bearing. A 429
+      // that arrives close to the deadline would otherwise be reported as a
+      // timeout - the provider's own refusal to serve, relabelled as our
+      // network being slow. The endpoint ANSWERED; that is the fact to report.
+      if (rateLimited) throw new SolanaRpcRateLimitedError(label);
       if (controller.signal.aborted) throw new SolanaRpcDeadlineExceededError(label);
       throw err;
     } finally {
       clearTimeout(timer);
       inFlight = null;
+      rateLimited = false;
     }
   }
 
@@ -516,12 +576,41 @@ interface MintLabel {
 }
 
 /**
+ * What the Jupiter leg of a metadata pass actually did.
+ *
+ *  - `not_needed`: the well-known table and the cache answered every mint, so
+ *    no lookup was attempted. NOT the same as a lookup that found nothing.
+ *  - `available`: the lookup ran and answered (possibly for a subset).
+ *  - `missing_key`: `JUPITER_API_KEY` is not configured, so the capability is
+ *    UNAVAILABLE - a named, permanent, per-environment condition. Retrying it
+ *    per mint or per cycle cannot help, which is why it is reported once and
+ *    never mistaken for a provider failure.
+ *  - `lookup_failed`: the lookup was attempted and the provider or the network
+ *    failed it. Transient, and unlike `missing_key` worth trying again next
+ *    cycle.
+ */
+type MintMetadataStatus = "not_needed" | "available" | "missing_key" | "lookup_failed";
+
+interface MintMetadataResult {
+  readonly labels: Map<string, MintLabel>;
+  readonly status: MintMetadataStatus;
+  /** Mints the well-known table and the cache could not answer. */
+  readonly missing: number;
+}
+
+/**
  * Symbol/name per mint: well-known table, then the 24h file cache, then ONE
  * batched Jupiter lookup whose answers are written back to the cache, then
  * nothing. Metadata is presentation: a mint that resolves to nothing keeps its
  * row with null labels. Decimals never come from here.
+ *
+ * The Jupiter leg reports its OUTCOME instead of swallowing it. Missing
+ * credentials used to reach the caller as an ordinary debug line, so every
+ * uncached mint kept null labels with nothing in the log to say the capability
+ * was never configured. Retry semantics are unchanged: there was no retry here
+ * before and there is none now.
  */
-async function loadMintMetadata(mints: readonly string[]): Promise<Map<string, MintLabel>> {
+async function loadMintMetadata(mints: readonly string[]): Promise<MintMetadataResult> {
   const labels = new Map<string, MintLabel>();
   const missing: string[] = [];
 
@@ -539,7 +628,13 @@ async function loadMintMetadata(mints: readonly string[]): Promise<Map<string, M
     missing.push(mint);
   }
 
-  if (missing.length === 0) return labels;
+  if (missing.length === 0) return { labels, status: "not_needed", missing: 0 };
+
+  // Asked BEFORE the request, not inferred from a thrown error: an unconfigured
+  // capability and a failed call are different facts and get different names.
+  if (resolveJupiterApiKey() === "") {
+    return { labels, status: "missing_key", missing: missing.length };
+  }
 
   try {
     const resolved = await getJupiterTokensByMint(missing);
@@ -553,8 +648,9 @@ async function loadMintMetadata(mints: readonly string[]): Promise<Map<string, M
       mints: missing.length,
       error: err instanceof Error ? err.name : "unknown",
     });
+    return { labels, status: "lookup_failed", missing: missing.length };
   }
-  return labels;
+  return { labels, status: "available", missing: missing.length };
 }
 
 // ── Pricing ─────────────────────────────────────────────────────────
@@ -587,6 +683,7 @@ async function priceMints(
     wanted: mints,
     normalizeAddress: (address) => address,
     quotePolicy: SOLANA_QUOTE_ASSET_POLICY,
+    expectedChainId: SOLANA_DEXSCREENER_SLUG,
   });
   if (mints.length === 0) {
     return { priceByMint: new Map<string, number>(), tiers: accumulator.countTiers() };
@@ -620,6 +717,11 @@ async function priceMints(
   );
   if (fallback.attempted > 0 || fallback.skipped > 0) {
     logger.debug("solana.balances.pool_fallback", fallback);
+  }
+
+  const foreignChainPairs = accumulator.foreignChainPairsRefused();
+  if (foreignChainPairs > 0) {
+    logger.warn("solana.balances.foreign_chain_pairs_refused", { pairs: foreignChainPairs });
   }
 
   const prices = accumulator.toPriceMap();

@@ -178,12 +178,16 @@ describe("TokenCardV3 - the mockup's anatomy", () => {
   });
 
   /**
-   * THE PHOTO SLOT'S FOUR STATES. The row that matters is the last: a read
-   * that failed for a transport-class reason, or a query that threw, must not
-   * settle to letters, because the monogram's note ("no image published") is
-   * a claim about the token that only the provider can make. Rows: what the
-   * icon bridge answers, the `data-state` the slot must carry, the text it may
-   * show, and which of the two notes (absence / unavailable) is announced.
+   * THE PHOTO SLOT'S FIVE STATES. Two rows carry the whole point. A read that
+   * failed for a transport-class reason, or a query that threw, must not settle
+   * to letters, because the monogram's note ("no image published") is a claim
+   * about the token that only the provider can make. And a read the app REFUSED
+   * (`refused_by_policy`) must settle to neither: the provider did publish
+   * artwork, so "no image published" is false, and the verdict is deterministic
+   * for those bytes, so "could not be loaded" invites a retry that will fetch
+   * the same refusal. Rows: what the icon bridge answers, the `data-state` the
+   * slot must carry, the text it may show, and which of the three notes
+   * (absence / refusal / unavailable) is announced.
    */
   describe.each<{
     readonly label: string;
@@ -191,6 +195,7 @@ describe("TokenCardV3 - the mockup's anatomy", () => {
     readonly state: string;
     readonly letters: string;
     readonly absenceNote: boolean;
+    readonly refusedNote: boolean;
     readonly unavailableNote: boolean;
   }>([
     {
@@ -199,6 +204,7 @@ describe("TokenCardV3 - the mockup's anatomy", () => {
       state: "loading",
       letters: "",
       absenceNote: false,
+      refusedNote: false,
       unavailableNote: false,
     },
     {
@@ -211,6 +217,7 @@ describe("TokenCardV3 - the mockup's anatomy", () => {
       state: "image",
       letters: "",
       absenceNote: false,
+      refusedNote: false,
       unavailableNote: false,
     },
     {
@@ -223,6 +230,7 @@ describe("TokenCardV3 - the mockup's anatomy", () => {
       state: "monogram",
       letters: "U",
       absenceNote: true,
+      refusedNote: false,
       unavailableNote: false,
     },
     {
@@ -235,7 +243,37 @@ describe("TokenCardV3 - the mockup's anatomy", () => {
       state: "unavailable",
       letters: "",
       absenceNote: false,
+      refusedNote: false,
       unavailableNote: true,
+    },
+    {
+      label: "refused by policy (bytes are not an image this app can identify)",
+      answer: () =>
+        Promise.resolve({
+          ok: true,
+          data: {
+            iconId: "abcd1234",
+            icon: { kind: "refused_by_policy", reason: "unsupported_image" },
+          },
+        }),
+      state: "refused",
+      letters: "",
+      absenceNote: false,
+      refusedNote: true,
+      unavailableNote: false,
+    },
+    {
+      label: "refused by policy (body past the byte ceiling)",
+      answer: () =>
+        Promise.resolve({
+          ok: true,
+          data: { iconId: "abcd1234", icon: { kind: "refused_by_policy", reason: "over_cap" } },
+        }),
+      state: "refused",
+      letters: "",
+      absenceNote: false,
+      refusedNote: true,
+      unavailableNote: false,
     },
     {
       label: "Result error (input or sender rejected)",
@@ -255,6 +293,7 @@ describe("TokenCardV3 - the mockup's anatomy", () => {
       state: "unavailable",
       letters: "",
       absenceNote: false,
+      refusedNote: false,
       unavailableNote: true,
     },
     {
@@ -263,9 +302,12 @@ describe("TokenCardV3 - the mockup's anatomy", () => {
       state: "unavailable",
       letters: "",
       absenceNote: false,
+      refusedNote: false,
       unavailableNote: true,
     },
-  ])("photo slot - $label", ({ answer, state, letters, absenceNote, unavailableNote }) => {
+  ])(
+    "photo slot - $label",
+    ({ answer, state, letters, absenceNote, refusedNote, unavailableNote }) => {
     it(`settles to data-state=${state}`, async () => {
       readBoardIcon.mockImplementation(answer);
       render(
@@ -285,6 +327,11 @@ describe("TokenCardV3 - the mockup's anatomy", () => {
       expect(
         document.querySelector('[data-vex-area="board-token-photo-unavailable"]') !== null,
       ).toBe(unavailableNote);
+      // The THIRD note, and the reason the class exists: published artwork the
+      // app declined is neither an absence nor an unknown.
+      expect(
+        document.querySelector('[data-vex-area="board-token-photo-refused"]') !== null,
+      ).toBe(refusedNote);
       if (unavailableNote) {
         expect(photo.getAttribute("title")).toBe("Image could not be loaded");
         expect(document.body.textContent).not.toContain("No image published");
@@ -292,8 +339,18 @@ describe("TokenCardV3 - the mockup's anatomy", () => {
       if (absenceNote) {
         expect(photo.getAttribute("title")).toBe("No image published for this token yet");
       }
-    });
-  });
+      if (refusedNote) {
+        expect(photo.getAttribute("title")).toBe(
+          "Published image was not accepted by Vex's image checks",
+        );
+        // NEITHER of the two wrong claims is anywhere on the surface.
+        expect(document.body.textContent).not.toContain("No image published");
+        expect(document.body.textContent).not.toContain("could not be loaded");
+      }
+      },
+    );
+  },
+  );
 
   it("puts no ring on any photo state", async () => {
     render(mount());
