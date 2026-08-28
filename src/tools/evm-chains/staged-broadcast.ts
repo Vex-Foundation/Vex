@@ -60,6 +60,27 @@ export interface StagedTxParams {
   readonly value?: bigint;
 }
 
+/**
+ * The transaction AS IT WILL BE SERIALIZED, handed to the pre-sign gate.
+ *
+ * WHY THE GATE TAKES IT. A gate that re-checks the caller's own earlier values
+ * proves something about a closure, not about the bytes:
+ * `prepareTransactionRequest` returns the request that is actually signed, and
+ * viem may fill or route it through the node, so `to`, `data` and `value` on the
+ * way out are not the caller's inputs by definition. The gate is therefore given
+ * exactly the object the signature is taken over, and a caller whose invariant is
+ * about the transaction can assert it against the transaction.
+ *
+ * Every field is the value passed to the signer; nothing here is re-derived.
+ */
+export interface FinalSignedRequest {
+  readonly to: Address | null | undefined;
+  readonly data: Hex | undefined;
+  readonly value: bigint;
+  readonly gas: bigint;
+  readonly nonce: number;
+}
+
 /** Persisted BEFORE the signed payload is broadcast. */
 export interface StagedSendHandles {
   readonly txHash: Hex;
@@ -226,7 +247,7 @@ export interface DeferredEvmSigner {
    * The caller's pre-sign gate. Runs EXACTLY ONCE, after all preparation and
    * before `createSigner`. Throwing aborts with nothing signed.
    */
-  readonly onBeforeSign: () => Promise<void>;
+  readonly onBeforeSign: (request: FinalSignedRequest) => Promise<void>;
   /** Resolve and decrypt the currently authorized wallet. Throwing aborts. */
   readonly createSigner: () => Promise<WalletClient<Transport, Chain, Account>>;
 }
@@ -299,6 +320,26 @@ export interface StagedBroadcastHooks {
    * NOT roll back the broadcast (the transaction is already in flight).
    */
   readonly onAccepted: () => Promise<void>;
+  /**
+   * THE LAST GATE BEFORE THE KEY. Called exactly once, after every awaited
+   * preparation step (estimate, fee filling, nonce reservation, deferred-signer
+   * resolution) and immediately before the signature - a throw here means
+   * NOTHING was signed and nothing was sent.
+   *
+   * The caller's check must be PURE: no provider call may sit between this hook
+   * and the signature, or the state it just validated can move before the bytes
+   * commit to it. The KyberSwap swap leg uses it to re-assert the approved price
+   * floor against the calldata that is actually about to be signed, which the
+   * allowance-stage checks alone cannot cover.
+   *
+   * The FINAL PREPARED REQUEST is passed in, and a gate about the transaction
+   * must assert against it rather than against the values it handed in: those
+   * are what the caller ASKED to sign, and this is what WILL be signed.
+   *
+   * Optional so existing callers are unchanged; a lane that has an invariant to
+   * re-check supplies it.
+   */
+  readonly onBeforeSign?: (request: FinalSignedRequest) => Promise<void>;
 }
 
 /**
@@ -435,9 +476,20 @@ async function runStagedBroadcast(
   if (!Number.isSafeInteger(nonce) || nonce < nodePendingNonce) {
     throw new Error("signStageBroadcast: durable nonce reservation returned an invalid nonce");
   }
-  const reservedRequest = { ...request, nonce };
+  // THE OBJECT THAT IS SIGNED, built once and used for the fee assertion, the
+  // pre-sign gates and both signer arms. It was previously respread at each of
+  // those points, which is how a gate could end up validating something other
+  // than the bytes - see `FinalSignedRequest`.
+  const signedRequest = { ...request, nonce, gas: gasLimit };
+  const finalRequest: FinalSignedRequest = {
+    to: signedRequest.to,
+    data: signedRequest.data,
+    value: signedRequest.value ?? 0n,
+    gas: gasLimit,
+    nonce,
+  };
   if (bounds !== undefined) {
-    assertWithinFeeBounds({ ...reservedRequest, gas: gasLimit }, bounds);
+    assertWithinFeeBounds(signedRequest, bounds);
   }
   // Re-asserted on the request that is actually serialized: when fees/nonce
   // still need filling, viem may route preparation through the node's
@@ -450,14 +502,20 @@ async function runStagedBroadcast(
     deferred as DeferredEvmSigner,
     account,
     chain,
+    finalRequest,
   );
+
+  // The caller's own pre-sign gate, on BOTH arms and with nothing awaited
+  // between it and the signature below that could reach a provider. It is given
+  // the request that is about to be serialized, never the caller's inputs.
+  await hooks.onBeforeSign?.(finalRequest);
 
   // THE SIGNATURE. The eager arm keeps viem's wallet action verbatim; the
   // deferred arm signs offline so that nothing at all reaches a provider between
   // `onBeforeSign` and this line. See `DeferredEvmSigner` step 5.
   const serializedTransaction = deferred === null
-    ? await walletClient.signTransaction({ ...reservedRequest, gas: gasLimit })
-    : await signPreparedTransactionOffline(walletClient, chain, { ...reservedRequest, gas: gasLimit });
+    ? await walletClient.signTransaction(signedRequest)
+    : await signPreparedTransactionOffline(walletClient, chain, signedRequest);
   const txHash = keccak256(serializedTransaction);
 
   await hooks.onHashStaged({
@@ -510,8 +568,9 @@ async function resolveDeferredSigner(
   deferred: DeferredEvmSigner,
   preparedAccount: Account,
   preparedChain: Chain,
+  finalRequest: FinalSignedRequest,
 ): Promise<WalletClient<Transport, Chain, Account>> {
-  await deferred.onBeforeSign();
+  await deferred.onBeforeSign(finalRequest);
   const walletClient = await deferred.createSigner();
   if (walletClient.account.address.toLowerCase() !== preparedAccount.address.toLowerCase()) {
     throw new DeferredSignerIdentityError("account");

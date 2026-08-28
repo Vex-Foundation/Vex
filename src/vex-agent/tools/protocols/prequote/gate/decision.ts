@@ -4,6 +4,7 @@
 
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { WalletPolicy } from "@vex-agent/engine/types.js";
+import type { QuoteBindingPreview } from "../../quote-authority/restore.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 
@@ -40,6 +41,14 @@ export type GateDecision =
        * sourced from the persisted prequote, never raw args.
        */
       readonly feePreview?: JupiterFeePreview;
+      /**
+       * What the approval card states this proposal is bound to: the quoted
+       * output, the floor the fill may not go below, the tolerance, the
+       * snapshot digest and the row's own expiry. Read from the matched
+       * prequote's stored snapshot, NEVER from raw args, so the model cannot
+       * state a floor the store does not hold.
+       */
+      readonly quoteBinding?: QuoteBindingPreview;
     }
   | { readonly kind: "block"; readonly reason: GateBlockReason; readonly message: string };
 

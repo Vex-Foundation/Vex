@@ -217,6 +217,12 @@ function storedPrequote(row: RecordedRow): SwapPrequote {
     safetyVerdict: "pass",
     safetyDetail: {},
     routeRef: null,
+    // Migration 095: a row that predates the claim lane reads as an
+    // executable, unclaimed quote. It authorizes nothing on its own - the
+    // claim additionally requires a stored route snapshot.
+    eligibilityKind: "executable",
+    claimedAt: null,
+    claimedBy: null,
     createdAt: "2026-08-17T00:00:00.000Z",
     expiresAt: "2026-08-17T00:15:00.000Z",
   };

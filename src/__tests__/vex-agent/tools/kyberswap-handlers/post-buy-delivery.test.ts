@@ -12,6 +12,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
@@ -102,6 +104,16 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
   pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
+// The execute CLAIMS the approved quote instead of fetching a route (the
+// 2026-08-27 quote-binding change). The claim's own behaviour is covered by
+// `quote-bound-execute.test.ts` and the Postgres claim suite; here it hands
+// back a real snapshot of this file's own route so the handler reaches the
+// behaviour under test.
+const mockClaim = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
+  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
@@ -144,7 +156,7 @@ beforeEach(() => {
     address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
   }));
   mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
-  mockGetRoute.mockResolvedValue({
+  const routeResponse = {
     data: {
       routeSummary: {
         amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
@@ -154,7 +166,15 @@ beforeEach(() => {
       },
       routerAddress: ROUTER,
     },
-  });
+  };
+  mockGetRoute.mockResolvedValue(routeResponse);
+  mockClaim.mockImplementation(
+    async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+      approvedClaim(
+        routeResponse.data.routeSummary,
+        typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+      ),
+  );
   mockBuildRoute.mockResolvedValue({
     data: {
       routerAddress: ROUTER,

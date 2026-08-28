@@ -59,11 +59,23 @@ vi.mock("@tools/kyberswap/aggregator/client.js", () => ({
   }),
 }));
 
+// The execute CLAIMS the approved quote instead of fetching a route (the
+// 2026-08-27 quote-binding change). The claim's own behaviour is covered by
+// `quote-bound-execute.test.ts` and the Postgres claim suite; here it hands
+// back a real snapshot of this file's own route so the handler reaches the
+// behaviour under test.
+const mockClaim = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
+  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
 });
 
+import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 import { NEGATIVE_PRICE_IMPACT_NOTE } from "@vex-agent/tools/protocols/price-impact-note.js";
 
@@ -85,7 +97,7 @@ function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionCon
  * `amountOutUsd: null` makes the impact unparseable, i.e. the null case.
  */
 function mockRoute(amountInUsd: string, amountOutUsd: string | null): void {
-  mockGetRoute.mockResolvedValue({
+  const routeResponse = {
     data: {
       routeSummary: {
         amountIn: "1000000000000000000",
@@ -97,8 +109,23 @@ function mockRoute(amountInUsd: string, amountOutUsd: string | null): void {
       },
       routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
     },
-  });
+  };
+  mockGetRoute.mockResolvedValue(routeResponse);
+  mockClaim.mockImplementation(
+    async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+      approvedClaim(
+        routeResponse.data.routeSummary,
+        typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+      ),
+  );
 }
+
+/**
+ * Resolved once, with a real check: an absent handler is a registry bug, and a
+ * non-null assertion here would report it as an unrelated call-of-undefined.
+ */
+const quoteHandler = KYBERSWAP_HANDLERS["kyberswap.swap.quote"];
+if (quoteHandler === undefined) throw new Error("kyberswap.swap.quote is not registered");
 
 async function quoteSummary(): Promise<string> {
   const result = await KYBERSWAP_HANDLERS["kyberswap.swap.quote"]!(
@@ -160,11 +187,22 @@ describe("kyberswap.swap.quote - negative price impact carries its meaning", () 
     expect(summary).not.toContain(NEGATIVE_PRICE_IMPACT_NOTE);
   });
 
-  it("says nothing when the impact could not be derived at all", async () => {
+  it("REFUSES when the provider stated no output value - there is no impact to annotate", async () => {
+    // Contract change (2026-08-28): an absent output USD is no longer a quote
+    // with a missing impact line. It is `provider_usd_invalid` - a typed
+    // provider-shape refusal - because a route Vex cannot price against a
+    // reference cannot authorize an execute, and annotating it would present
+    // an unpriced route as a priced offer.
     mockRoute("100", null);
-    const summary = await quoteSummary();
 
-    expect(summary).not.toContain("Price impact");
-    expect(summary).not.toContain(NEGATIVE_PRICE_IMPACT_NOTE);
+    const result = await quoteHandler(
+      { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
+      ctx(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.quoteAuthority?.eligibilityKind).toBe("provider_usd_invalid");
+    expect(result.output).not.toContain("Price impact");
+    expect(result.output).not.toContain(NEGATIVE_PRICE_IMPACT_NOTE);
   });
 });

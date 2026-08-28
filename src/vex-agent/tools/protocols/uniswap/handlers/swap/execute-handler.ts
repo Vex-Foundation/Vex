@@ -52,6 +52,14 @@ import {
   type UniswapFeeCollection,
   type UniswapFeeLegPlan,
 } from "./fee/index.js";
+import { VexError, ErrorCodes } from "../../../../../../errors.js";
+import { claimUniswapExecutionSnapshot } from "../../../prequote/claim.js";
+import { canonicalWrapPairRefusal } from "../../../wrap-pair-refusal.js";
+import {
+  compareUniswapExecutionInputs,
+  floorUnreachableRefusal,
+} from "../../../quote-authority/uniswap.js";
+import { executionInputsFrom } from "./execution-binding.js";
 import {
   ambiguousBroadcastResult,
   preSignRefusalResult,
@@ -108,12 +116,41 @@ export async function executeUniswapSwap(
 
   let tokenIn: UniswapToken;
   let tokenOut: UniswapToken;
+  try {
+    tokenIn = await resolveUniswapToken(deployment, tokenInRaw);
+    tokenOut = await resolveUniswapToken(deployment, tokenOutRaw);
+  } catch (err) {
+    return failPreBroadcast(p, { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress, sessionId }, err);
+  }
+
+  // Structurally unroutable, and refused before anything durable is written:
+  // both legs of this pair resolve to the same asset as far as the router is
+  // concerned. Named, with the tool that does build the conversion.
+  const wrapPair = canonicalWrapPairRefusal(deployment.chainId, tokenIn, tokenOut, TOOL_ID);
+  if (wrapPair) return fail(wrapPair);
+
+  // ── THE APPROVED QUOTE, claimed for exactly one execute ──
+  //
+  // Claimed BEFORE this handler quotes anything, so two concurrent executes of
+  // one quote resolve to a single winner before either prices a route. Fresh
+  // pathing below is allowed and expected - Uniswap's pools move - but the
+  // router input, the fee and the floor come from THIS snapshot, never from the
+  // fresh route. Deriving the floor from a fresh route is what let the sibling
+  // venue fill a 313,879.7 quote at 1,190.145 on 2026-08-27 without reverting.
+  const claimed = await claimUniswapExecutionSnapshot(TOOL_ID, sessionId, p, context, `${TOOL_ID}:${sessionId}`);
+  if (!claimed.ok) {
+    return failPreBroadcast(
+      p,
+      { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress, sessionId, tokenIn, tokenOut },
+      new VexError(ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED, claimed.refusal.message),
+    );
+  }
+  const approved = claimed.snapshot;
+
   let amountIn: bigint;
   let feeCharge: UniswapFeeCharge;
   let quoted: QuotedRoute;
   try {
-    tokenIn = await resolveUniswapToken(deployment, tokenInRaw);
-    tokenOut = await resolveUniswapToken(deployment, tokenOutRaw);
     amountIn = parseUnits(amountInRaw, tokenIn.decimals);
     // BEFORE the quote, and deliberately: the route is priced for the amount
     // the router actually receives (`amountIn − fee`), and whether a fee
@@ -121,8 +158,44 @@ export async function executeUniswapSwap(
     feeCharge = await resolveUniswapFeeCharge({ chainId: deployment.chainId, tokenIn, amountInRaw: amountIn });
     quoted = await computeQuote(deployment, tokenIn, tokenOut, feeCharge.swapAmountRaw, slippageBps);
   } catch (err) {
-    return failPreBroadcast(p, { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress, sessionId }, err);
+    return failPreBroadcast(
+      p,
+      { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress, sessionId, tokenIn, tokenOut },
+      err,
+    );
   }
+
+  // What the human approved, held against what this execute just resolved. A
+  // fee that appeared, a fee that vanished, or a router input that moved is a
+  // DIFFERENT trade, and the answer is to say which one moved - never to
+  // quietly re-cut the amount or the fee so the swap fits.
+  const drift = compareUniswapExecutionInputs(
+    approved,
+    executionInputsFrom({ chainId: deployment.chainId, tokenIn, tokenOut, charge: feeCharge }),
+  );
+  if (drift) {
+    return failPreBroadcast(
+      p,
+      { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress, sessionId, tokenIn, tokenOut },
+      new VexError(ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED, drift.message, drift.hint),
+    );
+  }
+
+  // The APPROVED floor, written into the calldata below. The fresh route only
+  // decides the PATH; if its own output cannot even reach the approved floor
+  // the swap would revert on-chain for gas, so it is refused here instead.
+  // This is not a zero-tolerance comparison: the floor already carries the full
+  // slippage the human authorized, so ordinary movement inside it passes.
+  const approvedMinOut = BigInt(approved.approvedMinOutRaw);
+  if (quoted.amountOut < approvedMinOut) {
+    const refusal = floorUnreachableRefusal(approved, quoted.amountOut);
+    return failPreBroadcast(
+      p,
+      { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress, sessionId, tokenIn, tokenOut },
+      new VexError(ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED, refusal.message, refusal.hint),
+    );
+  }
+  quoted = { ...quoted, minAmountOut: approvedMinOut };
 
   // Per-session signing wallet — resolved only now that dryRun is rejected
   // and the quote succeeded, so a rejected/failed call never decrypts a key.
@@ -175,6 +248,7 @@ export async function executeUniswapSwap(
     amountInHuman: formatUnits(swapAmount, tokenIn.decimals),
     quoted,
     currentAllowance,
+    approvedMinOutRaw: approved.approvedMinOutRaw,
   });
   const swapLegCount = events.length;
 
@@ -204,7 +278,20 @@ export async function executeUniswapSwap(
       const event = swapEvents[i]!;
       refusedRole = event.eventRole;
       const tx = buildTxForEvent(event, { deployment, router, tokenIn, tokenOut, amountIn: swapAmount, quoted, recipient: getAddress(signer.address) });
-      const outcome = await runStagedBroadcast(event, tx, clients, describeEventRole(event.eventRole), priorLeg);
+      // The swap leg alone carries an approved floor and an approved native
+      // input, so the swap leg alone is fenced. Every value comes from the
+      // CLAIMED snapshot and this deployment's own router - never from the
+      // built transaction, which is the object being judged.
+      const outcome = await runStagedBroadcast(
+        event, tx, clients, describeEventRole(event.eventRole), priorLeg,
+        event.eventRole === "swap"
+          ? {
+              expectedRouter: router,
+              approvedMinOutRaw: approved.approvedMinOutRaw,
+              expectedValueRaw: tokenIn.isNative ? approved.swapAmountRaw : "0",
+            }
+          : undefined,
+      );
 
       if (outcome.kind === "ambiguous") {
         // C17: the events STRICTLY AFTER this one were NEVER signed — finalize
@@ -262,6 +349,7 @@ export async function executeUniswapSwap(
         tokenIn,
         tokenOut,
         quoted,
+        approvedMinOutRaw: approved.approvedMinOutRaw,
         receipt: outcome.receipt,
         txHash: outcome.txHash,
         publicClient: clients.publicClient,

@@ -41,6 +41,7 @@ import {
   estimateGasForPlanLeg,
   type ConfirmedPriorLeg,
 } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
+import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
 import {
   UNISWAP_ERC20_ABI,
   UNISWAP_V2_ROUTER_ABI,
@@ -230,6 +231,14 @@ export interface SignedUniswapTransaction {
  * would-revert simulation surfaced through gas estimation) throws the raw
  * error — callers classify it with `revert-mapping.ts`, never a signed payload
  * is persisted.
+ *
+ * `onBeforeSign` is the caller's PRE-SIGN AUTHORITY FENCE, and it is handed the
+ * EXACT object that is about to be serialized - not the built tx, not the
+ * prepared request, but the merged request including the re-asserted gas and the
+ * reserved nonce. It runs after every awaited preparation step and immediately
+ * before `signTransaction`, with no provider call in between; a throw from it
+ * signs nothing, stages nothing and broadcasts nothing. Same contract as the
+ * shared staged-broadcast hook, whose `FinalSignedRequest` shape it reuses.
  */
 export async function signUniswapTransaction(
   publicClient: PublicClient<Transport, Chain>,
@@ -241,6 +250,7 @@ export async function signUniswapTransaction(
     readonly chainId: number;
     readonly nodePendingNonce: number;
   }) => Promise<number>,
+  onBeforeSign?: (request: FinalSignedRequest) => Promise<void>,
 ): Promise<SignedUniswapTransaction> {
   const account = walletClient.account;
   const nonceOwner = await acquireEvmNonceOwner(account.address, walletClient.chain.id);
@@ -291,7 +301,19 @@ export async function signUniswapTransaction(
   // `wallet_fillTransaction`, whose reply overwrites `gas` with the node's own
   // unbuffered figure. The signed bytes are what the chain enforces, so the
   // headroom has to survive to exactly here.
-  const serializedTransaction = await walletClient.signTransaction({ ...prepared, gas: gasLimit, nonce });
+  const finalRequest = { ...prepared, gas: gasLimit, nonce };
+  // THE FENCE. Every field below is read off the object on the next line, so a
+  // guard cannot pass on a value the signer does not receive.
+  if (onBeforeSign) {
+    await onBeforeSign({
+      to: finalRequest.to,
+      data: finalRequest.data,
+      value: finalRequest.value ?? 0n,
+      gas: gasLimit,
+      nonce,
+    });
+  }
+  const serializedTransaction = await walletClient.signTransaction(finalRequest);
   return {
     serializedTransaction,
     txHash: keccak256(serializedTransaction),

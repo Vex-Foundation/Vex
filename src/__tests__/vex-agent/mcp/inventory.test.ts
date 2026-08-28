@@ -62,8 +62,10 @@ describe("the exported inventory covers exactly the export scope", () => {
     // tools (EVM and Solana prepare/confirm).
     // 159 -> 165: the dexscreener protocol replaced its 12 public-API tools
     // with the 18-tool website-API surface (S10).
-    expect(inventory).toHaveLength(165);
-    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(25);
+    // 165 -> 167: the native <-> wrapped-native pair, exported by default like
+    // every other wallet tool and recorded in `mcp-export-scope.md`.
+    expect(inventory).toHaveLength(167);
+    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
     expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(140);
   });
 

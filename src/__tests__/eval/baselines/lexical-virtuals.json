@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-virtuals",
   "datasetVersion": "virtuals-v1",
   "status": "captured",
-  "capturedAt": "2026-08-25T12:47:10.139Z",
+  "capturedAt": "2026-08-28T10:37:11.035Z",
   "metrics": {
     "overall": {
       "count": 17,
       "recall1": 0.412,
       "recall5": 0.706,
       "coverage5": 0.706,
-      "mrr5": 0.507,
-      "groupMrr5": 0.507
+      "mrr5": 0.502,
+      "groupMrr5": 0.502
     },
     "awareness": {
       "blind": {
@@ -20,8 +20,8 @@
         "recall1": 0.111,
         "recall5": 0.444,
         "coverage5": 0.444,
-        "mrr5": 0.213,
-        "groupMrr5": 0.213
+        "mrr5": 0.204,
+        "groupMrr5": 0.204
       },
       "protocolAware": {
         "count": 8,
@@ -38,8 +38,8 @@
         "recall1": 0.438,
         "recall5": 0.75,
         "coverage5": 0.75,
-        "mrr5": 0.539,
-        "groupMrr5": 0.539
+        "mrr5": 0.533,
+        "groupMrr5": 0.533
       },
       "cross": {
         "count": 0,
@@ -112,8 +112,8 @@
         "recall1": 0.375,
         "recall5": 0.688,
         "coverage5": 0.688,
-        "mrr5": 0.476,
-        "groupMrr5": 0.476
+        "mrr5": 0.471,
+        "groupMrr5": 0.471
       },
       "prediction_discovery": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-virtuals@virtuals-v1, mode lexical, 17 cases evaluated.",
-    "overall recall@1 0.412, recall@5 0.706, coverage@5 0.706, mrr@5 0.507, groupMrr@5 0.507.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "overall recall@1 0.412, recall@5 0.706, coverage@5 0.706, mrr@5 0.502, groupMrr@5 0.502.",
+    "Measured delta vs previous baseline (virtuals-v1, captured 2026-08-25T12:47:10.139Z): 8 metric values moved; overall recall@5 0.706 -> 0.706, overall mrr@5 0.507 -> 0.502, case count 17 -> 17."
   ]
 }

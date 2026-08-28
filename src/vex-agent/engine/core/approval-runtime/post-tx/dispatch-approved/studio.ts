@@ -89,6 +89,7 @@ import type { ApproveSnapshot } from "../../snapshot.js";
 import {
   approvalPreviewExactlyMatches,
   checkApprovalManifestIdentity,
+  readApprovalQuoteAuthority,
   readStudioApprovalToolCall,
   studioAuthorityDigestMatches,
 } from "../../tool-call-envelope.js";
@@ -314,6 +315,11 @@ export async function applyStudioApproveSideEffects(
   const context = buildProjectToolContext(scope, {
     approved: true,
     approvalId,
+    // WHICH QUOTE this card authorized, from the envelope the authority digest
+    // above has just proven unchanged. The card rebuild already refuses a
+    // changed disclosure; binding the claim to the row makes the same
+    // substitution fail closed a second time, at the money path itself.
+    approvedQuoteAuthority: readApprovalQuoteAuthority(row.queue_tool_call),
   });
   let result: ToolResult;
   try {

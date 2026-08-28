@@ -36,6 +36,10 @@
  */
 
 import { decodeKyberSwapSettlement } from "@tools/kyberswap/evm-utils.js";
+import {
+  decodeUniswapExecutedLegs,
+  type DecodedUniswapLegs,
+} from "@tools/uniswap/receipt-decoder.js";
 import { decodeCurveBuy, decodeCurveSell } from "@tools/trench-express/evm/settlement.js";
 import {
   decodeMorphoBorrowSettlement,
@@ -48,6 +52,7 @@ import {
   resolveBridgeDepositAmount,
   type DepositEvidenceDeps,
 } from "./deposit-evidence-resolver.js";
+import { decodeWrapSettlement } from "@vex-agent/tools/internal/wallet/wrap/receipt-decode.js";
 import { META_AGGREGATION_ROUTER_V2 } from "@tools/kyberswap/constants.js";
 import { chainIdToSlug } from "@tools/kyberswap/chains.js";
 import { getKyberWrappedNativeAddress } from "@tools/kyberswap/wrapped-native.js";
@@ -82,6 +87,17 @@ export type VenueDecodeResult =
     readonly reason: SettlementDeclineReason;
     /** For OUR logs only — never a user-facing string. */
     readonly detail: string;
+    /**
+     * This decline is EVIDENCE OF AN ANOMALY, not completion of the decoder's
+     * work, so the caller must NOT stamp the decoder-set version: the row has
+     * to stay a candidate of every later pass instead of going quiet until
+     * somebody bumps that version.
+     *
+     * Distinct from `deferred`, which means NOTHING was decided. Here something
+     * WAS decided - the receipt contradicts the approval - and the decline is
+     * recorded; only the eligibility burn is withheld.
+     */
+    readonly keepsEligibility?: true;
   }
   /**
    * A chain read this decode needed did not answer. NOTHING was decided, so the
@@ -102,10 +118,17 @@ export type VenueDecodeResult =
 export async function decodeVenueSettlement(input: VenueDecodeInput): Promise<VenueDecodeResult> {
   const protocol = input.row.protocol?.toLowerCase() ?? "";
   if (protocol === "kyberswap") return decodeKyberRow(input);
+  if (protocol === "uniswap") return decodeUniswapRow(input);
   if (protocol === "trench") return decodeTrenchRow(input);
   if (protocol === "morpho") return decodeMorphoRow(input);
   if ((protocol === "relay" || protocol === "khalani") && input.row.eventRole === "bridge_deposit") {
     return decodeBridgeDepositRow(input);
+  }
+  if (
+    protocol === "wallet_wrap"
+    && (input.row.eventRole === "wrap" || input.row.eventRole === "unwrap")
+  ) {
+    return decodeWrapRow(input, input.row.eventRole);
   }
   return {
     kind: "declined",
@@ -184,6 +207,71 @@ function decodeKyberRow(input: VenueDecodeInput): VenueDecodeResult {
   };
 }
 
+/**
+ * A Uniswap swap confirmed without amounts. The rule for what the receipt
+ * proves is `@tools/uniswap/receipt-decoder.ts` - the SAME function the
+ * immediate path runs in `finalize-confirmed.ts`; this branch only resolves its
+ * inputs from the row's validated columns.
+ *
+ * A NATIVE LEG IS PASSED AS `null`, not as a sentinel address. That is the
+ * decoder's own contract for "read this leg from the WETH Deposit/Withdrawal
+ * event the router emitted", and it is why this branch needs neither the
+ * declared value nor a wrapped-native lookup: the decoder resolves both from
+ * the chain's own verified deployment registry, bound to a registered router.
+ *
+ * Takes no chain read, so it never DEFERS. A deployment this build does not
+ * know, or a receipt that proves only one leg, declines by name.
+ */
+function decodeUniswapRow(input: VenueDecodeInput): VenueDecodeResult {
+  const { row } = input;
+  const tokenInAddress = row.tokenInAddress;
+  const tokenOutAddress = row.tokenOutAddress;
+  const walletAddress = row.walletAddress;
+  if (!tokenInAddress || !tokenOutAddress || !walletAddress) {
+    return {
+      kind: "declined",
+      reason: "amounts_undecodable",
+      detail: "the row is missing a token or wallet address the decoder requires",
+    };
+  }
+
+  let decoded: DecodedUniswapLegs;
+  try {
+    decoded = decodeUniswapExecutedLegs({
+      receipt: { logs: input.logs },
+      chainId: row.chainId,
+      walletAddress,
+      tokenInAddress: isNativeAddress(tokenInAddress) ? null : tokenInAddress,
+      tokenOutAddress: isNativeAddress(tokenOutAddress) ? null : tokenOutAddress,
+    });
+  } catch {
+    // The decoder checksums addresses and reads the deployment registry; a
+    // malformed column or an unknown chain is a NAMED decline, never a throw
+    // that would kill the whole sweep pass.
+    return {
+      kind: "declined",
+      reason: "amounts_undecodable",
+      detail: "the row's addresses or chain could not be resolved for the uniswap decoder",
+    };
+  }
+
+  if (decoded.executedAmountInRaw === undefined || decoded.executedAmountOutRaw === undefined) {
+    return {
+      kind: "declined",
+      reason: "amounts_undecodable",
+      detail: "the venue decoder could not establish both legs from this receipt",
+    };
+  }
+
+  return {
+    kind: "decoded",
+    amounts: {
+      executedAmountInRaw: decoded.executedAmountInRaw.toString(),
+      executedAmountOutRaw: decoded.executedAmountOutRaw.toString(),
+    },
+  };
+}
+
 /** The wrapped native for this chain, or `undefined` when the venue has none registered. */
 function kyberWrappedNative(chainId: number): string | undefined {
   const slug = chainIdToSlug(chainId);
@@ -227,6 +315,100 @@ async function decodeBridgeDepositRow(input: VenueDecodeInput): Promise<VenueDec
     return { kind: "declined", reason: "amounts_undecodable", detail: resolved.detail };
   }
   return { kind: "decoded", amounts: { executedAmountInRaw: resolved.executedAmountInRaw } };
+}
+
+/**
+ * An EVM wrap or unwrap confirmed without amounts. The rule for what the
+ * receipt proves lives with the capability
+ * (`tools/internal/wallet/wrap/receipt-decode.ts`) and is the SAME rule the
+ * wrap confirm handler runs on the receipt it mines itself; this branch only
+ * resolves its inputs.
+ *
+ * THE BOUND CONTRACT IS THE ROW'S OWN WRAPPED-NATIVE LEG - the out token on a
+ * wrap, the in token on an unwrap - and never a registry lookup by chain: the
+ * row records the contract the human approved, and a registry that had since
+ * moved would judge the receipt against a different deployment.
+ *
+ * A WRAP TAKES ONE CHAIN READ AND CAN THEREFORE DEFER. Its native input is not
+ * in any log, so the leg needs the signed transaction's own declared value; the
+ * `settlementDecode` hint has no variant for this lane, so the mined
+ * transaction is the only source, and it is the stronger one besides. An
+ * unreadable transaction learned NOTHING and defers. An UNWRAP takes no chain
+ * read and never defers: its input leg is the `Withdrawal` event's own `wad`
+ * and its native output is 1:1 with it by the contract's construction.
+ */
+async function decodeWrapRow(
+  input: VenueDecodeInput,
+  direction: "wrap" | "unwrap",
+): Promise<VenueDecodeResult> {
+  const { row } = input;
+  const walletAddress = row.walletAddress;
+  const contractAddress = direction === "wrap" ? row.tokenOutAddress : row.tokenInAddress;
+  const amountRaw = row.amountInRaw;
+  if (!walletAddress || contractAddress === null || amountRaw === null) {
+    return declineWrap("the row is missing the wallet, wrapped-native token or approved amount the decoder requires");
+  }
+  if (isNativeAddress(contractAddress)) {
+    return declineWrap("the row's wrapped-native leg is a native sentinel, not a wrapper contract");
+  }
+
+  let declaredValueRaw: string | undefined;
+  if (direction === "wrap") {
+    const txHash = row.txHash;
+    if (txHash === null) return declineWrap("the row carries no transaction hash to read its native input from");
+    const transaction = await input.deps.fetchTransaction({ chainId: row.chainId, txHash });
+    if (transaction === null) {
+      return { kind: "deferred", detail: "the signed transaction could not be read this pass" };
+    }
+    if (!sameAddress(transaction.from, walletAddress)) {
+      return declineWrap("the mined transaction was not sent by this row's wallet");
+    }
+    if (transaction.to === null || !sameAddress(transaction.to, contractAddress)) {
+      return declineWrap("the mined transaction did not call this row's wrapped-native contract");
+    }
+    declaredValueRaw = transaction.valueRaw;
+  }
+
+  const decoded = decodeWrapSettlement({
+    logs: input.logs,
+    walletAddress,
+    contractAddress,
+    direction,
+    amountRaw,
+    ...(declaredValueRaw === undefined ? {} : { declaredValueRaw }),
+  });
+  if (decoded.kind === "amount_mismatch") {
+    // THE ANOMALY, and it must NOT burn the row's eligibility. A wrapper event
+    // exists for this wallet and its quantity CONTRADICTS the approval: that is
+    // a fact about the money, not a limit of this decoder set, so stamping the
+    // decoder version would silence the row until somebody bumps that version.
+    // The row stays selectable on every later pass.
+    return {
+      kind: "declined",
+      reason: "amounts_undecodable",
+      detail:
+        `the receipt proves a ${direction} of ${decoded.observedAmountRaw} raw units, and the row `
+        + `approved ${decoded.approvedAmountRaw}; a local deposit/withdraw is exact, so this is a `
+        + "settlement anomaly and not a partial fill",
+      keepsEligibility: true,
+    };
+  }
+  if (decoded.kind === "undecodable") {
+    return declineWrap(
+      `the receipt does not prove this ${direction} at exactly the approved amount: no matching wrapper event for this wallet, a disagreeing token evidence leg, or a native value that differs from what was credited`,
+    );
+  }
+  return {
+    kind: "decoded",
+    amounts: {
+      executedAmountInRaw: decoded.legs.executedAmountInRaw,
+      executedAmountOutRaw: decoded.legs.executedAmountOutRaw,
+    },
+  };
+}
+
+function declineWrap(detail: string): VenueDecodeResult {
+  return { kind: "declined", reason: "amounts_undecodable", detail };
 }
 
 /**

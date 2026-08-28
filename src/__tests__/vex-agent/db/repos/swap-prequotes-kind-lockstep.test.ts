@@ -182,6 +182,35 @@ describe("swap_prequotes kind — SQL CHECK <-> TS union lockstep", () => {
     }
   });
 
+  it("the eligibility vocabulary is in lockstep too - it gates the CLAIM", () => {
+    // Same failure modes as `kind`, and a worse consequence: `eligibility_kind`
+    // is a predicate in the atomic claim (migration 095), so TS ahead of SQL
+    // makes the recorder's insert throw inside a best-effort writer and leaves
+    // NO superseding row - which is exactly the stale-authority hole 095 closes.
+    const sqlWithoutComments = MIGRATION_SQL.split("\n")
+      .filter((line) => !line.trimStart().startsWith("--"))
+      .join("\n");
+    const check = /CONSTRAINT\s+swap_prequotes_eligibility_kind_check\s+CHECK\s*\(\s*eligibility_kind\s+IN\s*\(([^)]*)\)/i
+      .exec(sqlWithoutComments);
+    if (!check) throw new Error("lockstep: 'swap_prequotes_eligibility_kind_check' CHECK not found");
+    const sqlList = check[1];
+    if (sqlList === undefined) throw new Error("lockstep: eligibility CHECK matched no value list");
+    const sqlKinds = [...sqlList.matchAll(/'([^']+)'/g)].flatMap((m) => (m[1] === undefined ? [] : [m[1]])).sort();
+
+    const union = /export type PrequoteEligibilityKind =([\s\S]*?);/.exec(REPO_TS);
+    if (!union) throw new Error("lockstep: 'PrequoteEligibilityKind' union not found");
+    const tsList = union[1];
+    if (tsList === undefined) throw new Error("lockstep: eligibility union matched no member list");
+    const tsKinds = [...tsList.matchAll(/"([^"]+)"/g)].flatMap((m) => (m[1] === undefined ? [] : [m[1]])).sort();
+
+    expect(sqlKinds).toEqual(tsKinds);
+    // The classifier's own union is the third copy; it is the source both
+    // mirror, so a member added there must reach both sides.
+    expect(new Set(sqlKinds)).toEqual(new Set([
+      "executable", "unpriceable_output", "excessive_impact", "oversize_snapshot", "provider_usd_invalid",
+    ]));
+  });
+
   it("no kind is listed twice on either side", () => {
     const sql = parseKindCheck();
     const ts = parseKindUnion();

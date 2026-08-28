@@ -59,9 +59,22 @@
  *     added to the CHECK without a thought for this gate would otherwise release
  *     a staged hash silently, and that is exactly the failure mode the transfer
  *     table's weaker CHECK produced.
- *  8. `protocol_executions.execution_status = 'intent'` - a durable pre-sign
+ *  8. `wallet_wrap_intents` (migration 096) `consuming`,
+ *     `broadcast_unconfirmed`, `review_required`, or `pending` that has NOT
+ *     expired, plus the same hash-carrying defence in depth as 7. The wrap
+ *     table is read like the transaction table - `superseded_unproven` and
+ *     `audit_failed` RELEASE, everything unproven blocks - and it is a SEPARATE
+ *     state machine with its own table, so omitting it here would let a
+ *     compaction cutover rewrite the transcript while a wrap was mid-flight.
+ *
+ *     `review_required` is the wrap table's OWN addition and blocks for a
+ *     reason worth naming: the transaction CONFIRMED, but its receipt proved a
+ *     quantity that CONTRADICTS the approved amount. The chain event is over
+ *     while the MONEY QUESTION is not, and only a human closes it. It reads
+ *     exactly like `wallet_intents.review_required` in predicate 5.
+ *  9. `protocol_executions.execution_status = 'intent'` - a durable pre-sign
  *     record whose exchange outcome was never written back.
- *  9. `agent_activity.status = 'pending'` - a broadcast awaiting confirmation.
+ * 10. `agent_activity.status = 'pending'` - a broadcast awaiting confirmation.
  *
  * KNOWN GAP (owner decision pending, not a build choice): `protocol_executions`
  * `session_id` is nullable, so an intent row created without a session is
@@ -108,6 +121,8 @@ export interface MoneyStateReason {
     | "wallet_confirmation_unknown"
     | "wallet_transaction_intent_live"
     | "wallet_transaction_confirmation_unknown"
+    | "wallet_wrap_intent_live"
+    | "wallet_wrap_confirmation_unknown"
     | "protocol_execution_intent"
     | "agent_activity_pending";
   /** Identifier of the blocking row, for audit and operator diagnosis. */
@@ -128,9 +143,10 @@ export type UnresolvedMoneyState =
 const MAX_REASONS = 50;
 
 /**
- * One statement, nine session-scoped predicates. Every branch hits a
+ * One statement, eleven session-scoped predicates. Every branch hits a
  * session-scoped index (`idx_approvals_session`, `idx_wallet_intents_session`,
- * `idx_wallet_transaction_intents_session`, `idx_executions_session`,
+ * `idx_wallet_transaction_intents_session`, `idx_wallet_wrap_intents_session`,
+ * `idx_executions_session`,
  * `idx_agent_activity_pending`), because this runs on
  * the critical path of every apply while the session control lock is held.
  */
@@ -204,6 +220,24 @@ const UNRESOLVED_MONEY_STATE_SQL = `
    WHERE t.session_id = $1
      AND t.tx_hash IS NOT NULL
      AND t.status NOT IN ('executed', 'failed', 'superseded_unproven', 'broadcast_unconfirmed')
+
+   UNION ALL
+
+  SELECT 'wallet_wrap_intent_live', w2.intent_id::text, w2.status::text
+    FROM wallet_wrap_intents w2
+   WHERE w2.session_id = $1
+     AND (w2.status IN ('consuming', 'broadcast_unconfirmed', 'review_required')
+          OR (w2.status = 'pending' AND w2.expires_at > NOW()))
+
+   UNION ALL
+
+  SELECT 'wallet_wrap_confirmation_unknown', w2.intent_id::text, w2.status::text
+    FROM wallet_wrap_intents w2
+   WHERE w2.session_id = $1
+     AND w2.tx_hash IS NOT NULL
+     AND w2.status NOT IN (
+           'executed', 'failed', 'superseded_unproven', 'broadcast_unconfirmed', 'review_required'
+         )
 
    UNION ALL
 

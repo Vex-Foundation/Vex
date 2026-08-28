@@ -54,6 +54,8 @@ function callGate(manifest: Parameters<typeof evaluateApprovalGate>[0], toolId: 
     undefined,
     undefined,
     undefined,
+    // quoteBinding: no matched swap quote in this lane.
+    undefined,
   );
 }
 

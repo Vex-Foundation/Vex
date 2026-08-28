@@ -28,12 +28,12 @@ preconditions appear inside the first 2000 bytes.
 
 ## Totals
 
-- exported tools: 165
-- internal: 25
+- exported tools: 167
+- internal: 27
 - protocol: 140 across 11 namespaces
-- always loaded: 25
+- always loaded: 27
 - read-only: 109
-- destructive: 49
+- destructive: 50
 
 ## Internal tools
 
@@ -62,6 +62,8 @@ preconditions appear inside the first 2000 bytes.
 | WalletSolanaTransactionConfirm | Broadcast a prepared Solana transaction | internal | no | yes | yes | - | 1273 |
 | WalletSolanaTransactionPrepare | Prepare a Solana transaction | internal | no | no | yes | - | 1505 |
 | WalletTrackToken | Track a token in the local wallet view | internal | no | no | yes | - | 971 |
+| WalletWrapConfirm | Broadcast a prepared wrap or unwrap | internal | no | yes | yes | - | 2124 |
+| WalletWrapPrepare | Prepare a native / wrapped-native conversion | internal | no | no | yes | - | 2337 |
 | WebResearch | Search and read the web | internal | yes | no | yes | TAVILY_API_KEY | 2057 |
 | vex_ToolSearch | Search the protocol tool catalog | internal | yes | no | yes | - | 1107 |
 
@@ -109,8 +111,8 @@ preconditions appear inside the first 2000 bytes.
 | name | title | lane | read only | destructive | always load | requires env | description bytes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | kyberswap__chains_list | List KyberSwap chains | protocol | yes | no | no | - | 776 |
-| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 2534 |
-| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 1675 |
+| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3110 |
+| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 2569 |
 | kyberswap__token_safety_check | Audit an EVM token with KyberSwap | protocol | yes | no | no | - | 1138 |
 
 ### morpho
