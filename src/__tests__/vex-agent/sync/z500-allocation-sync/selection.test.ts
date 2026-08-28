@@ -11,8 +11,8 @@ import { Z500_CANDIDATE_SCAN_CAP } from "@vex-agent/sync/z500-allocation-sync/co
 /** Distinct, valid base58 mints: base mint with a varying two-char suffix. */
 function mint(index: number): string {
   const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  const a = alphabet[Math.floor(index / alphabet.length)]!;
-  const b = alphabet[index % alphabet.length]!;
+  const a = alphabet.charAt(Math.floor(index / alphabet.length));
+  const b = alphabet.charAt(index % alphabet.length);
   return `So1111111111111111111111111111111111111${a}${b}`;
 }
 
@@ -29,7 +29,7 @@ describe("ranking", () => {
     const ranked = rankByMarketCap(coins);
     expect(ranked.map((c) => c.marketCapUsd)).toEqual([500, 500, 50, 5]);
     // Tie broken by mint, so two runs over the same data agree.
-    expect(ranked[0]!.mintAddress < ranked[1]!.mintAddress).toBe(true);
+    expect((ranked[0]?.mintAddress ?? "") < (ranked[1]?.mintAddress ?? "z")).toBe(true);
   });
 });
 
@@ -39,7 +39,7 @@ describe("selection", () => {
     const result = await selectTopEligible(coins, ALL_ELIGIBLE);
     expect(result.complete).toBe(true);
     expect(result.selected).toHaveLength(10);
-    const weights = Object.values(result.desiredAllocation!);
+    const weights = Object.values(result.desiredAllocation ?? {});
     expect(weights).toHaveLength(10);
     expect(weights.every((w) => w === 10)).toBe(true);
     // The TOP 10 by cap, since everything was eligible.
@@ -50,12 +50,12 @@ describe("selection", () => {
     const sameSymbol = Array.from({ length: 10 }, (_, i) => coin(i, 100 - i, "SAME"));
     // The duplicate ranks SECOND (99.5) so the walk actually visits it before
     // the ten unique mints have filled the selection.
-    const withDup: AnsemCoin[] = [...sameSymbol, { ...sameSymbol[0]!, marketCapUsd: 99.5 }];
+    const withDup: AnsemCoin[] = [...sameSymbol, coin(0, 99.5, "SAME")];
     const result = await selectTopEligible(withDup, ALL_ELIGIBLE);
     expect(result.complete).toBe(true);
     expect(result.selected.map((c) => c.mintAddress)).toEqual(sameSymbol.map((c) => c.mintAddress));
     expect(result.excluded).toEqual([
-      expect.objectContaining({ mintAddress: sameSymbol[0]!.mintAddress, reason: "duplicate_mint" }),
+      expect.objectContaining({ mintAddress: mint(0), reason: "duplicate_mint" }),
     ]);
   });
 

@@ -71,7 +71,7 @@ describe("refusal classification", () => {
       status: 200, headers: { "content-type": "application/json" },
     }));
     const snapshot = await new AnsemClient(BASE).fetchSnapshot();
-    expect(snapshot.coins[0]!.mintAddress).toBe(SOL);
+    expect(snapshot.coins[0]?.mintAddress).toBe(SOL);
   });
 });
 
@@ -79,7 +79,7 @@ describe("feed-token discipline", () => {
   it("sends no Authorization header when ANSEM_API_KEY is absent", async () => {
     const captured = stubFetch(() => new Response(JSON.stringify(VALID), { status: 200 }));
     await new AnsemClient(BASE).fetchSnapshot();
-    expect(captured.headers[0]!.authorization).toBeUndefined();
+    expect(captured.headers[0]?.authorization).toBeUndefined();
   });
 
   it("sends the bearer token when configured, and never leaks it into an error", async () => {
@@ -89,7 +89,7 @@ describe("feed-token discipline", () => {
       await new AnsemClient(BASE).fetchSnapshot();
       expect.unreachable("should have thrown");
     } catch (err) {
-      expect(captured.headers[0]!.authorization).toBe("Bearer test-ansem-token");
+      expect(captured.headers[0]?.authorization).toBe("Bearer test-ansem-token");
       const text = `${(err as Error).message} ${(err as { hint?: string }).hint ?? ""}`;
       expect(text).not.toContain("test-ansem-token");
     }

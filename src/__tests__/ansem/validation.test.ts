@@ -26,8 +26,8 @@ describe("document shapes", () => {
   it("accepts a bare array and a wrapped collection equally", () => {
     const bare = validateAnsemSnapshot([coin()]);
     const wrapped = validateAnsemSnapshot({ coins: [coin()] });
-    expect(bare.coins[0]!.mintAddress).toBe(SOL);
-    expect(wrapped.coins[0]!.mintAddress).toBe(SOL);
+    expect(bare.coins[0]?.mintAddress).toBe(SOL);
+    expect(wrapped.coins[0]?.mintAddress).toBe(SOL);
   });
 
   it("rejects non-array, non-object, and collection-less documents as INVALID", () => {
@@ -69,7 +69,7 @@ describe("identity strictness (spec: identify exclusively by Solana mint)", () =
 
   it("numeric-string market caps are read; negatives are refused", () => {
     const snapshot = validateAnsemSnapshot([coin({ marketCap: "123.45" })]);
-    expect(snapshot.coins[0]!.marketCapUsd).toBeCloseTo(123.45);
+    expect(snapshot.coins[0]?.marketCapUsd).toBeCloseTo(123.45);
     expect(codeOf(() => validateAnsemSnapshot([coin({ marketCap: -5 })])))
       .toBe(ErrorCodes.ANSEM_INVALID_RESPONSE);
   });

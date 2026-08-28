@@ -26,7 +26,8 @@ function stubFetch(responses: Array<() => Response>): Captured {
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
     captured.urls.push(url);
     captured.bodies.push(typeof init?.body === "string" ? init.body : "");
-    const make = responses[Math.min(i, responses.length - 1)]!;
+    const make = responses[Math.min(i, responses.length - 1)];
+    if (!make) throw new Error("stubFetch: no response scripted");
     i += 1;
     return Promise.resolve(make());
   });
@@ -55,7 +56,7 @@ describe("versionHistory", () => {
     })]);
     const history = await new IndexifyClient(BASE).versionHistory(28440);
     expect(history.current_version).toBe(2);
-    expect(history.versions[0]!.allocation[0]).toMatchObject({ address: SOL, weight: 50 });
+    expect(history.versions[0]?.allocation[0]).toMatchObject({ address: SOL, weight: 50 });
   });
 
   it("is auth-required — refuses before any network without the key", async () => {
@@ -99,8 +100,8 @@ describe("editAllocation", () => {
     process.env[INDEXIFY_API_KEY_ENV] = TEST_KEY;
     const captured = stubFetch([() => json({ success: true, stack_id: 28440, version: 3, nav: 1.01, message: "ok" })]);
     const result = await new IndexifyClient(BASE).editAllocation(28440, { [SOL]: 60, [JUP]: 40 }, "note");
-    expect(new URL(captured.urls[0]!).searchParams.get("action")).toBe("edit_allocation");
-    expect(JSON.parse(captured.bodies[0]!)).toEqual({
+    expect(new URL(captured.urls[0] ?? "").searchParams.get("action")).toBe("edit_allocation");
+    expect(JSON.parse(captured.bodies[0] ?? "")).toEqual({
       stack_id: 28440,
       stackTokenInfo: { [SOL]: 60, [JUP]: 40 },
       creator_note: "note",

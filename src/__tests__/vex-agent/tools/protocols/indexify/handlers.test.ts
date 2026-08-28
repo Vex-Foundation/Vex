@@ -12,6 +12,13 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { INDEXIFY_HANDLERS } from "@vex-agent/tools/protocols/indexify/handlers.js";
+
+/** Look a handler up or fail loudly — the registry is typed as a partial map. */
+function invoke(toolId: keyof typeof INDEXIFY_HANDLERS) {
+  const fn = INDEXIFY_HANDLERS[toolId];
+  if (!fn) throw new Error(`missing handler ${String(toolId)}`);
+  return fn;
+}
 import { getIndexifyClient, IndexifyClient } from "@tools/indexify/client.js";
 import type { IndexifyStack } from "@tools/indexify/types.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -61,9 +68,9 @@ afterEach(() => vi.restoreAllMocks());
 describe("indexify.stacks", () => {
   it("projects fat provider rows to compact ones — no token objects survive", async () => {
     vi.spyOn(client(), "listStacks").mockResolvedValue([stack()]);
-    const result = await INDEXIFY_HANDLERS["indexify.stacks"]!({ feed: "trending" }, CTX);
+    const result = await invoke("indexify.stacks")({ feed: "trending" }, CTX);
     expect(result.success).toBe(true);
-    const row = (result.data as { stacks: Record<string, unknown>[] }).stacks[0]!;
+    const row = (result.data as { stacks: Record<string, unknown>[] }).stacks[0];
     expect(row.stackId).toBe(4139);
     expect(row.topTokenSymbols).toEqual(["JUP", "JitoSOL"]);
     expect(row.creator).toBe("bluebrave21374");
@@ -73,7 +80,7 @@ describe("indexify.stacks", () => {
 
   it("refuses sort on the trending feed by name instead of ignoring it", async () => {
     const spy = vi.spyOn(client(), "listStacks");
-    const result = await INDEXIFY_HANDLERS["indexify.stacks"]!({ feed: "trending", sort: "change1D" }, CTX);
+    const result = await invoke("indexify.stacks")({ feed: "trending", sort: "change1D" }, CTX);
     expect(result.success).toBe(false);
     expect(result.output).toContain("provider's own ranking");
     expect(spy).not.toHaveBeenCalled();
@@ -86,7 +93,7 @@ describe("indexify.search", () => {
       { stack_name: "Doge Basket", stack_id: 1, slug: "doge-basket", description_truncated: null },
       { stack_name: "Doge Basket 2", stack_id: 2, slug: "doge-basket-2", description_truncated: null },
     ]);
-    const result = await INDEXIFY_HANDLERS["indexify.search"]!({ query: "doge" }, CTX);
+    const result = await invoke("indexify.search")({ query: "doge" }, CTX);
     expect(result.success).toBe(true);
     expect((result.data as { note?: string }).note).toContain("NOT unique");
   });
@@ -96,7 +103,7 @@ describe("indexify.stack", () => {
   it("joins weights to tokens as allocations and carries the web link", async () => {
     vi.spyOn(client(), "fetchStack").mockResolvedValue(stack());
     vi.spyOn(client(), "stackInvestors").mockResolvedValue(12);
-    const result = await INDEXIFY_HANDLERS["indexify.stack"]!({ slug: "solana-top-5-defi-index" }, CTX);
+    const result = await invoke("indexify.stack")({ slug: "solana-top-5-defi-index" }, CTX);
     expect(result.success).toBe(true);
     const detail = (result.data as { stack: Record<string, unknown> }).stack;
     expect(detail.url).toBe("https://app.indexify.finance/stacks/solana-top-5-defi-index");
@@ -110,7 +117,7 @@ describe("indexify.stack", () => {
   it("a failed investor-count side read never takes the detail down", async () => {
     vi.spyOn(client(), "fetchStack").mockResolvedValue(stack());
     vi.spyOn(client(), "stackInvestors").mockRejectedValue(new Error("boom"));
-    const result = await INDEXIFY_HANDLERS["indexify.stack"]!({ stackId: 4139 }, CTX);
+    const result = await invoke("indexify.stack")({ stackId: 4139 }, CTX);
     expect(result.success).toBe(true);
     expect((result.data as { investorCount: number | null }).investorCount).toBeNull();
   });
@@ -121,7 +128,7 @@ describe("indexify.stack", () => {
 describe("indexify.trade_execute", () => {
   it("refuses a direction/amount mismatch by name — never resolves it silently", async () => {
     const swap = vi.spyOn(client(), "swap");
-    const result = await INDEXIFY_HANDLERS["indexify.trade_execute"]!(
+    const result = await invoke("indexify.trade_execute")(
       { stackId: 4139, direction: "sell", amountIn: "10" },
       CTX,
     );
@@ -133,7 +140,7 @@ describe("indexify.trade_execute", () => {
   it("refuses to buy a closed stack", async () => {
     vi.spyOn(client(), "fetchStack").mockResolvedValue(stack({ is_closed: true }));
     const swap = vi.spyOn(client(), "swap");
-    const result = await INDEXIFY_HANDLERS["indexify.trade_execute"]!(
+    const result = await invoke("indexify.trade_execute")(
       { stackId: 4139, direction: "buy", amountIn: "10" },
       CTX,
     );
@@ -149,7 +156,7 @@ describe("indexify.trade_execute", () => {
       usdcBalance: 100, usdcReserved: 0, totalBalanceUsdc: "100", walletAddress: "DTqyUBe8RoJsS7SKVcvC6YJnEhWgBkzmo49VUwgkz5hL",
     });
     const swap = vi.spyOn(client(), "swap");
-    const result = await INDEXIFY_HANDLERS["indexify.trade_execute"]!(
+    const result = await invoke("indexify.trade_execute")(
       { stackId: 4139, direction: "buy", amountIn: "2" },
       CTX,
     );
@@ -165,7 +172,7 @@ describe("indexify.trade_execute", () => {
       usdcBalance: 3, usdcReserved: 2, totalBalanceUsdc: "5", walletAddress: "DTqyUBe8RoJsS7SKVcvC6YJnEhWgBkzmo49VUwgkz5hL",
     });
     const swap = vi.spyOn(client(), "swap");
-    const result = await INDEXIFY_HANDLERS["indexify.trade_execute"]!(
+    const result = await invoke("indexify.trade_execute")(
       { stackId: 4139, direction: "buy", amountIn: "10" },
       CTX,
     );
@@ -181,7 +188,7 @@ describe("indexify.trade_execute", () => {
       stack_id: 4139, total_usdc: 0, total_invested: 0, total_cost_basis: 0, amounts: [], pnl: {},
     });
     const swap = vi.spyOn(client(), "swap");
-    const result = await INDEXIFY_HANDLERS["indexify.trade_execute"]!(
+    const result = await invoke("indexify.trade_execute")(
       { stackId: 4139, direction: "sell", sellPercent: 50 },
       CTX,
     );
@@ -200,7 +207,7 @@ describe("indexify.trade_execute", () => {
     vi.spyOn(client(), "orderDetails").mockResolvedValue({
       order: { order_id: "ord123", status: "PENDING" }, transactions: [], transaction_count: 0,
     });
-    const result = await INDEXIFY_HANDLERS["indexify.trade_execute"]!(
+    const result = await invoke("indexify.trade_execute")(
       { stackId: 4139, direction: "buy", amountIn: "10" },
       CTX,
     );
@@ -220,7 +227,7 @@ describe("indexify.trade_execute", () => {
     vi.spyOn(client(), "swap").mockRejectedValue(
       new VexError(ErrorCodes.INDEXIFY_TIMEOUT, "Indexify request timed out or was aborted", "Indexify did not answer in time."),
     );
-    const result = await INDEXIFY_HANDLERS["indexify.trade_execute"]!(
+    const result = await invoke("indexify.trade_execute")(
       { stackId: 4139, direction: "buy", amountIn: "10" },
       CTX,
     );
@@ -238,7 +245,7 @@ describe("indexify.trade_execute", () => {
     vi.spyOn(client(), "swap").mockRejectedValue(
       new VexError(ErrorCodes.INDEXIFY_INVALID_REQUEST, "Indexify rejected the request (HTTP 400: Insufficient balance)", "Insufficient balance"),
     );
-    const result = await INDEXIFY_HANDLERS["indexify.trade_execute"]!(
+    const result = await invoke("indexify.trade_execute")(
       { stackId: 4139, direction: "buy", amountIn: "10" },
       CTX,
     );
@@ -258,7 +265,7 @@ describe("indexify.order_resolve", () => {
       available_actions: { acknowledge: true, retry: false, sell_all: true },
     });
     const retry = vi.spyOn(client(), "retryOrder");
-    const result = await INDEXIFY_HANDLERS["indexify.order_resolve"]!({ orderId: "ord1", action: "retry" }, CTX);
+    const result = await invoke("indexify.order_resolve")({ orderId: "ord1", action: "retry" }, CTX);
     expect(result.success).toBe(false);
     expect(result.output).toContain('does not currently offer "retry"');
     expect(result.output).toContain("acknowledge, sell_all");
@@ -273,7 +280,7 @@ describe("indexify.order_resolve", () => {
       available_actions: { acknowledge: true, retry: true, sell_all: true },
     });
     vi.spyOn(client(), "retryOrder").mockResolvedValue({ order_id: "ord2", retry_attempt: 1 });
-    const result = await INDEXIFY_HANDLERS["indexify.order_resolve"]!({ orderId: "ord1", action: "retry" }, CTX);
+    const result = await invoke("indexify.order_resolve")({ orderId: "ord1", action: "retry" }, CTX);
     expect(result.success).toBe(true);
     const data = result.data as Record<string, unknown>;
     expect(data.newOrderId).toBe("ord2");
@@ -296,7 +303,7 @@ describe("indexify.stack_create", () => {
 
   it("refuses weights that do not sum to exactly 100, naming the sum", async () => {
     const create = vi.spyOn(client(), "createStack");
-    const result = await INDEXIFY_HANDLERS["indexify.stack_create"]!(
+    const result = await invoke("indexify.stack_create")(
       { ...VALID, allocations: { JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN: 60 } },
       CTX,
     );
@@ -306,14 +313,14 @@ describe("indexify.stack_create", () => {
   });
 
   it("refuses a non-integer weight and a non-Solana mint by name", async () => {
-    const fractional = await INDEXIFY_HANDLERS["indexify.stack_create"]!(
+    const fractional = await invoke("indexify.stack_create")(
       { ...VALID, allocations: { JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN: 60.5, J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn: 39.5 } },
       CTX,
     );
     expect(fractional.success).toBe(false);
     expect(fractional.output).toContain("INTEGER percent");
 
-    const badMint = await INDEXIFY_HANDLERS["indexify.stack_create"]!(
+    const badMint = await invoke("indexify.stack_create")(
       { ...VALID, allocations: { "0xdeadbeef": 100 } },
       CTX,
     );
@@ -326,7 +333,7 @@ describe("indexify.stack_create", () => {
     vi.spyOn(client(), "checkStackDescription").mockResolvedValue("OK");
     vi.spyOn(client(), "creatorFeeBounds").mockResolvedValue({ min: 0, max: 0.5, default: 0.5 });
     const create = vi.spyOn(client(), "createStack");
-    const result = await INDEXIFY_HANDLERS["indexify.stack_create"]!(VALID, CTX);
+    const result = await invoke("indexify.stack_create")(VALID, CTX);
     expect(result.success).toBe(false);
     expect(result.output).toContain("already taken");
     expect(create).not.toHaveBeenCalled();
@@ -338,7 +345,7 @@ describe("indexify.stack_create", () => {
     vi.spyOn(client(), "creatorFeeBounds").mockResolvedValue({ min: 0, max: 0.5, default: 0.25 });
     const create = vi.spyOn(client(), "createStack").mockResolvedValue({ success: true, stack_id: 1 });
     vi.spyOn(client(), "fetchStack").mockResolvedValue(stack({ id: 1, slug: "x" }));
-    await INDEXIFY_HANDLERS["indexify.stack_create"]!(VALID, CTX);
+    await invoke("indexify.stack_create")(VALID, CTX);
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ creatorFee: 0.25 }));
   });
 
@@ -348,7 +355,7 @@ describe("indexify.stack_create", () => {
     vi.spyOn(client(), "creatorFeeBounds").mockResolvedValue({ min: 0, max: 0.5, default: 0.5 });
     vi.spyOn(client(), "createStack").mockResolvedValue({ success: true, stack_id: 999 });
     vi.spyOn(client(), "fetchStack").mockResolvedValue(stack({ id: 999, slug: "vex-agent-index" }));
-    const result = await INDEXIFY_HANDLERS["indexify.stack_create"]!(VALID, CTX);
+    const result = await invoke("indexify.stack_create")(VALID, CTX);
     expect(result.success).toBe(true);
     const data = result.data as Record<string, unknown>;
     expect(data.stackId).toBe(999);

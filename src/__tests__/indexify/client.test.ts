@@ -31,7 +31,8 @@ function stubFetch(responses: Array<() => Response>): Captured {
     captured.urls.push(url);
     captured.headers.push((init?.headers ?? {}) as Record<string, string>);
     captured.bodies.push(typeof init?.body === "string" ? init.body : "");
-    const make = responses[Math.min(i, responses.length - 1)]!;
+    const make = responses[Math.min(i, responses.length - 1)];
+    if (!make) throw new Error("stubFetch: no response scripted");
     i += 1;
     return Promise.resolve(make());
   });
@@ -70,7 +71,7 @@ describe("auth-header discipline", () => {
       () => json([{ stack_name: "Solana DeFi", stack_id: 4139, slug: "solana-defi" }]),
     ]);
     await new IndexifyClient(BASE).searchStacks("defi");
-    expect(captured.headers[0]!["X-API-KEY"]).toBeUndefined();
+    expect(captured.headers[0]?.["X-API-KEY"]).toBeUndefined();
   });
 
   it("account reads carry the key from the env, read per call", async () => {
@@ -112,24 +113,24 @@ describe("measured provider quirks", () => {
   it("trending always sends limit AND offset together — the live API 400s otherwise", async () => {
     const captured = stubFetch([() => json([stackRow()])]);
     await new IndexifyClient(BASE).listStacks({ feed: "trending", limit: 5, offset: 0 });
-    const body = JSON.parse(captured.bodies[0]!) as Record<string, unknown>;
+    const body = JSON.parse(captured.bodies[0] ?? "") as Record<string, unknown>;
     expect(body.limit).toBe(5);
     expect(body.offset).toBe(0);
-    expect(new URL(captured.urls[0]!).searchParams.get("action")).toBe("trending");
+    expect(new URL(captured.urls[0] ?? "").searchParams.get("action")).toBe("trending");
   });
 
   it("the all feed routes to paginated_list and unwraps its {data} envelope", async () => {
     const captured = stubFetch([() => json({ data: [stackRow()] })]);
     const rows = await new IndexifyClient(BASE).listStacks({ feed: "all", limit: 5, offset: 0, sort: "change1D" });
-    expect(new URL(captured.urls[0]!).searchParams.get("action")).toBe("paginated_list");
+    expect(new URL(captured.urls[0] ?? "").searchParams.get("action")).toBe("paginated_list");
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.slug).toBe("solana-top-5-defi-index");
+    expect(rows[0]?.slug).toBe("solana-top-5-defi-index");
   });
 
   it("list limits clamp to the hard cap instead of passing through", async () => {
     const captured = stubFetch([() => json({ data: [] })]);
     await new IndexifyClient(BASE).listStacks({ feed: "all", limit: 9999, offset: 0 });
-    const body = JSON.parse(captured.bodies[0]!) as Record<string, unknown>;
+    const body = JSON.parse(captured.bodies[0] ?? "") as Record<string, unknown>;
     expect(body.limit).toBeLessThanOrEqual(25);
   });
 
@@ -196,8 +197,8 @@ describe("validators — strict identity, tolerant display", () => {
     const rows = validateStackArray([
       stackRow({ price: null, change1D: null, weighted_market_cap: undefined, description: null }),
     ]);
-    expect(rows[0]!.price).toBeNull();
-    expect(rows[0]!.change1D).toBeNull();
+    expect(rows[0]?.price).toBeNull();
+    expect(rows[0]?.change1D).toBeNull();
   });
 
   it("a malformed token mint inside a stack row throws — identity is never tolerant", () => {

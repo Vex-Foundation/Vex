@@ -27,8 +27,8 @@ import { Z500_STACK_ID } from "@vex-agent/sync/z500-allocation-sync/config.js";
 
 function mint(index: number): string {
   const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  const a = alphabet[Math.floor(index / alphabet.length)]!;
-  const b = alphabet[index % alphabet.length]!;
+  const a = alphabet.charAt(Math.floor(index / alphabet.length));
+  const b = alphabet.charAt(index % alphabet.length);
   return `So1111111111111111111111111111111111111${a}${b}`;
 }
 
@@ -89,7 +89,9 @@ class MemoryRepo implements Z500RunRepo {
   only(): MemoryRun {
     const all = [...this.runs.values()];
     expect(all).toHaveLength(1);
-    return all[0]!;
+    const run = all[0];
+    if (!run) throw new Error("expected exactly one run");
+    return run;
   }
 }
 
