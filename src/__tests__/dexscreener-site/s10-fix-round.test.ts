@@ -25,6 +25,7 @@ import { makeProtocolContext } from "../vex-agent/tools/_test-context.js";
 import { reconcileBatchRows } from "@tools/dexscreener/endpoints/pairs-batch.js";
 import {
   addressShapeForArchitecture,
+  pairIdShapeForArchitecture,
 } from "@tools/dexscreener/endpoints/chains-catalog.js";
 import {
   detectPriceDivergence,
@@ -70,6 +71,38 @@ describe("S10-33: address shape against the chain's architecture", () => {
     // identity, which is worse than the omission it replaces.
     expect(addressShapeForArchitecture(null, "0xabc")).toBe("unknown");
     expect(addressShapeForArchitecture("sui", "0xabc")).toBe("unknown");
+  });
+});
+
+/**
+ * A Uniswap v4 pool has no contract address: the singleton PoolManager holds
+ * every pool and names each one by a 32-byte `PoolId`, which DexScreener serves
+ * as `0x` + 64 hex. The TOKEN grammar calls that a mismatch, so before this
+ * split every v4 pair was refused by `pairs_batch_get` without ever being
+ * asked about. The ids below are copied from committed live captures.
+ */
+describe("EVM pair identities: the v4 PoolId grammar", () => {
+  // `token-pairs-v1-ethereum-weth.json`, a row with labels ["v4"].
+  const V4_POOL_ID =
+    "0xe500210c7ea6bfd9f69dce044b09ef384ec2b34832f132baec3b418208e3a657";
+  const EVM_ADDRESS = "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f";
+
+  it("accepts a 64-hex PAIR id on an EVM chain", () => {
+    expect(pairIdShapeForArchitecture("evm", V4_POOL_ID)).toBe("match");
+  });
+
+  it("still REFUSES a 64-hex value in the TOKEN lane", () => {
+    // The check that catches a caller pasting a pool id where a token belongs.
+    expect(addressShapeForArchitecture("evm", V4_POOL_ID)).toBe("mismatch");
+  });
+
+  it("leaves every other verdict exactly where it was", () => {
+    expect(pairIdShapeForArchitecture("evm", EVM_ADDRESS)).toBe("match");
+    expect(pairIdShapeForArchitecture("svm", V4_POOL_ID)).toBe("mismatch");
+    expect(pairIdShapeForArchitecture("evm", "So11111111111111111111111111111111111111112"))
+      .toBe("mismatch");
+    expect(pairIdShapeForArchitecture(null, V4_POOL_ID)).toBe("unknown");
+    expect(pairIdShapeForArchitecture("sui", V4_POOL_ID)).toBe("unknown");
   });
 });
 
