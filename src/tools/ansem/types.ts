@@ -33,6 +33,14 @@ export interface AnsemSnapshot {
    * corruption, not absence.
    */
   readonly rowsWithoutMint: number;
+  /**
+   * Curated rows whose market cap is null or absent — the live feed serves
+   * `marketCapUsd: null` for coins that have not traded yet (measured
+   * 2026-08-28). An unpriced coin cannot be RANKED by market cap, so it is
+   * reported and skipped rather than failing the snapshot; a present-but-
+   * non-numeric market cap still fails validation as corruption.
+   */
+  readonly rowsUnrankable: number;
   /** Total rows the raw document held before universe filtering. */
   readonly totalRows: number;
 }

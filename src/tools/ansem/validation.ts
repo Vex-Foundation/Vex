@@ -20,14 +20,27 @@
  *                 stale-by-absence; freshness is then bounded by fetch time,
  *                 which the run record carries.
  *
- * FIELD-NAME TOLERANCE, IDENTITY STRICTNESS. The live feed is currently
- * unreachable from non-browser clients (Cloudflare challenge, measured
- * 2026-08-28), so the exact field names are captured here as a RECOGNIZED SET
- * per concept (mint, market cap, universe, timestamp) rather than one pinned
- * spelling. Recognition is tolerant; once a field is recognized its VALUE is
- * strict. When real access is granted, the first captured fixture either
- * confirms this set or narrows it — either way the workflow fails closed
- * until then, which is exactly the spec's posture.
+ * FIELD-NAME TOLERANCE, IDENTITY STRICTNESS. Field names are a RECOGNIZED
+ * SET per concept (mint, market cap, universe, timestamp) rather than one
+ * pinned spelling. Recognition is tolerant; once a field is recognized its
+ * VALUE is strict.
+ *
+ * MEASURED WIRE SHAPE (2026-08-28, captured through a browser session — the
+ * origin still challenges non-browser clients): the document is
+ * `{coins: [...], total: N}`; each row carries `mint`, `marketCapUsd`
+ * (NULL for coins that have not traded yet), `ticker`, `name`, `status`
+ * ("on_curve" | "migrated"), and `tier` ("free" | "bronze" | "gold" |
+ * "diamond" — ansem.io's paid trust-tier system). There is NO explicit
+ * universe field, so:
+ *
+ *   "Z500 CURATED" IS INTERPRETED AS THE NON-FREE TIERS. The site's own
+ *   copy describes tiers as how "teams prove they are serious" (burning
+ *   $ANSEM at Gold/Diamond tier), which is exactly what "curated" can mean
+ *   in a launchpad feed with no other curation marker. The interpretation
+ *   lives in ONE predicate (`isCuratedRow`); if the Ansem team says Curated
+ *   means something else (e.g. the whole Z500 list), that predicate is the
+ *   single line to change. An explicit universe field, if the feed ever
+ *   grows one, takes precedence over the tier reading.
  */
 
 import { VexError, ErrorCodes } from "../../errors.js";
@@ -45,7 +58,9 @@ const MINT_KEYS = ["mint", "mintAddress", "mint_address", "address", "tokenAddre
 const MARKET_CAP_KEYS = ["marketCap", "market_cap", "marketCapUsd", "market_cap_usd", "mcap", "mc", "fdv"] as const;
 const SYMBOL_KEYS = ["symbol", "ticker"] as const;
 const NAME_KEYS = ["name", "coinName", "coin_name"] as const;
-const UNIVERSE_KEYS = ["universe", "universes", "list", "lists", "category", "categories", "tier", "curated"] as const;
+// NOTE: `tier` is deliberately NOT in this explicit list — it has its own
+// semantics (curated ⇔ non-"free") handled as the fallback in isCuratedRow.
+const UNIVERSE_KEYS = ["universe", "universes", "list", "lists", "category", "categories", "curated"] as const;
 const COLLECTION_KEYS = ["coins", "data", "tokens", "results", "items"] as const;
 const TIMESTAMP_KEYS = ["updatedAt", "updated_at", "lastUpdated", "last_updated", "timestamp", "generatedAt", "generated_at"] as const;
 
@@ -75,10 +90,14 @@ function readMarketCap(value: unknown): number | null {
 }
 
 /**
- * True iff the row's universe marker(s) name the curated universe.
- * A string matches case-insensitively (substring "curated" also accepted when
- * the full label differs only by decoration); an array matches when any
- * member does; `curated: true` matches by itself.
+ * True iff the row belongs to the "Z500 Curated" universe.
+ *
+ * Precedence:
+ *  1. An EXPLICIT universe marker (universe/universes/list/category/curated
+ *     fields) — matched case-insensitively, arrays match when any member
+ *     does, `curated: true` matches by itself.
+ *  2. Otherwise the TIER reading of the live feed (see module doc): a row
+ *     with a `tier` string is marked, and curated ⇔ tier !== "free".
  */
 function isCuratedRow(row: Record<string, unknown>): { matched: boolean; markerPresent: boolean } {
   const target = ANSEM_UNIVERSE_CURATED.toLowerCase();
@@ -98,6 +117,12 @@ function isCuratedRow(row: Record<string, unknown>): { matched: boolean; markerP
       if (normalized === target || normalized === "curated" || normalized.includes("curated")) {
         return { matched: true, markerPresent };
       }
+    }
+  }
+  if (!markerPresent) {
+    const tier = row.tier;
+    if (typeof tier === "string" && tier.trim() !== "") {
+      return { matched: tier.trim().toLowerCase() !== "free", markerPresent: true };
     }
   }
   return { matched: false, markerPresent };
@@ -165,6 +190,7 @@ export function validateAnsemSnapshot(raw: unknown, now: Date = new Date()): Ans
   // ── Per-row validation ───────────────────────────────────────────
   const coins: AnsemCoin[] = [];
   let rowsWithoutMint = 0;
+  let rowsUnrankable = 0;
   let anyUniverseMarker = false;
   let curatedRows = 0;
 
@@ -189,9 +215,13 @@ export function validateAnsemSnapshot(raw: unknown, now: Date = new Date()): Ans
     }
     const mintAddress = mintField.value.trim();
 
+    // The live feed serves `marketCapUsd: null` for coins that have not
+    // traded yet — an unpriced coin cannot be ranked, so it is reported and
+    // skipped. A present-but-garbage value is still corruption.
     const capField = firstPresent(row, MARKET_CAP_KEYS);
     if (capField === null) {
-      invalid(`row ${index} (${mintAddress}) carries no market-cap field — the ranking key is missing`);
+      rowsUnrankable += 1;
+      continue;
     }
     const marketCapUsd = readMarketCap(capField.value);
     if (marketCapUsd === null) {
@@ -228,6 +258,7 @@ export function validateAnsemSnapshot(raw: unknown, now: Date = new Date()): Ans
     fetchedAtIso: now.toISOString(),
     feedTimestampIso,
     rowsWithoutMint,
+    rowsUnrankable,
     totalRows: rows.length,
   };
 }

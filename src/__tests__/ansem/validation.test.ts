@@ -52,9 +52,17 @@ describe("identity strictness (spec: identify exclusively by Solana mint)", () =
     expect(snapshot.rowsWithoutMint).toBe(1);
   });
 
-  it("a missing or non-numeric market cap fails the snapshot — the ranking key is not optional", () => {
-    expect(codeOf(() => validateAnsemSnapshot([coin({ marketCap: undefined })])))
-      .toBe(ErrorCodes.ANSEM_INVALID_RESPONSE);
+  it("a NULL or absent market cap makes the row unrankable — reported, never fatal (live feed serves null for untraded coins)", () => {
+    const snapshot = validateAnsemSnapshot([
+      coin(),
+      coin({ mint: JUP, marketCap: null }),
+      { mint: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn", symbol: "X", universe: "Z500 Curated" },
+    ]);
+    expect(snapshot.coins).toHaveLength(1);
+    expect(snapshot.rowsUnrankable).toBe(2);
+  });
+
+  it("a PRESENT but non-numeric market cap still fails the snapshot — corruption, not absence", () => {
     expect(codeOf(() => validateAnsemSnapshot([coin({ marketCap: "soon" })])))
       .toBe(ErrorCodes.ANSEM_INVALID_RESPONSE);
   });
@@ -93,6 +101,57 @@ describe("universe verification (spec: Z500 Curated only)", () => {
   it("markers present but zero curated rows → incomplete → invalid", () => {
     expect(codeOf(() => validateAnsemSnapshot([coin({ universe: "Z500 Extended" })])))
       .toBe(ErrorCodes.ANSEM_INVALID_RESPONSE);
+  });
+
+  it("TIER fallback (live feed): curated ⇔ tier !== 'free'; free rows are marked but excluded", () => {
+    const snapshot = validateAnsemSnapshot([
+      coin({ universe: undefined, tier: "diamond" }),
+      coin({ mint: JUP, universe: undefined, tier: "bronze" }),
+      coin({ mint: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn", universe: undefined, tier: "free" }),
+    ]);
+    expect(snapshot.coins.map((c) => c.mintAddress)).toEqual([SOL, JUP]);
+  });
+
+  it("an explicit universe field beats the tier reading when both exist", () => {
+    const snapshot = validateAnsemSnapshot([
+      // Explicitly curated despite free tier…
+      coin({ universe: "Z500 Curated", tier: "free" }),
+      // …and explicitly NOT curated despite diamond tier.
+      coin({ mint: JUP, universe: "Z500 Extended", tier: "diamond" }),
+    ]);
+    expect(snapshot.coins.map((c) => c.mintAddress)).toEqual([SOL]);
+  });
+});
+
+describe("the measured wire shape (ansem.io/api/coins, captured 2026-08-28)", () => {
+  // Real rows from the live document, trimmed to the fields that matter plus
+  // the surrounding noise the validator must tolerate.
+  const LIVE_DOCUMENT = {
+    coins: [
+      // Untraded coin: marketCapUsd is NULL — must be unrankable, not fatal.
+      { slug: "girlcoin-4", name: "girlcoin", ticker: "girlcoin", tier: "free", mint: "D8U7w4rMCEVGMQviDGBpJSikzZTJWoCCvYjHVoSAjv7v", status: "on_curve", priceUsd: null, marketCapUsd: null, curvePct: 0, createdAt: "2026-08-27T23:58:18.014Z", nsfw: false },
+      // Free-tier coins, including the largest by market cap — NOT curated.
+      { slug: "cate", name: "Catecoin", ticker: "CATE", tier: "free", mint: "Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump", status: "migrated", marketCapUsd: 50608656, createdAt: "2026-08-17T17:19:43.376Z", nsfw: false },
+      { slug: "wifchi", name: "Wifchi", ticker: "WIFCHI", tier: "free", mint: "GtQHsNMqnwQ6QBejTTS1UWV1kXPKBij3pgtELTzvo1jV", status: "on_curve", marketCapUsd: 3283.5978354482795, createdAt: "2026-08-27T23:53:33.231Z", nsfw: false },
+      // The non-free tiers — the Curated universe under the tier reading.
+      { slug: "pants", name: "dogwifpants", ticker: "PANTS", tier: "diamond", mint: "FtateF34Xzawa91bpbVNdX72hZYo9cymRDYqBreHHbJi", status: "migrated", marketCapUsd: 1541625, createdAt: "2026-08-19T09:26:52.677Z", nsfw: false },
+      { slug: "tilly-7", name: "tilly", ticker: "TILLY", tier: "diamond", mint: "CGmBrG4GRiMvFSGaEiB7cwEd9uDYiqrXzkoyR2Qa3KrC", status: "migrated", marketCapUsd: 231082, createdAt: "2026-08-24T10:33:54.887Z", nsfw: false },
+      { slug: "z-14", name: "Z", ticker: "Z", tier: "diamond", mint: "7MQSupJTpY31HGChEHUAsS1pQhLSrHS5CCsB9bnaN3eS", status: "migrated", marketCapUsd: 183935, createdAt: "2026-08-17T17:31:17.173Z", nsfw: false },
+      { slug: "babyansem-3", name: "The Black Baby Bull", ticker: "BABYANSEM", tier: "bronze", mint: "9HNEutCZLoo6GZWQTmAgVvbtmLGV1mdeR8X3HWTooYXt", status: "migrated", marketCapUsd: 18040, createdAt: "2026-08-17T20:53:08.594Z", nsfw: false },
+      { slug: "kimichi", name: "kimchi", ticker: "KIMICHI", tier: "bronze", mint: "DC9x1o9HcyKiwgbGFvJtaq8ce6KrGXkC5HYytoa7HYtg", status: "migrated", marketCapUsd: 8997, createdAt: "2026-08-21T14:44:19.920Z", nsfw: false },
+    ],
+    total: 1284,
+  };
+
+  it("parses the live document: curated = non-free tiers, null-mcap reported, total rows counted", () => {
+    const snapshot = validateAnsemSnapshot(LIVE_DOCUMENT);
+    // Only the bronze/diamond rows survive, and CATE ($50M, free tier) does not.
+    expect(snapshot.coins.map((c) => c.symbol)).toEqual(["PANTS", "TILLY", "Z", "BABYANSEM", "KIMICHI"]);
+    expect(snapshot.coins.every((c) => typeof c.marketCapUsd === "number")).toBe(true);
+    expect(snapshot.rowsUnrankable).toBe(0); // girlcoin-4 is free-tier, filtered before ranking
+    expect(snapshot.totalRows).toBe(8);
+    // No top-level feed timestamp → freshness bounded by fetch time only.
+    expect(snapshot.feedTimestampIso).toBeNull();
   });
 });
 

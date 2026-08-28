@@ -42,14 +42,33 @@ Two deliberate asymmetries, both documented in `validation.ts`:
 - a feed with **no timestamp at all** is not stale-by-absence; freshness is
   then bounded by fetch time, which the run record carries.
 
-## Field-name recognition
+## Measured wire shape (2026-08-28, captured via a browser session)
 
-The live feed's exact field spellings are UNVERIFIED (access is challenged),
-so `validation.ts` recognizes a bounded set of spellings per concept — mint,
-market cap, universe, symbol/name, collection key, feed timestamp — with
-tolerant recognition and strict values. The first captured fixture after
-access is granted either confirms or narrows the set; until then every run
-fails closed, which is the spec's own posture.
+```
+{ coins: [ { slug, name, ticker, tier, mint, creatorWallet, status,
+             priceUsd, marketCapUsd, curvePct, pairAddress, athPriceUsd,
+             volume24hUsd, …, createdAt, nsfw } ], total: 1284 }
+```
+
+Three facts that shaped the validator:
+
+- **`marketCapUsd` is NULL for coins that have not traded yet** → such rows
+  are UNRANKABLE: counted in `rowsUnrankable` and skipped, never fatal. A
+  present-but-garbage value still fails the snapshot as corruption.
+- **There is no explicit universe field.** `tier`
+  ("free"/"bronze"/"gold"/"diamond" — ansem.io's paid trust-tier system) is
+  the only curation signal, so **"Z500 Curated" is interpreted as the
+  non-free tiers**. The interpretation lives in one predicate
+  (`isCuratedRow` in `validation.ts`); an explicit universe field, if the
+  feed ever grows one, takes precedence. Confirm the reading with the Ansem
+  team — flipping it is a one-line change.
+- **No top-level feed timestamp** → freshness is bounded by fetch time
+  (recorded per run); staleness enforcement activates only if the feed ever
+  declares its own clock.
+
+`validation.ts` still recognizes a bounded set of alternate spellings per
+concept (mint, market cap, universe, collection key, timestamp) so benign
+renames degrade gracefully; unrecognizable documents fail closed.
 
 ## Files
 
