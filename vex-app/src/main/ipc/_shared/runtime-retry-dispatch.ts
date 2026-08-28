@@ -9,6 +9,10 @@
  * flips status, kicks off `resumeMissionRun` asynchronously, and returns a
  * Result immediately.
  *
+ * Before it claims anything it enforces the RECOVERY MONEY GATE
+ * (`readSessionMoneyState` below): a session with an unproven money-path
+ * outcome cannot be resumed, and the refusal names the structural reasons.
+ *
  * Duplicates ~60% of `runResumeDispatch` by intent (codex review): a shared
  * claim + fire-and-forget helper is only worth extracting once the stop-fix
  * slice proves the shape is stable.
@@ -48,10 +52,58 @@ export type RetryFlowResult =
   | { readonly outcome: "blocked_terminal"; readonly status: MissionRunStatus }
   | { readonly outcome: "not_recoverable"; readonly status: MissionRunStatus }
   | { readonly outcome: "status_changed" }
+  | {
+    readonly outcome: "blocked_money_state";
+    readonly reasonKinds: readonly string[];
+  }
   | { readonly outcome: "lease_busy"; readonly retryAfterMs?: number };
 
 const LEASE_TTL_MS = 5 * 60_000;
 const RETRY_OWNER_PREFIX = "ipc-retry-";
+
+/**
+ * The RECOVERY money gate, enforced here because this is the privileged half.
+ *
+ * Recover resumes a run that stopped in the middle of something. A run parked
+ * by the restart-orphan reclaim is the sharpest case - the process died
+ * mid-slice, so a wallet intent may be `consuming`, a transaction may be
+ * broadcast with no confirmation yet, an approval may be `dispatching` - but it
+ * is not a special case: every `paused_error` pause is a decision made from an
+ * interrupted state, and resuming on top of an unproven money outcome is how a
+ * double spend happens. The rule is the product's own (rule 90): an unknown
+ * outcome is reconciled, never retried.
+ *
+ * Read inside a transaction under the SESSION CONTROL LOCK, which is what makes
+ * it a boundary rather than a snapshot of the past: every money-state writer
+ * takes the same lock (see the reader's module header). It is released before
+ * the claim below, deliberately - nothing may hold that lock across the
+ * fire-and-forget resume, and the claim revalidates status and lease under its
+ * own row locks anyway.
+ *
+ * FAIL-CLOSED: a throw propagates to the caller's catch and the retry is
+ * refused. An unreadable money state is not a clear one.
+ *
+ * The renderer's Recover affordance must gate on the same fact, but that is a
+ * display concern; this check is the enforcement and does not trust it.
+ */
+async function readSessionMoneyState(
+  sessionId: string,
+): Promise<
+  | { readonly clear: true }
+  | { readonly clear: false; readonly reasons: readonly { kind: string }[] }
+> {
+  const { withTransaction } = await import("@vex-agent/db/client.js");
+  const { acquireSessionControlLock } = await import(
+    "@vex-agent/engine/runtime/lease-and-status.js"
+  );
+  const { getUnresolvedMoneyStateForSession } = await import(
+    "@vex-agent/db/repos/approval-intents/money-state.js"
+  );
+  return withTransaction(async (client) => {
+    await acquireSessionControlLock(client, sessionId);
+    return getUnresolvedMoneyStateForSession(client, sessionId);
+  });
+}
 
 export async function runRetryDispatch(
   input: RetryFlowInput,
@@ -98,6 +150,18 @@ export async function runRetryDispatch(
     ) {
       // Not an error pause → Continue (runResumeDispatch) owns these.
       return ok({ outcome: "not_recoverable", status });
+    }
+
+    // Money gate BEFORE anything with an effect. Placed ahead of the wake
+    // cancellation below so a refused Recover leaves the run exactly as it was,
+    // scheduled auto-retry included.
+    const money = await readSessionMoneyState(input.sessionId);
+    if (!money.clear) {
+      const reasonKinds = [...new Set(money.reasons.map((r) => r.kind))];
+      log.info(
+        `[ipc:${ctx.channelLabel}] retry refused on unresolved money state runId=${runId} reasons=${reasonKinds.join(",")}`,
+      );
+      return ok({ outcome: "blocked_money_state", reasonKinds });
     }
 
     if (status === "paused_error") {

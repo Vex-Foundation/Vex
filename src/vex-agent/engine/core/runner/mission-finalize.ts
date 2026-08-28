@@ -30,6 +30,7 @@ import { finalizeBusinessOutcome } from "./mission-finalize/business-outcome.js"
 import { finalizeRuntimeContinuationPark } from "./mission-finalize/runtime-continuation-park.js";
 import { finalizeSystemError } from "./mission-finalize/system-error-escalation.js";
 import { finalizeOperatorReviewPark } from "./mission-finalize/operator-review-park.js";
+import { finalizeToolCallLoopPark } from "./mission-finalize/tool-call-loop-park.js";
 
 export { finalizeMissionRunError } from "./mission-finalize/error-pause.js";
 
@@ -73,6 +74,10 @@ export async function finalizeMissionRunStatus(
 
   if (stopReason === "system_error") {
     return finalizeSystemError(missionId, runId, sessionId, stopPayload);
+  }
+
+  if (stopReason === "tool_call_loop") {
+    return finalizeToolCallLoopPark(missionId, runId, sessionId, stopPayload);
   }
 
   if (stopReason === "compact_unable_at_critical" || stopReason === "no_progress") {

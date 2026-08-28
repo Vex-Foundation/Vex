@@ -7,45 +7,36 @@
  * mission/full-autonomous runners convert into a wake continuation.
  */
 
-import type {
-  StopReason,
-  BusinessStopReason,
-  RuntimeStopReason,
+import {
+  BUSINESS_STOP_REASONS,
+  RUNTIME_STOP_REASONS,
+  type StopReason,
+  type BusinessStopReason,
+  type RuntimeStopReason,
 } from "../types.js";
 
 // ── Classification ──────────────────────────────────────────────
 
-const BUSINESS_STOPS = new Set<string>([
-  "goal_reached",
-  "deadline_reached",
-  "capital_depleted",
-  "max_loss_hit",
-  "no_viable_opportunity",
-  "emergency_stop",
-  "user_stopped",
-]);
+/**
+ * Both sets are DERIVED from the canonical tuples in `types/stop-reasons.ts`,
+ * never re-typed here.
+ *
+ * `isRuntimePause` declares `reason is RuntimeStopReason`, which is a promise
+ * that it answers `true` for every member of that union. A hand-maintained
+ * list could not keep that promise and did not: `user_paused`,
+ * `user_form_required` and (before this) every newly added runtime stop were
+ * missing, so the predicate narrowed to a type it had just denied. Building
+ * the set from the union's own tuple makes the promise structural - a new
+ * member is classified the moment it is declared, not the moment someone
+ * remembers this file.
+ *
+ * `RESUMABLE_STOPS` below is deliberately NOT derived: it is a genuine policy
+ * subset, so every member is a decision and the default for a new stop reason
+ * must be "not directly resumable".
+ */
+const BUSINESS_STOPS: ReadonlySet<string> = new Set<string>(BUSINESS_STOP_REASONS);
 
-const RUNTIME_PAUSES = new Set<string>([
-  "approval_required",
-  "checkpoint_pause",
-  "iteration_limit",
-  "timeout",
-  "waiting_for_wake",
-  "waiting_for_compact_commit",
-  "compact_unable_at_critical",
-  "system_error",
-  // Plan-mode acceptance pause: a runtime pause, but deliberately NOT a
-  // RESUMABLE_STOP — once the plan is accepted it resumes via `plan.accept` or
-  // any control resume path, never via a plain user chat message, so ingress
-  // must not treat an incoming message as a resume.
-  "plan_acceptance_required",
-  // Model stall: a run of rounds that emitted nothing at all. A runtime pause,
-  // and deliberately NOT a RESUMABLE_STOP and NOT a continuable runtime stop -
-  // an unproductive round persists nothing, so an automatic continuation would
-  // re-ask the identical question and stall identically. Only a human deciding
-  // what to do differently (retry, narrow, switch model) breaks it.
-  "no_progress",
-]);
+const RUNTIME_PAUSES: ReadonlySet<string> = new Set<string>(RUNTIME_STOP_REASONS);
 
 /**
  * The subset of runtime pauses that allow a direct resume path:
@@ -53,7 +44,10 @@ const RUNTIME_PAUSES = new Set<string>([
  * the wake executor, and `checkpoint_pause` by checkpoint auto-resume.
  * `iteration_limit` and `timeout` are converted by autonomous runners into
  * `waiting_for_wake`; they are not direct ingress-resume statuses.
- * `system_error` remains non-resumable here.
+ * `system_error` remains non-resumable here, and so are `restart_orphan` and
+ * `tool_call_loop`: the first needs a fresh run (the process that owned the
+ * old one is gone), the second needs a human to change something, because
+ * resuming is precisely what the model just proved it would repeat.
  */
 const RESUMABLE_STOPS = new Set<string>([
   "approval_required",

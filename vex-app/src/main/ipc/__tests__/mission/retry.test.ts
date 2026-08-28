@@ -26,6 +26,8 @@ const mockClaim = vi.fn();
 const mockCreateLeaseHandle = vi.fn();
 const mockResumeMissionRun = vi.fn();
 const mockRelease = vi.fn();
+const mockAcquireLock = vi.fn();
+const mockMoneyState = vi.fn();
 
 vi.mock("electron", () => {
   const handlers = new Map<
@@ -78,6 +80,19 @@ vi.mock("@vex-agent/db/repos/loop-wake.js", () => ({
 }));
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   claimRunLeaseAndFlipToRunning: (...a: unknown[]) => mockClaim(...a),
+  acquireSessionControlLock: (...a: unknown[]) => mockAcquireLock(...a),
+}));
+// The RECOVERY money gate reads the session-scoped money state inside a
+// transaction under the session control lock. Both are mocked: what is proven
+// here is that the dispatcher REFUSES on an unclear answer and fails closed on
+// an unreadable one. That the reader itself is correct is proven against real
+// Postgres in the money-state reader's own integration suite.
+vi.mock("@vex-agent/db/client.js", () => ({
+  withTransaction: async (fn: (client: unknown) => Promise<unknown>) =>
+    fn({ query: vi.fn() }),
+}));
+vi.mock("@vex-agent/db/repos/approval-intents/money-state.js", () => ({
+  getUnresolvedMoneyStateForSession: (...a: unknown[]) => mockMoneyState(...a),
 }));
 vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({
   createLeaseHandle: (...a: unknown[]) => mockCreateLeaseHandle(...a),
@@ -114,6 +129,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockEnsureEngineDbUrl.mockResolvedValue({ ok: true, data: undefined });
   mockEmitControlStateAfterChange.mockResolvedValue(undefined);
+  mockAcquireLock.mockResolvedValue(undefined);
+  // Default: nothing in flight. Every pre-existing case below is about run
+  // STATE, not money state, so they all start from a clear session.
+  mockMoneyState.mockResolvedValue({ clear: true });
   electronMock.__handlers.clear();
   registerMissionRetryHandler();
 });
@@ -229,6 +248,69 @@ describe("mission.retry", () => {
     await vi.waitFor(() =>
       expect(mockResumeMissionRun).toHaveBeenCalledWith("run-err", "owner-x"),
     );
+  });
+
+  it("refuses with blocked_money_state when the session has unresolved money state", async () => {
+    // The restart-orphan case: the process died mid-slice, so a transfer may be
+    // broadcast with no confirmation yet. Resuming on top of that is how a
+    // double spend happens - an unknown outcome is reconciled, never retried.
+    mockGetLatestRunForSession.mockResolvedValueOnce({
+      ok: true,
+      data: { missionRunId: "run-orphan", status: "paused_error" },
+    });
+    mockMoneyState.mockResolvedValueOnce({
+      clear: false,
+      reasons: [
+        { kind: "wallet_transaction_confirmation_unknown", ref: "intent-1" },
+        { kind: "wallet_transaction_confirmation_unknown", ref: "intent-2" },
+        { kind: "approval_in_flight", ref: "approval-9" },
+      ],
+    });
+
+    const r = await call({ sessionId: SESSION });
+
+    expect(r.data).toEqual({
+      outcome: "blocked_money_state",
+      reasonKinds: [
+        "wallet_transaction_confirmation_unknown",
+        "approval_in_flight",
+      ],
+    });
+    // Nothing with an effect ran: no claim, no resume, and the scheduled
+    // auto-retry wake is left exactly as it was.
+    expect(mockClaim).not.toHaveBeenCalled();
+    expect(mockResumeMissionRun).not.toHaveBeenCalled();
+    expect(mockCancelForSession).not.toHaveBeenCalled();
+    // Structural labels only: no row identifiers reach the renderer.
+    expect(JSON.stringify(r.data)).not.toContain("intent-1");
+  });
+
+  it("takes the session control lock to read the money state", async () => {
+    // Read outside the lock the answer is stale the instant it returns: every
+    // money-state writer serializes on this same lock.
+    mockGetLatestRunForSession.mockResolvedValueOnce({
+      ok: true,
+      data: { missionRunId: "run-orphan", status: "paused_error" },
+    });
+    mockMoneyState.mockResolvedValueOnce({ clear: false, reasons: [] });
+
+    await call({ sessionId: SESSION });
+
+    expect(mockAcquireLock).toHaveBeenCalledWith(expect.anything(), SESSION);
+  });
+
+  it("FAILS CLOSED when the money state cannot be read", async () => {
+    mockGetLatestRunForSession.mockResolvedValueOnce({
+      ok: true,
+      data: { missionRunId: "run-orphan", status: "paused_error" },
+    });
+    mockMoneyState.mockRejectedValueOnce(new Error("db unreachable"));
+
+    const r = await call({ sessionId: SESSION });
+
+    expect(r.ok).toBe(false);
+    expect(mockClaim).not.toHaveBeenCalled();
+    expect(mockResumeMissionRun).not.toHaveBeenCalled();
   });
 
   it("maps lease_busy with a retryAfterMs hint and never leaks the owner id", async () => {

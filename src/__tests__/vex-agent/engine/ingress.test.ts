@@ -174,9 +174,13 @@ describe("ingress.routeUserMessage", () => {
         fromStatuses: ["paused_wake"],
       }),
     );
+    // M6: the wake-preempt route is the ONE disposition with an immediate
+    // consequence for the run, and it is now recorded as such rather than
+    // sharing a paragraph with every other queued write.
     expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
       "s1",
       "can you pause?",
+      "preempted_wake",
       expect.objectContaining({
         target: "mission_run",
         runId: "run-1",
@@ -196,9 +200,18 @@ describe("ingress.routeUserMessage", () => {
 
     const result = await routeUserMessage("s1", "wait!");
 
-    expect(result.text).toContain("queued");
+    // M6: `QUEUED_INTERRUPT_TEXT` as `TurnResult.text` is retired. The
+    // acknowledgement is a durable, user-visible engine notice row written in
+    // the same transaction as the instruction, so it survives a reload; the
+    // response object carries no ephemeral copy of it.
+    expect(result.text).toBeNull();
     expect(result.toolCallsMade).toBe(0);
-    expect(mockAddOperatorInstruction).toHaveBeenCalled();
+    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
+      "s1",
+      "wait!",
+      "queued_interrupt",
+      expect.objectContaining({ runStatus: "paused_approval" }),
+    );
     expect(mockResumeMissionRun).not.toHaveBeenCalled();
     expect(mockProcessAgentTurn).not.toHaveBeenCalled();
   });
@@ -220,6 +233,7 @@ describe("ingress.routeUserMessage", () => {
     expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
       "s1",
       "anything",
+      "queued_interrupt",
       expect.objectContaining({ target: "mission_run", runId: "run-4", runStatus: "paused_error" }),
     );
     expect(result.text).toContain("Recover button");

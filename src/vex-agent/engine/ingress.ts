@@ -31,8 +31,16 @@ import {
 import logger from "@utils/logger.js";
 import { releaseLeaseAndEmitControlState } from "./runtime/release-and-emit.js";
 
-const QUEUED_INTERRUPT_TEXT =
-  "Operator instruction queued for the active run. The model will read it at the next safe iteration boundary and continue.";
+/**
+ * `QUEUED_INTERRUPT_TEXT` is RETIRED (M6). It was a paragraph returned as
+ * `TurnResult.text` from three different branches with three different
+ * meanings, and it did not survive a reload. The acknowledgement is now a
+ * durable, user-visible engine notice row written in the same transaction as
+ * the instruction itself, with the disposition typed - see
+ * `core/operator-instructions.ts`. These branches return `text: null` because
+ * the acknowledgement is on the tape where the operator can still find it
+ * tomorrow, not in a response object that is gone once rendered.
+ */
 
 const PAUSED_ERROR_TEXT =
   "Run is paused after a provider/runtime error. I saved your instruction; use the Recover button to re-attempt.";
@@ -65,7 +73,10 @@ export async function routeUserMessage(
       // but return a clear hint instead of letting the shell render the
       // empty-fallback `(no text — stopReason: unknown)` string. The
       // operator drives recovery via the Recover button.
-      await addOperatorInstruction(sessionId, userInput, {
+      // `queued_interrupt`, not `steered`: a run parked on an error is not
+      // executing a turn, so nothing will merge this until the operator
+      // recovers it.
+      await addOperatorInstruction(sessionId, userInput, "queued_interrupt", {
         target: "mission_run",
         runId: activeRun.id,
         runStatus: activeRun.status,
@@ -84,7 +95,13 @@ export async function routeUserMessage(
     // but do NOT fire a new turn here. Approvals resume through their own
     // flow (`approveAndResume`); a running run will pick up the message on
     // its next iteration.
-    await addOperatorInstruction(sessionId, userInput, {
+    // `queued_interrupt` for BOTH statuses this branch covers. `running` looks
+    // like a live turn, but this route (unlike `submitSteeringMessage`) never
+    // established that a runner is actually executing one - `getActiveRunBySession`
+    // reports a row status, not a live loop - and `paused_approval` is
+    // definitively waiting on a human. The weaker, provable claim is the one
+    // the operator gets told.
+    await addOperatorInstruction(sessionId, userInput, "queued_interrupt", {
       target: "mission_run",
       runId: activeRun.id,
       runStatus: activeRun.status,
@@ -95,7 +112,7 @@ export async function routeUserMessage(
       runStatus: activeRun.status,
     });
     return {
-      text: QUEUED_INTERRUPT_TEXT,
+      text: null,
       toolCallsMade: 0,
       pendingApprovals: [],
       stopReason: null,
@@ -153,7 +170,7 @@ export async function submitSteeringMessage(
     if (activeRun.status !== "running" && activeRun.status !== "paused_approval") {
       return { outcome: "no_active_turn" };
     }
-    await addOperatorInstruction(sessionId, userInput, {
+    await addOperatorInstruction(sessionId, userInput, "steered", {
       target: "mission_run",
       runId: activeRun.id,
       runStatus: activeRun.status,
@@ -171,7 +188,7 @@ export async function submitSteeringMessage(
   if (lease === null || lease.expiresAt < new Date()) {
     return { outcome: "no_active_turn" };
   }
-  await addOperatorInstruction(sessionId, userInput, { target: "agent_turn" });
+  await addOperatorInstruction(sessionId, userInput, "steered", { target: "agent_turn" });
   logger.info("ingress.steer_persisted", { sessionId, target: "agent_turn" });
   return { outcome: "queued_live" };
 }
@@ -204,13 +221,17 @@ async function resumeMissionRunWithPreempt(
       runId,
       outcome: claim.outcome,
     });
-    await addOperatorInstruction(sessionId, userInput, {
+    // The preempt lost its race, so the wake was NOT preempted by us and the
+    // run is not ours to resume. `queued_interrupt` is the truthful record of
+    // what this call achieved: the row is on the tape and whoever won the
+    // claim will read it.
+    await addOperatorInstruction(sessionId, userInput, "queued_interrupt", {
       target: "mission_run",
       runId,
       runStatus: "claim_lost",
     });
     return {
-      text: QUEUED_INTERRUPT_TEXT,
+      text: null,
       toolCallsMade: 0,
       pendingApprovals: [],
       stopReason: null,
@@ -227,7 +248,7 @@ async function resumeMissionRunWithPreempt(
     ttlMs: 5 * 60_000,
   });
   try {
-    await addOperatorInstruction(sessionId, userInput, {
+    await addOperatorInstruction(sessionId, userInput, "preempted_wake", {
       target: "mission_run",
       runId,
       preempt: "wake",

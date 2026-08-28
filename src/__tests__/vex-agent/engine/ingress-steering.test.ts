@@ -71,7 +71,10 @@ describe("submitSteeringMessage", () => {
     const result = await submitSteeringMessage(SESSION, "steer this");
     expect(result).toEqual({ outcome: "queued_live" });
     expect(mockAddOperatorInstruction).toHaveBeenCalledTimes(1);
-    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(SESSION, "steer this", {
+    // M6 contract change: the disposition is a TYPED argument on the persist
+    // call, not prose derived downstream. Steering into a live run is
+    // `steered` - the loop merges it at its next batch boundary.
+    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(SESSION, "steer this", "steered", {
       target: "mission_run",
       runId: "run-1",
       runStatus: "running",
@@ -101,7 +104,7 @@ describe("submitSteeringMessage", () => {
     mockGetLease.mockResolvedValue(liveLease());
     const result = await submitSteeringMessage(SESSION, "steer this");
     expect(result).toEqual({ outcome: "queued_live" });
-    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(SESSION, "steer this", {
+    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(SESSION, "steer this", "steered", {
       target: "agent_turn",
     });
   });
