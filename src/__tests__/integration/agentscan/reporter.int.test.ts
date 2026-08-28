@@ -22,8 +22,11 @@
  *
  * Plus the server-answer table: session/complete 409 (wallet_conflict, kept
  * defensive — the current server transfers a proven wallet instead) →
- * permanent stop; events-endpoint 410 → permanent stop; events-endpoint 401
- * → re-handshake the SAME identity next run (`resetForReRegistration`);
+ * permanent stop; events-endpoint 410 → permanent stop; events-endpoint
+ * 403-quarantined → a long outbox pause, never a latched skip (the server
+ * can be wrong, and an install that has stopped calling cannot be told);
+ * events-endpoint 401 → re-handshake the SAME identity next run
+ * (`resetForReRegistration`);
  * session/complete 401 → a DIFFERENT recovery — the FakeSessionClient
  * enforces the server's real Bearer rule via a per-agentHash bound-token
  * ledger, so a genuine crash-after-rotation lockout (server holds T_new,
@@ -331,6 +334,27 @@ describe("reporter lane — gating", () => {
     expect(session.sessionStartCalls).toHaveLength(0);
     expect(client.sendCalls).toHaveLength(0);
   });
+
+  it("a leftover quarantined latch does not skip: the next tick still sends, and the stale flag is left alone", async () => {
+    const lane = await import("../../../vex-agent/sync/agentscan-report.js");
+    const stateRepo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await seedWallet();
+    await seedEligibleSwap();
+    const client = new FakeClient();
+    const session = new FakeSessionClient();
+
+    const first = await lane.runAgentscanReport(depsWith(client, "http://localhost", session));
+    expect(first.skipped).toBeNull();
+    expect(client.sendCalls).toHaveLength(1);
+
+    await stateRepo.markStopped("quarantined");
+    await seedEligibleSwap();
+
+    const second = await lane.runAgentscanReport(depsWith(client, "http://localhost", session));
+    expect(second.skipped).toBeNull();
+    expect(client.sendCalls).toHaveLength(2);
+    expect((await stateRepo.getReportingState()).stoppedReason).toBe("quarantined");
+  });
 });
 
 describe("reporter lane — handshake gate (AC2)", () => {
@@ -618,6 +642,34 @@ describe("reporter lane — server-answer table", () => {
     expect(client.sendCalls).toHaveLength(1);
   });
 
+  it("send 403 quarantined -> outbox held ~1h, no permanent latch; the following run in the hold window does not send", async () => {
+    const { queryOne } = await import("@vex-agent/db/client.js");
+    const lane = await import("../../../vex-agent/sync/agentscan-report.js");
+    const stateRepo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await seedWallet();
+    await seedEligibleSwap();
+    const client = new FakeClient();
+    client.sendOutcomes = [{ kind: "stopped", reason: "quarantined" }];
+
+    const first = await lane.runAgentscanReport(depsWith(client));
+    expect(first.skipped).toBeNull();
+    expect(first.deferred).toBe(1);
+    expect((await stateRepo.getReportingState()).stoppedReason).toBeNull();
+
+    const owed = await queryOne<{ next_attempt_at: Date; sent_at: Date | null }>(
+      `SELECT next_attempt_at, sent_at FROM agentscan_outbox`,
+      [],
+    );
+    expect(owed?.sent_at).toBeNull();
+    const heldUntil = new Date(owed?.next_attempt_at ?? 0).getTime();
+    expect(heldUntil).toBeGreaterThan(Date.now() + 3500 * 1000);
+    expect(heldUntil).toBeLessThanOrEqual(Date.now() + 3700 * 1000);
+
+    const next = await lane.runAgentscanReport(depsWith(client));
+    expect(next.skipped).toBeNull();
+    expect(client.sendCalls).toHaveLength(1);
+  });
+
   it("send 401 -> registration cleared, SAME identity re-handshaked next run, rows resent", async () => {
     const { execute } = await import("@vex-agent/db/client.js");
     const lane = await import("../../../vex-agent/sync/agentscan-report.js");
@@ -808,6 +860,23 @@ describe("runAgentscanIncremental — push-lane drain-only entry (AC2)", () => {
     expect(stopped.skipped).toBe("unregistered");
     expect(stoppedSession.sessionStartCalls).toHaveLength(0);
     expect(stoppedClient.sendCalls).toHaveLength(0);
+  });
+
+  it("a leftover quarantined latch does not skip the push lane: it still drains", async () => {
+    const lane = await import("../../../vex-agent/sync/agentscan-report.js");
+    const stateRepo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await seedWallet();
+    await seedEligibleSwap();
+    const setupClient = new FakeClient();
+    const setup = await lane.runAgentscanReport(depsWith(setupClient));
+    expect(setup.skipped).toBeNull();
+
+    await stateRepo.markStopped("quarantined");
+    await seedEligibleSwap();
+    const pushClient = new FakeClient();
+    const pushed = await lane.runAgentscanIncremental(depsWith(pushClient));
+    expect(pushed.skipped).toBeNull();
+    expect(pushClient.sendCalls.length).toBeGreaterThan(0);
   });
 
   it("registered but backfill not yet enqueued: a push-lane fire in the handshake->backfill window is a zero-touch no-op", async () => {

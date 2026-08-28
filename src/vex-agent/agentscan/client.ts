@@ -14,7 +14,8 @@
  * outcome unions ARE the retry policy, so they carry everything the lane
  * needs: the contract says only 429/5xx/network are retryable, 401 and
  * 403-`not_registered` are recoverable auth loss (re-handshake the same
- * identity), 410 / 403-`quarantined` are permanent stops, and any other 4xx
+ * identity), 410 is a permanent stop, 403-`quarantined` is a long pause at
+ * the lane (not a latched skip — the server can be wrong), and any other 4xx
  * is a client bug that must never be hot-retried.
  *
  * TOKEN HYGIENE. The ingest token travels ONLY in the `Authorization: Bearer`

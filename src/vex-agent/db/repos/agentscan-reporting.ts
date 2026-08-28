@@ -374,7 +374,8 @@ export async function resetIdentityForRecovery(): Promise<void> {
   });
 }
 
-/** Permanent stop — 410, 403-quarantined, or a register 409. Never auto-cleared. */
+/** Permanent stop — 410 consent_revoked or an identity conflict. Never auto-cleared. */
+
 export async function markStopped(reason: AgentscanStopReason): Promise<void> {
   await ensureSingleton();
   await execute(

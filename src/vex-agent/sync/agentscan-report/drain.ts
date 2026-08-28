@@ -31,6 +31,14 @@ export const AGENTSCAN_MAX_BATCHES_PER_TICK = 6;
 const INVALID_BATCH_HOLD_SECONDS = 3600;
 
 /**
+ * 403-quarantined is a server accusation, not a user decision. The server can
+ * be wrong (and has been), and an install that has stopped calling cannot be
+ * told the accusation was withdrawn. Hold the owed rows a full hour and ask
+ * again — never latch a permanent skip.
+ */
+const QUARANTINE_HOLD_SECONDS = 3600;
+
+/**
  * The incremental scan-then-drain step: shared verbatim by the periodic
  * lane's non-backfill tick and the push lane's `runAgentscanIncremental`, so
  * there is exactly one place that enqueues an incremental diff and drains it.
@@ -150,7 +158,11 @@ async function sendGroup(
     return { sent: 0, rejected: 0, deferred: owedIds.length, stop: true };
   }
   if (outcome.kind === "stopped") {
-    await reportingRepo.markStopped(outcome.reason);
+    if (outcome.reason === "quarantined") {
+      await reportingRepo.rescheduleOutbox(owedIds, QUARANTINE_HOLD_SECONDS);
+    } else {
+      await reportingRepo.markStopped(outcome.reason);
+    }
     logger.warn("agentscan.report.stopped_by_server", { reason: outcome.reason });
     return { sent: 0, rejected: 0, deferred: owedIds.length, stop: true };
   }

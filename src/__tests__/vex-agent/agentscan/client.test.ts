@@ -9,8 +9,9 @@
  *     Authorization header — never in a URL);
  *   - every server answer maps to the outcome the reporter keys off:
  *     contract retry rule (only 429/5xx/network are retryable), 401 and
- *     403-not_registered as recoverable auth loss, 410 / 403-quarantined as
- *     permanent stops, 400/413 as non-retryable client bugs;
+ *     403-not_registered as recoverable auth loss, 410 as a permanent stop,
+ *     403-quarantined as a named `stopped` outcome the lane treats as a
+ *     pause, 400/413 as non-retryable client bugs;
  *   - `Retry-After` is surfaced on 429/503;
  *   - nothing throws — a network failure is a named outcome;
  *   - failure details never contain the token.

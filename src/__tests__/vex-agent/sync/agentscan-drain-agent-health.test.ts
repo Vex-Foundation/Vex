@@ -12,14 +12,16 @@ import type { AgentscanClient, SendOutcome } from "@vex-agent/agentscan/client.j
 const mockClaimDueOutbox = vi.fn();
 const mockMarkOutboxSent = vi.fn();
 const mockMarkOutboxRejected = vi.fn();
+const mockRescheduleOutbox = vi.fn();
+const mockMarkStopped = vi.fn();
 
 vi.mock("@vex-agent/db/repos/agentscan-reporting.js", () => ({
   claimDueOutbox: (...args: unknown[]) => mockClaimDueOutbox(...args),
   markOutboxSent: (...args: unknown[]) => mockMarkOutboxSent(...args),
   markOutboxRejected: (...args: unknown[]) => mockMarkOutboxRejected(...args),
-  rescheduleOutbox: vi.fn(),
+  rescheduleOutbox: (...args: unknown[]) => mockRescheduleOutbox(...args),
   resetForReRegistration: vi.fn(),
-  markStopped: vi.fn(),
+  markStopped: (...args: unknown[]) => mockMarkStopped(...args),
 }));
 
 const mockWarn = vi.fn();
@@ -91,5 +93,23 @@ describe("drainOutbox - agent health surfacing", () => {
       (call) => call[0] === "agentscan.report.agent_strikes",
     );
     expect(strikeWarns).toEqual([]);
+  });
+});
+
+describe("drainOutbox - 403 quarantined is a pause, not a latch", () => {
+  it("reschedules owed rows ~1h and does not markStopped", async () => {
+    const client = clientReturning({ kind: "stopped", reason: "quarantined" });
+    const result = await drainOutbox(client, "a".repeat(64), "token");
+    expect(result).toEqual({ sent: 0, rejected: 0, deferred: 1 });
+    expect(mockMarkStopped).not.toHaveBeenCalled();
+    expect(mockRescheduleOutbox).toHaveBeenCalledWith([1], 3600);
+    expect(mockWarn).toHaveBeenCalledWith("agentscan.report.stopped_by_server", { reason: "quarantined" });
+  });
+
+  it("still latches consent_revoked as a permanent stop", async () => {
+    const client = clientReturning({ kind: "stopped", reason: "consent_revoked" });
+    await drainOutbox(client, "a".repeat(64), "token");
+    expect(mockMarkStopped).toHaveBeenCalledWith("consent_revoked");
+    expect(mockRescheduleOutbox).not.toHaveBeenCalled();
   });
 });

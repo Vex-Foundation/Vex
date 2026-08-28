@@ -28,8 +28,10 @@
  * until the public rollout). The identity is CSPRNG-random, never derived
  * from key material. Payloads go through the mapper's structural allowlist —
  * the banned columns are unreadable from its output by construction. Server
- * verdicts are honored exactly: 410 / 403-quarantined stop the lane
- * permanently; a 401 on the EVENTS endpoint re-handshakes the SAME identity
+ * verdicts are honored exactly: 410 consent_revoked and identity conflicts
+ * stop the lane permanently; 403-quarantined is a long outbox pause (the
+ * server can be wrong, and an install that has stopped calling cannot be
+ * told); a 401 on the EVENTS endpoint re-handshakes the SAME identity
  * AND resends the full eligible history (a server-side reset means the
  * server has nothing, so every already-sent row comes back owed, flagged
  * `backfill`); only 429/5xx/network are retried. A 401 from
@@ -75,6 +77,7 @@
 import { randomBytes } from "node:crypto";
 
 import * as reportingRepo from "@vex-agent/db/repos/agentscan-reporting.js";
+import type { AgentscanStopReason } from "@vex-agent/db/repos/agentscan-reporting.js";
 import type { AgentscanClient } from "../agentscan/client.js";
 import type { AgentscanSessionClient } from "../agentscan/session-client.js";
 import type {
@@ -125,6 +128,15 @@ const NOTHING: Omit<AgentscanReportResult, "skipped"> = {
   deferred: 0,
 };
 
+/**
+ * `quarantined` is a leftover latch from older binaries (and must not skip
+ * the lane — the server may already have lifted it). User-revoked consent
+ * and identity conflicts stay terminal.
+ */
+function isTerminalStopReason(reason: AgentscanStopReason | null): boolean {
+  return reason !== null && reason !== "quarantined";
+}
+
 /** CSPRNG identity — 32 bytes hex (public hash) + 32 bytes base64url (secret token). */
 export function generateAgentscanIdentity(): { agentHash: string; ingestToken: string } {
   return {
@@ -140,7 +152,7 @@ export async function runAgentscanReport(
   if (baseUrl === null) return { skipped: "disabled", ...NOTHING };
 
   let state = await reportingRepo.getReportingState();
-  if (state.stoppedReason !== null) return { skipped: "stopped", ...NOTHING };
+  if (isTerminalStopReason(state.stoppedReason)) return { skipped: "stopped", ...NOTHING };
 
   if (state.agentHash === null || state.ingestToken === null) {
     state = await reportingRepo.ensureIdentity(generateAgentscanIdentity);
@@ -187,7 +199,8 @@ export async function runAgentscanReport(
  * function itself never registers/backfills/writes state proactively, but the
  * drain it shares with the periodic lane honors server verdicts via
  * `sendGroup` (`resetForReRegistration()` on auth_lost, `markStopped()` on
- * 410/quarantine), so a push-lane fire CAN reset or stop the lane's state.
+ * 410; 403-quarantined is a long outbox pause, not a latch), so a push-lane
+ * fire CAN reset or stop the lane's state.
  * State is read fresh on every call, never cached across invocations.
  *
  * The `backfillEnqueuedAt === null` guard below is load-bearing: between the
@@ -206,7 +219,7 @@ export async function runAgentscanIncremental(
   if (baseUrl === null) return { skipped: "unregistered", ...NOTHING };
 
   const state = await reportingRepo.getReportingState();
-  if (state.stoppedReason !== null) return { skipped: "unregistered", ...NOTHING };
+  if (isTerminalStopReason(state.stoppedReason)) return { skipped: "unregistered", ...NOTHING };
   if (state.agentHash === null || state.ingestToken === null) {
     return { skipped: "unregistered", ...NOTHING };
   }
