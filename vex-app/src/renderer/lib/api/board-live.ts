@@ -30,7 +30,7 @@
  * reader's provider budget without being asked.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import type { BoardHydratedRow } from "@vex-lib/board/index.js";
@@ -69,6 +69,15 @@ export interface BoardLiveState {
   /** False until capability is known, and while a request is in flight. */
   readonly canToggle: boolean;
   readonly toggle: () => void;
+  /**
+   * STOP HOLDING THE LEASE. Idempotent, and it NEVER starts one.
+   *
+   * `toggle` is a toggle: called on a board that holds nothing it subscribes,
+   * which makes it the wrong thing to wire into a close path. A teardown
+   * registry, a surface exit and a rebind all need "stop, whatever state you
+   * are in", and that is a different verb.
+   */
+  readonly cut: () => void;
 }
 
 function indexRows(snapshot: BoardLiveSnapshot): ReadonlyMap<string, BoardHydratedRow> {
@@ -117,6 +126,18 @@ export function useBoardLiveCapability(): UseQueryResult<
  */
 export function useBoardLive(pools: readonly BoardLivePool[]): BoardLiveState {
   const capability = useBoardLiveCapability();
+  /**
+   * THE POOL SET THIS HOOK IS HOLDING A LEASE FOR, as one comparable string.
+   *
+   * Derived rather than taken on reference identity: a caller that rebuilds
+   * the array is not changing the board, and a caller that swaps board A for
+   * board B is, and only the second may cut a lease. The string is the
+   * cheapest thing that tells those two apart.
+   */
+  const subjectKey = useMemo(
+    () => pools.map((pool) => `${pool.chain}:${pool.pairAddress}`).join("|"),
+    [pools],
+  );
   const [mode, setMode] = useState<BoardDataMode>("snapshot");
   const [rowsByKey, setRowsByKey] = useState<ReadonlyMap<
     string,
@@ -133,6 +154,14 @@ export function useBoardLive(pools: readonly BoardLivePool[]): BoardLiveState {
    */
   const generation = useRef(0);
   const leaseId = useRef<string | null>(null);
+  /**
+   * `mode` for the callbacks that must not be rebuilt when it changes.
+   *
+   * `cut` is registered in the board surface store's teardown registry, and a
+   * disposer whose identity churned every render would re-register on every
+   * commit. The ref keeps the read current without moving the callback.
+   */
+  const modeRef = useRef<BoardDataMode>("snapshot");
 
   /**
    * The id this mount minted for a subscribe that has not answered yet.
@@ -213,17 +242,76 @@ export function useBoardLive(pools: readonly BoardLivePool[]): BoardLiveState {
     return () => off();
   }, []);
 
-  // TEARDOWN. The one cleanup that always runs: unmount, session switch, and
-  // any change of the board this hook is holding. Idempotent by construction.
+  /**
+   * The subject the state below actually describes.
+   *
+   * Seeded with the first subject, so a fresh mount is bound immediately and
+   * never renders a guarded blank frame it does not need. It is re-pointed in
+   * the effect BODY under it, which React runs only after that effect's
+   * cleanup has cut the previous subject's lease.
+   */
+  const boundSubject = useRef(subjectKey);
+
+  // TEARDOWN, ON UNMOUNT **AND ON A CHANGE OF SUBJECT**.
+  //
+  // THE DEFECT THIS DEPENDENCY LIST EXISTS FOR. `release` is a `useCallback`
+  // with no dependencies, so it never changes, so this cleanup used to run on
+  // unmount and NOTHING ELSE - while the comment above it claimed it ran on
+  // "any change of the board this hook is holding". It did not. A caller that
+  // stayed mounted across board A -> board B (the modal chrome does exactly
+  // that) kept A's lease open under B's name, and A's last rows were still in
+  // this hook's state to be published under B's key.
+  //
+  // Depending on `subjectKey` makes the claim true: React runs this cleanup
+  // BEFORE the new subject's effects, so the old lease is cut and released
+  // before anything can bind the new one. The state is reset in the same
+  // cleanup, so the two facts cannot separate.
   useEffect(() => {
+    boundSubject.current = subjectKey;
     return () => {
       generation.current += 1;
       release();
+      setMode("snapshot");
+      setRowsByKey(null);
+      setFetchedAtMs(null);
+      setNotice(null);
     };
-  }, [release]);
+  }, [release, subjectKey]);
+
+  modeRef.current = mode;
 
   const supported =
     capability.data?.ok === true ? capability.data.data.supported : false;
+
+  /**
+   * The one-way half of `toggle`, shared with it rather than copied.
+   *
+   * Bumping the generation FIRST is what makes this safe while a subscribe is
+   * still in flight: the response that eventually lands finds a generation it
+   * no longer owns and releases the lease it was granted instead of painting
+   * it. Safe to call twice, and safe when nothing is held.
+   */
+  const cut = useCallback((): void => {
+    // NOTHING HELD IS NOTHING TO STOP, and this guard is what makes `cut` safe
+    // to hand to a teardown registry that fires on every close path. Without
+    // it, a cut arriving at a board that already failed to subscribe would
+    // wipe the provider's own sentence off the helper line and replace an
+    // honest "Market channel is busy." with the ordinary idle copy - the
+    // reader would be told nothing about why their toggle came back off.
+    if (
+      leaseId.current === null &&
+      pendingRequestId.current === null &&
+      modeRef.current !== "live-connecting"
+    ) {
+      return;
+    }
+    generation.current += 1;
+    release();
+    setMode("live-off");
+    setRowsByKey(null);
+    setFetchedAtMs(null);
+    setNotice(null);
+  }, [release]);
 
   const toggle = useCallback((): void => {
     // TURNING IT OFF IS ALWAYS ALLOWED, including while a subscribe is still in
@@ -238,12 +326,7 @@ export function useBoardLive(pools: readonly BoardLivePool[]): BoardLiveState {
     ) {
       // Turning it OFF. The generation moves first, so a subscribe response
       // still in flight can no longer publish anything.
-      generation.current += 1;
-      release();
-      setMode("live-off");
-      setRowsByKey(null);
-      setFetchedAtMs(null);
-      setNotice(null);
+      cut();
       return;
     }
 
@@ -305,7 +388,7 @@ export function useBoardLive(pools: readonly BoardLivePool[]): BoardLiveState {
       .finally(() => {
         setBusy(false);
       });
-  }, [busy, capability.data, mode, pools, release, supported]);
+  }, [busy, capability.data, cut, mode, pools, release, supported]);
 
   // A build with no site bridge says so in the toggle's own label rather than
   // waiting for a click it will refuse. `snapshot` is the only mode this
@@ -315,12 +398,26 @@ export function useBoardLive(pools: readonly BoardLivePool[]): BoardLiveState {
       ? "live-unsupported"
       : mode;
 
+  /**
+   * THE PUBLICATION GUARD, and it is deliberately in front of the return
+   * rather than inside a consumer.
+   *
+   * The cleanup above resets the state, but a state reset is a re-render: for
+   * the ONE commit in which the subject has already changed and the reset has
+   * not landed yet, this hook would otherwise hand board A's rows back to a
+   * caller that is now rendering board B. Guarding at the point of return
+   * makes that commit impossible to observe, and it costs nothing on every
+   * other commit, where the ref and the argument agree.
+   */
+  const bound = boundSubject.current === subjectKey;
+
   return {
-    mode: resolvedMode,
-    rowsByKey,
-    fetchedAtMs,
-    notice,
+    mode: bound ? resolvedMode : "snapshot",
+    rowsByKey: bound ? rowsByKey : null,
+    fetchedAtMs: bound ? fetchedAtMs : null,
+    notice: bound ? notice : null,
     canToggle: !busy && capability.isSuccess && supported,
     toggle,
+    cut,
   };
 }

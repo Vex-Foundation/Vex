@@ -101,6 +101,9 @@ export { RETURN_TO_SHELL } from "./uiStore/shell-route.js";
 
 import type { ShellRoute } from "./uiStore/shell-route.js";
 
+/** The BOOK panel's two instruments. See `UiState.bookTab`. */
+export type BookTab = "portfolio" | "board";
+
 export interface UiLogEntry {
   readonly id: string;
   readonly level: "info" | "warn" | "error";
@@ -250,6 +253,19 @@ export interface UiState {
    * sanctioned renderer localStorage path — `check-build-artifacts.mjs`).
    */
   readonly bookSectionOrder: readonly string[];
+  /**
+   * Which BOOK tab is selected: the portfolio instrument or the board.
+   *
+   * A RAIL PREFERENCE, in the same class as `bookOpen` and
+   * `bookSectionOrder`: persisted, so the panel comes back the way the user
+   * left it.
+   *
+   * NEVER WRITTEN PROGRAMMATICALLY. A newly composed board does not switch
+   * the reader's panel out from under them; it lights the unseen dot in
+   * `board-surface-store` and waits to be chosen. `setBookTab` exists for the
+   * tab control and for nothing else.
+   */
+  readonly bookTab: BookTab;
   /** Set the theme choice: resolves + writes documentElement in one step. */
   readonly setThemePreference: (value: VexThemePreference) => void;
   readonly setSidebarOpen: (value: boolean) => void;
@@ -325,6 +341,8 @@ export interface UiState {
   readonly setHideDustBalances: (value: boolean) => void;
   readonly setNotificationsEnabled: (value: boolean) => void;
   readonly setBookSectionOrder: (order: readonly string[]) => void;
+  /** User-driven only: the tab control calls this and nothing else does. */
+  readonly setBookTab: (tab: BookTab) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
 }
@@ -363,6 +381,7 @@ export const useUiStore = create<UiState>()(
       hideDustBalances: true,
       notificationsEnabled: true,
       bookSectionOrder: [],
+      bookTab: "portfolio",
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setSidebarWidth: (px) => set({ sidebarWidth: clampSidebarWidth(px) }),
       setBookWidth: (px) => set({ bookWidth: clampBookWidth(px) }),
@@ -420,6 +439,7 @@ export const useUiStore = create<UiState>()(
       setHideDustBalances: (hideDustBalances) => set({ hideDustBalances }),
       setNotificationsEnabled: (notificationsEnabled) => set({ notificationsEnabled }),
       setBookSectionOrder: (bookSectionOrder) => set({ bookSectionOrder }),
+      setBookTab: (bookTab) => set({ bookTab }),
       appendLog: (entry) =>
         set((state) => ({
           logBuffer: [...state.logBuffer, entry].slice(-MAX_RENDER_LOGS),
@@ -428,7 +448,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 13,
+      version: 14,
       // Re-stamp the document root once the coerced, resolved theme is
       // known - theme-boot.js painted the pre-bundle frame from the RAW
       // payload, and a tampered value must not survive on <html>.

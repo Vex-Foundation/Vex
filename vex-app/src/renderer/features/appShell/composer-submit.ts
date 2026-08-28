@@ -7,7 +7,9 @@
  * queue (a submit while a turn is in flight queues instead of dropping,
  * and the head auto-drains when the session goes idle - A27), and the
  * welcome→create hand-off that fires a freshly created session's first
- * turn. The draft itself lives in the per-session draft store (B1). No JSX.
+ * turn, and the board's Ask VEX hand-off (A4) - which reaches the agent
+ * through the SAME dispatch every typed message takes, so the board modal
+ * needs no submit path of its own. The draft itself lives in the per-session draft store (B1). No JSX.
  * Stop-availability reading is split into `composer-submit/`.
  */
 
@@ -32,6 +34,7 @@ import {
 } from "../../lib/composer-queue.js";
 import { showToast } from "../../lib/toast.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { useBoardAskIntentStore } from "./Board/board-ask-intent.js";
 import { readStopAvailability } from "./composer-submit/stop-availability.js";
 import {
   STEERED_TOAST_TEXT,
@@ -162,6 +165,13 @@ export function useComposerSubmit(
   );
   const setSessionReasoningEffort = useUiStore(
     (s) => s.setSessionReasoningEffort,
+  );
+  const askIntent = useBoardAskIntentStore((s) => s.intent);
+  const consumeBoardAskIntent = useBoardAskIntentStore(
+    (s) => s.consumeBoardAskIntent,
+  );
+  const clearBoardAskIntent = useBoardAskIntentStore(
+    (s) => s.clearBoardAskIntent,
   );
   const runtimeQuery = useRuntimeState(sessionId);
   const requestStop = useRequestStop();
@@ -383,6 +393,56 @@ export function useComposerSubmit(
   // the "AWAITING SIGNATURE" tag above the pill.
   const awaitingApproval = runStatus === "paused_approval";
 
+  /**
+   * THE ONE HIGH-LEVEL DISPATCH for a finished message in a known session.
+   *
+   * Everything a message must pass through before it can reach the agent
+   * lives here and nowhere else: the in-flight mutex, the steering attempt
+   * with the queue as its fallback, the mission free-text gate, and
+   * `runChatSubmit`'s failure/retry contract. The composer's own Send calls
+   * it, and so does the board's Ask VEX hand-off below - which is exactly why
+   * that surface needs no submit path of its own (A4).
+   *
+   * The DRAFT is not this function's business. Its caller decides whether the
+   * text came from the field and therefore whether the field should clear.
+   */
+  const dispatchMessage = useCallback(
+    async (message: string): Promise<void> => {
+      const target = sessionId;
+      if (target === null || message.length === 0) return;
+      // THE MISSION GATE IS FIRST AND IT IS UNCONDITIONAL. Free text is
+      // refused while a mission run is active - mission controls live in the
+      // MissionControls strip above, not in the composer - and steering or
+      // queueing is still free text reaching that run. Ordering the gate
+      // AFTER the in-flight branch left exactly one hole: a mission run with a
+      // foreground turn in flight took a board Ask VEX hand-off as an
+      // interrupt, because that surface enters here rather than through
+      // `onSubmit`. A4 requires Ask VEX to obey the same rules as a typed
+      // message, and the only way that holds for every caller is for the gate
+      // to sit above every other branch.
+      if (freeTextGate) {
+        setNotice({ tone: "error", text: gatedReason(runStatus) });
+        return;
+      }
+      // A submit while a turn is already in flight STEERS the live turn
+      // (A33): the engine persists the message as an interrupt the loop
+      // reads at its next tool-step boundary, and the transcript shows the
+      // steered row. When steering is refused (turn just ended, parked run)
+      // the message QUEUES instead (A27) - never dropped, never doubled.
+      if (submitPending || inFlightRef.current.has(target)) {
+        const steerOutcome = await trySteerLiveTurn(target, message);
+        if (steerOutcome === "steered") {
+          showToast(STEERED_TOAST_TEXT);
+          return;
+        }
+        enqueueMessage(target, message);
+        return;
+      }
+      await runChatSubmit(message);
+    },
+    [sessionId, submitPending, freeTextGate, runStatus, runChatSubmit],
+  );
+
   const onSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>): Promise<void> => {
       event.preventDefault();
@@ -410,32 +470,21 @@ export function useComposerSubmit(
         openCreateSession(message, effectiveReasoningEffort);
         return;
       }
-      // A submit while a turn is already in flight STEERS the live turn
-      // (A33): the engine persists the message as an interrupt the loop
-      // reads at its next tool-step boundary, and the transcript shows the
-      // steered row. When steering is refused (turn just ended, parked run)
-      // the message QUEUES instead (A27) - never dropped, never doubled.
-      if (submitPending || inFlightRef.current.has(sessionId)) {
-        setDraft("");
-        const steerOutcome = await trySteerLiveTurn(sessionId, message);
-        if (steerOutcome === "steered") {
-          showToast(STEERED_TOAST_TEXT);
-          return;
-        }
-        enqueueMessage(sessionId, message);
-        return;
-      }
-      // Free text is gated while a mission run is active — mission controls
-      // live in the MissionControls strip above, not in the composer.
+      // The GATED case keeps the draft: a message refused by the mission gate
+      // was never sent, so clearing the field would delete what the user
+      // wrote. This branch is BUSY-INDEPENDENT and must stay so. The gate now
+      // sits at the top of `dispatchMessage`, so a gated message is refused
+      // whether or not a turn is in flight; a guard that still let the busy
+      // case through would clear the field and then have the dispatch refuse
+      // it, which deletes what the user typed. Every other branch is on its
+      // way to the agent, so the field clears optimistically and
+      // `runChatSubmit` owns restoring it on a failure that cannot retry.
       if (freeTextGate) {
         setNotice({ tone: "error", text: gatedReason(runStatus) });
         return;
       }
-      // Clear optimistically — the message is on its way to the agent and the
-      // transcript already shows it. runChatSubmit owns failure handling
-      // (retryable → inline Retry; otherwise restore the draft).
       setDraft("");
-      await runChatSubmit(message);
+      await dispatchMessage(message);
     },
     [
       sessionId,
@@ -444,10 +493,40 @@ export function useComposerSubmit(
       freeTextGate,
       openCreateSession,
       runStatus,
-      submitPending,
-      runChatSubmit,
+      setDraft,
+      dispatchMessage,
     ],
   );
+
+  // BOARD ASK VEX HAND-OFF (A4). A board surface parks a finished question -
+  // context envelope and all - and this composer, the resident one, dispatches
+  // it through `dispatchMessage` above. Three properties the panel could not
+  // give itself:
+  //
+  //  - SESSION-KEYED: an intent for another session is DROPPED here rather
+  //    than sent, so a question about session A's board can never land in
+  //    session B's transcript because the reader switched while it was open;
+  //  - CONSUME-ONCE: the store clears the slot in the same step it hands the
+  //    intent over, keyed by `intentId`, so StrictMode's double-invoked effect
+  //    finds nothing on its second pass;
+  //  - the SAME RULES as a typed message: mutex, mission gate, steering,
+  //    queue and retry, because it is the same dispatch.
+  useEffect(() => {
+    if (askIntent === null) return;
+    if (sessionId === null || askIntent.sessionId !== sessionId) {
+      clearBoardAskIntent();
+      return;
+    }
+    const taken = consumeBoardAskIntent(askIntent.intentId, sessionId);
+    if (taken === null) return;
+    void dispatchMessage(taken.message);
+  }, [
+    askIntent,
+    sessionId,
+    clearBoardAskIntent,
+    consumeBoardAskIntent,
+    dispatchMessage,
+  ]);
 
   const sendNowAvailable = !submitPending && !freeTextGate && !stopRequested;
 

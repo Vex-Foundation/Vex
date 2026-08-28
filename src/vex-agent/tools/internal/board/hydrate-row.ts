@@ -33,7 +33,9 @@
 import { projectPairRow } from "@tools/dexscreener/screen-core/project.js";
 import { sanitizeIssuerField } from "@tools/dexscreener/sanitize.js";
 import {
+  BOARD_DESCRIPTION_RULE,
   BOARD_ICON_ID_PATTERN,
+  checkBoardText,
   type BoardHydratedRow,
 } from "../../../../lib/board/index.js";
 
@@ -149,6 +151,40 @@ export function boardIconIdFromRow(source: unknown): string | null {
   return BOARD_ICON_ID_PATTERN.test(iconId) ? iconId : null;
 }
 
+/**
+ * The base token's CMS description, or null.
+ *
+ * SAME NSFW RULE AS THE ICON, and for the same reason: a profile the provider
+ * flagged is a profile this board carries nothing from, artwork or prose
+ * alike. Nothing else about the card is suppressed - the pool, its figures and
+ * the agent's caption are facts and are still shown.
+ *
+ * The blurb is UNTRUSTED PROVIDER TEXT and is admitted only when it passes the
+ * same forbidden-code-point table every board string passes
+ * ({@link BOARD_DESCRIPTION_RULE}). A blurb that fails, for length or for a
+ * forbidden class, becomes NULL rather than a cut string: half a description
+ * is a sentence the project did not write, and the honest rendering of "we
+ * could not carry this" is no description at all.
+ *
+ * Anything malformed (absent block, non-string value) is null. This never
+ * throws: an unreadable blurb is a missing paragraph, not a reason to refuse a
+ * board of real market figures.
+ *
+ * Exported because it is a pure decision over a provider row, and the policy
+ * it carries deserves a table test driven by real row shapes rather than an
+ * assertion made through a whole network-shaped hydration.
+ */
+export function boardDescriptionFromRow(source: unknown): string | null {
+  if (typeof source !== "object" || source === null) return null;
+  const profile = (source as Record<string, unknown>)["cmsProfile"];
+  if (typeof profile !== "object" || profile === null) return null;
+  const block = profile as Record<string, unknown>;
+  if (block["nsfw"] === true) return null;
+  const description = block["description"];
+  if (typeof description !== "string") return null;
+  return checkBoardText(description, BOARD_DESCRIPTION_RULE) === null ? description : null;
+}
+
 export interface ProjectBoardRowArgs {
   /**
    * The raw `dex_screener_schema.Pair` row as the batch channel returned it.
@@ -233,5 +269,6 @@ export function projectBoardRow(args: ProjectBoardRowArgs): BoardHydratedRow {
     // Always emitted, null included: the schema reads the key as optional
     // only so boards persisted before this field existed still parse.
     iconId: boardIconIdFromRow(args.source),
+    description: boardDescriptionFromRow(args.source),
   };
 }

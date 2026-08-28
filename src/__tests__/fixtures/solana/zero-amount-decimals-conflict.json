@@ -1,0 +1,27 @@
+{
+  "note": "Hand-built: a ZERO-balance account for BONK claiming decimals 9, while the live wallet's own BONK account claims 5. On-chain a mint has exactly one `decimals`, so this response cannot be trusted. Before the fix the zero account was skipped BEFORE the agreement check and the conflict went unreported, which let a whole-chain replace proceed from a response that had already contradicted itself.",
+  "account": {
+    "pubkey": "ZeroConf1ictAccountPubkey111111111111111111",
+    "account": {
+      "data": {
+        "program": "spl-token",
+        "parsed": {
+          "info": {
+            "isNative": false,
+            "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+            "owner": "BfvP43eVzM7xAu6Pm7yYbqp8RVkbP8R8dCfTvgPp64Pg",
+            "state": "initialized",
+            "tokenAmount": {
+              "amount": "0",
+              "decimals": 9,
+              "uiAmount": null,
+              "uiAmountString": "0"
+            }
+          },
+          "type": "account"
+        },
+        "space": 165
+      }
+    }
+  }
+}

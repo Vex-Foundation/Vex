@@ -53,7 +53,8 @@ export function AnnotationLegend({
         <li
           key={row.key}
           data-annotation-kind={row.kind}
-          className="flex w-max items-center gap-2 whitespace-nowrap rounded-md border border-line-2 bg-surface-1 px-2 py-1 text-[11px]"
+          className="flex w-max items-center gap-2 whitespace-nowrap rounded-md border border-line-2 bg-surface-1 px-2 py-1 text-[12px] leading-[16px]"
+          title={row.label}
         >
           <span
             aria-hidden

@@ -1,0 +1,27 @@
+{
+  "note": "Hand-built: a FROZEN token account. No live probe carried one, and a projection that reads `state` proves nothing against fixtures that are all `initialized`.",
+  "account": {
+    "pubkey": "CKMW8Bz4GMqQ4rN49AswqiEaQiCSXJ6tk5933e5HTmoc",
+    "account": {
+      "data": {
+        "program": "spl-token",
+        "parsed": {
+          "info": {
+            "isNative": false,
+            "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+            "owner": "BfvP43eVzM7xAu6Pm7yYbqp8RVkbP8R8dCfTvgPp64Pg",
+            "state": "frozen",
+            "tokenAmount": {
+              "amount": "250000",
+              "decimals": 5,
+              "uiAmount": null,
+              "uiAmountString": "250000"
+            }
+          },
+          "type": "account"
+        },
+        "space": 165
+      }
+    }
+  }
+}

@@ -5,7 +5,7 @@
  * readable slot registry.
  */
 
-import type { UiState } from "../uiStore.js";
+import type { BookTab, UiState } from "../uiStore.js";
 import {
   coerceThemePreference,
   resolveTheme,
@@ -28,7 +28,18 @@ export function partializeUiState(state: UiState): Record<string, unknown> {
     hideDustBalances: state.hideDustBalances,
     notificationsEnabled: state.notificationsEnabled,
     bookSectionOrder: state.bookSectionOrder,
+    bookTab: state.bookTab,
   };
+}
+
+/**
+ * The BOOK's selected tab, coerced from user-writable storage.
+ *
+ * Anything that is not exactly `"board"` degrades to `"portfolio"`, the
+ * default a fresh install gets.
+ */
+export function coerceBookTab(value: unknown): BookTab {
+  return value === "board" ? "board" : "portfolio";
 }
 
 // Expand-only migrations, oldest first:
@@ -62,6 +73,10 @@ export function partializeUiState(state: UiState): Record<string, unknown> {
 //       the two. A user who deliberately wants chronos re-picks it in
 //       Settings; that choice persists and v13 never runs again. An
 //       explicit `celeris` or `system` is left untouched.
+//   v14: `bookTab` added (the BOOK's Portfolio | Board tabs) - seed
+//       `portfolio`, the same default a fresh install gets. The tab is a rail
+//       preference like `bookOpen`: the user picks it, and nothing in the
+//       product ever writes it programmatically.
 export function migrateUiState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== "object") {
     return persisted;
@@ -94,6 +109,9 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
   }
   if (version < 13 && next["themePreference"] === "chronos") {
     next = { ...next, themePreference: "system" };
+  }
+  if (version < 14 && !("bookTab" in next)) {
+    next = { ...next, bookTab: "portfolio" };
   }
   return next;
 }
@@ -143,6 +161,7 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     hideDustBalances,
     notificationsEnabled,
     bookSectionOrder,
+    bookTab: coerceBookTab(incoming?.bookTab),
     sidebarWidth: coerceSidebarWidth(incoming?.sidebarWidth),
     bookWidth: coerceBookWidth(incoming?.bookWidth),
   };

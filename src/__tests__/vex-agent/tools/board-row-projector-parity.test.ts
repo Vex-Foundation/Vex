@@ -40,8 +40,8 @@ const { projectBoardRow, BOARD_BATCH_RANK_KEY } = await import(
 const NOW_MS = 1_787_000_000_000;
 
 const POOLS = [
-  { chain: "solana", pairAddress: "PairAAA" },
-  { chain: "base", pairAddress: "0xBBB222" },
+  { chain: "solana", pairAddress: "PairAAA", analysis: null },
+  { chain: "base", pairAddress: "0xBBB222", analysis: null },
 ] as const;
 
 /**

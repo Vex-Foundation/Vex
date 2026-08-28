@@ -583,3 +583,117 @@ scope (`task-shapes.ts`, `mission-run.ts`, `mission-setup.ts`,
 of defect, some are arguably deliberate teaching artifacts (the alias-to-
 protocol table in `tool-model.ts`), and each fix carries its own budget diff.
 They are held as a ratcheted inventory in the test, which can only shrink.
+
+## BOARD v3 - TOKEN RADAR (2026-08-26): three surfaces from the owner's mockups
+
+Owner order after the first production render of board v2: build the two
+mockups 1:1 (grid of equal token cards with real photos, chain logos, hero
+price, sparkline, four stat columns, safety chip; a Spotlight view with a live
+CANDLESTICK chart with a volume histogram OVERLAID on the same pane (never a
+second pane: lightweight-charts `CandlestickSeries` plus `HistogramSeries`,
+four resolution pills, one 280 px `h-[280px]` canvas with one ResizeObserver
+and one `remove()`; `vex-app/src/renderer/features/appShell/Board/
+SpotlightChart.tsx`, contract in
+scratchpad/board-lane/SPOTLIGHT-CHART-CONTRACT.md section 1.3, which supersedes
+the earlier AreaSeries ruling), stats panel with Holders, Buy/Sell and
+Liquidity Locked bars, Safety chip plus the model's assessment) inside a
+three-surface architecture: compact chat card -> full modal (grid + Spotlight
++ Ask VEX panel) -> BOOK
+sidebar tab with an Active board module. LIVE is a switch, Spotlight is an
+action button, every feed is cut on every exit.
+
+Plan of record: scratchpad/execution/BOARD-V3-ROOT.md (contract K1-K5,
+amendments A1-A13 from a three-turn external plan review, v4 probe-driven
+decisions C1-C5). Chart annex: scratchpad/board-lane/SPOTLIGHT-CHART-CONTRACT.md
+(derived from installed lightweight-charts 5.2.1 bytes; corrects two
+CHART-PLAYBOOK errors: the prepend offset recipe and the belief that a
+priceFormat change requires chart recreation; mandates inline-SVG sparklines).
+
+Decisions that bind the surface:
+- The board heading is the MODEL-AUTHORED spec.title; the subtitle is derived
+  (pools, date, UTC clock). No fixed product label.
+- spec.analysis (additive optional per pool, <= 10000 chars, notes-class
+  predicate, legacy -> null, writers always emit) is the model's FULL
+  per-token assessment - thesis, what moves the price, the levels with their
+  numbers, the risk read and its invalidation - rendered WHOLE in its own
+  primary section and NOWHERE excerpted; Safety is a separate panel of factual
+  check rows the runtime reads itself, and the chip NEVER colors from prose.
+  The tool description asks the model to lead with the safety read as an ORDER
+  (safety sentence, thesis, what moves the price, levels with numbers, risk and
+  invalidation, what to watch), not because anything is cut. The 10000 is a
+  REFUSAL threshold, never a target.
+- Notes: <= 12 per board, <= 600 chars each (both refusal thresholds; raised
+  from 6 x 280 after a production board of 7 real notes was refused whole).
+- Document byte budget: BOARD_SPEC_MAX_BYTES = 327,680 (320 KiB), reject-only.
+  MEASURED from a generated schema-valid ALL-FIELDS-MAX document
+  (src/__tests__/lib/board/maximal-board-spec.ts: every prose field at its
+  code-point bound, 8 pools, 12 notes, every optional hydration field present
+  at its width, 12 zone annotations, a full 200-bar series of maximum-width
+  decimals): 272,697 bytes in a two-byte script, 161,945 in Latin, leaving
+  54,983 bytes of headroom. The earlier 262,144 / 251,963 pair was hand
+  arithmetic over a SUBSET of the fields (no provider descriptions at bound, no
+  maximum-width hydration labels) and understated the real worst case, so a
+  board the schema ACCEPTED could be refused with nothing the model could
+  shorten. Still refused: emoji-dense assessments (8 x 10,000 code points at 4
+  bytes is 320,000 bytes of analysis alone), refused whole, naming the measured
+  size AND the heaviest pool; nothing is ever trimmed. Downstream invariant:
+  TOOL_ARGS_DISPLAY_CEILING (524,288) must stay above this budget plus the
+  BoardCompose args envelope (the all-fields-max board pretty-prints to 180,476
+  characters in the mapper's own form), or a legal board's args vanish from the
+  transcript.
+- hydration.rows[].description (additive optional, <= 1000 chars, notes-class
+  predicate, legacy -> null, writers always emit) is the PROVIDER's CMS blurb
+  from cmsProfile.description, dropped to null on the same nsfw gate as
+  iconId; untrusted text, rendered as text, never HTML, never read by the
+  safety classifier. Bound sized from the live distribution (VEX served 546
+  chars) and from the byte budget, because the model cannot shorten it.
+- Safety chip = a pure first-match-wins classifier (shared/board/) over the
+  pair-details evidence model {lastGood, lastAttempt}: pending / clear /
+  flagged / conflict / identity-mismatch / unverified / not-indexed /
+  incomplete / unavailable / stale; New pair (< 24 h) takes visual
+  precedence; compact-card counts clean / high risk / unchecked with unknown
+  pools counted. Measured norms (probe P1): security blocks ABSENT on solana
+  for a live trending memecoin (the neutral chip is production traffic),
+  liquidityLocks null on 2 of 4 chains, holderCount present 4/4.
+- LP Locked renders liquidityLocks.lockedPct VERBATIM with the provider's row
+  tag ("Locked 99.99% - Burned"); burned LP inside the provider's lock index
+  is the strongest lock and excluding it would misreport 0%. Never substitute
+  quickintel.lpBurnedPct for the share. Unit "unverified" renders
+  "n/a - unverified", never a number.
+- Cache expiry for details = provider max-age minus age; unknown age
+  (cacheAgeMs absent, measured on ethereum) = freshness consumed, 5 s floor.
+- Live data: one renderer-side owner (board-surface-store, book-local,
+  inspect-store pattern) for the active board and its lease; chat card, modal
+  and sidebar are views. Board-wide scheduler caps board-owned exchanges at
+  two; every channel is cut on the owning surface's exit; Spotlight candles
+  are a renderer-timed, main-bounded poll (vex:boardChart:poll, four pill
+  buckets 1m/60, 15m/96, 2h/84, 8h/90 bars; live-smoked per pill, probe P7).
+- Tape (trades) is loss-safe: block watermark advanced only after atomic
+  publish, continuation while oldest.block > W (exclusive lower bound),
+  bounded backward walk, explicit gapBefore marker when overlap is not
+  reached, identity dedupe with dropped counter, ring 30. TAPE_MAX_PAGES
+  continuation is fixture-proven only: no probe tick reached a full page.
+  DECLARED GATE: one live burst against a hot launch before release.
+- Ask VEX: the token context chip is interpolated into the message text
+  (model-visible iff logged by construction); a session-keyed consumed-once
+  intent (Board/board-ask-intent.ts) is consumed by the RESIDENT composer's
+  single dispatch path (mutex, mission gate, steer, queue, retry); the answer
+  lands in the main chat.
+- BOOK tabs use tabs.tsx keepMounted + scoped ids (inactive tabs used to
+  unmount children); bookTab is the arc's only uiStore slot, persisted, never
+  set programmatically; the unseen dot lights only from a genuine live
+  transcript append (settledIds mechanism).
+- Modal = dialog.tsx with an additive board size variant and a headless
+  header mode (real focus trap; ShellScreen has none); a single
+  BoardModalHost at AppShell level; every close path converges on one store
+  action that bumps generations and cuts feeds first; Spotlight is
+  conditionally unmounted on close.
+
+Execution: A0 (contracts + host, frozen in scratchpad/execution/A0-INTERFACES.md),
+wave A = T1 (grid, chat card, background) + T4 (data services, probes
+P1-P6), A-INT (data seams), wave B = T2 (Spotlight + SpotlightChart) + T3
+(sidebar + Ask VEX) + T4b (candle channel, probe P7). UI builders ran on
+Fable 5 with both mockups read as images before coding (owner order).
+Probe archives: scratchpad/board-v3-probes/ (PROBES.md + json with
+provenance). Verification numbers and the final review verdict: see the
+merge commit of the feat/board-v3 pull request.

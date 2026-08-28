@@ -261,8 +261,8 @@ describe("BoardBlock states", () => {
     const container = renderBoard(
       boardSpec({
         pools: [
-          { chain: "base", pairAddress: "0xaaa111" },
-          { chain: "base", pairAddress: "0xbbb222" },
+          { chain: "base", pairAddress: "0xaaa111", analysis: null },
+          { chain: "base", pairAddress: "0xbbb222", analysis: null },
         ],
         rows: [hydratedRow()],
       }),
@@ -765,8 +765,8 @@ describe("BoardBlock chart anchoring", () => {
   function twoPoolBoardChartingTheSecond() {
     return boardSpec({
       pools: [
-        { chain: "base", pairAddress: "0xaaa111" },
-        { chain: "base", pairAddress: "0xbbb222" },
+        { chain: "base", pairAddress: "0xaaa111", analysis: null },
+        { chain: "base", pairAddress: "0xbbb222", analysis: null },
       ],
       rows: [
         hydratedRow({ baseTokenSymbol: "PEPE" }),

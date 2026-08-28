@@ -26,6 +26,7 @@ import {
   BOARD_ICON_NOT_FOUND_STALE_MS,
   BOARD_ICON_TRANSIENT_STALE_MS,
   boardIconFreshnessMs,
+  boardTokenIconOutcome,
   useBoardTokenIcon,
 } from "../board-icons.js";
 
@@ -119,6 +120,55 @@ describe("boardIconFreshnessMs", () => {
         },
       }),
     ).toBe(Number.POSITIVE_INFINITY);
+  });
+});
+
+describe("boardTokenIconOutcome", () => {
+  /** The two observer fields the decision's signature admits. */
+  function queryOf(
+    data: Result<BoardIconReadResult> | undefined,
+    isError = false,
+  ): { readonly data: Result<BoardIconReadResult> | undefined; readonly isError: boolean } {
+    return { data, isError };
+  }
+
+  const RESULT_ERROR: Result<BoardIconReadResult> = {
+    ok: false,
+    error: {
+      code: "validation.invalid_input",
+      domain: "data",
+      message: "Not a board token icon id.",
+      retryable: false,
+      userActionable: false,
+      redacted: true,
+      correlationId: "00000000-0000-4000-8000-0000000000ff",
+    },
+  };
+
+  it.each<{
+    readonly label: string;
+    readonly iconId: string | null;
+    readonly data: Result<BoardIconReadResult> | undefined;
+    readonly isError?: boolean;
+    readonly kind: string;
+  }>([
+    { label: "no handle: settled absent, nothing asked", iconId: null, data: undefined, kind: "absent" },
+    { label: "in flight", iconId: ID, data: undefined, kind: "loading" },
+    { label: "image", iconId: ID, data: IMAGE, kind: "image" },
+    { label: "absent/not_found", iconId: ID, data: ok({ kind: "absent", reason: "not_found" }), kind: "absent" },
+    { label: "absent/unsupported_image", iconId: ID, data: ok({ kind: "absent", reason: "unsupported_image" }), kind: "absent" },
+    { label: "absent/over_cap", iconId: ID, data: ok({ kind: "absent", reason: "over_cap" }), kind: "absent" },
+    { label: "unavailable/busy", iconId: ID, data: ok({ kind: "unavailable", reason: "busy" }), kind: "unavailable" },
+    { label: "unavailable/transport", iconId: ID, data: ok({ kind: "unavailable", reason: "transport" }), kind: "unavailable" },
+    { label: "unavailable/not_mounted", iconId: ID, data: ok({ kind: "unavailable", reason: "not_mounted" }), kind: "unavailable" },
+    { label: "Result error", iconId: ID, data: RESULT_ERROR, kind: "unavailable" },
+    { label: "query threw", iconId: ID, data: undefined, isError: true, kind: "unavailable" },
+  ])("$label -> $kind", ({ iconId, data, isError, kind }) => {
+    expect(boardTokenIconOutcome(iconId, queryOf(data, isError ?? false)).kind).toBe(kind);
+  });
+
+  it("carries the data URL only in the image outcome", () => {
+    expect(boardTokenIconOutcome(ID, queryOf(IMAGE))).toEqual({ kind: "image", dataUrl: DATA_URL });
   });
 });
 
