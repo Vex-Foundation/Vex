@@ -212,6 +212,68 @@ func TestSignCreateOrderAcceptsReduceOnlyTakeProfitWithTriggerExpiry(t *testing.
 	}
 }
 
+func TestSignCreateGroupedOrdersOCO(t *testing.T) {
+	request := signerRequest{
+		Operation: "signCreateGroupedOrders", PrivateKey: strings.Repeat("1", 80),
+		ChainID: lighterCoreChainID, AccountIndex: "42", APIKeyIndex: 7, Nonce: "9",
+		GroupedOrders: &groupedOrdersRequest{
+			GroupingType: txtypes.GroupingType_OneCancelsTheOther,
+			Orders: []createOrderRequest{
+				{MarketIndex: 0, ClientOrderIndex: "101", BaseAmount: "12500", Price: "280000", IsAsk: 1, OrderType: 2, TimeInForce: 0, ReduceOnly: 1, TriggerPrice: "285000", OrderExpiry: "1893456000000"},
+				{MarketIndex: 0, ClientOrderIndex: "102", BaseAmount: "12500", Price: "325000", IsAsk: 1, OrderType: 4, TimeInForce: 0, ReduceOnly: 1, TriggerPrice: "330000", OrderExpiry: "1893456000000"},
+			},
+		},
+	}
+	response, err := signCreateGroupedOrders(request)
+	if err != nil {
+		t.Fatalf("signCreateGroupedOrders() error = %v", err)
+	}
+	if response.TxType != txtypes.TxTypeL2CreateGroupedOrders {
+		t.Fatalf("TxType = %d, want %d", response.TxType, txtypes.TxTypeL2CreateGroupedOrders)
+	}
+	var info struct {
+		GroupingType uint8
+		Orders       []struct {
+			Type         uint8
+			ReduceOnly   uint8
+			TriggerPrice uint32
+		}
+	}
+	if err := json.Unmarshal([]byte(response.TxInfo), &info); err != nil {
+		t.Fatalf("grouped TxInfo is not JSON: %v", err)
+	}
+	if info.GroupingType != 2 || len(info.Orders) != 2 {
+		t.Fatalf("group shape = type %d len %d", info.GroupingType, len(info.Orders))
+	}
+	if info.Orders[0].Type != 2 || info.Orders[1].Type != 4 || info.Orders[0].ReduceOnly != 1 || info.Orders[1].ReduceOnly != 1 {
+		t.Fatalf("grouped child types or reduce-only flags were not preserved")
+	}
+	if info.Orders[0].TriggerPrice != 285000 || info.Orders[1].TriggerPrice != 330000 {
+		t.Fatalf("grouped trigger prices were not preserved")
+	}
+}
+
+func TestReadRequestRejectsMalformedOCOContract(t *testing.T) {
+	request := signerRequest{
+		Operation: "signCreateGroupedOrders", PrivateKey: strings.Repeat("1", 80),
+		ChainID: lighterCoreChainID, AccountIndex: "42", APIKeyIndex: 7, Nonce: "9",
+		GroupedOrders: &groupedOrdersRequest{
+			GroupingType: txtypes.GroupingType_OneCancelsTheOther,
+			Orders: []createOrderRequest{
+				{MarketIndex: 0, ClientOrderIndex: "101", BaseAmount: "12500", Price: "280000", IsAsk: 1, OrderType: 2, TimeInForce: 0, ReduceOnly: 1, TriggerPrice: "285000", OrderExpiry: "1893456000000"},
+				{MarketIndex: 1, ClientOrderIndex: "102", BaseAmount: "12500", Price: "325000", IsAsk: 1, OrderType: 4, TimeInForce: 0, ReduceOnly: 1, TriggerPrice: "330000", OrderExpiry: "1893456000000"},
+			},
+		},
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if _, err := readRequest(strings.NewReader(string(payload))); err == nil {
+		t.Fatal("readRequest() accepted OCO children from different markets")
+	}
+}
+
 func TestSignCreateSpotOrderPreservesOfficialMarketIndexRange(t *testing.T) {
 	for _, marketIndex := range []int16{txtypes.MinSpotMarketIndex, txtypes.MaxSpotMarketIndex} {
 		t.Run(fmt.Sprintf("market-%d", marketIndex), func(t *testing.T) {

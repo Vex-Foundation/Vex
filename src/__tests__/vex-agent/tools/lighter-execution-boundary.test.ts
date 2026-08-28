@@ -32,6 +32,10 @@ const ORDER_LIFECYCLE_EXECUTION_SOURCE = join(
   ROOT,
   "src/vex-agent/tools/protocols/lighter/order-lifecycle.ts",
 );
+const OCO_EXECUTION_SOURCE = join(
+  ROOT,
+  "src/vex-agent/tools/protocols/lighter/oco-order-execution.ts",
+);
 const WITHDRAWAL_EXECUTION_SOURCE = join(
   ROOT,
   "src/vex-agent/tools/protocols/lighter/withdrawal-execution.ts",
@@ -167,6 +171,7 @@ describe("Lighter execution boundary", () => {
         if (file === EXECUTION_BOUNDARY_SOURCE) continue;
         if (file === ORDER_CREATE_EXECUTION_SOURCE) continue;
         if (file === ORDER_LIFECYCLE_EXECUTION_SOURCE) continue;
+        if (file === OCO_EXECUTION_SOURCE) continue;
         if (file === WITHDRAWAL_EXECUTION_SOURCE) continue;
         const source = readFileSync(file, "utf-8");
         if (
@@ -189,6 +194,7 @@ describe("Lighter execution boundary", () => {
         if (file === EXECUTION_BOUNDARY_SOURCE) continue;
         if (file === ORDER_CREATE_EXECUTION_SOURCE) continue;
         if (file === ORDER_LIFECYCLE_EXECUTION_SOURCE) continue;
+        if (file === OCO_EXECUTION_SOURCE) continue;
         if (file === WITHDRAWAL_EXECUTION_SOURCE) continue;
         const source = readFileSync(file, "utf-8");
         if (/\bsendTx\s*\(/.test(source) || /\bsendTxBatch\s*\(/.test(source)) {

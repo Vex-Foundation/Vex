@@ -23,6 +23,7 @@ const LIGHTER_TOOL_IDS = [
   "lighter.trades",
   "lighter.apiKeys.inspect",
   "lighter.order.preview",
+  "lighter.position.protect",
   "lighter.deposit.status",
   "lighter.withdraw.status",
   "lighter.key.register.status",

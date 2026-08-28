@@ -75,6 +75,20 @@ export interface LighterOrderPreviewParams {
   readonly clientOrderIndexPolicy: string;
 }
 
+export interface LighterOcoProtectionParams {
+  readonly accountIndex?: number;
+  readonly apiKeyIndex?: number | null;
+  readonly marketId?: number;
+  readonly marketSymbol?: string;
+  readonly side: LighterOrderSide;
+  readonly baseAmount: string;
+  readonly stopLossTriggerPrice: string;
+  readonly stopLossPrice: string;
+  readonly takeProfitTriggerPrice: string;
+  readonly takeProfitPrice: string;
+  readonly orderExpiry: number;
+}
+
 function readString(params: Record<string, unknown>, key: string): string | undefined {
   const value = params[key];
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
@@ -405,6 +419,53 @@ export function readLighterOrderPreviewParams(
       reduceOnly: reduceOnly ?? false,
       orderExpiry: orderExpiry.value,
       clientOrderIndexPolicy,
+    },
+  };
+}
+
+export function readLighterOcoProtectionParams(
+  params: Record<string, unknown>,
+  nowMs = Date.now(),
+): ParamRead<LighterOcoProtectionParams> {
+  const accountIndex = readOptionalAccountIndex(params);
+  if (!accountIndex.ok) return accountIndex;
+  const apiKeyIndex = readApiKeyIndex(params);
+  if (!apiKeyIndex.ok) return apiKeyIndex;
+  const marketId = readMarketId(params, false);
+  if (!marketId.ok) return marketId;
+  const marketSymbol = readString(params, "marketSymbol");
+  if (marketId.value === undefined && marketSymbol === undefined) {
+    return { ok: false, reason: "Missing required: marketId or marketSymbol." };
+  }
+  const side = readEnum(params, "side", LIGHTER_ORDER_SIDES, true);
+  if (!side.ok) return side;
+  if (side.value === undefined) return { ok: false, reason: "Missing required: side." };
+  const baseAmount = readRequiredString(params, "baseAmountIn");
+  if (!baseAmount.ok) return baseAmount;
+  const stopLossTriggerPrice = readRequiredString(params, "stopLossTriggerPrice");
+  if (!stopLossTriggerPrice.ok) return stopLossTriggerPrice;
+  const stopLossPrice = readRequiredString(params, "stopLossPrice");
+  if (!stopLossPrice.ok) return stopLossPrice;
+  const takeProfitTriggerPrice = readRequiredString(params, "takeProfitTriggerPrice");
+  if (!takeProfitTriggerPrice.ok) return takeProfitTriggerPrice;
+  const takeProfitPrice = readRequiredString(params, "takeProfitPrice");
+  if (!takeProfitPrice.ok) return takeProfitPrice;
+  const orderExpiry = readOrderExpiry(params, nowMs);
+  if (!orderExpiry.ok) return orderExpiry;
+  return {
+    ok: true,
+    value: {
+      accountIndex: accountIndex.value,
+      apiKeyIndex: apiKeyIndex.value ?? null,
+      marketId: marketId.value,
+      marketSymbol,
+      side: side.value,
+      baseAmount: baseAmount.value,
+      stopLossTriggerPrice: stopLossTriggerPrice.value,
+      stopLossPrice: stopLossPrice.value,
+      takeProfitTriggerPrice: takeProfitTriggerPrice.value,
+      takeProfitPrice: takeProfitPrice.value,
+      orderExpiry: orderExpiry.value,
     },
   };
 }

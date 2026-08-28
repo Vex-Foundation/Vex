@@ -22,6 +22,8 @@ import {
 import { assertLighterOrderCreateApprovalBinding } from "../approval-binding.js";
 import { buildLighterOrderApprovalDisclosure } from "../approval-disclosure.js";
 import { lighterPhaseOneOrderPolicyFailure } from "@tools/lighter/order-policy.js";
+import * as lighterOcoExecutionIntentsRepo from "@vex-agent/db/repos/lighter-oco-execution-intents.js";
+import { executePreparedLighterOco } from "./oco.js";
 
 function readRequiredString(
   params: Record<string, unknown>,
@@ -283,6 +285,13 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
 
     const intent = await lighterOrderExecutionIntentsRepo.findByIntentId(sessionId, intentId.value);
     if (!intent) {
+      const ocoIntent = await lighterOcoExecutionIntentsRepo.findByIntentId(
+        sessionId,
+        intentId.value,
+      );
+      if (ocoIntent !== null) {
+        return executePreparedLighterOco(ocoIntent, context.approvalId);
+      }
       return fail(`No Lighter order execution intent ${intentId.value} found in this session.`);
     }
     try {

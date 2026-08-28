@@ -15,6 +15,13 @@ import type {
   LighterCreateOrderSigningInput,
   LighterSignerAdapter,
 } from "./signer-adapter.js";
+import {
+  LIGHTER_TX_TYPE_CREATE_GROUPED_ORDERS,
+} from "./oco-order.js";
+import type {
+  LighterCreateGroupedOrdersSigningInput,
+  LighterGroupedOrderSignerAdapter,
+} from "./signer-grouped-orders.js";
 import { LIGHTER_SIGNER_CHAIN_IDS } from "./signer-adapter.js";
 import type {
   LighterCoreWithdrawalSignerAdapter,
@@ -103,6 +110,18 @@ interface LighterSignerBinaryCreateOrderPayload extends LighterSignerBinaryBaseP
   };
 }
 
+interface LighterSignerBinaryGroupedOrdersPayload extends LighterSignerBinaryBasePayload {
+  readonly operation: "signCreateGroupedOrders";
+  readonly nonce: string;
+  readonly groupedOrders: {
+    readonly groupingType: 2;
+    readonly orders: readonly [
+      LighterSignerBinaryCreateOrderPayload["order"],
+      LighterSignerBinaryCreateOrderPayload["order"],
+    ];
+  };
+}
+
 interface LighterSignerBinaryCancelOrderPayload extends LighterSignerBinaryBasePayload {
   readonly operation: "signCancelOrder";
   readonly nonce: string;
@@ -165,6 +184,7 @@ type LighterSignerBinaryPayload =
   | LighterSignerBinaryDerivePublicKeyPayload
   | LighterSignerBinaryAuthPayload
   | LighterSignerBinaryCreateOrderPayload
+  | LighterSignerBinaryGroupedOrdersPayload
   | LighterSignerBinaryCancelOrderPayload
   | LighterSignerBinaryModifyOrderPayload
   | LighterSignerBinaryCancelAllOrdersPayload
@@ -285,6 +305,43 @@ export function createLighterSignerBinaryAdapter(
         clientOrderIndex: input.order.clientOrderIndex,
         matchHash: input.order.matchHash,
         txType: output.txType,
+        txInfo: output.txInfo,
+        txHash: output.txHash,
+      };
+    },
+  };
+}
+
+export function createLighterGroupedOrderSignerBinaryAdapter(
+  options: LighterSignerBinaryAdapterOptions = {},
+): LighterGroupedOrderSignerAdapter {
+  const runner = options.runner ?? runLighterSignerBinary;
+  const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  return {
+    source: "official_lighter_signer",
+    signCreateGroupedOrders: async (input) => {
+      const raw = await runner({
+        binaryPath,
+        payload: buildGroupedOrdersPayload(input),
+        timeoutMs,
+      });
+      const output = parseSignerOutput(raw);
+      if (output.txType !== LIGHTER_TX_TYPE_CREATE_GROUPED_ORDERS) {
+        throw signerProcessFailed(raw);
+      }
+      return {
+        kind: "lighter_create_grouped_orders_signer_result",
+        environment: input.environment,
+        accountIndex: input.accountIndex,
+        apiKeyIndex: input.apiKeyIndex,
+        nonce: input.nonce,
+        clientOrderIndexes: [
+          input.group.orders[0].clientOrderIndex,
+          input.group.orders[1].clientOrderIndex,
+        ],
+        matchHash: input.group.matchHash,
+        txType: LIGHTER_TX_TYPE_CREATE_GROUPED_ORDERS,
         txInfo: output.txInfo,
         txHash: output.txHash,
       };
@@ -660,6 +717,37 @@ function buildSignerPayload(input: LighterCreateOrderSigningInput): LighterSigne
       reduceOnly: input.order.reduceOnly ? 1 : 0,
       triggerPrice: input.order.triggerPriceInteger,
       orderExpiry: String(input.order.orderExpiryMs),
+    },
+  };
+}
+
+function buildGroupedOrdersPayload(
+  input: LighterCreateGroupedOrdersSigningInput,
+): LighterSignerBinaryGroupedOrdersPayload {
+  const orderPayload = (
+    order: LighterCreateGroupedOrdersSigningInput["group"]["orders"][number],
+  ): LighterSignerBinaryCreateOrderPayload["order"] => ({
+    marketIndex: order.marketIndex,
+    clientOrderIndex: order.clientOrderIndex,
+    baseAmount: order.baseAmountInteger,
+    price: order.priceInteger,
+    isAsk: order.isAsk ? 1 : 0,
+    orderType: order.orderTypeCode,
+    timeInForce: order.timeInForceCode,
+    reduceOnly: order.reduceOnly ? 1 : 0,
+    triggerPrice: order.triggerPriceInteger,
+    orderExpiry: String(order.orderExpiryMs),
+  });
+  return {
+    operation: "signCreateGroupedOrders",
+    privateKey: input.secret.privateKey,
+    chainId: input.chainId,
+    accountIndex: String(input.accountIndex),
+    apiKeyIndex: input.apiKeyIndex,
+    nonce: input.nonce,
+    groupedOrders: {
+      groupingType: 2,
+      orders: [orderPayload(input.group.orders[0]), orderPayload(input.group.orders[1])],
     },
   };
 }

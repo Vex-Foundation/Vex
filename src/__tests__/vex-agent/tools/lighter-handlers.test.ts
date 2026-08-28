@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   previewsRepo: {
     create: vi.fn(),
     findFreshById: vi.fn(),
+    findById: vi.fn(),
     findLatestFresh: vi.fn(),
   },
   executionIntentsRepo: {
@@ -42,6 +43,16 @@ const mocks = vi.hoisted(() => ({
     markRepairResolved: vi.fn(),
     listStreamWatchable: vi.fn(),
     markStreamOutcome: vi.fn(),
+  },
+  ocoIntentsRepo: {
+    findLiveByMatch: vi.fn(),
+    createApprovalPendingWith: vi.fn(),
+    findByIntentId: vi.fn(),
+    findByIntentIdAnySession: vi.fn(),
+    listUnresolved: vi.fn(),
+    markApprovalDecision: vi.fn(),
+    markProviderOutcome: vi.fn(),
+    markSequencerPending: vi.fn(),
   },
   lifecycleIntentsRepo: {
     findAnyLiveOrderMutation: vi.fn(),
@@ -87,6 +98,7 @@ vi.mock("@tools/lighter/client.js", () => ({
 vi.mock("@vex-agent/db/repos/lighter-order-previews.js", () => ({
   create: mocks.previewsRepo.create,
   findFreshById: mocks.previewsRepo.findFreshById,
+  findById: mocks.previewsRepo.findById,
   findLatestFresh: mocks.previewsRepo.findLatestFresh,
 }));
 
@@ -107,6 +119,17 @@ vi.mock("@vex-agent/db/repos/lighter-order-execution-intents.js", () => ({
     "sequencer_pending",
     "ambiguous",
   ],
+}));
+
+vi.mock("@vex-agent/db/repos/lighter-oco-execution-intents.js", () => ({
+  findLiveByMatch: mocks.ocoIntentsRepo.findLiveByMatch,
+  createApprovalPendingWith: mocks.ocoIntentsRepo.createApprovalPendingWith,
+  findByIntentId: mocks.ocoIntentsRepo.findByIntentId,
+  findByIntentIdAnySession: mocks.ocoIntentsRepo.findByIntentIdAnySession,
+  listUnresolved: mocks.ocoIntentsRepo.listUnresolved,
+  markApprovalDecision: mocks.ocoIntentsRepo.markApprovalDecision,
+  markProviderOutcome: mocks.ocoIntentsRepo.markProviderOutcome,
+  markSequencerPending: mocks.ocoIntentsRepo.markSequencerPending,
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-order-lifecycle-intents.js", () => ({
@@ -522,8 +545,13 @@ beforeEach(() => {
   mocks.sessionLock.withSessionControlLock.mockImplementation(async (_sessionId, fn) => fn({}));
   mocks.sessionLock.withSessionControlLocks.mockImplementation(async (_sessionIds, fn) => fn({}));
   mocks.previewsRepo.findFreshById.mockResolvedValue(previewRow());
+  mocks.previewsRepo.findById.mockResolvedValue(previewRow());
   mocks.executionIntentsRepo.findLiveByPreview.mockResolvedValue(null);
   mocks.executionIntentsRepo.createApprovalPendingWith.mockResolvedValue(executionIntentRow());
+  mocks.ocoIntentsRepo.findLiveByMatch.mockResolvedValue(null);
+  mocks.ocoIntentsRepo.findByIntentId.mockResolvedValue(null);
+  mocks.ocoIntentsRepo.findByIntentIdAnySession.mockResolvedValue(null);
+  mocks.ocoIntentsRepo.listUnresolved.mockResolvedValue([]);
   mocks.approvalsRepo.getByIdForSession.mockResolvedValue(approvalQueueRow());
   mocks.approvalIntentsRepo.getByApprovalId.mockResolvedValue(approvalIntentAuditRow());
   mocks.onboarding.buildReaders.mockReturnValue({ marker: "onboarding-readers" });

@@ -144,6 +144,19 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
   },
+  "lighter.position.protect": {
+    embeddingText: embeddingText(
+      `Preview and prepare native Lighter OCO protection for one existing perpetual position using exactly one reduce-only stop-loss and one same-size reduce-only take-profit. ` +
+      `Use when: the user wants both a stop loss and take profit on an existing Lighter long or short. Require exact size, reducing side, both trigger prices, both hard execution bounds, and expiry; never guess. This does not open a position and does not support entry-plus-protection, OTO, or OTOCO. ` +
+      `After one exact approval, Vex signs and submits one native Lighter grouped transaction. It reports active protection only after both exact children are visible from authenticated provider evidence, never emulates cancellation, and never retries uncertainty. ` +
+      `Example queries: protect my 0.1 ETH Lighter long with stop 2900 bound 2850 and take profit 3300 bound 3250, add stop loss and take profit to my RHC perp position.`,
+    ),
+    aliases: ["lighter oco", "lighter stop loss and take profit", "protect lighter position", "paired tp sl"],
+    exampleIntents: ["protect my Lighter long with a stop loss and take profit", "add native OCO to my RHC perp position"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "low",
+  },
   "lighter.order.create.prepare": {
     embeddingText: embeddingText(
       `Prepare an approval-gated Lighter order create from a fresh persisted preview and opaque encrypted-vault credential reference. ` +
@@ -458,7 +471,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 36;
+const EXPECTED_COUNT = 37;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

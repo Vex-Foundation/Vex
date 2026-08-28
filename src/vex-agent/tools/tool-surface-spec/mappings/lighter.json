@@ -57,6 +57,11 @@
       "rationale": "Read-only order preview that prepares no state by itself."
     },
     {
+      "toolId": "lighter.position.protect",
+      "publicName": "lighter__position_protect",
+      "rationale": "Read-only native OCO preview that prepares one approval-gated grouped protection intent."
+    },
+    {
       "toolId": "lighter.deposit.status",
       "publicName": "lighter__deposit_status",
       "rationale": "Durable deposit intent status and reconciliation read."

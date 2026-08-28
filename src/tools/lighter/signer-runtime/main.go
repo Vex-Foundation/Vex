@@ -51,6 +51,7 @@ type signerRequest struct {
 	L1Signature         string                  `json:"l1Signature"`
 	ExpectedL1Address   string                  `json:"expectedL1Address"`
 	Order               *createOrderRequest     `json:"order"`
+	GroupedOrders       *groupedOrdersRequest   `json:"groupedOrders"`
 	CancelOrder         *cancelOrderRequest     `json:"cancelOrder"`
 	ModifyOrder         *modifyOrderRequest     `json:"modifyOrder"`
 	CancelAllOrders     *cancelAllOrdersRequest `json:"cancelAllOrders"`
@@ -68,6 +69,11 @@ type createOrderRequest struct {
 	ReduceOnly       uint8  `json:"reduceOnly"`
 	TriggerPrice     string `json:"triggerPrice"`
 	OrderExpiry      string `json:"orderExpiry"`
+}
+
+type groupedOrdersRequest struct {
+	GroupingType uint8                `json:"groupingType"`
+	Orders       []createOrderRequest `json:"orders"`
 }
 
 type withdrawRequest struct {
@@ -130,6 +136,8 @@ func main() {
 		response, err = createAccountAuth(request)
 	case "signCreateOrder":
 		response, err = signCreateOrder(request)
+	case "signCreateGroupedOrders":
+		response, err = signCreateGroupedOrders(request)
 	case "signCancelOrder":
 		response, err = signCancelOrder(request)
 	case "signModifyOrder":
@@ -159,7 +167,7 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 	if err := decoder.Decode(&request); err != nil {
 		return request, fmt.Errorf("invalid signer request")
 	}
-	if request.Operation != "signCreateOrder" && request.Operation != "signCancelOrder" && request.Operation != "signModifyOrder" &&
+	if request.Operation != "signCreateOrder" && request.Operation != "signCreateGroupedOrders" && request.Operation != "signCancelOrder" && request.Operation != "signModifyOrder" &&
 		request.Operation != "signCancelAllOrders" && request.Operation != "signWithdraw" && request.Operation != "signChangePubKey" &&
 		request.Operation != "checkClient" &&
 		request.Operation != "createAccountAuth" &&
@@ -301,33 +309,67 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 		}
 		return request, nil
 	}
+	if nonce, err := parseNonNegativeInt64(request.Nonce, "nonce"); err != nil || nonce > maxRegistrationNonce {
+		return request, fmt.Errorf("invalid nonce")
+	}
+	if request.Operation == "signCreateGroupedOrders" {
+		if request.GroupedOrders == nil || request.GroupedOrders.GroupingType != txtypes.GroupingType_OneCancelsTheOther || len(request.GroupedOrders.Orders) != 2 {
+			return request, fmt.Errorf("invalid grouped orders")
+		}
+		seenClientOrderIndexes := make(map[string]struct{}, 2)
+		for index := range request.GroupedOrders.Orders {
+			order := &request.GroupedOrders.Orders[index]
+			if err := validateCreateOrderRequest(order); err != nil {
+				return request, fmt.Errorf("invalid grouped order")
+			}
+			if _, exists := seenClientOrderIndexes[order.ClientOrderIndex]; exists {
+				return request, fmt.Errorf("duplicate grouped client order index")
+			}
+			seenClientOrderIndexes[order.ClientOrderIndex] = struct{}{}
+		}
+		stopLoss := request.GroupedOrders.Orders[0]
+		takeProfit := request.GroupedOrders.Orders[1]
+		if stopLoss.MarketIndex != takeProfit.MarketIndex ||
+			stopLoss.BaseAmount != takeProfit.BaseAmount ||
+			stopLoss.IsAsk != takeProfit.IsAsk ||
+			stopLoss.ReduceOnly != 1 || takeProfit.ReduceOnly != 1 ||
+			stopLoss.OrderExpiry == "0" || stopLoss.OrderExpiry != takeProfit.OrderExpiry ||
+			stopLoss.OrderType != txtypes.StopLossOrder || takeProfit.OrderType != txtypes.TakeProfitOrder ||
+			stopLoss.TimeInForce != txtypes.ImmediateOrCancel || takeProfit.TimeInForce != txtypes.ImmediateOrCancel ||
+			stopLoss.TriggerPrice == "0" || takeProfit.TriggerPrice == "0" {
+			return request, fmt.Errorf("invalid OCO child contract")
+		}
+		return request, nil
+	}
 	if request.Order == nil {
 		return request, fmt.Errorf("missing create order")
 	}
-	if _, err := parseNonNegativeInt64(request.Nonce, "nonce"); err != nil {
-		return request, fmt.Errorf("invalid nonce")
-	}
-	if _, err := parseNonNegativeInt64(request.Order.ClientOrderIndex, "client order index"); err != nil {
-		return request, fmt.Errorf("invalid client order index")
-	}
-	if _, err := parsePositiveInt64(request.Order.BaseAmount, "base amount"); err != nil {
-		return request, fmt.Errorf("invalid base amount")
-	}
-	if _, err := parsePositiveUint32(request.Order.Price, "price"); err != nil {
-		return request, fmt.Errorf("invalid price")
-	}
-	if request.Order.IsAsk > 1 || request.Order.ReduceOnly > 1 {
-		return request, fmt.Errorf("invalid boolean field")
-	}
-	if _, err := parseNonNegativeUint32(request.Order.TriggerPrice, "trigger price"); err != nil {
-		return request, fmt.Errorf("invalid trigger price")
-	}
-	// Expiry 0 is Lighter's nil expiry, required for immediate-or-cancel orders.
-	// The per-order-type expiry rule is enforced by lighter-go's Validate().
-	if _, err := parseNonNegativeInt64(request.Order.OrderExpiry, "order expiry"); err != nil {
-		return request, fmt.Errorf("invalid order expiry")
+	if err := validateCreateOrderRequest(request.Order); err != nil {
+		return request, err
 	}
 	return request, nil
+}
+
+func validateCreateOrderRequest(order *createOrderRequest) error {
+	if _, err := parseNonNegativeInt64(order.ClientOrderIndex, "client order index"); err != nil {
+		return fmt.Errorf("invalid client order index")
+	}
+	if _, err := parsePositiveInt64(order.BaseAmount, "base amount"); err != nil {
+		return fmt.Errorf("invalid base amount")
+	}
+	if _, err := parsePositiveUint32(order.Price, "price"); err != nil {
+		return fmt.Errorf("invalid price")
+	}
+	if order.IsAsk > 1 || order.ReduceOnly > 1 {
+		return fmt.Errorf("invalid boolean field")
+	}
+	if _, err := parseNonNegativeUint32(order.TriggerPrice, "trigger price"); err != nil {
+		return fmt.Errorf("invalid trigger price")
+	}
+	if _, err := parseNonNegativeInt64(order.OrderExpiry, "order expiry"); err != nil {
+		return fmt.Errorf("invalid order expiry")
+	}
+	return nil
 }
 
 func checkClient(request signerRequest) (signerResponse, error) {
@@ -600,6 +642,61 @@ func signCreateOrder(request signerRequest) (signerResponse, error) {
 		TxInfo: txInfo,
 		TxHash: tx.GetTxHash(),
 	}, nil
+}
+
+func signCreateGroupedOrders(request signerRequest) (signerResponse, error) {
+	if request.GroupedOrders == nil || request.GroupedOrders.GroupingType != txtypes.GroupingType_OneCancelsTheOther || len(request.GroupedOrders.Orders) != 2 {
+		return signerResponse{}, fmt.Errorf("invalid grouped orders request")
+	}
+	client, accountIndex, nonce, err := lifecycleClient(request)
+	if err != nil {
+		return signerResponse{}, err
+	}
+	orders := make([]*types.CreateOrderTxReq, 0, 2)
+	for index := range request.GroupedOrders.Orders {
+		orderRequest := &request.GroupedOrders.Orders[index]
+		clientOrderIndex, err := parseNonNegativeInt64(orderRequest.ClientOrderIndex, "client order index")
+		if err != nil {
+			return signerResponse{}, err
+		}
+		baseAmount, err := parsePositiveInt64(orderRequest.BaseAmount, "base amount")
+		if err != nil {
+			return signerResponse{}, err
+		}
+		price, err := parsePositiveUint32(orderRequest.Price, "price")
+		if err != nil {
+			return signerResponse{}, err
+		}
+		triggerPrice, err := parseNonNegativeUint32(orderRequest.TriggerPrice, "trigger price")
+		if err != nil {
+			return signerResponse{}, err
+		}
+		orderExpiry, err := parseNonNegativeInt64(orderRequest.OrderExpiry, "order expiry")
+		if err != nil {
+			return signerResponse{}, err
+		}
+		orders = append(orders, &types.CreateOrderTxReq{
+			MarketIndex: orderRequest.MarketIndex, ClientOrderIndex: clientOrderIndex,
+			BaseAmount: baseAmount, Price: price, IsAsk: orderRequest.IsAsk,
+			Type: orderRequest.OrderType, TimeInForce: orderRequest.TimeInForce,
+			ReduceOnly: orderRequest.ReduceOnly, TriggerPrice: triggerPrice,
+			OrderExpiry: orderExpiry,
+		})
+	}
+	apiKeyIndex := request.APIKeyIndex
+	tx, err := client.GetCreateGroupedOrdersTransaction(&types.CreateGroupedOrdersTxReq{
+		GroupingType: request.GroupedOrders.GroupingType,
+		Orders:       orders,
+	}, &types.TransactOpts{
+		FromAccountIndex: &accountIndex,
+		ApiKeyIndex:      &apiKeyIndex,
+		Nonce:            &nonce,
+		TxAttributes:     &types.L2TxAttributes{},
+	})
+	if err != nil {
+		return signerResponse{}, err
+	}
+	return lifecycleResponse(tx, txtypes.TxTypeL2CreateGroupedOrders)
 }
 
 func lifecycleClient(request signerRequest) (*lighterclient.TxClient, int64, int64, error) {

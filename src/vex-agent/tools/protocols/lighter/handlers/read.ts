@@ -47,6 +47,11 @@ import {
   repairLighterOrderLifecycleIntent,
   repairUnresolvedLighterOrderLifecycles,
 } from "../order-lifecycle-repair.js";
+import * as lighterOcoExecutionIntentsRepo from "@vex-agent/db/repos/lighter-oco-execution-intents.js";
+import {
+  repairLighterOcoIntent,
+  repairUnresolvedLighterOco,
+} from "../oco-order-repair.js";
 import {
   LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
   LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
@@ -126,7 +131,7 @@ async function resolveAuthenticatedAccountRead(
   };
 }
 
-function failureDetail(toolId: string, err: unknown): string {
+export function failureDetail(toolId: string, err: unknown): string {
   logger.warn("lighter.handler.error", {
     toolId,
     code: err instanceof VexError ? err.code : "UNEXPECTED",
@@ -162,7 +167,7 @@ function readOnlyAccountProvenance(
   };
 }
 
-function liveProvenance(
+export function liveProvenance(
   environment: LighterEnvironment,
   toolId: string,
   endpointPaths: readonly string[],
@@ -318,7 +323,7 @@ function previewSummary(
   };
 }
 
-function findMarketDetail(
+export function findMarketDetail(
   response: {
     readonly order_book_details: readonly LighterMarketDetail[];
     readonly spot_order_book_details: readonly LighterMarketDetail[];
@@ -344,7 +349,7 @@ function marketSymbolScore(market: LighterMarket, wanted: string): number {
   return Number.POSITIVE_INFINITY;
 }
 
-async function resolvePreviewMarketId(
+export async function resolvePreviewMarketId(
   client: LighterClient,
   environment: LighterEnvironment,
   params: {
@@ -430,7 +435,7 @@ async function resolveOnboardingTradeMarket(
   return selected;
 }
 
-function resolvePreviewAccountIndex(
+export function resolvePreviewAccountIndex(
   environment: LighterEnvironment,
   requestedAccountIndex?: number,
 ): number {
@@ -460,7 +465,7 @@ function resolvePreviewAccountIndex(
   return savedScope.accountIndex;
 }
 
-async function resolvePreviewApiKeyIndex(
+export async function resolvePreviewApiKeyIndex(
   client: LighterClient,
   environment: LighterEnvironment,
   accountIndex: number,
@@ -1434,9 +1439,16 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           }
           reports = [{ kind: "create_order", ...await repairLighterOrderIntent(intent, orderDeps) }];
         } else {
+          const oco = await lighterOcoExecutionIntentsRepo.findByIntentIdAnySession(intentId);
+          if (oco !== null) {
+            if (oco.environment !== environment.value) {
+              return fail(`Lighter OCO intent ${intentId} belongs to ${oco.environment}, not ${environment.value}.`);
+            }
+            reports = [{ ...await repairLighterOcoIntent(oco) }];
+          } else {
           const lifecycle = await lifecycleDeps.lifecycleIntents.findByIntentIdAnySession(intentId);
           if (lifecycle === null) {
-            return fail(`No Lighter order or lifecycle intent ${intentId} exists locally.`);
+            return fail(`No Lighter order, OCO, or lifecycle intent ${intentId} exists locally.`);
           }
           if (lifecycle.environment !== environment.value) {
             return fail(`Lighter lifecycle intent ${intentId} belongs to ${lifecycle.environment}, not ${environment.value}.`);
@@ -1445,13 +1457,15 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             kind: "lifecycle_action",
             ...await repairLighterOrderLifecycleIntent(lifecycle, lifecycleDeps),
           }];
+          }
         }
       } else {
-        const [orders, lifecycles] = await Promise.all([
+        const [orders, oco, lifecycles] = await Promise.all([
           repairUnresolvedLighterOrders(
             { environment: environment.value, limit: 5 },
             orderDeps,
           ),
+          repairUnresolvedLighterOco(environment.value, 5),
           repairUnresolvedLighterOrderLifecycles(
             { environment: environment.value, limit: 5 },
             lifecycleDeps,
@@ -1459,6 +1473,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         ]);
         reports = [
           ...orders.map((report) => ({ kind: "create_order", ...report })),
+          ...oco.map((report) => ({ ...report })),
           ...lifecycles.map((report) => ({ kind: "lifecycle_action", ...report })),
         ];
       }
@@ -1478,13 +1493,13 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         stillUnresolved: unresolved,
         reports,
         riskNotes: [
-          "Repair updates local create-order and lifecycle-action records from provider evidence and provable nonce facts only; it never signs, submits, retries, cancels, or modifies anything.",
+          "Repair updates local create-order, native OCO, and lifecycle-action records from provider evidence and provable nonce facts only; it never signs, submits, retries, cancels, or modifies anything.",
           "Never retry an action whose report is still unresolved; wait for the stated deadline and run this again.",
         ],
         message:
           reports.length === 0
-            ? `No unresolved Lighter order or lifecycle intents exist for ${environment.value}.`
-            : `Checked ${reports.length} Lighter order/lifecycle intent(s); ${unresolved} still unresolved.`,
+            ? `No unresolved Lighter order, OCO, or lifecycle intents exist for ${environment.value}.`
+            : `Checked ${reports.length} Lighter order/OCO/lifecycle intent(s); ${unresolved} still unresolved.`,
       });
     } catch (err) {
       return fail(`Lighter order status unavailable (${failureDetail("lighter.order.status", err)})`);

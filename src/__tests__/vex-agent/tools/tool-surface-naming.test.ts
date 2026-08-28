@@ -135,7 +135,7 @@ describe("G2 - publicName mapping gate", () => {
     );
   });
 
-  it("the mapped surface is the whole 176-tool catalog (drift alarm, not a cap)", () => {
+  it("the mapped surface is the whole 177-tool catalog (drift alarm, not a cap)", () => {
     // Not a limit: a Batch-2 addition updates this number together with its
     // mapping row, so the count and the map can never diverge silently.
     // 137 before the Batch 2 near-duplicate merges (owner decision D7) retired
@@ -163,7 +163,8 @@ describe("G2 - publicName mapping gate", () => {
     // public-API tools answered any part of what they answer.
     // 176 after combining Lighter's 36-tool surface with the six-tool net
     // DexScreener site expansion that brought the non-Lighter catalog to 140.
-    expect(PROTOCOL_TOOLS.length).toBe(176);
+    // 177 after native Lighter OCO position protection added one public tool.
+    expect(PROTOCOL_TOOLS.length).toBe(177);
   });
 });
 

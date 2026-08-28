@@ -125,12 +125,17 @@ position size, trigger direction, and bound direction before preview and again
 after approval before any credential or vault access. A trigger that is already
 crossed at revalidation is refused.
 
-Resting limit, good-till-time, post-only, trigger-limit, TWAP, and native grouped
-order creation remain unavailable. A request for paired TP/SL protection or an
-entry with attached protection must be refused as a whole rather than silently
-placing one leg. The pinned official signer supports the standalone trigger
-encoding locally, but no live protective order is claimed verified until a
-separately approved retained real-provider canary completes.
+Native OCO protection is available for one existing perpetual position. It
+binds exactly one reduce-only stop-loss and one same-size reduce-only take-profit
+to one approval and one TxType 28 grouped submission. Vex uses Lighter grouping
+type 2 and reports protection active only after both exact child client-order
+identities are visible from authenticated provider evidence. It never emulates
+the sibling cancellation and never retries an uncertain grouped submission.
+
+Resting limit, good-till-time, post-only, trigger-limit, TWAP, OTO, OTOCO, and
+entry-with-attached-protection remain unavailable. No live protective order is
+claimed verified until a separately approved retained real-provider canary
+completes.
 
 ## Production Deposit Boundary
 
