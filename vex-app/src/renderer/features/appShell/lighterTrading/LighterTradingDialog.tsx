@@ -714,8 +714,19 @@ function MarketPicker({
         className="lit-market-picker"
         role="dialog"
         aria-labelledby="lit-market-picker-title"
+        aria-describedby="lit-market-picker-description"
       >
-        <h2 id="lit-market-picker-title" className="sr-only">Search Lighter markets</h2>
+        <header className="lit-market-picker-heading">
+          <h2 id="lit-market-picker-title">
+            <span aria-hidden="true">Markets</span>
+            <span className="sr-only">Search Lighter markets</span>
+          </h2>
+          <p id="lit-market-picker-description">
+            {environment === "rhc" ? "Robinhood Chain" : "Lighter Core"}
+            <span aria-hidden="true"> · </span>
+            Choose the market for this desk
+          </p>
+        </header>
         <div className="lit-market-search">
           <IconSearch size={25} />
           <input

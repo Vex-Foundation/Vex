@@ -28,6 +28,16 @@
   --lit-environment-surface: var(--lit-panel);
   --lit-environment-surface-hover: var(--lit-panel-raised);
   --lit-market-bar-surface: transparent;
+  --lit-market-picker-surface:
+    color-mix(in srgb, var(--lit-panel-raised) 82%, var(--lit-panel));
+  --lit-market-picker-chrome:
+    color-mix(in srgb, var(--lit-panel-raised) 54%, var(--lit-panel));
+  --lit-market-picker-hover:
+    color-mix(in srgb, var(--lit-ink) 7%, var(--lit-market-picker-surface));
+  --lit-market-picker-selected:
+    color-mix(in srgb, var(--lit-selection) 32%, var(--lit-market-picker-surface));
+  --lit-market-picker-scrim:
+    color-mix(in srgb, var(--lit-bg) 76%, transparent);
   --lit-chart-font-size: 13;
   inset: 0;
   width: 100vw;
@@ -1280,23 +1290,66 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   position: absolute;
   z-index: 80;
   top: calc(100% - 1px);
-  left: 12px;
-  right: auto;
-  width: min(780px, calc(100vw - 24px));
+  right: 0;
+  left: 0;
+  width: auto;
+  min-height: calc(100dvh - 140px);
+  padding: 12px 12px 28px;
+  background: var(--lit-market-picker-scrim);
+  backdrop-filter: blur(3px) saturate(0.72);
+  pointer-events: none;
 }
 
 .lit-market-picker {
   display: flex;
-  width: 100%;
+  width: min(780px, calc(100vw - 24px));
   max-height: min(600px, calc(100dvh - 240px));
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--lit-line-strong);
-  border-radius: 0 0 14px 14px;
-  background: var(--lit-panel);
+  border-radius: 14px;
+  background: var(--lit-market-picker-surface);
   box-shadow:
-    0 16px 36px rgba(0, 0, 0, 0.34),
-    0 2px 8px rgba(0, 0, 0, 0.22);
+    0 28px 72px rgba(0, 0, 0, 0.46),
+    0 8px 22px rgba(0, 0, 0, 0.3);
+  animation: lit-market-picker-enter 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+  transform-origin: top left;
+}
+
+@keyframes lit-market-picker-enter {
+  from {
+    opacity: 0.84;
+    filter: blur(1px);
+    transform: translateY(-6px) scale(0.994);
+  }
+}
+
+.lit-market-picker-heading {
+  display: flex;
+  min-height: 54px;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 12px;
+  border-bottom: 1px solid var(--lit-line);
+  background: var(--lit-market-picker-chrome);
+  padding: 14px 18px 12px;
+}
+
+.lit-market-picker-heading h2 {
+  color: var(--lit-ink);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+
+.lit-market-picker-heading p {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lit-market-search {
@@ -1306,6 +1359,11 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid var(--lit-line);
+  background: color-mix(
+    in srgb,
+    var(--lit-market-picker-chrome) 74%,
+    var(--lit-market-picker-surface)
+  );
   padding: 0 18px;
   color: var(--lit-ink-muted);
   transition: box-shadow 140ms ease;
@@ -1342,6 +1400,7 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   align-items: center;
   gap: 4px;
   border-bottom: 1px solid var(--lit-line);
+  background: var(--lit-market-picker-chrome);
   padding: 6px 16px;
 }
 
@@ -1355,7 +1414,8 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 }
 
 .lit-market-picker-tabs button[aria-pressed="true"] {
-  background: var(--lit-panel-raised);
+  background: var(--lit-market-picker-hover);
+  box-shadow: inset 0 0 0 1px var(--lit-line);
   color: var(--lit-ink);
 }
 
@@ -1387,7 +1447,7 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   min-height: 36px;
   flex: 0 0 auto;
   border-bottom: 1px solid var(--lit-line);
-  background: var(--lit-panel);
+  background: var(--lit-market-picker-chrome);
   color: var(--lit-ink-muted);
   font-size: 11px;
   font-weight: 650;
@@ -1418,8 +1478,13 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 }
 
 .lit-market-table > button:hover,
-.lit-market-table > button[aria-selected="true"],
-.lit-market-table > button[data-highlighted="true"] { background: var(--lit-panel-raised); }
+.lit-market-table > button[data-highlighted="true"] {
+  background: var(--lit-market-picker-hover);
+}
+
+.lit-market-table > button[aria-selected="true"] {
+  background: var(--lit-market-picker-selected);
+}
 
 .lit-market-table > button[data-highlighted="true"] {
   box-shadow: inset 1px 0 0 var(--lit-focus);
@@ -1555,6 +1620,7 @@ button.lit-market-select > .lit-market-symbol[data-symbol-length="long"] { min-w
   align-items: center;
   gap: 22px;
   border-top: 1px solid var(--lit-line);
+  background: var(--lit-market-picker-chrome);
   padding-inline: 20px;
   color: var(--lit-ink-muted);
   font-size: 12px;
@@ -1575,7 +1641,7 @@ button.lit-market-select > .lit-market-symbol[data-symbol-length="long"] { min-w
 }
 
 @media (min-width: 1280px) {
-  .lit-market-picker-layer { width: clamp(860px, 52vw, 960px); }
+  .lit-market-picker { width: clamp(860px, 52vw, 960px); }
   .lit-market-picker { max-height: min(640px, calc(100dvh - 300px)); }
 }
 
@@ -1981,7 +2047,10 @@ button.lit-market-select > .lit-market-symbol[data-symbol-length="long"] { min-w
     font-size: 12px;
   }
 
-  .lit-market-picker-layer { right: auto; left: 22px; }
+  .lit-market-picker-layer { padding-inline-start: 22px; }
+  .lit-market-picker-heading { min-height: 62px; padding-inline: 26px; }
+  .lit-market-picker-heading h2 { font-size: 20px; }
+  .lit-market-picker-heading p { font-size: 14px; }
   .lit-market-search { min-height: 72px; padding-inline: 26px; }
   .lit-market-search input { font-size: 22px; }
   .lit-market-picker-tabs { min-height: 56px; padding-inline: 22px; }
@@ -2210,8 +2279,17 @@ button.lit-market-select > .lit-market-symbol[data-symbol-length="long"] { min-w
   .lit-resolution-tabs button { min-width: 40px; height: 40px; }
   .lit-chart-tools button { width: 36px; height: 36px; }
   .lit-chart-footer { min-height: 46px; flex-wrap: wrap; gap: 3px 14px; padding-block: 6px; }
-  .lit-market-picker-layer { position: fixed; inset: 12px 12px auto; width: auto; }
-  .lit-market-picker { max-height: min(72dvh, 620px); border-radius: 14px; }
+  .lit-market-picker-layer {
+    position: fixed;
+    inset: 0;
+    width: auto;
+    min-height: 100dvh;
+    padding: 12px;
+  }
+  .lit-market-picker { width: 100%; max-height: min(72dvh, 620px); border-radius: 14px; }
+  .lit-market-picker-heading { min-height: 52px; gap: 8px; padding-inline: 14px; }
+  .lit-market-picker-heading h2 { font-size: 16px; }
+  .lit-market-picker-heading p { font-size: 11px; }
   .lit-market-search { min-height: 62px; gap: 10px; padding-inline: 14px; }
   .lit-market-search input { font-size: 17px; }
   .lit-market-picker-tabs { min-height: 52px; overflow-x: auto; padding-inline: 10px; }

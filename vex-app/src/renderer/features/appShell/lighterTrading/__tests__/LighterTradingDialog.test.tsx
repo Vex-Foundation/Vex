@@ -369,6 +369,8 @@ describe("Light it up dialog", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(trigger.getAttribute("aria-controls")).toBe("lit-market-picker");
     expect(picker.getAttribute("aria-modal")).toBeNull();
+    expect(within(picker).getByText("Markets")).toBeTruthy();
+    expect(within(picker).getByText(/Robinhood Chain.*Choose the market for this desk/)).toBeTruthy();
     expect(picker.parentElement?.classList.contains("lit-market-picker-layer")).toBe(true);
     expect(screen.getByTestId("real-chart-host")).toBeTruthy();
   });
