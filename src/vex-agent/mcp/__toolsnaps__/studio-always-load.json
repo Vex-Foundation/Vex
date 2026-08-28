@@ -23,6 +23,8 @@
     "WalletSolanaTransactionConfirm",
     "WalletSolanaTransactionPrepare",
     "WalletTrackToken",
+    "WalletWrapConfirm",
+    "WalletWrapPrepare",
     "WebResearch",
     "vex_ToolSearch"
   ]

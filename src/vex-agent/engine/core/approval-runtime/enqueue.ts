@@ -60,6 +60,7 @@ import {
   type IntentPreview,
 } from "../approval-intent-preview.js";
 import { buildDurableApprovalCard } from "./durable-approval-card.js";
+import { approvedQuoteAuthorityFrom } from "@vex-agent/tools/protocols/quote-authority/approved-authority.js";
 
 /** The binding contract, as `ToolResult` declares it structurally. */
 type PreparedApprovalBinding = NonNullable<ToolResult["preparedApprovalBinding"]>;
@@ -95,6 +96,7 @@ export function buildApprovalIntentPreview(
             fotTax: input.result.prequote?.fotTax,
             termLock: input.result.prequote?.termLock,
             feePreview: input.result.prequote?.feePreview,
+            quoteBinding: input.result.prequote?.quoteBinding,
             riskPreview: input.result.riskPreview,
           }
         : undefined,
@@ -230,7 +232,17 @@ export async function enqueueApprovalIntentWithGate(
   // provably describes the value that will be dispatched. The binding travels
   // INSIDE it, which is what folds the proposal digest into the canonical
   // authority digest rather than bolting a second digest on beside it.
-  const envelope = buildApprovalToolCall(input.toolName, input.toolArgs, binding);
+  // WHICH QUOTE the human is approving, taken from the TYPED gate channel on the
+  // result (`prequote.quoteBinding` - the matched row's own snapshot id, digest,
+  // floor and expiry), never from `toolArgs`. Stored inside the envelope so both
+  // lanes' digests cover it and the resumed dispatch can claim that exact row
+  // instead of whichever quote is newest by then.
+  const quoteAuthority = result.prequote?.quoteBinding === undefined
+    ? undefined
+    : approvedQuoteAuthorityFrom(result.prequote.quoteBinding);
+  const envelope = buildApprovalToolCall(
+    input.toolName, input.toolArgs, binding, quoteAuthority,
+  );
   // Both lanes record a digest, with different authority contracts. Studio
   // binds the complete card, expiry and project identity. The agent lane binds
   // the envelope as before. While that lane stored `null`, a consistent co-edit of

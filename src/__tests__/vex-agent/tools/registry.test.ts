@@ -229,6 +229,11 @@ describe("registry", () => {
       "WalletEvmTransactionConfirm",
       "WalletSendConfirm",
       "WalletSolanaTransactionConfirm",
+      // The wrap lane's confirm (migration 096). Mutating for the same reason
+      // as the rest: it signs and broadcasts. Its PREPARE half is deliberately
+      // absent from this list - `WalletWrapPrepare` derives, simulates and
+      // records one durable intent, and spends nothing.
+      "WalletWrapConfirm",
     ]);
   });
 

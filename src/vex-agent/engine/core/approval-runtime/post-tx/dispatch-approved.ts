@@ -121,6 +121,7 @@ import type { ApproveSnapshot } from "../snapshot.js";
 import {
   approvalRequestDigestMatches,
   checkApprovalManifestIdentity,
+  readApprovalQuoteAuthority,
 } from "../tool-call-envelope.js";
 import {
   ApprovalDispatchError,
@@ -220,6 +221,11 @@ export async function applyApproveSideEffects(
       permissionAtEnqueue: row.queue_permission_at_enqueue,
       // C0 provenance: the resumed dispatch names the approval that authorized it.
       approvalId,
+      // ...and WHICH QUOTE it authorized. Read from the stored envelope, which
+      // the request digest below covers, so the row the execute claims is the
+      // row the human's card named rather than whichever quote is newest by the
+      // time they clicked Approve.
+      approvedQuoteAuthority: readApprovalQuoteAuthority(row.queue_tool_call),
     });
 
     // ── 3. Operator-Stop gate + dispatch slot, ONE transaction ──────────

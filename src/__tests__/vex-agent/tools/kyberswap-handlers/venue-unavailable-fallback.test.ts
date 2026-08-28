@@ -90,11 +90,23 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
   pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
+// The execute CLAIMS the approved quote instead of fetching a route (the
+// 2026-08-27 quote-binding change). The claim's own behaviour is covered by
+// `quote-bound-execute.test.ts` and the Postgres claim suite; here it hands
+// back a real snapshot of this file's own route so the handler reaches the
+// behaviour under test.
+const mockClaim = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
+  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
 });
 
+import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 import { mapAggregatorError } from "@tools/kyberswap/aggregator/errors.js";
 import { VexError, ErrorCodes } from "../../../../errors.js";
@@ -124,6 +136,16 @@ function quote(over: Partial<ProtocolExecutionContext> = {}) {
     ctx(over),
   );
 }
+
+/** A real snapshot of a minimal route, so the execute reaches the build call. */
+const APPROVED_CLAIM = approvedClaim(
+  {
+    amountIn: "1000000", amountOut: "999000", amountInUsd: "1", amountOutUsd: "0.99",
+    gasUsd: "0.5", routeID: "r1", checksum: "c1", tokenIn: TOKEN_A, tokenOut: TOKEN_B,
+    route: [[{ pool: "0xpool1" }]],
+  },
+  VEX_DEFAULT_SLIPPAGE_BPS,
+);
 
 function resetScaffold(): void {
   vi.clearAllMocks();
@@ -217,7 +239,11 @@ describe("kyberswap.swap.execute - a venue-availability failure names the altern
   beforeEach(resetScaffold);
 
   it("records failure_code venue_unavailable instead of hiding a geo-block as unknown", async () => {
-    mockGetRoute.mockRejectedValueOnce(mapAggregatorError(403, null, "HTTP 403: (html)"));
+    // The execute reaches the venue at `/route/build` only: it claims the
+    // quote it was given rather than fetching a route, so the geo-block
+    // arrives from the build call.
+    mockClaim.mockResolvedValue(APPROVED_CLAIM);
+    mockBuildRoute.mockRejectedValueOnce(mapAggregatorError(403, null, "HTTP 403: (html)"));
 
     const result = await KYBERSWAP_HANDLERS["kyberswap.swap.execute"]!(
       { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },

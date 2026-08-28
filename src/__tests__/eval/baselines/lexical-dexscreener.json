@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-dexscreener",
   "datasetVersion": "dexscreener-v5",
   "status": "captured",
-  "capturedAt": "2026-08-25T12:46:59.606Z",
+  "capturedAt": "2026-08-28T10:36:58.724Z",
   "metrics": {
     "overall": {
       "count": 62,
-      "recall1": 0.435,
+      "recall1": 0.452,
       "recall5": 0.71,
       "coverage5": 0.694,
-      "mrr5": 0.541,
-      "groupMrr5": 0.538
+      "mrr5": 0.549,
+      "groupMrr5": 0.547
     },
     "awareness": {
       "blind": {
@@ -25,21 +25,21 @@
       },
       "protocolAware": {
         "count": 24,
-        "recall1": 0.667,
+        "recall1": 0.708,
         "recall5": 0.958,
         "coverage5": 0.958,
-        "mrr5": 0.795,
-        "groupMrr5": 0.795
+        "mrr5": 0.816,
+        "groupMrr5": 0.816
       }
     },
     "intentShapes": {
       "single": {
         "count": 61,
-        "recall1": 0.443,
+        "recall1": 0.459,
         "recall5": 0.705,
         "coverage5": 0.705,
-        "mrr5": 0.546,
-        "groupMrr5": 0.546
+        "mrr5": 0.554,
+        "groupMrr5": 0.554
       },
       "cross": {
         "count": 0,
@@ -109,11 +109,11 @@
       },
       "market_research": {
         "count": 62,
-        "recall1": 0.435,
+        "recall1": 0.452,
         "recall5": 0.71,
         "coverage5": 0.694,
-        "mrr5": 0.541,
-        "groupMrr5": 0.538
+        "mrr5": 0.549,
+        "groupMrr5": 0.547
       },
       "prediction_discovery": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-dexscreener@dexscreener-v5, mode lexical, 62 cases evaluated.",
-    "overall recall@1 0.435, recall@5 0.71, coverage@5 0.694, mrr@5 0.541, groupMrr@5 0.538.",
-    "Measured delta vs previous baseline (dexscreener-v5, captured 2026-08-25T09:39:44.436Z): 8 metric values moved; overall recall@5 0.71 -> 0.71, overall mrr@5 0.537 -> 0.541, case count 62 -> 62."
+    "overall recall@1 0.452, recall@5 0.71, coverage@5 0.694, mrr@5 0.549, groupMrr@5 0.547.",
+    "Measured delta vs previous baseline (dexscreener-v5, captured 2026-08-25T12:46:59.606Z): 12 metric values moved; overall recall@5 0.71 -> 0.71, overall mrr@5 0.541 -> 0.549, case count 62 -> 62."
   ]
 }

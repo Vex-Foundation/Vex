@@ -60,6 +60,8 @@ const DOC_NAME_TO_LIVE_NAME: Readonly<Record<string, string>> = {
   wallet_evm_transaction_confirm: "WalletEvmTransactionConfirm",
   wallet_solana_transaction_prepare: "WalletSolanaTransactionPrepare",
   wallet_solana_transaction_confirm: "WalletSolanaTransactionConfirm",
+  wallet_wrap_prepare: "WalletWrapPrepare",
+  wallet_wrap_confirm: "WalletWrapConfirm",
   chain_read: "ChainRead",
   agent_scan: "AgentScan",
   web_research: "WebResearch",

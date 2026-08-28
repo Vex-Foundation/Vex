@@ -129,3 +129,78 @@ export function mapAggregatorError(status: number, code: number | null, message:
     false, code != null ? String(code) : undefined,
   ), status);
 }
+
+// ── Envelope classification ─────────────────────────────────────────────
+
+/**
+ * What a 2xx aggregator body actually IS.
+ *
+ * MEASURED (live 2026-08-27/28): the aggregator wraps every answer in
+ * `{code, message, data}` and `code: 0` is the ONLY success. A documented
+ * failure (4001/4002/4005/4007/4008/4009/4010/4011/4221) can arrive with a 200
+ * status and no usable `data`. Separately, a chain slug the aggregator does not
+ * serve answers a DIFFERENT envelope entirely -
+ * `{message, path, request_id, request_ip, status}` - with no `code` field.
+ */
+export type AggregatorEnvelope =
+  | { readonly kind: "success" }
+  | { readonly kind: "provider_code"; readonly code: number; readonly message: string; readonly requestId?: string }
+  | { readonly kind: "uncoded"; readonly requestId?: string };
+
+function readRequestId(body: Record<string, unknown>): string | undefined {
+  if (typeof body.requestId === "string" && body.requestId.length > 0) return body.requestId;
+  // The uncoded envelope spells it snake_case.
+  if (typeof body.request_id === "string" && body.request_id.length > 0) return body.request_id;
+  return undefined;
+}
+
+/**
+ * Classify an already-parsed aggregator response body. Pure; never throws. A
+ * body this cannot classify is reported `success` so the schema validators stay
+ * the authority on shape - this function adds outcomes, it does not take any
+ * away.
+ */
+export function readAggregatorEnvelope(raw: unknown): AggregatorEnvelope {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { kind: "success" };
+  const body = raw as Record<string, unknown>;
+  const requestId = readRequestId(body);
+  if (typeof body.code === "number") {
+    if (body.code === 0) return { kind: "success" };
+    return {
+      kind: "provider_code",
+      code: body.code,
+      message: typeof body.message === "string" && body.message.length > 0 ? body.message : "KyberSwap returned an error code",
+      ...(requestId === undefined ? {} : { requestId }),
+    };
+  }
+  if (isUncodedEnvelopeShape(body)) {
+    return { kind: "uncoded", ...(requestId === undefined ? {} : { requestId }) };
+  }
+  return { kind: "success" };
+}
+
+/**
+ * The uncoded envelope's signature: a `path` plus a `status`, and no `code`.
+ * Both fields are absent from every coded aggregator response, so the pair
+ * identifies the shape without matching on prose.
+ */
+export function isUncodedEnvelopeShape(body: Record<string, unknown>): boolean {
+  return body.code === undefined && typeof body.path === "string" && typeof body.status === "number";
+}
+
+/**
+ * The uncoded envelope as its own typed outcome. Not retryable and not a
+ * generic provider error: the aggregator does not serve this chain slug at all,
+ * so the chain is what has to change.
+ */
+export function mapUncodedAggregatorEnvelope(chain: string, status: number, requestId?: string): VexError {
+  const suffix = requestId ? ` [requestId: ${requestId}]` : "";
+  return withStatus(withMeta(
+    new VexError(
+      ErrorCodes.KYBER_UNSUPPORTED_CHAIN,
+      `KyberSwap's aggregator does not serve the chain slug "${chain}" (HTTP ${status}, no error code)${suffix}`,
+      "This venue has no aggregator on that chain. Use a chain KyberSwap supports, or a different venue.",
+    ),
+    false,
+  ), status);
+}

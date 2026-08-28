@@ -12,6 +12,7 @@
 import type { InternalToolContext } from "../../../../../tools/internal/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { Permission, WalletPolicy } from "@vex-agent/engine/types.js";
+import type { ApprovedQuoteAuthority } from "@vex-agent/tools/protocols/quote-authority/approved-authority.js";
 
 import logger from "@utils/logger.js";
 import {
@@ -30,6 +31,12 @@ export async function buildResumedApprovalToolContext(args: {
    * `dispatch-approved` path always supplies it.
    */
   readonly approvalId?: string;
+  /**
+   * WHICH QUOTE that approval bound, read from the stored envelope by the
+   * caller. Absent for every approval that carries none: every lane but a bound
+   * swap execute, and every row written before the binding existed.
+   */
+  readonly approvedQuoteAuthority?: ApprovedQuoteAuthority | null;
 }): Promise<InternalToolContext> {
   const walletHydrated = await hydrateEngineSession(args.sessionId);
   const walletResolution: WalletResolution = walletHydrated
@@ -50,6 +57,7 @@ export async function buildResumedApprovalToolContext(args: {
     // that require provenance refuse by name instead (`execution-provenance.ts`).
     missionId: await resolveMissionId(args.missionRunId),
     approvalId: args.approvalId ?? null,
+    approvedQuoteAuthority: args.approvedQuoteAuthority ?? null,
     sessionKind: "agent",
     // Resuming an action the user already approved is explicit per-action
     // authorization — the plan-acceptance gate (agent-autonomy) does not

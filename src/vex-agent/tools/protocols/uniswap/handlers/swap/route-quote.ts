@@ -31,10 +31,21 @@ export async function computeQuote(
   const client = getUniswapPublicClient(deployment);
   const best = await quoteBestRoute(client, { deployment, tokenIn, tokenOut, amountIn });
   if (!best) {
+    // What was ACTUALLY probed, never a guess about liquidity. This venue
+    // quotes V2 pairs and V3 pools only (`quoteBestRoute`); a pair that exists
+    // solely in a v4 pool, or on any other AMM on this chain, is invisible to
+    // it for STRUCTURAL reasons, and saying "may have no liquidity" sends an
+    // agent to check something that is not the cause.
+    const probed = [
+      deployment.v2 ? "V2 pairs" : null,
+      deployment.v3 ? `V3 pools (fee tiers ${deployment.v3.feeTiers.join(", ")})` : null,
+    ].filter((entry): entry is string => entry !== null);
     throw new VexError(
       ErrorCodes.KYBER_ROUTE_NOT_FOUND,
       `No Uniswap route found for ${tokenIn.symbol} → ${tokenOut.symbol} on ${deployment.name}.`,
-      "The pair may have no liquidity on this chain.",
+      `This venue probed ${probed.length > 0 ? probed.join(" and ") : "no configured Uniswap deployment"} on ${deployment.name} and none of them price this pair.`
+        + " A pool that exists only on Uniswap v4, or on another AMM, is not visible to this venue at all -"
+        + " quote the pair on KyberSwap, which aggregates other venues, before concluding it has no liquidity.",
     );
   }
   return {

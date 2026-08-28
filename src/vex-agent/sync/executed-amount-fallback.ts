@@ -64,6 +64,7 @@ import {
   decodeVenueSettlement,
   type VenueDecodeLog,
 } from "./executed-amount-fallback/venue-dispatch.js";
+import { assessRepairedFill } from "./executed-amount-fallback/approved-floor.js";
 import type {
   DepositEvidenceDeps,
   MinedTransaction,
@@ -77,7 +78,7 @@ import type {
  * thing that makes a row eligible again — a timestamp could only re-run the same
  * decode against the same immutable receipt forever.
  */
-export const SETTLEMENT_DECODER_SET_VERSION = "2026-08-13.native-deposit-and-rotation";
+export const SETTLEMENT_DECODER_SET_VERSION = "2026-08-28.uniswap-venue-branch";
 
 /** Bounded per pass — this shares the sync worker with the balance and bridge sweeps. */
 export const AMOUNT_CORRECTION_BATCH_LIMIT = 10;
@@ -352,12 +353,22 @@ async function repairOneRow(
     await noteSettlementDeclined(row.id, decoded.reason);
     // The marker is written ONLY NOW — after a COMPLETED decline. Writing it
     // before the attempt would be a crash poison.
-    await noteSettlementDecodeVersion(row.id, SETTLEMENT_DECODER_SET_VERSION);
+    //
+    // AND NOT AT ALL when the decline is EVIDENCE rather than completion. A
+    // decoder reporting "the receipt contradicts the approved amount" has
+    // learned something about the MONEY; it has not hit a limit of this decoder
+    // set. Burning the row's eligibility there would hide an unresolved anomaly
+    // until somebody bumped the version, so such a row stays a candidate of
+    // every later pass.
+    if (decoded.keepsEligibility !== true) {
+      await noteSettlementDecodeVersion(row.id, SETTLEMENT_DECODER_SET_VERSION);
+    }
     logger.debug("sync.amount_fallback.declined", {
       id: row.id,
       protocol: row.protocol,
       reason: decoded.reason,
       detail: decoded.detail,
+      keptEligibility: decoded.keepsEligibility === true,
     });
     return "declined";
   }
@@ -373,6 +384,24 @@ async function repairOneRow(
 
   if (result.outcome === "applied") {
     logger.info("sync.amount_fallback.filled", { id: row.id, protocol: row.protocol });
+    // PARITY WITH THE IMMEDIATE PATH, after the amounts are durably written.
+    // Both venue handlers assess the fill they decoded against the approved
+    // floor; a settlement that got its amounts HERE instead deserves the same
+    // named verdict, or the rows nobody was watching are the rows nobody
+    // checked. Detection only - the status is already decided and stays.
+    const floorAssessment = assessRepairedFill({
+      row,
+      executedAmountOutRaw: decoded.amounts.executedAmountOutRaw,
+    });
+    if (floorAssessment.kind === "materially_short") {
+      logger.warn("sync.amount_fallback.fill_below_approved_floor", {
+        id: row.id,
+        protocol: row.protocol,
+        txHash,
+        shortfallRaw: floorAssessment.shortfallRaw.toString(),
+        verdict: floorAssessment.verdict,
+      });
+    }
     return "filled";
   }
   if (result.outcome === "conflict") {

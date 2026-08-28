@@ -3,19 +3,18 @@
  *
  * It owns the order in which authority is acquired and evidence is gathered:
  * preview guard → wallet ADDRESS (never decrypts) → chain → tokens → signing
- * wallet → honeypot gate → tolerance → fresh route. Only then does Phase A
- * (`execute-plan.ts`) build and record the intent, and Phase B
- * (`execute-broadcast.ts`) sign and broadcast it.
+ * wallet → honeypot gate → tolerance → the CLAIM of the approved quote. Only
+ * then does Phase A (`execute-plan.ts`) build and record the intent, and Phase
+ * B (`execute-broadcast.ts`) sign and broadcast it.
  *
  * Everything before the intent exists fails through `failPreBroadcast` — a
  * hashless `definitively_failed` row; everything after it fails through the
  * post-intent handler, which never opens a second execution (C18).
  */
 
-import { getKyberAggregatorClient } from "@tools/kyberswap/aggregator/client.js";
 import { getKyberTokenApiClient } from "@tools/kyberswap/token-api/client.js";
 import { resolveChainSlug, slugToChainId } from "@tools/kyberswap/chains.js";
-import { getKyberEvmClients, verifyRouterAddress } from "@tools/kyberswap/evm-utils.js";
+import { getKyberEvmClients } from "@tools/kyberswap/evm-utils.js";
 import { META_AGGREGATION_ROUTER_V2 } from "@tools/kyberswap/constants.js";
 import { resolveTokenMetadataStrict, requireFeature, type ResolvedKyberTokenMetadata } from "@tools/kyberswap/helpers.js";
 import { annotateNativeSymbol } from "@tools/evm-chains/native-currency.js";
@@ -35,7 +34,8 @@ import { prepareSwapExecution } from "./execute-plan.js";
 import { describeUnavailableSafetyCheck, type SafetyCheckUnavailable } from "./safety-disclosure.js";
 import { venueFallbackNoteOnFailure } from "./fallback-messaging.js";
 import { resolveKyberSlippageBps } from "./slippage.js";
-import { VEX_INTEGRATOR_FEE_ROUTE_PARAMS, type KyberGetRouteResponse } from "./route-request.js";
+import type { KyberGetRouteResponse } from "./route-request.js";
+import { claimSwapExecutionSnapshot } from "../../../prequote/claim.js";
 
 export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolResult> => {
   const toolId = "kyberswap.swap.execute";
@@ -151,21 +151,35 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   }
   const slippage = resolvedSlippage.bps;
 
-  let routerAddress: Address;
-  let routeSummaryRaw: KyberGetRouteResponse["data"]["routeSummary"];
-  try {
-    const routeResp = await getKyberAggregatorClient().getRoute(slug, {
-      tokenIn: tokenIn.address,
-      tokenOut: tokenOut.address,
-      amountIn: amountIn.toString(),
-      ...VEX_INTEGRATOR_FEE_ROUTE_PARAMS,
-    });
-    verifyRouterAddress(routeResp.data.routerAddress, META_AGGREGATION_ROUTER_V2);
-    routerAddress = routeResp.data.routerAddress;
-    routeSummaryRaw = routeResp.data.routeSummary;
-  } catch (err) {
-    return failPreBroadcast(toolId, p, sessionId, walletAddress, chainId, slug, legInput(tokenIn), legInput(tokenOut), err, true);
+  // ── THE APPROVED QUOTE, claimed for exactly one execute ──
+  //
+  // There is NO execute-time re-quote. Until 2026-08-27 this handler fetched a
+  // fresh route here and `execute-plan.ts` derived the price floor from THAT
+  // route, which made the floor track the market instead of bounding it: a
+  // quote of 313,879.7 CCF filled at 1,190.145 CCF, 263x worse, without a
+  // revert, because the floor had moved with the price. No reference wallet
+  // re-quotes at submit either (MetaMask ships calldata inside the quote,
+  // Uniswap reads min-out off the accepted trade, Rabby carries `quote.tx`
+  // unchanged).
+  //
+  // The claim is single-use and atomic, so a second execute of the same quote
+  // is a typed refusal rather than a second fill, and a later quote for the
+  // same trade supersedes this one even when it is unexpired and unclaimed.
+  const claimed = await claimSwapExecutionSnapshot(toolId, sessionId, p, context, `${toolId}:${sessionId}`);
+  if (!claimed.ok) {
+    return failPreBroadcast(
+      toolId, p, sessionId, walletAddress, chainId, slug,
+      legInput(tokenIn), legInput(tokenOut),
+      new VexError(ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED, claimed.refusal.message),
+      true,
+    );
   }
+  // Strict equality against the ONE known router, unchanged: the address is a
+  // constant on all 19 aggregator chains, so nothing about dropping the route
+  // fetch weakens what the allowance is granted to. The build response's own
+  // router is re-verified in `execute-plan.ts` before anything is signed.
+  const routerAddress: Address = META_AGGREGATION_ROUTER_V2;
+  const approvedSummary = claimed.routeSummary as KyberGetRouteResponse["data"]["routeSummary"];
 
   // ── Phase A (pre-intent): balance/allowance-read/build + plan
   // construction + the atomic intent creation. ANY failure in this phase
@@ -176,7 +190,8 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   try {
     prepared = await prepareSwapExecution({
       toolId, intentParams: p, sessionId, publicClient, walletAddress, chainId, slug,
-      tokenIn, tokenOut, amountIn, amountInRaw, slippage, routerAddress, routeSummaryRaw,
+      tokenIn, tokenOut, amountIn, amountInRaw, slippage, routerAddress,
+      approvedSummary, approvedSnapshot: claimed.snapshot,
       safetyCheckUnavailable,
     });
   } catch (err) {

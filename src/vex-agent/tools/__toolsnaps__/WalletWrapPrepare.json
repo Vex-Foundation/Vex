@@ -1,0 +1,70 @@
+{
+  "definition": {
+    "function": {
+      "description": "Prepare a conversion between a chain's NATIVE currency and its WRAPPED-NATIVE ERC-20 form (ETH <-> WETH, BNB <-> WBNB, POL <-> WPOL, AVAX <-> WAVAX). It SPENDS NOTHING and signs nothing: it derives the transaction itself, simulates it, records one durable intent and hands back its id. THE INTENT IS WHAT THE USER APPROVES, so the direction, amount, contract and fee caps recorded here are exactly what is shown and confirmed. Use this when the user wants native currency in its wrapped ERC-20 form or back, and specifically when a swap venue REFUSES a native <-> wrapped-native pair - that pair is not a trade, it is this conversion, and no router will quote it. Call this before any call to `WalletWrapConfirm`; confirm has no other way to obtain an intentId. THE CONVERSION IS EXACTLY 1:1: one native unit becomes one wrapped unit and back, with NO slippage, NO route, NO price and NO quote, because the wrapped-native contract mints and burns at par. The recipient is ALWAYS the signer - the contract credits the sender, so there is no recipient parameter and none can be supplied. VEX CHARGES NO FEE on this path: the only cost is the network gas you cap below. REAL FAILURE MODES, each refused BY NAME with nothing prepared and no row left behind: a chain on which Vex has not verified a wrapped-native contract is refused and the refusal LISTS the verified set, which today is ethereum, optimism, bsc, polygon, robinhood, base, arbitrum and avalanche; a balance too small on the side the direction spends is refused with the balance and the amount (a `wrap` must also leave room for the gas ceiling you authorize, since both come out of the same native balance); a missing gas cap is refused by name and carries the current network estimate as a LABELLED HINT you choose from, never as a limit Vex sets for you; a failing simulation is refused with the decoded revert reason. RETURNS intentId, chain, chainId, walletAddress, status 'prepared', direction, wrappedNativeContract (address, symbol, decimals), amountRaw, amountHuman, rate '1:1', expiresAt, the approval preview, approvedFeeBounds echoing the caps you supplied, and nativeCurrency. The intent is scoped to this session, expires in 10 minutes, and binds the wallet selected right now; if that selection changes, confirm refuses rather than signing from another address.",
+      "name": "WalletWrapPrepare",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountRaw": {
+            "description": "How much to convert, in the token's SMALLEST BASE UNITS, as decimal digits only (18 decimals on every verified chain today, so \"1000000000000000000\" is one whole unit). Never a human decimal such as \"1.5\", never a JSON number, never a unit suffix. Must be greater than zero.",
+            "type": "string"
+          },
+          "chain": {
+            "description": "The EVM chain the conversion executes on. Only chains with a verified wrapped-native contract are accepted; today those are ethereum, optimism, bsc, polygon, robinhood, base, arbitrum and avalanche. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "type": "string"
+          },
+          "direction": {
+            "description": "`wrap` turns native currency into its wrapped ERC-20 form and spends native; `unwrap` turns the wrapped ERC-20 back into native and spends the token. Nothing else is accepted, and the value is refused by name rather than guessed.",
+            "enum": [
+              "wrap",
+              "unwrap"
+            ],
+            "type": "string"
+          },
+          "gasLimit": {
+            "description": "Maximum gas UNITS, as a decimal integer string. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint.",
+            "type": "string"
+          },
+          "gasPriceWei": {
+            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint.",
+            "type": "string"
+          },
+          "maxFeePerGasWei": {
+            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint.",
+            "type": "string"
+          },
+          "maxPriorityFeePerGasWei": {
+            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "direction",
+          "amountRaw",
+          "gasLimit"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "approval_prepare",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "mutating",
+    "withheld": false
+  }
+}

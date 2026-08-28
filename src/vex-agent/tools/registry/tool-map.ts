@@ -90,6 +90,13 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
       "WalletSolanaTransactionConfirm",
     ],
   },
+  // Also its own category, and for the same reason: a wrap intent has its own
+  // table and its own confirm. The label names the venue refusal because that
+  // is the situation an agent is usually in when it needs this pair.
+  {
+    label: "Native <-> wrapped-native conversion (1:1, no route; the answer when a swap venue refuses that pair)",
+    toolNames: ["WalletWrapPrepare", "WalletWrapConfirm"],
+  },
   { label: "Mission setup draft", toolNames: ["MissionDraftUpdate"] },
   { label: "Mission run stop", toolNames: ["MissionStop"] },
   // NOT mission-only: owner decree 2026-08-03 made waiting available to full

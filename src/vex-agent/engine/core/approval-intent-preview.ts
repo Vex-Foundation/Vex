@@ -26,6 +26,10 @@ import type { InternalToolContext } from "../../tools/internal/types.js";
 import { resolveInjectedProtocolTool } from "../../tools/registry/injected-protocol-tools.js";
 import { resolveToolName } from "../../tools/registry/name-resolution.js";
 import type { SafetyVerdict } from "../../db/repos/swap-prequotes.js";
+import {
+  renderQuoteBinding,
+  type QuoteBindingPreview,
+} from "../../tools/protocols/quote-authority/restore.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import { formatLamportsAsSol } from "@vex-agent/tools/protocols/amount-display.js";
@@ -184,6 +188,18 @@ export interface IntentPreviewExtras {
    * `criticalArgs.lendBorrowRisk`. Omitted for every other tool.
    */
   riskPreview?: LendBorrowRiskPreview;
+  /**
+   * The APPROVED QUOTE a gated swap execute is bound to. Sourced ONLY from the
+   * matched prequote's stored snapshot (NOT raw args - `quoteBinding` is
+   * deliberately NOT in PREVIEW_KEY_ALLOWLIST), so the card's floor is the
+   * store's floor and the model cannot state a different one.
+   *
+   * Rendered into `criticalArgs.quoteBinding`. The rendered line carries its own
+   * version tag, so a card written by an older build is textually different from
+   * one written by this build and the whole-card comparison at confirm time
+   * refuses it rather than confirming a line whose meaning has changed.
+   */
+  quoteBinding?: QuoteBindingPreview;
 }
 
 /** Render a swap safety verdict for the approval preview's `criticalArgs.safety`. */
@@ -328,6 +344,13 @@ export function buildIntentPreview(
   // `extras.termLock.maturityIso` (never from raw args — `termLock` is NOT in
   // PREVIEW_KEY_ALLOWLIST). The date is taken from OUR parse of the maturity, so
   // the message is unspoofable by construction.
+  // The quote binding: what was quoted, the floor the fill may not go below,
+  // and when this authority lapses. Rendered before the term-lock block so the
+  // money line sits next to the safety line on the card.
+  if (extras?.quoteBinding !== undefined) {
+    criticalArgs.quoteBinding = renderQuoteBinding(extras.quoteBinding);
+  }
+
   if (extras?.termLock !== undefined) {
     const ms = Date.parse(extras.termLock.maturityIso);
     if (Number.isFinite(ms)) {

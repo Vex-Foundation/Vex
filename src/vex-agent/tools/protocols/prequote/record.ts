@@ -22,6 +22,7 @@
 import logger from "@utils/logger.js";
 
 import type { ProtocolExecutionContext } from "../types.js";
+import type { ToolResult } from "../../types.js";
 
 import { PREQUOTE_QUOTE_TOOLS } from "./registry.js";
 import { recordBridgePrequote } from "./record/bridge.js";
@@ -40,12 +41,18 @@ import { recordSwapPrequote } from "./record/swap.js";
  * registered `kind`: a `swap` quote records a token-safety verdict; a `bridge`
  * quote always records verdict `unknown` (a Khalani route proves availability,
  * NOT token safety — Codex requirement #3).
+ *
+ * `quoteAuthority` is the quote handler's PRIVATE snapshot handoff (never model
+ * context). It carries the route snapshot to persist and the eligibility that
+ * decides whether the row may authorize an execute; on a REFUSED quote it also
+ * carries the identity needed to write the superseding ineligible marker.
  */
 export async function recordPrequoteFromQuote(
   toolId: string,
   params: Record<string, unknown>,
   resultData: Record<string, unknown>,
   context: ProtocolExecutionContext,
+  quoteAuthority?: ToolResult["quoteAuthority"],
 ): Promise<void> {
   const registered = PREQUOTE_QUOTE_TOOLS[toolId];
   if (!registered) return;
@@ -80,5 +87,5 @@ export async function recordPrequoteFromQuote(
     await recordMorphoBorrowPrequote(toolId, sessionId, registered, params, resultData, context);
     return;
   }
-  await recordSwapPrequote(toolId, sessionId, registered, params, resultData, context);
+  await recordSwapPrequote(toolId, sessionId, registered, params, resultData, context, quoteAuthority);
 }

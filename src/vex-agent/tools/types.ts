@@ -315,6 +315,42 @@ export interface ToolResult {
     readonly proposalDigestVersion: string;
     readonly resource: { readonly table: string; readonly intentId: string };
   };
+  /**
+   * PRIVATE handoff from a swap QUOTE handler to the prequote recorder: the
+   * execution snapshot the recorder persists and the eligibility that decides
+   * whether the resulting prequote may authorize an execute at all.
+   *
+   * Deliberately NOT `data`: `ok()` serializes `data` into `output`, so a
+   * snapshot placed there would enter model context, where it is both useless
+   * to the model and forgeable back into a later call. This channel is written
+   * by the handler, read by `recordPrequoteFromQuote`, and read by nothing
+   * else.
+   *
+   * Set on FAILURE results too. A quote that refuses on provider shape must
+   * still write a superseding ineligible row, or an older priced quote for the
+   * same identity stays claimable - which is the exact hole a success-only
+   * recorder leaves. `ineligibleIdentity` carries what the recorder needs when
+   * there is no successful quote payload to extract from.
+   *
+   * Typed structurally rather than by importing the protocol module:
+   * `types.ts` is the tool vocabulary and must not depend on one protocol
+   * family's implementation. The producing module's typed value is assignable,
+   * and the compiler checks that at the assignment.
+   */
+  quoteAuthority?: {
+    readonly eligibilityKind: string;
+    /** The stored route snapshot, or `null` when this quote authorizes nothing. */
+    readonly routeSnapshot: Record<string, unknown> | null;
+    readonly ineligibleIdentity?: {
+      readonly chainId: number;
+      readonly tokenIn: string;
+      readonly tokenOut: string;
+      readonly amount: string;
+      readonly slippageBps: number | null;
+      readonly safetyVerdict: "pass" | "fail" | "unknown";
+      readonly safetyDetail: Record<string, unknown>;
+    };
+  };
   /** Engine signal — structured command from tool to engine (e.g. stop_mission) */
   engineSignal?: EngineSignal;
   /**
@@ -390,6 +426,30 @@ export interface ToolResult {
      * before approving. Unspoofable by construction (never read from args).
      */
     readonly termLock?: { readonly maturityIso: string };
+    /**
+     * The APPROVED QUOTE this proposal is bound to, for the approval card: the
+     * quoted output and the floor the fill may not go below (both in the output
+     * token's human units), the tolerance, the snapshot digest and the row's
+     * expiry. Read from the matched prequote's stored snapshot, never from raw
+     * args, so a card cannot state a floor the store does not hold.
+     *
+     * Typed structurally: `types.ts` is the tool vocabulary and must not depend
+     * on one protocol family's implementation. The producing module's
+     * `QuoteBindingPreview` is assignable, and the compiler checks that at the
+     * assignment.
+     */
+    readonly quoteBinding?: {
+      /** The venue's own card-line version tag, rendered first on the line. */
+      readonly cardVersion: string;
+      readonly snapshotId: string;
+      readonly digest: string;
+      readonly approvedAmountOutHuman: string;
+      readonly approvedMinOutHuman: string;
+      readonly approvedMinOutRaw: string;
+      readonly tokenOutSymbol: string;
+      readonly effectiveSlippageBps: number;
+      readonly expiresAt: string;
+    };
     /**
      * Jupiter fee-bearing swap disclosure (W5 design §6 R4) — the 25bps fee,
      * fee mint + treasury ATA, ATA rent (if the account does not yet exist),
