@@ -1,7 +1,7 @@
 /**
- * THE BOOK'S PORTFOLIO | BOARD TABS (A13).
+ * THE BOOK'S PORTFOLIO | BOARD TABS + LIGHTER LAUNCHER (A13).
  *
- * Three laws, and they are the reason this suite is separate from the
+ * Four laws, and they are the reason this suite is separate from the
  * router's:
  *
  *  - NEVER AUTO-SWITCH. A board arriving while the reader is looking at their
@@ -14,6 +14,9 @@
  *  - THE DOT IS EARNED. It is lit by a LIVE board arrival through the store's
  *    one path, and it clears on both of A13's paths - the module seeing that
  *    board, and that board's modal opening from anywhere.
+ *  - LIGHTER IS ONE WORKSPACE. The adjacent launcher publishes the same
+ *    renderer-local intent as the `Light it up` command and never changes the
+ *    persisted Portfolio/Board selection underneath the dialog.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -56,6 +59,9 @@ const { useBoardSurfaceStore } = await import(
 );
 const { boardRefOf } = await import("../Board/board-surface-contracts.js");
 const { boardSpec } = await import("../Board/__tests__/boardFixture.js");
+const { subscribeLighterWorkspaceOpen } = await import(
+  "../lighterTrading/workspace-command.js"
+);
 
 const SESSION = "00000000-0000-4000-8000-00000000dddd";
 
@@ -121,6 +127,27 @@ describe("BOOK tabs", () => {
     expect(useUiStore.getState().bookTab).toBe("board");
     fireEvent.click(screen.getByRole("tab", { name: /Portfolio/ }));
     expect(useUiStore.getState().bookTab).toBe("portfolio");
+  });
+
+  it("shows Lighter as the third option and opens the shared trading dialog", () => {
+    const onOpen = vi.fn();
+    const unsubscribe = subscribeLighterWorkspaceOpen(onOpen);
+    renderRail();
+
+    const instruments = screen.getByRole("group", { name: "Book instruments" });
+    const lighter = screen.getByRole("button", { name: "Lighter" });
+    expect(instruments.lastElementChild).toBe(lighter);
+    expect(lighter.getAttribute("aria-haspopup")).toBe("dialog");
+
+    fireEvent.click(screen.getByRole("tab", { name: /Board/ }));
+    fireEvent.click(lighter);
+
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(useUiStore.getState().bookTab).toBe("board");
+    expect(
+      screen.getByRole("tab", { name: /Board/ }).getAttribute("aria-selected"),
+    ).toBe("true");
+    unsubscribe();
   });
 
   it("NEVER auto-switches: a live board arrival lights the dot and nothing else", () => {

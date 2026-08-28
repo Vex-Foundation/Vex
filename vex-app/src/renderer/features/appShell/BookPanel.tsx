@@ -80,6 +80,7 @@ import {
 import { ActiveBoardModule } from "./book/board/ActiveBoardModule.js";
 import { useBoardSurfaceStore } from "./Board/board-surface-store.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
+import { requestLighterWorkspaceOpen } from "./lighterTrading/workspace-command.js";
 
 /** The card a section id stands for. Exhaustive over `BookSectionId`. */
 function renderBookSection(id: BookSectionId, sessionId: string): ReactNode {
@@ -120,8 +121,9 @@ export function BookPanel({
   // pattern, shared with WelcomePortfolioPanel).
   const [reduced] = useState(prefersReducedMotion);
 
-  // The BOOK's two instruments (A13). The tab is a PERSISTED preference and
-  // the control below is its ONLY writer; the board surfaces never switch it.
+  // The BOOK's two mounted instruments (A13). The tab is a PERSISTED
+  // preference and the tablist below is its ONLY writer; Lighter is an
+  // adjacent dialog launcher and never replaces that preference.
   const bookTab = useUiStore((state) => state.bookTab);
   const setBookTab = useUiStore((state) => state.setBookTab);
   const boardUnseen = useBoardSurfaceStore(
@@ -227,27 +229,45 @@ export function BookPanel({
           keepMounted
           className="min-h-0 flex-1"
         >
-          <TabsList className="self-start">
-            <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-            <TabsTrigger value="board">
-              Board
-              {/* The unseen dot. Set by a LIVE board arrival only, and spoken
-                  as words beside it, because a 6px dot is not information a
-                  screen-reader user can reach. */}
-              {boardUnseen ? (
-                <span
-                  data-vex-area="book-board-unseen"
-                  className="ml-1.5 inline-flex items-center"
-                >
+          <div
+            role="group"
+            aria-label="Book instruments"
+            className="inline-flex h-9 self-start items-center justify-center gap-1 rounded-lg border border-line-3 bg-transparent p-1 text-ink-tertiary"
+          >
+            <TabsList
+              aria-label="Book panels"
+              className="h-auto justify-start rounded-none border-0 p-0"
+            >
+              <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+              <TabsTrigger value="board">
+                Board
+                {/* The unseen dot. Set by a LIVE board arrival only, and spoken
+                    as words beside it, because a 6px dot is not information a
+                    screen-reader user can reach. */}
+                {boardUnseen ? (
                   <span
-                    aria-hidden
-                    className="h-[6px] w-[6px] rounded-full bg-accent-primary"
-                  />
-                  <span className="sr-only">, new board</span>
-                </span>
-              ) : null}
-            </TabsTrigger>
-          </TabsList>
+                    data-vex-area="book-board-unseen"
+                    className="ml-1.5 inline-flex items-center"
+                  >
+                    <span
+                      aria-hidden
+                      className="h-[6px] w-[6px] rounded-full bg-accent-primary"
+                    />
+                    <span className="sr-only">, new board</span>
+                  </span>
+                ) : null}
+              </TabsTrigger>
+            </TabsList>
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              data-vex-area="book-lighter-launch"
+              onClick={requestLighterWorkspaceOpen}
+              className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[13px] font-medium leading-5 text-ink-tertiary hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Lighter
+            </button>
+          </div>
           {/* KEEP-MOUNTED: the Portfolio stack owns scroll offsets, running
               queries and card state that a tab switch must not throw away. */}
           <TabsContent
