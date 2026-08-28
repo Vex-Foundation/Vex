@@ -20,20 +20,7 @@
  * outlives its merge is stale by construction and the gate says so.
  */
 
-export const DELETED_TEST_ALLOWLIST = [
-  {
-    path: "vex-app/src/renderer/features/appShell/Board/__tests__/boardChartArea.test.ts",
-    reason:
-      "The spotlight chart's AREA adapter (toChartAreaPoint, normalizeBoardAreaPoints, " +
-      "reconcileAreaSeries, AreaFeed) was removed when the owner ruled the spotlight " +
-      "main chart a candlestick series with a volume histogram (2026-08-26); no code " +
-      "is left for this suite to exercise.",
-    coveredBy:
-      "vex-app/src/renderer/features/appShell/Board/__tests__/boardChartSpotlight.test.ts " +
-      "(the candle-plus-volume adapter, the same reconciliation table over all five " +
-      "fields, the per-bar colours and the two-series feed).",
-  },
-];
+export const DELETED_TEST_ALLOWLIST = [];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
   DELETED_TEST_ALLOWLIST.map((entry) => entry.path),
