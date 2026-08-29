@@ -113,15 +113,36 @@ export async function cancelForSession(
   sessionId: string,
   reason: string,
 ): Promise<number> {
-  return execute(
-    `UPDATE loop_wake_requests
-     SET status = 'cancelled',
-         cancelled_at = NOW(),
-         cancelled_reason = $2
-     WHERE session_id = $1 AND status = 'pending'`,
-    [sessionId, reason],
-  );
+  return execute(CANCEL_PENDING_FOR_SESSION_SQL, [sessionId, reason]);
 }
+
+/**
+ * The same cancellation on a transaction the CALLER owns.
+ *
+ * The recovery money gate needs the cancellation, the money read and the run
+ * claim to be ONE commit: cancelling a scheduled auto-retry is an effect, and
+ * an effect that survives a refused or lost Recover would leave the run with no
+ * retry scheduled and no recovery performed. Sharing the caller's transaction
+ * makes it roll back with the decision that caused it.
+ */
+export async function cancelForSessionWith(
+  client: PoolClient,
+  sessionId: string,
+  reason: string,
+): Promise<number> {
+  return executeWith(client, CANCEL_PENDING_FOR_SESSION_SQL, [
+    sessionId,
+    reason,
+  ]);
+}
+
+/** One statement, two entry points - never two spellings of the same effect. */
+const CANCEL_PENDING_FOR_SESSION_SQL = `
+    UPDATE loop_wake_requests
+       SET status = 'cancelled',
+           cancelled_at = NOW(),
+           cancelled_reason = $2
+     WHERE session_id = $1 AND status = 'pending'`;
 
 // ── Claim due (exactly-once) ────────────────────────────────────────
 

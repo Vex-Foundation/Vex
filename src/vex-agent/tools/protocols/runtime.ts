@@ -37,6 +37,7 @@ import { validateProtocolParams } from "./runtime/params.js";
 import { normalizeParamAliases } from "./runtime/param-aliases.js";
 import { coerceStringArrayParams } from "./runtime/string-array-coercion.js";
 import { coerceNumericStringParams } from "./runtime/numeric-string-coercion.js";
+import { normalizeOptionalEmptyArrayParams } from "./runtime/empty-array-params.js";
 import { renderProtocolFailureOutput, summarizeProtocolError } from "./runtime/errors.js";
 import { evaluatePrequoteGateDecision, evaluateApprovalGate } from "./runtime/gates.js";
 import { captureExecution } from "./runtime/capture.js";
@@ -125,13 +126,27 @@ export async function executeProtocolTool(
       coercedKeys: coerced.coercedKeys,
     });
   }
+  // An EMPTY array on an OPTIONAL list param means the parameter is absent, and
+  // the key is dropped HERE so nothing downstream ever sees it: the validator,
+  // the cross-param group gates, the handler and the capture row all read one
+  // call that simply did not carry the filter. Runs immediately AFTER the
+  // JSON-string coercion above so the `"[]"` spelling reaches the same outcome.
+  // A REQUIRED list param is untouched and still refuses `[]`. See
+  // `./runtime/empty-array-params.ts` for the production loop this closes.
+  const withoutEmptyLists = normalizeOptionalEmptyArrayParams(manifest, coerced.params);
+  if (withoutEmptyLists.droppedKeys.length > 0) {
+    logger.info("protocol.params.optional_empty_array_dropped", {
+      toolId: request.toolId,
+      droppedKeys: withoutEmptyLists.droppedKeys,
+    });
+  }
   // Second spelling normalization, same shape and same discipline: a param the
   // manifest DECLARED `type: "number"` whose value arrived as a losslessly
   // numeric string becomes that number. Amounts travel as STRING params in this
   // repo (rule 90), so a declared-number param is structurally non-monetary and
   // no amount is in reach — see `./runtime/numeric-string-coercion.ts`.
   // `validateProtocolParams` below is unchanged and still gates the result.
-  const numeric = coerceNumericStringParams(manifest, coerced.params);
+  const numeric = coerceNumericStringParams(manifest, withoutEmptyLists.params);
   if (numeric.coercedKeys.length > 0) {
     logger.info("protocol.params.numeric_string_coerced", {
       toolId: request.toolId,

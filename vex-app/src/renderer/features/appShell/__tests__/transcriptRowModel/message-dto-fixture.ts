@@ -31,6 +31,7 @@ export function dto(p: {
   readonly durationMs?: SessionMessageDto["durationMs"];
   readonly success?: SessionMessageDto["success"];
   readonly board?: SessionMessageDto["board"];
+  readonly interruptDisposition?: SessionMessageDto["interruptDisposition"];
   readonly id?: number;
 }): SessionMessageDto {
   return {
@@ -49,6 +50,9 @@ export function dto(p: {
     success: p.success ?? null,
     displayStatus: null,
     board: p.board ?? null,
+    // M6: the engine's record of what it did with an operator instruction.
+    // Overridable so a fixture can build each of the three steering rows.
+    interruptDisposition: p.interruptDisposition ?? null,
   };
 }
 

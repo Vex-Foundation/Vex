@@ -136,7 +136,28 @@ describe("mid-turn submit steers the live turn", () => {
 });
 
 describe("the steered row in the transcript", () => {
-  it("wears its delivery words - the user reads WHEN the agent sees it", () => {
+  /**
+   * M6. The mark's WORDS come from the engine's typed disposition, never from
+   * the row kind. Every operator-interrupt row used to render the steered
+   * sentence, so a message queued against a parked run claimed it would be
+   * read at the agent's next step - directly beside the acknowledgement row,
+   * written in the SAME transaction from the SAME value, saying the agent was
+   * not running. These are the four states the transcript can show.
+   */
+  it.each([
+    [
+      "steered" as const,
+      "Steered \u00b7 read at the agent's next step",
+    ],
+    [
+      "queued_interrupt" as const,
+      "Queued \u00b7 read the next time the agent runs",
+    ],
+    [
+      "preempted_wake" as const,
+      "Sent \u00b7 the agent is resuming now to read it",
+    ],
+  ])("a %s row wears that disposition's delivery words", (disposition, words) => {
     const { container, getByText } = render(
       <TranscriptMessage
         row={{
@@ -147,11 +168,37 @@ describe("the steered row in the transcript", () => {
           createdAt: "2026-08-20T10:00:00.000Z",
           reasoning: null,
           steering: true,
+          interruptDisposition: disposition,
+        }}
+      />,
+    );
+    const mark = container.querySelector("[data-vex-steering-mark]");
+    expect(mark).not.toBeNull();
+    expect(mark?.getAttribute("data-vex-disposition")).toBe(disposition);
+    expect(getByText(words)).toBeTruthy();
+  });
+
+  /**
+   * A legacy interrupt row, written before the disposition existed. It makes
+   * the neutral claim - the one thing that is true whatever happened - rather
+   * than guessing the optimistic one.
+   */
+  it("a row with no recorded disposition makes no timing claim", () => {
+    const { container, getByText } = render(
+      <TranscriptMessage
+        row={{
+          id: 44,
+          variant: "user",
+          label: null,
+          content: "legacy interrupt",
+          createdAt: "2026-08-20T10:00:00.000Z",
+          reasoning: null,
+          steering: true,
         }}
       />,
     );
     expect(container.querySelector("[data-vex-steering-mark]")).not.toBeNull();
-    expect(getByText("Steered · read at the agent's next step")).toBeTruthy();
+    expect(getByText("Sent to the agent")).toBeTruthy();
   });
 
   it("an ordinary user row wears no steering mark", () => {

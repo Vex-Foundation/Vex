@@ -50,6 +50,23 @@ export type MessageRole = z.infer<typeof messageRoleSchema>;
  *     cancelled mid-response (engine `message_type` "chat_stopped"),
  *     rendered as the normal assistant bubble plus a "Stopped" badge.
  */
+/**
+ * What the engine did with an operator instruction, mirrored from the engine's
+ * `OperatorInterruptDisposition` (`core/operator-instructions.ts`).
+ *
+ * A string-literal mirror rather than an import, like the `message_type`
+ * constants in the DB mapper: the engine package is not an import target from
+ * the app's shared contracts. Both sides are pinned by test.
+ */
+export const operatorInterruptDispositionSchema = z.enum([
+  "steered",
+  "queued_interrupt",
+  "preempted_wake",
+]);
+export type OperatorInterruptDispositionDto = z.infer<
+  typeof operatorInterruptDispositionSchema
+>;
+
 export const messageKindSchema = z.enum([
   "text",
   // A33: a user message steered into a LIVE turn (`operator_interrupt`) -
@@ -58,6 +75,15 @@ export const messageKindSchema = z.enum([
   "tool_call",
   "tool_result",
   "runtime_notice",
+  // M6: the engine's own durable acknowledgement of an operator instruction
+  // (`message_type` "operator_interrupt_ack"). A runtime notice in every
+  // visual respect, but SEPARATE from the catch-all so the renderer can
+  // announce it politely: it is the answer to something the operator just did,
+  // and it is the only notice kind that is. The wording per disposition is
+  // decided in the engine (`operator-instructions.ts`); this kind carries only
+  // the fact that the row IS an acknowledgement, so nothing here compares
+  // prose.
+  "operator_ack",
   "error",
   "compaction",
   "recall",
@@ -338,6 +364,25 @@ export const sessionMessageDtoSchema = z
      * prose always stands alone.
      */
     board: boardProjectionSchema.nullable(),
+    /**
+     * What the engine DID with an operator instruction (validated projection of
+     * `messages.metadata -> 'payload' -> 'disposition'`). Required and `null` on
+     * every non-`steering` row, and on legacy interrupt rows written before the
+     * disposition existed.
+     *
+     * WHY IT CROSSES. Without it the renderer had one word for three different
+     * events: every `operator_interrupt` row rendered "Steered - read at the
+     * agent's next step", including a message queued against a run parked on an
+     * error, which sat directly beside an acknowledgement saying the opposite.
+     * The two rows are written in ONE transaction from ONE typed value, so the
+     * only way they can disagree is if the renderer invents one of them.
+     *
+     * Bounded and closed: the enum is the engine's own union, and an
+     * unrecognised value projects `null` rather than crossing as a loose
+     * string. The renderer maps what it knows and keeps a total default, so a
+     * fourth disposition degrades to the neutral mark instead of a wrong claim.
+     */
+    interruptDisposition: operatorInterruptDispositionSchema.nullable(),
   })
   .strict();
 export type SessionMessageDto = z.infer<typeof sessionMessageDtoSchema>;

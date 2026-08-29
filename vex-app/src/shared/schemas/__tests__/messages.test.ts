@@ -38,6 +38,7 @@ const toolArgsRow = (toolArgs: string) => ({
   success: null,
   displayStatus: null,
   board: null,
+  interruptDisposition: null,
 });
 
 describe("messages schemas", () => {
@@ -47,9 +48,14 @@ describe("messages schemas", () => {
     }
     for (const k of [
       "text",
+      // Pre-existing gap: this list was not total. `steering` (A33) and
+      // `operator_ack` (M6) are named here so the enumeration matches the
+      // schema and a kind added without a wire pin becomes visible.
+      "steering",
       "tool_call",
       "tool_result",
       "runtime_notice",
+      "operator_ack",
       "error",
       "compaction",
       "recall",
@@ -85,6 +91,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -109,6 +116,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -133,6 +141,7 @@ describe("messages schemas", () => {
       success: true,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -158,6 +167,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -179,6 +189,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -199,6 +210,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, reasoning: "thought…" })
@@ -232,6 +244,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: false,
       board: null,
+      interruptDisposition: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, displayStatus: "pending" })
@@ -266,6 +279,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, durationMs: -1 }).success,
@@ -408,6 +422,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     });
     expect(parsed.success).toBe(false);
   });

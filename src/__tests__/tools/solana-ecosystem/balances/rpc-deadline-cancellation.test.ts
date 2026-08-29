@@ -265,6 +265,97 @@ describe("createDeadlineBoundSolanaRpc", () => {
     expect((err as Error).name).toBe("SolanaRpcRateLimited");
   });
 
+  /**
+   * THE CROSS CASE the two arcs create together: a caller Stop and a 429 on the
+   * SAME request. Both classifications are live on this path now, so the
+   * precedence is pinned rather than left to whichever check happens to run
+   * first (`callRpc`'s comment states it):
+   *
+   *  - a 429 that ARRIVED for this call wins, because the endpoint answered and
+   *    declined to serve - a fact about the provider's quota;
+   *  - an abort with NO response stays cancellation, which is the case the
+   *    caller-stop test below proves.
+   */
+  it("classifies a 429 that arrived before the caller's abort as rate_limited, not cancellation", async () => {
+    const controller = new AbortController();
+    const rpc = createDeadlineBoundSolanaRpc({
+      signal: controller.signal,
+      fetch: (_input, init) =>
+        new Promise<Response>((resolve) => {
+          // The provider's 429 is what settles this request, and it lands as
+          // the caller's Stop trips the same controller.
+          init?.signal?.addEventListener(
+            "abort",
+            () => resolve(new Response("slow down", { status: 429, statusText: "Too Many Requests" })),
+            { once: true },
+          );
+        }),
+    });
+
+    const settled = rpc.getBalance(OWNER).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    await vi.advanceTimersByTimeAsync(1);
+    controller.abort(new DOMException("the operator stopped the turn", "AbortError"));
+    const err = await settled;
+
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).name).toBe("SolanaRpcRateLimited");
+    expect((err as Error).name).not.toBe("SolanaRpcDeadlineExceeded");
+  });
+
+  it("aborts the in-flight fetch when the CALLER stops mid-request, and reports the caller's reason", async () => {
+    // The operator-Stop counterpart of the deadline test above, at the same
+    // TRANSPORT level: a real fetch-shaped request is in flight and is then
+    // aborted from outside. A pre-aborted signal cannot prove this - it never
+    // reaches the socket - and an injected `rpc` seam cannot prove it either,
+    // because it bypasses the transport entirely.
+    const controller = new AbortController();
+    const signals: AbortSignal[] = [];
+    let requests = 0;
+
+    const rpc = createDeadlineBoundSolanaRpc({
+      signal: controller.signal,
+      fetch: (_input, init) => {
+        requests += 1;
+        const signal = init?.signal;
+        if (!signal) throw new Error("the transport received no AbortSignal");
+        signals.push(signal);
+        return new Promise<Response>((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("aborted", "AbortError")),
+            { once: true },
+          );
+        });
+      },
+    });
+
+    const settled = rpc.getBalance(OWNER).then(
+      () => ({ ok: true as const }),
+      (err: unknown) => ({ ok: false as const, err }),
+    );
+
+    // The request is genuinely in flight before the Stop arrives.
+    await vi.advanceTimersByTimeAsync(1);
+    expect(requests).toBe(1);
+    expect(signals[0]?.aborted).toBe(false);
+
+    const reason = new DOMException("the operator stopped the turn", "AbortError");
+    controller.abort(reason);
+    const outcome = await settled;
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) throw new Error("the caller's abort did not reject the call");
+    // CLASSIFICATION: the caller's own reason, never the reader's deadline.
+    expect(outcome.err).toBe(reason);
+    expect((outcome.err as Error).name).not.toBe("SolanaRpcDeadlineExceeded");
+    // The socket was CANCELLED, not abandoned to run to completion.
+    expect(signals[0]?.aborted).toBe(true);
+    expect(requests).toBe(1);
+  });
+
   it("refuses an overlapping call rather than sharing another call's deadline", async () => {
     const rpc = createDeadlineBoundSolanaRpc({
       fetch: (_input, init) =>

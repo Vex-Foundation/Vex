@@ -9,7 +9,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { isStoppable, type RuntimeControlFacts } from "../session-control-state.js";
+import {
+  isStoppable,
+  readSessionActivity,
+  type RuntimeControlFacts,
+} from "../session-control-state.js";
 import { INCOMPLETE_APPROVAL_LIFECYCLE_PREDICATE } from "@vex-agent/db/contracts/approval-lifecycle-predicates.js";
 import { OUTSTANDING_USER_FORM_PREDICATE } from "@vex-agent/db/contracts/user-form-lifecycle-predicates.js";
 
@@ -29,6 +33,7 @@ function facts(overrides: Partial<RuntimeControlFacts> = {}): RuntimeControlFact
     leaseExpiresAt: null,
     pendingControlKind: null,
     hasPendingWake: false,
+    sessionWakeDueAt: null,
     hasPendingApproval: false,
     hasIncompleteApprovalLifecycle: false,
     hasOutstandingUserForm: false,
@@ -82,6 +87,61 @@ describe("isStoppable - the control-gating policy", () => {
     expect(isStoppable(facts({ hasActiveRun: false, status: "completed" }))).toBe(
       false,
     );
+  });
+});
+
+/**
+ * M5. The activity projection is the ONE answer the composer strip and the
+ * desk-rule tape both read, so its precedence is pinned here rather than left
+ * to the two surfaces to rediscover.
+ *
+ * The interesting case is the overlap: the executor claims a wake row and takes
+ * the lease before it marks the row consumed, so for one real interval both
+ * facts are true at once. "Running" is the only honest word there - a runner is
+ * attached and spending - and reporting "sleeping until 12:04" over an
+ * executing slice is the same lie the old sawtooth told in the other direction.
+ */
+describe("readSessionActivity - the activity policy", () => {
+  it("reports none for a session with no lease and no session wake", () => {
+    expect(readSessionActivity(facts())).toEqual({ kind: "none" });
+  });
+
+  it("reports running while the lease is held", () => {
+    expect(readSessionActivity(facts({ leaseActive: true }))).toEqual({
+      kind: "running",
+    });
+  });
+
+  it("reports sleeping with the pending wake instant", () => {
+    expect(
+      readSessionActivity(
+        facts({ sessionWakeDueAt: "2026-08-29T12:04:00.000Z" }),
+      ),
+    ).toEqual({ kind: "sleeping", nextWakeAt: "2026-08-29T12:04:00.000Z" });
+  });
+
+  it("prefers running over a wake row the executor has not consumed yet", () => {
+    expect(
+      readSessionActivity(
+        facts({
+          leaseActive: true,
+          sessionWakeDueAt: "2026-08-29T12:04:00.000Z",
+        }),
+      ),
+    ).toEqual({ kind: "running" });
+  });
+
+  /**
+   * `hasPendingWake` counts EVERY pending wake including a mission run's own;
+   * only `sessionWakeDueAt` is narrowed to `mission_run_id IS NULL`. Reading
+   * the broad fact here would make a sleeping mission report session activity
+   * and hand the tape two answers, which is the contradiction the projection
+   * exists to end.
+   */
+  it("ignores hasPendingWake - a mission run's own wake is not session sleep", () => {
+    expect(readSessionActivity(facts({ hasPendingWake: true }))).toEqual({
+      kind: "none",
+    });
   });
 });
 

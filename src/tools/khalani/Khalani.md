@@ -2,7 +2,7 @@
 
 This document maps every `.ts` file in `src/tools/khalani/` and `src/commands/khalani/` to the data it provides for cross-chain bridging, quoting, token discovery, and order tracking.
 
-**Last updated: 2026-03-30**
+**Last updated: 2026-08-28**
 
 **LLM maintainers:** If you modify any file in this folder, update this document to reflect the change — add/remove endpoints, update types, fix stale references.
 
@@ -103,6 +103,34 @@ Supports both **EVM chains** (Ethereum, Arbitrum, Base, etc.) and **Solana**.
 | `client.searchTokens(query, chainIds?)` | `GET /v1/tokens/search` | `{ data: KhalaniToken[] }` — search by name/symbol/address |
 | `client.autocompleteToken(keyword, opts?)` | `GET /v1/tokens/autocomplete/{keyword}` | `{ data[], parsed, nextSlots }` — semantic NLU autocomplete |
 | `client.getTokenBalances(address, chainIds?)` | `GET /v1/tokens/balances/{address}` | `KhalaniToken[]` — with `extensions.balance` and `extensions.price.usd` |
+
+### Balance source: SPLIT by family (2026-08-28)
+
+Khalani is NOT the balance source for Solana anywhere in Vex.
+
+| Lane | eip155 balances | solana balances |
+|------|-----------------|-----------------|
+| `WalletBalances` (internal) | Khalani scan, plus local-only EVM chains direct from RPC | direct Solana RPC via `tools/solana-ecosystem/balances/wallet-snapshot.ts` |
+| `khalani__token_balances_get` (`khalani.tokens.balances`) | Khalani scan | the same shared Solana snapshot service |
+| Balance sync (`vex-agent/sync/solana-balance-sync.ts`) | n/a | the same shared Solana snapshot service |
+| `tools/solana-ecosystem/balances/read-wallet-balances.ts` | n/a | Khalani used as a PRICE map only, never a balance source |
+
+WHY: `client.getTokenBalances` answers `scannedChainIds = [20011000000]` with
+ZERO tokens for Solana. Every lane that trusted it reported `$0` for a funded
+wallet while the Portfolio sidebar showed the true balance (owner screenshot,
+2026-08-28). Khalani legitimately remains the ENUMERATOR for its EVM chains,
+which have no per-chain RPC reader of their own.
+
+Consequences for maintainers of this folder:
+
+- the three Solana shaping rules (native SOL under the wSOL mint, zero balances
+  skipped, a wSOL token account folded into the native row) live ONCE, in
+  `tools/solana-ecosystem/balances/wallet-snapshot.ts`. Do not re-derive them;
+- Solana rows carry NULLABLE `symbol`/`name`. `ConciseKhalaniToken` is
+  deliberately not widened, and a mint address is never used as a label;
+- a Solana token ACCOUNT that fails validation is reported in `accountErrors`
+  ({chainId, accountAddress, reason}), never in `tokenErrors`, whose address
+  field means a MINT.
 
 **Autocomplete understands**: `"100 usdc on ethereum"` — parses amount, token, chain. `nextSlots` tells UI what input to prompt next.
 

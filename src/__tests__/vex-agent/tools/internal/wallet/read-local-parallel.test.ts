@@ -169,14 +169,28 @@ describe("wallet_balances — local chain scan", () => {
     const controller = new AbortController();
     controller.abort();
 
-    const res = await handleWalletBalances(
+    const outcome = await handleWalletBalances(
       { walletFamily: "eip155" },
       makeTestContext({ abortSignal: controller.signal }),
+    ).then(
+      (result) => ({ threw: false as const, result }),
+      (err: unknown) => ({ threw: true as const, err }),
     );
 
-    // The abort surfaces as the family's error rather than a fabricated empty
-    // snapshot — a wallet reported as holding nothing would be a lie.
-    expect(res.success).toBe(false);
+    // The abort PROPAGATES: never a fabricated empty snapshot (a wallet
+    // reported as holding nothing would be a lie), and no longer a failed
+    // ToolResult either. `dispatcher.ts` owns the turn's one canonical
+    // user-stop outcome and states the rule there: a cancelled call is not a
+    // failure to be dressed as one. Converting it here produced "eip155 wallet
+    // error: This operation was aborted", which reads to the model as a wallet
+    // fault it might retry. Both families now leave this catch the same way.
+    expect(outcome.threw).toBe(true);
+    if (!outcome.threw) {
+      throw new Error(
+        `expected the cancellation to propagate, got a ToolResult: ${JSON.stringify(outcome.result)}`,
+      );
+    }
+    expect(outcome.err instanceof Error ? outcome.err.message : String(outcome.err)).toMatch(/abort/i);
     expect(mockReadLocal).not.toHaveBeenCalled();
   });
 });

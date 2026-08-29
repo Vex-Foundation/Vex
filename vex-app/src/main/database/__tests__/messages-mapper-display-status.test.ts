@@ -28,6 +28,7 @@ const BASE: Omit<MessageRow, "role" | "success" | "display_status"> = {
   reasoning: null,
   duration_ms: null,
   board: null,
+  interrupt_disposition: null,
 };
 
 function row(p: {

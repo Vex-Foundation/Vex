@@ -67,6 +67,11 @@ export {
 } from "./_manifest-lint/source-rules.js";
 export type { SourceFile } from "./_manifest-lint/source-rules.js";
 export { lintDottedToolIdReferences } from "./_manifest-lint/dotted-toolid-rules.js";
+export {
+  lintUnknownPublicNameProse,
+  lintUnknownPublicNameSources,
+  PUBLIC_NAME_WILDCARD_ALLOWLIST,
+} from "./_manifest-lint/public-name-rules.js";
 export type { DottedReferenceSubject } from "./_manifest-lint/dotted-toolid-rules.js";
 
 /** A tool surface reduced to what the convention rules actually read. */

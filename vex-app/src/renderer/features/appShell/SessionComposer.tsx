@@ -24,6 +24,7 @@ import { cn } from "../../lib/utils.js";
 import {
   CHAT_STOPPED_NOTICE_TEXT,
   placeholderFor,
+  readActivity,
   readRunStatus,
 } from "./composer-helpers.js";
 import { PostStopRedirectHint } from "./PostStopRedirectHint.js";
@@ -115,6 +116,7 @@ export function SessionComposer({
     submitPending,
     stopRequested,
     stopAvailable,
+    stopLabel,
     awaitingApproval,
     onSubmit,
     onRetry,
@@ -142,6 +144,7 @@ export function SessionComposer({
   const setThemePreference = useUiStore((s) => s.setThemePreference);
   const runtimeQuery = useRuntimeState(sessionId);
   const runStatus = readRunStatus(runtimeQuery.data);
+  const runtimeActivity = readActivity(runtimeQuery.data);
   const planQuery = useSessionPlan(sessionId);
   const plan = planQuery.data?.ok ? planQuery.data.data : null;
   const [planOpen, setPlanOpen] = useState(false);
@@ -283,10 +286,15 @@ export function SessionComposer({
           />
         ) : null}
 
-        {sessionId !== null && activeSession?.mode === "mission" ? (
+        {/* M5: the strip is no longer mission-only. An AGENT session in full
+            autonomy runs and sleeps with no run row at all, and this band is
+            where the operator sees that it is still working. */}
+        {sessionId !== null && activeSession !== null ? (
           <ComposerMissionStrip
             sessionId={sessionId}
+            mode={activeSession.mode === "mission" ? "mission" : "agent"}
             missionStatus={runStatus}
+            activity={runtimeActivity}
           />
         ) : null}
         {sessionId !== null ? (
@@ -431,6 +439,7 @@ export function SessionComposer({
               ) : null}
               <ComposerSendControl
                 stopAvailable={stopAvailable}
+                stopLabel={stopLabel}
                 stopRequested={stopRequested}
                 onStop={onStop}
                 submitDisabled={submitDisabled}

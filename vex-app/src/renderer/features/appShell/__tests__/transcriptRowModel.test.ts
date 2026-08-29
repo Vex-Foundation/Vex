@@ -72,6 +72,23 @@ describe("toTranscriptRow", () => {
     );
   });
 
+  // M6: the operator-instruction acknowledgement is a notice like any other to
+  // look at, but it carries the `ack` tone so the renderer can announce it.
+  // The tone is what separates it from a wake banner - WITHOUT it the row is
+  // indistinguishable from every other runtime notice, and then either nothing
+  // is announced or everything is.
+  it("maps the operator_ack kind to an announced notice (M6)", () => {
+    const row = toTranscriptRow(
+      dto({ role: "system", kind: "operator_ack", content: "Saved." }),
+    );
+    expect(row.variant).toBe("notice");
+    expect(row.noticeTone).toBe("ack");
+    // Every other runtime notice stays silent.
+    expect(
+      toTranscriptRow(dto({ role: "system", kind: "runtime_notice" })).noticeTone,
+    ).toBe("runtime");
+  });
+
   it("maps the compaction kind to the compaction variant (no label) (8-4)", () => {
     const row = toTranscriptRow(
       dto({

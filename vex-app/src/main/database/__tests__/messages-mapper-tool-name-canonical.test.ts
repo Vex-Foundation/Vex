@@ -27,6 +27,7 @@ const BASE: Omit<MessageRow, "tool_calls"> = {
   success: null,
   display_status: null,
   board: null,
+  interrupt_disposition: null,
 };
 
 function callRow(name: string, id = "call_1"): MessageRow {

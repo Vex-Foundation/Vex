@@ -157,7 +157,7 @@ describe("composer micro-interactions - keep focus", () => {
     render(<SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />);
     const field = draftField();
     field.blur();
-    const stop = screen.getByRole("button", { name: "Stop generating" });
+    const stop = screen.getByRole("button", { name: "Stop agent" });
     const prevented = !fireEvent.mouseDown(stop);
     expect(prevented).toBe(true);
     expect(document.activeElement).toBe(field);
@@ -182,13 +182,13 @@ describe("composer micro-interactions - clear as commit and the stop morph", () 
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
     );
     expect(screen.getByRole("button", { name: "Send message" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Stop generating" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop agent" })).toBeNull();
     idle.unmount();
 
     mockSubmitChat.isPending = true;
     render(<SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />);
     // One key in the slot: Stop replaced Send, it did not join it.
-    expect(screen.getByRole("button", { name: "Stop generating" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Stop agent" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
   });
 });

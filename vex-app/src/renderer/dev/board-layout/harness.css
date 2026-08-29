@@ -1,0 +1,10 @@
+/* The renderer's own stylesheet, verbatim, plus the source glob Tailwind
+ * would otherwise infer from the Vite root.
+ *
+ * `vite.board-layout.config.ts` roots the dev server at THIS directory, so
+ * Tailwind's automatic content detection would scan only the harness and emit
+ * none of the utilities the board's components carry - which would measure a
+ * layout the product does not have. `@source` points it back at the whole
+ * renderer tree, which is exactly what `vite.renderer.config.ts` gives it. */
+@import "../../styles/globals.css";
+@source "../../";

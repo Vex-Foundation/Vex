@@ -405,7 +405,7 @@ async function assertNarrativeIds(
   throw siteError(
     DexScreenerSiteErrorCodes.SCREEN_FILTER_VALUE_INVALID,
     `These metaIds are not narrative ids: ${described}.`,
-    `filters[metaIds] takes a narrative's id, never its slug, and the screener answers an unknown id with zero rows and no error, so a slug would have been reported to you as an empty market. Call dexscreener__narratives_trending for the ids; the catalog currently has ${ids.size}.`
+    `filters[metaIds] takes a narrative's id, never its slug, and the screener answers an unknown id with zero rows and no error, so a slug would have been reported to you as an empty market. Call dexscreener__narratives_list for the ids; the catalog currently has ${ids.size}.`
   );
 }
 

@@ -79,15 +79,26 @@ function strictProperty(param: ProtocolParamDef): JsonSchemaProperty {
   const values = param.enum && param.enum.length > 0 ? [...param.enum] : undefined;
   const description = param.description;
 
-  // `acceptsStringArray` - the runtime rejects an EMPTY array by name
-  // (`checkStringArrayParam`), so the array branch carries `minItems: 1`.
+  // `acceptsStringArray` - the array branch carries `minItems: 1` only where the
+  // runtime still refuses an empty array, which after the 2026-08-28 change is
+  // REQUIRED params only (`checkStringArrayParam`). On an OPTIONAL param `[]`
+  // now means the parameter is absent (`runtime/empty-array-params.ts`).
+  //
+  // Keeping `minItems: 1` on the optional branch would NOT violate the contract
+  // above: a stricter projection is expressly allowed, and this would simply be
+  // a third axis of it. It is dropped for a PRODUCT reason, not a contractual
+  // one. A schema that says "at least one item" on a parameter which has no
+  // other way to express "no filter" recreates the exact friction D1 removed -
+  // it is the strict-gateway situation that put a model into seven identical
+  // refusals on 2026-08-27. Admitting `[]` is what makes the absent case
+  // expressible on this surface too.
   if (param.acceptsStringArray === true) {
     return {
       anyOf: [
         values ? { type: "string", enum: values } : { type: "string" },
         {
           type: "array",
-          minItems: 1,
+          ...(param.required === true ? { minItems: 1 } : {}),
           items: values ? { type: "string", enum: values } : { type: "string" },
         },
       ],
