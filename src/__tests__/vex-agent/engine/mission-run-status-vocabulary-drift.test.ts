@@ -107,17 +107,23 @@ describe("mission run status vocabulary — cross-package drift guard", () => {
     ).toEqual(expected);
   });
 
-  it("the composer's free-text gate covers every non-terminal status", () => {
+  it("the composer's free-text gate covers every non-terminal status except running", () => {
     // A status missing here silently lets the user type free text into a run
-    // that cannot answer it.
-    const nonTerminal = MISSION_RUN_STATUSES.filter((s) => !TERMINAL_RUN_STATUSES.has(s)).sort();
+    // that cannot answer it. `running` is the ONE deliberate exception
+    // (mission-autonomy wave 2): a message sent while a run executes STEERS
+    // it through the engine's operator_interrupt path, which is the designed
+    // behavior, so the composer must not gate it. Any OTHER status leaving
+    // this set is drift and must fail here.
+    const expected = MISSION_RUN_STATUSES.filter(
+      (s) => !TERMINAL_RUN_STATUSES.has(s) && s !== "running",
+    ).sort();
     expect(
       literalsBetween(
         read("vex-app/src/renderer/features/appShell/composer-helpers.ts"),
         "export const FREE_TEXT_DISALLOWED",
         "]);",
       ),
-    ).toEqual(nonTerminal);
+    ).toEqual(expected);
   });
 
   it("every paused status has its own gatedReason case — no silent default", () => {
