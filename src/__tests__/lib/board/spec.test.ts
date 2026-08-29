@@ -46,6 +46,13 @@ import {
   maximalBoardSpec,
 } from "./maximal-board-spec.js";
 
+/**
+ * The budget before the 2026-08-29 rise. A frozen historical fact used only to
+ * state what the emoji board used to exceed, so it must NEVER be replaced by
+ * `BOARD_SPEC_MAX_BYTES` - that would make the assertion self-satisfying.
+ */
+const PREVIOUS_BOARD_SPEC_MAX_BYTES = 327_680;
+
 const ZWSP = String.fromCodePoint(0x200b);
 const RLO = String.fromCodePoint(0x202e);
 const TAG_A = String.fromCodePoint(0xe0041);
@@ -1039,8 +1046,10 @@ describe("the all-fields-max document", () => {
     const budget = checkBoardSpecByteBudget(spec);
     expect(budget.byteLength).toBe(432_697);
     expect(budget.withinBudget).toBe(true);
-    // It really was over the previous ceiling; only the budget moved.
-    expect(budget.byteLength).toBeGreaterThan(327_680);
+    // It really was over the previous ceiling; only the budget moved. A frozen
+    // HISTORICAL figure, deliberately not `BOARD_SPEC_MAX_BYTES`: this states
+    // what the old constant was, so it must not follow the new one.
+    expect(budget.byteLength).toBeGreaterThan(PREVIOUS_BOARD_SPEC_MAX_BYTES);
   });
 
   /**
