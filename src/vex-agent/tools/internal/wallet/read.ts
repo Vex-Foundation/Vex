@@ -7,6 +7,16 @@
  * scan direct-RPC through the SAME shared reader the background sync uses
  * (`tools/evm-chains/balances.ts`), so live reads and projections can never
  * disagree on how a local chain is read.
+ *
+ * SOLANA follows the same doctrine and for the same reason. It is read direct
+ * from RPC through the shared snapshot service
+ * (`tools/solana-ecosystem/balances/wallet-snapshot.ts`), the one the Solana
+ * balance sync also projects from. It is NOT read through Khalani: Khalani's
+ * Solana scan answers ZERO tokens, so this tool reported `tokenCount: 0,
+ * totalUsd: 0` for a funded wallet whose true balance the Portfolio sidebar was
+ * showing at the same moment (owner screenshot, 2026-08-28). Khalani remains
+ * the enumerator for its EVM chains, which have no per-chain RPC reader, and a
+ * price-only source underneath the Solana reader.
  */
 
 import { formatUnits } from "viem";
@@ -21,6 +31,12 @@ import {
 } from "@tools/khalani/balances.js";
 import type { ChainFamily } from "@tools/khalani/types.js";
 import { readLocalChainBalances } from "@tools/evm-chains/balances.js";
+import {
+  readSolanaWalletSnapshot,
+  type SolanaBalanceRow,
+  type SolanaWalletSnapshotReader,
+} from "@tools/solana-ecosystem/balances/wallet-snapshot.js";
+import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../constants/solana-chain.js";
 import { getLocalChain, listLocalChains } from "@tools/evm-chains/registry.js";
 import { resolveInclusiveEvmChain } from "@tools/evm-chains/resolver.js";
 import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
@@ -89,11 +105,53 @@ interface TokenReadError {
 }
 
 /**
+ * One TOKEN ACCOUNT the read could not trust. Deliberately NOT a `tokenError`:
+ * that shape's `tokenAddress` means a MINT, while this carries an ACCOUNT
+ * pubkey, and crushing one into the other would tell the agent a mint is
+ * broken when what failed was one of the wallet's accounts holding it. The
+ * holdings behind these accounts are ABSENT from `tokens`, which is exactly why
+ * they are reported rather than dropped.
+ */
+interface AccountReadError {
+  chainId: number;
+  accountAddress: string;
+  reason: string;
+}
+
+/**
+ * Same bound and same reason as `MAX_TOKEN_ERRORS_PER_SNAPSHOT`: a broken read
+ * can fail on every account a wallet owns, and the agent needs to know it
+ * happened and on which accounts, not to have its context filled with the list.
+ */
+const MAX_ACCOUNT_ERRORS_PER_SNAPSHOT = 20;
+
+/**
+ * A Solana token row. It exists SEPARATELY from `ConciseKhalaniToken` because
+ * Solana mint metadata is genuinely optional: a mint no source can label keeps
+ * `symbol: null` / `name: null` rather than being relabelled with its own
+ * address, which an agent would read as a ticker that does not exist.
+ * `ConciseKhalaniToken` is deliberately NOT widened - its Khalani rows always
+ * carry both labels.
+ */
+interface SolanaWalletTokenRow {
+  symbol: string | null;
+  name: string | null;
+  address: string;
+  chainId: number;
+  decimals: number;
+  priceUsd?: string;
+  balance?: string;
+}
+
+/** Either lane's projected row, before the concise trim. */
+type ProjectedTokenRow = ConciseKhalaniToken | SolanaWalletTokenRow;
+
+/**
  * A projected token row as `WalletBalances` emits it. `priceUnavailable` is
  * added only by the concise trim, on a held token with no price feed, so the
  * agent can tell "no USD price" from "not held".
  */
-type WalletTokenRow = ConciseKhalaniToken & { priceUnavailable?: true };
+type WalletTokenRow = ProjectedTokenRow & { priceUnavailable?: true };
 
 interface WalletSnapshot {
   wallet: ChainFamily;
@@ -105,6 +163,10 @@ interface WalletSnapshot {
   tokenErrors: TokenReadError[];
   /** Present only when the bound below dropped entries. */
   tokenErrorsOmitted?: number;
+  /** Token ACCOUNTS the read could not trust (Solana). Always present. */
+  accountErrors: AccountReadError[];
+  /** Present only when the 20-row `accountErrors` bound dropped entries. */
+  accountErrorsOmitted?: number;
   /** Held-but-unpriced rows the concise trim's cap dropped. Present only when non-zero. */
   unpricedOmitted?: number;
   /**
@@ -297,11 +359,41 @@ async function readLocalChainSnapshot(
   }
 }
 
+// ── Solana live snapshot ────────────────────────────────────────
+
+/**
+ * Map one canonical Solana row onto this tool's token shape.
+ *
+ * `priceUsd` is stringified because that is the shape every other row in this
+ * output already uses (it is lifted from Khalani's own string field), and the
+ * agent reads them all the same way. `balance` stays the raw u64 STRING.
+ */
+export function solanaRowToWalletToken(row: SolanaBalanceRow): SolanaWalletTokenRow {
+  return {
+    symbol: row.symbol,
+    name: row.name,
+    address: row.mint,
+    chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+    decimals: row.decimals,
+    balance: row.amountRaw,
+    ...(row.priceUsd !== null ? { priceUsd: String(row.priceUsd) } : {}),
+  };
+}
+
+/**
+ * The narrow, optional dependency this handler takes so a test can drive the
+ * REAL handler over a scripted RPC. Production callers pass nothing.
+ */
+export interface WalletBalancesDependencies {
+  readonly readSolanaSnapshot?: SolanaWalletSnapshotReader;
+}
+
 // ── WalletBalances ─────────────────────────────────────────────
 
 export async function handleWalletBalances(
   params: Record<string, unknown>,
   context: InternalToolContext,
+  dependencies: WalletBalancesDependencies = {},
 ): Promise<ToolResult> {
   const parsed = WalletReadArgs.safeParse(params);
   if (!parsed.success) {
@@ -321,12 +413,16 @@ export async function handleWalletBalances(
   for (const family of walletFamilies) {
     const khalaniChainIds = getSelectedChainIdsForFamily(scope.selection, family);
     const localChainIds = family === "eip155" ? scope.localChainIds : [];
-    // With a filter present, the Khalani scan runs only when the filter kept
-    // Khalani chains for this family (an all-local filter must NOT widen into
-    // an unfiltered all-Khalani scan).
-    const khalaniRequested =
+    // With a filter present, the scan runs only when the filter kept chains for
+    // this family (an all-local filter must NOT widen into an unfiltered
+    // all-Khalani scan). Solana resolves through the SAME Khalani chain
+    // selection - the chain id and its aliases are Khalani's - but is READ
+    // direct from RPC, so the two branches are exclusive by family.
+    const familyChainsRequested =
       !scope.rawProvided || (scope.selection.rawProvided && (khalaniChainIds?.length ?? 0) > 0);
-    if (!khalaniRequested && localChainIds.length === 0) {
+    const solanaRequested = family === "solana" && familyChainsRequested;
+    const khalaniRequested = family !== "solana" && familyChainsRequested;
+    if (!khalaniRequested && !solanaRequested && localChainIds.length === 0) {
       if (parsed.data.walletFamily === family) {
         return fail(`WalletBalances: no ${family} chains matched chainIds="${parsed.data.chainIds}".`);
       }
@@ -358,12 +454,60 @@ export async function handleWalletBalances(
       // the model sees identity + lifted priceUsd/balance, not the heavy logoURI
       // / open `extensions` bag. `tokenCount` / `totalUsd` stay computed off the
       // FULL scan so an optional `limit` trim never distorts the held totals.
-      const projected = projectTokens(scan.tokens);
+      const projected: ProjectedTokenRow[] = projectTokens(scan.tokens);
       let totalUsd = scan.totalUsd;
       const scannedChainIds = [...scan.scannedChainIds];
       const chainErrors = [...scan.chainErrors];
       const tokenErrors: TokenReadError[] = [];
       let tokenErrorsOmitted = 0;
+      const accountErrors: AccountReadError[] = [];
+      let accountErrorsOmitted = 0;
+
+      // Solana - direct RPC through the shared snapshot service, never Khalani.
+      // A failure here is a per-chain error like any other, so the family
+      // snapshot survives it rather than the whole call failing.
+      if (solanaRequested) {
+        throwIfAborted(context.abortSignal);
+        const readSnapshot = dependencies.readSolanaSnapshot ?? readSolanaWalletSnapshot;
+        try {
+          const snapshot = await readSnapshot(address, { signal: context.abortSignal });
+          projected.push(...snapshot.rows.map(solanaRowToWalletToken));
+          totalUsd += snapshot.totalUsd;
+          scannedChainIds.push(SOLANA_SYNTHETIC_CHAIN_ID);
+          // A partial read still returns its readable rows. The sync lane's
+          // skip-the-chain policy is deliberately NOT copied: it exists because
+          // the sync REPLACES the whole chain, and this tool has nothing to
+          // destroy. Copying it would recreate the $0 answer under a new
+          // mechanism.
+          for (const failure of snapshot.accountFailures) {
+            if (accountErrors.length < MAX_ACCOUNT_ERRORS_PER_SNAPSHOT) {
+              accountErrors.push({
+                chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+                accountAddress: failure.pubkey,
+                reason: failure.reason,
+              });
+            } else accountErrorsOmitted += 1;
+          }
+        } catch (err) {
+          // An operator Stop is the caller's, not this chain's: it must abort
+          // the whole call rather than be filed as a Solana chain error.
+          throwIfAborted(context.abortSignal);
+          // SECURITY: a raw Solana RPC error can carry the configured RPC URL
+          // (with its key) and HTML bodies. Only the scrubbed summary is
+          // returned, exactly as the local-EVM branch does.
+          const summary = summarizeProtocolError(err);
+          logger.warn("wallet.solana_read.failed", {
+            chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+            category: summary.category,
+            error: summary.message,
+          });
+          chainErrors.push({
+            chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+            chainName: "Solana",
+            message: `Solana RPC read failed: ${summary.message}`,
+          });
+        }
+      }
 
       // Local (non-Khalani) chains — direct RPC, same failure surface as a
       // Khalani per-chain error (the family snapshot survives a dead chain).
@@ -418,12 +562,21 @@ export async function handleWalletBalances(
         chainErrors,
         tokenErrors,
         ...(tokenErrorsOmitted > 0 ? { tokenErrorsOmitted } : {}),
+        accountErrors,
+        ...(accountErrorsOmitted > 0 ? { accountErrorsOmitted } : {}),
         ...(trimmed.unpricedOmitted > 0 ? { unpricedOmitted: trimmed.unpricedOmitted } : {}),
         truncated,
         ...(truncated ? { truncationNote: TRUNCATION_NOTE } : {}),
         tokens: trimmed.tokens,
       });
     } catch (err) {
+      // An operator Stop is the TURN's outcome, not this family's. It leaves
+      // the handler as a THROW so the dispatcher produces its one canonical
+      // user-stop result. Converting it here would report a cancellation to
+      // the model as a wallet FAILURE it might retry, and under
+      // `walletFamily: "all"` would bury it in `walletErrors` while the other
+      // family's snapshot was returned as a success.
+      throwIfAborted(context.abortSignal);
       const message = err instanceof Error ? err.message : String(err);
       if (parsed.data.walletFamily === family) {
         return fail(`${family} wallet error: ${message}`);
@@ -457,7 +610,7 @@ function requestedWalletFamilies(wallet: "eip155" | "solana" | "all"): ChainFami
  * `totalUsd`). Missing / malformed price or balance is null-safe → `0`, so a
  * row with no price/balance signal sorts last rather than throwing.
  */
-function projectedTokenUsd(token: ConciseKhalaniToken): number {
+function projectedTokenUsd(token: ProjectedTokenRow): number {
   const { balance, priceUsd, decimals } = token;
   if (!balance || !priceUsd) return 0;
   try {
@@ -475,14 +628,14 @@ function projectedTokenUsd(token: ConciseKhalaniToken): number {
  * (the provider quoted it), so only a missing, malformed, or negative price
  * counts as "no price".
  */
-function hasUsdPrice(token: ConciseKhalaniToken): boolean {
+function hasUsdPrice(token: ProjectedTokenRow): boolean {
   if (token.priceUsd === undefined || token.priceUsd.trim() === "") return false;
   const price = Number(token.priceUsd);
   return Number.isFinite(price) && price >= 0;
 }
 
 /** True when the row reports a balance the wallet actually holds. */
-function holdsBalance(token: ConciseKhalaniToken): boolean {
+function holdsBalance(token: ProjectedTokenRow): boolean {
   if (!token.balance) return false;
   try {
     return BigInt(token.balance) !== 0n;
@@ -516,7 +669,7 @@ function holdsBalance(token: ConciseKhalaniToken): boolean {
  * display trim.
  */
 function trimTokens(
-  tokens: ConciseKhalaniToken[],
+  tokens: ProjectedTokenRow[],
   limit: number | undefined,
   responseFormat: ResponseFormat,
 ): { tokens: WalletTokenRow[]; unpricedOmitted: number } {

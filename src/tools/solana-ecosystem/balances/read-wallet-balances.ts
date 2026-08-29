@@ -65,6 +65,32 @@
  * the deadline CANCELS: the reader's transport is built with a custom `fetch`
  * that forwards the reader's `AbortSignal` to the HTTP request, so an expired
  * deadline aborts the request instead of abandoning it.
+ *
+ * A CALLER may also pass its own signal (`options.signal`, an operator Stop
+ * threaded from a tool context). It is COMPOSED with the deadline, not
+ * substituted for it, and the two outcomes stay distinguishable: a caller abort
+ * rethrows the signal's own reason, a deadline breach throws
+ * `SolanaRpcDeadlineExceededError`.
+ *
+ * ## How far the caller's Stop actually reaches
+ *
+ * A read is not three RPC calls; it is those plus the ENRICHMENT legs, and the
+ * enrichment legs are where the time goes (up to 12 SEQUENTIAL pool re-reads).
+ * A signal that is only checked BETWEEN legs still waits for the leg in flight,
+ * so it is passed INTO every leg that can take it:
+ *
+ * | Leg                                   | Reach of the Stop                  |
+ * |---------------------------------------|------------------------------------|
+ * | `getBalance`, both account reads      | into the request (reader-owned rpc)|
+ * | Jupiter metadata lookup               | into the request                   |
+ * | DexScreener price batches             | into each request                  |
+ * | DexScreener pool fallback (up to 12)  | into each request, and between them|
+ * | Khalani price fallback                | checked BEFORE the call only       |
+ *
+ * The last row is the one residual: `getTokenBalancesAcrossChains` is a shared
+ * multi-chain scan that exposes no signal of its own, so widening it belongs to
+ * a change that owns that surface. A Stop arriving mid-scan waits for that one
+ * request. Everything before it stops immediately.
  */
 
 import { PublicKey, type Commitment, type FetchFn } from "@solana/web3.js";
@@ -286,7 +312,15 @@ export interface SolanaWalletBalancesRead {
   /** SOL's USD price, taken from the wSOL mint. */
   solPriceUsd: number | null;
   tokens: SolanaTokenHolding[];
-  /** Non-empty means the read was INCOMPLETE; the caller must not replace. */
+  /**
+   * Non-empty means the read was INCOMPLETE: some token accounts could not be
+   * projected, so the holdings behind them are ABSENT from `tokens`. What COULD
+   * be read is still present and enriched - a partial read is never emptied.
+   *
+   * A consumer that REPLACES durable state (the balance sync) must refuse to
+   * write on a non-empty list, because a missing row would delete a real
+   * balance. A live consumer surfaces the rows plus these failures.
+   */
   accountFailures: SolanaTokenAccountFailure[];
   stats: {
     accountsScanned: number;
@@ -309,6 +343,21 @@ export interface ReadSolanaWalletBalancesOptions {
    * transport (`createDeadlineBoundSolanaRpc`), never the shared singleton.
    */
   readonly rpc?: SolanaBalanceRpc;
+  /**
+   * The CALLER's cancellation (an operator Stop, threaded from
+   * `InternalToolContext.abortSignal` / `ProtocolExecutionContext.abortSignal`).
+   *
+   * It is COMPOSED with the reader's own per-call deadline, never substituted
+   * for it: the deadline still bounds a hung provider when the caller has no
+   * signal, and an aborted caller still cancels a request that has not yet hit
+   * the deadline. The two outcomes stay DISTINGUISHABLE - a caller abort
+   * rethrows the signal's own reason (an `AbortError`), a deadline breach
+   * throws `SolanaRpcDeadlineExceededError` - because "the operator stopped"
+   * and "the provider hung" are different answers.
+   *
+   * Absent means "no cancellation", never "cancelled".
+   */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -324,8 +373,12 @@ export async function readSolanaWalletBalances(
   options: ReadSolanaWalletBalancesOptions = {},
 ): Promise<SolanaWalletBalancesRead> {
   const owner = new PublicKey(solanaPubkey.parse(ownerAddress));
-  const rpc = options.rpc ?? createDeadlineBoundSolanaRpc();
+  const signal = options.signal;
+  const rpc = options.rpc ?? createDeadlineBoundSolanaRpc({ signal });
 
+  // Checked between every leg, so a Stop lands at the next boundary even when
+  // the RPC seam is an injected one that cannot observe the signal itself.
+  signal?.throwIfAborted();
   // Lamports are validated before anything derives from them: the sync owner
   // WRITES this value, so a NaN or a lossy number must fail the read, not the row.
   const rawLamports = await rpc.getBalance(owner);
@@ -338,9 +391,11 @@ export async function readSolanaWalletBalances(
   }
   const lamports = parsedLamports.data;
 
+  signal?.throwIfAborted();
   const splAccounts = await rpc.getParsedTokenAccountsByOwner(owner, {
     programId: new PublicKey(SPL_TOKEN_PROGRAM_ID),
   });
+  signal?.throwIfAborted();
   const token2022Accounts = await rpc.getParsedTokenAccountsByOwner(owner, {
     programId: new PublicKey(TOKEN_2022_PROGRAM_ID),
   });
@@ -350,32 +405,36 @@ export async function readSolanaWalletBalances(
   );
   const projection = projectTokenAccounts(entries);
 
-  // An incomplete read is reported, never priced over: the caller stops here.
-  if (projection.failures.length > 0) {
-    return {
-      lamports: String(lamports),
-      solPriceUsd: null,
-      tokens: [],
-      accountFailures: projection.failures,
-      stats: {
-        accountsScanned: entries.length,
-        zeroSkipped: projection.zeroSkipped,
-        frozenAccounts: projection.frozenAccounts,
-        metadataMissing: 0,
-        unpriced: 0,
-        priceTiers: { tier0: 0, tier1: 0, unpriced: 0 },
-      },
-    };
-  }
+  // A PARTIAL read keeps everything it could read. There is exactly ONE path
+  // here on purpose: an account this reader could not project is reported in
+  // `accountFailures`, and the holdings it COULD project are still enriched and
+  // returned beside it. Discarding them would hand every consumer an empty
+  // `tokens` list carrying no hint that a holding existed - the same "$0 for a
+  // funded wallet" answer this module exists to remove, merely relocated from
+  // Khalani to a defensive branch.
+  //
+  // The FAILURE POLICY stays with the consumers, which is where it differs:
+  // `vex-agent/sync/solana-balance-sync.ts` refuses to write a partial read
+  // (it REPLACES the whole chain, so a missing row would delete a real
+  // balance), while a live tool has nothing to destroy and surfaces the rows
+  // plus the account errors. The sync therefore pays for enrichment it then
+  // discards on this rare path; correctness of the shared contract is worth
+  // more than that saved call.
 
   const mints = projection.holdings.map((holding) => holding.mint);
-  const metadata = await loadMintMetadata(mints);
+  const metadata = await loadMintMetadata(mints, signal);
+  // Enrichment legs are network calls of their own. The caller's Stop is
+  // checked around them so an abort during metadata or pricing cannot finish
+  // as a successful read.
+  signal?.throwIfAborted();
   // wSOL prices native SOL, so it joins the pricing set even when the wallet
   // holds no wSOL token account.
   const pricing = await priceMints(
     [SOL_MINT, ...mints.filter((mint) => mint !== SOL_MINT)],
     ownerAddress,
+    signal,
   );
+  signal?.throwIfAborted();
   const priceByMint = pricing.priceByMint;
 
   let metadataMissing = 0;
@@ -397,7 +456,9 @@ export async function readSolanaWalletBalances(
     lamports: String(lamports),
     solPriceUsd: priceByMint.get(SOL_MINT) ?? null,
     tokens,
-    accountFailures: [],
+    // Non-empty means the read was INCOMPLETE: `tokens` holds what could be
+    // projected, and the holdings behind these accounts are absent from it.
+    accountFailures: projection.failures,
     stats: {
       accountsScanned: entries.length,
       zeroSkipped: projection.zeroSkipped,
@@ -453,6 +514,12 @@ export interface DeadlineBoundRpcOptions {
   readonly commitment?: Commitment;
   /** Underlying transport. Defaults to `globalThis.fetch`, which is web3.js's own default. */
   readonly fetch?: FetchFn;
+  /**
+   * The CALLER's cancellation, composed with (never replacing) the per-call
+   * deadline. See `ReadSolanaWalletBalancesOptions.signal` for the contract and
+   * for why the two outcomes must stay distinguishable.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -481,20 +548,32 @@ export function createDeadlineBoundSolanaRpc(
     fetch: (input, init) => baseFetch(input, { ...init, signal: inFlight?.signal }),
   });
 
+  const callerSignal = options.signal;
+
   async function callRpc<T>(label: string, operation: () => Promise<T>): Promise<T> {
     if (inFlight !== null) {
       throw new Error(`solana balance rpc is sequential; ${label} overlapped another call`);
     }
+    callerSignal?.throwIfAborted();
     const controller = new AbortController();
     inFlight = controller;
     const timer = setTimeout(() => controller.abort(), RPC_DEADLINE_MS);
+    // The caller's abort cancels the HTTP request through the SAME controller
+    // the deadline uses, so a Stop aborts the socket instead of abandoning it.
+    const forwardCallerAbort = () => controller.abort();
+    callerSignal?.addEventListener("abort", forwardCallerAbort, { once: true });
     try {
       return await operation();
     } catch (err) {
+      // ORDER MATTERS. Both aborts trip the same controller, so the caller is
+      // asked FIRST: an operator Stop must surface as the signal's own reason
+      // (an `AbortError`), never be relabelled as the provider hanging.
+      if (callerSignal?.aborted === true) throw callerSignal.reason;
       if (controller.signal.aborted) throw new SolanaRpcDeadlineExceededError(label);
       throw err;
     } finally {
       clearTimeout(timer);
+      callerSignal?.removeEventListener("abort", forwardCallerAbort);
       inFlight = null;
     }
   }
@@ -521,7 +600,10 @@ interface MintLabel {
  * nothing. Metadata is presentation: a mint that resolves to nothing keeps its
  * row with null labels. Decimals never come from here.
  */
-async function loadMintMetadata(mints: readonly string[]): Promise<Map<string, MintLabel>> {
+async function loadMintMetadata(
+  mints: readonly string[],
+  signal?: AbortSignal,
+): Promise<Map<string, MintLabel>> {
   const labels = new Map<string, MintLabel>();
   const missing: string[] = [];
 
@@ -541,14 +623,18 @@ async function loadMintMetadata(mints: readonly string[]): Promise<Map<string, M
 
   if (missing.length === 0) return labels;
 
+  signal?.throwIfAborted();
   try {
-    const resolved = await getJupiterTokensByMint(missing);
+    const resolved = await getJupiterTokensByMint(missing, signal);
     const metadata = resolved.map(jupiterMintInformationToMetadata);
     for (const meta of metadata) {
       labels.set(meta.address, { symbol: meta.symbol, name: meta.name });
     }
     if (metadata.length > 0) cacheSolanaTokens(metadata);
   } catch (err) {
+    // A Stop is the caller's outcome, not a metadata miss to be shrugged off:
+    // swallowing it here would return null labels and let the read continue.
+    if (signal?.aborted === true) throw signal.reason;
     logger.debug("solana.balances.metadata_lookup_failed", {
       mints: missing.length,
       error: err instanceof Error ? err.name : "unknown",
@@ -582,6 +668,7 @@ interface SolanaPricing {
 async function priceMints(
   mints: readonly string[],
   ownerAddress: string,
+  signal?: AbortSignal,
 ): Promise<SolanaPricing> {
   const accumulator = createBestLiquidityPriceAccumulator({
     wanted: mints,
@@ -594,9 +681,14 @@ async function priceMints(
 
   for (let i = 0; i < mints.length; i += DEXSCREENER_TOKENS_BATCH) {
     const batch = mints.slice(i, i + DEXSCREENER_TOKENS_BATCH);
+    signal?.throwIfAborted();
     try {
-      accumulator.addPairs(await readTokensPairs(SOLANA_DEXSCREENER_SLUG, batch.join(",")));
+      accumulator.addPairs(
+        await readTokensPairs(SOLANA_DEXSCREENER_SLUG, batch.join(","), { signal }),
+      );
     } catch (err) {
+      // A Stop ends the pricing pass; it is not one more unpriced batch.
+      if (signal?.aborted === true) throw signal.reason;
       logger.debug("solana.balances.price_batch_failed", {
         batch: batch.length,
         error: err instanceof Error ? err.name : "unknown",
@@ -609,7 +701,7 @@ async function priceMints(
   // for a mint whose quote asset the provider misprices, the representative
   // pool is exactly the tier-2 pool the rule refuses. JUP is that mint.
   const fallback = await addPoolListsForUnpricedAddresses(
-    { accumulator, chainSlug: SOLANA_DEXSCREENER_SLUG, addresses: mints },
+    { accumulator, chainSlug: SOLANA_DEXSCREENER_SLUG, addresses: mints, signal },
     (address) => address,
     (mint, err) => {
       logger.debug("solana.balances.pool_fallback_failed", {
@@ -629,6 +721,12 @@ async function priceMints(
   }
   const stillUnpriced = mints.filter((mint) => !prices.has(mint));
   if (stillUnpriced.length === 0) return { priceByMint: prices, tiers };
+
+  // `getTokenBalancesAcrossChains` takes no signal of its own (it is a shared
+  // multi-chain scan with many callers), so the Stop is enforced BEFORE the
+  // call rather than inside it. A stop arriving mid-scan still waits for this
+  // one request; see the module header for the residual.
+  signal?.throwIfAborted();
 
   for (const [mint, price] of await khalaniPriceMap(stillUnpriced, ownerAddress)) {
     prices.set(mint, price);

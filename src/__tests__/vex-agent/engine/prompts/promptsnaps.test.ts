@@ -32,6 +32,13 @@
  * prove the rebuild left the D9-frozen fields byte-identical. It has its own
  * flag, UPDATE_RETRIEVAL_FIELDS_FIXTURE=true, for the day the owner unfreezes
  * them.
+ *
+ * That flag has been used ONCE, on 2026-08-29, for the `embeddingText` of
+ * `khalani.tokens.balances` alone, under the owner ruling recorded as the D9
+ * amendment in `tool-surface-spec/owner-decisions.md`: the frozen text
+ * advertised a Solana balance scan the tool no longer performs. Every other
+ * field in this fixture stays frozen, and a future difference here still needs
+ * its own ruling rather than a regeneration.
  */
 
 import { createHash } from "node:crypto";

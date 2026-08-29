@@ -54,7 +54,7 @@ preconditions appear inside the first 2000 bytes.
 | TokenFind | Find a token's address and decimals | internal | yes | no | yes | - | 1142 |
 | TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 2803 |
 | UnitsConvert | Convert token amounts and units | internal | yes | no | yes | - | 1397 |
-| WalletBalances | Read wallet balances across chains | internal | yes | no | yes | - | 1576 |
+| WalletBalances | Read wallet balances across chains | internal | yes | no | yes | - | 1990 |
 | WalletEvmTransactionConfirm | Broadcast a prepared EVM transaction | internal | no | yes | yes | - | 1804 |
 | WalletEvmTransactionPrepare | Prepare an EVM transaction | internal | no | no | yes | - | 2288 |
 | WalletSendConfirm | Broadcast a prepared wallet transfer | internal | no | yes | yes | - | 1503 |
@@ -101,7 +101,7 @@ preconditions appear inside the first 2000 bytes.
 | khalani__chains_list | List Khalani bridge chains | protocol | yes | no | no | - | 850 |
 | khalani__order_get | Read one Khalani bridge order | protocol | yes | no | no | - | 990 |
 | khalani__orders_list | List Khalani bridge orders | protocol | yes | no | no | - | 1066 |
-| khalani__token_balances_get | Read Khalani-chain wallet balances | protocol | yes | no | no | - | 1109 |
+| khalani__token_balances_get | Read Khalani-chain wallet balances | protocol | yes | no | no | - | 1813 |
 | khalani__tokens_autocomplete | Parse a token phrase into Khalani tokens | protocol | yes | no | no | - | 964 |
 | khalani__tokens_search | Search Khalani tokens | protocol | yes | no | no | - | 1253 |
 | khalani__tokens_top_list | List top bridged tokens on Khalani | protocol | yes | no | no | - | 794 |
