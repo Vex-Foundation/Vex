@@ -544,3 +544,45 @@ describe("TranscriptMessage tool card duration", () => {
     }
   });
 });
+
+/**
+ * M6. The operator-instruction acknowledgement is the engine's durable answer
+ * to something the operator just did, and it is the ONLY notice that is. A
+ * screen-reader user must learn their instruction landed without going looking
+ * for the row - politely, because it reports what already happened and must
+ * never cut across the operator's own typing.
+ */
+describe("TranscriptMessage operator acknowledgement (M6)", () => {
+  const ACK =
+    "Sent to the agent. It is mid-turn, so it will pick this up at its next step and keep going.";
+
+  it("announces the ack notice politely", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: { ...row({ variant: "notice", content: ACK }), noticeTone: "ack" },
+      }),
+    );
+    const node = container.querySelector('[data-vex-notice-tone="ack"]');
+    expect(node).not.toBeNull();
+    expect(node?.getAttribute("role")).toBe("status");
+    // POLITE, never assertive: an interrupting announcement over a composer the
+    // operator is still typing in is the rude failure this tone exists to avoid.
+    expect(node?.getAttribute("aria-live")).toBe("polite");
+    expect(node?.textContent).toBe(ACK);
+  });
+
+  it("leaves every other runtime notice silent", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          ...row({ variant: "notice", content: "Run resumed" }),
+          noticeTone: "runtime",
+        },
+      }),
+    );
+    const node = container.querySelector('[data-vex-notice-tone="runtime"]');
+    expect(node).not.toBeNull();
+    expect(node?.getAttribute("role")).toBeNull();
+    expect(node?.getAttribute("aria-live")).toBeNull();
+  });
+});

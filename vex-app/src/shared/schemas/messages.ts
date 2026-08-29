@@ -58,6 +58,15 @@ export const messageKindSchema = z.enum([
   "tool_call",
   "tool_result",
   "runtime_notice",
+  // M6: the engine's own durable acknowledgement of an operator instruction
+  // (`message_type` "operator_interrupt_ack"). A runtime notice in every
+  // visual respect, but SEPARATE from the catch-all so the renderer can
+  // announce it politely: it is the answer to something the operator just did,
+  // and it is the only notice kind that is. The wording per disposition is
+  // decided in the engine (`operator-instructions.ts`); this kind carries only
+  // the fact that the row IS an acknowledgement, so nothing here compares
+  // prose.
+  "operator_ack",
   "error",
   "compaction",
   "recall",

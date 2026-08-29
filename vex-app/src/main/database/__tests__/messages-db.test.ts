@@ -8,15 +8,32 @@
  * mapper output shape directly.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockedFunction,
+} from "vitest";
 
-type QueryFn = (
-  text: string,
-  params?: readonly unknown[],
-) => Promise<{ rows: ReadonlyArray<Record<string, unknown>> }>;
+/**
+ * The mock keeps `pg.Client.query`'s call signature AND vitest's mock surface.
+ * Casting to the bare function type erased `mockResolvedValueOnce`, so every
+ * arrangement in this file was an unchecked type error carried in the ratchet
+ * baseline; `MockedFunction` keeps both halves and the arrangements are checked
+ * again.
+ */
+type QueryFn = MockedFunction<
+  (
+    text: string,
+    params?: readonly unknown[],
+  ) => Promise<{ rows: ReadonlyArray<Record<string, unknown>> }>
+>;
 
 const mocks = vi.hoisted(() => ({
-  query: vi.fn() as QueryFn,
+  query: vi.fn() as unknown as QueryFn,
   connect: vi.fn(),
   end: vi.fn(),
   buildPoolConfig: vi.fn(),
@@ -323,6 +340,39 @@ describe("messages-db mapper", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.items[0]!.kind).toBe("runtime_notice");
+    expect(result.data.items[0]).not.toHaveProperty("metadata");
+  });
+
+  // M6: the engine's durable acknowledgement of an operator instruction gets
+  // its OWN kind, ahead of the catch-all. Flattened into `runtime_notice` it is
+  // indistinguishable from a wake banner, and the renderer cannot announce the
+  // one notice that answers something the operator just did.
+  it("derives operator_ack from the ack message_type, not the notice catch-all", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 11,
+          session_id: SESSION,
+          role: "system",
+          content:
+            "Saved. The agent is not running a turn right now, so it will read this the next time it runs.",
+          tool_call_id: null,
+          tool_calls: null,
+          created_at: "2026-08-28T10:00:00.000Z",
+          source: "engine",
+          message_type: "operator_interrupt_ack",
+          // The typed disposition rides the row's JSONB, which is NEVER
+          // forwarded: the renderer derives everything from `kind` plus the
+          // engine-authored content, and compares no prose.
+          metadata: { payload: { disposition: "queued_interrupt" } },
+        },
+      ],
+    });
+
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items[0]!.kind).toBe("operator_ack");
     expect(result.data.items[0]).not.toHaveProperty("metadata");
   });
 

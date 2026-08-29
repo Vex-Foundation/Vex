@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ChatSubmitResult } from "@shared/schemas/chat.js";
 import {
+  FREE_TEXT_DISALLOWED,
+  gatedReason,
+  readActivity,
   submitFailureNotice,
   submitSuccessText,
 } from "../composer-helpers.js";
@@ -111,4 +114,82 @@ describe("composer outcome copy", () => {
       expect(notice?.text).toContain("earlier steps may have completed");
     },
   );
+
+  // M2. A continued full-autonomy turn is NOT a failure: the slice ended
+  // because the next one is already scheduled. A terminal banner here is the
+  // renderer calling a healthy hand-off an error, which is the defect the
+  // honest stop reason was introduced to expose rather than create.
+  it("shows no terminal banner when the turn was continued to a scheduled wake", () => {
+    expect(submitFailureNotice(outcome({ stopReason: "waiting_for_wake" }))).toBeNull();
+    // Not an artefact of the zero-tool default arm: a continued turn that DID
+    // dispatch tool calls is still not a failure.
+    expect(
+      submitFailureNotice(
+        outcome({ stopReason: "waiting_for_wake", toolCallsMade: 4 }),
+      ),
+    ).toBeNull();
+  });
+
+  // M4. The detector's stop reason must reach the operator. Without its own
+  // arm it fell through `default: null` and the turn ended in silence - the
+  // loop stopped and nothing on screen said why.
+  it("names a tool-call loop and never offers one-click retry", () => {
+    const notice = submitFailureNotice(outcome({ stopReason: "tool_call_loop" }));
+    expect(notice?.text).toContain("repeated the same tool call");
+    // Unconditionally non-retryable, and deliberately NOT routed through
+    // `incompleteTurnNotice`: reaching this stop reason MEANS identical tool
+    // calls executed, so `toolCallsMade === 0` is unreachable and a
+    // count-gated retry arm would be dead code posing as a safety check.
+    expect(notice?.retryable).toBe(false);
+    expect(notice?.text).toContain("earlier steps may have completed");
+    expect(
+      submitFailureNotice(outcome({ stopReason: "tool_call_loop", toolCallsMade: 9 }))
+        ?.retryable,
+    ).toBe(false);
+  });
+});
+
+// M6 (owner decision). Steering a RUNNING mission is the designed path:
+// `ingress.ts` persists the message as an operator instruction that the loop
+// merges at its next tool-step boundary. The composer gate refused exactly
+// that, leaving Stop as the operator's only lever over a running run.
+describe("free-text gate", () => {
+  it("allows free text into a running mission", () => {
+    expect(FREE_TEXT_DISALLOWED.has("running")).toBe(false);
+  });
+
+  // The gate still holds where free text genuinely cannot answer what the run
+  // is parked on, and each of those states still names its own control.
+  it.each(["paused_approval", "paused_user", "paused_wake"] as const)(
+    "still gates %s and explains which control clears it",
+    (status) => {
+      expect(FREE_TEXT_DISALLOWED.has(status)).toBe(true);
+      expect(gatedReason(status).length).toBeGreaterThan(0);
+    },
+  );
+
+  // The reason string is only ever read for a GATED status. A `running` arm
+  // surviving here would be unreachable copy asserting the opposite of the
+  // contract above.
+  it("no longer carries a reason for running", () => {
+    expect(gatedReason("running")).not.toContain("Stop button");
+  });
+});
+
+describe("readActivity", () => {
+  it("reads the projection main decided", () => {
+    expect(
+      readActivity({ ok: true, data: { activity: { kind: "running" } } as never }),
+    ).toEqual({ kind: "running" });
+  });
+
+  // NULL IS NOT IDLE. An unread or failed runtime state must not let a surface
+  // assert the session is doing nothing - that is how a running agent was
+  // reported Idle in the first place.
+  it("returns null - never an idle activity - when the state is unread or failed", () => {
+    expect(readActivity(undefined)).toBeNull();
+    expect(
+      readActivity({ ok: false, error: { code: "x", message: "y" } } as never),
+    ).toBeNull();
+  });
 });

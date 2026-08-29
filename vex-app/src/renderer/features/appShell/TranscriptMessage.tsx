@@ -480,12 +480,19 @@ function resolveActs(row: TranscriptRowModel): readonly ToolCallActView[] {
  * notice wears the turn-error ROW grammar (A20 — in the flow, not a box):
  * error dot / bold "Error" title / the persisted sanitized message at 13/20.
  * The session-level banner remains the session-scope surface.
+ *
+ * `ack` (M6) is the runtime stamp plus a POLITE live region. It is the engine's
+ * durable answer to an operator instruction, so it is the one notice a screen
+ * reader should hear on arrival - politely, because it reports what already
+ * happened and must never cut across the operator's own typing. Every other
+ * runtime notice (wake banners and the rest) stays silent, which is why this
+ * needed its own tone rather than an `aria-live` on the whole variant.
  */
 function NoticeBody({
   tone,
   children,
 }: {
-  readonly tone: "runtime" | "error";
+  readonly tone: "runtime" | "error" | "ack";
   readonly children: ReactNode;
 }): JSX.Element {
   if (tone === "error") {
@@ -504,7 +511,13 @@ function NoticeBody({
     );
   }
   return (
-    <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-[6px] bg-interactive-hover px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]">
+    <div
+      {...(tone === "ack"
+        ? { role: "status" as const, "aria-live": "polite" as const }
+        : {})}
+      data-vex-notice-tone={tone}
+      className="max-w-[80%] whitespace-pre-wrap break-words rounded-[6px] bg-interactive-hover px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]"
+    >
       {children}
     </div>
   );

@@ -168,6 +168,18 @@ const COMPACTION_MARKER_MESSAGE_TYPE = "compaction_committed";
 const CHAT_STOPPED_MESSAGE_TYPE = "chat_stopped";
 
 /**
+ * Engine `message_type` for the durable acknowledgement written beside an
+ * operator instruction (M6). Surfaces as the `operator_ack` kind.
+ *
+ * Mirrors `OPERATOR_INSTRUCTION_ACK_MESSAGE_TYPE` in the engine's
+ * `core/operator-instructions.ts` - the same string-literal mirror the two
+ * constants above already are, because the engine package is not an import
+ * target from the app's DB layer. The wire value is pinned on both sides by
+ * test.
+ */
+const OPERATOR_INSTRUCTION_ACK_MESSAGE_TYPE = "operator_interrupt_ack";
+
+/**
  * Derive renderer-visible `kind` from row shape using the top-level
  * `message_type` column + the (already allow-list-extracted) tool name.
  * `metadata` JSONB is intentionally never selected.
@@ -194,6 +206,18 @@ function deriveKind(row: MessageRow, toolName: string | null): MessageKind {
   // system marker - it renders as a user row with a "steered" register mark.
   if (row.role === "user" && row.message_type === "operator_interrupt") {
     return "steering";
+  }
+  // M6: the engine's acknowledgement of an operator instruction, ahead of the
+  // catch-all that would otherwise flatten it into `runtime_notice`. Role
+  // guard for the same reason the `chat_stopped` arm has one: the engine only
+  // ever writes this through `appendEngineMessage`, whose default role is
+  // "system", and a notice that announces itself out loud should not be
+  // reachable from an unexpected role.
+  if (
+    row.role === "system"
+    && row.message_type === OPERATOR_INSTRUCTION_ACK_MESSAGE_TYPE
+  ) {
+    return "operator_ack";
   }
   if (row.message_type !== null && row.message_type !== "chat") {
     // Other engine markers (wake banners, LEGACY pre-D-4 overflow stubs from

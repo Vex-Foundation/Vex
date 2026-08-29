@@ -242,6 +242,42 @@ describe("ingress.routeUserMessage", () => {
     expect(mockProcessAgentTurn).not.toHaveBeenCalled();
   });
 
+  // M3/M4: the hint must not CLAIM a provider/runtime error for a pause that
+  // had neither. `restart_orphan` was parked by the reclaim sweep after Vex
+  // died mid-slice; `tool_call_loop` was stopped by the detector. The shared
+  // tail (what happened to the message, what clears the pause) stays on all
+  // three.
+  it.each([
+    ["restart_orphan", "Vex restarted while it was executing"],
+    ["tool_call_loop", "repeated the same tool call without making progress"],
+  ])("names %s as the cause of the pause", async (stopReason, cause) => {
+    mockGetActiveRunBySession.mockResolvedValue({
+      id: "run-5",
+      status: "paused_error",
+      stopReason,
+    });
+
+    const result = await routeUserMessage("s1", "anything");
+
+    expect(result.text).toContain(cause);
+    expect(result.text).not.toContain("provider/runtime error");
+    expect(result.text).toContain("Recover button");
+  });
+
+  // An unnamed reason keeps today's generic wording rather than a wrong one.
+  it("falls back to the generic pause wording for an unnamed stop reason", async () => {
+    mockGetActiveRunBySession.mockResolvedValue({
+      id: "run-6",
+      status: "paused_error",
+      stopReason: "some_future_reason",
+    });
+
+    const result = await routeUserMessage("s1", "anything");
+
+    expect(result.text).toContain("provider/runtime error");
+    expect(result.text).toContain("Recover button");
+  });
+
   it("routes to mission-setup when a draft mission exists and there is no run", async () => {
     mockGetActiveRunBySession.mockResolvedValue(null);
     mockGetSession.mockResolvedValue({ id: "s1", mode: "mission", permission: "restricted" });

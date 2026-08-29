@@ -42,8 +42,38 @@ import { releaseLeaseAndEmitControlState } from "./runtime/release-and-emit.js";
  * tomorrow, not in a response object that is gone once rendered.
  */
 
-const PAUSED_ERROR_TEXT =
-  "Run is paused after a provider/runtime error. I saved your instruction; use the Recover button to re-attempt.";
+/**
+ * Why the run is parked, per stop reason, for the hint returned to a user who
+ * typed at a `paused_error` run.
+ *
+ * CAUSE-SPECIFIC, because the generic sentence below CLAIMS a provider or
+ * runtime error, and for these two reasons that claim is simply false: nothing
+ * failed at the provider. `restart_orphan` was parked by the reclaim sweep
+ * after Vex died mid-slice (M3); `tool_call_loop` was stopped by the detector
+ * after repeating itself (M4). Keyed by the closed engine stop-reason union, so
+ * an unnamed reason falls through to the generic wording rather than to a
+ * wrong one.
+ */
+const PAUSED_ERROR_CAUSE_TEXT: Readonly<Record<string, string>> = {
+  restart_orphan:
+    "Run is paused because Vex restarted while it was executing. Steps already in flight"
+    + " may or may not have completed.",
+  tool_call_loop:
+    "Run is paused because it repeated the same tool call without making progress.",
+};
+
+const PAUSED_ERROR_GENERIC_TEXT = "Run is paused after a provider/runtime error.";
+
+/** The one shared tail: what was done with the message, and what clears it. */
+const PAUSED_ERROR_TAIL =
+  "I saved your instruction; use the Recover button to re-attempt.";
+
+function pausedErrorText(stopReason: string | null): string {
+  const cause =
+    (stopReason === null ? undefined : PAUSED_ERROR_CAUSE_TEXT[stopReason])
+    ?? PAUSED_ERROR_GENERIC_TEXT;
+  return `${cause} ${PAUSED_ERROR_TAIL}`;
+}
 
 /**
  * Route an incoming user message to the correct runtime. Always cancels any
@@ -84,7 +114,7 @@ export async function routeUserMessage(
       await addOperatorCue(sessionId);
       logger.info("ingress.paused_error_hint", { sessionId, runId: activeRun.id });
       return {
-        text: PAUSED_ERROR_TEXT,
+        text: pausedErrorText(activeRun.stopReason),
         toolCallsMade: 0,
         pendingApprovals: [],
         stopReason: null,

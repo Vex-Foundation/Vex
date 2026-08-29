@@ -46,8 +46,13 @@ export interface TranscriptRowModel {
   /**
    * Notice rows only (S3): `error`-kind notices keep the destructive tone;
    * everything else that lands on the notice variant stays neutral.
+   *
+   * `ack` (M6) is visually identical to `runtime` and differs only in that it
+   * is ANNOUNCED: it is the engine answering something the operator just did,
+   * so a screen-reader user learns their instruction landed without having to
+   * go looking for the row.
    */
-  readonly noticeTone?: "runtime" | "error";
+  readonly noticeTone?: "runtime" | "error" | "ack";
   /**
    * User rows only (A33): the message was steered into a LIVE turn
    * (`operator_interrupt`) and is delivered at the loop's next tool-batch
@@ -160,6 +165,7 @@ function resolveVariant(
     case "tool_result":
       return "tool";
     case "runtime_notice":
+    case "operator_ack":
     case "error":
       return "notice";
     case "compaction":
@@ -285,7 +291,12 @@ export function toTranscriptRow(
       label: null,
       content: dto.content,
       createdAt: dto.createdAt,
-      noticeTone: dto.kind === "error" ? "error" : "runtime",
+      noticeTone:
+        dto.kind === "error"
+          ? "error"
+          : dto.kind === "operator_ack"
+            ? "ack"
+            : "runtime",
     };
   }
   return {

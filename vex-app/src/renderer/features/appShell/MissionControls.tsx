@@ -82,6 +82,8 @@ import {
 } from "../../lib/api/mission.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import { cn } from "../../lib/utils.js";
+import { readStopAvailability } from "./composer-submit/stop-availability.js";
+import { resolveStopAffordance } from "./composer-submit/stop-affordance.js";
 import { MissionRestartAffordance } from "./MissionRestartAffordance.js";
 import { MissionErrorAlert } from "./MissionControls/MissionErrorAlert.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -166,6 +168,12 @@ function noticeFor(r: Result<{ readonly outcome: string }>): string | null {
       return "No inference provider - unlock Vex or set up a provider.";
     case "status_changed":
       return "Mission state changed - re-check and retry.";
+    case "blocked_money_state":
+      // The wave-1 recovery money gate. NOT a generic failure: the run is
+      // recoverable, but something on the money path has no proven outcome
+      // yet, and resuming on top of it is how a double spend happens. Say
+      // that, and say what clears it, without naming rows or providers.
+      return "Recover is blocked: a wallet or approval action from this session has no confirmed outcome yet. It clears once that settles.";
     default:
       return "Couldn't complete the action. Re-check the mission state.";
   }
@@ -298,8 +306,23 @@ export function MissionControls({
   if (runtime.hasActiveRun) {
     const status = runtime.status;
     const canContinue = status === "paused_wake" || status === "paused_user";
-    const canRecover = status === "paused_error";
+    // M3/M5: the money gate is enforced in the privileged retry IPC and
+    // MIRRORED here. `recoveryReady` is present exactly for `paused_error`, so
+    // an absent value on this branch means the mirror was not computed and the
+    // button stays offered - the IPC still refuses and names the reason. A
+    // present `blocked` disables it with that reason stated up front, instead
+    // of a click that can only fail.
+    const recoveryBlocked = runtime.recoveryReady?.kind === "blocked";
+    const canRecover = status === "paused_error" && !recoveryBlocked;
     const canEdit = status !== "paused_approval";
+    // The same selector the composer's send/stop key reads (M6). Both surfaces
+    // reach `runStopDispatch`: `mission.stop` and `runtime.requestStop` are two
+    // channel names for that one dispatcher.
+    const stopAffordance = resolveStopAffordance(
+      readStopAvailability(sessionId, runtimeQuery.data, runtimeQuery.isError),
+      "mission",
+      false,
+    );
     return (
       <>
         {canRecover ? (
@@ -333,10 +356,14 @@ export function MissionControls({
           />
           <ControlButton
             label="Stop"
+            ariaLabel={stopAffordance.label}
             tone="danger"
-            disabled={disabled}
+            disabled={disabled || !stopAffordance.offered}
             onClick={() => void run(() => stop.mutateAsync({ sessionId }))}
           />
+          {recoveryBlocked ? (
+            <ControlNoticeLine text={RECOVERY_BLOCKED_TEXT} tone="warning" />
+          ) : null}
           {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
         </div>
       </>
@@ -652,9 +679,34 @@ function ControlButton({
   );
 }
 
-function ControlNoticeLine({ text }: { readonly text: string }): JSX.Element {
+/**
+ * Why Recover is disabled, stated where the disabled button is (rule 08: a
+ * control that refuses must say what it is waiting for, and the disabled
+ * attribute alone says nothing to anyone).
+ *
+ * Structural only. The blocking `reasonKinds` are internal labels for the
+ * audit log, never operator copy, and naming a row would leak money-path
+ * detail into the renderer for no gain.
+ */
+const RECOVERY_BLOCKED_TEXT =
+  "Recover is unavailable: a wallet or approval action from this session has no confirmed outcome yet. It re-enables once that settles.";
+
+function ControlNoticeLine({
+  text,
+  tone,
+}: {
+  readonly text: string;
+  /** `error` (default) speaks as an alert; `warning` is a standing status. */
+  readonly tone?: "error" | "warning";
+}): JSX.Element {
   return (
-    <p role="alert" className="w-full text-xs text-destructive">
+    <p
+      role={tone === "warning" ? "status" : "alert"}
+      className={cn(
+        "w-full text-xs",
+        tone === "warning" ? "text-warning" : "text-destructive",
+      )}
+    >
       {text}
     </p>
   );

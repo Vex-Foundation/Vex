@@ -91,6 +91,13 @@ function runtimeState(over: Record<string, unknown>) {
     leaseActive: false,
     leaseExpiresAt: null,
     pendingControlKind: null,
+    // Wave 2 (M5/M6): both are REQUIRED on the DTO, so a stub without them is
+    // not a valid `runtime.getState` response. They default to the quiet
+    // answer - not stoppable, doing nothing - and each test that needs the
+    // other answer says so, which is what makes the Stop assertions below
+    // mean something instead of riding on an absent field.
+    stoppable: false,
+    activity: { kind: "none" },
     ...over,
   });
 }
@@ -459,7 +466,16 @@ describe("MissionControls", () => {
 
   it("running: Stop + Edit enabled, Continue + Recover disabled", async () => {
     getStateMock.mockResolvedValue(
-      runtimeState({ hasActiveRun: true, status: "running", missionRunId: "r1" }),
+      runtimeState({
+        hasActiveRun: true,
+        status: "running",
+        missionRunId: "r1",
+        // M6: Stop is offered from main's `stoppable`, not from "a run row
+        // exists" - the same answer the composer's Stop key reads.
+        stoppable: true,
+        leaseActive: true,
+        activity: { kind: "running" },
+      }),
     );
     getDraftMock.mockResolvedValue(draftReady());
     getDiffMock.mockResolvedValue(diffAccepted(true));
@@ -496,6 +512,56 @@ describe("MissionControls", () => {
       (screen.getByRole("button", { name: "Continue mission" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+    fireEvent.click(recoverBtn);
+    await waitFor(() => expect(retryMock).toHaveBeenCalledWith({ sessionId: SESSION }));
+  });
+
+  // M3/M5: the money gate. `recoveryReady` is a display MIRROR of the reader
+  // the privileged retry IPC enforces with; these pin that the mirror is
+  // OBEYED and, just as importantly, that its absence does not silently hide
+  // Recover on a session whose mirror was never computed.
+  it("paused_error with a blocked money state: Recover disabled, and it says why", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({
+        hasActiveRun: true,
+        status: "paused_error",
+        missionRunId: "r1",
+        recoveryReady: { kind: "blocked", reasonKinds: ["wallet_intent_live"] },
+      }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    renderControls();
+
+    const recoverBtn = await screen.findByRole("button", { name: "Recover mission" });
+    expect((recoverBtn as HTMLButtonElement).disabled).toBe(true);
+    // A disabled attribute says nothing to anyone (rule 08), so the reason is
+    // on screen as a standing status - and it names no row, provider or
+    // internal reason kind.
+    const why = await screen.findByRole("status");
+    expect(why.textContent).toContain("no confirmed outcome yet");
+    expect(why.textContent).not.toContain("wallet_intent_live");
+    // Disabled means NOT dispatched: the click must not reach the IPC at all.
+    fireEvent.click(recoverBtn);
+    expect(retryMock).not.toHaveBeenCalled();
+  });
+
+  it("paused_error with a ready money state: Recover stays enabled", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({
+        hasActiveRun: true,
+        status: "paused_error",
+        missionRunId: "r1",
+        recoveryReady: { kind: "ready" },
+      }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    retryMock.mockResolvedValue(ok({ outcome: "resumed", runId: "r1" }));
+    renderControls();
+
+    const recoverBtn = await screen.findByRole("button", { name: "Recover mission" });
+    expect((recoverBtn as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(recoverBtn);
     await waitFor(() => expect(retryMock).toHaveBeenCalledWith({ sessionId: SESSION }));
   });
