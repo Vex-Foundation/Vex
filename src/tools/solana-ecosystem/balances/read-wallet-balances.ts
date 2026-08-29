@@ -71,6 +71,26 @@
  * substituted for it, and the two outcomes stay distinguishable: a caller abort
  * rethrows the signal's own reason, a deadline breach throws
  * `SolanaRpcDeadlineExceededError`.
+ *
+ * ## How far the caller's Stop actually reaches
+ *
+ * A read is not three RPC calls; it is those plus the ENRICHMENT legs, and the
+ * enrichment legs are where the time goes (up to 12 SEQUENTIAL pool re-reads).
+ * A signal that is only checked BETWEEN legs still waits for the leg in flight,
+ * so it is passed INTO every leg that can take it:
+ *
+ * | Leg                                   | Reach of the Stop                  |
+ * |---------------------------------------|------------------------------------|
+ * | `getBalance`, both account reads      | into the request (shared transport)|
+ * | Jupiter metadata lookup               | into the request                   |
+ * | DexScreener price batches             | into each request                  |
+ * | DexScreener pool fallback (up to 12)  | into each request, and between them|
+ * | Khalani price fallback                | checked BEFORE the call only       |
+ *
+ * The last row is the one residual: `getTokenBalancesAcrossChains` is a shared
+ * multi-chain scan that exposes no signal of its own, so widening it belongs to
+ * a change that owns that surface. A Stop arriving mid-scan waits for that one
+ * request. Everything before it stops immediately.
  */
 
 import { PublicKey, type Commitment, type FetchFn } from "@solana/web3.js";
@@ -402,7 +422,7 @@ export async function readSolanaWalletBalances(
   // more than that saved call.
 
   const mints = projection.holdings.map((holding) => holding.mint);
-  const metadata = await loadMintMetadata(mints);
+  const metadata = await loadMintMetadata(mints, signal);
   // Enrichment legs are network calls of their own. The caller's Stop is
   // checked around them so an abort during metadata or pricing cannot finish
   // as a successful read.
@@ -412,6 +432,7 @@ export async function readSolanaWalletBalances(
   const pricing = await priceMints(
     [SOL_MINT, ...mints.filter((mint) => mint !== SOL_MINT)],
     ownerAddress,
+    signal,
   );
   signal?.throwIfAborted();
   const priceByMint = pricing.priceByMint;
@@ -579,7 +600,10 @@ interface MintLabel {
  * nothing. Metadata is presentation: a mint that resolves to nothing keeps its
  * row with null labels. Decimals never come from here.
  */
-async function loadMintMetadata(mints: readonly string[]): Promise<Map<string, MintLabel>> {
+async function loadMintMetadata(
+  mints: readonly string[],
+  signal?: AbortSignal,
+): Promise<Map<string, MintLabel>> {
   const labels = new Map<string, MintLabel>();
   const missing: string[] = [];
 
@@ -599,14 +623,18 @@ async function loadMintMetadata(mints: readonly string[]): Promise<Map<string, M
 
   if (missing.length === 0) return labels;
 
+  signal?.throwIfAborted();
   try {
-    const resolved = await getJupiterTokensByMint(missing);
+    const resolved = await getJupiterTokensByMint(missing, signal);
     const metadata = resolved.map(jupiterMintInformationToMetadata);
     for (const meta of metadata) {
       labels.set(meta.address, { symbol: meta.symbol, name: meta.name });
     }
     if (metadata.length > 0) cacheSolanaTokens(metadata);
   } catch (err) {
+    // A Stop is the caller's outcome, not a metadata miss to be shrugged off:
+    // swallowing it here would return null labels and let the read continue.
+    if (signal?.aborted === true) throw signal.reason;
     logger.debug("solana.balances.metadata_lookup_failed", {
       mints: missing.length,
       error: err instanceof Error ? err.name : "unknown",
@@ -640,6 +668,7 @@ interface SolanaPricing {
 async function priceMints(
   mints: readonly string[],
   ownerAddress: string,
+  signal?: AbortSignal,
 ): Promise<SolanaPricing> {
   const accumulator = createBestLiquidityPriceAccumulator({
     wanted: mints,
@@ -652,9 +681,14 @@ async function priceMints(
 
   for (let i = 0; i < mints.length; i += DEXSCREENER_TOKENS_BATCH) {
     const batch = mints.slice(i, i + DEXSCREENER_TOKENS_BATCH);
+    signal?.throwIfAborted();
     try {
-      accumulator.addPairs(await readTokensPairs(SOLANA_DEXSCREENER_SLUG, batch.join(",")));
+      accumulator.addPairs(
+        await readTokensPairs(SOLANA_DEXSCREENER_SLUG, batch.join(","), { signal }),
+      );
     } catch (err) {
+      // A Stop ends the pricing pass; it is not one more unpriced batch.
+      if (signal?.aborted === true) throw signal.reason;
       logger.debug("solana.balances.price_batch_failed", {
         batch: batch.length,
         error: err instanceof Error ? err.name : "unknown",
@@ -667,7 +701,7 @@ async function priceMints(
   // for a mint whose quote asset the provider misprices, the representative
   // pool is exactly the tier-2 pool the rule refuses. JUP is that mint.
   const fallback = await addPoolListsForUnpricedAddresses(
-    { accumulator, chainSlug: SOLANA_DEXSCREENER_SLUG, addresses: mints },
+    { accumulator, chainSlug: SOLANA_DEXSCREENER_SLUG, addresses: mints, signal },
     (address) => address,
     (mint, err) => {
       logger.debug("solana.balances.pool_fallback_failed", {
@@ -687,6 +721,12 @@ async function priceMints(
   }
   const stillUnpriced = mints.filter((mint) => !prices.has(mint));
   if (stillUnpriced.length === 0) return { priceByMint: prices, tiers };
+
+  // `getTokenBalancesAcrossChains` takes no signal of its own (it is a shared
+  // multi-chain scan with many callers), so the Stop is enforced BEFORE the
+  // call rather than inside it. A stop arriving mid-scan still waits for this
+  // one request; see the module header for the residual.
+  signal?.throwIfAborted();
 
   for (const [mint, price] of await khalaniPriceMap(stillUnpriced, ownerAddress)) {
     prices.set(mint, price);

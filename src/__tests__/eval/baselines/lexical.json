@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-seed",
   "datasetVersion": "v3-agent-116",
   "status": "captured",
-  "capturedAt": "2026-08-28T10:36:55.682Z",
+  "capturedAt": "2026-08-29T12:26:44.439Z",
   "metrics": {
     "overall": {
       "count": 109,
-      "recall1": 0.394,
+      "recall1": 0.404,
       "recall5": 0.569,
       "coverage5": 0.495,
-      "mrr5": 0.458,
-      "groupMrr5": 0.418
+      "mrr5": 0.463,
+      "groupMrr5": 0.422
     },
     "awareness": {
       "blind": {
@@ -25,21 +25,21 @@
       },
       "protocolAware": {
         "count": 57,
-        "recall1": 0.404,
+        "recall1": 0.421,
         "recall5": 0.579,
         "coverage5": 0.509,
-        "mrr5": 0.463,
-        "groupMrr5": 0.426
+        "mrr5": 0.471,
+        "groupMrr5": 0.435
       }
     },
     "intentShapes": {
       "single": {
         "count": 90,
-        "recall1": 0.378,
+        "recall1": 0.389,
         "recall5": 0.544,
         "coverage5": 0.544,
-        "mrr5": 0.438,
-        "groupMrr5": 0.438
+        "mrr5": 0.444,
+        "groupMrr5": 0.444
       },
       "cross": {
         "count": 3,
@@ -69,11 +69,11 @@
     "scenarios": {
       "account_history": {
         "count": 14,
-        "recall1": 0.357,
+        "recall1": 0.429,
         "recall5": 0.571,
         "coverage5": 0.571,
-        "mrr5": 0.435,
-        "groupMrr5": 0.435
+        "mrr5": 0.47,
+        "groupMrr5": 0.47
       },
       "bridge": {
         "count": 15,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-seed@v3-agent-116, mode lexical, 109 cases evaluated.",
-    "overall recall@1 0.394, recall@5 0.569, coverage@5 0.495, mrr@5 0.458, groupMrr@5 0.418.",
-    "Measured delta vs previous baseline (v3-agent-116, captured 2026-08-25T12:46:56.537Z): 22 metric values moved; overall recall@5 0.569 -> 0.569, overall mrr@5 0.456 -> 0.458, case count 109 -> 109."
+    "overall recall@1 0.404, recall@5 0.569, coverage@5 0.495, mrr@5 0.463, groupMrr@5 0.422.",
+    "Measured delta vs previous baseline (v3-agent-116, captured 2026-08-28T10:36:55.682Z): 12 metric values moved; overall recall@5 0.569 -> 0.569, overall mrr@5 0.458 -> 0.463, case count 109 -> 109."
   ]
 }
