@@ -40,6 +40,7 @@ function message(
     success: null,
     displayStatus: null,
     board: null,
+    interruptDisposition: null,
     ...overrides,
   };
 }

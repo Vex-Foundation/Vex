@@ -71,6 +71,92 @@ export const runtimePausedWakeSchema = z
   .strict();
 export type RuntimePausedWake = z.infer<typeof runtimePausedWakeSchema>;
 
+// ── Session activity projection (M5) ────────────────────────────────
+
+/**
+ * ONE discriminated answer to "is this session doing anything right now, and
+ * if it is asleep, until when".
+ *
+ * WHY IT EXISTS. A full-autonomy agent session alternates between lease-held
+ * slices and lease-less parks on a pending wake. Every surface that wanted to
+ * say what the session was doing had to re-derive that from `leaseActive` (a
+ * sawtooth) plus a wake read it did not have, so the tape reported wake-driven
+ * agent work as "Idle" while the agent was mid-run. This is the derived fact,
+ * computed once in main from the same snapshot that answers `stoppable`.
+ *
+ * NOT A DUPLICATE OF `leaseActive`. `leaseActive` stays exactly what it was -
+ * the raw lease summary. `activity` is the POLICY over it, and every consumer
+ * reads the policy rather than re-deriving one of its own.
+ *
+ * SESSION-SCOPED ONLY. The sleeping arm is derived from the pending wake row
+ * with `mission_run_id IS NULL`. A mission run's own wake keeps its dedicated,
+ * richer channel (`pausedWake` + `status === "paused_wake"`), so a mission
+ * session never reports `sleeping` here and the two surfaces cannot contradict
+ * each other.
+ */
+export const runtimeActivitySchema = z.discriminatedUnion("kind", [
+  /** No lease and no session-scoped wake: nothing of this session's own is running. */
+  z.object({ kind: z.literal("none") }).strict(),
+  /** A runner holds this session's lease right now. */
+  z.object({ kind: z.literal("running") }).strict(),
+  /**
+   * Parked on a session-scoped wake. `nextWakeAt` is the pending row's
+   * `due_at` - the ONE machine-readable fact of the park, exactly as
+   * `pausedWake.dueAt` is for a mission run. No reason text rides here: the
+   * agent-authored reason is display text with its own bound and its own
+   * channel, and this projection gates a status word.
+   */
+  z
+    .object({
+      kind: z.literal("sleeping"),
+      nextWakeAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+]);
+export type RuntimeActivity = z.infer<typeof runtimeActivitySchema>;
+
+/**
+ * Whether the operator's Recover affordance may be offered, mirrored from the
+ * SAME unresolved-money-state reader the privileged retry IPC enforces with
+ * (`approval-intents/money-state.ts`).
+ *
+ * DISPLAY MIRROR, NEVER AUTHORITY. `runtime-retry-dispatch.ts` re-reads this
+ * fact under the session control lock and refuses on its own answer; this field
+ * exists so the button can be honest BEFORE the click instead of offering an
+ * action the engine will refuse. A renderer that ignored it would be rude, not
+ * unsafe.
+ *
+ * FAIL-CLOSED and PRESENT ONLY for a `paused_error` run - the one status where
+ * Recover is offered. An unreadable money state projects as `blocked`, because
+ * an unknown money outcome is not a clear one (rule 90).
+ *
+ * `reasonKinds` are the reader's own STRUCTURAL labels (`wallet_intent_live`,
+ * `approval_in_flight`, ...) - never a provider message, a row id or user
+ * content. They are an open set: the reader gains kinds as the money path
+ * gains state machines, so a consumer maps what it knows and keeps a total
+ * default branch.
+ */
+/**
+ * The one reason kind the DTO adds on top of the money-state reader's own set:
+ * the state could not be read at all. Named rather than silent, so the surface
+ * says "could not check" instead of inventing a blocking reason the reader
+ * never reported.
+ */
+export const MONEY_STATE_UNREADABLE = "money_state_unreadable";
+
+export const runtimeRecoveryReadinessSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("ready") }).strict(),
+  z
+    .object({
+      kind: z.literal("blocked"),
+      reasonKinds: z.array(z.string().max(64)).max(50),
+    })
+    .strict(),
+]);
+export type RuntimeRecoveryReadiness = z.infer<
+  typeof runtimeRecoveryReadinessSchema
+>;
+
 // ── DTO returned by runtime.getState ────────────────────────────────
 
 export const runtimeStateDtoSchema = z
@@ -166,6 +252,19 @@ export const runtimeStateDtoSchema = z
      * renderer ship in one bundle, so a required field is safe here.
      */
     stoppable: z.boolean(),
+    /**
+     * What this session is doing right now (see `runtimeActivitySchema`).
+     *
+     * REQUIRED, like `stoppable`, and for the same reason: main and renderer
+     * ship in one bundle, and an absent value read as "none" would report a
+     * running agent as idle - the exact defect this field closes.
+     */
+    activity: runtimeActivitySchema,
+    /**
+     * Present ONLY while `status === "paused_error"` - the one state where the
+     * Recover control is offered. See `runtimeRecoveryReadinessSchema`.
+     */
+    recoveryReady: runtimeRecoveryReadinessSchema.optional(),
   })
   .strict()
   /**
@@ -185,6 +284,32 @@ export const runtimeStateDtoSchema = z
         message: 'pausedWake is only valid when status is "paused_wake"',
       });
     }
+    /**
+     * `activity: running` is DERIVED from the live lease, so the two must agree
+     * or the DTO carries two answers to one question. The converse is NOT
+     * enforced: a lease held for a mission run's slice is legitimately
+     * `running` here too, and a lease that expires between the two column
+     * reads of one snapshot cannot happen (they come from the same row).
+     */
+    if (state.activity.kind === "running" && !state.leaseActive) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["activity"],
+        message: 'activity "running" requires an active lease',
+      });
+    }
+    /**
+     * Recover readiness is meaningless without the pause it gates. Present on
+     * any other status would mean a surface could disable (or enable) Recover
+     * from a fact that was never computed for that state.
+     */
+    if (state.recoveryReady !== undefined && state.status !== "paused_error") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["recoveryReady"],
+        message: 'recoveryReady is only valid when status is "paused_error"',
+      });
+    }
   });
 export type RuntimeStateDto = z.infer<typeof runtimeStateDtoSchema>;
 
@@ -193,13 +318,14 @@ export type RuntimeStateDto = z.infer<typeof runtimeStateDtoSchema>;
  * are composed at the IPC boundary rather than read from the run.
  *
  * `mission-runs-db.ts` reports these facts and must not know about wakes or the
- * control-gating policy; `stoppable` is decided by the aggregate and
- * `pausedWake` by a separate, status-gated read. Naming the subset keeps a
- * required DTO field from silently becoming that helper's problem.
+ * control-gating policy; `stoppable` and `activity` are decided by the
+ * aggregate, and `pausedWake` / `recoveryReady` by separate, status-gated
+ * reads. Naming the subset keeps a required DTO field from silently becoming
+ * that helper's problem.
  */
 export type RuntimeRunStateFacts = Omit<
   RuntimeStateDto,
-  "stoppable" | "pausedWake"
+  "stoppable" | "pausedWake" | "activity" | "recoveryReady"
 >;
 
 // ── Inputs ──────────────────────────────────────────────────────────

@@ -37,6 +37,7 @@ const BASE: Omit<MessageRow, "role" | "board"> = {
   duration_ms: null,
   success: null,
   display_status: null,
+  interrupt_disposition: null,
 };
 
 function row(role: string, board: unknown): MessageRow {

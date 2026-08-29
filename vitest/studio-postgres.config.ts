@@ -12,6 +12,11 @@ export default defineConfig({
       "@utils": resolve(root, "src/utils"),
       "@config": resolve(root, "src/config"),
       "@vex-agent": resolve(root, "src/vex-agent"),
+      // The control-state aggregate lives in the desktop main process but its
+      // one hand-written statement runs against THIS schema, so its live proof
+      // belongs in this lane. Reaching that module means resolving the shared
+      // contracts it imports.
+      "@shared": resolve(root, "vex-app/src/shared"),
     },
   },
   test: {
@@ -20,6 +25,9 @@ export default defineConfig({
       "src/__tests__/integration/migrations/096-wallet-wrap-intents.int.test.ts",
       "src/__tests__/integration/engine/studio-*.int.test.ts",
       "src/__tests__/integration/repos/money-state-reader.int.test.ts",
+      "src/__tests__/integration/repos/session-control-state-wake.int.test.ts",
+      "src/__tests__/integration/repos/recovery-money-gate-race.int.test.ts",
+      "src/__tests__/integration/repos/recovery-reverse-lock-order.int.test.ts",
       "src/__tests__/integration/repos/wallet-transaction-*.int.test.ts",
       "src/__tests__/integration/repos/wallet-wrap-*.int.test.ts",
       "src/__tests__/integration/repos/swap-prequotes-claim.int.test.ts",

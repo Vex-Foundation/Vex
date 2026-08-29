@@ -325,6 +325,9 @@ describe("ComposerSendControl", () => {
         globalModelId: null,
         onReasoningPick: vi.fn(),
         stopAvailable: false,
+        // M6: the key is named by TARGET now. The owner resolves the words
+        // through `resolveStopAffordance`; this control only renders them.
+        stopLabel: "Stop agent",
         stopRequested: false,
         onStop: vi.fn(),
         submitDisabled: false,

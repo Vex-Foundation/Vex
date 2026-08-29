@@ -91,6 +91,13 @@ function runtimeState(over: Record<string, unknown>) {
     leaseActive: false,
     leaseExpiresAt: null,
     pendingControlKind: null,
+    // Wave 2 (M5/M6): both are REQUIRED on the DTO, so a stub without them is
+    // not a valid `runtime.getState` response. They default to the quiet
+    // answer - not stoppable, doing nothing - and each test that needs the
+    // other answer says so, which is what makes the Stop assertions below
+    // mean something instead of riding on an absent field.
+    stoppable: false,
+    activity: { kind: "none" },
     ...over,
   });
 }
@@ -459,7 +466,16 @@ describe("MissionControls", () => {
 
   it("running: Stop + Edit enabled, Continue + Recover disabled", async () => {
     getStateMock.mockResolvedValue(
-      runtimeState({ hasActiveRun: true, status: "running", missionRunId: "r1" }),
+      runtimeState({
+        hasActiveRun: true,
+        status: "running",
+        missionRunId: "r1",
+        // M6: Stop is offered from main's `stoppable`, not from "a run row
+        // exists" - the same answer the composer's Stop key reads.
+        stoppable: true,
+        leaseActive: true,
+        activity: { kind: "running" },
+      }),
     );
     getDraftMock.mockResolvedValue(draftReady());
     getDiffMock.mockResolvedValue(diffAccepted(true));
@@ -483,7 +499,15 @@ describe("MissionControls", () => {
 
   it("paused_error: Recover enabled (dispatches mission.retry), Continue disabled", async () => {
     getStateMock.mockResolvedValue(
-      runtimeState({ hasActiveRun: true, status: "paused_error", missionRunId: "r1" }),
+      runtimeState({
+        hasActiveRun: true,
+        status: "paused_error",
+        missionRunId: "r1",
+        // Recover requires the POSITIVE answer now. Main computes this mirror
+        // for every `paused_error` state it pushes, so a ready one is the
+        // ordinary shape; the absent case is its own test below.
+        recoveryReady: { kind: "ready" },
+      }),
     );
     getDraftMock.mockResolvedValue(draftReady());
     getDiffMock.mockResolvedValue(diffAccepted(true));
@@ -496,6 +520,139 @@ describe("MissionControls", () => {
       (screen.getByRole("button", { name: "Continue mission" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+    fireEvent.click(recoverBtn);
+    await waitFor(() => expect(retryMock).toHaveBeenCalledWith({ sessionId: SESSION }));
+  });
+
+  // M3/M5: the money gate. `recoveryReady` is a display MIRROR of the reader
+  // the privileged retry IPC enforces with; these pin that the mirror is
+  // OBEYED and that it FAILS CLOSED - an answer nobody computed is not
+  // permission.
+  it("paused_error with a blocked money state: Recover disabled, and it says why", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({
+        hasActiveRun: true,
+        status: "paused_error",
+        missionRunId: "r1",
+        recoveryReady: { kind: "blocked", reasonKinds: ["wallet_intent_live"] },
+      }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    renderControls();
+
+    const recoverBtn = await screen.findByRole("button", { name: "Recover mission" });
+    expect((recoverBtn as HTMLButtonElement).disabled).toBe(true);
+    // A disabled attribute says nothing to anyone (rule 08), so the reason is
+    // on screen as a standing status - and it names no row, provider or
+    // internal reason kind.
+    const why = await screen.findByRole("status");
+    expect(why.textContent).toContain("no confirmed outcome yet");
+    expect(why.textContent).not.toContain("wallet_intent_live");
+    // Disabled means NOT dispatched: the click must not reach the IPC at all.
+    fireEvent.click(recoverBtn);
+    expect(retryMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * THE fail-closed case, and the one that regressed. `!blocked` is true for
+   * `undefined`, so an absent mirror - the one answer nobody computed - was
+   * read as permission and Recover was offered on it. Unknown is not ready.
+   */
+  it("paused_error with NO mirror at all: Recover disabled and says it is unconfirmed", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({ hasActiveRun: true, status: "paused_error", missionRunId: "r1" }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    renderControls();
+
+    const recoverBtn = await screen.findByRole("button", { name: "Recover mission" });
+    expect((recoverBtn as HTMLButtonElement).disabled).toBe(true);
+    const why = await screen.findByRole("status");
+    expect(why.textContent).toContain("has not confirmed");
+    fireEvent.click(recoverBtn);
+    expect(retryMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * "Could not check" is a different sentence from "something is settling".
+   * The unresolved-outcome copy asserts an action EXISTS and is in flight,
+   * which tells an operator to wait for something that may not be there.
+   */
+  it("an unreadable money state says it could not check, not that work is pending", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({
+        hasActiveRun: true,
+        status: "paused_error",
+        missionRunId: "r1",
+        recoveryReady: {
+          kind: "blocked",
+          reasonKinds: ["money_state_unreadable"],
+        },
+      }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    renderControls();
+
+    const recoverBtn = await screen.findByRole("button", { name: "Recover mission" });
+    expect((recoverBtn as HTMLButtonElement).disabled).toBe(true);
+    const why = await screen.findByRole("status");
+    expect(why.textContent).toContain("could not check");
+    expect(why.textContent).not.toContain("no confirmed outcome yet");
+    expect(why.textContent).not.toContain("money_state_unreadable");
+  });
+
+  /**
+   * Blocking recovery must not delete the ACCOUNT of what happened. The alert
+   * was gated on the button's availability, so a blocked money state removed
+   * the restart-orphan / tool-call-loop explanation entirely and left a
+   * disabled control with no reason for either fact.
+   */
+  it("keeps the cause alert visible while recovery is blocked", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({
+        hasActiveRun: true,
+        status: "paused_error",
+        missionRunId: "r1",
+        stopReason: "restart_orphan",
+        recoveryReady: {
+          kind: "blocked",
+          reasonKinds: ["wallet_intent_live"],
+        },
+      }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    renderControls();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.getAttribute("data-vex-area")).toBe("mission-error-alert");
+    expect(alert.textContent).toMatch(/interrupted by a restart/i);
+    expect(
+      (
+        await screen.findByRole("button", { name: "Recover mission" })
+      ) as HTMLButtonElement,
+    ).toHaveProperty("disabled", true);
+  });
+
+  it("paused_error with a ready money state: Recover stays enabled", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({
+        hasActiveRun: true,
+        status: "paused_error",
+        missionRunId: "r1",
+        recoveryReady: { kind: "ready" },
+      }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    retryMock.mockResolvedValue(ok({ outcome: "resumed", runId: "r1" }));
+    renderControls();
+
+    const recoverBtn = await screen.findByRole("button", { name: "Recover mission" });
+    expect((recoverBtn as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(recoverBtn);
     await waitFor(() => expect(retryMock).toHaveBeenCalledWith({ sessionId: SESSION }));
   });
@@ -574,7 +731,12 @@ describe("MissionControls", () => {
     // getDraft returns null for the whole active run. The toolbar must key off
     // runtime alone — this pins the gate fix.
     getStateMock.mockResolvedValue(
-      runtimeState({ hasActiveRun: true, status: "paused_error", missionRunId: "r1" }),
+      runtimeState({
+        hasActiveRun: true,
+        status: "paused_error",
+        missionRunId: "r1",
+        recoveryReady: { kind: "ready" },
+      }),
     );
     getDraftMock.mockResolvedValue(ok(null));
     renderControls();
@@ -764,6 +926,8 @@ describe("MissionControls - paused_error standing alert (issue #42)", () => {
         status: "paused_error",
         missionRunId: "r1",
         stopReason: "provider_error",
+        // Clicking Recover requires the mirror to say ready.
+        recoveryReady: { kind: "ready" },
       }),
     );
     getDraftMock.mockResolvedValue(draftReady());
@@ -803,6 +967,7 @@ describe("MissionControls - paused_error standing alert (issue #42)", () => {
         status: "paused_error",
         missionRunId: "r1",
         stopReason: "provider_error",
+        recoveryReady: { kind: "ready" },
       }),
     );
     getDraftMock.mockResolvedValue(draftReady());
