@@ -108,7 +108,20 @@ export async function casRefuseStudioBeforeDispatchWith(
   client: ClientBase,
   input: {
     readonly approvalId: string;
-    readonly refusalReason: StudioPostDecisionRefusalReason;
+    /**
+     * Post-decision causes, PLUS `project_deleted`.
+     *
+     * `project_deleted` is normally a PENDING cause - `refusePendingStudioIntents`
+     * writes it to rows still awaiting a decision. It is accepted here for the
+     * one case where a project is deleted while an intent is ALREADY APPROVED
+     * but not yet dispatched: the pending sweep's CAS is guarded on
+     * `status = 'pending'` and cannot touch such a row, so the dispatch path
+     * settles it, and it must record the true cause rather than borrow
+     * `scope_unavailable`. Migration 086's CHECK already accepts the value; this
+     * widening follows the same precedent as `"scope_changed"` on
+     * `StudioGateOutcome`.
+     */
+    readonly refusalReason: StudioPostDecisionRefusalReason | "project_deleted";
     /** Serialized JSON body, or `null` when nothing could be serialized. */
     readonly settlementJson: string | null;
     readonly settlementBytes: number | null;
@@ -302,7 +315,11 @@ const COMMIT_STUDIO_SETTLEMENT_SQL = `UPDATE approval_intents
  RETURNING approval_id`;
 
 export async function commitStudioSettlementWith(
-  client: PoolClient,
+  // `ClientBase`, matching `casRefuseStudioBeforeDispatchWith` in this same
+  // file: the body issues one `client.query` and nothing else, so requiring a
+  // pooled client only excluded the privileged main process's own `pg.Client`
+  // - which is exactly the caller the project-delete transaction runs on.
+  client: ClientBase,
   input: {
     readonly approvalId: string;
     readonly status: ApprovalExecutionStatus;

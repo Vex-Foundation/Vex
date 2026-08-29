@@ -178,6 +178,10 @@ function scriptPool(
           scope_version: 4,
           permission: "full",
           backing_session_id: SESSION_ID,
+          // An ACTIVE project. `loadProjectScope` reads this column and throws
+          // `ProjectDeletedError` for anything non-null, which the dispatch
+          // path settles as `project_deleted`.
+          deleted_at: null,
         },
       ];
     }
@@ -200,7 +204,7 @@ beforeEach(() => {
   getStudioSettlementByApprovalId.mockResolvedValue(null);
   clientQuery.mockImplementation(async (sql: unknown) => {
     if (String(sql).includes("FROM projects")) {
-      return { rows: [{ scope_version: 4 }], rowCount: 1 };
+      return { rows: [{ scope_version: 4, deleted_at: null }], rowCount: 1 };
     }
     return { rows: [], rowCount: 0 };
   });
@@ -212,6 +216,98 @@ beforeEach(() => {
     success: true,
     output: "sent",
     data: { txHash: "0xabc" },
+  });
+});
+
+describe("a project deleted between approval and dispatch (B0)", () => {
+  it("REFUSES at the hydration read and never reaches the executor", async () => {
+    // `loadProjectScope` is the first thing to see the tombstone. It throws a
+    // TYPED `ProjectDeletedError` so the caller can settle `project_deleted`
+    // rather than the generic `scope_unavailable` - a deleted project is not an
+    // unreadable one, and telling the user Vex could not read something would
+    // be false.
+    scriptPool([]);
+    poolQuery.mockImplementation(async (sql: unknown) => {
+      if (String(sql).includes("FROM projects")) {
+        return [
+          {
+            id: PROJECT_ID,
+            scope_version: 4,
+            permission: "full",
+            backing_session_id: SESSION_ID,
+            deleted_at: new Date("2026-08-29T10:00:00.000Z"),
+          },
+        ];
+      }
+      return [];
+    });
+
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
+
+    // THE EXECUTOR SEAM WAS NEVER REACHED. Asserted on the spy, not on row
+    // state: a refusal that still called the tool would have moved funds.
+    expect(admitStudioCall).not.toHaveBeenCalled();
+
+    // A pre-dispatch refusal is reported as a SETTLED dispatch carrying the
+    // refusal as its tool result - the same envelope the final gate produces -
+    // so the caller always learns the action's terminal state from one shape.
+    expect(outcome.kind).toBe("dispatched");
+    if (outcome.kind !== "dispatched") return;
+    expect(outcome.executionStatus).toBe("failed");
+    expect(outcome.toolResult?.output).toContain("was deleted");
+    expect(outcome.toolResult?.output).toContain("no funds moved");
+
+    // Settled under its OWN cause, not the generic `scope_unavailable` a
+    // thrown-and-swallowed hydration error used to produce.
+    expect(casRefuseStudioBeforeDispatchWith).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ refusalReason: "project_deleted" }),
+    );
+  });
+
+  it("REFUSES at the FINAL GATE when the tombstone lands after hydration", async () => {
+    // The gate re-reads the project row under the session control lock, which
+    // is the SAME lock the delete transaction takes as edge 0. So a delete that
+    // commits after hydration is necessarily visible here - this is the last
+    // thing standing between an approved action and a wallet.
+    clientQuery.mockImplementation(async (sql: unknown) => {
+      if (String(sql).includes("FROM projects")) {
+        return {
+          rows: [
+            {
+              scope_version: 4,
+              deleted_at: new Date("2026-08-29T10:00:00.000Z"),
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
+
+    // THE EXECUTOR SEAM WAS NEVER REACHED - the assertion that actually
+    // matters, because the alternative is a tool call against a wallet.
+    expect(admitStudioCall).not.toHaveBeenCalled();
+
+    // A gate refusal settles INSIDE the claim transaction and is reported to
+    // the caller as a settled dispatch carrying the refusal as its result,
+    // rather than as a `refused` envelope: the claim already committed this row
+    // in this transaction, so the refusal has to settle it here.
+    expect(outcome.kind).toBe("dispatched");
+    if (outcome.kind !== "dispatched") return;
+    expect(outcome.executionStatus).toBe("failed");
+    expect(outcome.toolResult?.success).toBe(false);
+    expect(outcome.toolResult?.output).toContain("was deleted");
+    expect(outcome.toolResult?.output).toContain("no funds moved");
+
+    // Reported as its own cause, NOT folded into `scope_changed`: a deleted
+    // project and a re-scoped one have different remedies.
+    expect(commitStudioSettlementWith).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ refusalReason: "project_deleted" }),
+    );
   });
 });
 
@@ -363,7 +459,7 @@ describe("refusals before the dispatch", () => {
   it("does not dispatch when the project scope moved after the decision committed", async () => {
     clientQuery.mockImplementation(async (sql: unknown) => {
       if (String(sql).includes("FROM projects")) {
-        return { rows: [{ scope_version: 9 }], rowCount: 1 };
+        return { rows: [{ scope_version: 9, deleted_at: null }], rowCount: 1 };
       }
       return { rows: [], rowCount: 0 };
     });
@@ -678,6 +774,7 @@ describe("the commit-time scope check compares against the ENQUEUE version", () 
             scope_version: 9,
             permission: "full",
             backing_session_id: SESSION_ID,
+            deleted_at: null,
           },
         ];
       }
@@ -685,7 +782,7 @@ describe("the commit-time scope check compares against the ENQUEUE version", () 
     });
     clientQuery.mockImplementation(async (sql: unknown) => {
       if (String(sql).includes("FROM projects")) {
-        return { rows: [{ scope_version: 9 }], rowCount: 1 };
+        return { rows: [{ scope_version: 9, deleted_at: null }], rowCount: 1 };
       }
       return { rows: [], rowCount: 0 };
     });

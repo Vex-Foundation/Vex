@@ -51,6 +51,14 @@ export default defineConfig({
             "src/preload/**/__tests__/**/*.test.ts",
             "src/shared/**/__tests__/**/*.test.ts",
           ],
+          /**
+           * `*.int.test.ts` needs a real PostgreSQL with every migration
+           * applied, and this config starts none. Those files belong to the
+           * repository's `test:studio-postgres` lane, which owns the
+           * container; running them here would fail on a missing database
+           * rather than on the behaviour they assert.
+           */
+          exclude: ["**/node_modules/**", "**/dist/**", "**/*.int.test.ts"],
         },
       },
       {

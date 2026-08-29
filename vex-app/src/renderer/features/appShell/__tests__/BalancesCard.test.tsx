@@ -299,7 +299,15 @@ describe("BalancesCard - session scope (C4)", () => {
 
   it("reads the SESSION portfolio, never the global one", () => {
     mountWith([token({ tokenName: "Token A", symbol: "AAA", balanceUsd: 10 })], SESSION);
-    expect(mockUsePortfolio).toHaveBeenCalledWith(SESSION);
+    // The hook takes the WHOLE validated read input now, not a
+    // `string | null` session id: that parameter could not express the B0
+    // project scope and collapsed it to `null`, which IS the global aggregate.
+    // The property asserted is unchanged - this card reads the SESSION, never
+    // the global inventory.
+    expect(mockUsePortfolio).toHaveBeenCalledWith({
+      scope: "session",
+      sessionId: SESSION,
+    });
   });
 
   it("carries the session scope into the All-assets route it opens", () => {

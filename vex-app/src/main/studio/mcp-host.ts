@@ -69,8 +69,14 @@ import { chmodSync, realpathSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 
+import type {
+  StudioHostStatus,
+  StudioHostUnavailableCause,
+} from "@shared/schemas/studio.js";
+
 import { CONFIG_DIR } from "../paths/config-dir.js";
 import { log } from "../logger/index.js";
+import { publishStudioHostStatus } from "./host-status.js";
 import { studioReadiness } from "./readiness.js";
 import { planStudioEndpoint, unprovenWindowsTransport } from "./mcp-host/endpoint.js";
 import {
@@ -178,6 +184,51 @@ let lifecycleEpoch = 0;
  */
 let reservedConnections = 0;
 
+/**
+ * THE RENDERER-VISIBLE STATUS, derived from the state above and nothing else.
+ *
+ * Derived rather than stored so it cannot drift from the facts it describes:
+ * there is no second variable to forget to update, and every transition site
+ * simply calls `emitHostStatus()` after mutating whatever it owns.
+ *
+ * Precedence is deliberate. `shuttingDown` outranks everything because a quit
+ * is terminal and a listener that is closing is not "locked" in the sense a
+ * user means it. `locked` outranks `running` because the lock teardown clears
+ * the server in the same tick it sets the flag. `starting` is only reachable
+ * while an attempt is between its first line and its publication gate.
+ */
+let startsInFlight = 0;
+let shuttingDown = false;
+let lastUnavailableCause: StudioHostUnavailableCause = "starting";
+
+function currentHostStatus(): StudioHostStatus {
+  const connectionCount = reservedConnections;
+  const atCapacity = connectionCount >= STUDIO_MAX_CONNECTIONS;
+  const base = {
+    connectionCount,
+    maxConnections: STUDIO_MAX_CONNECTIONS,
+    atCapacity,
+  } as const;
+  if (shuttingDown) {
+    return { ...base, state: "unavailable", cause: "shutting_down" };
+  }
+  if (state.locked) return { ...base, state: "locked", cause: null };
+  if (state.server !== null && state.endpoint !== null) {
+    return { ...base, state: "running", cause: null };
+  }
+  if (startsInFlight > 0) return { ...base, state: "starting", cause: null };
+  return { ...base, state: "unavailable", cause: lastUnavailableCause };
+}
+
+/**
+ * Publish the current status. Identical consecutive payloads are coalesced by
+ * the cache, so calling this from every transition site is cheap and the sites
+ * do not have to reason about whether anything visible actually changed.
+ */
+function emitHostStatus(): void {
+  publishStudioHostStatus(currentHostStatus());
+}
+
 /** The current lifecycle epoch. Exposed for the race tests. */
 export function studioMcpLifecycleEpoch(): number {
   return lifecycleEpoch;
@@ -197,12 +248,17 @@ function advanceLifecycleEpoch(): number {
 /** Claim one established-connection slot, or refuse. Release is idempotent. */
 function reserveConnectionSlot(): ConnectionSlotOutcome {
   if (reservedConnections >= STUDIO_MAX_CONNECTIONS) {
+    // The ESTABLISHED bound. This one really is "Studio is full", so the emit
+    // here carries `atCapacity: true` - unlike the handshake-pending refusal in
+    // `handleConnection`, which is a different and much smaller queue.
+    emitHostStatus();
     return {
       ok: false,
       refusal: atCapacityRefusal(STUDIO_MAX_CONNECTIONS, "MCP connections"),
     };
   }
   reservedConnections += 1;
+  emitHostStatus();
   let released = false;
   return {
     ok: true,
@@ -210,6 +266,7 @@ function reserveConnectionSlot(): ConnectionSlotOutcome {
       if (released) return;
       released = true;
       reservedConnections -= 1;
+      emitHostStatus();
     },
   };
 }
@@ -312,7 +369,9 @@ async function runQueuedStart(
   if (state.queued?.epoch === epoch) state.queued = null;
   // A teardown may have landed while this waited: that epoch queues its own
   // start, and this one refuses rather than binding for a dead lifecycle.
-  if (epoch !== lifecycleEpoch) return refusedStart(lockedSentence());
+  if (epoch !== lifecycleEpoch) {
+    return refusedStart(lockedSentence(), "endpoint_unavailable");
+  }
   return startStudioMcpHost();
 }
 
@@ -325,13 +384,36 @@ async function runStart(epoch: number): Promise<StudioHostStart> {
   if (state.server !== null && state.endpoint !== null) {
     return { started: true, endpoint: state.endpoint };
   }
-  if (hostDeps === null) {
-    return refusedStart("The Vex Studio MCP host has no executor configured.");
-  }
   state.locked = false;
+  // THE `starting` WINDOW OPENS HERE and closes in `finally` below, which is
+  // what makes the state observable for exactly as long as an attempt is
+  // between this line and its publication gate. It is a COUNTER rather than a
+  // flag because a queued follow-up attempt can overlap a stale one.
+  startsInFlight += 1;
+  shuttingDown = false;
+  emitHostStatus();
+  try {
+    return await runStartAttempt(epoch);
+  } finally {
+    startsInFlight -= 1;
+    emitHostStatus();
+  }
+}
+
+async function runStartAttempt(epoch: number): Promise<StudioHostStart> {
+  // Inside the attempt, not before it, so that the `finally` above publishes
+  // this refusal too. A refusal that returned before the `starting` window
+  // opened left the cache holding whatever it said last, and the renderer was
+  // never told the host had refused.
+  if (hostDeps === null) {
+    return refusedStart(
+      "The Vex Studio MCP host has no executor configured.",
+      "not_configured",
+    );
+  }
 
   const readiness = studioReadiness();
-  if (!readiness.ready) return refusedStart(readiness.cause);
+  if (!readiness.ready) return refusedStart(readiness.cause, readiness.code);
 
   const plan = planStudioEndpoint({
     platform: process.platform,
@@ -341,13 +423,17 @@ async function runStart(epoch: number): Promise<StudioHostStart> {
     uid: typeof process.getuid === "function" ? process.getuid() : -1,
     probeDirectory: nodeDirectoryProbe,
   });
-  if (plan.kind === "refused") return refusedStart(plan.message);
+  if (plan.kind === "refused") {
+    return refusedStart(plan.message, "endpoint_unavailable");
+  }
 
   // THE WINDOWS RUNTIME GATE (contract 1.6). The pipe was PLANNED - derivation
   // and syntax are unchanged and still vector-tested - and the transport is
   // refused until a Windows runner has measured its security descriptor.
   const gated = unprovenWindowsTransport(plan);
-  if (gated !== null && gated.kind === "refused") return refusedStart(gated.message);
+  if (gated !== null && gated.kind === "refused") {
+    return refusedStart(gated.message, "endpoint_unavailable");
+  }
 
   let verifyDirectoryIdentity = (): string | null => null;
   if (plan.kind === "pipe") {
@@ -362,29 +448,40 @@ async function runStart(epoch: number): Promise<StudioHostStart> {
         `The Vex Studio MCP host will not bind the named pipe ${plan.path} on `
           + `${process.platform}: named pipes exist on Windows only, and binding `
           + "that name here would create an ordinary file, not an endpoint.",
+        "endpoint_unavailable",
       );
     }
     // A pipe has no parent directory and no stale file: the ONLY question is
     // whether another Vex is already serving this name.
     const liveFailure = await refuseLiveEndpoint(plan.path);
-    if (liveFailure !== null) return refusedStart(liveFailure);
+    if (liveFailure !== null) {
+      return refusedStart(liveFailure, "endpoint_unavailable");
+    }
   } else {
     // Two steps, in this order: the parent must be proven private BEFORE any
     // decision about an entry inside it, because "is this stale socket safe to
     // remove" is only answerable in a directory nobody else can write.
     const prepared = prepareEndpointDirectory(plan);
-    if (prepared !== null) return refusedStart(prepared);
+    if (prepared !== null) return refusedStart(prepared, "endpoint_unavailable");
     const captured = captureEndpointDirectoryChain(plan.parentDir);
-    if (captured.kind === "refused") return refusedStart(captured.reason);
+    if (captured.kind === "refused") {
+      return refusedStart(captured.reason, "endpoint_unavailable");
+    }
     verifyDirectoryIdentity = () => verifyEndpointDirectoryChain(captured.identity);
     const staleFailure = await clearStaleEndpoint(plan.path, verifyDirectoryIdentity);
-    if (staleFailure !== null) return refusedStart(staleFailure);
+    if (staleFailure !== null) {
+      return refusedStart(staleFailure, "endpoint_unavailable");
+    }
   }
   // The stale probe is a network round trip with a 1 s ceiling. A lock inside
   // it must not be overtaken into a listener.
-  if (epoch !== lifecycleEpoch) return refusedStart(lockedSentence());
+  if (epoch !== lifecycleEpoch) {
+    return refusedStart(lockedSentence(), "endpoint_unavailable");
+  }
   const preBindIdentityFailure = verifyDirectoryIdentity();
-  if (preBindIdentityFailure !== null) return refusedStart(preBindIdentityFailure);
+  if (preBindIdentityFailure !== null) {
+    return refusedStart(preBindIdentityFailure, "endpoint_unavailable");
+  }
 
   // `allowHalfOpen` IS THE CONTRACT, not a tuning knob. Without it Node ends
   // the writable side the moment the peer's FIN arrives, so a bridge that
@@ -413,13 +510,14 @@ async function runStart(epoch: number): Promise<StudioHostStart> {
     return refusedStart(
       `The Vex Studio MCP host could not bind ${plan.path}: `
         + `${cause instanceof Error ? cause.message : String(cause)}`,
+      "endpoint_unavailable",
     );
   }
 
   const postBindIdentityFailure = verifyDirectoryIdentity();
   if (postBindIdentityFailure !== null) {
     server.close();
-    return refusedStart(postBindIdentityFailure);
+    return refusedStart(postBindIdentityFailure, "endpoint_unavailable");
   }
 
   // THE PUBLICATION GATE. The listener now exists and is bound, so a stale
@@ -438,7 +536,7 @@ async function runStart(epoch: number): Promise<StudioHostStart> {
         // The path may already be gone. Not a second failure path.
       }
     }
-    return refusedStart(lockedSentence());
+    return refusedStart(lockedSentence(), "endpoint_unavailable");
   }
 
   // 0600 on the socket itself, in addition to the 0700 directory. Belt and
@@ -455,11 +553,27 @@ async function runStart(epoch: number): Promise<StudioHostStart> {
 
   state.server = server;
   state.endpoint = plan.path;
+  // THE PUBLICATION GATE HAS PASSED. Emitted here, after the listener is
+  // published, so a renderer that sees `running` can rely on there being a
+  // bound listener behind it. The endpoint itself never leaves this module.
+  emitHostStatus();
   log.info(`[studio:mcp] listening at ${plan.path}`);
   return { started: true, endpoint: plan.path };
 }
 
-function refusedStart(reason: string): StudioHostStart {
+/**
+ * Refuse a start, recording the CODE the renderer will see beside the sentence
+ * the caller will read.
+ *
+ * The two are deliberately different vocabularies. `reason` is prose for an
+ * operator's log and frequently embeds the endpoint path or a provider error;
+ * `cause` is a bounded code. Only the code is ever published.
+ */
+function refusedStart(
+  reason: string,
+  cause: StudioHostUnavailableCause,
+): StudioHostStart {
+  lastUnavailableCause = cause;
   log.warn(`[studio:mcp] host not started: ${reason}`);
   return { started: false, reason };
 }
@@ -499,15 +613,22 @@ function handleConnection(socket: Socket): void {
       }),
     onClosed: (closed) => {
       connections.delete(closed);
+      emitHostStatus();
     },
   });
   connections.add(connection);
+  emitHostStatus();
 
   // The HANDSHAKE-PENDING bound, checked at accept time because that is when a
   // pending socket appears. Registration happens first so the refusal leaves
   // through the same teardown path as every other close.
   const pending = [...connections].filter((item) => item.isHandshaking()).length;
   if (pending > STUDIO_MAX_HANDSHAKE_PENDING) {
+    // A HANDSHAKE-PENDING refusal, which is NOT "Studio is full". It emits so
+    // the renderer sees the churn, but `atCapacity` stays derived from the
+    // ESTABLISHED reservations alone: telling a user their 16 connection slots
+    // are gone because four sockets are mid-handshake would be false.
+    emitHostStatus();
     void connection.refuse(
       atCapacityRefusal(STUDIO_MAX_HANDSHAKE_PENDING, "connections waiting to handshake"),
     );
@@ -571,6 +692,12 @@ export function lockStudioMcpHost(cause: "lock" | "vex_quit" = "lock"): void {
   for (const connection of [...connections]) {
     connection.destroyNow(cause);
   }
+  // FIRE AND FORGET, and never awaited: this function is synchronous by
+  // contract, and the dispatch-generation advance that follows it must not wait
+  // behind window enumeration. The publisher contains listener failures for the
+  // same reason.
+  if (cause === "vex_quit") shuttingDown = true;
+  emitHostStatus();
 }
 
 /**
@@ -588,9 +715,14 @@ export function lockStudioMcpHost(cause: "lock" | "vex_quit" = "lock"): void {
 export async function shutdownStudioMcpHost(): Promise<void> {
   advanceLifecycleEpoch();
   state.locked = true;
+  shuttingDown = true;
   const server = state.server;
   state.server = null;
   state.endpoint = null;
+  // Emitted BEFORE the drain, not after: a quit that takes its full 5 s budget
+  // should show as shutting down for those 5 s, not report nothing until the
+  // window it would have been rendered in is already gone.
+  emitHostStatus();
 
   let releaseDeadline = (): void => undefined;
   const deadlineTimer = setTimeout(() => {
@@ -626,6 +758,7 @@ export async function shutdownStudioMcpHost(): Promise<void> {
     connections.clear();
     globalInFlight = 0;
     reservedConnections = 0;
+    emitHostStatus();
   }
 }
 
@@ -640,5 +773,8 @@ export function resetStudioMcpHostForTests(): void {
   connections.clear();
   globalInFlight = 0;
   reservedConnections = 0;
+  startsInFlight = 0;
+  shuttingDown = false;
+  lastUnavailableCause = "starting";
   hostDeps = null;
 }

@@ -29,15 +29,33 @@
  * ordinary scope update reports it and moves on; only `trigger: "repair"` -
  * an explicit user action on its own channel - replaces it.
  *
- * NOTHING IS DELETED. A deselected agent has its ENTRY removed from a file that
- * remains on disk with all of the user's other content in it.
+ * NOTHING IS DELETED ON AN INSTALL OR A SCOPE UPDATE. A deselected agent has its
+ * ENTRY removed from a file that remains on disk with all of the user's other
+ * content in it.
+ *
+ * THE ONE EXCEPTION IS THE B0 TEARDOWN, and it is narrow on purpose. A plan
+ * whose artifacts are all `operation: "remove"` runs when a PROJECT IS DELETED,
+ * and it may remove a whole FILE - but only where every byte of it was provably
+ * Vex's own output: `.vex/protocols.md`, which is wholly generated, and an
+ * `AGENTS.md` whose managed block was the entire file and whose content digest
+ * still matches what provenance recorded. Anything else is written back with
+ * Vex's region taken out and the file left in place. A teardown removes a
+ * recorded artifact only where provenance says Vex WROTE those bytes (origin
+ * `written`); bytes Vex merely ADOPTED because they already existed are the
+ * user's and are kept. Drift, an unproven entry, unknown keys inside our entry,
+ * and an adopted artifact are all KEPT and REPORTED, never deleted, and a
+ * teardown deliberately runs with `repair: false` so no takeover can override
+ * that.
  */
 
 import {
   STUDIO_AGENTS_MD_PATH,
   claudeMdImportsAgents,
   inspectStudioManagedBlock,
+  studioManagedBlockOwnership,
+  removeStudioManagedBlock,
   mergeClaudeMdImport,
+  removeClaudeMdImport,
   mergeStudioAgentConfig,
   mergeStudioManagedBlock,
   readStudioOwnedRegion,
@@ -56,6 +74,7 @@ import type {
   StudioInstallerWarning,
   StudioRefusalReason,
 } from "@shared/schemas/studio-installer.js";
+import type { ArtifactProvenanceOrigin } from "../../database/projects/installer-provenance.js";
 import { log } from "../../logger/index.js";
 import {
   hashText,
@@ -67,12 +86,25 @@ import { findAmbiguousTwin, resolveArtifactPath } from "./paths.js";
 import type { StudioArtifactPlan, StudioPlan } from "./plan.js";
 import { collectStudioWarnings, detectForeignAuthority } from "./warnings.js";
 
-/** What a completed artifact leaves in the durable store. */
+/**
+ * What a completed artifact leaves in the durable store.
+ *
+ * The `origin` union is imported TYPE-ONLY from the repository that owns the
+ * column, so the two cannot drift into different vocabularies; the value seam
+ * itself stays injected (`ReconcileIo`), so this module still has no runtime
+ * dependency on the database.
+ */
 export interface ArtifactProvenanceWrite {
   readonly artifactKey: string;
   readonly relativePath: string;
   readonly entryHash: string | null;
   readonly contentHash: string;
+  /**
+   * `written` when Vex REPLACED these bytes; `adopted` when they were already
+   * on disk and identical to a fresh render. Only `written` is authorship
+   * proof - see the teardown gate in `decideDesiredText`.
+   */
+  readonly origin: ArtifactProvenanceOrigin;
 }
 
 /**
@@ -106,15 +138,46 @@ export interface ReconcileIo {
   readonly commitProvenance: (record: ArtifactProvenanceWrite) => Promise<boolean>;
   /** Forget one artifact's provenance, after its entry was removed. */
   readonly clearProvenance: (artifactKey: string) => Promise<boolean>;
+  /**
+   * Remove a file Vex owns whole (B0 teardown). Optional: only a teardown plan
+   * can produce a `delete` decision, so the install paths never supply it, and
+   * a plan that needs it without one is refused rather than silently skipped.
+   */
+  readonly deleteFile?: (options: {
+    readonly projectDirectory: string;
+    readonly absolutePath: string;
+    readonly relativeLabel: string;
+    readonly expectedHash: string | null;
+  }) => Promise<ConfinedWrite>;
 }
 
 export interface ReconcileOptions {
   readonly projectDirectory: string;
   readonly plan: StudioPlan;
   readonly facts: StudioProjectFacts;
-  readonly brief: StudioProjectBrief;
-  /** Artifact key -> the digest of the Vex region Vex last wrote there. */
-  readonly provenance: ReadonlyMap<string, { entryHash: string | null; contentHash: string }>;
+  /**
+   * The managed-block brief.
+   *
+   * NULL is permitted for a TEARDOWN plan only - one whose artifacts are all
+   * `remove` operations, which never render the block. `decideAgentsMd` is the
+   * one consumer, and it refuses loudly rather than rendering an empty brief,
+   * so a plan that needs a brief and was handed `null` fails visibly instead of
+   * writing a stripped file into a user's repository.
+   */
+  readonly brief: StudioProjectBrief | null;
+  /**
+   * Artifact key -> what the durable store records about that artifact: the
+   * digest of the Vex-owned region, the digest of the whole file, and whether
+   * Vex WROTE those bytes or merely ADOPTED bytes that were already there.
+   */
+  readonly provenance: ReadonlyMap<
+    string,
+    {
+      entryHash: string | null;
+      contentHash: string;
+      origin: ArtifactProvenanceOrigin;
+    }
+  >;
   /** Repair is the only trigger that overwrites a drifted artifact. */
   readonly repair: boolean;
   readonly io: ReconcileIo;
@@ -125,6 +188,73 @@ export interface ReconcileResult {
   readonly warnings: readonly StudioInstallerWarning[];
   /** True only when no artifact ended in a refusal or a blocked drift. */
   readonly completed: boolean;
+}
+
+/**
+ * Did this artifact reach the state its plan asked for?
+ *
+ * The definition of `completed`, named so that a caller which has to reason
+ * about the NON-reconciled outcomes (the teardown, which classifies them) reads
+ * the same list rather than re-typing it and drifting from it.
+ */
+export function isReconciledArtifact(outcome: StudioArtifactOutcome): boolean {
+  return (
+    outcome.status === "written"
+    || outcome.status === "unchanged"
+    || outcome.status === "removed"
+    || outcome.status === "unsupported"
+  );
+}
+
+/**
+ * The refusal reasons that mean "these bytes are not provably Vex's".
+ *
+ * MEMBERSHIP IS DECIDED HERE, EXPLICITLY, over the closed set in
+ * `@shared/schemas/studio-installer.js`, because a caller that pattern-matched
+ * on reason strings would silently reclassify the next member somebody adds.
+ *
+ *   - `provenance_collision`      something sits at the Vex path that Vex
+ *                                 cannot show it wrote, or a proven Vex entry
+ *                                 was edited after Vex wrote it. Either way the
+ *                                 bytes are somebody else's.
+ *   - `unknown_keys_in_vex_entry` a proven Vex entry grew fields Vex never
+ *                                 writes. The entry is ours, the added fields
+ *                                 are not, and Vex will not delete them. This IS
+ *                                 reachable from a teardown: a teardown runs
+ *                                 with `repair: false`, so the provenance-proven
+ *                                 takeover does not fire and the unknown-key
+ *                                 check is reached. A delete therefore keeps
+ *                                 those fields, reports them, and discharges.
+ *
+ * EVERYTHING ELSE IS NOT AN OWNERSHIP ANSWER and is deliberately absent:
+ * `malformed_json`, `malformed_toml`, `toml_multiline_string` and
+ * `malformed_managed_block` say Vex cannot safely PARSE the file, not that the
+ * region is not ours; `symlinked_path`, `not_a_regular_file`, `too_large`,
+ * `invalid_utf8`, `ambiguous_twin`, `path_escape` and `io_error` are conditions
+ * of the path or the filesystem; and `source_changed` is a race a retry
+ * genuinely resolves - the next run re-reads the bytes and either proves
+ * ownership or refuses on it.
+ */
+const OWNERSHIP_REFUSAL_REASONS: ReadonlySet<StudioRefusalReason> = new Set<
+  StudioRefusalReason
+>(["provenance_collision", "unknown_keys_in_vex_entry"]);
+
+/**
+ * Is this outcome Vex declining to touch bytes it cannot prove it owns?
+ *
+ * `drift_blocked` is always one: a managed block whose body no longer hashes to
+ * the value in its own marker, a generated file that was edited, or a block that
+ * is not the one provenance recorded. The refused outcomes are the reasons in
+ * `OWNERSHIP_REFUSAL_REASONS`.
+ *
+ * The teardown is the consumer, and the distinction matters there because the
+ * two classes owe different things: an ownership refusal is a FINAL, correct
+ * answer that will be identical on every retry, while a transient failure is
+ * work that still needs doing.
+ */
+export function isOwnershipRefusal(outcome: StudioArtifactOutcome): boolean {
+  if (outcome.status === "drift_blocked") return true;
+  return outcome.status === "refused" && OWNERSHIP_REFUSAL_REASONS.has(outcome.reason);
 }
 
 /** Run the plan. Sequential: two artifacts can share a file, and order matters. */
@@ -151,13 +281,7 @@ export async function reconcileStudioArtifacts(
     artifacts.push(await reconcileOne(artifact, options, discovered));
   }
 
-  const completed = artifacts.every(
-    (outcome) =>
-      outcome.status === "written"
-      || outcome.status === "unchanged"
-      || outcome.status === "removed"
-      || outcome.status === "unsupported",
-  );
+  const completed = artifacts.every(isReconciledArtifact);
 
   return {
     artifacts,
@@ -216,20 +340,75 @@ async function reconcileOne(
     };
   }
   if (decision.kind === "unchanged") {
+    if (artifact.operation === "remove") {
+      // A REMOVAL WHOSE WORK IS ALREADY DONE. The entry, the import line or the
+      // file is not there, so the obligation this artifact carries is
+      // SATISFIED - and the provenance row's only purpose was to prove
+      // ownership of bytes that no longer exist. Leaving it behind kept a
+      // deleted project's cleanup owing a record it could never discharge, and
+      // made the next teardown plan an artifact with nothing to plan.
+      //
+      // Cleared unconditionally of whether the store has the key: `clear` is a
+      // guarded DELETE, so the no-row case is a no-op rather than an error.
+      const forgotten = await options.io.clearProvenance(artifact.key);
+      if (!forgotten) return provenanceNotRecorded(artifact, label, false);
+      return {
+        status: "unchanged",
+        kind: artifact.kind,
+        agentId: artifact.agentId,
+        path: label,
+      };
+    }
     // Even a no-op refreshes provenance when the store has no record of an
     // artifact that is already correct. Without it, a project whose files were
     // restored from a backup would refuse its own entries as collisions.
+    //
+    // `adopted`, ALWAYS, and that is the whole point of the column: these bytes
+    // were on disk before this run touched anything, and nothing here can tell
+    // a Vex write whose record was lost from a user who wrote exactly the same
+    // thing. The record therefore says only what is provable - "these bytes are
+    // not a collision" - and never "Vex authored them".
     if (existingText !== null && !options.provenance.has(artifact.key)) {
       const recorded = await options.io.commitProvenance({
         artifactKey: artifact.key,
         relativePath: label,
         entryHash: decision.entryHash,
         contentHash: hashText(existingText),
+        origin: "adopted",
       });
       if (!recorded) return provenanceNotRecorded(artifact, label, false);
     }
     return {
       status: "unchanged",
+      kind: artifact.kind,
+      agentId: artifact.agentId,
+      path: label,
+    };
+  }
+
+  if (decision.kind === "delete") {
+    const remove = options.io.deleteFile;
+    if (remove === undefined) {
+      return refusal(
+        artifact,
+        "io_error",
+        `Vex was not able to remove "${label}" because this run has no delete `
+          + "capability. Nothing was changed.",
+      );
+    }
+    const removed = await remove({
+      projectDirectory: options.projectDirectory,
+      absolutePath: resolution.absolutePath,
+      relativeLabel: label,
+      expectedHash: decision.expectedHash,
+    });
+    if (removed.kind === "refused") {
+      return refusal(artifact, removed.reason, removed.detail);
+    }
+    const forgotten = await options.io.clearProvenance(artifact.key);
+    if (!forgotten) return provenanceNotRecorded(artifact, label, true);
+    return {
+      status: "removed",
       kind: artifact.kind,
       agentId: artifact.agentId,
       path: label,
@@ -259,11 +438,14 @@ async function reconcileOne(
     };
   }
 
+  // `written`: this run rendered the text and replaced the bytes on disk, so
+  // Vex can prove authorship of them. This is the ONLY place that records it.
   const recorded = await options.io.commitProvenance({
     artifactKey: artifact.key,
     relativePath: label,
     entryHash: decision.entryHash,
     contentHash: write.hash,
+    origin: "written",
   });
   if (!recorded) return provenanceNotRecorded(artifact, label, true);
 
@@ -278,6 +460,13 @@ async function reconcileOne(
 
 type Decision =
   | { readonly kind: "write"; readonly text: string; readonly entryHash: string | null }
+  /**
+   * REMOVE THE FILE ITSELF (B0 teardown). Reachable only for an artifact Vex
+   * owns whole - a generated doc, or a file left empty once Vex's own region
+   * came out of it. `expectedHash` is the digest of the bytes ownership was
+   * proved against, and the delete refuses if the file no longer matches it.
+   */
+  | { readonly kind: "delete"; readonly expectedHash: string }
   | { readonly kind: "unchanged"; readonly entryHash: string | null }
   | { readonly kind: "drift_blocked"; readonly detail: string }
   | {
@@ -291,15 +480,52 @@ function decideDesiredText(
   existing: string | null,
   options: ReconcileOptions,
 ): Decision {
+  // THE ADOPTION GATE, and it is the FIRST thing a removal is asked.
+  //
+  // A teardown treats a provenance row as authorship proof and removes what it
+  // names. But a row whose origin is `adopted` proves only that the bytes were
+  // already identical to a fresh render when Vex first looked - which is
+  // exactly what a user who wrote a `vex` MCP entry, or an `@AGENTS.md` import
+  // line, BEFORE ever installing Vex leaves behind. Deleting their project then
+  // deleted their own content. So a removal may only proceed against bytes Vex
+  // recorded WRITING.
+  //
+  // It is gated here, once, rather than in each of the four deciders, because
+  // it is one policy and four copies of it would be four places to forget it.
+  // The answer is `provenance_collision`, which is the existing member of the
+  // CLOSED refusal set whose meaning is precisely this - "something is at the
+  // Vex path that Vex cannot show it wrote" - and which
+  // `OWNERSHIP_REFUSAL_REASONS` already classifies as an ownership answer, so
+  // the delete's cleanup DISCHARGES on it instead of retrying forever.
+  if (artifact.operation === "remove" && existing !== null) {
+    const record = options.provenance.get(artifact.key);
+    if (record !== undefined && record.origin !== "written") {
+      return {
+        kind: "refused",
+        reason: "provenance_collision",
+        detail:
+          `Vex left "${artifact.relativePath}" exactly as it is. What Vex recorded `
+          + "there was already on disk, byte for byte, before Vex first wrote "
+          + "anything, so Vex cannot show the content is its own and will not "
+          + "delete it. Remove it by hand if you no longer want it.",
+      };
+    }
+  }
   switch (artifact.kind) {
     case "agent-config":
       return decideAgentConfig(artifact, existing, options);
     case "agents-md":
-      return decideAgentsMd(existing, options);
+      return artifact.operation === "remove"
+        ? decideAgentsMdTeardown(artifact, existing, options)
+        : decideAgentsMd(existing, options);
     case "claude-md":
-      return decideClaudeMd(artifact, existing, options);
+      return artifact.operation === "remove"
+        ? decideClaudeMdTeardown(artifact, existing, options)
+        : decideClaudeMd(artifact, existing, options);
     case "protocols-doc":
-      return decideProtocolsDoc(artifact, existing, options);
+      return artifact.operation === "remove"
+        ? decideProtocolsDocTeardown(artifact, existing, options)
+        : decideProtocolsDoc(artifact, existing, options);
   }
 }
 
@@ -441,15 +667,98 @@ function entryHashFor(
   return region.kind === "present" ? region.hash : null;
 }
 
+/**
+ * TEARDOWN of the `AGENTS.md` managed block (B0).
+ *
+ * The block claims live authority - it tells the next coding agent that this
+ * repository is connected to Vex and which wallets it may spend - so a deleted
+ * project must not leave one behind. But everything OUTSIDE the markers is the
+ * user's file, and a block the user edited is not ours to delete.
+ *
+ * Ownership is proved twice, and deliberately so: the block's body must still
+ * hash to the value recorded in its own marker (that is `drifted` if it does
+ * not), AND, when provenance holds an entry hash for it, that hash must agree.
+ * The first check catches a hand edit; the second catches a block written by
+ * something other than this project's own install.
+ *
+ * The file is REMOVED only when nothing of the user's is left in it: the text
+ * after removal is blank, and the whole file still hashes to what provenance
+ * recorded, so every byte in it was Vex's. Any other outcome writes the
+ * remainder back and leaves the file in place.
+ */
+function decideAgentsMdTeardown(
+  artifact: StudioArtifactPlan,
+  existing: string | null,
+  options: ReconcileOptions,
+): Decision {
+  if (existing === null) return { kind: "unchanged", entryHash: null };
+
+  const ownership = studioManagedBlockOwnership(existing);
+  if (ownership.kind === "absent") return { kind: "unchanged", entryHash: null };
+  if (ownership.kind === "malformed") {
+    return {
+      kind: "refused",
+      reason: "malformed_managed_block",
+      detail: ownership.detail,
+    };
+  }
+  if (ownership.kind === "drifted") {
+    return {
+      kind: "drift_blocked",
+      detail:
+        `The Vex section in "${artifact.relativePath}" was edited after Vex wrote it, so `
+        + "Vex left the file exactly as it is. Delete that section by hand if you no "
+        + "longer want it; everything outside the markers is yours either way.",
+    };
+  }
+
+  const recorded = options.provenance.get(artifact.key);
+  if (recorded?.entryHash != null && recorded.entryHash !== ownership.bodyHash) {
+    return {
+      kind: "drift_blocked",
+      detail:
+        `The Vex section in "${artifact.relativePath}" is not the one Vex recorded `
+        + "writing, so Vex left it alone. Remove it by hand if you no longer want it.",
+    };
+  }
+
+  const removal = removeStudioManagedBlock(existing);
+  if (removal.status === "refused") {
+    return { kind: "refused", reason: removal.reason, detail: removal.detail };
+  }
+  if (removal.status === "unchanged") return { kind: "unchanged", entryHash: null };
+
+  // NOTHING OF THE USER'S LEFT, and the whole file was provably ours.
+  const wholeFileWasOurs = recorded?.contentHash === hashText(existing);
+  if (removal.text.trim() === "" && wholeFileWasOurs) {
+    return { kind: "delete", expectedHash: hashText(existing) };
+  }
+  return { kind: "write", text: removal.text, entryHash: null };
+}
+
 function decideAgentsMd(existing: string | null, options: ReconcileOptions): Decision {
-  const block = renderStudioManagedBlock(options.brief);
+  const brief = options.brief;
+  if (brief === null) {
+    // Only a teardown plan may omit the brief, and a teardown never plans this
+    // artifact. Reaching here means a caller built a plan whose brief it did
+    // not supply; refusing is the only safe answer, because the alternative is
+    // rendering the managed block from nothing.
+    return {
+      kind: "refused",
+      reason: "malformed_managed_block",
+      detail:
+        "Vex did not have the project summary it needs to write this file, so it "
+        + "left the file alone.",
+    };
+  }
+  const block = renderStudioManagedBlock(brief);
   const bodyHash = studioManagedBodyHash(managedBodyOf(block));
 
   if (existing === null) {
     return { kind: "write", text: block, entryHash: bodyHash };
   }
 
-  const state = inspectStudioManagedBlock(existing, options.brief);
+  const state = inspectStudioManagedBlock(existing, brief);
   if (state.kind === "malformed") {
     return { kind: "refused", reason: "malformed_managed_block", detail: state.detail };
   }
@@ -463,9 +772,51 @@ function decideAgentsMd(existing: string | null, options: ReconcileOptions): Dec
     };
   }
   return fromRender(
-    mergeStudioManagedBlock(existing, options.brief, { overwriteDrift: options.repair }),
+    mergeStudioManagedBlock(existing, brief, { overwriteDrift: options.repair }),
     bodyHash,
   );
+}
+
+/**
+ * TEARDOWN of the `CLAUDE.md` import line (B0).
+ *
+ * Only ONE line is ever Vex's here: the `@AGENTS.md` import. Everything else in
+ * the file is the user's, so the teardown removes that line through the same
+ * merge discipline the install used and leaves the rest of the file untouched -
+ * INCLUDING an empty remainder. Unlike `AGENTS.md`, this file is not removed
+ * even when nothing is left in it: the coordinator's teardown semantics say the
+ * rest of the file stays, and a `CLAUDE.md` is a file a user is likely to
+ * reach for again.
+ */
+function decideClaudeMdTeardown(
+  artifact: StudioArtifactPlan,
+  existing: string | null,
+  options: ReconcileOptions,
+): Decision {
+  if (existing === null) return { kind: "unchanged", entryHash: null };
+  if (!claudeMdImportsAgents(existing)) return { kind: "unchanged", entryHash: null };
+
+  // Provenance is the ownership proof: the line is only removed where the store
+  // says Vex put it there.
+  //
+  // A user who wrote the same import by hand DOES keep it, but not because of
+  // this check - an install adopts their line and writes a provenance row for
+  // it, so `has(...)` is true for them too and this branch never fires. What
+  // keeps it is the ADOPTION GATE in `decideDesiredText`, which refuses the
+  // removal because that row's origin is `adopted` rather than `written`. This
+  // check remains as the answer for a key with NO row at all, which the
+  // teardown planner does not currently produce and which must still not be
+  // read as permission to delete.
+  if (!options.provenance.has(artifact.key)) {
+    return { kind: "unchanged", entryHash: null };
+  }
+
+  const removal = removeClaudeMdImport(existing);
+  if (removal.status === "refused") {
+    return { kind: "refused", reason: removal.reason, detail: removal.detail };
+  }
+  if (removal.status === "unchanged") return { kind: "unchanged", entryHash: null };
+  return { kind: "write", text: removal.text, entryHash: null };
 }
 
 function decideClaudeMd(
@@ -491,6 +842,40 @@ function decideClaudeMd(
     };
   }
   return fromRender(mergeClaudeMdImport(existing), null);
+}
+
+/**
+ * TEARDOWN of `.vex/protocols.md` (B0).
+ *
+ * Wholly generated and wholly Vex's, so the whole FILE goes - but only after
+ * the same drift check every other artifact gets. The file says "GENERATED
+ * FILE. Do not edit by hand." at the top, and someone who edited it anyway is
+ * told rather than having their edit deleted.
+ */
+function decideProtocolsDocTeardown(
+  artifact: StudioArtifactPlan,
+  existing: string | null,
+  options: ReconcileOptions,
+): Decision {
+  if (existing === null) return { kind: "unchanged", entryHash: null };
+
+  const actualHash = hashText(existing);
+  const recorded = options.provenance.get(artifact.key);
+
+  // Ours if the store recorded these exact bytes, or if it is byte-for-byte
+  // what the generator produces right now (the same finalize-what-the-disk-
+  // proves reasoning the agent-config path uses for a lost provenance commit).
+  const matchesRecorded = recorded?.contentHash === actualHash;
+  const matchesGenerator = existing === renderStudioProtocolsDoc();
+  if (!matchesRecorded && !matchesGenerator) {
+    return {
+      kind: "drift_blocked",
+      detail:
+        `"${artifact.relativePath}" was edited after Vex generated it, so Vex left it `
+        + "in place. Delete it by hand if you no longer want it.",
+    };
+  }
+  return { kind: "delete", expectedHash: actualHash };
 }
 
 function decideProtocolsDoc(

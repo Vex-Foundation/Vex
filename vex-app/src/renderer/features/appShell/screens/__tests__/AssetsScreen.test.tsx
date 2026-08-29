@@ -324,7 +324,15 @@ describe("AssetsScreen - session scope (C4)", () => {
     render(<ShellScreens />);
     // The scope reaches the query hook — a narrowed register must never be
     // fed the global read.
-    expect(mockUsePortfolio).toHaveBeenCalledWith(SESSION);
+    // The hook takes the WHOLE validated read input now, not a
+    // `string | null` session id: that parameter could not express the B0
+    // project scope and collapsed it to `null`, which IS the global aggregate.
+    // The property asserted is unchanged - this card reads the SESSION, never
+    // the global inventory.
+    expect(mockUsePortfolio).toHaveBeenCalledWith({
+      scope: "session",
+      sessionId: SESSION,
+    });
     expect(
       screen.getByRole("dialog", { name: "Session assets" }),
     ).not.toBeNull();

@@ -61,6 +61,10 @@
 
 import { studioSettlementBus } from "@vex-agent/engine/runtime/studio-settlement-bus.js";
 import { setStudioDispatchPreflight } from "@vex-agent/engine/core/approval-runtime/studio/dispatch-preflight.js";
+import {
+  setStudioProjectLeaseAcquirer,
+  type StudioProjectDispatchLease,
+} from "@vex-agent/engine/core/approval-runtime/studio/project-lease-registry.js";
 import { log } from "../logger/index.js";
 import {
   isSecretSessionUnlocked,
@@ -68,7 +72,9 @@ import {
   isStudioSessionTransitionInProgress,
 } from "../secrets/session.js";
 import { settleStudioWaiter } from "../studio/approval-broker.js";
+import { acquireProjectLease } from "../studio/project-lifecycle-gate.js";
 import { repairPendingStudioRefusal } from "../studio/approval-refusals.js";
+import { repairUnfinishedProjectCleanups } from "../studio/project-delete.js";
 import {
   beginStudioReadinessEpoch,
   isStudioRuntimeReady,
@@ -82,6 +88,23 @@ import {
  * bridge installs before and after its lifecycle is provably the same one.
  */
 const DENY_DISPATCH = (): boolean => false;
+
+/**
+ * Main's `dispatch` lease acquirer, handed to the engine's registry.
+ *
+ * The engine owns the approved-dispatch path but cannot import the lifecycle
+ * gate (main's property, and a headless engine has no delete to race). This is
+ * the whole adapter: one synchronous acquisition, translated to the registry's
+ * `lease | null` contract. `null` is accounting, never a refusal to dispatch -
+ * see `project-lease-registry.ts` and the gate's own header on why the gate is
+ * not consulted for authority anywhere.
+ */
+function acquireStudioDispatchLease(
+  projectId: string,
+): StudioProjectDispatchLease | null {
+  const outcome = acquireProjectLease(projectId, "dispatch");
+  return outcome.ok ? outcome.lease : null;
+}
 
 /**
  * Subscribe the settlement bus to the broker. Returns the teardown - the caller
@@ -98,6 +121,12 @@ export function setupStudioSettlementBridge(): () => void {
   // this line can be a plain static call: after it returns, no Studio dispatch
   // can be admitted by an absent predicate, whatever happens next.
   setStudioDispatchPreflight(DENY_DISPATCH);
+
+  // Registered SYNCHRONOUSLY alongside the deny, for the same reason: an
+  // acquirer installed after an await leaves a window in which an approved
+  // dispatch runs uncounted, and an uncounted dispatch is one a concurrent
+  // delete's drain does not wait for.
+  setStudioProjectLeaseAcquirer(acquireStudioDispatchLease);
 
   const off = studioSettlementBus.subscribe((event) => {
     void releaseWaiter(event.approvalId);
@@ -120,6 +149,10 @@ export function setupStudioSettlementBridge(): () => void {
     // waited on a dynamic import would leave the previous predicate live across
     // the window in which the process is shutting down.
     setStudioDispatchPreflight(DENY_DISPATCH);
+    // Cleared, not left installed: the gate is process-local state belonging to
+    // a main that is going away, and an engine that outlived it must fall back
+    // to its headless default rather than keep counting into a dead map.
+    setStudioProjectLeaseAcquirer(null);
     void disposeStudioWriteRepairOwner();
   };
 }
@@ -187,6 +220,18 @@ async function initializeStudioRuntime(epoch: number): Promise<void> {
   await reconcileAbandonedDispatches();
   markStudioRuntimeReady(epoch);
   log.info("[agent:studio-settlement-bridge] studio runtime ready");
+
+  // B0: finish any project cleanup a previous run did not. Deliberately AFTER
+  // the barrier opens and deliberately NOT awaited into readiness: an
+  // unfinished cleanup is a durable obligation on a project that is already
+  // gone, so it must never be able to hold Studio closed. Its own failures are
+  // recorded on the row and retried by the next start or by the user.
+  void repairUnfinishedProjectCleanups().catch((cause: unknown) => {
+    log.warn(
+      "[agent:studio-settlement-bridge] project cleanup repair failed",
+      cause,
+    );
+  });
 }
 
 /**

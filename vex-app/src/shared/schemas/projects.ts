@@ -23,6 +23,7 @@
  */
 
 import { z } from "zod";
+import { studioArtifactOutcomeSchema as artifactOutcomeSchema } from "./studio-installer.js";
 import { STUDIO_AGENT_IDS } from "./studio-agent-ids.js";
 import { sessionPermissionSchema } from "./sessions.js";
 import {
@@ -287,3 +288,94 @@ export type {
 /** `get` returns null for an unknown id (the caller held a stale view). */
 export const projectGetResultSchema = projectDtoSchema.nullable();
 export type ProjectGetResult = z.infer<typeof projectGetResultSchema>;
+
+/**
+ * `projects.delete` INPUT.
+ *
+ * `expectedName` is TYPED-CONFIRMATION support: the renderer collects the
+ * project's name from the user and main revalidates it against the stored row
+ * inside the delete. It is not a security boundary - a hostile renderer knows
+ * the name, because it was shown the project - it is a MIS-AIM boundary, and
+ * that is the realistic failure for an irreversible action sitting in a list of
+ * similar-looking rows.
+ *
+ * `alsoTrashFolder` is the user's decision about THEIR files, and it is
+ * honoured through the OS trash, never an unlink. Note that a RESUMED cleanup
+ * ignores this field and honours the tombstone's recorded intent instead: the
+ * durable decision was made when the project was deleted, and a retry's
+ * checkbox is not a second chance to change it.
+ */
+export const projectDeleteInputSchema = z
+  .object({
+    projectId: z.string().uuid(),
+    alsoTrashFolder: z.boolean(),
+    expectedName: z.string().min(1).max(80),
+  })
+  .strict();
+export type ProjectDeleteInput = z.infer<typeof projectDeleteInputSchema>;
+
+/** What happened to the user's project FOLDER, as distinct from Vex's entries. */
+export const projectTrashOutcomeSchema = z.enum([
+  /** The user did not ask for it; the folder is untouched. */
+  "not_requested",
+  /** Moved to the OS trash, recoverable by the user. */
+  "trashed",
+  /**
+   * The trash call failed. THE DELETE STILL STANDS: the authority commit
+   * happened before this was attempted and is never rolled back by it. The
+   * folder is simply still on disk, which is the safe direction to fail.
+   */
+  "failed",
+]);
+export type ProjectTrashOutcome = z.infer<typeof projectTrashOutcomeSchema>;
+
+const cleanupReportShape = {
+  /** Per-artifact outcomes, from the installer's own vocabulary. */
+  cleanup: z.array(artifactOutcomeSchema).max(64),
+  trash: projectTrashOutcomeSchema,
+};
+
+/**
+ * `projects.delete` RESULT. Discriminated, strict, and deliberately NOT
+ * collapsed: each member has a different remedy, and rule 04 forbids reporting
+ * "unknown", "blocked" and "already done" as one outcome.
+ *
+ *  - `removed`                 the tombstone committed and cleanup finished.
+ *  - `already_removed`         a tombstone whose cleanup is `done`. The only
+ *                              outcome that means "there is nothing left to do".
+ *  - `cleanup_resumed`         an unfinished tombstone was found and its
+ *                              cleanup was run again; reports what that pass did.
+ *  - `cleanup_pending`         the tombstone stands but cleanup did not finish.
+ *                              Retryable, and retrying resumes rather than
+ *                              re-deleting.
+ *  - `not_found`               no such project, or the name did not match.
+ *  - `blocked_active_calls`    calls were still running when the drain expired;
+ *                              NOTHING was written and admission was reopened.
+ *  - `blocked_pending_dispatch` an approved action was mid-dispatch; the
+ *                              transaction aborted and wrote nothing.
+ */
+export const projectDeleteResultSchema = z.discriminatedUnion("outcome", [
+  z.object({ outcome: z.literal("removed"), ...cleanupReportShape }).strict(),
+  z.object({ outcome: z.literal("already_removed") }).strict(),
+  z
+    .object({ outcome: z.literal("cleanup_resumed"), ...cleanupReportShape })
+    .strict(),
+  z
+    .object({
+      outcome: z.literal("cleanup_pending"),
+      ...cleanupReportShape,
+      /** Lifetime attempts against this tombstone, so the UI can go sticky. */
+      attempts: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z.object({ outcome: z.literal("not_found") }).strict(),
+  z
+    .object({
+      outcome: z.literal("blocked_active_calls"),
+      /** How many calls were still running. "Busy" is not an actionable answer. */
+      count: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z.object({ outcome: z.literal("blocked_pending_dispatch") }).strict(),
+]);
+export type ProjectDeleteResult = z.infer<typeof projectDeleteResultSchema>;

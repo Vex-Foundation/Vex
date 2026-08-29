@@ -87,7 +87,7 @@ export async function readProjectRenderScope(
                FROM project_wallets pw
               WHERE pw.project_id = p.id
            ) w ON TRUE
-          WHERE p.id = $1`,
+          WHERE p.id = $1 AND p.deleted_at IS NULL`,
         [projectId],
       );
       const row = rows.rows[0];

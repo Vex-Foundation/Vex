@@ -31,7 +31,7 @@ import { usePortfolio } from "../../../../lib/api/portfolio.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { CardStateNote, PortfolioCard } from "./PortfolioCard.js";
 import {
-  scopeSessionId,
+  portfolioReadInputFor,
   type PortfolioCardScope,
 } from "./portfolio-scope.js";
 import {
@@ -50,8 +50,13 @@ export function BalancesCard({
   /** Wallet scope this card reads (studio seam #3) — never session state read inside. */
   readonly scope: PortfolioCardScope;
 }): JSX.Element {
-  const sessionId = scopeSessionId(scope);
-  const query = usePortfolio(sessionId);
+  const query = usePortfolio(portfolioReadInputFor(scope));
+  // The All-assets SHELL ROUTE still carries a `string | null` session id;
+  // widening it to a scope is B4's job, not this stage's. Derived here,
+  // locally and visibly, rather than through a shared adapter: a project scope
+  // has no session id, and the one thing that must not happen is a general
+  // helper quietly turning one into the global aggregate for every caller.
+  const routeSessionId = scope.kind === "session" ? scope.sessionId : null;
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   const hideDustBalances = useUiStore((s) => s.hideDustBalances);
   const result = query.data;
@@ -71,7 +76,7 @@ export function BalancesCard({
     setShellRoute({
       kind: "assets",
       origin: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      sessionId,
+      sessionId: routeSessionId,
     });
   };
 
@@ -85,7 +90,7 @@ export function BalancesCard({
         </CardStateNote>
       ) : top.length === 0 ? (
         <CardStateNote>
-          {sessionId === null
+          {routeSessionId === null
             ? "No balances yet - fund a wallet and your holdings appear here."
             : "No balances in this session's wallets yet - fund them and your holdings appear here."}
         </CardStateNote>

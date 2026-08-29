@@ -65,6 +65,9 @@ function makeRow(
     decision: null,
     decisionReason: null,
     executionStatus: null,
+    origin: null,
+    projectId: null,
+    projectName: null,
     sessionTitle: "Alpha session",
     ...over,
   };

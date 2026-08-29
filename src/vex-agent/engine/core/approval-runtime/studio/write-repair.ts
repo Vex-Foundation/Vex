@@ -85,7 +85,14 @@ export type StudioWriteRepair =
   | ({
       readonly write: "refusal";
       readonly approvalId: string;
-      readonly refusalReason: StudioPostDecisionRefusalReason;
+      /**
+       * Post-decision causes plus `project_deleted`, matching
+       * `casRefuseStudioBeforeDispatchWith`. A refusal that could not be
+       * written must be repaired under the SAME cause it was refused for; a
+       * narrower type here would force the repair to record a different
+       * reason than the one the caller was told.
+       */
+      readonly refusalReason: StudioPostDecisionRefusalReason | "project_deleted";
     } & StudioRepairBody)
   | ({
       readonly write: "indeterminate";

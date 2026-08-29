@@ -1,12 +1,14 @@
 import { CH } from "../../shared/ipc/channels.js";
 import {
   projectCreateInputSchema,
+  projectDeleteInputSchema,
   projectGetInputSchema,
   projectRepairFilesInputSchema,
   projectUpdateScopeInputSchema,
 } from "../../shared/schemas/projects.js";
 import type {
   ProjectCreateInput,
+  ProjectDeleteInput,
   ProjectGetInput,
   ProjectRepairFilesInput,
   ProjectUpdateScopeInput,
@@ -37,5 +39,11 @@ export const projects = {
       input,
       projectRepairFilesInputSchema
     );
+  },
+  // Validated at the GATE like every sibling: `projectDeleteInputSchema` is
+  // strict, so a caller-supplied extra field is rejected by name here rather
+  // than travelling to a handler that destroys authority.
+  delete(input: ProjectDeleteInput) {
+    return invokeWithSchema(CH.projects.delete, input, projectDeleteInputSchema);
   },
 } satisfies ProjectsBridge;

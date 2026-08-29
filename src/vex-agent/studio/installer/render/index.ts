@@ -38,10 +38,14 @@ export {
 export { studioServerEntryWrite } from "./json-file.js";
 export type { StudioOwnedRegion } from "./owned-region.js";
 export { readStudioOwnedRegion, studioRegionHash } from "./owned-region.js";
-export type { StudioManagedBlockState } from "./managed-block.js";
+export type {
+  StudioManagedBlockState,
+  StudioManagedBlockOwnership,
+} from "./managed-block.js";
 export {
   STUDIO_PROTOCOLS_DOC_PATH,
   inspectStudioManagedBlock,
+  studioManagedBlockOwnership,
   mergeStudioManagedBlock,
   removeStudioManagedBlock,
   renderStudioManagedBlock,

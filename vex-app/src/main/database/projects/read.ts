@@ -97,7 +97,10 @@ export async function getProject(
       if (!rootCheck.ok) return rootCheck;
 
       const rows = await client.query<ProjectRow>(
-        `SELECT ${PROJECT_ROW_COLUMNS} FROM projects WHERE id = $1`,
+        // ACTIVE ONLY. A tombstone reads exactly like a project that never
+        // existed - `ok(null)` - which is the contract every caller already
+        // branches on.
+        `SELECT ${PROJECT_ROW_COLUMNS} FROM projects WHERE id = $1 AND deleted_at IS NULL`,
         [projectId],
       );
       const row = rows.rows[0];
@@ -146,7 +149,11 @@ export async function listProjects(
       if (!rootCheck.ok) return rootCheck;
 
       const rows = await client.query<ProjectRow>(
-        `SELECT ${PROJECT_ROW_COLUMNS} FROM projects ORDER BY created_at DESC`,
+        // Filtered in SQL rather than after projection, and that is
+        // load-bearing: `buildProjectDtos` fails the WHOLE read on any one
+        // project's wallet drift, so a tombstoned project whose wallet was
+        // removed alongside it would otherwise break the live project list.
+        `SELECT ${PROJECT_ROW_COLUMNS} FROM projects WHERE deleted_at IS NULL ORDER BY created_at DESC`,
       );
       if (rows.rows.length === 0) return ok([]);
       const walletRows = await client.query<ProjectWalletRow>(

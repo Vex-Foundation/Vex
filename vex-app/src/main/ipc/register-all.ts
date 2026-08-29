@@ -28,6 +28,7 @@ import { registerCompactionHandlers } from "./compaction.js";
 import { registerDatabaseHandlers } from "./database.js";
 import { registerLongMemoryHandlers } from "./long-memory.js";
 import { registerMarketHandlers } from "./market.js";
+import { registerStudioHandlers } from "./studio.js";
 import { registerMemoryHandlers } from "./memory.js";
 import { registerMemoryInspectorHandlers } from "./memory-inspector.js";
 import { registerDockerHandlers } from "./docker.js";
@@ -153,6 +154,11 @@ export function registerAllIpcHandlers(): void {
   // handler serves main's in-memory cache; the external poll + EV.market.vex
   // broadcast are owned by the market service, started in index.ts.
   teardowns.push(...registerMarketHandlers());
+
+  // B0: read-only Vex Studio host status. The handler serves main's in-memory
+  // cache; the transitions are published by the MCP host itself and broadcast
+  // by the host-status bridge, started in index.ts.
+  teardowns.push(...registerStudioHandlers());
   // Agent integration stage 7-1: read-only Track-2 compaction status for the
   // runtime bar. The Track-2 executor itself is owned by main and started in
   // `index.ts` (see `setupCompactWorker`), not here. Stage 7-2a extends this

@@ -142,7 +142,7 @@ async function runScopeTransaction(
   // locking the project row before the session control lock, which inverts the
   // global lock order.
   const backing = await client.query<{ backing_session_id: string }>(
-    "SELECT backing_session_id FROM projects WHERE id = $1",
+    "SELECT backing_session_id FROM projects WHERE id = $1 AND deleted_at IS NULL",
     [input.projectId],
   );
   const backingSessionId = backing.rows[0]?.backing_session_id ?? null;
@@ -186,7 +186,7 @@ async function runScopeTransaction(
             agents = COALESCE($4, agents),
             scope_version = scope_version + 1,
             updated_at = NOW()
-      WHERE id = $1 AND scope_version = $2
+      WHERE id = $1 AND scope_version = $2 AND deleted_at IS NULL
       RETURNING ${PROJECT_ROW_COLUMNS}`,
     [
       input.projectId,
@@ -202,7 +202,7 @@ async function runScopeTransaction(
     // These are different situations with different remedies, so read the
     // current version inside the same transaction and say which one it is.
     const current = await client.query<{ scope_version: number }>(
-      "SELECT scope_version FROM projects WHERE id = $1",
+      "SELECT scope_version FROM projects WHERE id = $1 AND deleted_at IS NULL",
       [input.projectId],
     );
     await client.query("ROLLBACK");
