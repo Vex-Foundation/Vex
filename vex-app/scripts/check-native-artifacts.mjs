@@ -30,6 +30,13 @@ import {
   GOOS_BY_ELECTRON_PLATFORM,
   inspectExecutable,
 } from "./bridge-artifact.mjs";
+import {
+  EXCLUDED_CANDIDATE_FILE_PATTERNS,
+  MAC_SIGNED_NATIVE_BINARIES,
+  REBUILD_DISABLED_LINE,
+  SELECTED_ASAR_UNPACK_GLOBS,
+  WS_ACCELERATOR_MODULES,
+} from "./native-payload-contract.mjs";
 
 /**
  * What each node-pty prebuild directory must contain.
@@ -142,6 +149,24 @@ function checkNodePtyPrebuilds(root) {
  * package (`@parcel/watcher-linux-x64-glibc`), not the parent package, which
  * is why the asarUnpack glob targets `@parcel/watcher-*`. Only the host's
  * package is installed, so only the host's is asserted.
+ *
+ * MEASURED LOADER ORDER (@parcel/watcher 2.6.0 `index.js`, read from the
+ * installed package):
+ *
+ *     require('@parcel/watcher-<platform>-<arch>[-glibc|-musl]')
+ *       ->  ./build/Release/watcher.node
+ *       ->  ./build/Debug/watcher.node
+ *
+ * The optional platform package WINS, so it is the SELECTED shipping
+ * candidate; the parent's own source build is excluded from the payload by
+ * `files` (see scripts/native-payload-contract.mjs). Note this is the OPPOSITE
+ * order to node-pty, which tries `build/Release` FIRST - which is why node-pty
+ * needs its build/ excluded to reach the reviewed prebuilds at all, while
+ * @parcel/watcher's exclusion only removes a fallback that could never win.
+ *
+ * The parent build, when a developer's tree still has one, is held to the same
+ * architecture contract here: it never reaches a package, but a wrong-arch
+ * binary in node_modules means the local install is not what it claims.
  */
 function checkParcelWatcher(root) {
   const scopeDir = path.join(root, "node_modules", "@parcel");
@@ -166,9 +191,6 @@ function checkParcelWatcher(root) {
   const expectedArch = GO_ARCH_BY_ELECTRON_ARCH[process.arch];
   const expectedGoos = GOOS_BY_ELECTRON_PLATFORM[process.platform];
 
-  // The parent package's own source build, when the install script produced
-  // one. @parcel/watcher prefers it over the optional platform package, so it
-  // is held to the same architecture contract.
   const sourceBuild = path.join(scopeDir, "watcher", "build", "Release", "watcher.node");
   const candidates = platformPackages.map((pkg) => ({
     label: `@parcel/${pkg}/watcher.node`,
@@ -211,8 +233,17 @@ function checkParcelWatcher(root) {
  * Inlining node-pty's loader would break it silently: the loader resolves
  * `prebuilds/<platform>-<arch>/pty.node` relative to its own file location
  * inside node_modules, so a copy living in dist/pty-host/ would look in the
- * wrong place. The import statement surviving in the emitted ESM is the
- * evidence that `rolldownOptions.external` still holds.
+ * wrong place.
+ *
+ * TWO assertions, because either alone is vacuous. The absence scan (node-pty's
+ * loader is not in the bundle) passes trivially when nothing imports it at all,
+ * which is exactly what B1 looked like before src/pty-host/index.ts took a real
+ * import. The PRESENCE assertion is the one with teeth: a bare
+ * `from "node-pty"` in the emitted ESM is what proves
+ * `rolldownOptions.external` still holds, and it goes red both when the import
+ * is dropped from the source and when `external` is removed from
+ * vite.pty-host.config.ts (rolldown then inlines the module and the specifier
+ * disappears).
  */
 function checkPtyHostBundle(root) {
   const bundle = path.join(root, "dist", "pty-host", "index.js");
@@ -225,42 +256,68 @@ function checkPtyHostBundle(root) {
 
   // node-pty's own source is unmistakable if it were inlined: the loader
   // builds the prebuilds path from these literals.
-  if (source.includes("prebuilds/") || source.includes("spawn-helper")) {
+  // node-pty's loader is unmistakable if it were inlined: `loadNativeModule`
+  // builds its search path from the "build/Debug" + "prebuilds/" pair. The
+  // CONJUNCTION matters. Scanning for either literal alone flagged this bundle
+  // for a source COMMENT that merely names the packaging hazard (measured
+  // 2026-08-29) - a gate that fails on prose about itself teaches people to
+  // stop writing the prose.
+  if (source.includes("build/Debug") && source.includes("prebuilds/")) {
     throw new Error(
-      `${bundle} appears to INLINE node-pty (found its prebuilds/spawn-helper literals).\n`
+      `${bundle} appears to INLINE node-pty (found its loader's build/Debug + prebuilds/ search path).\n`
         + "    node-pty must stay in `rolldownOptions.external` in vite.pty-host.config.ts."
+    );
+  }
+
+  // A bare specifier, not a relative path: `from "node-pty"` / `require("node-pty")`.
+  // Anything relative would mean the module was emitted into dist/pty-host/.
+  const externalReference =
+    /(?:^|[\s;{,])(?:import\s[^;]*?from\s*|import\s*|require\s*\(\s*)["']node-pty["']/m;
+  if (!externalReference.test(source)) {
+    throw new Error(
+      `${bundle} carries NO external reference to "node-pty".\n`
+        + "    Either src/pty-host/index.ts dropped its import, or node-pty left\n"
+        + "    `rolldownOptions.external` in vite.pty-host.config.ts and was inlined.\n"
+        + "    Without this reference the externalization contract is untested."
     );
   }
 }
 
 /**
- * The `asarUnpack` globs in the electron-builder profiles still match real
- * directories.
+ * Both electron-builder profiles still state the single-candidate policy, and
+ * they state the SAME one.
  *
- * A glob that matches nothing is not an error to electron-builder - it just
- * packs the native module INSIDE app.asar, where it cannot be dlopen'd. This
- * compares the configured prefixes against the installed tree so an upstream
- * layout change fails here instead of in a shipped build.
+ * Every string compared here comes from scripts/native-payload-contract.mjs, so
+ * the unpack globs, the payload exclusions and the macOS signing list have one
+ * source of truth instead of three files that happen to agree today. A
+ * mismatched signing path is the failure that motivates it: `mac.binaries` and
+ * `asarUnpack` pointing at different directories produces a package whose
+ * spawn-helper is unpacked but unsigned, and nothing before this gate would
+ * say so.
+ *
+ * This is a CONFIG assertion. What the packaged bytes actually contain is
+ * asserted separately by scripts/check-packaged-payload.mjs against a real
+ * `--dir` tree; a glob that matches nothing is not an error to
+ * electron-builder, so config agreement alone proves nothing about a package.
  */
-function checkAsarUnpackCoverage(root) {
+function checkPackagingPolicyConfig(root) {
   const profiles = ["electron-builder.yml", "electron-builder.release.yml"];
-  const required = [
+  const probes = [
     {
-      glob: "node_modules/node-pty/prebuilds/**",
+      glob: SELECTED_ASAR_UNPACK_GLOBS[0],
       probe: path.join(root, "node_modules", "node-pty", "prebuilds"),
     },
     {
-      // `watcher*`, not `watcher-*`: @parcel/watcher loads
-      // `build/Release/watcher.node` from the PARENT package when a source
-      // build produced one, and falls back to the per-platform optional
-      // package. Both were present in a real `--dir` package, and only the
-      // wildcard covers both. electron-builder also auto-unpacks stray `.node`
-      // files, but that is implicit behavior - this glob is the contract.
-      glob: "node_modules/@parcel/watcher*/**",
+      // The glob is a wildcard over the per-platform packages; this probe only
+      // proves the scope exists, and checkParcelWatcher verifies the concrete
+      // package for this host.
+      glob: SELECTED_ASAR_UNPACK_GLOBS[1],
       probe: path.join(root, "node_modules", "@parcel"),
-      // The glob is a wildcard; the probe above only proves the scope exists,
-      // so the concrete packages are verified by checkParcelWatcher.
     },
+    ...WS_ACCELERATOR_MODULES.map(({ packageName }) => ({
+      glob: `node_modules/${packageName}/prebuilds/**`,
+      probe: path.join(root, "node_modules", packageName, "prebuilds"),
+    })),
   ];
 
   const issues = [];
@@ -271,23 +328,43 @@ function checkAsarUnpackCoverage(root) {
       continue;
     }
     const config = readFileSync(file, "utf8");
-    for (const { glob } of required) {
+    for (const glob of SELECTED_ASAR_UNPACK_GLOBS) {
       if (!config.includes(glob)) {
         issues.push(`${profile}: asarUnpack is missing \`${glob}\``);
+      }
+    }
+    for (const pattern of EXCLUDED_CANDIDATE_FILE_PATTERNS) {
+      if (!config.includes(pattern)) {
+        issues.push(
+          `${profile}: \`files\` is missing ${pattern}, so a non-selected native `
+            + "candidate can enter the payload"
+        );
+      }
+    }
+    if (!config.includes(REBUILD_DISABLED_LINE)) {
+      issues.push(
+        `${profile}: missing \`${REBUILD_DISABLED_LINE}\`; electron-builder rebuilds `
+          + "native deps by DEFAULT, which plants a build/Release that outranks the "
+          + "reviewed node-pty prebuilds"
+      );
+    }
+    for (const binary of MAC_SIGNED_NATIVE_BINARIES) {
+      if (!config.includes(binary)) {
+        issues.push(`${profile}: \`mac.binaries\` is missing \`${binary}\` (would ship unsigned)`);
       }
     }
     if (!config.includes("dist/pty-host/**")) {
       issues.push(`${profile}: \`files\` is missing \`dist/pty-host/**\``);
     }
   }
-  for (const { glob, probe } of required) {
+  for (const { glob, probe } of probes) {
     if (!existsSync(probe)) {
       issues.push(`asarUnpack \`${glob}\` matches nothing: ${probe} does not exist`);
     }
   }
 
   if (issues.length > 0) {
-    throw new Error(`asarUnpack coverage issues:\n    ${issues.join("\n    ")}`);
+    throw new Error(`packaging policy issues:\n    ${issues.join("\n    ")}`);
   }
 }
 
@@ -297,19 +374,21 @@ function checkAsarUnpackCoverage(root) {
  */
 export const nativeArtifactChecks = [
   {
-    label: "pty-host bundle — exists and keeps node-pty external",
+    label: "pty-host bundle - exists and keeps node-pty external",
     run: checkPtyHostBundle,
   },
   {
-    label: "node-pty prebuilds — present, right architecture, spawn-helper executable",
+    label: "node-pty prebuilds - present, right architecture, spawn-helper executable",
     run: checkNodePtyPrebuilds,
   },
   {
-    label: "@parcel/watcher — native backend installed for this host",
+    label: "@parcel/watcher - native backend installed for this host",
     run: checkParcelWatcher,
   },
   {
-    label: "electron-builder — pty-host packaged and native modules asarUnpack'd",
-    run: checkAsarUnpackCoverage,
+    label:
+      "electron-builder - one native candidate per module: rebuild off, "
+      + "non-selected candidates excluded, selected ones unpacked and mac-signed",
+    run: checkPackagingPolicyConfig,
   },
 ];

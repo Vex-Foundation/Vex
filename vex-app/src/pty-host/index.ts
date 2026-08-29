@@ -20,6 +20,22 @@
  */
 
 /**
+ * node-pty, imported here in B1 for one reason beyond B2's convenience: the
+ * import statement is the PACKAGING CONTRACT this process depends on.
+ *
+ * It must survive into `dist/pty-host/index.js` as a bare external import.
+ * Inlined instead, node-pty's loader would resolve
+ * `prebuilds/<platform>-<arch>/pty.node` relative to the bundle rather than to
+ * node_modules and every terminal would fail at runtime, in the packaged app
+ * only. `rolldownOptions.external` in vite.pty-host.config.ts is what keeps it
+ * external, and scripts/check-native-artifacts.mjs asserts the emitted import
+ * is still there - an assertion that only means something because this import
+ * exists. Do not remove it to "clean up" the B1 scaffolding; B2 replaces it
+ * with real use.
+ */
+import nodePty from "node-pty";
+
+/**
  * Electron's `utilityProcess` child API. Declared locally rather than pulled
  * from `electron` because a utilityProcess entry does NOT import the electron
  * module - `parentPort` is injected onto `process` by the runtime.
@@ -41,7 +57,14 @@ function main(): void {
     return;
   }
 
-  console.log(`vex-studio pty host: ready (pid=${process.pid}, node=${process.versions.node})`);
+  // A top-level import of a native module makes an unloadable node-pty a
+  // startup failure of this process, which is the honest outcome: a pty host
+  // that cannot open a pty has nothing to serve. Whether the binary WORKS is
+  // measured by `pnpm probe:node-pty`, which drives a real pty end to end.
+  console.log(
+    `vex-studio pty host: ready (pid=${process.pid}, node=${process.versions.node}, `
+      + `node-pty spawn=${typeof nodePty.spawn})`
+  );
 
   // Holding a message listener is what keeps the event loop alive until the
   // parent tears the port down. B2 replaces this with the real protocol

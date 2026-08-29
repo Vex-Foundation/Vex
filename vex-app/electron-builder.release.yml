@@ -49,6 +49,18 @@ electronUpdaterCompatibility: ">=2.16"
 # Flips Electron fuses (RunAsNode off, ASAR integrity on, ...) BEFORE codesign.
 afterPack: ./build/afterPack.mjs
 
+# Do NOT rebuild native dependencies. Every native dependency here (node-pty,
+# @parcel/watcher, bufferutil, utf-8-validate) ships Node-API prebuilds, and a
+# rebuild would plant a SECOND loadable artifact that
+# outranks the reviewed one in node-pty's own search order (build/Release before
+# prebuilds/) while sitting outside the asarUnpack and mac.binaries contracts
+# below - on macOS a rebuilt spawn-helper would go UNSIGNED into a hardened
+# runtime, so every terminal spawn would fail on a notarized build. The policy,
+# the measured loader orders and the excluded candidates live in
+# scripts/native-payload-contract.mjs; scripts/check-native-artifacts.mjs fails
+# if this file drifts from it.
+npmRebuild: false
+
 directories:
   output: dist-electron
   buildResources: build
@@ -62,16 +74,38 @@ files:
   # Exclude sourcemaps from packaged artifacts (security + size).
   - "!dist/**/*.map"
   - "!dist/**/*.tsbuildinfo"
+  # ONE loadable candidate per native module. These two directories are the
+  # NON-selected candidates; leaving them in the payload would let a loader
+  # pick an artifact the unpack and signing contracts never covered. app-builder
+  # applies negated `files` patterns to the node_modules copy too, which is what
+  # makes these effective (fileMatcher.js getNodeModuleFileMatcher).
+  - "!**/node-pty/build/**"
+  - "!**/@parcel/watcher/build/**"
+  # bufferutil and utf-8-validate are the optional `ws` accelerators (pulled in
+  # by @solana/web3.js and viem). node-gyp-build searches build/Release BEFORE
+  # prebuilds/, exactly like node-pty, so a leftover local build would outrank
+  # the published Node-API prebuild and ship a binary compiled on a developer's
+  # machine into the payload.
+  - "!**/bufferutil/build/**"
+  - "!**/utf-8-validate/build/**"
 
 # Native modules must live OUTSIDE app.asar. Neither can be loaded from inside
 # an archive: node-pty's loader resolves `prebuilds/<platform>-<arch>/pty.node`
 # by real filesystem path and on macOS spawns the sibling `spawn-helper`
-# executable, and @parcel/watcher dlopens `watcher.node` from whichever
-# per-platform optional package npm/pnpm installed. Both paths are verified
-# post-build by scripts/check-build-artifacts.mjs.
+# executable, and @parcel/watcher dlopens `watcher.node` from the per-platform
+# optional package, which is the first entry in its own search order. These are
+# the SELECTED candidates; the payload is verified against them by
+# scripts/check-packaged-payload.mjs.
 asarUnpack:
   - node_modules/node-pty/prebuilds/**
-  - node_modules/@parcel/watcher*/**
+  - node_modules/@parcel/watcher-*/**
+  # The ws accelerators' Node-API prebuilds. electron-builder auto-unpacks
+  # `.node` files even without a glob, so these were already outside the asar by
+  # an undeclared default; naming them puts them under the reviewed contract the
+  # payload gate asserts. Absence for a target upstream publishes no prebuild
+  # for is a tolerated degrade to ws's pure-JS path, not a failure.
+  - node_modules/bufferutil/prebuilds/**
+  - node_modules/utf-8-validate/prebuilds/**
 
 extraResources:
   - from: resources/compose

@@ -30,7 +30,7 @@
     "dev": "pnpm run build:main && pnpm run build:preload && pnpm run build:pty-host && concurrently --kill-others --names \"renderer,main,preload,pty-host,electron\" \"pnpm:dev:renderer\" \"pnpm:dev:main:watch\" \"pnpm:dev:preload:watch\" \"pnpm:dev:pty-host:watch\" \"pnpm:dev:electron\"",
     "build:bridge": "node scripts/build-host-bridges.mjs",
     "prepackage:bridge": "node scripts/stage-bridge.mjs --arch x64 --arch arm64",
-    "package": "pnpm run build && pnpm run build:bridge && pnpm run prepackage:bridge && electron-builder --dir --publish never",
+    "package": "pnpm run build && pnpm run build:bridge && pnpm run prepackage:bridge && electron-builder --dir --publish never && pnpm run check:package",
     "make": "pnpm run build && pnpm run build:bridge && pnpm run prepackage:bridge && electron-builder --publish never",
     "lint": "pnpm run lint:tsc && pnpm run lint:tsc:ratchet && pnpm run check:boundaries",
     "lint:tsc": "tsc --noEmit -p tsconfig.shared.json && tsc --noEmit -p tsconfig.pty-host.json && tsc --noEmit -p tsconfig.e2e.json",
@@ -44,7 +44,9 @@
     "doctor": "node scripts/doctor.mjs",
     "predev": "node scripts/doctor.mjs && node scripts/copy-migrations.mjs",
     "check:build": "node scripts/check-build-artifacts.mjs",
+    "check:package": "node scripts/check-packaged-payload.mjs",
     "probe:node-pty": "electron scripts/probe-node-pty.mjs",
+    "probe:node-pty:packaged": "electron scripts/probe-node-pty.mjs --packaged",
     "check:boundaries": "node scripts/check-process-boundaries.mjs"
   },
   "dependencies": {
