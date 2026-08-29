@@ -66,7 +66,10 @@ import type {
   MissionGetRenewableSourceResult,
   MissionRenewResult,
 } from "@shared/schemas/mission.js";
-import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
+import {
+  MONEY_STATE_UNREADABLE,
+  type RuntimeStateDto,
+} from "@shared/schemas/runtime.js";
 import { useIsChatSubmitting } from "../../lib/api/chat.js";
 import {
   useEditMission,
@@ -307,13 +310,24 @@ export function MissionControls({
     const status = runtime.status;
     const canContinue = status === "paused_wake" || status === "paused_user";
     // M3/M5: the money gate is enforced in the privileged retry IPC and
-    // MIRRORED here. `recoveryReady` is present exactly for `paused_error`, so
-    // an absent value on this branch means the mirror was not computed and the
-    // button stays offered - the IPC still refuses and names the reason. A
-    // present `blocked` disables it with that reason stated up front, instead
-    // of a click that can only fail.
-    const recoveryBlocked = runtime.recoveryReady?.kind === "blocked";
-    const canRecover = status === "paused_error" && !recoveryBlocked;
+    // MIRRORED here. FAIL-CLOSED, and it is worth being exact about why.
+    //
+    // The mirror's own schema calls itself fail-closed - an unreadable money
+    // state projects `blocked`. This branch used to undo that by reading an
+    // ABSENT field as permission: `!blocked` is true for `undefined`, so the
+    // one case the mirror could not answer was the one case the button was
+    // offered for. An affordance granted on a fact nobody computed is exactly
+    // the "unknown read as clear" the money rules forbid.
+    //
+    // So Recover now requires the POSITIVE answer. Absent is unknown, unknown
+    // is not ready, and the operator is told which of the two it is rather
+    // than being handed a click that can only fail. The IPC remains the
+    // authority and refuses on its own read regardless of any of this.
+    const isPausedError = status === "paused_error";
+    const recovery = runtime.recoveryReady;
+    const recoveryBlocked = isPausedError && recovery?.kind === "blocked";
+    const recoveryUnknown = isPausedError && recovery === undefined;
+    const canRecover = isPausedError && recovery?.kind === "ready";
     const canEdit = status !== "paused_approval";
     // The same selector the composer's send/stop key reads (M6). Both surfaces
     // reach `runStopDispatch`: `mission.stop` and `runtime.requestStop` are two
@@ -325,7 +339,13 @@ export function MissionControls({
     );
     return (
       <>
-        {canRecover ? (
+        {/* Keyed on the PAUSE, never on the button. The alert explains why the
+            run stopped - the restart, the repeated tool call, the provider
+            error - and that explanation is most needed precisely when recovery
+            is blocked. Gating it on `canRecover` meant a blocked money state
+            silently removed the only account of what happened, leaving a
+            disabled button and no reason for either fact. */}
+        {isPausedError ? (
           <MissionErrorAlert
             stopReason={runtime.stopReason}
             lastError={runtime.lastError}
@@ -362,7 +382,13 @@ export function MissionControls({
             onClick={() => void run(() => stop.mutateAsync({ sessionId }))}
           />
           {recoveryBlocked ? (
-            <ControlNoticeLine text={RECOVERY_BLOCKED_TEXT} tone="warning" />
+            <ControlNoticeLine
+              text={recoveryBlockedText(recovery)}
+              tone="warning"
+            />
+          ) : null}
+          {recoveryUnknown ? (
+            <ControlNoticeLine text={RECOVERY_UNKNOWN_TEXT} tone="warning" />
           ) : null}
           {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
         </div>
@@ -690,6 +716,56 @@ function ControlButton({
  */
 const RECOVERY_BLOCKED_TEXT =
   "Recover is unavailable: a wallet or approval action from this session has no confirmed outcome yet. It re-enables once that settles.";
+
+/**
+ * The DIFFERENT sentence for "we could not check".
+ *
+ * These are two genuinely different situations and collapsing them was a lie
+ * in one direction: the copy above asserts that an action exists and is
+ * settling, which tells an operator to wait for something that may not be
+ * there. `money_state_unreadable` means the mirror could not read the state at
+ * all - a database that did not answer - and the honest thing to say is that
+ * nothing is known, not to invent a pending action.
+ *
+ * It still fails closed: unreadable disables Recover exactly as blocked does
+ * (rule 90 - an unknown outcome is not a clear one). Only the words differ,
+ * because only the words were wrong.
+ */
+const RECOVERY_UNREADABLE_TEXT =
+  "Recover is unavailable: Vex could not check this session's wallet and approval state. Retry once the local services are responding.";
+
+/**
+ * The third sentence: `paused_error` with NO mirror computed at all.
+ *
+ * Distinct from unreadable, which is main having tried and failed. This is the
+ * field simply absent - an older main, a state pushed before the mirror
+ * existed, a projection that did not run. Same fail-closed outcome, and again
+ * the operator is told which unknown this is instead of being shown a blocked
+ * reason that was never reported.
+ */
+const RECOVERY_UNKNOWN_TEXT =
+  "Recover is unavailable: Vex has not confirmed this session's wallet and approval state yet.";
+
+/**
+ * Blocked copy by REASON, mapping the reader's structural labels to the two
+ * sentences the operator can act on.
+ *
+ * `reasonKinds` is an OPEN set by contract - the money-state reader gains kinds
+ * as the money path gains state machines - so this maps the one kind whose
+ * meaning is categorically different and keeps a total default for the rest.
+ * A future kind is an unresolved outcome until someone decides otherwise,
+ * which is the safe way for this default to be wrong.
+ */
+function recoveryBlockedText(
+  recovery: RuntimeStateDto["recoveryReady"],
+): string {
+  if (recovery === undefined || recovery.kind !== "blocked") {
+    return RECOVERY_BLOCKED_TEXT;
+  }
+  return recovery.reasonKinds.includes(MONEY_STATE_UNREADABLE)
+    ? RECOVERY_UNREADABLE_TEXT
+    : RECOVERY_BLOCKED_TEXT;
+}
 
 function ControlNoticeLine({
   text,

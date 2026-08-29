@@ -186,3 +186,65 @@ describe("both rows, one transaction, events after the commit", () => {
     expect(emitTranscriptAppend).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The classifier, as a truth table. It is the ONE place `steered` may be
+ * decided, and both ingress routes now defer to it - they used to disagree
+ * with each other in opposite directions on the same session.
+ */
+describe("classifyOperatorInterruptDisposition", () => {
+  it("says steered ONLY for executing work with a live matching lease", async () => {
+    const { classifyOperatorInterruptDisposition } = await import(
+      "@vex-agent/engine/core/operator-instructions.js"
+    );
+    const cases: ReadonlyArray<
+      [string | null, boolean, "steered" | "queued_interrupt"]
+    > = [
+      // A live mission run whose runner holds the lease: the loop merges it.
+      ["running", true, "steered"],
+      // `running` is a ROW STATUS. With a dead lease it is the crashed-runner
+      // state the restart-orphan sweep reclaims, and nothing is alive to merge.
+      ["running", false, "queued_interrupt"],
+      // An agent session has no run row; the lease is the whole question.
+      [null, true, "steered"],
+      [null, false, "queued_interrupt"],
+      // Parked states. A live lease does not make a parked run executing - it
+      // is held for work that is waiting on a human or a clock.
+      ["paused_approval", true, "queued_interrupt"],
+      ["paused_approval", false, "queued_interrupt"],
+      ["paused_error", true, "queued_interrupt"],
+      ["paused_error", false, "queued_interrupt"],
+      ["paused_wake", true, "queued_interrupt"],
+      ["paused_user", true, "queued_interrupt"],
+      ["paused_user_form", true, "queued_interrupt"],
+      ["paused_plan_acceptance", true, "queued_interrupt"],
+    ];
+    for (const [runStatus, hasLiveMatchingLease, expected] of cases) {
+      expect(
+        classifyOperatorInterruptDisposition({ runStatus, hasLiveMatchingLease }),
+      ).toBe(expected);
+    }
+  });
+
+  /**
+   * `preempted_wake` is a fact about an ACTION that won its race, not a
+   * derivation from state. Only the code that performed the claim and saw it
+   * succeed may assert it - deriving it from `paused_wake` would claim a
+   * preempt that may have lost.
+   */
+  it("never produces preempted_wake from state alone", async () => {
+    const { classifyOperatorInterruptDisposition } = await import(
+      "@vex-agent/engine/core/operator-instructions.js"
+    );
+    for (const runStatus of [null, "running", "paused_wake", "paused_error"]) {
+      for (const hasLiveMatchingLease of [true, false]) {
+        expect(
+          classifyOperatorInterruptDisposition({
+            runStatus,
+            hasLiveMatchingLease,
+          }),
+        ).not.toBe("preempted_wake");
+      }
+    }
+  });
+});

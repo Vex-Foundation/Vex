@@ -38,7 +38,11 @@ vi.mock("../../../vex-agent/engine/core/runner.js", () => ({
   resumeMissionRun: (...a: unknown[]) => mockResumeMissionRun(...a),
 }));
 
-vi.mock("../../../vex-agent/engine/core/operator-instructions.js", () => ({
+// The two WRITERS are mocked; `classifyOperatorInterruptDisposition` is kept
+// REAL via importActual. It is the decision these tests exist to check, and a
+// stubbed classifier would let the routes assert their own answer back.
+vi.mock("../../../vex-agent/engine/core/operator-instructions.js", async (importActual) => ({
+  ...(await importActual<Record<string, unknown>>()),
   addOperatorInstruction: (...a: unknown[]) => mockAddOperatorInstruction(...a),
   addOperatorCue: (...a: unknown[]) => mockAddOperatorCue(...a),
 }));
@@ -51,12 +55,23 @@ const { submitSteeringMessage } = await import("../../../vex-agent/engine/ingres
 
 const SESSION = "session-1";
 
-function liveLease(): { expiresAt: Date } {
-  return { expiresAt: new Date(Date.now() + 60_000) };
+/**
+ * `missionRunId` is part of the fixture because the route MATCHES on it: a
+ * lease held for a different run is another turn's and cannot merge this
+ * message. `null` is the agent-session shape (no run row exists).
+ */
+function liveLease(missionRunId: string | null = null): {
+  expiresAt: Date;
+  missionRunId: string | null;
+} {
+  return { expiresAt: new Date(Date.now() + 60_000), missionRunId };
 }
 
-function expiredLease(): { expiresAt: Date } {
-  return { expiresAt: new Date(Date.now() - 1_000) };
+function expiredLease(missionRunId: string | null = null): {
+  expiresAt: Date;
+  missionRunId: string | null;
+} {
+  return { expiresAt: new Date(Date.now() - 1_000), missionRunId };
 }
 
 beforeEach(() => {
@@ -68,6 +83,8 @@ beforeEach(() => {
 describe("submitSteeringMessage", () => {
   it("a running mission run gets exactly one persisted interrupt and queued_live - no turn fires", async () => {
     mockGetActiveRunBySession.mockResolvedValue({ id: "run-1", status: "running" });
+    // A live lease for THIS run is what makes the claim `steered` provable.
+    mockGetLease.mockResolvedValue(liveLease("run-1"));
     const result = await submitSteeringMessage(SESSION, "steer this");
     expect(result).toEqual({ outcome: "queued_live" });
     expect(mockAddOperatorInstruction).toHaveBeenCalledTimes(1);
@@ -83,11 +100,55 @@ describe("submitSteeringMessage", () => {
     expect(mockResumeMissionRun).not.toHaveBeenCalled();
   });
 
-  it("a paused_approval run steers too - the loop resumes through the approval flow, not this entry", async () => {
+  /**
+   * M6 correction. This route used to persist `steered` for `paused_approval`,
+   * which told the operator a run parked on a human decision would pick their
+   * message up mid-turn. The row still persists - it is on the tape and will be
+   * read - but the DISPOSITION is now the honest weaker one.
+   */
+  it("a paused_approval run persists as QUEUED, not steered - nothing is executing", async () => {
     mockGetActiveRunBySession.mockResolvedValue({ id: "run-1", status: "paused_approval" });
+    mockGetLease.mockResolvedValue(liveLease("run-1"));
     const result = await submitSteeringMessage(SESSION, "steer this");
     expect(result).toEqual({ outcome: "queued_live" });
     expect(mockAddOperatorInstruction).toHaveBeenCalledTimes(1);
+    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
+      SESSION,
+      "steer this",
+      "queued_interrupt",
+      { target: "mission_run", runId: "run-1", runStatus: "paused_approval" },
+    );
+  });
+
+  /**
+   * The other half of the same correction: `running` is a ROW STATUS, and a
+   * row status with a dead lease is the crashed-runner state the restart-orphan
+   * sweep reclaims. Claiming a message was steered into it would describe a
+   * merge that nothing is alive to perform.
+   */
+  it("a running run with a DEAD lease persists as queued, not steered", async () => {
+    mockGetActiveRunBySession.mockResolvedValue({ id: "run-1", status: "running" });
+    mockGetLease.mockResolvedValue(expiredLease("run-1"));
+    const result = await submitSteeringMessage(SESSION, "steer this");
+    expect(result).toEqual({ outcome: "queued_live" });
+    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
+      SESSION,
+      "steer this",
+      "queued_interrupt",
+      { target: "mission_run", runId: "run-1", runStatus: "running" },
+    );
+  });
+
+  it("a running run whose live lease belongs to ANOTHER run is not this turn", async () => {
+    mockGetActiveRunBySession.mockResolvedValue({ id: "run-1", status: "running" });
+    mockGetLease.mockResolvedValue(liveLease("run-2"));
+    await submitSteeringMessage(SESSION, "steer this");
+    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
+      SESSION,
+      "steer this",
+      "queued_interrupt",
+      { target: "mission_run", runId: "run-1", runStatus: "running" },
+    );
   });
 
   it.each(["paused_wake", "paused_error", "paused_user", "paused_plan_acceptance", "paused_user_form"])(

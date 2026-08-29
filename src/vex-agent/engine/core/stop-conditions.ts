@@ -45,9 +45,15 @@ const RUNTIME_PAUSES: ReadonlySet<string> = new Set<string>(RUNTIME_STOP_REASONS
  * `iteration_limit` and `timeout` are converted by autonomous runners into
  * `waiting_for_wake`; they are not direct ingress-resume statuses.
  * `system_error` remains non-resumable here, and so are `restart_orphan` and
- * `tool_call_loop`: the first needs a fresh run (the process that owned the
- * old one is gone), the second needs a human to change something, because
- * resuming is precisely what the model just proved it would repeat.
+ * `tool_call_loop`.
+ *
+ * Non-resumable means NOT RESUMABLE BY INGRESS - a user message must not
+ * silently restart either one. Both remain recoverable by the operator through
+ * Recover (`mission.retry`), which claims and resumes the SAME run row, and
+ * neither requires a fresh run: `restart_orphan` parked a run whose process
+ * died, and the claim simply takes a new lease on that row; `tool_call_loop`
+ * needs a human to read the transcript first, which is a reason to withhold
+ * the automatic path, not to discard the run.
  */
 const RESUMABLE_STOPS = new Set<string>([
   "approval_required",

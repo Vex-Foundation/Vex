@@ -55,16 +55,25 @@
  * Cost of a false positive at strike two: a turn ends with an honest message
  * and a transcript the user can read. Cost of not having it: the incident.
  *
- * ## Zero imports, on purpose
+ * ## No project imports, on purpose
  *
- * This module imports NOTHING - the `unproductive-rounds.ts` precedent. Its
- * only consumer is `turn-loop-tool-batch.ts`, which it must never import back
- * (the batch orchestrator would then depend on a module that depends on it),
- * and a detector with no dependencies is a pure function of what it was told,
- * which is what makes the table tests over it worth anything.
+ * This module imports NO PROJECT CODE - the `unproductive-rounds.ts`
+ * precedent. Its only consumer is `turn-loop-tool-batch.ts`, which it must
+ * never import back (the batch orchestrator would then depend on a module that
+ * depends on it), and a detector with no project dependencies is a pure
+ * function of what it was told, which is what makes the table tests over it
+ * worth anything.
+ *
+ * The one exception is `node:crypto`, a runtime builtin used for the signature
+ * digest. It is not an engine edge, cannot join an import cycle, and cannot
+ * change underneath this module - so the property this rule protects is
+ * untouched. `toolCallSignature` states why a real digest rather than a
+ * hand-rolled hash.
  *
  * Derived in pattern, not in code, from gemini-cli's `loopDetectionService`.
  */
+
+import { createHash } from "node:crypto";
 
 /** Identical repeats of a cycle before the detector reacts. */
 export const TOOL_CALL_LOOP_THRESHOLD = 5;
@@ -185,22 +194,43 @@ export function canonicalize(value: unknown): string {
 }
 
 /**
- * The signature of a completed call: name, canonical arguments, success flag,
- * and model-visible output.
+ * The signature of a completed call: a sha256 over the tool name, its canonical
+ * arguments, the success flag and the model-visible output.
  *
- * Deliberately a readable joined string and not a cryptographic digest. It is
- * compared for equality and never persisted, logged, or shown to anyone - the
- * facts above are what leaves this module - so hashing would buy nothing and
- * cost the ability to see, in a debugger, exactly which two calls the detector
- * thought were the same.
+ * ## Why it is HASHED and not the joined string
+ *
+ * The joined string RETAINS what it joins. Tool arguments and model-visible
+ * output are exactly where wallet addresses, amounts, provider responses and
+ * user content live, and the history array holds `THRESHOLD * MAX_CYCLE_LENGTH`
+ * of them for the life of the turn. A digest keeps the only property the
+ * detector uses - equality - and keeps that content out of a structure whose
+ * whole job is to sit in memory beside the runner. It is also the shape the
+ * approved design specified and the shape this module's header already
+ * describes; the joined string was the drift.
+ *
+ * ## sha256, not a local FNV-1a
+ *
+ * The alternative was a hand-rolled 32-bit hash to preserve this module's
+ * zero-import property. Rejected on consequence: a collision here means two
+ * DIFFERENT calls count as a repeat, and five of those STOP A RUN. A 32-bit
+ * hash over a turn's worth of entries has a real collision probability;
+ * sha256's is not a number anyone needs to reason about. `node:crypto` is a
+ * runtime builtin, so it adds no engine edge and cannot join an import cycle -
+ * the property the zero-import habit protected is intact.
+ *
+ * The separator is an escaped NUL, which cannot occur in the JSON-encoded
+ * canonical form, so no shifting of a field boundary can forge a collision. It
+ * is written `\u0000` rather than typed literally: a raw NUL byte makes this
+ * file classify as binary data, which breaks diffs, greps and review tooling.
  */
 export function toolCallSignature(observation: CompletedToolCallObservation): string {
-  return [
+  const canonical = [
     observation.toolName,
     canonicalize(observation.args),
     observation.success ? "ok" : "err",
     observation.output,
-  ].join(" ");
+  ].join("\u0000");
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
 }
 
 /**

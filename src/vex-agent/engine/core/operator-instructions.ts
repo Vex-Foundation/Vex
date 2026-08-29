@@ -57,6 +57,56 @@ export type OperatorInterruptDisposition =
   | "preempted_wake";
 
 /**
+ * THE classifier for the two dispositions that are DERIVED from state, in one
+ * place, used by every route that persists an operator instruction.
+ *
+ * ## Why it had to be one function
+ *
+ * The routes disagreed, and each disagreement was visible to the operator.
+ * `routeUserMessage` labelled every `running` run `queued_interrupt` even when
+ * a runner was demonstrably executing it, so a genuinely steered message told
+ * the user it would be read "the next time it runs". `submitSteeringMessage`
+ * made the opposite error and labelled `paused_approval` as `steered`, telling
+ * the user a parked run would pick their message up mid-turn when nothing was
+ * running at all. Two routes, two answers, wrong in opposite directions, and no
+ * single place to correct either.
+ *
+ * ## The rule
+ *
+ * `steered` requires PROOF that something is executing: a live lease belonging
+ * to this session's current work. A row status alone is not proof - `running`
+ * with a dead lease is exactly the crashed-runner state the restart-orphan
+ * sweep exists to clean up, and telling the operator their message was steered
+ * into it would be a lie about a run nobody is driving.
+ *
+ * Everything else is `queued_interrupt`: the honest, weaker claim, and the
+ * default on purpose, because a route that cannot prove the stronger claim
+ * should make the weaker one.
+ *
+ * ## `preempted_wake` is deliberately NOT produced here
+ *
+ * It is not derivable from status and lease. It is a fact about an ACTION that
+ * succeeded - a wake cancelled and the run claimed - so only the code that
+ * performed that claim and saw it WIN may assert it. Deriving it from a
+ * `paused_wake` status would claim a preempt that may have lost its race.
+ */
+export function classifyOperatorInterruptDisposition(input: {
+  /** The mission run's status, or `null` for an agent session with no run. */
+  readonly runStatus: string | null;
+  /**
+   * A lease that is unexpired AND belongs to this work: the same run for a
+   * mission run, the session itself for an agent session. A lease held for a
+   * DIFFERENT run is someone else's turn and cannot merge this message.
+   */
+  readonly hasLiveMatchingLease: boolean;
+}): OperatorInterruptDisposition {
+  const executing = input.runStatus === "running" || input.runStatus === null;
+  return executing && input.hasLiveMatchingLease
+    ? "steered"
+    : "queued_interrupt";
+}
+
+/**
  * The user-visible acknowledgement per disposition.
  *
  * One sentence each, saying what happened and when the agent will read it -

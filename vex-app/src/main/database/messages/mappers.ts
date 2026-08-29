@@ -7,8 +7,9 @@
  * `getMessageAround`). Raw `metadata` JSONB is deliberately never selected in
  * full; every read off that column is a NARROW, individually validated sub-key
  * projection (see `MESSAGE_ROW_COLUMNS`): `explorerRefs`, `success`,
- * `reasoning`, `durationMs`, `displayStatus`, and `board` - six of them today,
- * each with its own fail-to-null schema. The `message_type` top-level column remains the
+ * `reasoning`, `durationMs`, `displayStatus`, `board`, and the operator
+ * instruction's `payload -> 'disposition'` - seven of them today, each with its
+ * own fail-to-null schema. The `message_type` top-level column remains the
  * discriminator for row kind.
  *
  * TOOL NAMES ARE CANONICALIZED HERE. A discovered protocol manifest is called
@@ -24,6 +25,7 @@ import {
   explorerRefsSchema,
   reasoningProjectionSchema,
   toolDurationMsProjectionSchema,
+  operatorInterruptDispositionSchema,
   toolDisplayStatusProjectionSchema,
   toolSuccessProjectionSchema,
   type BoardProjection,
@@ -31,6 +33,7 @@ import {
   type MessageCursor,
   type MessageKind,
   type MessageRole,
+  type OperatorInterruptDispositionDto,
   type SessionMessageDto,
   type ToolCallDisplay,
   type ToolDisplayStatus,
@@ -61,17 +64,28 @@ export interface MessageRow {
   readonly display_status: unknown;
   /** ONLY the `board` sub-key of `messages.metadata` (assistant rows). */
   readonly board: unknown;
+  /**
+   * ONLY `messages.metadata -> 'payload' -> 'disposition'` (operator-interrupt
+   * rows). The engine's typed record of what it did with the instruction.
+   */
+  readonly interrupt_disposition: unknown;
 }
 
 // Raw `metadata` JSONB is still deliberately NOT selected in full — the strict
-// "metadata completely omitted" posture stands. Exactly SIX narrowly
+// "metadata completely omitted" posture stands. Exactly SEVEN narrowly
 // allow-listed sub-key projections exist (`explorerRefs`, `reasoning`,
-// `durationMs`, `success`, `displayStatus`, `board`); the SELECT reaches only
-// those sub-keys and the mapper zod-validates each before it reaches the DTO
+// `durationMs`, `success`, `displayStatus`, `board`, and the operator
+// instruction's `payload -> 'disposition'`); the SELECT reaches only those
+// sub-keys and the mapper zod-validates each before it reaches the DTO
 // (JSONB is untrusted at this boundary). The `message_type` column
 // (migration 002) remains the engine's authoritative marker discriminator.
+//
+// The disposition reaches TWO levels down because that is where the engine
+// writes it (`payload.disposition`), and the narrowness is the point: the
+// sibling `payload` keys - the route's own free-form target and run ids - stay
+// main-side where they belong.
 export const MESSAGE_ROW_COLUMNS =
-  "id, session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, metadata -> 'explorerRefs' AS explorer_refs, metadata -> 'reasoning' AS reasoning, metadata -> 'durationMs' AS duration_ms, metadata -> 'success' AS success, metadata -> 'displayStatus' AS display_status, metadata -> 'board' AS board";
+  "id, session_id, role, content, tool_call_id, tool_calls, created_at, source, message_type, metadata -> 'explorerRefs' AS explorer_refs, metadata -> 'reasoning' AS reasoning, metadata -> 'durationMs' AS duration_ms, metadata -> 'success' AS success, metadata -> 'displayStatus' AS display_status, metadata -> 'board' AS board, metadata -> 'payload' -> 'disposition' AS interrupt_disposition";
 
 export function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -180,6 +194,14 @@ const CHAT_STOPPED_MESSAGE_TYPE = "chat_stopped";
 const OPERATOR_INSTRUCTION_ACK_MESSAGE_TYPE = "operator_interrupt_ack";
 
 /**
+ * Engine `message_type` for the operator instruction row itself. Mirrors
+ * `OPERATOR_INTERRUPT_MESSAGE_TYPE` in the engine's
+ * `core/operator-instructions.ts`, the same string-literal mirror as the
+ * constants above. Pinned on both sides by test.
+ */
+const OPERATOR_INTERRUPT_MESSAGE_TYPE = "operator_interrupt";
+
+/**
  * Derive renderer-visible `kind` from row shape using the top-level
  * `message_type` column + the (already allow-list-extracted) tool name.
  * `metadata` JSONB is intentionally never selected.
@@ -204,7 +226,7 @@ function deriveKind(row: MessageRow, toolName: string | null): MessageKind {
   if (row.message_type === "mission_setup") return "text";
   // A33: a user message steered into a live turn is the user's prose, not a
   // system marker - it renders as a user row with a "steered" register mark.
-  if (row.role === "user" && row.message_type === "operator_interrupt") {
+  if (row.role === "user" && row.message_type === OPERATOR_INTERRUPT_MESSAGE_TYPE) {
     return "steering";
   }
   // M6: the engine's acknowledgement of an operator instruction, ahead of the
@@ -341,7 +363,33 @@ export function toDto(row: MessageRow): SessionMessageDto {
     success: extractSuccess(row),
     displayStatus: extractDisplayStatus(row),
     board: extractBoard(row),
+    interruptDisposition: extractInterruptDisposition(row),
   };
+}
+
+/**
+ * Validate the `metadata -> 'payload' -> 'disposition'` projection. ONLY an
+ * operator-interrupt row carries one.
+ *
+ * The row guard is not decoration: `disposition` also rides the ACK row's
+ * payload, and the ack is a notice whose whole text already states the
+ * disposition. Projecting it onto both rows would give the renderer two places
+ * to render the same fact and an opportunity to render them differently.
+ *
+ * An unrecognised value projects `null` - the enum is closed, this JSONB is
+ * untrusted, and a legacy row written before the disposition existed has none.
+ * `null` renders the neutral mark, never a guessed one.
+ */
+function extractInterruptDisposition(
+  row: MessageRow,
+): OperatorInterruptDispositionDto | null {
+  if (row.role !== "user" || row.message_type !== OPERATOR_INTERRUPT_MESSAGE_TYPE) {
+    return null;
+  }
+  const parsed = operatorInterruptDispositionSchema.safeParse(
+    row.interrupt_disposition,
+  );
+  return parsed.success ? parsed.data : null;
 }
 
 export function nextCursorFor(items: readonly SessionMessageDto[]): MessageCursor | null {

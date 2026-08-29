@@ -76,11 +76,26 @@ vi.mock("@vex-agent/db/repos/runtime-control-requests.js", () => ({
 // Phase 4d: runRetryDispatch cancels pending error_retry wakes before claiming.
 const mockCancelForSession = vi.fn().mockResolvedValue(0);
 vi.mock("@vex-agent/db/repos/loop-wake.js", () => ({
-  cancelForSession: (...a: unknown[]) => mockCancelForSession(...a),
+  cancelForSessionWith: (...a: unknown[]) => mockCancelForSession(...a),
 }));
+// `withSessionControlLock` opens the transaction and takes the lock; the gate
+// runs the money read, the wake cancellation and the claim INSIDE it. The fake
+// records that the lock was taken and hands the body a client, so the unit
+// tests can still assert the dispatcher's branching. That the exclusion is
+// REAL - that no money writer can commit between the read and the claim - is
+// not provable with a mocked lock and is proven against two live Postgres
+// clients in `recovery-money-gate-race.int.test.ts`.
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
-  claimRunLeaseAndFlipToRunning: (...a: unknown[]) => mockClaim(...a),
-  acquireSessionControlLock: (...a: unknown[]) => mockAcquireLock(...a),
+  claimRunLeaseAndFlipToRunningWith: (_client: unknown, ...a: unknown[]) =>
+    mockClaim(...a),
+  withSessionControlLock: async (
+    sessionId: string,
+    fn: (client: unknown) => Promise<unknown>,
+  ) => {
+    const client = { query: vi.fn() };
+    await mockAcquireLock(client, sessionId);
+    return fn(client);
+  },
 }));
 // The RECOVERY money gate reads the session-scoped money state inside a
 // transaction under the session control lock. Both are mocked: what is proven
@@ -258,6 +273,11 @@ describe("mission.retry", () => {
       ok: true,
       data: { missionRunId: "run-orphan", status: "paused_error" },
     });
+    // The audit row is enqueued BEFORE the gate now, so the attempt is on
+    // record ahead of any effect and a money refusal settles it explicitly. A
+    // refusal on the money path is exactly what an operator needs to find
+    // later, so it gets an audit row rather than vanishing.
+    mockEnqueueRequest.mockResolvedValueOnce({ id: "audit-blocked" });
     mockMoneyState.mockResolvedValueOnce({
       clear: false,
       reasons: [
@@ -283,11 +303,17 @@ describe("mission.retry", () => {
     expect(mockCancelForSession).not.toHaveBeenCalled();
     // Structural labels only: no row identifiers reach the renderer.
     expect(JSON.stringify(r.data)).not.toContain("intent-1");
+    expect(mockMarkFailed).toHaveBeenCalledWith(
+      "audit-blocked",
+      "blocked_money_state",
+    );
   });
 
-  it("takes the session control lock to read the money state", async () => {
+  it("takes the session control lock around the money read AND the claim", async () => {
     // Read outside the lock the answer is stale the instant it returns: every
-    // money-state writer serializes on this same lock.
+    // money-state writer serializes on this same lock. The claim runs inside
+    // the same transaction, which is what makes the read a decision boundary
+    // rather than a snapshot of the past.
     mockGetLatestRunForSession.mockResolvedValueOnce({
       ok: true,
       data: { missionRunId: "run-orphan", status: "paused_error" },

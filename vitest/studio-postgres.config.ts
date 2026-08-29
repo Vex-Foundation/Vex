@@ -26,6 +26,7 @@ export default defineConfig({
       "src/__tests__/integration/engine/studio-*.int.test.ts",
       "src/__tests__/integration/repos/money-state-reader.int.test.ts",
       "src/__tests__/integration/repos/session-control-state-wake.int.test.ts",
+      "src/__tests__/integration/repos/recovery-money-gate-race.int.test.ts",
       "src/__tests__/integration/repos/wallet-transaction-*.int.test.ts",
       "src/__tests__/integration/repos/wallet-wrap-*.int.test.ts",
       "src/__tests__/integration/repos/swap-prequotes-claim.int.test.ts",

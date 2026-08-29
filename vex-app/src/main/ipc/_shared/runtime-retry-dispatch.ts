@@ -10,8 +10,10 @@
  * Result immediately.
  *
  * Before it claims anything it enforces the RECOVERY MONEY GATE
- * (`readSessionMoneyState` below): a session with an unproven money-path
- * outcome cannot be resumed, and the refusal names the structural reasons.
+ * (`gatedClaimUnderSessionLock` below): a session with an unproven money-path
+ * outcome cannot be resumed, and the refusal names the structural reasons. The
+ * gate and the claim it guards commit as ONE transaction under the session
+ * control lock - two transactions leave a window a money writer commits in.
  *
  * Duplicates ~60% of `runResumeDispatch` by intent (codex review): a shared
  * claim + fire-and-forget helper is only worth extracting once the stop-fix
@@ -27,6 +29,7 @@
 import { randomUUID } from "node:crypto";
 import { ok, err, type Result } from "@shared/ipc/result.js";
 import type { MissionRunStatus } from "@shared/schemas/sessions.js";
+import type { ClaimRunOutcome } from "@vex-agent/engine/runtime/lease-and-status.js";
 import { getLatestRunForSession } from "../../database/mission-runs-db.js";
 import { log } from "../../logger/index.js";
 import { controlFailedError } from "../runtime/_errors.js";
@@ -62,7 +65,10 @@ const LEASE_TTL_MS = 5 * 60_000;
 const RETRY_OWNER_PREFIX = "ipc-retry-";
 
 /**
- * The RECOVERY money gate, enforced here because this is the privileged half.
+ * The gated claim: the RECOVERY money gate and the claim it guards, as ONE
+ * decision in ONE transaction under the session control lock.
+ *
+ * ## The gate
  *
  * Recover resumes a run that stopped in the middle of something. A run parked
  * by the restart-orphan reclaim is the sharpest case - the process died
@@ -73,35 +79,104 @@ const RETRY_OWNER_PREFIX = "ipc-retry-";
  * double spend happens. The rule is the product's own (rule 90): an unknown
  * outcome is reconciled, never retried.
  *
- * Read inside a transaction under the SESSION CONTROL LOCK, which is what makes
- * it a boundary rather than a snapshot of the past: every money-state writer
- * takes the same lock (see the reader's module header). It is released before
- * the claim below, deliberately - nothing may hold that lock across the
- * fire-and-forget resume, and the claim revalidates status and lease under its
- * own row locks anyway.
+ * ## Why one transaction, and what was wrong before
+ *
+ * The gate used to read the money state under the lock, RELEASE it, and then
+ * claim the run in a separate transaction. That is a TOCTOU window, not a
+ * boundary: every money-path writer takes this same lock, so a writer blocked
+ * behind the read would commit an unresolved intent the instant the read
+ * released it, and the claim - which takes row locks on `mission_runs` and
+ * `runner_leases` but never the session control lock - would then resume the
+ * run over exactly the outcome the gate exists to refuse. The window was small
+ * and the loss is a double spend, which is the trade this rule does not make.
+ *
+ * So the read, the auto-retry wake cancellation and the claim now commit
+ * together or not at all. A money writer either commits before the read (and
+ * the gate sees it and refuses) or waits behind the lock until the claim is
+ * durable. There is no third ordering, which is what the two-client
+ * integration test asserts.
+ *
+ * ## The hold is still short
+ *
+ * The lock is held across three statements and NO inference: the fire-and-
+ * forget `resumeMissionRun` starts after this transaction commits, exactly as
+ * before. Holding the session control lock across a model turn is the failure
+ * this module's lock discipline forbids, and nothing here does it.
  *
  * FAIL-CLOSED: a throw propagates to the caller's catch and the retry is
  * refused. An unreadable money state is not a clear one.
  *
- * The renderer's Recover affordance must gate on the same fact, but that is a
- * display concern; this check is the enforcement and does not trust it.
+ * The renderer's Recover affordance gates on a MIRROR of the same fact, but
+ * that is a display concern; this is the enforcement and does not trust it.
+ *
+ * EXPORTED for its integration test, which drives this exact function from two
+ * real clients to prove the interleaving is impossible. The alternative was a
+ * test that re-composed the same three calls, which would prove only that the
+ * copy is safe. It is not part of the IPC surface and has no other caller.
  */
-async function readSessionMoneyState(
-  sessionId: string,
-): Promise<
-  | { readonly clear: true }
-  | { readonly clear: false; readonly reasons: readonly { kind: string }[] }
-> {
-  const { withTransaction } = await import("@vex-agent/db/client.js");
-  const { acquireSessionControlLock } = await import(
+type GatedClaimOutcome =
+  | {
+    readonly kind: "blocked_money_state";
+    readonly reasonKinds: readonly string[];
+  }
+  | { readonly kind: "claimed"; readonly claim: ClaimRunOutcome };
+
+export async function gatedClaimUnderSessionLock(input: {
+  readonly sessionId: string;
+  readonly runId: string;
+  readonly status: MissionRunStatus;
+  readonly ownerId: string;
+}): Promise<GatedClaimOutcome> {
+  const { withSessionControlLock } = await import(
+    "@vex-agent/engine/runtime/lease-and-status.js"
+  );
+  const { claimRunLeaseAndFlipToRunningWith } = await import(
     "@vex-agent/engine/runtime/lease-and-status.js"
   );
   const { getUnresolvedMoneyStateForSession } = await import(
     "@vex-agent/db/repos/approval-intents/money-state.js"
   );
-  return withTransaction(async (client) => {
-    await acquireSessionControlLock(client, sessionId);
-    return getUnresolvedMoneyStateForSession(client, sessionId);
+  const { cancelForSessionWith } = await import(
+    "@vex-agent/db/repos/loop-wake.js"
+  );
+
+  return withSessionControlLock(input.sessionId, async (client) => {
+    const money = await getUnresolvedMoneyStateForSession(
+      client,
+      input.sessionId,
+    );
+    if (!money.clear) {
+      return {
+        kind: "blocked_money_state",
+        reasonKinds: [...new Set(money.reasons.map((r) => r.kind))],
+      };
+    }
+
+    if (input.status === "paused_error") {
+      // A human Recover supersedes any scheduled auto-retry. Inside the gate,
+      // so a refused or lost claim does not leave the run with its retry
+      // cancelled AND no recovery performed. A wake already CONSUMED by the
+      // executor cannot be cancelled; there `claimRunForAutoRetry`'s own
+      // atomic re-check is the authority and will skip.
+      await cancelForSessionWith(
+        client,
+        input.sessionId,
+        "superseded_by_manual_recover",
+      );
+    }
+
+    const claim = await claimRunLeaseAndFlipToRunningWith(client, {
+      sessionId: input.sessionId,
+      missionRunId: input.runId,
+      // `[status]` - either `["paused_error"]` (the normal Recover path) or
+      // `["running"]` (the dead-lease reclaim path). Never both: only one of
+      // the two branches reaches here for a given call.
+      fromStatuses: [input.status],
+      ownerId: input.ownerId,
+      processKind: "electron_main",
+      ttlMs: LEASE_TTL_MS,
+    });
+    return { kind: "claimed", claim };
   });
 }
 
@@ -152,31 +227,15 @@ export async function runRetryDispatch(
       return ok({ outcome: "not_recoverable", status });
     }
 
-    // Money gate BEFORE anything with an effect. Placed ahead of the wake
-    // cancellation below so a refused Recover leaves the run exactly as it was,
-    // scheduled auto-retry included.
-    const money = await readSessionMoneyState(input.sessionId);
-    if (!money.clear) {
-      const reasonKinds = [...new Set(money.reasons.map((r) => r.kind))];
-      log.info(
-        `[ipc:${ctx.channelLabel}] retry refused on unresolved money state runId=${runId} reasons=${reasonKinds.join(",")}`,
-      );
-      return ok({ outcome: "blocked_money_state", reasonKinds });
-    }
-
-    if (status === "paused_error") {
-      // Phase 4d: a human Recover supersedes any scheduled auto-retry — cancel
-      // the pending error_retry wake so it can't fire later. A wake already
-      // CONSUMED by the executor can't be cancelled; there, claimRunForAutoRetry's
-      // atomic re-check (status/unsafe/attempt) is the authority and will skip.
-      const { cancelForSession } = await import(
-        "@vex-agent/db/repos/loop-wake.js"
-      );
-      await cancelForSession(input.sessionId, "superseded_by_manual_recover");
-    }
-
-    // status === "paused_error", or "running" with a DEAD lease — claim +
-    // flip + fire-and-forget resume.
+    // status === "paused_error", or "running" with a DEAD lease: money gate +
+    // wake cancellation + claim + flip, then fire-and-forget resume.
+    //
+    // The audit request is enqueued BEFORE the gated claim so the attempt is
+    // recorded ahead of any effect (rule 09: request before dispatch, exactly
+    // one correlated outcome after settlement). A money-blocked Recover
+    // therefore leaves an audit row settled `blocked_money_state`, which is
+    // the point - a refusal on the money path is precisely what an operator
+    // needs to find later.
     const { enqueueRequest, markObserved, markCleared, markFailed } =
       await import("@vex-agent/db/repos/runtime-control-requests.js");
     const auditRequest = await enqueueRequest({
@@ -186,20 +245,23 @@ export async function runRetryDispatch(
       requestedBy: "user",
       correlationId: ctx.requestId,
     });
-    const { claimRunLeaseAndFlipToRunning } = await import(
-      "@vex-agent/engine/runtime/lease-and-status.js"
-    );
-    const claim = await claimRunLeaseAndFlipToRunning({
+    const gated = await gatedClaimUnderSessionLock({
       sessionId: input.sessionId,
-      missionRunId: runId,
-      // `[status]` — either `["paused_error"]` (the normal Recover path) or
-      // `["running"]` (the dead-lease reclaim path above). Never both: only
-      // one of the two branches above reaches here for a given call.
-      fromStatuses: [status],
+      runId,
+      status,
       ownerId: `${RETRY_OWNER_PREFIX}${randomUUID()}`,
-      processKind: "electron_main",
-      ttlMs: LEASE_TTL_MS,
     });
+    if (gated.kind === "blocked_money_state") {
+      await markFailed(auditRequest.id, "blocked_money_state");
+      log.info(
+        `[ipc:${ctx.channelLabel}] retry refused on unresolved money state runId=${runId} reasons=${gated.reasonKinds.join(",")}`,
+      );
+      return ok({
+        outcome: "blocked_money_state",
+        reasonKinds: gated.reasonKinds,
+      });
+    }
+    const claim = gated.claim;
     if (claim.outcome === "lease_busy") {
       await markFailed(auditRequest.id, "lease_busy");
       const retryAfterMs = Math.max(

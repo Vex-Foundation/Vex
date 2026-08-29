@@ -27,9 +27,35 @@ import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import {
   addOperatorCue,
   addOperatorInstruction,
+  classifyOperatorInterruptDisposition,
 } from "./core/operator-instructions.js";
+import { getLease } from "@vex-agent/db/repos/runner-leases.js";
 import logger from "@utils/logger.js";
 import { releaseLeaseAndEmitControlState } from "./runtime/release-and-emit.js";
+
+/**
+ * Whether a runner is demonstrably executing THIS work right now.
+ *
+ * Two conditions, and both matter. The lease must be UNEXPIRED - an expired row
+ * is the fingerprint of a crashed runner, not a live one, and it is exactly
+ * what the restart-orphan sweep reclaims. And it must MATCH: a lease held for a
+ * different mission run belongs to another turn, and nothing in that turn will
+ * merge a message written for this one. `missionRunId` is `null` on both sides
+ * for an agent session, which matches by the same rule.
+ *
+ * This is the only input to `classifyOperatorInterruptDisposition` that needs a
+ * query, which is why it lives here beside its callers: the classifier stays a
+ * pure decision over facts it is handed.
+ */
+async function hasLiveMatchingLease(
+  sessionId: string,
+  missionRunId: string | null,
+): Promise<boolean> {
+  const lease = await getLease(sessionId);
+  if (lease === null) return false;
+  if (lease.expiresAt <= new Date()) return false;
+  return lease.missionRunId === missionRunId;
+}
 
 /**
  * `QUEUED_INTERRUPT_TEXT` is RETIRED (M6). It was a paragraph returned as
@@ -125,13 +151,20 @@ export async function routeUserMessage(
     // but do NOT fire a new turn here. Approvals resume through their own
     // flow (`approveAndResume`); a running run will pick up the message on
     // its next iteration.
-    // `queued_interrupt` for BOTH statuses this branch covers. `running` looks
-    // like a live turn, but this route (unlike `submitSteeringMessage`) never
-    // established that a runner is actually executing one - `getActiveRunBySession`
-    // reports a row status, not a live loop - and `paused_approval` is
-    // definitively waiting on a human. The weaker, provable claim is the one
-    // the operator gets told.
-    await addOperatorInstruction(sessionId, userInput, "queued_interrupt", {
+    //
+    // The disposition comes from the ONE classifier, which means this route
+    // now ASKS whether a runner is executing instead of assuming it is not.
+    // It previously hardcoded `queued_interrupt` for both statuses, so a
+    // genuinely steered message told the operator it would be read "the next
+    // time it runs" while the loop was about to merge it at the next step.
+    const disposition = classifyOperatorInterruptDisposition({
+      runStatus: activeRun.status,
+      hasLiveMatchingLease: await hasLiveMatchingLease(
+        sessionId,
+        activeRun.id,
+      ),
+    });
+    await addOperatorInstruction(sessionId, userInput, disposition, {
       target: "mission_run",
       runId: activeRun.id,
       runStatus: activeRun.status,
@@ -200,7 +233,17 @@ export async function submitSteeringMessage(
     if (activeRun.status !== "running" && activeRun.status !== "paused_approval") {
       return { outcome: "no_active_turn" };
     }
-    await addOperatorInstruction(sessionId, userInput, "steered", {
+    // The SAME classifier, so this route can no longer disagree with the one
+    // above about the same session. It used to hardcode `steered` for both
+    // statuses, which told the operator that a run parked on an approval - a
+    // run with nothing executing at all - would pick their message up mid-turn.
+    // `paused_approval` now correctly reads `queued_interrupt`, and a `running`
+    // run with a dead lease does too.
+    const disposition = classifyOperatorInterruptDisposition({
+      runStatus: activeRun.status,
+      hasLiveMatchingLease: await hasLiveMatchingLease(sessionId, activeRun.id),
+    });
+    await addOperatorInstruction(sessionId, userInput, disposition, {
       target: "mission_run",
       runId: activeRun.id,
       runStatus: activeRun.status,
@@ -209,17 +252,29 @@ export async function submitSteeringMessage(
       sessionId,
       runId: activeRun.id,
       runStatus: activeRun.status,
+      disposition,
     });
     return { outcome: "queued_live" };
   }
 
-  const { getLease } = await import("@vex-agent/db/repos/runner-leases.js");
-  const lease = await getLease(sessionId);
-  if (lease === null || lease.expiresAt < new Date()) {
-    return { outcome: "no_active_turn" };
-  }
-  await addOperatorInstruction(sessionId, userInput, "steered", { target: "agent_turn" });
-  logger.info("ingress.steer_persisted", { sessionId, target: "agent_turn" });
+  // An agent session has no run row, so `runStatus` is null and the lease is
+  // the whole question. Routed through the same classifier as the mission
+  // paths: one function decides `steered` everywhere, and it can only say so
+  // on a live matching lease.
+  const live = await hasLiveMatchingLease(sessionId, null);
+  if (!live) return { outcome: "no_active_turn" };
+  const disposition = classifyOperatorInterruptDisposition({
+    runStatus: null,
+    hasLiveMatchingLease: live,
+  });
+  await addOperatorInstruction(sessionId, userInput, disposition, {
+    target: "agent_turn",
+  });
+  logger.info("ingress.steer_persisted", {
+    sessionId,
+    target: "agent_turn",
+    disposition,
+  });
   return { outcome: "queued_live" };
 }
 

@@ -37,6 +37,7 @@ import { ToolActRow } from "./ToolLedger/ToolActRow.js";
 import { ExplorerRefLinks } from "./ToolLedger/ExplorerRefLinks.js";
 import { ToolGroupRow } from "./ToolLedger/ToolGroupRow.js";
 import { ToolDisclosure } from "./ToolDisclosure.js";
+import type { OperatorInterruptDispositionDto } from "@shared/schemas/messages.js";
 import type {
   ToolCallActView,
   TranscriptEntry,
@@ -280,15 +281,21 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           <div className="max-w-[min(525px,82%)] whitespace-pre-wrap break-words rounded-[22px] bg-surface-bubble px-4 py-2.5 text-[16px] leading-6 text-ink-primary">
             {row.content}
           </div>
-          {/* A33 - a steered message says WHEN it reaches the model, in
-              words: delivery happens at the live loop's next tool-step
-              boundary, never mid tool call. */}
+          {/* A33 - an operator instruction says WHEN it reaches the model, in
+              words. The words come from the engine's own typed disposition
+              (M6), never from the row kind: the kind means only "this is an
+              operator instruction", and three different things can have
+              happened to one. Hardcoding the steered wording told a user whose
+              message was queued against a parked run that it would be read at
+              the agent's next step, contradicting the acknowledgement written
+              beside it in the very same transaction. */}
           {row.steering === true ? (
             <span
               data-vex-steering-mark=""
+              data-vex-disposition={row.interruptDisposition}
               className="vex-micro-label mt-1 text-ink-secondary"
             >
-              Steered · read at the agent's next step
+              {steeringMarkText(row.interruptDisposition)}
             </span>
           ) : null}
           {/* Same C2 human-caption register as the assistant stamp. */}
@@ -488,6 +495,36 @@ function resolveActs(row: TranscriptRowModel): readonly ToolCallActView[] {
  * runtime notice (wake banners and the rest) stays silent, which is why this
  * needed its own tone rather than an `aria-live` on the whole variant.
  */
+/**
+ * The register mark under an operator instruction, per disposition.
+ *
+ * Each says WHEN the agent reads the message, because that is the only thing
+ * the operator actually wants from this mark and the one thing the old single
+ * string got wrong for two of the three cases. The wording is deliberately
+ * close to the engine's own acknowledgement text: the two rows describe one
+ * event and are written from one typed value, so they must not read as two
+ * different claims.
+ *
+ * A total default, not an exhaustive switch: the disposition is absent on
+ * legacy rows and could gain a fourth member engine-side. The neutral "Sent"
+ * makes no claim about timing at all, which is the only safe thing to say
+ * when the record does not tell us.
+ */
+function steeringMarkText(
+  disposition: OperatorInterruptDispositionDto | undefined,
+): string {
+  switch (disposition) {
+    case "steered":
+      return "Steered \u00b7 read at the agent's next step";
+    case "queued_interrupt":
+      return "Queued \u00b7 read the next time the agent runs";
+    case "preempted_wake":
+      return "Sent \u00b7 the agent is resuming now to read it";
+    default:
+      return "Sent to the agent";
+  }
+}
+
 function NoticeBody({
   tone,
   children,

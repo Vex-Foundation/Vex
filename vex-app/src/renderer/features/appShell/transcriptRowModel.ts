@@ -15,6 +15,7 @@ import type {
   ExplorerRef,
   MessageKind,
   MessageRole,
+  OperatorInterruptDispositionDto,
   SessionMessageDto,
   ToolCallDisplay,
   ToolDisplayStatus,
@@ -54,11 +55,23 @@ export interface TranscriptRowModel {
    */
   readonly noticeTone?: "runtime" | "error" | "ack";
   /**
-   * User rows only (A33): the message was steered into a LIVE turn
-   * (`operator_interrupt`) and is delivered at the loop's next tool-batch
-   * boundary - the row wears a register mark saying so in words.
+   * User rows only (A33): the message is an operator instruction and the row
+   * wears a register mark saying WHEN the agent reads it.
    */
   readonly steering?: true;
+  /**
+   * What the engine DID with that instruction, when it recorded one.
+   *
+   * The mark's WORDS come from here, never from the `steering` kind. The kind
+   * says only "this is an operator instruction"; three different things can
+   * have happened to one, and the row used to claim the most optimistic of
+   * them for all three - a message queued against a run parked on an error
+   * rendered "Steered - read at the agent's next step" directly beside an
+   * acknowledgement saying the agent was not running. `undefined` on a legacy
+   * row written before the disposition existed, which renders the neutral
+   * mark rather than a guess.
+   */
+  readonly interruptDisposition?: OperatorInterruptDispositionDto;
   /**
    * Tool rows only. `"call"` → `content` is assistant prose and `toolCalls`
    * carries the per-call param disclosures; `"result"` → `content` is the
@@ -313,6 +326,11 @@ export function toTranscriptRow(
     // A33: the steered mark survives into the row so the user row can wear
     // its "read at the agent's next step" register stamp.
     ...(dto.kind === "steering" ? { steering: true as const } : {}),
+    // Carried only when the engine recorded one. A null disposition leaves the
+    // field absent, and the mark falls back to its neutral wording.
+    ...(dto.kind === "steering" && dto.interruptDisposition !== null
+      ? { interruptDisposition: dto.interruptDisposition }
+      : {}),
   };
 }
 

@@ -343,6 +343,92 @@ describe("messages-db mapper", () => {
     expect(result.data.items[0]).not.toHaveProperty("metadata");
   });
 
+  /**
+   * M6. The disposition is the engine's own typed record of what it did, and
+   * the renderer's delivery words are read from it. Flattened away, the row
+   * rendered "Steered - read at the agent's next step" for every interrupt,
+   * including one queued against a run parked on an error whose own
+   * acknowledgement row said the opposite.
+   */
+  it("projects the operator instruction's disposition onto the steering row", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 12,
+          session_id: SESSION,
+          role: "user",
+          content: "check the fees first",
+          tool_call_id: null,
+          tool_calls: null,
+          created_at: "2026-08-28T10:00:00.000Z",
+          source: "user",
+          message_type: "operator_interrupt",
+          interrupt_disposition: "queued_interrupt",
+        },
+      ],
+    });
+
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items[0]!.kind).toBe("steering");
+    expect(result.data.items[0]!.interruptDisposition).toBe("queued_interrupt");
+  });
+
+  it("projects null for an unrecognised disposition rather than a loose string", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 13,
+          session_id: SESSION,
+          role: "user",
+          content: "hi",
+          tool_call_id: null,
+          tool_calls: null,
+          created_at: "2026-08-28T10:00:00.000Z",
+          source: "user",
+          message_type: "operator_interrupt",
+          interrupt_disposition: "teleported",
+        },
+      ],
+    });
+
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items[0]!.interruptDisposition).toBeNull();
+  });
+
+  /**
+   * The ACK row carries the same disposition in its own payload, and its whole
+   * text already states it. Projecting it onto both rows would give the
+   * renderer two places to say one thing and a chance to say them differently.
+   */
+  it("does NOT project a disposition onto the acknowledgement row", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 14,
+          session_id: SESSION,
+          role: "system",
+          content: "Saved.",
+          tool_call_id: null,
+          tool_calls: null,
+          created_at: "2026-08-28T10:00:00.000Z",
+          source: "engine",
+          message_type: "operator_interrupt_ack",
+          interrupt_disposition: "queued_interrupt",
+        },
+      ],
+    });
+
+    const result = await getMessageTail(SESSION, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items[0]!.kind).toBe("operator_ack");
+    expect(result.data.items[0]!.interruptDisposition).toBeNull();
+  });
+
   // M6: the engine's durable acknowledgement of an operator instruction gets
   // its OWN kind, ahead of the catch-all. Flattened into `runtime_notice` it is
   // indistinguishable from a wake banner, and the renderer cannot announce the

@@ -82,6 +82,45 @@ describe("the signature", () => {
     expect(toolCallSignature(call({ success: true, output: "no route" })))
       .not.toBe(toolCallSignature(call({ success: false, output: "no route" })));
   });
+
+  /**
+   * The signature is a DIGEST, and the reason is retention: arguments and
+   * model-visible output are where addresses, amounts and user content live,
+   * and the history holds a turn's worth of them in memory for the life of the
+   * turn. A signature that still contained them would be a copy of that
+   * content under another name.
+   */
+  it("is a sha256 digest that retains none of what it hashes", () => {
+    const signature = toolCallSignature(
+      call({
+        args: { to: "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", amount: "125" },
+        output: "sent to 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      }),
+    );
+    expect(signature).toMatch(/^[0-9a-f]{64}$/);
+    expect(signature).not.toContain("0xdeadbeef");
+    expect(signature).not.toContain("125");
+  });
+
+  it("is stable for the same call and different for a changed argument", () => {
+    const a = toolCallSignature(call({ args: { page: 1 } }));
+    expect(toolCallSignature(call({ args: { page: 1 } }))).toBe(a);
+    expect(toolCallSignature(call({ args: { page: 2 } }))).not.toBe(a);
+  });
+
+  /**
+   * What the NUL separator buys. Without a separator that cannot occur in the
+   * canonical form, a tool named "ab" whose output is "c" and one named "a"
+   * whose output is "bc" would hash identically, and the detector would count
+   * two unrelated calls as a repeat - which, five times over, stops a run.
+   */
+  it("cannot be made to collide by shifting a field boundary", () => {
+    expect(
+      toolCallSignature(call({ toolName: "ab", args: {}, output: "c" })),
+    ).not.toBe(
+      toolCallSignature(call({ toolName: "a", args: {}, output: "bc" })),
+    );
+  });
 });
 
 describe("what triggers", () => {

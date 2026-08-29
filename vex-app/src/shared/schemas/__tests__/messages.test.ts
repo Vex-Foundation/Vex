@@ -68,6 +68,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -92,6 +93,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -116,6 +118,7 @@ describe("messages schemas", () => {
       success: true,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     });
     expect(parsed.success).toBe(true);
   });
@@ -141,6 +144,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -162,6 +166,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     });
     expect(parsed.success).toBe(false);
   });
@@ -182,6 +187,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, reasoning: "thought…" })
@@ -215,6 +221,7 @@ describe("messages schemas", () => {
       durationMs: null,
       success: false,
       board: null,
+      interruptDisposition: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, displayStatus: "pending" })
@@ -249,6 +256,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     };
     expect(
       sessionMessageDtoSchema.safeParse({ ...base, durationMs: -1 }).success,
@@ -288,6 +296,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     });
     expect(
       sessionMessageDtoSchema.safeParse(row("a".repeat(2001))).success,
@@ -362,6 +371,7 @@ describe("messages schemas", () => {
       success: null,
       displayStatus: null,
       board: null,
+      interruptDisposition: null,
     });
     expect(parsed.success).toBe(false);
   });

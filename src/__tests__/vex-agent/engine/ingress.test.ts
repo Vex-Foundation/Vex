@@ -24,6 +24,7 @@ const mockAddEngineMessage = vi.fn();
 const mockProcessAgentTurn = vi.fn();
 const mockProcessMissionSetupTurn = vi.fn();
 const mockResumeMissionRun = vi.fn();
+const mockGetLease = vi.fn();
 const mockAddOperatorInstruction = vi.fn();
 const mockAddOperatorCue = vi.fn();
 
@@ -119,13 +120,23 @@ vi.mock("@vex-agent/engine/runtime/release-and-emit.js", () => ({
   releaseLeaseAndEmitControlState: vi.fn().mockResolvedValue(undefined),
 }));
 
+// The lease is the route's evidence that a runner is actually executing, which
+// is what separates a `steered` instruction from a merely `queued` one.
+vi.mock("@vex-agent/db/repos/runner-leases.js", () => ({
+  getLease: (...a: unknown[]) => mockGetLease(...a),
+}));
+
 vi.mock("../../../vex-agent/engine/core/runner.js", () => ({
   processAgentTurn: (...a: unknown[]) => mockProcessAgentTurn(...a),
   processMissionSetupTurn: (...a: unknown[]) => mockProcessMissionSetupTurn(...a),
   resumeMissionRun: (...a: unknown[]) => mockResumeMissionRun(...a),
 }));
 
-vi.mock("../../../vex-agent/engine/core/operator-instructions.js", () => ({
+// The two WRITERS are mocked; `classifyOperatorInterruptDisposition` stays
+// REAL. It is the shared decision this route now defers to, and stubbing it
+// would let the route assert its own answer back at itself.
+vi.mock("../../../vex-agent/engine/core/operator-instructions.js", async (importActual) => ({
+  ...(await importActual<Record<string, unknown>>()),
   addOperatorInstruction: (...a: unknown[]) => mockAddOperatorInstruction(...a),
   addOperatorCue: (...a: unknown[]) => mockAddOperatorCue(...a),
 }));
@@ -138,6 +149,9 @@ const resumeResult = { text: null, toolCallsMade: 2, pendingApprovals: [], stopR
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // No lease by default: every route that does not stage one is, correctly,
+  // unable to prove anything is executing.
+  mockGetLease.mockResolvedValue(null);
   mockCancelForSession.mockResolvedValue(0);
   mockProcessAgentTurn.mockResolvedValue(agentResult);
   mockProcessMissionSetupTurn.mockResolvedValue(setupResult);
@@ -216,13 +230,45 @@ describe("ingress.routeUserMessage", () => {
     expect(mockProcessAgentTurn).not.toHaveBeenCalled();
   });
 
-  it("persists an interrupt when the run is still running", async () => {
+  /**
+   * M6: this route used to hardcode `queued_interrupt` for `running`, so a
+   * message a live loop was about to merge told the operator it would be read
+   * "the next time it runs". It now asks the same classifier the steering
+   * entry point asks, and a live MATCHING lease is the proof it requires.
+   */
+  it("persists a STEERED interrupt when the run is running with a live lease", async () => {
     mockGetActiveRunBySession.mockResolvedValue({ id: "run-3", status: "running" });
+    mockGetLease.mockResolvedValue({
+      expiresAt: new Date(Date.now() + 60_000),
+      missionRunId: "run-3",
+    });
 
     await routeUserMessage("s1", "FYI");
 
-    expect(mockAddOperatorInstruction).toHaveBeenCalled();
+    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
+      "s1",
+      "FYI",
+      "steered",
+      expect.objectContaining({ runId: "run-3", runStatus: "running" }),
+    );
     expect(mockProcessAgentTurn).not.toHaveBeenCalled();
+  });
+
+  it("persists a QUEUED interrupt when the running run's lease is dead", async () => {
+    mockGetActiveRunBySession.mockResolvedValue({ id: "run-3", status: "running" });
+    mockGetLease.mockResolvedValue({
+      expiresAt: new Date(Date.now() - 1_000),
+      missionRunId: "run-3",
+    });
+
+    await routeUserMessage("s1", "FYI");
+
+    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
+      "s1",
+      "FYI",
+      "queued_interrupt",
+      expect.objectContaining({ runId: "run-3", runStatus: "running" }),
+    );
   });
 
   it("returns a recovery hint instead of empty fallback for paused_error", async () => {
