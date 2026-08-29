@@ -77,6 +77,62 @@ describe("evaluateZodLocaleBundles", () => {
     ]);
   });
 
+  /**
+   * THE COMMENT CASE, and it is not hypothetical: `dist/main` is emitted with
+   * `minify: false`, and `src/lib/zod-locale.ts` SPELLS the marker out in the
+   * doc block explaining why it exists. Without this filter that comment alone
+   * satisfies the gate with the registration tree-shaken away - the gate would
+   * prove the string was compiled in, which was never the question.
+   */
+  it("FAILS when the marker appears only inside whole-line comments", () => {
+    const registered = `${JSON.stringify(MARKER)};${JSON.stringify(LOCALE_PHRASE)}`;
+    const commentOnly = [
+      "/**",
+      ` * Distinctive literal ${MARKER} that the gate greps for.`,
+      " */",
+      `// ${MARKER} again, in a line comment`,
+      `const phrase=${JSON.stringify(LOCALE_PHRASE)};`,
+    ].join("\n");
+    const verdict = evaluateZodLocaleBundles([
+      bundle("dist/main", commentOnly),
+      bundle("dist/preload/index.cjs", registered),
+      bundle("dist/renderer/assets", registered),
+    ]);
+
+    expect(verdict.ok).toBe(false);
+    expect(verdict.violations).toEqual([expect.stringContaining("dist/main")]);
+  });
+
+  /** The filter must not eat a real reference that shares the chunk. */
+  it("PASSES when a commented marker sits beside an executable one", () => {
+    const registered = `${JSON.stringify(MARKER)};${JSON.stringify(LOCALE_PHRASE)}`;
+    const verdict = evaluateZodLocaleBundles([
+      bundle("dist/main", `// ${MARKER} in a comment\n${registered}`),
+      bundle("dist/preload/index.cjs", registered),
+      bundle("dist/renderer/assets", registered),
+    ]);
+
+    expect(verdict).toEqual({ ok: true, violations: [] });
+  });
+
+  /**
+   * The English locale PHRASE is filtered the same way, so a chunk carrying it
+   * only in a comment cannot claim the locale module is bundled.
+   */
+  it("FAILS when the locale phrase appears only inside a comment", () => {
+    const registered = `${JSON.stringify(MARKER)};${JSON.stringify(LOCALE_PHRASE)}`;
+    const verdict = evaluateZodLocaleBundles([
+      bundle("dist/main", `${JSON.stringify(MARKER)};\n// ${LOCALE_PHRASE}`),
+      bundle("dist/preload/index.cjs", registered),
+      bundle("dist/renderer/assets", registered),
+    ]);
+
+    expect(verdict.ok).toBe(false);
+    expect(verdict.violations).toEqual([
+      expect.stringContaining("the locale module itself is not in the bundle"),
+    ]);
+  });
+
   it("FAILS when a required bundle set exists but emitted no files", () => {
     const registered = `${JSON.stringify(MARKER)};${JSON.stringify(LOCALE_PHRASE)}`;
     const verdict = evaluateZodLocaleBundles([

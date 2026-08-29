@@ -225,22 +225,44 @@ describe("toDto - board projection (metadata -> 'board')", () => {
     // `BoardCompose` refuses with, so a page cannot carry a board the contract
     // caps out.
     //
-    // THE FIXTURE IS GENERATED, not hand-assembled: `maximalBoardSpec()` is
-    // the schema-valid all-fields-max document the budget itself is derived
-    // from, and turning its assessments into FOUR-byte emoji prose is the one
-    // axis that pushes a legal board past the ceiling (the analysis bound
-    // counts CODE POINTS, so 8 x 10,000 emoji is 320,000 bytes of analysis on
-    // its own). Raising a board bound moves this fixture too, so it can never
-    // quietly stop being oversize.
-    const oversize = maximalBoardSpec({ analysisScript: "fourByte" });
+    // CONTRACT CHANGE, stated (owner decision, 2026-08-29). The fixture used
+    // to be `maximalBoardSpec({ analysisScript: "fourByte" })`, because at a
+    // 327,680-byte budget an emoji-assessment board was over the ceiling. At
+    // 524,288 it is not, and NO schema-valid board is: the byte-heaviest
+    // document the contract can express measures 480,569 bytes. That is the
+    // whole reason this guard still earns its place - what it catches now is a
+    // row from a DIFFERENT schema version or a corrupted one, which is exactly
+    // what a durable-row reader must defend against, so the fixture is built
+    // over budget by construction rather than by any legal spelling.
+    const oversize = maximalBoardSpec({ script: "threeByte" }) as {
+      notes: string[];
+    };
+    const note = oversize.notes[0];
+    if (note === undefined) throw new Error("the generated board has no notes");
+    oversize.notes[0] = note + "a".repeat(BOARD_SPEC_MAX_BYTES);
 
-    // It really is a valid document; only its SIZE disqualifies it.
-    expect(boardProjectionSchema.safeParse(oversize).success).toBe(true);
+    // Structurally a board - the shape a future writer could still emit - and
+    // only its SIZE disqualifies it. The note is past the schema's own note
+    // bound, which is precisely the drift this recheck exists to survive.
     expect(
       checkBoardSpecByteBudget(oversize).byteLength,
     ).toBeGreaterThan(BOARD_SPEC_MAX_BYTES);
 
     expect(toDto(row("assistant", oversize)).board).toBeNull();
+  });
+
+  /**
+   * The other half of that change, kept executable: the emoji-assessment board
+   * the old budget rejected is now CARRIED. Without this, someone reinstating
+   * the old fixture from memory would not learn it had stopped being oversize.
+   */
+  it("now carries the emoji-assessment board the old 320 KiB budget rejected", () => {
+    const spec = maximalBoardSpec({ analysisScript: "fourByte" });
+    expect(boardProjectionSchema.safeParse(spec).success).toBe(true);
+    const budget = checkBoardSpecByteBudget(spec);
+    expect(budget.byteLength).toBe(432_697);
+    expect(budget.withinBudget).toBe(true);
+    expect(toDto(row("assistant", spec)).board).toEqual(spec);
   });
 
   it("keeps a board that sits inside the budget", () => {

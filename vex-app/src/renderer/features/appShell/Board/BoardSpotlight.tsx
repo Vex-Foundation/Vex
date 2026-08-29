@@ -114,6 +114,12 @@ export const SPOTLIGHT_LIVE_LABEL = "updated now";
 export const SPOTLIGHT_NO_ANALYSIS = "No saved analysis";
 export const SPOTLIGHT_ASSESSMENT_TITLE = "VEX assessment";
 export const SPOTLIGHT_NO_IMAGE_LINE = "No image published on DexScreener yet";
+/**
+ * The hero's line for artwork this app declined. A DIFFERENT sentence from the
+ * one above, because the fact is different: DexScreener did publish an image.
+ */
+export const SPOTLIGHT_IMAGE_REFUSED_LINE =
+  "Published image was not accepted by Vex's image checks";
 export const SPOTLIGHT_CHART_ABSENT =
   "No chart source is connected on this surface.";
 
@@ -456,6 +462,17 @@ function Hero(props: {
             className="text-[12px] leading-[16px] text-ink-tertiary"
           >
             {SPOTLIGHT_NO_IMAGE_LINE}
+          </span>
+        ) : null}
+        {/* Also settled, also said - and deliberately NOT the sentence above:
+          * the provider published artwork, so claiming it did not would be
+          * false, and the reader has nothing to retry. */}
+        {photo.state === "refused" ? (
+          <span
+            data-vex-area="board-spotlight-image-refused"
+            className="text-[12px] leading-[16px] text-ink-tertiary"
+          >
+            {SPOTLIGHT_IMAGE_REFUSED_LINE}
           </span>
         ) : null}
         {/* The provider's description, WHOLE: plain React text (never

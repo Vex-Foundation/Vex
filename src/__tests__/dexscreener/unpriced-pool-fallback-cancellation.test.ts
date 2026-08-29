@@ -48,6 +48,8 @@ function unpricedAccumulator() {
     wanted: MINTS,
     normalizeAddress: (address) => address,
     quotePolicy: SOLANA_QUOTE_ASSET_POLICY,
+    // The pass values ONE chain, and it is the same slug both cases read from.
+    expectedChainId: "solana",
   });
 }
 

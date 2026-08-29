@@ -182,7 +182,6 @@ afterEach(async () => {
 const TRADERS_PANEL = {
   kind: "traders",
   rows: [],
-  rowsAvailable: 0,
   lookbackDays: 30,
   windowLabel: "30-day pair-local cash flow",
   semanticsNote: "Net is cash flow through this pool, not profit.",

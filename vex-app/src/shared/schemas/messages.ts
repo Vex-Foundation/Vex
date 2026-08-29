@@ -125,27 +125,57 @@ export type MessageCursor = z.infer<typeof messageCursorSchema>;
  *
  * THE INVARIANT, and the reason this number is not chosen freely:
  *
- *     TOOL_ARGS_DISPLAY_CEILING > BOARD_SPEC_MAX_BYTES + BoardCompose args envelope
+ *     TOOL_ARGS_DISPLAY_CEILING >= pretty-printed CHARACTERS of the largest
+ *                                  tool args any legitimate producer can emit
  *
- * The largest legitimate producer is BoardCompose. Its own spec is refused
- * above `BOARD_SPEC_MAX_BYTES` (`src/lib/board/spec.ts`, 327,680 bytes), and
- * the args this mapper serializes are that payload plus the call's envelope
- * (tool name, JSON key names, the pretty-print indentation and escaping the
- * serializer adds). If this ceiling ever sat at or below the board budget, a
- * board the compose tool ACCEPTED would have its args fall off the transcript
- * as `null`, and the user would see a tool call with no arguments at all - a
- * silent loss dressed as an empty field.
+ * The largest legitimate producer is BoardCompose. If this ceiling ever sat
+ * below what that producer can emit, a board the compose tool ACCEPTED would
+ * have its args fall off the transcript as `null`, and the user would see a
+ * tool call with no arguments at all - a silent loss dressed as an empty
+ * field.
  *
- * MEASURED, not assumed: the schema-valid all-fields-max board serializes to
- * 180,476 characters in the mapper's own pretty-printed form, so 524,288
- * clears the real envelope by better than a factor of two. Both the
- * conservative byte comparison and that measured figure are pinned in
- * `./__tests__/messages.test.ts` against the generator
- * `src/__tests__/lib/board/maximal-board-spec.ts`, which is the same document
- * `BOARD_SPEC_MAX_BYTES` is derived from.
+ * WHY THIS IS NO LONGER WRITTEN AS "> BOARD_SPEC_MAX_BYTES + envelope".
+ * It used to be, and as of the 2026-08-29 budget rise the two constants are
+ * both 524,288, so the old form would read as violated while the real property
+ * holds with enormous margin. The two numbers are not comparable by
+ * arithmetic, in EITHER direction:
  *
- * Raising `BOARD_SPEC_MAX_BYTES` therefore REQUIRES re-checking this constant.
- * Only a corrupted row can exceed it, and the mapper maps that to `null`.
+ *   - this ceiling counts UTF-16 UNITS of a PRETTY-PRINTED string
+ *     (`JSON.stringify(value, null, 2)`, see
+ *     `vex-app/src/main/database/messages/redaction.ts`);
+ *   - the board budget counts UTF-8 BYTES of a COMPACT one.
+ *
+ * Per character, units <= bytes (a multi-byte character is one or two units
+ * but two to four bytes; an escape is equal on both sides), which alone would
+ * make the ceiling safe - except that the pretty form ADDS indentation
+ * characters the compact byte figure never carried. So the byte budget does
+ * not bound this ceiling on its own.
+ *
+ * WHAT ACTUALLY BOUNDS IT is the board schema's own CHARACTER bounds, and
+ * that is why raising the byte budget did not move this number at all. Every
+ * prose field is bounded in code points and every provider label in UTF-16
+ * units, so the character count of the maximal document is the SAME whatever
+ * script fills it:
+ *
+ *   - every single-script fill of `maximalBoardSpec()`, Latin through CJK:
+ *     180,476 pretty-printed characters, though the same documents span
+ *     161,945 to 383,449 bytes;
+ *   - the heaviest ADMISSIBLE document measured - CJK everywhere with astral
+ *     assessments, 463,449 bytes - reaches 260,476 characters.
+ *
+ * 524,288 therefore clears the real worst case by better than a factor of
+ * two. Those figures are pinned in `./__tests__/messages.test.ts` against the
+ * generator `src/__tests__/lib/board/maximal-board-spec.ts`, which is the same
+ * document `BOARD_SPEC_MAX_BYTES` is derived from, so raising a board bound
+ * re-measures this envelope rather than re-guessing it.
+ *
+ * THE BOUNDARY IS INCLUSIVE on both sides: a spec of exactly
+ * `BOARD_SPEC_MAX_BYTES` bytes is admitted by the budget, and args of exactly
+ * `TOOL_ARGS_DISPLAY_CEILING` characters are shipped WHOLE by the mapper,
+ * which nulls only strictly above. The two agree at the edge rather than
+ * leaving a one-unit band where a board is stored but its args are not shown.
+ *
+ * Only a corrupted row can exceed this, and the mapper maps that to `null`.
  * One declaration, both sides: the mapper's guard imports THIS constant.
  */
 export const TOOL_ARGS_DISPLAY_CEILING = 524_288;

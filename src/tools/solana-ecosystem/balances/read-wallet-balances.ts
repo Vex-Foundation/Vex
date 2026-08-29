@@ -105,6 +105,7 @@ import { readTokensPairs } from "../../dexscreener/price-read.js";
 import { addPoolListsForUnpricedAddresses } from "../../dexscreener/unpriced-pool-fallback.js";
 import { getTokenBalancesAcrossChains } from "../../khalani/balances.js";
 import { getJupiterTokensByMint } from "../jupiter/jupiter-tokens/service.js";
+import { resolveJupiterApiKey } from "../shared/jupiter-auth.js";
 import { jupiterMintInformationToMetadata } from "../jupiter/jupiter-tokens/types.js";
 import { solanaPubkey } from "../shared/schemas.js";
 import { createSolanaConnection } from "../shared/solana-transaction/connection.js";
@@ -422,7 +423,18 @@ export async function readSolanaWalletBalances(
   // more than that saved call.
 
   const mints = projection.holdings.map((holding) => holding.mint);
-  const metadata = await loadMintMetadata(mints, signal);
+  const metadataResult = await loadMintMetadata(mints, signal);
+  const metadata = metadataResult.labels;
+  if (metadataResult.status === "missing_key") {
+    // ONCE per wallet read - which is once per sync - and named as the
+    // unavailable capability it is, not as one failure per mint. Nothing here
+    // retries: a key that is absent stays absent until the user configures it.
+    logger.warn("solana.balances.metadata_capability_unavailable", {
+      capability: "jupiter_tokens_api",
+      reason: "JUPITER_API_KEY is not configured",
+      mints: metadataResult.missing,
+    });
+  }
   // Enrichment legs are network calls of their own. The caller's Stop is
   // checked around them so an abort during metadata or pricing cannot finish
   // as a successful read.
@@ -497,6 +509,24 @@ export class SolanaRpcDeadlineExceededError extends Error {
 }
 
 /**
+ * The RPC provider answered HTTP 429 for this call.
+ *
+ * A DISTINCT OUTCOME FROM THE DEADLINE, and the distinction is the point. The
+ * provider was reached and it declined to serve, which is a quota fact about
+ * the endpoint; a deadline is a fact about our own budget. Collapsing the two
+ * sends a reader looking for a slow network when the answer is a rate limit.
+ *
+ * NOTHING RETRIES ON IT. The reader stops and reports; whoever owns the
+ * deadline owns the decision to ask again, with fresh budget.
+ */
+export class SolanaRpcRateLimitedError extends Error {
+  override readonly name = "SolanaRpcRateLimited";
+  constructor(readonly call: string) {
+    super(`${call} was rate limited by the RPC provider (HTTP 429)`);
+  }
+}
+
+/**
  * `getBalance` answers lamports as a JSON number. A u64 above 2^53 cannot
  * survive that encoding, and a malformed body could deliver NaN, a float or a
  * negative. Only a non-negative safe integer is a balance.
@@ -541,11 +571,34 @@ export function createDeadlineBoundSolanaRpc(
 ): SolanaBalanceRpc {
   const baseFetch: FetchFn = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   let inFlight: AbortController | null = null;
+  /**
+   * Whether the ACTIVE call saw an HTTP 429. Per-call state exactly like
+   * `inFlight`, cleared with it, and only ever read by the call that set it -
+   * the transport is single-call by contract, which is what makes this safe.
+   */
+  let rateLimited = false;
 
   const connection = createSolanaConnection({
     rpcUrl: options.rpcUrl,
     commitment: options.commitment,
-    fetch: (input, init) => baseFetch(input, { ...init, signal: inFlight?.signal }),
+    fetch: async (input, init) => {
+      const response = await baseFetch(input, { ...init, signal: inFlight?.signal });
+      // Recorded here because this is the only place the STATUS is visible:
+      // web3.js turns a non-ok response into `Error("429 Too Many Requests:
+      // <body>")`, and matching on that message would be matching on provider
+      // text. The status is the fact.
+      if (response.status === 429) rateLimited = true;
+      return response;
+    },
+    // MEASURED (`@solana/web3.js@1.98.4` `lib/index.cjs.js:5053-5075`): the
+    // default retries a 429 five times, sleeping 500+1000+2000+4000 = 7.5 s,
+    // and writes a `console.error` per attempt. This reader's whole budget is
+    // RPC_DEADLINE_MS, so the library would spend most of it and the call would
+    // then surface as a TIMEOUT for what was a rate limit. Turning the retry
+    // off does not add one anywhere: it hands the decision to the deadline
+    // owner, which is the only party that knows whether asking again is worth
+    // the remaining budget.
+    disableRetryOnRateLimit: true,
   });
 
   const callerSignal = options.signal;
@@ -557,6 +610,7 @@ export function createDeadlineBoundSolanaRpc(
     callerSignal?.throwIfAborted();
     const controller = new AbortController();
     inFlight = controller;
+    rateLimited = false;
     const timer = setTimeout(() => controller.abort(), RPC_DEADLINE_MS);
     // The caller's abort cancels the HTTP request through the SAME controller
     // the deadline uses, so a Stop aborts the socket instead of abandoning it.
@@ -565,9 +619,24 @@ export function createDeadlineBoundSolanaRpc(
     try {
       return await operation();
     } catch (err) {
-      // ORDER MATTERS. Both aborts trip the same controller, so the caller is
-      // asked FIRST: an operator Stop must surface as the signal's own reason
-      // (an `AbortError`), never be relabelled as the provider hanging.
+      // CLASSIFICATION PRECEDENCE, three outcomes, one controller. Both aborts
+      // trip the same controller and a 429 can land beside either, so the order
+      // is decided here rather than left to whichever check runs first:
+      //
+      //  1. A 429 RECORDED FOR THIS CALL wins. `rateLimited` is per-call state,
+      //     set only by a real HTTP 429 response to this call's own request, so
+      //     it means the endpoint was reached and DECLINED to serve. That is a
+      //     fact about the provider's quota, and it outranks both of the
+      //     timing-based verdicts below - a response that arrived is stronger
+      //     evidence than a clock that expired. With `disableRetryOnRateLimit`
+      //     the library rethrows a 429 at once, so this races an abort only in
+      //     the narrow window where both happen to the same request; a 429 that
+      //     ARRIVED before the abort is still rate limiting.
+      //  2. Otherwise a CALLER ABORT is cancellation, surfaced as the signal's
+      //     own reason (an `AbortError`). An abort with no response is the
+      //     operator stopping us, never the provider hanging or refusing.
+      //  3. Otherwise the deadline fired: our own budget ran out.
+      if (rateLimited) throw new SolanaRpcRateLimitedError(label);
       if (callerSignal?.aborted === true) throw callerSignal.reason;
       if (controller.signal.aborted) throw new SolanaRpcDeadlineExceededError(label);
       throw err;
@@ -575,6 +644,7 @@ export function createDeadlineBoundSolanaRpc(
       clearTimeout(timer);
       callerSignal?.removeEventListener("abort", forwardCallerAbort);
       inFlight = null;
+      rateLimited = false;
     }
   }
 
@@ -595,15 +665,44 @@ interface MintLabel {
 }
 
 /**
+ * What the Jupiter leg of a metadata pass actually did.
+ *
+ *  - `not_needed`: the well-known table and the cache answered every mint, so
+ *    no lookup was attempted. NOT the same as a lookup that found nothing.
+ *  - `available`: the lookup ran and answered (possibly for a subset).
+ *  - `missing_key`: `JUPITER_API_KEY` is not configured, so the capability is
+ *    UNAVAILABLE - a named, permanent, per-environment condition. Retrying it
+ *    per mint or per cycle cannot help, which is why it is reported once and
+ *    never mistaken for a provider failure.
+ *  - `lookup_failed`: the lookup was attempted and the provider or the network
+ *    failed it. Transient, and unlike `missing_key` worth trying again next
+ *    cycle.
+ */
+type MintMetadataStatus = "not_needed" | "available" | "missing_key" | "lookup_failed";
+
+interface MintMetadataResult {
+  readonly labels: Map<string, MintLabel>;
+  readonly status: MintMetadataStatus;
+  /** Mints the well-known table and the cache could not answer. */
+  readonly missing: number;
+}
+
+/**
  * Symbol/name per mint: well-known table, then the 24h file cache, then ONE
  * batched Jupiter lookup whose answers are written back to the cache, then
  * nothing. Metadata is presentation: a mint that resolves to nothing keeps its
  * row with null labels. Decimals never come from here.
+ *
+ * The Jupiter leg reports its OUTCOME instead of swallowing it. Missing
+ * credentials used to reach the caller as an ordinary debug line, so every
+ * uncached mint kept null labels with nothing in the log to say the capability
+ * was never configured. Retry semantics are unchanged: there was no retry here
+ * before and there is none now.
  */
 async function loadMintMetadata(
   mints: readonly string[],
   signal?: AbortSignal,
-): Promise<Map<string, MintLabel>> {
+): Promise<MintMetadataResult> {
   const labels = new Map<string, MintLabel>();
   const missing: string[] = [];
 
@@ -621,7 +720,13 @@ async function loadMintMetadata(
     missing.push(mint);
   }
 
-  if (missing.length === 0) return labels;
+  if (missing.length === 0) return { labels, status: "not_needed", missing: 0 };
+
+  // Asked BEFORE the request, not inferred from a thrown error: an unconfigured
+  // capability and a failed call are different facts and get different names.
+  if (resolveJupiterApiKey() === "") {
+    return { labels, status: "missing_key", missing: missing.length };
+  }
 
   signal?.throwIfAborted();
   try {
@@ -639,8 +744,9 @@ async function loadMintMetadata(
       mints: missing.length,
       error: err instanceof Error ? err.name : "unknown",
     });
+    return { labels, status: "lookup_failed", missing: missing.length };
   }
-  return labels;
+  return { labels, status: "available", missing: missing.length };
 }
 
 // ── Pricing ─────────────────────────────────────────────────────────
@@ -674,6 +780,7 @@ async function priceMints(
     wanted: mints,
     normalizeAddress: (address) => address,
     quotePolicy: SOLANA_QUOTE_ASSET_POLICY,
+    expectedChainId: SOLANA_DEXSCREENER_SLUG,
   });
   if (mints.length === 0) {
     return { priceByMint: new Map<string, number>(), tiers: accumulator.countTiers() };
@@ -712,6 +819,11 @@ async function priceMints(
   );
   if (fallback.attempted > 0 || fallback.skipped > 0) {
     logger.debug("solana.balances.pool_fallback", fallback);
+  }
+
+  const foreignChainPairs = accumulator.foreignChainPairsRefused();
+  if (foreignChainPairs > 0) {
+    logger.warn("solana.balances.foreign_chain_pairs_refused", { pairs: foreignChainPairs });
   }
 
   const prices = accumulator.toPriceMap();

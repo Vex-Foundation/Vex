@@ -36,6 +36,7 @@
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../constants/solana-chain.js";
 import {
   readSolanaWalletBalances,
+  SolanaRpcRateLimitedError,
   type SolanaBalanceRpc,
   type SolanaWalletBalancesRead,
 } from "@tools/solana-ecosystem/balances/read-wallet-balances.js";
@@ -59,11 +60,33 @@ export interface SolanaSyncOptions {
   readonly rpc?: SolanaBalanceRpc;
 }
 
+/**
+ * Why a cycle wrote nothing.
+ *
+ *  - `rate_limited`: the RPC provider answered HTTP 429. A QUOTA fact about the
+ *    endpoint, and deliberately not folded into `rpc_failed`: it is the one
+ *    skip whose remedy is pacing rather than diagnosis, and the reader stopped
+ *    at the FIRST 429 rather than spending its budget inside web3.js's own
+ *    retry (see `createDeadlineBoundSolanaRpc`). Nothing retries it here.
+ *  - `rpc_failed`: any other transport, deadline or response failure.
+ *  - `read_incomplete`: the read succeeded but some token account would not
+ *    project, so writing the survivors would DELETE real holdings.
+ */
+export type SolanaSyncSkipReason = "rate_limited" | "rpc_failed" | "read_incomplete";
+
 export interface SolanaSyncResult {
   chainId: number;
   tokensUpdated: number;
   /** True when nothing was written and the last-good rows were kept. */
   skipped: boolean;
+  /**
+   * Why it was skipped, or null when the sync wrote.
+   *
+   * `skipped: true` alone said only "not this cycle", so a rate limit and a
+   * dead endpoint reached the caller as the same fact. The reason travels with
+   * the flag rather than only into a log line.
+   */
+  reason: SolanaSyncSkipReason | null;
 }
 
 /**
@@ -81,12 +104,17 @@ export async function syncSolanaWalletBalances(
   try {
     read = await readSolanaWalletBalances(walletAddress, { rpc: options.rpc });
   } catch (err) {
+    // A RATE LIMIT IS NOT A FAILURE OF THE ENDPOINT, and the caller is told so
+    // rather than left to infer it from an error class name in a log.
+    const reason: SolanaSyncSkipReason =
+      err instanceof SolanaRpcRateLimitedError ? "rate_limited" : "rpc_failed";
     logger.warn("sync.solana_chain.failed", {
       chainId: SOLANA_SYNTHETIC_CHAIN_ID,
       address: redactedAddress,
+      reason,
       error: err instanceof Error ? err.name : "unknown",
     });
-    return { chainId: SOLANA_SYNTHETIC_CHAIN_ID, tokensUpdated: 0, skipped: true };
+    return { chainId: SOLANA_SYNTHETIC_CHAIN_ID, tokensUpdated: 0, skipped: true, reason };
   }
 
   if (read.accountFailures.length > 0) {
@@ -97,7 +125,12 @@ export async function syncSolanaWalletBalances(
       scanned: read.stats.accountsScanned,
       reasons: [...new Set(read.accountFailures.map((failure) => failure.reason))],
     });
-    return { chainId: SOLANA_SYNTHETIC_CHAIN_ID, tokensUpdated: 0, skipped: true };
+    return {
+      chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+      tokensUpdated: 0,
+      skipped: true,
+      reason: "read_incomplete",
+    };
   }
 
   const rows = buildBalanceRows(walletAddress, read);
@@ -121,7 +154,12 @@ export async function syncSolanaWalletBalances(
     // `unpriced` is what our own rule refused rather than guessed at.
     priceTiers: read.stats.priceTiers,
   });
-  return { chainId: SOLANA_SYNTHETIC_CHAIN_ID, tokensUpdated: count, skipped: false };
+  return {
+    chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+    tokensUpdated: count,
+    skipped: false,
+    reason: null,
+  };
 }
 
 // ── Row assembly ────────────────────────────────────────────────────

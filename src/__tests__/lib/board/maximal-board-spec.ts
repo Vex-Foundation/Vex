@@ -59,6 +59,15 @@ import {
  * written in one of them costs twice a Latin board. Latin is carried beside it
  * so a test can state the ratio rather than assert "it fits".
  *
+ * THREE BYTES was UNMEASURED until this filler existed, and it is the case
+ * that matters most. A CJK ideograph is three UTF-8 bytes and ONE UTF-16 unit,
+ * so unlike the four-byte emoji it is schema-valid on EVERY field, including
+ * the provider labels and provenance strings that zod bounds by UTF-16 units.
+ * A whole-document CJK fill is therefore a board the schema fully admits, and
+ * it is the true worst case: a reader asking for analysis in Chinese, Japanese
+ * or Korean is an ordinary request, not a corner. See
+ * {@link MAXIMAL_THREE_BYTE_DOCUMENT_BYTES} for what it measures.
+ *
  * FOUR BYTES is the case the budget deliberately REFUSES. Emoji-dense prose at
  * every bound cannot be stored, and the contract's answer is to refuse the
  * whole board naming its heaviest pool, never to cut it to fit.
@@ -66,6 +75,8 @@ import {
 export const BOARD_FILLER = {
   latin: "a",
   twoByte: "д",
+  /** U+6587 CJK IDEOGRAPH "文": 3 UTF-8 bytes, 1 UTF-16 unit. */
+  threeByte: "文",
   fourByte: "\u{1F680}",
 } as const;
 
@@ -218,5 +229,68 @@ export const MAXIMAL_TWO_BYTE_DOCUMENT_BYTES = 272_697;
 /** The same document in Latin prose: the everyday cost of the same shape. */
 export const MAXIMAL_LATIN_DOCUMENT_BYTES = 161_945;
 
-/** Bytes of `BOARD_SPEC_MAX_BYTES` left unspent by the two-byte worst case. */
-export const MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES = 54_983;
+/**
+ * Bytes of `BOARD_SPEC_MAX_BYTES` left unspent by the two-byte document.
+ *
+ * No longer the sizing case: the CJK figure below is, since it is the byte-
+ * heaviest script legal on every field. This is kept as the everyday cost of
+ * a Cyrillic, Greek or Hebrew board.
+ */
+export const MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES = 251_591;
+
+/**
+ * UTF-8 bytes of `maximalBoardSpec({ script: "threeByte" })`, as MEASURED by
+ * the generator on 2026-08-28.
+ *
+ * THE FIGURE THAT MOVED THE BUDGET. When it was first measured the ceiling was
+ * `BOARD_SPEC_MAX_BYTES = 327,680` and this document was 55,769 bytes over it,
+ * with NOTHING the model could shorten: every field already sat on its own
+ * bound, and the bounds count characters while the budget counts bytes.
+ *
+ * Unlike the four-byte case that was never a corner the contract chose to
+ * refuse. A CJK ideograph is one UTF-16 unit, so it is legal on the provider
+ * labels and provenance strings too, and a reader asking for analysis in
+ * Chinese, Japanese or Korean is an ordinary request.
+ *
+ * The owner raised the budget to 512 KiB on 2026-08-29 with this number in
+ * hand, so the document now FITS - see
+ * {@link MAXIMAL_THREE_BYTE_DOCUMENT_HEADROOM_BYTES}. The measurement stays
+ * here, and stays executable in `./spec.test.ts`, because it is what the
+ * budget is now sized against.
+ */
+export const MAXIMAL_THREE_BYTE_DOCUMENT_BYTES = 383_449;
+
+/**
+ * Bytes of `BOARD_SPEC_MAX_BYTES` left unspent by the CJK worst case.
+ *
+ * This replaces `MAXIMAL_THREE_BYTE_DOCUMENT_OVERSHOOT_BYTES`, which recorded
+ * the 55,769-byte OVERSHOOT against the old 327,680 ceiling. The document did
+ * not change; the budget did.
+ */
+export const MAXIMAL_THREE_BYTE_DOCUMENT_HEADROOM_BYTES = 140_839;
+
+/* ------------------------------------------------------------------ */
+/* The transcript-mapper envelope                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Pretty-printed CHARACTERS of the maximal document, as the transcript mapper
+ * serializes tool args (`JSON.stringify(value, null, 2)`).
+ *
+ * THE SAME FOR EVERY SINGLE-SCRIPT FILL, which is the whole point and the
+ * reason `TOOL_ARGS_DISPLAY_CEILING` did not move when the byte budget did:
+ * every prose field is bounded in CODE POINTS and every provider label in
+ * UTF-16 units, so Latin, two-byte and CJK fills of this document all produce
+ * exactly this many characters while spanning 161,945 to 383,449 bytes.
+ */
+export const MAXIMAL_DOCUMENT_PRETTY_CHARS = 180_476;
+
+/**
+ * The same measurement for the heaviest ADMISSIBLE document: CJK everywhere
+ * with astral (4-byte, 2-UTF-16-unit) assessments, 463,449 bytes.
+ *
+ * This is the real worst case the display ceiling must clear, because astral
+ * characters are the one way to spend TWO UTF-16 units on one code point of a
+ * code-point-bounded field.
+ */
+export const MAXIMAL_ASTRAL_ANALYSIS_PRETTY_CHARS = 260_476;
