@@ -1,5 +1,16 @@
 /**
  * Khalani read-only handlers — chains, tokens, quotes, orders.
+ *
+ * ONE non-Khalani read lives here, deliberately: `khalani.tokens.balances`
+ * answers its `solana` family from Solana's own RPC through the shared snapshot
+ * service (`tools/solana-ecosystem/balances/wallet-snapshot.ts`), the same one
+ * `WalletBalances` and the balance sync project from. Khalani's Solana scan
+ * answers ZERO tokens, and this tool's own description tells the model to use it
+ * to find a funded source asset before quoting a bridge or a swap - a funding
+ * oracle on a blind lane. The `eip155` family stays Khalani-backed, because
+ * those chains have no per-chain RPC reader and Khalani is legitimately their
+ * enumerator. This tool keeps the wallet contract it owns (`walletAddress`, the
+ * session scope check) across BOTH families.
  */
 
 import { getKhalaniClient } from "@tools/khalani/client.js";
@@ -29,6 +40,12 @@ import { estimateUsd, humanizeAmount, resolveKhalaniTokenInfo } from "./bridge-u
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ChainFamily, KhalaniChain } from "@tools/khalani/types.js";
 import { getLocalChain, resolveLocalChainId } from "@tools/evm-chains/registry.js";
+import {
+  readSolanaWalletSnapshot,
+  type SolanaBalanceRow,
+  type SolanaWalletSnapshotReader,
+} from "@tools/solana-ecosystem/balances/wallet-snapshot.js";
+import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../../constants/solana-chain.js";
 
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import type { ToolResult } from "../../../types.js";
@@ -40,6 +57,7 @@ import { resolveKhalaniPrequoteRoute } from "@tools/khalani/prequote-route-guard
 import { renderProtocolFailureOutput, summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import { readStringOrArrayParam } from "../../runtime/list-params.js";
 import { describeKhalaniOrderCorrelation } from "../order-correlation.js";
+import { throwIfAborted } from "@utils/cancellation.js";
 
 // ── Shared helpers (exported for bridge handler) ────────────────
 
@@ -135,6 +153,166 @@ export function resolveWalletAddress(
   return selected;
 }
 
+// ── khalani.tokens.balances ──────────────────────────────────────
+
+/**
+ * A Solana balance row as this tool emits it.
+ *
+ * SEPARATE from `ConciseKhalaniToken` on purpose: Solana mint metadata is
+ * genuinely optional, so `symbol` / `name` stay NULLABLE and a mint no source
+ * can label is reported honestly rather than relabelled with its own address.
+ * `ConciseKhalaniToken` is deliberately NOT widened - its Khalani rows always
+ * carry both labels, and widening it would make every other Khalani read tool
+ * claim a nullability it does not have.
+ */
+interface SolanaBalanceTokenRow {
+  symbol: string | null;
+  name: string | null;
+  address: string;
+  chainId: number;
+  decimals: number;
+  priceUsd?: string;
+  balance?: string;
+}
+
+/**
+ * One TOKEN ACCOUNT the Solana read could not trust. Never folded into a token
+ * row: the holdings behind these accounts are ABSENT from `tokens`, and an
+ * agent that cannot see that would read the gap as "you hold none of it".
+ */
+interface AccountReadError {
+  chainId: number;
+  accountAddress: string;
+  reason: string;
+}
+
+/** Same bound and reason as the `WalletBalances` snapshot's own account-error cap. */
+const MAX_ACCOUNT_ERRORS = 20;
+
+function solanaRowToTokenRow(row: SolanaBalanceRow): SolanaBalanceTokenRow {
+  return {
+    symbol: row.symbol,
+    name: row.name,
+    address: row.mint,
+    chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+    decimals: row.decimals,
+    balance: row.amountRaw,
+    ...(row.priceUsd !== null ? { priceUsd: String(row.priceUsd) } : {}),
+  };
+}
+
+/**
+ * The narrow, optional dependency this handler takes so a test can drive the
+ * REAL handler over a scripted RPC. Production callers pass nothing.
+ */
+export interface TokenBalancesDependencies {
+  readonly readSolanaSnapshot?: SolanaWalletSnapshotReader;
+}
+
+export async function handleTokenBalances(
+  params: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+  dependencies: TokenBalancesDependencies = {},
+): Promise<ToolResult> {
+  const walletFamily = resolveWalletFamily(params);
+  // The wallet contract this tool owns, unchanged for BOTH families: an
+  // explicit `walletAddress` reads someone else's wallet under default
+  // resolution, and must equal the selected wallet under a session scope.
+  const address = resolveWalletAddress(params, context, walletFamily);
+  const chainIdsRead = readListParam("khalani.tokens.balances", params, "chainIds");
+  if (!chainIdsRead.ok) return chainIdsRead.result;
+  // The chain FILTER still resolves through Khalani's registry for both
+  // families - the Solana chain id and its aliases are Khalani's - so an
+  // explicit filter that keeps no chain for this family still fails the same
+  // way it always did. Only the BALANCE SOURCE for solana changes.
+  const selection = await parseBalanceChainSelection(chainIdsRead.value);
+  const chainIds = getSelectedChainIdsForFamily(selection, walletFamily);
+  if (selection.rawProvided && chainIds?.length === 0) {
+    return {
+      success: false,
+      output: `No ${walletFamily} chains matched chainIds="${chainIdsRead.value ?? ""}".`,
+    };
+  }
+
+  if (walletFamily === "solana") {
+    const readSnapshot = dependencies.readSolanaSnapshot ?? readSolanaWalletSnapshot;
+    let snapshot: Awaited<ReturnType<SolanaWalletSnapshotReader>>;
+    try {
+      snapshot = await readSnapshot(address, { signal: context.abortSignal });
+    } catch (err) {
+      // An operator Stop is the CALLER's outcome, not the provider's: it
+      // propagates as the signal's own reason instead of being relabelled a
+      // Solana read failure the agent might retry.
+      throwIfAborted(context.abortSignal);
+      // SECURITY: a raw Solana RPC error can carry the configured RPC URL (with
+      // its key) and HTML bodies, so only the scrubbed summary reaches the model.
+      return {
+        success: false,
+        output: renderProtocolFailureOutput("khalani.tokens.balances", summarizeProtocolError(err)),
+      };
+    }
+    const accountErrors: AccountReadError[] = [];
+    let accountErrorsOmitted = 0;
+    for (const failure of snapshot.accountFailures) {
+      if (accountErrors.length < MAX_ACCOUNT_ERRORS) {
+        accountErrors.push({
+          chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+          accountAddress: failure.pubkey,
+          reason: failure.reason,
+        });
+      } else accountErrorsOmitted += 1;
+    }
+    const tokens = snapshot.rows.map(solanaRowToTokenRow);
+    const payload = {
+      address,
+      wallet: walletFamily,
+      count: tokens.length,
+      totalUsd: snapshot.totalUsd,
+      scannedChainIds: [SOLANA_SYNTHETIC_CHAIN_ID],
+      chainErrors: [],
+      accountErrors,
+      ...(accountErrorsOmitted > 0 ? { accountErrorsOmitted } : {}),
+      tokens,
+    };
+    return {
+      success: true,
+      output: JSON.stringify(payload, null, 2),
+      data: payload,
+    };
+  }
+
+  // Live read tool (khalani.tokens.balances): opt into the EVM native-coin
+  // top-up, like WalletBalances. Only the sync/projection path stays
+  // native-free (it full-replaces proj_balances).
+  const scan = await getTokenBalancesAcrossChains({ address, family: walletFamily, chainIds, includeNative: true });
+  return {
+    success: true,
+    output: JSON.stringify({
+      address,
+      wallet: walletFamily,
+      count: scan.tokens.length,
+      totalUsd: scan.totalUsd,
+      scannedChainIds: scan.scannedChainIds,
+      chainErrors: scan.chainErrors,
+      // An EVM scan reads no Solana token accounts, so the field is present and
+      // empty rather than absent: an absent field would read as "no answer".
+      accountErrors: [],
+      // Project to concise token rows (P0-4): the balances path is where
+      // `extensions.balance` lives, so the lifted balance/price stay surfaced.
+      tokens: projectTokens(scan.tokens),
+    }, null, 2),
+    data: {
+      address,
+      wallet: walletFamily,
+      totalUsd: scan.totalUsd,
+      scannedChainIds: scan.scannedChainIds,
+      chainErrors: scan.chainErrors,
+      accountErrors: [],
+      tokens: scan.tokens,
+    },
+  };
+}
+
 // ── Handler map ──────────────────────────────────────────────────
 
 export const READ_HANDLERS: Record<string, ProtocolHandler> = {
@@ -211,46 +389,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     };
   },
 
-  "khalani.tokens.balances": async (params, context) => {
-    const walletFamily = resolveWalletFamily(params);
-    const address = resolveWalletAddress(params, context, walletFamily);
-    const chainIdsRead = readListParam("khalani.tokens.balances", params, "chainIds");
-    if (!chainIdsRead.ok) return chainIdsRead.result;
-    const selection = await parseBalanceChainSelection(chainIdsRead.value);
-    const chainIds = getSelectedChainIdsForFamily(selection, walletFamily);
-    if (selection.rawProvided && chainIds?.length === 0) {
-      return {
-        success: false,
-        output: `No ${walletFamily} chains matched chainIds="${chainIdsRead.value ?? ""}".`,
-      };
-    }
-    // Live read tool (khalani.tokens.balances): opt into the EVM native-coin
-    // top-up, like WalletBalances. Only the sync/projection path stays
-    // native-free (it full-replaces proj_balances).
-    const scan = await getTokenBalancesAcrossChains({ address, family: walletFamily, chainIds, includeNative: true });
-    return {
-      success: true,
-      output: JSON.stringify({
-        address,
-        wallet: walletFamily,
-        count: scan.tokens.length,
-        totalUsd: scan.totalUsd,
-        scannedChainIds: scan.scannedChainIds,
-        chainErrors: scan.chainErrors,
-        // Project to concise token rows (P0-4): the balances path is where
-        // `extensions.balance` lives, so the lifted balance/price stay surfaced.
-        tokens: projectTokens(scan.tokens),
-      }, null, 2),
-      data: {
-        address,
-        wallet: walletFamily,
-        totalUsd: scan.totalUsd,
-        scannedChainIds: scan.scannedChainIds,
-        chainErrors: scan.chainErrors,
-        tokens: scan.tokens,
-      },
-    };
-  },
+  "khalani.tokens.balances": (params, context) => handleTokenBalances(params, context),
 
   "khalani.quote.get": async (params, context) => {
     const fromChain = str(params, "fromChain");
