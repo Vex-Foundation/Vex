@@ -291,6 +291,22 @@ const WIDE_ROWS: readonly Partial<BoardHydratedRow>[] = [
     pairAgeSeconds: 259_200,
   },
   {
+    // WIDE LATIN, which is not an exotic case at all. The ticker renders in
+    // PROPORTIONAL uppercase Inter Tight, where `W` advances 11.82px at 13px
+    // against a slot of 8.8px: eight of them are 94.56px inside an 88px
+    // column while costing only eight of ten CHARACTERS. Latin-1, short, and
+    // it overflowed anyway - the case that proves a character count is not a
+    // width on this surface.
+    baseTokenSymbol: "WWWWWWWW",
+    baseTokenName: "Wide Latin Token",
+    priceUsd: "0.0084213",
+    priceChange: { h1: "0", h24: "-0.42" },
+    liquidityUsd: "2341000.55",
+    volumeH24Usd: "998877.10",
+    txns: { buys: 998, sells: 1_240_000 },
+    pairAgeSeconds: 7200,
+  },
+  {
     // Base characters carrying combining marks, then astral code points whose
     // surrogate pairs a code-unit slice would split down the middle.
     baseTokenSymbol: "ZÁLGO̰TOKÉN\u{1D400}\u{1D401}\u{1D402}",

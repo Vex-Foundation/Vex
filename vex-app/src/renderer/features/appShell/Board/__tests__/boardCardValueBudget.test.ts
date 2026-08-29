@@ -163,10 +163,89 @@ describe("boardCardValue over non-Latin tickers", () => {
   it("leaves a Latin ticker exactly where it was", () => {
     // The realistic path must not move because the Unicode path was fixed.
     for (const symbol of ["WBTC", "PEPE", "DEGEN", "TOSHI", "USDC"]) {
-      expect(boardCardValue(symbol, BOARD_CARD_TICKER_MAX_SLOTS)).toEqual({
-        text: symbol,
-        shortened: false,
-      });
+      expect(
+        boardCardValue(symbol, BOARD_CARD_TICKER_MAX_SLOTS, "proportional"),
+      ).toEqual({ text: symbol, shortened: false });
+    }
+  });
+});
+
+/**
+ * THE PROPORTIONAL SURFACE. The ticker is not `tabular-nums`: it renders in
+ * uppercase Inter Tight, whose advances measured at the ticker's own 13px run
+ * from `I` at 2.95px to `W` at 11.82px against a slot of 8.8px. Counting
+ * characters there is not measuring width, and this is what says so.
+ */
+describe("boardCardValue on the proportional surface", () => {
+  it("charges a wide Latin glyph two slots and a narrow one one", () => {
+    // Measured: W 11.82, M 10.84, % 9.85, C/D/G/H/N/O/Q/U 8.86 - every one
+    // past the 8.8px slot. E 6.90, A 7.88, I 2.95 - every one inside it.
+    for (const wide of ["W", "M", "C", "D", "G", "H", "N", "O", "Q", "U", "%"]) {
+      expect(boardCardValueSlots(wide, "proportional")).toBe(2);
+    }
+    for (const narrow of ["A", "B", "E", "F", "I", "L", "S", "T", "Z", "1"]) {
+      expect(boardCardValueSlots(narrow, "proportional")).toBe(1);
+    }
+    // The SAME characters cost one slot on the tabular surface, because there
+    // every digit really does advance by the same width.
+    expect(boardCardValueSlots("WWWWWWWW", "tabular")).toBe(8);
+  });
+
+  it("shortens WWWWWWWW, which a character count let through", () => {
+    // THE DEFECT: eight characters, eight of ten slots under the old model,
+    // and 94.56px of glyphs inside an 88px column - clipped, with `shortened`
+    // false and a neutral affordance saying nothing had been cut.
+    expect(boardCardValueSlots("WWWWWWWW", "proportional")).toBe(16);
+    const printed = boardCardValue(
+      "WWWWWWWW",
+      BOARD_CARD_TICKER_MAX_SLOTS,
+      "proportional",
+    );
+    expect(printed.shortened).toBe(true);
+    expect(printed.text).toBe("WWWW…");
+    // 4 x 11.82 is 47.28px, comfortably inside the column.
+    expect(
+      boardCardValueSlots(printed.text.slice(0, -1), "proportional"),
+    ).toBeLessThanOrEqual(BOARD_CARD_TICKER_MAX_SLOTS - 2);
+  });
+
+  it("uppercases before weighing, because the CSS does", () => {
+    // `text-transform: uppercase` means a lowercase `w` occupies a `W`. A
+    // model that weighed the SOURCE string would charge it as narrow and let
+    // the rendered glyph overflow anyway.
+    expect(boardCardValueSlots("wwwwwwww", "proportional")).toBe(16);
+    expect(
+      boardCardValue("wwwwwwww", BOARD_CARD_TICKER_MAX_SLOTS, "proportional")
+        .shortened,
+    ).toBe(true);
+  });
+
+  it("charges an unmeasured Latin-1 glyph the wide weight", () => {
+    // The class is an ALLOWLIST of glyphs measured inside a slot, so a
+    // character the schema admits and nobody measured is charged two rather
+    // than assumed innocent.
+    for (const unmeasured of ["@", "&", "#", "é", "Ñ", "©"]) {
+      expect(boardCardValueSlots(unmeasured, "proportional")).toBe(2);
+    }
+  });
+
+  it("keeps every realistic ticker whole at its own budget", () => {
+    // The over-charging must not turn into a cut on tickers a real market
+    // actually uses - a false "shortened" is its own kind of dishonesty.
+    for (const symbol of [
+      "WBTC",
+      "PEPE",
+      "DEGEN",
+      "TOSHI",
+      "USDC",
+      "AERO",
+      "MATIC",
+      "PENDLE",
+      "BITCOIN",
+    ]) {
+      expect(
+        boardCardValue(symbol, BOARD_CARD_TICKER_MAX_SLOTS, "proportional"),
+      ).toEqual({ text: symbol, shortened: false });
     }
   });
 });

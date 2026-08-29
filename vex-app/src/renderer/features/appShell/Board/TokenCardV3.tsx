@@ -155,7 +155,15 @@ export function TokenCardV3({
   // budgets belong to `boardCardValueBudget.ts`; the accessible name below
   // and the disclosure panel both keep the WHOLE strings, so nothing here
   // removes a value from the reader - it decides which copy is on the plate.
-  const printedTicker = boardCardValue(ticker, BOARD_CARD_TICKER_MAX_SLOTS);
+  // The ticker is the card's one PROPORTIONAL surface: it renders in uppercase
+  // Inter Tight, where `W` advances four times as far as `I`, so it is weighed
+  // per glyph rather than counted. Everything below renders `tabular-nums`,
+  // where a count of digits genuinely is a width.
+  const printedTicker = boardCardValue(
+    ticker,
+    BOARD_CARD_TICKER_MAX_SLOTS,
+    "proportional",
+  );
   const printedPrice = boardCardValue(priceLabel, BOARD_CARD_PRICE_MAX_SLOTS);
   const printedDelta = boardCardValue(deltaLabel, BOARD_CARD_DELTA_MAX_SLOTS);
   const stats: readonly {

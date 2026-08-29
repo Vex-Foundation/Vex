@@ -60,23 +60,62 @@
  * width every budget below was measured in: one Latin character of that
  * region's own type.
  *
- * THE WIDTH MODEL, and it is deliberately conservative. A cluster costs ONE
- * slot when every code point in it is U+0000-U+00FF - ASCII plus Latin-1,
- * which covers every character `boardFormat.ts` can emit and every ticker a
- * Latin market uses - and TWO otherwise. That over-charges a few genuinely
- * narrow cases, such as a Greek letter or a base character carrying a
- * combining mark, and that is the right direction to be wrong in:
- * over-charging shortens a value slightly early AND SAYS SO, while
- * under-charging overflows the card in silence. It is a model of the DATA,
- * owned here. It is not a measurement, and it still takes no threshold away
- * from `global-css/board-layout.css`.
+ * TWO SURFACES, TWO WIDTH MODELS, because the card has two kinds of type and
+ * one model cannot describe both.
+ *
+ * TABULAR (`"tabular"`) is the price, the delta and the stat values. They
+ * render `tabular-nums`, where every digit advances by the same width by
+ * definition of the feature, so a count of clusters IS a width and one slot
+ * is one digit.
+ *
+ * PROPORTIONAL (`"proportional"`) is the ticker, which renders in ordinary
+ * uppercase Inter Tight (`TokenCardV3.tsx`) where glyph advances differ by
+ * more than a factor of four. Measured in the committed face at the ticker's
+ * own 13px, one slot is 8.8px - the 88px identity column divided by the
+ * budget of 10 - and the glyphs fall either side of it:
+ *
+ *   W 11.82   M 10.84   % 9.85   C D G H N O Q U 8.86
+ *   A B K P R S T V X Y Z $ + 0 3 4 7.88   E F L 2 5 6 7 8 9 6.90
+ *   J 5.91   1 - 4.93   I . , : 2.95
+ *
+ * So a count of characters is NOT a width here, and treating it as one was a
+ * defect: `WWWWWWWW` is eight characters, cost eight of ten slots, and
+ * rendered 94.56px into an 88px column - clipped, with nothing reporting it.
+ * Anything measuring wider than a slot is charged two.
+ *
+ * THE PROPORTIONAL CLASS IS AN ALLOWLIST OF NARROW GLYPHS, not a blocklist of
+ * wide ones, and that direction is the point: a character nobody measured -
+ * and the schema admits any of Latin-1 - is charged the wide weight rather
+ * than assumed innocent. The ticker also renders through `text-transform:
+ * uppercase`, so classification uppercases first: a lowercase `w` occupies a
+ * `W`.
+ *
+ * ABOVE LATIN-1, both surfaces charge two. That over-charges a Greek letter
+ * or a base character carrying a combining mark, and under-charges nothing.
+ *
+ * Over-charging shortens a value slightly early AND SAYS SO; under-charging
+ * overflows the card in silence. Every one of these numbers is a model of the
+ * DATA owned here, and none of them takes a threshold away from
+ * `global-css/board-layout.css`.
  */
+
+/** Which of the card's two type surfaces a value is printed on. */
+export type BoardCardSurface = "tabular" | "proportional";
 
 /** The last code point charged as one slot. */
 const NARROW_CODE_POINT_MAX = 0x00ff;
 
 /** What a cluster costs when it is not narrow. */
 const WIDE_SLOTS = 2;
+
+/**
+ * The glyphs measured at or under one slot (8.8px) in the ticker's own type,
+ * after its `uppercase` transform. Everything else on that surface - measured
+ * wider, or never measured - is charged {@link WIDE_SLOTS}.
+ */
+const PROPORTIONAL_NARROW = new Set(
+  [..."ABEFIJKLPRSTVXYZ0123456789.,:-$+ "],
+);
 
 /** The ellipsis a shortened value ends in. */
 const ELLIPSIS = "…";
@@ -112,9 +151,14 @@ export const BOARD_CARD_DELTA_MAX_SLOTS = 8;
 export const BOARD_CARD_STAT_MAX_SLOTS = 11;
 
 /**
- * The ticker under the name. The compact header spends its inner width on the
- * 64px photo, two 16px gaps and the 132px action cluster, which leaves the
- * identity column 88px; the ticker renders at roughly 8.2px per character.
+ * The ticker under the name, and the one PROPORTIONAL surface.
+ *
+ * The compact header spends its inner width on the 64px photo, two 16px gaps
+ * and the 132px action cluster, which leaves the identity column 88px. Ten
+ * slots of 8.8px each is that column exactly, which is what makes 8.8px the
+ * slot on this surface and what the glyph table in the head note is measured
+ * against. The widest a ten-slot string can render is ten narrow glyphs at
+ * 7.88px, or 78.8px, so the model keeps 9px in hand against its own column.
  */
 export const BOARD_CARD_TICKER_MAX_SLOTS = 10;
 
@@ -162,19 +206,28 @@ function graphemeSegmenter(): Intl.Segmenter | null {
   return segmenterCache;
 }
 
-/** What one cluster costs, under the width model in this file's head note. */
-function slotsOf(grapheme: string): number {
+/** What one cluster costs, under the width models in this file's head note. */
+function slotsOf(grapheme: string, surface: BoardCardSurface): number {
   for (const codePoint of grapheme) {
     const value = codePoint.codePointAt(0);
     if (value === undefined || value > NARROW_CODE_POINT_MAX) return WIDE_SLOTS;
+  }
+  if (surface === "tabular") return 1;
+  // Uppercased first: the ticker renders through `text-transform: uppercase`,
+  // so a lowercase `w` occupies a `W` and must be charged as one.
+  for (const character of grapheme.toUpperCase()) {
+    if (!PROPORTIONAL_NARROW.has(character)) return WIDE_SLOTS;
   }
   return 1;
 }
 
 /** What `text` costs in slots, whole. Exported because the tests assert it. */
-export function boardCardValueSlots(text: string): number {
+export function boardCardValueSlots(
+  text: string,
+  surface: BoardCardSurface = "tabular",
+): number {
   let slots = 0;
-  for (const grapheme of graphemesOf(text)) slots += slotsOf(grapheme);
+  for (const grapheme of graphemesOf(text)) slots += slotsOf(grapheme, surface);
   return slots;
 }
 
@@ -191,12 +244,16 @@ export function boardCardValueSlots(text: string): number {
  * a bare `…` names no value at all, and the clamp is one cluster over rather
  * than a preview that says nothing.
  */
-export function boardCardValue(text: string, maxSlots: number): BoardCardValue {
+export function boardCardValue(
+  text: string,
+  maxSlots: number,
+  surface: BoardCardSurface = "tabular",
+): BoardCardValue {
   // SEGMENTED ONCE. The whole-value cost and the kept prefix are two questions
   // about the same clusters, and asking the segmenter twice is a per-row cost
   // on every value of every card.
   const graphemes = graphemesOf(text);
-  const costs = graphemes.map(slotsOf);
+  const costs = graphemes.map((grapheme) => slotsOf(grapheme, surface));
   let total = 0;
   for (const cost of costs) total += cost;
   if (total <= maxSlots) return { text, shortened: false };

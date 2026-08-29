@@ -292,11 +292,34 @@ the layout.
 | Hero price | 12 | `$0.000001230`, 197.29px in a 198px slot |
 | Signed delta | 8 | `+661.00%`, 76px |
 | Stat value | 11 | wide mode's `(460 - 3 x 12) / 4 = 106px` column |
-| Ticker | 10 | compact identity column, 88px |
+| Ticker | 10 | compact identity column, 88px (one slot = 8.8px) |
 | Token name | none | keeps its CSS ellipsis by product decision |
 
+**TWO SURFACES, TWO WIDTH MODELS.** The price, delta and stat values render
+`tabular-nums`, where every digit advances the same width by definition of the
+feature, so a count of clusters IS a width. The TICKER does not: it renders in
+proportional uppercase Inter Tight, measured in the committed face at its own
+13px against a slot of 8.8px:
+
+| Advance | Glyphs |
+| --- | --- |
+| 11.82 | `W` |
+| 10.84 | `M` |
+| 9.85 | `%` |
+| 8.86 | `C D G H N O Q U` |
+| 7.88 | `A B K P R S T V X Y Z $ + 0 3 4` |
+| 6.90 | `E F L 2 5 6 7 8 9` |
+| 5.91 | `J` |
+| 4.93 | `1 -` |
+| 2.95 | `I . , :` |
+
+Anything past a slot is charged two, and the class is an ALLOWLIST of the
+glyphs measured inside one - so a character nobody measured, and the schema
+admits all of Latin-1, is charged the wide weight rather than assumed
+innocent. Classification uppercases first, because the element does.
+
 **One slot is one narrow character of that region's own type**, and the unit
-matters because `String.length` is not it. Two corrections came out of that:
+matters because `String.length` is not it. Three corrections came out of that:
 
 - **The ellipsis costs TWO slots.** The financial regions render
   `tabular-nums` where every digit is one width, but `…` is not a digit: in
@@ -313,6 +336,14 @@ matters because `String.length` is not it. Two corrections came out of that:
   code units, so a cut between a surrogate pair emitted a LONE SURROGATE (an
   ill-formed string on its way to the jsonb boundary) while a cut inside a ZWJ
   sequence rendered a different token than the provider sent.
+
+- **A wide LATIN glyph costs two slots on the proportional surface.** The
+  correction above was not enough, because it only caught non-Latin-1. Plain
+  ASCII `WWWWWWWW` is eight characters, cost eight of ten slots, and rendered
+  94.56px inside the 88px identity column - clipped, with `shortened` false
+  and a neutral affordance. Latin-1 and short, and it overflowed anyway. The
+  table above is what replaced the assumption; the browser case at the compact
+  floor is what would have caught it.
 
   The model, owned in that module's head note: segment into grapheme clusters
   with `Intl.Segmenter`, then charge a cluster ONE slot when every code point

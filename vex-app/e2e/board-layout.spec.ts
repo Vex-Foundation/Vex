@@ -440,16 +440,35 @@ test.describe("board grid geometry", () => {
       await open(page, {
         width: at.width,
         board: "wide",
-        pools: 3,
+        pools: 4,
         ...(at.plate === undefined ? {} : { plate: at.plate }),
       });
       expect(await ellipsizedRegions(page, CLIPPED_BY_DESIGN)).toEqual([]);
       expect(await verticallyClippedRegions(page)).toEqual([]);
-      // And every one of them says it shortened, rather than being silently
-      // clipped by the card.
-      await expect(
-        page.locator('[data-vex-area="board-token-ticker"]').first(),
-      ).toHaveAttribute("data-shortened", "true");
+      // And EVERY one of them says it shortened, rather than being silently
+      // clipped by the card. All four rows are over their budget: the CJK
+      // ticker, the emoji sequences, the combining marks, and `WWWWWWWW` -
+      // which is plain Latin-1, eight characters long, and still 94.56px of
+      // glyphs in an 88px column.
+      const tickers = await page.evaluate(() =>
+        [
+          ...document.querySelectorAll('[data-vex-area="board-token-ticker"]'),
+        ].map((node) => ({
+          text: node.textContent ?? "",
+          shortened: node.getAttribute("data-shortened") ?? "none",
+        })),
+      );
+      expect(tickers).toHaveLength(4);
+      expect(tickers.map((t) => t.shortened)).toEqual([
+        "true",
+        "true",
+        "true",
+        "true",
+      ]);
+      // The wide-Latin row exactly, because it is the one whose width a
+      // character count claimed to know: four `W`s at 11.82px is 47.28px,
+      // where eight would have been 94.56 in an 88px column.
+      expect(tickers[2]?.text).toBe("WWWW…");
     });
   }
 
@@ -459,7 +478,7 @@ test.describe("board grid geometry", () => {
     // THE PERSISTENCE BOUNDARY, not only the pixels. A cut between the two
     // halves of a surrogate pair produces an ill-formed string; a cut inside
     // a ZWJ sequence produces a different token than the provider sent.
-    await open(page, { width: 1440, board: "wide", pools: 3 });
+    await open(page, { width: 1440, board: "wide", pools: 4 });
     const findings = await page.evaluate(() => {
       const bad: string[] = [];
       for (const node of document.querySelectorAll(
