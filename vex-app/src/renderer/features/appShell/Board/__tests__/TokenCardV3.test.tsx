@@ -580,7 +580,10 @@ describe("TokenCardV3 - the full-value disclosure", () => {
     );
     openPanel();
     const popover = area("board-token-full-value-popover");
-    expect(popover.getAttribute("role")).toBe("dialog");
+    // The panel's ROLE is asserted where it is the subject, in "is a labelled
+    // disclosure and claims no modality it does not have" below. It is a
+    // `group`, not a `dialog`: an INTENTIONAL contract change, because
+    // `aria-modal` promised an inertness this overlay never had.
     expect(area("board-token-full-value").getAttribute("aria-expanded")).toBe(
       "true",
     );
@@ -651,42 +654,91 @@ describe("TokenCardV3 - the full-value disclosure", () => {
     expect(onBoardEscape).not.toHaveBeenCalled();
   });
 
-  it("keeps Tab and Shift+Tab inside the panel", async () => {
-    // THE PANEL IS A `role="dialog"` PAINTED OVER THE CARD'S OWN BUTTONS,
-    // which are still in the document after it. Without containment, Tab from
-    // the close button lands on the Spotlight trigger the reader cannot see -
-    // and an Escape from THERE is no longer this panel's to stop, so it
-    // reaches the board and closes it. This is the WAI modal-dialog pattern.
+  it("is a labelled disclosure and claims no modality it does not have", () => {
+    // `role="dialog"` WITH `aria-modal="true"` WAS A LIE. Nothing outside this
+    // panel was ever inert: a pointer reached every other card while it was
+    // open, and two of them could be "modal" at once. A promise the code does
+    // not keep is worse than no promise, so the panel is what it is - a group
+    // a button expands - and the trigger carries the whole relationship.
     render(mount());
-    openPanel();
-    const popover = area("board-token-full-value-popover");
-    await waitFor(() => {
-      expect(document.activeElement).toBe(area("board-token-full-value-close"));
-    });
+    const trigger = area("board-token-full-value");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    const controls = trigger.getAttribute("aria-controls");
+    expect(controls).not.toBeNull();
 
-    // jsdom does not move focus on a synthetic Tab, so what is observable
-    // HERE is the panel REFUSING to let the browser do it: the default action
-    // is prevented and focus is placed by the panel instead. The sequence
-    // itself is measured where a real engine can move focus, in
-    // `e2e/board-layout.spec.ts`.
-    for (const shiftKey of [false, true]) {
-      const moved = fireEvent.keyDown(document.activeElement ?? popover, {
-        key: "Tab",
-        shiftKey,
-        cancelable: true,
-      });
-      expect(moved).toBe(false);
-      expect(popover.contains(document.activeElement)).toBe(true);
+    openPanel();
+    const panel = area("board-token-full-value-popover");
+    expect(panel.getAttribute("role")).toBe("group");
+    expect(panel.hasAttribute("aria-modal")).toBe(false);
+    expect(panel.getAttribute("id")).toBe(controls);
+    expect(panel.getAttribute("aria-label")).toContain("UBERCAT");
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("takes every covered control out of the tab order while open", () => {
+    // THE PANEL IS OPAQUE AND COVERS THE WHOLE CARD, so a control underneath
+    // it cannot be seen - and a Tab that lands there puts focus somewhere
+    // invisible, which rule 08 forbids ("focus is visible and not obscured").
+    // Withdrawing them is the CARD's job, because the card owns them.
+    //
+    // `tabIndex={-1}` and NOT `inert`: `inert` removes the subtree from the
+    // accessibility tree along with the trigger's own `aria-expanded`, so the
+    // panel would be open with nothing able to report that it was.
+    render(mount());
+    const covered = [
+      "board-token-full-value",
+      "board-card-spotlight",
+      "board-token-dexscreener-link",
+      "board-card-ask",
+    ];
+    for (const name of covered) {
+      expect(area(name).hasAttribute("tabindex")).toBe(false);
     }
 
-    // A key the panel does not own is left alone, so the trap cannot become a
-    // swallow-everything handler.
-    expect(
-      fireEvent.keyDown(document.activeElement ?? popover, {
-        key: "ArrowDown",
-        cancelable: true,
-      }),
-    ).toBe(true);
+    openPanel();
+    for (const name of covered) {
+      expect(area(name).getAttribute("tabindex")).toBe("-1");
+      // STILL IN THE TREE, which is the entire reason this is not `inert`:
+      // each one keeps its accessible name, and the trigger keeps its state.
+      expect(area(name).getAttribute("aria-label")).not.toBeNull();
+    }
+    expect(area("board-token-full-value").getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+    // The panel's own control keeps its natural place in the order.
+    expect(area("board-token-full-value-close").hasAttribute("tabindex")).toBe(
+      false,
+    );
+
+    // It reverts with the state flip, in the same commit that removes the
+    // panel, and the trigger still takes focus back although it was
+    // `tabIndex={-1}` at the moment it was asked to.
+    fireEvent.keyDown(area("board-token-full-value-popover"), {
+      key: "Escape",
+    });
+    for (const name of covered) {
+      expect(area(name).hasAttribute("tabindex")).toBe(false);
+    }
+    expect(document.activeElement).toBe(area("board-token-full-value"));
+  });
+
+  it("does not trap Tab, because a non-modal surface must not", () => {
+    // The counterpart of the assertion above. A trap on a surface that is not
+    // modal steals a key the rest of the page is entitled to; the browser's
+    // own sequence is the correct behaviour, and the E2E measures where it
+    // actually lands.
+    render(mount());
+    openPanel();
+    const panel = area("board-token-full-value-popover");
+    for (const shiftKey of [false, true]) {
+      expect(
+        fireEvent.keyDown(document.activeElement ?? panel, {
+          key: "Tab",
+          shiftKey,
+          cancelable: true,
+        }),
+      ).toBe(true);
+    }
   });
 
   it("says the values are shortened only when the card shortened one", () => {

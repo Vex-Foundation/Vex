@@ -48,30 +48,25 @@
  *
  * NOTHING IS RECOVERED BY HOVER. `title` is a pointer convenience and never
  * the only way back to a cut string, so every card carries one always-present
- * `FullValueDisclosure` button: a real `<button>`, in the tab order, that
- * opens the whole name, the whole ticker and the RAW provider decimals, and
- * whose own tab sequence is contained the way a `role="dialog"` over obscured
- * controls must be. It is present unconditionally on purpose - a card is
- * always rounding something - but it is not SILENT about the difference
- * between rounding and cutting: when the card printed a shortened copy of a
- * value it says so, in the button's accessible name, in the button's own
- * treatment, and again at the top of the panel.
+ * `FullValueDisclosure` button: a real `<button>` with `aria-expanded` and
+ * `aria-controls`, in the tab order, that opens the whole name, the whole
+ * ticker and the RAW provider decimals. A DISCLOSURE and never a dialog - the
+ * long form of why is on the component itself. It is present unconditionally
+ * on purpose - a card is always rounding something - but it is not SILENT
+ * about the difference between rounding and cutting: when the card printed a
+ * shortened copy of a value it says so, in the button's accessible name, in
+ * the button's own treatment, and again at the top of the panel.
  *
  * WHAT DECIDES "SHORTENED" IS THE DATA, NOT THE LAYOUT. `boardCardValueBudget
- * .ts` owns a character budget per region, derived from the same measurement
- * matrix the CSS floors come from, and it runs before layout exists. No
+ * .ts` owns a per-region budget in SLOTS - grapheme clusters weighted by the
+ * width class of their code points - derived from the same measurement matrix
+ * the CSS floors come from, and it runs before layout exists. No
  * JavaScript here reads a width back, and no threshold leaves the stylesheet:
  * a budget decides how much of a string is worth printing, never how many
  * columns the board has or which anatomy a card wears.
  */
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  type JSX,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from "react";
+import { useEffect, useId, useRef, useState, type JSX } from "react";
 import {
   IconArrowUpRight,
   IconClose,
@@ -100,10 +95,10 @@ import {
 import {
   anyShortened,
   boardCardValue,
-  BOARD_CARD_DELTA_MAX_CHARS,
-  BOARD_CARD_PRICE_MAX_CHARS,
-  BOARD_CARD_STAT_MAX_CHARS,
-  BOARD_CARD_TICKER_MAX_CHARS,
+  BOARD_CARD_DELTA_MAX_SLOTS,
+  BOARD_CARD_PRICE_MAX_SLOTS,
+  BOARD_CARD_STAT_MAX_SLOTS,
+  BOARD_CARD_TICKER_MAX_SLOTS,
   type BoardCardValue,
 } from "./boardCardValueBudget.js";
 import type { BoardCardModel } from "./boardModel.js";
@@ -160,9 +155,9 @@ export function TokenCardV3({
   // budgets belong to `boardCardValueBudget.ts`; the accessible name below
   // and the disclosure panel both keep the WHOLE strings, so nothing here
   // removes a value from the reader - it decides which copy is on the plate.
-  const printedTicker = boardCardValue(ticker, BOARD_CARD_TICKER_MAX_CHARS);
-  const printedPrice = boardCardValue(priceLabel, BOARD_CARD_PRICE_MAX_CHARS);
-  const printedDelta = boardCardValue(deltaLabel, BOARD_CARD_DELTA_MAX_CHARS);
+  const printedTicker = boardCardValue(ticker, BOARD_CARD_TICKER_MAX_SLOTS);
+  const printedPrice = boardCardValue(priceLabel, BOARD_CARD_PRICE_MAX_SLOTS);
+  const printedDelta = boardCardValue(deltaLabel, BOARD_CARD_DELTA_MAX_SLOTS);
   const stats: readonly {
     readonly label: string;
     readonly printed: BoardCardValue;
@@ -172,7 +167,7 @@ export function TokenCardV3({
       label: "Liquidity",
       printed: boardCardValue(
         formatBoardUsdCompact(row?.liquidityUsd ?? null),
-        BOARD_CARD_STAT_MAX_CHARS,
+        BOARD_CARD_STAT_MAX_SLOTS,
       ),
       title: row?.liquidityUsd ?? undefined,
     },
@@ -180,7 +175,7 @@ export function TokenCardV3({
       label: "24h Volume",
       printed: boardCardValue(
         formatBoardUsdCompact(row?.volumeH24Usd ?? null),
-        BOARD_CARD_STAT_MAX_CHARS,
+        BOARD_CARD_STAT_MAX_SLOTS,
       ),
       title: row?.volumeH24Usd ?? undefined,
     },
@@ -190,7 +185,7 @@ export function TokenCardV3({
         row === null
           ? BOARD_EMPTY
           : formatBoardTradeTotal(row.txns.buys, row.txns.sells),
-        BOARD_CARD_STAT_MAX_CHARS,
+        BOARD_CARD_STAT_MAX_SLOTS,
       ),
       title: undefined,
     },
@@ -198,7 +193,7 @@ export function TokenCardV3({
       label: "Pair age",
       printed: boardCardValue(
         formatBoardAge(row?.pairAgeSeconds ?? null),
-        BOARD_CARD_STAT_MAX_CHARS,
+        BOARD_CARD_STAT_MAX_SLOTS,
       ),
       title: undefined,
     },
@@ -212,6 +207,27 @@ export function TokenCardV3({
     printedDelta,
     ...stats.map((stat) => stat.printed),
   ]);
+
+  /**
+   * THE DISCLOSURE'S STATE LIVES ON THE CARD, and it has to.
+   *
+   * The panel is opaque and covers the whole card, so while it is open every
+   * interactive element underneath it is INVISIBLE - and an invisible control
+   * that can still be reached by Tab is exactly what rule 08 forbids ("focus
+   * is visible and not obscured"). Withdrawing them is therefore the CARD's
+   * job, because the card is what owns them; a component inside the header
+   * could not reach the footer's buttons without reaching up out of itself.
+   *
+   * `tabIndex={-1}` AND NOT `inert`, deliberately. `inert` removes a subtree
+   * from the accessibility tree, which would take the trigger's own
+   * `aria-expanded="true"` with it - the panel would be open and nothing
+   * would be able to say so. `tabIndex={-1}` removes an element from the TAB
+   * ORDER only: it stays in the tree, it still reports its state, and it can
+   * still be focused programmatically, which is what the Escape restore below
+   * relies on. The attributes revert with this flag, in the same commit that
+   * removes the panel.
+   */
+  const [fullValueOpen, setFullValueOpen] = useState(false);
 
   return (
     <article
@@ -258,11 +274,14 @@ export function TokenCardV3({
             heading={heading}
             row={row}
             shortened={shortened}
+            open={fullValueOpen}
+            onOpenChange={setFullValueOpen}
           />
           <SpotlightAction
             symbol={ticker}
             selected={selected}
             onSpotlight={onSpotlight}
+            covered={fullValueOpen}
           />
         </div>
       </header>
@@ -376,12 +395,20 @@ export function TokenCardV3({
           pairAgeSeconds={row?.pairAgeSeconds ?? null}
         />
         <div className="flex shrink-0 items-center gap-2">
-          <DexscreenerLink chain={card.chain} pairAddress={card.pairAddress} ticker={ticker} />
+          <DexscreenerLink
+            chain={card.chain}
+            pairAddress={card.pairAddress}
+            ticker={ticker}
+            covered={fullValueOpen}
+          />
             <button
             type="button"
             data-vex-area="board-card-ask"
             onClick={onAsk}
             aria-label={`Ask VEX about ${ticker}`}
+            // Covered by the full-value panel: out of the tab order, still in
+            // the accessibility tree. See `fullValueOpen` above.
+            tabIndex={fullValueOpen ? -1 : undefined}
             className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line-2 px-2.5 text-[12.5px] font-medium text-ink-secondary transition-colors duration-150 hover:border-line-3 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
           >
             <IconSparkle size={14} />
@@ -407,11 +434,14 @@ export function DexscreenerLink({
   pairAddress,
   ticker,
   className,
+  covered = false,
 }: {
   readonly chain: string;
   readonly pairAddress: string;
   readonly ticker: string;
   readonly className?: string;
+  /** True while an opaque overlay covers this link: out of the tab order. */
+  readonly covered?: boolean;
 }): JSX.Element {
   return (
     <a
@@ -420,6 +450,7 @@ export function DexscreenerLink({
       rel="noopener noreferrer"
       data-vex-area="board-token-dexscreener-link"
       aria-label={`Open ${ticker} on DexScreener`}
+      tabIndex={covered ? -1 : undefined}
       className={cn(
         "inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-1.5 text-[12.5px] font-medium text-ink-tertiary transition-colors duration-150 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
         className,
@@ -476,10 +507,13 @@ function SpotlightAction({
   symbol,
   selected,
   onSpotlight,
+  covered = false,
 }: {
   readonly symbol: string;
   readonly selected: boolean;
   readonly onSpotlight: () => void;
+  /** True while the full-value panel covers this button. */
+  readonly covered?: boolean;
 }): JSX.Element {
   return (
     <button
@@ -488,6 +522,7 @@ function SpotlightAction({
       data-selected={selected ? "true" : "false"}
       aria-pressed={selected}
       aria-label={`Spotlight ${symbol}`}
+      tabIndex={covered ? -1 : undefined}
       onClick={onSpotlight}
       className={cn(
         "inline-flex h-7 shrink-0 items-center gap-1.5 self-start rounded-capsule border px-3 text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
@@ -579,38 +614,74 @@ export const BOARD_FULL_VALUE_SHORTENED_LABEL =
  * This is a real `<button>`, so Enter and Space work with no key handler of
  * our own, and the panel it opens is an ordinary absolutely-positioned
  * overlay INSIDE the card rather than a portal: the board modal's native
- * `<dialog>` already owns the focus trap, and a portal to `document.body`
- * would put the panel outside it. Initial focus goes to the close button,
- * Escape closes, and focus returns to the trigger - the three obligations a
- * dialog-nested disclosure has, met without touching the dialog primitive.
+ * `<dialog>` already owns the modal layer, and a portal to `document.body`
+ * would put the panel outside it.
  *
- * Escape is stopped from propagating while the panel is open, so closing the
- * panel does not also close the board behind it.
+ * IT IS A DISCLOSURE, NOT A DIALOG, and the difference is not cosmetic. This
+ * panel carried `role="dialog"` with `aria-modal="true"` and a focus trap,
+ * and every part of that claim was false: nothing outside it was inert, a
+ * pointer reached every other card on the board while it was open, and two of
+ * them could be "modal" at the same time. `aria-modal` promises a reader that
+ * the rest of the page is unavailable, and a promise the code does not keep
+ * is worse than no promise - a screen-reader user would have been told the
+ * board was gone while a sighted user was clicking it.
  *
- * AND ITS TAB SEQUENCE IS CONTAINED, which a `role="dialog"` over obscured
- * controls owes its reader (WAI modal-dialog pattern). The panel covers the
- * card, but the card's own buttons - the Spotlight trigger, DexScreener, Ask
- * VEX - are still in the document after it, so without the trap below a Tab
- * from the close button lands on a control nobody can see, and an Escape from
- * there is no longer this panel's to stop: it reaches the board `<dialog>`
- * and closes the whole board.
+ * So it is what it actually is: a button with `aria-expanded` and
+ * `aria-controls`, and a labelled group it points at. Consequences, all
+ * deliberate:
+ *
+ *   - NO FOCUS TRAP. A non-modal surface must not trap; Tab runs through the
+ *     panel's content and then ONWARD, out of this card entirely - because
+ *     the controls it covers leave the tab order for as long as it covers
+ *     them. That is `tabIndex={-1}` on the card's own buttons and NOT
+ *     `inert`: `inert` would take the whole subtree out of the accessibility
+ *     tree, including the trigger's `aria-expanded="true"`, so the panel
+ *     would be open with nothing able to say so. `tabIndex={-1}` removes an
+ *     element from the tab order alone - it still reports its state, and it
+ *     can still be focused programmatically, which is what the Escape
+ *     restore depends on. `TokenCardV3` owns that flag; see `fullValueOpen`.
+ *   - MANY MAY BE OPEN. Two cards showing their values at once is legitimate
+ *     for a disclosure - it is how a reader compares two pools - so it is
+ *     TESTED rather than left accidental, and opening one never closes
+ *     another.
+ *   - THE REST OF THE BOARD STAYS LIVE. Another card's Spotlight is one click
+ *     away while this panel is open, which is also tested.
+ *
+ * Focus still MOVES into the panel on open and RETURNS to the trigger on
+ * close. That is not a modal obligation, it is this panel's own: it paints
+ * over the card it belongs to, so a reader whose focus stayed behind it would
+ * be operating a control they can no longer see. Escape closes it, and is
+ * stopped from propagating so that closing the panel does not also close the
+ * board `<dialog>` listening for the same key.
  */
 function FullValueDisclosure({
   ticker,
   heading,
   row,
   shortened,
+  open,
+  onOpenChange,
 }: {
   readonly ticker: string;
   readonly heading: string;
   readonly row: BoardCardModel["row"];
   /** True when the card printed a shortened copy of at least one value. */
   readonly shortened: boolean;
+  /**
+   * CONTROLLED BY THE CARD, because the card is what has to react to it: the
+   * panel covers the Spotlight button, the DexScreener link and Ask VEX, and
+   * those have to leave the tab order while they cannot be seen. State owned
+   * privately here could not reach them.
+   */
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
 }): JSX.Element {
-  const [open, setOpen] = useState(false);
+  const setOpen = onOpenChange;
   const trigger = useRef<HTMLButtonElement | null>(null);
   const close = useRef<HTMLButtonElement | null>(null);
-  const panel = useRef<HTMLDivElement | null>(null);
+  // The panel's id is the other half of `aria-controls`, and `useId` is what
+  // keeps it unique across a board of eight cards without a counter of ours.
+  const panelId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -620,43 +691,6 @@ function FullValueDisclosure({
   const dismiss = (): void => {
     setOpen(false);
     trigger.current?.focus();
-  };
-
-  /**
-   * The trap. It lives on the panel's own `keydown`, so it can only run while
-   * focus is already inside: there is no document listener to leak, nothing
-   * to unregister, and a card whose panel is closed costs nothing.
-   */
-  const trap = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
-    if (event.key !== "Tab") return;
-    const host = panel.current;
-    if (host === null) return;
-    const focusable = [
-      ...host.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    ];
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (first === undefined || last === undefined) {
-      // Nothing to move to, so the only correct move is not to move: letting
-      // Tab through would put focus on the card behind the panel.
-      event.preventDefault();
-      return;
-    }
-    const active = document.activeElement;
-    const inside = active instanceof Node && host.contains(active);
-    if (event.shiftKey) {
-      if (!inside || active === first) {
-        event.preventDefault();
-        last.focus();
-      }
-      return;
-    }
-    if (!inside || active === last) {
-      event.preventDefault();
-      first.focus();
-    }
   };
 
   const entries: readonly FullValueEntry[] = [
@@ -676,6 +710,11 @@ function FullValueDisclosure({
         data-vex-area="board-token-full-value"
         data-shortened={shortened ? "true" : undefined}
         aria-expanded={open}
+        aria-controls={panelId}
+        // The trigger is under the panel too. Out of the tab order while it
+        // is covered, and still focusable programmatically - which is exactly
+        // what `dismiss` needs and what `inert` would have taken away.
+        tabIndex={open ? -1 : undefined}
         // NAMED, NOT GENERIC, once the card has actually cut something.
         aria-label={
           shortened
@@ -705,16 +744,15 @@ function FullValueDisclosure({
       </button>
       {open ? (
         <div
-          ref={panel}
+          id={panelId}
           data-vex-area="board-token-full-value-popover"
-          role="dialog"
-          aria-modal="true"
+          // A LABELLED GROUP, which is what this is. Not `role="dialog"`, and
+          // emphatically not `aria-modal`: see the head note above. The
+          // trigger's `aria-expanded` plus `aria-controls` is the whole
+          // relationship a disclosure needs.
+          role="group"
           aria-label={`${BOARD_FULL_VALUE_TITLE} for ${ticker}`}
           onKeyDown={(event) => {
-            if (event.key === "Tab") {
-              trap(event);
-              return;
-            }
             if (event.key !== "Escape") return;
             // The board dialog is listening for Escape too, and it would
             // close the whole board behind this panel.

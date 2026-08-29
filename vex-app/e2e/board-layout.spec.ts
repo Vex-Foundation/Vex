@@ -380,7 +380,7 @@ test.describe("board grid geometry", () => {
 
   for (const at of [
     { label: "1440px", width: 1440 },
-    { label: "the compact floor", width: 1440, plate: 356 },
+    { label: "the compact floor", width: 1440, plate: 358 },
   ]) {
     test(`cuts no extreme figure silently at ${at.label}`, async ({ page }) => {
       // THE EXTREME CASE RUNS THE SAME ASSERTION SET AS EVERY OTHER WIDTH.
@@ -424,55 +424,246 @@ test.describe("board grid geometry", () => {
     ).not.toHaveAttribute("aria-label", /shortened/i);
   });
 
-  test("contains the disclosure's tab sequence and restores focus", async ({
+  for (const at of [
+    { label: "1440px", width: 1440 },
+    { label: "the compact floor", width: 1440, plate: 358 },
+  ]) {
+    test(`cuts no wide-glyph ticker silently at ${at.label}`, async ({
+      page,
+    }) => {
+      // SCHEMA-VALID UNICODE IS ITS OWN AXIS. `baseTokenSymbol` admits 512
+      // UTF-16 code units of anything: a ten-character CJK ticker is twice
+      // the width of the Latin string the budget was measured against, so a
+      // budget counted in CHARACTERS passed it and the column overflowed with
+      // nothing reporting the cut. This board is CJK, emoji ZWJ sequences and
+      // combining marks, and it runs the whole assertion set.
+      await open(page, {
+        width: at.width,
+        board: "wide",
+        pools: 3,
+        ...(at.plate === undefined ? {} : { plate: at.plate }),
+      });
+      expect(await ellipsizedRegions(page, CLIPPED_BY_DESIGN)).toEqual([]);
+      expect(await verticallyClippedRegions(page)).toEqual([]);
+      // And every one of them says it shortened, rather than being silently
+      // clipped by the card.
+      await expect(
+        page.locator('[data-vex-area="board-token-ticker"]').first(),
+      ).toHaveAttribute("data-shortened", "true");
+    });
+  }
+
+  test("never renders a lone surrogate or half a grapheme in a ticker", async ({
     page,
   }) => {
-    // THE OVERLAY IS A `role="dialog"` OVER OBSCURED CONTROLS. Per the WAI
-    // modal-dialog pattern its tab sequence must stay inside it: a Tab that
-    // reaches the card underneath puts focus on a control the reader cannot
-    // see, and an Escape from there closes the WHOLE board.
+    // THE PERSISTENCE BOUNDARY, not only the pixels. A cut between the two
+    // halves of a surrogate pair produces an ill-formed string; a cut inside
+    // a ZWJ sequence produces a different token than the provider sent.
+    await open(page, { width: 1440, board: "wide", pools: 3 });
+    const findings = await page.evaluate(() => {
+      const bad: string[] = [];
+      for (const node of document.querySelectorAll(
+        '[data-vex-area="board-token-ticker"]',
+      )) {
+        const text = node.textContent ?? "";
+        for (let index = 0; index < text.length; index += 1) {
+          const unit = text.charCodeAt(index);
+          const high = unit >= 0xd800 && unit <= 0xdbff;
+          const low = unit >= 0xdc00 && unit <= 0xdfff;
+          if (!high && !low) continue;
+          const next = text.charCodeAt(index + 1);
+          const paired =
+            high && next >= 0xdc00 && next <= 0xdfff;
+          if (paired) {
+            index += 1;
+            continue;
+          }
+          bad.push(`lone surrogate at ${String(index)} in ${text}`);
+        }
+        // A trailing zero-width joiner is half a sequence.
+        const withoutMark = text.endsWith("…") ? text.slice(0, -1) : text;
+        if (withoutMark.endsWith("‍")) {
+          bad.push(`dangling ZWJ in ${text}`);
+        }
+      }
+      return bad;
+    });
+    expect(findings).toEqual([]);
+  });
+
+  test("is a disclosure, not a dialog, and leaves the board interactive", async ({
+    page,
+  }) => {
+    // `aria-modal` WOULD BE A LIE HERE: nothing outside this panel is inert.
+    // So it is what it is - a labelled group a button expands - and the rest
+    // of the board stays as reachable as the markup says it is.
+    await open(page, { width: 1440, board: "realistic", pools: 6 });
+    const triggers = page.locator('[data-vex-area="board-token-full-value"]');
+    const first = triggers.nth(0);
+    await first.focus();
+    await page.keyboard.press("Enter");
+
+    const panel = page.locator(
+      '[data-vex-area="board-token-full-value-popover"]',
+    );
+    await expect(panel).toHaveCount(1);
+    await expect(panel).toHaveAttribute("role", "group");
+    expect(await panel.getAttribute("aria-modal")).toBeNull();
+    await expect(first).toHaveAttribute("aria-expanded", "true");
+    // The trigger points AT the panel it expanded.
+    expect(await first.getAttribute("aria-controls")).toBe(
+      await panel.getAttribute("id"),
+    );
+
+    // POINTER: another card is not blocked by anything. Its Spotlight really
+    // fires, which is the proof `aria-modal` had no right to claim otherwise.
+    const otherCard = page
+      .locator('[data-vex-area="board-token-card-v3"]')
+      .nth(1);
+    await otherCard.locator('[data-vex-area="board-card-spotlight"]').click();
+    await expect(
+      page.locator('[data-vex-area="board-spotlight-hero"]'),
+    ).toBeVisible();
+  });
+
+  test("tabs out of the card entirely, never onto a covered control", async ({
+    page,
+  }) => {
+    // THE POINT OF NOT TRAPPING, PROVEN WHERE FOCUS REALLY MOVES. The panel is
+    // opaque and covers its whole card, so that card's own buttons cannot be
+    // seen while it is open - and they carry `tabIndex="-1"` for exactly that
+    // long. Tab out of the panel therefore leaves the CARD, not merely the
+    // panel, and never lands on something the reader cannot see (rule 08).
+    await open(page, { width: 1440, board: "realistic", pools: 6 });
+    const owner = page
+      .locator('[data-vex-area="board-token-card-v3"]')
+      .nth(2);
+    const trigger = owner.locator('[data-vex-area="board-token-full-value"]');
+    const panel = owner.locator(
+      '[data-vex-area="board-token-full-value-popover"]',
+    );
+
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    await expect(panel).toBeVisible();
+
+    // Every covered control has left the tab order AND kept its accessible
+    // name - which is the whole difference between this and `inert`.
+    expect(
+      await owner.evaluate((card) =>
+        [
+          "board-token-full-value",
+          "board-card-spotlight",
+          "board-token-dexscreener-link",
+          "board-card-ask",
+        ].map((name) => {
+          const node = card.querySelector(`[data-vex-area="${name}"]`);
+          return `${name}=${node?.getAttribute("tabindex") ?? "none"}/${
+            (node?.getAttribute("aria-label") ?? "") === "" ? "unnamed" : "named"
+          }`;
+        }),
+      ),
+    ).toEqual([
+      "board-token-full-value=-1/named",
+      "board-card-spotlight=-1/named",
+      "board-token-dexscreener-link=-1/named",
+      "board-card-ask=-1/named",
+    ]);
+
+    /** Which card holds focus, and on what, right now. */
+    const focus = async (): Promise<string> =>
+      page.evaluate(() => {
+        const active = document.activeElement;
+        const card = active?.closest(
+          '[data-vex-area="board-token-card-v3"]',
+        );
+        if (card === null || card === undefined) return "outside any card";
+        const cards = [
+          ...document.querySelectorAll('[data-vex-area="board-token-card-v3"]'),
+        ];
+        return `card ${String(cards.indexOf(card))}: ${
+          active?.getAttribute("data-vex-area") ?? "?"
+        }`;
+      });
+
+    // FORWARD, out of the panel's last focusable element.
+    await page.keyboard.press("Tab");
+    expect(await focus()).not.toContain("card 2:");
+
+    // BACKWARD, out of its first, from a fresh open.
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    await expect(panel).toBeVisible();
+    await page.keyboard.press("Shift+Tab");
+    expect(await focus()).not.toContain("card 2:");
+
+    // And Escape from INSIDE the panel - the only place a reader can press it
+    // from, since everything else on this card has left the tab order - hands
+    // focus back to the trigger, which is `tabIndex="-1"` at the moment it is
+    // asked to take it. That is precisely what `inert` would have made
+    // impossible, and it is why this is `tabIndex` and not `inert`.
+    await owner
+      .locator('[data-vex-area="board-token-full-value-close"]')
+      .focus();
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    expect(await focus()).toBe("card 2: board-token-full-value");
+    // The attributes come back with the state.
+    expect(
+      await owner
+        .locator('[data-vex-area="board-card-spotlight"]')
+        .getAttribute("tabindex"),
+    ).toBeNull();
+  });
+
+  test("lets two cards show their values at once", async ({ page }) => {
+    // MULTIPLE OPEN IS THE DEFINED BEHAVIOUR, not an accident: comparing two
+    // pools' raw decimals side by side is the reason to have this at all.
+    await open(page, { width: 1440, board: "realistic", pools: 6 });
+    const triggers = page.locator('[data-vex-area="board-token-full-value"]');
+    await triggers.nth(0).click();
+    await triggers.nth(1).click();
+    await expect(
+      page.locator('[data-vex-area="board-token-full-value-popover"]'),
+    ).toHaveCount(2);
+    // Two distinct panels, each pointed at by its own trigger.
+    expect(await triggers.nth(0).getAttribute("aria-controls")).not.toBe(
+      await triggers.nth(1).getAttribute("aria-controls"),
+    );
+  });
+
+  test("closes on Escape, restores focus, and leaves the board open", async ({
+    page,
+  }) => {
     await open(page, { width: 1440, board: "realistic", pools: 6 });
     const trigger = page
       .locator('[data-vex-area="board-token-full-value"]')
       .first();
     await trigger.focus();
     await page.keyboard.press("Enter");
-    const popover = page.locator(
+    const panel = page.locator(
       '[data-vex-area="board-token-full-value-popover"]',
     );
-    await expect(popover).toBeVisible();
-
-    const inside = async (): Promise<boolean> =>
-      page.evaluate(
-        () =>
-          document.activeElement?.closest(
-            '[data-vex-area="board-token-full-value-popover"]',
-          ) !== null &&
-          document.activeElement?.closest(
-            '[data-vex-area="board-token-full-value-popover"]',
-          ) !== undefined,
-      );
-
-    expect(await inside()).toBe(true);
-    for (let step = 0; step < 4; step += 1) {
-      await page.keyboard.press("Tab");
-      expect(await inside()).toBe(true);
-    }
-    for (let step = 0; step < 4; step += 1) {
-      await page.keyboard.press("Shift+Tab");
-      expect(await inside()).toBe(true);
-    }
-
-    // Escape closes ONLY the overlay, and focus comes back to the button
-    // that opened it. The board stays open behind it.
-    await page.keyboard.press("Escape");
-    await expect(popover).toHaveCount(0);
+    await expect(panel).toBeVisible();
+    // Focus MOVES into the panel on open. Not a modal obligation - this panel
+    // paints over its own card, so focus left behind it would be operating a
+    // control the reader can no longer see.
     expect(
       await page.evaluate(
-        () =>
-          document.activeElement?.getAttribute("data-vex-area") ?? "none",
+        () => document.activeElement?.getAttribute("data-vex-area") ?? "none",
+      ),
+    ).toBe("board-token-full-value-close");
+
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        () => document.activeElement?.getAttribute("data-vex-area") ?? "none",
       ),
     ).toBe("board-token-full-value");
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    // The board `<dialog>` listens for the same key and must not have taken
+    // it: closing a panel is not closing the board.
     await expect(
       page.locator('[data-vex-surface="board-modal"]'),
     ).toBeVisible();

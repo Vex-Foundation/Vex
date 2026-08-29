@@ -16,7 +16,8 @@
  * preload bridge. Faking anything above it would prove a layout the product
  * does not have.
  *
- * THE CONTROL SURFACE. The URL decides the board (`?board=realistic|extreme`,
+ * THE CONTROL SURFACE. The URL decides the board
+ * (`?board=realistic|extreme|wide`,
  * `?pools=N`), which view is mounted (`?view=grid|spotlight`) and, for the
  * seam matrix, the EXACT inline size of a query container (`?plate=C`,
  * `?spotlightPlate=C`). `window.__vexBoardLayoutHarness` decides what changes
@@ -252,6 +253,57 @@ const EXTREME_ROWS: readonly Partial<BoardHydratedRow>[] = [
   ...REALISTIC_ROWS.slice(0, 2),
 ];
 
+/**
+ * SCHEMA-VALID UNICODE, which is a different axis from schema-valid LENGTH.
+ *
+ * `baseTokenSymbol` is `z.string().min(1).max(512)` - 512 UTF-16 CODE UNITS of
+ * ANY Unicode, not 512 Latin letters. A full-width CJK character is about
+ * twice the width of the Latin one the budgets were measured against, an emoji
+ * ZWJ sequence is ONE grapheme built from seven code points, and a combining
+ * mark is a code point with no width of its own. Each row below is one of
+ * those, and the overflow assertions run over all of them at the compact
+ * floor - the case a length-in-characters budget passed while overflowing.
+ */
+const WIDE_ROWS: readonly Partial<BoardHydratedRow>[] = [
+  {
+    // Ten full-width characters: twenty slots, and short enough in CHARACTERS
+    // to have sat under a ten-character budget while overflowing its column.
+    baseTokenSymbol: "比特币现金交易所代币",
+    baseTokenName: "比特币现金交易所代币",
+    priceUsd: "104238.9174",
+    priceChange: { h1: "-1.73", h24: "-12.48" },
+    liquidityUsd: "495612.34",
+    volumeH24Usd: "12456789.01",
+    txns: { buys: 12345, sells: 9876 },
+    pairAgeSeconds: 31_536_000,
+  },
+  {
+    // A ZWJ family, a tag-sequence flag, a regional-indicator pair: one
+    // grapheme each, several code points each. A cut inside any of them
+    // renders half a sequence, which is a different token than the one sent.
+    baseTokenSymbol: "👨‍👩‍👧‍👦🏴󠁧󠁢󠁳󠁣󠁴󠁿👩‍💻🇯🇵🧑‍🚀👨‍👩‍👧‍👦🇯🇵",
+    baseTokenName: "Emoji Sequence Token",
+    priceUsd: "0.00000123",
+    priceChange: { h1: "4.10", h24: "661" },
+    liquidityUsd: "75189.01",
+    volumeH24Usd: "464284.04",
+    txns: { buys: 1235, sells: 856 },
+    pairAgeSeconds: 259_200,
+  },
+  {
+    // Base characters carrying combining marks, then astral code points whose
+    // surrogate pairs a code-unit slice would split down the middle.
+    baseTokenSymbol: "ZÁLGO̰TOKÉN\u{1D400}\u{1D401}\u{1D402}",
+    baseTokenName: "Combining Marks Token",
+    priceUsd: "1.2345",
+    priceChange: { h1: "-0.5", h24: "8.31" },
+    liquidityUsd: "18400000",
+    volumeH24Usd: "3210987.65",
+    txns: { buys: 8888, sells: 7777 },
+    pairAgeSeconds: 1800,
+  },
+];
+
 function row(overrides: Partial<BoardHydratedRow>): BoardHydratedRow {
   return {
     baseTokenSymbol: "PEPE",
@@ -272,7 +324,12 @@ function row(overrides: Partial<BoardHydratedRow>): BoardHydratedRow {
 }
 
 function harnessSpec(kind: string, poolCount: number): BoardSpecV1 {
-  const source = kind === "extreme" ? EXTREME_ROWS : REALISTIC_ROWS;
+  const source =
+    kind === "extreme"
+      ? EXTREME_ROWS
+      : kind === "wide"
+        ? WIDE_ROWS
+        : REALISTIC_ROWS;
   const rows: BoardHydratedRow[] = [];
   for (let index = 0; index < poolCount; index += 1) {
     rows.push(row(source[index % source.length] ?? {}));

@@ -226,11 +226,49 @@ It also retires hover as a recovery path. `title` stays on the token name for
 the pointer, but the name's ellipsis now has a real, keyboard-reachable way
 back to the whole string.
 
-Its own tab sequence is CONTAINED (WAI modal-dialog pattern). The panel is a
-`role="dialog"` painted over the card's own buttons, which remain in the
-document after it; without the trap, Tab from its close button lands on a
-control the reader cannot see, and Escape from there reaches the board
-`<dialog>` and closes the whole board rather than the panel.
+It is a DISCLOSURE, not a dialog. It carried `role="dialog"` with
+`aria-modal="true"` and a focus trap, and none of that was true: nothing
+outside the panel was inert, a pointer reached every other card on the board
+while it was open, and two of them could be "modal" at once. `aria-modal`
+promises a reader that the rest of the page is unavailable, so a screen-reader
+user was told the board was gone while a sighted user was clicking it. A
+promise the code does not keep is worse than no promise.
+
+What it is instead: a button carrying `aria-expanded` and `aria-controls`, and
+a labelled `role="group"` it points at. Consequences, each of them tested
+rather than assumed:
+
+- no focus trap, because a non-modal surface must not trap - Tab runs through
+  the panel and ONWARD, out of the card entirely;
+- MANY MAY BE OPEN AT ONCE, which is legitimate for a disclosure and is how a
+  reader compares two pools' raw decimals side by side;
+- the rest of the board stays live to a pointer, including another card's
+  Spotlight.
+
+**The covered controls leave the TAB ORDER, and only the tab order.** The
+panel is opaque and covers its whole card, so while it is open the Spotlight
+button, the DexScreener link, Ask VEX and the trigger itself cannot be seen -
+and a Tab that reached one of them would put focus somewhere invisible, which
+rule 08 forbids. Each of them therefore carries `tabIndex="-1"` for exactly as
+long as the panel is open, so tabbing out of the panel leaves the card rather
+than landing behind it.
+
+`tabIndex="-1"` and NOT `inert`, deliberately. `inert` removes a subtree from
+the ACCESSIBILITY TREE, which would take the trigger's own
+`aria-expanded="true"` with it: the panel would be open with nothing able to
+report that it was, and the Escape restore could not focus the trigger either.
+`tabIndex="-1"` removes an element from the tab order alone - it keeps its
+accessible name and state, and it can still be focused programmatically. The
+attributes revert in the same commit that removes the panel, so a card nothing
+covers carries none of them. `TokenCardV3` owns the flag, which is why the
+disclosure's open state is controlled by the card rather than private to the
+disclosure: a component in the header cannot reach the footer's buttons.
+
+Focus still moves into the panel on open and returns to the trigger on close.
+That is not a modal obligation but this panel's own: it paints over the card
+it belongs to, so focus left behind it would be operating an invisible
+control. Escape closes it and is stopped from propagating, so closing a panel
+never closes the board `<dialog>` listening for the same key.
 
 Its cost to the floors is nothing: it sits in the identity row, whose
 flexible middle absorbs it, so no table above changes.
@@ -244,10 +282,10 @@ whole into a `whitespace-nowrap` cell inside an `overflow-hidden` card: the
 reader got a figure with its tail removed and nothing saying so.
 
 `boardCardValueBudget.ts` owns the fix. Each budget is the widest realistic
-string for that region measured in CHARACTERS - which is exactly the string
-the region's floor was derived from, so a value past it is by construction
-past what the layout was sized for, and it is the value that concedes rather
-than the layout.
+string for that region, measured in SLOTS - which is exactly the string the
+region's floor was derived from, so a value past it is by construction past
+what the layout was sized for, and it is the value that concedes rather than
+the layout.
 
 | Region | Budget | The string it is derived from |
 | --- | --- | --- |
@@ -257,19 +295,39 @@ than the layout.
 | Ticker | 10 | compact identity column, 88px |
 | Token name | none | keeps its CSS ellipsis by product decision |
 
-The ellipsis is charged TWO of those slots, which is measured rather than
-chosen. The regions render `tabular-nums`, where every digit is one width -
-but `…` is not a digit: in the display face at the hero's 28px it measures
-about 30px against a digit's 16.44. A value shortened to exactly the budget
-in characters therefore still overflowed by nine pixels, which the extreme
-case at the compact floor caught.
+**One slot is one narrow character of that region's own type**, and the unit
+matters because `String.length` is not it. Two corrections came out of that:
+
+- **The ellipsis costs TWO slots.** The financial regions render
+  `tabular-nums` where every digit is one width, but `…` is not a digit: in
+  the display face at the hero's 28px it measures about 30px against a
+  digit's 16.44. A value shortened to exactly the budget in characters still
+  overflowed by nine pixels, which the extreme case at the compact floor
+  caught.
+- **A wide code point costs TWO slots, and the cut is grapheme-safe.**
+  `baseTokenSymbol` is `z.string().min(1).max(512)`: 512 UTF-16 CODE UNITS of
+  any Unicode, and the ticker is not `tabular-nums`. A ten-character CJK
+  ticker was ten `String.length`, sat under a ten-character budget, and
+  rendered 130px into an 88px column with `shortened` reported as false -
+  silent loss from the module written to prevent it. And `String.slice` cuts
+  code units, so a cut between a surrogate pair emitted a LONE SURROGATE (an
+  ill-formed string on its way to the jsonb boundary) while a cut inside a ZWJ
+  sequence rendered a different token than the provider sent.
+
+  The model, owned in that module's head note: segment into grapheme clusters
+  with `Intl.Segmenter`, then charge a cluster ONE slot when every code point
+  in it is U+0000-U+00FF and TWO otherwise. It over-charges a Greek letter or
+  a combining mark, which is the right direction to be wrong in -
+  over-charging shortens early AND SAYS SO; under-charging overflows in
+  silence.
 
 A budget is a property of the DATA, decided before layout exists. It owns no
 threshold: it does not pick a column count, a mode or a floor, and no
 JavaScript reads a width back. The overflow assertions in
-`e2e/board-layout.spec.ts` run over the SCHEMA-EXTREME board at the compact
-floor and fail if any financial, stat, badge or action region scrolls, which
-is what proves the budgets hold.
+`e2e/board-layout.spec.ts` run over the SCHEMA-EXTREME board AND a WIDE-GLYPH
+board (CJK, emoji ZWJ sequences, combining marks) at the compact floor, and
+fail if any financial, stat, badge or action region scrolls. That is what
+proves the budgets hold.
 
 ## 5. What the matrix proves about the CURRENT card
 
