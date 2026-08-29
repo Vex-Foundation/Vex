@@ -54,7 +54,7 @@ describe("ProtocolParamDef.enum", () => {
     const result = validateProtocolParams(ENUM_MANIFEST, { chain: "arbitrum" });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.reason).toContain('Allowed values for "chain" on test.tool: BASE, SOLANA');
+    expect(result.reason).toContain('Allowed values for "chain" on test__tool: BASE, SOLANA');
   });
 
   it("matches case-sensitively on any param that is not a chain value", () => {
@@ -186,7 +186,7 @@ describe("W6f chain number→string normalization", () => {
     const result = validateProtocolParams(CHAIN_MANIFEST, params);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.reason).toContain('Parameter "query" for test.tool has invalid type');
+    expect(result.reason).toContain('Parameter "query" for test__tool has invalid type');
     expect(params.query).toBe(8453);
   });
 

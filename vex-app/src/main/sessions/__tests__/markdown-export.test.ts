@@ -100,22 +100,118 @@ describe("session Markdown export", () => {
     expect(markdown).not.toContain("__");
   });
 
-  it("omits system, runtime, compaction, and raw tool-result rows and redacts secrets in prose", () => {
+  // DELIBERATE CONTRACT CHANGE (2026-08-28). This case used to pin that EVERY
+  // tool result is dropped. Measured cost: the export of the 2026-08-27 refusal
+  // loop showed seven `> Tool:` rows and nothing else, so the human could not
+  // see that any call had failed. A tool result whose outcome is unambiguously
+  // FAILED now contributes one capped, redacted `> Failed:` line (see the
+  // sibling suite below). A successful or unknown-outcome result is still
+  // omitted whole, which is what this case keeps pinning.
+  it("omits system, runtime, compaction, and non-failed tool-result rows and redacts secrets in prose", () => {
     const apiKey = `sk-or-v1-${"a".repeat(32)}`;
     const markdown = renderSessionMarkdown(SESSION, [
       message({ id: 1, role: "system", content: "hidden system prompt" }),
       message({ id: 2, role: "assistant", kind: "runtime_notice", content: "runtime noise" }),
       message({ id: 3, role: "assistant", kind: "compaction", content: "compacted" }),
       message({ id: 4, role: "tool", kind: "tool_result", content: "raw result" }),
+      message({
+        id: 6,
+        role: "tool",
+        kind: "tool_result",
+        content: "raw success payload",
+        success: true,
+      }),
       message({ id: 5, role: "user", content: `Use ${apiKey}` }),
     ]);
 
     expect(markdown).not.toContain("hidden system prompt");
     expect(markdown).not.toContain("runtime noise");
     expect(markdown).not.toContain("compacted");
+    // `success: null` is UNKNOWN, never failure.
     expect(markdown).not.toContain("raw result");
+    expect(markdown).not.toContain("raw success payload");
+    expect(markdown).not.toContain("> Failed:");
     expect(markdown).not.toContain(apiKey);
     expect(markdown).toContain("[redacted]");
+  });
+
+  describe("failed tool results", () => {
+    it("renders one correlated failure line naming the tool that failed", () => {
+      const markdown = renderSessionMarkdown(SESSION, [
+        message({
+          id: 1,
+          role: "assistant",
+          kind: "tool_call",
+          content: "Checking new pairs.",
+          toolCalls: [
+            { toolCallId: "call-1", toolName: "dexscreener.pairs.new", toolArgs: "{}" },
+          ],
+        }),
+        message({
+          id: 2,
+          role: "tool",
+          kind: "tool_result",
+          toolCallId: "call-1",
+          content: 'Parameter "chainIds" was an empty array.',
+          success: false,
+        }),
+      ]);
+
+      expect(markdown).toContain("> Failed: `dexscreener.pairs.new`: Parameter \"chainIds\" was an empty array.");
+    });
+
+    it("says nothing for a PENDING result, which is unresolved rather than failed", () => {
+      const markdown = renderSessionMarkdown(SESSION, [
+        message({
+          id: 2,
+          role: "tool",
+          kind: "tool_result",
+          content: "broadcast in flight",
+          success: false,
+          displayStatus: "pending",
+        }),
+      ]);
+
+      expect(markdown).not.toContain("> Failed:");
+      expect(markdown).not.toContain("broadcast in flight");
+    });
+
+    it("reports its own cap instead of cutting silently", () => {
+      const long = `x`.repeat(900);
+      const markdown = renderSessionMarkdown(SESSION, [
+        message({
+          id: 2,
+          role: "tool",
+          kind: "tool_result",
+          content: `${long}\nsecond line`,
+          success: false,
+        }),
+      ]);
+
+      expect(markdown).toContain("400 of 900 characters");
+      expect(markdown).toContain("first line only");
+      expect(markdown).toContain("the full output is in the session view");
+      expect(markdown).not.toContain("second line");
+    });
+
+    // The COMPLETE output is redacted before the summary is selected. Selecting
+    // first would hand the redactor a fragment and let a secret that straddles
+    // the cut reach the file intact.
+    it("redacts a secret that straddles the summary cap", () => {
+      const apiKey = `sk-or-v1-${"b".repeat(32)}`;
+      const markdown = renderSessionMarkdown(SESSION, [
+        message({
+          id: 2,
+          role: "tool",
+          kind: "tool_result",
+          content: `${"y".repeat(390)}${apiKey} trailing`,
+          success: false,
+        }),
+      ]);
+
+      expect(markdown).not.toContain(apiKey);
+      expect(markdown).not.toContain(`sk-or-v1-${"b".repeat(10)}`);
+    });
   });
 
   it("quotes persisted assistant reasoning before the prose, redacted like content", () => {
