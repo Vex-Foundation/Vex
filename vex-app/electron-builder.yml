@@ -18,11 +18,22 @@ directories:
 files:
   - dist/main/**
   - dist/preload/**
+  - dist/pty-host/**
   - dist/renderer/**
   - package.json
   # Exclude sourcemaps from packaged artifacts (security + size).
   - "!dist/**/*.map"
   - "!dist/**/*.tsbuildinfo"
+
+# Native modules must live OUTSIDE app.asar. Neither can be loaded from inside
+# an archive: node-pty's loader resolves `prebuilds/<platform>-<arch>/pty.node`
+# by real filesystem path and on macOS spawns the sibling `spawn-helper`
+# executable, and @parcel/watcher dlopens `watcher.node` from whichever
+# per-platform optional package npm/pnpm installed. Both paths are verified
+# post-build by scripts/check-build-artifacts.mjs.
+asarUnpack:
+  - node_modules/node-pty/prebuilds/**
+  - node_modules/@parcel/watcher*/**
 
 extraResources:
   - from: resources/compose
@@ -55,6 +66,14 @@ mac:
   # is resolved by app-builder-lib against the bundle root.
   binaries:
     - Contents/Resources/bridge/vex-mcp
+    # node-pty's `spawn-helper` is a Mach-O executable with NO file extension,
+    # so @electron/osx-sign's default nested-binary walker does not pick it up
+    # (it does sign the `.node` files). Unsigned, the hardened runtime refuses
+    # to exec it and every terminal spawn fails on macOS. Both arches are
+    # listed because node-pty ships prebuilds for both and electron-builder
+    # packages x64 and arm64 in ONE invocation.
+    - Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-x64/spawn-helper
+    - Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper
   target:
     - target: dmg
       arch: [x64, arm64]
