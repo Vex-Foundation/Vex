@@ -72,6 +72,18 @@ export function decodeUniswapRow(input: VenueDecodeInput): VenueDecodeResult {
     amounts.executedAmountOutRaw = decoded.executedAmountOutRaw.toString();
   }
 
+  // Both stored legs are ERC-20: require both, same as the immediate path.
+  // A native/NULL address is a missing identity, not a missing Transfer, so
+  // that case persists the proven ERC-20 side instead of declining.
+  const bothErc20 = !isNativeStored(tokenInAddress) && !isNativeStored(tokenOutAddress);
+  if (bothErc20 && (amounts.executedAmountInRaw === undefined || amounts.executedAmountOutRaw === undefined)) {
+    return {
+      kind: "declined",
+      reason: "amounts_undecodable",
+      detail: "the venue decoder could not establish both legs from this receipt",
+    };
+  }
+
   if (amounts.executedAmountInRaw === undefined && amounts.executedAmountOutRaw === undefined) {
     return {
       kind: "declined",

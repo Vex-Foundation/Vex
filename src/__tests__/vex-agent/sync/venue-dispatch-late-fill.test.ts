@@ -120,6 +120,16 @@ describe("venue dispatch: uniswap", () => {
     expect(result.kind === "decoded" ? result.amounts.executedAmountInRaw : "x").toBeUndefined();
   });
 
+  it("declines an ERC-20/ERC-20 swap whose receipt proves only one Transfer", async () => {
+    const result = await decodeVenueSettlement({
+      row: row(),
+      logs: [transfer(VEX, WALLET, VIRTUAL, 30_480n)],
+      hint: null,
+      deps: deps(),
+    });
+    expect(result).toMatchObject({ kind: "declined", reason: "amounts_undecodable" });
+  });
+
   it("declines when the receipt proves no reportable (non-native-out) leg", async () => {
     const result = await decodeVenueSettlement({
       row: row({ tokenOutAddress: null }),

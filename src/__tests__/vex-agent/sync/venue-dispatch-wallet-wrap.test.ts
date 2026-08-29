@@ -269,11 +269,11 @@ describe("venue dispatch: the arm is bound to its two roles", () => {
         deps: NO_CHAIN_READ,
       });
 
-      expect(result.kind).toBe("declined");
-      if (result.kind !== "declined") throw new Error("expected a decline");
-      expect(result.reason).toBe("amounts_undecodable");
+      expect(result.kind).toBe("deferred");
+      if (result.kind !== "deferred") throw new Error("expected a deferral");
       // The UNMAPPED-PROTOCOL sentence, which is the proof it fell past the
-      // wrap branch rather than being judged by it.
+      // wrap branch rather than being judged by it. "No adapter for this
+      // protocol+role" is not a conclusion that no amounts are coming.
       expect(result.detail).toBe(
         'no settlement decoder is wired for protocol "wallet_wrap"',
       );
