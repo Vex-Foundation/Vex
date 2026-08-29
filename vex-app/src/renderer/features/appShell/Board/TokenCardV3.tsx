@@ -35,12 +35,48 @@
  * NO ICON SITS ON A DISC. The chain mark, the chip's glyph and the Ask VEX
  * sparkle are bare `currentColor` glyphs; the one round container on the
  * card is the token photo itself.
+ *
+ * TWO ANATOMIES, ONE CARD, AND CSS PICKS. The board plate is a container
+ * query container and `global-css/board-layout.css` owns every threshold; the
+ * card carries the classes and reads the mode's values out of custom
+ * properties. In WIDE mode the sparkline sits in the price row, the stats are
+ * four columns and the footer is one line. In COMPACT mode the sparkline
+ * moves to its own full-width slot, the stats go 2x2 and the footer stacks
+ * the chip above the actions. Nothing here knows a pixel: there is no solver,
+ * no ResizeObserver and no window read, so opening the Ask VEX drawer changes
+ * the layout in the same paint that changes the container.
+ *
+ * NOTHING IS RECOVERED BY HOVER. `title` is a pointer convenience and never
+ * the only way back to a cut string, so every card carries one always-present
+ * `FullValueDisclosure` button: a real `<button>`, in the tab order, that
+ * opens the whole name, the whole ticker and the RAW provider decimals, and
+ * whose own tab sequence is contained the way a `role="dialog"` over obscured
+ * controls must be. It is present unconditionally on purpose - a card is
+ * always rounding something - but it is not SILENT about the difference
+ * between rounding and cutting: when the card printed a shortened copy of a
+ * value it says so, in the button's accessible name, in the button's own
+ * treatment, and again at the top of the panel.
+ *
+ * WHAT DECIDES "SHORTENED" IS THE DATA, NOT THE LAYOUT. `boardCardValueBudget
+ * .ts` owns a character budget per region, derived from the same measurement
+ * matrix the CSS floors come from, and it runs before layout exists. No
+ * JavaScript here reads a width back, and no threshold leaves the stylesheet:
+ * a budget decides how much of a string is worth printing, never how many
+ * columns the board has or which anatomy a card wears.
  */
 
-import { useRef, type JSX } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type JSX,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import {
   IconArrowUpRight,
+  IconClose,
   IconFullscreen,
+  IconInfo,
   IconSparkle,
 } from "../../../components/icons/index.js";
 import { ChainSlugIcon } from "../../../components/common/ChainIcon.js";
@@ -61,6 +97,15 @@ import {
   formatBoardUsdCompact,
   type BoardTrend,
 } from "./boardFormat.js";
+import {
+  anyShortened,
+  boardCardValue,
+  BOARD_CARD_DELTA_MAX_CHARS,
+  BOARD_CARD_PRICE_MAX_CHARS,
+  BOARD_CARD_STAT_MAX_CHARS,
+  BOARD_CARD_TICKER_MAX_CHARS,
+  type BoardCardValue,
+} from "./boardCardValueBudget.js";
 import type { BoardCardModel } from "./boardModel.js";
 import type { BoardSafetyVerdict } from "./board-surface-contracts.js";
 
@@ -75,7 +120,7 @@ import type { BoardSafetyVerdict } from "./board-surface-contracts.js";
  * plate: the plate is not focusable, and a ring around a non-target is noise.
  */
 const CARD_CLASS =
-  "vex-board-card group flex h-full flex-col rounded-2xl border bg-board-card px-5 py-5 " +
+  "vex-board-card group relative flex h-full w-full min-w-0 flex-col overflow-hidden rounded-2xl border bg-board-card px-5 py-5 " +
   "transition-[background-color,border-color,box-shadow] duration-150 " +
   "hover:border-line-3 hover:bg-board-card-hover hover:shadow-lv2 motion-reduce:transition-none";
 
@@ -111,6 +156,63 @@ export function TokenCardV3({
   const statusLabel = boardStatusChipLabel(verdict, row?.pairAgeSeconds ?? null);
   const tick = useLiveTick(live, row?.priceUsd ?? null, row?.priceChange.h24 ?? null);
 
+  // WHAT THE CARD WILL PRINT, and what it had to shorten to print it. The
+  // budgets belong to `boardCardValueBudget.ts`; the accessible name below
+  // and the disclosure panel both keep the WHOLE strings, so nothing here
+  // removes a value from the reader - it decides which copy is on the plate.
+  const printedTicker = boardCardValue(ticker, BOARD_CARD_TICKER_MAX_CHARS);
+  const printedPrice = boardCardValue(priceLabel, BOARD_CARD_PRICE_MAX_CHARS);
+  const printedDelta = boardCardValue(deltaLabel, BOARD_CARD_DELTA_MAX_CHARS);
+  const stats: readonly {
+    readonly label: string;
+    readonly printed: BoardCardValue;
+    readonly title: string | undefined;
+  }[] = [
+    {
+      label: "Liquidity",
+      printed: boardCardValue(
+        formatBoardUsdCompact(row?.liquidityUsd ?? null),
+        BOARD_CARD_STAT_MAX_CHARS,
+      ),
+      title: row?.liquidityUsd ?? undefined,
+    },
+    {
+      label: "24h Volume",
+      printed: boardCardValue(
+        formatBoardUsdCompact(row?.volumeH24Usd ?? null),
+        BOARD_CARD_STAT_MAX_CHARS,
+      ),
+      title: row?.volumeH24Usd ?? undefined,
+    },
+    {
+      label: "Trades",
+      printed: boardCardValue(
+        row === null
+          ? BOARD_EMPTY
+          : formatBoardTradeTotal(row.txns.buys, row.txns.sells),
+        BOARD_CARD_STAT_MAX_CHARS,
+      ),
+      title: undefined,
+    },
+    {
+      label: "Pair age",
+      printed: boardCardValue(
+        formatBoardAge(row?.pairAgeSeconds ?? null),
+        BOARD_CARD_STAT_MAX_CHARS,
+      ),
+      title: undefined,
+    },
+  ];
+  // The NAME is deliberately not in this list: it keeps its CSS ellipsis by
+  // product decision, and its whole string is in the `title`, in the card's
+  // accessible name and in the disclosure.
+  const shortened = anyShortened([
+    printedTicker,
+    printedPrice,
+    printedDelta,
+    ...stats.map((stat) => stat.printed),
+  ]);
+
   return (
     <article
       data-vex-area="board-token-card-v3"
@@ -135,9 +237,11 @@ export function TokenCardV3({
           </span>
           <span
             data-vex-area="board-token-ticker"
+            data-shortened={printedTicker.shortened ? "true" : undefined}
             className="truncate text-[13px] uppercase leading-[16px] text-ink-tertiary"
+            title={ticker}
           >
-            {ticker}
+            {printedTicker.text}
           </span>
           <span
             data-vex-area="board-token-chain"
@@ -148,11 +252,19 @@ export function TokenCardV3({
             <span className="sr-only">{card.chain}</span>
           </span>
         </div>
-        <SpotlightAction
-          symbol={ticker}
-          selected={selected}
-          onSpotlight={onSpotlight}
-        />
+        <div className="flex shrink-0 items-center gap-2 self-start">
+          <FullValueDisclosure
+            ticker={ticker}
+            heading={heading}
+            row={row}
+            shortened={shortened}
+          />
+          <SpotlightAction
+            symbol={ticker}
+            selected={selected}
+            onSpotlight={onSpotlight}
+          />
+        </div>
       </header>
 
       {/* PRICE. The hero numeral, the qualified delta, and the sparkline in
@@ -165,36 +277,66 @@ export function TokenCardV3({
         data-tick={tick}
         className="mt-4 flex h-[44px] items-end gap-3 rounded-md"
       >
-        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+        {/* NOWRAP, and that is the fix for a defect the matrix caught at
+          * 1920px with no drawer at all: with `flex-wrap` the browser pushed
+          * the delta and its `24h` window onto a second line rather than
+          * shrinking the price, and the row's fixed 44px had no room for it.
+          * Nowrap makes the price the one element that concedes width - the
+          * right priority, because the delta and the window are short, fixed
+          * and meaningless apart, and because the disclosure in the header
+          * carries the whole decimal string either way. */}
+        <div className="flex min-w-0 flex-1 flex-nowrap items-baseline gap-x-2.5">
           <span
             data-vex-area="board-token-price"
+            data-shortened={printedPrice.shortened ? "true" : undefined}
             className="min-w-0 truncate font-display text-[28px] font-bold leading-[34px] tracking-[-0.02em] tabular-nums text-ink-primary"
             // The WHOLE decimal string, so no digit the provider reported is
-            // lost to the display precision above it.
+            // lost to the display precision above it. The KEYBOARD path to
+            // the same string is the header's disclosure; this is the
+            // pointer's shortcut, never the only way back.
             title={row?.priceUsd ?? undefined}
           >
-            {priceLabel}
+            {printedPrice.text}
           </span>
           <span
             data-vex-area="board-token-delta"
             data-trend={card.trendH24}
+            data-shortened={printedDelta.shortened ? "true" : undefined}
             className={cn(
-              "text-[15px] font-semibold leading-[20px] tabular-nums",
+              "shrink-0 text-[15px] font-semibold leading-[20px] tabular-nums",
               deltaToneClass(card.trendH24),
             )}
+            title={printedDelta.shortened ? deltaLabel : undefined}
           >
-            {deltaLabel}
+            {printedDelta.text}
           </span>
           <span
             data-vex-area="board-token-delta-window"
-            className="text-[13px] leading-[18px] text-ink-tertiary"
+            className="shrink-0 text-[13px] leading-[18px] text-ink-tertiary"
           >
             24h
           </span>
         </div>
-        <div className="h-[44px] w-[30%] shrink-0">
+        {/* WIDE mode only. `board-layout.css` gives this a fixed 132px rather
+          * than a percentage: a percentage shrinks the figures' budget faster
+          * than the card shrinks, which is what pushed the delta out of the
+          * row in the first place. */}
+        <div
+          data-vex-area="board-token-sparkline-inline"
+          className="vex-board-card-sparkline-inline"
+        >
           <BoardSparkline data={sparkline} trend={card.trendH24} />
         </div>
+      </div>
+
+      {/* COMPACT mode only, and this is why compact loses no data: the line
+        * is not deleted when it will not fit beside the figures, it moves
+        * under them into a slot of its own. */}
+      <div
+        data-vex-area="board-token-sparkline-slot"
+        className="vex-board-card-sparkline-slot w-full"
+      >
+        <BoardSparkline data={sparkline} trend={card.trendH24} />
       </div>
 
       <div className="mt-4 h-px w-full bg-line-2" aria-hidden />
@@ -205,36 +347,30 @@ export function TokenCardV3({
         * any one value renders. */}
       <dl
         data-vex-area="board-token-stats"
-        className="mt-4 grid h-[46px] grid-cols-4 gap-x-3"
+        className="vex-board-card-stats mt-4"
       >
-        <Stat
-          label="Liquidity"
-          value={formatBoardUsdCompact(row?.liquidityUsd ?? null)}
-          title={row?.liquidityUsd ?? undefined}
-        />
-        <Stat
-          label="24h Volume"
-          value={formatBoardUsdCompact(row?.volumeH24Usd ?? null)}
-          title={row?.volumeH24Usd ?? undefined}
-        />
-        <Stat
-          label="Trades"
-          value={
-            row === null
-              ? BOARD_EMPTY
-              : formatBoardTradeTotal(row.txns.buys, row.txns.sells)
-          }
-        />
-        <Stat
-          label="Pair age"
-          value={formatBoardAge(row?.pairAgeSeconds ?? null)}
-        />
+        {stats.map((stat) => (
+          <Stat
+            key={stat.label}
+            label={stat.label}
+            printed={stat.printed}
+            title={stat.title}
+          />
+        ))}
       </dl>
 
       {/* FOOTER. `mt-auto` pins this row to the bottom of the plate, so a
         * row of cards has its chips and its buttons on one line whatever
         * happens above them. */}
-      <div className="mt-auto flex items-center justify-between gap-3 pt-4">
+      {/* In WIDE mode this is one line with the chip against the actions; in
+        * COMPACT it stacks, which is what lets the chip print
+        * "Checks unavailable in this response" - 242px, the widest string the
+        * frozen safety table can produce - beside nothing instead of
+        * ellipsizing beside two buttons. `board-layout.css` owns the switch. */}
+      <div
+        data-vex-area="board-token-footer"
+        className="vex-board-card-footer mt-auto pt-4"
+      >
         <BoardStatusChip
           verdict={verdict}
           pairAgeSeconds={row?.pairAgeSeconds ?? null}
@@ -374,24 +510,261 @@ function deltaToneClass(trend: BoardTrend): string {
 
 function Stat({
   label,
-  value,
+  printed,
   title,
 }: {
   readonly label: string;
-  readonly value: string;
+  readonly printed: BoardCardValue;
   readonly title?: string | undefined;
 }): JSX.Element {
+  // NEITHER LINE ELLIPSIZES IN CSS, and that is why the value arrives already
+  // decided. A stat label is fixed product copy and a stat value is a figure
+  // a reader is about to act on; the mode floors in `board-layout.css` are
+  // sized so every realistic pair fits whole (binding label "24h Volume" at
+  // 66px, binding value "$998.8K" at 63px). A schema extreme that cannot fit
+  // is shortened by `boardCardValueBudget.ts` BEFORE it gets here, so what
+  // reaches this cell always fits and always says whether it is the whole
+  // figure - rather than being clipped by the card with nothing reporting it.
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <dt className="truncate text-[13px] leading-[16px] text-ink-tertiary">
+      <dt className="whitespace-nowrap text-[13px] leading-[16px] text-ink-tertiary">
         {label}
       </dt>
       <dd
-        className="truncate text-[15px] font-semibold leading-[20px] tabular-nums text-ink-primary"
+        data-shortened={printed.shortened ? "true" : undefined}
+        className="whitespace-nowrap text-[15px] font-semibold leading-[20px] tabular-nums text-ink-primary"
         title={title}
       >
-        {value}
+        {printed.text}
       </dd>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* The full-value disclosure                                           */
+/* ------------------------------------------------------------------ */
+
+/** What the card is showing in a clamped form, and the whole string for it. */
+interface FullValueEntry {
+  readonly label: string;
+  readonly value: string;
+}
+
+export const BOARD_FULL_VALUE_LABEL = "Show the full values";
+export const BOARD_FULL_VALUE_TITLE = "Full values";
+
+/**
+ * WHAT THE AFFORDANCE SAYS WHEN THE CARD ACTUALLY CUT SOMETHING.
+ *
+ * "Show the full values" says a panel exists; it does not say that the figure
+ * in front of the reader is not the whole figure. That difference is the
+ * whole point of a reported bound, so a card that shortened a value names the
+ * cut state in the button's accessible name and again, visibly, at the top of
+ * the panel.
+ */
+export const BOARD_FULL_VALUE_SHORTENED_LABEL =
+  "Some values on this card are shortened";
+
+/**
+ * THE RECOVERY PATH FOR EVERY CLAMPED STRING ON THE CARD.
+ *
+ * A 40-character decimal and a 512-character symbol are both schema-valid
+ * (`BOARD_DECIMAL_MAX_CHARS`, `BOARD_TOKEN_LABEL_MAX_CHARS`) and neither can
+ * be made to fit any card at any width. The display formatters also round
+ * every price by design. So the card always clamps SOMETHING, and until now
+ * the only way back was a `title` - unreachable by keyboard and by touch,
+ * which rule 08 does not accept for anything a reader may need.
+ *
+ * This is a real `<button>`, so Enter and Space work with no key handler of
+ * our own, and the panel it opens is an ordinary absolutely-positioned
+ * overlay INSIDE the card rather than a portal: the board modal's native
+ * `<dialog>` already owns the focus trap, and a portal to `document.body`
+ * would put the panel outside it. Initial focus goes to the close button,
+ * Escape closes, and focus returns to the trigger - the three obligations a
+ * dialog-nested disclosure has, met without touching the dialog primitive.
+ *
+ * Escape is stopped from propagating while the panel is open, so closing the
+ * panel does not also close the board behind it.
+ *
+ * AND ITS TAB SEQUENCE IS CONTAINED, which a `role="dialog"` over obscured
+ * controls owes its reader (WAI modal-dialog pattern). The panel covers the
+ * card, but the card's own buttons - the Spotlight trigger, DexScreener, Ask
+ * VEX - are still in the document after it, so without the trap below a Tab
+ * from the close button lands on a control nobody can see, and an Escape from
+ * there is no longer this panel's to stop: it reaches the board `<dialog>`
+ * and closes the whole board.
+ */
+function FullValueDisclosure({
+  ticker,
+  heading,
+  row,
+  shortened,
+}: {
+  readonly ticker: string;
+  readonly heading: string;
+  readonly row: BoardCardModel["row"];
+  /** True when the card printed a shortened copy of at least one value. */
+  readonly shortened: boolean;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const close = useRef<HTMLButtonElement | null>(null);
+  const panel = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    close.current?.focus();
+  }, [open]);
+
+  const dismiss = (): void => {
+    setOpen(false);
+    trigger.current?.focus();
+  };
+
+  /**
+   * The trap. It lives on the panel's own `keydown`, so it can only run while
+   * focus is already inside: there is no document listener to leak, nothing
+   * to unregister, and a card whose panel is closed costs nothing.
+   */
+  const trap = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== "Tab") return;
+    const host = panel.current;
+    if (host === null) return;
+    const focusable = [
+      ...host.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ];
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (first === undefined || last === undefined) {
+      // Nothing to move to, so the only correct move is not to move: letting
+      // Tab through would put focus on the card behind the panel.
+      event.preventDefault();
+      return;
+    }
+    const active = document.activeElement;
+    const inside = active instanceof Node && host.contains(active);
+    if (event.shiftKey) {
+      if (!inside || active === first) {
+        event.preventDefault();
+        last.focus();
+      }
+      return;
+    }
+    if (!inside || active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  const entries: readonly FullValueEntry[] = [
+    { label: "Name", value: heading },
+    { label: "Ticker", value: ticker },
+    { label: "Price, USD", value: row?.priceUsd ?? BOARD_EMPTY },
+    { label: "24h change, percent", value: row?.priceChange.h24 ?? BOARD_EMPTY },
+    { label: "Liquidity, USD", value: row?.liquidityUsd ?? BOARD_EMPTY },
+    { label: "24h volume, USD", value: row?.volumeH24Usd ?? BOARD_EMPTY },
+  ];
+
+  return (
+    <>
+      <button
+        ref={trigger}
+        type="button"
+        data-vex-area="board-token-full-value"
+        data-shortened={shortened ? "true" : undefined}
+        aria-expanded={open}
+        // NAMED, NOT GENERIC, once the card has actually cut something.
+        aria-label={
+          shortened
+            ? `${BOARD_FULL_VALUE_SHORTENED_LABEL}. ${BOARD_FULL_VALUE_LABEL} for ${ticker}`
+            : `${BOARD_FULL_VALUE_LABEL} for ${ticker}`
+        }
+        title={
+          shortened
+            ? `${BOARD_FULL_VALUE_SHORTENED_LABEL}. ${BOARD_FULL_VALUE_LABEL}.`
+            : BOARD_FULL_VALUE_LABEL
+        }
+        onClick={() => {
+          setOpen(true);
+        }}
+        className={cn(
+          "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-ink-tertiary transition-colors duration-150 hover:border-line-3 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+          // The cut is VISIBLE on the control itself, in the one treatment
+          // the card already uses to mean "this needs your attention", so a
+          // reader who never opens the panel still sees that this card is
+          // showing them less than the provider sent.
+          shortened
+            ? "border-accent-primary/40 bg-accent-wash text-accent-primary"
+            : "border-line-2",
+        )}
+      >
+        <IconInfo size={14} />
+      </button>
+      {open ? (
+        <div
+          ref={panel}
+          data-vex-area="board-token-full-value-popover"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${BOARD_FULL_VALUE_TITLE} for ${ticker}`}
+          onKeyDown={(event) => {
+            if (event.key === "Tab") {
+              trap(event);
+              return;
+            }
+            if (event.key !== "Escape") return;
+            // The board dialog is listening for Escape too, and it would
+            // close the whole board behind this panel.
+            event.stopPropagation();
+            event.preventDefault();
+            dismiss();
+          }}
+          className="absolute inset-0 z-10 flex flex-col gap-3 overflow-y-auto rounded-2xl border border-line-2 bg-board-card px-5 py-5"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <p className="font-display text-[15px] font-semibold leading-[20px] text-ink-primary">
+              {BOARD_FULL_VALUE_TITLE}
+            </p>
+            <button
+              ref={close}
+              type="button"
+              data-vex-area="board-token-full-value-close"
+              onClick={dismiss}
+              aria-label={`Close the full values for ${ticker}`}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <IconClose size={14} />
+            </button>
+          </div>
+          {shortened ? (
+            <p
+              data-vex-area="board-token-full-value-notice"
+              className="text-[12px] leading-[16px] text-ink-secondary"
+            >
+              {BOARD_FULL_VALUE_SHORTENED_LABEL}. Every value below is the
+              whole one.
+            </p>
+          ) : null}
+          <dl className="flex flex-col gap-2">
+            {entries.map((entry) => (
+              <div key={entry.label} className="flex flex-col gap-0.5">
+                <dt className="text-[12px] leading-[16px] text-ink-tertiary">
+                  {entry.label}
+                </dt>
+                {/* `break-all` and no clamp of any kind: this is the one place
+                  * on the card where the WHOLE string is the point, so a
+                  * 512-character symbol wraps and the panel scrolls. */}
+                <dd className="break-all text-[13px] leading-[18px] text-ink-primary">
+                  {entry.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ) : null}
+    </>
   );
 }

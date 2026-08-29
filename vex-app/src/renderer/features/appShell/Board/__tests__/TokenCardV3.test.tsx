@@ -21,7 +21,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { TokenCardV3 } from "../TokenCardV3.js";
@@ -391,9 +398,53 @@ describe("TokenCardV3 - equal cards and designed data states", () => {
     render(mount());
     // Fixed heights, not content-driven ones: this is what makes a grid of
     // cards line up regardless of name length, missing artwork or absent bars.
+    // The stat block's height is now PER MODE and therefore CSS's
+    // (`vex-board-card-stats` in global-css/board-layout.css, 46px wide /
+    // 92px compact); what this file still owns is that the card carries the
+    // class at all, so the mode has something to act on. The heights
+    // themselves are proven where they are observable, in
+    // `e2e/board-layout.spec.ts`.
     expect(area("board-token-card-v3").className).toContain("h-full");
-    expect(area("board-token-stats").className).toContain("h-[46px]");
+    expect(area("board-token-card-v3").className).toContain("w-full");
+    expect(area("board-token-stats").className).toContain(
+      "vex-board-card-stats",
+    );
+    expect(area("board-token-footer").className).toContain(
+      "vex-board-card-footer",
+    );
+    // THE NAME KEEPS ITS ELLIPSIS, and this pin stays deliberate: a token
+    // name is prose, it is the one string on the card that may be clamped,
+    // and the whole of it is still in the `title`, in the card's accessible
+    // name and in the full-value disclosure.
     expect(area("board-token-name").className).toContain("truncate");
+    expect(area("board-token-name").getAttribute("title")).toBe("UBERCAT");
+  });
+
+  it("clamps no figure, stat label or chip label", () => {
+    render(mount());
+    // The counterpart of the pin above. Everything that is not the name is a
+    // figure or a fixed piece of product copy, and the mode floors in
+    // `board-layout.css` are sized so each one fits whole; an ellipsis here
+    // would be a silent cut with no recovery in the layout.
+    const stats = area("board-token-stats");
+    for (const cell of [...stats.querySelectorAll("dt, dd")]) {
+      expect(cell.className).not.toContain("truncate");
+      expect(cell.className).toContain("whitespace-nowrap");
+    }
+    const chipLabel = area("board-status-chip").querySelector("span");
+    expect(chipLabel?.className).not.toContain("truncate");
+  });
+
+  it("keeps the sparkline in BOTH anatomies rather than dropping it", () => {
+    render(mount());
+    // Compact mode moves the line, it never deletes it. Both slots are in the
+    // DOM and CSS shows exactly one; a reader on a narrow card still gets the
+    // shape of the last 24 hours.
+    expect(area("board-token-sparkline-inline")).toBeTruthy();
+    expect(area("board-token-sparkline-slot")).toBeTruthy();
+    expect(
+      document.querySelectorAll('[data-vex-area="board-sparkline"]'),
+    ).toHaveLength(2);
   });
 
   it("renders every element for an UNHYDRATED pool, with dashes not gaps", () => {
@@ -483,5 +534,211 @@ describe("TokenCardV3 - actions", () => {
       expect(node.className).not.toContain("opacity-0");
       expect(node.className).toContain("focus-visible:ring");
     }
+  });
+});
+
+
+/**
+ * THE FULL-VALUE DISCLOSURE.
+ *
+ * The card clamps by necessity - the formatters round every price, the name
+ * ellipsizes, and a 512-character symbol is schema-valid - and until this
+ * control existed the only way back to the whole string was a `title`, which
+ * a keyboard reader and a touch reader never reach.
+ *
+ * WHAT THIS FILE PROVES AND WHAT IT DOES NOT. jsdom does not synthesize a
+ * click from a keypress, so "Enter opens it" cannot be an honest assertion
+ * here; the browser does that natively and only for real buttons, so what is
+ * asserted below is the semantics that EARN the native behaviour, plus the
+ * focus contract, which is real DOM state. The Enter press itself is driven
+ * against a real engine in `e2e/board-layout.spec.ts`.
+ */
+describe("TokenCardV3 - the full-value disclosure", () => {
+  const RAW_PRICE = "1234567890123456789012345678901234.5678";
+
+  function openPanel(): HTMLElement {
+    const trigger = area("board-token-full-value");
+    fireEvent.click(trigger);
+    return trigger;
+  }
+
+  it("is a real button, which is what makes Enter and Space work natively", () => {
+    render(mount());
+    const trigger = area("board-token-full-value");
+    // `<button type="button">`, not a `div` with `role="button"`: the native
+    // element is what activates on BOTH keys with no handler of ours, and
+    // what keeps it in the tab order with no `tabindex` of ours.
+    expect(trigger.tagName).toBe("BUTTON");
+    expect(trigger.getAttribute("type")).toBe("button");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger.getAttribute("aria-label")).toContain("UBERCAT");
+  });
+
+  it("shows the WHOLE provider string the hero price rounded away", () => {
+    render(
+      mount({ card: card({ row: hydratedRow({ priceUsd: RAW_PRICE }) }) }),
+    );
+    openPanel();
+    const popover = area("board-token-full-value-popover");
+    expect(popover.getAttribute("role")).toBe("dialog");
+    expect(area("board-token-full-value").getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+    // The 40-character decimal, entire. This is the whole point: the hero row
+    // shows `$1234567890123456789012345678901234.56` and every digit the
+    // formatter dropped is here rather than lost.
+    expect(popover.textContent).toContain(RAW_PRICE);
+  });
+
+  it("carries the whole name and ticker, which the identity row clamps", () => {
+    const symbol = "X".repeat(512);
+    render(
+      mount({
+        card: card({
+          row: hydratedRow({ baseTokenSymbol: symbol, baseTokenName: symbol }),
+        }),
+      }),
+    );
+    openPanel();
+    expect(area("board-token-full-value-popover").textContent).toContain(
+      symbol,
+    );
+  });
+
+  it("gives the panel initial focus, so a keyboard reader lands inside it", async () => {
+    render(mount());
+    openPanel();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(area("board-token-full-value-close"));
+    });
+  });
+
+  it("closes on Escape and restores focus to the trigger", async () => {
+    render(mount());
+    const trigger = openPanel();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(area("board-token-full-value-close"));
+    });
+
+    fireEvent.keyDown(area("board-token-full-value-popover"), {
+      key: "Escape",
+    });
+    expect(
+      document.querySelector('[data-vex-area="board-token-full-value-popover"]'),
+    ).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("does not let its own Escape close the board behind it", () => {
+    // The board modal is a native `<dialog>` listening for the same key. An
+    // Escape that propagated would take the whole board down with it, which
+    // is a reader losing their place to a control they opened to read one
+    // number.
+    const onBoardEscape = vi.fn();
+    render(
+      <div
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onBoardEscape();
+        }}
+      >
+        {mount()}
+      </div>,
+    );
+    openPanel();
+    fireEvent.keyDown(area("board-token-full-value-popover"), {
+      key: "Escape",
+    });
+    expect(onBoardEscape).not.toHaveBeenCalled();
+  });
+
+  it("keeps Tab and Shift+Tab inside the panel", async () => {
+    // THE PANEL IS A `role="dialog"` PAINTED OVER THE CARD'S OWN BUTTONS,
+    // which are still in the document after it. Without containment, Tab from
+    // the close button lands on the Spotlight trigger the reader cannot see -
+    // and an Escape from THERE is no longer this panel's to stop, so it
+    // reaches the board and closes it. This is the WAI modal-dialog pattern.
+    render(mount());
+    openPanel();
+    const popover = area("board-token-full-value-popover");
+    await waitFor(() => {
+      expect(document.activeElement).toBe(area("board-token-full-value-close"));
+    });
+
+    // jsdom does not move focus on a synthetic Tab, so what is observable
+    // HERE is the panel REFUSING to let the browser do it: the default action
+    // is prevented and focus is placed by the panel instead. The sequence
+    // itself is measured where a real engine can move focus, in
+    // `e2e/board-layout.spec.ts`.
+    for (const shiftKey of [false, true]) {
+      const moved = fireEvent.keyDown(document.activeElement ?? popover, {
+        key: "Tab",
+        shiftKey,
+        cancelable: true,
+      });
+      expect(moved).toBe(false);
+      expect(popover.contains(document.activeElement)).toBe(true);
+    }
+
+    // A key the panel does not own is left alone, so the trap cannot become a
+    // swallow-everything handler.
+    expect(
+      fireEvent.keyDown(document.activeElement ?? popover, {
+        key: "ArrowDown",
+        cancelable: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("says the values are shortened only when the card shortened one", () => {
+    // NAMED, NOT GENERIC. On a card that cut nothing the plain label is the
+    // truth; on one that did, "Show the full values" would leave a reader
+    // believing the figure in front of them is the figure.
+    render(mount());
+    expect(
+      area("board-token-full-value").getAttribute("aria-label"),
+    ).not.toMatch(/shortened/i);
+    expect(area("board-token-full-value").hasAttribute("data-shortened")).toBe(
+      false,
+    );
+
+    cleanup();
+    render(
+      mount({
+        card: card({
+          row: hydratedRow({
+            priceUsd: RAW_PRICE,
+            baseTokenSymbol: "X".repeat(512),
+          }),
+        }),
+      }),
+    );
+    const trigger = area("board-token-full-value");
+    expect(trigger.getAttribute("aria-label")).toMatch(/shortened/i);
+    expect(trigger.getAttribute("data-shortened")).toBe("true");
+    // The cut is marked where it happened, not only on the affordance.
+    expect(area("board-token-price").getAttribute("data-shortened")).toBe(
+      "true",
+    );
+    expect(area("board-token-ticker").getAttribute("data-shortened")).toBe(
+      "true",
+    );
+    // And the panel repeats it visibly, above the whole values.
+    fireEvent.click(trigger);
+    expect(area("board-token-full-value-notice").textContent).toMatch(
+      /shortened/i,
+    );
+  });
+
+  it("closes on its own close button too, and restores focus", async () => {
+    render(mount());
+    const trigger = openPanel();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(area("board-token-full-value-close"));
+    });
+    fireEvent.click(area("board-token-full-value-close"));
+    expect(
+      document.querySelector('[data-vex-area="board-token-full-value-popover"]'),
+    ).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 });
