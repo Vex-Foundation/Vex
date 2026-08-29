@@ -91,7 +91,16 @@ export const DRAINED_LEASE_CLASSES: readonly ProjectLeaseClass[] = [
   "dispatch",
 ];
 
-/** A held lease. `release` is idempotent. */
+/**
+ * A held lease. `release` is idempotent.
+ *
+ * The type is structural, so it does not by itself prove a handle came from
+ * this gate. `release` needs no such proof - it is a CLOSURE over the entry the
+ * acquisition created, so a hand-built object's `release` is simply its own
+ * function and can never reach these counters. `reclassifyProjectLease` is the
+ * one operation that takes a handle as an ARGUMENT, so it is the one that
+ * checks; see `issuedLeases`.
+ */
 export interface ProjectLease {
   readonly release: () => void;
   /** The class this lease is currently counted under. Moves on reclassification. */
@@ -104,11 +113,18 @@ export interface ProjectLease {
  * `released` is not an error: a lease whose owner already released it (a
  * cancellation racing the transition) has nothing to move, and the caller's
  * correct response is to carry on, not to throw on the approval path.
+ *
+ * `unknown_handle` is the refusal for an object this module did not issue. It
+ * is separate from `released` because the two mean opposite things: `released`
+ * says "your lease is finished, carry on", while `unknown_handle` says "that
+ * was never a lease" - a caller bug or a forgery, and the counters were not
+ * touched.
  */
 export type ProjectLeaseReclassification =
   | "reclassified"
   | "unchanged"
-  | "released";
+  | "released"
+  | "unknown_handle";
 
 /**
  * The answer to an acquisition request.
@@ -219,6 +235,7 @@ export function acquireProjectLease(
       collect(projectId, owner);
     },
   };
+  issuedLeases.add(handle);
   return { ok: true, lease: handle };
 }
 
@@ -228,6 +245,27 @@ interface MutableLease extends ProjectLease {
   current: ProjectLeaseClass;
   released: boolean;
 }
+
+/**
+ * THE HANDLES THIS MODULE ISSUED, and the only ones `reclassifyProjectLease`
+ * will act on.
+ *
+ * `ProjectLease` is a STRUCTURAL public type, so any object with a `release`
+ * and a `leaseClass` satisfies it, and reclassification reaches the private
+ * `MutableLease` fields by narrowing. Without this registry, a caller that
+ * passed a hand-built object - by mistake or by design - would name an
+ * arbitrary `projectId` and `current`, and the gate would obediently decrement
+ * a class the object never held. That corrupts the very counters a delete's
+ * drain waits on, so a wrong count here is a delete that hangs or a delete that
+ * proceeds over live work.
+ *
+ * A `WeakSet` rather than a brand property because it cannot be copied onto a
+ * forgery, and it holds no strong reference: a handle whose owner dropped it is
+ * collected exactly as before. Membership is never removed on release - a
+ * released handle is still one we issued, and `released` is the field that
+ * answers that question.
+ */
+const issuedLeases = new WeakSet<ProjectLease>();
 
 function decrement(entry: ProjectEntry, leaseClass: ProjectLeaseClass): void {
   entry.counts.set(leaseClass, Math.max(0, held(entry, leaseClass) - 1));
@@ -274,11 +312,26 @@ function wakeIfDrained(entry: ProjectEntry): void {
  * drained work behind a completed drain.
  *
  * `collect` is deliberately NOT called: the entry still holds this lease.
+ *
+ * ## The handle must be one WE issued
+ *
+ * The narrowing to `MutableLease` below is safe ONLY because `issuedLeases`
+ * has already proven this object came out of `acquireProjectLease`; see that
+ * registry's note for what an unchecked forgery would do to the drain
+ * counters. A handle we did not issue is refused with `unknown_handle` and
+ * changes nothing - the gate never throws at its callers, and the approval
+ * path in particular must not gain a new failure mode from a bad argument.
  */
 export function reclassifyProjectLease(
   lease: ProjectLease,
   to: ProjectLeaseClass,
 ): ProjectLeaseReclassification {
+  if (!issuedLeases.has(lease)) {
+    log.warn(
+      "[studio:lifecycle] reclassify refused a lease handle this gate did not issue",
+    );
+    return "unknown_handle";
+  }
   const handle = lease as MutableLease;
   if (handle.released) return "released";
   if (handle.current === to) return "unchanged";

@@ -119,6 +119,20 @@ export async function readArtifactProvenance(
  * (`origin: "adopted"`). See the module header for why this is not deferred to
  * the end of the run, and `ArtifactProvenanceOrigin` for why the two are not
  * the same fact.
+ *
+ * ## `written` NEVER DOWNGRADES TO `adopted`, and the guarantee is in the SQL
+ *
+ * Adoption is a NO-COLLISION marker; `written` is AUTHORSHIP PROOF, and only
+ * authorship proof authorizes the B0 teardown to DELETE an artifact's bytes. A
+ * later `adopted` commit over a `written` row would silently revoke a deletion
+ * right the project already holds, so the upsert KEEPS `written` when the
+ * existing row says `written`, whatever the incoming value.
+ *
+ * The reconciler already declines to make that call, but that is a caller's
+ * discipline and this is a durable invariant. Expressing it in the `DO UPDATE`
+ * makes it hold for every future caller, including ones not written yet. The
+ * reverse move (`adopted` -> `written`) is unrestricted: it is an UPGRADE, and
+ * it is exactly what happens when Vex genuinely rewrites the artifact.
  */
 export async function commitArtifactProvenance(
   projectId: string,
@@ -135,7 +149,11 @@ export async function commitArtifactProvenance(
            SET relative_path = EXCLUDED.relative_path,
                entry_hash = EXCLUDED.entry_hash,
                content_hash = EXCLUDED.content_hash,
-               origin = EXCLUDED.origin,
+               origin = CASE
+                          WHEN project_file_provenance.origin = 'written'
+                            THEN 'written'
+                          ELSE EXCLUDED.origin
+                        END,
                written_at = NOW()`,
         [
           projectId,

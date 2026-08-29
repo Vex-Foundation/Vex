@@ -25,6 +25,7 @@ import {
   reclassifyProjectLease,
   reopenProjectAdmission,
   resetProjectLifecycleGateForTests,
+  type ProjectLease,
 } from "../project-lifecycle-gate.js";
 
 const PROJECT = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
@@ -221,6 +222,35 @@ describe("reclassifyProjectLease", () => {
     // move, and the approval path must carry on rather than throw.
     expect(reclassifyProjectLease(lease.lease, "executingCall")).toBe("released");
     expect(heldProjectLeases(PROJECT, "executingCall")).toBe(0);
+  });
+
+  it("refuses a handle it did not issue, and touches no counter", () => {
+    // `ProjectLease` is a STRUCTURAL type, so an object literal satisfies it
+    // without ever having been acquired. Before the issued-handle registry,
+    // reclassification read such an object's private fields and decremented a
+    // class it never held - corrupting the very counts a delete's drain waits
+    // on. A real lease is held alongside it so the assertion proves the forgery
+    // changed nothing, rather than merely returning a string.
+    const real = acquireProjectLease(PROJECT, "executingCall");
+    if (!real.ok) throw new Error("expected a lease");
+
+    const forged: ProjectLease = {
+      leaseClass: "executingCall",
+      release: (): void => undefined,
+    };
+    expect(reclassifyProjectLease(forged, "pendingApproval")).toBe(
+      "unknown_handle",
+    );
+
+    expect(heldProjectLeases(PROJECT, "executingCall")).toBe(1);
+    expect(heldProjectLeases(PROJECT, "pendingApproval")).toBe(0);
+
+    // And the real handle still works: the refusal is about identity, not a
+    // gate that shut itself down.
+    expect(reclassifyProjectLease(real.lease, "pendingApproval")).toBe(
+      "reclassified",
+    );
+    real.lease.release();
   });
 
   it("keeps other projects' counts untouched", () => {

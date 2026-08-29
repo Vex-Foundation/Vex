@@ -12,7 +12,10 @@
  *     the transaction opens; once the authority commit is under way it runs to
  *     a terminal state whatever the renderer does, because a half-applied
  *     deletion is not an outcome this app offers;
- *   - LOGGING that names the outcome and never the project's folder.
+ *   - LOGGING that names the outcome and never the project's folder;
+ *   - WIRING the desktop trash capability. `project-delete.ts` owns the order
+ *     of operations and the safety guard around the trash, but not the
+ *     `electron` import that provides it - see `studio/os-trash.ts`.
  *
  * `expectedName` travels through to be revalidated against the stored row
  * inside the transaction. Validating it here instead would be a check against a
@@ -26,6 +29,7 @@ import {
   projectDeleteResultSchema,
   type ProjectDeleteResult,
 } from "@shared/schemas/projects.js";
+import { trashItemToOsTrash } from "../../studio/os-trash.js";
 import { deleteProject } from "../../studio/project-delete.js";
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
@@ -37,7 +41,12 @@ export function registerProjectsDeleteHandler(): () => void {
     inputSchema: projectDeleteInputSchema,
     outputSchema: projectDeleteResultSchema,
     handle: async (input, ctx): Promise<Result<ProjectDeleteResult>> => {
-      const outcome = await deleteProject(input, ctx.requestId, ctx.signal);
+      const outcome = await deleteProject(
+        input,
+        ctx.requestId,
+        { trashItem: trashItemToOsTrash },
+        ctx.signal,
+      );
       if (outcome.ok) {
         // The OUTCOME and the project id only. Never the slug, the folder, or
         // the artifact paths: a delete's log line is read in support bundles.

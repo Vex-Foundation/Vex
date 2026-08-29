@@ -17,11 +17,18 @@
  *
  * ## What is mocked, and why only these
  *
- * Three boundaries, all of them outside the behaviour under test: the desktop
- * runtime (`electron`), the main-process logger (which imports it), and the two
- * places that answer "where does this app keep things" - the compose connection
- * state, pointed at the lane's own container, and the configured projects root,
+ * Three boundaries, all of them outside the behaviour under test: the
+ * main-process logger (which imports the desktop runtime), and the two places
+ * that answer "where does this app keep things" - the compose connection state,
+ * pointed at the lane's own container, and the configured projects root,
  * pointed at a temp directory. Everything else is the production module.
+ *
+ * The OS TRASH is not mocked, it is INJECTED. `deleteProject` takes its trash
+ * capability as a dependency (`ProjectDeleteDeps`), and this file passes a fake
+ * through the same parameter production wires `studio/os-trash.ts` into. That
+ * is what keeps `electron` out of this module graph entirely, which is what
+ * lets the `test:studio-postgres` lane - where Electron is not installed - run
+ * the real composition at all.
  *
  * ## Why it is an `.int.test.ts` and not part of `pnpm --dir vex-app test`
  *
@@ -42,17 +49,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const runtime = vi.hoisted(() => ({
   /** The configured projects root, rewritten per test. */
   projectsRoot: "",
+  /**
+   * The injected OS trash. Not a module mock: this is handed to the production
+   * entry points as `deps.trashItem`, exactly where `trashItemToOsTrash` goes.
+   */
   trashItem: vi.fn<(target: string) => Promise<void>>(),
 }));
 
-vi.mock("electron", () => ({
-  app: {
-    getVersion: (): string => "0.0.0-test",
-    isPackaged: false,
-    getPath: (): string => tmpdir(),
-  },
-  shell: { trashItem: runtime.trashItem },
-}));
+/** The dependency bundle every call below passes. One fake, one seam. */
+const deps = { trashItem: runtime.trashItem };
 
 vi.mock("../../logger/index.js", () => ({
   log: {
@@ -131,6 +136,12 @@ import {
 } from "@vex-agent/engine/runtime/studio-settlement-bus.js";
 import { encodeStudioSettlement } from "@vex-agent/engine/core/approval-runtime/studio/settlement-codec.js";
 import { getStudioSettlementByApprovalId } from "@vex-agent/db/repos/approval-intents.js";
+// Types only: the executor chunk itself stays behind its loader seam, and an
+// `import type` is erased, so the stub below is checked against the real
+// contract without pulling the chunk into this file's module graph.
+import type { StudioExecution } from "@vex-agent/mcp/executor.js";
+import type { StudioToolCall } from "@vex-agent/mcp/admission.js";
+import type { ProjectScope } from "@vex-agent/mcp/project-scope.js";
 import { renderStudioProtocolsDoc } from "@vex-agent/studio/instructions/protocols-doc.js";
 
 import { ok, type Result, type VexError } from "@shared/ipc/result.js";
@@ -546,24 +557,31 @@ async function seedProjectWallets(projectId: string): Promise<void> {
  * reservation, the enqueue transaction and its project gate, the durable
  * intent, the broker park, the lease reclassification, and the settlement
  * mapping - is the production code path.
+ *
+ * The double is TYPED against the real chunk's contract instead of cast into
+ * place. `@vex-agent/mcp/executor.js` exports exactly one value, so an object
+ * literal carrying a correctly typed `executeStudioTool` already IS a
+ * `StudioExecutorModule`. Typing it is what keeps the fake honest: it has to
+ * echo the caller's `toolCallId`, which the previous double cast let it omit.
  */
 function stubPendingApprovalExecutor(): void {
-  setStudioExecutorLoaderForTests(
-    () =>
-      Promise.resolve({
-        executeStudioTool: () =>
-          Promise.resolve({
-            result: {
-              success: false,
-              output: "This action needs approval.",
-              pendingApproval: true,
-              actionKind: "user_wallet_broadcast",
-            },
-            durationMs: 1,
-          }),
-      }) as unknown as ReturnType<
-        Parameters<typeof setStudioExecutorLoaderForTests>[0] & (() => never)
-      >,
+  setStudioExecutorLoaderForTests(() =>
+    Promise.resolve({
+      executeStudioTool: (
+        _scope: ProjectScope,
+        call: StudioToolCall,
+      ): Promise<StudioExecution> =>
+        Promise.resolve({
+          result: {
+            success: false,
+            output: "This action needs approval.",
+            pendingApproval: true,
+            actionKind: "user_wallet_broadcast",
+          },
+          durationMs: 1,
+          toolCallId: call.toolCallId,
+        }),
+    }),
   );
 }
 
@@ -607,6 +625,7 @@ describe("deleteProject: the filesystem teardown", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
         "corr-teardown",
+        deps,
       ),
     );
 
@@ -683,6 +702,7 @@ describe("deleteProject: the filesystem teardown", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
         "corr-drift",
+        deps,
       ),
     );
 
@@ -710,6 +730,7 @@ describe("deleteProject: the filesystem teardown", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
         "corr-drift-2",
+        deps,
       ),
     );
     expect(again.outcome).toBe("already_removed");
@@ -737,6 +758,7 @@ describe("deleteProject: the filesystem teardown", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: true, expectedName: PROJECT_NAME },
         "corr-drift-mixed",
+        deps,
       ),
     );
 
@@ -782,6 +804,7 @@ describe("deleteProject: the filesystem teardown", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
         "corr-toml",
+        deps,
       ),
     );
 
@@ -812,6 +835,7 @@ describe("deleteProject: the trash step", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: true, expectedName: PROJECT_NAME },
         "corr-trash-fail",
+        deps,
       ),
     );
 
@@ -851,6 +875,7 @@ describe("deleteProject: the trash step", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: true, expectedName: PROJECT_NAME },
         "corr-resume-1",
+        deps,
       ),
     );
     expect(first.outcome).toBe("cleanup_pending");
@@ -861,6 +886,7 @@ describe("deleteProject: the trash step", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
         "corr-resume-2",
+        deps,
       ),
     );
 
@@ -878,6 +904,7 @@ describe("deleteProject: the trash step", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
         "corr-resume-3",
+        deps,
       ),
     );
     expect(third.outcome).toBe("already_removed");
@@ -897,6 +924,7 @@ describe("deleteProject: the drain", () => {
         await deleteProject(
           { projectId: project.projectId, alsoTrashFolder: true, expectedName: PROJECT_NAME },
           "corr-drain",
+          deps,
         ),
       );
 
@@ -995,6 +1023,7 @@ describe("deleteProject: the drain", () => {
         await deleteProject(
           { projectId: project.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
           "corr-parked",
+          deps,
         ),
       );
 
@@ -1161,6 +1190,7 @@ describe("deleteProject: bytes Vex cannot prove it authored", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
         "corr-edited-json",
+        deps,
       ),
     );
 
@@ -1211,6 +1241,7 @@ describe("deleteProject: bytes Vex cannot prove it authored", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
         "corr-edited-toml",
+        deps,
       ),
     );
 
@@ -1271,6 +1302,7 @@ describe("deleteProject: bytes Vex cannot prove it authored", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
         "corr-unknown-keys",
+        deps,
       ),
     );
 
@@ -1307,6 +1339,7 @@ describe("deleteProject: bytes Vex cannot prove it authored", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
         "corr-already-absent",
+        deps,
       ),
     );
 
@@ -1388,6 +1421,7 @@ describe("deleteProject: bytes Vex cannot prove it authored", () => {
       await deleteProject(
         { projectId: project.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
         "corr-adopted",
+        deps,
       ),
     );
 
@@ -1432,7 +1466,7 @@ describe("deleteProject: the startup repair sweep", () => {
     // on disk, the obligation recorded.
     await tombstoneWithPendingCleanup(project.projectId, "pending");
 
-    await repairUnfinishedProjectCleanups();
+    await repairUnfinishedProjectCleanups(deps);
 
     expect(await exists(path.join(project.directory, ".vex/protocols.md"))).toBe(false);
     expect(await readFile(path.join(project.directory, "AGENTS.md"), "utf8")).toBe(
@@ -1447,7 +1481,7 @@ describe("deleteProject: the startup repair sweep", () => {
 
     // THE SECOND SWEEP DOES NOTHING. A `done` row is not in the unfinished list,
     // so a repeat start cannot re-run a teardown over a user's restored files.
-    await repairUnfinishedProjectCleanups();
+    await repairUnfinishedProjectCleanups(deps);
     expect(await readTombstone(project.projectId)).toMatchObject({
       deleted: true,
       cleanup_state: "done",
@@ -1473,7 +1507,7 @@ describe("deleteProject: the startup repair sweep", () => {
       projects.push(project);
     }
 
-    await repairUnfinishedProjectCleanups();
+    await repairUnfinishedProjectCleanups(deps);
 
     const attempts = await Promise.all(
       projects.map(async (project) => (await readTombstone(project.projectId)).cleanup_attempts),
@@ -1495,7 +1529,7 @@ describe("deleteProject: the startup repair sweep", () => {
       PROJECT_CLEANUP_STICKY_ATTEMPTS - 1,
     ]);
 
-    await repairUnfinishedProjectCleanups();
+    await repairUnfinishedProjectCleanups(deps);
 
     const row = await readTombstone(project.projectId);
     expect(row.cleanup_attempts).toBe(PROJECT_CLEANUP_STICKY_ATTEMPTS);

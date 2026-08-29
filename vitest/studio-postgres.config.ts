@@ -18,15 +18,6 @@ export default defineConfig({
       // that test and the modules it drives import through `@shared`.
       "@shared": resolve(root, "vex-app/src/shared"),
       "@vex-lib": resolve(root, "src/lib"),
-      // ONE module identity for `electron`. The package is installed only under
-      // `vex-app/node_modules`, so a bare `electron` specifier resolves
-      // differently depending on whether the importer sits under `vex-app/` or
-      // under `src/`. `vi.mock("electron")` keys on the RESOLVED id, so without
-      // this the desktop-runtime double applied to the test file and NOT to the
-      // main-process module under test - silently: `shell` was then `undefined`,
-      // every `shell.trashItem` call threw inside a `try`, and a test asserting
-      // "the trash failed" passed for entirely the wrong reason.
-      electron: resolve(root, "vex-app/node_modules/electron"),
     },
   },
   test: {

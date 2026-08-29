@@ -67,8 +67,6 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 
-import { shell } from "electron";
-
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import type {
   ProjectDeleteInput,
@@ -108,7 +106,21 @@ import {
   type ProjectDeletionToken,
 } from "./project-lifecycle-gate.js";
 import { projectNotFoundError } from "./project-errors.js";
+import type { TrashItem } from "./os-trash.js";
 import { resolveProjectDirectory, resolveProjectsRoot } from "./projects-root.js";
+
+/**
+ * The collaborators this module does not own.
+ *
+ * One entry today, and it earns the interface rather than a bare parameter: the
+ * trash is the only DESKTOP-RUNTIME capability on an otherwise pure
+ * database-plus-filesystem path, and naming it as a dependency is what keeps
+ * `electron` out of this module's import graph. See `os-trash.ts`.
+ */
+export interface ProjectDeleteDeps {
+  /** Move an absolute path to the OS trash. Rejects when the platform refuses. */
+  readonly trashItem: TrashItem;
+}
 
 /**
  * How long a delete waits for in-flight calls.
@@ -133,6 +145,7 @@ export const PROJECT_CLEANUP_STICKY_ATTEMPTS = 5;
 export async function deleteProject(
   input: ProjectDeleteInput,
   correlationId: string,
+  deps: ProjectDeleteDeps,
   signal?: AbortSignal,
 ): Promise<Result<ProjectDeleteResult, VexError>> {
   const { projectId } = input;
@@ -189,6 +202,7 @@ export async function deleteProject(
       outcome.cleanupState,
       token,
       correlationId,
+      deps,
     );
     return ok(
       resumed.finished
@@ -211,6 +225,7 @@ export async function deleteProject(
     outcome.cleanupState,
     token,
     correlationId,
+    deps,
   );
   return ok(
     cleanup.finished
@@ -246,11 +261,13 @@ async function runCleanup(
   cleanupState: Exclude<ProjectCleanupState, "none" | "done">,
   token: ProjectDeletionToken,
   correlationId: string,
+  deps: ProjectDeleteDeps,
 ): Promise<CleanupReport> {
   return enqueueStudioRender<CleanupReport>({
     projectId,
     kind: "repair",
-    run: () => runCleanupJob(projectId, slug, cleanupState, token, correlationId),
+    run: () =>
+      runCleanupJob(projectId, slug, cleanupState, token, correlationId, deps),
     // A repair is never superseded, so this is unreachable in practice; it
     // reports "nothing was done" rather than claiming a cleanup that did not run.
     whenSuperseded: () => ({
@@ -268,6 +285,7 @@ async function runCleanupJob(
   cleanupState: Exclude<ProjectCleanupState, "none" | "done">,
   token: ProjectDeletionToken,
   correlationId: string,
+  deps: ProjectDeleteDeps,
 ): Promise<CleanupReport> {
   // The administrative lease. Admission is closed for this project, so an
   // ordinary render acquisition would be refused - which is the point.
@@ -411,7 +429,12 @@ async function runCleanupJob(
 
     let trash: ProjectTrashOutcome = "not_requested";
     if (cleanupState === "trash_pending") {
-      trash = await trashProjectFolder(rootOutcome.data, directory, correlationId);
+      trash = await trashProjectFolder(
+        rootOutcome.data,
+        directory,
+        correlationId,
+        deps.trashItem,
+      );
     }
 
     // The folder is only "clean" when both halves are. A failed trash keeps the
@@ -510,11 +533,13 @@ async function failCleanup(
 /**
  * Move the project folder to the OS trash.
  *
- * FIRST use of `shell.trashItem` in this app, on a destructive path, so the
- * guard is explicit: the directory's REALPATH must still resolve to a direct
- * child of the projects root's realpath. That is what stops a symlinked slug
- * directory - or a root that moved between the tombstone and this call - from
- * turning "trash the project" into "trash something else".
+ * FIRST use of an OS trash in this app, on a destructive path, so the guard is
+ * explicit: the directory's REALPATH must still resolve to a direct child of
+ * the projects root's realpath. That is what stops a symlinked slug directory -
+ * or a root that moved between the tombstone and this call - from turning
+ * "trash the project" into "trash something else". THE GUARD LIVES HERE, with
+ * the caller that knows the root, and never travels with the injected
+ * capability.
  *
  * It is the TRASH, never an unlink: the user can get their files back.
  * A failure here NEVER rolls back the authority commit; the project is deleted
@@ -524,6 +549,7 @@ async function trashProjectFolder(
   configuredRoot: string,
   directory: string,
   correlationId: string,
+  trashItem: TrashItem,
 ): Promise<ProjectTrashOutcome> {
   let resolvedDirectory: string;
   let resolvedRoot: string;
@@ -556,7 +582,7 @@ async function trashProjectFolder(
   }
 
   try {
-    await shell.trashItem(resolvedDirectory);
+    await trashItem(resolvedDirectory);
     return "trashed";
   } catch (cause) {
     log.warn(
@@ -595,7 +621,9 @@ function isMissing(cause: unknown): boolean {
  * next start or for the user to ask again, and its attempt count is what makes
  * the failure visible rather than silent.
  */
-export async function repairUnfinishedProjectCleanups(): Promise<void> {
+export async function repairUnfinishedProjectCleanups(
+  deps: ProjectDeleteDeps,
+): Promise<void> {
   const pending = await listUnfinishedProjectCleanups();
   if (!pending.ok) {
     log.warn(
@@ -624,6 +652,7 @@ export async function repairUnfinishedProjectCleanups(): Promise<void> {
       tombstone.cleanupState,
       token,
       `startup-cleanup-${tombstone.projectId}`,
+      deps,
     );
     log.info(
       `[studio:delete] startup cleanup projectId=${tombstone.projectId} `
