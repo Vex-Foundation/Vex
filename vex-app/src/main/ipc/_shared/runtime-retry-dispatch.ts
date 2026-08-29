@@ -90,11 +90,21 @@ const RETRY_OWNER_PREFIX = "ipc-retry-";
  * run over exactly the outcome the gate exists to refuse. The window was small
  * and the loss is a double spend, which is the trade this rule does not make.
  *
- * So the read, the auto-retry wake cancellation and the claim now commit
+ * So the read, the claim and the auto-retry wake cancellation now commit
  * together or not at all. A money writer either commits before the read (and
  * the gate sees it and refuses) or waits behind the lock until the claim is
  * durable. There is no third ordering, which is what the two-client
  * integration test asserts.
+ *
+ * ## Lock ORDER inside that transaction
+ *
+ * The claim runs BEFORE the wake cancellation, matching the order every other
+ * claimant uses: `mission_runs`, then `runner_leases`, then
+ * `loop_wake_requests`. Cancelling first inverted that order and made a real
+ * deadlock reachable whenever the run advanced to `paused_wake` between this
+ * dispatcher's outside read and the transaction. `gatedClaimUnderSessionLock`
+ * spells out the interleaving; the regression is pinned live in
+ * `recovery-reverse-lock-order.int.test.ts`.
  *
  * ## The hold is still short
  *
@@ -152,30 +162,57 @@ export async function gatedClaimUnderSessionLock(input: {
       };
     }
 
-    if (input.status === "paused_error") {
-      // A human Recover supersedes any scheduled auto-retry. Inside the gate,
-      // so a refused or lost claim does not leave the run with its retry
-      // cancelled AND no recovery performed. A wake already CONSUMED by the
-      // executor cannot be cancelled; there `claimRunForAutoRetry`'s own
-      // atomic re-check is the authority and will skip.
+    // THE CLAIM COMES FIRST, and the order is load-bearing, not stylistic.
+    //
+    // `claimRunLeaseAndFlipToRunningWith` locks the `mission_runs` row, then
+    // the lease row, then pending `loop_wake_requests` rows - in that order,
+    // and every other claimant in the system follows it. Cancelling the
+    // auto-retry wake BEFORE the claim took those wake rows first and inverted
+    // it, which is a textbook lock-order inversion with a reachable deadlock:
+    //
+    //   1. this dispatcher reads `paused_error` OUTSIDE the transaction;
+    //   2. the run advances to `paused_wake` before the gate opens;
+    //   3. a wake or Continue claimant locks the run row and moves toward the
+    //      wake rows;
+    //   4. this transaction, still carrying the stale `paused_error`, locks
+    //      the pending wake row and then waits on the run row;
+    //   5. the claimant waits on the wake row this transaction holds.
+    //
+    // Postgres breaks that cycle by aborting one side, which turns an ordinary
+    // lost race into a failed control action. Claiming first removes the cycle
+    // entirely: a stale Recover simply loses the status check and returns
+    // `status_mismatch` having touched no wake row at all.
+    const claim = await claimRunLeaseAndFlipToRunningWith(client, {
+      sessionId: input.sessionId,
+      missionRunId: input.runId,
+      // `[status]` - either `["paused_error"]` (the normal Recover path) or
+      // `["running"]` (the dead-lease reclaim path). Never both: only one of
+      // the two branches reaches here for a given call. This is also the
+      // revalidation that makes the outside read safe to be stale.
+      fromStatuses: [input.status],
+      ownerId: input.ownerId,
+      processKind: "electron_main",
+      ttlMs: LEASE_TTL_MS,
+    });
+
+    // A human Recover supersedes any scheduled auto-retry - but ONLY once the
+    // claim has actually won, and only for a run that really was parked on an
+    // error. `previousStatus` is what the claim OBSERVED under the row lock,
+    // never the status this dispatcher read outside the transaction; keying on
+    // the latter is what let a stale call cancel a wake belonging to a
+    // different scheduling cycle.
+    //
+    // A `paused_wake` claim needs nothing here: the claim cancels that run's
+    // own wake itself, under the same lock order. And a wake already CONSUMED
+    // by the executor cannot be cancelled by anyone - there
+    // `claimRunForAutoRetry`'s atomic re-check is the authority and will skip.
+    if (claim.outcome === "claimed" && claim.previousStatus === "paused_error") {
       await cancelForSessionWith(
         client,
         input.sessionId,
         "superseded_by_manual_recover",
       );
     }
-
-    const claim = await claimRunLeaseAndFlipToRunningWith(client, {
-      sessionId: input.sessionId,
-      missionRunId: input.runId,
-      // `[status]` - either `["paused_error"]` (the normal Recover path) or
-      // `["running"]` (the dead-lease reclaim path). Never both: only one of
-      // the two branches reaches here for a given call.
-      fromStatuses: [input.status],
-      ownerId: input.ownerId,
-      processKind: "electron_main",
-      ttlMs: LEASE_TTL_MS,
-    });
     return { kind: "claimed", claim };
   });
 }

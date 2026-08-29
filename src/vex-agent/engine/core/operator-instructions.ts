@@ -192,6 +192,19 @@ export async function addOperatorInstruction(
     // acknowledgement the operator reads. It is an engine notice row, never
     // assistant prose - the agent did not say this, the runtime did.
     visibility: "user",
+    // The disposition IS persisted here, deliberately: this row and the
+    // instruction row are two records of one event, and an audit forced to
+    // infer the ack's disposition from its prose would be reading rendered
+    // text back as data.
+    //
+    // It is equally deliberately NOT PROJECTED onto the ack DTO. The mapper
+    // reads `payload -> 'disposition'` only for the `operator_interrupt` row
+    // (`extractInterruptDisposition` in the app's messages mapper). This row's
+    // own TEXT already states what happened, so projecting the field as well
+    // would give the renderer two sources for one fact and a chance to render
+    // them differently - which is the exact class of contradiction the typed
+    // disposition was introduced to end. The instruction row is where the
+    // renderer's delivery words come from.
     payload: { operatorInstructionAck: true, disposition },
   } as const;
 

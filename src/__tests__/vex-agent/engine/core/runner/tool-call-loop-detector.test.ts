@@ -109,16 +109,37 @@ describe("the signature", () => {
   });
 
   /**
-   * What the NUL separator buys. Without a separator that cannot occur in the
-   * canonical form, a tool named "ab" whose output is "c" and one named "a"
-   * whose output is "bc" would hash identically, and the detector would count
-   * two unrelated calls as a repeat - which, five times over, stops a run.
+   * What the NUL separator actually buys, with a pair that genuinely collides
+   * without it.
+   *
+   * The fields are name, canonical args, the success flag, then output. A
+   * NUMERIC argument canonicalises to bare digits, so a character can be moved
+   * across the name/args boundary with nothing else changing:
+   *
+   *     "a"  + "12" + "ok" + "x"   ->  a12okx
+   *     "a1" + "2"  + "ok" + "x"   ->  a12okx
+   *
+   * Concatenated with no delimiter these are byte-identical, so an unseparated
+   * signature would treat two unrelated calls as the same call - and five of
+   * those STOP A RUN. The NUL cannot occur in either the JSON-encoded canonical
+   * form or a bare number, so it is the thing that keeps them apart.
+   *
+   * (An earlier version of this test used "ab"+"c" against "a"+"bc", which
+   * proved nothing: the args and the flag sit between name and output, so
+   * those two differ with or without a separator.)
    */
-  it("cannot be made to collide by shifting a field boundary", () => {
-    expect(
-      toolCallSignature(call({ toolName: "ab", args: {}, output: "c" })),
-    ).not.toBe(
-      toolCallSignature(call({ toolName: "a", args: {}, output: "bc" })),
+  it("would collide across a field boundary if the separator were removed", () => {
+    const shiftedLeft = call({ toolName: "a", args: 12, success: true, output: "x" });
+    const shiftedRight = call({ toolName: "a1", args: 2, success: true, output: "x" });
+
+    // The precondition this test rests on: identical once concatenated.
+    const concatenated = (o: CompletedToolCallObservation) =>
+      `${o.toolName}${canonicalize(o.args)}${o.success ? "ok" : "err"}${o.output}`;
+    expect(concatenated(shiftedLeft)).toBe(concatenated(shiftedRight));
+
+    // And distinct once the separator is in place.
+    expect(toolCallSignature(shiftedLeft)).not.toBe(
+      toolCallSignature(shiftedRight),
     );
   });
 });
