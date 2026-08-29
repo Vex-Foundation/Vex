@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ChatSubmitResult } from "@shared/schemas/chat.js";
+import { err, ok } from "@shared/ipc/result.js";
+import type {
+  RuntimeActivity,
+  RuntimeStateDto,
+} from "@shared/schemas/runtime.js";
 import {
   FREE_TEXT_DISALLOWED,
   gatedReason,
@@ -176,11 +181,34 @@ describe("free-text gate", () => {
   });
 });
 
+/**
+ * A REAL runtime DTO, not a partial cast to `never`. The cast let a fixture
+ * omit every field the reader might grow to touch and still type-check, which
+ * is exactly the drift a projection test exists to catch.
+ */
+function runtimeState(activity: RuntimeActivity): RuntimeStateDto {
+  return {
+    sessionId: "00000000-0000-4000-8000-0000000000a1",
+    hasActiveRun: false,
+    missionRunId: null,
+    status: null,
+    stopReason: null,
+    lastCheckpointAt: null,
+    startedAt: null,
+    iterationCount: null,
+    leaseActive: activity.kind === "running",
+    leaseExpiresAt: null,
+    pendingControlKind: null,
+    stoppable: activity.kind !== "none",
+    activity,
+  };
+}
+
 describe("readActivity", () => {
   it("reads the projection main decided", () => {
-    expect(
-      readActivity({ ok: true, data: { activity: { kind: "running" } } as never }),
-    ).toEqual({ kind: "running" });
+    expect(readActivity(ok(runtimeState({ kind: "running" })))).toEqual({
+      kind: "running",
+    });
   });
 
   // NULL IS NOT IDLE. An unread or failed runtime state must not let a surface
@@ -189,7 +217,17 @@ describe("readActivity", () => {
   it("returns null - never an idle activity - when the state is unread or failed", () => {
     expect(readActivity(undefined)).toBeNull();
     expect(
-      readActivity({ ok: false, error: { code: "x", message: "y" } } as never),
+      readActivity(
+        err({
+          code: "internal.unexpected",
+          domain: "runtime",
+          message: "Unable to load runtime state.",
+          retryable: true,
+          userActionable: false,
+          redacted: true,
+          correlationId: "corr-1",
+        }),
+      ),
     ).toBeNull();
   });
 });

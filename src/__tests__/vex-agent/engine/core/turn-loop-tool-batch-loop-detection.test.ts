@@ -23,8 +23,22 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { definedValue } from "../../../_test-value-guards.js";
+
+/**
+ * The single argument `persistBatchTranscript` receives, narrowed to the two
+ * fields these tests read. Declaring it on the MOCK is what lets `mock.calls`
+ * carry a real type, so the accessor below needs no cast to reach them.
+ */
+interface PersistedBatchArg {
+  readonly executedCalls: ReadonlyArray<{ readonly id: string }>;
+  readonly executedResults: ReadonlyArray<{ readonly output: string }>;
+}
+
 const dispatchTool = vi.fn();
-const persistBatchTranscript = vi.fn().mockResolvedValue(undefined);
+const persistBatchTranscript = vi
+  .fn<(batch: PersistedBatchArg, ...rest: unknown[]) => Promise<void>>()
+  .mockResolvedValue(undefined);
 const appendEngineMessage = vi.fn().mockResolvedValue({ id: 1, role: "system" });
 const enqueueApprovalIntent = vi.fn();
 const parkTurnOnUserForm = vi.fn();
@@ -54,7 +68,9 @@ vi.mock("@vex-agent/engine/core/turn-loop-tool-batch/results.js", async (
   importOriginal,
 ) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  persistBatchTranscript: (...args: unknown[]) => persistBatchTranscript(...args),
+  persistBatchTranscript: (
+    ...args: Parameters<typeof persistBatchTranscript>
+  ) => persistBatchTranscript(...args),
 }));
 
 const { processTurnToolBatch } = await import(
@@ -76,18 +92,25 @@ const { TOOL_CALL_LOOP_CORRECTION_MESSAGE_TYPE } = await import(
 
 import type { Message } from "@vex-agent/db/repos/messages.js";
 import type { ToolCallLoopDetector } from "@vex-agent/engine/core/runner/tool-call-loop-detector.js";
+import type { EngineContext } from "@vex-agent/engine/types/engine-context.js";
 
-function context() {
+/**
+ * A REAL `EngineContext`, not a cast bag. The cast hid which fields the batch
+ * orchestrator actually requires, so a context that drifted out of shape would
+ * have kept type-checking here and failed only at runtime.
+ */
+function context(): EngineContext {
   return {
     sessionId: "session-1",
     sessionKind: "mission",
     sessionPermission: "full",
     missionId: "mission-1",
     missionRunId: "run-1",
-    loadedDocuments: new Map(),
+    selectedEvmWallet: null,
+    selectedSolanaWallet: null,
+    loadedDocuments: new Map<string, string>(),
     walletPolicy: { kind: "none" },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
+  };
 }
 
 /** N copies of the SAME call - same name, same arguments, distinct ids. */
@@ -117,13 +140,12 @@ async function runBatch(args: {
   });
 }
 
-function persisted(callIndex = 0): {
-  executedCalls: Array<{ id: string }>;
-  executedResults: Array<{ output: string }>;
-} {
-  const call = persistBatchTranscript.mock.calls[callIndex];
-  if (call === undefined) throw new Error("persistBatchTranscript not called");
-  return call[0] as never;
+/** The batch argument of the `callIndex`-th persist call, typed by the mock. */
+function persisted(callIndex = 0): PersistedBatchArg {
+  return definedValue(
+    persistBatchTranscript.mock.calls[callIndex],
+    `persistBatchTranscript call ${callIndex}`,
+  )[0];
 }
 
 beforeEach(() => {
@@ -191,8 +213,12 @@ describe("strike one - seven identical calls in ONE batch", () => {
     expect(live?.content).toBe(cue);
 
     // Ordering: the cue is written after the batch transcript, never before.
-    expect(persistBatchTranscript.mock.invocationCallOrder[0])
-      .toBeLessThan(appendEngineMessage.mock.invocationCallOrder[0]!);
+    expect(persistBatchTranscript.mock.invocationCallOrder[0]).toBeLessThan(
+      definedValue(
+        appendEngineMessage.mock.invocationCallOrder[0],
+        "appendEngineMessage first invocation order",
+      ),
+    );
   });
 });
 

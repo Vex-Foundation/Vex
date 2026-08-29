@@ -8,32 +8,28 @@
  * mapper output shape directly.
  */
 
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-  type MockedFunction,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { SessionMessageDto } from "@shared/schemas/messages.js";
 
 /**
- * The mock keeps `pg.Client.query`'s call signature AND vitest's mock surface.
- * Casting to the bare function type erased `mockResolvedValueOnce`, so every
- * arrangement in this file was an unchecked type error carried in the ratchet
- * baseline; `MockedFunction` keeps both halves and the arrangements are checked
- * again.
+ * `pg.Client.query`'s call signature, handed to `vi.fn` as its type argument.
+ *
+ * Two earlier shapes were wrong in opposite directions. Casting to the bare
+ * function type erased `mockResolvedValueOnce`, so every arrangement in this
+ * file was an unchecked type error carried in the ratchet baseline. Casting
+ * through `unknown` to `MockedFunction` restored the mock surface but threw
+ * away the checking again - a double assertion tells the compiler nothing was
+ * verified. Passing the signature to `vi.fn` gives both halves with NO cast:
+ * the arrangements are checked, and so are the call sites.
  */
-type QueryFn = MockedFunction<
-  (
-    text: string,
-    params?: readonly unknown[],
-  ) => Promise<{ rows: ReadonlyArray<Record<string, unknown>> }>
->;
+type QuerySignature = (
+  text: string,
+  params?: readonly unknown[],
+) => Promise<{ rows: ReadonlyArray<Record<string, unknown>> }>;
 
 const mocks = vi.hoisted(() => ({
-  query: vi.fn() as unknown as QueryFn,
+  query: vi.fn<QuerySignature>(),
   connect: vi.fn(),
   end: vi.fn(),
   buildPoolConfig: vi.fn(),
@@ -63,6 +59,22 @@ vi.mock("../db-config.js", () => ({
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
 const { getMessageTail, listMessages } = await import("../messages-db.js");
+
+/**
+ * The one row a single-row tail must have produced, or a failure that says so.
+ *
+ * A non-null assertion here asserts nothing: when the projection returns no
+ * rows the test dies on "cannot read properties of undefined" with no clue
+ * which expectation was being made. This names the missing thing instead, and
+ * narrows honestly.
+ */
+function onlyItem(items: readonly SessionMessageDto[]): SessionMessageDto {
+  const first = items[0];
+  if (first === undefined) {
+    throw new Error("expected the tail to project exactly one row, got none");
+  }
+  return first;
+}
 
 const SESSION = "00000000-0000-4000-8000-00000000abcd";
 
@@ -371,8 +383,9 @@ describe("messages-db mapper", () => {
     const result = await getMessageTail(SESSION, 1);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.data.items[0]!.kind).toBe("steering");
-    expect(result.data.items[0]!.interruptDisposition).toBe("queued_interrupt");
+    const row = onlyItem(result.data.items);
+    expect(row.kind).toBe("steering");
+    expect(row.interruptDisposition).toBe("queued_interrupt");
   });
 
   it("projects null for an unrecognised disposition rather than a loose string", async () => {
@@ -396,7 +409,7 @@ describe("messages-db mapper", () => {
     const result = await getMessageTail(SESSION, 1);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.data.items[0]!.interruptDisposition).toBeNull();
+    expect(onlyItem(result.data.items).interruptDisposition).toBeNull();
   });
 
   /**
@@ -425,8 +438,9 @@ describe("messages-db mapper", () => {
     const result = await getMessageTail(SESSION, 1);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.data.items[0]!.kind).toBe("operator_ack");
-    expect(result.data.items[0]!.interruptDisposition).toBeNull();
+    const ackRow = onlyItem(result.data.items);
+    expect(ackRow.kind).toBe("operator_ack");
+    expect(ackRow.interruptDisposition).toBeNull();
   });
 
   // M6: the engine's durable acknowledgement of an operator instruction gets
@@ -458,7 +472,7 @@ describe("messages-db mapper", () => {
     const result = await getMessageTail(SESSION, 1);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.data.items[0]!.kind).toBe("operator_ack");
+    expect(onlyItem(result.data.items).kind).toBe("operator_ack");
     expect(result.data.items[0]).not.toHaveProperty("metadata");
   });
 

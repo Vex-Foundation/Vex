@@ -18,6 +18,8 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import { definedValue } from "../../../../_test-value-guards.js";
+
 const mockMissionRunsUpdateStatus = vi.fn();
 const mockMissionRunsUpdateStatusIfNotTerminal = vi.fn().mockResolvedValue(true);
 const mockMissionsSetStatus = vi.fn();
@@ -85,8 +87,10 @@ describe("finalizeMissionRunStatus - tool_call_loop", () => {
 
     expect(mockMissionRunsUpdateStatus).not.toHaveBeenCalled();
     expect(mockMissionRunsUpdateStatusIfNotTerminal).toHaveBeenCalledTimes(1);
-    const [runId, status, reason, payload] =
-      mockMissionRunsUpdateStatusIfNotTerminal.mock.calls[0]!;
+    const [runId, status, reason, payload] = definedValue(
+      mockMissionRunsUpdateStatusIfNotTerminal.mock.calls[0],
+      "updateStatusIfNotTerminal first call",
+    );
     expect(runId).toBe("run-1");
     expect(status).toBe("paused_error");
     expect(reason).toBe("tool_call_loop");
@@ -102,8 +106,10 @@ describe("finalizeMissionRunStatus - tool_call_loop", () => {
     // every pass, and it is why this cause is not one-click retryable.
     await finalizeMissionRunStatus("mission-1", "run-1", "session-1", "tool_call_loop");
 
-    const payload = mockMissionRunsUpdateStatusIfNotTerminal.mock
-      .calls[0]![3] as { summary: string };
+    const payload = definedValue(
+      mockMissionRunsUpdateStatusIfNotTerminal.mock.calls[0],
+      "updateStatusIfNotTerminal first call",
+    )[3] as { summary: string };
     expect(payload.summary).toContain("did execute");
     expect(payload.summary).toContain("review the transcript");
   });
