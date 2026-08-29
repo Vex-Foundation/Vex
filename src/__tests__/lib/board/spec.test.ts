@@ -41,7 +41,7 @@ import {
   MAXIMAL_LATIN_DOCUMENT_BYTES,
   MAXIMAL_TWO_BYTE_DOCUMENT_BYTES,
   MAXIMAL_THREE_BYTE_DOCUMENT_BYTES,
-  MAXIMAL_THREE_BYTE_DOCUMENT_OVERSHOOT_BYTES,
+  MAXIMAL_THREE_BYTE_DOCUMENT_HEADROOM_BYTES,
   MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES,
   maximalBoardSpec,
 } from "./maximal-board-spec.js";
@@ -886,51 +886,80 @@ describe("the all-fields-max document", () => {
     }
   });
 
-  it("fits the budget in a two-byte script, which is the case it is sized against", () => {
+  it("fits the budget in a two-byte script, well inside the CJK case it is sized against", () => {
     // Cyrillic, Greek and Hebrew are ordinary scripts a user may ask for
-    // analysis in, and a board written in one costs twice a Latin board. THIS
-    // is the measurement behind the constant; the exact figure is printed so a
-    // reviewer reading a failure sees the new worst case, not just a boolean.
+    // analysis in, and a board written in one costs twice a Latin board. This
+    // was the sizing case until the CJK class was measured; it is now an
+    // everyday figure well inside the ceiling. The exact number is asserted so
+    // a reviewer reading a failure sees the new worst case, not just a boolean.
     const budget = checkBoardSpecByteBudget(maximalBoardSpec({ script: "twoByte" }));
     expect(budget.withinBudget).toBe(true);
     expect(budget.byteLength).toBe(MAXIMAL_TWO_BYTE_DOCUMENT_BYTES);
     expect(BOARD_SPEC_MAX_BYTES - budget.byteLength).toBe(
       MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES,
     );
-    // Stated as real headroom rather than "it fits": a budget that admits the
+    // Stated as real headroom rather than "it fits": a budget that admits its
     // worst case by a handful of bytes is a budget about to be wrong again.
     expect(MAXIMAL_TWO_BYTE_DOCUMENT_HEADROOM_BYTES).toBeGreaterThan(32 * 1024);
   });
 
   /**
-   * THE MEASUREMENT THE BUDGET DECISION WAITS ON, kept executable.
+   * THE MEASUREMENT THAT MOVED THE BUDGET, now the case it is sized against.
    *
-   * A three-byte CJK ideograph is ONE UTF-16 unit, so unlike the four-byte
-   * emoji it is legal on every field the schema bounds with zod's `.max()` -
-   * the provider labels and the provenance strings included. A whole-document
-   * CJK board is therefore fully schema-valid AND over the budget, with
-   * nothing the model could shorten: every field already sits on its own
-   * bound, and the bounds count characters while the budget counts bytes. That
-   * combination does not exist for any other script.
+   * CONTRACT CHANGE, stated (owner decision, 2026-08-29): this document used
+   * to be REFUSED. A three-byte CJK ideograph is ONE UTF-16 unit, so unlike
+   * the four-byte emoji it is legal on every field the schema bounds with
+   * zod's `.max()` - the provider labels and the provenance strings included.
+   * A whole-document CJK board was therefore fully schema-valid AND 55,769
+   * bytes over the old 327,680 ceiling, with nothing the model could shorten:
+   * every field already sat on its own bound, and the bounds count characters
+   * while the budget counts bytes. Asking for analysis in Chinese, Japanese or
+   * Korean is an ordinary request, so the budget rose to 512 KiB rather than
+   * the board staying unstorable.
    *
-   * This test RECORDS the number. It does not move `BOARD_SPEC_MAX_BYTES`:
-   * choosing the ceiling is the owner's decision, and this arc's job was to
-   * put a measured figure in front of it instead of a derived one. When the
-   * ceiling does move, this test goes red with the new relationship in the
-   * diff, which is exactly when it should be re-read.
+   * The document itself did not change - the measured 383,449 bytes is the
+   * same number, now recorded as headroom instead of overshoot.
    */
-  it("MEASURES the schema-valid CJK worst case, which does NOT fit today's budget", () => {
+  it("admits the schema-valid CJK worst case, which is what the budget is sized against", () => {
     const cjk = maximalBoardSpec({ script: "threeByte" });
-    // A LEGAL board on every field, which is what makes the overshoot a defect
-    // in the ceiling rather than a corner the contract chose to refuse.
+    // A LEGAL board on every field, which is why refusing it was the defect.
     expect(boardSpecV1Schema.safeParse(cjk).success).toBe(true);
 
     const budget = checkBoardSpecByteBudget(cjk);
     expect(budget.byteLength).toBe(MAXIMAL_THREE_BYTE_DOCUMENT_BYTES);
-    expect(budget.withinBudget).toBe(false);
-    expect(budget.byteLength - BOARD_SPEC_MAX_BYTES).toBe(
-      MAXIMAL_THREE_BYTE_DOCUMENT_OVERSHOOT_BYTES,
+    expect(budget.withinBudget).toBe(true);
+    expect(BOARD_SPEC_MAX_BYTES - budget.byteLength).toBe(
+      MAXIMAL_THREE_BYTE_DOCUMENT_HEADROOM_BYTES,
     );
+    // Real headroom, not a squeeze: a budget that admits its worst case by a
+    // handful of bytes is a budget about to be wrong again.
+    expect(MAXIMAL_THREE_BYTE_DOCUMENT_HEADROOM_BYTES).toBeGreaterThan(32 * 1024);
+  });
+
+  /**
+   * THE INCLUSIVE EDGE. `checkBoardSpecByteBudget` compares with `<=`, so a
+   * document of exactly the budget is ADMITTED, and the transcript mapper's
+   * own guard is inclusive in the same direction. Pinned because a silent flip
+   * to `<` would refuse a board that every other part of the contract - the
+   * schema, the mapper, this constant's own documentation - says is legal.
+   */
+  it("admits a document of EXACTLY the budget, and refuses one byte more", () => {
+    const spec = maximalBoardSpec({ script: "latin" }) as { notes: string[] };
+    const base = checkBoardSpecByteBudget(spec).byteLength;
+    // Grow one ASCII note until the document is exactly at the ceiling. ASCII
+    // so one character is one byte and the arithmetic is exact.
+    const note = spec.notes[0];
+    if (note === undefined) throw new Error("the generated board has no notes");
+    spec.notes[0] = note + "a".repeat(BOARD_SPEC_MAX_BYTES - base);
+
+    const atCeiling = checkBoardSpecByteBudget(spec);
+    expect(atCeiling.byteLength).toBe(BOARD_SPEC_MAX_BYTES);
+    expect(atCeiling.withinBudget).toBe(true);
+
+    spec.notes[0] = `${spec.notes[0]}a`;
+    const overCeiling = checkBoardSpecByteBudget(spec);
+    expect(overCeiling.byteLength).toBe(BOARD_SPEC_MAX_BYTES + 1);
+    expect(overCeiling.withinBudget).toBe(false);
   });
 
   it("costs about half as much in Latin, which is what the two-byte sizing buys", () => {
@@ -940,24 +969,105 @@ describe("the all-fields-max document", () => {
   });
 
   /**
-   * THE REFUSAL, and the reason the budget is not simply raised until nothing
-   * is ever refused.
+   * WHAT THE 512 KiB BUDGET ACTUALLY MEANS FOR SCHEMA-VALID BOARDS, measured.
    *
-   * `BOARD_ANALYSIS_RULE` counts CODE POINTS, so eight assessments of 10,000
-   * emoji are legal prose and 320,000 bytes of document. That board cannot be
-   * stored, and the contract's answer is to refuse it WHOLE with its measured
-   * size and its heaviest pool named - never to cut an assessment the model
-   * wrote, under the model's name, for a reader who cannot tell.
+   * CONTRACT CHANGE, stated (owner decision, 2026-08-29). This suite used to
+   * assert that an emoji-dense board is REFUSED, and at 327,680 bytes it was.
+   * At 524,288 it is not, and neither is anything else the schema admits: the
+   * heaviest document the contract can express - 3-byte CJK on every field
+   * zod bounds by UTF-16 units, 4-byte astral on every code-point-bounded
+   * prose field, which is the byte-maximal legal spelling of each - measures
+   * 480,569 bytes and clears the budget by 43,719.
+   *
+   * So the byte budget is no longer a reachable refusal for a legal board. It
+   * is now a CORRUPTION and FORWARD-COMPATIBILITY guard, and that is a real
+   * change in what the constant is for: both call sites run it AFTER a
+   * successful schema parse (`tools/internal/board/compose.ts` and the
+   * transcript mapper's `extractBoard`), so what it can still catch is a
+   * durable row written by a different schema version, or a bound raised above
+   * without re-deriving the budget. This test is what fails when a future
+   * bound change makes the refusal reachable again, which is exactly when
+   * someone must re-read `BOARD_SPEC_MAX_BYTES`.
+   *
+   * The refusal MACHINERY stays fully tested below and above - it just has to
+   * be driven with a document that is over budget by construction rather than
+   * by any legal spelling.
    */
-  it("is refused, whole and by name, once the assessments become 4-byte emoji", () => {
-    const overflowing = maximalBoardSpec({ analysisScript: "fourByte" });
-    // It really is a LEGAL board; only its size disqualifies it.
-    expect(boardSpecV1Schema.safeParse(overflowing).success).toBe(true);
+  it("admits every board the schema can express, the byte-maximal one included", () => {
+    const spec = maximalBoardSpec({ script: "threeByte" }) as {
+      title: string;
+      pools: { caption: string; analysis: string }[];
+      notes: string[];
+      chart: { annotations: { label: string } [] };
+      hydration: { rows: { description: string }[] };
+    };
+    // Astral on every CODE-POINT-bounded field: one code point of the field's
+    // budget, four bytes of the document, which is the heaviest a legal
+    // character can be there. The zod-bounded fields keep CJK, because an
+    // astral character costs TWO of their UTF-16 units and would be invalid.
+    const astral = (run: string): string => "\u{1F680}".repeat([...run].length);
+    spec.title = astral(spec.title);
+    for (const pool of spec.pools) {
+      pool.caption = astral(pool.caption);
+      pool.analysis = astral(pool.analysis);
+    }
+    spec.notes = spec.notes.map(astral);
+    for (const annotation of spec.chart.annotations) {
+      annotation.label = astral(annotation.label);
+    }
+    for (const row of spec.hydration.rows) row.description = astral(row.description);
 
-    const budget = checkBoardSpecByteBudget(overflowing);
+    // Still LEGAL on every field - that is what makes the measurement binding.
+    expect(boardSpecV1Schema.safeParse(spec).success).toBe(true);
+
+    const budget = checkBoardSpecByteBudget(spec);
+    expect(budget.byteLength).toBe(480_569);
+    expect(budget.withinBudget).toBe(true);
+    expect(BOARD_SPEC_MAX_BYTES - budget.byteLength).toBe(43_719);
+  });
+
+  /**
+   * The emoji-assessment board, which USED to be the refusal case. Kept as a
+   * measurement rather than deleted: it is the document the old ceiling was
+   * argued about, and stating that it now fits is what stops someone
+   * reinstating the old assertion from memory.
+   */
+  it("now admits the emoji-assessment board the old 320 KiB budget refused", () => {
+    const spec = maximalBoardSpec({ analysisScript: "fourByte" });
+    expect(boardSpecV1Schema.safeParse(spec).success).toBe(true);
+
+    const budget = checkBoardSpecByteBudget(spec);
+    expect(budget.byteLength).toBe(432_697);
+    expect(budget.withinBudget).toBe(true);
+    // It really was over the previous ceiling; only the budget moved.
+    expect(budget.byteLength).toBeGreaterThan(327_680);
+  });
+
+  /**
+   * THE REFUSAL MACHINERY, driven by an over-budget document.
+   *
+   * `checkBoardSpecByteBudget` takes `unknown` and does not schema-validate,
+   * which is what lets this exercise the real refusal path now that no legal
+   * board reaches it. The contract's answer to an over-budget board is to
+   * refuse it WHOLE with its measured size and its heaviest pool named - never
+   * to cut an assessment the model wrote, under the model's name, for a reader
+   * who cannot tell.
+   */
+  it("refuses an over-budget document whole, naming its size and heaviest pool", () => {
+    const spec = maximalBoardSpec({ script: "threeByte" }) as {
+      pools: { analysis: string }[];
+      notes: string[];
+    };
+    // Grow ONE pool past the ceiling. It is no longer a legal board, and that
+    // is the point: only a corrupted or future-schema row can get here.
+    const heaviest = spec.pools[0];
+    if (heaviest === undefined) throw new Error("the generated board has no pools");
+    heaviest.analysis = "a".repeat(BOARD_SPEC_MAX_BYTES);
+
+    const budget = checkBoardSpecByteBudget(spec);
     expect(budget.withinBudget).toBe(false);
     expect(budget.byteLength).toBeGreaterThan(BOARD_SPEC_MAX_BYTES);
-    expect(budget.largestPool).not.toBeNull();
+    expect(budget.largestPool?.index).toBe(0);
 
     const message = describeBoardByteBudgetFailure(budget);
     expect(message).toContain(String(budget.byteLength));
@@ -966,23 +1076,25 @@ describe("the all-fields-max document", () => {
     expect(message).toContain("nothing was truncated");
   });
 
-  it("crosses from accepted to refused one assessment at a time, naming a converted pool", () => {
-    // The step across the threshold, walked rather than asserted. Each pool
-    // whose assessment turns from two-byte prose to 4-byte emoji costs the
-    // document another 20,000 bytes, and the headroom absorbs the first
-    // few - which is the point of having headroom. The refusal, when it comes,
-    // must name a pool that actually grew, or the model would be told to
-    // shorten work it had already written at the right size.
-    const spec = maximalBoardSpec() as { pools: { analysis: string }[] };
-    const emoji = "\u{1F680}".repeat(BOARD_ANALYSIS_RULE.maxChars);
+  /**
+   * The refusal names a pool that ACTUALLY grew. Walked one pool at a time, so
+   * a heaviest-pool calculation that reported the wrong index would be caught
+   * rather than assumed - the model must not be told to shorten work it had
+   * already written at the right size.
+   */
+  it("names a pool that actually grew when it crosses the threshold", () => {
+    const spec = maximalBoardSpec({ script: "threeByte" }) as {
+      pools: { analysis: string }[];
+    };
+    // Well past any legal analysis length, so each converted pool moves the
+    // document a long way and the crossing is unambiguous.
+    const oversized = "a".repeat(BOARD_ANALYSIS_RULE.maxChars * 8);
 
     let converted = 0;
     let refusedAt: number | null = null;
     for (const pool of spec.pools) {
-      pool.analysis = emoji;
+      pool.analysis = oversized;
       converted += 1;
-      // Still a LEGAL board at every step; only its size ever disqualifies it.
-      expect(boardSpecV1Schema.safeParse(spec).success).toBe(true);
       if (!checkBoardSpecByteBudget(spec).withinBudget) {
         refusedAt = converted;
         break;
@@ -990,11 +1102,10 @@ describe("the all-fields-max document", () => {
     }
 
     expect(refusedAt).not.toBeNull();
-    // The headroom is real: a single emoji assessment does not sink the board.
+    // The headroom is real: one oversized assessment does not sink the board.
     expect(refusedAt).toBeGreaterThan(1);
 
     const budget = checkBoardSpecByteBudget(spec);
-    expect(budget.byteLength).toBeGreaterThan(BOARD_SPEC_MAX_BYTES);
     const named = budget.largestPool?.index;
     expect(named).toBeDefined();
     // The heaviest pool is one of the ones that grew, and it is named.

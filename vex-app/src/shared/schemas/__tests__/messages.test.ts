@@ -12,11 +12,33 @@ import {
   transcriptAppendEventSchema,
   TRANSCRIPT_APPEND_EVENT_TYPE,
 } from "../messages.js";
-import { BOARD_SPEC_MAX_BYTES } from "@vex-lib/board/index.js";
-import { maximalBoardSpec } from "../../../../../src/__tests__/lib/board/maximal-board-spec.js";
+import {
+  MAXIMAL_ASTRAL_ANALYSIS_PRETTY_CHARS,
+  MAXIMAL_DOCUMENT_PRETTY_CHARS,
+  maximalBoardSpec,
+} from "../../../../../src/__tests__/lib/board/maximal-board-spec.js";
 
 const ISO = "2026-05-21T10:00:00.000Z";
 const SESSION = "00000000-0000-4000-8000-000000000001";
+
+/** One `tool_call` DTO row carrying `toolArgs`. Shared by the ceiling tests. */
+const toolArgsRow = (toolArgs: string) => ({
+  id: 14,
+  sessionId: SESSION,
+  role: "assistant",
+  kind: "tool_call",
+  content: "",
+  createdAt: ISO,
+  toolCallId: null,
+  toolName: "x:y",
+  toolCalls: [{ toolCallId: "c", toolName: "x:y", toolArgs }],
+  explorerRefs: null,
+  reasoning: null,
+  durationMs: null,
+  success: null,
+  displayStatus: null,
+  board: null,
+});
 
 describe("messages schemas", () => {
   it("role + kind enums accept canonical values", () => {
@@ -267,72 +289,101 @@ describe("messages schemas", () => {
     // truncation suffix pushed it past this schema, failing the entire page.
     // The bound is now TOOL_ARGS_DISPLAY_CEILING, a corruption guard above
     // every legitimate producer, shared with the mapper's own null guard.
-    const row = (toolArgs: string) => ({
-      id: 14,
-      sessionId: SESSION,
-      role: "assistant",
-      kind: "tool_call",
-      content: "",
-      createdAt: ISO,
-      toolCallId: null,
-      toolName: "x:y",
-      toolCalls: [{ toolCallId: "c", toolName: "x:y", toolArgs }],
-      explorerRefs: null,
-      reasoning: null,
-      durationMs: null,
-      success: null,
-      displayStatus: null,
-      board: null,
-    });
     expect(
-      sessionMessageDtoSchema.safeParse(row("a".repeat(2001))).success,
+      sessionMessageDtoSchema.safeParse(toolArgsRow("a".repeat(2001))).success,
     ).toBe(true);
     expect(
-      sessionMessageDtoSchema.safeParse(row("a".repeat(TOOL_ARGS_DISPLAY_CEILING))).success,
+      sessionMessageDtoSchema.safeParse(toolArgsRow("a".repeat(TOOL_ARGS_DISPLAY_CEILING))).success,
     ).toBe(true);
     expect(
-      sessionMessageDtoSchema.safeParse(row("a".repeat(TOOL_ARGS_DISPLAY_CEILING + 1))).success,
+      sessionMessageDtoSchema.safeParse(toolArgsRow("a".repeat(TOOL_ARGS_DISPLAY_CEILING + 1))).success,
     ).toBe(false);
   });
 
-  it("keeps the display ceiling ABOVE the board budget plus its args envelope", () => {
-    // THE invariant that makes the ceiling a corruption guard rather than a
-    // content cut. BoardCompose is the largest legitimate producer: it accepts
-    // a spec up to BOARD_SPEC_MAX_BYTES, and the mapper serializes that
-    // payload PLUS the call envelope. If this ever inverted, a board the
-    // compose tool accepted would have its args shipped as `null` and the user
-    // would see a tool call with no arguments - a silent loss dressed as an
-    // empty field. This test is what fails when someone raises the board
-    // budget without re-checking this constant.
-    expect(TOOL_ARGS_DISPLAY_CEILING).toBeGreaterThan(BOARD_SPEC_MAX_BYTES);
-    // Not merely greater: the envelope, key names and JSON escaping all ride
-    // along, so the guard keeps real headroom rather than a single byte of it.
-    expect(TOOL_ARGS_DISPLAY_CEILING - BOARD_SPEC_MAX_BYTES).toBeGreaterThan(
-      BOARD_SPEC_MAX_BYTES / 2,
+  /**
+   * THE INVARIANT, restated for the 2026-08-29 budget rise, and the reason it
+   * could not stay `TOOL_ARGS_DISPLAY_CEILING > BOARD_SPEC_MAX_BYTES`.
+   *
+   * CONTRACT CHANGE, stated: this test used to assert exactly that, plus half
+   * the budget as headroom. Both constants now read 524,288, so the old
+   * assertions would fail while the property they were PROXYING for holds with
+   * enormous margin. They were a byte-vs-character comparison standing in for
+   * the real question, which is what the transcript mapper can actually
+   * produce.
+   *
+   * The two numbers are not comparable by arithmetic in either direction: this
+   * ceiling counts UTF-16 units of a PRETTY-PRINTED string, the board budget
+   * counts UTF-8 bytes of a COMPACT one, and pretty-printing ADDS indentation
+   * characters that the byte figure never carried. What actually bounds the
+   * mapper is the board schema's own CHARACTER bounds - which is why raising
+   * the byte budget by 192 KiB did not move the character figures below by a
+   * single unit.
+   */
+  it("clears the mapper's output for every board the budget admits, measured", () => {
+    // The mapper serializes tool args with `JSON.stringify(value, null, 2)`
+    // (`vex-app/src/main/database/messages/redaction.ts`), so that string's
+    // LENGTH is the figure this ceiling must clear - indentation, key names
+    // and escaping included.
+    const pretty = (spec: unknown): number => JSON.stringify(spec, null, 2).length;
+
+    // EVERY single-script fill produces the SAME character count while
+    // spanning 161,945 to 383,449 bytes. That identity is the invariant: the
+    // schema bounds characters, so the script cannot move this number.
+    for (const script of ["latin", "twoByte", "threeByte"] as const) {
+      expect(pretty(maximalBoardSpec({ script }))).toBe(MAXIMAL_DOCUMENT_PRETTY_CHARS);
+    }
+
+    // The heaviest ADMISSIBLE document: astral assessments are the one way to
+    // spend TWO UTF-16 units on one code point of a code-point-bounded field.
+    expect(pretty(maximalBoardSpec({ script: "threeByte", analysisScript: "fourByte" }))).toBe(
+      MAXIMAL_ASTRAL_ANALYSIS_PRETTY_CHARS,
+    );
+
+    // The real invariant, and real headroom rather than a squeeze: the ceiling
+    // is a corruption guard, so no legitimate producer sits anywhere near it.
+    expect(TOOL_ARGS_DISPLAY_CEILING).toBeGreaterThan(MAXIMAL_ASTRAL_ANALYSIS_PRETTY_CHARS);
+    expect(TOOL_ARGS_DISPLAY_CEILING - MAXIMAL_ASTRAL_ANALYSIS_PRETTY_CHARS).toBeGreaterThan(
+      MAXIMAL_ASTRAL_ANALYSIS_PRETTY_CHARS,
     );
   });
 
-  it("clears the envelope MEASURED from the largest board the contract admits", () => {
-    // The comparison above is the conservative form: it holds a UTF-16 length
-    // against a UTF-8 byte budget, which is safe but is not the real envelope.
-    // This is the real one. `maximalBoardSpec()` is the schema-valid
-    // all-fields-max document that `BOARD_SPEC_MAX_BYTES` itself is derived
-    // from, and the mapper serializes a tool call's args with
-    // `JSON.stringify(value, null, 2)` (see
-    // `vex-app/src/main/database/messages/redaction.ts`), so the figure the
-    // ceiling must clear is that pretty-printed string's length - indentation,
-    // key names and escaping included.
-    //
-    // Deriving it from the SAME generator is what keeps the two constants
-    // honest together: raising a board bound moves this number, and this test
-    // is where a ceiling that no longer covers it fails.
-    const spec = maximalBoardSpec();
-    const envelope = JSON.stringify(spec, null, 2).length;
-    expect(envelope).toBeGreaterThan(0);
-    expect(TOOL_ARGS_DISPLAY_CEILING).toBeGreaterThan(envelope);
-    // Real headroom, not a squeeze: the ceiling is a corruption guard, so no
-    // legitimate producer should sit anywhere near it.
-    expect(TOOL_ARGS_DISPLAY_CEILING - envelope).toBeGreaterThan(envelope);
+  /**
+   * THE PER-CHARACTER FACT the conservative reasoning rests on, pinned rather
+   * than asserted in prose: for any string, UTF-16 units <= UTF-8 bytes. A
+   * multi-byte character is one or two units but two to four bytes, and an
+   * escape costs the same on both sides. It does NOT alone make the ceiling
+   * safe - pretty-printing adds characters the compact byte figure never
+   * carried - which is why the measured test above is the binding one.
+   */
+  it("never lets a stringified spec's characters exceed its bytes", () => {
+    const encoder = new TextEncoder();
+    for (const script of ["latin", "twoByte", "threeByte", "fourByte"] as const) {
+      const serialized = JSON.stringify(maximalBoardSpec({ script }));
+      expect(serialized.length).toBeLessThanOrEqual(encoder.encode(serialized).length);
+    }
+    // Including the shapes JSON escapes: a control character and a lone
+    // surrogate both serialize to six ASCII characters and six bytes.
+    for (const raw of ["\u0001", "\ud800", '"', "\\"]) {
+      const serialized = JSON.stringify({ v: raw });
+      expect(serialized.length).toBeLessThanOrEqual(encoder.encode(serialized).length);
+    }
+  });
+
+  /**
+   * THE INCLUSIVE EDGE, both sides of it.
+   *
+   * The mapper nulls args only STRICTLY above the ceiling, and the board
+   * budget admits a document of exactly its own size, so the two agree at the
+   * boundary. A silent flip to `>=` on either side would open a one-unit band
+   * where a board is stored but its arguments vanish from the transcript.
+   */
+  it("ships args of EXACTLY the ceiling whole, and nulls only one character more", () => {
+    const atCeiling = "a".repeat(TOOL_ARGS_DISPLAY_CEILING);
+    expect(atCeiling.length > TOOL_ARGS_DISPLAY_CEILING).toBe(false);
+    expect(`${atCeiling}a`.length > TOOL_ARGS_DISPLAY_CEILING).toBe(true);
+    // The schema agrees with the mapper at the same edge.
+    expect(sessionMessageDtoSchema.safeParse(toolArgsRow(atCeiling)).success).toBe(true);
+    expect(sessionMessageDtoSchema.safeParse(toolArgsRow(`${atCeiling}a`)).success).toBe(false);
   });
 
   it("rejects a toolCalls array over the 32-entry cap", () => {
