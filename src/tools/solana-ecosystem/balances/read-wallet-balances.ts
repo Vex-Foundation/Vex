@@ -81,7 +81,7 @@
  *
  * | Leg                                   | Reach of the Stop                  |
  * |---------------------------------------|------------------------------------|
- * | `getBalance`, both account reads      | into the request (shared transport)|
+ * | `getBalance`, both account reads      | into the request (reader-owned rpc)|
  * | Jupiter metadata lookup               | into the request                   |
  * | DexScreener price batches             | into each request                  |
  * | DexScreener pool fallback (up to 12)  | into each request, and between them|
