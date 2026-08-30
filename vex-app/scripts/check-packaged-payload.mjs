@@ -31,7 +31,14 @@
  * `inspectExecutable`, so a macOS x64 bundle that quietly received arm64
  * artifacts fails here rather than on a user's machine.
  *
- * Run: `pnpm --dir vex-app check:package` after `electron-builder --dir`
+ * TWO ENTRY POINTS, one body. `checkPayload(appOutDir, platform, arch)` is the
+ * importable core: build/afterPack.mjs calls it per packaged app with the
+ * target electron-builder actually packaged for, which is what puts this
+ * contract on the PRODUCTION path - the release workflow packages and uploads
+ * in one `--publish always` invocation and never gets to run a separate CLI
+ * gate, so a violation caught only by the CLI would already be on GitHub.
+ *
+ * Run the CLI: `pnpm --dir vex-app check:package` after `electron-builder --dir`
  * (wired into the `package` script). Give it `--payload <dir>` to point at one
  * specific packaged app; with no argument it checks every packaged app it finds
  * under dist-electron/ and FAILS if there are none - a gate that silently
@@ -40,6 +47,7 @@
 
 import { existsSync, readdirSync, statSync, constants } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import asar from "@electron/asar";
 
@@ -55,6 +63,7 @@ import {
   parcelWatcherPackageName,
   PAYLOAD_DIR_TARGETS,
   resolvePayload,
+  resolvePayloadForTarget,
   UNDECIDED_NATIVE_MODULES,
   WS_ACCELERATOR_MODULES,
   wsAcceleratorPrebuildDir,
@@ -112,7 +121,7 @@ function assertArtifact(file, label, target, issues, { executable = false } = {}
   }
 }
 
-function checkPayload(payload) {
+function inspectPayload(payload) {
   const { target, resources } = payload;
   const issues = [];
   /** Tolerated, NAMED losses of an optional capability. Never silent. */
@@ -244,68 +253,110 @@ function checkPayload(payload) {
   return { issues, undecided, degraded };
 }
 
-const root = path.resolve(process.cwd());
-const explicit = process.argv.indexOf("--payload");
-let payloads;
-if (explicit !== -1) {
-  const dir = process.argv[explicit + 1];
-  if (dir === undefined) {
-    console.error("--payload needs a directory (e.g. dist-electron/linux-unpacked)");
-    process.exit(1);
+/**
+ * The contract over ONE packaged app, addressed by the target it was packaged
+ * for rather than by directory name.
+ *
+ * `appOutDir` is electron-builder's per-arch output directory (the afterPack
+ * context field of the same name); `platform` is `electronPlatformName`
+ * (darwin/win32/linux) and `arch` its resolved name (x64/arm64). Returns the
+ * same three channels the CLI prints: `issues` are failures, `degraded` are the
+ * named, tolerated losses of an optional capability, `undecided` are native
+ * artifacts from modules still owed a candidate decision. `label` identifies
+ * the app in a message.
+ */
+export function checkPayload(appOutDir, platform, arch) {
+  const target = { platform, arch };
+  const label = `${path.basename(appOutDir)} (${platform}/${arch})`;
+  if (GOOS_BY_ELECTRON_PLATFORM[platform] === undefined || GO_ARCH_BY_ELECTRON_ARCH[arch] === undefined) {
+    // Refused by NAME rather than checked against undefined expectations: an
+    // arch this contract has never reviewed (a mac `universal` merge, say) must
+    // not pass by comparing two undefineds.
+    return {
+      label,
+      issues: [`no native payload contract for ${platform}/${arch}; this target has never been reviewed`],
+      undecided: [],
+      degraded: [],
+    };
   }
-  const payload = resolvePayload(path.resolve(root, dir));
+  const payload = resolvePayloadForTarget(appOutDir, target);
   if (payload === undefined) {
+    return { label, issues: [`no packaged app at ${appOutDir}`], undecided: [], degraded: [] };
+  }
+  return { label, ...inspectPayload(payload) };
+}
+
+function main() {
+  const root = path.resolve(process.cwd());
+  const explicit = process.argv.indexOf("--payload");
+  let payloads;
+  if (explicit !== -1) {
+    const dir = process.argv[explicit + 1];
+    if (dir === undefined) {
+      console.error("--payload needs a directory (e.g. dist-electron/linux-unpacked)");
+      process.exit(1);
+    }
+    const payload = resolvePayload(path.resolve(root, dir));
+    if (payload === undefined) {
+      console.error(
+        `${dir} is not a recognised electron-builder --dir output. Known names: `
+          + `${Object.keys(PAYLOAD_DIR_TARGETS).join(", ")}`
+      );
+      process.exit(1);
+    }
+    payloads = [payload];
+  } else {
+    payloads = discoverPayloads(root);
+  }
+
+  if (payloads.length === 0) {
     console.error(
-      `${dir} is not a recognised electron-builder --dir output. Known names: `
-        + `${Object.keys(PAYLOAD_DIR_TARGETS).join(", ")}`
+      `${RED}No packaged app found under dist-electron/.${RESET}\n`
+        + "  This gate asserts the REAL packaged payload, so it fails rather than passing\n"
+        + "  vacuously. Run `pnpm --dir vex-app package` (electron-builder --dir) first."
     );
     process.exit(1);
   }
-  payloads = [payload];
-} else {
-  payloads = discoverPayloads(root);
+
+  let failed = 0;
+  for (const payload of payloads) {
+    const { issues, undecided, degraded } = inspectPayload(payload);
+    const label = `${payload.label} (${payload.target.platform}/${payload.target.arch})`;
+    if (degraded.length > 0) {
+      // An accepted, documented capability loss. Printed by name every run so
+      // "this target ships no native ws accelerator" is a fact someone chose to
+      // live with, not one nobody noticed.
+      console.log(`${YELLOW}!${RESET} ${label}: ${degraded.length} optional native module(s) DEGRADED to a JS fallback:`);
+      for (const entry of degraded) console.log(`    ${entry}`);
+    }
+    if (undecided.length > 0) {
+      // Printed every run, by name. An owed decision that nobody sees is the
+      // same as no decision at all.
+      console.log(
+        `${YELLOW}!${RESET} ${label}: ${undecided.length} native artifact(s) from modules with NO `
+          + "candidate decision yet (UNDECIDED_NATIVE_MODULES in native-payload-contract.mjs):"
+      );
+      for (const entry of undecided) console.log(`    ${entry}`);
+    }
+    if (issues.length === 0) {
+      console.log(`${GREEN}✓${RESET} ${label} - one native candidate per module, all reviewed`);
+    } else {
+      failed += 1;
+      console.log(`${RED}✗${RESET} ${label}`);
+      for (const issue of issues) console.log(`    ${issue}`);
+    }
+  }
+
+  if (failed > 0) {
+    console.log(`\n${RED}${failed} packaged payload(s) FAILED the native candidate contract.${RESET}\n`);
+    process.exit(1);
+  }
+  console.log(`\n${GREEN}All packaged payloads passed the native candidate contract.${RESET}\n`);
 }
 
-if (payloads.length === 0) {
-  console.error(
-    `${RED}No packaged app found under dist-electron/.${RESET}\n`
-      + "  This gate asserts the REAL packaged payload, so it fails rather than passing\n"
-      + "  vacuously. Run `pnpm --dir vex-app package` (electron-builder --dir) first."
-  );
-  process.exit(1);
+// CLI only when RUN as a script. build/afterPack.mjs imports `checkPayload`
+// from this module, and a bare top-level CLI would run the dist-electron scan
+// (and its `process.exit(1)` when nothing is packaged yet) on import.
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
 }
-
-let failed = 0;
-for (const payload of payloads) {
-  const { issues, undecided, degraded } = checkPayload(payload);
-  const label = `${payload.label} (${payload.target.platform}/${payload.target.arch})`;
-  if (degraded.length > 0) {
-    // An accepted, documented capability loss. Printed by name every run so
-    // "this target ships no native ws accelerator" is a fact someone chose to
-    // live with, not one nobody noticed.
-    console.log(`${YELLOW}!${RESET} ${label}: ${degraded.length} optional native module(s) DEGRADED to a JS fallback:`);
-    for (const entry of degraded) console.log(`    ${entry}`);
-  }
-  if (undecided.length > 0) {
-    // Printed every run, by name. An owed decision that nobody sees is the
-    // same as no decision at all.
-    console.log(
-      `${YELLOW}!${RESET} ${label}: ${undecided.length} native artifact(s) from modules with NO `
-        + "candidate decision yet (UNDECIDED_NATIVE_MODULES in native-payload-contract.mjs):"
-    );
-    for (const entry of undecided) console.log(`    ${entry}`);
-  }
-  if (issues.length === 0) {
-    console.log(`${GREEN}✓${RESET} ${label} - one native candidate per module, all reviewed`);
-  } else {
-    failed += 1;
-    console.log(`${RED}✗${RESET} ${label}`);
-    for (const issue of issues) console.log(`    ${issue}`);
-  }
-}
-
-if (failed > 0) {
-  console.log(`\n${RED}${failed} packaged payload(s) FAILED the native candidate contract.${RESET}\n`);
-  process.exit(1);
-}
-console.log(`\n${GREEN}All packaged payloads passed the native candidate contract.${RESET}\n`);

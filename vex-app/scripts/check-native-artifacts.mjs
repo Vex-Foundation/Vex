@@ -33,6 +33,7 @@ import {
 import {
   EXCLUDED_CANDIDATE_FILE_PATTERNS,
   MAC_SIGNED_NATIVE_BINARIES,
+  parcelWatcherPackageName,
   REBUILD_DISABLED_LINE,
   SELECTED_ASAR_UNPACK_GLOBS,
   WS_ACCELERATOR_MODULES,
@@ -147,8 +148,16 @@ function checkNodePtyPrebuilds(root) {
 /**
  * @parcel/watcher: the native binary arrives through a per-platform OPTIONAL
  * package (`@parcel/watcher-linux-x64-glibc`), not the parent package, which
- * is why the asarUnpack glob targets `@parcel/watcher-*`. Only the host's
- * package is installed, so only the host's is asserted.
+ * is why the asarUnpack glob targets `@parcel/watcher-*`.
+ *
+ * SEVERAL of them are installed, not just the host's:
+ * `pnpm.supportedArchitectures` deliberately materialises every arch the
+ * release matrix packages, because the macOS job builds x64 and arm64 from one
+ * install (see the header of native-payload-contract.mjs). Each package is
+ * therefore held to the target its OWN NAME declares - a darwin-arm64 package
+ * carrying an x86_64 binary is the defect this catches - while the HOST's
+ * package must additionally be present, since that is the one this machine
+ * loads.
  *
  * MEASURED LOADER ORDER (@parcel/watcher 2.6.0 `index.js`, read from the
  * installed package):
@@ -168,6 +177,19 @@ function checkNodePtyPrebuilds(root) {
  * architecture contract here: it never reaches a package, but a wrong-arch
  * binary in node_modules means the local install is not what it claims.
  */
+/**
+ * The Go target a `watcher-<platform>-<arch>[-libc]` package name declares.
+ *
+ * Name-derived on purpose: the package's own name is the only statement of
+ * what it is FOR, so comparing it against the binary's header is what catches
+ * a mislabelled or corrupted download. `undefined` in either field means the
+ * name names a target this repository has no mapping for.
+ */
+function watcherPackageTarget(packageName) {
+  const [, platform, arch] = packageName.split("-");
+  return { goos: GOOS_BY_ELECTRON_PLATFORM[platform], arch: GO_ARCH_BY_ELECTRON_ARCH[arch] };
+}
+
 function checkParcelWatcher(root) {
   const scopeDir = path.join(root, "node_modules", "@parcel");
   if (!existsSync(scopeDir)) {
@@ -188,33 +210,53 @@ function checkParcelWatcher(root) {
   }
 
   const issues = [];
-  const expectedArch = GO_ARCH_BY_ELECTRON_ARCH[process.arch];
-  const expectedGoos = GOOS_BY_ELECTRON_PLATFORM[process.platform];
+  const hostGoos = GOOS_BY_ELECTRON_PLATFORM[process.platform];
+  const hostArch = GO_ARCH_BY_ELECTRON_ARCH[process.arch];
+
+  const hostPackage = parcelWatcherPackageName(process.platform, process.arch).replace("@parcel/", "");
+  if (!platformPackages.includes(hostPackage)) {
+    issues.push(
+      `@parcel/${hostPackage} is not installed; this host has no native watcher backend `
+        + `(installed: ${platformPackages.join(", ")})`
+    );
+  }
 
   const sourceBuild = path.join(scopeDir, "watcher", "build", "Release", "watcher.node");
+  // Each platform package declares its target in its own name; the parent's
+  // source build, when a developer's tree still has one, was compiled here.
   const candidates = platformPackages.map((pkg) => ({
     label: `@parcel/${pkg}/watcher.node`,
     file: path.join(scopeDir, pkg, "watcher.node"),
+    expected: watcherPackageTarget(pkg),
     required: true,
   }));
   if (existsSync(sourceBuild)) {
     candidates.push({
       label: "@parcel/watcher/build/Release/watcher.node",
       file: sourceBuild,
+      expected: { goos: hostGoos, arch: hostArch },
       required: false,
     });
   }
 
-  for (const { label, file: binary, required } of candidates) {
+  for (const { label, file: binary, expected, required } of candidates) {
     if (!existsSync(binary)) {
       if (required) issues.push(`${label}: missing`);
       continue;
     }
+    if (expected.goos === undefined || expected.arch === undefined) {
+      issues.push(
+        `${label}: package name declares a platform/arch this repository has never reviewed; `
+          + "add it to bridge-artifact.mjs's target maps or narrow pnpm.supportedArchitectures"
+      );
+      continue;
+    }
     try {
       const found = inspectExecutable(binary);
-      if (found.goos !== expectedGoos || found.arch !== expectedArch) {
+      if (found.goos !== expected.goos || found.arch !== expected.arch) {
         issues.push(
-          `${label}: header says ${found.goos}/${found.arch}, host is ${expectedGoos}/${expectedArch}`
+          `${label}: header says ${found.goos}/${found.arch}, the package name declares `
+            + `${expected.goos}/${expected.arch}`
         );
       }
     } catch (error) {

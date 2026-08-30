@@ -101,10 +101,27 @@
  *                 these are `.node` files with the extension, which
  *                 @electron/osx-sign's nested-binary walker does sign.
  *
+ * WHERE THE SELECTED ARTIFACTS COME FROM ON A RELEASE RUNNER. @parcel/watcher
+ * publishes one optional package per target, each constrained by `os`/`cpu`, so
+ * a default install materialises the RUNNER's arch only. The macOS release job
+ * packages darwin-x64 AND darwin-arm64 from a single install on one runner, so
+ * the non-runner arch would have no watcher package at all - and with
+ * `@parcel/watcher/build/**` excluded above there is nothing left to degrade
+ * to. `pnpm.supportedArchitectures` in vex-app/package.json
+ * (os: current+darwin, cpu: current+x64+arm64) is what makes the install cover
+ * every arch the release matrix builds; the gate below is what turns a
+ * regression there into a failed build instead of an app that cannot watch
+ * files. The cross product also pulls the non-runner Linux arch on a Linux
+ * install (pnpm has no per-os cpu pairing); measured cost in this checkout:
+ * vex-app/node_modules 1.2G -> 1.3G. The lockfile is unaffected, so
+ * `--frozen-lockfile` installs stay valid.
+ *
  * Consumers: electron-builder.yml and electron-builder.release.yml carry these
  * strings; scripts/check-native-artifacts.mjs asserts the configs still match
  * these constants (so the three files cannot drift apart), and
- * scripts/check-packaged-payload.mjs asserts the real `--dir` output.
+ * scripts/check-packaged-payload.mjs asserts the real `--dir` output - from the
+ * CLI after packaging, and from build/afterPack.mjs per packaged app BEFORE
+ * signing and publishing.
  */
 
 import { existsSync, readdirSync } from "node:fs";
@@ -254,7 +271,21 @@ export const PAYLOAD_DIR_TARGETS = Object.freeze({
  */
 export function resolvePayload(dir) {
   const target = PAYLOAD_DIR_TARGETS[path.basename(dir)];
-  if (target === undefined || !existsSync(dir)) return undefined;
+  if (target === undefined) return undefined;
+  return resolvePayloadForTarget(dir, target);
+}
+
+/**
+ * The same resolution when the caller ALREADY knows the target.
+ *
+ * electron-builder's afterPack hook is handed `appOutDir` plus the concrete
+ * `electronPlatformName`/`arch` it packaged for, which is better evidence than
+ * the directory name: it holds even if `directories.output` or an artifact
+ * naming macro changes, and it is the only source available before the CLI
+ * gate's dist-electron scan could run.
+ */
+export function resolvePayloadForTarget(dir, target) {
+  if (!existsSync(dir)) return undefined;
   if (target.platform === "darwin") {
     const apps = readdirSync(dir, { withFileTypes: true }).filter(
       (entry) => entry.isDirectory() && entry.name.endsWith(".app")

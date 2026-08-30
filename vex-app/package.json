@@ -115,6 +115,17 @@
   },
   "packageManager": "pnpm@10.32.1",
   "pnpm": {
+    "supportedArchitectures": {
+      "os": [
+        "current",
+        "darwin"
+      ],
+      "cpu": [
+        "current",
+        "x64",
+        "arm64"
+      ]
+    },
     "onlyBuiltDependencies": [
       "@parcel/watcher",
       "electron",
