@@ -251,11 +251,27 @@ describe("strictness at the process boundaries", () => {
       droppedRows: 0,
       reducedRows: 0,
     };
+    // The layout NAMES the entry. It used to be empty, which the schema now
+    // refuses outright: an entry no pane references is the invisible-shell case
+    // the referential invariant was added for. Keeping the empty layout would
+    // make this test fail for a reason that has nothing to do with `env`, which
+    // is precisely the confusion its own comment warns about.
     const snapshotWith = (entry: unknown): unknown => ({
       version: 1,
       projectId: "p1",
       savedAt: 0,
-      layout: { projectId: "p1", groups: [], activeGroupIndex: 0 },
+      layout: {
+        projectId: "p1",
+        activeGroupIndex: 0,
+        groups: [
+          {
+            groupId: "g1",
+            orientation: "horizontal",
+            activePaneIndex: 0,
+            panes: [{ terminalId: "t1", relativeSize: 1 }],
+          },
+        ],
+      },
       terminals: [entry],
     });
 
@@ -499,5 +515,92 @@ describe("terminalSnapshotFileName is a path-traversal gate", () => {
     expect(name).not.toBeNull();
     expect(name).not.toContain("/");
     expect(name).not.toContain("\\");
+  });
+});
+
+
+describe("a snapshot's two halves describe the SAME terminals", () => {
+  /**
+   * The file used to permit either half to name a terminal the other did not.
+   *
+   * One direction is merely wasteful - a pane with no buffer to restore. The
+   * other created an INVISIBLE SHELL: an entry no pane referenced was revived
+   * into a live pty that no pane could show and nothing in the UI could name in
+   * order to close, so it held capacity against the per-project bound and a
+   * lease against its project for the life of the session. A slow close racing
+   * a persist is all it took.
+   *
+   * The invariant is a bijection, and it belongs in the schema for the same
+   * reason the group invariants do: every consumer would otherwise have to
+   * re-check it, and the one that forgot is the one that shipped.
+   */
+  const base = {
+    version: TERMINAL_SNAPSHOT_VERSION,
+    projectId: "p1",
+    savedAt: 1,
+  };
+
+  function entry(terminalId: string): unknown {
+    return {
+      terminalId,
+      title: "bash",
+      shellName: "bash",
+      executable: "/bin/bash",
+      args: [],
+      cwdAtSpawn: "/projects/p1",
+      cols: 80,
+      rows: 24,
+      serialized: "",
+      droppedRows: 0,
+      reducedRows: 0,
+    };
+  }
+
+  function layout(terminalIds: readonly string[]): unknown {
+    return {
+      projectId: "p1",
+      activeGroupIndex: 0,
+      groups:
+        terminalIds.length === 0
+          ? []
+          : [
+              {
+                groupId: "g1",
+                orientation: "horizontal",
+                activePaneIndex: 0,
+                panes: terminalIds.map((terminalId) => ({
+                  terminalId,
+                  relativeSize: 1 / terminalIds.length,
+                })),
+              },
+            ],
+    };
+  }
+
+  it("accepts a file whose panes and entries match exactly", () => {
+    const parsed = terminalWorkspaceSnapshotSchema.safeParse({
+      ...base,
+      layout: layout(["t1", "t2"]),
+      terminals: [entry("t1"), entry("t2")],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("REFUSES a pane naming a terminal the file does not carry", () => {
+    const parsed = terminalWorkspaceSnapshotSchema.safeParse({
+      ...base,
+      layout: layout(["t1", "ghost"]),
+      terminals: [entry("t1")],
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("REFUSES an entry no pane references, which is the invisible-shell case", () => {
+    const parsed = terminalWorkspaceSnapshotSchema.safeParse({
+      ...base,
+      layout: layout(["t1"]),
+      terminals: [entry("t1"), entry("orphan")],
+    });
+    expect(parsed.success).toBe(false);
   });
 });

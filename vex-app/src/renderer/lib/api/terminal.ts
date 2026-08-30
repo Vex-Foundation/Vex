@@ -145,6 +145,19 @@ export function getTerminalAvailability(): Promise<Result<TerminalHostAvailabili
   return window.vex.terminal.getAvailability();
 }
 
+/**
+ * The terminals that died with an unexpectedly terminated pty host.
+ *
+ * These ids will never produce an `onExit`, because the port that would have
+ * carried it died with the process. This is the only way the workspace learns
+ * that the tabs it is drawing are shells that no longer exist.
+ */
+export function onTerminalsLost(
+  cb: (terminalIds: readonly string[]) => void,
+): () => void {
+  return window.vex.terminal.onTerminalsLost(cb);
+}
+
 export function onTerminalAvailability(
   cb: (availability: TerminalHostAvailability) => void,
 ): () => void {

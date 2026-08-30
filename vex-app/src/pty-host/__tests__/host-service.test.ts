@@ -23,6 +23,7 @@ import {
   TERMINAL_PENDING_CEILING_BYTES,
   WORKSPACE_SNAPSHOT_FILE_MAX_BYTES,
   terminalReviveResultSchema,
+  terminalWorkspaceSnapshotSchema,
   type TerminalHostMessage,
   type TerminalHostRequest,
   type TerminalOutcome,
@@ -882,12 +883,415 @@ describe("F7 - the WHOLE FILE is brought under its bound", () => {
 
     // And the loss is ACCOUNTED FOR rather than silent.
     expect(saved.terminals.some((entry) => entry.reducedRows > 0)).toBe(true);
-    expect(
-      toMain.some(
-        (message) => message.kind === "notice" && message.code === "snapshot_rows_reduced",
-      ),
-    ).toBe(true);
+    const notice = toMain.find(
+      (message) => message.kind === "notice" && message.code === "snapshot_rows_reduced",
+    );
+    expect(notice).toBeDefined();
+
+    // ---- THE ACCOUNTING IS EXACT, not merely non-zero ----
+    //
+    // `serializeWithinNow(cap).reducedRows` is a TOTAL measured from the whole
+    // buffer at that cap, so the halving loop reports 500, then 750, then 875
+    // for one terminal that finally gave up 875 rows. ADDING those recorded
+    // 2125 - more rows than the mirror has ever held - and that inflated figure
+    // went into the user's notice AND into `reducedRows`, which is the
+    // cumulative running total the NEXT session inherits as its baseline. So it
+    // compounded every time the file was saved.
+    //
+    // Each mirror here holds at most its 1000-row scrollback, and this is the
+    // first save of each terminal, so its cumulative figure cannot exceed that.
+    // `> 0` would have passed against the defect; this does not.
+    for (const entry of saved.terminals) {
+      expect(entry.reducedRows).toBeLessThanOrEqual(1000);
+    }
+
+    // The notice the user is shown is the sum of what was actually given up.
+    const summed = saved.terminals.reduce((total, entry) => total + entry.reducedRows, 0);
+    expect(notice?.kind === "notice" ? notice.count : -1).toBe(summed);
 
     await service.shutdownAll();
   }, 180_000);
+
+  /**
+   * THE REDUCTION IS RECORDED ONCE, NOT ONCE PER PASS.
+   *
+   * The scenario the previous test could not reach: buffers large enough that
+   * the PER-TERMINAL cap reduces them AND the whole-file cap reduces them
+   * again. Two passes over the same terminal, and each pass's `reducedRows` is
+   * a TOTAL measured from the whole buffer - so adding them counted the same
+   * lost rows twice.
+   *
+   * The consequence was not cosmetic. `reducedRows` is CUMULATIVE ACROSS
+   * SESSIONS: a revived terminal starts life with the previous save's figure as
+   * its baseline, so an inflated figure is inherited and inflated again on the
+   * next save. Within a handful of sessions the number a user is shown bears no
+   * relation to anything.
+   *
+   * The bound that makes this falsifiable: a mirror holds at most
+   * `scrollbackRows` rows, so a FIRST save cannot honestly report giving up
+   * more than that. The defect reports the sum of two overlapping totals, which
+   * exceeds it.
+   */
+  it("records the FINAL reduction per terminal, not the sum of every pass", async () => {
+    const { service } = buildPooled();
+
+    const terminalIds = Array.from({ length: 12 }, (_, index) => `big${String(index)}`);
+    // FIVE TIMES the attribute churn of the test above at the same width, which
+    // is what pushes each terminal past the 2 MiB PER-TERMINAL cap as well as
+    // the 16 MiB file cap. Both passes then run over the same mirror. The width
+    // stays at the schema's 1000-column ceiling; density, not width, is what
+    // fills the bound, because JSON expands every ESC to six bytes.
+    const segments = Array.from(
+      { length: 200 },
+      (_, index) => `\u001b[38;5;${String(16 + (index % 200))}m${"W".repeat(5)}`,
+    );
+    const line = `${segments.join("")}\u001b[0m\r\n`;
+    for (const terminalId of terminalIds) {
+      const created = await send(service, {
+        kind: "create",
+        terminalId,
+        windowId: "w1",
+        projectId: "p1",
+        launch: { executable: "bash", args: [], cwd: CWD, cols: 1000, rows: 24, env: {} },
+      });
+      if (!created.ok) throw new Error(`create refused: ${created.code}`);
+      const terminal = service.terminal(terminalId);
+      if (terminal === undefined) throw new Error("unreachable");
+      for (let row = 0; row < 1000; row += 1) terminal.process.mirror.write(line);
+      await terminal.process.mirror.drain();
+    }
+
+    await send(service, layoutFor(terminalIds));
+
+    const raw = await fs.readFile(path.join(directory, "p1.json"), "utf8");
+    const saved = JSON.parse(raw) as {
+      terminals: Array<{ terminalId: string; reducedRows: number }>;
+    };
+
+    expect(Buffer.byteLength(raw, "utf8")).toBeLessThanOrEqual(
+      WORKSPACE_SNAPSHOT_FILE_MAX_BYTES,
+    );
+    // Both passes really did reduce, or this test proves nothing about the
+    // double count it exists to catch.
+    expect(saved.terminals.every((entry) => entry.reducedRows > 0)).toBe(true);
+
+    // EXACT: a 1000-row mirror on its first save cannot have given up more than
+    // 1000 rows. The defect records the per-terminal pass plus the whole-file
+    // pass, both measured from the whole buffer, and exceeds it.
+    for (const entry of saved.terminals) {
+      expect(entry.reducedRows).toBeLessThanOrEqual(1000);
+    }
+
+    const notice = toMain.find(
+      (message) => message.kind === "notice" && message.code === "snapshot_rows_reduced",
+    );
+    const summed = saved.terminals.reduce((total, entry) => total + entry.reducedRows, 0);
+    expect(notice?.kind === "notice" ? notice.count : -1).toBe(summed);
+
+    await service.shutdownAll();
+  }, 300_000);
+});
+
+/**
+ * A pty that PRODUCES UNTIL IT IS PAUSED, on a real timer.
+ *
+ * `ScriptedPty.emit` is a test control: it delivers whether or not the pty was
+ * paused, which is exactly right for proving flow-control ACCOUNTING and
+ * exactly wrong for proving a HOLD. A hold's whole claim is that the producer
+ * stops, so a fake that ignores `pause()` cannot distinguish a held producer
+ * from an unheld one - the property under test would be unobservable.
+ *
+ * This one honours the pause, which is what a real node-pty does when the host
+ * stops draining its pipe.
+ */
+class FirehosePty extends ScriptedPty {
+  private timer: NodeJS.Timeout | null = null;
+  /** Chunks actually delivered. The measurement the hold is asserted against. */
+  emitted = 0;
+
+  startProducing(everyMs = 1): void {
+    this.timer = setInterval(() => {
+      if (this.paused) return;
+      this.emitted += 1;
+      this.emit(`row ${String(this.emitted)} of a build that never stops\r\n`);
+    }, everyMs);
+    this.timer.unref?.();
+  }
+
+  stopProducing(): void {
+    if (this.timer !== null) clearTimeout(this.timer);
+    if (this.timer !== null) clearInterval(this.timer);
+    this.timer = null;
+  }
+}
+
+describe("the snapshot HOLDS its producers", () => {
+  /**
+   * `commitProject` used to serialize while the ptys kept writing.
+   *
+   * Two written beliefs depended on a hold that did not exist. The mirror's
+   * drain "terminates because its callers pause the producer first" - this
+   * caller did not. And the whole-file reduction pass reserializes each mirror
+   * with no drain of its own because "the producer has not been resumed since"
+   * - it had never been stopped, so the second pass could measure a screen the
+   * first pass never saw, and the committed entry could disagree with the byte
+   * accounting computed for it.
+   *
+   * The observable property: ACROSS THE WHOLE CAPTURE, the producer delivers
+   * nothing. Not "the commit finished", which a lucky scheduling window also
+   * satisfies - a count of zero chunks between the request and its reply is the
+   * fixed producer state the reduction pass assumes.
+   */
+  it("delivers NO output between the start of a capture and its commit", async () => {
+    const pool = scriptedSpawnerPool();
+    const service = new PtyHostService({
+      spawn: pool.spawn,
+      probe: fakeProbe({
+        directories: [CWD],
+        files: [SHELL],
+        executables: { bash: SHELL, [SHELL]: SHELL },
+      }),
+      baseEnv: { PATH: "/usr/bin" },
+      snapshotStore: new TerminalSnapshotStore(directory),
+      scrollbackRows: 1000,
+      graceMs: 60_000,
+      shortGraceMs: 6_000,
+      sendToMain: (message) => toMain.push(message),
+      platform: "linux",
+    });
+
+    const created = await send(service, createRequest("hot", "w1"));
+    if (!created.ok) throw new Error("create refused");
+
+    // The pool hands out a plain ScriptedPty, so the firehose replaces the
+    // adapter the process actually holds by driving the same listener set.
+    const terminal = service.terminal("hot");
+    if (terminal === undefined) throw new Error("unreachable");
+
+    const firehose = new FirehosePty();
+    // Feed the terminal through its real data sink, which is what the adapter's
+    // own `onData` subscription does.
+    const chunks: string[] = [];
+    const feeder = setInterval(() => {
+      if (firehose.paused) return;
+      firehose.emitted += 1;
+      const line = `row ${String(firehose.emitted)} of a build that never stops\r\n`;
+      chunks.push(line);
+      pool.ptys[0]?.emit(line);
+    }, 1);
+    feeder.unref?.();
+    // The host pauses the REAL adapter, so the firehose watches that adapter's
+    // pause flag rather than its own.
+    Object.defineProperty(firehose, "paused", {
+      get: () => pool.ptys[0]?.paused === true,
+      configurable: true,
+    });
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    expect(firehose.emitted).toBeGreaterThan(0);
+
+    const before = firehose.emitted;
+    const startedAt = Date.now();
+    const persisted = await send(service, layoutFor(["hot"]));
+    const elapsed = Date.now() - startedAt;
+    const during = firehose.emitted - before;
+
+    expect(persisted.ok).toBe(true);
+    // PROMPTLY: a held producer makes the drain's fixed point immediate, so the
+    // capture costs a serialization and a write, not a race with a firehose.
+    expect(elapsed).toBeLessThan(5_000);
+    // AND THE PRODUCER WAS STOPPED FOR ALL OF IT.
+    expect(during).toBe(0);
+    // Released afterwards: a hold that is not released is a wedged terminal.
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    expect(firehose.emitted).toBeGreaterThan(before);
+    clearInterval(feeder);
+
+    await service.shutdownAll();
+  }, 60_000);
+});
+
+describe("the snapshot file names ONE set of terminals", () => {
+  /**
+   * A terminal that exits while a persist is in flight used to leave the file
+   * describing two different workspaces: a layout naming an id no entry
+   * carried, and - the expensive direction - an entry no pane named.
+   *
+   * The second is what produced an INVISIBLE REVIVED SHELL. The next open
+   * spawned a pty for that orphaned entry, no pane could ever show it, and
+   * nothing in the UI could name it in order to close it.
+   *
+   * The schema now requires a bijection, so the host reconciles the two halves
+   * to their intersection rather than either refusing the write (which would
+   * cost the user the whole workspace over one closed pane) or committing a
+   * file that cannot be parsed back.
+   */
+  it("drops an entry no pane names, and a pane whose terminal has gone", async () => {
+    const { service, ptys } = buildPooled();
+
+    for (const id of ["keep", "gone"]) {
+      const created = await send(service, createRequest(id, "w1"));
+      if (!created.ok) throw new Error(`create refused: ${created.code}`);
+    }
+
+    // The layout names BOTH, which is what the renderer last persisted.
+    const both = layoutFor(["keep", "gone"]);
+
+    // `gone` exits before the capture runs, exactly as a slow close does.
+    ptys[1]?.exit(0);
+    // The exit is announced only after the trailing-output flush window, so the
+    // wait is for that contract rather than a guessed interval.
+    await new Promise<void>((resolve) => setTimeout(resolve, 600));
+    expect(service.terminal("gone")).toBeUndefined();
+
+    const persisted = await send(service, both);
+    expect(persisted.ok).toBe(true);
+
+    const raw = await fs.readFile(path.join(directory, "p1.json"), "utf8");
+    const parsed = terminalWorkspaceSnapshotSchema.safeParse(JSON.parse(raw));
+    // THE FILE PARSES BACK. Before the invariant existed this file happily
+    // carried a pane over a dead id; now a file that did would be discarded
+    // whole on the next open, so committing one is the defect.
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) throw new Error("unreachable");
+
+    expect(parsed.data.terminals.map((entry) => entry.terminalId)).toEqual(["keep"]);
+    expect(
+      parsed.data.layout.groups.flatMap((group) =>
+        group.panes.map((pane) => pane.terminalId),
+      ),
+    ).toEqual(["keep"]);
+
+    // ---- and now the other direction, which is the expensive one ----
+    //
+    // A LIVE terminal the layout does not name. Carrying it would make the next
+    // open spawn a pty for an entry no pane references - a running shell the
+    // user can neither see nor close.
+    const extra = await send(service, createRequest("unreferenced", "w1"));
+    expect(extra.ok).toBe(true);
+    const persistedAgain = await send(service, layoutFor(["keep"]));
+    expect(persistedAgain.ok).toBe(true);
+
+    const secondRaw = await fs.readFile(path.join(directory, "p1.json"), "utf8");
+    const second = terminalWorkspaceSnapshotSchema.safeParse(JSON.parse(secondRaw));
+    expect(second.success).toBe(true);
+    if (!second.success) throw new Error("unreachable");
+    expect(second.data.terminals.map((entry) => entry.terminalId)).toEqual(["keep"]);
+
+    await service.shutdownAll();
+  });
+});
+
+describe("a revive restores the OLD SCREEN before the new shell speaks", () => {
+  /**
+   * ORDER, and it was wrong.
+   *
+   * The revive used to start the fresh shell and restore the mirror
+   * AFTERWARDS. A shell that prints its prompt in that gap put the prompt into
+   * the mirror first, and the restored serialization - which begins with a
+   * screen clear, as every serialization does - then erased it. The user
+   * watched their prompt appear and vanish, and the terminal they came back to
+   * showed the old session with no live prompt in it.
+   *
+   * The gap is not hypothetical: a shell writes its prompt on the first turn
+   * of the event loop after it starts, and the restore was several awaits
+   * later.
+   *
+   * This pins the order at the source of truth. The mirror is what every
+   * replay, resync and snapshot is serialized from, so its contents ARE the
+   * user's screen.
+   */
+  it("has the restored screen ahead of the fresh shell's first output", async () => {
+    const restored = "RESTORED-FROM-THE-LAST-SESSION";
+    const prompt = "PROMPT-FROM-THE-FRESH-SHELL";
+
+    // Seed a snapshot the revive can read.
+    const store = new TerminalSnapshotStore(directory);
+    const written = await store.write({
+      version: 1,
+      projectId: "p1",
+      savedAt: 1,
+      layout: {
+        projectId: "p1",
+        groups: [
+          {
+            groupId: "g1",
+            orientation: "horizontal",
+            panes: [{ terminalId: "old", relativeSize: 1 }],
+            activePaneIndex: 0,
+          },
+        ],
+        activeGroupIndex: 0,
+      },
+      terminals: [
+        {
+          terminalId: "old",
+          title: "bash",
+          shellName: "bash",
+          executable: "bash",
+          args: [],
+          cwdAtSpawn: CWD,
+          cols: 80,
+          rows: 24,
+          serialized: `${restored}\r\n`,
+          droppedRows: 0,
+          reducedRows: 0,
+        },
+      ],
+    });
+    if (written.kind !== "ok") throw new Error(`seed failed: ${written.kind}`);
+
+    // A shell that speaks THE INSTANT it is spawned. That is the whole point:
+    // the defect lives in the window between the spawn and the restore, so a
+    // pty that waits cannot expose it.
+    const ptys: ScriptedPty[] = [];
+    const service = new PtyHostService({
+      spawn: (executable, args, options) => {
+        void executable;
+        void args;
+        void options;
+        const pty = new ScriptedPty();
+        ptys.push(pty);
+        queueMicrotask(() => {
+          pty.emit(`${prompt}\r\n`);
+        });
+        return pty;
+      },
+      probe: fakeProbe({
+        directories: [CWD],
+        files: [SHELL],
+        executables: { bash: SHELL, [SHELL]: SHELL },
+      }),
+      baseEnv: { PATH: "/usr/bin" },
+      snapshotStore: store,
+      scrollbackRows: 1000,
+      graceMs: 60_000,
+      shortGraceMs: 6_000,
+      sendToMain: (message) => toMain.push(message),
+      platform: "linux",
+    });
+
+    const revived = await send(service, {
+      kind: "revive",
+      projectId: "p1",
+      windowId: "w1",
+      assignments: [{ from: "old", to: "fresh" }],
+    });
+    if (!revived.ok) throw new Error("revive refused");
+
+    const terminal = service.terminal("fresh");
+    if (terminal === undefined) throw new Error("unreachable");
+    // Give the shell's own output time to land, then read the authoritative
+    // screen the way a replay would.
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    const screen = await terminal.process.mirror.serialize();
+
+    expect(screen.data).toContain(restored);
+    expect(screen.data).toContain(prompt);
+    // THE ORDER. Reversed, the restored screen's leading clear wipes the prompt
+    // and the second `toContain` above fails outright.
+    expect(screen.data.indexOf(restored)).toBeLessThan(screen.data.indexOf(prompt));
+
+    await service.shutdownAll();
+  });
 });

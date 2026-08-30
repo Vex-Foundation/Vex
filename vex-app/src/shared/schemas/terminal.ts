@@ -143,8 +143,36 @@ export const TERMINAL_PORT_NONCE_TTL_MS = 10_000;
 /** How long main waits for the host to answer `create` before calling it unresponsive. */
 export const TERMINAL_CREATE_TIMEOUT_MS = 5_000;
 
+/**
+ * The extra deadline a `revive` earns FOR EACH TERMINAL it is asked to restore.
+ *
+ * A revive spawns up to `TERMINALS_PER_PROJECT_MAX` ptys SEQUENTIALLY, each of
+ * which probes an executable and starts a shell. Holding all twelve to the
+ * single-request budget made a normal restore on a cold or loaded machine
+ * indistinguishable from an unresponsive host: main timed the request out,
+ * declared the host unresponsive, released the reservations - and the host went
+ * on spawning shells nobody was counting.
+ *
+ * So the budget is PROPORTIONAL to the work requested. It is not unbounded: the
+ * assignment list is capped by the schema, so the deadline is capped with it.
+ */
+export const TERMINAL_REVIVE_PER_TERMINAL_TIMEOUT_MS = 5_000;
+
 /** Trailing-output flush window before a exiting pty's exit is announced. */
 export const TERMINAL_DATA_FLUSH_TIMEOUT_MS = 250;
+
+/**
+ * How long a snapshot waits for ONE held terminal's mirror to reach a fixed
+ * point before committing anyway.
+ *
+ * The producer is already stopped when this runs, so the only thing being
+ * waited on is xterm's parser finishing what it was handed. The bound exists so
+ * that a wedged one cannot convert the snapshot - which is on the quit path -
+ * into a hang: a terminal that overruns it is serialized from wherever its
+ * mirror got to, and the shortfall is logged rather than paid for by the user's
+ * whole workspace.
+ */
+export const TERMINAL_SNAPSHOT_DRAIN_MS = 1_000;
 
 /** Force-kill backstop for a pty that will not exit on its own. */
 export const TERMINAL_MAXIMUM_SHUTDOWN_MS = 5_000;
@@ -573,6 +601,27 @@ export const terminalHostRequestSchema = z.discriminatedUnion("kind", [
         .max(TERMINALS_PER_PROJECT_MAX),
     })
     .strict(),
+  /**
+   * ABANDON an earlier request: main stopped waiting for it, and whatever it
+   * creates must not survive as an untracked pty.
+   *
+   * Main's `send` bounds every request. When that bound fires, main releases the
+   * capacity reservation and the project lease it was holding and answers the
+   * caller `create_timeout` - but the HOST never heard about any of that, so a
+   * slow `create` or `revive` went on to register live ptys that main had just
+   * stopped believing in and no window would ever attach. This request is what
+   * closes that gap: the host records the abandonment, and the terminals the
+   * abandoned request produces are killed by the host itself rather than
+   * reconciled by a main that has no way to learn their ids.
+   *
+   * NEVER answered with a reply - main is no longer listening for one.
+   */
+  z
+    .object({
+      kind: z.literal("abandonRequest"),
+      requestId: z.string().min(1).max(64),
+    })
+    .strict(),
   /** The ordered shutdown. Serializes, commits, kills, disposes - in that order. */
   z.object({ kind: z.literal("shutdownAll") }).strict(),
 ]);
@@ -783,6 +832,36 @@ export const terminalWorkspaceSnapshotSchema = z
       === snapshot.terminals.length,
     { message: "two snapshot entries share a terminalId" },
   )
+  .refine(
+    (snapshot) => {
+      // EVERY PANE NAMES AN ENTRY THAT EXISTS. A layout referencing a terminal
+      // the file does not carry restores a pane with no buffer, no launch and
+      // nothing to revive from - which the revive then drops, silently, after
+      // the user has already been shown the tab.
+      const entries = new Set(snapshot.terminals.map((entry) => entry.terminalId));
+      return snapshot.layout.groups.every((group) =>
+        group.panes.every((pane) => entries.has(pane.terminalId)),
+      );
+    },
+    { message: "a pane names a terminal the snapshot does not carry" },
+  )
+  .refine(
+    (snapshot) => {
+      // AND EVERY ENTRY IS NAMED BY A PANE. The other direction is the one that
+      // produced an INVISIBLE REVIVED SHELL: a terminal closed while a persist
+      // was in flight left its entry in the file with no pane referencing it,
+      // and the next open spawned a pty for it that no pane could ever show and
+      // no user could ever close. Paired with the pane-uniqueness refinement on
+      // the layout, this makes the two halves of the file a bijection.
+      const referenced = new Set(
+        snapshot.layout.groups.flatMap((group) =>
+          group.panes.map((pane) => pane.terminalId),
+        ),
+      );
+      return snapshot.terminals.every((entry) => referenced.has(entry.terminalId));
+    },
+    { message: "a terminal entry is not referenced by any pane" },
+  )
   .refine((snapshot) => snapshot.layout.projectId === snapshot.projectId, {
     // The file names one project. A layout inside it that names another is a
     // file whose two halves describe different workspaces, and reviving it
@@ -946,6 +1025,35 @@ export type TerminalResizeInput = z.infer<typeof terminalResizeInputSchema>;
 export const terminalIdInputSchema = z
   .object({ terminalId: terminalIdSchema })
   .strict();
+
+/**
+ * A project's layout, as the renderer hands it to main.
+ *
+ * Named separately from the layout itself because the preload gate validates
+ * the PAYLOAD it is given, not the field inside it, and a gate that parses only
+ * part of its input is a gate with a hole in the shape of the rest.
+ */
+export const terminalPersistWorkspaceInputSchema = z
+  .object({ layout: terminalWorkspaceLayoutSchema })
+  .strict();
+
+export const terminalProjectInputSchema = z
+  .object({ projectId: z.string().min(1).max(64) })
+  .strict();
+
+/**
+ * The terminals that died with an unexpectedly terminated pty host.
+ *
+ * Broadcast rather than replied to, because nobody asked: the renderer is
+ * holding tabs for shells that no longer exist and cannot learn that any other
+ * way - their exits died with the port that would have carried them.
+ */
+export const terminalsLostSchema = z
+  .object({
+    terminalIds: z.array(terminalIdSchema).max(TERMINALS_GLOBAL_MAX),
+  })
+  .strict();
+export type TerminalsLost = z.infer<typeof terminalsLostSchema>;
 
 export const terminalAckResultSchema = terminalOutcomeSchema(z.null());
 export type TerminalAckResult = z.infer<typeof terminalAckResultSchema>;

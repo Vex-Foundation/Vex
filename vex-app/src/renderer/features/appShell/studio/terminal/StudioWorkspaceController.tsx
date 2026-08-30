@@ -34,6 +34,7 @@ import { cn } from "../../../../lib/utils.js";
 import {
   createTerminal,
   killTerminal,
+  onTerminalsLost,
   persistTerminalWorkspace,
   readTerminalWorkspace,
 } from "../../../../lib/api/terminal.js";
@@ -108,6 +109,18 @@ export function StudioWorkspaceController({
 }: StudioWorkspaceControllerProps): JSX.Element {
   const [state, setState] = useState<WorkspaceState>(() => emptyWorkspace(projectId));
   const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * Terminals that died with an unexpectedly terminated pty host.
+   *
+   * Their panes are marked dead rather than removed: the snapshot on disk still
+   * holds their scrollback, so the honest offer is a revive, and silently
+   * emptying the workspace would take a recoverable state away from the user
+   * before they were told it existed.
+   */
+  const [lostTerminalIds, setLostTerminalIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [restoring, setRestoring] = useState(false);
   // The registry a closed tab's terminals are DISPOSED through. The prop exists
   // so a test can supply its own; the shared one is the window's.
   const activeRegistry = registry ?? terminalRegistry;
@@ -130,6 +143,15 @@ export function StudioWorkspaceController({
    * restore could overwrite terminals opened after it started.
    */
   const generationRef = useRef(0);
+
+  /**
+   * The project this controller is CURRENTLY showing.
+   *
+   * Read by the stale-restore compensation, which needs to distinguish two very
+   * different reasons a restore can be stale. See the restore effect.
+   */
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
 
   /**
    * Opens that have been admitted but whose pty does not exist yet.
@@ -184,18 +206,48 @@ export function StudioWorkspaceController({
     stateRef.current = emptyWorkspace(projectId);
     setState(stateRef.current);
 
+    const opened = projectId;
+    setLostTerminalIds(new Set());
+
     void (async () => {
-      const result = await readTerminalWorkspace(projectId);
+      const result = await readTerminalWorkspace(opened);
       // A restore that landed after the workspace was replaced describes one
       // nobody is looking at any more. Applying it would show the previous
-      // project's terminals under the new project's name - and, now that the
+      // project's terminals under the new project's name - and, because the
       // open REVIVES rather than only reads, would also overwrite whatever the
       // user has opened since with a layout built before any of it existed.
       //
-      // The terminals it revived are not orphaned by this: main recorded them
-      // and they are reachable through the project's next open, or closed with
-      // the project.
-      if (generation !== generationRef.current) return;
+      // ## Discarding it is not enough, and the two stale cases differ
+      //
+      // The claim that used to stand here - that the discarded terminals were
+      // "reachable through the project's next open" - was false: the next open
+      // revived ANOTHER set from the same snapshot, so every discard leaked a
+      // full workspace of running shells no pane referenced.
+      //
+      // Main now owns that: an open is single-flight and idempotent per window
+      // and project, so a StrictMode double restore JOINS one revive and both
+      // continuations name the SAME live terminals. That is precisely why this
+      // compensation must ask WHICH KIND of stale it is:
+      //
+      //  - SAME PROJECT (a remount, StrictMode, a double effect): the newer
+      //    mount holds these exact ids. Killing them here would kill the live
+      //    workspace the user is looking at.
+      //  - DIFFERENT PROJECT (the user switched while this was in flight):
+      //    nothing in this window will ever reference them. They are ours to
+      //    end, and leaving them is what "an invisible running shell" means.
+      if (generation !== generationRef.current) {
+        if (
+          opened !== projectIdRef.current
+          && result.ok
+          && result.data.ok
+          && result.data.value !== null
+        ) {
+          for (const entry of result.data.value.terminals) {
+            void killTerminal(entry.terminalId);
+          }
+        }
+        return;
+      }
       if (result.ok && result.data.ok && result.data.value !== null) {
         stateRef.current = fromSnapshot(result.data.value);
         setState(stateRef.current);
@@ -259,6 +311,71 @@ export function StudioWorkspaceController({
       flushPersist();
     };
   }, [flushPersist]);
+
+  /* ---------------- host loss ---------------- */
+
+  /**
+   * The pty host died and took every shell with it.
+   *
+   * Nothing consumed this signal before, and the result was a workspace that
+   * went on drawing live tabs over dead processes and accepting keystrokes into
+   * them - permanently, because the per-terminal `exit` that would have said
+   * otherwise died with the port that carried it.
+   *
+   * Only the ids this workspace actually shows are recorded, so a crash that
+   * cost another project's terminals does not put a banner over this one.
+   */
+  useEffect(() => {
+    return onTerminalsLost((terminalIds) => {
+      const mine = new Set<string>();
+      for (const tab of stateRef.current.tabs) {
+        if (tab.kind !== "terminalGroup") continue;
+        for (const pane of tab.panes) {
+          if (terminalIds.includes(pane.terminalId)) mine.add(pane.terminalId);
+        }
+      }
+      if (mine.size === 0) return;
+      setLostTerminalIds((current) => new Set([...current, ...mine]));
+    });
+  }, []);
+
+  /**
+   * Revive the workspace from the last snapshot, after a host loss.
+   *
+   * Goes through the SAME open every mount uses, so it inherits main's
+   * single-flight and its host-generation fence: the remembered open from
+   * before the crash is invalid by construction, and this produces exactly one
+   * fresh set of ptys rather than racing the mount effect into two.
+   */
+  const handleRestoreLost = useCallback((): void => {
+    if (restoring) return;
+    setRestoring(true);
+    const generation = generationRef.current;
+    const opened = projectIdRef.current;
+    void (async () => {
+      try {
+        const result = await readTerminalWorkspace(opened);
+        if (generation !== generationRef.current) return;
+        if (!result.ok || !result.data.ok) {
+          setNotice("Vex could not restore this project's terminals. Try again.");
+          return;
+        }
+        if (result.data.value === null) {
+          setNotice("There is no saved terminal workspace left to restore.");
+          stateRef.current = emptyWorkspace(opened);
+          setState(stateRef.current);
+          setLostTerminalIds(new Set());
+          return;
+        }
+        stateRef.current = fromSnapshot(result.data.value);
+        setState(stateRef.current);
+        setLostTerminalIds(new Set());
+        setNotice(null);
+      } finally {
+        setRestoring(false);
+      }
+    })();
+  }, [restoring]);
 
   /* ---------------- actions ---------------- */
 
@@ -443,6 +560,7 @@ export function StudioWorkspaceController({
     <div className={cn("flex h-full min-h-0 flex-col bg-surface-base", className)}>
       <TerminalTabs
         state={state}
+        lostTerminalIds={lostTerminalIds}
         {...(registry === undefined ? {} : { registry })}
         onSelectTab={(tabId) => {
           apply((current) => selectTab(current, tabId));
@@ -466,7 +584,26 @@ export function StudioWorkspaceController({
           // them would take it away. `XtermHost` renders the exit line.
         }}
         notice={
-          notice === null ? null : (
+          lostTerminalIds.size > 0 ? (
+            <div
+              role="alert"
+              className="flex shrink-0 items-start gap-2 border-b border-line-3 bg-warning-wash px-3 py-2 text-[12px] leading-4 text-ink-primary"
+            >
+              <span className="flex-1">
+                {`The terminal service stopped and ${String(lostTerminalIds.size)} `
+                  + `${lostTerminalIds.size === 1 ? "shell" : "shells"} ended with it. `
+                  + "Their saved output can be restored."}
+              </span>
+              <button
+                type="button"
+                onClick={handleRestoreLost}
+                disabled={restoring}
+                className="rounded px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60"
+              >
+                {restoring ? "Restoring..." : "Restore terminals"}
+              </button>
+            </div>
+          ) : notice === null ? null : (
             <div
               role="status"
               className="flex shrink-0 items-start gap-2 border-b border-line-3 bg-warning-wash px-3 py-2 text-[12px] leading-4 text-ink-primary"

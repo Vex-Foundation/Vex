@@ -620,3 +620,92 @@ describe("write chunking", () => {
     expect(seen).toBe(1);
   });
 });
+
+describe("every terminal input is VALIDATED AT THE PRELOAD GATE", () => {
+  /**
+   * Main revalidates all of this and main is the authority. That is not a
+   * reason for the gate to be missing, and the boundary rule says so directly:
+   * a narrow domain method parses what it is handed BEFORE it crosses the
+   * process line. These methods did not, so whatever the renderer put in a
+   * payload reached the privileged side unexamined, and the only thing between
+   * it and a handler was the handler remembering.
+   *
+   * The schemas here are the SHARED ones main uses, so the two gates cannot
+   * drift into disagreeing about what is acceptable.
+   *
+   * The observable property is the same for every row: nothing crosses. An
+   * invalid input produces no invoke, and for the port methods no packet.
+   */
+  it("refuses an off-contract payload without invoking main", async () => {
+    const rows: Array<{ what: string; call: () => Promise<unknown> }> = [
+      {
+        what: "create with a non-integer geometry",
+        call: () => terminal.create({ projectId: "p1", cols: 80.5, rows: 24 }),
+      },
+      {
+        what: "create with an empty projectId",
+        call: () => terminal.create({ projectId: "", cols: 80, rows: 24 }),
+      },
+      {
+        what: "resize past the column bound",
+        call: () => terminal.resize({ terminalId: "t1", cols: 100_000, rows: 24 }),
+      },
+      {
+        what: "kill with an empty terminalId",
+        call: () => terminal.kill({ terminalId: "" }),
+      },
+      {
+        what: "readWorkspace with an empty projectId",
+        call: () => terminal.readWorkspace({ projectId: "" }),
+      },
+      {
+        what: "persistWorkspace with a layout whose active index names nothing",
+        call: () =>
+          terminal.persistWorkspace({
+            layout: { projectId: "p1", groups: [], activeGroupIndex: 3 },
+          }),
+      },
+      {
+        what: "persistWorkspace with one terminal in two panes",
+        call: () =>
+          terminal.persistWorkspace({
+            layout: {
+              projectId: "p1",
+              activeGroupIndex: 0,
+              groups: [
+                {
+                  groupId: "g1",
+                  orientation: "horizontal",
+                  activePaneIndex: 0,
+                  panes: [
+                    { terminalId: "t1", relativeSize: 0.5 },
+                    { terminalId: "t1", relativeSize: 0.5 },
+                  ],
+                },
+              ],
+            },
+          }),
+      },
+    ];
+
+    for (const row of rows) {
+      invocations.length = 0;
+      await row.call();
+      expect(invocations, row.what).toEqual([]);
+    }
+  });
+
+  it("refuses an off-contract attach or detach without touching the port", async () => {
+    const port = await acquire();
+    const before = port.sent.length;
+
+    const attached = await terminal.attach({ terminalId: "" });
+    const detached = await terminal.detach({ terminalId: "" });
+
+    expect(attached).toEqual({ ok: true, data: { ok: false, code: "invalid_packet" } });
+    expect(detached).toEqual({ ok: true, data: { ok: false, code: "invalid_packet" } });
+    // NOTHING WAS POSTED. The port is a live conduit into the process that
+    // spawns shells; a packet the gate could not parse must not reach it.
+    expect(port.sent.length).toBe(before);
+  });
+});

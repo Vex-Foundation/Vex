@@ -143,9 +143,44 @@ function refuse(code: TerminalErrorCode): TerminalOutcome<never> {
   return { ok: false, code };
 }
 
+/**
+ * One window's open of one project, joinable and reusable.
+ *
+ * THE OWNER OF "how many times may a workspace be revived". Every open used to
+ * spawn a fresh set of ptys from the same snapshot, and nothing above it made
+ * that idempotent: React StrictMode runs the restore effect twice by design,
+ * and the controller's generation fence DISCARDED the first result without
+ * killing what it had created. The comment claiming those terminals were
+ * "reachable through the project's next open" was false in the most expensive
+ * possible way - the next open revived ANOTHER set.
+ *
+ * The fix belongs here rather than in the renderer, because main is the only
+ * party that can see every open and owns the ids either way.
+ *
+ *  - IN FLIGHT: a second open joins the first's promise. One revive.
+ *  - SETTLED, same host generation: the recorded terminals are returned again,
+ *    filtered to those still live. No spawn at all.
+ *  - Nothing left live, or the host generation has moved: the memory describes
+ *    a world that ended, and a real revive runs.
+ */
+interface WorkspaceOpen {
+  readonly generation: number;
+  readonly promise: Promise<TerminalOutcome<TerminalWorkspaceRestore | null>>;
+}
+
 export class TerminalDomain {
   private readonly terminals = new Map<string, TerminalEntry>();
   private readonly tickets = new Map<string, PortTicket>();
+  /** Keyed by `windowId\0projectId`. See `WorkspaceOpen`. */
+  private readonly opens = new Map<string, WorkspaceOpen>();
+  /**
+   * Bumped whenever every terminal main believes in has ceased to exist.
+   *
+   * A remembered open is a set of live pty ids. When the host dies they all go
+   * at once, and reusing the memory would hand the renderer ids the restarted
+   * host has never heard of.
+   */
+  private hostGeneration = 0;
   /** Capacity claimed by creates that have not been recorded yet. */
   private pendingGlobalCreates = 0;
   private readonly pendingProjectCreates = new Map<string, number>();
@@ -436,6 +471,82 @@ export class TerminalDomain {
     windowId: string,
     projectId: string,
   ): Promise<TerminalOutcome<TerminalWorkspaceRestore | null>> {
+    const key = `${windowId}\u0000${projectId}`;
+    const existing = this.opens.get(key);
+    if (existing !== undefined && existing.generation === this.hostGeneration) {
+      const reused = await this.reuseOpen(existing);
+      if (reused !== null) return reused;
+      // Nothing it created is live any more. The memory is spent.
+      this.opens.delete(key);
+    } else if (existing !== undefined) {
+      this.opens.delete(key);
+    }
+
+    const generation = this.hostGeneration;
+    const promise = this.reviveWorkspace(windowId, projectId);
+    this.opens.set(key, { generation, promise });
+    try {
+      return await promise;
+    } catch (cause: unknown) {
+      // A rejected open must not be remembered as a successful one.
+      if (this.opens.get(key)?.promise === promise) this.opens.delete(key);
+      throw cause;
+    }
+  }
+
+  /**
+   * Answer from a remembered open, or `null` when it no longer describes
+   * anything live.
+   *
+   * FILTERED, never replayed verbatim: between the first open and this one the
+   * user may have closed a pane, and returning an id whose pty is gone is the
+   * same defect - a pane over a shell that does not exist - pointed the other
+   * way. A partially-live memory is still worth reusing, because the
+   * alternative is spawning a duplicate set beside the terminals that survived.
+   */
+  private async reuseOpen(
+    open: WorkspaceOpen,
+  ): Promise<TerminalOutcome<TerminalWorkspaceRestore | null> | null> {
+    const settled = await open.promise;
+    if (!settled.ok) return null;
+    if (settled.value === null) return settled;
+    const live = settled.value.terminals.filter((entry) =>
+      this.terminals.has(entry.terminalId),
+    );
+    if (live.length === 0) return null;
+    const liveIds = new Set(live.map((entry) => entry.terminalId));
+    const groups: TerminalWorkspaceLayout["groups"][number][] = [];
+    for (const group of settled.value.layout.groups) {
+      const panes = group.panes.filter((pane) => liveIds.has(pane.terminalId));
+      if (panes.length === 0) continue;
+      groups.push({
+        ...group,
+        panes,
+        activePaneIndex: Math.min(group.activePaneIndex, panes.length - 1),
+      });
+    }
+    return {
+      ok: true,
+      value: {
+        layout: {
+          ...settled.value.layout,
+          groups,
+          activeGroupIndex:
+            groups.length === 0
+              ? 0
+              : Math.min(settled.value.layout.activeGroupIndex, groups.length - 1),
+        },
+        terminals: live,
+        idMap: settled.value.idMap.filter((entry) => liveIds.has(entry.to)),
+      },
+    };
+  }
+
+  /** The revive itself. One per `WorkspaceOpen`, never called directly. */
+  private async reviveWorkspace(
+    windowId: string,
+    projectId: string,
+  ): Promise<TerminalOutcome<TerminalWorkspaceRestore | null>> {
     const read = await this.starter.send({ kind: "readWorkspace", projectId });
     if (!read.ok) return read;
     if (read.value === null) return { ok: true, value: null };
@@ -550,6 +661,11 @@ export class TerminalDomain {
    * from the last snapshot rather than silently emptying the workspace.
    */
   private handleHostTerminated(): void {
+    // Every remembered open names ptys that died with the process. Invalidating
+    // the generation is what stops the next open from handing the renderer ids
+    // a restarted host would answer `unknown_terminal` for.
+    this.hostGeneration += 1;
+    this.opens.clear();
     const lost = [...this.terminals.keys()];
     for (const terminalId of lost) this.forget(terminalId);
 
@@ -645,6 +761,12 @@ export class TerminalDomain {
 
   /** A window went away. Its terminals detach on the short grace in the host. */
   async releaseWindow(windowId: string): Promise<void> {
+    // The window that owns these opens is gone. Its terminals detach on the
+    // short grace; the memory of how they were opened is no longer reusable by
+    // anyone, because a new window is a new owner the host would refuse.
+    for (const [key] of [...this.opens]) {
+      if (key.startsWith(`${windowId}\u0000`)) this.opens.delete(key);
+    }
     for (const [nonce, ticket] of [...this.tickets]) {
       if (ticket.windowId !== windowId) continue;
       clearTimeout(ticket.timer);
@@ -661,6 +783,9 @@ export class TerminalDomain {
     const doomed = [...this.terminals.values()].filter(
       (entry) => entry.projectId === projectId,
     );
+    for (const [key] of [...this.opens]) {
+      if (key.endsWith(`\u0000${projectId}`)) this.opens.delete(key);
+    }
     for (const entry of doomed) {
       await this.starter.send({
         kind: "kill",
@@ -680,6 +805,7 @@ export class TerminalDomain {
 
   async dispose(): Promise<void> {
     this.unregisterCloseHook();
+    this.opens.clear();
     for (const [, ticket] of this.tickets) clearTimeout(ticket.timer);
     this.tickets.clear();
     for (const entry of this.terminals.values()) entry.lease.release();

@@ -31,6 +31,15 @@ export interface TerminalPaneGroupProps {
   readonly onClosePane: (paneId: string) => void;
   readonly onTitleChange: (title: string) => void;
   readonly onPaneExit: (paneId: string, info: { exitCode: number; signal: number | null }) => void;
+  /**
+   * Terminals whose pty died with the pty host.
+   *
+   * The pane is NOT unmounted for one: the xterm still holds the scrollback the
+   * user was reading, and destroying it would take that away before they had
+   * been told anything. It is covered with a dead overlay instead, which also
+   * stops keystrokes from going into a shell that cannot receive them.
+   */
+  readonly lostTerminalIds?: ReadonlySet<string>;
 }
 
 export function TerminalPaneGroup({
@@ -42,6 +51,7 @@ export function TerminalPaneGroup({
   onClosePane,
   onTitleChange,
   onPaneExit,
+  lostTerminalIds,
 }: TerminalPaneGroupProps): JSX.Element {
   const multiple = group.panes.length > 1;
 
@@ -55,7 +65,9 @@ export function TerminalPaneGroup({
       }
       className="h-full w-full"
     >
-      {group.panes.map((pane, index) => (
+      {group.panes.map((pane, index) => {
+        const lost = lostTerminalIds?.has(pane.terminalId) === true;
+        return (
         <div
           key={pane.paneId}
           className={cn(
@@ -80,6 +92,19 @@ export function TerminalPaneGroup({
               onPaneExit(pane.paneId, info);
             }}
           />
+          {lost ? (
+            <div
+              // The overlay is the ENFORCEMENT, not a label: it sits over the
+              // terminal so a keystroke cannot reach a textarea whose pty no
+              // longer exists, while the scrollback stays readable behind it.
+              role="status"
+              className="absolute inset-0 flex items-end justify-center bg-surface-base/60 p-3 text-[12px] text-ink-secondary"
+            >
+              <span className="rounded border border-line-3 bg-surface-raised px-2 py-1">
+                This shell ended when the terminal service stopped.
+              </span>
+            </div>
+          ) : null}
           {multiple ? (
             <button
               type="button"
@@ -93,7 +118,8 @@ export function TerminalPaneGroup({
             </button>
           ) : null}
         </div>
-      ))}
+        );
+      })}
     </SplitPane>
   );
 }

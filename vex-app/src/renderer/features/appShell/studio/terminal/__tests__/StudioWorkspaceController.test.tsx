@@ -528,3 +528,146 @@ describe("StudioWorkspaceController surface", () => {
     expect(mark?.getAttribute("aria-hidden")).toBe("true");
   });
 });
+
+describe("a restore leaves EXACTLY ONE live set of ptys", () => {
+  /**
+   * THE LEAK THIS SUITE COULD NOT SEE BEFORE.
+   *
+   * The old assertions checked that a stale restore was not APPLIED, which says
+   * nothing about the shells it created. Every open revives a set of ptys, and
+   * with no model of them a suite cannot distinguish one live set from three.
+   *
+   * `bridge.livePtys` is that model - the fake main and host together - and
+   * `bridge.reviveCount` separates an open that genuinely spawned from one that
+   * joined or reused. Both halves of the fix are load-bearing here: main's
+   * single-flight stops the duplicate spawn, and the controller's compensation
+   * ends a set that belongs to a project it is no longer showing.
+   */
+  it("survives a StrictMode DOUBLE RESTORE with one revive and one live set", async () => {
+    bridge.savedWorkspace = savedWorkspace();
+    renderStrict("p1");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
+    });
+
+    // StrictMode ran the restore effect twice. ONE revive, and the terminals
+    // the workspace is showing are the ones that are live.
+    expect(bridge.reviveCount).toBe(1);
+    expect([...bridge.livePtys].sort()).toEqual(["t1", "t2"]);
+    // And the surviving set was not killed by a stale continuation that
+    // mistook a remount for a project switch.
+    expect(bridge.kills).toEqual([]);
+  });
+
+  it("KILLS the set a PROJECT SWITCH orphaned instead of leaving it running", async () => {
+    bridge.savedWorkspace = savedWorkspace();
+    bridge.deferReadWorkspace = true;
+    const view = renderStrict("p1");
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // The user moves to another project while p1's revive is in flight.
+    await act(async () => {
+      view.rerender(strictTree("p2"));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      bridge.deferReadWorkspace = false;
+      bridge.settleReads();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      // NOTHING FROM p1 IS STILL RUNNING. Before the compensation these two
+      // shells lived on with no pane referencing them, holding capacity against
+      // the per-project bound and a lease against the project, for the life of
+      // the window.
+      expect([...bridge.livePtys].filter((id) => id === "t1" || id === "t2")).toEqual([]);
+    });
+    // As a SET: StrictMode gives the joined open two stale continuations, and
+    // both compensate. A repeated kill of the same id is idempotent - main
+    // answers the second `unknown_terminal` - and de-duplicating it in the
+    // controller would mean tracking which ids a sibling mount had already
+    // ended, which is state with no other purpose.
+    expect([...new Set(bridge.kills)].sort()).toEqual(["t1", "t2"]);
+  });
+
+  it("does not spawn a SECOND set when a slow restore is joined by a remount", async () => {
+    bridge.savedWorkspace = savedWorkspace();
+    bridge.deferReadWorkspace = true;
+    const view = renderStrict("p1");
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // A remount of the SAME project while the first open is still in flight.
+    await act(async () => {
+      view.rerender(strictTree("p1"));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      bridge.deferReadWorkspace = false;
+      bridge.settleReads();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
+    });
+    expect(bridge.reviveCount).toBe(1);
+    expect([...bridge.livePtys].sort()).toEqual(["t1", "t2"]);
+    expect(bridge.kills).toEqual([]);
+  });
+});
+
+describe("a lost pty host is REPORTED, not hidden", () => {
+  /**
+   * `EV.terminal.terminalsLost` had no consumer at all.
+   *
+   * Main broadcast it, preload dropped it on the floor, and the workspace went
+   * on drawing live tabs over shells that no longer existed and accepting
+   * keystrokes into them - permanently, because the per-terminal `exit` that
+   * would have said otherwise died with the port that carried it.
+   */
+  it("marks the panes dead and OFFERS the revive the snapshot still supports", async () => {
+    bridge.savedWorkspace = savedWorkspace();
+    renderStrict("p1");
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
+    });
+
+    await act(async () => {
+      bridge.emitTerminalsLost(["t1", "t2"]);
+      await Promise.resolve();
+    });
+
+    // The user is TOLD, in an alert, and the panes say so themselves.
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("terminal service stopped");
+    expect(screen.getAllByText(/This shell ended when the terminal service stopped/))
+      .not.toHaveLength(0);
+
+    // And the offer works: it goes through the same open every mount uses, so
+    // it produces exactly one fresh set rather than racing anything.
+    const before = bridge.reviveCount;
+    await act(async () => {
+      screen.getByRole("button", { name: "Restore terminals" }).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+    expect(bridge.reviveCount).toBe(before + 1);
+    expect(bridge.livePtys.size).toBe(2);
+  });
+});

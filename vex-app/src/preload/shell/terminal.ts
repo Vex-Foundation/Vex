@@ -38,8 +38,15 @@ import {
   TERMINAL_PORT_NONCE_TTL_MS,
   TERMINAL_WRITE_MAX_BYTES,
   chunkByUtf8Bytes,
+  terminalCreateInputSchema,
   terminalHostAvailabilitySchema,
+  terminalIdInputSchema,
+  terminalPersistWorkspaceInputSchema,
   terminalPortEventSchema,
+  terminalProjectInputSchema,
+  terminalResizeInputSchema,
+  terminalWriteInputSchema,
+  terminalsLostSchema,
   type TerminalAckResult,
   type TerminalPortEvent,
 } from "../../shared/schemas/terminal.js";
@@ -446,9 +453,31 @@ function portUnavailable(): Result<TerminalAckResult, VexError> {
   return ok({ ok: false, code: "port_unavailable" });
 }
 
+/**
+ * A refusal shaped like the outcome the caller expects.
+ *
+ * The port methods do not reach an invoke at all, so `invokeWithSchema`'s own
+ * validation error is not available to them; they answer with the same typed
+ * refusal every other local failure on this surface uses.
+ */
+function invalidInput(): Result<TerminalAckResult, VexError> {
+  return ok({ ok: false, code: "invalid_packet" });
+}
+
+/**
+ * `vex.terminal.*`, with EVERY INPUT VALIDATED AT THE GATE.
+ *
+ * Main revalidates all of this and main is the authority - but the preload
+ * boundary's own contract is that a narrow domain method parses what it is
+ * handed before it crosses the process line, and these methods did not. The
+ * cost of the omission is not theoretical: an unparsed payload reaches the
+ * privileged side as whatever the renderer chose to put in it, and the only
+ * thing standing between that and a handler is the handler remembering. Here
+ * the schemas are the shared ones main uses, so the two gates cannot drift.
+ */
 export const terminal = {
   create(input) {
-    return invokeWithSchema(CH.terminal.create, input);
+    return invokeWithSchema(CH.terminal.create, input, terminalCreateInputSchema);
   },
 
   async write(input) {
@@ -457,10 +486,11 @@ export const terminal = {
     // in packets that fit the bound, and the caller's promise resolves only
     // after the last one.
     for (const chunk of chunkByUtf8Bytes(input.data, TERMINAL_WRITE_MAX_BYTES)) {
-      last = await invokeWithSchema<TerminalAckResult>(CH.terminal.write, {
-        terminalId: input.terminalId,
-        data: chunk,
-      });
+      last = await invokeWithSchema<TerminalAckResult, { terminalId: string; data: string }>(
+        CH.terminal.write,
+        { terminalId: input.terminalId, data: chunk },
+        terminalWriteInputSchema,
+      );
       // Stop at the first refusal rather than firing the rest into a terminal
       // that has already said no - a half-delivered paste is worse than a
       // refused one, and the caller sees the refusal that stopped it.
@@ -470,14 +500,15 @@ export const terminal = {
   },
 
   resize(input) {
-    return invokeWithSchema(CH.terminal.resize, input);
+    return invokeWithSchema(CH.terminal.resize, input, terminalResizeInputSchema);
   },
 
   kill(input) {
-    return invokeWithSchema(CH.terminal.kill, input);
+    return invokeWithSchema(CH.terminal.kill, input, terminalIdInputSchema);
   },
 
   async attach(input) {
+    if (!terminalIdInputSchema.safeParse(input).success) return invalidInput();
     const active = await ensurePort();
     if (active === null) return portUnavailable();
     unacked.set(input.terminalId, 0);
@@ -491,6 +522,7 @@ export const terminal = {
   },
 
   async detach(input) {
+    if (!terminalIdInputSchema.safeParse(input).success) return invalidInput();
     if (port === null) return portUnavailable();
     const sent = postToPort({ kind: "detach", terminalId: input.terminalId });
     unacked.delete(input.terminalId);
@@ -520,11 +552,15 @@ export const terminal = {
   },
 
   persistWorkspace(input) {
-    return invokeWithSchema(CH.terminal.persistWorkspace, input);
+    return invokeWithSchema(
+      CH.terminal.persistWorkspace,
+      input,
+      terminalPersistWorkspaceInputSchema,
+    );
   },
 
   readWorkspace(input) {
-    return invokeWithSchema(CH.terminal.readWorkspace, input);
+    return invokeWithSchema(CH.terminal.readWorkspace, input, terminalProjectInputSchema);
   },
 
   getAvailability() {
@@ -533,6 +569,28 @@ export const terminal = {
 
   onAvailability(cb) {
     return subscribe(EV.terminal.availability, terminalHostAvailabilitySchema, cb);
+  },
+
+  /**
+   * The terminals that died with an unexpectedly terminated pty host.
+   *
+   * Nothing consumed this before, and the consequence was visible: after a host
+   * crash the workspace went on drawing live tabs over shells that no longer
+   * existed and accepting keystrokes into them, because the per-terminal `exit`
+   * events that would have said otherwise died with the port that carried them.
+   * This is the only signal that can report it.
+   *
+   * The subscription also clears the ack accounting for the lost ids, so a
+   * revived terminal does not inherit a debt owed by a process that is gone.
+   */
+  onTerminalsLost(cb) {
+    return subscribe(EV.terminal.terminalsLost, terminalsLostSchema, (payload) => {
+      for (const terminalId of payload.terminalIds) {
+        unacked.delete(terminalId);
+        replayInFlight.delete(terminalId);
+      }
+      cb(payload.terminalIds);
+    });
   },
 } satisfies TerminalBridge;
 

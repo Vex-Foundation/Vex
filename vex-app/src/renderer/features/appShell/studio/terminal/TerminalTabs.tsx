@@ -49,6 +49,9 @@ import type { TerminalRegistry } from "./terminal-registry.js";
 /** Namespaces the primitive's generated ids so a second strip cannot collide. */
 export const TERMINAL_TABS_ID_SCOPE = "studio-terminal";
 
+/** Stable identity so the default does not remount consumers on every render. */
+const EMPTY_LOST: ReadonlySet<string> = new Set<string>();
+
 export interface TerminalTabsProps {
   readonly state: WorkspaceState;
   readonly registry?: TerminalRegistry;
@@ -67,6 +70,11 @@ export interface TerminalTabsProps {
   ) => void;
   /** A refusal or a status line, rendered above the panels. */
   readonly notice?: ReactNode;
+  /**
+   * Terminals whose pty died with the host. Their panes render DEAD rather than
+   * disappearing, because the snapshot still holds their output.
+   */
+  readonly lostTerminalIds?: ReadonlySet<string>;
 }
 
 export function TerminalTabs({
@@ -82,8 +90,10 @@ export function TerminalTabs({
   onTitleChange,
   onPaneExit,
   notice,
+  lostTerminalIds,
 }: TerminalTabsProps): JSX.Element {
   const activeTabId = state.activeTabId ?? "";
+  const lost = lostTerminalIds ?? EMPTY_LOST;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -138,6 +148,7 @@ export function TerminalTabs({
                 <TerminalPaneGroup
                   group={tab}
                   visible={isActive}
+                  lostTerminalIds={lost}
                   {...(registry === undefined ? {} : { registry })}
                   onResizePanes={(sizes) => {
                     onResizePanes(tab.tabId, sizes);

@@ -91,6 +91,36 @@ export interface TerminalBridgeStub {
   emitRefused: (terminalId: string, code: TerminalErrorCode) => void;
   /** Live subscriptions, so a test can prove a cleanup actually ran. */
   subscriberCount: (kind: EventKind) => number;
+
+  /* ---------------- the fake main and pty host ---------------- */
+
+  /**
+   * The ptys the fake host believes are RUNNING.
+   *
+   * The reason this exists at all: the controller's stale-restore fence was
+   * proven by asserting that a discarded result was not applied, which says
+   * nothing about the shells it created. Every open revives a set of ptys, and
+   * a suite with no model of them cannot tell one live set from three. Counting
+   * them here is what makes "exactly one live set" an assertion rather than a
+   * hope.
+   */
+  readonly livePtys: Set<string>;
+  /**
+   * How many GENUINE revives ran - opens that actually spawned, as opposed to
+   * opens that joined an in-flight one or reused a settled one.
+   */
+  reviveCount: number;
+  /**
+   * Model main's ownership of the open.
+   *
+   * `true` reproduces the production contract: single-flight per project, and a
+   * settled open reused while its terminals are live. `false` reproduces the
+   * behaviour that shipped - every open spawns a fresh set - so a test can show
+   * the proof is measuring something real by watching it fail.
+   */
+  singleFlightOpens: boolean;
+  /** Play a pty-host death for these ids, as main broadcasts it. */
+  emitTerminalsLost: (terminalIds: readonly string[]) => void;
 }
 
 /** jsdom has no matchMedia; xterm calls it while constructing. */
@@ -257,7 +287,68 @@ export function installTerminalBridge(): TerminalBridgeStub {
       channels.refused.get(terminalId)?.(code);
     },
     subscriberCount: (kind) => channels[kind].size,
+    livePtys: new Set<string>(),
+    reviveCount: 0,
+    singleFlightOpens: true,
+    emitTerminalsLost: (terminalIds) => {
+      for (const terminalId of terminalIds) stub.livePtys.delete(terminalId);
+      for (const listener of [...lostListeners]) listener(terminalIds);
+    },
   };
+
+  const lostListeners = new Set<(terminalIds: readonly string[]) => void>();
+
+  /**
+   * Settled or in-flight opens, per project. THE FAKE MAIN's memory.
+   *
+   * Keyed by project rather than by call, because that is the granularity the
+   * production owner works at: a second open of the same project joins or
+   * reuses the first, and only a project whose terminals are all gone revives
+   * again.
+   */
+  const opens = new Map<string, Promise<TerminalWorkspaceRestore | null>>();
+
+  /**
+   * Spawn one workspace's worth of ptys and answer with their ids.
+   *
+   * The FIRST revive of a project keeps the snapshot's own ids, so the suites
+   * that assert on those ids read the way they always did. Every later revive
+   * mints fresh ones, exactly as the real revive does - which is what makes a
+   * duplicate set visible as a larger `livePtys` rather than as an idempotent
+   * no-op that hides the leak.
+   */
+  async function revive(
+    template: TerminalWorkspaceRestore,
+  ): Promise<TerminalWorkspaceRestore> {
+    if (stub.deferReadWorkspace) {
+      await new Promise<void>((resolve) => {
+        stub.pendingReads.push(resolve);
+      });
+    }
+    stub.reviveCount += 1;
+    const rename = stub.reviveCount === 1
+      ? (id: string) => id
+      : (id: string) => `${id}-revive${String(stub.reviveCount)}`;
+    const restored: TerminalWorkspaceRestore = {
+      layout: {
+        ...template.layout,
+        groups: template.layout.groups.map((group) => ({
+          ...group,
+          panes: group.panes.map((pane) => ({
+            ...pane,
+            terminalId: rename(pane.terminalId),
+          })),
+        })),
+      },
+      terminals: template.terminals.map((entry) => ({
+        ...entry,
+        terminalId: rename(entry.terminalId),
+      })),
+      idMap: template.idMap.map((entry) => ({ ...entry, to: rename(entry.to) })),
+    };
+    for (const entry of restored.terminals) stub.livePtys.add(entry.terminalId);
+    return restored;
+  }
 
   const terminal = {
     create: vi.fn(async (input: { projectId: string; cols: number; rows: number }) => {
@@ -283,6 +374,9 @@ export function installTerminalBridge(): TerminalBridgeStub {
     }),
     kill: vi.fn(async (input: { terminalId: string }) => {
       stub.kills.push(input.terminalId);
+      // THE PTY ACTUALLY GOES. A kill recorded but not modelled would let a
+      // leak test pass by counting a shell the controller had already ended.
+      stub.livePtys.delete(input.terminalId);
       return { ok: true as const, data: { ok: true as const, value: null } };
     }),
     attach: vi.fn(async (input: { terminalId: string }) => {
@@ -311,19 +405,51 @@ export function installTerminalBridge(): TerminalBridgeStub {
       stub.persisted.push(input.layout);
       return { ok: true as const, data: { ok: true as const, value: null } };
     }),
-    readWorkspace: vi.fn(async () => {
+    readWorkspace: vi.fn(async (input: { projectId: string }) => {
       // Same rule as `create`: the snapshot this read answers with is the one
       // that existed when the read was issued.
-      const value = stub.savedWorkspace;
-      if (stub.deferReadWorkspace) {
-        await new Promise<void>((resolve) => {
-          stub.pendingReads.push(resolve);
-        });
+      const template = stub.savedWorkspace;
+      if (template === null) {
+        if (stub.deferReadWorkspace) {
+          await new Promise<void>((resolve) => {
+            stub.pendingReads.push(resolve);
+          });
+        }
+        return { ok: true as const, data: { ok: true as const, value: null } };
       }
-      return { ok: true as const, data: { ok: true as const, value } };
+
+      if (!stub.singleFlightOpens) {
+        return {
+          ok: true as const,
+          data: { ok: true as const, value: await revive(template) },
+        };
+      }
+
+      const remembered = opens.get(input.projectId);
+      if (remembered !== undefined) {
+        const settled = await remembered;
+        // Reused only while it still describes live ptys - the same condition
+        // main applies, and the reason a memory cannot outlive what it names.
+        if (
+          settled !== null
+          && settled.terminals.some((entry) => stub.livePtys.has(entry.terminalId))
+        ) {
+          return { ok: true as const, data: { ok: true as const, value: settled } };
+        }
+        opens.delete(input.projectId);
+      }
+      const promise = revive(template);
+      opens.set(input.projectId, promise);
+      return { ok: true as const, data: { ok: true as const, value: await promise } };
     }),
     getAvailability: vi.fn(async () => ({ ok: true as const, data: AVAILABILITY })),
     onAvailability: () => () => undefined,
+    onTerminalsLost: (cb: (terminalIds: readonly string[]) => void) => {
+      lostListeners.add(cb);
+      return () => {
+        lostListeners.delete(cb);
+      };
+    },
   };
 
   // `window.vex` is declared readonly for product code; defineProperty installs

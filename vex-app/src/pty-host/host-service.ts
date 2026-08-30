@@ -34,6 +34,7 @@ import { randomUUID } from "node:crypto";
 import {
   TERMINAL_KILL_SETTLE_MS,
   TERMINAL_MAXIMUM_SHUTDOWN_MS,
+  TERMINAL_SNAPSHOT_DRAIN_MS,
   TERMINAL_SNAPSHOT_MAX_BYTES,
   TERMINAL_SNAPSHOT_VERSION,
   WORKSPACE_SNAPSHOT_FILE_MAX_BYTES,
@@ -85,6 +86,13 @@ interface WindowEntry {
   readonly nonce: string;
 }
 
+/**
+ * How many settled create-or-revive requests are retained for a late
+ * abandonment. Small on purpose: it answers a question about the milliseconds
+ * around main's deadline, not a history.
+ */
+const SETTLED_CREATOR_WINDOW = 32;
+
 function refuse(code: TerminalErrorCode): TerminalOutcome<never> {
   return { ok: false, code };
 }
@@ -99,6 +107,30 @@ export class PtyHostService {
   private readonly layouts = new Map<string, TerminalWorkspaceLayout>();
   private admitting = true;
   private shutdownPromise: Promise<void> | null = null;
+  /**
+   * Control requests currently being dispatched, by the id main gave them.
+   *
+   * Kept only so an `abandonRequest` can find its target. Bounded by the number
+   * of requests in flight, which main bounds by its own request timeout.
+   */
+  private readonly inFlightRequests = new Map<string, TerminalHostRequest>();
+  /** Requests main abandoned while they were still running. */
+  private readonly abandonedRequests = new Set<string>();
+  /**
+   * The last few settled requests that could have created terminals.
+   *
+   * THE RACE THIS EXISTS FOR: main's deadline can fire in the same instant the
+   * host's reply is on the wire. The reply then reaches a main that has already
+   * stopped listening and is dropped, and the abandonment reaches a host that
+   * has already forgotten the request. Without this window that is exactly the
+   * orphan the abandonment protocol was added to prevent - the one case where
+   * both sides believe the other handled it.
+   *
+   * A ring rather than a growing map: it answers a question about the last few
+   * milliseconds, and anything older can no longer be abandoned by a main whose
+   * own deadline has long since passed.
+   */
+  private readonly settledCreators = new Map<string, TerminalHostRequest>();
 
   constructor(private readonly deps: HostServiceDeps) {}
 
@@ -125,8 +157,101 @@ export class PtyHostService {
       return;
     }
     const { requestId, request } = envelope.data;
-    const outcome = await this.dispatch(request, ports);
+
+    // ABANDONMENT IS NOT A DISPATCH. It carries no reply, changes no terminal
+    // state by itself, and must be processed the moment it arrives rather than
+    // queued behind the request it is about.
+    if (request.kind === "abandonRequest") {
+      this.abandonRequest(request.requestId);
+      return;
+    }
+
+    this.inFlightRequests.set(requestId, request);
+    let outcome: TerminalOutcome<unknown>;
+    try {
+      outcome = await this.dispatch(request, ports);
+    } finally {
+      this.inFlightRequests.delete(requestId);
+      this.rememberCreator(requestId, request);
+    }
+
+    if (this.abandonedRequests.delete(requestId)) {
+      // Main stopped waiting for this one and released whatever it was holding
+      // for it. Replying would be answering nobody; what matters is that the
+      // terminals this request produced do not outlive main's belief in them.
+      this.compensateAbandoned(requestId, request);
+      return;
+    }
     this.deps.sendToMain({ kind: "reply", requestId, outcome });
+  }
+
+  /**
+   * The ids a request would have brought into existence.
+   *
+   * Derived from the REQUEST, not from a before/after diff of the registry: a
+   * diff would attribute a concurrently created terminal to whichever request
+   * happened to finish second, and killing another window's live shell is a
+   * far worse failure than the orphan being compensated.
+   */
+  private static createdIds(request: TerminalHostRequest): readonly TerminalId[] {
+    if (request.kind === "create") return [request.terminalId];
+    if (request.kind === "revive") {
+      return request.assignments.map((assignment) => assignment.to);
+    }
+    return [];
+  }
+
+  /** Retain a settled create-or-revive briefly, for a late abandonment. */
+  private rememberCreator(requestId: string, request: TerminalHostRequest): void {
+    if (PtyHostService.createdIds(request).length === 0) return;
+    this.settledCreators.set(requestId, request);
+    while (this.settledCreators.size > SETTLED_CREATOR_WINDOW) {
+      const oldest = this.settledCreators.keys().next();
+      if (oldest.done === true) break;
+      this.settledCreators.delete(oldest.value);
+    }
+  }
+
+  /**
+   * Main gave up on a request. Make sure nothing it created survives.
+   *
+   * Two cases, and both are real. STILL RUNNING: the flag is recorded and the
+   * dispatch's own completion path compensates, because killing a terminal a
+   * spawn is halfway through registering would race that registration.
+   * ALREADY SETTLED: compensate now, from the retained record.
+   */
+  private abandonRequest(requestId: string): void {
+    if (this.inFlightRequests.has(requestId)) {
+      this.abandonedRequests.add(requestId);
+      return;
+    }
+    const settled = this.settledCreators.get(requestId);
+    if (settled === undefined) return;
+    this.settledCreators.delete(requestId);
+    this.compensateAbandoned(requestId, settled);
+  }
+
+  /** Kill every terminal an abandoned request registered. */
+  private compensateAbandoned(requestId: string, request: TerminalHostRequest): void {
+    this.settledCreators.delete(requestId);
+    const ids = PtyHostService.createdIds(request);
+    if (ids.length === 0) return;
+    const windowId = request.kind === "create" || request.kind === "revive"
+      ? request.windowId
+      : null;
+    if (windowId === null) return;
+    let killed = 0;
+    for (const terminalId of ids) {
+      if (!this.terminals.has(terminalId)) continue;
+      killed += 1;
+      void this.killTerminal(terminalId, windowId);
+    }
+    if (killed > 0) {
+      this.log(
+        `[pty-host] request ${requestId} was abandoned by main; killing `
+          + `${String(killed)} terminal(s) it had created`,
+      );
+    }
   }
 
   private async dispatch(
@@ -152,6 +277,10 @@ export class PtyHostService {
         return await this.readWorkspace(request.projectId);
       case "revive":
         return await this.reviveProject(request);
+      case "abandonRequest":
+        // Handled before dispatch, in `handleMainMessage`. Present so the union
+        // stays exhaustively checked rather than falling through a default.
+        return accept(null);
       case "shutdownAll":
         await this.shutdownAll();
         return accept(null);
@@ -211,6 +340,19 @@ export class PtyHostService {
     projectId: string;
     launch: TerminalLaunch;
     reducedRowsAtSpawn: number;
+    /**
+     * A previous session's screen, written into the mirror BEFORE the shell is
+     * started.
+     *
+     * THE ORDER IS THE CONTRACT. Restoring after `start()` was a real ordering
+     * defect: the fresh shell can emit its prompt in the gap, the mirror then
+     * holds `prompt` followed by the restored serialization, and the restored
+     * bytes - which begin with a screen clear - erase the prompt the user just
+     * watched appear. Writing the old screen first makes the mirror read
+     * exactly as the session reads: everything that was there, then everything
+     * the new shell says.
+     */
+    readonly restore?: { readonly serialized: string; readonly droppedRows: number };
   }): Promise<
     TerminalOutcome<{
       pid: number;
@@ -234,6 +376,11 @@ export class PtyHostService {
       },
       PersistentTerminal.sinksFor(holder),
     );
+
+    // BEFORE `start()`. See the `restore` option's note.
+    if (options.restore !== undefined) {
+      process.mirror.restore(options.restore.serialized, options.restore.droppedRows);
+    }
 
     const started = await process.start();
     if (!started.ok) {
@@ -525,17 +672,18 @@ export class PtyHostService {
           env: {},
         },
         reducedRowsAtSpawn: entry.reducedRows,
+        // WRITE-THROUGH into the mirror, and BEFORE the shell starts: the replay
+        // a consumer receives on attach is serialized from the mirror, so this
+        // is what makes the restored screen reach the renderer through the
+        // ordinary path rather than a second one - and doing it ahead of the
+        // spawn is what keeps the fresh shell's first prompt from being cleared
+        // by the restored screen that should have preceded it.
+        restore: { serialized: entry.serialized, droppedRows: entry.droppedRows },
       });
       if (!started.ok) {
         failed.push({ from: assignment.from, code: started.code });
         continue;
       }
-
-      // WRITE-THROUGH into the mirror, before anything can attach: the replay
-      // that a consumer receives on attach is serialized from the mirror, so
-      // restoring here is what makes the restored screen reach the renderer
-      // through the ordinary path rather than a second one.
-      started.value.terminal.restoreMirror(entry.serialized, entry.droppedRows);
 
       revived.push({
         from: assignment.from,
@@ -569,7 +717,32 @@ export class PtyHostService {
     });
   }
 
-  /** Serialize every live terminal of one project and commit its file. */
+  /**
+   * Serialize every live terminal of one project and commit its file.
+   *
+   * ## THE PRODUCER IS HELD FOR THE WHOLE CAPTURE
+   *
+   * Serializing a mirror while its pty is still writing into it is the same
+   * ordering problem the attach handoff has, and it was unsolved here. The
+   * mirror's drain is documented to terminate only because its callers pause
+   * the producer first; this one never did. Worse, the whole-file reduction
+   * pass reserializes each mirror with NO drain of its own, on the written
+   * belief that "the producer has not been resumed since" - a belief that was
+   * simply false, so the second pass could measure a screen the first pass had
+   * never seen and the committed entry could disagree with its own byte
+   * accounting.
+   *
+   * So the hold is taken over every live terminal of the project, and released
+   * in a `finally`. It is an INDEPENDENT hold (`setSnapshotHold`), not the
+   * attach one, because a snapshot may overlap an attach and neither owner's
+   * release may cancel the other's.
+   *
+   * The hold is BOUNDED. Each mirror gets `TERMINAL_SNAPSHOT_DRAIN_MS` to reach
+   * a fixed point - the producer is already stopped, so this waits only on
+   * xterm's parser - and a terminal that overruns it is serialized from where
+   * it got to. This path runs on quit; it may not become a way for one wedged
+   * shell to stop the app from exiting.
+   */
   private async commitProject(projectId: string): Promise<boolean> {
     const layout = this.layouts.get(projectId);
     if (layout === undefined) return true;
@@ -578,16 +751,52 @@ export class PtyHostService {
       (terminal) => terminal.options.projectId === projectId,
     );
 
-    const entries: TerminalSnapshotEntry[] = [];
-    let reducedTotal = 0;
+    for (const terminal of live) terminal.process.setSnapshotHold(true);
+    try {
+      return await this.captureProject(projectId, layout, live);
+    } finally {
+      for (const terminal of live) terminal.process.setSnapshotHold(false);
+    }
+  }
+
+  /** The capture itself, with every producer of `live` already held. */
+  private async captureProject(
+    projectId: string,
+    layout: TerminalWorkspaceLayout,
+    live: readonly PersistentTerminal[],
+  ): Promise<boolean> {
+    // ---- drain, bounded, while held ----
     for (const terminal of live) {
-      const serialized = await terminal.process.mirror.serializeWithin(
+      const settled = await settledWithin(
+        terminal.process.mirror.drain(),
+        TERMINAL_SNAPSHOT_DRAIN_MS,
+      );
+      if (!settled) {
+        this.log(
+          `[pty-host] mirror for ${terminal.options.terminalId} did not reach a fixed `
+            + "point inside the snapshot drain bound; serializing what it holds",
+        );
+      }
+    }
+
+    // ---- NO AWAIT from here to the commit: the mirrors are fixed ----
+    const entries: TerminalSnapshotEntry[] = [];
+    /**
+     * Rows THIS SAVE gave up, per terminal. REPLACED by the whole-file pass,
+     * never added to - see `fitWholeFile`.
+     */
+    const sessionReduced = new Map<TerminalId, number>();
+    const baselines = new Map<TerminalId, number>();
+    for (const terminal of live) {
+      const serialized = terminal.process.mirror.serializeWithinNow(
         TERMINAL_SNAPSHOT_MAX_BYTES,
       );
-      reducedTotal += serialized.reducedRows;
       const { cols, rows } = terminal.process.dimensions;
+      const id = terminal.options.terminalId;
+      sessionReduced.set(id, serialized.reducedRows);
+      baselines.set(id, terminal.options.reducedRowsAtSpawn);
       entries.push({
-        terminalId: terminal.options.terminalId,
+        terminalId: id,
         title: terminal.process.title,
         shellName: terminal.options.shellName,
         executable: terminal.options.executable,
@@ -603,7 +812,25 @@ export class PtyHostService {
       });
     }
 
-    reducedTotal += this.fitWholeFile(projectId, layout, entries, live);
+    // ---- the file and its layout must describe the SAME terminals ----
+    //
+    // A terminal that exited while a persist was in flight leaves the layout
+    // naming an id no entry carries, and an entry no pane names. The snapshot
+    // schema now refuses both, and refusing here would cost the user their
+    // whole workspace over one closed pane - so the two halves are reconciled
+    // to their intersection instead, which is exactly what was live at this
+    // moment.
+    const committed = reconcile(layout, entries);
+
+    this.fitWholeFile(projectId, committed.layout, committed.entries, live, {
+      sessionReduced,
+      baselines,
+    });
+
+    let reducedTotal = 0;
+    for (const entry of committed.entries) {
+      reducedTotal += sessionReduced.get(entry.terminalId) ?? 0;
+    }
 
     if (reducedTotal > 0) {
       this.deps.sendToMain({
@@ -619,8 +846,8 @@ export class PtyHostService {
       version: TERMINAL_SNAPSHOT_VERSION,
       projectId,
       savedAt: Date.now(),
-      layout,
-      terminals: entries,
+      layout: committed.layout,
+      terminals: committed.entries,
     };
     const written = await this.deps.snapshotStore.write(snapshot);
     if (written.kind !== "ok") {
@@ -661,19 +888,33 @@ export class PtyHostService {
    * actually notice losing, and a workspace that reopens with its panes intact
    * and its scrollback shortened is a far better outcome than the reverse.
    *
-   * Returns the rows given up here, for the notice.
+   * ## The accounting REPLACES, it does not accumulate
+   *
+   * `serializeWithinNow(cap).reducedRows` is a TOTAL: the rows the full mirror
+   * gives up at that cap, measured from the whole buffer every time. Adding one
+   * iteration's total to the next inflated every figure it touched - a terminal
+   * whose successive caps reported 500, then 750, then 875 was recorded as
+   * having lost 2125 rows for a real loss of 875. That number went into the
+   * user's notice, and worse, into `reducedRows`, which is the CUMULATIVE
+   * running total the next session inherits as its baseline. So each iteration
+   * OVERWRITES the terminal's figure for this save, and only the cross-session
+   * baseline is ever added to it.
    */
   private fitWholeFile(
     projectId: string,
     layout: TerminalWorkspaceLayout,
     entries: TerminalSnapshotEntry[],
     live: readonly PersistentTerminal[],
-  ): number {
+    accounting: {
+      readonly sessionReduced: Map<TerminalId, number>;
+      readonly baselines: Map<TerminalId, number>;
+    },
+  ): void {
     const mirrors = new Map(
       live.map((terminal) => [terminal.options.terminalId, terminal.process.mirror]),
     );
     let cap = TERMINAL_SNAPSHOT_MAX_BYTES;
-    let reduced = 0;
+    let touched = false;
 
     while (
       measureSnapshotBytes(projectId, layout, entries) > WORKSPACE_SNAPSHOT_FILE_MAX_BYTES
@@ -688,28 +929,37 @@ export class PtyHostService {
         if (mirror === undefined) {
           // The terminal exited between serialization and this pass. Its bytes
           // cannot be recomputed, so they go rather than block the whole file.
+          // Its row accounting is left where the first pass put it: there is no
+          // mirror left to measure a truthful figure against, and inventing one
+          // is what this whole rewrite exists to stop.
           entries[index] = { ...entry, serialized: "" };
           continue;
         }
-        // No drain needed: the mirror was drained when this entry was first
-        // serialized, and the producer has not been resumed since.
+        // No drain needed: the producer is HELD by `commitProject` for the whole
+        // capture, so this mirror is at the same fixed point the first pass
+        // serialized it from.
         const next = mirror.serializeWithinNow(cap);
-        reduced += next.reducedRows;
+        touched = true;
+        accounting.sessionReduced.set(entry.terminalId, next.reducedRows);
         entries[index] = {
           ...entry,
           serialized: next.data,
-          reducedRows: entry.reducedRows + next.reducedRows,
+          reducedRows:
+            (accounting.baselines.get(entry.terminalId) ?? 0) + next.reducedRows,
         };
       }
     }
 
-    if (reduced > 0) {
+    if (touched) {
+      let given = 0;
+      for (const entry of entries) {
+        given += accounting.sessionReduced.get(entry.terminalId) ?? 0;
+      }
       this.log(
         `[pty-host] whole-file reduction for ${projectId}: `
-          + `${String(reduced)} rows given up to fit the file bound`,
+          + `${String(given)} rows given up to fit the file bound`,
       );
     }
-    return reduced;
   }
 
   /* ---------------------------------------------------------------- *
@@ -812,6 +1062,46 @@ async function settledWithin(settled: Promise<void>, ms: number): Promise<boolea
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
+}
+
+/**
+ * Reduce a layout and a set of entries to the terminals they BOTH name.
+ *
+ * The snapshot schema requires a bijection between panes and entries, and the
+ * two halves are produced by different owners at different moments: the layout
+ * is whatever the renderer last persisted, the entries are whatever is live
+ * now. A terminal that exited in the gap appears in one and not the other.
+ *
+ * Refusing the file over that would cost the user the workspace; carrying it
+ * would revive a shell no pane can show. The intersection is the honest answer,
+ * and it is exactly the workspace as it stands at the moment of the capture.
+ */
+function reconcile(
+  layout: TerminalWorkspaceLayout,
+  entries: readonly TerminalSnapshotEntry[],
+): { layout: TerminalWorkspaceLayout; entries: TerminalSnapshotEntry[] } {
+  const available = new Set(entries.map((entry) => entry.terminalId));
+  const groups: TerminalGroupLayout[] = [];
+  const kept = new Set<TerminalId>();
+  for (const group of layout.groups) {
+    const panes = group.panes.filter((pane) => available.has(pane.terminalId));
+    if (panes.length === 0) continue;
+    for (const pane of panes) kept.add(pane.terminalId);
+    groups.push({
+      ...group,
+      panes,
+      activePaneIndex: Math.min(group.activePaneIndex, panes.length - 1),
+    });
+  }
+  return {
+    layout: {
+      projectId: layout.projectId,
+      groups,
+      activeGroupIndex:
+        groups.length === 0 ? 0 : Math.min(layout.activeGroupIndex, groups.length - 1),
+    },
+    entries: entries.filter((entry) => kept.has(entry.terminalId)),
+  };
 }
 
 /** The exact bytes `TerminalSnapshotStore.write` would produce for this state. */

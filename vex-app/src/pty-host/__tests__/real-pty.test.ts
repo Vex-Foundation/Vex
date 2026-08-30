@@ -924,3 +924,103 @@ describe("mirror-paced flow control against a real pty", () => {
     port.dispose();
   }, 120_000);
 });
+
+describe("a snapshot against a REAL, CONTINUOUSLY PRODUCING shell", () => {
+  /**
+   * (e) THE HOLD REACHES THE OPERATING SYSTEM.
+   *
+   * The other four properties in this file exist because a scripted pty cannot
+   * fail the way a real one does. This one is the same argument applied to the
+   * snapshot path: `commitProject` now pauses every producer for the duration
+   * of drain -> serialize -> reduce -> commit, and a scripted pty proves only
+   * that `pause()` was called. Whether calling it actually stops a real `yes`
+   * loop - and therefore whether the mirror is genuinely fixed while it is
+   * being serialized - is a question only a kernel pty answers.
+   *
+   * Before the hold, this path had no pause at all. The mirror's drain is
+   * documented to terminate only because its callers pause the producer first,
+   * and this caller did not; against a real firehose that is an unbounded wait
+   * on the quit path.
+   *
+   * The assertion is the OUTCOME the user gets: the snapshot commits promptly
+   * and the file is on disk, while a real shell is writing as fast as the
+   * kernel will take it.
+   *
+   * ## WHAT THIS TEST DOES NOT PROVE, measured rather than assumed
+   *
+   * It was run with the hold DELETED and it still passed. The reason is worth
+   * recording, because it is easy to mistake this for a proof: a detached
+   * terminal is mirror-paced, so by the time the capture runs the flow-control
+   * watermark has usually already paused this pty for its own reasons, and the
+   * drain then reaches a fixed point whether or not the snapshot took a hold.
+   *
+   * The DISCRIMINATING proof of the hold is the scripted-firehose test in
+   * `host-service.test.ts`, which counts the chunks delivered between the start
+   * of a capture and its commit and goes red with three. This one is the real-
+   * kernel regression guard for the outcome: that a live shell does not turn
+   * the quit path into a hang, and that the hold is released afterwards.
+   */
+  it("commits promptly while a real `yes` loop is running", async () => {
+    const service = buildService();
+    const port = new RecordingPort();
+    await send(service, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [
+      port,
+    ]);
+
+    // A native producer that never stops on its own. Detached, so the MIRROR is
+    // its only consumer - which is the state a snapshot on quit finds.
+    const { pid } = await createTerminal(service, "firehose", {
+      args: ["-c", "yes vex-snapshot-hold-probe"],
+    });
+    expect(isAlive(pid)).toBe(true);
+
+    // Let it genuinely fill the mirror first, or the capture would be trivial.
+    await untilAsync(
+      async () => (await service.terminal("firehose")?.process.mirror.serialize())
+        ?.data.includes("vex-snapshot-hold-probe") === true,
+      "the real shell to fill the mirror",
+    );
+
+    const startedAt = Date.now();
+    const persisted = await send(service, {
+      kind: "persistWorkspace",
+      projectId: PROJECT,
+      layout: {
+        projectId: PROJECT,
+        activeGroupIndex: 0,
+        groups: [
+          {
+            groupId: "g1",
+            orientation: "horizontal",
+            activePaneIndex: 0,
+            panes: [{ terminalId: "firehose", relativeSize: 1 }],
+          },
+        ],
+      },
+    });
+    const elapsed = Date.now() - startedAt;
+
+    expect(persisted.ok).toBe(true);
+    // PROMPTLY, against a producer that is still running. Generous enough for a
+    // loaded WSL2 event loop, far under what an unheld drain against `yes`
+    // would cost.
+    expect(elapsed).toBeLessThan(15_000);
+
+    const file = path.join(snapshotDir, `${PROJECT}.json`);
+    const raw = await fs.readFile(file, "utf8");
+    const saved = JSON.parse(raw) as {
+      terminals: Array<{ terminalId: string; serialized: string }>;
+    };
+    expect(saved.terminals.map((entry) => entry.terminalId)).toEqual(["firehose"]);
+    expect(saved.terminals[0]?.serialized).toContain("vex-snapshot-hold-probe");
+
+    // AND THE PRODUCER WAS RELEASED. A hold that is not released leaves the
+    // user with a shell that has silently stopped.
+    const after = await service.terminal("firehose")?.process.mirror.serialize();
+    expect(after?.data.includes("vex-snapshot-hold-probe")).toBe(true);
+    expect(isAlive(pid)).toBe(true);
+
+    await service.shutdownAll();
+    expect(await detectSurvivors([pid])).toEqual([]);
+  }, 120_000);
+});

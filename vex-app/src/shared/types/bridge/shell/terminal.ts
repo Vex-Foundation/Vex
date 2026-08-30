@@ -145,4 +145,21 @@ export interface TerminalBridge {
   readonly onAvailability: (
     cb: (availability: TerminalHostAvailability) => void,
   ) => () => void;
+
+  /**
+   * The terminals that died with an unexpectedly terminated pty host.
+   *
+   * A SEPARATE signal from availability, because the two answer different
+   * questions. Availability says whether a new terminal can be opened at all;
+   * this names specific existing ones that are gone. Their `onExit` will never
+   * fire - the port that would have carried it died with the host - so a UI
+   * that listens only for exits shows live tabs over dead shells indefinitely.
+   *
+   * The correct response is to mark those panes dead and offer a revive from
+   * the last snapshot, never to silently empty the workspace: the snapshot is
+   * still on disk and the user's scrollback is still in it.
+   */
+  readonly onTerminalsLost: (
+    cb: (terminalIds: readonly string[]) => void,
+  ) => () => void;
 }

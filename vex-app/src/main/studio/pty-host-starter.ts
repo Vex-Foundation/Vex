@@ -59,6 +59,7 @@ import {
   TERMINAL_HOST_FIRST_WAIT_MULTIPLIER,
   TERMINAL_HOST_MAX_RESTARTS,
   TERMINAL_HOST_SECOND_WAIT_MULTIPLIER,
+  TERMINAL_REVIVE_PER_TERMINAL_TIMEOUT_MS,
   ptyHostEnvironment,
   terminalSnapshotFileName,
   terminalHostMessageSchema,
@@ -311,6 +312,23 @@ export class PtyHostStarter implements PtyHost {
    * host that stopped answering must not leave an IPC handler awaiting
    * forever, and a caller that gets `create_timeout` can tell the user
    * something true.
+   *
+   * ## A DEADLINE IS AN ABANDONMENT, NOT A SILENCE
+   *
+   * Deleting the pending entry and answering the caller used to be the whole
+   * timeout path, and it left the host running the request. Main had by then
+   * released the capacity reservation and the `terminalCreate` lease it took
+   * for it; the host went on to register a live pty against ids main no longer
+   * believed in, no window would ever attach to it, and nothing in the system
+   * could name it in order to close it. So the host is TOLD, and it kills what
+   * the abandoned request created.
+   *
+   * ## The deadline is proportional to the work
+   *
+   * A `revive` spawns one shell per assignment, sequentially. Holding twelve of
+   * them to the single-request budget made an ordinary restore look exactly
+   * like an unresponsive host - which is the failure this timeout exists to
+   * detect, reported for a host that was doing precisely what it was asked.
    */
   async send(
     request: TerminalHostRequest,
@@ -325,12 +343,42 @@ export class PtyHostStarter implements PtyHost {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
         this.handleUnresponsive();
+        this.abandon(requestId, request);
         resolve({ ok: false, code: "create_timeout" });
-      }, TERMINAL_CREATE_TIMEOUT_MS);
+      }, deadlineFor(request));
       timer.unref?.();
       this.pending.set(requestId, { resolve, timer });
       child.postMessage({ requestId, request }, transfer);
     });
+  }
+
+  /**
+   * Tell the host that main has stopped waiting for `requestId`.
+   *
+   * Best effort by construction: the reason the deadline fired may well be that
+   * the host is gone, in which case there is nothing to compensate because the
+   * ptys died with it. A live host answers by killing whatever the abandoned
+   * request created.
+   */
+  private abandon(requestId: string, request: TerminalHostRequest): void {
+    if (deriveCreates(request) === false) return;
+    const child = this.child;
+    if (child === null) return;
+    try {
+      child.postMessage({
+        requestId: randomUUID(),
+        request: { kind: "abandonRequest", requestId },
+      });
+      log.warn(
+        `[studio:pty-host] ${request.kind} exceeded its deadline; abandoning it at the `
+          + "host so the terminals it may have created are killed",
+      );
+    } catch (cause: unknown) {
+      log.error(
+        "[studio:pty-host] could not abandon a timed-out request: "
+          + `${cause instanceof Error ? cause.name : "unknown"}`,
+      );
+    }
   }
 
   /**
@@ -437,6 +485,31 @@ export class PtyHostStarter implements PtyHost {
     child.kill();
     this.state = "stopped";
   }
+}
+
+/**
+ * Whether this request kind can bring a terminal into existence, and therefore
+ * whether abandoning it is worth a message.
+ */
+function deriveCreates(request: TerminalHostRequest): boolean {
+  return request.kind === "create" || request.kind === "revive";
+}
+
+/**
+ * The deadline for one request.
+ *
+ * Proportional for `revive`, which does N sequential spawns; flat for
+ * everything else, which does one bounded thing. The assignment list is capped
+ * by the shared schema, so the proportional branch is bounded with it.
+ */
+function deadlineFor(request: TerminalHostRequest): number {
+  if (request.kind === "revive") {
+    return (
+      TERMINAL_CREATE_TIMEOUT_MS
+      + request.assignments.length * TERMINAL_REVIVE_PER_TERMINAL_TIMEOUT_MS
+    );
+  }
+  return TERMINAL_CREATE_TIMEOUT_MS;
 }
 
 function defaultFork(entry: string, env: Record<string, string>): UtilityProcess {

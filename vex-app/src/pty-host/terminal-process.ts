@@ -102,6 +102,22 @@ export class TerminalProcess {
    * watermark pause that is still owed, which un-pauses a pty nobody is reading.
    */
   private attachHold = false;
+  /**
+   * The pty is held while a SNAPSHOT is being taken.
+   *
+   * A THIRD independent stop reason, and it exists because `commitProject` had
+   * none. The mirror's drain is documented to terminate only because its
+   * callers pause the producer first; the snapshot path never did, so a
+   * continuously-producing terminal could keep the drain looping, and the
+   * whole-file reduction pass - which reserializes the mirror with no drain of
+   * its own, on the stated belief that "the producer has not been resumed
+   * since" - was operating on a mirror that had moved underneath it.
+   *
+   * Separate from `attachHold` for the same reason `attachHold` is separate
+   * from the watermark: a snapshot can overlap an attach, and one owner's
+   * release must not cancel the other's hold.
+   */
+  private snapshotHold = false;
   /** What the pty was last actually told. Prevents redundant pause/resume calls. */
   private ptyFlowing = true;
 
@@ -369,14 +385,31 @@ export class TerminalProcess {
   }
 
   /**
-   * Apply the two independent stop reasons to the pty.
+   * Hold the producer while this terminal is being serialized into a snapshot,
+   * and release it afterwards.
    *
-   * The pty flows only when NEITHER holds it. Tracking what the pty was last
+   * The hold is what makes "what the mirror holds" a decidable question for the
+   * duration of drain -> serialize -> reduce -> commit, exactly as the attach
+   * handoff needs it to be for drain -> serialize -> install. Its OWNER is the
+   * host's commit path, which releases it in a `finally` and is itself bounded
+   * by the shutdown control timeout - so a wedged shell cannot convert this
+   * into an unbounded stall.
+   */
+  setSnapshotHold(held: boolean): void {
+    if (this.snapshotHold === held) return;
+    this.snapshotHold = held;
+    this.syncPtyFlow();
+  }
+
+  /**
+   * Apply the three independent stop reasons to the pty.
+   *
+   * The pty flows only when NONE of them holds it. Tracking what the pty was last
    * told keeps a resume from one owner from silently cancelling the other's
    * pause.
    */
   private syncPtyFlow(): void {
-    const shouldFlow = !this.ptyPaused && !this.attachHold;
+    const shouldFlow = !this.ptyPaused && !this.attachHold && !this.snapshotHold;
     if (shouldFlow === this.ptyFlowing) return;
     this.ptyFlowing = shouldFlow;
     try {

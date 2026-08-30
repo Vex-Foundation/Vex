@@ -96,6 +96,24 @@ export interface PersistentTerminalOptions {
 
 export class PersistentTerminal {
   private consumer: TerminalConsumer | null = null;
+  /**
+   * The consumer the EMERGENCY CEILING parked, kept solely so its own resync
+   * request can find a binding to replay into.
+   *
+   * The ceiling detaches a consumer that stopped keeping up and tells it to ask
+   * again. Nulling `consumer` and keeping nothing else made that instruction
+   * unfollowable: the resync request arrived, `resync()` read a null consumer
+   * and returned, and the terminal - which had already cleared its screen on
+   * the `resyncRequired` - stayed blank for the rest of the session. The window
+   * has not gone anywhere, so the binding has not either; what the terminal
+   * gives up at the ceiling is the LIVE STREAM, not the identity of who is
+   * watching it.
+   *
+   * Cleared by every other decision about consumer identity - a real detach, a
+   * newer attach, a dispose - so a parked binding can never outlive the window
+   * that owns it or resurrect a stream a newer owner replaced.
+   */
+  private parkedConsumer: TerminalConsumer | null = null;
   private graceTimer: NodeJS.Timeout | null = null;
   private disposed = false;
   private exited = false;
@@ -193,6 +211,7 @@ export class PersistentTerminal {
     // The previous consumer stops receiving NOW. It must not be handed bytes
     // that belong to the replay the new consumer is about to be sent.
     this.consumer = null;
+    this.parkedConsumer = null;
     this.process.setConsumerAttached(false);
     this.process.setAttachHold(true);
     try {
@@ -229,6 +248,7 @@ export class PersistentTerminal {
     // completes after the detach and installs a consumer nobody is reading.
     this.nextAttachGeneration();
     this.consumer = null;
+    this.parkedConsumer = null;
     this.process.setConsumerAttached(false);
     this.process.setAttachHold(false);
     this.clearGrace();
@@ -269,7 +289,12 @@ export class PersistentTerminal {
    * serialized.
    */
   async resync(): Promise<void> {
-    const consumer = this.consumer;
+    // THE PARKED BINDING IS THE POINT. On the ordinary path `consumer` is set
+    // and this is a re-serialization; on the emergency-ceiling path it is null
+    // and the parked one is the only thing that can complete the recovery the
+    // host itself demanded. Reading `consumer` alone made the ceiling's
+    // `resyncRequired` an instruction with no possible response.
+    const consumer = this.consumer ?? this.parkedConsumer;
     if (consumer === null) return;
     await this.attach(consumer);
   }
@@ -383,6 +408,10 @@ export class PersistentTerminal {
     // attach still in flight must not install a consumer over that decision.
     this.nextAttachGeneration();
     this.consumer = null;
+    // PARKED, not forgotten: the resync this consumer is about to be told to
+    // request needs a binding to replay into, and this is the only record of
+    // one. See `parkedConsumer`.
+    this.parkedConsumer = consumer;
     this.process.setConsumerAttached(false);
     this.process.clearUnacknowledgedChars();
     consumer?.send({
@@ -405,20 +434,8 @@ export class PersistentTerminal {
     this.nextAttachGeneration();
     this.clearGrace();
     this.consumer = null;
+    this.parkedConsumer = null;
     this.process.setConsumerAttached(false);
     this.process.dispose();
-  }
-
-  /**
-   * Restore a persisted screen into this terminal's mirror, for a revive.
-   *
-   * WRITE-THROUGH into the mirror, so the very next replay serves it. The
-   * alternative - holding the serialized string beside the mirror and
-   * prepending it to replays - would give the terminal two sources of screen
-   * truth that diverge the moment the shell writes its first prompt.
-   */
-  restoreMirror(serialized: string, carriedDroppedRows: number): void {
-    if (this.disposed) return;
-    this.process.mirror.restore(serialized, carriedDroppedRows);
   }
 }

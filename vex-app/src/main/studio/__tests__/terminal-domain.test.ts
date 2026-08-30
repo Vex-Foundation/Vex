@@ -100,8 +100,69 @@ class FakeStarter implements PtyHost {
     return true;
   }
 
+  /**
+   * The snapshot `readWorkspace` answers with, or `null` for a project that has
+   * nothing to revive.
+   */
+  snapshot: unknown = null;
+  /** Freeze every `revive` inside the host call, for the slow-restore race. */
+  private reviveHold: Promise<void> | null = null;
+
+  holdRevives(): () => void {
+    let release: () => void = () => {};
+    this.reviveHold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      this.reviveHold = null;
+      release();
+    };
+  }
+
+  /** How many times the host was actually asked to SPAWN a workspace. */
+  reviveCount(): number {
+    return this.requests.filter((request) => request.kind === "revive").length;
+  }
+
   async send(request: HostRequest): Promise<HostOutcome> {
     this.requests.push(request);
+    if (request.kind === "readWorkspace") {
+      return { ok: true, value: this.snapshot };
+    }
+    if (request.kind === "revive") {
+      if (this.reviveHold !== null) await this.reviveHold;
+      return {
+        ok: true,
+        value: {
+          revived: request.assignments.map((assignment) => ({
+            from: assignment.from,
+            to: assignment.to,
+            pid: 1,
+            shellName: "bash",
+            cwd: `/projects/${request.projectId}`,
+            title: "bash",
+            droppedRows: 0,
+            reducedRows: 0,
+          })),
+          failed: [],
+          layout: {
+            projectId: request.projectId,
+            groups: [
+              {
+                groupId: "g1",
+                orientation: "horizontal" as const,
+                panes: request.assignments.map((assignment) => ({
+                  terminalId: assignment.to,
+                  relativeSize: 1 / request.assignments.length,
+                })),
+                activePaneIndex: 0,
+              },
+            ],
+            activeGroupIndex: 0,
+          },
+        },
+      };
+    }
     if (request.kind === "create") {
       for (const resolve of this.createSeen.splice(0)) resolve();
       if (this.createHold !== null) await this.createHold;
@@ -646,6 +707,140 @@ describe("host termination", () => {
     const reported = lostSpy.mock.calls[0];
     if (reported === undefined) throw new Error("unreachable");
     expect([...reported[0]].sort()).toEqual([...live].sort());
+    await domain.dispose();
+  });
+});
+
+/**
+ * A snapshot file for `p1` holding `count` terminals, shaped exactly as the
+ * host writes one - the domain parses it with the shared schema, so a
+ * hand-waved shape would be refused `snapshot_unavailable` and the suite would
+ * be measuring the parse rather than the open.
+ */
+function snapshotFor(count: number): unknown {
+  const ids = Array.from({ length: count }, (_, index) => `old${String(index)}`);
+  return {
+    version: 1,
+    projectId: "p1",
+    savedAt: 1,
+    layout: {
+      projectId: "p1",
+      groups: [
+        {
+          groupId: "g1",
+          orientation: "horizontal",
+          panes: ids.map((terminalId) => ({ terminalId, relativeSize: 1 / ids.length })),
+          activePaneIndex: 0,
+        },
+      ],
+      activeGroupIndex: 0,
+    },
+    terminals: ids.map((terminalId) => ({
+      terminalId,
+      title: "bash",
+      shellName: "bash",
+      executable: "/bin/bash",
+      args: [],
+      cwdAtSpawn: "/projects/p1",
+      cols: 80,
+      rows: 24,
+      serialized: "screen",
+      droppedRows: 0,
+      reducedRows: 0,
+    })),
+  };
+}
+
+describe("opening a workspace is SINGLE-FLIGHT and IDEMPOTENT", () => {
+  /**
+   * EVERY OPEN USED TO SPAWN A FRESH SET OF PTYS.
+   *
+   * Nothing above main made it idempotent, and React StrictMode runs the
+   * restore effect twice by design. The renderer's generation fence discarded
+   * the first result and killed nothing, on the written belief that those
+   * terminals were "reachable through the project's next open" - which was
+   * false, because the next open revived ANOTHER set. Every remount therefore
+   * leaked a whole workspace of running shells that no pane referenced and
+   * nothing could name in order to close.
+   *
+   * The bound is the point: a project whose snapshot holds twelve terminals
+   * reaches `TERMINALS_PER_PROJECT_MAX` after ONE leak, so the second remount
+   * of a session refuses to restore anything at all.
+   */
+  it("JOINS a concurrent second open instead of reviving twice", async () => {
+    const domain = build();
+    starter.snapshot = snapshotFor(3);
+    const release = starter.holdRevives();
+
+    const first = domain.openWorkspace("w1", "p1");
+    const second = domain.openWorkspace("w1", "p1");
+    release();
+    const [a, b] = await Promise.all([first, second]);
+
+    expect(starter.reviveCount()).toBe(1);
+    expect(domain.liveCount).toBe(3);
+    if (!a.ok || a.value === null || !b.ok || b.value === null) {
+      throw new Error("both opens must restore the workspace");
+    }
+    // THE SAME LIVE IDS, not two disjoint sets.
+    expect(b.value.terminals.map((entry) => entry.terminalId)).toEqual(
+      a.value.terminals.map((entry) => entry.terminalId),
+    );
+    await domain.dispose();
+  });
+
+  it("REUSES a settled open while its terminals are still live", async () => {
+    const domain = build();
+    starter.snapshot = snapshotFor(3);
+
+    const first = await domain.openWorkspace("w1", "p1");
+    const second = await domain.openWorkspace("w1", "p1");
+
+    expect(starter.reviveCount()).toBe(1);
+    expect(domain.liveCount).toBe(3);
+    if (!first.ok || first.value === null || !second.ok || second.value === null) {
+      throw new Error("both opens must restore the workspace");
+    }
+    expect(second.value.terminals.map((entry) => entry.terminalId)).toEqual(
+      first.value.terminals.map((entry) => entry.terminalId),
+    );
+    await domain.dispose();
+  });
+
+  it("FILTERS a reused open down to the terminals that are still live", async () => {
+    const domain = build();
+    starter.snapshot = snapshotFor(3);
+
+    const first = await domain.openWorkspace("w1", "p1");
+    if (!first.ok || first.value === null) throw new Error("unreachable");
+    const closed = first.value.terminals[0]?.terminalId;
+    if (closed === undefined) throw new Error("unreachable");
+    starter.reportExit(closed);
+
+    const second = await domain.openWorkspace("w1", "p1");
+    expect(starter.reviveCount()).toBe(1);
+    if (!second.ok || second.value === null) throw new Error("unreachable");
+    // The closed pane is gone from BOTH halves, and the survivors were not
+    // duplicated by a second spawn beside them.
+    expect(second.value.terminals.map((entry) => entry.terminalId)).not.toContain(closed);
+    expect(second.value.terminals).toHaveLength(2);
+    expect(domain.liveCount).toBe(2);
+    await domain.dispose();
+  });
+
+  it("REVIVES again once the host has died, because the memory names dead ptys", async () => {
+    const domain = build();
+    starter.snapshot = snapshotFor(2);
+
+    const first = await domain.openWorkspace("w1", "p1");
+    if (!first.ok || first.value === null) throw new Error("unreachable");
+    starter.reportHostTerminated();
+    expect(domain.liveCount).toBe(0);
+
+    const second = await domain.openWorkspace("w1", "p1");
+    expect(starter.reviveCount()).toBe(2);
+    if (!second.ok || second.value === null) throw new Error("unreachable");
+    expect(domain.liveCount).toBe(2);
     await domain.dispose();
   });
 });
