@@ -136,6 +136,23 @@ export const EV = {
      */
     activityProgress: "vex:event:portfolio:activityProgress",
   },
+  /**
+   * Vex Studio terminals (stage B2).
+   *
+   * `port` is NOT an ordinary event: it is the channel main uses to TRANSFER a
+   * `MessagePort` into a window's preload, alongside the one-shot nonce that
+   * correlates it with the `terminal.acquirePort` reply. Its payload therefore
+   * carries a nonce and nothing else - the port itself rides the transfer list,
+   * where the renderer can never reach it, because only preload owns the port
+   * object and the renderer sees domain methods.
+   *
+   * `availability` is the terminal subsystem's own honest state, including the
+   * durable "unavailable" a spent restart cap produces.
+   */
+  terminal: {
+    port: "vex:event:terminal:port",
+    availability: "vex:event:terminal:availability",
+  },
   engine: {
     transcriptAppend: "vex:event:engine:transcriptAppend",
     controlState: "vex:event:engine:controlState",

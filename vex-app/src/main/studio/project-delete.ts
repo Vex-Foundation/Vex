@@ -20,7 +20,9 @@
  *      tombstone, all under the session control lock.
  *   5. ANNOUNCE the refusals (the transaction does this after COMMIT), which is
  *      what releases the parked approvals.
- *   6. CLOSE TERMINALS AND VIEWERS. B4 registers these; the step is named now.
+ *   6. CLOSE TERMINALS AND VIEWERS, through the gate's close-hook registry.
+ *      B2 registers the terminal domain there; the hooks run only after the
+ *      tombstone has committed, and a failing hook never fails the delete.
  *   7. CLEANUP, under the ADMINISTRATIVE token - admission stays permanently
  *      closed for a tombstone, and the token is what lets the remover work
  *      inside a gate that refuses everyone else.
@@ -101,6 +103,7 @@ import {
 import {
   acquireProjectLease,
   closeProjectAdmission,
+  closeProjectResources,
   drainProjectLeases,
   reopenProjectAdmission,
   type ProjectDeletionToken,
@@ -216,7 +219,11 @@ export async function deleteProject(
     );
   }
 
-  // STEP 6. Terminals and viewers. B4 registers these - see the module doc.
+  // STEP 6. CLOSE TERMINALS AND VIEWERS, now that the tombstone has COMMITTED.
+  // Registered owners (B2 registers the terminal domain) close what they hold
+  // for this project. A hook failure never fails the delete - the authority
+  // change is already durable - and the gate logs every one.
+  await closeProjectResources(projectId);
 
   // STEP 7. Cleanup, under the administrative token.
   const cleanup = await runCleanup(
