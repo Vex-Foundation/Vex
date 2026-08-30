@@ -28,41 +28,10 @@ import {
 } from "@shared/schemas/terminal.js";
 import { PtyHostService, type HostPort } from "../host-service.js";
 import { TerminalSnapshotStore } from "../snapshot-store.js";
-import { ScriptedPty, fakeProbe, scriptedSpawner } from "./scripted-pty.js";
+import { RecordingPort, ScriptedPty, fakeProbe, scriptedSpawner } from "./scripted-pty.js";
 
 const CWD = "/projects/demo";
 const SHELL = "/bin/bash";
-
-/** A port that records what the host sent and can inject what a window sends. */
-class FakePort implements HostPort {
-  readonly sent: TerminalPortEvent[] = [];
-  closed = false;
-  private listener: ((value: unknown) => void) | null = null;
-
-  postMessage(value: unknown): void {
-    this.sent.push(value as TerminalPortEvent);
-  }
-
-  onMessage(listener: (value: unknown) => void): void {
-    this.listener = listener;
-  }
-
-  close(): void {
-    this.closed = true;
-  }
-
-  receive(value: unknown): void {
-    this.listener?.(value);
-  }
-
-  eventsOfKind<K extends TerminalPortEvent["kind"]>(
-    kind: K,
-  ): Array<Extract<TerminalPortEvent, { kind: K }>> {
-    return this.sent.filter((event) => event.kind === kind) as Array<
-      Extract<TerminalPortEvent, { kind: K }>
-    >;
-  }
-}
 
 let directory: string;
 let toMain: TerminalHostMessage[];
@@ -154,8 +123,8 @@ describe("ownership", () => {
 
   it("refuses a PORT packet for another window's terminal, at the HOST", async () => {
     const service = await build();
-    const own = new FakePort();
-    const other = new FakePort();
+    const own = new RecordingPort();
+    const other = new RecordingPort();
     await send(service, { kind: "attachWindow", windowId: "w1", nonce: "n".repeat(32) }, [own]);
     await send(service, { kind: "attachWindow", windowId: "w2", nonce: "m".repeat(32) }, [other]);
     await send(service, createRequest("t1", "w1"));
@@ -184,7 +153,7 @@ describe("ownership", () => {
 
   it("drops an unparseable port packet with a typed refusal rather than throwing", async () => {
     const service = await build();
-    const port = new FakePort();
+    const port = new RecordingPort();
     await send(service, { kind: "attachWindow", windowId: "w1", nonce: "n".repeat(32) }, [port]);
 
     port.receive({ kind: "definitely-not-a-packet" });
@@ -195,9 +164,9 @@ describe("ownership", () => {
 });
 
 describe("attach, replay and resync", () => {
-  async function attached(): Promise<{ service: PtyHostService; port: FakePort }> {
+  async function attached(): Promise<{ service: PtyHostService; port: RecordingPort }> {
     const service = await build();
-    const port = new FakePort();
+    const port = new RecordingPort();
     await send(service, { kind: "attachWindow", windowId: "w1", nonce: "n".repeat(32) }, [port]);
     await send(service, createRequest("t1", "w1"));
     port.receive({ kind: "attach", terminalId: "t1" });
@@ -207,7 +176,7 @@ describe("attach, replay and resync", () => {
 
   it("replays the FULL mirror on attach and reports the rows the bound dropped", async () => {
     const service = await build();
-    const port = new FakePort();
+    const port = new RecordingPort();
     await send(service, { kind: "attachWindow", windowId: "w1", nonce: "n".repeat(32) }, [port]);
     await send(service, createRequest("t1", "w1"));
 

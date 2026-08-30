@@ -14,6 +14,8 @@
  * a chosen moment.
  */
 
+import type { TerminalPortEvent } from "@shared/schemas/terminal.js";
+import type { HostPort } from "../host-service.js";
 import type { LaunchProbe, PtyAdapter, PtySpawner } from "../types.js";
 
 export class ScriptedPty implements PtyAdapter {
@@ -132,4 +134,43 @@ export function fakeProbe(options: {
     findExecutable: (command) => Promise.resolve(executables[command] ?? null),
     readCwd: (pid) => Promise.resolve(cwdByPid[pid] ?? null),
   };
+}
+
+/**
+ * A `HostPort` that records what the host sent and can inject what a window
+ * sends.
+ *
+ * It lives here, beside the scripted pty, because BOTH host suites need it: the
+ * scripted one and the real-pty one. Two copies of a recording double drift -
+ * one grows a helper the other lacks, and the two suites quietly stop asserting
+ * the same shape of the data plane.
+ */
+export class RecordingPort implements HostPort {
+  readonly sent: TerminalPortEvent[] = [];
+  closed = false;
+  private listener: ((value: unknown) => void) | null = null;
+
+  postMessage(value: unknown): void {
+    this.sent.push(value as TerminalPortEvent);
+  }
+
+  onMessage(listener: (value: unknown) => void): void {
+    this.listener = listener;
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+
+  receive(value: unknown): void {
+    this.listener?.(value);
+  }
+
+  eventsOfKind<K extends TerminalPortEvent["kind"]>(
+    kind: K,
+  ): Array<Extract<TerminalPortEvent, { kind: K }>> {
+    return this.sent.filter((event) => event.kind === kind) as Array<
+      Extract<TerminalPortEvent, { kind: K }>
+    >;
+  }
 }

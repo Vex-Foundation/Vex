@@ -127,7 +127,21 @@ export function closeTab(state: WorkspaceState, tabId: string): WorkspaceMutatio
   return { ok: true, state: repairSelection({ ...state, tabs, activeTabId }) };
 }
 
-/** Add a pane to a group (a split). */
+/**
+ * Add a pane to a group (a split).
+ *
+ * THE NEW PANE TAKES HALF OF THE ACTIVE PANE, and every other pane keeps the
+ * share it had. That is VS Code's split semantics, and it is the only rule that
+ * makes a split feel like a split: equalizing instead would resize panes the
+ * user had deliberately sized, several splits away from where they clicked.
+ *
+ * The new pane is inserted immediately AFTER the pane it was carved out of, so
+ * it appears where the user's gesture pointed rather than at the end of the axis.
+ *
+ * `pane.relativeSize` is IGNORED. The caller cannot know the group's current
+ * shares, so the split - not the caller - decides the size, and the caller is
+ * free to pass any placeholder.
+ */
 export function addPane(
   state: WorkspaceState,
   tabId: string,
@@ -137,14 +151,113 @@ export function addPane(
   if (target === undefined || !isGroup(target)) {
     return { ok: false, reason: "unknown_tab", state };
   }
-  const panes = [...target.panes, pane];
+  if (target.panes.length === 0) {
+    return {
+      ok: true,
+      state: replaceTab(state, {
+        ...target,
+        panes: [{ ...pane, relativeSize: 1 }],
+        activePaneId: pane.paneId,
+      }),
+    };
+  }
+
+  const activeIndex = Math.max(
+    0,
+    target.panes.findIndex((candidate) => candidate.paneId === target.activePaneId),
+  );
+  const donor = target.panes[activeIndex];
+  const half = (donor?.relativeSize ?? 1 / target.panes.length) / 2;
+
+  const panes: WorkspacePane[] = [];
+  target.panes.forEach((candidate, index) => {
+    if (index === activeIndex) {
+      panes.push({ ...candidate, relativeSize: half });
+      panes.push({ ...pane, relativeSize: half });
+      return;
+    }
+    panes.push(candidate);
+  });
+
   return {
     ok: true,
     state: replaceTab(state, {
       ...target,
-      panes: normalizeSizes(panes),
+      panes: normalizeToSumOne(panes),
       activePaneId: pane.paneId,
     }),
+  };
+}
+
+/**
+ * Set one pane's share, compensating its NEIGHBOUR so the axis still sums to 1.
+ *
+ * A splitter sits BETWEEN two panes and moving it is a transfer between exactly
+ * those two: growing one by taking from every other pane would move content the
+ * user is not dragging. The neighbour is the pane to the RIGHT, except for the
+ * end pane, which has none and therefore trades with the pane to its LEFT -
+ * the inversion the split-pane primitive applies at the same seam.
+ *
+ * The transfer is CLAMPED by what the neighbour actually has, so a drag past the
+ * neighbour's edge stops at the edge instead of producing a negative share.
+ */
+export function resizePane(
+  state: WorkspaceState,
+  tabId: string,
+  paneId: string,
+  relativeSize: number,
+): WorkspaceMutation {
+  const target = state.tabs.find((tab) => tab.tabId === tabId);
+  if (target === undefined || !isGroup(target)) {
+    return { ok: false, reason: "unknown_tab", state };
+  }
+  const index = target.panes.findIndex((pane) => pane.paneId === paneId);
+  if (index === -1) return { ok: false, reason: "unknown_pane", state };
+  if (target.panes.length === 1) {
+    return { ok: true, state };
+  }
+
+  const partnerIndex = index === target.panes.length - 1 ? index - 1 : index + 1;
+  const current = target.panes[index]?.relativeSize ?? 0;
+  const partner = target.panes[partnerIndex]?.relativeSize ?? 0;
+  const pooled = current + partner;
+  const next = Math.min(Math.max(relativeSize, 0), pooled);
+
+  const panes = target.panes.map((pane, position) => {
+    if (position === index) return { ...pane, relativeSize: next };
+    if (position === partnerIndex) return { ...pane, relativeSize: pooled - next };
+    return pane;
+  });
+  return { ok: true, state: replaceTab(state, { ...target, panes }) };
+}
+
+/**
+ * Set every share at once, as a splitter drag that settled does.
+ *
+ * The array is positional and must match the group's pane count; a mismatch is
+ * refused rather than zipped against whichever panes happen to line up, because
+ * a stale array from a group that changed under the drag would silently assign
+ * one pane's size to another.
+ */
+export function resizePanes(
+  state: WorkspaceState,
+  tabId: string,
+  relativeSizes: readonly number[],
+): WorkspaceMutation {
+  const target = state.tabs.find((tab) => tab.tabId === tabId);
+  if (target === undefined || !isGroup(target)) {
+    return { ok: false, reason: "unknown_tab", state };
+  }
+  if (relativeSizes.length !== target.panes.length) {
+    return { ok: false, reason: "unknown_pane", state };
+  }
+  const panes = target.panes.map((pane, index) => ({
+    ...pane,
+    relativeSize: Math.max(relativeSizes[index] ?? 0, 0),
+  }));
+  return {
+    ok: true,
+    state: replaceTab(state, { ...target, panes: normalizeToSumOne(panes) }),
   };
 }
 
@@ -177,9 +290,15 @@ export function closePane(
     target.activePaneId === paneId
       ? (panes[Math.max(0, index - 1)]?.paneId ?? panes[0]?.paneId ?? "")
       : target.activePaneId;
+  // The closed pane's share is redistributed to the survivors IN PROPORTION to
+  // what they already held, so a wide pane stays wide relative to a narrow one.
   return {
     ok: true,
-    state: replaceTab(state, { ...target, panes: normalizeSizes(panes), activePaneId }),
+    state: replaceTab(state, {
+      ...target,
+      panes: normalizeToSumOne(panes),
+      activePaneId,
+    }),
   };
 }
 
@@ -192,11 +311,34 @@ function replaceTab(state: WorkspaceState, tab: WorkspaceTab): WorkspaceState {
   };
 }
 
-/** Re-share the split axis so the sizes always sum to 1. */
-function normalizeSizes(panes: readonly WorkspacePane[]): WorkspacePane[] {
+/**
+ * Rescale the split axis so the shares sum to 1, PRESERVING THEIR PROPORTIONS.
+ *
+ * This is the whole of the stage-B2-round-2 pane-size contract change. The
+ * round-1 version of this function assigned every pane `1 / count`, which made
+ * the sizes a function of the pane COUNT alone: a restored workspace came back
+ * with its panes equalized, and closing one pane resized the survivors the user
+ * had deliberately sized. Scaling preserves what the user chose, and the
+ * sum-to-1 invariant every consumer relies on still holds.
+ *
+ * A degenerate axis - no panes with a positive share, which a corrupt or
+ * hand-written snapshot can produce - falls back to equal shares, because there
+ * are no proportions to preserve and an all-zero axis renders as nothing.
+ */
+function normalizeToSumOne(panes: readonly WorkspacePane[]): WorkspacePane[] {
   if (panes.length === 0) return [];
-  const share = 1 / panes.length;
-  return panes.map((pane) => ({ ...pane, relativeSize: share }));
+  const total = panes.reduce(
+    (sum, pane) => sum + (pane.relativeSize > 0 ? pane.relativeSize : 0),
+    0,
+  );
+  if (total <= 0) {
+    const share = 1 / panes.length;
+    return panes.map((pane) => ({ ...pane, relativeSize: share }));
+  }
+  return panes.map((pane) => ({
+    ...pane,
+    relativeSize: (pane.relativeSize > 0 ? pane.relativeSize : 0) / total,
+  }));
 }
 
 /**
@@ -285,7 +427,10 @@ export function fromSnapshot(snapshot: TerminalWorkspaceSnapshot): WorkspaceStat
       tabId: group.groupId,
       title: titles.get(panes[0]?.terminalId ?? "") ?? "terminal",
       orientation: group.orientation,
-      panes: normalizeSizes(panes),
+      // The PERSISTED shares survive the restore. Normalization here only
+      // re-establishes the sum-to-1 invariant, which a dropped pane (a terminal
+      // named in the layout whose buffer was not saved) can otherwise break.
+      panes: normalizeToSumOne(panes),
       activePaneId: panes[Math.max(0, activeIndex)]?.paneId ?? panes[0]?.paneId ?? "",
     });
   }

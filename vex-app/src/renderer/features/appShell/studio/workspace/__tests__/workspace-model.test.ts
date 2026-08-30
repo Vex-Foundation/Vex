@@ -23,6 +23,8 @@ import {
   emptyWorkspace,
   fromSnapshot,
   repairSelection,
+  resizePane,
+  resizePanes,
   selectTab,
   terminalGroupCount,
   toPersistedLayout,
@@ -140,15 +142,90 @@ describe("closing", () => {
   });
 });
 
+function sizesOf(state: WorkspaceState, tabId = "a"): number[] {
+  const tab = state.tabs.find((candidate) => candidate.tabId === tabId);
+  return (tab as WorkspaceTerminalGroup).panes.map((pane) => pane.relativeSize);
+}
+
+/**
+ * Compare shares elementwise with a tolerance.
+ *
+ * These are LAYOUT fractions, not money: they are computed by division and
+ * subtraction and land on values like 0.09999999999999998, which is the same
+ * pane at pixel resolution. Rule 90's no-float law governs token amounts,
+ * which never pass through this model.
+ */
+function expectSizes(actual: number[], expected: number[]): void {
+  expect(actual).toHaveLength(expected.length);
+  expected.forEach((value, index) => {
+    expect(actual[index]).toBeCloseTo(value, 10);
+  });
+}
+
+/**
+ * STATED CONTRACT CHANGE (stage B2 round 2): pane sizes SURVIVE.
+ *
+ * Round 1 re-shared the axis equally on every mutation, so `relativeSize` was a
+ * function of the pane count alone and the persisted field could not affect
+ * anything. These tests replace that contract with VS Code's: a split halves the
+ * ACTIVE pane and leaves the others alone, a close redistributes the closed
+ * share IN PROPORTION to the survivors, a restore preserves what was persisted,
+ * and normalization only re-establishes the sum-to-1 invariant.
+ */
 describe("panes", () => {
-  it("normalizes sizes on a split so they always sum to 1", () => {
-    const state = withGroups(["a"]);
-    const split = mutate(
-      addPane(state, "a", { paneId: "a:1", terminalId: "a-t2", relativeSize: 0.5 }),
+  /** Split `count` times, always off whichever pane the previous split selected. */
+  function splitTimes(state: WorkspaceState, count: number): WorkspaceState {
+    let next = state;
+    for (let index = 1; index <= count; index += 1) {
+      next = mutate(
+        addPane(next, "a", {
+          paneId: `a:${String(index)}`,
+          terminalId: `a-t${String(index + 1)}`,
+          relativeSize: 0,
+        }),
+      );
+    }
+    return next;
+  }
+
+  it("splits the ACTIVE pane in half and leaves every other pane alone", () => {
+    // Two splits off the first pane give 0.5 / 0.5, then the active (0.5) pane
+    // halves: 0.5 / 0.25 / 0.25. Under the round-1 rule this was 1/3 each, which
+    // resized a pane the user never touched.
+    const state = splitTimes(withGroups(["a"]), 2);
+    expectSizes(sizesOf(state), [0.5, 0.25, 0.25]);
+    expect((state.tabs[0] as WorkspaceTerminalGroup).activePaneId).toBe("a:2");
+  });
+
+  it("inserts the new pane immediately after the one it was carved out of", () => {
+    let state = splitTimes(withGroups(["a"]), 1);
+    // Re-select the FIRST pane, then split it: the new pane belongs next to it,
+    // not at the end of the axis.
+    const group0 = state.tabs[0] as WorkspaceTerminalGroup;
+    state = { ...state, tabs: [{ ...group0, activePaneId: "a:0" }] };
+    state = mutate(
+      addPane(state, "a", { paneId: "a:new", terminalId: "a-t3", relativeSize: 0 }),
     );
-    const panes = (split.tabs[0] as WorkspaceTerminalGroup).panes;
-    expect(panes.map((pane) => pane.relativeSize)).toEqual([0.5, 0.5]);
-    expect((split.tabs[0] as WorkspaceTerminalGroup).activePaneId).toBe("a:1");
+    expect(
+      (state.tabs[0] as WorkspaceTerminalGroup).panes.map((pane) => pane.paneId),
+    ).toEqual(["a:0", "a:new", "a:1"]);
+  });
+
+  it("keeps the axis summing to 1 through a run of splits", () => {
+    const state = splitTimes(withGroups(["a"]), 4);
+    expect(sizesOf(state).reduce((sum, size) => sum + size, 0)).toBeCloseTo(1, 10);
+  });
+
+  it("redistributes a closed pane's share IN PROPORTION to the survivors", () => {
+    // 0.5 / 0.25 / 0.25. Closing the 0.5 pane leaves two equal survivors; closing
+    // a 0.25 pane instead must leave the wide pane twice the narrow one.
+    const state = splitTimes(withGroups(["a"]), 2);
+
+    expectSizes(sizesOf(mutate(closePane(state, "a", "a:0"))), [0.5, 0.5]);
+
+    const narrowClosed = sizesOf(mutate(closePane(state, "a", "a:2")));
+    expect(narrowClosed[0]).toBeCloseTo(2 / 3, 10);
+    expect(narrowClosed[1]).toBeCloseTo(1 / 3, 10);
   });
 
   it("REFUSES to remove the last pane, because that is a different gesture", () => {
@@ -171,6 +248,42 @@ describe("panes", () => {
   it("refuses an unknown pane", () => {
     const state = withGroups(["a"]);
     expect(closePane(state, "a", "ghost").ok).toBe(false);
+  });
+
+  it("moves a splitter as a transfer between the two panes it sits between", () => {
+    // 0.5 / 0.25 / 0.25. Growing the middle pane must take from its RIGHT
+    // neighbour only: the left pane is on the other side of a splitter the user
+    // is not dragging, so its size may not move.
+    const state = splitTimes(withGroups(["a"]), 2);
+    const dragged = mutate(resizePane(state, "a", "a:1", 0.4));
+    expectSizes(sizesOf(dragged), [0.5, 0.4, 0.1]);
+  });
+
+  it("inverts at the END pane, which has no right neighbour to trade with", () => {
+    const state = splitTimes(withGroups(["a"]), 2);
+    const dragged = mutate(resizePane(state, "a", "a:2", 0.4));
+    // The end pane trades with the pane to its LEFT; the first pane is untouched.
+    expectSizes(sizesOf(dragged), [0.5, 0.1, 0.4]);
+  });
+
+  it("CLAMPS a drag at the neighbour's edge instead of producing a negative share", () => {
+    const state = splitTimes(withGroups(["a"]), 2);
+    const dragged = mutate(resizePane(state, "a", "a:1", 5));
+    // The pooled share of the two panes either side of the splitter is 0.5.
+    expectSizes(sizesOf(dragged), [0.5, 0.5, 0]);
+    expect(sizesOf(dragged).reduce((sum, size) => sum + size, 0)).toBeCloseTo(1, 10);
+  });
+
+  it("settles a whole-axis drag and refuses one whose arity does not match", () => {
+    const state = splitTimes(withGroups(["a"]), 2);
+    expectSizes(sizesOf(mutate(resizePanes(state, "a", [0.2, 0.2, 0.6]))), [0.2, 0.2, 0.6]);
+    // A stale array from a group that changed under the drag would otherwise
+    // assign one pane's size to another.
+    expect(resizePanes(state, "a", [0.5, 0.5])).toEqual({
+      ok: false,
+      reason: "unknown_pane",
+      state,
+    });
   });
 });
 
@@ -241,6 +354,67 @@ describe("persistence mapping", () => {
     // with no explanation.
     expect(restored.tabs.map((tab) => tab.tabId)).toEqual(["a"]);
     expect(restored.activeTabId).toBe("a");
+  });
+
+  /**
+   * STATED CONTRACT CHANGE. Round 1's `fromSnapshot` equalized every restored
+   * pane, so `relativeSize` was persisted and then thrown away on read - the
+   * field existed in the wire schema and could not affect anything.
+   */
+  it("PRESERVES the persisted pane sizes through a save and a restore", () => {
+    let state = withGroups(["a"]);
+    state = mutate(
+      addPane(state, "a", { paneId: "a:1", terminalId: "a-t2", relativeSize: 0 }),
+    );
+    state = mutate(resizePane(state, "a", "a:0", 0.8));
+
+    const layout = toPersistedLayout(state);
+    expectSizes(layout.groups[0]?.panes.map((pane) => pane.relativeSize) ?? [], [0.8, 0.2]);
+
+    const restored = fromSnapshot(snapshotWith(layout, ["a-t", "a-t2"]));
+    expectSizes(
+      (restored.tabs[0] as WorkspaceTerminalGroup).panes.map((pane) => pane.relativeSize),
+      [0.8, 0.2],
+    );
+  });
+
+  it("rescales to sum 1 when a restore DROPS a pane, keeping the survivors' proportions", () => {
+    let state = withGroups(["a"]);
+    state = mutate(
+      addPane(state, "a", { paneId: "a:1", terminalId: "a-t2", relativeSize: 0 }),
+    );
+    state = mutate(
+      addPane(state, "a", { paneId: "a:2", terminalId: "a-t3", relativeSize: 0 }),
+    );
+    state = mutate(resizePanes(state, "a", [0.6, 0.3, 0.1]));
+    const layout = toPersistedLayout(state);
+
+    // Only two of the three buffers were serialized; the third pane is dropped,
+    // and the axis must still sum to 1 without equalizing the two that remain.
+    const restored = fromSnapshot(snapshotWith(layout, ["a-t", "a-t2"]));
+    const sizes = (restored.tabs[0] as WorkspaceTerminalGroup).panes.map(
+      (pane) => pane.relativeSize,
+    );
+    expect(sizes.reduce((sum, size) => sum + size, 0)).toBeCloseTo(1, 10);
+    expect((sizes[0] ?? 0) / (sizes[1] ?? 1)).toBeCloseTo(2, 10);
+  });
+
+  it("falls back to equal shares for a snapshot whose axis has no positive share", () => {
+    const layout = toPersistedLayout(withGroups(["a"]));
+    const zeroed = {
+      ...layout,
+      groups: layout.groups.map((group) => ({
+        ...group,
+        panes: group.panes.map((pane) => ({ ...pane, relativeSize: 0 })),
+      })),
+    };
+    // A hand-written or corrupt snapshot has no proportions to preserve, and an
+    // all-zero axis renders as nothing.
+    const restored = fromSnapshot(snapshotWith(zeroed, ["a-t"]));
+    expectSizes(
+      (restored.tabs[0] as WorkspaceTerminalGroup).panes.map((pane) => pane.relativeSize),
+      [1],
+    );
   });
 
   it("titles a restored tab from what was running in it", () => {

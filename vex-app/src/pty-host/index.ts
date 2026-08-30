@@ -12,6 +12,7 @@
  *   config.ts              boot configuration, and its deletion from the env
  *   process-env.ts         the scrubbed base environment terminals inherit
  *   launch-probe.ts        cwd/executable/cwd-tracking against the real OS
+ *   node-pty-spawner.ts    the one place node-pty is imported and a shell spawned
  *   terminal-process.ts    one pty: flow control, exit ordering, resize, title
  *   mirror.ts              the authoritative headless xterm behind every replay
  *   persistent-terminal.ts detach, reattach, resync, grace
@@ -26,21 +27,6 @@
  * deny-list in `process-env.ts` would also catch it; both locks are deliberate.
  */
 
-/**
- * node-pty, imported here as a BARE EXTERNAL import - that is the packaging
- * contract this process depends on.
- *
- * It must survive into `dist/pty-host/index.js` unbundled. Inlined instead,
- * node-pty's loader would resolve `prebuilds/<platform>-<arch>/pty.node`
- * relative to the bundle rather than to node_modules, and on macOS it would
- * lose its sibling `spawn-helper` binary too - so every terminal would fail at
- * runtime, in the packaged app only. `rolldownOptions.external` in
- * vite.pty-host.config.ts keeps it external and
- * `scripts/check-native-artifacts.mjs` asserts the emitted import is still
- * there.
- */
-import nodePty from "node-pty";
-
 import {
   TERMINAL_HOST_BEAT_INTERVAL_MS,
   type TerminalHostMessage,
@@ -48,9 +34,9 @@ import {
 import { readAndClearPtyHostConfig } from "./config.js";
 import { PtyHostService, type HostPort } from "./host-service.js";
 import { filesystemLaunchProbe } from "./launch-probe.js";
+import { createNodePtySpawner, nodePtyLoaded } from "./node-pty-spawner.js";
 import { scrubEnvironment } from "./process-env.js";
 import { TerminalSnapshotStore } from "./snapshot-store.js";
-import type { PtyAdapter, PtySpawner } from "./types.js";
 
 /**
  * Electron's `utilityProcess` child API. Declared locally rather than pulled
@@ -92,38 +78,6 @@ function adaptPort(port: ElectronMessagePort): HostPort {
   };
 }
 
-/**
- * node-pty behind the host's `PtySpawner` seam.
- *
- * The seam exists so the flow-control, exit-sequencing and resize tests can
- * drive a scripted pty deterministically. Production is this one function.
- */
-const nodePtySpawner: PtySpawner = (executable, args, options) => {
-  const pty = nodePty.spawn(executable, [...args], {
-    name: options.name,
-    cols: options.cols,
-    rows: options.rows,
-    cwd: options.cwd,
-    env: { ...options.env },
-  });
-  const adapter: PtyAdapter = {
-    get pid() {
-      return pty.pid;
-    },
-    get process() {
-      return pty.process;
-    },
-    onData: (listener) => pty.onData(listener),
-    onExit: (listener) => pty.onExit(listener),
-    write: (data) => pty.write(data),
-    resize: (cols, rows) => pty.resize(cols, rows),
-    kill: (signal) => (signal === undefined ? pty.kill() : pty.kill(signal)),
-    pause: () => pty.pause(),
-    resume: () => pty.resume(),
-  };
-  return adapter;
-};
-
 function main(): void {
   const parentPort = parentPortOf(process);
   if (!parentPort) {
@@ -150,8 +104,14 @@ function main(): void {
     parentPort.postMessage(message);
   };
 
+  const log = (line: string): void => {
+    console.log(line);
+  };
+
   const service = new PtyHostService({
-    spawn: nodePtySpawner,
+    // The spawner traces through the SAME sink the rest of the host logs
+    // through, so a spawn and the refusal that follows it land in one stream.
+    spawn: createNodePtySpawner(log),
     probe: filesystemLaunchProbe,
     baseEnv,
     snapshotStore: new TerminalSnapshotStore(config.snapshotDir),
@@ -159,7 +119,7 @@ function main(): void {
     graceMs: config.graceMs,
     shortGraceMs: config.shortGraceMs,
     sendToMain,
-    log: (line) => console.log(line),
+    log,
   });
 
   parentPort.on("message", (event) => {
@@ -180,7 +140,7 @@ function main(): void {
 
   console.log(
     `vex-studio pty host: ready (pid=${String(process.pid)}, `
-      + `node=${process.versions.node}, node-pty spawn=${typeof nodePty.spawn}, `
+      + `node=${process.versions.node}, node-pty=${nodePtyLoaded() ? "loaded" : "MISSING"}, `
       + `scrollback=${String(config.scrollbackRows)})`,
   );
 }

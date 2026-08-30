@@ -18,6 +18,7 @@ import type { Result } from "@shared/ipc/result.js";
 import type {
   TerminalAckResult,
   TerminalCreateResult,
+  TerminalErrorCode,
   TerminalHostAvailability,
   TerminalOutcome,
   TerminalProperty,
@@ -96,6 +97,21 @@ export function onTerminalExit(
   cb: (info: { exitCode: number; signal: number | null }) => void,
 ): () => void {
   return window.vex.terminal.onExit(terminalId, cb);
+}
+
+/**
+ * A packet the host refused. CODES only.
+ *
+ * This is the surface behind the refusal prompts: `limit_project_terminals` and
+ * `limit_global_terminals` mean "close one first" - never an eviction - and
+ * `foreign_terminal` means a packet was rejected at the host rather than merely
+ * at a preload the renderer also controls.
+ */
+export function onTerminalRefused(
+  terminalId: string,
+  cb: (code: TerminalErrorCode) => void,
+): () => void {
+  return window.vex.terminal.onRefused(terminalId, cb);
 }
 
 export function persistTerminalWorkspace(

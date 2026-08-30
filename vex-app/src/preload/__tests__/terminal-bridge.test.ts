@@ -47,6 +47,7 @@ vi.mock("electron", () => ({
 const { EV } = await import("../../shared/ipc/channels.js");
 const {
   TERMINAL_ACK_CHARS,
+  TERMINAL_REPLAY_CHUNK_MAX_BYTES,
   TERMINAL_WRITE_MAX_BYTES,
 } = await import("../../shared/schemas/terminal.js");
 const { terminal, __resetTerminalBridgeForTests } = await import("../shell/terminal.js");
@@ -238,6 +239,98 @@ describe("subscriptions", () => {
 
     expect(resync).toHaveBeenCalledWith({ reason: "replay", droppedRows: 1204 });
     expect(data).toHaveBeenCalledWith("restored screen");
+  });
+
+  /**
+   * RED ON REVERT. Restore a mirror larger than one replay chunk.
+   *
+   * The defect this pins: signalling a resync per CHUNK instead of per REPLAY.
+   * The consumer's handler clears its screen on every resync, so a per-chunk
+   * signal throws away every chunk but the last, and reports the dropped-row
+   * count once per chunk. Both are silent - the terminal simply comes back with
+   * a fraction of its history and an inflated counter.
+   */
+  it("signals ONE resync for a multi-chunk replay and keeps every chunk", async () => {
+    const port = await acquire();
+    const resync = vi.fn();
+    // A consumer that behaves the way the terminal does: clear on resync,
+    // append on data. What survives at the end is what the user would see.
+    let screen = "";
+    terminal.onResync("t1", () => {
+      resync();
+      screen = "";
+    });
+    terminal.onData("t1", (chunk: string) => {
+      screen += chunk;
+    });
+
+    // Three chunks at the wire bound, which is what a mirror above 256 KiB
+    // produces. The host stamps the SAME droppedRows on every chunk of one
+    // replay, because they all come from one serialization.
+    const chunks = ["a".repeat(TERMINAL_REPLAY_CHUNK_MAX_BYTES), "b".repeat(TERMINAL_REPLAY_CHUNK_MAX_BYTES), "c".repeat(4096)];
+    chunks.forEach((chunk, index) => {
+      port.receive({
+        kind: "replay",
+        terminalId: "t1",
+        data: chunk,
+        last: index === chunks.length - 1,
+        droppedRows: 37,
+      });
+    });
+
+    expect(resync).toHaveBeenCalledTimes(1);
+    expect(screen).toBe(chunks.join(""));
+    expect(screen.length).toBeGreaterThan(TERMINAL_REPLAY_CHUNK_MAX_BYTES);
+  });
+
+  it("reports droppedRows ONCE per replay rather than once per chunk", async () => {
+    const port = await acquire();
+    const reported: number[] = [];
+    terminal.onResync("t1", (payload: { reason: string; droppedRows: number }) => {
+      reported.push(payload.droppedRows);
+    });
+    terminal.onData("t1", () => {});
+
+    for (const last of [false, false, true]) {
+      port.receive({
+        kind: "replay",
+        terminalId: "t1",
+        data: "x".repeat(1024),
+        last,
+        droppedRows: 37,
+      });
+    }
+
+    expect(reported).toEqual([37]);
+  });
+
+  it("opens a NEW resync for the replay that follows a completed one", async () => {
+    const port = await acquire();
+    const resync = vi.fn();
+    terminal.onResync("t1", resync);
+    terminal.onData("t1", () => {});
+
+    port.receive({ kind: "replay", terminalId: "t1", data: "one", last: true, droppedRows: 0 });
+    port.receive({ kind: "replay", terminalId: "t1", data: "two", last: true, droppedRows: 5 });
+
+    expect(resync).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let a replay abandoned mid-sequence suppress the next attach's clear", async () => {
+    const port = await acquire();
+    const resync = vi.fn();
+    terminal.onResync("t1", resync);
+    terminal.onData("t1", () => {});
+
+    // A replay that never gets its `last` chunk, because the consumer detached.
+    port.receive({ kind: "replay", terminalId: "t1", data: "partial", last: false, droppedRows: 0 });
+    expect(resync).toHaveBeenCalledTimes(1);
+
+    await terminal.detach({ terminalId: "t1" });
+    await terminal.attach({ terminalId: "t1" });
+
+    port.receive({ kind: "replay", terminalId: "t1", data: "fresh", last: true, droppedRows: 0 });
+    expect(resync).toHaveBeenCalledTimes(2);
   });
 });
 

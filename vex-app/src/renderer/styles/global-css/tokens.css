@@ -268,6 +268,43 @@
   --vex-alias-board-card-hover: var(--color-gray-875);
   --vex-alias-board-vignette: rgba(43, 62, 255, 0.07);
 
+
+  /* TERMINAL (Vex Studio, stage B2). The 16 ANSI slots plus the four chrome
+   * colours xterm needs, aliased here because xterm paints to a canvas: it
+   * cannot consume `var(--vex-alias-*)` and it cannot be restyled by a
+   * stylesheet, so a bridge resolves these with getComputedStyle and hands
+   * xterm concrete strings (the same shape boardChartTheme.ts uses for
+   * lightweight-charts). ONE source of truth for terminal colour: a hex
+   * written into a component would be invisible to the theme flip and banned
+   * by the design guard.
+   *
+   * `background` is TRANSPARENT on purpose - the pane paints its own surface
+   * and the watermark sits under the terminal. The ANSI slots are the only
+   * place in this file where raw hex is right: they are a WIRE CONTRACT with
+   * programs that emit SGR 30-37 and 90-97, not brand decisions, and bending
+   * them to the brand ramp would misrender every diff, prompt and ls. */
+  --vex-alias-term-background: transparent;
+  --vex-alias-term-foreground: var(--color-gray-200);
+  --vex-alias-term-cursor: var(--vex-alias-accent-primary);
+  --vex-alias-term-selection: rgba(255, 255, 255, 0.18);
+
+  --vex-alias-term-black: #1c2030;
+  --vex-alias-term-red: #f2777a;
+  --vex-alias-term-green: #6cc57c;
+  --vex-alias-term-yellow: #e0b155;
+  --vex-alias-term-blue: #6c9ef8;
+  --vex-alias-term-magenta: #c69af3;
+  --vex-alias-term-cyan: #5cc9d4;
+  --vex-alias-term-white: #c8ccd8;
+  --vex-alias-term-bright-black: #5a6178;
+  --vex-alias-term-bright-red: #ff9d9f;
+  --vex-alias-term-bright-green: #8fdd9d;
+  --vex-alias-term-bright-yellow: #f5cd7a;
+  --vex-alias-term-bright-blue: #93b8ff;
+  --vex-alias-term-bright-magenta: #dcbcff;
+  --vex-alias-term-bright-cyan: #86e2ec;
+  --vex-alias-term-bright-white: #f2f4f8;
+
   --vex-alias-scrollbar-l1: rgba(255, 255, 255, 0.14);
   --vex-alias-scrollbar-l1-hover: rgba(255, 255, 255, 0.24);
   --vex-alias-scrollbar-l2: rgba(255, 255, 255, 0.2);
@@ -363,6 +400,43 @@
   --vex-alias-board-card: var(--color-gray-0);
   --vex-alias-board-card-hover: var(--color-gray-50);
   --vex-alias-board-vignette: rgba(43, 62, 255, 0.04);
+
+
+  /* TERMINAL (Vex Studio, stage B2). The 16 ANSI slots plus the four chrome
+   * colours xterm needs, aliased here because xterm paints to a canvas: it
+   * cannot consume `var(--vex-alias-*)` and it cannot be restyled by a
+   * stylesheet, so a bridge resolves these with getComputedStyle and hands
+   * xterm concrete strings (the same shape boardChartTheme.ts uses for
+   * lightweight-charts). ONE source of truth for terminal colour: a hex
+   * written into a component would be invisible to the theme flip and banned
+   * by the design guard.
+   *
+   * `background` is TRANSPARENT on purpose - the pane paints its own surface
+   * and the watermark sits under the terminal. The ANSI slots are the only
+   * place in this file where raw hex is right: they are a WIRE CONTRACT with
+   * programs that emit SGR 30-37 and 90-97, not brand decisions, and bending
+   * them to the brand ramp would misrender every diff, prompt and ls. */
+  --vex-alias-term-background: transparent;
+  --vex-alias-term-foreground: var(--color-gray-800);
+  --vex-alias-term-cursor: var(--vex-alias-accent-primary);
+  --vex-alias-term-selection: rgba(10, 13, 24, 0.14);
+
+  --vex-alias-term-black: #2b3040;
+  --vex-alias-term-red: #c0393f;
+  --vex-alias-term-green: #2f7d43;
+  --vex-alias-term-yellow: #8a6410;
+  --vex-alias-term-blue: #2b52c4;
+  --vex-alias-term-magenta: #7a3fb0;
+  --vex-alias-term-cyan: #1f6f78;
+  --vex-alias-term-white: #6b7180;
+  --vex-alias-term-bright-black: #4a5064;
+  --vex-alias-term-bright-red: #e05055;
+  --vex-alias-term-bright-green: #3f9a57;
+  --vex-alias-term-bright-yellow: #a87d1c;
+  --vex-alias-term-bright-blue: #3f68dd;
+  --vex-alias-term-bright-magenta: #9455cc;
+  --vex-alias-term-bright-cyan: #2a8a94;
+  --vex-alias-term-bright-white: #1c2030;
 
   --vex-alias-scrollbar-l1: rgba(10, 13, 24, 0.18);
   --vex-alias-scrollbar-l1-hover: rgba(10, 13, 24, 0.3);
