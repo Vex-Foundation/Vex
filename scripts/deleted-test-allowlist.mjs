@@ -20,35 +20,7 @@
  * outlives its merge is stale by construction and the gate says so.
  */
 
-export const DELETED_TEST_ALLOWLIST = [
-  {
-    path: "vex-app/src/renderer/features/appShell/studio/explorer/__spike__/__tests__/flatIndex.spike.test.tsx",
-    reason:
-      "Stage B3 spike, candidate B. Its subject was `__spike__/flatIndexModel.ts`, a throwaway " +
-      "measurement harness whose only purpose was to decide whether to own the tree model or adopt " +
-      "@headless-tree. The measurement returned 10-13x faster per splice at 10k visible rows, the " +
-      "port decision was ratified, and stage B3b lands it - so the spike module is deleted in this " +
-      "same change and there is no subject left to exercise.",
-    survivingCoverage:
-      "vex-app/src/renderer/features/appShell/studio/explorer/__tests__/explorer-model.test.ts " +
-      "(the shipped model's contract, including the three defects the spike carried: the byId " +
-      "subtree leak, the O(n) index scan and the silent re-parent) and " +
-      "vex-app/src/renderer/features/appShell/studio/explorer/__tests__/ExplorerTree.splice.test.tsx " +
-      "(the 50k-node splice invariant, ported with the same fixture and render counters).",
-  },
-  {
-    path: "vex-app/src/renderer/features/appShell/studio/explorer/__spike__/__tests__/headlessTree.spike.test.tsx",
-    reason:
-      "Stage B3 spike, candidate A. Its subject was `@headless-tree/core` and `@headless-tree/react`, " +
-      "which lost the measurement and are REMOVED from vex-app/package.json and vex-app/pnpm-lock.yaml " +
-      "in this same change. The test cannot be kept: the packages it imports are no longer installed.",
-    survivingCoverage:
-      "Nothing of the rejected candidate survives, by design. The behaviour the comparison was ABOUT - " +
-      "that expanding a 10k-child folder and inserting one child re-renders only viewport rows - is " +
-      "asserted against the shipped model in " +
-      "vex-app/src/renderer/features/appShell/studio/explorer/__tests__/ExplorerTree.splice.test.tsx.",
-  },
-];
+export const DELETED_TEST_ALLOWLIST = [];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
   DELETED_TEST_ALLOWLIST.map((entry) => entry.path),
