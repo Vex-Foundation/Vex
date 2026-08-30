@@ -302,6 +302,72 @@ export function closePane(
   };
 }
 
+/**
+ * Make a pane the group's active one.
+ *
+ * The active pane is what a SPLIT carves out of and what a pane close falls back
+ * from, so "which pane did the user last touch" is model state, not a component's
+ * private memory. A controller that kept it locally would let the two disagree
+ * exactly when it matters: after a restore, or after a close moved the selection.
+ */
+export function setActivePane(
+  state: WorkspaceState,
+  tabId: string,
+  paneId: string,
+): WorkspaceMutation {
+  const target = state.tabs.find((tab) => tab.tabId === tabId);
+  if (target === undefined || !isGroup(target)) {
+    return { ok: false, reason: "unknown_tab", state };
+  }
+  if (!target.panes.some((pane) => pane.paneId === paneId)) {
+    return { ok: false, reason: "unknown_pane", state };
+  }
+  if (target.activePaneId === paneId) return { ok: true, state };
+  return { ok: true, state: replaceTab(state, { ...target, activePaneId: paneId }) };
+}
+
+/**
+ * Set the axis a group's panes are laid out along.
+ *
+ * Shares are RELATIVE and therefore axis-agnostic, so flipping the orientation
+ * re-lays the same proportions along the other axis rather than resetting them.
+ * That is what makes "split side by side" and "split top and bottom" one
+ * decision the user can revise, instead of a property fixed when the group was
+ * created.
+ */
+export function setGroupOrientation(
+  state: WorkspaceState,
+  tabId: string,
+  orientation: "horizontal" | "vertical",
+): WorkspaceMutation {
+  const target = state.tabs.find((tab) => tab.tabId === tabId);
+  if (target === undefined || !isGroup(target)) {
+    return { ok: false, reason: "unknown_tab", state };
+  }
+  if (target.orientation === orientation) return { ok: true, state };
+  return { ok: true, state: replaceTab(state, { ...target, orientation }) };
+}
+
+/**
+ * Rename a tab.
+ *
+ * The title is DISPLAY state that the pty host owns upstream: it arrives as a
+ * `title` property change and is re-read from the snapshot on restore. It lives
+ * on the tab anyway because the strip renders from the model, and an empty title
+ * is refused so a shell that reports one cannot blank the tab it names.
+ */
+export function setTabTitle(
+  state: WorkspaceState,
+  tabId: string,
+  title: string,
+): WorkspaceMutation {
+  const target = state.tabs.find((tab) => tab.tabId === tabId);
+  if (target === undefined) return { ok: false, reason: "unknown_tab", state };
+  const next = title.trim();
+  if (next === "" || next === target.title) return { ok: true, state };
+  return { ok: true, state: replaceTab(state, { ...target, title: next }) };
+}
+
 function replaceTab(state: WorkspaceState, tab: WorkspaceTab): WorkspaceState {
   return {
     ...state,

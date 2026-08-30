@@ -206,3 +206,30 @@ export const IconStarFill = ({ size = 16, className }: GlyphProps): JSX.Element 
     />
   </svg>
 );
+
+/* Split a pane SIDE BY SIDE: a frame divided by a vertical rule. Filled
+ * outline, like the rest of the family - the divider is a bar, not a stroke. */
+export const IconSplitHorizontal = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M3 4H21V20H3V4ZM4.5 5.5V18.5H19.5V5.5H4.5Z"
+      fill="currentColor"
+    />
+    <path d="M11.25 5.5H12.75V18.5H11.25V5.5Z" fill="currentColor" />
+  </svg>
+);
+
+/* Split a pane TOP AND BOTTOM: the same frame divided by a horizontal rule. */
+export const IconSplitVertical = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M3 4H21V20H3V4ZM4.5 5.5V18.5H19.5V5.5H4.5Z"
+      fill="currentColor"
+    />
+    <path d="M4.5 11.25H19.5V12.75H4.5V11.25Z" fill="currentColor" />
+  </svg>
+);

@@ -26,6 +26,9 @@ import {
   resizePane,
   resizePanes,
   selectTab,
+  setActivePane,
+  setGroupOrientation,
+  setTabTitle,
   terminalGroupCount,
   toPersistedLayout,
 } from "../workspace-model.js";
@@ -468,3 +471,98 @@ function snapshotWith(
     })),
   };
 }
+
+/**
+ * The three mutations the React controller needs and must not keep privately.
+ *
+ * Each of them is state the model already OWNS: the active pane is what a split
+ * carves out of, the orientation is what a restore lays panes along, and the
+ * title is what the strip renders. A controller holding any of them in its own
+ * `useState` would give each one a second source of truth, free to disagree with
+ * the model exactly after a restore or a close - which is when it matters.
+ */
+describe("controller-facing mutations", () => {
+  it("makes a pane active, and refuses a pane or tab that does not exist", () => {
+    const state = withGroups(["a"]);
+    const split = addPane(state, "a", { paneId: "a:1", terminalId: "t2", relativeSize: 0 });
+    if (!split.ok) throw new Error("split refused");
+
+    const selected = setActivePane(split.state, "a", "a:0");
+    if (!selected.ok) throw new Error("unexpected refusal");
+    const tab = selected.state.tabs[0];
+    if (tab?.kind !== "terminalGroup") throw new Error("expected a group");
+    expect(tab.activePaneId).toBe("a:0");
+
+    expect(setActivePane(split.state, "a", "nope")).toMatchObject({
+      ok: false,
+      reason: "unknown_pane",
+    });
+    expect(setActivePane(split.state, "nope", "a:0")).toMatchObject({
+      ok: false,
+      reason: "unknown_tab",
+    });
+  });
+
+  it("makes the ACTIVE pane the one a later split carves out of", () => {
+    // The reason `setActivePane` belongs to the model rather than to a
+    // component: `addPane` reads `activePaneId` to decide whose share to halve.
+    let state = withGroups(["a"]);
+    const first = addPane(state, "a", { paneId: "a:1", terminalId: "t2", relativeSize: 0 });
+    if (!first.ok) throw new Error("split refused");
+    state = first.state;
+
+    const back = setActivePane(state, "a", "a:0");
+    if (!back.ok) throw new Error("unexpected refusal");
+
+    const second = addPane(back.state, "a", {
+      paneId: "a:2",
+      terminalId: "t3",
+      relativeSize: 0,
+    });
+    if (!second.ok) throw new Error("split refused");
+    const tab = second.state.tabs[0];
+    if (tab?.kind !== "terminalGroup") throw new Error("expected a group");
+    // The new pane sits immediately after the one it was carved out of.
+    expect(tab.panes.map((pane) => pane.paneId)).toEqual(["a:0", "a:2", "a:1"]);
+  });
+
+  it("flips the orientation and PRESERVES the shares, which are axis-agnostic", () => {
+    let state = withGroups(["a"]);
+    const split = addPane(state, "a", { paneId: "a:1", terminalId: "t2", relativeSize: 0 });
+    if (!split.ok) throw new Error("split refused");
+    const sized = resizePanes(split.state, "a", [0.8, 0.2]);
+    if (!sized.ok) throw new Error("resize refused");
+    state = sized.state;
+
+    const flipped = setGroupOrientation(state, "a", "vertical");
+    if (!flipped.ok) throw new Error("unexpected refusal");
+    const tab = flipped.state.tabs[0];
+    if (tab?.kind !== "terminalGroup") throw new Error("expected a group");
+    expect(tab.orientation).toBe("vertical");
+    expect(tab.panes.map((pane) => pane.relativeSize)).toEqual([0.8, 0.2]);
+
+    // Setting the orientation it already has changes nothing at all.
+    const same = setGroupOrientation(flipped.state, "a", "vertical");
+    if (!same.ok) throw new Error("unexpected refusal");
+    expect(same.state).toBe(flipped.state);
+  });
+
+  it("renames a tab but refuses to let a shell BLANK the name it reports", () => {
+    const state = withGroups(["a"]);
+
+    const named = setTabTitle(state, "a", "  vim README.md  ");
+    if (!named.ok) throw new Error("unexpected refusal");
+    expect(named.state.tabs[0]?.title).toBe("vim README.md");
+
+    // An empty or whitespace title leaves the tab labelled as it was: a strip
+    // entry with no name is one a user cannot aim at.
+    const blanked = setTabTitle(named.state, "a", "   ");
+    if (!blanked.ok) throw new Error("unexpected refusal");
+    expect(blanked.state.tabs[0]?.title).toBe("vim README.md");
+
+    expect(setTabTitle(state, "nope", "x")).toMatchObject({
+      ok: false,
+      reason: "unknown_tab",
+    });
+  });
+});

@@ -30,7 +30,7 @@
  *   - `pendingApproval` a call PARKED waiting for a human decision.
  *   - `render`          an installer job writing this project's artifacts.
  *   - `watcher`         a filesystem watcher (consumer arrives in a later stage).
- *   - `terminal`        an open terminal session (consumer arrives in B4).
+ *   - `terminal`        an open terminal session, taken by `terminals.ts`.
  *
  * `executingCall` and `dispatch` are DRAINED: they are bounded by their own
  * work and will finish. `pendingApproval` is PARKED and never drained, because
@@ -50,9 +50,13 @@
  * through the main-registered acquirer in
  * `engine/core/approval-runtime/studio/project-lease-registry.ts`.
  *
- * `watcher` and `terminal` have no consumers yet. They are defined now because
- * the delete ORDER has to reserve a place for closing them (step 6), and a
- * class added later would silently not be closed by deletes shipped before it.
+ * `terminal` HAS a consumer: `terminals.ts` takes one per terminal it opens and
+ * registers the close hook that step 6 of a delete runs, so a project delete
+ * closes that project's shells after its tombstone has committed.
+ *
+ * `watcher` still has none. It is defined now because the delete ORDER has to
+ * reserve a place for closing it (step 6), and a class added later would
+ * silently not be closed by deletes shipped before it.
  *
  * ## Bounds and ownership
  *

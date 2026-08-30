@@ -157,6 +157,7 @@ import {
   acquireProjectLease,
   heldProjectLeases,
   isProjectAdmitting,
+  registerProjectCloseHook,
   resetProjectLifecycleGateForTests,
 } from "../project-lifecycle-gate.js";
 import { runStudioCall } from "../approval-service.js";
@@ -1542,5 +1543,108 @@ describe("deleteProject: the startup repair sweep", () => {
       "The project folder could not be moved to the trash.",
     );
     expect(reason[0]?.cleanup_last_error).not.toMatch(/EPERM/);
+  }, 30_000);
+});
+
+/**
+ * STEP 6: WHAT THE PROJECT OWNS IS CLOSED ONLY AFTER THE TOMBSTONE COMMITS.
+ *
+ * This is an ORDERING contract, and ordering is the one thing a unit test of
+ * either half cannot establish. `terminal-domain.test.ts` already proves the
+ * close hook kills the right project's terminals; `project-lifecycle-gate`'s own
+ * suite proves the hook registry runs its hooks. Both stay green if step 6 moves
+ * ABOVE the transaction - and if it did, a terminal would be killed for a delete
+ * that then hit a constraint and rolled back, leaving the user with a live
+ * project whose shells Vex had already ended. Nothing in the tree would notice.
+ *
+ * So the observation is made from INSIDE the hook, against the real database: a
+ * `deleted_at` read on a fresh pooled connection at the instant the hook fires
+ * is committed state or it is nothing. A hook that ran before COMMIT would read
+ * `null` - the transaction's own writes are invisible to another connection -
+ * and a hook that ran before the transaction started would read `null` too. Both
+ * failures collapse onto the same assertion.
+ *
+ * The resource the hook closes is a REAL `terminal` lease taken from the real
+ * gate, which is exactly what `terminals.ts` holds per open terminal. The
+ * `TerminalDomain` itself is deliberately not constructed here: its module graph
+ * reaches `pty-host-starter.ts`, whose value import of `electron` this lane's
+ * header (and its whole design) exists to keep out. What is under test is the
+ * ORDER the gate imposes on its hooks, and that order is identical for every
+ * hook the registry holds.
+ *
+ * Two facts are also worth having and cost nothing: the artifact still exists
+ * when the hook runs (so close precedes cleanup, step 6 before step 7), and a
+ * SECOND project's terminal lease is untouched (so the close is scoped to the
+ * project being deleted, not to every terminal in the process).
+ */
+describe("deleteProject: step 6, closing what the project owns", () => {
+  it("closes a live terminal only AFTER the tombstone transaction has committed", async () => {
+    const doomed = await seedProject();
+    await installProjectArtifacts(doomed);
+    const bystander = await seedProject();
+
+    // What `terminals.ts` holds per open terminal, taken from the real gate.
+    const doomedTerminal = acquireProjectLease(doomed.projectId, "terminal");
+    const bystanderTerminal = acquireProjectLease(bystander.projectId, "terminal");
+    expect(doomedTerminal.ok).toBe(true);
+    expect(bystanderTerminal.ok).toBe(true);
+    expect(heldProjectLeases(doomed.projectId, "terminal")).toBe(1);
+
+    // OBSERVATIONS, not assertions: the gate swallows a throw from a hook, so an
+    // `expect` in here would be eaten and the delete would report success.
+    let hookCalls = 0;
+    const seen: {
+      deletedAt: Date | null | undefined;
+      artifactStillThere: boolean | undefined;
+      bystanderLeases: number | undefined;
+    } = {
+      deletedAt: undefined,
+      artifactStillThere: undefined,
+      bystanderLeases: undefined,
+    };
+
+    const unregister = registerProjectCloseHook(async (projectId) => {
+      if (projectId !== doomed.projectId) return;
+      hookCalls += 1;
+      const rows = await sql<{ deleted_at: Date | null }>(
+        "SELECT deleted_at FROM projects WHERE id = $1",
+        [doomed.projectId],
+      );
+      seen.deletedAt = rows[0]?.deleted_at ?? null;
+      seen.artifactStillThere = await exists(
+        path.join(doomed.directory, ".vex/protocols.md"),
+      );
+      seen.bystanderLeases = heldProjectLeases(bystander.projectId, "terminal");
+      // The terminal closes here, which is what releases its lease.
+      if (doomedTerminal.ok) doomedTerminal.lease.release();
+    });
+
+    try {
+      const result = unwrap(
+        await deleteProject(
+          { projectId: doomed.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
+          "corr-close-order",
+          deps,
+        ),
+      );
+      expect(result.outcome).toBe("removed");
+    } finally {
+      unregister();
+      if (bystanderTerminal.ok) bystanderTerminal.lease.release();
+    }
+
+    // The hook ran, once, for this project.
+    expect(hookCalls).toBe(1);
+    // THE ORDERING CLAIM. A separate connection can only see this value because
+    // the transaction that wrote it had already COMMITTED when the hook ran.
+    expect(seen.deletedAt).toBeInstanceOf(Date);
+    // Step 6 before step 7: nothing had been torn down yet.
+    expect(seen.artifactStillThere).toBe(true);
+    // Scoped to the project being deleted.
+    expect(seen.bystanderLeases).toBe(1);
+
+    // And the terminal really is gone afterwards.
+    expect(heldProjectLeases(doomed.projectId, "terminal")).toBe(0);
+    expect(await readTombstone(doomed.projectId)).toMatchObject({ deleted: true });
   }, 30_000);
 });
