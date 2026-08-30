@@ -20,6 +20,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  TERMINALS_GLOBAL_MAX,
+  TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS,
   TERMINAL_PENDING_CEILING_BYTES,
   WORKSPACE_SNAPSHOT_FILE_MAX_BYTES,
   terminalReviveResultSchema,
@@ -283,6 +285,7 @@ describe("ordered shutdown", () => {
     await send(service, {
       kind: "persistWorkspace",
       projectId: "p1",
+      layoutVersion: 0,
       layout: {
         projectId: "p1",
         groups: [
@@ -375,15 +378,20 @@ function buildPooled(snapshotDirectory = directory): {
   return { service, ptys: pool.ptys, launches: pool.calls };
 }
 
-function layoutFor(terminalIds: readonly string[]): TerminalHostRequest {
+function layoutFor(
+  terminalIds: readonly string[],
+  layoutVersion = 0,
+  groupId = "g1",
+): TerminalHostRequest {
   return {
     kind: "persistWorkspace",
     projectId: "p1",
+    layoutVersion,
     layout: {
       projectId: "p1",
       groups: [
         {
-          groupId: "g1",
+          groupId,
           orientation: "horizontal",
           panes: terminalIds.map((terminalId) => ({ terminalId, relativeSize: 1 / terminalIds.length })),
           activePaneIndex: 0,
@@ -1295,3 +1303,254 @@ describe("a revive restores the OLD SCREEN before the new shell speaks", () => {
     await service.shutdownAll();
   });
 });
+
+
+/**
+ * A store whose `write` can be BLOCKED, so an overlap has a window to exist in.
+ *
+ * Subclassed rather than faked: the real `write` is what the second half of
+ * these tests reads back off the disk, and a double that reimplemented the
+ * write-then-rename would be asserting about itself.
+ */
+class GatedSnapshotStore extends TerminalSnapshotStore {
+  readonly events: string[] = [];
+  private gate: Promise<void> | null = null;
+  private release: () => void = () => {};
+  private entered: (() => void) | null = null;
+
+  /** Block the NEXT write, and return a promise that settles once it starts. */
+  blockNextWrite(): Promise<void> {
+    this.gate = new Promise<void>((resolve) => {
+      this.release = resolve;
+    });
+    return new Promise<void>((resolve) => {
+      this.entered = resolve;
+    });
+  }
+
+  releaseWrite(): void {
+    this.gate = null;
+    this.release();
+  }
+
+  override async write(
+    snapshot: import("@shared/schemas/terminal.js").TerminalWorkspaceSnapshot,
+  ): Promise<import("../snapshot-store.js").SnapshotWriteOutcome> {
+    this.events.push(`start ${snapshot.layout.groups[0]?.groupId ?? "-"}`);
+    const gate = this.gate;
+    if (gate !== null) {
+      this.entered?.();
+      this.entered = null;
+      await gate;
+    }
+    const outcome = await super.write(snapshot);
+    this.events.push(`end ${snapshot.layout.groups[0]?.groupId ?? "-"}`);
+    return outcome;
+  }
+}
+
+/**
+ * OVERLAPPING PERSISTS HAD NO OWNER.
+ *
+ * Renderer persistence is fire-and-forget and the host dispatches control
+ * messages concurrently, so two `persistWorkspace` requests for one project
+ * were routinely in flight together - and every mechanism the capture relies on
+ * assumed it was alone. They shared ONE boolean producer hold, so the first to
+ * finish resumed a pty the second was still serializing. They wrote the same
+ * `<file>.<pid>.tmp`. And whichever rename landed second won, which could be
+ * the one carrying the OLDER topology.
+ *
+ * The owner is per-project, serialized and coalescing: a commit in flight makes
+ * the next request queue as ONE follow-up run that reads the newest layout.
+ */
+describe("a project's snapshot commits have ONE serialized owner", () => {
+  it("holds the producer across BOTH overlapping persists, and the newest layout wins", async () => {
+    const pool = scriptedSpawnerPool();
+    const store = new GatedSnapshotStore(directory);
+    const service = new PtyHostService({
+      spawn: pool.spawn,
+      probe: fakeProbe({
+        directories: [CWD],
+        files: [SHELL],
+        executables: { bash: SHELL, [SHELL]: SHELL },
+      }),
+      baseEnv: { PATH: "/usr/bin" },
+      snapshotStore: store,
+      scrollbackRows: 1000,
+      graceMs: 60_000,
+      shortGraceMs: 6_000,
+      sendToMain: (message) => toMain.push(message),
+      platform: "linux",
+    });
+    const created = await send(service, createRequest("t1", "w1"));
+    expect(created.ok).toBe(true);
+    const pty = pool.ptys[0];
+    if (pty === undefined) throw new Error("unreachable");
+    expect(pty.paused).toBe(false);
+
+    // The first persist reaches the write and stops there.
+    const inWrite = store.blockNextWrite();
+    const first = service.handleMainMessage(
+      { requestId: "pA", request: layoutFor(["t1"], 0, "gA") },
+      [],
+    );
+    await inWrite;
+    // The producer is held for the capture that is in flight.
+    expect(pty.paused).toBe(true);
+
+    // The second persist arrives while the first is inside its write. It must
+    // not start a capture of its own; it must coalesce into one follow-up.
+    const second = service.handleMainMessage(
+      { requestId: "pB", request: layoutFor(["t1"], 1, "gB") },
+      [],
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    // STILL HELD. A boolean hold released by whichever capture finished first
+    // is what let a pty write into a mirror another capture was serializing.
+    expect(pty.paused).toBe(true);
+    expect(store.events).toEqual(["start gA"]);
+
+    store.releaseWrite();
+    await Promise.all([first, second]);
+
+    // The writes never interleaved, and the SECOND layout is the one on disk.
+    expect(store.events).toEqual(["start gA", "end gA", "start gB", "end gB"]);
+    const read = await store.read("p1");
+    if (read.kind !== "ok") throw new Error(`snapshot not readable: ${read.kind}`);
+    expect(read.snapshot.layout.groups[0]?.groupId).toBe("gB");
+    // Released once every owner let go.
+    expect(pty.paused).toBe(false);
+
+    await service.shutdownAll();
+  });
+
+  it("DROPS a layout that arrives behind a newer one instead of committing over it", async () => {
+    // Serialization at the host orders the commits it runs; it cannot order the
+    // requests that reach it. The version is main's monotonic per-project
+    // counter, and the lower one loses.
+    const { service } = buildPooled();
+    await send(service, createRequest("t1", "w1"));
+
+    expect((await send(service, layoutFor(["t1"], 5, "newest"))).ok).toBe(true);
+    expect((await send(service, layoutFor(["t1"], 2, "stale"))).ok).toBe(true);
+
+    const store = new TerminalSnapshotStore(directory);
+    const read = await store.read("p1");
+    if (read.kind !== "ok") throw new Error(`snapshot not readable: ${read.kind}`);
+    expect(read.snapshot.layout.groups[0]?.groupId).toBe("newest");
+
+    await service.shutdownAll();
+  });
+});
+
+/**
+ * THE ORDERLY SHUTDOWN'S REAL BOUND HAD TO FIT INSIDE MAIN'S DEADLINE.
+ *
+ * The drains ran one after another, each bounded by
+ * `TERMINAL_SNAPSHOT_DRAIN_MS`, and the projects were committed one after
+ * another too - so at the global terminal bound the host's shutdown could cost
+ * ~24 s of drain before a single byte was written, while main's flat 5 s
+ * deadline then disposed the starter and KILLED the child. That kill could land
+ * in the middle of a commit, which is the opposite of the durability the
+ * ordered shutdown exists to provide.
+ *
+ * The assertion is a DEADLOCK, not a stopwatch: every drain is gated on all of
+ * them having started, across both projects. Sequential drains can never open
+ * that gate, so they fall through to the per-drain bound and serialize their
+ * mirrors while other terminals have not been reached - which the capture
+ * counter below records.
+ */
+describe("the orderly shutdown drains CONCURRENTLY", () => {
+  it("drains every project's terminals in parallel at the global terminal bound", async () => {
+    const pool = scriptedSpawnerPool();
+    const service = new PtyHostService({
+      spawn: pool.spawn,
+      probe: fakeProbe({
+        directories: [CWD],
+        files: [SHELL],
+        executables: { bash: SHELL, [SHELL]: SHELL },
+      }),
+      baseEnv: { PATH: "/usr/bin" },
+      snapshotStore: new TerminalSnapshotStore(directory),
+      scrollbackRows: 1000,
+      graceMs: 60_000,
+      shortGraceMs: 6_000,
+      sendToMain: (message) => toMain.push(message),
+      platform: "linux",
+    });
+
+    const perProject = TERMINALS_GLOBAL_MAX / 2;
+    const ids: string[] = [];
+    for (const projectId of ["p1", "p2"]) {
+      const projectIds: string[] = [];
+      for (let index = 0; index < perProject; index += 1) {
+        const terminalId = `${projectId}-t${String(index)}`;
+        projectIds.push(terminalId);
+        ids.push(terminalId);
+        const created = await send(service, {
+          kind: "create",
+          terminalId,
+          windowId: "w1",
+          projectId,
+          launch: { executable: "bash", args: [], cwd: CWD, cols: 80, rows: 24, env: {} },
+        });
+        if (!created.ok) throw new Error(`create refused: ${created.code}`);
+      }
+      const persisted = await send(service, {
+        kind: "persistWorkspace",
+        projectId,
+        layoutVersion: 0,
+        layout: {
+          projectId,
+          groups: projectIds.map((terminalId, index) => ({
+            groupId: `g${String(index)}`,
+            orientation: "horizontal" as const,
+            panes: [{ terminalId, relativeSize: 1 }],
+            activePaneIndex: 0,
+          })),
+          activeGroupIndex: 0,
+        },
+      });
+      expect(persisted.ok).toBe(true);
+    }
+    expect(service.liveTerminalCount).toBe(TERMINALS_GLOBAL_MAX);
+
+    // Every drain blocks until ALL of them have been entered, across BOTH
+    // projects. Sequential drains cannot satisfy that and must time out.
+    let started = 0;
+    let openGate: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      openGate = resolve;
+    });
+    /** How many drains had started each time a mirror was serialized. */
+    const startsAtCapture: number[] = [];
+    for (const terminalId of ids) {
+      const terminal = service.terminal(terminalId);
+      if (terminal === undefined) throw new Error(`missing ${terminalId}`);
+      const { mirror } = terminal.process;
+      const serialize = mirror.serializeWithinNow.bind(mirror);
+      mirror.drain = async (): Promise<void> => {
+        started += 1;
+        if (started === TERMINAL_GLOBAL_DRAINS) openGate();
+        await gate;
+      };
+      mirror.serializeWithinNow = (maxBytes: number) => {
+        startsAtCapture.push(started);
+        return serialize(maxBytes);
+      };
+    }
+
+    const startedAt = Date.now();
+    await service.shutdownAll();
+    const elapsed = Date.now() - startedAt;
+
+    // EVERY drain was in flight before ANY mirror was serialized.
+    expect(startsAtCapture).toHaveLength(TERMINAL_GLOBAL_DRAINS);
+    expect(new Set(startsAtCapture)).toEqual(new Set([TERMINAL_GLOBAL_DRAINS]));
+    // And the whole thing fits the deadline main now derives for it.
+    expect(elapsed).toBeLessThan(TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS);
+  }, 60_000);
+});
+
+/** Every terminal the concurrency test drains. Named so the gate reads once. */
+const TERMINAL_GLOBAL_DRAINS = TERMINALS_GLOBAL_MAX;

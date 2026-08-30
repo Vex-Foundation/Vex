@@ -33,6 +33,7 @@
  * Every eviction is reported; none is silent.
  */
 
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
@@ -159,7 +160,12 @@ export class TerminalSnapshotStore {
     }
 
     const file = path.join(this.directory, name);
-    const temporary = `${file}.${String(process.pid)}.tmp`;
+    // UNIQUE PER WRITE, not per process. The pid alone made every concurrent
+    // commit of one project write the same temporary path, so one writer could
+    // rename a file another was still filling. The host now serializes a
+    // project's commits, which removes that overlap at the source; this is the
+    // second lock, and it is one line.
+    const temporary = `${file}.${String(process.pid)}.${randomUUID()}.tmp`;
     try {
       await this.ensureDirectory();
       await fs.writeFile(temporary, serialized, { encoding: "utf8", mode: 0o600 });

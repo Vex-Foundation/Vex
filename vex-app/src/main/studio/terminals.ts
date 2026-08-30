@@ -45,10 +45,12 @@ import {
   TERMINAL_PORT_NONCE_TTL_MS,
   utf8ByteLength,
   TERMINAL_WRITE_MAX_BYTES,
+  terminalCreateValueSchema,
   terminalReviveResultSchema,
   terminalWorkspaceSnapshotSchema,
   type TerminalErrorCode,
   type TerminalHostAvailability,
+  type TerminalGroupLayout,
   type TerminalOutcome,
   type TerminalWorkspaceLayout,
   type TerminalWorkspaceRestore,
@@ -103,11 +105,29 @@ export interface TerminalDomainDeps {
   readonly publishTerminalsLost: (terminalIds: readonly string[]) => void;
 }
 
+/**
+ * What an open has to say about a live terminal beyond its id.
+ *
+ * RECORDED AT ADMISSION, for created and revived terminals alike, because an
+ * open is answered from the live set rather than from a remembered result: a
+ * terminal main cannot describe is a terminal a later open would have to drop.
+ * `revivedFrom` is the snapshot id this terminal replaced, and it is what the
+ * restore's `idMap` is derived from.
+ */
+interface TerminalDescriptor {
+  readonly title: string;
+  readonly shellName: string;
+  readonly droppedRows: number;
+  readonly reducedRows: number;
+  readonly revivedFrom: string | null;
+}
+
 interface TerminalEntry {
   readonly terminalId: string;
   readonly windowId: string;
   readonly projectId: string;
   readonly lease: ProjectLease;
+  readonly descriptor: TerminalDescriptor;
   /**
    * Fires if the host never reports this terminal's exit after a kill.
    *
@@ -144,7 +164,7 @@ function refuse(code: TerminalErrorCode): TerminalOutcome<never> {
 }
 
 /**
- * One window's open of one project, joinable and reusable.
+ * A revive that is CURRENTLY RUNNING for one window and project.
  *
  * THE OWNER OF "how many times may a workspace be revived". Every open used to
  * spawn a fresh set of ptys from the same snapshot, and nothing above it made
@@ -154,25 +174,65 @@ function refuse(code: TerminalErrorCode): TerminalOutcome<never> {
  * "reachable through the project's next open" was false in the most expensive
  * possible way - the next open revived ANOTHER set.
  *
- * The fix belongs here rather than in the renderer, because main is the only
- * party that can see every open and owns the ids either way.
+ * ## In flight only. A settled open is NOT a cached answer
  *
- *  - IN FLIGHT: a second open joins the first's promise. One revive.
- *  - SETTLED, same host generation: the recorded terminals are returned again,
- *    filtered to those still live. No spawn at all.
- *  - Nothing left live, or the host generation has moved: the memory describes
- *    a world that ended, and a real revive runs.
+ * It used to be, and the cache went stale the moment anything changed. A
+ * remembered restore names the terminals and the topology of the instant it
+ * ran; creates, splits, pane closures and layout changes never touched it. So
+ * an empty project whose first open answered `null` answered `null` forever -
+ * the user opened terminals, the layout persisted, and the next remount or
+ * project switch handed the renderer nothing while the shells stayed live and
+ * invisible. A restored workspace that was then split reopened with only the
+ * original panes, beside live ptys no pane referenced.
+ *
+ * An open is therefore DERIVED from live state - the terminals main records for
+ * this window and project, and the layout main last persisted for it - and this
+ * entry exists only so that a second open arriving during a revive joins it
+ * instead of starting a second one.
  */
 interface WorkspaceOpen {
   readonly generation: number;
   readonly promise: Promise<TerminalOutcome<TerminalWorkspaceRestore | null>>;
 }
 
+/** The restore shape one live terminal contributes to an open. */
+function restoreEntryOf(
+  descriptor: TerminalDescriptor,
+): Omit<TerminalWorkspaceRestore["terminals"][number], "terminalId"> {
+  return {
+    title: descriptor.title,
+    shellName: descriptor.shellName,
+    droppedRows: descriptor.droppedRows,
+    reducedRows: descriptor.reducedRows,
+  };
+}
+
 export class TerminalDomain {
   private readonly terminals = new Map<string, TerminalEntry>();
   private readonly tickets = new Map<string, PortTicket>();
-  /** Keyed by `windowId\0projectId`. See `WorkspaceOpen`. */
+  /** Keyed by `windowId\0projectId`. See `WorkspaceOpen`. IN-FLIGHT ONLY. */
   private readonly opens = new Map<string, WorkspaceOpen>();
+  /**
+   * The topology main last recorded for a project, and the version it minted.
+   *
+   * MAIN HOLDS IT because main answers the opens. The host holds the same
+   * layout for its own reason - it is what a shutdown commits - but a request
+   * to read it back would make every remount a round trip to a utility process
+   * for something main had just sent it.
+   *
+   * The version is MONOTONIC per project and travels with every
+   * `persistWorkspace`, so the host can refuse a layout that reaches it after a
+   * newer one. Renderer persistence is fire-and-forget: nothing else in the
+   * system orders those requests.
+   */
+  private readonly layouts = new Map<string, TerminalWorkspaceLayout>();
+  /**
+   * The last version minted for a project. NEVER DECREASES for the life of this
+   * domain, not even across a revive: the host keeps the highest version it has
+   * been given, so a counter that restarted would have its next several
+   * persists dropped as stale by a host that had already seen those numbers.
+   */
+  private readonly layoutVersions = new Map<string, number>();
   /**
    * Bumped whenever every terminal main believes in has ceased to exist.
    *
@@ -345,7 +405,19 @@ export class TerminalDomain {
       });
       if (!outcome.ok) return outcome;
 
-      const recorded = this.record(terminalId, windowId, projectId);
+      // The host answers with an `unknown`; parsing it is what lets a later
+      // open DESCRIBE this terminal without asking the host again. A value that
+      // does not parse is not a reason to refuse a live pty - the terminal
+      // exists - so the description degrades and the terminal is kept.
+      const created = terminalCreateValueSchema.safeParse(outcome.value);
+      const shellName = created.success ? created.data.shellName : "";
+      const recorded = this.record(terminalId, windowId, projectId, {
+        title: shellName,
+        shellName,
+        droppedRows: 0,
+        reducedRows: 0,
+        revivedFrom: null,
+      });
       if (!recorded) {
         // The project closed while the pty was spawning. It exists; end it.
         await this.starter.send({ kind: "kill", terminalId, windowId });
@@ -369,7 +441,12 @@ export class TerminalDomain {
    * Synchronous, so nothing can close admission between the answer and the
    * record it justifies.
    */
-  private record(terminalId: string, windowId: string, projectId: string): boolean {
+  private record(
+    terminalId: string,
+    windowId: string,
+    projectId: string,
+    descriptor: TerminalDescriptor,
+  ): boolean {
     const leased = acquireProjectLease(projectId, "terminal");
     if (!leased.ok) return false;
     this.terminals.set(terminalId, {
@@ -377,6 +454,7 @@ export class TerminalDomain {
       windowId,
       projectId,
       lease: leased.lease,
+      descriptor,
       backstop: null,
     });
     return true;
@@ -472,73 +550,116 @@ export class TerminalDomain {
     projectId: string,
   ): Promise<TerminalOutcome<TerminalWorkspaceRestore | null>> {
     const key = `${windowId}\u0000${projectId}`;
-    const existing = this.opens.get(key);
-    if (existing !== undefined && existing.generation === this.hostGeneration) {
-      const reused = await this.reuseOpen(existing);
-      if (reused !== null) return reused;
-      // Nothing it created is live any more. The memory is spent.
-      this.opens.delete(key);
-    } else if (existing !== undefined) {
-      this.opens.delete(key);
+
+    // 1. JOIN a revive already running for this window and project. This is the
+    //    whole of the single flight: two opens in the same tick - StrictMode's
+    //    double effect is exactly that - must not each spawn a workspace.
+    const inFlight = this.opens.get(key);
+    if (inFlight !== undefined && inFlight.generation === this.hostGeneration) {
+      await inFlight.promise.catch(() => undefined);
     }
 
+    // 2. ANSWER FROM LIVE STATE. Not from what the revive returned: by the time
+    //    a second open arrives the user may have created, split or closed
+    //    terminals and the renderer may have persisted a new topology, and a
+    //    remembered result describes none of it.
+    const derived = this.deriveOpen(windowId, projectId);
+    if (derived !== null) return { ok: true, value: derived };
+
+    // 3. Nothing is live. Only now is a revive the right answer.
     const generation = this.hostGeneration;
     const promise = this.reviveWorkspace(windowId, projectId);
     this.opens.set(key, { generation, promise });
     try {
-      return await promise;
-    } catch (cause: unknown) {
-      // A rejected open must not be remembered as a successful one.
+      const outcome = await promise;
+      if (!outcome.ok || outcome.value === null) return outcome;
+      // Answer from live state here too, so one code path decides what an open
+      // looks like - and so a terminal created while the revive was in flight
+      // is in the answer rather than stranded outside it.
+      return { ok: true, value: this.deriveOpen(windowId, projectId) ?? outcome.value };
+    } finally {
+      // The entry exists only to be joined. Holding it past settlement is what
+      // made a stale topology reusable in the first place.
       if (this.opens.get(key)?.promise === promise) this.opens.delete(key);
-      throw cause;
     }
   }
 
   /**
-   * Answer from a remembered open, or `null` when it no longer describes
-   * anything live.
+   * The workspace as it stands NOW: every live terminal of this window and
+   * project, laid out by the topology main last recorded. `null` when nothing
+   * is live, which is the only case a revive can help with.
    *
-   * FILTERED, never replayed verbatim: between the first open and this one the
-   * user may have closed a pane, and returning an id whose pty is gone is the
-   * same defect - a pane over a shell that does not exist - pointed the other
-   * way. A partially-live memory is still worth reusing, because the
-   * alternative is spawning a duplicate set beside the terminals that survived.
+   * ## Live terminals the layout does not name still get a pane
+   *
+   * The renderer persists on a 400 ms debounce, so a terminal created in the
+   * last frame before a remount is live and absent from the recorded topology.
+   * Dropping it would produce precisely the failure this method exists to
+   * remove: a running shell with no pane, which nothing in the UI can reach in
+   * order to close. It is appended as its own group instead. That cannot
+   * overflow the group bound, because a project holds at most
+   * `TERMINALS_PER_PROJECT_MAX` terminals and every group named here has at
+   * least one of them.
    */
-  private async reuseOpen(
-    open: WorkspaceOpen,
-  ): Promise<TerminalOutcome<TerminalWorkspaceRestore | null> | null> {
-    const settled = await open.promise;
-    if (!settled.ok) return null;
-    if (settled.value === null) return settled;
-    const live = settled.value.terminals.filter((entry) =>
-      this.terminals.has(entry.terminalId),
+  private deriveOpen(
+    windowId: string,
+    projectId: string,
+  ): TerminalWorkspaceRestore | null {
+    const live = [...this.terminals.values()].filter(
+      (entry) => entry.windowId === windowId && entry.projectId === projectId,
     );
     if (live.length === 0) return null;
-    const liveIds = new Set(live.map((entry) => entry.terminalId));
-    const groups: TerminalWorkspaceLayout["groups"][number][] = [];
-    for (const group of settled.value.layout.groups) {
-      const panes = group.panes.filter((pane) => liveIds.has(pane.terminalId));
+
+    const byId = new Map(live.map((entry) => [entry.terminalId, entry]));
+    const held = this.layouts.get(projectId);
+    const groups: TerminalGroupLayout[] = [];
+    const placed = new Set<string>();
+    const terminals: TerminalWorkspaceRestore["terminals"] = [];
+
+    for (const group of held?.groups ?? []) {
+      const panes = group.panes.filter(
+        (pane) => byId.has(pane.terminalId) && !placed.has(pane.terminalId),
+      );
       if (panes.length === 0) continue;
+      for (const pane of panes) {
+        placed.add(pane.terminalId);
+        const entry = byId.get(pane.terminalId);
+        if (entry !== undefined) {
+          terminals.push({ terminalId: entry.terminalId, ...restoreEntryOf(entry.descriptor) });
+        }
+      }
       groups.push({
         ...group,
         panes,
         activePaneIndex: Math.min(group.activePaneIndex, panes.length - 1),
       });
     }
+
+    for (const entry of live) {
+      if (placed.has(entry.terminalId)) continue;
+      placed.add(entry.terminalId);
+      terminals.push({ terminalId: entry.terminalId, ...restoreEntryOf(entry.descriptor) });
+      groups.push({
+        groupId: `live-${entry.terminalId}`,
+        orientation: "horizontal",
+        panes: [{ terminalId: entry.terminalId, relativeSize: 1 }],
+        activePaneIndex: 0,
+      });
+    }
+
+    const idMap: TerminalWorkspaceRestore["idMap"] = [];
+    for (const entry of live) {
+      const from = entry.descriptor.revivedFrom;
+      if (from !== null) idMap.push({ from, to: entry.terminalId });
+    }
+
     return {
-      ok: true,
-      value: {
-        layout: {
-          ...settled.value.layout,
-          groups,
-          activeGroupIndex:
-            groups.length === 0
-              ? 0
-              : Math.min(settled.value.layout.activeGroupIndex, groups.length - 1),
-        },
-        terminals: live,
-        idMap: settled.value.idMap.filter((entry) => liveIds.has(entry.to)),
+      layout: {
+        projectId,
+        groups,
+        activeGroupIndex: Math.min(held?.activeGroupIndex ?? 0, groups.length - 1),
       },
+      terminals,
+      idMap,
     };
   }
 
@@ -596,7 +717,14 @@ export class TerminalDomain {
       const terminals: TerminalWorkspaceRestore["terminals"] = [];
       const idMap: TerminalWorkspaceRestore["idMap"] = [];
       for (const entry of revived.data.revived) {
-        if (!this.record(entry.to, windowId, projectId)) {
+        const descriptor: TerminalDescriptor = {
+          title: entry.title === "" ? entry.shellName : entry.title,
+          shellName: entry.shellName,
+          droppedRows: entry.droppedRows,
+          reducedRows: entry.reducedRows,
+          revivedFrom: entry.from,
+        };
+        if (!this.record(entry.to, windowId, projectId, descriptor)) {
           // Admission closed mid-revive. The project is being deleted, so the
           // workspace is going away entirely; ending the pty and refusing the
           // whole open is the honest answer rather than a partial layout for a
@@ -616,13 +744,7 @@ export class TerminalDomain {
           });
           return refuse("project_deleting");
         }
-        terminals.push({
-          terminalId: entry.to,
-          title: entry.title === "" ? entry.shellName : entry.title,
-          shellName: entry.shellName,
-          droppedRows: entry.droppedRows,
-          reducedRows: entry.reducedRows,
-        });
+        terminals.push({ terminalId: entry.to, ...restoreEntryOf(descriptor) });
         idMap.push({ from: entry.from, to: entry.to });
       }
 
@@ -634,6 +756,10 @@ export class TerminalDomain {
         );
       }
 
+      // The revived topology is what main answers the NEXT open from, until the
+      // renderer persists one of its own. The VERSION COUNTER IS NOT TOUCHED:
+      // it orders persists, and a revive is not one.
+      this.layouts.set(projectId, revived.data.layout);
       return { ok: true, value: { layout: revived.data.layout, terminals, idMap } };
     } finally {
       creating.lease.release();
@@ -687,11 +813,26 @@ export class TerminalDomain {
     this.deps.publishTerminalsLost(lost);
   }
 
+  /**
+   * Record a project's topology and commit it.
+   *
+   * Main keeps its own copy because main answers the opens, and the version is
+   * minted HERE because main is the only party that sees every persist for a
+   * project. It is a plain counter: the contract is monotonicity, not time.
+   */
   async persistWorkspace(
     projectId: string,
     layout: TerminalWorkspaceLayout,
   ): Promise<TerminalOutcome<unknown>> {
-    return await this.starter.send({ kind: "persistWorkspace", projectId, layout });
+    const version = (this.layoutVersions.get(projectId) ?? -1) + 1;
+    this.layoutVersions.set(projectId, version);
+    this.layouts.set(projectId, layout);
+    return await this.starter.send({
+      kind: "persistWorkspace",
+      projectId,
+      layout,
+      layoutVersion: version,
+    });
   }
 
 
@@ -786,6 +927,11 @@ export class TerminalDomain {
     for (const [key] of [...this.opens]) {
       if (key.endsWith(`\u0000${projectId}`)) this.opens.delete(key);
     }
+    // The project has a tombstone. Its topology names panes that will never be
+    // drawn again, and keeping it would let a later open of a recreated id
+    // inherit a dead workspace's shape.
+    this.layouts.delete(projectId);
+    this.layoutVersions.delete(projectId);
     for (const entry of doomed) {
       await this.starter.send({
         kind: "kill",

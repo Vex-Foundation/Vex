@@ -844,3 +844,159 @@ describe("opening a workspace is SINGLE-FLIGHT and IDEMPOTENT", () => {
     await domain.dispose();
   });
 });
+
+
+/**
+ * A COMPLETED OPEN ANSWERS WITH THE WORKSPACE AS IT STANDS, NOT AS IT WAS.
+ *
+ * The single flight used to be a CACHE: the first open's result was remembered
+ * and every later open for the same window and project replayed it, filtered to
+ * the ids still live. Nothing ever updated it - not a create, not a split, not
+ * a pane closure, not a persisted layout - so it went stale the moment the user
+ * did anything, and the failure was the exact one the whole revive path exists
+ * to prevent.
+ *
+ *  - An EMPTY project's first open answered `null` and cached the `null`. The
+ *    user opened terminals and their layout persisted; the next remount, or an
+ *    A -> B -> A project switch, replayed the cached `null`. The shells stayed
+ *    live, attached to nothing, invisible, and unclosable.
+ *  - A RESTORED project that was then split reopened with only the original
+ *    ids and the original topology, beside live ptys no pane named.
+ *
+ * So an open is DERIVED: the live terminals main records for that window and
+ * project, laid out by the topology main last persisted. The pty count is the
+ * assertion that matters in both tests below - answering correctly by reviving
+ * a second set would be the older, more expensive defect.
+ */
+describe("a completed open answers from LIVE state", () => {
+  function layout(
+    groups: ReadonlyArray<readonly string[]>,
+  ): import("@shared/schemas/terminal.js").TerminalWorkspaceLayout {
+    return {
+      projectId: "p1",
+      groups: groups.map((ids, index) => ({
+        groupId: `g${String(index)}`,
+        orientation: "horizontal" as const,
+        panes: ids.map((terminalId) => ({ terminalId, relativeSize: 1 / ids.length })),
+        activePaneIndex: 0,
+      })),
+      activeGroupIndex: 0,
+    };
+  }
+
+  it("returns terminals CREATED after an empty open, without reviving anything", async () => {
+    const domain = build();
+    // Nothing to restore: this is the project whose cached `null` was answered
+    // forever.
+    starter.snapshot = null;
+
+    const first = await domain.openWorkspace("w1", "p1");
+    expect(first).toEqual({ ok: true, value: null });
+
+    await domain.create("w1", "p1", 80, 24);
+    await domain.create("w1", "p1", 80, 24);
+    const [a, b] = starter.createdIds();
+    if (a === undefined || b === undefined) throw new Error("unreachable");
+    await domain.persistWorkspace("p1", layout([[a], [b]]));
+
+    // The remount.
+    const second = await domain.openWorkspace("w1", "p1");
+
+    if (!second.ok || second.value === null) {
+      throw new Error("the remount must see the terminals the user opened");
+    }
+    expect(second.value.terminals.map((entry) => entry.terminalId)).toEqual([a, b]);
+    expect(second.value.layout.groups.map((group) => group.panes.map((p) => p.terminalId)))
+      .toEqual([[a], [b]]);
+    // AND NOT ONE MORE PTY. No revive ran, and no second create.
+    expect(starter.reviveCount()).toBe(0);
+    expect(starter.createdIds()).toEqual([a, b]);
+    expect(domain.liveCount).toBe(2);
+    await domain.dispose();
+  });
+
+  it("returns the CURRENT topology after a restore is split, without reviving twice", async () => {
+    const domain = build();
+    starter.snapshot = snapshotFor(2);
+
+    const restored = await domain.openWorkspace("w1", "p1");
+    if (!restored.ok || restored.value === null) throw new Error("unreachable");
+    const [a, b] = restored.value.terminals.map((entry) => entry.terminalId);
+    if (a === undefined || b === undefined) throw new Error("unreachable");
+
+    // The user splits, and the renderer persists the new topology.
+    await domain.create("w1", "p1", 80, 24);
+    const c = starter.createdIds()[0];
+    if (c === undefined) throw new Error("unreachable");
+    await domain.persistWorkspace("p1", layout([[a, b], [c]]));
+
+    const second = await domain.openWorkspace("w1", "p1");
+
+    if (!second.ok || second.value === null) throw new Error("unreachable");
+    expect(second.value.terminals.map((entry) => entry.terminalId)).toEqual([a, b, c]);
+    expect(second.value.layout.groups.map((group) => group.panes.map((p) => p.terminalId)))
+      .toEqual([[a, b], [c]]);
+    // The idMap still names the two that came from the snapshot, and only them.
+    expect(second.value.idMap.map((entry) => entry.to)).toEqual([a, b]);
+    // ONE revive for the session, and one create. The pty count did not move.
+    expect(starter.reviveCount()).toBe(1);
+    expect(starter.createdIds()).toEqual([c]);
+    expect(domain.liveCount).toBe(3);
+    await domain.dispose();
+  });
+
+  it("gives a live terminal the persisted layout does not name a pane of its own", async () => {
+    // Persistence is debounced in the renderer, so a terminal opened in the
+    // last frame before a remount is live and absent from the recorded
+    // topology. Dropping it is how a running shell ends up with no pane.
+    const domain = build();
+    starter.snapshot = null;
+    await domain.create("w1", "p1", 80, 24);
+    const [a] = starter.createdIds();
+    if (a === undefined) throw new Error("unreachable");
+    await domain.persistWorkspace("p1", layout([[a]]));
+    await domain.create("w1", "p1", 80, 24);
+    const unpersisted = starter.createdIds()[1];
+    if (unpersisted === undefined) throw new Error("unreachable");
+
+    const opened = await domain.openWorkspace("w1", "p1");
+
+    if (!opened.ok || opened.value === null) throw new Error("unreachable");
+    expect(opened.value.terminals.map((entry) => entry.terminalId)).toEqual([a, unpersisted]);
+    expect(opened.value.layout.groups).toHaveLength(2);
+    expect(opened.value.layout.groups[1]?.panes).toEqual([
+      { terminalId: unpersisted, relativeSize: 1 },
+    ]);
+    await domain.dispose();
+  });
+
+  it("mints a STRICTLY INCREASING layout version per project, and never rewinds", async () => {
+    // The host keeps the highest version it has seen and drops anything below
+    // it, so a counter that restarted - after a revive, say - would have its
+    // next several persists silently discarded.
+    const domain = build();
+    starter.snapshot = snapshotFor(1);
+    const opened = await domain.openWorkspace("w1", "p1");
+    if (!opened.ok || opened.value === null) throw new Error("unreachable");
+    const id = opened.value.terminals[0]?.terminalId;
+    if (id === undefined) throw new Error("unreachable");
+
+    await domain.persistWorkspace("p1", layout([[id]]));
+    await domain.persistWorkspace("p1", layout([[id]]));
+    starter.reportHostTerminated();
+    const reopened = await domain.openWorkspace("w1", "p1");
+    if (!reopened.ok || reopened.value === null) throw new Error("unreachable");
+    const revivedId = reopened.value.terminals[0]?.terminalId;
+    if (revivedId === undefined) throw new Error("unreachable");
+    await domain.persistWorkspace("p1", layout([[revivedId]]));
+
+    const versions = starter.requests
+      .filter(
+        (request): request is Extract<HostRequest, { kind: "persistWorkspace" }> =>
+          request.kind === "persistWorkspace",
+      )
+      .map((request) => request.layoutVersion);
+    expect(versions).toEqual([0, 1, 2]);
+    await domain.dispose();
+  });
+});

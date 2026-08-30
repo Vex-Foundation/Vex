@@ -619,6 +619,43 @@ describe("write chunking", () => {
     expect(outcome).toEqual({ ok: true, data: { ok: false, code: "unknown_terminal" } });
     expect(seen).toBe(1);
   });
+
+  /**
+   * THE GATE RUNS BEFORE THE CHUNKER, and it did not.
+   *
+   * `write` walked `input.data` for UTF-8 boundaries before anything had
+   * checked it was a string, so a malformed call THREW at the preload boundary
+   * instead of being refused by name - and a throw crossing the contextBridge
+   * is not the typed refusal every other local failure on this surface answers
+   * with. Validating first also means the chunker only ever sees a value the
+   * shared schema accepts.
+   */
+  it("REFUSES a malformed write by name, without walking its bytes", async () => {
+    invokeReply = () => ({ ok: true, data: { ok: true, value: null } });
+    const before = invocations.length;
+
+    // Through `JSON.parse`, which is what a hostile payload actually looks like
+    // at this boundary: a value that never went through the typed path. No cast
+    // is involved, so nothing here can be silencing a real type error.
+    const nonString: { terminalId: string; data: string } = JSON.parse(
+      '{"terminalId":"t1","data":42}',
+    );
+    const extraKey: { terminalId: string; data: string } = JSON.parse(
+      '{"terminalId":"t1","data":"ls","extra":true}',
+    );
+
+    const outcomes = await Promise.all([
+      terminal.write(nonString),
+      terminal.write({ terminalId: "", data: "ls" }),
+      terminal.write(extraKey),
+    ]);
+
+    for (const outcome of outcomes) {
+      expect(outcome).toEqual({ ok: true, data: { ok: false, code: "invalid_packet" } });
+    }
+    // Nothing crossed the process line.
+    expect(invocations.length).toBe(before);
+  });
 });
 
 describe("every terminal input is VALIDATED AT THE PRELOAD GATE", () => {

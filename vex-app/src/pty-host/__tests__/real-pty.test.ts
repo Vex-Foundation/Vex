@@ -764,7 +764,12 @@ describe("revive across a service restart", () => {
         ],
         activeGroupIndex: 0,
       };
-      await send(first, { kind: "persistWorkspace", projectId: PROJECT, layout });
+      await send(first, {
+        kind: "persistWorkspace",
+        projectId: PROJECT,
+        layoutVersion: 0,
+        layout,
+      });
 
       // THE ORDERED SHUTDOWN: serialize, commit, kill, dispose.
       await first.shutdownAll();
@@ -985,6 +990,7 @@ describe("a snapshot against a REAL, CONTINUOUSLY PRODUCING shell", () => {
     const persisted = await send(service, {
       kind: "persistWorkspace",
       projectId: PROJECT,
+      layoutVersion: 0,
       layout: {
         projectId: PROJECT,
         activeGroupIndex: 0,

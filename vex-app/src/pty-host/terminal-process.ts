@@ -117,7 +117,7 @@ export class TerminalProcess {
    * from the watermark: a snapshot can overlap an attach, and one owner's
    * release must not cancel the other's hold.
    */
-  private snapshotHold = false;
+  private snapshotHolds = 0;
   /** What the pty was last actually told. Prevents redundant pause/resume calls. */
   private ptyFlowing = true;
 
@@ -385,8 +385,8 @@ export class TerminalProcess {
   }
 
   /**
-   * Hold the producer while this terminal is being serialized into a snapshot,
-   * and release it afterwards.
+   * Hold the producer while this terminal is being serialized into a snapshot.
+   * Returns the release, which is IDEMPOTENT.
    *
    * The hold is what makes "what the mirror holds" a decidable question for the
    * duration of drain -> serialize -> reduce -> commit, exactly as the attach
@@ -394,11 +394,25 @@ export class TerminalProcess {
    * host's commit path, which releases it in a `finally` and is itself bounded
    * by the shutdown control timeout - so a wedged shell cannot convert this
    * into an unbounded stall.
+   *
+   * ## COUNTED, not a boolean
+   *
+   * A boolean hold has one bit for an arbitrary number of owners, so the FIRST
+   * release resumes the pty while a second capture is still relying on the
+   * mirror standing still - and that second capture then reserializes, in its
+   * reduction pass, a screen its first pass never saw. Counting is what makes
+   * "released" mean "released by everyone".
    */
-  setSnapshotHold(held: boolean): void {
-    if (this.snapshotHold === held) return;
-    this.snapshotHold = held;
+  acquireSnapshotHold(): () => void {
+    this.snapshotHolds += 1;
     this.syncPtyFlow();
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.snapshotHolds = Math.max(0, this.snapshotHolds - 1);
+      this.syncPtyFlow();
+    };
   }
 
   /**
@@ -409,7 +423,7 @@ export class TerminalProcess {
    * pause.
    */
   private syncPtyFlow(): void {
-    const shouldFlow = !this.ptyPaused && !this.attachHold && !this.snapshotHold;
+    const shouldFlow = !this.ptyPaused && !this.attachHold && this.snapshotHolds === 0;
     if (shouldFlow === this.ptyFlowing) return;
     this.ptyFlowing = shouldFlow;
     try {

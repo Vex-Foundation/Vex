@@ -178,6 +178,64 @@ export const TERMINAL_SNAPSHOT_DRAIN_MS = 1_000;
 export const TERMINAL_MAXIMUM_SHUTDOWN_MS = 5_000;
 
 /**
+ * Everything ONE commit costs after its drains have reached a fixed point:
+ * serialization, the whole-file reduction loop, the write-then-rename, and the
+ * directory-bound sweep.
+ *
+ * Sized against the work rather than the wire: the reduction loop halves the
+ * per-terminal cap until a 16 MiB file fits, and the write is a single
+ * `writeFile` plus a `rename` of at most that much.
+ */
+export const TERMINAL_SNAPSHOT_COMMIT_ALLOWANCE_MS = 2_000;
+
+/**
+ * The real bound on ONE commit of ONE project.
+ *
+ * A project's drains run CONCURRENTLY and each is bounded by
+ * `TERMINAL_SNAPSHOT_DRAIN_MS`, so the drain phase costs one drain bound
+ * however many terminals the project holds - not one per terminal. It used to
+ * cost one per terminal, which is what put the host's real shutdown bound
+ * (24 terminals, ~24 s) an order of magnitude past main's flat 5 s deadline.
+ */
+export const TERMINAL_COMMIT_BOUND_MS =
+  TERMINAL_SNAPSHOT_DRAIN_MS + TERMINAL_SNAPSHOT_COMMIT_ALLOWANCE_MS;
+
+/**
+ * The deadline main gives a `persistWorkspace`.
+ *
+ * TWO commit bounds, and the second is not slack. The host serializes commits
+ * per project and COALESCES the requests that arrive during one: a persist that
+ * lands while a commit is running waits for that commit and then for the single
+ * follow-up run that carries its layout. Two is therefore the worst case a
+ * correct host produces, and a deadline of one would time out the very
+ * serialization that makes overlapping persists safe.
+ */
+export const TERMINAL_PERSIST_TIMEOUT_MS = 2 * TERMINAL_COMMIT_BOUND_MS;
+
+/** Disposing timers, subscriptions, mirrors and ports once every pty has gone. */
+export const TERMINAL_SHUTDOWN_DISPOSE_ALLOWANCE_MS = 1_000;
+
+/**
+ * The deadline main gives `shutdownAll`, DERIVED from what the host actually
+ * does rather than reused from the flat control-request budget.
+ *
+ * The flat budget was a durability defect, not a tuning choice: main disposes
+ * the host - and KILLS the child - once its deadline passes, so a shutdown
+ * whose real bound exceeded it was killed mid-commit and the user lost the very
+ * snapshot the orderly shutdown exists to write. The terms are the host's own
+ * shutdown steps, in order:
+ *
+ *  - the commits, per project, run in parallel, each possibly behind one
+ *    coalesced in-flight commit: `TERMINAL_PERSIST_TIMEOUT_MS`;
+ *  - the ptys, awaited jointly and bounded: `TERMINAL_MAXIMUM_SHUTDOWN_MS`;
+ *  - dispose: `TERMINAL_SHUTDOWN_DISPOSE_ALLOWANCE_MS`.
+ */
+export const TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS =
+  TERMINAL_PERSIST_TIMEOUT_MS
+  + TERMINAL_MAXIMUM_SHUTDOWN_MS
+  + TERMINAL_SHUTDOWN_DISPOSE_ALLOWANCE_MS;
+
+/**
  * How long the host waits for a killed pty to actually EXIT before replying.
  *
  * A kill settles on the exit, not on the signal: main keeps the terminal's
@@ -576,6 +634,17 @@ export const terminalHostRequestSchema = z.discriminatedUnion("kind", [
       kind: z.literal("persistWorkspace"),
       projectId: z.string().min(1).max(64),
       layout: z.unknown(),
+      /**
+       * A MONOTONIC per-project counter, minted by main.
+       *
+       * Serialization at the host orders the commits it runs; it cannot order
+       * the requests that reach it. Renderer persistence is fire-and-forget and
+       * the host dispatches control messages concurrently, so nothing else in
+       * the system stops an older layout from being applied after a newer one
+       * and committed over it. The host keeps the highest version it has seen
+       * per project and refuses anything below it.
+       */
+      layoutVersion: z.number().int().nonnegative(),
     })
     .strict(),
   z
@@ -734,12 +803,16 @@ export const terminalSnapshotEntrySchema = z
     /** Scrollback rows the live 1000-row bound had already discarded. */
     droppedRows: z.number().int().nonnegative(),
     /**
-     * Rows this snapshot gave up to fit its byte caps, CUMULATIVE across every
-     * save of this terminal.
+     * Rows given up to the byte caps: the CROSS-SESSION BASELINE this terminal
+     * inherited when it was revived, PLUS what THIS save gave up.
      *
-     * Persisted rather than recomputed because it is a running total: a
-     * terminal reduced at each of six saves has lost rows six times, and a
-     * counter reset on every save would tell the user it had lost them once.
+     * It is not a sum over every save. `serializeWithinNow(cap).reducedRows` is
+     * a TOTAL measured from the whole mirror, so a second save of the same
+     * session REPLACES the session's figure rather than adding to it - adding
+     * is what once turned a real loss of 875 rows into a reported 2125. Only
+     * the baseline a revive carried in from the previous session is ever added,
+     * which is why the field is persisted rather than recomputed: nothing in a
+     * fresh session can rediscover what an earlier one discarded.
      */
     reducedRows: z.number().int().nonnegative(),
   })
@@ -985,17 +1058,48 @@ export const terminalCreateInputSchema = z
   .strict();
 export type TerminalCreateInput = z.infer<typeof terminalCreateInputSchema>;
 
+/**
+ * What a successful `create` produced.
+ *
+ * NAMED separately from the outcome wrapper because main parses it too: the
+ * host answers `create` with an `unknown` value, and main records the
+ * terminal's `shellName` so that a later open can describe a live terminal it
+ * did not revive. Two spellings of this shape would be two chances for main's
+ * record and the renderer's to disagree about the same terminal.
+ */
+export const terminalCreateValueSchema = z
+  .object({
+    terminalId: terminalIdSchema,
+    pid: z.number().int().nonnegative(),
+    shellName: z.string().max(256),
+    cwd: z.string().max(4096),
+  })
+  .strict();
+export type TerminalCreateValue = z.infer<typeof terminalCreateValueSchema>;
+
 export const terminalCreateResultSchema = terminalOutcomeSchema(
-  z
-    .object({
-      terminalId: terminalIdSchema,
-      pid: z.number().int().nonnegative(),
-      shellName: z.string().max(256),
-      cwd: z.string().max(4096),
-    })
-    .strict(),
+  terminalCreateValueSchema,
 );
 export type TerminalCreateResult = z.infer<typeof terminalCreateResultSchema>;
+
+/**
+ * What a CALLER hands `vex.terminal.write`, before preload chunks it.
+ *
+ * Identical to the wire shape except that `data` carries no byte bound: a paste
+ * larger than one packet is legitimate and is sent whole, in packets that fit.
+ * It exists so the preload gate can PARSE BEFORE IT CHUNKS - chunking first
+ * meant a caller that passed a non-string reached `chunkByUtf8Bytes`, which is
+ * a byte walk over a value it was never given, and the boundary threw instead
+ * of answering the typed refusal every other local failure on this surface
+ * answers with.
+ */
+export const terminalWriteRequestSchema = z
+  .object({
+    terminalId: terminalIdSchema,
+    data: z.string(),
+  })
+  .strict();
+export type TerminalWriteRequest = z.infer<typeof terminalWriteRequestSchema>;
 
 export const terminalWriteInputSchema = z
   .object({

@@ -86,6 +86,24 @@ interface WindowEntry {
   readonly nonce: string;
 }
 
+/** A project's layout and the version main minted with it. */
+interface VersionedLayout {
+  readonly layout: TerminalWorkspaceLayout;
+  readonly version: number;
+}
+
+/**
+ * The state of one project's in-flight commit.
+ *
+ * `queued` is a FLAG, not a count: any number of requests arriving during a run
+ * are answered by ONE follow-up, because a capture reads the newest layout and
+ * running it twice would only recommit the same bytes.
+ */
+interface CommitRun {
+  queued: boolean;
+  readonly waiters: Array<(committed: boolean) => void>;
+}
+
 /**
  * How many settled create-or-revive requests are retained for a late
  * abandonment. Small on purpose: it answers a question about the milliseconds
@@ -104,7 +122,23 @@ function accept<T>(value: T): TerminalOutcome<T> {
 export class PtyHostService {
   private readonly terminals = new Map<TerminalId, PersistentTerminal>();
   private readonly windows = new Map<string, WindowEntry>();
-  private readonly layouts = new Map<string, TerminalWorkspaceLayout>();
+  /**
+   * The layout each project would commit, with the version that authorised it.
+   *
+   * VERSIONED because the host cannot order what arrives at it. Control
+   * messages are dispatched concurrently and renderer persistence is
+   * fire-and-forget, so two persists can reach this map in either order; the
+   * version is main's monotonic per-project counter and the LOWER one loses.
+   */
+  private readonly layouts = new Map<string, VersionedLayout>();
+  /**
+   * The per-project commit owner. See `commitProject`.
+   *
+   * One entry exists exactly while that project has a commit running, so its
+   * presence IS the mutual exclusion - the map is written before the first
+   * await and deleted with no await between the last check and the delete.
+   */
+  private readonly commits = new Map<string, CommitRun>();
   private admitting = true;
   private shutdownPromise: Promise<void> | null = null;
   /**
@@ -272,7 +306,11 @@ export class PtyHostService {
       case "releaseWindow":
         return this.releaseWindow(request.windowId);
       case "persistWorkspace":
-        return await this.persistWorkspace(request.projectId, request.layout);
+        return await this.persistWorkspace(
+          request.projectId,
+          request.layout,
+          request.layoutVersion,
+        );
       case "readWorkspace":
         return await this.readWorkspace(request.projectId);
       case "revive":
@@ -583,11 +621,25 @@ export class PtyHostService {
   private async persistWorkspace(
     projectId: string,
     layout: unknown,
+    layoutVersion: number,
   ): Promise<TerminalOutcome<null>> {
     const parsed = terminalWorkspaceLayoutSchema.safeParse(layout);
     if (!parsed.success) return refuse("invalid_packet");
     if (parsed.data.projectId !== projectId) return refuse("invalid_packet");
-    this.layouts.set(projectId, parsed.data);
+
+    // AN OLDER LAYOUT NEVER OVERWRITES A NEWER ONE. Dropping it is the right
+    // answer rather than a refusal: the newer layout the caller is racing has
+    // already been recorded and will be committed, so the workspace on disk
+    // ends up describing the newest topology either way.
+    const held = this.layouts.get(projectId);
+    if (held !== undefined && layoutVersion < held.version) {
+      this.log(
+        `[pty-host] dropped a stale layout for ${projectId} `
+          + `(version ${String(layoutVersion)} behind ${String(held.version)})`,
+      );
+      return accept(null);
+    }
+    this.layouts.set(projectId, { layout: parsed.data, version: layoutVersion });
     const committed = await this.commitProject(projectId);
     return committed ? accept(null) : refuse("snapshot_unavailable");
   }
@@ -702,7 +754,9 @@ export class PtyHostService {
     // first persist would commit a layout of dead ids beside live terminals,
     // and the next session would restore a workspace with every pane dropped.
     const layout = remapLayout(read.snapshot.layout, revived);
-    this.layouts.set(request.projectId, layout);
+    // VERSION -1: a baseline below every version main can mint, so the first
+    // real persist of the session always wins over the revived topology.
+    this.layouts.set(request.projectId, { layout, version: -1 });
 
     return accept({ revived, failed, layout });
   }
@@ -718,7 +772,23 @@ export class PtyHostService {
   }
 
   /**
-   * Serialize every live terminal of one project and commit its file.
+   * THE COMMIT OWNER for one project: serialized, and coalescing.
+   *
+   * ## Why a project's commits may never overlap
+   *
+   * Renderer persistence is fire-and-forget and the host dispatches control
+   * messages concurrently, so two `persistWorkspace` requests for one project
+   * were routinely in flight together - and every mechanism the capture depends
+   * on assumed it was alone. They shared ONE boolean producer hold, so the
+   * first to finish resumed a pty the second was still serializing. They wrote
+   * the same temporary file. And whichever `rename` happened to land second
+   * won, which could be the one carrying the OLDER topology.
+   *
+   * So a project has at most one capture at a time. A request that arrives
+   * during one does not queue a capture of its own: it sets `queued` and is
+   * answered by a SINGLE follow-up run, which reads the newest layout. Two
+   * captures of the same bytes would cost the user's terminals a second pause
+   * for a file identical to the one just written.
    *
    * ## THE PRODUCER IS HELD FOR THE WHOLE CAPTURE
    *
@@ -733,29 +803,70 @@ export class PtyHostService {
    * accounting.
    *
    * So the hold is taken over every live terminal of the project, and released
-   * in a `finally`. It is an INDEPENDENT hold (`setSnapshotHold`), not the
-   * attach one, because a snapshot may overlap an attach and neither owner's
-   * release may cancel the other's.
+   * in a `finally`. It is an INDEPENDENT, COUNTED hold
+   * (`acquireSnapshotHold`), not the attach one, because a snapshot may overlap
+   * an attach and neither owner's release may cancel the other's.
    *
-   * The hold is BOUNDED. Each mirror gets `TERMINAL_SNAPSHOT_DRAIN_MS` to reach
-   * a fixed point - the producer is already stopped, so this waits only on
-   * xterm's parser - and a terminal that overruns it is serialized from where
-   * it got to. This path runs on quit; it may not become a way for one wedged
-   * shell to stop the app from exiting.
+   * The hold is BOUNDED. The mirrors drain CONCURRENTLY and each gets
+   * `TERMINAL_SNAPSHOT_DRAIN_MS` to reach a fixed point - the producer is
+   * already stopped, so this waits only on xterm's parser - and a terminal that
+   * overruns it is serialized from where it got to. The whole phase therefore
+   * costs one drain bound, not one per terminal, which is what keeps the real
+   * shutdown cost inside `TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS`. This path runs
+   * on quit; it may not become a way for one wedged shell to stop the app from
+   * exiting.
    */
-  private async commitProject(projectId: string): Promise<boolean> {
-    const layout = this.layouts.get(projectId);
-    if (layout === undefined) return true;
+  private commitProject(projectId: string): Promise<boolean> {
+    const active = this.commits.get(projectId);
+    if (active !== undefined) {
+      // COALESCE. A second request does not queue a second capture behind the
+      // first; it asks for ONE follow-up run, and every request that arrives
+      // while this one is in flight is answered by that same run - reading the
+      // newest layout, which is the only one worth committing.
+      active.queued = true;
+      return new Promise<boolean>((resolve) => {
+        active.waiters.push(resolve);
+      });
+    }
+
+    const state: CommitRun = { queued: false, waiters: [] };
+    // Written BEFORE the first await, so a request in the same tick sees it.
+    this.commits.set(projectId, state);
+    return (async (): Promise<boolean> => {
+      let outcome = await this.runCommit(projectId);
+      for (;;) {
+        if (!state.queued) {
+          // NO AWAIT between the check and the delete, so nothing can enqueue
+          // into a run that is about to stop looking.
+          this.commits.delete(projectId);
+          return outcome;
+        }
+        state.queued = false;
+        const waiters = state.waiters.splice(0);
+        outcome = await this.runCommit(projectId);
+        for (const waiter of waiters) waiter(outcome);
+      }
+    })();
+  }
+
+  /** One capture of one project. Only ever called by `commitProject`. */
+  private async runCommit(projectId: string): Promise<boolean> {
+    const held = this.layouts.get(projectId);
+    if (held === undefined) return true;
 
     const live = [...this.terminals.values()].filter(
       (terminal) => terminal.options.projectId === projectId,
     );
 
-    for (const terminal of live) terminal.process.setSnapshotHold(true);
+    // COUNTED holds, released exactly once each. The per-project serialization
+    // above already stops two captures of one project from overlapping, so this
+    // is defence in depth against a future second owner - a boolean hold would
+    // let the first release resume a producer the second still needs stopped.
+    const releases = live.map((terminal) => terminal.process.acquireSnapshotHold());
     try {
-      return await this.captureProject(projectId, layout, live);
+      return await this.captureProject(projectId, held.layout, live);
     } finally {
-      for (const terminal of live) terminal.process.setSnapshotHold(false);
+      for (const release of releases) release();
     }
   }
 
@@ -765,18 +876,25 @@ export class PtyHostService {
     layout: TerminalWorkspaceLayout,
     live: readonly PersistentTerminal[],
   ): Promise<boolean> {
-    // ---- drain, bounded, while held ----
-    for (const terminal of live) {
-      const settled = await settledWithin(
-        terminal.process.mirror.drain(),
-        TERMINAL_SNAPSHOT_DRAIN_MS,
+    // ---- drain, bounded, while held, CONCURRENTLY ----
+    //
+    // In parallel because every producer is already stopped: what is being
+    // waited on is each xterm parser finishing what it was handed, and those do
+    // not contend. Sequentially, the phase cost `TERMINAL_SNAPSHOT_DRAIN_MS`
+    // PER TERMINAL - 24 s at the global bound - which is what put the host's
+    // real shutdown cost an order of magnitude past main's deadline, and main
+    // kills the child when its deadline passes.
+    const drained = await Promise.all(
+      live.map(async (terminal) =>
+        await settledWithin(terminal.process.mirror.drain(), TERMINAL_SNAPSHOT_DRAIN_MS),
+      ),
+    );
+    for (let index = 0; index < live.length; index += 1) {
+      if (drained[index] === true) continue;
+      this.log(
+        `[pty-host] mirror for ${live[index]?.options.terminalId ?? "?"} did not reach a `
+          + "fixed point inside the snapshot drain bound; serializing what it holds",
       );
-      if (!settled) {
-        this.log(
-          `[pty-host] mirror for ${terminal.options.terminalId} did not reach a fixed `
-            + "point inside the snapshot drain bound; serializing what it holds",
-        );
-      }
     }
 
     // ---- NO AWAIT from here to the commit: the mirrors are fixed ----
@@ -935,7 +1053,7 @@ export class PtyHostService {
           entries[index] = { ...entry, serialized: "" };
           continue;
         }
-        // No drain needed: the producer is HELD by `commitProject` for the whole
+        // No drain needed: the producer is HELD by `runCommit` for the whole
         // capture, so this mirror is at the same fixed point the first pass
         // serialized it from.
         const next = mirror.serializeWithinNow(cap);
@@ -977,9 +1095,17 @@ export class PtyHostService {
     this.admitting = false;
 
     // 2 + 3. Serialize and commit, per project, BEFORE any pty is touched.
-    for (const projectId of new Set(this.layouts.keys())) {
-      await this.commitProject(projectId);
-    }
+    //
+    // The projects run CONCURRENTLY: they share no terminal and write separate
+    // files, so serializing them multiplied the whole bound by the number of
+    // projects for nothing. Each project's own commits stay serialized by
+    // `commitProject`, so this joins any persist already in flight rather than
+    // racing it.
+    await Promise.all(
+      [...new Set(this.layouts.keys())].map(async (projectId) =>
+        await this.commitProject(projectId),
+      ),
+    );
 
     // 4. Shut the ptys down, and WAIT FOR THEM TO ACTUALLY GO.
     //

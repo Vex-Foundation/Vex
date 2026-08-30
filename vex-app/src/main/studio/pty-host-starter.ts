@@ -59,6 +59,8 @@ import {
   TERMINAL_HOST_FIRST_WAIT_MULTIPLIER,
   TERMINAL_HOST_MAX_RESTARTS,
   TERMINAL_HOST_SECOND_WAIT_MULTIPLIER,
+  TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS,
+  TERMINAL_PERSIST_TIMEOUT_MS,
   TERMINAL_REVIVE_PER_TERMINAL_TIMEOUT_MS,
   ptyHostEnvironment,
   terminalSnapshotFileName,
@@ -464,8 +466,16 @@ export class PtyHostStarter implements PtyHost {
    *
    * `shutdownAll` is awaited rather than fired blind, because it is the request
    * that makes the host commit every snapshot; a fire-and-forget here would
-   * make snapshot durability depend on process-exit timing. The wait is bounded
-   * by `send`'s own timeout.
+   * make snapshot durability depend on process-exit timing.
+   *
+   * ## THE CHILD IS NOT KILLED WHILE THE SHUTDOWN IS STILL INSIDE ITS DEADLINE
+   *
+   * `kill()` below is reached only after the awaited `send` has settled, and
+   * that send is bounded by `TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS` - a deadline
+   * DERIVED from the host's own commit, pty-wait and dispose bounds rather than
+   * the flat control-request budget. With the flat budget the two disagreed by
+   * an order of magnitude at the global terminal bound, and the disagreement
+   * resolved as a `kill()` in the middle of a commit.
    */
   async dispose(): Promise<void> {
     this.quitRequested = true;
@@ -496,11 +506,26 @@ function deriveCreates(request: TerminalHostRequest): boolean {
 }
 
 /**
- * The deadline for one request.
+ * The deadline for one request, DERIVED FROM WHAT THE HOST ACTUALLY DOES.
  *
- * Proportional for `revive`, which does N sequential spawns; flat for
- * everything else, which does one bounded thing. The assignment list is capped
- * by the shared schema, so the proportional branch is bounded with it.
+ * The flat control-request budget is right only for requests that do one
+ * bounded thing. Three kinds do not, and giving them the flat budget was not a
+ * tuning miss - a deadline shorter than a request's real bound makes main
+ * declare a healthy host unresponsive, abandon the request, and (on quit) KILL
+ * the child mid-commit, which costs the user the snapshot the request existed
+ * to write.
+ *
+ *  - `revive` spawns one shell per assignment, sequentially. The assignment
+ *    list is capped by the shared schema, so the proportional branch is
+ *    bounded with it.
+ *  - `persistWorkspace` may wait behind one coalesced in-flight commit and then
+ *    run as the follow-up: `TERMINAL_PERSIST_TIMEOUT_MS`.
+ *  - `shutdownAll` commits every project, then waits for every pty, then
+ *    disposes: `TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS`.
+ *
+ * Every one of those is composed in `@shared/schemas/terminal.js` from the
+ * constants the host itself bounds those phases with, so the two sides cannot
+ * drift into disagreeing about how long the work takes.
  */
 function deadlineFor(request: TerminalHostRequest): number {
   if (request.kind === "revive") {
@@ -509,6 +534,8 @@ function deadlineFor(request: TerminalHostRequest): number {
       + request.assignments.length * TERMINAL_REVIVE_PER_TERMINAL_TIMEOUT_MS
     );
   }
+  if (request.kind === "persistWorkspace") return TERMINAL_PERSIST_TIMEOUT_MS;
+  if (request.kind === "shutdownAll") return TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS;
   return TERMINAL_CREATE_TIMEOUT_MS;
 }
 

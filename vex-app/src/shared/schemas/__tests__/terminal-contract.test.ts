@@ -20,8 +20,15 @@ import {
   TERMINAL_DETACH_SHORT_GRACE_MS,
   TERMINAL_FLOW_HIGH_WATERMARK_CHARS,
   TERMINAL_FLOW_LOW_WATERMARK_CHARS,
+  TERMINAL_COMMIT_BOUND_MS,
   TERMINAL_KILL_SETTLE_MS,
+  TERMINAL_MAXIMUM_SHUTDOWN_MS,
+  TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS,
   TERMINAL_PENDING_CEILING_BYTES,
+  TERMINAL_PERSIST_TIMEOUT_MS,
+  TERMINAL_SHUTDOWN_DISPOSE_ALLOWANCE_MS,
+  TERMINAL_SNAPSHOT_COMMIT_ALLOWANCE_MS,
+  TERMINAL_SNAPSHOT_DRAIN_MS,
   TERMINAL_SNAPSHOT_MAX_BYTES,
   TERMINAL_SNAPSHOT_VERSION,
   TERMINAL_WRITE_MAX_BYTES,
@@ -141,6 +148,64 @@ describe("bound relationships", () => {
     // host: main would time the request out and declare the host dead for
     // doing exactly what it was asked to do.
     expect(TERMINAL_KILL_SETTLE_MS).toBeLessThan(TERMINAL_CREATE_TIMEOUT_MS);
+  });
+});
+
+/**
+ * THE DEADLINES MAIN GIVES THE HOST ARE DERIVED FROM WHAT THE HOST DOES.
+ *
+ * They used to be the flat control-request budget, and that was a durability
+ * defect rather than a tuning miss: main disposes the pty host - and KILLS the
+ * child - once a request's deadline passes, so a shutdown whose real bound
+ * exceeded the deadline was killed in the middle of the commit that writes the
+ * user's terminals to disk. These assertions are what stop a future edit to one
+ * constant from silently reopening that gap, because every term below names a
+ * bound the host actually enforces.
+ */
+describe("shutdown and persist deadlines are composed from the host's own bounds", () => {
+  it("derives ONE commit bound from the drain bound plus the commit allowance", () => {
+    // The drains run CONCURRENTLY, so a project's drain phase costs one drain
+    // bound however many terminals it holds. A per-terminal term here would be
+    // the sequential arithmetic that produced the 24 s / 5 s mismatch.
+    expect(TERMINAL_COMMIT_BOUND_MS).toBe(
+      TERMINAL_SNAPSHOT_DRAIN_MS + TERMINAL_SNAPSHOT_COMMIT_ALLOWANCE_MS,
+    );
+  });
+
+  it("gives a persist room for one in-flight commit AND its coalesced follow-up", () => {
+    // The host serializes a project's commits and coalesces the requests that
+    // arrive during one, so the worst case a CORRECT host produces is two
+    // commit bounds. A deadline of one would time out the very serialization
+    // that makes overlapping persists safe.
+    expect(TERMINAL_PERSIST_TIMEOUT_MS).toBe(2 * TERMINAL_COMMIT_BOUND_MS);
+  });
+
+  it("sums the orderly shutdown's three phases, in the order the host runs them", () => {
+    expect(TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS).toBe(
+      TERMINAL_PERSIST_TIMEOUT_MS
+      + TERMINAL_MAXIMUM_SHUTDOWN_MS
+      + TERMINAL_SHUTDOWN_DISPOSE_ALLOWANCE_MS,
+    );
+  });
+
+  it("keeps the shutdown deadline above the flat control-request budget", () => {
+    // The flat budget is the value this deadline replaced. If a constant change
+    // ever brings the derived figure back to or below it, the derivation has
+    // stopped describing the work and the mid-commit kill is back.
+    expect(TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS).toBeGreaterThan(
+      TERMINAL_CREATE_TIMEOUT_MS,
+    );
+    expect(TERMINAL_PERSIST_TIMEOUT_MS).toBeGreaterThan(TERMINAL_COMMIT_BOUND_MS);
+  });
+
+  it("bounds the shutdown by a figure that does NOT scale with the terminal count", () => {
+    // The property the concurrency buys. Sequential drains made the real bound
+    // TERMINALS_GLOBAL_MAX * TERMINAL_SNAPSHOT_DRAIN_MS before a single byte
+    // was written; a deadline derived from that arithmetic would have to be
+    // larger than this one, and the app would hang on quit instead.
+    expect(TERMINAL_COMMIT_BOUND_MS).toBeLessThan(
+      TERMINALS_GLOBAL_MAX * TERMINAL_SNAPSHOT_DRAIN_MS,
+    );
   });
 });
 

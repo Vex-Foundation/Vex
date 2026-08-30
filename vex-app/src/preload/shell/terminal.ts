@@ -46,6 +46,7 @@ import {
   terminalProjectInputSchema,
   terminalResizeInputSchema,
   terminalWriteInputSchema,
+  terminalWriteRequestSchema,
   terminalsLostSchema,
   type TerminalAckResult,
   type TerminalPortEvent,
@@ -481,6 +482,10 @@ export const terminal = {
   },
 
   async write(input) {
+    // PARSED BEFORE ANYTHING TOUCHES IT. Chunking first walked the bytes of a
+    // value nothing had checked was a string, so a malformed call threw at the
+    // preload boundary instead of being refused by name.
+    if (!terminalWriteRequestSchema.safeParse(input).success) return invalidInput();
     let last: Result<TerminalAckResult, VexError> = ok({ ok: true, value: null });
     // CHUNKING, NOT TRUNCATION: a paste larger than one packet is sent whole,
     // in packets that fit the bound, and the caller's promise resolves only
