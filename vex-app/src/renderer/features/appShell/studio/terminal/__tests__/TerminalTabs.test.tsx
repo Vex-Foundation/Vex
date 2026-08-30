@@ -238,7 +238,14 @@ describe("TerminalTabs keyboard and controls", () => {
       projectId: "p1",
       activeTabId: "f1",
       tabs: [
-        { kind: "file", tabId: "f1", title: "README.md", relativePath: "docs/README.md", dirty: false },
+        {
+          kind: "file",
+          tabId: "f1",
+          title: "README.md",
+          relativePath: "docs/README.md",
+          nodeId: "node-readme",
+          dirty: false,
+        },
       ],
     };
     renderTabs(state);

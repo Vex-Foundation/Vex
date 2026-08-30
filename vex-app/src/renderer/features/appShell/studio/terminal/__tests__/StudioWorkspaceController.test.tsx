@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
+import { publishFileOpen, useFileOpenIntentStore } from "../../workspace/file-open-intent.js";
 import { WORKSPACE_KEEP_ALIVE_MAX } from "../../workspace/types.js";
 import { StudioWorkspaceController } from "../StudioWorkspaceController.js";
 import { TerminalRegistry } from "../terminal-registry.js";
@@ -46,6 +47,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  useFileOpenIntentStore.getState().clearFileOpenIntent();
   vi.useRealTimers();
 });
 
@@ -669,5 +671,103 @@ describe("a lost pty host is REPORTED, not hidden", () => {
     });
     expect(bridge.reviveCount).toBe(before + 1);
     expect(bridge.livePtys.size).toBe(2);
+  });
+});
+
+describe("opening a file", () => {
+  /** A node exactly as the explorer would hand it over. */
+  function sourceNode(path: string, nodeId = `node-${path}`) {
+    return {
+      nodeId,
+      name: path.slice(path.lastIndexOf("/") + 1),
+      path,
+      kind: "file" as const,
+      size: 120,
+      modifiedMs: 1,
+    };
+  }
+
+  it("adds a file tab, renders the placeholder with the path, and closes through closeTab", async () => {
+    renderStrict();
+    await waitFor(() => {
+      expect(screen.getByRole("tablist")).toBeTruthy();
+    });
+
+    await act(async () => {
+      publishFileOpen("p1", sourceNode("src/deep/service.ts"));
+      await Promise.resolve();
+    });
+
+    // The TITLE is the node's own name, which main minted; the PANEL shows the
+    // project-relative path and nothing else.
+    const tab = await screen.findByRole("tab", { name: /service\.ts/ });
+    expect(tab).toBeTruthy();
+    const placeholder = screen.getByTestId("file-tab-placeholder");
+    expect(placeholder.textContent).toBe("src/deep/service.ts");
+    // No terminal was created for a file tab, and it has no split affordance.
+    expect(bridge.livePtys.size).toBe(0);
+    expect(screen.queryByRole("button", { name: /^Split/ })).toBeNull();
+
+    await act(async () => {
+      screen.getByRole("button", { name: "Close service.ts" }).click();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("tab", { name: /service\.ts/ })).toBeNull();
+    expect(screen.queryByTestId("file-tab-placeholder")).toBeNull();
+  });
+
+  it("consumes the intent ONCE, so a StrictMode double effect cannot open it twice", async () => {
+    renderStrict();
+    await waitFor(() => {
+      expect(screen.getByRole("tablist")).toBeTruthy();
+    });
+
+    await act(async () => {
+      publishFileOpen("p1", sourceNode("src/a.ts"));
+      await Promise.resolve();
+    });
+
+    expect(screen.getAllByRole("tab", { name: /a\.ts/ })).toHaveLength(1);
+    expect(useFileOpenIntentStore.getState().intent).toBeNull();
+  });
+
+  it("DROPS a file chosen in another project", async () => {
+    renderStrict("p1");
+    await waitFor(() => {
+      expect(screen.getByRole("tablist")).toBeTruthy();
+    });
+
+    await act(async () => {
+      // The user switched projects while the click was in flight.
+      publishFileOpen("p2", sourceNode("other/b.ts"));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("tab", { name: /b\.ts/ })).toBeNull();
+    // Still parked: it belongs to p2's workspace, not to this one.
+    expect(useFileOpenIntentStore.getState().intent).not.toBeNull();
+  });
+
+  it("re-selects an already-open file and adopts its new token", async () => {
+    renderStrict();
+    await waitFor(() => {
+      expect(screen.getByRole("tablist")).toBeTruthy();
+    });
+
+    await act(async () => {
+      publishFileOpen("p1", sourceNode("src/a.ts", "node-epoch-1"));
+      await Promise.resolve();
+    });
+    await openTerminals(1);
+
+    await act(async () => {
+      publishFileOpen("p1", sourceNode("src/a.ts", "node-epoch-2"));
+      await Promise.resolve();
+    });
+
+    // One tab for one path, and it is the selected one again.
+    expect(screen.getAllByRole("tab", { name: /a\.ts/ })).toHaveLength(1);
+    expect(screen.getByTestId("file-tab-placeholder").textContent).toBe("src/a.ts");
   });
 });

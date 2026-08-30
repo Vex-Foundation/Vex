@@ -43,6 +43,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "../../../../components/ui/tabs.js";
 import { cn } from "../../../../lib/utils.js";
 import type { WorkspaceState, WorkspaceTab } from "../workspace/types.js";
+import { FileTabPlaceholder } from "../viewer/FileTabPlaceholder.js";
 import { TerminalPaneGroup } from "./TerminalPaneGroup.js";
 import type { TerminalRegistry } from "./terminal-registry.js";
 
@@ -168,11 +169,10 @@ export function TerminalTabs({
                 />
               ) : (
                 // File tabs already have a place in the model's ONE ordered
-                // strip; the editor that fills them is B4's. Rendering the
-                // placeholder keeps the strip honest instead of hiding the tab.
-                <div className="flex h-full items-center justify-center text-[12px] text-ink-tertiary">
-                  {tab.relativePath}
-                </div>
+                // strip; the viewer that fills them is B3c's, and it replaces
+                // this component. Rendering it keeps the strip honest instead
+                // of hiding the tab.
+                <FileTabPlaceholder relativePath={tab.relativePath} />
               )}
             </div>
           );

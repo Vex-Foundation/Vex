@@ -29,6 +29,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import type { FileNode } from "@shared/schemas/files.js";
 import type { TerminalErrorCode } from "@shared/schemas/terminal.js";
 import { cn } from "../../../../lib/utils.js";
 import {
@@ -39,6 +40,7 @@ import {
   readTerminalWorkspace,
 } from "../../../../lib/api/terminal.js";
 import {
+  addFileTab,
   addPane,
   addTerminalGroup,
   canAddTerminalGroup,
@@ -54,6 +56,7 @@ import {
   setTabTitle,
   toPersistedLayout,
 } from "../workspace/workspace-model.js";
+import { useFileOpenIntentStore } from "../workspace/file-open-intent.js";
 import type { WorkspaceMutation, WorkspaceState } from "../workspace/types.js";
 import { TerminalTabs } from "./TerminalTabs.js";
 import { terminalRegistry, type TerminalRegistry } from "./terminal-registry.js";
@@ -499,6 +502,53 @@ export function StudioWorkspaceController({
   const handleNewTerminal = useCallback((): void => {
     void openTerminal({ kind: "tab" });
   }, [openTerminal]);
+
+  /* ---------------- opening a file ---------------- */
+
+  /**
+   * Put a file in the strip.
+   *
+   * The TITLE is `node.name`, which main already minted as the entry's own
+   * name - deriving a basename here would be a second, weaker answer to a
+   * question the wire has already answered. The TOKEN travels with the tab
+   * because it, not the path, is what reads the file; see `WorkspaceFileTab`.
+   *
+   * No admissibility question to ask first, unlike `openTerminal`: a file tab
+   * holds no pty, no lease and no host slot, so `addFileTab` cannot refuse and
+   * there is no invisible resource a late completion could strand.
+   */
+  const openFile = useCallback(
+    (node: FileNode): void => {
+      apply((current) =>
+        addFileTab(current, {
+          kind: "file",
+          tabId: newId("file"),
+          title: node.name,
+          relativePath: node.path,
+          nodeId: node.nodeId,
+          dirty: false,
+        }),
+      );
+    },
+    [apply],
+  );
+
+  /**
+   * Take whatever the explorer parked for THIS project.
+   *
+   * Consume-once and project-keyed, so StrictMode's second effect pass finds an
+   * empty slot and a file chosen just before a project switch is dropped rather
+   * than opened in the wrong workspace. See `workspace/file-open-intent.ts`.
+   */
+  const parkedFileOpen = useFileOpenIntentStore((store) => store.intent);
+  useEffect(() => {
+    if (parkedFileOpen === null) return;
+    const taken = useFileOpenIntentStore
+      .getState()
+      .consumeFileOpenIntent(parkedFileOpen.intentId, projectId);
+    if (taken === null) return;
+    openFile(taken.node);
+  }, [openFile, parkedFileOpen, projectId]);
 
   const handleSplit = useCallback(
     (tabId: string, orientation: "horizontal" | "vertical"): void => {

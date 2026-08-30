@@ -98,6 +98,47 @@ describe("creation and selection", () => {
     expect(again.state.activeTabId).toBe("f1");
   });
 
+  it("ADOPTS a new node token for a file that is already open", () => {
+    // A file deleted and recreated, or a project re-subscribed in a new
+    // session, is the same tab to the user and a different token to main. The
+    // old token no longer verifies, so a tab that kept it could never read its
+    // file again.
+    let state = emptyWorkspace("p1");
+    state = mutate(addFileTab(state, fileTab("f1", "src/a.ts", "node-epoch-1")));
+    state = mutate(addTerminalGroup(state, group("g1")));
+
+    const again = addFileTab(state, fileTab("f2", "src/a.ts", "node-epoch-2"));
+
+    expect(again.ok).toBe(true);
+    const files = again.state.tabs.filter((tab) => tab.kind === "file");
+    expect(files).toHaveLength(1);
+    // Same tab, same position, new token, and it is selected.
+    expect(files[0]?.tabId).toBe("f1");
+    expect(files[0]?.kind === "file" ? files[0].nodeId : null).toBe("node-epoch-2");
+    expect(again.state.tabs.map((tab) => tab.tabId)).toEqual(["f1", "g1"]);
+    expect(again.state.activeTabId).toBe("f1");
+  });
+
+  it("leaves the tab untouched when the same token is reopened", () => {
+    let state = emptyWorkspace("p1");
+    state = mutate(addFileTab(state, fileTab("f1", "src/a.ts", "node-1")));
+    const before = state.tabs;
+
+    const again = addFileTab(state, fileTab("f2", "src/a.ts", "node-1"));
+
+    expect(again.state.tabs).toBe(before);
+    expect(again.state.activeTabId).toBe("f1");
+  });
+
+  it("keeps the node token out of the persisted layout", () => {
+    let state = withGroups(["a"]);
+    state = mutate(addFileTab(state, fileTab("f1", "src/a.ts", "node-secret")));
+
+    // The token binds a project EPOCH under main's own key: it means nothing to
+    // a future run, and file tabs are not persisted at all.
+    expect(JSON.stringify(toPersistedLayout(state))).not.toContain("node-secret");
+  });
+
   it("refuses selecting a tab that does not exist, and changes nothing", () => {
     const state = withGroups(["a"]);
     const outcome = selectTab(state, "ghost");
@@ -439,12 +480,16 @@ function mutate(mutation: ReturnType<typeof addTerminalGroup>): WorkspaceState {
   return mutation.state;
 }
 
-function fileTab(tabId: string, relativePath: string) {
+function fileTab(tabId: string, relativePath: string, nodeId = `node-${relativePath}`) {
   return {
     kind: "file" as const,
     tabId,
     title: relativePath,
     relativePath,
+    // The main-minted token the tab reads its file through. Defaulted from the
+    // path so a case that does not care about token identity reads unchanged,
+    // and overridable by the cases that do.
+    nodeId,
     dirty: false,
   };
 }

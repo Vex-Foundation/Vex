@@ -1,0 +1,566 @@
+/**
+ * The explorer tree component: keyboard, ARIA, click, paging and lifecycle.
+ *
+ * Two properties here are the ones a virtualized tree gets wrong quietly:
+ *
+ *  - `aria-activedescendant` on the CONTAINER. A roving tabindex would put DOM
+ *    focus on a row element that a scroll can unmount, at which point the
+ *    browser drops focus to `body`. The attribute must name a row that is
+ *    actually in the document, and be ABSENT when it is not.
+ *  - THE ORDER IS MAIN'S. The load-more case deliberately serves a second page
+ *    whose names sort BEFORE the first page's, so a renderer that re-sorted
+ *    would be caught: main's comparator is what the cursor encodes a position
+ *    in, and a re-sort makes every page boundary meaningless.
+ *
+ * Every subject is wrapped in `<StrictMode>`, the way the B2 controller suite
+ * does it, because the acquire/release contract only shows its seams under the
+ * double-invoked effect.
+ */
+
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { StrictMode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { FileNode } from "@shared/schemas/files.js";
+import { ExplorerRegistry } from "../explorer-registry.js";
+import { ExplorerTree } from "../ExplorerTree.js";
+import {
+  FilesApiFake,
+  directoryNode,
+  fileNode,
+  listingOf,
+  testViewport,
+} from "./explorer-harness.js";
+
+let api: FilesApiFake;
+let registry: ExplorerRegistry;
+
+vi.mock("../../../../../lib/api/files.js", () => ({
+  listProjectChildren: (input: Parameters<FilesApiFake["listChildren"]>[0]) =>
+    api.listChildren(input),
+  readProjectFile: () => {
+    throw new Error("the tree never reads a file");
+  },
+  watchProjectFiles: (input: Parameters<FilesApiFake["watchFile"]>[0]) => api.watchFile(input),
+  unwatchProjectFiles: (subscriptionId: string) => api.unwatchFile({ subscriptionId }),
+  onProjectFilesEvent: (
+    subscriptionId: string,
+    cb: Parameters<FilesApiFake["onFilesEvent"]>[1],
+  ) => api.onFilesEvent(subscriptionId, cb),
+}));
+
+async function flush(): Promise<void> {
+  for (let step = 0; step < 20; step += 1) await Promise.resolve();
+}
+
+function tree(): HTMLElement {
+  return screen.getByRole("tree");
+}
+
+function rowNames(): string[] {
+  return screen.getAllByRole("treeitem").map((row) => row.textContent ?? "");
+}
+
+function rowFor(name: string): HTMLElement {
+  const match = screen
+    .getAllByRole("treeitem")
+    .find((row) => (row.textContent ?? "").includes(name));
+  if (match === undefined) throw new Error(`no row for ${name}`);
+  return match;
+}
+
+function activeRow(): HTMLElement | null {
+  const id = tree().getAttribute("aria-activedescendant");
+  return id === null ? null : document.getElementById(id);
+}
+
+/** A small workspace: one folder with two files, plus a top-level file. */
+function standardTree(): void {
+  api.listResponder = (call) =>
+    call.nodeId === null
+      ? {
+          ok: true,
+          data: {
+            ok: true,
+            value: listingOf([
+              directoryNode("src", "src"),
+              fileNode("readme.md", "readme.md"),
+              fileNode("tsconfig.json", "tsconfig.json"),
+            ]),
+          },
+        }
+      : {
+          ok: true,
+          data: {
+            ok: true,
+            value: listingOf([
+              fileNode("alpha.ts", "src/alpha.ts"),
+              fileNode("beta.ts", "src/beta.ts"),
+            ]),
+          },
+        };
+}
+
+async function mountTree(
+  onOpenFile: (node: FileNode) => void = () => undefined,
+): Promise<void> {
+  render(
+    <StrictMode>
+      <ExplorerTree
+        projectId="p1"
+        onOpenFile={onOpenFile}
+        registry={registry}
+        viewport={testViewport}
+      />
+    </StrictMode>,
+  );
+  await flush();
+}
+
+beforeEach(() => {
+  api = new FilesApiFake();
+  registry = new ExplorerRegistry((run) => {
+    queueMicrotask(run);
+  });
+  document.body.innerHTML = "";
+});
+
+afterEach(async () => {
+  await registry.disposeAll();
+  vi.useRealTimers();
+});
+
+describe("mount and lifecycle", () => {
+  it("opens exactly ONE watch and ONE listener under StrictMode", async () => {
+    standardTree();
+    await mountTree();
+
+    // StrictMode runs setup, cleanup, setup. The registry's deferred teardown
+    // is what stops that becoming two subscriptions in development only.
+    expect(api.watchCount).toBe(1);
+    expect(api.listenCount).toBe(1);
+    expect(rowNames()).toHaveLength(3);
+  });
+
+  it("releases exactly once on unmount", async () => {
+    standardTree();
+    const view = render(
+      <StrictMode>
+        <ExplorerTree
+          projectId="p1"
+          onOpenFile={() => undefined}
+          registry={registry}
+          viewport={testViewport}
+        />
+      </StrictMode>,
+    );
+    await flush();
+    expect(registry.consumerCount("p1")).toBe(1);
+
+    view.unmount();
+    await flush();
+
+    expect(registry.sessionCount()).toBe(0);
+    expect(api.unwatchCount).toBe(1);
+    expect(api.offCount).toBe(1);
+  });
+});
+
+describe("aria", () => {
+  it("is a tree of treeitems with level, position and set size", async () => {
+    standardTree();
+    await mountTree();
+
+    expect(tree().getAttribute("tabindex")).toBe("0");
+    expect(tree().getAttribute("aria-label")).toBe("Project files");
+
+    const src = rowFor("src");
+    expect(src.getAttribute("aria-level")).toBe("1");
+    expect(src.getAttribute("aria-posinset")).toBe("1");
+    expect(src.getAttribute("aria-setsize")).toBe("3");
+
+    fireEvent.keyDown(tree(), { key: "ArrowRight" });
+    await flush();
+    const alpha = rowFor("alpha.ts");
+    expect(alpha.getAttribute("aria-level")).toBe("2");
+    expect(alpha.getAttribute("aria-posinset")).toBe("1");
+    expect(alpha.getAttribute("aria-setsize")).toBe("2");
+  });
+
+  it("puts aria-expanded on directories and NEVER on files", async () => {
+    standardTree();
+    await mountTree();
+
+    expect(rowFor("src").getAttribute("aria-expanded")).toBe("false");
+    // A false on a leaf announces a file as a collapsed group.
+    expect(rowFor("readme.md").hasAttribute("aria-expanded")).toBe(false);
+
+    fireEvent.keyDown(tree(), { key: "ArrowRight" });
+    await flush();
+    expect(rowFor("src").getAttribute("aria-expanded")).toBe("true");
+    expect(rowFor("alpha.ts").hasAttribute("aria-expanded")).toBe(false);
+  });
+
+  it("moves aria-activedescendant with the focused row", async () => {
+    standardTree();
+    await mountTree();
+    expect(tree().hasAttribute("aria-activedescendant")).toBe(false);
+
+    fireEvent.keyDown(tree(), { key: "ArrowDown" });
+    await flush();
+    expect(activeRow()?.textContent).toContain("src");
+
+    fireEvent.keyDown(tree(), { key: "ArrowDown" });
+    await flush();
+    expect(activeRow()?.textContent).toContain("readme.md");
+
+    fireEvent.keyDown(tree(), { key: "End" });
+    await flush();
+    expect(activeRow()?.textContent).toContain("tsconfig.json");
+
+    fireEvent.keyDown(tree(), { key: "Home" });
+    await flush();
+    expect(activeRow()?.textContent).toContain("src");
+  });
+
+  it("describes a directory whose entries the ignore rules hid", async () => {
+    api.listResponder = (call) =>
+      call.nodeId === null
+        ? { ok: true, data: { ok: true, value: listingOf([directoryNode("src", "src")]) } }
+        : {
+            ok: true,
+            data: {
+              ok: true,
+              value: listingOf([fileNode("a.ts", "src/a.ts")], { excludedCount: 42 }),
+            },
+          };
+    await mountTree();
+    fireEvent.click(rowFor("src"));
+    await flush();
+
+    const row = rowFor("src");
+    expect(row.getAttribute("aria-describedby")).not.toBeNull();
+    expect(within(row).getByText("42 entries hidden by ignore rules")).toBeTruthy();
+  });
+
+  it("describes the ROOT's hidden entries on the tree, which has no row", async () => {
+    // node_modules and .git are hidden at the project root, and the root has no
+    // row of its own - so without this the most commonly filtered directory in
+    // the product is the one nobody is told about.
+    api.listResponder = () => ({
+      ok: true,
+      data: {
+        ok: true,
+        value: listingOf([fileNode("readme.md", "readme.md")], { excludedCount: 7 }),
+      },
+    });
+    await mountTree();
+
+    const describedBy = tree().getAttribute("aria-describedby");
+    expect(describedBy).not.toBeNull();
+    expect(document.getElementById(describedBy ?? "")?.textContent).toBe(
+      "7 entries hidden by ignore rules",
+    );
+  });
+
+  it("marks the selected row and nothing else", async () => {
+    standardTree();
+    await mountTree();
+
+    fireEvent.click(rowFor("readme.md"));
+    await flush();
+
+    expect(rowFor("readme.md").getAttribute("aria-selected")).toBe("true");
+    expect(rowFor("src").getAttribute("aria-selected")).toBe("false");
+  });
+});
+
+describe("keyboard", () => {
+  it("ArrowRight expands, then moves to the first child", async () => {
+    standardTree();
+    await mountTree();
+    fireEvent.keyDown(tree(), { key: "ArrowDown" });
+    await flush();
+
+    fireEvent.keyDown(tree(), { key: "ArrowRight" });
+    await flush();
+    expect(rowFor("src").getAttribute("aria-expanded")).toBe("true");
+    // Expanding does not move focus; that is the second press.
+    expect(activeRow()?.textContent).toContain("src");
+
+    fireEvent.keyDown(tree(), { key: "ArrowRight" });
+    await flush();
+    expect(activeRow()?.textContent).toContain("alpha.ts");
+  });
+
+  it("ArrowLeft collapses, then moves to the parent", async () => {
+    standardTree();
+    await mountTree();
+    fireEvent.keyDown(tree(), { key: "ArrowDown" });
+    fireEvent.keyDown(tree(), { key: "ArrowRight" });
+    await flush();
+    fireEvent.keyDown(tree(), { key: "ArrowRight" });
+    await flush();
+    expect(activeRow()?.textContent).toContain("alpha.ts");
+
+    // A file has nothing to collapse, so Left goes to the parent.
+    fireEvent.keyDown(tree(), { key: "ArrowLeft" });
+    await flush();
+    expect(activeRow()?.textContent).toContain("src");
+
+    fireEvent.keyDown(tree(), { key: "ArrowLeft" });
+    await flush();
+    expect(rowFor("src").getAttribute("aria-expanded")).toBe("false");
+    expect(activeRow()?.textContent).toContain("src");
+  });
+
+  it("ArrowRight on a file does nothing at all", async () => {
+    standardTree();
+    await mountTree();
+    fireEvent.keyDown(tree(), { key: "ArrowDown" });
+    fireEvent.keyDown(tree(), { key: "ArrowDown" });
+    await flush();
+    const before = rowNames();
+
+    fireEvent.keyDown(tree(), { key: "ArrowRight" });
+    await flush();
+
+    expect(rowNames()).toEqual(before);
+    expect(activeRow()?.textContent).toContain("readme.md");
+  });
+
+  it("Enter toggles a directory and opens a file", async () => {
+    standardTree();
+    const opened: FileNode[] = [];
+    await mountTree((node) => opened.push(node));
+
+    fireEvent.keyDown(tree(), { key: "ArrowDown" });
+    fireEvent.keyDown(tree(), { key: "Enter" });
+    await flush();
+    expect(rowFor("src").getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.keyDown(tree(), { key: "ArrowDown" });
+    fireEvent.keyDown(tree(), { key: "Enter" });
+    await flush();
+
+    expect(opened).toHaveLength(1);
+    expect(opened[0]?.path).toBe("src/alpha.ts");
+    expect(opened[0]?.nodeId).toBe("id:src/alpha.ts");
+  });
+
+  it("Space toggles a directory and does nothing on a file", async () => {
+    standardTree();
+    const opened: FileNode[] = [];
+    await mountTree((node) => opened.push(node));
+
+    fireEvent.keyDown(tree(), { key: "ArrowDown" });
+    fireEvent.keyDown(tree(), { key: " " });
+    await flush();
+    expect(rowFor("src").getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.keyDown(tree(), { key: "ArrowLeft" });
+    await flush();
+    fireEvent.keyDown(tree(), { key: "ArrowDown" });
+    fireEvent.keyDown(tree(), { key: " " });
+    await flush();
+    expect(opened).toHaveLength(0);
+  });
+
+  it("moving focus never expands or loads anything", async () => {
+    standardTree();
+    await mountTree();
+    const listingsBefore = api.listCalls.length;
+
+    for (const key of ["ArrowDown", "ArrowDown", "End", "Home", "PageDown", "PageUp"]) {
+      fireEvent.keyDown(tree(), { key });
+    }
+    await flush();
+
+    expect(api.listCalls).toHaveLength(listingsBefore);
+    expect(rowFor("src").getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("type-ahead jumps to the next match and resets after one second", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(1_000_000));
+    standardTree();
+    render(
+      <StrictMode>
+        <ExplorerTree
+          projectId="p1"
+          onOpenFile={() => undefined}
+          registry={registry}
+          viewport={testViewport}
+        />
+      </StrictMode>,
+    );
+    await flush();
+
+    fireEvent.keyDown(tree(), { key: "t" });
+    await flush();
+    expect(activeRow()?.textContent).toContain("tsconfig.json");
+
+    // Within the window: "tr" matches nothing, so focus stays put.
+    vi.advanceTimersByTime(200);
+    fireEvent.keyDown(tree(), { key: "r" });
+    await flush();
+    expect(activeRow()?.textContent).toContain("tsconfig.json");
+
+    // Past the window: "r" is a fresh prefix and finds readme.md.
+    vi.advanceTimersByTime(1_500);
+    fireEvent.keyDown(tree(), { key: "r" });
+    await flush();
+    expect(activeRow()?.textContent).toContain("readme.md");
+  });
+
+  it("lets an application chord through instead of typing into the tree", async () => {
+    standardTree();
+    await mountTree();
+    fireEvent.keyDown(tree(), { key: "ArrowDown" });
+    await flush();
+
+    fireEvent.keyDown(tree(), { key: "t", ctrlKey: true });
+    await flush();
+
+    expect(activeRow()?.textContent).toContain("src");
+  });
+});
+
+describe("mouse", () => {
+  it("click focuses and selects, toggles a directory, opens a file", async () => {
+    standardTree();
+    const opened: FileNode[] = [];
+    await mountTree((node) => opened.push(node));
+
+    fireEvent.click(rowFor("src"));
+    await flush();
+    expect(rowFor("src").getAttribute("aria-expanded")).toBe("true");
+    expect(activeRow()?.textContent).toContain("src");
+
+    fireEvent.click(rowFor("alpha.ts"));
+    await flush();
+    expect(opened.map((node) => node.path)).toEqual(["src/alpha.ts"]);
+
+    fireEvent.click(rowFor("src"));
+    await flush();
+    expect(rowFor("src").getAttribute("aria-expanded")).toBe("false");
+  });
+});
+
+describe("paging", () => {
+  it("loads the next page and APPENDS it in the order received", async () => {
+    api.listResponder = (call) =>
+      call.cursor === "c1"
+        ? {
+            ok: true,
+            data: {
+              ok: true,
+              // Names that sort BEFORE the first page. A renderer that re-sorted
+              // would put them first and this assertion would catch it.
+              value: listingOf([fileNode("aaa.ts"), fileNode("bbb.ts")], { totalCount: 4 }),
+            },
+          }
+        : {
+            ok: true,
+            data: {
+              ok: true,
+              value: listingOf([fileNode("zzz.ts"), fileNode("yyy.ts")], {
+                hasMore: true,
+                nextCursor: "c1",
+                totalCount: 4,
+              }),
+            },
+          };
+    await mountTree();
+
+    const more = rowFor("Show 2 more entries");
+    expect(more.getAttribute("aria-posinset")).toBe("3");
+    expect(more.getAttribute("aria-setsize")).toBe("3");
+
+    fireEvent.click(more);
+    await flush();
+
+    expect(rowNames()).toEqual(["zzz.ts", "yyy.ts", "aaa.ts", "bbb.ts"]);
+  });
+
+  it("loads the next page from the keyboard too", async () => {
+    api.listResponder = (call) =>
+      call.cursor === "c1"
+        ? { ok: true, data: { ok: true, value: listingOf([fileNode("p2.ts")], { totalCount: 2 }) } }
+        : {
+            ok: true,
+            data: {
+              ok: true,
+              value: listingOf([fileNode("p1.ts")], {
+                hasMore: true,
+                nextCursor: "c1",
+                totalCount: 2,
+              }),
+            },
+          };
+    await mountTree();
+
+    // End is ABSOLUTE: with nothing focused it must reach the last row, not
+    // enter the list at the first one.
+    fireEvent.keyDown(tree(), { key: "End" });
+    fireEvent.keyDown(tree(), { key: "Enter" });
+    await flush();
+
+    expect(rowNames()).toEqual(["p1.ts", "p2.ts"]);
+  });
+});
+
+describe("notices", () => {
+  it("shows an empty project as a row, not as a blank panel", async () => {
+    api.listResponder = () => ({ ok: true, data: { ok: true, value: listingOf([]) } });
+    await mountTree();
+
+    expect(rowNames()).toEqual(["This project has no files yet"]);
+    // INFORMATION, not a failure. A notice row has no twistie, so the warning
+    // mark would be the only glyph on the line - and it would claim something
+    // is wrong with a project that is merely new.
+    expect(rowFor("This project has no files yet").querySelectorAll("svg")).toHaveLength(0);
+  });
+
+  it("retries a failed folder from the notice row", async () => {
+    let failed = false;
+    api.listResponder = (call) => {
+      if (call.nodeId === null) {
+        return {
+          ok: true,
+          data: { ok: true, value: listingOf([directoryNode("src", "src")]) },
+        };
+      }
+      if (!failed) {
+        failed = true;
+        return { ok: true, data: { ok: false, code: "io_error" } };
+      }
+      return { ok: true, data: { ok: true, value: listingOf([fileNode("a.ts", "src/a.ts")]) } };
+    };
+    await mountTree();
+
+    fireEvent.click(rowFor("src"));
+    await flush();
+    const notice = rowFor("This folder could not be read.");
+    expect(notice.getAttribute("data-row-kind")).toBe("notice");
+    // A FAILURE keeps the mark.
+    expect(notice.querySelectorAll("svg")).toHaveLength(1);
+
+    fireEvent.click(notice);
+    await flush();
+
+    expect(rowNames()).toEqual(["src", "a.ts"]);
+  });
+});
+
+describe("motion", () => {
+  it("guards the twistie transition behind motion-reduce", async () => {
+    standardTree();
+    await mountTree();
+
+    const twistie = rowFor("src").querySelector("svg");
+    expect(twistie).not.toBeNull();
+    // The one animated property in this feature. A user who asked the OS for
+    // less motion must not get a rotation on every expand.
+    expect(twistie?.getAttribute("class") ?? "").toContain("motion-reduce:transition-none");
+  });
+});
