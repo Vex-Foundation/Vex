@@ -59,6 +59,7 @@ import {
 import { useFileOpenIntentStore } from "../workspace/file-open-intent.js";
 import type { WorkspaceMutation, WorkspaceState } from "../workspace/types.js";
 import { TerminalTabs } from "./TerminalTabs.js";
+import { FileViewer } from "../viewer/index.js";
 import { terminalRegistry, type TerminalRegistry } from "./terminal-registry.js";
 
 /**
@@ -628,6 +629,12 @@ export function StudioWorkspaceController({
         onTitleChange={(tabId, title) => {
           apply((current) => setTabTitle(current, tabId, title));
         }}
+        renderFileTab={(tab, isActive) => (
+          // The viewer needs the project, and `TerminalTabs` does not have one.
+          // A render prop keeps the tab strip ignorant of the files domain
+          // rather than threading `projectId` into a terminal component.
+          <FileViewer projectId={projectId} tab={tab} active={isActive} />
+        )}
         onPaneExit={() => {
           // An exited pty leaves its pane and its scrollback in place: the exit
           // code is what the user came back to read, and closing the pane for

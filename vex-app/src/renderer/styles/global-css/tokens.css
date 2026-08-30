@@ -305,6 +305,43 @@
   --vex-alias-term-bright-cyan: #86e2ec;
   --vex-alias-term-bright-white: #f2f4f8;
 
+
+  /* CODE TOKENS (Vex Studio file viewer, stage B3c). The slots
+   * `createCssVariablesTheme` emits under the `--vex-alias-code-` prefix, read
+   * out of the installed @shikijs/core rather than remembered. Shiki writes
+   * `var(--vex-alias-code-token-keyword)` straight into a token's colour, so a
+   * name missing from this sheet renders as NO COLOUR - no error, no warning,
+   * just grey code. `theme-matrix.test.ts` pins every slot in both themes.
+   *
+   * The palette DIRECTION is the chat transcript's (chat-transcript.css
+   * `.vex-code-*`): keywords carry the accent, strings the success tone,
+   * comments recede into the caption tone. A file in the viewer and a snippet
+   * in chat then read as one product rather than two highlighters.
+   *
+   * These are NOT projected into `@theme` and must not be: nothing consumes
+   * them as a Tailwind utility. They are read by name, from an inline style
+   * string the tokenizer produced.
+   *
+   * `background` is TRANSPARENT: the panel paints its own surface, and a second
+   * fill behind the code would show as a seam against the header strip.
+   * The diff slots (inserted/deleted/changed) are declared because markdown and
+   * diff scopes reach them; the sixteen ANSI slots are not, because only the
+   * `ansi` language id produces those and the viewer never asks for it. */
+  --vex-alias-code-background: transparent;
+  --vex-alias-code-foreground: var(--vex-alias-label-primary);
+  --vex-alias-code-token-keyword: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-string: var(--vex-alias-state-success);
+  --vex-alias-code-token-string-expression: var(--vex-alias-state-success);
+  --vex-alias-code-token-comment: var(--vex-alias-label-caption);
+  --vex-alias-code-token-constant: var(--vex-alias-accent-hover);
+  --vex-alias-code-token-function: var(--vex-alias-label-primary);
+  --vex-alias-code-token-parameter: var(--vex-alias-label-secondary);
+  --vex-alias-code-token-punctuation: var(--vex-alias-label-caption);
+  --vex-alias-code-token-link: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-inserted: var(--vex-alias-state-success);
+  --vex-alias-code-token-deleted: var(--vex-alias-state-error);
+  --vex-alias-code-token-changed: var(--vex-alias-state-warn-label);
+
   --vex-alias-scrollbar-l1: rgba(255, 255, 255, 0.14);
   --vex-alias-scrollbar-l1-hover: rgba(255, 255, 255, 0.24);
   --vex-alias-scrollbar-l2: rgba(255, 255, 255, 0.2);
@@ -437,6 +474,43 @@
   --vex-alias-term-bright-magenta: #9455cc;
   --vex-alias-term-bright-cyan: #2a8a94;
   --vex-alias-term-bright-white: #1c2030;
+
+
+  /* CODE TOKENS (Vex Studio file viewer, stage B3c). The slots
+   * `createCssVariablesTheme` emits under the `--vex-alias-code-` prefix, read
+   * out of the installed @shikijs/core rather than remembered. Shiki writes
+   * `var(--vex-alias-code-token-keyword)` straight into a token's colour, so a
+   * name missing from this sheet renders as NO COLOUR - no error, no warning,
+   * just grey code. `theme-matrix.test.ts` pins every slot in both themes.
+   *
+   * The palette DIRECTION is the chat transcript's (chat-transcript.css
+   * `.vex-code-*`): keywords carry the accent, strings the success tone,
+   * comments recede into the caption tone. A file in the viewer and a snippet
+   * in chat then read as one product rather than two highlighters.
+   *
+   * These are NOT projected into `@theme` and must not be: nothing consumes
+   * them as a Tailwind utility. They are read by name, from an inline style
+   * string the tokenizer produced.
+   *
+   * `background` is TRANSPARENT: the panel paints its own surface, and a second
+   * fill behind the code would show as a seam against the header strip.
+   * The diff slots (inserted/deleted/changed) are declared because markdown and
+   * diff scopes reach them; the sixteen ANSI slots are not, because only the
+   * `ansi` language id produces those and the viewer never asks for it. */
+  --vex-alias-code-background: transparent;
+  --vex-alias-code-foreground: var(--vex-alias-label-primary);
+  --vex-alias-code-token-keyword: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-string: var(--vex-alias-state-success);
+  --vex-alias-code-token-string-expression: var(--vex-alias-state-success);
+  --vex-alias-code-token-comment: var(--vex-alias-label-caption);
+  --vex-alias-code-token-constant: var(--vex-alias-accent-hover);
+  --vex-alias-code-token-function: var(--vex-alias-label-primary);
+  --vex-alias-code-token-parameter: var(--vex-alias-label-secondary);
+  --vex-alias-code-token-punctuation: var(--vex-alias-label-caption);
+  --vex-alias-code-token-link: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-inserted: var(--vex-alias-state-success);
+  --vex-alias-code-token-deleted: var(--vex-alias-state-error);
+  --vex-alias-code-token-changed: var(--vex-alias-state-warn-label);
 
   --vex-alias-scrollbar-l1: rgba(10, 13, 24, 0.18);
   --vex-alias-scrollbar-l1-hover: rgba(10, 13, 24, 0.3);

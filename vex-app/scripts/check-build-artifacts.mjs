@@ -33,6 +33,14 @@
  *      `REPLACE_WITH_VERIFIED_DIGEST_BEFORE_FIRST_RUN` placeholders behind.
  *   10. Packaged migration resources are byte-for-byte in sync with the
  *      canonical `src/vex-agent/db/migrations/` source.
+ *   11. Studio highlight worker (3b): the built CSP pins `worker-src` to
+ *      exactly `'self'`, and whenever the renderer bundle can actually REACH
+ *      the highlighter port, a `highlight.worker-<hash>.js` chunk exists in
+ *      dist/renderer/assets/. Conditional on reachability on purpose: the
+ *      Studio surface is not mounted in the shell until stage B4, and a gate
+ *      that demanded the chunk today would fail every build while a gate that
+ *      merely skipped it would still be off when B4 lands. This one ARMS
+ *      ITSELF the moment the port enters the module graph.
  *
  * Exit non-zero on any violation.
  */
@@ -41,7 +49,10 @@ import { createHash } from "node:crypto";
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
-import { privilegedBundleChecks } from "./check-privileged-bundles.mjs";
+import {
+  evaluateHighlightWorkerBundle,
+  privilegedBundleChecks,
+} from "./check-privileged-bundles.mjs";
 import { nativeArtifactChecks } from "./check-native-artifacts.mjs";
 
 const root = path.resolve(process.cwd());
@@ -141,8 +152,13 @@ check("renderer index.html CSP — no unsafe-inline / unsafe-eval", () => {
     if (tokens.length === 0) continue;
     directives.set(tokens[0], tokens.slice(1));
   }
-  // script-src and connect-src must remain EXACTLY ['self'].
-  for (const name of ["script-src", "connect-src"]) {
+  // script-src, connect-src and worker-src must remain EXACTLY ['self'].
+  //
+  // worker-src is spelled out rather than inherited from default-src because
+  // the Studio file viewer runs shiki in a module worker, and the directive
+  // that governs it is the one that must be pinned: `blob:` here would be a way
+  // to run code that `script-src 'self'` alone refuses.
+  for (const name of ["script-src", "connect-src", "worker-src"]) {
     const sources = directives.get(name);
     if (!sources) {
       throw new Error(`CSP missing required directive: ${name} 'self'`);
@@ -172,6 +188,32 @@ check("renderer index.html CSP — no unsafe-inline / unsafe-eval", () => {
         `CSP img-src must be exactly 'self' data: (found: img-src ${sources.join(" ")})`
       );
     }
+  }
+});
+
+// 3b. Studio highlight worker: the CSP directive that governs it, and the
+// chunk itself once anything in the renderer can reach it. Pure predicate in
+// check-privileged-bundles.mjs so its RED cases are provable on synthetic
+// input (src/main/__tests__/highlight-worker-bundle-gate.test.ts).
+check("renderer highlight worker - worker-src pinned + chunk emitted when reachable", () => {
+  if (!existsSync(distRendererHtml)) throw new Error(`missing: ${distRendererHtml}`);
+  const html = readFileSync(distRendererHtml, "utf8");
+  const cspMatch = html.match(/<meta\b[^>]*?http-equiv="Content-Security-Policy"[^>]*?content="([^"]+)"/is);
+  if (!cspMatch) throw new Error("no Content-Security-Policy <meta> tag found");
+  if (!existsSync(distRendererAssets)) throw new Error(`missing: ${distRendererAssets}`);
+
+  const assetFileNames = readdirSync(distRendererAssets);
+  const bundleSources = assetFileNames
+    .filter((name) => name.endsWith(".js"))
+    .map((name) => readFileSync(path.join(distRendererAssets, name), "utf8"));
+
+  const verdict = evaluateHighlightWorkerBundle({
+    csp: cspMatch[1],
+    assetFileNames,
+    bundleSources,
+  });
+  if (!verdict.ok) {
+    throw new Error(`Highlight worker violations:\n    ${verdict.violations.join("\n    ")}`);
   }
 });
 

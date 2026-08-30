@@ -25,6 +25,7 @@ import {
 import { publishFileOpen, useFileOpenIntentStore } from "../../workspace/file-open-intent.js";
 import { WORKSPACE_KEEP_ALIVE_MAX } from "../../workspace/types.js";
 import { StudioWorkspaceController } from "../StudioWorkspaceController.js";
+import { fileViewerRegistry } from "../../viewer/index.js";
 import { TerminalRegistry } from "../terminal-registry.js";
 import {
   installMatchMedia,
@@ -35,6 +36,70 @@ import {
 
 const noWebgl = { webglLoader: () => Promise.reject(new Error("no gl in jsdom")) };
 
+/**
+ * The files bridge, for the REAL `FileViewer` this controller now mounts.
+ *
+ * The viewer is not stubbed here. The wiring under test is the whole chain -
+ * controller to `TerminalTabs`' render prop to the viewer's own read - and a
+ * stub would prove only that a prop was passed. What IS faked is the process
+ * boundary, which is what a renderer suite always fakes.
+ *
+ * jsdom defines no `Worker`, so the viewer's registry resolves to the
+ * unavailable highlighter and every file renders as plain text with a reason.
+ * That is a real degradation path, not a workaround, and it keeps this suite
+ * about the workspace rather than about tokenizing.
+ */
+const fileReads: string[] = [];
+
+vi.mock("../../../../../lib/api/files.js", () => ({
+  readProjectFile: (_projectId: string, nodeId: string) => {
+    fileReads.push(nodeId);
+    return Promise.resolve({
+      ok: true,
+      data: {
+        ok: true,
+        value: {
+          nodeId,
+          path: "src/a.ts",
+          text: `contents of ${nodeId}\n`,
+          size: 20,
+          modifiedMs: 1,
+          hash: `hash:${nodeId}`,
+        },
+      },
+    });
+  },
+  listProjectChildren: () =>
+    Promise.resolve({
+      ok: true,
+      data: {
+        ok: true,
+        value: {
+          children: [],
+          hasMore: false,
+          nextCursor: null,
+          totalCount: 0,
+          excludedCount: 0,
+        },
+      },
+    }),
+  watchProjectFiles: () =>
+    Promise.resolve({
+      ok: true,
+      data: {
+        ok: true,
+        value: {
+          subscriptionId: "sub-1",
+          watcherGeneration: 1,
+          state: "watching",
+          warnings: [],
+        },
+      },
+    }),
+  unwatchProjectFiles: () => Promise.resolve({ ok: true, data: { ok: true, value: null } }),
+  onProjectFilesEvent: () => () => undefined,
+}));
+
 let bridge: TerminalBridgeStub;
 let registry: TerminalRegistry;
 
@@ -43,11 +108,17 @@ beforeEach(() => {
   installResizeObserver();
   bridge = installTerminalBridge();
   registry = new TerminalRegistry(noWebgl);
+  fileReads.length = 0;
+  fileViewerRegistry.disposeAll();
   document.body.innerHTML = "";
 });
 
 afterEach(() => {
   useFileOpenIntentStore.getState().clearFileOpenIntent();
+  // The viewer registry is a MODULE SINGLETON, like the controller's own. A
+  // session left alive here keeps a path subscription and a read in flight into
+  // the next test in this file.
+  fileViewerRegistry.disposeAll();
   vi.useRealTimers();
 });
 
@@ -687,7 +758,7 @@ describe("opening a file", () => {
     };
   }
 
-  it("adds a file tab, renders the placeholder with the path, and closes through closeTab", async () => {
+  it("adds a file tab, mounts the VIEWER on it, and closes through closeTab", async () => {
     renderStrict();
     await waitFor(() => {
       expect(screen.getByRole("tablist")).toBeTruthy();
@@ -702,8 +773,15 @@ describe("opening a file", () => {
     // project-relative path and nothing else.
     const tab = await screen.findByRole("tab", { name: /service\.ts/ });
     expect(tab).toBeTruthy();
-    const placeholder = screen.getByTestId("file-tab-placeholder");
-    expect(placeholder.textContent).toBe("src/deep/service.ts");
+    // The controller supplied the viewer, with the project it holds and the
+    // tab the model minted. Its header shows the project-relative path.
+    const viewer = screen.getByTestId("file-viewer");
+    expect(viewer.textContent).toContain("src/deep/service.ts");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // And it read the file through the tab's own token.
+    expect(fileReads).toEqual(["node-src/deep/service.ts"]);
     // No terminal was created for a file tab, and it has no split affordance.
     expect(bridge.livePtys.size).toBe(0);
     expect(screen.queryByRole("button", { name: /^Split/ })).toBeNull();
@@ -714,7 +792,7 @@ describe("opening a file", () => {
     });
 
     expect(screen.queryByRole("tab", { name: /service\.ts/ })).toBeNull();
-    expect(screen.queryByTestId("file-tab-placeholder")).toBeNull();
+    expect(screen.queryByTestId("file-viewer")).toBeNull();
   });
 
   it("consumes the intent ONCE, so a StrictMode double effect cannot open it twice", async () => {
@@ -768,6 +846,14 @@ describe("opening a file", () => {
 
     // One tab for one path, and it is the selected one again.
     expect(screen.getAllByRole("tab", { name: /a\.ts/ })).toHaveLength(1);
-    expect(screen.getByTestId("file-tab-placeholder").textContent).toBe("src/a.ts");
+    expect(screen.getByTestId("file-viewer").textContent).toContain("src/a.ts");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // The NEW token was adopted: a file deleted and recreated is the same tab
+    // to the user and a different read identity to main, and a viewer still
+    // holding the old token would answer `invalid_node` for as long as the tab
+    // stayed open.
+    expect(fileReads).toContain("node-epoch-2");
   });
 });

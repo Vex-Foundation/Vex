@@ -946,6 +946,158 @@ describe("collapse all", () => {
   });
 });
 
+describe("subscribePath (the file viewer's seam)", () => {
+  /** Activate a session and record what one path subscriber hears. */
+  async function following(
+    path: string,
+  ): Promise<{
+    session: ExplorerSession;
+    heard: string[];
+    unsubscribe: () => void;
+  }> {
+    const session = makeSession();
+    await session.activate();
+    await flush();
+    const heard: string[] = [];
+    const unsubscribe = session.subscribePath(path, (event) => {
+      heard.push(event.kind);
+    });
+    return { session, heard, unsubscribe };
+  }
+
+  it("hears an updated for its own path and NOTHING for a sibling", async () => {
+    const { session, heard } = await following("src/a.ts");
+    api.emit(
+      changedEvent(
+        [
+          { path: "src/a.ts", kind: "updated" },
+          { path: "src/b.ts", kind: "updated" },
+          { path: "src", kind: "updated" },
+        ],
+        { batchSeq: 0 },
+      ),
+    );
+    // Exactly one: the sibling and the PARENT DIRECTORY are not this file.
+    // Re-reading on a directory event would put an IPC round trip on every
+    // sibling's save.
+    expect(heard).toEqual(["updated"]);
+    expect(session.pathSubscriptionCount()).toBe(1);
+  });
+
+  it("reports an ADDED as an update, because a recreated file is new contents", async () => {
+    const { heard } = await following("src/a.ts");
+    api.emit(changedEvent([{ path: "src/a.ts", kind: "added" }], { batchSeq: 0 }));
+    expect(heard).toEqual(["updated"]);
+  });
+
+  it("reports a DELETED as its own kind, because the answer to it is a re-check", async () => {
+    const { heard } = await following("src/a.ts");
+    api.emit(changedEvent([{ path: "src/a.ts", kind: "deleted" }], { batchSeq: 0 }));
+    expect(heard[0]).toBe("deleted");
+  });
+
+  it("resyncs every subscriber when the session knows it missed events", async () => {
+    const { heard } = await following("src/a.ts");
+    // A batchSeq gap: batch 1 never arrived and its contents are unknowable,
+    // so the viewer's held text may be stale in a way no event will correct.
+    api.emit(changedEvent([{ path: "other/x.ts", kind: "updated" }], { batchSeq: 0 }));
+    api.emit(changedEvent([{ path: "other/x.ts", kind: "updated" }], { batchSeq: 2 }));
+    expect(heard).toContain("resync");
+  });
+
+  it("resyncs on the header's Refresh", async () => {
+    const { session, heard } = await following("src/a.ts");
+    session.refreshNow();
+    await flush();
+    expect(heard).toEqual(["resync"]);
+  });
+
+  it("unsubscribe is idempotent and shrinks the map back to zero", async () => {
+    const { session, heard, unsubscribe } = await following("src/a.ts");
+    unsubscribe();
+    unsubscribe();
+    expect(session.pathSubscriptionCount()).toBe(0);
+    api.emit(changedEvent([{ path: "src/a.ts", kind: "updated" }], { batchSeq: 0 }));
+    expect(heard).toEqual([]);
+  });
+
+  it("keeps two subscribers on one path independent", async () => {
+    const session = makeSession();
+    await session.activate();
+    await flush();
+    const first: string[] = [];
+    const second: string[] = [];
+    const dropFirst = session.subscribePath("src/a.ts", (event) => first.push(event.kind));
+    session.subscribePath("src/a.ts", (event) => second.push(event.kind));
+    expect(session.pathSubscriptionCount()).toBe(1);
+
+    dropFirst();
+    api.emit(changedEvent([{ path: "src/a.ts", kind: "updated" }], { batchSeq: 0 }));
+    expect(first).toEqual([]);
+    expect(second).toEqual(["updated"]);
+    // The path still has a subscriber, so its entry stays.
+    expect(session.pathSubscriptionCount()).toBe(1);
+  });
+
+  it("survives a listener that unsubscribes itself while being notified", async () => {
+    const session = makeSession();
+    await session.activate();
+    await flush();
+    const heard: string[] = [];
+    const drop = session.subscribePath("src/a.ts", (event) => {
+      heard.push(event.kind);
+      drop();
+    });
+    session.subscribePath("src/a.ts", (event) => heard.push(`second:${event.kind}`));
+
+    // The viewer does exactly this when a delete leads it to tear down. Note
+    // what this case does NOT prove: a `Set` tolerates deleting an element it
+    // has already visited, so it stays green whether or not the notifier
+    // iterates a copy. The case below is the one that pins the copy.
+    expect(() => {
+      api.emit(changedEvent([{ path: "src/a.ts", kind: "updated" }], { batchSeq: 0 }));
+    }).not.toThrow();
+    expect(heard).toEqual(["updated", "second:updated"]);
+  });
+
+  it("does not deliver an event to a listener that subscribed DURING it", async () => {
+    const session = makeSession();
+    await session.activate();
+    await flush();
+    const heard: string[] = [];
+    session.subscribePath("src/a.ts", (event) => {
+      heard.push(event.kind);
+      // A late arrival. It subscribed after this event happened and must not
+      // be told about it: a `Set` iterated live would pick up the append and
+      // hand it an event that predates it, which for the viewer means a read
+      // for a change it was never watching.
+      session.subscribePath("src/a.ts", (late) => heard.push(`late:${late.kind}`));
+    });
+
+    api.emit(changedEvent([{ path: "src/a.ts", kind: "updated" }], { batchSeq: 0 }));
+    expect(heard).toEqual(["updated"]);
+
+    // The next event does reach it.
+    api.emit(changedEvent([{ path: "src/a.ts", kind: "updated" }], { batchSeq: 1 }));
+    expect(heard).toContain("late:updated");
+  });
+
+  it("dispose clears every path listener", async () => {
+    const session = makeSession();
+    await session.activate();
+    await flush();
+    session.subscribePath("src/a.ts", () => undefined);
+    session.subscribePath("src/b.ts", () => undefined);
+    expect(session.pathSubscriptionCount()).toBe(2);
+
+    await session.dispose();
+
+    // A listener left here would be held by a disposed session for the life of
+    // the renderer.
+    expect(session.pathSubscriptionCount()).toBe(0);
+  });
+});
+
 /** A watch the bridge could not even make. Distinct from a watcher refusal. */
 function transportFailureWatch(): FilesApiFake["watchResult"] {
   return {

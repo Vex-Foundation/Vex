@@ -13,10 +13,16 @@
       connect-src stay strict 'self', and the build gate
       (scripts/check-build-artifacts.mjs) asserts img-src stays exactly
       `'self' data:`.
+
+      `worker-src 'self'` is EXPLICIT rather than inherited from default-src
+      (Vex Studio's file viewer runs shiki in a module worker). Spelling it out
+      is what lets the build gate pin it to exactly `'self'`: a `blob:` worker,
+      which is how an injected script would smuggle code past `script-src`,
+      stays refused, and the same gate fails if anyone widens it.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     />
     <title>Vex</title>
     <!-- Above-the-fold face: the Inter Tight variable file carries every UI

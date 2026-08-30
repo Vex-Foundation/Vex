@@ -24,3 +24,28 @@ export function findBareFilenameHits(
 ): ReadonlyArray<{ readonly line: number; readonly text: string }>;
 
 export const privilegedBundleChecks: ReadonlyArray<PrivilegedBundleCheck>;
+
+export interface HighlightWorkerBundleInput {
+  /** The `content` of the built renderer's Content-Security-Policy meta tag. */
+  readonly csp: string;
+  /** Every file name in `dist/renderer/assets/`. */
+  readonly assetFileNames: ReadonlyArray<string>;
+  /** Full text of every emitted `.js` chunk in that directory. */
+  readonly bundleSources: ReadonlyArray<string>;
+}
+
+export interface HighlightWorkerBundleVerdict {
+  readonly ok: boolean;
+  readonly violations: string[];
+}
+
+/**
+ * The marker string that proves the Studio highlighter PORT is in the bundle.
+ * Lives in the same module as the `new Worker(new URL(...))` factory, so it
+ * cannot be present without the factory being present.
+ */
+export const HIGHLIGHT_PORT_MARKER: string;
+
+export function evaluateHighlightWorkerBundle(
+  input: HighlightWorkerBundleInput,
+): HighlightWorkerBundleVerdict;

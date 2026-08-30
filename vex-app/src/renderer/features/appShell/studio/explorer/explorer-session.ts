@@ -110,6 +110,25 @@ export const EXPLORER_FOCUS_REFRESH_THROTTLE_MS = 2_000;
 /** The page a directory is listed with when nothing says otherwise. */
 export const EXPLORER_PAGE_SIZE = FILES_LIST_PAGE_DEFAULT;
 
+/**
+ * What a path subscriber is told. CODES, and only three of them.
+ *
+ * `updated` also carries an `added` for the same path, deliberately. VS Code's
+ * `textFileEditorModelManager.ts:122-135` treats ADDED exactly like UPDATED for
+ * reload, and it is right: a file deleted and recreated by a tool that writes
+ * through a temp file arrives as ADDED, and a viewer that ignored it would sit
+ * on contents that no longer exist.
+ *
+ * `resync` is not a statement about the path at all. It says "this session
+ * knows it missed events", and the subscriber's remedy is the same as the
+ * tree's: read again rather than trust what it holds.
+ */
+export interface ExplorerPathEvent {
+  readonly kind: "updated" | "deleted" | "resync";
+}
+
+export type ExplorerPathListener = (event: ExplorerPathEvent) => void;
+
 export type ExplorerSessionState =
   | "idle"
   | "activating"
@@ -198,6 +217,20 @@ export class ExplorerSession {
   readonly #revisionListeners = new Set<() => void>();
   readonly #unsubscribeModel: () => void;
 
+  /**
+   * Per-path subscribers, for the file VIEWER (B3c).
+   *
+   * The viewer follows one open file, and the honest way to do that is through
+   * the session that already holds the project's ONE watcher subscription. A
+   * second `watchFile` per open tab would be a second refcount on the same
+   * native watcher in main and a second event stream to keep consistent with
+   * this one - two sources of truth about the same disk.
+   *
+   * BOUNDED by the open file tabs: a tab subscribes on mount and unsubscribes
+   * on close, and `dispose` clears the map. The tree itself never reads it.
+   */
+  readonly #pathListeners = new Map<string, Set<ExplorerPathListener>>();
+
   constructor(options: ExplorerSessionOptions) {
     this.projectId = options.projectId;
     this.model =
@@ -248,6 +281,70 @@ export class ExplorerSession {
   #bumpRevision(): void {
     this.#revision += 1;
     for (const listener of this.#revisionListeners) listener();
+  }
+
+  /* ----------------------- per-path subscribers ----------------------- */
+
+  /**
+   * Follow one project-relative path. Returns an IDEMPOTENT unsubscribe.
+   *
+   * The path is matched EXACTLY. A viewer watching `src/a.ts` hears nothing
+   * about `src/`, which is right: a change to the directory is not a change to
+   * the file's bytes, and re-reading on it would put an IPC round trip on every
+   * sibling's save.
+   *
+   * Calling the returned function twice removes nothing the second time, and
+   * the empty listener set is deleted so the map stays the size of the open
+   * tabs rather than the size of every tab ever opened.
+   */
+  subscribePath(path: string, listener: ExplorerPathListener): () => void {
+    let listeners = this.#pathListeners.get(path);
+    if (listeners === undefined) {
+      listeners = new Set<ExplorerPathListener>();
+      this.#pathListeners.set(path, listeners);
+    }
+    listeners.add(listener);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const current = this.#pathListeners.get(path);
+      if (current === undefined) return;
+      current.delete(listener);
+      if (current.size === 0) this.#pathListeners.delete(path);
+    };
+  }
+
+  /** How many paths have a subscriber. The bound, made measurable. */
+  pathSubscriptionCount(): number {
+    return this.#pathListeners.size;
+  }
+
+  /**
+   * Tell one path's subscribers.
+   *
+   * Iterated over a COPY: a listener that unsubscribes itself while being
+   * notified (the viewer does exactly this when a delete leads it to dispose)
+   * would otherwise mutate the set mid-iteration.
+   */
+  #notifyPath(path: string, kind: ExplorerPathEvent["kind"]): void {
+    const listeners = this.#pathListeners.get(path);
+    if (listeners === undefined) return;
+    for (const listener of [...listeners]) listener({ kind });
+  }
+
+  /**
+   * Tell EVERY subscriber the session missed events.
+   *
+   * Emitted from the two places a full refresh begins - the scheduled one and
+   * the header's immediate Refresh - so a viewer's re-read is armed by exactly
+   * the moments that arm the tree's.
+   */
+  #notifyResync(): void {
+    if (this.#pathListeners.size === 0) return;
+    for (const listeners of [...this.#pathListeners.values()]) {
+      for (const listener of [...listeners]) listener({ kind: "resync" });
+    }
   }
 
   /* ----------------------- observable state ----------------------- */
@@ -339,6 +436,10 @@ export class ExplorerSession {
     this.#unsubscribeModel();
     this.#stateListeners.clear();
     this.#revisionListeners.clear();
+    // Every viewer that followed a path in this project is gone with it. A
+    // listener left here would be held by a disposed session for the life of
+    // the renderer.
+    this.#pathListeners.clear();
   }
 
   /* ----------------------- user intents ----------------------- */
@@ -405,6 +506,7 @@ export class ExplorerSession {
   /** The header's Refresh: re-read the whole tree NOW, not in 500 ms. */
   refreshNow(): void {
     this.#refresh.reset();
+    this.#notifyResync();
     this.#runFullRefresh();
   }
 
@@ -558,9 +660,15 @@ export class ExplorerSession {
     }
 
     for (const change of event.changes) {
+      // The VIEWER hears about every change to a path it follows, whatever the
+      // tree does with it. An `added` counts as an update (VS Code reloads on
+      // both), and a `deleted` is its own event because the viewer's answer to
+      // it is a re-check, not a re-read.
+      this.#notifyPath(change.path, change.kind === "deleted" ? "deleted" : "updated");
+
       if (change.kind === "updated") {
         // The tree shows no size and no mtime, so an update changes nothing it
-        // renders. The VIEWER (B3c) owns file content.
+        // renders. The VIEWER owns file content, and was told above.
         continue;
       }
       const parentPath = parentPathOf(change.path);
@@ -616,6 +724,12 @@ export class ExplorerSession {
 
   #scheduleFullRefresh(): void {
     this.#refresh.scheduleFull();
+    // The tree waits out the 500 ms window; a path subscriber is told NOW.
+    // The window exists to stop a burst becoming a burst of listings, and a
+    // viewer's answer to a resync is one re-read that its own depth-2 queue
+    // already coalesces - so making it wait would only delay the moment the
+    // user's open file stops being stale.
+    this.#notifyResync();
   }
 
   /** A window closed. The scheduler decided WHAT; this decides how. */
