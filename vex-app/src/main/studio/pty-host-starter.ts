@@ -90,12 +90,33 @@ export interface PtyHostObserver {
   readonly onAvailabilityChanged: (availability: TerminalHostAvailability) => void;
 }
 
+/**
+ * The seam the terminal domain depends on: everything a caller may ask of the
+ * pty host, and nothing about how it is hosted. `PtyHostStarter` is the one
+ * production implementation; the contract is named separately so a stand-in can
+ * be CHECKED against it rather than asserted past it - the class's private
+ * lifecycle state can never be satisfied structurally.
+ */
+export interface PtyHost {
+  readonly availability: TerminalHostAvailability;
+  ensureStarted(): boolean;
+  send(
+    request: TerminalHostRequest,
+    transfer?: MessagePortMain[],
+  ): Promise<TerminalOutcome<unknown>>;
+  mintPort(
+    windowId: string,
+    nonce: string,
+  ): Promise<{ outcome: TerminalOutcome<unknown>; rendererPort: MessagePortMain | null }>;
+  dispose(): Promise<void>;
+}
+
 interface Pending {
   readonly resolve: (outcome: TerminalOutcome<unknown>) => void;
   readonly timer: NodeJS.Timeout;
 }
 
-export class PtyHostStarter {
+export class PtyHostStarter implements PtyHost {
   private child: UtilityProcess | null = null;
   private readonly pending = new Map<string, Pending>();
   private restartCount = 0;

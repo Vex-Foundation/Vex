@@ -37,7 +37,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { WebContents } from "electron";
+import type { MessagePortMain } from "electron";
 import {
   TERMINALS_GLOBAL_MAX,
   TERMINALS_PER_PROJECT_MAX,
@@ -55,7 +55,21 @@ import {
   registerProjectCloseHook,
   type ProjectLease,
 } from "./project-lifecycle-gate.js";
-import { PtyHostStarter, type PtyHostObserver } from "./pty-host-starter.js";
+import { PtyHostStarter, type PtyHost, type PtyHostObserver } from "./pty-host-starter.js";
+
+/**
+ * The window this domain hands a data-plane port to.
+ *
+ * Deliberately NARROWER than `WebContents`: identity, a liveness check and the
+ * one transfer API. Electron's `WebContents` satisfies it, and naming only what
+ * is used is what lets the port path be exercised without inventing a hundred
+ * members the domain never calls.
+ */
+export interface TerminalPortTarget {
+  readonly id: number;
+  isDestroyed(): boolean;
+  postMessage(channel: string, message: unknown, transfer?: MessagePortMain[]): void;
+}
 
 /** Everything this domain does not own and must be given. */
 export interface TerminalDomainDeps {
@@ -65,10 +79,10 @@ export interface TerminalDomainDeps {
   readonly resolveShell: () => { executable: string; args: string[] };
   /** Post a transferable port to a window. */
   readonly postPort: (
-    target: WebContents,
+    target: TerminalPortTarget,
     channel: string,
     payload: unknown,
-    transfer: unknown[],
+    transfer: MessagePortMain[],
   ) => void;
   /** Broadcast availability so the renderer can render an honest unavailable state. */
   readonly publishAvailability: (availability: TerminalHostAvailability) => void;
@@ -94,12 +108,12 @@ function refuse(code: TerminalErrorCode): TerminalOutcome<never> {
 export class TerminalDomain {
   private readonly terminals = new Map<string, TerminalEntry>();
   private readonly tickets = new Map<string, PortTicket>();
-  private readonly starter: PtyHostStarter;
+  private readonly starter: PtyHost;
   private readonly unregisterCloseHook: () => void;
 
   constructor(
     private readonly deps: TerminalDomainDeps,
-    starterFactory: (observer: PtyHostObserver) => PtyHostStarter = (observer) =>
+    starterFactory: (observer: PtyHostObserver) => PtyHost = (observer) =>
       new PtyHostStarter(observer),
   ) {
     this.starter = starterFactory({
@@ -280,7 +294,7 @@ export class TerminalDomain {
    * correlates one acquisition; it authorizes nothing.
    */
   async acquirePort(
-    sender: WebContents,
+    sender: TerminalPortTarget,
     channel: string,
   ): Promise<TerminalOutcome<{ nonce: string }>> {
     const windowId = String(sender.id);

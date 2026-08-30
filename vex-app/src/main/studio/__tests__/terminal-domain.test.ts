@@ -17,6 +17,7 @@
  *    the gate's close-hook registry.
  */
 
+import type { MessagePortMain } from "electron";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({
@@ -40,16 +41,19 @@ const {
 } = await import("@shared/schemas/terminal.js");
 const gate = await import("../project-lifecycle-gate.js");
 const { TerminalDomain } = await import("../terminals.js");
-const { PtyHostStarter } = await import("../pty-host-starter.js");
+const { MessageChannelMain } = await import("electron");
 
 type HostRequest = import("@shared/schemas/terminal.js").TerminalHostRequest;
+type PtyHost = import("../pty-host-starter.js").PtyHost;
+type TerminalPortTarget = import("../terminals.js").TerminalPortTarget;
+type HostOutcome = import("@shared/schemas/terminal.js").TerminalOutcome<unknown>;
 
 /**
  * A stand-in starter. It records what main asked the host to do and answers
  * the way a healthy host would, so the domain's own decisions are what the
  * assertions observe.
  */
-class FakeStarter {
+class FakeStarter implements PtyHost {
   readonly requests: HostRequest[] = [];
   readonly ports: Array<{ windowId: string; nonce: string }> = [];
   mintable = true;
@@ -67,7 +71,7 @@ class FakeStarter {
     return true;
   }
 
-  send(request: HostRequest): Promise<{ ok: true; value: unknown }> {
+  send(request: HostRequest): Promise<HostOutcome> {
     this.requests.push(request);
     if (request.kind === "create") {
       return Promise.resolve({
@@ -86,7 +90,7 @@ class FakeStarter {
   mintPort(
     windowId: string,
     nonce: string,
-  ): Promise<{ outcome: { ok: boolean }; rendererPort: unknown }> {
+  ): Promise<{ outcome: HostOutcome; rendererPort: MessagePortMain | null }> {
     if (!this.mintable) {
       return Promise.resolve({
         outcome: { ok: false, code: "host_unavailable" },
@@ -94,7 +98,13 @@ class FakeStarter {
       });
     }
     this.ports.push({ windowId, nonce });
-    return Promise.resolve({ outcome: { ok: true, value: null }, rendererPort: {} });
+    // A real port, minted the way production mints one: the electron mock above
+    // supplies the channel, so what the domain transfers is the same shape the
+    // starter would have handed it.
+    return Promise.resolve({
+      outcome: { ok: true, value: null },
+      rendererPort: new MessageChannelMain().port2,
+    });
   }
 
   dispose(): Promise<void> {
@@ -123,12 +133,22 @@ function build(): InstanceType<typeof TerminalDomain> {
     },
     (observer) => {
       starter = new FakeStarter(observer);
-      return starter as unknown as InstanceType<typeof PtyHostStarter>;
+      return starter;
     },
   );
 }
 
-const sender = { id: 7, isDestroyed: () => false } as unknown as Electron.WebContents;
+/**
+ * The window that asks for a port. `TerminalPortTarget` is the whole contract
+ * the domain uses, so this double satisfies it outright: an id, a liveness
+ * answer, and the transfer call the domain makes. The `posted` dependency above
+ * is what the assertions read, so `postMessage` here is never reached.
+ */
+const sender: TerminalPortTarget = {
+  id: 7,
+  isDestroyed: () => false,
+  postMessage: () => {},
+};
 
 beforeEach(() => {
   gate.resetProjectLifecycleGateForTests();

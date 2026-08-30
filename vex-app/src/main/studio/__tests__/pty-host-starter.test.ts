@@ -14,6 +14,7 @@
  */
 
 import { EventEmitter } from "node:events";
+import type { UtilityProcess } from "electron";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({
@@ -43,17 +44,27 @@ type PtyHostAvailability = Awaited<
   ReturnType<() => InstanceType<typeof PtyHostStarter>["availability"]>
 >;
 
-/** A fake utility process: an emitter with the two methods the starter uses. */
-class FakeChild extends EventEmitter {
+/**
+ * A fake utility process. It IMPLEMENTS `UtilityProcess`, so the compiler - not
+ * a cast - is what says the starter is being handed something the real fork
+ * seam could have returned. `pid`, `stdout` and `stderr` are the members the
+ * starter never touches; they are present because the contract has them, and
+ * their absence would be exactly the gap an assertion used to hide.
+ */
+class FakeChild extends EventEmitter implements UtilityProcess {
   readonly posted: unknown[] = [];
   killed = false;
+  readonly pid = 4242;
+  readonly stdout = null;
+  readonly stderr = null;
 
   postMessage(message: unknown): void {
     this.posted.push(message);
   }
 
-  kill(): void {
+  kill(): boolean {
     this.killed = true;
+    return true;
   }
 }
 
@@ -70,7 +81,7 @@ function build(): InstanceType<typeof PtyHostStarter> {
     () => {
       const child = new FakeChild();
       forked.push(child);
-      return child as unknown as never;
+      return child;
     },
   );
 }
@@ -220,7 +231,7 @@ describe("message routing", () => {
       () => {
         const child = new FakeChild();
         forked.push(child);
-        return child as unknown as never;
+        return child;
       },
     );
     observed.ensureStarted();
@@ -247,7 +258,7 @@ describe("message routing", () => {
       () => {
         const child = new FakeChild();
         forked.push(child);
-        return child as unknown as never;
+        return child;
       },
     );
     starter.ensureStarted();

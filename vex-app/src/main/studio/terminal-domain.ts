@@ -9,7 +9,7 @@
  * table or the user's `$SHELL`.
  */
 
-import { BrowserWindow, type WebContents } from "electron";
+import { BrowserWindow } from "electron";
 import { CH, EV } from "@shared/ipc/channels.js";
 import type { TerminalHostAvailability } from "@shared/schemas/terminal.js";
 import { getProject } from "../database/projects/read.js";
@@ -68,11 +68,11 @@ export function terminalDomain(): TerminalDomain {
   instance ??= new TerminalDomain({
     resolveProjectCwd,
     resolveShell,
-    postPort: (target: WebContents, channel, payload, transfer) => {
+    postPort: (target, channel, payload, transfer) => {
       // `postMessage` is the only Electron API that can move a MessagePort into
       // a renderer process; `send` would structured-clone the payload and drop
       // the port silently.
-      target.postMessage(channel, payload, transfer as never);
+      target.postMessage(channel, payload, transfer);
     },
     publishAvailability,
   });
