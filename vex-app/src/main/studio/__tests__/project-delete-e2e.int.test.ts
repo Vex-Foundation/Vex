@@ -46,6 +46,18 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The pty host, composed IN PROCESS for the real-shell ordering proof at the
+// end of this file. `__tests__` is excluded from the process-boundary gate
+// precisely so a test can stand both sides of a boundary up at once.
+import { PtyHostService } from "../../../pty-host/host-service.js";
+import { filesystemLaunchProbe } from "../../../pty-host/launch-probe.js";
+import { createNodePtySpawner } from "../../../pty-host/node-pty-spawner.js";
+import { scrubEnvironment } from "../../../pty-host/process-env.js";
+import { TerminalSnapshotStore } from "../../../pty-host/snapshot-store.js";
+import type { TerminalOutcome } from "@shared/schemas/terminal.js";
+import type { PtyHost, PtyHostObserver } from "../pty-host-starter.js";
+import { TerminalDomain } from "../terminals.js";
+
 const runtime = vi.hoisted(() => ({
   /** The configured projects root, rewritten per test. */
   projectsRoot: "",
@@ -54,10 +66,22 @@ const runtime = vi.hoisted(() => ({
    * entry points as `deps.trashItem`, exactly where `trashItemToOsTrash` goes.
    */
   trashItem: vi.fn<(target: string) => Promise<void>>(),
+  /**
+   * The injected snapshot removal, handed in exactly where
+   * `removeTerminalSnapshot` goes in production.
+   *
+   * It is also this suite's OBSERVATION POINT for the ordering claim below:
+   * cleanup calls it, so whatever it records is a fact about the world at the
+   * moment cleanup began.
+   */
+  removeTerminalSnapshot: vi.fn<(projectId: string) => Promise<boolean>>(),
 }));
 
-/** The dependency bundle every call below passes. One fake, one seam. */
-const deps = { trashItem: runtime.trashItem };
+/** The dependency bundle every call below passes. One fake, two seams. */
+const deps = {
+  trashItem: runtime.trashItem,
+  removeTerminalSnapshot: runtime.removeTerminalSnapshot,
+};
 
 vi.mock("../../logger/index.js", () => ({
   log: {
@@ -521,6 +545,8 @@ beforeEach(async () => {
   __resetStudioRenderQueuesForTests();
   runtime.trashItem.mockReset();
   runtime.trashItem.mockResolvedValue(undefined);
+  runtime.removeTerminalSnapshot.mockReset();
+  runtime.removeTerminalSnapshot.mockResolvedValue(true);
   projectsRoot = await mkdtemp(path.join(tmpdir(), "vex-studio-delete-"));
   runtime.projectsRoot = projectsRoot;
 });
@@ -1647,4 +1673,171 @@ describe("deleteProject: step 6, closing what the project owns", () => {
     expect(heldProjectLeases(doomed.projectId, "terminal")).toBe(0);
     expect(await readTombstone(doomed.projectId)).toMatchObject({ deleted: true });
   }, 30_000);
+
+  /**
+   * THE SAME ORDERING CLAIM, DRIVEN THROUGH THE REAL STACK AND ASSERTED
+   * AGAINST THE OPERATING SYSTEM.
+   *
+   * The test above proves the hook runs after the commit, but it drives a bare
+   * `terminal` lease: it models what `terminals.ts` HOLDS without exercising
+   * anything that holds it. That leaves the claim a user actually cares about
+   * unproven - "deleting a project ends the shells running in it, before Vex
+   * starts removing its files" - because a lease released by hand proves
+   * nothing about a process.
+   *
+   * So this composes the REAL `TerminalDomain` over the REAL `PtyHostService`
+   * over REAL node-pty, opens a shell that will not leave voluntarily, and
+   * reads deadness from the kernel with `kill(pid, 0)` at the moment cleanup
+   * begins. Nothing between the delete and the pty is a stand-in.
+   *
+   * It goes red if the close hook stops killing, if a kill is acknowledged
+   * before the process exits (the domain would release the lease and let the
+   * delete proceed over a live shell), or if the hook is moved after cleanup.
+   */
+  it("has ENDED the project's real shell before cleanup touches a file", async () => {
+    const doomed = await seedProject();
+    const snapshotDirectory = await mkdtemp(path.join(tmpdir(), "vex-del-snap-"));
+    const wiring = inProcessPtyHost(snapshotDirectory);
+
+    // The REAL domain over the REAL host. `starterFactory` is the seam the
+    // production class already exposes; everything inside `TerminalDomain` -
+    // its leases, its counts, its close hook - is the production code.
+    const domain = new TerminalDomain(
+      {
+        resolveProjectCwd: () => Promise.resolve(doomed.directory),
+        // A shell that will not leave voluntarily, so the delete is what ends it.
+        resolveShell: () => ({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
+        postPort: () => undefined,
+        publishAvailability: () => undefined,
+        publishTerminalsLost: () => undefined,
+      },
+      wiring.starterFactory,
+    );
+
+    let pid = -1;
+    try {
+      const created = await domain.create("w1", doomed.projectId, 80, 24);
+      if (!created.ok) throw new Error(`create refused: ${created.code}`);
+      pid = (created.value as { pid: number }).pid;
+
+      // The premise: a real process really is running for this project.
+      expect(isAlive(pid)).toBe(true);
+      expect(heldProjectLeases(doomed.projectId, "terminal")).toBe(1);
+
+      // THE OBSERVATION POINT. Cleanup calls this, so what it records is the
+      // state of the world at the moment Vex began removing the project's files.
+      let aliveWhenCleanupBegan: boolean | null = null;
+      runtime.removeTerminalSnapshot.mockImplementation(() => {
+        aliveWhenCleanupBegan = isAlive(pid);
+        return Promise.resolve(true);
+      });
+
+      const result = unwrap(
+        await deleteProject(
+          { projectId: doomed.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
+          "corr-real-pty-close",
+          deps,
+        ),
+      );
+      expect(result.outcome).toBe("removed");
+
+      // THE CLAIM. Not "a lease was released" - the SHELL WAS GONE, and it was
+      // gone before a single file of the project had been touched.
+      expect(aliveWhenCleanupBegan).toBe(false);
+      expect(isAlive(pid)).toBe(false);
+      // And the domain forgot it, so its capacity and its lease came back.
+      expect(domain.liveCount).toBe(0);
+      expect(heldProjectLeases(doomed.projectId, "terminal")).toBe(0);
+    } finally {
+      await domain.dispose().catch(() => undefined);
+      await wiring.shutdown();
+      if (pid > 0) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Already gone, which is the outcome this test asserts.
+        }
+      }
+      await rm(snapshotDirectory, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
+
+/** Whether a pid is still alive, read from the KERNEL rather than reported. */
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A `PtyHost` backed by a real `PtyHostService` in THIS process.
+ *
+ * The utility process is the one thing replaced here, and it is replaced by the
+ * very code that would run inside it rather than by a fake. What is lost is the
+ * process boundary; what is kept is every line of the host's own logic, which
+ * is where the ptys are actually killed.
+ *
+ * The `terminalExit` wiring is load-bearing and not a convenience: it is how
+ * the domain learns a pty has gone, and therefore how a terminal's project
+ * lease is released. Without it the delete would block on a lease nothing ever
+ * gives back, and the test would time out rather than prove anything.
+ */
+function inProcessPtyHost(snapshotDirectory: string): {
+  starterFactory: (observer: PtyHostObserver) => PtyHost;
+  shutdown: () => Promise<void>;
+} {
+  const replies = new Map<string, TerminalOutcome<unknown>>();
+  let observer: PtyHostObserver | null = null;
+
+  const service = new PtyHostService({
+    spawn: createNodePtySpawner(),
+    probe: filesystemLaunchProbe,
+    baseEnv: scrubEnvironment(process.env),
+    snapshotStore: new TerminalSnapshotStore(snapshotDirectory),
+    scrollbackRows: 1000,
+    graceMs: 60_000,
+    shortGraceMs: 1_000,
+    sendToMain: (message) => {
+      if (message.kind === "reply") {
+        replies.set(message.requestId, message.outcome);
+        return;
+      }
+      if (message.kind === "terminalExit") {
+        observer?.onTerminalExit(message.terminalId, message.exitCode, message.signal);
+      }
+    },
+    platform: process.platform,
+  });
+
+  let counter = 0;
+  const host: PtyHost = {
+    availability: { state: "running", restartCount: 0, responsive: true },
+    ensureStarted: () => true,
+    send: async (request) => {
+      counter += 1;
+      const requestId = `e2e-${String(counter)}`;
+      await service.handleMainMessage({ requestId, request }, []);
+      const outcome = replies.get(requestId);
+      replies.delete(requestId);
+      return outcome ?? { ok: false, code: "host_unavailable" };
+    },
+    mintPort: () =>
+      Promise.resolve({
+        outcome: { ok: false, code: "port_unavailable" },
+        rendererPort: null,
+      }),
+    dispose: () => service.shutdownAll(),
+  };
+
+  return {
+    starterFactory: (given) => {
+      observer = given;
+      return host;
+    },
+    shutdown: () => service.shutdownAll().catch(() => undefined),
+  };
+}

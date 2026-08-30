@@ -74,7 +74,7 @@ import {
 import { settleStudioWaiter } from "../studio/approval-broker.js";
 import { acquireProjectLease } from "../studio/project-lifecycle-gate.js";
 import { repairPendingStudioRefusal } from "../studio/approval-refusals.js";
-import { trashItemToOsTrash } from "../studio/os-trash.js";
+import { projectDeleteRuntimeDeps } from "../studio/project-delete-runtime.js";
 import { repairUnfinishedProjectCleanups } from "../studio/project-delete.js";
 import {
   beginStudioReadinessEpoch,
@@ -227,7 +227,7 @@ async function initializeStudioRuntime(epoch: number): Promise<void> {
   // unfinished cleanup is a durable obligation on a project that is already
   // gone, so it must never be able to hold Studio closed. Its own failures are
   // recorded on the row and retried by the next start or by the user.
-  void repairUnfinishedProjectCleanups({ trashItem: trashItemToOsTrash }).catch(
+  void repairUnfinishedProjectCleanups(projectDeleteRuntimeDeps).catch(
     (cause: unknown) => {
       log.warn(
         "[agent:studio-settlement-bridge] project cleanup repair failed",

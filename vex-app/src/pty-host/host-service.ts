@@ -32,17 +32,24 @@
 
 import { randomUUID } from "node:crypto";
 import {
+  TERMINAL_KILL_SETTLE_MS,
+  TERMINAL_MAXIMUM_SHUTDOWN_MS,
   TERMINAL_SNAPSHOT_MAX_BYTES,
   TERMINAL_SNAPSHOT_VERSION,
+  WORKSPACE_SNAPSHOT_FILE_MAX_BYTES,
+  utf8ByteLength,
   terminalHostEnvelopeSchema,
   terminalPortRequestSchema,
   terminalWorkspaceLayoutSchema,
   type TerminalErrorCode,
+  type TerminalGroupLayout,
   type TerminalHostMessage,
   type TerminalHostRequest,
   type TerminalId,
+  type TerminalLaunch,
   type TerminalOutcome,
   type TerminalPortEvent,
+  type TerminalReviveResult,
   type TerminalSnapshotEntry,
   type TerminalWorkspaceLayout,
   type TerminalWorkspaceSnapshot,
@@ -136,13 +143,15 @@ export class PtyHostService {
       case "resize":
         return this.resizeTerminal(request);
       case "kill":
-        return this.killTerminal(request.terminalId, request.windowId);
+        return await this.killTerminal(request.terminalId, request.windowId);
       case "releaseWindow":
         return this.releaseWindow(request.windowId);
       case "persistWorkspace":
         return await this.persistWorkspace(request.projectId, request.layout);
       case "readWorkspace":
         return await this.readWorkspace(request.projectId);
+      case "revive":
+        return await this.reviveProject(request);
       case "shutdownAll":
         await this.shutdownAll();
         return accept(null);
@@ -171,12 +180,51 @@ export class PtyHostService {
   private async createTerminal(
     request: Extract<TerminalHostRequest, { kind: "create" }>,
   ): Promise<TerminalOutcome<unknown>> {
+    const started = await this.spawnTerminal({
+      terminalId: request.terminalId,
+      windowId: request.windowId,
+      projectId: request.projectId,
+      launch: request.launch,
+      reducedRowsAtSpawn: 0,
+    });
+    if (!started.ok) return started;
+    return accept({
+      terminalId: request.terminalId,
+      pid: started.value.pid,
+      shellName: started.value.shellName,
+      cwd: started.value.cwd,
+    });
+  }
+
+  /**
+   * Spawn one pty and register it. THE ONE PLACE a terminal comes into
+   * existence in this process.
+   *
+   * A create and a revive differ in exactly two things - where the launch came
+   * from, and whether a screen is written into the mirror afterwards - so they
+   * share this. A second registration path would be a second place for the exit
+   * wiring, the notice wiring and the ownership record to drift from each other.
+   */
+  private async spawnTerminal(options: {
+    terminalId: TerminalId;
+    windowId: string;
+    projectId: string;
+    launch: TerminalLaunch;
+    reducedRowsAtSpawn: number;
+  }): Promise<
+    TerminalOutcome<{
+      pid: number;
+      shellName: string;
+      cwd: string;
+      terminal: PersistentTerminal;
+    }>
+  > {
     if (!this.admitting) return refuse("host_unavailable");
-    if (this.terminals.has(request.terminalId)) return refuse("invalid_packet");
+    if (this.terminals.has(options.terminalId)) return refuse("invalid_packet");
 
     const holder: { current: PersistentTerminal | null } = { current: null };
     const process = new TerminalProcess(
-      request.launch,
+      options.launch,
       {
         spawn: this.deps.spawn,
         probe: this.deps.probe,
@@ -196,21 +244,24 @@ export class PtyHostService {
 
     const persistent = new PersistentTerminal(
       {
-        terminalId: request.terminalId,
-        windowId: request.windowId,
-        projectId: request.projectId,
+        terminalId: options.terminalId,
+        windowId: options.windowId,
+        projectId: options.projectId,
         shellName: started.shellName,
-        cwdAtSpawn: request.launch.cwd,
+        executable: options.launch.executable,
+        args: options.launch.args,
+        cwdAtSpawn: options.launch.cwd,
+        reducedRowsAtSpawn: options.reducedRowsAtSpawn,
         graceMs: this.deps.graceMs,
         shortGraceMs: this.deps.shortGraceMs,
       },
       process,
       {
         onExit: (exitCode, signal) => {
-          this.terminals.delete(request.terminalId);
+          this.terminals.delete(options.terminalId);
           this.deps.sendToMain({
             kind: "terminalExit",
-            terminalId: request.terminalId,
+            terminalId: options.terminalId,
             exitCode,
             signal,
           });
@@ -219,21 +270,21 @@ export class PtyHostService {
           this.deps.sendToMain({
             kind: "notice",
             code,
-            terminalId: request.terminalId,
-            projectId: request.projectId,
+            terminalId: options.terminalId,
+            projectId: options.projectId,
             count,
           });
         },
       },
     );
     holder.current = persistent;
-    this.terminals.set(request.terminalId, persistent);
+    this.terminals.set(options.terminalId, persistent);
 
     return accept({
-      terminalId: request.terminalId,
       pid: started.pid,
       shellName: started.shellName,
       cwd: started.cwd,
+      terminal: persistent,
     });
   }
 
@@ -275,11 +326,32 @@ export class PtyHostService {
     return accept(null);
   }
 
-  private killTerminal(terminalId: TerminalId, windowId: string): TerminalOutcome<null> {
+  /**
+   * Kill a terminal, and REPLY ONLY ONCE IT HAS ACTUALLY EXITED.
+   *
+   * Acknowledging the signal instead of the exit is what let main release the
+   * terminal's capacity and its project lease while the process was still
+   * shutting down: a create could then take the slot of a pty that had not
+   * gone, and a project delete could report itself finished with one of its
+   * shells still running.
+   *
+   * The wait is bounded by `TERMINAL_KILL_SETTLE_MS`, comfortably inside the
+   * control-request timeout. A pty that outlasts it has already been
+   * force-killed by `TerminalProcess`'s own backstop, and main learns of the
+   * exit through the unsolicited `terminalExit` event whenever it arrives.
+   */
+  private async killTerminal(
+    terminalId: TerminalId,
+    windowId: string,
+  ): Promise<TerminalOutcome<null>> {
     const found = this.owned(terminalId, windowId);
     if (typeof found === "string") return refuse(found);
     // Immediate: a user closed the tab and is watching the tab disappear.
-    found.process.shutdown(true);
+    const settled = found.process.shutdown(true);
+    const exited = await settledWithin(settled, TERMINAL_KILL_SETTLE_MS);
+    if (!exited) {
+      this.log(`[pty-host] kill did not settle inside the window for ${terminalId}`);
+    }
     return accept(null);
   }
 
@@ -377,17 +449,124 @@ export class PtyHostService {
     const outcome = await this.deps.snapshotStore.read(projectId);
     if (outcome.kind === "ok") return accept(outcome.snapshot);
     if (outcome.kind === "absent") return accept(null);
+    this.reportDiscarded(projectId, outcome.reason);
+    return accept(null);
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Revive
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Bring a project's persisted terminals back.
+   *
+   * ## A revived shell is a NEW shell, and the id says so
+   *
+   * The previous session's processes are gone. What survived is their SCREENS,
+   * and this restores those into fresh ptys under the new ids main assigned. It
+   * is VS Code's model and it is the only honest one: pretending a reattach
+   * happened would leave the user typing into a shell that has none of the
+   * state their scrollback appears to describe - no shell variables, no
+   * background jobs, no history of the directory it looks like it is in.
+   *
+   * ## Partial revival is a real outcome, and it is reported
+   *
+   * A project directory deleted between sessions, an executable removed by a
+   * package upgrade, a per-terminal spawn failure: each is refused for that
+   * terminal alone and named in `failed`, so main can release the capacity it
+   * reserved and the renderer can show the pane as gone rather than as empty.
+   */
+  private async reviveProject(
+    request: Extract<TerminalHostRequest, { kind: "revive" }>,
+  ): Promise<TerminalOutcome<TerminalReviveResult>> {
+    if (!this.admitting) return refuse("host_unavailable");
+
+    const read = await this.deps.snapshotStore.read(request.projectId);
+    if (read.kind !== "ok") {
+      if (read.kind === "discarded") this.reportDiscarded(request.projectId, read.reason);
+      // Nothing to revive is not a failure of the request; it is an answer.
+      return accept({
+        revived: [],
+        failed: request.assignments.map((assignment) => ({
+          from: assignment.from,
+          code: "snapshot_unavailable" as const,
+        })),
+        layout: { projectId: request.projectId, groups: [], activeGroupIndex: 0 },
+      });
+    }
+
+    const entries = new Map(
+      read.snapshot.terminals.map((entry) => [entry.terminalId, entry]),
+    );
+    const revived: TerminalReviveResult["revived"] = [];
+    const failed: TerminalReviveResult["failed"] = [];
+
+    for (const assignment of request.assignments) {
+      const entry = entries.get(assignment.from);
+      if (entry === undefined) {
+        failed.push({ from: assignment.from, code: "unknown_terminal" });
+        continue;
+      }
+
+      const started = await this.spawnTerminal({
+        terminalId: assignment.to,
+        windowId: request.windowId,
+        projectId: request.projectId,
+        launch: {
+          executable: entry.executable,
+          args: [...entry.args],
+          cwd: entry.cwdAtSpawn,
+          cols: entry.cols,
+          rows: entry.rows,
+          // RECOMPUTED, never restored. The environment is not in the snapshot
+          // and must not be: it is a capture of the user's credentials, tokens
+          // and paths, and a file that held one would keep it for the life of
+          // the project.
+          env: {},
+        },
+        reducedRowsAtSpawn: entry.reducedRows,
+      });
+      if (!started.ok) {
+        failed.push({ from: assignment.from, code: started.code });
+        continue;
+      }
+
+      // WRITE-THROUGH into the mirror, before anything can attach: the replay
+      // that a consumer receives on attach is serialized from the mirror, so
+      // restoring here is what makes the restored screen reach the renderer
+      // through the ordinary path rather than a second one.
+      started.value.terminal.restoreMirror(entry.serialized, entry.droppedRows);
+
+      revived.push({
+        from: assignment.from,
+        to: assignment.to,
+        pid: started.value.pid,
+        shellName: started.value.shellName,
+        cwd: started.value.cwd,
+        title: entry.title,
+        droppedRows: entry.droppedRows,
+        reducedRows: entry.reducedRows,
+      });
+    }
+
+    // The layout this host now holds for the project must name the terminals
+    // that actually exist. Without the remap, a shutdown before the renderer's
+    // first persist would commit a layout of dead ids beside live terminals,
+    // and the next session would restore a workspace with every pane dropped.
+    const layout = remapLayout(read.snapshot.layout, revived);
+    this.layouts.set(request.projectId, layout);
+
+    return accept({ revived, failed, layout });
+  }
+
+  private reportDiscarded(projectId: string, reason: "corrupt" | "version"): void {
     this.deps.sendToMain({
       kind: "notice",
-      code:
-        outcome.reason === "version"
-          ? "snapshot_discarded_version"
-          : "snapshot_discarded_corrupt",
+      code: reason === "version" ? "snapshot_discarded_version" : "snapshot_discarded_corrupt",
       terminalId: null,
       projectId,
       count: 0,
     });
-    return accept(null);
   }
 
   /** Serialize every live terminal of one project and commit its file. */
@@ -395,10 +574,13 @@ export class PtyHostService {
     const layout = this.layouts.get(projectId);
     if (layout === undefined) return true;
 
+    const live = [...this.terminals.values()].filter(
+      (terminal) => terminal.options.projectId === projectId,
+    );
+
     const entries: TerminalSnapshotEntry[] = [];
     let reducedTotal = 0;
-    for (const terminal of this.terminals.values()) {
-      if (terminal.options.projectId !== projectId) continue;
+    for (const terminal of live) {
       const serialized = await terminal.process.mirror.serializeWithin(
         TERMINAL_SNAPSHOT_MAX_BYTES,
       );
@@ -408,13 +590,20 @@ export class PtyHostService {
         terminalId: terminal.options.terminalId,
         title: terminal.process.title,
         shellName: terminal.options.shellName,
+        executable: terminal.options.executable,
+        args: [...terminal.options.args],
         cwdAtSpawn: terminal.options.cwdAtSpawn,
         cols,
         rows,
         serialized: serialized.data,
         droppedRows: serialized.droppedRows,
+        // CUMULATIVE across sessions: what this save gave up, plus what every
+        // previous save of this terminal had already given up.
+        reducedRows: terminal.options.reducedRowsAtSpawn + serialized.reducedRows,
       });
     }
+
+    reducedTotal += this.fitWholeFile(projectId, layout, entries, live);
 
     if (reducedTotal > 0) {
       this.deps.sendToMain({
@@ -454,6 +643,75 @@ export class PtyHostService {
     return true;
   }
 
+  /**
+   * Bring the WHOLE FILE under its bound, by reducing the largest buffers.
+   *
+   * Per-terminal reduction is not sufficient and the arithmetic says why:
+   * twelve terminals each legitimately under the 2 MiB per-terminal cap sum to
+   * 24 MiB, which is half again the 16 MiB file cap. The store would refuse the
+   * write, and the user would lose the entire workspace - layout included -
+   * because their buffers were individually fine.
+   *
+   * So the per-terminal cap is HALVED and the entries that exceed the new cap -
+   * which is exactly the largest ones - are reserialized against it, until the
+   * file fits. Reducing the largest first is what keeps a workspace of one huge
+   * build log and eleven idle prompts from throwing away the eleven prompts.
+   *
+   * THE LAYOUT IS NEVER TRIMMED. It is kilobytes, it is the half a user would
+   * actually notice losing, and a workspace that reopens with its panes intact
+   * and its scrollback shortened is a far better outcome than the reverse.
+   *
+   * Returns the rows given up here, for the notice.
+   */
+  private fitWholeFile(
+    projectId: string,
+    layout: TerminalWorkspaceLayout,
+    entries: TerminalSnapshotEntry[],
+    live: readonly PersistentTerminal[],
+  ): number {
+    const mirrors = new Map(
+      live.map((terminal) => [terminal.options.terminalId, terminal.process.mirror]),
+    );
+    let cap = TERMINAL_SNAPSHOT_MAX_BYTES;
+    let reduced = 0;
+
+    while (
+      measureSnapshotBytes(projectId, layout, entries) > WORKSPACE_SNAPSHOT_FILE_MAX_BYTES
+      && cap > 0
+    ) {
+      cap = Math.floor(cap / 2);
+      for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (entry === undefined) continue;
+        if (utf8ByteLength(entry.serialized) <= cap) continue;
+        const mirror = mirrors.get(entry.terminalId);
+        if (mirror === undefined) {
+          // The terminal exited between serialization and this pass. Its bytes
+          // cannot be recomputed, so they go rather than block the whole file.
+          entries[index] = { ...entry, serialized: "" };
+          continue;
+        }
+        // No drain needed: the mirror was drained when this entry was first
+        // serialized, and the producer has not been resumed since.
+        const next = mirror.serializeWithinNow(cap);
+        reduced += next.reducedRows;
+        entries[index] = {
+          ...entry,
+          serialized: next.data,
+          reducedRows: entry.reducedRows + next.reducedRows,
+        };
+      }
+    }
+
+    if (reduced > 0) {
+      this.log(
+        `[pty-host] whole-file reduction for ${projectId}: `
+          + `${String(reduced)} rows given up to fit the file bound`,
+      );
+    }
+    return reduced;
+  }
+
   /* ---------------------------------------------------------------- *
    * Shutdown
    * ---------------------------------------------------------------- */
@@ -473,9 +731,29 @@ export class PtyHostService {
       await this.commitProject(projectId);
     }
 
-    // 4. Shut the ptys down. Flush-then-kill, so trailing output is not lost.
-    for (const terminal of this.terminals.values()) {
-      terminal.process.shutdown(false);
+    // 4. Shut the ptys down, and WAIT FOR THEM TO ACTUALLY GO.
+    //
+    // Issuing the shutdowns and moving on is what orphaned shells: step 5 then
+    // disposed the terminals, and dispose used to cancel the very kill timers
+    // step 4 had just scheduled. Awaiting the real exits closes that hole from
+    // the other side as well - a terminal that has exited cannot be orphaned by
+    // anything that happens afterwards.
+    //
+    // The wait is BOUNDED per terminal and the terminals are awaited jointly,
+    // so a single wedged shell costs the backstop once rather than the backstop
+    // times the number of terminals. A shell that outlasts it is force-killed
+    // by `TerminalProcess` itself and then by the dispose below.
+    const outcomes = await Promise.all(
+      [...this.terminals.values()].map(async (terminal) =>
+        await settledWithin(terminal.process.shutdown(false), TERMINAL_MAXIMUM_SHUTDOWN_MS),
+      ),
+    );
+    const stragglers = outcomes.filter((exited) => !exited).length;
+    if (stragglers > 0) {
+      this.log(
+        `[pty-host] ${String(stragglers)} terminal(s) did not exit inside the backstop; `
+          + "disposing them force-kills the pty",
+      );
     }
 
     // 5. Dispose. Every failure is collected rather than aborting the rest.
@@ -513,4 +791,78 @@ export class PtyHostService {
   static newTerminalId(): TerminalId {
     return randomUUID();
   }
+}
+
+/**
+ * Resolve `true` when `settled` completed inside `ms`, `false` when it did not.
+ *
+ * Never rejects and never leaves a timer behind: this is the shutdown path, and
+ * a stray handle here is a process that will not quit.
+ */
+async function settledWithin(settled: Promise<void>, ms: number): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  const expiry = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => {
+      resolve(false);
+    }, ms);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([settled.then(() => true), expiry]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/** The exact bytes `TerminalSnapshotStore.write` would produce for this state. */
+function measureSnapshotBytes(
+  projectId: string,
+  layout: TerminalWorkspaceLayout,
+  entries: readonly TerminalSnapshotEntry[],
+): number {
+  const snapshot: TerminalWorkspaceSnapshot = {
+    version: TERMINAL_SNAPSHOT_VERSION,
+    projectId,
+    savedAt: 0,
+    layout,
+    terminals: [...entries],
+  };
+  return utf8ByteLength(JSON.stringify(snapshot));
+}
+
+/**
+ * Rewrite a persisted layout onto the ids a revive actually produced.
+ *
+ * Panes whose terminal did not come back are DROPPED, groups left with no panes
+ * are dropped with them, and both active indices are clamped back into range -
+ * the layout schema refuses an empty group and an out-of-range index, so a
+ * remap that skipped this would produce a layout that cannot be persisted at
+ * all.
+ */
+function remapLayout(
+  layout: TerminalWorkspaceLayout,
+  revived: TerminalReviveResult["revived"],
+): TerminalWorkspaceLayout {
+  const mapping = new Map(revived.map((entry) => [entry.from, entry.to]));
+  const groups: TerminalGroupLayout[] = [];
+  for (const group of layout.groups) {
+    const panes = group.panes
+      .filter((pane) => mapping.has(pane.terminalId))
+      .map((pane) => ({
+        ...pane,
+        terminalId: mapping.get(pane.terminalId) ?? pane.terminalId,
+      }));
+    if (panes.length === 0) continue;
+    groups.push({
+      ...group,
+      panes,
+      activePaneIndex: Math.min(group.activePaneIndex, panes.length - 1),
+    });
+  }
+  return {
+    projectId: layout.projectId,
+    groups,
+    activeGroupIndex:
+      groups.length === 0 ? 0 : Math.min(layout.activeGroupIndex, groups.length - 1),
+  };
 }

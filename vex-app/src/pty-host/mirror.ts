@@ -51,6 +51,15 @@ export interface MirrorSerialization {
   readonly droppedRows: number;
   /** Rows deliberately left out to fit a byte cap. Zero for a full replay. */
   readonly reducedRows: number;
+  /**
+   * The row budget reached zero and the result STILL did not fit.
+   *
+   * Reported rather than returned as an oversized string, because the caller's
+   * only correct response is to store nothing for this terminal and say so. A
+   * serialization that silently exceeds the cap it was asked to respect is the
+   * defect this flag exists to make impossible.
+   */
+  readonly overflowed: boolean;
 }
 
 export class TerminalMirror {
@@ -61,6 +70,15 @@ export class TerminalMirror {
   private disposed = false;
   /** Resolves when every `write` issued so far has been parsed. */
   private drained: Promise<void> = Promise.resolve();
+  /**
+   * Rows this terminal had already lost BEFORE this mirror existed.
+   *
+   * A revived terminal's mirror is a fresh xterm holding a restored screen, so
+   * its own counters start at zero - but the history the previous session
+   * dropped is still gone, and a revived terminal that reported `0 earlier rows
+   * dropped` would tell the user their scrollback was complete when it is not.
+   */
+  private carriedDroppedRows = 0;
 
   constructor(
     cols: number,
@@ -84,11 +102,44 @@ export class TerminalMirror {
    * handed to any consumer, so a consumer that arrives late can always be
    * brought to the same screen.
    */
-  write(data: string): void {
+  /**
+   * Feed the mirror, optionally learning when xterm has PARSED what was fed.
+   *
+   * `onParsed` is what makes mirror-paced flow control possible: while no
+   * consumer is attached, the mirror is the only thing consuming the pty's
+   * output, so its parse rate is the rate the producer must be held to. Acking
+   * on receipt instead would let a `yes` loop run at full speed into an
+   * unbounded xterm parser queue that nothing ever drains.
+   *
+   * The callback fires once per `write`, after that write's bytes are parsed.
+   * It does not fire on a disposed mirror, because there is then no consumer
+   * whose pace it could describe.
+   */
+  write(data: string, onParsed?: () => void): void {
     if (this.disposed) return;
     this.drained = new Promise<void>((resolve) => {
-      this.terminal.write(data, resolve);
+      this.terminal.write(data, () => {
+        resolve();
+        onParsed?.();
+      });
     });
+  }
+
+  /**
+   * Write a previously serialized screen back in, for a revive.
+   *
+   * WRITE-THROUGH, deliberately: the restored bytes go through the same parser
+   * every live byte goes through, so the mirror ends up holding a real screen
+   * rather than a string it would have to remember to prepend to every replay.
+   * Everything downstream - replay, resync, the next snapshot - then works on a
+   * revived terminal without knowing it was revived.
+   *
+   * `carriedDroppedRows` is the history the previous session had already lost.
+   */
+  restore(serialized: string, carriedDroppedRows: number): void {
+    if (this.disposed) return;
+    this.carriedDroppedRows = Math.max(0, carriedDroppedRows);
+    if (serialized.length > 0) this.write(serialized);
   }
 
   resize(cols: number, rows: number): void {
@@ -96,9 +147,12 @@ export class TerminalMirror {
     this.terminal.resize(cols, rows);
   }
 
-  /** Scrollback rows evicted by the bound so far. */
+  /** Scrollback rows evicted by the bound so far, including inherited ones. */
   get droppedRows(): number {
-    return Math.max(0, this.scrolledLines - this.terminal.buffer.active.baseY);
+    return (
+      this.carriedDroppedRows
+      + Math.max(0, this.scrolledLines - this.terminal.buffer.active.baseY)
+    );
   }
 
   /**
@@ -112,18 +166,48 @@ export class TerminalMirror {
     return this.terminal.buffer.active.length;
   }
 
-  /** Wait for xterm to have parsed everything written so far. */
+  /**
+   * Wait for xterm to have parsed everything written so far, TO A FIXED POINT.
+   *
+   * Awaiting a single captured promise is not enough: a `write` issued while
+   * that promise was outstanding replaces `this.drained`, and the caller would
+   * return believing the mirror was current when a later chunk is still in the
+   * parser. Every consumer of `drain` is about to make an ordering decision on
+   * that belief - what belongs in a replay, what belongs in a snapshot - so the
+   * loop continues until no new write appeared during the last await.
+   *
+   * It terminates because its callers pause the producer first; an unpaused
+   * firehose would keep it looping, which is precisely why they pause.
+   */
   async drain(): Promise<void> {
-    await this.drained;
+    let awaited: Promise<void>;
+    do {
+      awaited = this.drained;
+      await awaited;
+    } while (this.drained !== awaited);
   }
 
   /** A full serialization: every retained row, no byte cap. */
   async serialize(): Promise<MirrorSerialization> {
     await this.drain();
+    return this.serializeNow();
+  }
+
+  /**
+   * Serialize WITHOUT draining first.
+   *
+   * The attach handoff needs the serialization to happen in the same
+   * synchronous run as installing the consumer - an await between the two is
+   * the window in which live output is either duplicated into the replay or
+   * lost before it. So the caller drains, and then calls this with no await in
+   * between. See `persistent-terminal.ts`.
+   */
+  serializeNow(): MirrorSerialization {
     return {
       data: this.serializer.serialize({ scrollback: this.scrollbackRows }),
       droppedRows: this.droppedRows,
       reducedRows: 0,
+      overflowed: false,
     };
   }
 
@@ -144,17 +228,53 @@ export class TerminalMirror {
    */
   async serializeWithin(maxBytes: number): Promise<MirrorSerialization> {
     await this.drain();
+    return this.serializeWithinNow(maxBytes);
+  }
+
+  /**
+   * `serializeWithin` without the drain, for a caller that has already drained.
+   *
+   * ZERO IS A REAL BUDGET AND IT CAN STILL BE TOO BIG. `scrollback: 0` is the
+   * VIEWPORT, not nothing, and a 1000-column viewport of styled text can exceed
+   * a small cap on its own. The previous loop exited on `budget > 0` and
+   * returned whatever the last serialization produced, so the one case the cap
+   * exists for - the result does not fit - was the one case it did not cover,
+   * and an oversized string went to a caller that had been told it fit.
+   *
+   * So the fit is CHECKED after the loop, and a result that still does not fit
+   * is reported as `overflowed` with no data. Every row is then accounted for
+   * in `reducedRows`, because every row is what was given up.
+   */
+  serializeWithinNow(maxBytes: number): MirrorSerialization {
     let budget = this.scrollbackRows;
     let data = this.serializer.serialize({ scrollback: budget });
     while (utf8ByteLength(data) > maxBytes && budget > 0) {
       budget = Math.floor(budget / 2);
       data = this.serializer.serialize({ scrollback: budget });
     }
+    if (utf8ByteLength(data) > maxBytes) {
+      return {
+        data: "",
+        droppedRows: this.droppedRows,
+        reducedRows: this.bufferRows,
+        overflowed: true,
+      };
+    }
     return {
       data,
       droppedRows: this.droppedRows,
-      reducedRows: Math.max(0, this.scrollbackRows - budget),
+      // Measured against the scrollback the buffer ACTUALLY holds, not against
+      // the 1000-row capacity. A 30-row buffer serialized at a budget of 500
+      // gave up nothing, and reporting 470 lost rows would put a false loss
+      // notice in front of the user and inflate the persisted running total.
+      reducedRows: Math.max(0, this.scrollbackLines - budget),
+      overflowed: false,
     };
+  }
+
+  /** Scrollback lines currently held above the viewport. */
+  get scrollbackLines(): number {
+    return this.terminal.buffer.active.baseY;
   }
 
   dispose(): void {

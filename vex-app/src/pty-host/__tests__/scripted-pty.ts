@@ -58,10 +58,37 @@ export class ScriptedPty implements PtyAdapter {
     this.resizes.push({ cols, rows });
   }
 
+  /**
+   * Signal the process, AND REPORT ITS EXIT, because that is what a pty does.
+   *
+   * This fake used to record the signal and stop, which made it unfaithful in
+   * the one way that mattered: a real node-pty answers a kill by firing
+   * `onExit` once the process is reaped, and the host now WAITS for that event
+   * before announcing an exit - a signal delivered is not a process reaped, and
+   * main releases a terminal's capacity and its project lease on the answer.
+   * A fake that never exits turns that correct wait into a timeout, so tests
+   * would have measured the backstop instead of the behaviour.
+   *
+   * Fired on a MICROTASK, not synchronously: node-pty delivers exit on a later
+   * turn, and answering on the caller's own stack would re-enter the exit
+   * sequencing from inside the kill that triggered it.
+   *
+   * `ignoresKill` models the process that does not die on request - the case
+   * the force-kill backstop exists for.
+   */
+  ignoresKill = false;
+
   kill(signal?: string): void {
     this.killed = true;
     this.killSignal = signal;
+    if (this.ignoresKill || this.exitReported) return;
+    this.exitReported = true;
+    queueMicrotask(() => {
+      this.exit(0, 9);
+    });
   }
+
+  private exitReported = false;
 
   pause(): void {
     this.paused = true;
@@ -99,6 +126,35 @@ export function scriptedSpawner(pty: ScriptedPty): {
     calls,
     spawn: (executable, args, options) => {
       calls.push({ executable, args, cwd: options.cwd, env: options.env });
+      return pty;
+    },
+  };
+}
+
+/**
+ * A spawner that mints a FRESH scripted pty per spawn, and records each launch.
+ *
+ * `scriptedSpawner` hands the SAME object to every spawn, which is adequate for
+ * a suite asserting about one terminal and wrong for anything about several:
+ * two terminals sharing one pty share its `killed` flag and its data listeners,
+ * so "every pty was killed" and "this terminal's output" both become
+ * unfalsifiable. A revive restores a whole workspace and a shutdown must
+ * account for every process it owns, so those need one object per process.
+ */
+export function scriptedSpawnerPool(): {
+  spawn: PtySpawner;
+  ptys: ScriptedPty[];
+  calls: Array<{ executable: string; args: readonly string[]; cwd: string }>;
+} {
+  const ptys: ScriptedPty[] = [];
+  const calls: Array<{ executable: string; args: readonly string[]; cwd: string }> = [];
+  return {
+    ptys,
+    calls,
+    spawn: (executable, args, options) => {
+      calls.push({ executable, args, cwd: options.cwd });
+      const pty = new ScriptedPty();
+      ptys.push(pty);
       return pty;
     },
   };

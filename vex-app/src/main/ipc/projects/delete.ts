@@ -29,7 +29,7 @@ import {
   projectDeleteResultSchema,
   type ProjectDeleteResult,
 } from "@shared/schemas/projects.js";
-import { trashItemToOsTrash } from "../../studio/os-trash.js";
+import { projectDeleteRuntimeDeps } from "../../studio/project-delete-runtime.js";
 import { deleteProject } from "../../studio/project-delete.js";
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
@@ -44,7 +44,7 @@ export function registerProjectsDeleteHandler(): () => void {
       const outcome = await deleteProject(
         input,
         ctx.requestId,
-        { trashItem: trashItemToOsTrash },
+        projectDeleteRuntimeDeps,
         ctx.signal,
       );
       if (outcome.ok) {

@@ -40,6 +40,7 @@ import {
 import {
   addPane,
   addTerminalGroup,
+  canAddTerminalGroup,
   closePane,
   closeTab,
   collectCleanups,
@@ -54,7 +55,7 @@ import {
 } from "../workspace/workspace-model.js";
 import type { WorkspaceMutation, WorkspaceState } from "../workspace/types.js";
 import { TerminalTabs } from "./TerminalTabs.js";
-import type { TerminalRegistry } from "./terminal-registry.js";
+import { terminalRegistry, type TerminalRegistry } from "./terminal-registry.js";
 
 /**
  * How long a burst of layout changes coalesces before it is written.
@@ -107,6 +108,9 @@ export function StudioWorkspaceController({
 }: StudioWorkspaceControllerProps): JSX.Element {
   const [state, setState] = useState<WorkspaceState>(() => emptyWorkspace(projectId));
   const [notice, setNotice] = useState<string | null>(null);
+  // The registry a closed tab's terminals are DISPOSED through. The prop exists
+  // so a test can supply its own; the shared one is the window's.
+  const activeRegistry = registry ?? terminalRegistry;
 
   // The latest state, for handlers that must run at teardown - where the state
   // captured by a closure is whatever it was when the effect was created.
@@ -114,6 +118,28 @@ export function StudioWorkspaceController({
   stateRef.current = state;
   const hydratedRef = useRef(false);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
+   * THE WORKSPACE GENERATION. Bumped whenever the workspace this controller is
+   * showing is replaced - a project switch, a remount, a StrictMode
+   * double-effect.
+   *
+   * Every async open and every restore captures it and rechecks it at
+   * publication. Without it a create issued for project A could land after the
+   * user moved to project B and insert A's terminal into B's layout, and a slow
+   * restore could overwrite terminals opened after it started.
+   */
+  const generationRef = useRef(0);
+
+  /**
+   * Opens that have been admitted but whose pty does not exist yet.
+   *
+   * Counted so the keep-alive bound is decided against the world INCLUDING
+   * them: four groups plus two in-flight opens is six, and the model must
+   * refuse the second of those two rather than admit both against a count of
+   * four.
+   */
+  const pendingOpensRef = useRef(0);
 
   /**
    * Apply a model mutation. The ONE place a refusal becomes visible, so no
@@ -150,7 +176,8 @@ export function StudioWorkspaceController({
   /* ---------------- restore ---------------- */
 
   useEffect(() => {
-    let current = true;
+    generationRef.current += 1;
+    const generation = generationRef.current;
     hydratedRef.current = false;
     // The ref is written alongside every setState so a teardown or a mutation
     // that lands before the next render still sees the current workspace.
@@ -159,10 +186,16 @@ export function StudioWorkspaceController({
 
     void (async () => {
       const result = await readTerminalWorkspace(projectId);
-      // A read that landed after the project changed describes a workspace
-      // nobody is looking at any more, and applying it would show the previous
-      // project's terminals under the new project's name.
-      if (!current) return;
+      // A restore that landed after the workspace was replaced describes one
+      // nobody is looking at any more. Applying it would show the previous
+      // project's terminals under the new project's name - and, now that the
+      // open REVIVES rather than only reads, would also overwrite whatever the
+      // user has opened since with a layout built before any of it existed.
+      //
+      // The terminals it revived are not orphaned by this: main recorded them
+      // and they are reachable through the project's next open, or closed with
+      // the project.
+      if (generation !== generationRef.current) return;
       if (result.ok && result.data.ok && result.data.value !== null) {
         stateRef.current = fromSnapshot(result.data.value);
         setState(stateRef.current);
@@ -171,7 +204,10 @@ export function StudioWorkspaceController({
     })();
 
     return () => {
-      current = false;
+      // Invalidate on the way out as well as on the way in, so an unmount -
+      // including StrictMode's - cancels the restore rather than letting it
+      // publish into a controller that is gone.
+      generationRef.current += 1;
     };
   }, [projectId]);
 
@@ -226,29 +262,95 @@ export function StudioWorkspaceController({
 
   /* ---------------- actions ---------------- */
 
+  /**
+   * Open a terminal. ADMISSIBILITY FIRST, THEN THE PTY.
+   *
+   * ## The order is the fix
+   *
+   * This used to create the pty and then ask the model whether it could be
+   * placed. Every way that question could be answered "no" produced an
+   * INVISIBLE RUNNING SHELL: a refused fifth group, a split into a tab the user
+   * closed while the create was in flight, a create that landed after the user
+   * switched projects. The terminal existed, held a slot against the host's
+   * bounds and a lease against its project, and no pane referenced it - so
+   * nothing could ever close it.
+   *
+   * So the model decides first. A refusal now costs a notice and nothing else.
+   *
+   * ## The publication fence
+   *
+   * Admissibility is decided before an await and acted on after one, so it must
+   * be RECHECKED at publication - and the recheck has to cover more than the
+   * count. The generation covers "is this still the same workspace" (a project
+   * switch, a remount); the tab lookup covers "does the destination still
+   * exist" (the user closed it mid-split).
+   *
+   * A stale completion KILLS ITS OWN PTY. It is the only holder of that id -
+   * nothing else ever saw it - so discarding without killing is precisely how
+   * the invisible shell was created.
+   */
   const openTerminal = useCallback(
     async (
       into: { readonly kind: "tab" } | { readonly kind: "pane"; readonly tabId: string },
     ): Promise<void> => {
-      const result = await createTerminal({
-        projectId,
-        cols: CREATE_COLS,
-        rows: CREATE_ROWS,
-      });
+      const generation = generationRef.current;
+
+      // ---- admissibility, before anything exists ----
+      if (into.kind === "tab") {
+        if (!canAddTerminalGroup(stateRef.current, pendingOpensRef.current)) {
+          setNotice(KEEP_ALIVE_COPY);
+          return;
+        }
+      } else if (
+        stateRef.current.tabs.find((tab) => tab.tabId === into.tabId) === undefined
+      ) {
+        // Splitting a tab that is not there is not a refusal to report; it is a
+        // gesture whose target has gone.
+        return;
+      }
+
+      pendingOpensRef.current += 1;
+      let result;
+      try {
+        result = await createTerminal({
+          projectId,
+          cols: CREATE_COLS,
+          rows: CREATE_ROWS,
+        });
+      } finally {
+        pendingOpensRef.current -= 1;
+      }
+
       if (!result.ok) {
-        setNotice("Vex could not reach the terminal service.");
+        if (generation === generationRef.current) {
+          setNotice("Vex could not reach the terminal service.");
+        }
         return;
       }
       if (!result.data.ok) {
-        setNotice(
-          REFUSAL_COPY[result.data.code] ??
-            `The terminal service refused: ${result.data.code}.`,
-        );
+        if (generation === generationRef.current) {
+          setNotice(
+            REFUSAL_COPY[result.data.code] ??
+              `The terminal service refused: ${result.data.code}.`,
+          );
+        }
         return;
       }
       const { terminalId, shellName } = result.data.value;
-      setNotice(null);
 
+      // ---- the fence ----
+      const stale =
+        generation !== generationRef.current
+        || (into.kind === "pane"
+          && stateRef.current.tabs.find((tab) => tab.tabId === into.tabId) === undefined);
+      if (stale) {
+        // Nothing references this terminal and nothing ever will. It is ours to
+        // end, and leaving it is what "an invisible running shell" means.
+        void killTerminal(terminalId);
+        return;
+      }
+
+      setNotice(null);
       const paneId = newId("pane");
       if (into.kind === "tab") {
         apply((current) =>
@@ -289,6 +391,25 @@ export function StudioWorkspaceController({
     [apply, openTerminal],
   );
 
+  /**
+   * End a terminal for good: kill the pty AND destroy the xterm.
+   *
+   * BOTH HALVES, and the second is the one that was missing. The registry keeps
+   * terminals outside React on purpose - `release` never disposes, so a
+   * StrictMode remount or a tab switch cannot destroy a live shell - which
+   * means a closed tab's xterm instance, its scrollback, its theme observer,
+   * its DOM wrapper and its WebGL context were retained for the life of the
+   * window, by a registry no surviving component could name. `dispose` is the
+   * explicit verb for exactly this caller: the user closed it.
+   */
+  const endTerminal = useCallback(
+    (terminalId: string): void => {
+      void killTerminal(terminalId);
+      activeRegistry.dispose(terminalId);
+    },
+    [activeRegistry],
+  );
+
   const handleCloseTab = useCallback(
     (tabId: string): void => {
       const tab = stateRef.current.tabs.find((candidate) => candidate.tabId === tabId);
@@ -296,11 +417,11 @@ export function StudioWorkspaceController({
         // CLOSING: the user closed this tab, so its ptys are killed rather than
         // left running for a grace period nobody will come back through.
         const plan = collectCleanups([tab], "closing");
-        for (const terminalId of plan.killTerminalIds) void killTerminal(terminalId);
+        for (const terminalId of plan.killTerminalIds) endTerminal(terminalId);
       }
       apply((current) => closeTab(current, tabId));
     },
-    [apply],
+    [apply, endTerminal],
   );
 
   const handleClosePane = useCallback(
@@ -308,11 +429,14 @@ export function StudioWorkspaceController({
       const tab = stateRef.current.tabs.find((candidate) => candidate.tabId === tabId);
       if (tab?.kind === "terminalGroup") {
         const pane = tab.panes.find((candidate) => candidate.paneId === paneId);
-        if (pane !== undefined) void killTerminal(pane.terminalId);
+        // Only when the model will actually remove it: `closePane` refuses the
+        // last pane of a group, and killing a terminal whose pane survives the
+        // refusal would leave the pane rendering a shell that no longer exists.
+        if (pane !== undefined && tab.panes.length > 1) endTerminal(pane.terminalId);
       }
       apply((current) => closePane(current, tabId, paneId));
     },
-    [apply],
+    [apply, endTerminal],
   );
 
   return (

@@ -10,8 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  TERMINAL_SNAPSHOT_VERSION,
-  type TerminalWorkspaceSnapshot,
+  type TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
 import {
   addFileTab,
@@ -450,24 +449,30 @@ function fileTab(tabId: string, relativePath: string) {
   };
 }
 
+/**
+ * A REVIVED workspace, as main hands one to the renderer.
+ *
+ * `fromSnapshot` no longer reads a persisted file: main revives the terminals
+ * first and returns the layout already rewritten onto the live ids, so this
+ * helper models that shape. The serialized buffers are deliberately absent -
+ * they stay in the pty host and reach the renderer as a replay on attach.
+ */
 function snapshotWith(
   layout: ReturnType<typeof toPersistedLayout>,
   terminalIds: string[],
-): TerminalWorkspaceSnapshot {
+): TerminalWorkspaceRestore {
   return {
-    version: TERMINAL_SNAPSHOT_VERSION,
-    projectId: layout.projectId,
-    savedAt: 0,
     layout,
     terminals: terminalIds.map((terminalId) => ({
       terminalId,
       title: "bash",
       shellName: "bash",
-      cwdAtSpawn: "/projects/p1",
-      cols: 80,
-      rows: 24,
-      serialized: "",
       droppedRows: 0,
+      reducedRows: 0,
+    })),
+    idMap: terminalIds.map((terminalId) => ({
+      from: `old-${terminalId}`,
+      to: terminalId,
     })),
   };
 }

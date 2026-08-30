@@ -16,11 +16,11 @@
  * All four stay green under a naive implementation until someone reloads.
  */
 
+import { StrictMode, type JSX } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  TERMINAL_SNAPSHOT_VERSION,
-  type TerminalWorkspaceSnapshot,
+  type TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
 import { WORKSPACE_KEEP_ALIVE_MAX } from "../../workspace/types.js";
 import { StudioWorkspaceController } from "../StudioWorkspaceController.js";
@@ -49,12 +49,15 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** A saved workspace with two DELIBERATELY UNEQUAL panes in one group. */
-function savedWorkspace(): TerminalWorkspaceSnapshot {
+/**
+ * A REVIVED workspace with two DELIBERATELY UNEQUAL panes in one group.
+ *
+ * This is what main returns from an open now: the terminals were revived as
+ * live ptys and the layout names those, not the ids the snapshot was written
+ * with.
+ */
+function savedWorkspace(): TerminalWorkspaceRestore {
   return {
-    version: TERMINAL_SNAPSHOT_VERSION,
-    projectId: "p1",
-    savedAt: 1,
     layout: {
       projectId: "p1",
       activeGroupIndex: 0,
@@ -74,17 +77,36 @@ function savedWorkspace(): TerminalWorkspaceSnapshot {
       terminalId,
       title: terminalId === "t1" ? "vim" : "bash",
       shellName: "bash",
-      cwdAtSpawn: "/w",
-      cols: 80,
-      rows: 24,
-      serialized: "",
       droppedRows: 0,
+      reducedRows: 0,
+    })),
+    idMap: ["t1", "t2"].map((terminalId) => ({
+      from: `old-${terminalId}`,
+      to: terminalId,
     })),
   };
 }
 
 function renderController(projectId = "p1") {
   return render(<StudioWorkspaceController projectId={projectId} registry={registry} />);
+}
+
+/**
+ * The controller under StrictMode, whose double-invoked effects are PART of the
+ * experiment for every lifecycle guard below: mount -> effect -> cleanup ->
+ * effect is exactly the sequence that bumps the workspace generation twice and
+ * that a release-disposes registry would use to destroy a live shell.
+ */
+function strictTree(projectId: string): JSX.Element {
+  return (
+    <StrictMode>
+      <StudioWorkspaceController projectId={projectId} registry={registry} />
+    </StrictMode>
+  );
+}
+
+function renderStrict(projectId = "p1") {
+  return render(strictTree(projectId));
 }
 
 /** Open `count` terminals through the real "New terminal" affordance. */
@@ -278,6 +300,221 @@ describe("StudioWorkspaceController persistence", () => {
 
     expect(bridge.persisted).toHaveLength(1);
     expect(bridge.persisted[0]?.groups).toHaveLength(1);
+  });
+});
+
+/**
+ * THE INVISIBLE RUNNING SHELL, from all four directions it used to arrive from.
+ *
+ * A pty that exists while no pane references it holds a slot against the host's
+ * per-project and global bounds and a lease against its project, and nothing in
+ * the UI can ever reach it to close it. Each test below drives one of the
+ * routes that produced one.
+ */
+describe("StudioWorkspaceController admissibility and the publication fence", () => {
+  it("asks the model BEFORE the pty, so a refused group creates nothing", async () => {
+    // F6a. The controller used to create the pty and only then ask whether it
+    // could be placed; the refusal then left a live shell no pane named. The
+    // notice alone does not catch that - only the absence of a create does.
+    renderController();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "New terminal" })).toBeTruthy();
+    });
+
+    await openTerminals(WORKSPACE_KEEP_ALIVE_MAX);
+    expect(screen.getAllByRole("tab")).toHaveLength(WORKSPACE_KEEP_ALIVE_MAX);
+    const createsBefore = bridge.creates.length;
+
+    await openTerminals(1);
+
+    expect(screen.getByRole("status").textContent).toContain("Close one");
+    expect(screen.getAllByRole("tab")).toHaveLength(WORKSPACE_KEEP_ALIVE_MAX);
+    // No pty was ever ASKED FOR, so there is nothing left running that the UI
+    // cannot reach.
+    expect(bridge.creates).toHaveLength(createsBefore);
+  });
+
+  it("KILLS a split's terminal when its tab was closed while the create was in flight", async () => {
+    // F6b. The destination tab is gone by the time the create lands, so the
+    // completion is the only holder of that terminal id. Discarding it without
+    // killing is precisely how the invisible shell was created.
+    renderStrict();
+    await openTerminals(1);
+
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "t-split", pid: 900, shellName: "bash", cwd: "/w" },
+    };
+    bridge.deferCreate = true;
+
+    await act(async () => {
+      screen.getByRole("button", { name: "Split shell-0 side by side" }).click();
+      await Promise.resolve();
+    });
+    expect(bridge.creates).toHaveLength(2);
+    expect(bridge.kills).not.toContain("t-split");
+
+    await act(async () => {
+      screen.getByRole("button", { name: "Close shell-0" }).click();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      bridge.settleCreates();
+      await Promise.resolve();
+    });
+
+    expect(bridge.kills).toContain("t-split");
+    // And nothing renders it: the workspace has no tabs left at all.
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    expect(registry.has("t-split")).toBe(false);
+  });
+
+  it("KILLS a create that lands after a project switch instead of leaking it into the new project", async () => {
+    // F6c. A create issued for p1 that publishes into p2 would put one
+    // project's terminal under another project's name, and p1 could never
+    // reach it again.
+    const view = renderStrict("p1");
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "New terminal" })).toBeTruthy();
+    });
+
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "t-p1", pid: 901, shellName: "bash", cwd: "/w" },
+    };
+    bridge.deferCreate = true;
+    await act(async () => {
+      screen.getByRole("button", { name: "New terminal" }).click();
+      await Promise.resolve();
+    });
+    expect(bridge.creates).toHaveLength(1);
+
+    await act(async () => {
+      view.rerender(strictTree("p2"));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      bridge.settleCreates();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    expect(bridge.kills).toContain("t-p1");
+  });
+
+  it("does not let a SLOW RESTORE overwrite the workspace that replaced it", async () => {
+    // F6d. The open revives rather than only reads, so a late restore would
+    // both show p1's terminals under p2's name and destroy whatever the user
+    // opened in p2 while it was in flight.
+    bridge.savedWorkspace = savedWorkspace();
+    bridge.deferReadWorkspace = true;
+    const view = renderStrict("p1");
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    bridge.deferReadWorkspace = false;
+    bridge.savedWorkspace = null;
+    await act(async () => {
+      view.rerender(strictTree("p2"));
+      await Promise.resolve();
+    });
+
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "t-p2", pid: 902, shellName: "p2-shell", cwd: "/w" },
+    };
+    await act(async () => {
+      screen.getByRole("button", { name: "New terminal" }).click();
+      await Promise.resolve();
+    });
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+
+    await act(async () => {
+      bridge.settleReads();
+      await Promise.resolve();
+    });
+
+    // p1's revived tabs are nowhere, and p2's own tab survived the late answer.
+    expect(screen.queryByRole("tab", { name: /vim/ })).toBeNull();
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0]?.textContent).toContain("p2-shell");
+  });
+});
+
+describe("StudioWorkspaceController terminal disposal", () => {
+  it("DISPOSES the xterm when the user closes the tab, and kills the pty", async () => {
+    // F6e. `release` deliberately never disposes, so before this fix a closed
+    // tab's xterm, scrollback, theme observer, DOM wrapper and WebGL context
+    // were retained for the life of the window by a registry no surviving
+    // component could name.
+    renderStrict();
+    await openTerminals(1);
+    expect(registry.has("t0")).toBe(true);
+
+    await act(async () => {
+      screen.getByRole("button", { name: "Close shell-0" }).click();
+      await Promise.resolve();
+    });
+
+    expect(registry.has("t0")).toBe(false);
+    expect(bridge.kills).toEqual(["t0"]);
+  });
+
+  it("only RELEASES on a plain unmount, so a StrictMode remount cannot destroy a live shell", async () => {
+    // F6e, the negative half. Disposing on release would make a tab switch or
+    // StrictMode's cleanup-then-effect throw away a terminal the user is still
+    // using.
+    const view = renderStrict();
+    await openTerminals(1);
+    expect(registry.has("t0")).toBe(true);
+
+    view.unmount();
+
+    expect(registry.has("t0")).toBe(true);
+    expect(registry.consumerCount("t0")).toBe(0);
+    expect(bridge.kills).toEqual([]);
+  });
+
+  it("kills and disposes NOTHING when closing the last pane is refused", async () => {
+    // F6f. `closePane` refuses the last pane of a group; a pane that survives
+    // the refusal while its terminal was killed would render a shell that no
+    // longer exists.
+    renderController();
+    await openTerminals(1);
+
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "t-second", pid: 903, shellName: "bash", cwd: "/w" },
+    };
+    await act(async () => {
+      screen.getByRole("button", { name: "Split shell-0 side by side" }).click();
+      await Promise.resolve();
+    });
+
+    const paneCloses = screen.getAllByRole("button", {
+      name: /^Close terminal \d+ in /,
+    });
+    expect(paneCloses).toHaveLength(2);
+
+    // Both gestures in ONE batch: the first removes a pane, the second then
+    // targets the only pane left and must be refused.
+    await act(async () => {
+      paneCloses[0]?.click();
+      paneCloses[1]?.click();
+      await Promise.resolve();
+    });
+
+    // Exactly the first pane's terminal died. The survivor is untouched, and a
+    // pane still renders it.
+    expect(bridge.kills).toEqual(["t0"]);
+    expect(registry.has("t-second")).toBe(true);
+    expect(
+      screen.queryAllByRole("button", { name: /^Close terminal \d+ in / }),
+    ).toHaveLength(0);
   });
 });
 

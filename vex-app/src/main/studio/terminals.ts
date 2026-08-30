@@ -41,13 +41,17 @@ import type { MessagePortMain } from "electron";
 import {
   TERMINALS_GLOBAL_MAX,
   TERMINALS_PER_PROJECT_MAX,
+  TERMINAL_MAXIMUM_SHUTDOWN_MS,
   TERMINAL_PORT_NONCE_TTL_MS,
   utf8ByteLength,
   TERMINAL_WRITE_MAX_BYTES,
+  terminalReviveResultSchema,
+  terminalWorkspaceSnapshotSchema,
   type TerminalErrorCode,
   type TerminalHostAvailability,
   type TerminalOutcome,
   type TerminalWorkspaceLayout,
+  type TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
 import { log } from "../logger/index.js";
 import {
@@ -86,6 +90,17 @@ export interface TerminalDomainDeps {
   ) => void;
   /** Broadcast availability so the renderer can render an honest unavailable state. */
   readonly publishAvailability: (availability: TerminalHostAvailability) => void;
+  /**
+   * Tell every window which terminals died with an unexpectedly terminated pty
+   * host.
+   *
+   * A separate signal from availability because the two answer different
+   * questions. Availability says whether a new terminal can be opened;
+   * this says that specific existing ones are gone - and their exits can never
+   * arrive over the data plane, because the port carrying them died with the
+   * process.
+   */
+  readonly publishTerminalsLost: (terminalIds: readonly string[]) => void;
 }
 
 interface TerminalEntry {
@@ -93,6 +108,29 @@ interface TerminalEntry {
   readonly windowId: string;
   readonly projectId: string;
   readonly lease: ProjectLease;
+  /**
+   * Fires if the host never reports this terminal's exit after a kill.
+   *
+   * A kill settles on the exit event, which is what stops a create from taking
+   * a dying pty's capacity. That correctness depends on the event arriving, and
+   * a host that died between the kill and the event would otherwise leave the
+   * record - and its project lease - held forever.
+   */
+  backstop: NodeJS.Timeout | null;
+}
+
+/**
+ * A capacity slot held for a create that has not finished.
+ *
+ * COUNTED, and taken SYNCHRONOUSLY before the first await. The bound used to be
+ * checked against the recorded terminals alone, so every concurrent create read
+ * the same pre-award count and every one of them passed: twelve simultaneous
+ * clicks produced twelve terminals against a limit of twelve that was already
+ * reached by the third. A reservation is what makes the check and the claim one
+ * indivisible step.
+ */
+interface CapacityReservation {
+  readonly release: () => void;
 }
 
 interface PortTicket {
@@ -108,6 +146,9 @@ function refuse(code: TerminalErrorCode): TerminalOutcome<never> {
 export class TerminalDomain {
   private readonly terminals = new Map<string, TerminalEntry>();
   private readonly tickets = new Map<string, PortTicket>();
+  /** Capacity claimed by creates that have not been recorded yet. */
+  private pendingGlobalCreates = 0;
+  private readonly pendingProjectCreates = new Map<string, number>();
   private readonly starter: PtyHost;
   private readonly unregisterCloseHook: () => void;
 
@@ -127,6 +168,9 @@ export class TerminalDomain {
       },
       onAvailabilityChanged: (availability) => {
         this.deps.publishAvailability(availability);
+      },
+      onHostTerminated: () => {
+        this.handleHostTerminated();
       },
     });
     // Step 6 of a project delete closes this project's terminals, AFTER the
@@ -152,6 +196,39 @@ export class TerminalDomain {
     return count;
   }
 
+  /**
+   * Claim one terminal's worth of capacity, or say which bound refused it.
+   *
+   * SYNCHRONOUS AND INDIVISIBLE: the check and the claim happen with no await
+   * between them, so two creates in the same tick cannot both observe the last
+   * free slot. The reservation is released either when the create fails or when
+   * its recorded terminal takes over the accounting - never both, and never
+   * neither.
+   */
+  private reserveCapacity(projectId: string): CapacityReservation | TerminalErrorCode {
+    if (this.terminals.size + this.pendingGlobalCreates >= TERMINALS_GLOBAL_MAX) {
+      return "limit_global_terminals";
+    }
+    const pendingForProject = this.pendingProjectCreates.get(projectId) ?? 0;
+    if (this.countForProject(projectId) + pendingForProject >= TERMINALS_PER_PROJECT_MAX) {
+      return "limit_project_terminals";
+    }
+    this.pendingGlobalCreates += 1;
+    this.pendingProjectCreates.set(projectId, pendingForProject + 1);
+
+    let released = false;
+    return {
+      release: () => {
+        if (released) return;
+        released = true;
+        this.pendingGlobalCreates = Math.max(0, this.pendingGlobalCreates - 1);
+        const remaining = (this.pendingProjectCreates.get(projectId) ?? 1) - 1;
+        if (remaining <= 0) this.pendingProjectCreates.delete(projectId);
+        else this.pendingProjectCreates.set(projectId, remaining);
+      },
+    };
+  }
+
   private owned(terminalId: string, windowId: string): TerminalEntry | TerminalErrorCode {
     const entry = this.terminals.get(terminalId);
     if (entry === undefined) return "unknown_terminal";
@@ -163,6 +240,7 @@ export class TerminalDomain {
     const entry = this.terminals.get(terminalId);
     if (entry === undefined) return;
     this.terminals.delete(terminalId);
+    if (entry.backstop !== null) clearTimeout(entry.backstop);
     entry.lease.release();
   }
 
@@ -170,63 +248,103 @@ export class TerminalDomain {
    * Create
    * ---------------------------------------------------------------- */
 
+  /**
+   * Open a terminal.
+   *
+   * ## Three claims, in this order, and each one before its first await
+   *
+   *  1. CAPACITY, as a counted reservation. Checking the recorded terminals and
+   *     then awaiting a cwd and a spawn meant every concurrent create measured
+   *     the same pre-award world and all of them passed.
+   *  2. A `terminalCreate` LEASE, which is drained. This create is now visible
+   *     to a project delete: the delete waits for it instead of running its
+   *     close hook over a set that does not contain it yet.
+   *  3. A `terminal` LEASE at INSERT TIME, post-award. Admission can have closed
+   *     while the pty was being spawned, and this is the gate's own answer to
+   *     "may this project still hold a terminal" - asked at the moment the
+   *     answer is acted on rather than five milliseconds earlier.
+   *
+   * If (3) refuses, a pty EXISTS for a project that is being deleted, and it is
+   * killed here. Leaving it would be a live shell in a folder about to be moved
+   * to the trash, holding no lease and named in no record - unreachable by the
+   * close hook that is supposed to end it.
+   */
   async create(
     windowId: string,
     projectId: string,
     cols: number,
     rows: number,
   ): Promise<TerminalOutcome<unknown>> {
-    if (this.terminals.size >= TERMINALS_GLOBAL_MAX) {
-      return refuse("limit_global_terminals");
-    }
-    if (this.countForProject(projectId) >= TERMINALS_PER_PROJECT_MAX) {
-      return refuse("limit_project_terminals");
-    }
+    const reservation = this.reserveCapacity(projectId);
+    if (typeof reservation === "string") return refuse(reservation);
 
-    // SYNCHRONOUS, before the first await: a lease taken after one describes a
-    // moment that has already passed.
-    const leased = acquireProjectLease(projectId, "terminal");
-    if (!leased.ok) return refuse("project_deleting");
-
-    const cwd = await this.deps.resolveProjectCwd(projectId);
-    if (cwd === null) {
-      leased.lease.release();
-      return refuse("launch_cwd_missing");
+    const creating = acquireProjectLease(projectId, "terminalCreate");
+    if (!creating.ok) {
+      reservation.release();
+      return refuse("project_deleting");
     }
 
-    const shell = this.deps.resolveShell();
-    const terminalId = randomUUID();
-    const outcome = await this.starter.send({
-      kind: "create",
-      terminalId,
-      windowId,
-      projectId,
-      launch: {
-        executable: shell.executable,
-        args: shell.args,
-        cwd,
-        cols,
-        rows,
-        // No overlay in B2: the base environment plus Vex's own assertions is
-        // the whole contract. A project-scoped overlay is a product decision
-        // that has not been made, and inventing one here would put a policy in
-        // the wrong owner.
-        env: {},
-      },
-    });
+    try {
+      const cwd = await this.deps.resolveProjectCwd(projectId);
+      if (cwd === null) return refuse("launch_cwd_missing");
 
-    if (!outcome.ok) {
-      leased.lease.release();
+      const shell = this.deps.resolveShell();
+      const terminalId = randomUUID();
+      const outcome = await this.starter.send({
+        kind: "create",
+        terminalId,
+        windowId,
+        projectId,
+        launch: {
+          executable: shell.executable,
+          args: shell.args,
+          cwd,
+          cols,
+          rows,
+          // No overlay in B2: the base environment plus Vex's own assertions is
+          // the whole contract. A project-scoped overlay is a product decision
+          // that has not been made, and inventing one here would put a policy in
+          // the wrong owner.
+          env: {},
+        },
+      });
+      if (!outcome.ok) return outcome;
+
+      const recorded = this.record(terminalId, windowId, projectId);
+      if (!recorded) {
+        // The project closed while the pty was spawning. It exists; end it.
+        await this.starter.send({ kind: "kill", terminalId, windowId });
+        return refuse("project_deleting");
+      }
       return outcome;
+    } finally {
+      creating.lease.release();
+      // Released last: until the record exists, the reservation is the only
+      // thing holding this terminal's slot.
+      reservation.release();
     }
+  }
 
+  /**
+   * Take the `terminal` lease and record the terminal, or refuse both.
+   *
+   * The acquisition IS the admission re-check: the gate is the authority on
+   * whether a project may still hold a terminal, and asking it is strictly
+   * better than reading a separate boolean that could have changed since.
+   * Synchronous, so nothing can close admission between the answer and the
+   * record it justifies.
+   */
+  private record(terminalId: string, windowId: string, projectId: string): boolean {
+    const leased = acquireProjectLease(projectId, "terminal");
+    if (!leased.ok) return false;
     this.terminals.set(terminalId, {
       terminalId,
       windowId,
       projectId,
       lease: leased.lease,
+      backstop: null,
     });
-    return outcome;
+    return true;
   }
 
   /* ---------------------------------------------------------------- *
@@ -263,12 +381,194 @@ export class TerminalDomain {
   async kill(windowId: string, terminalId: string): Promise<TerminalOutcome<unknown>> {
     const found = this.owned(terminalId, windowId);
     if (typeof found === "string") return refuse(found);
+    // The host does not reply until the pty has actually exited, so by the time
+    // this resolves the `terminalExit` event has normally already released the
+    // record and the lease.
     const outcome = await this.starter.send({ kind: "kill", terminalId, windowId });
-    // The count and the lease are released on the host's `terminalExit` event,
-    // not here: a kill that was accepted is not yet a process that has gone,
-    // and releasing early would let a create slip in over a pty still shutting
-    // down.
+    // THE BACKSTOP, for the case where it has not: a host that died between the
+    // signal and the event, or a pty that outlasted the host's settle window.
+    // Without it the record and its project lease are held forever by a process
+    // that no longer exists, and the project can never be deleted.
+    const entry = this.terminals.get(terminalId);
+    if (entry !== undefined && entry.backstop === null) {
+      entry.backstop = setTimeout(() => {
+        log.warn(
+          `[studio:terminals] no exit reported for ${terminalId} after a kill; `
+            + "releasing its record and lease",
+        );
+        this.forget(terminalId);
+      }, TERMINAL_MAXIMUM_SHUTDOWN_MS);
+      entry.backstop.unref?.();
+    }
     return outcome;
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Revive
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Open a project's workspace, reviving its persisted terminals.
+   *
+   * ## Why this replaced a bare `readWorkspace`
+   *
+   * Reading the snapshot and handing it to the renderer restored a LAYOUT and
+   * nothing else. The renderer then attached the old terminal ids to a host
+   * that had never heard of them, was answered `unknown_terminal` for every
+   * one, and displayed a workspace of empty panes - while the serialized
+   * buffers the snapshot existed to preserve sat in the file, read and
+   * discarded. Nothing recreated a terminal, because nothing in the system
+   * did.
+   *
+   * So the open is: read, claim capacity for what the snapshot holds, mint new
+   * ids, and ask the host to spawn fresh ptys with the old screens written into
+   * their mirrors. What comes back is the layout on the NEW ids, which the
+   * renderer can attach to.
+   *
+   * ## Partial is normal
+   *
+   * A snapshot may hold more terminals than the bounds now allow, and a spawn
+   * may fail for a project whose directory moved. Both revive what they can and
+   * report the rest by omission from the layout, rather than refusing the whole
+   * workspace over one pane.
+   */
+  async openWorkspace(
+    windowId: string,
+    projectId: string,
+  ): Promise<TerminalOutcome<TerminalWorkspaceRestore | null>> {
+    const read = await this.starter.send({ kind: "readWorkspace", projectId });
+    if (!read.ok) return read;
+    if (read.value === null) return { ok: true, value: null };
+
+    const snapshot = terminalWorkspaceSnapshotSchema.safeParse(read.value);
+    if (!snapshot.success) return refuse("snapshot_unavailable");
+    if (snapshot.data.terminals.length === 0) return { ok: true, value: null };
+
+    // Capacity for the whole restore is claimed BEFORE the host is asked, for
+    // the same reason a create claims it before spawning: the reservations are
+    // what stop a revive and a concurrent create from both fitting into the
+    // last free slot.
+    const reservations: CapacityReservation[] = [];
+    const assignments: { from: string; to: string }[] = [];
+    for (const entry of snapshot.data.terminals) {
+      const reservation = this.reserveCapacity(projectId);
+      if (typeof reservation === "string") {
+        log.warn(
+          `[studio:terminals] revive stopped at the ${reservation} bound `
+            + `projectId=${projectId}; ${String(assignments.length)} of `
+            + `${String(snapshot.data.terminals.length)} terminal(s) restored`,
+        );
+        break;
+      }
+      reservations.push(reservation);
+      assignments.push({ from: entry.terminalId, to: randomUUID() });
+    }
+    if (assignments.length === 0) return { ok: true, value: null };
+
+    const creating = acquireProjectLease(projectId, "terminalCreate");
+    if (!creating.ok) {
+      for (const reservation of reservations) reservation.release();
+      return refuse("project_deleting");
+    }
+
+    try {
+      const outcome = await this.starter.send({
+        kind: "revive",
+        projectId,
+        windowId,
+        assignments,
+      });
+      if (!outcome.ok) return outcome;
+      const revived = terminalReviveResultSchema.safeParse(outcome.value);
+      if (!revived.success) return refuse("invalid_packet");
+
+      const terminals: TerminalWorkspaceRestore["terminals"] = [];
+      const idMap: TerminalWorkspaceRestore["idMap"] = [];
+      for (const entry of revived.data.revived) {
+        if (!this.record(entry.to, windowId, projectId)) {
+          // Admission closed mid-revive. The project is being deleted, so the
+          // workspace is going away entirely; ending the pty and refusing the
+          // whole open is the honest answer rather than a partial layout for a
+          // project that will not exist.
+          //
+          // TERMINALS RECORDED EARLIER IN THIS LOOP ARE NOT LEAKED, and the
+          // reason is the `terminalCreate` lease above rather than anything
+          // here. That class is DRAINED, so a delete waits for this whole
+          // revive before its close hook runs - which means every terminal
+          // this loop recorded is in the map by the time the hook walks it,
+          // and the hook is what kills them. Killing them here as well would
+          // give one handle two owners.
+          await this.starter.send({
+            kind: "kill",
+            terminalId: entry.to,
+            windowId,
+          });
+          return refuse("project_deleting");
+        }
+        terminals.push({
+          terminalId: entry.to,
+          title: entry.title === "" ? entry.shellName : entry.title,
+          shellName: entry.shellName,
+          droppedRows: entry.droppedRows,
+          reducedRows: entry.reducedRows,
+        });
+        idMap.push({ from: entry.from, to: entry.to });
+      }
+
+      if (revived.data.failed.length > 0) {
+        log.warn(
+          `[studio:terminals] ${String(revived.data.failed.length)} terminal(s) could `
+            + `not be revived projectId=${projectId} `
+            + `codes=${revived.data.failed.map((item) => item.code).join(",")}`,
+        );
+      }
+
+      return { ok: true, value: { layout: revived.data.layout, terminals, idMap } };
+    } finally {
+      creating.lease.release();
+      for (const reservation of reservations) reservation.release();
+    }
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Host loss
+   * ---------------------------------------------------------------- */
+
+  /**
+   * The pty host terminated unexpectedly. RECONCILE.
+   *
+   * Every pty died with that process, so every record main holds is now a
+   * belief about a world that ended. Keeping them is not conservative, it is
+   * wrong in the expensive direction: the leases would block the project's
+   * delete forever, the counts would refuse creates against capacity nothing
+   * occupies, and the renderer would keep drawing live tabs over dead shells
+   * and accepting keystrokes into them.
+   *
+   * So the records go, the leases are released, the window ports are dropped -
+   * they pointed into a process that no longer exists - and the renderer is
+   * told exactly which ids died, so it can mark those tabs and offer a revive
+   * from the last snapshot rather than silently emptying the workspace.
+   */
+  private handleHostTerminated(): void {
+    const lost = [...this.terminals.keys()];
+    for (const terminalId of lost) this.forget(terminalId);
+
+    // In-flight creates are answered `host_unavailable` by the starter, and
+    // their reservations are released by their own `finally`. Clearing the
+    // counters here as well would double-release. Nothing to do for them.
+
+    for (const [nonce, ticket] of [...this.tickets]) {
+      clearTimeout(ticket.timer);
+      this.tickets.delete(nonce);
+    }
+
+    if (lost.length > 0) {
+      log.error(
+        `[studio:terminals] the pty host terminated; ${String(lost.length)} terminal(s) `
+          + "were lost",
+      );
+    }
+    this.deps.publishTerminalsLost(lost);
   }
 
   async persistWorkspace(
@@ -278,9 +578,6 @@ export class TerminalDomain {
     return await this.starter.send({ kind: "persistWorkspace", projectId, layout });
   }
 
-  async readWorkspace(projectId: string): Promise<TerminalOutcome<unknown>> {
-    return await this.starter.send({ kind: "readWorkspace", projectId });
-  }
 
   /* ---------------------------------------------------------------- *
    * Port acquisition

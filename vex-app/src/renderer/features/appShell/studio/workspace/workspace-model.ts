@@ -32,7 +32,7 @@ import {
 } from "./types.js";
 import type {
   TerminalWorkspaceLayout,
-  TerminalWorkspaceSnapshot,
+  TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
 
 export function emptyWorkspace(projectId: string): WorkspaceState {
@@ -45,6 +45,22 @@ function isGroup(tab: WorkspaceTab): tab is WorkspaceTerminalGroup {
 
 export function terminalGroupCount(state: WorkspaceState): number {
   return state.tabs.filter(isGroup).length;
+}
+
+/**
+ * Whether another terminal group may be opened, counting groups NOT YET IN THE
+ * STATE.
+ *
+ * The keep-alive bound is the model's rule, so the question is answered here
+ * rather than by a controller comparing counts against the constant itself.
+ * `pending` is what makes it answerable BEFORE the pty exists: a controller
+ * that created first and asked afterwards had nowhere to put a refused
+ * terminal, so a refused fifth group left a running shell attached to no pane
+ * and visible in no tab. Asking first, with in-flight opens counted, means a
+ * refusal creates nothing at all.
+ */
+export function canAddTerminalGroup(state: WorkspaceState, pending: number): boolean {
+  return terminalGroupCount(state) + Math.max(0, pending) < WORKSPACE_KEEP_ALIVE_MAX;
 }
 
 /**
@@ -464,16 +480,22 @@ export function toPersistedLayout(state: WorkspaceState): TerminalWorkspaceLayou
 }
 
 /**
- * Rebuild a workspace from a host snapshot.
+ * Rebuild a workspace from a REVIVED snapshot.
  *
- * Titles come from the snapshot's per-terminal entries, so a restored tab is
- * labelled with what was running in it rather than with a generic name. A
- * terminal named in the layout but missing from `terminals` is DROPPED: the
- * snapshot's two halves disagreeing means the layout references a buffer that
- * was not saved, and rendering an empty pane for it would look like data loss
- * with no explanation.
+ * The input names LIVE terminals. Main revived the persisted ptys under fresh
+ * ids and handed back the layout rewritten onto them, so nothing here maps
+ * anything: a pane's `terminalId` is a terminal a running host will answer for,
+ * which is exactly what the previous version could not say. It rebuilt the
+ * layout from the persisted ids and the panes then attached to a host that had
+ * never heard of them.
+ *
+ * Titles come from the per-terminal entries, so a restored tab is labelled with
+ * what was running in it rather than with a generic name. A terminal named in
+ * the layout but missing from `terminals` is DROPPED: the two halves
+ * disagreeing means the layout references something that did not come back, and
+ * rendering an empty pane for it would look like data loss with no explanation.
  */
-export function fromSnapshot(snapshot: TerminalWorkspaceSnapshot): WorkspaceState {
+export function fromSnapshot(snapshot: TerminalWorkspaceRestore): WorkspaceState {
   const titles = new Map(
     snapshot.terminals.map((entry) => [entry.terminalId, entry.title || entry.shellName]),
   );
@@ -503,5 +525,8 @@ export function fromSnapshot(snapshot: TerminalWorkspaceSnapshot): WorkspaceStat
   const activeTabId =
     tabs[Math.min(snapshot.layout.activeGroupIndex, Math.max(0, tabs.length - 1))]?.tabId
     ?? null;
-  return repairSelection({ projectId: snapshot.projectId, tabs, activeTabId });
+  // The layout is the only place the project is named now. The schema pins it
+  // to the snapshot's own projectId on the way in, so there is exactly one
+  // answer and it cannot disagree with itself.
+  return repairSelection({ projectId: snapshot.layout.projectId, tabs, activeTabId });
 }

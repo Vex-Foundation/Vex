@@ -150,9 +150,23 @@ export function XtermHost({
     // follows it. See the module header.
     let awaitingReplay = false;
 
-    const offData = onTerminalData(terminalId, (data) => {
+    const offData = onTerminalData(terminalId, (data, done) => {
       awaitingReplay = false;
-      entry.terminal.write(data);
+      // THE COMPLETION CALLBACK IS THE FLOW CONTROL, and passing it is not
+      // optional politeness.
+      //
+      // `Terminal.write` is asynchronous: it enqueues the bytes and its parser
+      // reaches them on a later turn. Writing without the callback - which is
+      // what this component did - meant preload acknowledged the characters the
+      // instant they arrived, so the host believed this renderer had consumed
+      // everything it had been sent and never paused the pty. A `yes` loop then
+      // built an unbounded queue inside xterm while every counter in the system
+      // read as caught up.
+      //
+      // Handing xterm's own completion callback back to preload closes that
+      // loop: the ack is sent when the parser is finished, and a renderer that
+      // falls behind stops acking and the producer is paused at the source.
+      entry.terminal.write(data, done);
     });
     const offResync = onTerminalResync(terminalId, (info) => {
       if (!awaitingReplay) {

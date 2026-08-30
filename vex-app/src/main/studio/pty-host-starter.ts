@@ -49,6 +49,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { app, utilityProcess, MessageChannelMain, type MessagePortMain, type UtilityProcess } from "electron";
 import {
@@ -59,6 +60,7 @@ import {
   TERMINAL_HOST_MAX_RESTARTS,
   TERMINAL_HOST_SECOND_WAIT_MULTIPLIER,
   ptyHostEnvironment,
+  terminalSnapshotFileName,
   terminalHostMessageSchema,
   type TerminalHostAvailability,
   type TerminalHostMessage,
@@ -70,6 +72,34 @@ import { log } from "../logger/index.js";
 /** Where the host writes revive snapshots. Created by the host, 0700. */
 export function terminalSnapshotDirectory(): string {
   return path.join(app.getPath("userData"), "studio", "terminal-snapshots");
+}
+
+/**
+ * Delete one project's revive snapshot. `true` when the file is gone.
+ *
+ * MAIN'S JOB, not the host's, and deliberately so: a project delete must remove
+ * this file whether or not a pty host happens to be running, and routing it
+ * through a lazily-started utility process would mean forking one in order to
+ * delete a file - or, worse, skipping the deletion when the fork failed.
+ *
+ * `force` makes a missing file a success, which is the common case: a project
+ * whose terminals were never opened has no snapshot.
+ */
+export async function removeTerminalSnapshot(projectId: string): Promise<boolean> {
+  const name = terminalSnapshotFileName(projectId);
+  // An id that cannot name a file never had one written for it, so there is
+  // nothing to remove and nothing to report.
+  if (name === null) return true;
+  try {
+    await fs.rm(path.join(terminalSnapshotDirectory(), name), { force: true });
+    return true;
+  } catch (cause: unknown) {
+    log.error(
+      `[studio:pty-host] snapshot removal failed projectId=${projectId}: `
+        + `${cause instanceof Error ? cause.name : "unknown"}`,
+    );
+    return false;
+  }
 }
 
 /** The built pty-host entry, next to the built main bundle. */
@@ -88,6 +118,16 @@ export interface PtyHostObserver {
   readonly onNotice: (message: Extract<TerminalHostMessage, { kind: "notice" }>) => void;
   /** Availability changed. The renderer reads this through its own channel. */
   readonly onAvailabilityChanged: (availability: TerminalHostAvailability) => void;
+  /**
+   * The host process TERMINATED UNEXPECTEDLY. Every pty it owned died with it.
+   *
+   * Fired before any restart is attempted, and never on the ordered shutdown -
+   * a quit is not a loss, and reporting one would make every clean exit look
+   * like a crash. Main's records survived the process that made them true, so
+   * this is the signal to stop believing them: drop the terminal entries,
+   * release their leases, invalidate the window ports, and tell the renderer.
+   */
+  readonly onHostTerminated: () => void;
 }
 
 /**
@@ -202,6 +242,12 @@ export class PtyHostStarter implements PtyHost {
       this.publishAvailability();
       return;
     }
+
+    // UNEXPECTED. Reported BEFORE the restart decision, because the terminals
+    // are gone either way and a restarted host does not bring them back - it
+    // comes up empty, and would answer `unknown_terminal` to every id main
+    // still believes in.
+    this.observer.onHostTerminated();
 
     if (this.restartCount <= TERMINAL_HOST_MAX_RESTARTS) {
       log.error(

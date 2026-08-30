@@ -149,6 +149,22 @@ export const TERMINAL_DATA_FLUSH_TIMEOUT_MS = 250;
 /** Force-kill backstop for a pty that will not exit on its own. */
 export const TERMINAL_MAXIMUM_SHUTDOWN_MS = 5_000;
 
+/**
+ * How long the host waits for a killed pty to actually EXIT before replying.
+ *
+ * A kill settles on the exit, not on the signal: main keeps the terminal's
+ * record and its project lease until the process is genuinely gone, or a create
+ * could slip into the capacity of a pty that is still shutting down, and a
+ * project delete could complete while one of its shells was still running.
+ *
+ * MUST be strictly less than `TERMINAL_CREATE_TIMEOUT_MS`, which bounds every
+ * control request: a settle window at or above it would make a slow-but-normal
+ * kill indistinguishable from an unresponsive host, and main would declare the
+ * host unresponsive for doing exactly what it was asked. `terminal-bounds`
+ * pins the relation.
+ */
+export const TERMINAL_KILL_SETTLE_MS = 3_000;
+
 /** The 5 ms coalescing window on outbound terminal data. */
 export const TERMINAL_DATA_BUFFER_MS = 5;
 
@@ -249,6 +265,30 @@ export type TerminalId = z.infer<typeof terminalIdSchema>;
 
 /** A window id: Electron's `webContents.id`, stringified at the boundary. */
 export const terminalWindowIdSchema = z.string().min(1).max(32);
+
+/**
+ * One old-to-new terminal id assignment for a revive.
+ *
+ * A REVIVED SHELL IS A NEW SHELL. The old process died with the previous
+ * session and nothing can bring it back, so the honest thing - and VS Code's
+ * own model - is to spawn a fresh one, restore the SCREEN it left behind into
+ * the mirror, and give it a new identity. Reusing the old id would make a fresh
+ * process indistinguishable from a survivor, and every stale reference the
+ * renderer still held would silently bind to it.
+ *
+ * Ids are minted by MAIN, here as everywhere else, because main owns admission:
+ * a revive consumes exactly the same per-project and global capacity a create
+ * does, and a host that minted its own ids could exceed a bound main is
+ * accounting for.
+ *
+ * Declared here rather than beside the other revive shapes because the control
+ * plane below references it, and a `const` used before its initializer runs is
+ * a module-load crash rather than a type error.
+ */
+export const terminalReviveAssignmentSchema = z
+  .object({ from: terminalIdSchema, to: terminalIdSchema })
+  .strict();
+export type TerminalReviveAssignment = z.infer<typeof terminalReviveAssignmentSchema>;
 
 /**
  * Every refusal this subsystem can produce, as CODES.
@@ -513,6 +553,26 @@ export const terminalHostRequestSchema = z.discriminatedUnion("kind", [
   z
     .object({ kind: z.literal("readWorkspace"), projectId: z.string().min(1).max(64) })
     .strict(),
+  /**
+   * Bring a project's persisted terminals back as NEW ptys under NEW ids.
+   *
+   * The host reads the serialized buffers from its OWN store rather than being
+   * handed them: it wrote that file, it is the only process that needs the
+   * bytes, and a round trip through main would move megabytes of scrollback
+   * across two process boundaries so that main could pass them straight back.
+   * Main supplies the assignments, because ids and admission are main's.
+   */
+  z
+    .object({
+      kind: z.literal("revive"),
+      projectId: z.string().min(1).max(64),
+      windowId: terminalWindowIdSchema,
+      assignments: z
+        .array(terminalReviveAssignmentSchema)
+        .min(1)
+        .max(TERMINALS_PER_PROJECT_MAX),
+    })
+    .strict(),
   /** The ordered shutdown. Serializes, commits, kills, disposes - in that order. */
   z.object({ kind: z.literal("shutdownAll") }).strict(),
 ]);
@@ -591,11 +651,48 @@ export const terminalSnapshotEntrySchema = z
     terminalId: terminalIdSchema,
     title: z.string().max(512),
     shellName: z.string().max(256),
+    /**
+     * LAUNCH METADATA, so a revive can start a shell rather than an empty pane.
+     *
+     * These are a HINT, never an authority. On revive the host re-runs the same
+     * `LaunchProbe` gate a first-time create runs - the cwd must exist and be a
+     * directory, the executable must resolve and be a file or symlink - so a
+     * snapshot file edited between sessions cannot name a binary that would not
+     * have been spawnable through the ordinary path either. The environment is
+     * NEVER persisted (see below) and is recomputed from the host's scrubbed
+     * base every time.
+     */
+    executable: z.string().min(1).max(4096),
+    args: z.array(z.string().max(4096)).max(64),
     cwdAtSpawn: z.string().max(4096),
     cols: z.number().int().min(1).max(1000),
     rows: z.number().int().min(1).max(1000),
-    serialized: z.string(),
+    /**
+     * The serialized mirror, bounded BY BYTES here and not only by the row
+     * reduction that produces it.
+     *
+     * The reduction loop is the mechanism; this refinement is the contract. A
+     * file whose entry exceeds the per-terminal cap is off-contract however it
+     * came to be - a hand-edited file, a future build with a larger cap, a
+     * reduction that failed to converge - and is discarded whole rather than
+     * read back into a mirror.
+     */
+    serialized: z
+      .string()
+      .refine((value) => utf8ByteLength(value) <= TERMINAL_SNAPSHOT_MAX_BYTES, {
+        message: "serialized exceeds TERMINAL_SNAPSHOT_MAX_BYTES",
+      }),
+    /** Scrollback rows the live 1000-row bound had already discarded. */
     droppedRows: z.number().int().nonnegative(),
+    /**
+     * Rows this snapshot gave up to fit its byte caps, CUMULATIVE across every
+     * save of this terminal.
+     *
+     * Persisted rather than recomputed because it is a running total: a
+     * terminal reduced at each of six saves has lost rows six times, and a
+     * counter reset on every save would tell the user it had lost them once.
+     */
+    reducedRows: z.number().int().nonnegative(),
   })
   .strict();
 export type TerminalSnapshotEntry = z.infer<typeof terminalSnapshotEntrySchema>;
@@ -609,15 +706,31 @@ export const terminalPaneLayoutSchema = z
   })
   .strict();
 
-/** A group is one tab: an ordered set of panes split along one axis. */
+/**
+ * A group is one tab: an ordered set of panes split along one axis.
+ *
+ * THE INVARIANTS ARE IN THE SCHEMA, not in the consumer. A group with no panes
+ * renders as a tab with nothing in it, and an `activePaneIndex` past the end
+ * names a pane that does not exist - both are states the UI cannot draw, and a
+ * layout that can express them is a layout every consumer has to re-check. The
+ * cost of checking here is one pass over at most twelve panes at parse time.
+ */
 export const terminalGroupLayoutSchema = z
   .object({
     groupId: z.string().min(1).max(64),
     orientation: z.enum(["horizontal", "vertical"]),
-    panes: z.array(terminalPaneLayoutSchema).max(TERMINALS_PER_PROJECT_MAX),
+    panes: z.array(terminalPaneLayoutSchema).min(1).max(TERMINALS_PER_PROJECT_MAX),
     activePaneIndex: z.number().int().nonnegative(),
   })
-  .strict();
+  .strict()
+  .refine((group) => group.activePaneIndex < group.panes.length, {
+    message: "activePaneIndex names a pane that does not exist",
+  })
+  .refine(
+    (group) =>
+      new Set(group.panes.map((pane) => pane.terminalId)).size === group.panes.length,
+    { message: "a terminal appears in two panes of one group" },
+  );
 export type TerminalGroupLayout = z.infer<typeof terminalGroupLayoutSchema>;
 
 export const terminalWorkspaceLayoutSchema = z
@@ -626,7 +739,28 @@ export const terminalWorkspaceLayoutSchema = z
     groups: z.array(terminalGroupLayoutSchema).max(TERMINALS_PER_PROJECT_MAX),
     activeGroupIndex: z.number().int().nonnegative(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (layout) =>
+      layout.groups.length === 0
+        ? layout.activeGroupIndex === 0
+        : layout.activeGroupIndex < layout.groups.length,
+    { message: "activeGroupIndex names a group that does not exist" },
+  )
+  .refine(
+    (layout) =>
+      new Set(layout.groups.map((group) => group.groupId)).size === layout.groups.length,
+    { message: "two groups share a groupId" },
+  )
+  .refine((layout) => {
+    // ONE TERMINAL, ONE PANE, workspace-wide. Preload allows a single subscriber
+    // per (terminalId, event kind), so a terminal named by two panes gives one
+    // pty two consumers and the second silently steals the first's output.
+    const ids = layout.groups.flatMap((group) =>
+      group.panes.map((pane) => pane.terminalId),
+    );
+    return new Set(ids).size === ids.length;
+  }, { message: "a terminal appears in two panes of the workspace" });
 export type TerminalWorkspaceLayout = z.infer<typeof terminalWorkspaceLayoutSchema>;
 
 /**
@@ -642,10 +776,122 @@ export const terminalWorkspaceSnapshotSchema = z
     layout: terminalWorkspaceLayoutSchema,
     terminals: z.array(terminalSnapshotEntrySchema).max(TERMINALS_PER_PROJECT_MAX),
   })
-  .strict();
+  .strict()
+  .refine(
+    (snapshot) =>
+      new Set(snapshot.terminals.map((entry) => entry.terminalId)).size
+      === snapshot.terminals.length,
+    { message: "two snapshot entries share a terminalId" },
+  )
+  .refine((snapshot) => snapshot.layout.projectId === snapshot.projectId, {
+    // The file names one project. A layout inside it that names another is a
+    // file whose two halves describe different workspaces, and reviving it
+    // would open one project's shells under another project's name.
+    message: "layout.projectId does not match the snapshot's projectId",
+  });
 export type TerminalWorkspaceSnapshot = z.infer<
   typeof terminalWorkspaceSnapshotSchema
 >;
+
+/**
+ * The snapshot file name for a project, or `null` when the id cannot name one.
+ *
+ * SHARED because two processes resolve it: the pty host writes and reads these
+ * files, and main DELETES them when a project is deleted - a cleanup that runs
+ * whether or not a host is alive, so it cannot be a request to one. Two copies
+ * of a path rule whose whole job is to refuse traversal is exactly the kind of
+ * duplication that ends with one copy fixed and the other shipped.
+ *
+ * Project ids are opaque to this subsystem, so anything that is not a plain
+ * name is refused rather than escaped.
+ */
+export function terminalSnapshotFileName(projectId: string): string | null {
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(projectId)) return null;
+  if (projectId === "." || projectId === "..") return null;
+  return `${projectId}.json`;
+}
+
+/* ------------------------------------------------------------------ *
+ * Revive
+ * ------------------------------------------------------------------ */
+
+/** What a revive produced, per requested terminal. */
+export const terminalReviveResultSchema = z
+  .object({
+    revived: z
+      .array(
+        z
+          .object({
+            from: terminalIdSchema,
+            to: terminalIdSchema,
+            pid: z.number().int().nonnegative(),
+            shellName: z.string().max(256),
+            cwd: z.string().max(4096),
+            title: z.string().max(512),
+            droppedRows: z.number().int().nonnegative(),
+            reducedRows: z.number().int().nonnegative(),
+          })
+          .strict(),
+      )
+      .max(TERMINALS_PER_PROJECT_MAX),
+    /**
+     * The ones that did not come back, BY NAME and with the reason.
+     *
+     * A revive is partial by nature - a project whose directory was deleted
+     * between sessions cannot spawn there - and a caller that only learned the
+     * successes would leave the failures as panes attached to nothing.
+     */
+    failed: z
+      .array(
+        z.object({ from: terminalIdSchema, code: terminalErrorCodeSchema }).strict(),
+      )
+      .max(TERMINALS_PER_PROJECT_MAX),
+    /**
+     * The persisted layout, rewritten onto the ids that actually came back.
+     *
+     * Returned by the host rather than recomputed by main so the remap has ONE
+     * implementation. The host has to do it anyway - the layout it holds for
+     * this project is what a shutdown would commit, and a layout of dead ids
+     * committed beside live terminals would cost the whole workspace on the
+     * next launch - and a second copy in main would be a second rule about
+     * which panes survive a partial revive.
+     */
+    layout: terminalWorkspaceLayoutSchema,
+  })
+  .strict();
+export type TerminalReviveResult = z.infer<typeof terminalReviveResultSchema>;
+
+/**
+ * What main hands the renderer when a workspace is opened.
+ *
+ * The SERIALIZED BUFFERS ARE NOT HERE. They stay in the pty host, which wrote
+ * them into the revived terminals' mirrors; the renderer receives them the same
+ * way it receives every other screen it has not seen, as a replay on attach.
+ * Routing up to 24 MiB of scrollback through main into the renderer so it could
+ * be thrown away would make the privileged process a courier for bytes nobody
+ * in it reads.
+ */
+export const terminalWorkspaceRestoreSchema = z
+  .object({
+    layout: terminalWorkspaceLayoutSchema,
+    terminals: z
+      .array(
+        z
+          .object({
+            terminalId: terminalIdSchema,
+            title: z.string().max(512),
+            shellName: z.string().max(256),
+            droppedRows: z.number().int().nonnegative(),
+            reducedRows: z.number().int().nonnegative(),
+          })
+          .strict(),
+      )
+      .max(TERMINALS_PER_PROJECT_MAX),
+    /** Old id -> new id, for every terminal that came back. */
+    idMap: z.array(terminalReviveAssignmentSchema).max(TERMINALS_PER_PROJECT_MAX),
+  })
+  .strict();
+export type TerminalWorkspaceRestore = z.infer<typeof terminalWorkspaceRestoreSchema>;
 
 /* ------------------------------------------------------------------ *
  * Control plane: preload <-> main (IPC payloads)

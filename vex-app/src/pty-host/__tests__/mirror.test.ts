@@ -103,14 +103,73 @@ describe("TerminalMirror", () => {
     mirror.dispose();
   });
 
-  it("terminates the reduction loop even when the cap is impossibly small", async () => {
+  /**
+   * THE OVERSHOOT (F7). `scrollback: 0` is the VIEWPORT, not nothing, so the
+   * row budget bottoming out does not by itself mean the result fits.
+   *
+   * The previous loop exited on `budget > 0` and returned whatever the last
+   * serialization produced, so the one case the cap exists for - it still does
+   * not fit - was the one case that returned an oversized string to a caller
+   * that had been told it fitted. Restoring that condition turns this red.
+   */
+  it("REPORTS an overflow rather than returning data past a cap it cannot meet", async () => {
     const mirror = new TerminalMirror(80, 24, 1000);
     await writeInto(mirror, 200);
 
     // Row reduction bottoms out at zero scrollback rows; it does not spin.
     const capped = await mirror.serializeWithin(1);
-    expect(capped.reducedRows).toBe(1000);
-    expect(typeof capped.data).toBe("string");
+    expect(capped.overflowed).toBe(true);
+    // Nothing is returned, because nothing that could be returned would fit.
+    expect(capped.data).toBe("");
+    expect(Buffer.byteLength(capped.data, "utf8")).toBeLessThanOrEqual(1);
+    // Every row is accounted for, because every row is what was given up.
+    expect(capped.reducedRows).toBeGreaterThan(0);
     mirror.dispose();
+  });
+
+  /**
+   * Reduction is measured against the scrollback the buffer ACTUALLY holds.
+   *
+   * A short buffer under a generous cap gave up nothing, and the old arithmetic
+   * (`scrollbackRows - budget`) would report hundreds of lost rows whenever the
+   * loop halved even once. That is a false data-loss notice to the user, and -
+   * now that the count is persisted cumulatively - a running total that climbs
+   * on every save of a terminal that has never lost a row.
+   */
+  it("reports NO reduction when everything the buffer holds already fits", async () => {
+    const mirror = new TerminalMirror(80, 24, 1000);
+    await writeInto(mirror, 30);
+
+    const capped = await mirror.serializeWithin(2 * 1024 * 1024);
+    expect(capped.overflowed).toBe(false);
+    expect(capped.reducedRows).toBe(0);
+    mirror.dispose();
+  });
+
+  /**
+   * REVIVE (F1): a restored screen is served through the ORDINARY replay path.
+   *
+   * `restore` writes the persisted serialization THROUGH the parser, so the
+   * mirror holds a real screen and every downstream consumer - replay, resync,
+   * the next snapshot - works on a revived terminal without knowing it was
+   * revived. Red if `restore` merely stashes the string beside the mirror.
+   */
+  it("restores a serialized screen INTO the mirror and carries its dropped rows", async () => {
+    const source = new TerminalMirror(80, 24, 1000);
+    await writeInto(source, 40);
+    const saved = await source.serialize();
+    source.dispose();
+
+    const revived = new TerminalMirror(80, 24, 1000);
+    revived.restore(saved.data, 1_204);
+    const replayed = await revived.serialize();
+
+    // Serialized OUT of the revived mirror, which is what an attaching consumer
+    // is sent - so the restored screen reaches the renderer through one path.
+    expect(await replayText(replayed.data)).toContain("line 39");
+    // And the previous session's loss is still reported: a revived terminal
+    // claiming 0 dropped rows would imply a complete history it does not have.
+    expect(replayed.droppedRows).toBeGreaterThanOrEqual(1_204);
+    revived.dispose();
   });
 });

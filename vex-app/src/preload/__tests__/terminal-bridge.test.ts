@@ -50,7 +50,8 @@ const {
   TERMINAL_REPLAY_CHUNK_MAX_BYTES,
   TERMINAL_WRITE_MAX_BYTES,
 } = await import("../../shared/schemas/terminal.js");
-const { terminal, __resetTerminalBridgeForTests } = await import("../shell/terminal.js");
+const { terminal, __resetTerminalBridgeForTests, __lastPortDropReasonForTests } =
+  await import("../shell/terminal.js");
 
 /** A `MessagePort` stand-in: records outbound packets, injects inbound ones. */
 class FakePort {
@@ -58,8 +59,13 @@ class FakePort {
   readonly sent: unknown[] = [];
   started = false;
   closed = false;
+  /** Listeners the bridge registered. A real `MessagePort` fires `close`. */
+  readonly listeners = new Map<string, Array<() => void>>();
+  /** Set to make `postMessage` throw, as posting into a dead port does. */
+  dead = false;
 
   postMessage(value: unknown): void {
+    if (this.dead) throw new Error("port is closed");
     this.sent.push(value);
   }
 
@@ -71,6 +77,17 @@ class FakePort {
     this.closed = true;
   }
 
+  addEventListener(type: string, listener: () => void): void {
+    const existing = this.listeners.get(type) ?? [];
+    existing.push(listener);
+    this.listeners.set(type, existing);
+  }
+
+  /** Fire the `close` the browser fires when the other end's process dies. */
+  emitClose(): void {
+    for (const listener of [...(this.listeners.get("close") ?? [])]) listener();
+  }
+
   receive(data: unknown): void {
     this.onmessage?.({ data });
   }
@@ -78,13 +95,7 @@ class FakePort {
 
 const NONCE = "n".repeat(32);
 
-/**
- * Let the acquisition's own promise chain settle before main posts the port.
- *
- * The bridge awaits an `invoke` and only THEN registers the nonce it is waiting
- * for, so a port delivered in the same microtask would find no waiter and be
- * closed as a stray. Draining the queue is deterministic; a timeout would not be.
- */
+/** Drain the microtask queue. Deterministic, where a timeout would not be. */
 async function flushMicrotasks(): Promise<void> {
   for (let turn = 0; turn < 25; turn += 1) await Promise.resolve();
 }
@@ -104,7 +115,13 @@ async function acquire(): Promise<FakePort> {
       : { ok: true, data: { ok: true, value: null } };
 
   const attaching = terminal.attach({ terminalId: "t1" });
-  await flushMicrotasks();
+  // SAME MICROTASK, DELIBERATELY. This helper used to drain the queue first,
+  // which hid the race it was papering over: main transfers the port from
+  // INSIDE the acquire handler, so in production the port can arrive before the
+  // invoke reply does. With the waiter registered only after the reply, such a
+  // port found nobody waiting and was closed as a stray - and the acquisition
+  // then sat until its own timeout. Posting here with no delay is what proves
+  // the waiter is registered before the invoke.
   postPort(port);
   await attaching;
   return port;
@@ -187,7 +204,7 @@ describe("subscriptions", () => {
 
     port.receive({ kind: "data", terminalId: "t1", data: "hello" });
     expect(first).not.toHaveBeenCalled();
-    expect(second).toHaveBeenCalledWith("hello");
+    expect(second).toHaveBeenCalledWith("hello", expect.any(Function));
 
     offSecond();
     port.receive({ kind: "data", terminalId: "t1", data: "again" });
@@ -217,7 +234,7 @@ describe("subscriptions", () => {
     port.receive({ kind: "data", terminalId: "t1", data: "a" });
     port.receive({ kind: "exit", terminalId: "t1", exitCode: 0, signal: null });
 
-    expect(dataOne).toHaveBeenCalledWith("a");
+    expect(dataOne).toHaveBeenCalledWith("a", expect.any(Function));
     expect(dataTwo).not.toHaveBeenCalled();
     expect(exitOne).toHaveBeenCalledWith({ exitCode: 0, signal: null });
   });
@@ -238,7 +255,7 @@ describe("subscriptions", () => {
     });
 
     expect(resync).toHaveBeenCalledWith({ reason: "replay", droppedRows: 1204 });
-    expect(data).toHaveBeenCalledWith("restored screen");
+    expect(data).toHaveBeenCalledWith("restored screen", expect.any(Function));
   });
 
   /**
@@ -353,9 +370,22 @@ describe("validation", () => {
 });
 
 describe("flow-control acknowledgements", () => {
-  it("sends ONE ack per TERMINAL_ACK_CHARS consumed, and none before", async () => {
+  /**
+   * THE ACK FOLLOWS THE CONSUMER, NOT THE PACKET (F2).
+   *
+   * `Terminal.write` is asynchronous - it enqueues bytes and parses them on a
+   * later turn - so acking on arrival proves only that the bytes reached this
+   * process. Preload used to do exactly that, and a fast producer therefore
+   * looked fully consumed while an unbounded parser queue grew in front of a
+   * renderer that had rendered none of it.
+   *
+   * These two tests are the property, in both directions. Restoring an
+   * arrival-time ack turns the second one red.
+   */
+  it("sends ONE ack per TERMINAL_ACK_CHARS the consumer COMPLETED, and none before", async () => {
     const port = await acquire();
-    terminal.onData("t1", () => {});
+    const completions: Array<() => void> = [];
+    terminal.onData("t1", (_data, done) => completions.push(done));
     port.sent.length = 0;
 
     port.receive({
@@ -363,24 +393,191 @@ describe("flow-control acknowledgements", () => {
       terminalId: "t1",
       data: "x".repeat(TERMINAL_ACK_CHARS - 1),
     });
-    expect(port.sent).toEqual([]);
-
     port.receive({ kind: "data", terminalId: "t1", data: "x" });
 
-    // Without this the pty pauses at the high watermark and never resumes.
+    // Delivered in full, and NOT YET ACKNOWLEDGED: the consumer has not
+    // reported finishing with any of it.
+    expect(port.sent).toEqual([]);
+
+    for (const settle of completions.splice(0)) settle();
+
+    // Now it has. Without this ack the pty pauses at the high watermark and
+    // never resumes.
     expect(port.sent).toEqual([
       { kind: "ack", terminalId: "t1", charCount: TERMINAL_ACK_CHARS },
     ]);
   });
 
-  it("acknowledges even when the renderer never subscribed", async () => {
+  it("does NOT acknowledge while the consumer never reports completion", async () => {
     const port = await acquire();
+    // A consumer that takes the bytes and never finishes with them - the slow
+    // renderer this whole mechanism exists for.
+    terminal.onData("t1", () => undefined);
     port.sent.length = 0;
 
-    port.receive({ kind: "data", terminalId: "t1", data: "y".repeat(TERMINAL_ACK_CHARS) });
+    for (let burst = 0; burst < 5; burst += 1) {
+      port.receive({
+        kind: "data",
+        terminalId: "t1",
+        data: "x".repeat(TERMINAL_ACK_CHARS),
+      });
+    }
 
-    // A component that forgot to subscribe must not be able to wedge a shell.
-    expect(port.sent).toHaveLength(1);
+    // Five times the ack unit delivered and not one ack sent, so the host's
+    // unacknowledged count climbs and the pty is paused at the source. Acking
+    // on arrival would have sent five here.
+    expect(port.sent).toEqual([]);
+  });
+
+  it("counts each completion ONCE, however many times the consumer calls it", async () => {
+    const port = await acquire();
+    const completions: Array<() => void> = [];
+    terminal.onData("t1", (_data, done) => completions.push(done));
+    port.sent.length = 0;
+
+    port.receive({
+      kind: "data",
+      terminalId: "t1",
+      data: "x".repeat(TERMINAL_ACK_CHARS),
+    });
+    const settle = completions[0];
+    settle?.();
+    settle?.();
+    settle?.();
+
+    // A double-settling consumer must not credit the host for characters it
+    // was never sent - that is an un-pausable pty, from the other direction.
+    expect(port.sent).toEqual([
+      { kind: "ack", terminalId: "t1", charCount: TERMINAL_ACK_CHARS },
+    ]);
+  });
+
+  /**
+   * REPLAY CHUNKS ARE NEVER ACKNOWLEDGED (F2).
+   *
+   * The host clears every outstanding count when a replay completes - the
+   * consumer's screen then equals the mirror by construction - so an ack for a
+   * replay chunk landing after that clear is charged against live debt the
+   * consumer never incurred.
+   */
+  it("never acknowledges a REPLAY chunk, even one the consumer completes", async () => {
+    const port = await acquire();
+    const completions: Array<() => void> = [];
+    terminal.onData("t1", (_data, done) => completions.push(done));
+    port.sent.length = 0;
+
+    port.receive({
+      kind: "replay",
+      terminalId: "t1",
+      data: "x".repeat(TERMINAL_ACK_CHARS * 2),
+      last: true,
+      droppedRows: 0,
+    });
+    for (const settle of completions.splice(0)) settle();
+
+    expect(port.sent).toEqual([]);
+  });
+});
+
+describe("resync recovery", () => {
+  /**
+   * THE EMERGENCY CEILING NEEDS BOTH HALVES (F3).
+   *
+   * The host detaches a consumer that hit the pending ceiling and tells it to
+   * resync - then WAITS TO BE ASKED. Nothing in the system sent that request,
+   * so the path ended in a terminal that had cleared its screen and would never
+   * be sent another byte. Preload owns the request because preload owns the
+   * port and the ack accounting the replay resets.
+   */
+  it("SENDS a resync request when the host demands one", async () => {
+    const port = await acquire();
+    const resyncs: Array<{ reason: string; droppedRows: number }> = [];
+    terminal.onResync("t1", (info) => resyncs.push(info));
+    port.sent.length = 0;
+
+    port.receive({
+      kind: "resyncRequired",
+      terminalId: "t1",
+      reason: "pending_ceiling",
+    });
+
+    // The consumer is told to throw its screen away...
+    expect(resyncs).toEqual([{ reason: "pending_ceiling", droppedRows: 0 }]);
+    // ...AND the replay that refills it is actually requested.
+    expect(port.sent).toEqual([{ kind: "resync", terminalId: "t1" }]);
+  });
+});
+
+describe("port recovery", () => {
+  /**
+   * A DEAD PORT IS DROPPED AND RE-ACQUIRED (F8).
+   *
+   * A `MessagePort` dies with the process on its other end, and it dies
+   * silently: posting into a closed port delivers nothing and throws nothing.
+   * The bridge held that corpse forever, so every attach, ack and detach after
+   * a pty-host crash went nowhere with no error anywhere.
+   */
+  it("re-acquires after the port closes under it", async () => {
+    const first = await acquire();
+    expect(first.started).toBe(true);
+
+    // The pty host died; the browser fires `close` on the entangled port.
+    first.emitClose();
+
+    const second = new FakePort();
+    invokeReply = (channel) =>
+      channel.endsWith("acquirePort")
+        ? { ok: true, data: { ok: true, value: { nonce: NONCE } } }
+        : { ok: true, data: { ok: true, value: null } };
+    const attaching = terminal.attach({ terminalId: "t1" });
+    postPort(second);
+    await attaching;
+
+    // A FRESH port, not the dead one, and the attach went to it.
+    expect(second).not.toBe(first);
+    expect(second.started).toBe(true);
+    expect(second.sent).toEqual([{ kind: "attach", terminalId: "t1" }]);
+  });
+
+  it("drops a port whose post throws, rather than posting into a corpse", async () => {
+    const port = await acquire();
+    port.sent.length = 0;
+    port.dead = true;
+
+    const detached = await terminal.detach({ terminalId: "t1" });
+
+    // Reported by name rather than resolving as if it had been delivered.
+    // Narrowed rather than asserted through: `Result` carries `data` only on
+    // the success arm, and reading it past a bare `.ok` check is the kind of
+    // unchecked access the type ratchet exists to keep out of this suite.
+    if (!detached.ok) throw new Error("the bridge failed rather than answering");
+    expect(detached.data).toEqual({ ok: false, code: "port_unavailable" });
+    expect(__lastPortDropReasonForTests()).toBe("post_failed");
+  });
+
+  /**
+   * CONFIRMATION FAILURE IS AN OUTCOME (F8).
+   *
+   * An unconfirmed nonce expires in main, which tears the port down underneath
+   * us. Ignoring the failed confirmation meant the bridge went on using a
+   * conduit main was about to close, and every terminal on it stopped silently.
+   */
+  it("refuses the acquisition when main will not confirm the nonce", async () => {
+    const port = new FakePort();
+    invokeReply = (channel) =>
+      channel.endsWith("acquirePort")
+        ? { ok: true, data: { ok: true, value: { nonce: NONCE } } }
+        : { ok: true, data: { ok: false, code: "port_unavailable" } };
+
+    const attaching = terminal.attach({ terminalId: "t1" });
+    postPort(port);
+    const result = await attaching;
+
+    if (!result.ok) throw new Error("the bridge failed rather than answering");
+    expect(result.data).toEqual({ ok: false, code: "port_unavailable" });
+    // The port is given up rather than retained as a conduit main has expired.
+    expect(port.closed).toBe(true);
+    expect(port.sent).toEqual([]);
   });
 });
 

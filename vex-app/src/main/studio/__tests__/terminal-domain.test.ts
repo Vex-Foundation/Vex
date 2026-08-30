@@ -36,6 +36,7 @@ vi.mock("../../logger/index.js", () => ({
 const {
   TERMINALS_GLOBAL_MAX,
   TERMINALS_PER_PROJECT_MAX,
+  TERMINAL_MAXIMUM_SHUTDOWN_MS,
   TERMINAL_PORT_NONCE_TTL_MS,
   TERMINAL_WRITE_MAX_BYTES,
 } = await import("@shared/schemas/terminal.js");
@@ -47,6 +48,7 @@ type HostRequest = import("@shared/schemas/terminal.js").TerminalHostRequest;
 type PtyHost = import("../pty-host-starter.js").PtyHost;
 type TerminalPortTarget = import("../terminals.js").TerminalPortTarget;
 type HostOutcome = import("@shared/schemas/terminal.js").TerminalOutcome<unknown>;
+type CreateRequest = Extract<HostRequest, { kind: "create" }>;
 
 /**
  * A stand-in starter. It records what main asked the host to do and answers
@@ -58,9 +60,36 @@ class FakeStarter implements PtyHost {
   readonly ports: Array<{ windowId: string; nonce: string }> = [];
   mintable = true;
   private observer: import("../pty-host-starter.js").PtyHostObserver;
+  /** Set while a test is holding every `create` mid-flight. */
+  private createHold: Promise<void> | null = null;
+  private readonly createSeen: Array<() => void> = [];
 
   constructor(observer: import("../pty-host-starter.js").PtyHostObserver) {
     this.observer = observer;
+  }
+
+  /**
+   * Freeze every subsequent `create` inside the host call. Returns the release.
+   *
+   * This is the window in which a delete can close admission, and the window a
+   * post-await capacity check would measure the world in.
+   */
+  holdCreates(): () => void {
+    let release: () => void = () => {};
+    this.createHold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      this.createHold = null;
+      release();
+    };
+  }
+
+  /** Resolves once the domain has actually asked the host to spawn a pty. */
+  whenCreateSent(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.createSeen.push(resolve);
+    });
   }
 
   get availability(): import("@shared/schemas/terminal.js").TerminalHostAvailability {
@@ -71,10 +100,12 @@ class FakeStarter implements PtyHost {
     return true;
   }
 
-  send(request: HostRequest): Promise<HostOutcome> {
+  async send(request: HostRequest): Promise<HostOutcome> {
     this.requests.push(request);
     if (request.kind === "create") {
-      return Promise.resolve({
+      for (const resolve of this.createSeen.splice(0)) resolve();
+      if (this.createHold !== null) await this.createHold;
+      return {
         ok: true,
         value: {
           terminalId: request.terminalId,
@@ -82,9 +113,9 @@ class FakeStarter implements PtyHost {
           shellName: "bash",
           cwd: request.launch.cwd,
         },
-      });
+      };
     }
-    return Promise.resolve({ ok: true, value: null });
+    return { ok: true, value: null };
   }
 
   mintPort(
@@ -115,21 +146,66 @@ class FakeStarter implements PtyHost {
   reportExit(terminalId: string): void {
     this.observer.onTerminalExit(terminalId, 0, null);
   }
+
+  /** Simulate the host process dying unexpectedly, taking every pty with it. */
+  reportHostTerminated(): void {
+    this.observer.onHostTerminated();
+  }
+
+  /** The terminal ids the domain asked the host to spawn, in order. */
+  createdIds(): string[] {
+    return this.requests
+      .filter((request): request is CreateRequest => request.kind === "create")
+      .map((request) => request.terminalId);
+  }
+
+  /** The terminal ids the domain asked the host to kill, in order. */
+  killedIds(): string[] {
+    return this.requests
+      .filter(
+        (request): request is Extract<HostRequest, { kind: "kill" }> =>
+          request.kind === "kill",
+      )
+      .map((request) => request.terminalId);
+  }
 }
 
 let starter: FakeStarter;
 const posted: Array<{ channel: string; payload: unknown; transfer: unknown[] }> = [];
+let lostSpy = vi.fn((_terminalIds: readonly string[]) => {});
+
+/**
+ * The other place a create can be held mid-flight: before the cwd resolves, so
+ * a refusal path can be observed while the create is still in the air.
+ */
+let cwdHold: Promise<void> | null = null;
+
+function holdCwd(): () => void {
+  let release: () => void = () => {};
+  cwdHold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return () => {
+    cwdHold = null;
+    release();
+  };
+}
 
 function build(): InstanceType<typeof TerminalDomain> {
   return new TerminalDomain(
     {
-      resolveProjectCwd: (projectId) =>
-        Promise.resolve(projectId === "missing" ? null : `/projects/${projectId}`),
+      resolveProjectCwd: async (projectId) => {
+        if (cwdHold !== null) await cwdHold;
+        return projectId === "missing" ? null : `/projects/${projectId}`;
+      },
       resolveShell: () => ({ executable: "/bin/bash", args: [] }),
       postPort: (_target, channel, payload, transfer) => {
         posted.push({ channel, payload, transfer });
       },
       publishAvailability: () => {},
+      publishTerminalsLost: (terminalIds) => {
+        lostSpy(terminalIds);
+      },
     },
     (observer) => {
       starter = new FakeStarter(observer);
@@ -153,6 +229,8 @@ const sender: TerminalPortTarget = {
 beforeEach(() => {
   gate.resetProjectLifecycleGateForTests();
   posted.length = 0;
+  cwdHold = null;
+  lostSpy = vi.fn((_terminalIds: readonly string[]) => {});
 });
 
 describe("bounds", () => {
@@ -377,5 +455,197 @@ describe("project delete integration", () => {
     await gate.closeProjectResources("p1");
 
     expect(starter.requests).toHaveLength(0);
+  });
+});
+
+describe("concurrent admission", () => {
+  it("CLAIMS capacity before the await, so simultaneous creates cannot all pass the project bound", async () => {
+    // The defect: the bound was checked against the RECORDED terminals and the
+    // record was written after a cwd resolve and a host spawn, so every create
+    // started in the same tick read the same pre-award count and every one of
+    // them passed. Twelve clicks produced twelve terminals past a limit of
+    // twelve that the third had already reached.
+    const domain = build();
+    const attempts = TERMINALS_PER_PROJECT_MAX + 4;
+
+    const release = starter.holdCreates();
+    const inFlight = Array.from({ length: attempts }, () =>
+      domain.create("w1", "p-race", 80, 24),
+    );
+    release();
+    const outcomes = await Promise.all(inFlight);
+
+    const admitted = outcomes.filter((outcome) => outcome.ok);
+    const refused = outcomes.filter((outcome) => !outcome.ok);
+    expect(admitted).toHaveLength(TERMINALS_PER_PROJECT_MAX);
+    expect(refused).toHaveLength(attempts - TERMINALS_PER_PROJECT_MAX);
+    for (const outcome of refused) {
+      expect(outcome).toEqual({ ok: false, code: "limit_project_terminals" });
+    }
+    // No pty was spawned for a refused create, and the domain believes exactly
+    // what the bound allows.
+    expect(starter.createdIds()).toHaveLength(TERMINALS_PER_PROJECT_MAX);
+    expect(domain.liveCount).toBe(TERMINALS_PER_PROJECT_MAX);
+    await domain.dispose();
+  });
+
+  it("CLAIMS capacity before the await for the GLOBAL bound across projects too", async () => {
+    // Same defect at the global bound: the per-project counts stayed legal
+    // while the process as a whole ran past TERMINALS_GLOBAL_MAX.
+    const domain = build();
+    const projects = 3;
+    const attempts = projects * TERMINALS_PER_PROJECT_MAX;
+
+    const release = starter.holdCreates();
+    const inFlight: Array<ReturnType<typeof domain.create>> = [];
+    for (let project = 0; project < projects; project += 1) {
+      for (let index = 0; index < TERMINALS_PER_PROJECT_MAX; index += 1) {
+        inFlight.push(domain.create("w1", `p-global-${String(project)}`, 80, 24));
+      }
+    }
+    release();
+    const outcomes = await Promise.all(inFlight);
+
+    const admitted = outcomes.filter((outcome) => outcome.ok);
+    const refused = outcomes.filter((outcome) => !outcome.ok);
+    expect(admitted).toHaveLength(TERMINALS_GLOBAL_MAX);
+    expect(refused).toHaveLength(attempts - TERMINALS_GLOBAL_MAX);
+    for (const outcome of refused) {
+      expect(outcome).toEqual({ ok: false, code: "limit_global_terminals" });
+    }
+    expect(domain.liveCount).toBe(TERMINALS_GLOBAL_MAX);
+    await domain.dispose();
+  });
+
+  it("KILLS the pty it just spawned when admission closed while it was spawning", async () => {
+    // The defect: admission was checked once, before the spawn. A delete that
+    // closed admission mid-spawn left a live shell in a folder about to be
+    // trashed - holding no lease and named in no record, so the close hook that
+    // is supposed to end it could never reach it.
+    const domain = build();
+    const release = starter.holdCreates();
+    const pending = domain.create("w1", "p-closing", 80, 24);
+    await starter.whenCreateSent();
+
+    gate.closeProjectAdmission("p-closing");
+    release();
+    const outcome = await pending;
+
+    expect(outcome).toEqual({ ok: false, code: "project_deleting" });
+    expect(domain.liveCount).toBe(0);
+    expect(gate.heldProjectLeases("p-closing", "terminal")).toBe(0);
+    // The pty EXISTS. The domain must have ended it itself.
+    const spawned = starter.createdIds();
+    expect(spawned).toHaveLength(1);
+    expect(starter.killedIds()).toEqual(spawned);
+    await domain.dispose();
+  });
+
+  it("holds a DRAINED `terminalCreate` lease while a create is in flight, and releases it on success", async () => {
+    // The defect: an in-flight create held no lease and had no record, so it
+    // was invisible to a delete's drain and could insert a live terminal for a
+    // tombstoned project after the close hook had already run.
+    expect(gate.DRAINED_LEASE_CLASSES).toContain("terminalCreate");
+
+    const domain = build();
+    const release = starter.holdCreates();
+    const pending = domain.create("w1", "p-visible", 80, 24);
+    await starter.whenCreateSent();
+
+    expect(gate.heldProjectLeases("p-visible", "terminalCreate")).toBe(1);
+
+    release();
+    expect((await pending).ok).toBe(true);
+    expect(gate.heldProjectLeases("p-visible", "terminalCreate")).toBe(0);
+    await domain.dispose();
+  });
+
+  it("releases the `terminalCreate` lease on a REFUSAL path too", async () => {
+    // The mirror of the same defect: a lease held past a refused create would
+    // block the project's delete drain forever on work that already ended.
+    const domain = build();
+    const releaseCwd = holdCwd();
+    const pending = domain.create("w1", "missing", 80, 24);
+
+    expect(gate.heldProjectLeases("missing", "terminalCreate")).toBe(1);
+
+    releaseCwd();
+    expect(await pending).toEqual({ ok: false, code: "launch_cwd_missing" });
+    expect(gate.heldProjectLeases("missing", "terminalCreate")).toBe(0);
+    await domain.dispose();
+  });
+});
+
+describe("kill settlement", () => {
+  it("KEEPS the record, the count and the lease until the exit event, not the kill", async () => {
+    // The defect: releasing on the accepted kill would let a create take the
+    // capacity of a pty that is still shutting down, and would drop the project
+    // lease while a live process still belonged to it.
+    const domain = build();
+    expect((await domain.create("w1", "p-kill", 80, 24)).ok).toBe(true);
+    const [terminalId] = starter.createdIds();
+    if (terminalId === undefined) throw new Error("unreachable");
+
+    await domain.kill("w1", terminalId);
+
+    expect(domain.liveCount).toBe(1);
+    expect(gate.heldProjectLeases("p-kill", "terminal")).toBe(1);
+
+    starter.reportExit(terminalId);
+
+    expect(domain.liveCount).toBe(0);
+    expect(gate.heldProjectLeases("p-kill", "terminal")).toBe(0);
+    await domain.dispose();
+  });
+
+  it("BACKSTOPS a kill whose exit event never arrives", async () => {
+    // The defect: a host that died between the signal and the exit event held
+    // the record and the project's `terminal` lease forever, and the project
+    // could then never be deleted.
+    vi.useFakeTimers();
+    try {
+      const domain = build();
+      expect((await domain.create("w1", "p-backstop", 80, 24)).ok).toBe(true);
+      const [terminalId] = starter.createdIds();
+      if (terminalId === undefined) throw new Error("unreachable");
+
+      await domain.kill("w1", terminalId);
+      // No `reportExit`. The event is the thing that never comes.
+      expect(domain.liveCount).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(TERMINAL_MAXIMUM_SHUTDOWN_MS + 10);
+
+      expect(domain.liveCount).toBe(0);
+      expect(gate.heldProjectLeases("p-backstop", "terminal")).toBe(0);
+      await domain.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("host termination", () => {
+  it("DROPS every record and lease when the pty host dies, and names the lost terminals", async () => {
+    // The defect: main's records outlived the process that made them true.
+    // Keeping them blocked the projects' deletes on leases nothing held, refused
+    // creates against capacity nothing occupied, and left the renderer drawing
+    // live tabs over dead shells.
+    const domain = build();
+    expect((await domain.create("w1", "p-host-a", 80, 24)).ok).toBe(true);
+    expect((await domain.create("w1", "p-host-a", 80, 24)).ok).toBe(true);
+    expect((await domain.create("w1", "p-host-b", 80, 24)).ok).toBe(true);
+    const live = starter.createdIds();
+    expect(live).toHaveLength(3);
+
+    starter.reportHostTerminated();
+
+    expect(domain.liveCount).toBe(0);
+    expect(gate.heldProjectLeases("p-host-a", "terminal")).toBe(0);
+    expect(gate.heldProjectLeases("p-host-b", "terminal")).toBe(0);
+    expect(lostSpy).toHaveBeenCalledTimes(1);
+    const reported = lostSpy.mock.calls[0];
+    if (reported === undefined) throw new Error("unreachable");
+    expect([...reported[0]].sort()).toEqual([...live].sort());
+    await domain.dispose();
   });
 });

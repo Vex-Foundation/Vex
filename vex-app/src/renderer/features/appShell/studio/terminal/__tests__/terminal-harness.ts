@@ -28,7 +28,7 @@ import type { TerminalErrorCode, TerminalProperty } from "@shared/schemas/termin
 import type {
   TerminalHostAvailability,
   TerminalWorkspaceLayout,
-  TerminalWorkspaceSnapshot,
+  TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
 import { vi } from "vitest";
 
@@ -52,9 +52,39 @@ export interface TerminalBridgeStub {
   readonly persisted: TerminalWorkspaceLayout[];
   /** How the next `create` answers. Set a code to make it refuse. */
   nextCreate: { ok: true; value: CreateAnswer } | { ok: false; code: TerminalErrorCode };
-  /** What `readWorkspace` returns. `null` means "no saved workspace". */
-  savedWorkspace: TerminalWorkspaceSnapshot | null;
+  /** What `readWorkspace` returns. `null` means "nothing to revive". */
+  savedWorkspace: TerminalWorkspaceRestore | null;
+  /**
+   * Completion callbacks handed to the data subscriber and not yet called.
+   *
+   * The bridge now acks on CONSUMER COMPLETION, so a test that wants to model a
+   * renderer keeping up calls these, and one that wants a slow renderer simply
+   * does not. Counting them is how a proof shows the acks follow the consumer
+   * rather than the packet.
+   */
+  pendingDataCompletions: Array<() => void>;
+  /**
+   * Hold `create` in flight instead of answering it.
+   *
+   * The controller's publication fence can only be exercised while a create has
+   * been ISSUED and has not landed: that window is where a tab close, a project
+   * switch or a remount happens. A test that cannot hold the answer cannot
+   * produce the window at all, so it would prove nothing about the fence.
+   */
+  deferCreate: boolean;
+  /** Issued creates whose answer is still being withheld. */
+  pendingCreates: Array<() => void>;
+  /** Answer every withheld create, in issue order. */
+  settleCreates: () => void;
+  /** Hold `readWorkspace` in flight, for the same reason as `deferCreate`. */
+  deferReadWorkspace: boolean;
+  /** Issued restores whose answer is still being withheld. */
+  pendingReads: Array<() => void>;
+  /** Answer every withheld restore, in issue order. */
+  settleReads: () => void;
   emitData: (terminalId: string, data: string) => void;
+  /** Run every completion callback the consumer has been handed so far. */
+  settleData: () => void;
   emitResync: (terminalId: string, droppedRows: number) => void;
   emitProperty: (terminalId: string, change: TerminalProperty) => void;
   emitExit: (terminalId: string, exitCode: number, signal: number | null) => void;
@@ -132,7 +162,7 @@ export function installTerminalBridge(): TerminalBridgeStub {
   // heterogeneous map would need a cast at every emit, and a test double that
   // has to cast is a double whose own contract is unchecked.
   const channels = {
-    data: new Map<string, (payload: string) => void>(),
+    data: new Map<string, (payload: string, done: () => void) => void>(),
     resync: new Map<
       string,
       (payload: { reason: "replay"; droppedRows: number }) => void
@@ -145,10 +175,30 @@ export function installTerminalBridge(): TerminalBridgeStub {
     refused: new Map<string, (payload: TerminalErrorCode) => void>(),
   };
 
-  function subscribe<T>(
-    channel: Map<string, (payload: T) => void>,
+  /**
+   * The data channel, whose callback takes a completion function.
+   *
+   * Recorded rather than invoked, so a test decides when - or whether - this
+   * consumer reports that it kept up.
+   */
+  function subscribeData(
     terminalId: string,
-    callback: (payload: T) => void,
+    callback: (payload: string, done: () => void) => void,
+  ): Unsubscribe {
+    return subscribe(
+      channels.data,
+      terminalId,
+      (payload: string, done: () => void) => {
+        stub.pendingDataCompletions.push(done);
+        callback(payload, done);
+      },
+    );
+  }
+
+  function subscribe<T extends unknown[]>(
+    channel: Map<string, (...payload: T) => void>,
+    terminalId: string,
+    callback: (...payload: T) => void,
   ): Unsubscribe {
     channel.set(terminalId, callback);
     let released = false;
@@ -169,13 +219,30 @@ export function installTerminalBridge(): TerminalBridgeStub {
     kills: [],
     creates: [],
     persisted: [],
+    pendingDataCompletions: [],
     nextCreate: {
       ok: true,
       value: { terminalId: "t1", pid: 4242, shellName: "bash", cwd: "/w" },
     },
     savedWorkspace: null,
+    deferCreate: false,
+    pendingCreates: [],
+    settleCreates: () => {
+      const owed = stub.pendingCreates.splice(0);
+      for (const settle of owed) settle();
+    },
+    deferReadWorkspace: false,
+    pendingReads: [],
+    settleReads: () => {
+      const owed = stub.pendingReads.splice(0);
+      for (const settle of owed) settle();
+    },
     emitData: (terminalId, data) => {
-      channels.data.get(terminalId)?.(data);
+      channels.data.get(terminalId)?.(data, () => undefined);
+    },
+    settleData: () => {
+      const owed = stub.pendingDataCompletions.splice(0);
+      for (const settle of owed) settle();
     },
     emitResync: (terminalId, droppedRows) => {
       channels.resync.get(terminalId)?.({ reason: "replay", droppedRows });
@@ -195,7 +262,16 @@ export function installTerminalBridge(): TerminalBridgeStub {
   const terminal = {
     create: vi.fn(async (input: { projectId: string; cols: number; rows: number }) => {
       stub.creates.push(input);
-      return { ok: true as const, data: stub.nextCreate };
+      // The answer is fixed WHEN THE CALL IS ISSUED, not when it is settled, so
+      // a test that changes `nextCreate` while an earlier create is withheld
+      // does not rewrite that earlier create's answer.
+      const answer = stub.nextCreate;
+      if (stub.deferCreate) {
+        await new Promise<void>((resolve) => {
+          stub.pendingCreates.push(resolve);
+        });
+      }
+      return { ok: true as const, data: answer };
     }),
     write: vi.fn(async (input: { terminalId: string; data: string }) => {
       stub.writes.push(input);
@@ -217,8 +293,8 @@ export function installTerminalBridge(): TerminalBridgeStub {
       stub.detaches.push(input.terminalId);
       return { ok: true as const, data: { ok: true as const, value: null } };
     }),
-    onData: (terminalId: string, cb: (data: string) => void) =>
-      subscribe(channels.data, terminalId, cb),
+    onData: (terminalId: string, cb: (data: string, done: () => void) => void) =>
+      subscribeData(terminalId, cb),
     onResync: (
       terminalId: string,
       cb: (info: { reason: "replay"; droppedRows: number }) => void,
@@ -235,10 +311,17 @@ export function installTerminalBridge(): TerminalBridgeStub {
       stub.persisted.push(input.layout);
       return { ok: true as const, data: { ok: true as const, value: null } };
     }),
-    readWorkspace: vi.fn(async () => ({
-      ok: true as const,
-      data: { ok: true as const, value: stub.savedWorkspace },
-    })),
+    readWorkspace: vi.fn(async () => {
+      // Same rule as `create`: the snapshot this read answers with is the one
+      // that existed when the read was issued.
+      const value = stub.savedWorkspace;
+      if (stub.deferReadWorkspace) {
+        await new Promise<void>((resolve) => {
+          stub.pendingReads.push(resolve);
+        });
+      }
+      return { ok: true as const, data: { ok: true as const, value } };
+    }),
     getAvailability: vi.fn(async () => ({ ok: true as const, data: AVAILABILITY })),
     onAvailability: () => () => undefined,
   };

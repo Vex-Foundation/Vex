@@ -83,16 +83,28 @@ export type ProjectLeaseClass =
   | "pendingApproval"
   | "render"
   | "watcher"
-  | "terminal";
+  | "terminal"
+  | "terminalCreate";
 
 /**
  * The classes a delete WAITS for. Bounded work that finishes on its own.
  *
  * `pendingApproval` is deliberately absent - see the module doc.
+ *
+ * `terminalCreate` is present and `terminal` is not, and the difference is the
+ * whole reason they are two classes. An OPEN terminal is unbounded work: it
+ * lives until the user closes it, so a delete that waited for one would wait
+ * forever - that is what step 6's close hook is for. A terminal being CREATED
+ * is bounded: it resolves a cwd, asks the host to spawn, and finishes. Before
+ * this split an in-flight create was invisible to the delete - it held no lease
+ * yet and no record yet - so a create that started before the tombstone could
+ * insert a live terminal for a project that had already been deleted, after the
+ * close hook had already run and found nothing.
  */
 export const DRAINED_LEASE_CLASSES: readonly ProjectLeaseClass[] = [
   "executingCall",
   "dispatch",
+  "terminalCreate",
 ];
 
 /**

@@ -63,6 +63,24 @@ export class TerminalDataBufferer {
     this.emit(data);
   }
 
+  /**
+   * Drop the queued window WITHOUT emitting it, and stop the timer.
+   *
+   * The one caller is the attach handoff, and the one thing that makes it sound
+   * is that every queued chunk was written to the authoritative mirror before
+   * it was queued here. The replay the handoff is about to send therefore
+   * already contains them; emitting them as live data as well would show the
+   * user the same bytes twice. Any other caller would be discarding output that
+   * exists nowhere else, which this class otherwise never does.
+   */
+  discard(): void {
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.pending.length = 0;
+  }
+
   /** Flush and stop coalescing. Idempotent. */
   stop(): void {
     this.flush();

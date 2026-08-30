@@ -40,6 +40,7 @@ import {
   TERMINAL_DATA_FLUSH_TIMEOUT_MS,
   TERMINAL_FLOW_HIGH_WATERMARK_CHARS,
   TERMINAL_FLOW_LOW_WATERMARK_CHARS,
+  TERMINAL_KILL_SETTLE_MS,
   TERMINAL_MAXIMUM_SHUTDOWN_MS,
   TERMINAL_TITLE_POLL_MS,
   utf8ByteLength,
@@ -93,6 +94,27 @@ export class TerminalProcess {
   private ptyPaused = false;
 
   /**
+   * The pty is held while an attach hands the stream over.
+   *
+   * A SECOND, INDEPENDENT reason to stop the producer, kept apart from the
+   * flow-control one because the two are decided by different owners and can
+   * overlap. Collapsing them into one boolean makes the attach's resume undo a
+   * watermark pause that is still owed, which un-pauses a pty nobody is reading.
+   */
+  private attachHold = false;
+  /** What the pty was last actually told. Prevents redundant pause/resume calls. */
+  private ptyFlowing = true;
+
+  /**
+   * Whether a live consumer is attached, as its owner last declared.
+   *
+   * This is what decides WHO paces the pty. Attached, the consumer's own write
+   * completion is the pace (its acks arrive over the port). Detached, the
+   * headless mirror's parse completion is - see `handlePtyData`.
+   */
+  private consumerAttached = false;
+
+  /**
    * Bytes handed to the consumer that it has not acknowledged, and the FIFO
    * that makes the accounting exact.
    *
@@ -117,6 +139,23 @@ export class TerminalProcess {
   private markStartupComplete: () => void = () => {};
   private disposed = false;
   private exitAnnounced = false;
+  /** A kill has been issued to the pty. Dispose must not issue a second one. */
+  private killIssued = false;
+  /** Resolves when this terminal's exit has been announced. */
+  private readonly exitSettled: Promise<void>;
+  private markExitSettled: () => void = () => {};
+  /**
+   * Resolves when THE OPERATING SYSTEM reported the process gone.
+   *
+   * Distinct from `exitSettled`, which is about this object's contract with its
+   * consumer. A signal delivered is not a process reaped, and the difference is
+   * observable: `kill(pid, 0)` still succeeds for a shell that has been sent
+   * SIGKILL and not yet collected. Main releases the terminal's capacity and
+   * its project lease on the answer to a kill, so answering on the signal lets
+   * a create take the slot of a pty that is still there.
+   */
+  private readonly ptyExited: Promise<void>;
+  private markPtyExited: () => void = () => {};
 
   private currentTitle = "";
   private currentCwd: string;
@@ -137,6 +176,29 @@ export class TerminalProcess {
     this.startupComplete = new Promise<void>((resolve) => {
       this.markStartupComplete = resolve;
     });
+    this.exitSettled = new Promise<void>((resolve) => {
+      this.markExitSettled = resolve;
+    });
+    this.ptyExited = new Promise<void>((resolve) => {
+      this.markPtyExited = resolve;
+    });
+  }
+
+  /**
+   * Resolves once this terminal's exit has been ANNOUNCED.
+   *
+   * The shutdown owner awaits this rather than the kill call, because a kill
+   * that was issued is not a process that has gone: the OS still has to reap
+   * it, and a shutdown that returned on the issue would let the app quit with
+   * the user's shells still running.
+   */
+  get exited(): Promise<void> {
+    return this.exitSettled;
+  }
+
+  /** Whether the pty is still believed to be alive. */
+  get alive(): boolean {
+    return this.pty !== null && !this.exitAnnounced;
   }
 
   /* ---------------------------------------------------------------- *
@@ -216,6 +278,10 @@ export class TerminalProcess {
       pty.onExit((event) => {
         this.exitCode = event.exitCode;
         this.exitSignal = event.signal ?? null;
+        // THE PROCESS IS GONE, as the OS sees it. `kill` waits for this before
+        // announcing, so a caller told the terminal exited can rely on the pid
+        // being reaped rather than merely signalled.
+        this.markPtyExited();
         this.queueExit();
       }),
     );
@@ -241,15 +307,32 @@ export class TerminalProcess {
     // THE MIRROR FIRST, ALWAYS. It is the source of truth for every replay,
     // resync and snapshot, so no branch below may skip it - including the
     // detached branch, which is exactly the case a reattach has to recover.
-    this.mirror.write(data);
+    //
+    // MIRROR-PACED FLOW CONTROL. Whether this chunk is acknowledged by the
+    // mirror is decided HERE, at the moment it is written, not when the parse
+    // completes: the consumer may attach or detach in between, and a decision
+    // read at completion would ack a chunk the renderer is also acking (double
+    // credit, an un-pausable pty) or ack neither (a pty paused forever).
+    //
+    // A transition mid-flight is still safe, because attach ends in
+    // `clearUnacknowledgedChars` - the replay makes every outstanding count
+    // moot by construction.
+    const pacedByMirror = !this.consumerAttached;
+    this.mirror.write(
+      data,
+      pacedByMirror
+        ? () => {
+            // The mirror has PARSED it. That, and not its arrival, is what
+            // proves the only consumer of a detached terminal kept up.
+            this.acknowledge(data.length);
+          }
+        : undefined,
+    );
 
     this.unacknowledgedChars += data.length;
-    if (
-      !this.ptyPaused
-      && this.unacknowledgedChars > TERMINAL_FLOW_HIGH_WATERMARK_CHARS
-    ) {
+    if (this.unacknowledgedChars > TERMINAL_FLOW_HIGH_WATERMARK_CHARS) {
       this.ptyPaused = true;
-      this.pty?.pause();
+      this.syncPtyFlow();
     }
 
     this.bufferer.handle(data);
@@ -259,9 +342,72 @@ export class TerminalProcess {
     if (this.closeTimer !== null) this.queueExit();
   }
 
+  /**
+   * Declare whether a live consumer is attached.
+   *
+   * Called by `PersistentTerminal`, which owns consumer identity. This class
+   * needs only the boolean, and only to decide who paces the producer.
+   */
+  setConsumerAttached(attached: boolean): void {
+    this.consumerAttached = attached;
+  }
+
+  /**
+   * Hold the producer while an attach hands the stream over, and release it
+   * afterwards.
+   *
+   * The handoff has to decide, for every byte, whether it belongs to the replay
+   * or to the live stream that follows it. That decision is only well defined
+   * while the producer is stopped; unpaused, a byte can enter the mirror after
+   * the serialization and before the consumer is installed, and it is then
+   * either sent twice or not at all.
+   */
+  setAttachHold(held: boolean): void {
+    if (this.attachHold === held) return;
+    this.attachHold = held;
+    this.syncPtyFlow();
+  }
+
+  /**
+   * Apply the two independent stop reasons to the pty.
+   *
+   * The pty flows only when NEITHER holds it. Tracking what the pty was last
+   * told keeps a resume from one owner from silently cancelling the other's
+   * pause.
+   */
+  private syncPtyFlow(): void {
+    const shouldFlow = !this.ptyPaused && !this.attachHold;
+    if (shouldFlow === this.ptyFlowing) return;
+    this.ptyFlowing = shouldFlow;
+    try {
+      if (shouldFlow) this.pty?.resume();
+      else this.pty?.pause();
+    } catch {
+      // The pty exited between the decision and the call. Its exit event is
+      // what reports that, not a flow-control call that lost a race.
+    }
+  }
+
+  /**
+   * Drop whatever the coalescing window is holding, WITHOUT emitting it.
+   *
+   * Sound in exactly one place: the attach handoff, after the mirror has been
+   * drained. Every byte the bufferer holds was written to the mirror BEFORE it
+   * was buffered (see `handlePtyData`), so a drained mirror already contains
+   * all of them and the replay about to be serialized carries them. Emitting
+   * them as live data too would deliver them twice.
+   */
+  discardBufferedOutput(): void {
+    this.bufferer.discard();
+  }
+
   private emitData(data: string): void {
     if (data.length === 0) return;
-    this.chargePending(data);
+    // Charged only when a consumer actually holds these bytes. While detached
+    // there is no one to acknowledge them, and charging anyway would grow the
+    // byte counter for the whole detach and trip the emergency ceiling on the
+    // first live chunk after a reattach.
+    if (this.consumerAttached) this.chargePending(data);
     this.sinks.onData(data);
   }
 
@@ -319,7 +465,7 @@ export class TerminalProcess {
       && this.unacknowledgedChars < TERMINAL_FLOW_LOW_WATERMARK_CHARS
     ) {
       this.ptyPaused = false;
-      this.pty?.resume();
+      this.syncPtyFlow();
     }
   }
 
@@ -338,7 +484,7 @@ export class TerminalProcess {
     this.pendingBytes = 0;
     if (this.ptyPaused) {
       this.ptyPaused = false;
-      this.pty?.resume();
+      this.syncPtyFlow();
     }
   }
 
@@ -479,13 +625,19 @@ export class TerminalProcess {
    * the flush window runs, with a `TERMINAL_MAXIMUM_SHUTDOWN_MS` backstop so a
    * program that keeps writing forever cannot keep the terminal alive forever.
    */
-  shutdown(immediate: boolean): void {
-    if (this.disposed) return;
+  shutdown(immediate: boolean): Promise<void> {
+    if (this.disposed) return this.exitSettled;
     if (immediate) {
       void this.kill();
-      return;
+      return this.exitSettled;
     }
-    if (this.closeTimer !== null) return;
+    if (this.closeTimer === null) {
+      this.beginGracefulShutdown();
+    }
+    return this.exitSettled;
+  }
+
+  private beginGracefulShutdown(): void {
     this.queueExit();
     this.forceKillTimer = setTimeout(() => {
       this.forceKillTimer = null;
@@ -511,11 +663,24 @@ export class TerminalProcess {
     // Never fire an exit before the start it belongs to.
     await this.startupComplete;
     if (this.disposed) return;
-    try {
-      this.pty?.kill();
-    } catch {
-      // Already dead. The exit below is still owed to the consumer.
-    }
+    this.killPtyNow();
+    // WAIT FOR THE PROCESS TO ACTUALLY GO before announcing that it did.
+    //
+    // A signal delivered is not a process reaped: `kill(pid, 0)` still
+    // succeeds for a shell that has been sent SIGKILL and not yet collected.
+    // Announcing on the signal is what let main release a terminal's capacity
+    // and its project lease while the pty was still there, so a create could
+    // take its slot and a project delete could finish with the shell running.
+    //
+    // On the ORDINARY path this costs nothing: the pty's own exit event is
+    // what scheduled this call, so the promise is already resolved. It matters
+    // on the forced path, where we did the killing.
+    //
+    // Bounded, because a process wedged in uninterruptible sleep must not hold
+    // the shutdown open forever; past the bound the exit is announced anyway
+    // and the discrepancy is the caller's to reconcile.
+    await settledWithin(this.ptyExited, TERMINAL_KILL_SETTLE_MS);
+    if (this.disposed) return;
     // Final trailing output reaches the consumer BEFORE the exit event, or the
     // exit describes a screen the consumer never saw.
     this.bufferer.stop();
@@ -524,19 +689,45 @@ export class TerminalProcess {
     this.dispose();
   }
 
+  /** Signal the pty, exactly once. Safe on an already-dead process. */
+  private killPtyNow(): void {
+    if (this.killIssued) return;
+    this.killIssued = true;
+    try {
+      this.pty?.kill();
+    } catch {
+      // Already dead. The exit is still owed to the consumer.
+    }
+  }
+
   private announceExit(): void {
     if (this.exitAnnounced) return;
     this.exitAnnounced = true;
     this.sinks.onExit(this.exitCode ?? 0, this.exitSignal);
+    this.markExitSettled();
   }
 
   /**
    * Release every handle. Idempotent, and safe after a partial start: each
    * timer and subscription is cleared only if it was ever acquired.
+   *
+   * ## Dispose NEVER cancels an owed kill
+   *
+   * This method used to clear the close and force-kill timers and then null the
+   * pty, which orphaned the shell: a shutdown that had SCHEDULED the kill and
+   * was then disposed left a running process with nothing holding a handle to
+   * it. The real-pty harness was reaping those pids itself, which was evidence
+   * of this defect rather than a property of the harness.
+   *
+   * So the kill is issued HERE, synchronously, before any handle is dropped. It
+   * is the last moment this object can act on the process it owns, and a
+   * disposed owner that has not killed its pty has simply leaked it.
    */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    // BEFORE the timers are cleared and the reference is dropped.
+    if (this.pty !== null) this.killPtyNow();
     for (const timer of [
       this.closeTimer,
       this.forceKillTimer,
@@ -560,6 +751,11 @@ export class TerminalProcess {
     // A dispose that races a pending start must not leave `kill` awaiting
     // forever on a promise nothing will resolve.
     this.markStartupComplete();
+    // Nor may it leave a shutdown owner awaiting an exit that can no longer be
+    // announced, or a `kill` awaiting a pty exit event whose subscription this
+    // method just disposed. The process is dead either way; both must learn it.
+    this.markPtyExited();
+    this.markExitSettled();
   }
 }
 
@@ -568,4 +764,23 @@ function basename(target: string, platform: NodeJS.Platform): string {
   const separator = platform === "win32" ? /[\\/]/ : /\//;
   const parts = target.split(separator);
   return parts[parts.length - 1] ?? target;
+}
+
+/**
+ * Resolve once `settled` completes, or after `ms`, whichever comes first.
+ *
+ * Never rejects and never leaves a timer behind: the callers are on the exit
+ * path, and a stray handle there is a host process that will not quit.
+ */
+async function settledWithin(settled: Promise<void>, ms: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const expiry = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
+  try {
+    await Promise.race([settled, expiry]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }

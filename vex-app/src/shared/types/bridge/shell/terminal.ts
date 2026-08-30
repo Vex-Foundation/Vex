@@ -8,7 +8,7 @@ import type {
   TerminalProperty,
   TerminalResyncReason,
   TerminalWorkspaceLayout,
-  TerminalWorkspaceSnapshot,
+  TerminalWorkspaceRestore,
 } from "../../../schemas/terminal.js";
 
 /**
@@ -69,13 +69,30 @@ export interface TerminalBridge {
   readonly detach: (input: { terminalId: string }) => Promise<Result<TerminalAckResult>>;
 
   /**
-   * Live output for one terminal. Preload acknowledges consumed characters on
-   * the renderer's behalf, which is what un-pauses a flow-controlled pty; the
-   * renderer only has to render.
+   * Live output for one terminal.
+   *
+   * ## `done` is not optional bookkeeping - it IS the flow control
+   *
+   * Preload acknowledges consumed characters on the renderer's behalf, and what
+   * counts as "consumed" is the point. Acknowledging on ARRIVAL - which is what
+   * this bridge used to do - proves only that the bytes reached the renderer
+   * process and were handed to xterm's write queue. `Terminal.write` is
+   * asynchronous: it enqueues and parses later. So a fast producer was reported
+   * as fully consumed while an unbounded parser queue grew in front of a
+   * terminal that had rendered none of it, and the pty was never paused.
+   *
+   * The consumer therefore calls `done` from xterm's own write COMPLETION
+   * callback, and preload acks only then. A renderer that falls behind stops
+   * calling `done`, unacknowledged characters climb, and the pty is paused at
+   * the source - which is the whole point of having flow control.
+   *
+   * REPLAY CHUNKS ARE NEVER ACKNOWLEDGED and calling `done` for one is a no-op:
+   * a replay resets the host's counters when it completes, so a late ack for a
+   * replay chunk would be charged against live debt it never incurred.
    */
   readonly onData: (
     terminalId: string,
-    cb: (data: string) => void,
+    cb: (data: string, done: () => void) => void,
   ) => () => void;
 
   /**
@@ -110,10 +127,17 @@ export interface TerminalBridge {
     layout: TerminalWorkspaceLayout;
   }) => Promise<Result<TerminalAckResult>>;
 
-  /** Read a project's revive snapshot. `null` when there is none. */
+  /**
+   * OPEN a project's terminal workspace, reviving its persisted terminals.
+   *
+   * `null` when the project has none to revive. Otherwise the layout on the ids
+   * of LIVE ptys, plus `idMap` from the persisted ids to those - the caller
+   * must map any id it remembers through it before attaching, because a revived
+   * terminal is a new process with a new id and the old one names nothing.
+   */
   readonly readWorkspace: (input: {
     projectId: string;
-  }) => Promise<Result<TerminalOutcome<TerminalWorkspaceSnapshot | null>>>;
+  }) => Promise<Result<TerminalOutcome<TerminalWorkspaceRestore | null>>>;
 
   /** The terminal subsystem's own honest state, including a spent restart cap. */
   readonly getAvailability: () => Promise<Result<TerminalHostAvailability>>;

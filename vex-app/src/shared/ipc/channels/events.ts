@@ -148,10 +148,19 @@ export const EV = {
    *
    * `availability` is the terminal subsystem's own honest state, including the
    * durable "unavailable" a spent restart cap produces.
+   *
+   * `terminalsLost` is what an UNEXPECTED pty-host termination looks like from
+   * the renderer. Every pty in that process died with it, and the data-plane
+   * port they were reported over died too - so the `exit` events the renderer
+   * would ordinarily receive can never arrive. Without this event the tabs sit
+   * there looking alive, accepting keystrokes that go nowhere. It carries the
+   * ids main had recorded, so the renderer can mark exactly those dead and
+   * offer to revive from the last snapshot.
    */
   terminal: {
     port: "vex:event:terminal:port",
     availability: "vex:event:terminal:availability",
+    terminalsLost: "vex:event:terminal:terminalsLost",
   },
   engine: {
     transcriptAppend: "vex:event:engine:transcriptAppend",

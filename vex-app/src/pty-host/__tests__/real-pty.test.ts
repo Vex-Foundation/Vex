@@ -83,7 +83,7 @@ let snapshotDir: string;
 let workDir: string;
 let toMain: TerminalHostMessage[];
 let services: PtyHostService[];
-/** Every pid this test spawned, reaped in `afterEach` whatever else happened. */
+/** Every pid this test spawned. `afterEach` fails the run if any survives. */
 let spawnedPids: number[];
 let requestCounter = 0;
 
@@ -160,25 +160,44 @@ function isAlive(pid: number): boolean {
 }
 
 /**
- * Wait until every pid is gone, or fail loudly.
+ * THE LEAK DETECTOR. Wait for every pid to be gone, and REPORT the ones that
+ * are not.
  *
- * This is the suite's own reaping, not an assertion about the service: see the
- * header on why `shutdownAll()` resolving is not proof of a dead shell.
+ * This used to be a REAPER: it sent SIGKILL to whatever was still alive, and
+ * that was the suite compensating for a production defect rather than
+ * observing it. `dispose` cancelled the kill timers a shutdown had scheduled
+ * and nulled the pty without killing it, so `shutdownAll` genuinely orphaned
+ * shells - and the harness quietly cleaned them up, which is exactly why no
+ * test ever failed for it.
+ *
+ * Now that the host kills its own ptys (`TerminalProcess.dispose`) and its
+ * shutdown awaits the real exits, the suite's job is to CHECK that, not to do
+ * it. Survivors are killed only AFTER they have been recorded, so a leak does
+ * not burn a core for the rest of the run - but the leak is returned, and the
+ * caller fails the run over it.
+ *
+ * Returns the pids that were still alive when the deadline passed.
  */
-async function reap(pids: readonly number[], timeoutMs = 10_000): Promise<void> {
+async function detectSurvivors(
+  pids: readonly number[],
+  timeoutMs = 10_000,
+): Promise<number[]> {
   const deadline = Date.now() + timeoutMs;
   let remaining = pids.filter(isAlive);
   while (remaining.length > 0 && Date.now() < deadline) {
-    for (const pid of remaining) {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {
-        // Already gone between the filter and here. That is the goal state.
-      }
-    }
     await delay(25);
     remaining = remaining.filter(isAlive);
   }
+  // Recorded first, then cleaned up: a leaked `yes` loop must not outlive the
+  // run, but the fact that it leaked must not be lost either.
+  for (const pid of remaining) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // Gone between the filter and here. That is the goal state.
+    }
+  }
+  return remaining;
 }
 
 function delay(ms: number): Promise<void> {
@@ -265,47 +284,91 @@ class PortDrain {
 }
 
 /**
- * A port that acknowledges FROM THE DATA PATH, the way preload does.
+ * A consumer that acknowledges FROM A REAL XTERM'S WRITE COMPLETION.
  *
- * Preload's `countForAck` runs inside its port `onmessage` handler: an ack is
- * emitted as soon as `TERMINAL_ACK_CHARS` have been delivered, on the same turn
- * the data arrived. An earlier version of the flood test instead acked from a
- * 5 ms `setInterval`, and that was wrong twice over. It was unfaithful - no
- * consumer in the system behaves that way - and because flow control blocks the
- * pty until an ack arrives, TOTAL THROUGHPUT became a function of timer
- * scheduling: alone the flood took 5.5 s, but under CPU contention from a
- * parallel run the timer starved and the same test needed over 162 s and blew
- * its budget. Acking from the data path removes the scheduler from the loop
- * entirely.
+ * ## Why the bytes go through a real parser
  *
- * The ack is posted in a MICROTASK rather than synchronously: the host sends
- * data from inside its own `handleData`, and answering it on that same stack
- * would re-enter the flow-control accounting mid-send.
+ * This class used to count characters as they arrived and ack on the count,
+ * which SIMULATED a renderer keeping up. That is exactly the defect the
+ * production path had: preload acked on receipt, and `XtermHost` wrote without
+ * the completion callback, so a fast producer built an unbounded xterm parser
+ * queue while every counter in the system read as caught up. A test that acks
+ * on arrival cannot fail against that code, because it is that code.
+ *
+ * So the data is WRITTEN INTO A HEADLESS XTERM and the ack is emitted from the
+ * write callback - the same seam `XtermHost` now passes to preload. The
+ * property under test becomes end to end: the pty is paced by a real parser
+ * finishing with real bytes.
+ *
+ * REPLAY CHUNKS ARE NOT ACKNOWLEDGED, matching preload. The host clears its
+ * counters when a replay completes, so an ack for a replay chunk would be
+ * charged against live debt the consumer never incurred.
+ *
+ * No `queueMicrotask` is needed any more: xterm's write callback already fires
+ * on a later turn, so the ack can never re-enter the host's accounting on the
+ * stack that sent the data.
  */
-class AutoAckingPort extends RecordingPort {
+class XtermConsumerPort extends RecordingPort {
+  readonly terminal = new HeadlessTerminal({
+    cols: 80,
+    rows: 24,
+    scrollback: TERMINAL_SCROLLBACK_ROWS,
+    allowProposedApi: true,
+  });
+  /** Characters PARSED and not yet acknowledged. */
   private pending = 0;
   private terminalId: string | null = null;
+  /** Writes handed to xterm whose parse has not completed. */
+  private inFlight = 0;
+  /** Set to stall the consumer: completions are recorded and not acted on. */
+  stalled = false;
+  private readonly stalledCompletions: Array<() => void> = [];
+
+  get outstandingWrites(): number {
+    return this.inFlight;
+  }
 
   ackFor(terminalId: string): void {
     this.terminalId = terminalId;
   }
 
+  /** Release a stalled consumer, letting every owed ack go out. */
+  resumeConsumer(): void {
+    this.stalled = false;
+    for (const settle of this.stalledCompletions.splice(0)) settle();
+  }
+
   override postMessage(value: unknown): void {
     super.postMessage(value);
-    const target = this.terminalId;
-    // Not armed yet: the flood's first phase deliberately does not acknowledge,
-    // and counting there would make the catch-up ack that arms this port
-    // ambiguous about what it covers. Nothing accumulates until `ackFor`.
-    if (target === null) return;
     const event = value as { kind?: string; data?: string };
     if (event.kind !== "data" && event.kind !== "replay") return;
-    this.pending += event.data?.length ?? 0;
-    if (this.pending < TERMINAL_ACK_CHARS) return;
-    const charCount = this.pending;
-    this.pending = 0;
-    queueMicrotask(() => {
-      this.receive({ kind: "ack", terminalId: target, charCount });
+    const chars = event.data?.length ?? 0;
+    const isReplay = event.kind === "replay";
+    this.inFlight += 1;
+
+    this.terminal.write(event.data ?? "", () => {
+      this.inFlight -= 1;
+      const settle = (): void => {
+        // A replay is never acknowledged; see the class doc.
+        if (isReplay) return;
+        const target = this.terminalId;
+        if (target === null) return;
+        this.pending += chars;
+        if (this.pending < TERMINAL_ACK_CHARS) return;
+        const charCount = this.pending;
+        this.pending = 0;
+        this.receive({ kind: "ack", terminalId: target, charCount });
+      };
+      if (this.stalled) {
+        this.stalledCompletions.push(settle);
+        return;
+      }
+      settle();
     });
+  }
+
+  dispose(): void {
+    this.terminal.dispose();
   }
 }
 
@@ -364,10 +427,13 @@ afterEach(async () => {
       // A service that already shut down in the test body is the normal case.
     }
   }
-  // The service's own report is not evidence. Reap what we spawned.
-  await reap(spawnedPids);
+  // THE SERVICE'S OWN REPORT IS NOT EVIDENCE, so the world is checked. Every
+  // shell this test spawned must be gone because the HOST ended it, not
+  // because the harness did.
+  const survivors = await detectSurvivors(spawnedPids);
   await fs.rm(snapshotDir, { recursive: true, force: true });
   await fs.rm(workDir, { recursive: true, force: true });
+  expect(survivors).toEqual([]);
 });
 
 /* ------------------------------------------------------------------ *
@@ -383,7 +449,7 @@ describe("flow control against a real pty", () => {
     "PAUSES a real producer above the high watermark and resumes it on acks, losing nothing",
     async () => {
       const service = buildService();
-      const port = new AutoAckingPort();
+      const port = new XtermConsumerPort();
       await send(service, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [
         port,
       ]);
@@ -726,4 +792,135 @@ describe("revive across a service restart", () => {
     },
     60_000,
   );
+});
+
+/* ------------------------------------------------------------------ *
+ * (e) Shutdown ends real processes (stage B2 round 3, F4)
+ * ------------------------------------------------------------------ */
+
+describe("shutdown against real processes", () => {
+  /**
+   * THE ORPHANED-SHELL PROOF, asserted against the OPERATING SYSTEM.
+   *
+   * `runShutdown` scheduled a kill and then `dispose` cancelled the very timers
+   * that would have delivered it, nulling the pty without signalling it. Every
+   * shell that was not going to exit on its own therefore survived the app
+   * that spawned it. It never failed a test because this suite REAPED the
+   * survivors itself, which is the harness compensating for a production
+   * defect rather than observing it.
+   *
+   * So the shells here are chosen to be ones that will not leave voluntarily -
+   * `sleep` for ten minutes - and deadness is read from the kernel with
+   * `kill(pid, 0)`, not from the service's own report. Removing the kill from
+   * `TerminalProcess.dispose` turns this red, and `afterEach`'s leak detector
+   * red with it.
+   */
+  it("KILLS every real shell it owns, and the kernel agrees", async () => {
+    const service = buildService();
+    const first = await createTerminal(service, "t1", { args: ["-c", "sleep 600"] });
+    const second = await createTerminal(service, "t2", { args: ["-c", "sleep 600"] });
+    const third = await createTerminal(service, "t3", { args: ["-c", "sleep 600"] });
+
+    // The premise: these really are running, so the assertion below is about
+    // the shutdown rather than about shells that had already exited.
+    await until(
+      () => isAlive(first.pid) && isAlive(second.pid) && isAlive(third.pid),
+      "all three shells to be running",
+    );
+
+    await service.shutdownAll();
+
+    // No grace, no polling slack: the shutdown does not resolve until the ptys
+    // have exited, so by this line they are gone.
+    await until(
+      () => ![first.pid, second.pid, third.pid].some(isAlive),
+      "every shell to be gone after shutdownAll resolved",
+      5_000,
+    );
+    expect([first.pid, second.pid, third.pid].filter(isAlive)).toEqual([]);
+  }, 60_000);
+
+  /**
+   * A KILL SETTLES ON THE EXIT of a real process.
+   *
+   * Main releases the terminal's capacity and its project lease when this
+   * request is answered. Answering on the signal rather than the exit is what
+   * let a create take the slot of a pty that had not gone, and let a project
+   * delete report itself finished with one of its shells still running.
+   */
+  it("does not answer a kill until the real process has exited", async () => {
+    const service = buildService();
+    const terminal = await createTerminal(service, "t1", { args: ["-c", "sleep 600"] });
+    await until(() => isAlive(terminal.pid), "the shell to be running");
+
+    const outcome = await send(service, {
+      kind: "kill",
+      terminalId: "t1",
+      windowId: WINDOW,
+    });
+
+    expect(outcome).toEqual({ ok: true, value: null });
+    // Read from the kernel the instant the reply exists. A kill acknowledged
+    // before the exit fails here.
+    expect(isAlive(terminal.pid)).toBe(false);
+  }, 60_000);
+});
+
+describe("mirror-paced flow control against a real pty", () => {
+  /**
+   * THE SLOW-RENDERER PROPERTY, END TO END (F2).
+   *
+   * The consumer here is a real headless xterm whose write completions are
+   * HELD, which is what a renderer that has fallen behind actually looks like:
+   * the bytes arrived, the parser has them, and nothing has finished with them.
+   *
+   * Under the old contract preload acknowledged on RECEIPT and `XtermHost`
+   * wrote without the completion callback, so this consumer would have been
+   * reported as fully caught up and the pty would have run at full speed into
+   * a parser queue nobody was draining. The pause below is the whole fix,
+   * observed at the producer.
+   */
+  it("PAUSES the producer for a consumer that never completes its writes", async () => {
+    const service = buildService();
+    const port = new XtermConsumerPort();
+    await send(service, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [
+      port,
+    ]);
+
+    const line = "y".repeat(95);
+    await createTerminal(service, "t1", {
+      args: ["-c", `yes '${line}' | head -n 200000`],
+    });
+    // Armed, so the consumer WOULD ack - if it ever finished a write.
+    port.ackFor("t1");
+    port.stalled = true;
+    port.receive({ kind: "attach", terminalId: "t1" });
+
+    const terminal = service.terminal("t1");
+    if (terminal === undefined) throw new Error("unreachable");
+
+    // The producer is stopped at the source, because the only consumer stopped
+    // reporting progress.
+    await until(
+      () => terminal.process.isPaused,
+      "the pty to pause behind a stalled consumer",
+    );
+
+    // AND IT STAYS STOPPED. An arrival-time ack would have kept crediting the
+    // host and the stream would have run to completion regardless.
+    const atPause = port.eventsOfKind("data").length;
+    await delay(500);
+    const afterWaiting = port.eventsOfKind("data").length;
+    expect(afterWaiting - atPause).toBeLessThan(5);
+
+    // Releasing the consumer lets the owed acks out and the producer resumes,
+    // so the pause was backpressure and not a deadlock.
+    port.resumeConsumer();
+    await until(
+      () => !terminal.process.isPaused,
+      "the pty to resume once the consumer caught up",
+    );
+
+    port.dispose();
+  }, 120_000);
 });

@@ -70,6 +70,8 @@ class FakeChild extends EventEmitter implements UtilityProcess {
 
 let forked: FakeChild[];
 let availability: PtyHostAvailability[];
+/** How many times the starter reported an UNEXPECTED host termination. */
+let terminations: number;
 
 function build(): InstanceType<typeof PtyHostStarter> {
   return new PtyHostStarter(
@@ -77,6 +79,7 @@ function build(): InstanceType<typeof PtyHostStarter> {
       onTerminalExit: () => {},
       onNotice: () => {},
       onAvailabilityChanged: (value) => availability.push(value),
+      onHostTerminated: () => (terminations += 1),
     },
     () => {
       const child = new FakeChild();
@@ -89,6 +92,7 @@ function build(): InstanceType<typeof PtyHostStarter> {
 beforeEach(() => {
   forked = [];
   availability = [];
+  terminations = 0;
 });
 
 describe("restart cap", () => {
@@ -161,6 +165,42 @@ describe("restart cap", () => {
     // forever on a reply that can no longer arrive.
     await expect(pending).resolves.toEqual({ ok: false, code: "host_unavailable" });
   });
+
+  /**
+   * F1 RECONCILIATION: an unexpected termination is REPORTED, and a quit is not.
+   *
+   * Main's terminal records outlive the process that made them true, and a
+   * restarted host comes up EMPTY - it would answer `unknown_terminal` for
+   * every id main still believes in. So the loss is announced, once per death,
+   * BEFORE the restart decision.
+   *
+   * The negative half matters as much: reporting a clean shutdown as a loss
+   * would make every quit look like a crash and have the renderer marking tabs
+   * dead on the way out of the app.
+   */
+  it("reports an UNEXPECTED termination once per death, and never a requested quit", async () => {
+    const starter = build();
+    starter.ensureStarted();
+
+    forked[0]?.emit("exit", 1);
+    expect(terminations).toBe(1);
+    forked[1]?.emit("exit", 1);
+    expect(terminations).toBe(2);
+
+    // Now quit deliberately. The exit that follows is expected, not a loss.
+    const child = forked[forked.length - 1];
+    const disposal = starter.dispose();
+    const envelope = child?.posted[0] as { requestId: string } | undefined;
+    child?.emit("message", {
+      kind: "reply",
+      requestId: envelope?.requestId ?? "",
+      outcome: { ok: true, value: null },
+    });
+    await disposal;
+    child?.emit("exit", 0);
+
+    expect(terminations).toBe(2);
+  });
 });
 
 describe("heartbeat ladder", () => {
@@ -227,6 +267,7 @@ describe("message routing", () => {
         onTerminalExit: () => (exits += 1),
         onNotice: () => {},
         onAvailabilityChanged: () => {},
+        onHostTerminated: () => {},
       },
       () => {
         const child = new FakeChild();
@@ -254,6 +295,7 @@ describe("message routing", () => {
         onTerminalExit: (terminalId, exitCode) => (seen = { terminalId, exitCode }),
         onNotice: () => {},
         onAvailabilityChanged: () => {},
+        onHostTerminated: () => {},
       },
       () => {
         const child = new FakeChild();

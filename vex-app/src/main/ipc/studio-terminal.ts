@@ -31,7 +31,9 @@ import {
   terminalPortTicketSchema,
   terminalResizeInputSchema,
   terminalWorkspaceLayoutSchema,
+  terminalWorkspaceRestoreSchema,
   terminalWriteInputSchema,
+  terminalOutcomeSchema,
   type TerminalHostAvailability,
 } from "@shared/schemas/terminal.js";
 import { terminalDomain } from "../studio/terminal-domain.js";
@@ -43,6 +45,18 @@ const confirmInput = z.object({ nonce: z.string().min(16).max(128) }).strict();
 const persistInput = z
   .object({ layout: terminalWorkspaceLayoutSchema })
   .strict();
+
+/**
+ * A revived workspace, or `null` when the project has none to revive.
+ *
+ * `null` is a real answer and not an absence of one: a project opened for the
+ * first time, and a project whose snapshot was discarded, both legitimately
+ * have no workspace, and the renderer starts empty rather than showing an
+ * error.
+ */
+const terminalWorkspaceRestoreResultSchema = terminalOutcomeSchema(
+  terminalWorkspaceRestoreSchema.nullable(),
+);
 
 /** The window this request came from. The payload never gets a say. */
 function windowIdOf(ctx: HandlerContext): string {
@@ -175,8 +189,19 @@ export function registerStudioTerminalHandlers(): Array<() => void> {
       channel: CH.terminal.readWorkspace,
       domain: "studio",
       inputSchema: projectInput,
-      handle: async (input) =>
-        ok(await terminalDomain().readWorkspace(input.projectId)),
+      // OPEN, which now REVIVES rather than only reading. The channel name is
+      // unchanged because the renderer's question is unchanged - "what is this
+      // project's terminal workspace" - but the answer is no longer a file's
+      // contents. It is the layout on ids that name LIVE ptys, plus the
+      // old-to-new map, because ids from a previous session name nothing a
+      // running host has ever heard of.
+      outputSchema: terminalWorkspaceRestoreResultSchema,
+      handle: async (input, ctx) =>
+        ok(
+          asOutcome<z.infer<typeof terminalWorkspaceRestoreResultSchema>>(
+            await terminalDomain().openWorkspace(windowIdOf(ctx), input.projectId),
+          ),
+        ),
     }),
 
     registerHandler({

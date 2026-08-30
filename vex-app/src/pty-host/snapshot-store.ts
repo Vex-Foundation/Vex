@@ -38,6 +38,7 @@ import path from "node:path";
 import {
   SNAPSHOT_DIR_MAX_BYTES,
   WORKSPACE_SNAPSHOT_FILE_MAX_BYTES,
+  terminalSnapshotFileName,
   terminalWorkspaceSnapshotSchema,
   type TerminalWorkspaceSnapshot,
 } from "@shared/schemas/terminal.js";
@@ -52,12 +53,13 @@ export type SnapshotWriteOutcome =
   | { readonly kind: "too_large"; readonly bytes: number }
   | { readonly kind: "failed" };
 
-/** Project ids are opaque; refuse anything that could escape the directory. */
-function snapshotFileName(projectId: string): string | null {
-  if (!/^[A-Za-z0-9._-]{1,64}$/.test(projectId)) return null;
-  if (projectId === "." || projectId === "..") return null;
-  return `${projectId}.json`;
-}
+/**
+ * Project ids are opaque; refuse anything that could escape the directory.
+ *
+ * The rule lives in the shared contract because main deletes these same files
+ * during a project delete, without a pty host in the loop.
+ */
+const snapshotFileName = terminalSnapshotFileName;
 
 export class TerminalSnapshotStore {
   constructor(private readonly directory: string) {}
@@ -73,6 +75,24 @@ export class TerminalSnapshotStore {
     const name = snapshotFileName(projectId);
     if (name === null) return { kind: "absent" };
     const file = path.join(this.directory, name);
+
+    // STAT BEFORE READ. `readFile` on an unbounded path allocates whatever is
+    // there before a single validation rule has run, so a 2 GiB file - however
+    // it came to exist - would be a heap exhaustion in the pty host rather than
+    // a rejected snapshot. The bound is the same one the write side enforces,
+    // so a file this refuses is a file this build could never have produced.
+    let size: number;
+    try {
+      const info = await fs.stat(file);
+      if (!info.isFile()) return { kind: "absent" };
+      size = info.size;
+    } catch {
+      return { kind: "absent" };
+    }
+    if (size > WORKSPACE_SNAPSHOT_FILE_MAX_BYTES) {
+      await this.discard(file);
+      return { kind: "discarded", reason: "corrupt" };
+    }
 
     let raw: string;
     try {
@@ -100,6 +120,17 @@ export class TerminalSnapshotStore {
         kind: "discarded",
         reason: typeof version === "number" ? "version" : "corrupt",
       };
+    }
+
+    // IDENTITY: the file is named for a project and must describe that project.
+    // `p1.json` holding a snapshot whose `projectId` is `p2` would restore one
+    // project's terminals under another project's name - and, because the host
+    // writes back to the file named for the projectId it was handed, would then
+    // move them there permanently. The schema already pins layout.projectId to
+    // the snapshot's; this pins the snapshot's to the filename.
+    if (validated.data.projectId !== projectId) {
+      await this.discard(file);
+      return { kind: "discarded", reason: "corrupt" };
     }
 
     return { kind: "ok", snapshot: validated.data };

@@ -53,12 +53,16 @@ async function resolveProjectCwd(projectId: string): Promise<string | null> {
   return resolveProjectDirectory(rootOutcome.data, project.data.slug);
 }
 
-/** Broadcast availability to every open window. */
-function publishAvailability(availability: TerminalHostAvailability): void {
+/** Broadcast to every open window. */
+function broadcast(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed()) continue;
-    window.webContents.send(EV.terminal.availability, availability);
+    window.webContents.send(channel, payload);
   }
+}
+
+function publishAvailability(availability: TerminalHostAvailability): void {
+  broadcast(EV.terminal.availability, availability);
 }
 
 let instance: TerminalDomain | null = null;
@@ -75,8 +79,63 @@ export function terminalDomain(): TerminalDomain {
       target.postMessage(channel, payload, transfer);
     },
     publishAvailability,
+    publishTerminalsLost: (terminalIds) => {
+      broadcast(EV.terminal.terminalsLost, { terminalIds: [...terminalIds] });
+    },
   });
   return instance;
+}
+
+/**
+ * Give a window's terminals up when the window goes away.
+ *
+ * TWO TRIGGERS, because a window can leave in two different ways and only one
+ * of them is polite:
+ *
+ *  - `closed` on the BrowserWindow: the user closed it. Its terminals detach on
+ *    the SHORT grace, so a mistaken close is recoverable for a few seconds.
+ *  - `render-process-gone` on its webContents: the renderer CRASHED. The window
+ *    object may still exist and may never emit `closed`, and its data-plane
+ *    port is pointing at a dead process either way.
+ *
+ * Before this, `releaseWindow` had no production caller at all: every window
+ * that closed left its port registered in the host and its terminals attached
+ * to a consumer that could never come back, so they sat out the FULL detach
+ * grace instead of the short one and the port stayed a live conduit into the
+ * pty host with no window on the other end.
+ *
+ * Returns an unsubscribe for the caller that owns the window's lifetime.
+ */
+export function observeWindowForTerminals(window: BrowserWindow): () => void {
+  const windowId = String(window.webContents.id);
+  let released = false;
+  const release = (reason: string): void => {
+    if (released) return;
+    released = true;
+    log.info(`[studio:terminals] releasing window ${windowId} (${reason})`);
+    void terminalDomain()
+      .releaseWindow(windowId)
+      .catch(() => {
+        // The host may already be gone. The window is leaving regardless, and
+        // its terminals are reconciled by the host-terminated path.
+      });
+  };
+
+  const onClosed = (): void => {
+    release("closed");
+  };
+  const onGone = (): void => {
+    release("render-process-gone");
+  };
+  window.once("closed", onClosed);
+  window.webContents.once("render-process-gone", onGone);
+
+  return () => {
+    window.off("closed", onClosed);
+    if (!window.isDestroyed()) {
+      window.webContents.off("render-process-gone", onGone);
+    }
+  };
 }
 
 /** Tear the domain down at app quit. Idempotent. */

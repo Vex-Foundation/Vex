@@ -21,15 +21,32 @@
  * stream instead would need the host to know exactly how much of the old
  * stream the dead renderer had rendered - a fact that died with it.
  *
- * ## Detached terminals are NOT flow-controlled
+ * ## Detached terminals are MIRROR-PACED
  *
- * While detached, output still feeds the mirror but no longer counts against
- * the flow-control watermark. This is a DELIBERATE DIVERGENCE from VS Code,
- * where a detached terminal's unacknowledged count keeps climbing until the pty
- * pauses and the program stalls. Vex reloads its renderer during development
- * far more often than VS Code reloads a window, and a background build frozen
- * by a reload it never observed is a worse outcome than the memory it costs -
- * which is bounded anyway, because the mirror retains rows, not bytes.
+ * An earlier revision exempted detached terminals from flow control entirely,
+ * on the reasoning that a background build should not freeze because a renderer
+ * reloaded. That was wrong, and the mistake is worth stating because it is easy
+ * to make again: "the mirror retains rows, not bytes" bounds the SCREEN, not
+ * the queue in front of it. Forgiving every unacknowledged character let a
+ * detached `yes` loop run at full speed into the headless xterm's parser queue,
+ * which is unbounded, so the memory the exemption was said to cost was not
+ * bounded at all.
+ *
+ * So the pace has an owner in both states, and it is always the ACTIVE
+ * CONSUMER:
+ *
+ *  - ATTACHED, the consumer is the renderer's xterm, and the acks that drive
+ *    flow control come from its write COMPLETION callback - not from the
+ *    packet's arrival in preload, which proves only that bytes were handed to a
+ *    queue.
+ *  - DETACHED, the only consumer is the headless mirror, and its parse
+ *    completion is the pace. A program that outruns the mirror is paused at the
+ *    pty, exactly as one that outruns the renderer is.
+ *
+ * A reload therefore does not freeze a build: the mirror keeps parsing, and the
+ * producer is held only when it genuinely outruns the one thing still reading
+ * it. That is the property the exemption was reaching for, obtained without an
+ * unbounded queue.
  */
 
 import {
@@ -63,7 +80,16 @@ export interface PersistentTerminalOptions {
   readonly windowId: string;
   readonly projectId: string;
   readonly shellName: string;
+  /**
+   * The launch this terminal was started from, kept so a snapshot can record
+   * enough to start an equivalent one next session. The ENVIRONMENT is
+   * deliberately not part of it - see the snapshot entry schema.
+   */
+  readonly executable: string;
+  readonly args: readonly string[];
   readonly cwdAtSpawn: string;
+  /** Rows this terminal had already given up to snapshot caps, cumulatively. */
+  readonly reducedRowsAtSpawn: number;
   readonly graceMs: number;
   readonly shortGraceMs: number;
 }
@@ -75,6 +101,15 @@ export class PersistentTerminal {
   private exited = false;
   /** Set while a replay is streaming, so acks for pre-replay bytes are ignored. */
   private replaying = false;
+  /**
+   * Bumped by every decision about who the consumer is.
+   *
+   * An attach captures it before its await and checks it at publication; a
+   * detach, a newer attach or a dispose invalidates it. This is what makes a
+   * StrictMode mount/cleanup/mount safe rather than a race between two
+   * acquisitions of the same stream.
+   */
+  private attachGeneration = 0;
 
   constructor(
     readonly options: PersistentTerminalOptions,
@@ -114,7 +149,37 @@ export class PersistentTerminal {
    * ---------------------------------------------------------------- */
 
   /**
-   * Claim the live stream.
+   * Claim the live stream. REPLAY FIRST, ALWAYS.
+   *
+   * ## The ordering this method exists to guarantee
+   *
+   * The consumer must observe a full serialization of the mirror and then, in
+   * order, every byte the pty produced after it. The obvious implementation -
+   * install the consumer, then await the serialization - cannot provide that:
+   * output arriving during the await is sent as live data BEFORE the replay
+   * that also contains it, so the consumer sees it twice and in the wrong
+   * order. That is what this rewrite fixes.
+   *
+   * The construction:
+   *
+   *  1. HOLD THE PRODUCER. With the pty stopped, "what the mirror has" becomes
+   *     a decidable question instead of a race.
+   *  2. DRAIN THE MIRROR TO A FIXED POINT. Every byte the pty already delivered
+   *     is now parsed and will appear in the serialization.
+   *  3. NO AWAIT FROM HERE. Discard the coalescing window - every byte in it is
+   *     in the mirror already, because `handlePtyData` writes the mirror before
+   *     it buffers - serialize, install the consumer, emit the replay. Nothing
+   *     can interleave, because nothing yields.
+   *  4. RELEASE THE PRODUCER. Bytes from now on are live, arrive after the
+   *     replay, and are in neither twice.
+   *
+   * ## The generation fence
+   *
+   * StrictMode's mount/cleanup/mount runs an attach and a detach around this
+   * await routinely. Each attach takes a generation; a detach or a newer attach
+   * invalidates it, and the stale one publishes NOTHING - it does not install
+   * its consumer, does not emit a replay to a subscriber that has gone, and
+   * does not release a hold the newer attach now owns.
    *
    * Replacing an existing consumer is IDEMPOTENT rather than an error: a
    * renderer that remounts a component before its old cleanup ran must end up
@@ -122,15 +187,50 @@ export class PersistentTerminal {
    */
   async attach(consumer: TerminalConsumer): Promise<void> {
     if (this.disposed) return;
+    const generation = this.nextAttachGeneration();
     this.clearGrace();
-    this.consumer = consumer;
-    await this.sendReplay();
+
+    // The previous consumer stops receiving NOW. It must not be handed bytes
+    // that belong to the replay the new consumer is about to be sent.
+    this.consumer = null;
+    this.process.setConsumerAttached(false);
+    this.process.setAttachHold(true);
+    try {
+      await this.process.mirror.drain();
+      if (this.disposed || this.attachGeneration !== generation) return;
+
+      // ---- no await below this line until the replay is out ----
+      this.process.discardBufferedOutput();
+      const snapshot = this.process.mirror.serializeNow();
+      this.consumer = consumer;
+      this.process.setConsumerAttached(true);
+      this.emitReplay(consumer, snapshot);
+    } finally {
+      // Only the generation that still owns the hold may release it.
+      if (this.attachGeneration === generation) this.process.setAttachHold(false);
+    }
+  }
+
+  /**
+   * Invalidate any in-flight attach and take the next generation.
+   *
+   * Every path that changes who the consumer is goes through here, so a stale
+   * acquisition can never publish over a newer decision.
+   */
+  private nextAttachGeneration(): number {
+    this.attachGeneration += 1;
+    return this.attachGeneration;
   }
 
   /** Give up the live stream and start the grace timer. */
   detach(reason: "reload" | "closed"): void {
     if (this.disposed) return;
+    // Cancels an attach that is mid-acquisition: without this, the stale attach
+    // completes after the detach and installs a consumer nobody is reading.
+    this.nextAttachGeneration();
     this.consumer = null;
+    this.process.setConsumerAttached(false);
+    this.process.setAttachHold(false);
     this.clearGrace();
     const graceMs =
       reason === "closed" ? this.options.shortGraceMs : this.options.graceMs;
@@ -158,17 +258,35 @@ export class PersistentTerminal {
    * Replay and resync
    * ---------------------------------------------------------------- */
 
-  /** A fresh full serialization, on the consumer's request. */
+  /**
+   * A fresh full serialization, on the consumer's request.
+   *
+   * This is the CONSUMER'S half of the emergency-ceiling recovery: the host
+   * detached it and told it to resync, and this is the request that brings its
+   * screen back. It runs the whole ordered handoff rather than a bare
+   * re-serialization, because a resync has exactly the same ordering problem an
+   * attach has - the pty is still producing while the mirror is being
+   * serialized.
+   */
   async resync(): Promise<void> {
-    await this.sendReplay();
-  }
-
-  private async sendReplay(): Promise<void> {
     const consumer = this.consumer;
     if (consumer === null) return;
+    await this.attach(consumer);
+  }
+
+  /**
+   * Emit one replay. SYNCHRONOUS by contract.
+   *
+   * Called only from inside `attach`, between the drain and the release of the
+   * producer hold. It must not await: an await here reopens the window the hold
+   * was taken to close.
+   */
+  private emitReplay(
+    consumer: TerminalConsumer,
+    snapshot: { data: string; droppedRows: number },
+  ): void {
     this.replaying = true;
     try {
-      const snapshot = await this.process.mirror.serialize();
       const chunks = chunkByUtf8Bytes(snapshot.data, TERMINAL_REPLAY_CHUNK_MAX_BYTES);
       for (let index = 0; index < chunks.length; index += 1) {
         const chunk = chunks[index] ?? "";
@@ -197,6 +315,9 @@ export class PersistentTerminal {
       this.replaying = false;
       // The consumer's screen now EQUALS the mirror, so every outstanding
       // acknowledgement is moot and a pty paused during the gap must resume.
+      // This is also why a replay packet is never acknowledged by the consumer:
+      // the counters it would settle are cleared here, and a late ack for a
+      // replay chunk would then be charged against LIVE debt it never incurred.
       this.process.clearUnacknowledgedChars();
     }
   }
@@ -209,8 +330,9 @@ export class PersistentTerminal {
     const consumer = this.consumer;
     if (consumer === null) {
       // Detached: the mirror already has it (TerminalProcess writes there
-      // first), and the reattach replay is what delivers it.
-      this.process.clearUnacknowledgedChars();
+      // first), and the reattach replay is what delivers it. The producer is
+      // paced by the MIRROR's parse completion while we are here - see the
+      // module header - so nothing needs to be forgiven at this point.
       return;
     }
     consumer.send({ kind: "data", terminalId: this.options.terminalId, data });
@@ -257,7 +379,11 @@ export class PersistentTerminal {
     }
     const consumer = this.consumer;
     const pending = this.process.pendingConsumerBytes;
+    // Invalidate first: the terminal is going back to mirror pacing, and an
+    // attach still in flight must not install a consumer over that decision.
+    this.nextAttachGeneration();
     this.consumer = null;
+    this.process.setConsumerAttached(false);
     this.process.clearUnacknowledgedChars();
     consumer?.send({
       kind: "resyncRequired",
@@ -276,8 +402,23 @@ export class PersistentTerminal {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.nextAttachGeneration();
     this.clearGrace();
     this.consumer = null;
+    this.process.setConsumerAttached(false);
     this.process.dispose();
+  }
+
+  /**
+   * Restore a persisted screen into this terminal's mirror, for a revive.
+   *
+   * WRITE-THROUGH into the mirror, so the very next replay serves it. The
+   * alternative - holding the serialized string beside the mirror and
+   * prepending it to replays - would give the terminal two sources of screen
+   * truth that diverge the moment the shell writes its first prompt.
+   */
+  restoreMirror(serialized: string, carriedDroppedRows: number): void {
+    if (this.disposed) return;
+    this.process.mirror.restore(serialized, carriedDroppedRows);
   }
 }

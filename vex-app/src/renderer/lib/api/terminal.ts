@@ -24,7 +24,7 @@ import type {
   TerminalProperty,
   TerminalResyncReason,
   TerminalWorkspaceLayout,
-  TerminalWorkspaceSnapshot,
+  TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
 
 export function createTerminal(input: {
@@ -68,9 +68,17 @@ export function detachTerminal(
   return window.vex.terminal.detach({ terminalId });
 }
 
+/**
+ * Live output. `done` MUST be called once the bytes are genuinely rendered.
+ *
+ * That callback is the flow control: preload acknowledges characters only when
+ * it fires, so a consumer that reports completion on arrival - before xterm's
+ * parser has touched the bytes - tells the host it kept up while an unbounded
+ * queue grows in front of it. See the bridge contract for the whole argument.
+ */
 export function onTerminalData(
   terminalId: string,
-  cb: (data: string) => void,
+  cb: (data: string, done: () => void) => void,
 ): () => void {
   return window.vex.terminal.onData(terminalId, cb);
 }
@@ -120,9 +128,16 @@ export function persistTerminalWorkspace(
   return window.vex.terminal.persistWorkspace({ layout });
 }
 
+/**
+ * Open the project's workspace, REVIVING its persisted terminals.
+ *
+ * The returned layout names live terminals, not the ids the snapshot was
+ * written with; `idMap` carries the correspondence for any caller holding an
+ * old id. `null` means the project has nothing to revive.
+ */
 export function readTerminalWorkspace(
   projectId: string,
-): Promise<Result<TerminalOutcome<TerminalWorkspaceSnapshot | null>>> {
+): Promise<Result<TerminalOutcome<TerminalWorkspaceRestore | null>>> {
   return window.vex.terminal.readWorkspace({ projectId });
 }
 
