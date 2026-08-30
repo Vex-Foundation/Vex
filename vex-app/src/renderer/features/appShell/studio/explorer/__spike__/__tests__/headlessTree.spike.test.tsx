@@ -62,7 +62,10 @@ describe("SPIKE candidate A: @headless-tree + react-virtual", () => {
       });
     };
 
-    let tree: TreeInstance<SpikeItemData> | null = null;
+    // Ref object, not a closure-assigned let: TypeScript narrows a let assigned
+    // only inside a callback to null at the read site, which is what the cast
+    // this replaces was hiding.
+    const treeRef: { current: TreeInstance<SpikeItemData> | null } = { current: null };
     let actualDurationMs = 0;
     const onRender = (
       _id: string,
@@ -86,7 +89,7 @@ describe("SPIKE candidate A: @headless-tree + react-virtual", () => {
             getChildrenWithData={getChildrenWithData}
             counters={counters}
             onTree={(t) => {
-              tree = t;
+              treeRef.current = t;
             }}
           />
         </Profiler>
@@ -97,7 +100,8 @@ describe("SPIKE candidate A: @headless-tree + react-virtual", () => {
     });
     const mountMs = performance.now() - t0;
 
-    const treeInstance = tree as unknown as TreeInstance<SpikeItemData>;
+    if (treeRef.current === null) throw new Error("spike: tree never mounted");
+    const treeInstance = treeRef.current;
     const rowsAtMount = view.container.querySelectorAll("[role='treeitem']")
       .length;
     log(
