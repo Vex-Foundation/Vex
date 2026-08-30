@@ -626,6 +626,25 @@ export const CH = {
     availability: "vex:terminal:availability",
   },
 
+  /**
+   * Vex Studio project files (stage B3a).
+   *
+   * READ-ONLY. There is no write, rename, create or delete channel here, and
+   * that is a product decision rather than an omission: mutating a user's repo
+   * from the tree is an approval-gated action that does not yet have one.
+   *
+   * Every request addresses an opaque `FileNodeId` minted by main; no channel
+   * on this surface accepts a path. `watchFile`/`unwatchFile` are the
+   * subscription pair - one native watcher per project, many logical
+   * subscriptions over it, each returning an idempotent release.
+   */
+  files: {
+    listChildren: "vex:files:listChildren",
+    readFile: "vex:files:readFile",
+    watchFile: "vex:files:watchFile",
+    unwatchFile: "vex:files:unwatchFile",
+  },
+
   // Cancellation
   cancel: "vex:cancel",
 } as const;

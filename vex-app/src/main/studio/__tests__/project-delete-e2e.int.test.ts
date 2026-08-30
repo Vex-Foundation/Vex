@@ -57,6 +57,15 @@ import { TerminalSnapshotStore } from "../../../pty-host/snapshot-store.js";
 import type { TerminalOutcome } from "@shared/schemas/terminal.js";
 import type { PtyHost, PtyHostObserver } from "../pty-host-starter.js";
 import { TerminalDomain } from "../terminals.js";
+import { FilesDomain } from "../files/files-domain.js";
+import {
+  pollForRootReturn,
+  projectRootExists,
+  subscribeNativeWatcher,
+} from "../files/native-adapters.js";
+import { mintFileNodeId } from "../files/node-id.js";
+import type { FilesEvent } from "@shared/schemas/files.js";
+import { getProject } from "../../database/projects/read.js";
 
 const runtime = vi.hoisted(() => ({
   /** The configured projects root, rewritten per test. */
@@ -1841,3 +1850,127 @@ function inProcessPtyHost(snapshotDirectory: string): {
     shutdown: () => service.shutdownAll().catch(() => undefined),
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * Stage B3a: the FILE WATCHER is a lease, and a delete spends its tokens
+ * ------------------------------------------------------------------ */
+
+/**
+ * The files domain, wired against THIS lane's real database and real
+ * filesystem.
+ *
+ * Only the event sink is substituted (there is no `BrowserWindow` here). The
+ * native watcher is the real @parcel/watcher through production's own adapters,
+ * and `resolveProjectDirectory` goes through the REAL `getProject` - which is
+ * the link this section is actually about, because `getProject` serves ACTIVE
+ * projects only and is therefore what turns a committed tombstone into a
+ * refused read.
+ *
+ * WHY THIS BELONGS IN THE POSTGRES LANE rather than beside the other file
+ * tests: the subject is `deleteProject` end to end - the drain, the tombstone
+ * transaction, the artifact teardown, and THEN step 6's close hooks - and every
+ * one of those needs a real database with every migration applied. The
+ * `node`-lane suite (`files/__tests__/files-real-fs.test.ts`) proves the close
+ * hook's BEHAVIOUR by calling it directly; this proves the real delete actually
+ * REACHES it, which is the half a direct call can never establish.
+ */
+describe("deleteProject: the file watcher", () => {
+  it("TEARS THE WATCHER DOWN and SPENDS every node token the project issued", async () => {
+    const project = await seedProject();
+    // `getProject` - the authority this whole section turns on - resolves a
+    // project's wallets, and a project missing a family row is a write-around it
+    // refuses. Without this seed the watch is refused with `project_closed`
+    // before the delete has done anything, and the test would pass its
+    // read-after-delete assertions for entirely the wrong reason.
+    await seedProjectWallets(project.projectId);
+    await installProjectArtifacts(project);
+    await writeFile(path.join(project.directory, "notes.md"), "user bytes", "utf8");
+
+    const events: FilesEvent[] = [];
+    const filesDomain = new FilesDomain({
+      resolveProjectDirectory: async (projectId) => {
+        const row = await getProject(projectId, "corr-files");
+        if (!row.ok || row.data === null) return null;
+        return path.join(projectsRoot, row.data.slug);
+      },
+      subscribeNative: subscribeNativeWatcher,
+      pollForRoot: pollForRootReturn,
+      rootExists: projectRootExists,
+      publish: (_windowId, event) => {
+        events.push(event);
+      },
+    });
+
+    try {
+      const nodeId = mintFileNodeId(project.projectId, "notes.md");
+      const watched = await filesDomain.watchFile("1", {
+        projectId: project.projectId,
+        nodeId: null,
+      });
+      // toEqual on the whole outcome, so a refusal PRINTS ITS CODE.
+      expect(watched).toEqual({ ok: true, value: expect.anything() });
+
+      // The lease is REAL and the gate can see it. A delete's step 6 exists
+      // precisely because this class is never drained.
+      expect(heldProjectLeases(project.projectId, "watcher")).toBe(1);
+      const before = await filesDomain.readFile({
+        projectId: project.projectId,
+        nodeId,
+      });
+      expect(before.ok).toBe(true);
+
+      const result = unwrap(
+        await deleteProject(
+          {
+            projectId: project.projectId,
+            alsoTrashFolder: false,
+            expectedName: PROJECT_NAME,
+          },
+          "corr-files-delete",
+          deps,
+        ),
+      );
+      expect(result.outcome).toBe("removed");
+
+      // STEP 6 RAN. The close hook the domain registered at construction was
+      // reached by the real delete, after the tombstone committed.
+      expect(filesDomain.watchedProjectCount).toBe(0);
+      expect(heldProjectLeases(project.projectId, "watcher")).toBe(0);
+
+      // The subscriber was TOLD, rather than left with a tree that silently
+      // stopped updating.
+      const closed = events.findLast((event) => event.kind === "status");
+      expect(closed?.kind === "status" && closed.state).toBe("closed");
+      expect(closed?.kind === "status" && closed.reason).toBe("project_deleted");
+
+      // READ AFTER DELETE IS REFUSED. `notes.md` is a USER file, so the
+      // teardown deliberately left it on disk - which is exactly what makes
+      // this assertion mean something: the bytes are still there, and the only
+      // thing stopping the read is that the project's authority is gone.
+      expect(await exists(path.join(project.directory, "notes.md"))).toBe(true);
+      const after = await filesDomain.readFile({
+        projectId: project.projectId,
+        nodeId,
+      });
+      expect(after.ok).toBe(false);
+
+      // ...and a FRESHLY MINTED token does not help either, because the
+      // authority the epoch fences is not the only gate: `getProject` no longer
+      // answers for a tombstoned project.
+      const reminted = await filesDomain.readFile({
+        projectId: project.projectId,
+        nodeId: mintFileNodeId(project.projectId, "notes.md"),
+      });
+      expect(reminted).toEqual({ ok: false, code: "project_closed" });
+
+      // A new watcher is refused too: admission is closed for good.
+      const rewatched = await filesDomain.watchFile("1", {
+        projectId: project.projectId,
+        nodeId: null,
+      });
+      expect(rewatched).toEqual({ ok: false, code: "project_closed" });
+    } finally {
+      await filesDomain.dispose();
+    }
+  });
+});
