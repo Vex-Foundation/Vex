@@ -53,6 +53,7 @@ import path from "node:path";
 import { Terminal as HeadlessTerminal } from "@xterm/headless";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  TERMINAL_ACK_CHARS,
   TERMINAL_FLOW_HIGH_WATERMARK_CHARS,
   TERMINAL_SCROLLBACK_ROWS,
   type TerminalHostMessage,
@@ -263,6 +264,51 @@ class PortDrain {
   }
 }
 
+/**
+ * A port that acknowledges FROM THE DATA PATH, the way preload does.
+ *
+ * Preload's `countForAck` runs inside its port `onmessage` handler: an ack is
+ * emitted as soon as `TERMINAL_ACK_CHARS` have been delivered, on the same turn
+ * the data arrived. An earlier version of the flood test instead acked from a
+ * 5 ms `setInterval`, and that was wrong twice over. It was unfaithful - no
+ * consumer in the system behaves that way - and because flow control blocks the
+ * pty until an ack arrives, TOTAL THROUGHPUT became a function of timer
+ * scheduling: alone the flood took 5.5 s, but under CPU contention from a
+ * parallel run the timer starved and the same test needed over 162 s and blew
+ * its budget. Acking from the data path removes the scheduler from the loop
+ * entirely.
+ *
+ * The ack is posted in a MICROTASK rather than synchronously: the host sends
+ * data from inside its own `handleData`, and answering it on that same stack
+ * would re-enter the flow-control accounting mid-send.
+ */
+class AutoAckingPort extends RecordingPort {
+  private pending = 0;
+  private terminalId: string | null = null;
+
+  ackFor(terminalId: string): void {
+    this.terminalId = terminalId;
+  }
+
+  override postMessage(value: unknown): void {
+    super.postMessage(value);
+    const target = this.terminalId;
+    // Not armed yet: the flood's first phase deliberately does not acknowledge,
+    // and counting there would make the catch-up ack that arms this port
+    // ambiguous about what it covers. Nothing accumulates until `ackFor`.
+    if (target === null) return;
+    const event = value as { kind?: string; data?: string };
+    if (event.kind !== "data" && event.kind !== "replay") return;
+    this.pending += event.data?.length ?? 0;
+    if (this.pending < TERMINAL_ACK_CHARS) return;
+    const charCount = this.pending;
+    this.pending = 0;
+    queueMicrotask(() => {
+      this.receive({ kind: "ack", terminalId: target, charCount });
+    });
+  }
+}
+
 /** Everything a port received as `data`, concatenated in arrival order. */
 function dataOf(port: RecordingPort): string {
   return port.eventsOfKind("data").map((event) => event.data).join("");
@@ -337,7 +383,7 @@ describe("flow control against a real pty", () => {
     "PAUSES a real producer above the high watermark and resumes it on acks, losing nothing",
     async () => {
       const service = buildService();
-      const port = new RecordingPort();
+      const port = new AutoAckingPort();
       await send(service, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [
         port,
       ]);
@@ -382,31 +428,31 @@ describe("flow control against a real pty", () => {
       expect(afterWaiting - atPause).toBeLessThan(TERMINAL_FLOW_HIGH_WATERMARK_CHARS);
       expect(afterWaiting).toBeLessThan(2_000_000);
 
-      // NOW acknowledge continuously, the way preload does. If pause had not
-      // really stopped the producer the totals below would not add up; if acks
-      // did not really resume it, this would never finish.
-      let acked = 0;
-      const pump = setInterval(() => {
-        drain.pump();
-        if (drain.chars > acked) {
-          const charCount = drain.chars - acked;
-          acked = drain.chars;
-          port.receive({ kind: "ack", terminalId: "t1", charCount });
-        }
-      }, 5);
+      // NOW let the consumer acknowledge from its data path, exactly as
+      // preload does. If pause had not really stopped the producer the totals
+      // below would not add up; if acks did not really resume it, this would
+      // never finish.
+      port.ackFor("t1");
+      // One ack to restart the stream that is currently paused below the
+      // threshold; every ack after this one comes from the data path itself.
+      port.receive({ kind: "ack", terminalId: "t1", charCount: drain.chars });
 
-      try {
-        await until(
-          () => {
-            drain.pump();
-            return drain.sawSentinel;
-          },
-          "the flood to run to completion",
-          150_000,
-        );
-      } finally {
-        clearInterval(pump);
-      }
+      await until(
+        () => {
+          drain.pump();
+          return drain.sawSentinel;
+        },
+        "the flood to run to completion",
+        // A GENEROUS budget, not a weakened assertion. The volume and the
+        // exact-count check below are unchanged; this only decides how much
+        // CPU starvation the test tolerates before calling it a failure.
+        // Measured on this machine: 4.3 s idle, 7.5 s under six spinning
+        // cores, 132 s while two full `tsc` lint runs (twelve processes at
+        // 4 GB each) were also running. A real producer on a shared event loop
+        // is throughput-bound, so the budget has to clear the pathological
+        // case or the suite reports a scheduler as a flow-control defect.
+        240_000,
+      );
       drain.pump();
 
       // NO MID-STREAM LOSS. Every line the shell wrote is in the ordered live
@@ -420,7 +466,7 @@ describe("flow control against a real pty", () => {
       // it, and reaching it would have forced a full resync.
       expect(port.eventsOfKind("resyncRequired")).toEqual([]);
     },
-    180_000,
+    300_000,
   );
 });
 
