@@ -14,9 +14,11 @@
 
 import type { FileContent, FilesErrorCode, FilesOutcome } from "@shared/schemas/files.js";
 import type { Result } from "@shared/ipc/result.js";
+import { settledHandle } from "../highlight/highlighter-port.js";
 import type {
   HighlightAsk,
   HighlighterPort,
+  HighlightHandle,
   HighlightOutcome,
   HighlightUnavailableReason,
 } from "../highlight/highlighter-port.js";
@@ -29,23 +31,43 @@ import type { TokenLine } from "../highlight/highlight-protocol.js";
 interface HeldHighlight {
   readonly ask: HighlightAsk;
   readonly settle: (outcome: HighlightOutcome) => void;
+  cancelled: boolean;
 }
 
 export class FakeHighlighterPort implements HighlighterPort {
   readonly asks: HighlightAsk[] = [];
   readonly held: HeldHighlight[] = [];
+  /** The asks whose handle was cancelled, oldest first. The observable half. */
+  readonly cancelledAsks: HighlightAsk[] = [];
   disposals = 0;
 
   /** When false, every request resolves at once with {@link autoOutcome}. */
   manual = true;
   autoOutcome: HighlightOutcome = { ok: true, lines: [], longLines: 0 };
 
-  highlight(ask: HighlightAsk): Promise<HighlightOutcome> {
+  highlight(ask: HighlightAsk): HighlightHandle {
     this.asks.push(ask);
-    if (!this.manual) return Promise.resolve(this.autoOutcome);
-    return new Promise<HighlightOutcome>((resolve) => {
-      this.held.push({ ask, settle: resolve });
+    if (!this.manual) return settledHandle(this.autoOutcome);
+
+    let settle: (outcome: HighlightOutcome) => void = () => undefined;
+    const outcome = new Promise<HighlightOutcome>((resolve) => {
+      settle = resolve;
     });
+    const entry: HeldHighlight = { ask, settle, cancelled: false };
+    this.held.push(entry);
+    return {
+      outcome,
+      cancel: () => {
+        if (entry.cancelled) return;
+        entry.cancelled = true;
+        this.cancelledAsks.push(ask);
+        const at = this.held.indexOf(entry);
+        if (at !== -1) this.held.splice(at, 1);
+        // The real port settles a cancelled request rather than leaving its
+        // promise pending forever; a fake that did not would hide a leak.
+        settle({ ok: false, reason: "cancelled" });
+      },
+    };
   }
 
   dispose(): void {

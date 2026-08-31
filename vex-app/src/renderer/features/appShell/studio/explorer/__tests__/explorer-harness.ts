@@ -305,11 +305,21 @@ export class FilesApiFake {
     pending.fail(error);
   }
 
+  /**
+   * When set, `watchFile` REJECTS instead of answering.
+   *
+   * An IPC-level throw, which is a different event from a refusal: the bridge
+   * can produce it where a `FilesOutcome` was expected, and only a fake can
+   * drive one. A session that swallows it never leaves `activating`.
+   */
+  watchRejection: Error | null = null;
+
   watchFile(_input: {
     projectId: string;
     nodeId: string | null;
   }): Promise<Result<FilesOutcome<FilesSubscription>>> {
     this.calls.push("watch");
+    if (this.watchRejection !== null) return Promise.reject(this.watchRejection);
     return Promise.resolve(this.watchResult);
   }
 
@@ -346,6 +356,7 @@ export class FilesApiFake {
     this.pendingLists.length = 0;
     this.#listeners.clear();
     this.manual = false;
+    this.watchRejection = null;
   }
 }
 

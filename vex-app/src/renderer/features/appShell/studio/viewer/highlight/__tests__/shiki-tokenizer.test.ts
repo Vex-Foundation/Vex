@@ -21,8 +21,10 @@ import {
   CODE_VARIABLE_PREFIX,
   createTokenizer,
   hotLanguagesWithoutLoader,
+  projectLines,
 } from "../shiki-tokenizer.js";
 import { HOT_LANGUAGES, PLAIN_LANGUAGE } from "../language-of-path.js";
+import type { ThemedToken } from "@shikijs/types";
 import type { TokenizeResult } from "../highlight-protocol.js";
 
 const NO_LINE_BOUND = 0;
@@ -220,5 +222,60 @@ describe("tokenize", () => {
       ok: false,
       reason: "tokenize_failed",
     });
+  });
+});
+
+/**
+ * THE RECONSTRUCTION RULE.
+ *
+ * A highlighter that drops or duplicates bytes would silently change what the
+ * user reads, and a file viewer is the one surface where that is unacceptable:
+ * the text on screen is evidence. The rule is asserted against hand-built token
+ * streams because a real grammar will not misbehave on demand - and the defect
+ * this guards against is precisely a future grammar or engine that does.
+ */
+describe("projectLines: the source line is the truth", () => {
+  const token = (content: string): ThemedToken => ({ content, offset: 0 });
+
+  it("keeps the tokens when they reconstruct the line exactly", () => {
+    const { lines } = projectLines([[token("const"), token(" a")]], "const a", 0);
+    expect(lines[0]?.map((entry) => entry.text)).toEqual(["const", " a"]);
+  });
+
+  it("falls back to ONE plain token when a byte was dropped", () => {
+    // The tokens say "ac"; the file says "abc". Rendering the tokens would show
+    // the user a line their file does not contain.
+    const { lines } = projectLines([[token("a"), token("c")]], "abc", 0);
+    expect(lines[0]).toEqual([
+      { text: "abc", color: null, italic: false, bold: false, underline: false },
+    ]);
+  });
+
+  it("falls back per LINE, leaving the good lines coloured", () => {
+    const { lines } = projectLines(
+      [[token("ok")], [token("x")]],
+      "ok\nbad",
+      0,
+    );
+    expect(lines[0]?.map((entry) => entry.text)).toEqual(["ok"]);
+    expect(lines[1]).toEqual([
+      { text: "bad", color: null, italic: false, bold: false, underline: false },
+    ]);
+  });
+
+  it("carries through a line the tokenizer never emitted", () => {
+    const { lines } = projectLines([[token("a")]], "a\nb", 0);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]?.[0]?.text).toBe("b");
+  });
+
+  it("matches shiki's own split, so CRLF text reconstructs unchanged", () => {
+    // MEASURED against shiki 4.4.3: a `\r\n` file comes back with the `\r`
+    // already stripped, which is why `split(/\r?\n/)` is the right comparison
+    // and a CRLF file is not silently demoted to plain text.
+    const { lines } = projectLines([[token("a")], [token("b")], []], "a\r\nb\r\n", 0);
+    expect(lines[0]?.[0]?.text).toBe("a");
+    expect(lines[1]?.[0]?.text).toBe("b");
+    expect(lines[2]).toEqual([]);
   });
 });

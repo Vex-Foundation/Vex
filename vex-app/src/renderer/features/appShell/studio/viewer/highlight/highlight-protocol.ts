@@ -98,6 +98,23 @@ export interface HighlightFailure {
 }
 
 /**
+ * Abandon a request the caller no longer wants an answer to.
+ *
+ * A request that has NOT started is removed from the worker's queue and never
+ * runs at all; the one already running is dropped at the next await point
+ * rather than interrupted, because `codeToTokensBase` has no yield point inside
+ * it. Either way the worker posts nothing for a cancelled id, and the port has
+ * already stopped holding it.
+ */
+export interface HighlightCancel {
+  readonly kind: "cancel";
+  readonly requestId: number;
+}
+
+/** Everything the worker can receive. */
+export type HighlightMessage = HighlightRequest | HighlightCancel;
+
+/**
  * Posted once when the worker's module graph has evaluated.
  *
  * The port does not wait for it - a request posted before it arrives is queued
@@ -109,6 +126,67 @@ export interface HighlightReady {
 }
 
 export type HighlightResponse = HighlightReady | HighlightSuccess | HighlightFailure;
+
+/* ------------------------------------------------------------------ *
+ * The shape guard
+ * ------------------------------------------------------------------ */
+
+/**
+ * Is this really one of the responses above?
+ *
+ * Both ends are ours, so this is not a trust boundary and there is no Zod here
+ * for the reason the module header gives. It is still a PROCESS boundary, and
+ * the worker runs our own evolving code behind a separate build: a bad chunk,
+ * a half-applied edit or a future protocol change would otherwise put a shape
+ * nothing checked straight into renderer state and render `undefined` as a line
+ * of the user's file. This fails CLOSED instead - the port reports
+ * `malformed_result` and the viewer shows honest plain text.
+ *
+ * Deliberately NARROW: it proves the discriminants, the array-ness of `lines`
+ * and the field types of every token, which is exactly what the renderer reads.
+ */
+export function isHighlightResponse(value: unknown): value is HighlightResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const message = value as { readonly kind?: unknown };
+  if (message.kind === "ready") return true;
+  if (message.kind !== "result") return false;
+  const result = value as {
+    readonly requestId?: unknown;
+    readonly ok?: unknown;
+    readonly lines?: unknown;
+    readonly longLines?: unknown;
+    readonly reason?: unknown;
+  };
+  if (typeof result.requestId !== "number") return false;
+  if (result.ok === false) {
+    return result.reason === "grammar_unavailable" || result.reason === "tokenize_failed";
+  }
+  if (result.ok !== true) return false;
+  if (typeof result.longLines !== "number") return false;
+  if (!Array.isArray(result.lines)) return false;
+  return result.lines.every(isTokenLine);
+}
+
+function isTokenLine(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.every(isHighlightToken);
+}
+
+function isHighlightToken(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const token = value as {
+    readonly text?: unknown;
+    readonly color?: unknown;
+    readonly italic?: unknown;
+    readonly bold?: unknown;
+    readonly underline?: unknown;
+  };
+  if (typeof token.text !== "string") return false;
+  if (token.color !== null && typeof token.color !== "string") return false;
+  if (typeof token.italic !== "boolean") return false;
+  if (typeof token.bold !== "boolean") return false;
+  return typeof token.underline === "boolean";
+}
 
 /** What the tokenizer returns and the worker forwards. */
 export interface TokenizeResult {

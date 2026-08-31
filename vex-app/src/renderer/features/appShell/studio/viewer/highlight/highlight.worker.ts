@@ -12,12 +12,12 @@
  * in `file-viewer-session.ts` exists for the same reason from the other side:
  * a tokenization we cannot interrupt is one we must be able to decline.
  *
- * ## Sequential on purpose
+ * ## It owns the globals, and NOTHING else
  *
- * One request at a time. Concurrency here would buy nothing - the work is
- * CPU-bound and this is one thread - and it would let a stale tab's file
- * compete with the visible one. The port upstream never has more than one
- * request outstanding either, because a hidden tab does not ask.
+ * Which request runs, which is dropped and when a cancel takes effect all live
+ * in `highlight-queue.ts`, which names no global and is therefore testable from
+ * the ordinary renderer suite. What is left here is the two lines only a worker
+ * can execute. Sequencing, cancellation and their bounds are documented there.
  *
  * ## This file is the ONLY module in the renderer tree with worker globals
  *
@@ -27,50 +27,28 @@
  * we know the tokenizer has no hidden DOM dependency.
  */
 
-import type { HighlightRequest, HighlightResponse } from "./highlight-protocol.js";
+import { createHighlightQueue } from "./highlight-queue.js";
+import type { HighlightMessage, HighlightResponse } from "./highlight-protocol.js";
 import { createTokenizer } from "./shiki-tokenizer.js";
 
 const tokenizer = createTokenizer();
-
-/**
- * The tail of the request chain.
- *
- * Requests are serialized by chaining onto this rather than by a queue plus a
- * running flag: the chain IS the queue, it cannot lose an entry to a missed
- * flag, and `tokenize` never rejects, so the chain can never break.
- */
-let chain: Promise<void> = Promise.resolve();
 
 function post(message: HighlightResponse): void {
   self.postMessage(message);
 }
 
-self.onmessage = (event: MessageEvent<HighlightRequest>): void => {
-  const request = event.data;
-  // Structured clone hands us whatever the other side posted. Both ends are
-  // ours, so this is a shape guard against our own future edits, not a trust
-  // boundary - and it fails silently on purpose, because there is no request
-  // id to answer with.
-  if (request.kind !== "highlight") return;
+/**
+ * The queue owns WHICH request runs and which is dropped; this module owns only
+ * the worker globals. That split is what makes the drop policy testable: a test
+ * in the DOM project cannot import this file without dragging `self` in with it.
+ */
+const queue = createHighlightQueue({
+  tokenize: (text, language, maxLineLength) => tokenizer.tokenize(text, language, maxLineLength),
+  post,
+});
 
-  chain = chain.then(async () => {
-    const outcome = await tokenizer.tokenize(
-      request.text,
-      request.language,
-      request.maxLineLength,
-    );
-    if (outcome.ok) {
-      post({
-        kind: "result",
-        requestId: request.requestId,
-        ok: true,
-        lines: outcome.result.lines,
-        longLines: outcome.result.longLines,
-      });
-      return;
-    }
-    post({ kind: "result", requestId: request.requestId, ok: false, reason: outcome.reason });
-  });
+self.onmessage = (event: MessageEvent<HighlightMessage>): void => {
+  queue.accept(event.data);
 };
 
 // Posted after the module graph has evaluated, so "the worker started" is an

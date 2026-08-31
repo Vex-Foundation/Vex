@@ -81,7 +81,7 @@ import {
   type ExplorerRegistry,
 } from "../explorer/index.js";
 import type { WorkspaceFileTab } from "../workspace/types.js";
-import type { HighlighterPort } from "./highlight/highlighter-port.js";
+import type { HighlightHandle, HighlighterPort } from "./highlight/highlighter-port.js";
 import type { TokenLine } from "./highlight/highlight-protocol.js";
 import { plainTokenize } from "./highlight/shiki-tokenizer.js";
 import {
@@ -121,6 +121,28 @@ export const VIEWER_HIGHLIGHT_MAX_BYTES = 512 * 1024;
  * the count is on the chip. A bound nobody is told about is a bug.
  */
 export const VIEWER_MAX_TOKENIZE_LINE_LENGTH = 20_000;
+
+/**
+ * The most tokens a file may produce before the viewer shows it plain.
+ *
+ * 250,000, and the number is MEASURED rather than chosen. Against the installed
+ * shiki 4.4.3 with this repo's hot grammars, ordinary TypeScript source runs at
+ * about 122 tokens per KiB, so a file at {@link VIEWER_HIGHLIGHT_MAX_BYTES}
+ * produces roughly 62,000 tokens; densely punctuated JSON runs at about 645
+ * tokens per KiB, which at the same byte bound is roughly 330,000. The bound
+ * therefore sits four times above anything real source can reach and below the
+ * pathological shape, which is exactly the file it exists to decline.
+ *
+ * It is a bound on the ARRAY, not on the DOM: `FileViewerLines` virtualizes, so
+ * only the visible rows are ever mounted. What a quarter of a million tokens
+ * costs is the structured clone out of the worker and the objects this session
+ * then retains for as long as the tab is open, per tab.
+ *
+ * AT THE BOUND the file is shown in full as plain text and the chip names the
+ * reason (`too_many_tokens`). Nothing is truncated and no line is dropped; the
+ * user loses colour, which is all a highlighter provides.
+ */
+export const VIEWER_MAX_TOKENS = 250_000;
 
 /**
  * How deep the reload queue goes: one running, one queued.
@@ -233,6 +255,16 @@ export class FileViewerSession {
 
   /** The hash the outstanding highlight request was issued for. */
   #highlightingHash: string | null = null;
+  /**
+   * The outstanding worker request, so it can be ABANDONED.
+   *
+   * A tab that is hidden, whose bytes changed, or that is closing is not
+   * waiting for its tokens any more, and a tokenization nobody will publish is
+   * a CPU-bound job competing with the tab the user is actually looking at.
+   * At most one exists: `#startHighlight` cancels the previous before issuing
+   * the next, and the port enforces the same bound under this tab's id.
+   */
+  #highlightRequest: HighlightHandle | null = null;
   /** Set when a highlight was wanted but the tab is hidden. */
   #highlightDeferred = false;
 
@@ -250,6 +282,18 @@ export class FileViewerSession {
    * invalidates it and one that did not reuses it.
    */
   #plainLines: { hash: string; lines: readonly TokenLine[] } | null = null;
+
+  /**
+   * The last contents successfully read, kept for the ORPHAN answer.
+   *
+   * Captured the moment a delete is OBSERVED rather than when its confirming
+   * read returns, because those are different moments and a read can land in
+   * between: a reload queued ahead of the re-check can answer `not_found`
+   * first, drop the content to a bare refusal, and leave the orphan with
+   * nothing to show. The snapshot makes "the last bytes the user saw" a fact
+   * this session holds rather than a state it hopes to still be in.
+   */
+  #orphanSnapshot: FileContent | null = null;
 
   #revision = 0;
   readonly #revisionListeners = new Set<() => void>();
@@ -343,17 +387,35 @@ export class FileViewerSession {
    * `activate` on that session is idempotent and single-flight, so calling it
    * here costs nothing when the tree already did.
    */
-  activate(): void {
-    if (this.#state.kind === "disposed" || this.#activated) return;
+  activate(): Promise<void> {
+    if (this.#state.kind === "disposed" || this.#activated) return Promise.resolve();
     this.#activated = true;
 
+    const generation = this.#generation;
     const explorer = this.#explorers.acquire(this.projectId);
-    void this.#explorers.activate(this.projectId);
+    // The listener is installed BEFORE the watch is awaited, so no event can
+    // arrive with nobody to hear it once the watch goes live.
     this.#unsubscribePath = explorer.subscribePath(this.relativePath, (event) => {
       this.#onPathEvent(event.kind);
     });
 
-    this.#requestRead();
+    // READ ONLY AFTER THE WATCH. The explorer session lists only after it
+    // listens for exactly this reason, and a restored tab has the same gap:
+    // read first and a change landing before the watch is live is a change
+    // nobody hears, leaving the viewer on contents that are silently wrong
+    // with no event left to correct them.
+    const read = (): void => {
+      if (generation !== this.#generation) return;
+      if (this.#state.kind === "disposed") return;
+      this.#requestRead();
+    };
+    return this.#explorers.activate(this.projectId).then(read, (cause: unknown) => {
+      // The watch could not be brought up. The tab still shows the file it was
+      // opened on - degraded to "will not follow the disk", which the explorer
+      // states in its own notice - rather than sitting empty forever.
+      console.warn(`studio viewer: the watch for ${this.tabId} could not start`, cause);
+      read();
+    });
   }
 
   /**
@@ -368,10 +430,18 @@ export class FileViewerSession {
   setActive(active: boolean): void {
     if (this.#state.kind === "disposed" || this.#active === active) return;
     this.#active = active;
-    if (active && this.#highlightDeferred) {
-      this.#highlightDeferred = false;
-      this.#startHighlight();
+    if (active) {
+      if (this.#highlightDeferred) {
+        this.#highlightDeferred = false;
+        this.#startHighlight();
+      }
+      return;
     }
+    // HIDDEN. A hidden tab holds no worker request, on the way out as well as
+    // on the way in: the want is remembered so showing the tab asks again.
+    if (this.#highlightingHash === null) return;
+    this.#highlightDeferred = true;
+    this.#cancelHighlight();
   }
 
   /** The Retry affordance on a transport failure. */
@@ -395,8 +465,9 @@ export class FileViewerSession {
     if (this.#activated) this.#explorers.release(this.projectId);
 
     this.#queuedRead = false;
-    this.#highlightingHash = null;
+    this.#cancelHighlight();
     this.#highlightDeferred = false;
+    this.#orphanSnapshot = null;
     this.#revisionListeners.clear();
   }
 
@@ -424,6 +495,11 @@ export class FileViewerSession {
    * events and one re-check is the answer to all of them.
    */
   #scheduleDeleteRecheck(): void {
+    // THE SNAPSHOT, taken at OBSERVATION. See `#orphanSnapshot`.
+    const state = this.#state;
+    if (state.kind === "ready" || state.kind === "orphaned") {
+      this.#orphanSnapshot = state.content;
+    }
     this.#clearDeleteTimer();
     this.#deleteTimer = setTimeout(() => {
       this.#deleteTimer = null;
@@ -509,6 +585,9 @@ export class FileViewerSession {
 
   #publishContent(content: FileContent): void {
     const previous = this.#state;
+    // The file answered with bytes, so the doubt a delete raised is settled and
+    // the snapshot it left behind describes an older read.
+    this.#orphanSnapshot = null;
     const unchanged =
       (previous.kind === "ready" || previous.kind === "orphaned") &&
       previous.content.hash === content.hash;
@@ -526,26 +605,29 @@ export class FileViewerSession {
 
   #publishOrphaned(): void {
     const previous = this.#state;
-    if (previous.kind !== "ready" && previous.kind !== "orphaned") {
+    const content =
+      this.#orphanSnapshot ??
+      (previous.kind === "ready" || previous.kind === "orphaned" ? previous.content : null);
+    if (content === null) {
       // Nothing was ever read, so there is nothing to keep. This is an
       // ordinary not-found answer.
       this.#publishRefusal("not_found", undefined);
       return;
     }
-    this.#setState({ kind: "orphaned", content: previous.content });
+    this.#setState({ kind: "orphaned", content });
   }
 
   #publishRefusal(code: FilesErrorCode, size: number | undefined): void {
     this.#setState({ kind: "refused", code, size });
     this.#setHighlight({ kind: "plain", reason: "plain_language" });
-    this.#highlightingHash = null;
+    this.#cancelHighlight();
     this.#highlightDeferred = false;
   }
 
   #publishFailure(): void {
     this.#setState({ kind: "failed" });
     this.#setHighlight({ kind: "plain", reason: "plain_language" });
-    this.#highlightingHash = null;
+    this.#cancelHighlight();
     this.#highlightDeferred = false;
   }
 
@@ -558,7 +640,8 @@ export class FileViewerSession {
    * with no colour and no explanation looks like a broken highlighter.
    */
   #decideHighlight(content: FileContent): void {
-    this.#highlightingHash = null;
+    // New bytes supersede whatever was being tokenized for the old ones.
+    this.#cancelHighlight();
 
     if (this.language === PLAIN_LANGUAGE) {
       this.#highlightDeferred = false;
@@ -584,36 +667,79 @@ export class FileViewerSession {
     if (state.kind !== "ready" && state.kind !== "orphaned") return;
     const content = state.content;
 
+    this.#cancelHighlight();
     const generation = this.#generation;
     const hash = content.hash;
     this.#highlightingHash = hash;
     this.#setHighlight({ kind: "highlighting" });
 
-    void this.#highlighter
-      .highlight({
-        language: this.language,
-        text: content.text,
-        maxLineLength: VIEWER_MAX_TOKENIZE_LINE_LENGTH,
-      })
-      .then((outcome) => {
-        // THE FENCE, both halves. The generation says this session still
-        // exists; the hash says the tokens describe the text on screen. A
-        // reload that landed during the await invalidates the second even
-        // though the first still holds.
-        if (generation !== this.#generation) return;
-        if (this.#highlightingHash !== hash) return;
-        this.#highlightingHash = null;
+    const request = this.#highlighter.highlight({
+      language: this.language,
+      text: content.text,
+      maxLineLength: VIEWER_MAX_TOKENIZE_LINE_LENGTH,
+      // The tab id, so the port holds at most one request for this tab and a
+      // burst of saves costs one tokenization rather than one per save.
+      caller: this.tabId,
+    });
+    this.#highlightRequest = request;
 
-        if (outcome.ok) {
-          this.#setHighlight({
-            kind: "highlighted",
-            lines: outcome.lines,
-            longLines: outcome.longLines,
-          });
-          return;
-        }
-        this.#setHighlight({ kind: "plain-after-failure", reason: outcome.reason });
-      });
+    void request.outcome.then((outcome) => {
+      // THE FENCE, all three parts. The generation says this session still
+      // exists; the REQUEST says this is still the one outstanding, which is
+      // what a cancelled or superseded predecessor fails even when it asked
+      // about the same bytes; the hash says the tokens describe the text on
+      // screen. Checked at publication, never only at issue: everything
+      // interesting happens during the await (rule 05).
+      if (generation !== this.#generation) return;
+      if (this.#highlightRequest !== request) return;
+      if (this.#highlightingHash !== hash) return;
+      this.#highlightingHash = null;
+      this.#highlightRequest = null;
+
+      if (outcome.ok) {
+        this.#publishTokens(outcome.lines, outcome.longLines);
+        return;
+      }
+      // A request WE abandoned is not a failure and says nothing to the user.
+      // Whoever cancelled it already set the state it wanted.
+      if (outcome.reason === "cancelled") return;
+      this.#setHighlight({ kind: "plain-after-failure", reason: outcome.reason });
+    });
+  }
+
+  /**
+   * Publish tokens, or decline them for being too many.
+   *
+   * THE NODE BOUND, and it reports itself: a file over {@link VIEWER_MAX_TOKENS}
+   * is shown in full as plain text with `too_many_tokens` on the chip rather
+   * than retained as a quarter-million objects per tab. Counting is one pass
+   * over arrays we have already paid to clone.
+   */
+  #publishTokens(lines: readonly TokenLine[], longLines: number): void {
+    let tokens = 0;
+    for (const line of lines) {
+      tokens += line.length;
+      if (tokens > VIEWER_MAX_TOKENS) {
+        this.#setHighlight({ kind: "plain-after-failure", reason: "too_many_tokens" });
+        return;
+      }
+    }
+    this.#setHighlight({ kind: "highlighted", lines, longLines });
+  }
+
+  /**
+   * Abandon the outstanding worker request, if there is one. Idempotent.
+   *
+   * It does NOT touch the highlight sub-state: every caller has its own answer
+   * for what the user should see (a hidden tab keeps what it had, a refusal
+   * shows the refusal, a reload shows the new bytes), and deciding that here
+   * would overwrite it.
+   */
+  #cancelHighlight(): void {
+    this.#highlightingHash = null;
+    const request = this.#highlightRequest;
+    this.#highlightRequest = null;
+    if (request !== null) request.cancel();
   }
 
   /* ----------------------- plumbing ----------------------- */

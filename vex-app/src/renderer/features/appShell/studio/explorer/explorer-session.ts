@@ -119,6 +119,11 @@ export const EXPLORER_PAGE_SIZE = FILES_LIST_PAGE_DEFAULT;
  * through a temp file arrives as ADDED, and a viewer that ignored it would sit
  * on contents that no longer exist.
  *
+ * A `deleted` arrives for the path itself AND for any ancestor of it: main
+ * suppresses the descendant events under a deleted directory, so the ancestor's
+ * delete is the only one that will ever be sent about the file. `updated` and
+ * its `added` stay exact.
+ *
  * `resync` is not a statement about the path at all. It says "this session
  * knows it missed events", and the subscriber's remedy is the same as the
  * tree's: read again rather than trust what it holds.
@@ -288,10 +293,11 @@ export class ExplorerSession {
   /**
    * Follow one project-relative path. Returns an IDEMPOTENT unsubscribe.
    *
-   * The path is matched EXACTLY. A viewer watching `src/a.ts` hears nothing
+   * An `updated` is matched EXACTLY. A viewer watching `src/a.ts` hears nothing
    * about `src/`, which is right: a change to the directory is not a change to
    * the file's bytes, and re-reading on it would put an IPC round trip on every
-   * sibling's save.
+   * sibling's save. A `deleted` also reaches every subscriber UNDER the deleted
+   * path; `#notifyDeleted` says why.
    *
    * Calling the returned function twice removes nothing the second time, and
    * the empty listener set is deleted so the map stays the size of the open
@@ -331,6 +337,35 @@ export class ExplorerSession {
     const listeners = this.#pathListeners.get(path);
     if (listeners === undefined) return;
     for (const listener of [...listeners]) listener({ kind });
+  }
+
+  /**
+   * Tell a deleted path's subscribers AND everyone under it.
+   *
+   * The one place the exact-path rule does not hold, and it is not a preference:
+   * main's coalescer SUPPRESSES descendant events under a deleted directory
+   * (`main/studio/files/coalescer.ts` - a deleted `dir` is emitted, its children
+   * are not), so a viewer open on `dir/file.ts` would otherwise wait forever for
+   * a per-file delete that will never be sent and keep showing a file that is
+   * gone.
+   *
+   * DELETES ONLY. An `updated` stays exact, because a sibling's save is not a
+   * change to your file's bytes and re-reading on it would put an IPC round
+   * trip on every write in the directory.
+   *
+   * BOUNDED by the open tabs: the walk is over the path-listener map, which is
+   * the size of the file tabs, never of the tree.
+   */
+  #notifyDeleted(path: string): void {
+    const prefix = `${path}/`;
+    for (const [listenerPath, listeners] of [...this.#pathListeners]) {
+      // The root deleting takes everything with it; below the root, a
+      // descendant is a segment-wise prefix match, so `dir2` is not under
+      // `dir`.
+      const affected = path === "" || listenerPath === path || listenerPath.startsWith(prefix);
+      if (!affected) continue;
+      for (const listener of [...listeners]) listener({ kind: "deleted" });
+    }
   }
 
   /**
@@ -402,9 +437,19 @@ export class ExplorerSession {
     this.#generation += 1;
     const generation = this.#generation;
     this.#setState("activating");
-    const activation = this.#runActivation(generation).finally(() => {
-      if (this.#activation === activation) this.#activation = null;
-    });
+    const activation = this.#runActivation(generation)
+      .catch((cause: unknown) => {
+        // The bridge REJECTED where a Result was expected. Without this the
+        // session would sit in `activating` for the life of the tab: the
+        // rejection has no other owner, and a watch that never answered is
+        // indistinguishable, to the user, from one that answered "no".
+        console.warn(`explorer: activating project ${this.projectId} rejected`, cause);
+        if (generation !== this.#generation) return;
+        this.#setUnavailable(WATCH_FAILED);
+      })
+      .finally(() => {
+        if (this.#activation === activation) this.#activation = null;
+      });
     this.#activation = activation;
     return activation;
   }
@@ -616,7 +661,18 @@ export class ExplorerSession {
     if (event.watcherGeneration > this.#watcherGeneration) {
       this.#watcherGeneration = event.watcherGeneration;
       this.#lastBatchSeq = null;
-      this.#scheduleFullRefresh();
+      // Every subscriber is told it missed events, whatever the tree does next.
+      this.#notifyResync();
+      // The tree is NOT re-listed on the jump alone. In production a bump never
+      // arrives by itself: main's watcher bumps inside `suspend` and inside
+      // `resume` and publishes the accompanying status in the same breath
+      // (`main/studio/files/watcher.ts`), and that status is what says whether
+      // there is a tree to list at all. Arming a blind refresh here would list
+      // a root the `suspended` status arriving microseconds later declares
+      // gone. A jump into a LIVE session is the restart case and still refreshes
+      // immediately; a jump into any other state waits for the status or the
+      // `root_resumed` resync to say the tree is back.
+      if (this.#state === "live") this.#refresh.scheduleFull();
     }
 
     if (event.kind === "status") {
@@ -664,7 +720,8 @@ export class ExplorerSession {
       // tree does with it. An `added` counts as an update (VS Code reloads on
       // both), and a `deleted` is its own event because the viewer's answer to
       // it is a re-check, not a re-read.
-      this.#notifyPath(change.path, change.kind === "deleted" ? "deleted" : "updated");
+      if (change.kind === "deleted") this.#notifyDeleted(change.path);
+      else this.#notifyPath(change.path, "updated");
 
       if (change.kind === "updated") {
         // The tree shows no size and no mtime, so an update changes nothing it
@@ -735,6 +792,16 @@ export class ExplorerSession {
   /** A window closed. The scheduler decided WHAT; this decides how. */
   #applyRefreshPlan(plan: RefreshPlan): void {
     if (this.#state === "disposed" || this.#state === "inactive") return;
+    // THE FIRE-TIME GUARD: only a LIVE session lists on its own.
+    //
+    // A window armed while the tree was live closes 500 ms later, and every
+    // interesting transition happens inside that gap (rule 05): a `suspended`
+    // or `closed` status has cleared the tree by then and listing a root that
+    // has just vanished is the one request guaranteed to be wrong, while an
+    // `unavailable` watcher means nothing more will arrive to justify a
+    // scheduled re-read. The user's own Refresh is unaffected - it is an
+    // explicit act, and `#runFullRefresh` is reached directly.
+    if (this.#state !== "live") return;
     if (plan.full) {
       this.#runFullRefresh();
       return;

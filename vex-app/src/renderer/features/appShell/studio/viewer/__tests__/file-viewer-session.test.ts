@@ -28,6 +28,7 @@ import {
   VIEWER_DELETE_RECHECK_MS,
   VIEWER_HIGHLIGHT_MAX_BYTES,
   VIEWER_MAX_TOKENIZE_LINE_LENGTH,
+  VIEWER_MAX_TOKENS,
 } from "../file-viewer-session.js";
 import {
   FakeHighlighterPort,
@@ -90,7 +91,7 @@ async function flush(): Promise<void> {
 async function live(tab: WorkspaceFileTab = TAB): Promise<FileViewerSession> {
   const session = makeSession(tab);
   session.setActive(true);
-  session.activate();
+  void session.activate();
   await flush();
   return session;
 }
@@ -138,8 +139,8 @@ describe("reading", () => {
 
   it("activate is idempotent, so a StrictMode double mount reads ONCE", async () => {
     const session = await live();
-    session.activate();
-    session.activate();
+    void session.activate();
+    void session.activate();
     await flush();
     expect(files.readCount).toBe(1);
   });
@@ -148,7 +149,7 @@ describe("reading", () => {
     files.manual = true;
     const session = makeSession();
     session.setActive(true);
-    session.activate();
+    void session.activate();
     await flush();
     expect(session.getState()).toEqual({ kind: "reading" });
 
@@ -205,7 +206,7 @@ describe("reading", () => {
     files.manual = true;
     const session = makeSession();
     session.setActive(true);
-    session.activate();
+    void session.activate();
     await flush();
     files.rejectNextRead();
     await flush();
@@ -217,7 +218,7 @@ describe("reading", () => {
     files.manual = true;
     const session = makeSession();
     session.setActive(true);
-    session.activate();
+    void session.activate();
     await flush();
 
     session.dispose();
@@ -234,12 +235,72 @@ describe("reading", () => {
  * The depth-2 reload queue
  * ------------------------------------------------------------------ */
 
+describe("activation order", () => {
+  it("reads only AFTER the project's watch is live", async () => {
+    const session = makeSession();
+    const treeCallsAtRead: string[][] = [];
+    files.responder = () => {
+      treeCallsAtRead.push([...tree.calls]);
+      return ok(contentOf("hello\n"));
+    };
+
+    void session.activate();
+
+    // NOT YET. Reading here would reopen the gap B3a closed for the tree: the
+    // file is read, a change lands before the watch and the listener exist, and
+    // the viewer sits on contents no event will ever correct.
+    expect(files.readCount).toBe(0);
+
+    await flush();
+    expect(files.readCount).toBe(1);
+    // The listener was registered BEFORE the read went out, which is the whole
+    // content of the rule.
+    expect(treeCallsAtRead[0]).toContain("listen");
+    expect(session.getState().kind).toBe("ready");
+  });
+
+  it("subscribes the path before the watch is awaited, so no event is missed", async () => {
+    const session = makeSession();
+    void session.activate();
+    // The subscription is installed synchronously; only the READ waits.
+    expect(explorers.acquire("p1").pathSubscriptionCount()).toBe(1);
+    explorers.release("p1");
+    await flush();
+    session.dispose();
+  });
+
+  it("still reads when the watch cannot be brought up", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    tree.watchRejection = new Error("the bridge rejected");
+    const session = makeSession();
+
+    await session.activate();
+    await flush();
+
+    // A tab that cannot follow the disk still shows the file. Sitting empty
+    // forever would be a worse answer than a degraded one.
+    expect(session.getState().kind).toBe("ready");
+    vi.restoreAllMocks();
+  });
+
+  it("publishes nothing when the tab is disposed during activation", async () => {
+    const session = makeSession();
+    const activation = session.activate();
+    session.dispose();
+    await activation;
+    await flush();
+
+    expect(files.readCount).toBe(0);
+    expect(session.getState().kind).toBe("disposed");
+  });
+});
+
 describe("the reload queue", () => {
   it("coalesces a burst of changes into at most TWO reads", async () => {
     files.manual = true;
     const session = makeSession();
     session.setActive(true);
-    session.activate();
+    void session.activate();
     await flush();
     files.settleNextRead(ok(contentOf("one\n")));
     await flush();
@@ -284,6 +345,8 @@ describe("highlighting", () => {
         language: "typescript",
         text: "hello\n",
         maxLineLength: VIEWER_MAX_TOKENIZE_LINE_LENGTH,
+        // NAMED, so the port holds at most one request for this tab.
+        caller: "tab-1",
       },
     ]);
     expect(session.getHighlight()).toEqual({ kind: "highlighting" });
@@ -328,25 +391,32 @@ describe("highlighting", () => {
     const session = await live();
     expect(highlighter.held).toHaveLength(1);
 
-    // The file was saved while the first tokenization was in flight.
+    // The file was saved while the first tokenization was in flight. The stale
+    // request is now CANCELLED rather than merely ignored - see the bounds
+    // suite - so what this case pins is the other half: the answer that DOES
+    // arrive describes the text on screen and nothing else can publish.
     files.responder = () => ok(contentOf("second version\n"));
     emitChange("updated");
     await flush();
-    expect(highlighter.held).toHaveLength(2);
-
-    // Answer the STALE one. Its tokens describe text nobody is looking at.
-    const staleLines = [
-      [{ text: "STALE", color: null, italic: false, bold: false, underline: false }],
-    ];
-    highlighter.settleOldest(staleLines, 0);
-    await flush();
-
-    // THE HASH FENCE.
+    expect(highlighter.held).toHaveLength(1);
+    expect(highlighter.cancelledAsks[0]?.text).toBe("hello\n");
     expect(session.getHighlight()).toEqual({ kind: "highlighting" });
 
     highlighter.settleOldest([], 0);
     await flush();
     expect(session.getHighlight()).toEqual({ kind: "highlighted", lines: [], longLines: 0 });
+  });
+
+  it("drops a result that resolved before dispose but LANDS after it", async () => {
+    const session = await live();
+    // Resolved first, so the outcome is already on its way when the session is
+    // torn down: the `then` runs a microtask later, against a disposed session.
+    highlighter.settleOldest([[]], 0);
+    session.dispose();
+    await flush();
+    expect(session.getHighlight()).not.toEqual(
+      expect.objectContaining({ kind: "highlighted" }),
+    );
   });
 
   it("does not re-highlight when a reload returns the SAME bytes", async () => {
@@ -367,7 +437,9 @@ describe("highlighting", () => {
   it("publishes nothing from a highlight that lands after dispose", async () => {
     const session = await live();
     session.dispose();
-    highlighter.settleOldest([[]], 0);
+    // The request was cancelled by the dispose, so there is nothing left for
+    // the worker to answer - which is the stronger version of the same rule.
+    expect(highlighter.held).toHaveLength(0);
     await flush();
     expect(session.getHighlight()).not.toEqual(
       expect.objectContaining({ kind: "highlighted" }),
@@ -379,10 +451,99 @@ describe("highlighting", () => {
  * The hidden tab
  * ------------------------------------------------------------------ */
 
+describe("bounds and cancellation", () => {
+  it("CANCELS the pending highlight when the tab is hidden", async () => {
+    const session = await live();
+    expect(highlighter.held).toHaveLength(1);
+
+    session.setActive(false);
+
+    // A tokenization nobody will publish is CPU competing with the tab the
+    // user is actually looking at.
+    expect(highlighter.cancelledAsks).toHaveLength(1);
+    expect(session.getHighlight().kind).toBe("highlighting");
+
+    // Shown again, the want is honoured with a fresh request.
+    session.setActive(true);
+    await flush();
+    expect(highlighter.asks).toHaveLength(2);
+    highlighter.settleOldest([], 0);
+    await flush();
+    expect(session.getHighlight().kind).toBe("highlighted");
+  });
+
+  it("SUPERSEDES the pending highlight when the bytes change", async () => {
+    const session = await live();
+    expect(highlighter.held).toHaveLength(1);
+
+    files.responder = () => ok(contentOf("changed\n"));
+    emitChange("updated");
+    await flush();
+
+    expect(highlighter.cancelledAsks).toHaveLength(1);
+    expect(highlighter.asks[1]?.text).toBe("changed\n");
+    expect(highlighter.held).toHaveLength(1);
+  });
+
+  it("CANCELS on dispose, so a torn-down tab leaves no work behind", async () => {
+    const session = await live();
+    session.dispose();
+    expect(highlighter.cancelledAsks).toHaveLength(1);
+  });
+
+  it("shows a cancelled request as nothing at all, never as a failure", async () => {
+    const session = await live();
+    session.setActive(false);
+    await flush();
+    // The user was told nothing, because nothing about the FILE changed.
+    expect(session.getHighlight().kind).toBe("highlighting");
+  });
+
+  it("falls back to reported plain text over VIEWER_MAX_TOKENS", async () => {
+    const session = await live();
+    // One line carrying one token more than the bound allows.
+    const token = { text: "x", color: null, italic: false, bold: false, underline: false };
+    const lines = [Array.from({ length: VIEWER_MAX_TOKENS + 1 }, () => token)];
+    highlighter.settleOldest(lines, 0);
+    await flush();
+
+    // The file is still shown in FULL, as plain text, and the chip says why.
+    expect(session.getHighlight()).toEqual({
+      kind: "plain-after-failure",
+      reason: "too_many_tokens",
+    });
+    // "hello\n" splits into the line and the empty line after it.
+    expect(session.getLines()).toHaveLength(2);
+    expect(session.copyAll()).toBe("hello\n");
+  });
+
+  it("publishes tokens right up to the bound", async () => {
+    const session = await live();
+    const token = { text: "x", color: null, italic: false, bold: false, underline: false };
+    const lines = [Array.from({ length: VIEWER_MAX_TOKENS }, () => token)];
+    highlighter.settleOldest(lines, 0);
+    await flush();
+    expect(session.getHighlight().kind).toBe("highlighted");
+  });
+
+  it("reports a malformed worker result as plain text rather than state", async () => {
+    const session = await live();
+    highlighter.failOldest("malformed_result");
+    await flush();
+    expect(session.getHighlight()).toEqual({
+      kind: "plain-after-failure",
+      reason: "malformed_result",
+    });
+    // The FILE is unaffected: a broken highlighter is not a broken read.
+    expect(session.getState().kind).toBe("ready");
+    expect(session.getLines()).toHaveLength(2);
+  });
+});
+
 describe("a hidden tab", () => {
   it("holds NO worker request, and asks when it is shown", async () => {
     const session = makeSession();
-    session.activate();
+    void session.activate();
     await flush();
 
     expect(session.getState().kind).toBe("ready");
@@ -400,7 +561,7 @@ describe("a hidden tab", () => {
 
   it("still follows the disk while hidden", async () => {
     const session = makeSession();
-    session.activate();
+    void session.activate();
     await flush();
     files.responder = () => ok(contentOf("changed\n"));
     emitChange("updated");
@@ -488,6 +649,49 @@ describe("a delete event", () => {
     expect(session.getState().kind).toBe("refused");
   });
 
+  it("keeps the last contents when a reload answers not_found FIRST", async () => {
+    vi.useFakeTimers();
+    const session = await live();
+    highlighter.settleOldest([], 0);
+    await flush();
+    expect(session.copyAll()).toBe("hello\n");
+
+    // THE RACE. A reload is already in flight when the delete is observed, so
+    // the re-check is queued behind it - and the reload answers first, about a
+    // file that is already gone.
+    files.manual = true;
+    emitChange("updated");
+    await flush();
+    emitChange("deleted");
+    vi.advanceTimersByTime(VIEWER_DELETE_RECHECK_MS);
+    await flush();
+
+    files.settleNextRead(refused("not_found"));
+    await flush();
+    files.settleNextRead(refused("not_found"));
+    await flush();
+
+    // The orphan carries the last bytes the user saw. Without the snapshot the
+    // reload's refusal drops the content first and the delete path arrives to
+    // an empty state, leaving a bare not-found where a readable file was.
+    expect(session.getState().kind).toBe("orphaned");
+    expect(session.copyAll()).toBe("hello\n");
+  });
+
+  it("forgets the snapshot once the file answers with bytes again", async () => {
+    vi.useFakeTimers();
+    const session = await live();
+    emitChange("deleted");
+    files.responder = () => ok(contentOf("back\n"));
+    vi.advanceTimersByTime(VIEWER_DELETE_RECHECK_MS);
+    await flush();
+    expect(session.getState().kind).toBe("ready");
+
+    // A LATER delete of a file that was never read again must not resurrect the
+    // old snapshot as if it were current.
+    expect(session.copyAll()).toBe("back\n");
+  });
+
   it("fires no re-check after dispose", async () => {
     vi.useFakeTimers();
     const session = await live();
@@ -543,7 +747,7 @@ describe("lifecycle", () => {
       seen.push(session.getRevision());
     });
     session.setActive(true);
-    session.activate();
+    void session.activate();
     await flush();
     highlighter.settleOldest([], 0);
     await flush();

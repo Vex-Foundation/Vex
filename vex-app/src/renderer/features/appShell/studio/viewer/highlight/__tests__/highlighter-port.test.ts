@@ -15,7 +15,11 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { HighlightRequest, HighlightResponse } from "../highlight-protocol.js";
+import type {
+  HighlightMessage,
+  HighlightRequest,
+  HighlightResponse,
+} from "../highlight-protocol.js";
 import {
   defaultHighlighterPort,
   HIGHLIGHT_WORKER_MAX_RESTARTS,
@@ -39,9 +43,9 @@ class FakeWorker extends EventTarget implements Worker {
   static built: FakeWorker[] = [];
   static failOnConstruct = false;
 
-  readonly posted: HighlightRequest[] = [];
+  readonly received: HighlightMessage[] = [];
   terminated = 0;
-  onmessage: ((this: Worker, event: MessageEvent<HighlightResponse>) => void) | null = null;
+  onmessage: ((this: Worker, event: MessageEvent<unknown>) => void) | null = null;
   onmessageerror: ((this: Worker, event: MessageEvent<HighlightResponse>) => void) | null = null;
   onerror: OnErrorEventHandler = null;
 
@@ -56,8 +60,22 @@ class FakeWorker extends EventTarget implements Worker {
     FakeWorker.built.push(this);
   }
 
-  postMessage(request: HighlightRequest): void {
-    this.posted.push(request);
+  postMessage(message: HighlightMessage): void {
+    this.received.push(message);
+  }
+
+  /** Only the highlight requests, in order. */
+  get posted(): HighlightRequest[] {
+    return this.received.filter(
+      (message): message is HighlightRequest => message.kind === "highlight",
+    );
+  }
+
+  /** The ids this worker was told to cancel, in order. */
+  get cancelled(): number[] {
+    return this.received
+      .filter((message) => message.kind === "cancel")
+      .map((message) => message.requestId);
   }
 
   terminate(): void {
@@ -66,7 +84,18 @@ class FakeWorker extends EventTarget implements Worker {
 
   /** Answer one request as the real worker would. */
   answer(response: HighlightResponse): void {
-    this.onmessage?.call(this, new MessageEvent("message", { data: response }));
+    this.deliver(response);
+  }
+
+  /**
+   * Post ANYTHING, including something that is not a response.
+   *
+   * Typed `unknown` deliberately: the shape the port must fail closed on is by
+   * definition one the protocol types cannot describe, and a cast would put the
+   * lie in this file instead.
+   */
+  deliver(data: unknown): void {
+    this.onmessage?.call(this, new MessageEvent("message", { data }));
   }
 
   crash(): void {
@@ -92,8 +121,8 @@ afterEach(() => {
 describe("WorkerHighlighterPort", () => {
   it("correlates answers by request id, out of order", async () => {
     const port = makePort();
-    const first = port.highlight(ask);
-    const second = port.highlight({ ...ask, text: "const b = 2;" });
+    const first = port.highlight(ask).outcome;
+    const second = port.highlight({ ...ask, text: "const b = 2;" }).outcome;
 
     const worker = FakeWorker.built[0];
     expect(worker?.posted).toHaveLength(2);
@@ -117,16 +146,16 @@ describe("WorkerHighlighterPort", () => {
 
   it("builds ONE worker for many requests", () => {
     const port = makePort();
-    void port.highlight(ask);
-    void port.highlight(ask);
-    void port.highlight(ask);
+    port.highlight(ask);
+    port.highlight(ask);
+    port.highlight(ask);
     expect(FakeWorker.built).toHaveLength(1);
     port.dispose();
   });
 
   it("ignores the ready message and answers for requests it no longer holds", async () => {
     const port = makePort();
-    const pending = port.highlight(ask);
+    const pending = port.highlight(ask).outcome;
     const worker = FakeWorker.built[0];
     worker?.answer({ kind: "ready" });
     // An id nobody is waiting for: the fence, and it must not throw.
@@ -140,8 +169,8 @@ describe("WorkerHighlighterPort", () => {
   it("fails EVERY pending request on onerror, terminates, and rebuilds on the next ask", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const port = makePort();
-    const first = port.highlight(ask);
-    const second = port.highlight(ask);
+    const first = port.highlight(ask).outcome;
+    const second = port.highlight(ask).outcome;
     const worker = FakeWorker.built[0];
 
     worker?.crash();
@@ -152,7 +181,7 @@ describe("WorkerHighlighterPort", () => {
     expect(port.restartCount()).toBe(1);
 
     // The next request pays for exactly ONE new worker.
-    void port.highlight(ask);
+    port.highlight(ask);
     expect(FakeWorker.built).toHaveLength(2);
     port.dispose();
   });
@@ -160,7 +189,7 @@ describe("WorkerHighlighterPort", () => {
   it("treats onmessageerror the same way", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const port = makePort();
-    const pending = port.highlight(ask);
+    const pending = port.highlight(ask).outcome;
     const failing = FakeWorker.built[0];
     failing?.onmessageerror?.call(
       failing,
@@ -175,7 +204,7 @@ describe("WorkerHighlighterPort", () => {
     const port = makePort(3);
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
-      const pending = port.highlight(ask);
+      const pending = port.highlight(ask).outcome;
       const worker = FakeWorker.built[attempt - 1];
       worker?.crash();
       // The first two deaths are transient and say so; the third spends the
@@ -187,7 +216,7 @@ describe("WorkerHighlighterPort", () => {
     }
 
     expect(FakeWorker.built).toHaveLength(3);
-    await expect(port.highlight(ask)).resolves.toEqual({
+    await expect(port.highlight(ask).outcome).resolves.toEqual({
       ok: false,
       reason: "worker_unavailable",
     });
@@ -200,8 +229,8 @@ describe("WorkerHighlighterPort", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     FakeWorker.failOnConstruct = true;
     const port = makePort(2);
-    await expect(port.highlight(ask)).resolves.toEqual({ ok: false, reason: "worker_failed" });
-    await expect(port.highlight(ask)).resolves.toEqual({
+    await expect(port.highlight(ask).outcome).resolves.toEqual({ ok: false, reason: "worker_failed" });
+    await expect(port.highlight(ask).outcome).resolves.toEqual({
       ok: false,
       reason: "worker_unavailable",
     });
@@ -209,9 +238,103 @@ describe("WorkerHighlighterPort", () => {
     port.dispose();
   });
 
+  it("CANCELS: tells the worker, settles the caller, and drops a late answer", async () => {
+    const port = makePort();
+    const handle = port.highlight(ask);
+    const worker = FakeWorker.built[0];
+    const id = worker?.posted[0]?.requestId ?? 0;
+
+    handle.cancel();
+    // Idempotent: a caller cancels on hide, on new bytes and again on dispose,
+    // and must not have to know which came first.
+    handle.cancel();
+
+    await expect(handle.outcome).resolves.toEqual({ ok: false, reason: "cancelled" });
+    // The WORKER is told exactly once, so it can drop the request from its
+    // queue before it costs a tokenization.
+    expect(worker?.cancelled).toEqual([id]);
+
+    // A result that was already on its way in is dropped rather than published.
+    worker?.answer({ kind: "result", requestId: id, ok: true, lines: [[]], longLines: 3 });
+    await expect(handle.outcome).resolves.toEqual({ ok: false, reason: "cancelled" });
+    port.dispose();
+  });
+
+  it("holds at most ONE request per named caller, superseding the older", async () => {
+    const port = makePort();
+    const first = port.highlight({ ...ask, caller: "tab-1" });
+    const second = port.highlight({ ...ask, text: "const b = 2;", caller: "tab-1" });
+    const other = port.highlight({ ...ask, caller: "tab-2" });
+    const worker = FakeWorker.built[0];
+
+    // THE BOUND: the tab's previous request is abandoned before the new one is
+    // posted, so three saves in a row cost one live tokenization, not three.
+    await expect(first.outcome).resolves.toEqual({ ok: false, reason: "cancelled" });
+    expect(worker?.cancelled).toEqual([worker?.posted[0]?.requestId]);
+
+    // A DIFFERENT caller is untouched: they do not share a slot.
+    const secondId = worker?.posted[1]?.requestId ?? 0;
+    const otherId = worker?.posted[2]?.requestId ?? 0;
+    worker?.answer({ kind: "result", requestId: secondId, ok: true, lines: [], longLines: 0 });
+    worker?.answer({ kind: "result", requestId: otherId, ok: true, lines: [[]], longLines: 1 });
+    await expect(second.outcome).resolves.toEqual({ ok: true, lines: [], longLines: 0 });
+    await expect(other.outcome).resolves.toEqual({ ok: true, lines: [[]], longLines: 1 });
+    port.dispose();
+  });
+
+  it("frees a caller's slot once its request settles", async () => {
+    const port = makePort();
+    const first = port.highlight({ ...ask, caller: "tab-1" });
+    const worker = FakeWorker.built[0];
+    const id = worker?.posted[0]?.requestId ?? 0;
+    worker?.answer({ kind: "result", requestId: id, ok: true, lines: [], longLines: 0 });
+    await expect(first.outcome).resolves.toEqual({ ok: true, lines: [], longLines: 0 });
+
+    // The settled request is not cancelled retroactively by the next ask.
+    port.highlight({ ...ask, caller: "tab-1" });
+    expect(worker?.cancelled).toEqual([]);
+    port.dispose();
+  });
+
+  it("FAILS CLOSED on a message that is not a response", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const port = makePort();
+    const pending = port.highlight(ask).outcome;
+    const worker = FakeWorker.built[0];
+
+    // A bad chunk or a half-applied protocol change. `lines` is not an array of
+    // token arrays, and publishing it would render `undefined` as a line of the
+    // user's file.
+    worker?.deliver({
+      kind: "result",
+      requestId: worker.posted[0]?.requestId,
+      ok: true,
+      lines: "nope",
+    });
+
+    await expect(pending).resolves.toEqual({ ok: false, reason: "malformed_result" });
+    port.dispose();
+  });
+
+  it("FAILS CLOSED on a token that is missing its fields", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const port = makePort();
+    const pending = port.highlight(ask).outcome;
+    const worker = FakeWorker.built[0];
+    worker?.deliver({
+      kind: "result",
+      requestId: worker.posted[0]?.requestId,
+      ok: true,
+      longLines: 0,
+      lines: [[{ text: "a" }]],
+    });
+    await expect(pending).resolves.toEqual({ ok: false, reason: "malformed_result" });
+    port.dispose();
+  });
+
   it("dispose terminates, settles the outstanding request once, and is idempotent", async () => {
     const port = makePort();
-    const pending = port.highlight(ask);
+    const pending = port.highlight(ask).outcome;
     const worker = FakeWorker.built[0];
 
     port.dispose();
@@ -229,7 +352,7 @@ describe("WorkerHighlighterPort", () => {
       lines: [],
       longLines: 0,
     });
-    await expect(port.highlight(ask)).resolves.toEqual({
+    await expect(port.highlight(ask).outcome).resolves.toEqual({
       ok: false,
       reason: "worker_unavailable",
     });
@@ -240,7 +363,7 @@ describe("WorkerHighlighterPort", () => {
 describe("UnavailableHighlighterPort", () => {
   it("answers every request unavailable and disposes without holding anything", async () => {
     const port = new UnavailableHighlighterPort();
-    await expect(port.highlight(ask)).resolves.toEqual({
+    await expect(port.highlight(ask).outcome).resolves.toEqual({
       ok: false,
       reason: "worker_unavailable",
     });

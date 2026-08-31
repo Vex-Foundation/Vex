@@ -151,6 +151,35 @@ describe("activation", () => {
   });
 });
 
+describe("a watch that never answers", () => {
+  it("lands UNAVAILABLE when watchProjectFiles REJECTS, never stuck activating", async () => {
+    api.watchRejection = new Error("the bridge rejected");
+    const session = makeSession();
+
+    await session.activate();
+    await flush();
+
+    // An IPC-level throw is not a refusal, and nothing else owns it: without a
+    // catch the session sits in `activating` for the life of the tab, showing a
+    // spinner no event will ever clear.
+    expect(session.getState()).toBe("unavailable");
+    expect(noticeTexts(session)[0]).toContain("could not");
+  });
+
+  it("re-activates cleanly after a rejected watch", async () => {
+    api.watchRejection = new Error("the bridge rejected");
+    const session = makeSession();
+    await session.activate();
+    await flush();
+
+    api.watchRejection = null;
+    await session.activate();
+    await flush();
+
+    expect(session.getState()).toBe("live");
+  });
+});
+
 describe("the publication fence", () => {
   it("does NOT publish a listing that resolves after deactivate", async () => {
     api.manual = true;
@@ -537,16 +566,45 @@ describe("watcher states", () => {
     return session;
   }
 
-  it("suspended clears the tree to a single notice", async () => {
+  it("suspended clears the tree to a single notice and LISTS NOTHING", async () => {
+    vi.useFakeTimers();
     const session = await liveSession();
     expect(rowIds(session)).toEqual(["id:top.ts"]);
+    api.listCalls.length = 0;
 
-    api.emit(statusEvent("suspended", { reason: "root_missing" }));
+    // THE PRODUCTION SHAPE. Main's watcher bumps the generation inside
+    // `suspend` and publishes the status on the NEW one (`watcher.ts`), so a
+    // suspend a consumer can actually receive always carries a generation jump.
+    // The same-generation status the old fixture used cannot happen.
+    api.emit(
+      statusEvent("suspended", { reason: "root_missing", watcherGeneration: 2 }),
+    );
 
     // A vanished project folder is not a tree with a warning on it.
     expect(session.getState()).toBe("suspended");
     expect(rowIds(session)).toEqual(["root::notice"]);
     expect(noticeTexts(session)[0]).toContain("not on disk");
+
+    // AND NOTHING IS LISTED. The generation jump must not arm a blind refresh
+    // that wakes 500 ms later and asks a vanished root for its children.
+    vi.advanceTimersByTime(EXPLORER_REFRESH_DELAY_MS * 2);
+    await flush();
+    expect(api.listCalls).toEqual([]);
+  });
+
+  it("lists nothing while CLOSED, however the generation moved", async () => {
+    vi.useFakeTimers();
+    const session = await liveSession();
+    api.listCalls.length = 0;
+
+    api.emit(
+      statusEvent("closed", { reason: "project_deleted", watcherGeneration: 3 }),
+    );
+    vi.advanceTimersByTime(EXPLORER_REFRESH_DELAY_MS * 2);
+    await flush();
+
+    expect(session.getState()).toBe("closed");
+    expect(api.listCalls).toEqual([]);
   });
 
   it("stays suspended on `watching` until the root_resumed resync arrives", async () => {
@@ -563,6 +621,25 @@ describe("watcher states", () => {
     vi.advanceTimersByTime(EXPLORER_REFRESH_DELAY_MS);
     await flush();
     expect(rowIds(session)).toEqual(["id:top.ts"]);
+  });
+
+  it("issues no SCHEDULED listing while unavailable, but Refresh still works", async () => {
+    vi.useFakeTimers();
+    const session = await liveSession();
+    api.emit(statusEvent("unavailable", { warnings: ["os_watch_limit_reached"] }));
+    api.listCalls.length = 0;
+
+    // A watcher that is not watching will send nothing more, so a window that
+    // happens to close now is asking on the strength of events that stopped.
+    api.emit(resyncEvent("watcher_restarted", { watcherGeneration: 4 }));
+    vi.advanceTimersByTime(EXPLORER_REFRESH_DELAY_MS * 2);
+    await flush();
+    expect(api.listCalls).toEqual([]);
+
+    // The user's own Refresh is an explicit act and is never gated on it.
+    session.refreshNow();
+    await flush();
+    expect(api.listCalls.map((call) => call.nodeId)).toEqual([null]);
   });
 
   it("unavailable KEEPS the rows and names the remedy", async () => {
@@ -994,6 +1071,31 @@ describe("subscribePath (the file viewer's seam)", () => {
     const { heard } = await following("src/a.ts");
     api.emit(changedEvent([{ path: "src/a.ts", kind: "deleted" }], { batchSeq: 0 }));
     expect(heard[0]).toBe("deleted");
+  });
+
+  it("hears a DELETED for an ANCESTOR, because no per-file delete is coming", async () => {
+    const { heard } = await following("a/b/c.ts");
+
+    // Main's coalescer SUPPRESSES the descendants of a deleted directory
+    // (`suppressUnderDeletedParents` in `main/studio/files/coalescer.ts`), so
+    // `a/b` is the only delete that will ever be sent about this file. A viewer
+    // matched on the exact path alone would keep showing a file that is gone.
+    api.emit(changedEvent([{ path: "a/b", kind: "deleted" }], { batchSeq: 0 }));
+
+    expect(heard).toEqual(["deleted"]);
+  });
+
+  it("does not treat a NAME-PREFIX sibling directory as an ancestor", async () => {
+    const { heard } = await following("a/b/c.ts");
+    // `a/bb` is not `a/b`, and a segment-wise match is what keeps them apart.
+    api.emit(changedEvent([{ path: "a/bb", kind: "deleted" }], { batchSeq: 0 }));
+    expect(heard).toEqual([]);
+  });
+
+  it("keeps UPDATED exact, so an ancestor's touch is not this file's", async () => {
+    const { heard } = await following("a/b/c.ts");
+    api.emit(changedEvent([{ path: "a/b", kind: "updated" }], { batchSeq: 0 }));
+    expect(heard).toEqual([]);
   });
 
   it("resyncs every subscriber when the session knows it missed events", async () => {

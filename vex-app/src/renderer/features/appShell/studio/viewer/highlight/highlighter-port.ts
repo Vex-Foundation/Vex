@@ -26,6 +26,16 @@
  * highlighter is unavailable rather than showing uncoloured code with no
  * explanation.
  *
+ * ## Cancellation is the CALLER's, through a handle
+ *
+ * `highlight` returns a {@link HighlightHandle} rather than a bare promise, so
+ * the one thing a caller needs - "stop, I no longer want this" - does not
+ * require the caller to know request ids. `cancel` drops the pending entry
+ * here (a late result for it is discarded) and tells the WORKER, which removes
+ * the request from its queue when it has not started and drops it at the next
+ * await point when it has. The outcome resolves `cancelled`, which is an answer
+ * the caller asked for and never a reason to show the user.
+ *
  * ## Ownership
  *
  * The port owns exactly one `Worker` at a time and every pending request
@@ -34,10 +44,11 @@
  * mid-highlight leaves no promise for anyone to await forever.
  */
 
-import type {
-  HighlightRequest,
-  HighlightResponse,
-  TokenLine,
+import {
+  isHighlightResponse,
+  type HighlightCancel,
+  type HighlightRequest,
+  type TokenLine,
 } from "./highlight-protocol.js";
 
 /**
@@ -56,7 +67,21 @@ export type HighlightUnavailableReason =
   /** The worker died, or errored, while this request was outstanding. */
   | "worker_failed"
   /** No worker runtime, or the restart budget is spent. Durable. */
-  | "worker_unavailable";
+  | "worker_unavailable"
+  /**
+   * The worker answered with something that is not a response.
+   *
+   * Our own code behind our own build, so this is a bad chunk or a
+   * half-applied protocol change rather than an attack - and it fails CLOSED
+   * here rather than becoming renderer state.
+   */
+  | "malformed_result"
+  /**
+   * The CALLER abandoned this request. Not a failure and never user-visible:
+   * the caller cancelled because the tab was hidden, its bytes changed, or it
+   * closed, and it is not waiting for an answer to show.
+   */
+  | "cancelled";
 
 export type HighlightOutcome =
   | { readonly ok: true; readonly lines: readonly TokenLine[]; readonly longLines: number }
@@ -67,13 +92,46 @@ export interface HighlightAsk {
   /** The WHOLE file. */
   readonly text: string;
   readonly maxLineLength: number;
+  /**
+   * Who is asking, when the caller wants the port to enforce its bound.
+   *
+   * A caller that names itself gets AT MOST ONE outstanding request: a second
+   * ask under the same name cancels the first, so a tab whose bytes changed
+   * three times while the worker was busy costs one tokenization rather than
+   * three. Omitted, the request stands on its own and the caller owns its
+   * lifetime through the handle.
+   */
+  readonly caller?: string;
+}
+
+/**
+ * One outstanding request, and the only two things a caller does with it.
+ *
+ * `cancel` is IDEMPOTENT and safe after the outcome has settled: a caller that
+ * cancels on hide, on new bytes and again on dispose must not have to track
+ * which of those happened first.
+ */
+export interface HighlightHandle {
+  /** The answer. Never rejects; `cancelled` is one of the answers. */
+  readonly outcome: Promise<HighlightOutcome>;
+  cancel(): void;
 }
 
 export interface HighlighterPort {
-  /** Tokenize. Resolves an outcome; never rejects. */
-  highlight(ask: HighlightAsk): Promise<HighlightOutcome>;
+  /** Tokenize. The handle's outcome resolves; it never rejects. */
+  highlight(ask: HighlightAsk): HighlightHandle;
   /** Release the worker. Idempotent. Pending requests settle unavailable. */
   dispose(): void;
+}
+
+/** A handle for an answer that is already known. Cancelling it does nothing. */
+export function settledHandle(outcome: HighlightOutcome): HighlightHandle {
+  return {
+    outcome: Promise.resolve(outcome),
+    cancel: () => {
+      // Already answered; there is nothing outstanding to abandon.
+    },
+  };
 }
 
 /**
@@ -88,8 +146,8 @@ export class UnavailableHighlighterPort implements HighlighterPort {
   // The ask is accepted and ignored: this port answers the same way for every
   // request, and dropping the parameter from the signature would make callers
   // that hold a `HighlighterPort` fail to type-check against this one.
-  highlight(_ask: HighlightAsk): Promise<HighlightOutcome> {
-    return Promise.resolve({ ok: false, reason: "worker_unavailable" });
+  highlight(_ask: HighlightAsk): HighlightHandle {
+    return settledHandle({ ok: false, reason: "worker_unavailable" });
   }
 
   dispose(): void {
@@ -115,6 +173,8 @@ function defaultWorkerFactory(): Worker {
 
 interface Pending {
   readonly resolve: (outcome: HighlightOutcome) => void;
+  /** The named caller whose one slot this request holds, when there is one. */
+  readonly caller?: string;
 }
 
 export interface WorkerHighlighterPortOptions {
@@ -129,6 +189,14 @@ export class WorkerHighlighterPort implements HighlighterPort {
   #worker: Worker | null = null;
   /** Requests posted to the CURRENT worker, by id. */
   readonly #pending = new Map<number, Pending>();
+  /**
+   * The one outstanding request per NAMED caller. The bound, enforced here.
+   *
+   * BOUNDED by the callers that named themselves and still have work in
+   * flight: an entry is removed when its request settles, is cancelled, or is
+   * superseded by that same caller's next ask.
+   */
+  readonly #outstandingByCaller = new Map<string, number>();
   #nextRequestId = 1;
   /** Workers built after the first. Compared against the bound. */
   #restarts = 0;
@@ -146,9 +214,19 @@ export class WorkerHighlighterPort implements HighlighterPort {
     return this.#restarts;
   }
 
-  highlight(ask: HighlightAsk): Promise<HighlightOutcome> {
+  highlight(ask: HighlightAsk): HighlightHandle {
     if (this.#disposed || this.#givenUp) {
-      return Promise.resolve({ ok: false, reason: "worker_unavailable" });
+      return settledHandle({ ok: false, reason: "worker_unavailable" });
+    }
+
+    // SUPERSEDE. A named caller's previous request is abandoned before the new
+    // one is posted, so the worker drops it from its queue if it has not
+    // started - which is the request that would otherwise have burned a whole
+    // tokenization for bytes nobody is looking at any more.
+    const caller = ask.caller;
+    if (caller !== undefined) {
+      const previous = this.#outstandingByCaller.get(caller);
+      if (previous !== undefined) this.#cancel(previous);
     }
 
     let worker: Worker;
@@ -164,7 +242,7 @@ export class WorkerHighlighterPort implements HighlighterPort {
       console.warn("studio viewer highlight: could not start the worker", cause);
       this.#restarts += 1;
       this.#giveUpIfSpent();
-      return Promise.resolve({
+      return settledHandle({
         ok: false,
         reason: this.#givenUp ? "worker_unavailable" : "worker_failed",
       });
@@ -172,9 +250,13 @@ export class WorkerHighlighterPort implements HighlighterPort {
 
     const requestId = this.#nextRequestId;
     this.#nextRequestId += 1;
+    if (caller !== undefined) this.#outstandingByCaller.set(caller, requestId);
 
-    return new Promise<HighlightOutcome>((resolve) => {
-      this.#pending.set(requestId, { resolve });
+    const outcome = new Promise<HighlightOutcome>((resolve) => {
+      this.#pending.set(requestId, {
+        resolve,
+        ...(caller === undefined ? {} : { caller }),
+      });
       const request: HighlightRequest = {
         kind: "highlight",
         requestId,
@@ -190,6 +272,45 @@ export class WorkerHighlighterPort implements HighlighterPort {
         this.#failAll("worker_failed", cause);
       }
     });
+
+    return {
+      outcome,
+      cancel: () => {
+        this.#cancel(requestId);
+      },
+    };
+  }
+
+  /**
+   * Abandon one request. Idempotent, and safe after it has settled.
+   *
+   * The pending entry goes FIRST, so a result already on its way in is dropped
+   * by the same fence that drops a result for a rebuilt worker. Then the worker
+   * is told, so it can skip work it has not started.
+   */
+  #cancel(requestId: number): void {
+    const pending = this.#pending.get(requestId);
+    if (pending === undefined) return;
+    this.#pending.delete(requestId);
+    this.#forgetCaller(pending, requestId);
+    pending.resolve({ ok: false, reason: "cancelled" });
+
+    const worker = this.#worker;
+    if (worker === null) return;
+    const message: HighlightCancel = { kind: "cancel", requestId };
+    try {
+      worker.postMessage(message);
+    } catch (cause: unknown) {
+      this.#failAll("worker_failed", cause);
+    }
+  }
+
+  /** Release a caller's slot, but only when it still names THIS request. */
+  #forgetCaller(pending: Pending, requestId: number): void {
+    const caller = pending.caller;
+    if (caller === undefined) return;
+    if (this.#outstandingByCaller.get(caller) !== requestId) return;
+    this.#outstandingByCaller.delete(caller);
   }
 
   dispose(): void {
@@ -223,20 +344,36 @@ export class WorkerHighlighterPort implements HighlighterPort {
       // call `onerror` makes.
       this.#failAll("worker_failed", event);
     };
-    worker.onmessage = (event: MessageEvent<HighlightResponse>) => {
+    worker.onmessage = (event: MessageEvent<unknown>) => {
       this.#onMessage(event.data);
     };
     this.#worker = worker;
     return worker;
   }
 
-  #onMessage(response: HighlightResponse): void {
+  /**
+   * A message from the worker. VALIDATED before it can become anything.
+   *
+   * The shape guard is here rather than in the session because this is where
+   * the process boundary is (rule 04: validate once, at the real boundary). A
+   * message that is not a response cannot be attributed to a request, so every
+   * outstanding one fails closed with `malformed_result` - the same
+   * conservative call `onmessageerror` makes for the same reason.
+   */
+  #onMessage(response: unknown): void {
+    if (!isHighlightResponse(response)) {
+      console.warn("studio viewer highlight: the worker sent an unusable message");
+      this.#settleAll({ ok: false, reason: "malformed_result" });
+      return;
+    }
     if (response.kind === "ready") return;
     const pending = this.#pending.get(response.requestId);
-    // An answer for a request this port no longer holds: the worker was torn
-    // down and rebuilt, or the port was disposed. Dropping it is the fence.
+    // An answer for a request this port no longer holds: it was cancelled, the
+    // worker was torn down and rebuilt, or the port was disposed. Dropping it
+    // is the fence.
     if (pending === undefined) return;
     this.#pending.delete(response.requestId);
+    this.#forgetCaller(pending, response.requestId);
     pending.resolve(
       response.ok
         ? { ok: true, lines: response.lines, longLines: response.longLines }
@@ -281,6 +418,7 @@ export class WorkerHighlighterPort implements HighlighterPort {
   #settleAll(outcome: HighlightOutcome): void {
     const pending = [...this.#pending.values()];
     this.#pending.clear();
+    this.#outstandingByCaller.clear();
     for (const entry of pending) entry.resolve(outcome);
   }
 }

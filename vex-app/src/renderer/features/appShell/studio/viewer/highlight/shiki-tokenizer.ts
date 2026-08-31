@@ -44,6 +44,21 @@
  * failures are therefore about the MODULE (a failed dynamic import), and both
  * paths are caught below and mapped to their own code.
  *
+ * ## Every line is CHECKED against the source it came from
+ *
+ * A highlighter that drops or duplicates bytes would silently change what the
+ * user reads, and a viewer is the one surface where that is unacceptable: the
+ * file on screen is evidence. So each projected line's token texts are
+ * concatenated and compared with the source line, and a line that does not
+ * reconstruct falls back to ONE plain token carrying the source text - the
+ * colour is lost for that line, the bytes never are.
+ *
+ * The comparison is sound because shiki splits lines exactly as
+ * `text.split(/\r?\n/)` does. MEASURED against the installed shiki 4.4.3
+ * rather than assumed: `"const a = 1;\nconst b = 2;\n"` and the same text with
+ * `\r\n` both produce three lines whose token texts carry no terminator and no
+ * `\r`.
+ *
  * ## The long-line rule is shiki's own, and it is VS Code's value
  *
  * `tokenizeMaxLineLength` is a first-class shiki option: a line at or above it
@@ -300,7 +315,7 @@ export function createTokenizer(options: TokenizerOptions = {}): ShikiTokenizer 
           theme: THEME_NAME,
           tokenizeMaxLineLength: maxLineLength,
         });
-        return { ok: true, result: projectLines(lines, maxLineLength) };
+        return { ok: true, result: projectLines(lines, text, maxLineLength) };
       } catch (cause: unknown) {
         warn(`tokenizing ${language} failed`, cause);
         return { ok: false, reason: "tokenize_failed" };
@@ -397,18 +412,26 @@ function plainToken(text: string): HighlightToken {
  * property (plain-language lines) and an empty string (over-length lines) - so
  * the renderer has one case.
  */
-function projectLines(
+/**
+ * Exported for its COLOCATED test only, which drives the reconstruction rule
+ * with token streams a real grammar will not produce on demand. It is a pure
+ * function over its arguments; nothing outside this folder imports it.
+ */
+export function projectLines(
   lines: readonly (readonly ThemedToken[])[],
+  text: string,
   maxLineLength: number,
 ): TokenizeResult {
+  const sourceLines = text.split(/\r?\n/);
   const projected: TokenLine[] = [];
   let longLines = 0;
+  let unreconstructed = 0;
 
-  for (const line of lines) {
-    let length = 0;
+  for (const [index, line] of lines.entries()) {
+    let rendered = "";
     const tokens: HighlightToken[] = [];
     for (const token of line) {
-      length += token.content.length;
+      rendered += token.content;
       const style = token.fontStyle ?? 0;
       tokens.push({
         text: token.content,
@@ -418,8 +441,34 @@ function projectLines(
         underline: (style & FONT_STYLE_UNDERLINE) !== 0,
       });
     }
-    if (isOverLength(length, maxLineLength)) longLines += 1;
+    if (isOverLength(rendered.length, maxLineLength)) longLines += 1;
+
+    // THE RECONSTRUCTION CHECK. The source line is the truth; the tokens are a
+    // decoration over it, and a decoration that changed the text is discarded
+    // rather than shown.
+    const source = sourceLines[index];
+    if (source === undefined || source !== rendered) {
+      unreconstructed += 1;
+      const repaired = source ?? rendered;
+      projected.push(repaired.length === 0 ? [] : [plainToken(repaired)]);
+      continue;
+    }
     projected.push(tokens);
+  }
+
+  // A line shiki never emitted is a line the user would not see at all, so the
+  // remainder of the source is carried through plain rather than dropped.
+  for (let index = lines.length; index < sourceLines.length; index += 1) {
+    const source = sourceLines[index] ?? "";
+    unreconstructed += 1;
+    projected.push(source.length === 0 ? [] : [plainToken(source)]);
+  }
+
+  if (unreconstructed > 0) {
+    warn(
+      `${String(unreconstructed)} line(s) did not reconstruct and were shown plain`,
+      null,
+    );
   }
 
   return { lines: projected, longLines };

@@ -114,7 +114,10 @@ export function FileViewer({
     // that remount free. Acquiring in render would double-count.
     const acquired = activeRegistry.acquire(projectId, tabRef.current);
     setSession(acquired);
-    acquired.activate();
+    // Fire and forget: `activate` awaits the project's watch before its first
+    // read and the session owns every state it can reach, so there is nothing
+    // for this effect to do with the promise.
+    void acquired.activate();
     return () => {
       activeRegistry.release(tabRef.current.tabId);
     };

@@ -113,7 +113,9 @@ export type PlainReason =
   | "grammar_unavailable"
   | "tokenize_failed"
   | "worker_failed"
-  | "worker_unavailable";
+  | "worker_unavailable"
+  | "malformed_result"
+  | "too_many_tokens";
 
 export function plainReasonText(reason: PlainReason, size: number, bound: number): string {
   switch (reason) {
@@ -129,6 +131,10 @@ export function plainReasonText(reason: PlainReason, size: number, bound: number
       return "Not highlighted: the highlighter stopped. It will be retried on the next file.";
     case "worker_unavailable":
       return "Not highlighted: the highlighter is unavailable.";
+    case "malformed_result":
+      return "Not highlighted: the highlighter returned a result Vex could not use.";
+    case "too_many_tokens":
+      return "Not highlighted: this file has too many syntax pieces to colour.";
   }
 }
 
