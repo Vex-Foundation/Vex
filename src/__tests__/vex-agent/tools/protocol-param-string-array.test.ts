@@ -82,10 +82,44 @@ describe("acceptsStringArray — runtime param boundary", () => {
     expect(reason).toContain("number");
   });
 
-  it("rejects an empty array instead of reading it as 'no filter'", () => {
-    const reason = rejectionFor({ query: "PEPE", chainIds: [] });
+  // DELIBERATE CONTRACT FLIP (2026-08-28). This case used to pin "rejects an
+  // empty array". It cost a production loop: a strict-mode gateway presented
+  // `dexscreener__pairs_new_list` (zero required params, additionalProperties
+  // false) as if every key were required, the model filled each unused list
+  // filter with `[]`, and the refusal told it to omit a parameter its schema
+  // appeared to forbid omitting - seven byte-identical refusals in a row.
+  // github-mcp-server's OptionalStringArrayParam treats missing, nil and empty
+  // identically; so do we, on OPTIONAL params only.
+  it("treats an empty array on an OPTIONAL param as the parameter being absent", () => {
+    expect(validateProtocolParams(MANIFEST, { query: "PEPE", chainIds: [] }).ok).toBe(true);
+  });
+
+  it("still REFUSES an empty array on a REQUIRED list param", () => {
+    const requiredList: ProtocolToolManifest = {
+      ...MANIFEST,
+      params: [SINGLE_PARAM, { ...LIST_PARAM, required: true }],
+    };
+    const outcome = validateProtocolParams(requiredList, { query: "PEPE", chainIds: [] });
+    expect(outcome.ok).toBe(false);
+    const reason = outcome.ok ? "" : outcome.reason;
     expect(reason).toContain("chainIds");
     expect(reason).toMatch(/empty array/i);
+    // A required param has no absent state to fall back to, so the refusal must
+    // not repeat the "or omit the parameter" advice that produced the loop.
+    expect(reason).not.toMatch(/omit the parameter/i);
+  });
+
+  it("refuses by the model-facing publicName, never the internal dotted toolId", () => {
+    const reason = rejectionFor({ query: "PEPE", chainIds: ["solana", 5] });
+    expect(reason).toContain(MANIFEST.publicName);
+    expect(reason).not.toContain(MANIFEST.toolId);
+  });
+
+  it("names EVERY offending parameter in one refusal instead of aborting at the first", () => {
+    const reason = rejectionFor({ query: 5, chainIds: ["solana", 7], nonsense: "x" });
+    expect(reason).toContain("nonsense");
+    expect(reason).toContain("query");
+    expect(reason).toContain("chainIds");
   });
 
   it("still rejects a non-string, non-array value", () => {

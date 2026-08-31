@@ -65,6 +65,20 @@ export function assertNeverParamType(value: never): never {
 }
 
 /**
+ * The name every model-facing refusal in this module addresses the tool by.
+ *
+ * `publicName` is the identity the model was OFFERED and the one it wrote in
+ * its call; `toolId` is the durable internal dotted id it has never seen.
+ * Measured 2026-08-27: seven refusals naming `dexscreener.pairs.new` for a call
+ * the model made as `dexscreener__pairs_new_list`, which is a rejection it
+ * cannot match to anything it did. The HUMAN-facing dotted-id contract (tool
+ * labels, the approval card) is a different surface and is unchanged.
+ */
+function modelFacingName(manifest: Pick<ProtocolToolManifest, "publicName">): string {
+  return manifest.publicName;
+}
+
+/**
  * The `acceptsStringArray` branch of the type gate — VALIDATION ONLY.
  *
  * Returns a rejection reason, or `null` when the value is an acceptable array.
@@ -73,21 +87,29 @@ export function assertNeverParamType(value: never): never {
  * hashes or captures the call) sees one untouched input rather than a shape this
  * gate silently rewrote.
  *
+ * An empty array refuses only on a REQUIRED param. On an OPTIONAL one it means
+ * the parameter is absent and never reaches here at all: the runtime drops the
+ * key first (`./empty-array-params.ts`), and the caller below treats a
+ * surviving optional `[]` the same way, so a direct caller of this gate cannot
+ * observe a stricter rule than the runtime enforces. A required param has no
+ * absent state to fall back to, so "give me a list" and "give me nothing" stay
+ * distinct there.
+ *
  * A non-string member is named BY POSITION. "chainIds must be strings" leaves an
  * agent re-sending the same 12-element array with the same mistake in it.
  */
 function checkStringArrayParam(
-  toolId: string,
+  toolName: string,
   key: string,
   value: readonly unknown[],
 ): string | null {
   if (value.length === 0) {
-    return `Parameter "${key}" for ${toolId} was an empty array. Supply at least one value, `
-      + "or omit the parameter — an empty list cannot mean both 'none' and 'no filter'.";
+    return `Parameter "${key}" for ${toolName} is required and was an empty array. `
+      + "Supply at least one value - on a required parameter an empty list cannot mean 'no filter'.";
   }
   for (const [index, member] of value.entries()) {
     if (typeof member !== "string") {
-      return `Parameter "${key}" for ${toolId} accepts a string or an array of strings, but the `
+      return `Parameter "${key}" for ${toolName} accepts a string or an array of strings, but the `
         + `item at index ${index} is ${member === null ? "null" : typeof member}.`;
     }
   }
@@ -118,6 +140,11 @@ export type ParamValidation =
  * is a call that genuinely works; a required key the manifest forgot to
  * exemplify degrades to a typed placeholder rather than an invented value.
  *
+ * The example is shown in the CURRENT calling convention: the tool is a
+ * function named by its `publicName` and its arguments are the params, flat.
+ * The `{"toolId": ..., "params": {...}}` envelope it used to print is retired
+ * and showing it taught the model a call shape that no longer exists.
+ *
  * KEYS ONLY, never values, on the "you sent" lane (rule 06): a param value can
  * carry untrusted or secret-adjacent content, a key name cannot.
  */
@@ -126,24 +153,24 @@ function describeMissingRequired(
   param: ProtocolParamDef,
   params: Record<string, unknown>,
 ): string {
+  const name = modelFacingName(manifest);
   const requiredParams = manifest.params.filter((p) => p.required === true);
   const optional = manifest.params.filter((p) => p.required !== true).map((p) => p.key);
   const sent = Object.keys(params).filter((key) => params[key] !== undefined);
-  const example = JSON.stringify({
-    toolId: manifest.toolId,
-    params: Object.fromEntries(
+  const example = `${name}(${JSON.stringify(
+    Object.fromEntries(
       requiredParams.map((p) => [
         p.key,
         manifest.exampleParams[p.key] ?? `<${p.type}>`,
       ] as const),
     ),
-  });
-  return `Missing required parameter "${param.key}" (${param.type}) for ${manifest.toolId}. `
+  )})`;
+  return `Missing required parameter "${param.key}" (${param.type}) for ${name}. `
     + `Required: ${requiredParams.map((p) => p.key).join(", ")}. `
     + `Optional: ${optional.join(", ") || "(none)"}. `
     + `Send: ${example}. `
-    + `You sent params keys: [${sent.join(", ")}]. `
-    + `Do not repeat the previous call — add "${param.key}" inside "params" and call once.`;
+    + `You sent parameter keys: [${sent.join(", ")}]. `
+    + `Do not repeat the previous call - add "${param.key}" and call once.`;
 }
 
 /**
@@ -185,7 +212,7 @@ export function describeParamGroupConstraints(manifest: ProtocolToolManifest): s
  * position, for the same reason `checkStringArrayParam` names the index.
  */
 function checkEnumParam(
-  toolId: string,
+  toolName: string,
   param: ProtocolParamDef,
   value: unknown,
 ): string | null {
@@ -194,18 +221,18 @@ function checkEnumParam(
   const matching = CHAIN_VALUE_PARAM_KEYS.includes(param.key)
     ? "(a chain value matches in any case)"
     : "(exact match, case-sensitive)";
-  const suffix = `Allowed values for "${param.key}" on ${toolId}: ${allowed.join(", ")} `
+  const suffix = `Allowed values for "${param.key}" on ${toolName}: ${allowed.join(", ")} `
     + `${matching}.`;
 
   if (Array.isArray(value)) {
     for (const [index, member] of value.entries()) {
       if (typeof member === "string" && allowed.includes(member)) continue;
-      return `Parameter "${param.key}" for ${toolId} has an unsupported value at index ${index}. ${suffix}`;
+      return `Parameter "${param.key}" for ${toolName} has an unsupported value at index ${index}. ${suffix}`;
     }
     return null;
   }
   if (typeof value === "string" && allowed.includes(value)) return null;
-  return `Parameter "${param.key}" for ${toolId} has an unsupported value. ${suffix}`;
+  return `Parameter "${param.key}" for ${toolName} has an unsupported value. ${suffix}`;
 }
 
 /**
@@ -250,7 +277,7 @@ function checkExclusiveParamGroups(
     const problem = present.length === 0
       ? `none of them is set`
       : `you sent ${present.length}: [${present.join(", ")}]`;
-    return `Parameters ${nameGroup(group)} for ${manifest.toolId} `
+    return `Parameters ${nameGroup(group)} for ${modelFacingName(manifest)} `
       + `are mutually exclusive and ${problem}. ${describeExclusiveParamGroup(group)}`;
   }
   return null;
@@ -268,7 +295,7 @@ function checkAtMostOneGroups(
   for (const group of manifest.atMostOne ?? []) {
     const present = presentGroupMembers(group, params);
     if (present.length <= 1) continue;
-    return `Parameters ${nameGroup(group)} for ${manifest.toolId} cannot be combined, `
+    return `Parameters ${nameGroup(group)} for ${modelFacingName(manifest)} cannot be combined, `
       + `and you sent ${present.length}: [${present.join(", ")}]. ${describeAtMostOneGroup(group)}`;
   }
   return null;
@@ -285,7 +312,7 @@ function checkAtLeastOneOfGroups(
 ): string | null {
   for (const group of manifest.atLeastOneOf ?? []) {
     if (presentGroupMembers(group, params).length > 0) continue;
-    return `Parameters ${nameGroup(group)} for ${manifest.toolId} are all absent — `
+    return `Parameters ${nameGroup(group)} for ${modelFacingName(manifest)} are all absent - `
       + `this call would do nothing. ${describeAtLeastOneOfGroup(group)}`;
   }
   return null;
@@ -363,7 +390,11 @@ function matchEnumIgnoringCase(param: ProtocolParamDef, value: string): string |
  *     "missing" (preserves the pre-B-002 empty-string-as-absent semantics so
  *     an empty optional is allowed and an empty required is rejected).
  *  3. TYPE — a PRESENT param whose value fails its declared primitive schema is
- *     rejected. Missing optionals are not type-checked.
+ *     rejected. Missing optionals are not type-checked, and an EMPTY array on
+ *     an optional `acceptsStringArray` param IS absent (`./empty-array-params.ts`
+ *     drops the key upstream; this gate agrees so a direct caller cannot see a
+ *     stricter rule than the runtime enforces). A REQUIRED list param still
+ *     refuses an empty array.
  *  4. ENUM — a param declaring a closed value set rejects anything off it,
  *     naming the allowed values.
  *  5. UNIT — a param declaring a domain unit (`unit: "bps"`) must additionally
@@ -373,7 +404,15 @@ function matchEnumIgnoringCase(param: ProtocolParamDef, value: string): string |
  *     gate so the value is already proven to be a number.
  *  6. GROUPS — each declared `exclusiveParamGroups` group must have exactly one
  *     member present, each `atMostOne` group at most one, each `atLeastOneOf`
- *     group at least one. Runs LAST: a group is about the CALL, not a value.
+ *     group at least one. Runs LAST, and only when steps 1-5 collected nothing:
+ *     a group is about the CALL, not a value.
+ *
+ * Steps 1-5 COLLECT. Every offending parameter is named in one refusal, at most
+ * one error each, in the order above, bounded by `RefusalAccumulator` (which
+ * reports what it did not list). Aborting at the first key cost one round trip
+ * per key; see the accumulator's doc for the loop that measured it.
+ *
+ * Every refusal addresses the tool by its `publicName` (see `modelFacingName`).
  *
  * Messages are agent-actionable and contain only the offending KEY + declared
  * type — never a string value (which could carry untrusted/secret-adjacent
@@ -404,13 +443,97 @@ export function readRejectedParamReason(
   return typeof reason === "string" && reason.trim().length > 0 ? reason : undefined;
 }
 
+/**
+ * The most parameter-level errors one refusal renders, and the most unknown
+ * keys inside that budget.
+ *
+ * A refusal exists to be ACTED ON. Twenty sentences is a wall the agent skims;
+ * eight is a checklist it can work through in one retry. Unknown keys get the
+ * smaller share because each one repeats the same allowed-parameter list.
+ */
+const MAX_REPORTED_PARAM_ERRORS = 8;
+const MAX_REPORTED_UNKNOWN_KEYS = 5;
+
+/** Longest model-authored key rendered verbatim inside a refusal. */
+const MAX_RENDERED_KEY_CHARS = 64;
+
+/**
+ * A key the MODEL invented, rendered for the refusal that names it.
+ *
+ * The key is untrusted in LENGTH: a malformed tool call can carry a
+ * multi-kilobyte property name, and splicing it whole into model-visible output
+ * spends the agent's context on its own typo. The bound REPORTS itself - the
+ * agent is told the rendering was shortened and by how much - so nothing is
+ * silently dropped (CLAUDE.md: a bound that names what it left out is a bound,
+ * not a cut).
+ */
+function renderModelKey(key: string): string {
+  if (key.length <= MAX_RENDERED_KEY_CHARS) return key;
+  return `${key.slice(0, MAX_RENDERED_KEY_CHARS)}[... key shortened for display, `
+    + `${key.length} characters total]`;
+}
+
+/**
+ * Every parameter-level problem in ONE refusal instead of one round trip each.
+ *
+ * Measured 2026-08-27: a strict-mode gateway filled every list filter of
+ * `dexscreener__pairs_new_list` and the gate answered the FIRST offending key
+ * only, so no single refusal could tell the agent what the whole call had to
+ * become. The accumulator preserves the enforcement ORDER (unknown keys, then
+ * required, then type, then enum/unit) and holds at most one error per
+ * parameter. It is BOUNDED in both directions - it stops after
+ * {@link MAX_REPORTED_PARAM_ERRORS} errors and after
+ * {@link MAX_REPORTED_UNKNOWN_KEYS} unknown keys - and it STATES how many
+ * problems it did not list, so the agent knows another pass is coming.
+ */
+class RefusalAccumulator {
+  private readonly reasons: string[] = [];
+  private unknownKeysSeen = 0;
+  private suppressed = 0;
+
+  /**
+   * Reserve the unknown-key budget BEFORE the caller builds a sentence, so a
+   * key past the cap costs neither a rendered message nor a table lookup.
+   * Returns false when this unknown key will not be listed.
+   */
+  admitUnknownKey(): boolean {
+    this.unknownKeysSeen += 1;
+    if (this.unknownKeysSeen > MAX_REPORTED_UNKNOWN_KEYS) {
+      this.suppressed += 1;
+      return false;
+    }
+    return true;
+  }
+
+  add(reason: string): void {
+    if (this.reasons.length >= MAX_REPORTED_PARAM_ERRORS) {
+      this.suppressed += 1;
+      return;
+    }
+    this.reasons.push(reason);
+  }
+
+  /** The refusal text, or `null` when nothing was collected. */
+  render(): string | null {
+    if (this.reasons.length === 0) return null;
+    const tail = this.suppressed > 0
+      ? [`${this.suppressed} further parameter problem`
+        + `${this.suppressed === 1 ? " was" : "s were"} not listed. `
+        + `Fix the ones above and call again to see the rest.`]
+      : [];
+    return [...this.reasons, ...tail].join("\n");
+  }
+}
+
 export function validateProtocolParams(
   manifest: ProtocolToolManifest,
   params: Record<string, unknown>,
 ): ParamValidation {
   const declared = new Map(manifest.params.map((p) => [p.key, p] as const));
+  const name = modelFacingName(manifest);
+  const errors = new RefusalAccumulator();
 
-  // 0. Chain-key number→string normalization (W6f) — see the function's doc for
+  // 0. Chain-key number->string normalization (W6f) - see the function's doc for
   // why this one transform lives inside an otherwise pure gate.
   normalizeChainValueParams(manifest, params);
 
@@ -423,6 +546,7 @@ export function validateProtocolParams(
     // still rejected here, and a wrong-typed declared value is still rejected below.
     if (params[key] === undefined) continue;
     if (!declared.has(key) && !RESERVED_RUNTIME_PARAM_KEYS.has(key)) {
+      if (!errors.admitUnknownKey()) continue;
       // A key the convention RETIRED is answered with its replacement. The
       // banned spellings are exactly the ones a model reaches for from memory
       // of the pre-convention tree (`chainId`, `amount`, `inputToken`), and
@@ -455,71 +579,88 @@ export function validateProtocolParams(
       // another name off the allowed list, and a filter that is structurally
       // impossible here needs to say WHY or it gets retried under a synonym.
       const rejected = readRejectedParamReason(manifest, key);
-      return {
-        ok: false,
-        reason:
-          `Unknown parameter "${key}" for ${manifest.toolId}. `
-          + (rejected ? `${rejected} ` : "")
-          + (replacement ? `Instead ${replacement}. ` : "")
-          + `Allowed parameters: ${manifest.params.map((p) => p.key).join(", ") || "(none)"}.`,
-      };
+      errors.add(
+        `Unknown parameter "${renderModelKey(key)}" for ${name}. `
+        + (rejected ? `${rejected} ` : "")
+        + (replacement ? `Instead ${replacement}. ` : "")
+        + `Allowed parameters: ${manifest.params.map((p) => p.key).join(", ") || "(none)"}.`,
+      );
     }
   }
 
-  // 2 + 3. Per-declared-param required presence + strict type.
+  // 2 + 3 + 4 + 5. Per-declared-param checks, at most ONE error per parameter:
+  // the first gate a key fails is the one that answers it, and no enum or unit
+  // verdict is rendered for a value whose TYPE is already wrong.
   for (const param of manifest.params) {
     const value = params[param.key];
     const missing = value === undefined || value === null || value === "";
     if (param.required && missing) {
-      return { ok: false, reason: describeMissingRequired(manifest, param, params) };
+      errors.add(describeMissingRequired(manifest, param, params));
+      continue;
     }
-    if (missing) continue; // optional + absent — not type-checked
+    if (missing) continue; // optional + absent - not type-checked
 
     if (Array.isArray(value)) {
       // `typeof [] === "object"`, so the generic message below would tell an
-      // agent that sent a list that we expected a string and got an "object" —
+      // agent that sent a list that we expected a string and got an "object" -
       // true, unhelpful, and the exact wording that cost a call in the persona
       // gate. Both branches name the array explicitly.
       if (param.acceptsStringArray !== true) {
-        return {
-          ok: false,
-          reason:
-            `Parameter "${param.key}" for ${manifest.toolId} has invalid type: `
-            + `expected ${param.type}, got array — this parameter takes a single value, not a list.`,
-        };
+        errors.add(
+          `Parameter "${param.key}" for ${name} has invalid type: `
+          + `expected ${param.type}, got array - this parameter takes a single value, not a list.`,
+        );
+        continue;
       }
-      const violation = checkStringArrayParam(manifest.toolId, param.key, value);
-      if (violation) return { ok: false, reason: violation };
-      const offList = checkEnumParam(manifest.toolId, param, value);
-      if (offList) return { ok: false, reason: offList };
+      // An EMPTY array on an OPTIONAL list param IS the absent parameter (see
+      // `./empty-array-params.ts`, which removes the key upstream). Nothing is
+      // filtered on and nothing is refused; a required param falls through to
+      // the empty-array refusal below.
+      if (value.length === 0 && param.required !== true) continue;
+      const violation = checkStringArrayParam(name, param.key, value);
+      if (violation) {
+        errors.add(violation);
+        continue;
+      }
+      const offList = checkEnumParam(name, param, value);
+      if (offList) errors.add(offList);
       continue; // validated as a list; the primitive schema does not apply
     }
 
     const parsed = primitiveSchema(param.type).safeParse(value);
     if (!parsed.success) {
-      return {
-        ok: false,
-        reason:
-          `Parameter "${param.key}" for ${manifest.toolId} has invalid type: `
-          + `expected ${param.type}, got ${typeof value}`,
-      };
+      errors.add(
+        `Parameter "${param.key}" for ${name} has invalid type: `
+        + `expected ${param.type}, got ${typeof value}`,
+      );
+      continue;
     }
 
     // 4. Closed value set. Runs after the type gate so the value is already
     // proven to be a string.
-    const offList = checkEnumParam(manifest.toolId, param, value);
-    if (offList) return { ok: false, reason: offList };
+    const offList = checkEnumParam(name, param, value);
+    if (offList) {
+      errors.add(offList);
+      continue;
+    }
 
     // 5. Domain-unit contract. `unit` is only meaningful on a numeric param;
     // the `typeof` guard keeps a mis-declared manifest from crashing the gate
     // (`protocol-manifest-bps-units.test.ts` fails the build for that case).
     if (param.unit === "bps" && typeof value === "number") {
-      const violation = checkBpsParam(manifest.toolId, param.key, value);
-      if (violation) return { ok: false, reason: violation };
+      const violation = checkBpsParam(name, param.key, value);
+      if (violation) errors.add(violation);
     }
   }
 
-  // 6. Cross-param group rules, once for the manifest, strongest first.
+  const collected = errors.render();
+  if (collected !== null) return { ok: false, reason: collected };
+
+  // 6. Cross-param group rules, once for the manifest, strongest first. Runs
+  // AFTER the collected per-parameter errors and only when there are none: a
+  // group verdict is about the SHAPE of a call whose individual values are
+  // already known good, and rendering it over a call that also has an unknown
+  // key or a wrong type sends the agent after the wrong correction first.
   const exclusivityViolation = checkExclusiveParamGroups(manifest, params);
   if (exclusivityViolation) return { ok: false, reason: exclusivityViolation };
   const atMostOneViolation = checkAtMostOneGroups(manifest, params);

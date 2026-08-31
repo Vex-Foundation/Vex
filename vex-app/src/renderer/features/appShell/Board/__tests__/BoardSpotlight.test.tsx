@@ -17,7 +17,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { BoardDetailsBundle } from "@shared/schemas/board-details.js";
@@ -97,7 +105,6 @@ function okTraders(rows: unknown[] = []) {
       outcome: {
         kind: "traders" as const,
         rows,
-        rowsAvailable: rows.length,
         lookbackDays: 30,
         windowLabel: "30-day pair-local cash flow",
         semanticsNote:
@@ -1018,6 +1025,138 @@ describe("the SPOTLIGHT+ sections", () => {
     // The list scrolls inside a capped surface rather than cutting rows.
     expect(list?.className).toContain("overflow-y-auto");
     expect(list?.className).toContain("max-h-");
+  });
+
+  /**
+   * THE DEFECT, AND THE SECOND ATTEMPT AT IT.
+   *
+   * The row first showed `label ?? maker` with the ADDRESS on `title`: one
+   * fact visible, a different one on hover, and nothing reachable without a
+   * pointer. The first fix put the full string in an `sr-only` span, which
+   * helped screen readers ONLY - a sighted keyboard or touch user still could
+   * not reveal a 40+ character address clipped in a narrow column, and this
+   * test pinned that half-fix by asserting the hidden copy's text.
+   *
+   * The contract is "reachable without hover", so the assertions are now about
+   * the REVEAL: a real focusable control, and both complete values on screen
+   * after it is activated.
+   *
+   * WHY ACTIVATION IS ASSERTED WITH A CLICK. The control is a native
+   * `<button>`, so Enter and Space activation is the BROWSER's behaviour and
+   * we deliberately write no key handler for it; jsdom does not synthesise
+   * that click, so asserting `keyDown` here would test a handler that must not
+   * exist. The button element plus its focusability is what guarantees the
+   * keyboard path, and both are asserted directly.
+   */
+  it("reveals a labelled trader's full label and address from the keyboard, with no hover", async () => {
+    const maker = "0xwallet0000000000000000000000000000000001";
+    const label = "Whale desk that trades under a very long descriptive name";
+    readTopTraders.mockResolvedValue(
+      okTraders([
+        {
+          maker,
+          label,
+          buys: 1,
+          sells: 1,
+          boughtUsd: 1000,
+          soldUsd: 500,
+          netCashFlowUsd: 500,
+          providerRank: 1,
+        },
+      ]),
+    );
+    const board = boardRef();
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+
+    const control = document.querySelector(
+      '[data-vex-area="board-spotlight-trader-identity"]',
+    ) as HTMLElement | null;
+    if (control === null) throw new Error("the identity control was not rendered");
+
+    // A REAL CONTROL: a native button is what makes Enter and Space work
+    // without a key handler of our own, and what puts it in the tab order.
+    expect(control.tagName).toBe("BUTTON");
+    expect(control.getAttribute("type")).toBe("button");
+    expect(control.getAttribute("aria-hidden")).toBeNull();
+    expect(control.getAttribute("tabindex")).toBeNull();
+
+    // REACHABLE: it takes focus, so a keyboard user arrives at it.
+    act(() => {
+      control.focus();
+    });
+    expect(document.activeElement).toBe(control);
+
+    // Collapsed: both values are present but clipped by CSS, never cut.
+    expect(control.getAttribute("aria-expanded")).toBe("false");
+    const labelNode = control.querySelector(
+      '[data-vex-area="board-spotlight-trader-identity-label"]',
+    );
+    const makerNode = control.querySelector(
+      '[data-vex-area="board-spotlight-trader-identity-maker"]',
+    );
+    expect(labelNode?.textContent).toBe(label);
+    expect(makerNode?.textContent).toBe(maker);
+    expect(labelNode?.className).toContain("truncate");
+    expect(makerNode?.className).toContain("truncate");
+
+    // ACTIVATE - what Enter and Space produce on a native button.
+    act(() => {
+      fireEvent.click(control);
+    });
+
+    // REVEALED: neither value is clipped any more, and both are still whole.
+    expect(control.getAttribute("aria-expanded")).toBe("true");
+    expect(labelNode?.className).not.toContain("truncate");
+    expect(makerNode?.className).not.toContain("truncate");
+    expect(labelNode?.textContent).toBe(label);
+    expect(makerNode?.textContent).toBe(maker);
+
+    // And it closes again from the same control.
+    act(() => {
+      fireEvent.click(control);
+    });
+    expect(control.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("reveals the address alone when the provider sent no label", async () => {
+    const maker = "0xwallet0000000000000000000000000000000002";
+    readTopTraders.mockResolvedValue(
+      okTraders([
+        {
+          maker,
+          label: null,
+          buys: 1,
+          sells: 1,
+          boughtUsd: 1000,
+          soldUsd: 500,
+          netCashFlowUsd: 500,
+          providerRank: 1,
+        },
+      ]),
+    );
+    const board = boardRef();
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+
+    const control = document.querySelector(
+      '[data-vex-area="board-spotlight-trader-identity"]',
+    ) as HTMLElement | null;
+    if (control === null) throw new Error("the identity control was not rendered");
+
+    expect(
+      control.querySelector('[data-vex-area="board-spotlight-trader-identity-label"]'),
+    ).toBeNull();
+    act(() => {
+      fireEvent.click(control);
+    });
+    expect(control.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      control.querySelector('[data-vex-area="board-spotlight-trader-identity-maker"]')
+        ?.textContent,
+    ).toBe(maker);
   });
 
   it("every section has a pending state before its read lands", () => {

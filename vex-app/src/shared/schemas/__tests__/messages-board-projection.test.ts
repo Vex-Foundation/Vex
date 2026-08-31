@@ -33,6 +33,7 @@ const DTO_BASE = {
   durationMs: null,
   success: null,
   displayStatus: null,
+  interruptDisposition: null,
 };
 
 describe("board DTO projection", () => {

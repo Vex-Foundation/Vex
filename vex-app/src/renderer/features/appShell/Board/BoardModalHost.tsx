@@ -140,8 +140,26 @@ export function BoardModalHost({
     >
       <DialogContent
         size="board"
-        className="vex-board-dialog"
+        // THE DRAWER IS PAID FOR BY THE DIALOG, NOT BY THE CARDS. The Ask VEX
+        // panel is a fixed 360px taken out of the board's own width, and at
+        // the `board` size's 1280px cap that came straight off the cards: at a
+        // 1440px window every card fell to 268px, below what a stat column or
+        // a price row needs. Opening the drawer therefore widens the box by
+        // exactly the drawer, capped at 94vw so it can never exceed the window
+        // it lives in.
+        //
+        // THE POLICY IS THE HOST'S, THE MECHANISM IS THE PRIMITIVE'S.
+        // `components/ui/dialog.tsx` stays generic and knows nothing about Ask
+        // VEX; `cn` runs tailwind-merge over the result, so these utilities
+        // REPLACE the size family's own width classes rather than fighting
+        // them for specificity.
+        className={
+          askPanelOpen
+            ? "vex-board-dialog w-[min(94vw,1640px)] max-w-[min(94vw,1640px)]"
+            : "vex-board-dialog"
+        }
         data-vex-surface="board-modal"
+        data-vex-drawer={askPanelOpen ? "open" : "closed"}
       >
         {/* The visible header is ours below; the screen reader still gets a
          * real title and description carrying the dialog's context ids. */}

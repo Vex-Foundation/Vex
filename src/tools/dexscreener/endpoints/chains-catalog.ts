@@ -527,6 +527,40 @@ export function addressShapeForArchitecture(
 }
 
 /**
+ * Whether `id` is shaped like a PAIR identity of `architecture`.
+ *
+ * A PAIR IS NOT A TOKEN, AND ON EVM IT STOPPED BEING AN ADDRESS. A Uniswap v4
+ * pool has no contract of its own: the singleton PoolManager holds every pool
+ * and identifies each one by a 32-byte `PoolId`, so DexScreener serves those
+ * pairs under `0x` plus 64 hex digits. Reading a pair identity with the TOKEN
+ * grammar (`addressShapeForArchitecture`, 40 hex) calls every v4 pool a
+ * chain/shape mismatch and refuses to ask the provider about a pair the
+ * provider itself published.
+ *
+ * The evidence is committed, not inferred: `token-pairs-v1-ethereum-weth.json`
+ * carries three `chainId: "ethereum"` rows whose `pairAddress` is 64 hex and
+ * whose `labels` contain `v4`, and the captured live v8 subscribe command
+ * (`v8-batch-known-three.command.provenance.json`) sends a 64-hex id under the
+ * EVM slug `robinhood` to a socket that answered `101`.
+ *
+ * SCOPE. This widens PAIR identities on EVM only. The token grammar is
+ * untouched in both of its homes (this module's `addressShapeForArchitecture`
+ * and `assertTokenAddressShaped` in the resolve handler), so a 64-hex value
+ * written as a TOKEN is still refused - which is the check that catches a
+ * caller pasting a pool id into the token lane. SVM is unchanged: a Solana pair
+ * is a base58 account exactly as before, and `unknown` still means undecided.
+ */
+export function pairIdShapeForArchitecture(
+  architecture: string | null,
+  id: string
+): "match" | "mismatch" | "unknown" {
+  const trimmed = id.trim();
+  if (trimmed === "") return "unknown";
+  if (architecture === "evm" && /^0x[0-9a-fA-F]{64}$/.test(trimmed)) return "match";
+  return addressShapeForArchitecture(architecture, trimmed);
+}
+
+/**
  * Rank catalog slugs by nearness to `input`, best first.
  *
  * Three signals, in order: one slug containing the other (a truncated or

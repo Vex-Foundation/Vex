@@ -33,6 +33,7 @@ import {
   resolveChainSlugs,
   assertChainSlugsResolved,
   addressShapeForArchitecture,
+  pairIdShapeForArchitecture,
   type ChainsCatalog,
 } from "@tools/dexscreener/endpoints/chains-catalog.js";
 import {
@@ -1383,10 +1384,14 @@ export function parseBatchInputs(
       }
       slug = resolved;
       const chain = catalog.bySlug.get(resolved);
-      if (
-        chain !== undefined
-        && addressShapeForArchitecture(chain.architecture, id) === "mismatch"
-      ) {
+      // `kind` decides the grammar. A PAIR identity on EVM may be a Uniswap v4
+      // `PoolId` (0x + 64 hex), which has no contract address and which the
+      // provider itself publishes; a TOKEN identity keeps the 40-hex address
+      // grammar, so a pool id pasted into the token lane is still named here.
+      const shape = kind === "pair"
+        ? pairIdShapeForArchitecture(chain?.architecture ?? null, id)
+        : addressShapeForArchitecture(chain?.architecture ?? null, id);
+      if (chain !== undefined && shape === "mismatch") {
         chainShapeMismatch.push(trimmed);
         return;
       }

@@ -67,7 +67,6 @@ function tradersPanel(rowLabel: string, fetchedAtMs = FETCHED_AT): unknown {
   return {
     kind: "traders",
     rows: [],
-    rowsAvailable: 0,
     lookbackDays: 30,
     windowLabel: rowLabel,
     semanticsNote: "One pool, thirty days of pair-local cash flow.",

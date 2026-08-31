@@ -151,13 +151,21 @@ export function setupAgentBridges(): () => Promise<void> {
   // Sequential rather than concurrent, because the ordering inside the teardown
   // above is the point of it. `await` inside the try also catches a rejected
   // async teardown, so one bad disposer still cannot poison the rest.
-  return async () => {
-    for (const teardown of teardowns) {
-      try {
-        await teardown();
-      } catch {
-        // a misbehaving teardown must not poison the others
+  //
+  // MEMOIZED: the disposer body runs exactly once no matter how many callers
+  // invoke it or how they interleave. A second caller joins the first drain
+  // instead of re-running disposals against already-torn-down handles.
+  let pendingTeardown: Promise<void> | undefined;
+  return () => {
+    pendingTeardown ??= (async () => {
+      for (const teardown of teardowns) {
+        try {
+          await teardown();
+        } catch {
+          // a misbehaving teardown must not poison the others
+        }
       }
-    }
+    })();
+    return pendingTeardown;
   };
 }

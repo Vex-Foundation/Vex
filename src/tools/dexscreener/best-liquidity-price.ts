@@ -82,6 +82,30 @@
  * here would silently corrupt every Solana mint key. The SAME function is
  * applied to the policy's own addresses, so a policy table may be written in
  * whatever case its registry already uses.
+ *
+ * ## One accumulator is ONE chain, and that is ENFORCED
+ *
+ * A quote policy is a per-chain table and an address is only an identity within
+ * one chain: the same 20 bytes are a stablecoin on one EVM chain and an
+ * anonymous contract on the next. A pass therefore declares the DexScreener
+ * chain identifier it is valuing ({@link
+ * BestLiquidityPriceAccumulatorOptions.expectedChainId}, the same slug the
+ * caller puts in the request URL) and every row whose `chainId` is not that
+ * chain is REFUSED, not merely unused. The refusals are counted and reachable
+ * through {@link BestLiquidityPriceAccumulator.foreignChainPairsRefused} so a
+ * caller can log that the provider answered off-chain rows rather than silently
+ * discarding them. The comparison is case-insensitive: the provider's slug
+ * vocabulary is ASCII lowercase and the caller passes the slug it requested.
+ *
+ * ## Numbers off the wire are parsed, never trusted
+ *
+ * `liquidity.usd` is the ONLY tie-break between trusted pools, so it goes
+ * through the same finite-and-non-negative parse as every price field: an
+ * `Infinity`, a string or a negative depth would otherwise decide which pool
+ * prices a wallet. Both `priceUsd / priceNative` inversions are guarded the same
+ * way at the point they are produced, so a denormal `priceNative` cannot emit a
+ * non-finite USD price. An unusable candidate is never offered, so it can never
+ * suppress a shallower valid one.
  */
 
 import type { DexPair } from "./types.js";
@@ -161,6 +185,13 @@ export interface BestLiquidityPriceAccumulatorOptions {
   readonly normalizeAddress: (address: string) => string;
   /** Which quote assets may price a token on this chain. */
   readonly quotePolicy: QuoteAssetPolicy;
+  /**
+   * The DexScreener chain identifier this pass values - the same slug the
+   * caller puts in the request URL ("solana", "base", "robinhood"). Rows
+   * carrying any other `chainId` are refused: an address is an identity only
+   * within one chain, and this policy is one chain's table.
+   */
+  readonly expectedChainId: string;
 }
 
 export interface BestLiquidityPriceAccumulator {
@@ -178,6 +209,12 @@ export interface BestLiquidityPriceAccumulator {
   unpricedAddresses(): string[];
   /** Why each unpriced address is unpriced. Same key set as `unpricedAddresses`. */
   unpricedReasons(): Map<string, UnpricedReason>;
+  /**
+   * Rows refused so far because their `chainId` was not `expectedChainId`.
+   * Non-zero means the provider answered another chain's pools for this
+   * request; nothing was priced from them.
+   */
+  foreignChainPairsRefused(): number;
 }
 
 /**
@@ -208,6 +245,19 @@ function finiteNonNegative(raw: unknown): number | undefined {
 function finitePositive(raw: unknown): number | undefined {
   const value = finiteNonNegative(raw);
   return value !== undefined && value > 0 ? value : undefined;
+}
+
+/**
+ * `priceUsd / priceNative` in dollars, or undefined when the quotient is not a
+ * usable price. The divisor is already strictly positive, but a DENORMAL one
+ * (`5e-324`) still overflows the quotient to Infinity, and a "usd" candidate is
+ * returned VERBATIM at resolve time - only the "native" branch multiplies and
+ * re-checks. Guarding here is what keeps a non-finite dollar value out of a
+ * money display, and an unusable quotient is simply not offered, so it can
+ * never outrank a shallower valid candidate.
+ */
+function invertedUsdPrice(priceUsd: number, priceNative: number): number | undefined {
+  return finiteNonNegative(priceUsd / priceNative);
 }
 
 /** One competing price for one wanted address, resolved at `toPriceMap` time. */
@@ -248,6 +298,9 @@ export function createBestLiquidityPriceAccumulator(
   const stables = new Set<string>();
   for (const address of options.quotePolicy.stables) stables.add(normalizeAddress(address));
   const wrappedNative = normalizeAddress(options.quotePolicy.wrappedNative);
+
+  const expectedChainId = options.expectedChainId.toLowerCase();
+  let foreignChainPairs = 0;
 
   const candidates = new Map<string, Candidate>();
   /** Wanted addresses that HAD a trusted pool, but only below the floor. */
@@ -323,7 +376,18 @@ export function createBestLiquidityPriceAccumulator(
   return {
     addPairs(pairs: readonly DexPair[]): void {
       for (const pair of pairs) {
-        const liquidityUsd = pair.liquidity?.usd ?? 0;
+        // One accumulator values ONE chain. A row from another chain carries
+        // addresses this policy cannot interpret, so it prices nothing and is
+        // counted rather than quietly ignored.
+        if (pair.chainId?.toLowerCase() !== expectedChainId) {
+          foreignChainPairs += 1;
+          continue;
+        }
+
+        // The ONLY tie-break between trusted pools, so it is parsed like a
+        // price: Infinity, a string or a negative depth scores 0 (sub-floor),
+        // never "deepest".
+        const liquidityUsd = finiteNonNegative(pair.liquidity?.usd) ?? 0;
         const meetsFloor = liquidityUsd >= PRICE_SOURCE_MIN_LIQUIDITY_USD;
         const pairAddress = pair.pairAddress;
         const rawQuote = pair.quoteToken?.address;
@@ -361,16 +425,19 @@ export function createBestLiquidityPriceAccumulator(
           };
           if (beats(anchor, nativeAnchor)) nativeAnchor = anchor;
         } else if (tier === 1 && priceUsd !== undefined && priceNative !== undefined) {
-          const implied: Candidate = {
-            tier: 1,
-            basis: "stable-quote-inverted",
-            liquidityUsd,
-            kind: "usd",
-            value: priceUsd / priceNative,
-            pairAddress,
-            quoteSymbol,
-          };
-          if (beats(implied, nativeImplied)) nativeImplied = implied;
+          const impliedNativeUsd = invertedUsdPrice(priceUsd, priceNative);
+          if (impliedNativeUsd !== undefined) {
+            const implied: Candidate = {
+              tier: 1,
+              basis: "stable-quote-inverted",
+              liquidityUsd,
+              kind: "usd",
+              value: impliedNativeUsd,
+              pairAddress,
+              quoteSymbol,
+            };
+            if (beats(implied, nativeImplied)) nativeImplied = implied;
+          }
         }
 
         // ── base side: the wanted token is what the pair prices ──
@@ -410,15 +477,18 @@ export function createBestLiquidityPriceAccumulator(
           priceUsd !== undefined &&
           priceNative !== undefined
         ) {
-          offer(quote, {
-            tier: 0,
-            basis: "stable-quote-inverted",
-            liquidityUsd,
-            kind: "usd",
-            value: priceUsd / priceNative,
-            pairAddress,
-            quoteSymbol,
-          });
+          const invertedUsd = invertedUsdPrice(priceUsd, priceNative);
+          if (invertedUsd !== undefined) {
+            offer(quote, {
+              tier: 0,
+              basis: "stable-quote-inverted",
+              liquidityUsd,
+              kind: "usd",
+              value: invertedUsd,
+              pairAddress,
+              quoteSymbol,
+            });
+          }
         }
       }
     },
@@ -468,6 +538,9 @@ export function createBestLiquidityPriceAccumulator(
         }
       }
       return reasons;
+    },
+    foreignChainPairsRefused(): number {
+      return foreignChainPairs;
     },
   };
 }
