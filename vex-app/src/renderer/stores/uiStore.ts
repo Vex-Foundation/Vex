@@ -268,6 +268,19 @@ export interface UiState {
    */
   readonly bookSectionOrder: readonly string[];
   /**
+   * User's custom order for the STUDIO rail's sections, with its own id set
+   * (`book/studio-section-order.ts`: Portfolio Overview / Wallets / Balances).
+   *
+   * A SEPARATE key from `bookSectionOrder` on purpose: the two rails are
+   * separate registries whose id sets already differ, so one shared key would
+   * make a reorder on either rail rewrite the other, and each rail's resolver
+   * would drop the other's ids. `[]` means "no custom order - use the
+   * default". Same class as `bookSectionOrder`: COSMETIC, persisted (v15), and
+   * coerced on every rehydrate because the payload is user-writable
+   * localStorage.
+   */
+  readonly studioBookSectionOrder: readonly string[];
+  /**
    * Which BOOK tab is selected: the portfolio instrument or the board.
    *
    * A RAIL PREFERENCE, in the same class as `bookOpen` and
@@ -365,6 +378,8 @@ export interface UiState {
   readonly setHideDustBalances: (value: boolean) => void;
   readonly setNotificationsEnabled: (value: boolean) => void;
   readonly setBookSectionOrder: (order: readonly string[]) => void;
+  /** The Studio rail's own order. See `studioBookSectionOrder`. */
+  readonly setStudioBookSectionOrder: (order: readonly string[]) => void;
   /** User-driven only: the tab control calls this and nothing else does. */
   readonly setBookTab: (tab: BookTab) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
@@ -406,6 +421,7 @@ export const useUiStore = create<UiState>()(
       hideDustBalances: true,
       notificationsEnabled: true,
       bookSectionOrder: [],
+      studioBookSectionOrder: [],
       bookTab: "portfolio",
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setSidebarWidth: (px) => set({ sidebarWidth: clampSidebarWidth(px) }),
@@ -466,6 +482,8 @@ export const useUiStore = create<UiState>()(
       setHideDustBalances: (hideDustBalances) => set({ hideDustBalances }),
       setNotificationsEnabled: (notificationsEnabled) => set({ notificationsEnabled }),
       setBookSectionOrder: (bookSectionOrder) => set({ bookSectionOrder }),
+      setStudioBookSectionOrder: (studioBookSectionOrder) =>
+        set({ studioBookSectionOrder }),
       setBookTab: (bookTab) => set({ bookTab }),
       appendLog: (entry) =>
         set((state) => ({
@@ -475,7 +493,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 14,
+      version: 15,
       // Re-stamp the document root once the coerced, resolved theme is
       // known - theme-boot.js painted the pre-bundle frame from the RAW
       // payload, and a tampered value must not survive on <html>.

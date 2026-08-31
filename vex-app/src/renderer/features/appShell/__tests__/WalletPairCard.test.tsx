@@ -1,5 +1,5 @@
 /**
- * WALLETS (session) card — the copy-ready session wallet pair.
+ * WALLETS card - the copy-ready wallet PAIR, on both rails.
  *
  * Pins:
  *   - one row per family the session actually holds; an absent family renders
@@ -23,7 +23,11 @@ const mockUseSessionWallets = vi.hoisted(() => vi.fn());
 vi.mock("../../../lib/api/session-wallets.js", () => ({
   useSessionWallets: mockUseSessionWallets,
 }));
-const { SessionWalletsCard } = await import("../book/SessionWalletsCard.js");
+const mockUseProject = vi.hoisted(() => vi.fn());
+vi.mock("../../../lib/api/projects.js", () => ({
+  useProject: mockUseProject,
+}));
+const { WalletPairCard } = await import("../book/WalletPairCard.js");
 
 const SESSION = "00000000-0000-4000-8000-00000000ddaa";
 const EVM_ADDR = "0xAAAAbbbbccccddddeeeeffff0000111122223333";
@@ -38,20 +42,23 @@ function scope(overrides: Partial<SessionWalletScopeDto>): SessionWalletScopeDto
   };
 }
 
+const IDLE = { isLoading: false, isError: false, data: undefined };
+
 function mount(data: SessionWalletScopeDto | null, isLoading = false) {
   mockUseSessionWallets.mockReturnValue({
     isLoading,
     isError: false,
     data: data === null ? undefined : { ok: true, data },
   });
-  return render(<SessionWalletsCard sessionId={SESSION} />);
+  mockUseProject.mockReturnValue(IDLE);
+  return render(<WalletPairCard scope={{ kind: "session", sessionId: SESSION }} />);
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("SessionWalletsCard", () => {
+describe("WalletPairCard - session scope", () => {
   it("renders a copy-ready row per held family", () => {
     mount(
       scope({
@@ -103,6 +110,84 @@ describe("SessionWalletsCard", () => {
     mount(scope({}));
     expect(
       screen.getByText(/wallet tools stay disabled/i),
+    ).not.toBeNull();
+  });
+});
+
+/**
+ * PROJECT scope (B4c). The property that carries the risk: a project read the
+ * card cannot answer for must land on the project's OWN error line. Nothing
+ * here may reach the global wallet inventory - the card must never name a
+ * wallet the project did not select.
+ */
+describe("WalletPairCard - project scope", () => {
+  const PROJECT = "9c1b0e8e-0000-4000-8000-000000000001";
+
+  function mountProject(
+    state: Record<string, unknown>,
+  ): ReturnType<typeof render> {
+    mockUseSessionWallets.mockReturnValue(IDLE);
+    mockUseProject.mockReturnValue({ isLoading: false, isError: false, ...state });
+    return render(
+      <WalletPairCard scope={{ kind: "project", projectId: PROJECT }} />,
+    );
+  }
+
+  function projectDto(
+    wallets: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return { id: PROJECT, name: "Acme", wallets };
+  }
+
+  it("renders the project's own selected pair, unlabeled rows keeping the family caption", () => {
+    mountProject({
+      data: {
+        ok: true,
+        data: projectDto({
+          evm: { id: "evm_1", address: EVM_ADDR },
+          solana: { id: "sol_1", address: SOL_ADDR },
+        }),
+      },
+    });
+    expect(screen.getByText("0xAAAA…3333")).not.toBeNull();
+    expect(screen.getByText("So1111…1112")).not.toBeNull();
+    expect(screen.getByText("EVM")).not.toBeNull();
+    expect(screen.getByText("SOL")).not.toBeNull();
+  });
+
+  it("never calls the session read for a project scope", () => {
+    mountProject({
+      data: { ok: true, data: projectDto({ evm: null, solana: null }) },
+    });
+    // The hook is declared unconditionally for stable order, but with `null`
+    // so no session query is ever issued for a project card.
+    expect(mockUseSessionWallets).toHaveBeenCalledWith(null);
+  });
+
+  it("a FAILED project read renders the project's error line, never a wider list", () => {
+    mountProject({
+      data: {
+        ok: false,
+        error: { code: "projects.wallet_drift", message: "drift" },
+      },
+    });
+    expect(screen.getByText(/Couldn't load this project's wallets/i)).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Copy address" })).toBeNull();
+  });
+
+  it("an unknown project id is an ERROR, not an empty pair", () => {
+    // `projects.get` resolves to null for a stale selection. Reporting that as
+    // "no wallets selected" would be a different, wrong statement.
+    mountProject({ data: { ok: true, data: null } });
+    expect(screen.getByText(/Couldn't load this project's wallets/i)).not.toBeNull();
+  });
+
+  it("states the consequence when the project selected no wallets", () => {
+    mountProject({
+      data: { ok: true, data: projectDto({ evm: null, solana: null }) },
+    });
+    expect(
+      screen.getByText(/No wallets selected for this project/i),
     ).not.toBeNull();
   });
 });

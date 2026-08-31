@@ -14,6 +14,16 @@
  * with more than one configured wallet (the established switcher rule — a
  * single wallet's aggregate already IS that wallet). No sparkline/chart:
  * deferred until a real history feed exists — never a fake curve.
+ *
+ * UNDER A PROJECT SCOPE (B4c, the Studio rail) the chip row does not render at
+ * all. The chips are GLOBAL INVENTORY identities and narrow through the
+ * `{ scope: "global", walletAddress }` read, so a chip press inside a project
+ * card would replace the project's total with a wallet the project may not
+ * have selected - a silent widening of exactly the kind the scope union exists
+ * to prevent. The project's own pair is the Wallets card directly below, and
+ * narrowing a project read to one of its wallets is the `walletId` member of
+ * the scope, not a global address. The total, its delta and every state line
+ * stay the project's own.
  */
 
 import { useState, type JSX } from "react";
@@ -43,7 +53,12 @@ export function PortfolioOverviewCard({
   /** Wallet scope this card reads (studio seam #3) — never session state read inside. */
   readonly scope: PortfolioCardScope;
 }): JSX.Element {
+  // Named `globalQuery` for the welcome tab it was written for; it is in fact
+  // THE SCOPE'S read - global, session or project - and is the only source of
+  // the card's total, its states and its wallet count.
   const globalQuery = usePortfolio(portfolioReadInputFor(scope));
+  // The scope chips are a GLOBAL-inventory affordance; see the module doc.
+  const chipsAllowed = scope.kind !== "project";
   const walletsQuery = useAvailableWallets();
   const inventory = walletsQuery.data?.ok ? walletsQuery.data.data : null;
   const wallets = inventory !== null ? flattenPortfolioWallets(inventory) : [];
@@ -89,7 +104,7 @@ export function PortfolioOverviewCard({
       ) : (
         <div className="flex flex-col gap-2.5">
           <TotalFigure portfolio={activePortfolio} />
-          {wallets.length > 1 ? (
+          {chipsAllowed && wallets.length > 1 ? (
             <ScopeChipRow
               wallets={wallets}
               selectedId={selectedId}

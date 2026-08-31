@@ -56,6 +56,12 @@ export interface ApprovalCardProps {
    * `aria-labelledby`). Omit for the canonical inline card.
    */
   readonly idVariant?: string;
+  /**
+   * The joined Studio project name from the app-wide read
+   * (`ApprovalPendingGlobalDto.projectName`), when the caller has one. Display
+   * only; `summary.projectId` is the identity and is already on the summary.
+   */
+  readonly projectName?: string | null;
 }
 
 export function ApprovalCard({
@@ -63,6 +69,7 @@ export function ApprovalCard({
   sessionId,
   focusOnMount,
   idVariant,
+  projectName = null,
 }: ApprovalCardProps): JSX.Element {
   const queryClient = useQueryClient();
   const approve = useApprove();
@@ -221,6 +228,7 @@ export function ApprovalCard({
         toolName={toolName}
         criticalArgs={criticalArgs}
         inlineError={inlineError}
+        projectName={projectName}
         signedGlint={signedGlint}
       />
       <ApprovalDecisionActions

@@ -226,7 +226,12 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "Glass is allowed ONLY on the two side rails.",
   },
   {
-    file: "features/appShell/BookPanel.tsx",
+    // Stage B4c: the BOOK's chrome moved out of BookPanel.tsx into the frame
+    // both rails (agent + Studio) now share, so the sanction moved WITH the
+    // glass rather than being duplicated. BookPanel.tsx no longer names the
+    // utility at all, so its entry is deleted rather than left as a stale
+    // sanction.
+    file: "features/appShell/book/BookRailFrame.tsx",
     pattern: "backdrop-blur (glass)",
     reason:
       "User-sanctioned glass rail: the BOOK panel floats as translucent ink " +

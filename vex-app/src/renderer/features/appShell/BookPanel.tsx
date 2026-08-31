@@ -1,37 +1,39 @@
 /**
- * BOOK — the right-edge stage router, and since the card redesign the ONE
- * card-stack host for BOTH stages. Mode is a pure derivation of
- * `activeSessionId`:
+ * BOOK - the right-edge stage router, and since the card redesign the ONE
+ * card-stack host for every stage. Mode is a PURE DERIVATION of the shell's
+ * runtime mode plus its active selection - the panel holds no mode state of
+ * its own:
  *
- *  - WELCOME stage (`null`): the floating collapsible Portfolio tab
- *    (`book/portfolio/WelcomePortfolioPanel` — a round handle button that
- *    expands upward into the Overview/Wallets/Balances card stack). Same
- *    persisted `bookOpen` flag, same `onToggle`.
- *  - SESSION stage: the rail below, now carrying the SAME `PortfolioCard`
- *    stack rather than the retired hairline/mono-ledger `BookBlock` grammar
- *    (owner decree: one card system app-wide). Card order — Position,
- *    Wallets, Balances, Activity, Session. An ADDITIVE
- *    inspect mode (A32/E13, `book/inspect/`) overlays a tool-call view while
- *    the inspect store holds a payload; the stack hides via CSS, never
- *    unmounts.
+ *  - AGENT mode, no session (`activeSessionId === null`): the floating
+ *    collapsible Portfolio tab (`book/portfolio/WelcomePortfolioPanel` - a
+ *    round handle button that expands upward into the Overview/Wallets/
+ *    Balances card stack). Same persisted `bookOpen` flag, same `onToggle`.
+ *  - AGENT mode, a session: the rail below, carrying the `PortfolioCard`
+ *    stack (owner decree: one card system app-wide). Card order - Position,
+ *    Wallets, Balances, Activity, Session. An ADDITIVE inspect mode
+ *    (A32/E13, `book/inspect/`) overlays a tool-call view while the inspect
+ *    store holds a payload; the stack hides via CSS, never unmounts.
+ *  - STUDIO mode, a project selected: the STUDIO rail (`book/StudioBookRail`),
+ *    its own registry (Portfolio Overview / Wallets / Balances) under its own
+ *    persisted order key, every card reading the project scope. The
+ *    agent-only sections and the Board tab never render there.
+ *  - STUDIO mode, NO project selected: the SAME welcome Portfolio tab as
+ *    agent mode. A DECIDED behaviour, not a fallback: before any project
+ *    exists there is no project scope to show, and the global inventory is
+ *    the honest answer to "what do I hold" - it is the user's own aggregate,
+ *    not a project's numbers widened. The moment a project is selected the
+ *    rail switches to that project's scope and never reaches global again.
  *
- * The rail floats over the Eclipse backdrop as soft translucent ink
- * (`--vex-rail` + backdrop-blur, guard-whitelisted for exactly this file and
- * SessionsList), with no separating stroke. Inside, the stack scrolls in the
+ * The rail chrome (the floating aside, its ink, the collapse header bar with
+ * the version stamp and the chevron) is `book/BookRailFrame` - one geometry
+ * and one collapse contract for both rails. Inside, the stack scrolls in the
  * `vex-scroll` column and the cards cascade on the shared
- * `portfolio-motion.ts` stagger — the same gesture the welcome tab uses, so
- * both stages read as one object. Slides in via a CSP-safe one-shot keyframe
- * (`vex-book-enter`), which replays on the welcome→session remount, exactly
- * when the rail materializes; reduced motion collapses it to the final frame.
- *
- * The panel owns its own collapse header bar (first child): the version stamp
- * (relocated from the DESK RULE) + a chevron that calls the same `toggleBook`
- * the DESK RULE toggle uses. When collapsed the panel keeps the header bar
- * mounted (chevron-only spine) and hides the stack via CSS (no remount), so
- * the BOOK slide-in keyframe never replays on expand. The version stamp is
- * shown only when expanded. Width is owned by the AppShell grid track (the
- * shell-columns solver derives auto-close and the 48px spine); the rail
- * only fills its track.
+ * `portfolio-motion.ts` stagger - the same gesture the welcome tab uses, so
+ * every stage reads as one object. The frame slides in via a CSP-safe one-shot
+ * keyframe (`vex-book-enter`), which replays on the welcome->session remount,
+ * exactly when the rail materializes; reduced motion collapses it to the final
+ * frame. Width is owned by the AppShell grid track (the shell-columns solver
+ * derives auto-close and the 48px spine); the rail only fills its track.
  */
 
 import {
@@ -43,27 +45,27 @@ import {
   type ReactNode,
 } from "react";
 import { motion } from "motion/react";
-import {
-  IconPanelRight,
-} from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 import { PositionBlock } from "./book/PositionBlock.js";
 import { SessionActivityCard } from "./book/SessionActivityCard.js";
 import { ImageLockerCard } from "./book/ImageLockerCard.js";
 import { SessionBlock } from "./book/SessionBlock.js";
-import { SessionWalletsCard } from "./book/SessionWalletsCard.js";
+import { WalletPairCard } from "./book/WalletPairCard.js";
 import { BalancesCard } from "./book/portfolio/BalancesCard.js";
 import {
   prefersReducedMotion,
   stackVariants,
 } from "./book/portfolio/portfolio-motion.js";
-import { SidebarIconButton } from "./SessionRows.js";
+import { BookRailFrame } from "./book/BookRailFrame.js";
+import { StudioBookRail } from "./book/StudioBookRail.js";
 import { WelcomePortfolioPanel } from "./book/portfolio/WelcomePortfolioPanel.js";
 import {
   ReorderableSection,
   useBookSectionReorder,
 } from "./book/ReorderableSection.js";
 import {
+  BOOK_SECTION_LABEL,
+  BOOK_SECTION_REGISTRY,
   resolveBookSectionOrder,
   type BookSectionId,
 } from "./book/section-order.js";
@@ -87,7 +89,7 @@ function renderBookSection(id: BookSectionId, sessionId: string): ReactNode {
     case "position":
       return <PositionBlock activeSessionId={sessionId} />;
     case "wallets":
-      return <SessionWalletsCard sessionId={sessionId} />;
+      return <WalletPairCard scope={{ kind: "session", sessionId }} />;
     case "balances":
       return <BalancesCard scope={{ kind: "session", sessionId }} />;
     case "activity":
@@ -106,6 +108,13 @@ function renderBookSection(id: BookSectionId, sessionId: string): ReactNode {
   }
 }
 
+/**
+ * The stage router. Every branch below is derived from store state that some
+ * OTHER owner writes (`runtimeMode`, `activeProjectId`, `activeSessionId`);
+ * the panel decides nothing about the mode and grants no authority by
+ * rendering a surface. The agent rail's own hooks live in `AgentBookRail` so
+ * that a mode switch cannot make a hook conditional.
+ */
 export function BookPanel({
   activeSessionId,
   bookOpen,
@@ -115,7 +124,52 @@ export function BookPanel({
   readonly bookOpen: boolean;
   readonly onToggle: () => void;
 }): JSX.Element {
-  // Sampled once per mount — the enter declaration must not flip mid-animation
+  const runtimeMode = useUiStore((state) => state.runtimeMode);
+  const activeProjectId = useUiStore((state) => state.activeProjectId);
+
+  if (runtimeMode === "studio") {
+    // No project selected yet: the honest global tab. See the module doc -
+    // this is a decision, not a fallback from a failed project read.
+    if (activeProjectId === null) {
+      return <WelcomePortfolioPanel bookOpen={bookOpen} onToggle={onToggle} />;
+    }
+    return (
+      <BookRailFrame
+        label="Project instrument"
+        bookOpen={bookOpen}
+        onToggle={onToggle}
+      >
+        <StudioBookRail projectId={activeProjectId} />
+      </BookRailFrame>
+    );
+  }
+
+  // WELCOME stage: the floating Portfolio tab replaces the rail entirely.
+  if (activeSessionId === null) {
+    return <WelcomePortfolioPanel bookOpen={bookOpen} onToggle={onToggle} />;
+  }
+  return (
+    <BookRailFrame
+      label="Session instrument"
+      bookOpen={bookOpen}
+      onToggle={onToggle}
+    >
+      <AgentBookRail activeSessionId={activeSessionId} />
+    </BookRailFrame>
+  );
+}
+
+/**
+ * The agent rail's instruments: the Portfolio card stack and the Board tab,
+ * plus the additive inspect overlay. Mounted only while the rail is expanded
+ * (the frame gates its children), and only in agent mode.
+ */
+function AgentBookRail({
+  activeSessionId,
+}: {
+  readonly activeSessionId: string;
+}): JSX.Element {
+  // Sampled once per mount - the enter declaration must not flip mid-animation
   // if the OS preference changes while the rail is open (SidebarProfile
   // pattern, shared with WelcomePortfolioPanel).
   const [reduced] = useState(prefersReducedMotion);
@@ -137,84 +191,39 @@ export function BookPanel({
     () => resolveBookSectionOrder(storedOrder),
     [storedOrder],
   );
-  const reorder = useBookSectionReorder(order, setBookSectionOrder);
-  // Same macOS overlay bar as the transcript — one shared utility, one hook.
+  const reorder = useBookSectionReorder(
+    order,
+    setBookSectionOrder,
+    BOOK_SECTION_REGISTRY,
+  );
+  // Same macOS overlay bar as the transcript - one shared utility, one hook.
   const stackRef = useRef<HTMLUListElement>(null);
   useScrollbarVisibility(stackRef);
 
-  // INSPECT mode (A32/E13) — an ADDITIVE view: while a tool-call payload for
+  // INSPECT mode (A32/E13) - an ADDITIVE view: while a tool-call payload for
   // THIS session is open, the inspect panel shows and the card stack hides
   // via CSS (it stays mounted, so no card state or query is lost and the
   // stack's enter stagger never replays on close). A session switch closes
-  // the view — a stale call from another session must never render.
+  // the view - a stale call from another session must never render.
   const inspect = useToolInspectStore((s) => s.inspect);
   const closeToolInspect = useToolInspectStore((s) => s.closeToolInspect);
   useEffect(() => {
     closeToolInspect();
   }, [activeSessionId, closeToolInspect]);
-  const inspecting =
-    inspect !== null && inspect.sessionId === activeSessionId;
+  const inspecting = inspect !== null && inspect.sessionId === activeSessionId;
 
-  // One static glyph for both states, like the left rail toggle - the
-  // open/close semantic lives in the aria-label.
-  const PanelGlyph = IconPanelRight;
-
-  // WELCOME stage: the floating Portfolio tab replaces the rail entirely.
-  if (activeSessionId === null) {
-    return <WelcomePortfolioPanel bookOpen={bookOpen} onToggle={onToggle} />;
-  }
   return (
-    <aside
-      data-vex-area="book-panel"
-      data-vex-book-open={bookOpen ? "true" : "false"}
-      aria-label="Session instrument"
-      className={cn(
-        // Rail over the Eclipse backdrop: softer translucent ink (--vex-rail)
-        // in BOTH states — the collapsed spine is the same tint, thinner. Pure
-        // glass, NO separating stroke (owner review round 2: even the
-        // edge-fading hairline still read as a dividing line). macOS-clean ink
-        // glass: the rail carries ONLY the ink tint + blur, no grain overlay.
-        // Width is OWNED by the AppShell grid track (shell-columns solver:
-        // 300-520 open, 48px spine closed) - the rail only fills it.
-        "vex-book-enter relative flex h-full w-full shrink-0 flex-col overflow-hidden bg-[var(--vex-rail)] backdrop-blur-xl",
-        bookOpen ? "gap-3 p-3" : "p-0",
-      )}
-    >
-      {/* Collapse header bar — version stamp + chevron. When collapsed the bar
-       * centres the chevron in the narrow spine and the stamp drops away. */}
-      <div
-        className={cn(
-          "flex shrink-0 items-center",
-          bookOpen ? "justify-between" : "justify-center pt-3",
-        )}
-      >
-        {bookOpen ? (
-          <span className="vex-micro-label uppercase text-ink-secondary">
-            v{__VEX_APP_VERSION__}
-          </span>
-        ) : null}
-        <SidebarIconButton
-          label={bookOpen ? "Collapse the BOOK panel" : "Expand the BOOK panel"}
-          onClick={onToggle}
-        >
-          <PanelGlyph size={17} />
-        </SidebarIconButton>
-      </div>
-
-      {bookOpen && inspecting && inspect !== null ? (
+    <>
+      {inspecting && inspect !== null ? (
         <BookInspectPanel inspect={inspect} />
       ) : null}
-      {bookOpen ? (
-        // The instruments live in their own box so the inspect overlay can
-        // hide them with CSS - mounted, never unmounted, exactly as the card
-        // stack was hidden before the tabs existed.
-        <div
-          data-vex-area="book-instruments"
-          className={cn(
-            "flex min-h-0 flex-1 flex-col",
-            inspecting && "hidden",
-          )}
-        >
+      {/* The instruments live in their own box so the inspect overlay can
+       * hide them with CSS - mounted, never unmounted, exactly as the card
+       * stack was hidden before the tabs existed. */}
+      <div
+        data-vex-area="book-instruments"
+        className={cn("flex min-h-0 flex-1 flex-col", inspecting && "hidden")}
+      >
         <Tabs
           value={bookTab}
           onValueChange={(next) => {
@@ -266,6 +275,7 @@ export function BookPanel({
                 <ReorderableSection
                   key={id}
                   id={id}
+                  label={BOOK_SECTION_LABEL[id]}
                   index={index}
                   count={order.length}
                   reorder={reorder}
@@ -273,8 +283,8 @@ export function BookPanel({
                   {renderBookSection(id, activeSessionId)}
                 </ReorderableSection>
               ))}
-              {/* The keyboard path's spoken confirmation - the same visually-hidden
-                  live-region idiom the Turn Island uses. */}
+              {/* The keyboard path's spoken confirmation - the same
+                  visually-hidden live-region idiom the Turn Island uses. */}
               <li aria-live="polite" className="sr-only">
                 {reorder.announcement}
               </li>
@@ -287,8 +297,7 @@ export function BookPanel({
             <ActiveBoardModule />
           </TabsContent>
         </Tabs>
-        </div>
-      ) : null}
-    </aside>
+      </div>
+    </>
   );
 }
