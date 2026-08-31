@@ -220,7 +220,7 @@ describe("the project rows", () => {
 });
 
 describe("the row action menu", () => {
-  it("opens from the KEYBOARD and lists the three items, all disabled", async () => {
+  it("opens from the KEYBOARD and lists the three live items", async () => {
     projectsListMock.mockResolvedValue({
       ok: true,
       data: [makeProject({ name: "vex-core" })],
@@ -242,9 +242,16 @@ describe("the row action menu", () => {
       "Repair",
       "Delete",
     ]);
+    // STATED CONTRACT CHANGE (B4b). B4a asserted all three were `disabled`,
+    // because their handlers did not exist and a live-looking control wired to
+    // nothing would have been a lie. B4b built the dialogs, so the three items
+    // are now ENABLED and each publishes a project-dialog intent. What they
+    // publish is asserted by
+    // `projects/__tests__/project-dialog-wiring.test.tsx`, which owns that
+    // contract; this file owns the KEYBOARD path to them.
     for (const item of items) {
-      expect(item).toHaveProperty("disabled", true);
-      expect(item.getAttribute("aria-disabled")).toBe("true");
+      expect(item).toHaveProperty("disabled", false);
+      expect(item.getAttribute("aria-disabled")).not.toBe("true");
     }
     // No roadmap copy anywhere on the menu.
     expect(screen.queryByText(/coming soon/i)).toBeNull();

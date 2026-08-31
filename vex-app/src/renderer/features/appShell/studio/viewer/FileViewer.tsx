@@ -123,9 +123,14 @@ export function FileViewer({
     };
   }, [activeRegistry, projectId, tab.tabId, tab.nodeId]);
 
+  // Reported to the REGISTRY, not to the session: the registry is what holds
+  // the warm-tab bound across every open file, and a component telling its own
+  // session would be a second place that bound is decided. See
+  // `file-viewer-registry.ts`.
   useEffect(() => {
-    session?.setActive(active);
-  }, [session, active]);
+    if (session === null) return;
+    activeRegistry.setActive(tabRef.current.tabId, active);
+  }, [activeRegistry, session, active]);
 
   const subscribe = useCallback(
     (onChange: () => void) => {

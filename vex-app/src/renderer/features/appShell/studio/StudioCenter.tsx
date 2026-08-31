@@ -55,6 +55,7 @@ import {
 } from "./terminal/index.js";
 import { StudioWelcome } from "./welcome/StudioWelcome.js";
 import { StudioKeepAliveDialog } from "./StudioKeepAliveDialog.js";
+import { openProjectCreator, StudioProjectDialogs } from "./projects/index.js";
 import { takeProjectTerminals } from "./workspace/project-terminals.js";
 import {
   closeProject,
@@ -67,7 +68,12 @@ import {
 } from "./workspace/keep-alive.js";
 
 export interface StudioCenterProps {
-  /** Open the project creator; B4b supplies it. See `StudioWelcome`. */
+  /**
+   * Open the project creator.
+   *
+   * Defaults to the intent publisher, which is what the dialogs mounted below
+   * consume. The prop stays a seam for tests; production has no second answer.
+   */
   readonly onCreateProject?: () => void;
   /** Test seams; production uses the window's registries. */
   readonly explorerRegistry?: ExplorerRegistry;
@@ -75,7 +81,7 @@ export interface StudioCenterProps {
 }
 
 export function StudioCenter({
-  onCreateProject,
+  onCreateProject = openProjectCreator,
   explorerRegistry,
   terminalRegistry,
 }: StudioCenterProps): JSX.Element {
@@ -236,6 +242,31 @@ export function StudioCenter({
     [applyKeepAlive],
   );
 
+  /**
+   * A project was deleted: close its workspace NOW and give up the selection.
+   *
+   * The stale-selection effect above would reach the same state on the next
+   * settled list, and it stays as the general repair (a project deleted in
+   * another window still has to be handled). This is the immediate half, and it
+   * exists because the two are not the same moment: without it the workspace of
+   * a project the user just deleted stays mounted, and its terminals stay
+   * attached, for as long as the refetch takes.
+   *
+   * The two cannot disagree: both go through `applyKeepAlive`, which disposes
+   * whatever left the set, and `closeProject` on an id that has already left is
+   * a no-op by identity.
+   */
+  const handleProjectDeleted = useCallback(
+    (deletedProjectId: string): void => {
+      applyKeepAlive((current) => closeProject(current, deletedProjectId));
+      setRefusedProjectId((current) =>
+        current === deletedProjectId ? null : current,
+      );
+      if (activeProjectId === deletedProjectId) setActiveProjectId(null);
+    },
+    [activeProjectId, applyKeepAlive, setActiveProjectId],
+  );
+
   const refusedProject =
     refusedProjectId === null ? null : (projectById.get(refusedProjectId) ?? null);
   const openProjects = keepAlive.projectIds
@@ -263,6 +294,16 @@ export function StudioCenter({
           terminals={terminalRegistry}
         />
       ))}
+
+      {/* THE PROJECT DIALOGS, mounted here because this component exists exactly
+        * as long as Studio is the active shell and because the sidebar - in
+        * another grid column - must be able to raise them without either column
+        * owning the other's state. They consume the intent channel; see
+        * `projects/project-dialog-intent.ts`. */}
+      <StudioProjectDialogs
+        onProjectCreated={(project) => setActiveProjectId(project.id)}
+        onProjectDeleted={handleProjectDeleted}
+      />
 
       <StudioKeepAliveDialog
         requestedProject={refusedProject}

@@ -58,7 +58,12 @@ import {
 } from "../workspace/workspace-model.js";
 import { useFileOpenIntentStore } from "../workspace/file-open-intent.js";
 import { publishProjectTerminals } from "../workspace/project-terminals.js";
-import type { WorkspaceMutation, WorkspaceState } from "../workspace/types.js";
+import { STUDIO_FILE_TABS_MAX } from "../workspace/types.js";
+import type {
+  WorkspaceMutation,
+  WorkspaceRefusalReason,
+  WorkspaceState,
+} from "../workspace/types.js";
 import { TerminalTabs } from "./TerminalTabs.js";
 import { FileViewer } from "../viewer/index.js";
 import { terminalRegistry, type TerminalRegistry } from "./terminal-registry.js";
@@ -100,6 +105,24 @@ const REFUSAL_COPY: Partial<Record<TerminalErrorCode, string>> = {
 
 const KEEP_ALIVE_COPY =
   "This project already has the maximum number of live terminal tabs. Close one to open another - Vex never closes a running shell for you.";
+
+/**
+ * What a refused mutation SAYS, per reason.
+ *
+ * A lookup rather than a chain of ternaries because `WorkspaceMutation` gained
+ * a second bound in B4b and the two read identically in code while meaning
+ * different things to a user. Every member of the union has an entry, so a
+ * refusal can never fall through to a reason code printed at the user.
+ */
+const MUTATION_REFUSAL_COPY: Readonly<Record<WorkspaceRefusalReason, string>> = {
+  keep_alive_limit: KEEP_ALIVE_COPY,
+  file_tab_limit:
+    `This project already has ${String(STUDIO_FILE_TABS_MAX)} files open. Close one to open another; Vex never closes a tab for you.`,
+  unknown_tab: "That tab is no longer open.",
+  unknown_pane: "That pane is no longer open.",
+  last_pane:
+    "That is the last pane in this tab. Close the tab itself to close it.",
+};
 
 export interface StudioWorkspaceControllerProps {
   readonly projectId: string;
@@ -180,11 +203,7 @@ export function StudioWorkspaceController({
     // pane) relies on.
     const result = mutate(stateRef.current);
     if (!result.ok) {
-      setNotice(
-        result.reason === "keep_alive_limit"
-          ? KEEP_ALIVE_COPY
-          : `That could not be done: ${result.reason}.`,
-      );
+      setNotice(MUTATION_REFUSAL_COPY[result.reason]);
       return;
     }
     stateRef.current = result.state;

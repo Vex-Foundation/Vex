@@ -39,6 +39,30 @@ export function publishProjectTerminals(
 }
 
 /**
+ * Read one project's terminal ids WITHOUT taking them, or `null` when this
+ * project has published nothing.
+ *
+ * The distinction between `null` and `[]` is the whole point and the reason
+ * this is not `takeProjectTerminals().length`. Only a MOUNTED workspace
+ * publishes, so `null` means "this project's workspace is not mounted, so the
+ * renderer does not know how many terminals it has" while `[]` means "it is
+ * mounted and it has none". The delete dialog says "N running terminals will
+ * be closed" from the second and stays SILENT on the first: a project whose
+ * workspace was never opened in this window may well have running shells that
+ * main will close, and printing "0" there would be an invented fact about an
+ * irreversible action.
+ *
+ * Non-destructive, unlike {@link takeProjectTerminals}: a reader is not a
+ * disposer, and a dialog that consumed the index would leave the centre with
+ * nothing to dispose when the workspace actually closed.
+ */
+export function peekProjectTerminals(
+  projectId: string,
+): readonly string[] | null {
+  return terminalIdsByProject.get(projectId) ?? null;
+}
+
+/**
  * Read AND FORGET one project's terminal ids.
  *
  * Take-once because the caller is about to dispose them: leaving the entry

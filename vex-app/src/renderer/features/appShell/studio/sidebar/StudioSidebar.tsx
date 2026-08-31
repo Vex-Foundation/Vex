@@ -58,6 +58,7 @@ import {
   ExplorerTree,
   type ExplorerRegistry,
 } from "../explorer/index.js";
+import { openProjectCreator } from "../projects/index.js";
 import { publishFileOpen } from "../workspace/file-open-intent.js";
 import {
   STUDIO_EXPLORER_SECTION,
@@ -76,8 +77,13 @@ import { StudioProjectsSection } from "./StudioProjectsSection.js";
 
 export interface StudioSidebarProps {
   /**
-   * Open the project creator. OPTIONAL: the creator is stage B4b's, and a
-   * "+ NEW PROJECT" key wired to nothing would be a lie. Absent = no key.
+   * Open the project creator.
+   *
+   * OPTIONAL, and the default is now the real publisher rather than "no key":
+   * B4a left the key absent because the creator did not exist and a control
+   * wired to nothing would have been a lie. B4b built it, so the honest default
+   * is the key that opens it. The prop stays for tests and for any future mount
+   * that wants to route the request somewhere else.
    */
   readonly onCreateProject?: () => void;
   /** Rail state decided by the shell frame (breakpoint-aware). */
@@ -93,7 +99,7 @@ export interface StudioSidebarProps {
 }
 
 export function StudioSidebar({
-  onCreateProject,
+  onCreateProject = openProjectCreator,
   collapsed,
   width,
   onToggleSidebar,
@@ -249,8 +255,7 @@ export function StudioSidebar({
         </div>
       ) : null}
 
-      {onCreateProject !== undefined ? (
-        <div className={cn("p-3", !wide && "px-2")} data-rail-control>
+      <div className={cn("p-3", !wide && "px-2")} data-rail-control>
           {/* The rail's one accent-FILLED key, in the same register and the
             * same shape as the sessions rail's signing key. */}
           <button
@@ -268,8 +273,7 @@ export function StudioSidebar({
             <IconPlus size={15} />
             {wide ? <span>{STUDIO_NEW_PROJECT_LABEL}</span> : null}
           </button>
-        </div>
-      ) : null}
+      </div>
 
       <div
         ref={listScrollRef}

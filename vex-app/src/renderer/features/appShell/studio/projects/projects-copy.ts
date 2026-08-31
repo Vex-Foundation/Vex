@@ -1,0 +1,385 @@
+/**
+ * EVERY user-visible string of the Studio project dialogs, in one module.
+ *
+ * Separate from `../studio-copy.ts` for the reason that file states about the
+ * terminal, explorer and viewer copy modules: this is a surface with its own
+ * owner and its own vocabulary (scope, render outcomes, tombstones, trash), and
+ * folding it into the shell's copy would make one file the place two unrelated
+ * wordings are reviewed.
+ *
+ * Rules that bind this file: English, no em dashes, and NO ROADMAP COPY. An
+ * agent Vex cannot integrate says WHY and says what would change it, because
+ * that is a fact about today; it never says "coming soon".
+ *
+ * ONE RULE ABOUT REFUSALS. Every outcome, refusal and warning the installer or
+ * the delete can produce has a sentence here, keyed by its wire member, and the
+ * records are typed `Record<Member, string>` rather than `Partial`. A new wire
+ * member with no sentence is then a type error instead of a blank line in a
+ * dialog about the user's files.
+ */
+
+import type {
+  ProjectDeleteResult,
+  ProjectTrashOutcome,
+} from "@shared/schemas/projects.js";
+import type {
+  StudioArtifactKind,
+  StudioArtifactStatus,
+  StudioArtifactOutcome,
+  StudioInstallerWarning,
+  StudioRefusalReason,
+  StudioRenderOutcome,
+} from "@shared/schemas/studio-installer.js";
+
+/* --------------------------------- creator -------------------------------- */
+
+export const PROJECT_CREATE_TITLE = "New project";
+export const PROJECT_CREATE_LEAD =
+  "A project is a folder Vex creates under your projects root. Its permission and its wallet selection can be changed later; the folder name cannot.";
+export const PROJECT_CREATE_SUBMIT = "Create";
+export const PROJECT_CREATE_PENDING = "Creating";
+export const PROJECT_CREATE_DONE = "Done";
+export const PROJECT_CANCEL = "Cancel";
+export const PROJECT_CLOSE = "Close";
+
+export const PROJECT_NAME_LABEL = "Name";
+export const PROJECT_NAME_PLACEHOLDER = "Give this project a short name.";
+export const PROJECT_NAME_HELP =
+  "Vex derives the folder name from this. The sidebar uses it as the project title.";
+
+export const PROJECT_PERMISSION_LEGEND = "Permission";
+export const PROJECT_PERMISSION_OPTIONS = [
+  {
+    value: "restricted",
+    index: "01",
+    title: "Restricted",
+    description:
+      "Agents in this project may act inside the project folder and the wallets you select below.",
+    caution: false,
+  },
+  {
+    value: "full",
+    index: "02",
+    title: "Full access",
+    description:
+      "Agents in this project may act outside the project folder. Grant this only when you know why you need it.",
+    caution: true,
+  },
+] as const;
+
+export const PROJECT_WALLETS_LEGEND = "Wallets";
+export const PROJECT_WALLETS_HELP =
+  "Optional. Pick at most one EVM and one Solana wallet this project may use. Vex sends the wallet identifier only; the keys never leave your machine.";
+export const PROJECT_WALLET_EVM_LABEL = "EVM wallet";
+export const PROJECT_WALLET_SOLANA_LABEL = "Solana wallet";
+
+export const PROJECT_AGENTS_LEGEND = "Coding agents";
+export const PROJECT_AGENTS_HELP =
+  "Vex writes an MCP config for each agent you select, inside this project's folder. You can change the selection later.";
+export const PROJECT_AGENT_UNSUPPORTED_TAG = "Not supported";
+
+/** How the picker introduces an agent Vex cannot integrate today. */
+export function agentSupportReturnsSentence(condition: string): string {
+  return `Support returns when ${condition}.`;
+}
+
+/** How the picker shows a launch-mode agent's required command. */
+export function agentLaunchSentence(instruction: string): string {
+  return `Launch it with: ${instruction}`;
+}
+
+/* -------------------------------- settings -------------------------------- */
+
+export const PROJECT_SETTINGS_TITLE = "Project settings";
+export const PROJECT_SETTINGS_SUBMIT = "Save";
+export const PROJECT_SETTINGS_PENDING = "Saving";
+export const PROJECT_SETTINGS_UNCHANGED =
+  "Nothing has changed yet. Edit the permission, the wallets or the agents to save.";
+export const PROJECT_SETTINGS_LOADING = "Loading this project";
+export const PROJECT_SETTINGS_UNREADABLE =
+  "Vex could not read this project. Close this dialog and try again.";
+export const PROJECT_SETTINGS_GONE =
+  "This project no longer exists. Close this dialog.";
+
+export function projectFolderLine(displayPath: string): string {
+  return `Folder: ${displayPath}`;
+}
+
+/**
+ * The `projects.scope_conflict` copy, and it is DELIBERATELY not a retry.
+ *
+ * The expected scope version was consumed by the attempt, so pressing Save
+ * again with the same intent would either be a second conflict or would re-
+ * apply an edit composed against a project that no longer looks like that.
+ * The only correct next step is a fresh read, which is what the button offers,
+ * and the user re-makes their choices against what is actually stored.
+ */
+export const PROJECT_SCOPE_CONFLICT_TITLE = "This project changed while you were editing";
+export const PROJECT_SCOPE_CONFLICT_BODY =
+  "Someone or something else saved a change to this project's scope after this dialog was opened, so Vex wrote nothing. Reload the project and make your edits again against what is stored now.";
+export const PROJECT_SCOPE_CONFLICT_RELOAD = "Reload the project";
+
+/* --------------------------------- repair --------------------------------- */
+
+export const PROJECT_REPAIR_TITLE = "Repair project files";
+export const PROJECT_REPAIR_BODY =
+  "Vex rewrites the files it maintains in this project's folder so they match the project's current scope. A file you edited since Vex wrote it will be OVERWRITTEN. Nothing else in the folder is touched.";
+export const PROJECT_REPAIR_SUBMIT = "Repair";
+export const PROJECT_REPAIR_PENDING = "Repairing";
+
+/* --------------------------------- delete --------------------------------- */
+
+export const PROJECT_DELETE_TITLE = "Delete project?";
+export const PROJECT_DELETE_SUBMIT = "Delete";
+export const PROJECT_DELETE_PENDING = "Deleting";
+export const PROJECT_DELETE_RETRY = "Try again";
+
+export function projectDeleteBody(projectName: string): string {
+  return `Vex removes "${projectName}" and everything it stores about it. Your project FOLDER stays on disk unless you ask for it below.`;
+}
+
+export const PROJECT_DELETE_TRASH_LABEL = "Also move the project folder to the trash";
+export const PROJECT_DELETE_TRASH_HELP =
+  "The folder goes to your operating system's trash, where you can still recover it. Everything in it goes with it.";
+
+/**
+ * The line above the typed confirmation. It names the action as irreversible in
+ * Vex, which is true whether or not the folder is trashed: the project row, its
+ * scope and its backing session are gone either way.
+ */
+export function projectDeleteConfirmPrompt(projectName: string): string {
+  return `Type the project name to confirm: ${projectName}`;
+}
+
+export const PROJECT_DELETE_CONFIRM_LABEL = "Project name";
+export const PROJECT_DELETE_CONFIRM_MISMATCH =
+  "That does not match the project name yet.";
+
+export function projectDeleteTerminalsLine(count: number): string {
+  return count === 1
+    ? "1 running terminal in this project will be closed."
+    : `${String(count)} running terminals in this project will be closed.`;
+}
+
+/**
+ * What each delete outcome MEANS, and what the user does next.
+ *
+ * Seven members, seven sentences. `removed` and `already_removed` are the two
+ * that end the dialog; the rest keep it open because the user still has a
+ * decision or a retry in front of them.
+ */
+export const PROJECT_DELETE_OUTCOME_SENTENCES: Readonly<
+  Record<ProjectDeleteResult["outcome"], string>
+> = {
+  removed: "The project was deleted.",
+  already_removed: "This project was already deleted; there was nothing left to do.",
+  cleanup_resumed:
+    "An unfinished delete was found and Vex ran its cleanup again. What that pass did is listed below.",
+  cleanup_pending:
+    "The project is deleted and will not come back, but Vex could not finish cleaning up its files. Try again to resume; it will not delete anything a second time.",
+  not_found:
+    "Vex found no project by that name. It may already be gone, or the name did not match.",
+  blocked_active_calls:
+    "Calls from this project were still running, so Vex wrote nothing and left the project exactly as it was. Stop them, or wait for them, then try again.",
+  blocked_pending_dispatch:
+    "An approved action for this project was already being dispatched, so Vex wrote nothing and left the project exactly as it was. Try again once it settles.",
+};
+
+export function projectDeleteActiveCallsLine(count: number): string {
+  return count === 1
+    ? "1 call was still running."
+    : `${String(count)} calls were still running.`;
+}
+
+export function projectDeleteAttemptsLine(attempts: number): string {
+  return attempts === 1
+    ? "Vex has attempted this cleanup once."
+    : `Vex has attempted this cleanup ${String(attempts)} times.`;
+}
+
+/**
+ * What a retry of an unfinished cleanup actually does. Said beside the attempt
+ * count because "try again" on a delete is the one place a user could
+ * reasonably fear deleting something twice.
+ */
+export const PROJECT_DELETE_ATTEMPTS_NOTE =
+  "Trying again resumes the same cleanup. It does not delete anything a second time.";
+
+/** What happened to the user's FOLDER. `not_requested` says nothing on purpose. */
+export const PROJECT_TRASH_SENTENCES: Readonly<
+  Record<ProjectTrashOutcome, string>
+> = {
+  not_requested: "Your project folder was left on disk, as you asked.",
+  trashed: "Your project folder was moved to the trash and can still be recovered from there.",
+  failed:
+    "Vex could not move your project folder to the trash, so it is still on disk. The project itself is still deleted. Move the folder yourself if you wanted it gone.",
+};
+
+export const PROJECT_DELETE_CLEANUP_TITLE = "What the cleanup did";
+
+/* ---------------------------- render outcomes ----------------------------- */
+
+export const RENDER_OUTCOME_TITLE = "Project files";
+export const RENDER_OUTCOME_EMPTY =
+  "Vex wrote no files for this project. Select a coding agent to get one.";
+export const RENDER_WARNINGS_TITLE = "Worth knowing";
+
+/**
+ * The `trigger` line, which is the one place a run can honestly report that it
+ * did nothing at all.
+ */
+export const RENDER_TRIGGER_SENTENCES: Readonly<
+  Record<StudioRenderOutcome["trigger"], string>
+> = {
+  scope_update: "Vex reconciled this project's files against the scope you saved.",
+  repair: "Vex rewrote the files it maintains in this project.",
+  superseded:
+    "A newer change to this project was already queued, so this run wrote nothing and the newer one owns the result.",
+};
+
+export const RENDER_INCOMPLETE_NOTICE =
+  "This run did not reach every file, so Vex still owes this project a reconciliation. Repair it from the project menu.";
+
+/** Which artifact a row is about, in words rather than a wire enum. */
+export const ARTIFACT_KIND_LABELS: Readonly<Record<StudioArtifactKind, string>> = {
+  "agent-config": "Agent config",
+  "agents-md": "AGENTS.md",
+  "claude-md": "CLAUDE.md",
+  "protocols-doc": "Vex tool reference",
+};
+
+/** The per-row verdict word. Short, because the row already carries the path. */
+export const ARTIFACT_STATUS_LABELS: Readonly<
+  Record<StudioArtifactOutcome["status"], string>
+> = {
+  written: "Written",
+  unchanged: "Unchanged",
+  removed: "Removed",
+  refused: "Refused",
+  drift_blocked: "Not overwritten",
+  unsupported: "Not supported",
+};
+
+export function artifactChangeLabel(change: "created" | "updated"): string {
+  return change === "created" ? "Created" : "Updated";
+}
+
+/**
+ * WHY a write was refused, one sentence per closed wire reason.
+ *
+ * Each one names a different situation with a different fix, which is the
+ * property `studioRefusalReasonSchema` exists to preserve: collapsing them into
+ * "could not write the file" would throw away the only part the user can act
+ * on. The installer's own `detail` is rendered beside these, so this is the
+ * category and that is the specific.
+ */
+export const REFUSAL_REASON_SENTENCES: Readonly<
+  Record<StudioRefusalReason, string>
+> = {
+  malformed_json: "The existing file is not valid JSON, so Vex would have had to guess what to keep.",
+  malformed_toml: "The existing file is not valid TOML, so Vex would have had to guess what to keep.",
+  toml_multiline_string:
+    "The existing TOML uses multi-line strings, which Vex cannot edit section by section without risking the rest of the file.",
+  malformed_managed_block:
+    "The Vex block in this file has a start marker without an end, or the reverse, so Vex cannot tell where its own content stops.",
+  provenance_collision:
+    "Something already sits at this path and Vex cannot prove it wrote it, so it left it alone.",
+  unknown_keys_in_vex_entry:
+    "Vex's own entry in this file grew keys Vex never writes, so something else has been editing it.",
+  symlinked_path:
+    "The path, or a folder on the way to it, is a symbolic link. Vex does not follow links out of a project.",
+  not_a_regular_file: "Something that is not a regular file sits at this path.",
+  too_large: "The existing file is larger than Vex will read.",
+  invalid_utf8: "The existing file is not valid UTF-8 text.",
+  ambiguous_twin:
+    "Both a .json and a .jsonc version of this file exist and Vex cannot tell which one the agent reads.",
+  source_changed: "The file changed on disk while Vex was writing it.",
+  path_escape: "The resolved path led outside the project folder.",
+  io_error: "The write itself failed. Check the folder's permissions and free space.",
+};
+
+export const DRIFT_BLOCKED_SENTENCE =
+  "This file was edited after Vex wrote it, so Vex left your edit in place. Repair the project to overwrite it with Vex's version.";
+
+/** Something true about a written file that the write itself cannot fix. */
+export const INSTALLER_WARNING_SENTENCES: Readonly<
+  Record<StudioInstallerWarning["kind"], string>
+> = {
+  inert_until: "This config will do nothing until you pass a gate outside Vex.",
+  launch_required: "This agent only reads the config when you launch it with a flag.",
+  user_global_timeout:
+    "This agent's only tool-call timeout lives in a file outside the project, so Vex cannot set it here.",
+  foreign_authority_section:
+    "This file also carries permission or allow rules that Vex did not write and does not manage.",
+  timeout_unverified:
+    "This agent documents no tool-call timeout, so a long Vex call may be cut short.",
+};
+
+/* --------------------------- files on disk (DTO) --------------------------- */
+
+export const PROJECT_FILES_TITLE = "Project files";
+export const PROJECT_FILES_EMPTY =
+  "Vex maintains no files in this project yet. Select a coding agent to get one.";
+export const PROJECT_FILES_NEVER_RENDERED =
+  "Vex has not yet completed a full pass over this project's files. Repair it from the project menu to finish.";
+
+/** The per-row verdict word for what a file IS, not what a run did to it. */
+export const ARTIFACT_STATE_LABELS: Readonly<
+  Record<StudioArtifactStatus["state"], string>
+> = {
+  current: "Current",
+  drifted: "Edited",
+  missing: "Missing",
+  stale: "Out of date",
+  unsupported: "Not supported",
+  unreadable: "Unreadable",
+};
+
+/** One sentence per state, saying what it means and what fixes it. */
+export const ARTIFACT_STATE_SENTENCES: Readonly<
+  Record<StudioArtifactStatus["state"], string>
+> = {
+  current: "On disk and identical to what Vex would write now.",
+  drifted:
+    "On disk but edited since Vex wrote it. Repairing this project overwrites your edit.",
+  missing:
+    "This project asks for this file and it is not on disk. Repair this project to write it.",
+  stale:
+    "On disk and unedited, but older than this project's current scope. Repair this project to bring it up to date.",
+  unsupported: "Vex writes no file for this agent, by design.",
+  unreadable: "Vex could not inspect this file on disk.",
+};
+
+/**
+ * Which states read in the warning register.
+ *
+ * `unsupported` is deliberately NOT one of them, matching
+ * `sidebar/project-row-model.ts`: an agent with no artifact by design is not a
+ * problem, and badging it would train the user to ignore the badge that is.
+ */
+export const ARTIFACT_STATE_WANTS_ATTENTION: Readonly<
+  Record<StudioArtifactStatus["state"], boolean>
+> = {
+  current: false,
+  drifted: true,
+  missing: true,
+  stale: true,
+  unsupported: false,
+  unreadable: true,
+};
+
+/* --------------------------------- toasts --------------------------------- */
+
+export function projectDeletedToast(projectName: string): string {
+  return `Deleted "${projectName}".`;
+}
+
+export function projectCreatedToast(projectName: string): string {
+  return `Created "${projectName}".`;
+}
+
+/* ---------------------------- accessible names ---------------------------- */
+
+export const PROJECT_OUTCOME_LIST_LABEL = "What Vex did to each file";
+export const PROJECT_WARNING_LIST_LABEL = "Things worth knowing about these files";
+export const PROJECT_AGENT_LIST_LABEL = "Coding agents for this project";

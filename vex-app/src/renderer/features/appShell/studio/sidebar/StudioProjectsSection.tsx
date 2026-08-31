@@ -7,14 +7,17 @@
  * the query and one row's interaction. Neither file has to be read to review the
  * other.
  *
- * ## The row menu is rendered and DISABLED, not omitted
+ * ## The row menu is LIVE (B4b)
  *
- * Settings, Repair and Delete are stage B4b's handlers. Rendering the menu with
- * three `aria-disabled` items is the honest state: the keyboard path to the row
- * actions exists and is testable now, so B4b adds handlers rather than building
- * an interaction surface from scratch. There is no roadmap copy on them - a
- * disabled item says "not now" by being disabled, and a "coming soon" label
- * would be a promise this repo does not make in UI.
+ * Settings, Repair and Delete publish a project-dialog intent
+ * (`projects/project-dialog-intent.ts`); the dialogs themselves are mounted by
+ * `StudioProjectDialogs` in the Studio centre. This section does not own a
+ * dialog and must not: the welcome screen in the other column raises the same
+ * requests, and two owners would be two dialogs answering one click.
+ *
+ * The menu is `Menu`'s own list, so it keeps the keyboard path B4a built - the
+ * ellipsis is a real button with `aria-haspopup`, and the items are reachable
+ * without a pointer. The three ids below are the whole interaction surface.
  */
 
 import { useCallback, useState, type JSX } from "react";
@@ -24,6 +27,11 @@ import { DotmSquare3 } from "../../../../components/ui/dotm-square-3.js";
 import { Menu, type MenuEntry } from "../../../../components/ui/menu.js";
 import { RailGroup } from "../../../../components/ui/rail-list.js";
 import { ListPlaceholder } from "../../SessionRows/ListPlaceholder.js";
+import {
+  openProjectDelete,
+  openProjectRepair,
+  openProjectSettings,
+} from "../projects/index.js";
 import {
   projectRowMenuLabel,
   STUDIO_PROJECT_MENU_DELETE,
@@ -38,11 +46,14 @@ import {
 } from "../studio-copy.js";
 import { ProjectRailRow } from "./ProjectRailRow.js";
 
-/** The three row actions, disabled until B4b owns their handlers. */
+/**
+ * The three row actions. Ids are the contract between this list and the
+ * dispatch below; a `MenuEntry` carries no handler of its own.
+ */
 const ROW_MENU_ENTRIES: readonly MenuEntry[] = [
-  { id: "settings", label: STUDIO_PROJECT_MENU_SETTINGS, disabled: true },
-  { id: "repair", label: STUDIO_PROJECT_MENU_REPAIR, disabled: true },
-  { id: "delete", label: STUDIO_PROJECT_MENU_DELETE, disabled: true, danger: true },
+  { id: "settings", label: STUDIO_PROJECT_MENU_SETTINGS },
+  { id: "repair", label: STUDIO_PROJECT_MENU_REPAIR },
+  { id: "delete", label: STUDIO_PROJECT_MENU_DELETE, danger: true },
 ];
 
 export interface StudioProjectsSectionProps {
@@ -70,6 +81,24 @@ export function StudioProjectsSection({
 }: StudioProjectsSectionProps): JSX.Element {
   const [openMenuProjectId, setOpenMenuProjectId] = useState<string | null>(null);
   const closeMenu = useCallback(() => setOpenMenuProjectId(null), []);
+
+  /**
+   * One dispatch for the three items, and the menu closes on EVERY selection
+   * including an id it does not know.
+   *
+   * A menu left open behind a modal would still be in the DOM, still focusable,
+   * and would outlive the dialog it launched. Closing first, publishing second,
+   * so the dialog's own focus management runs against a settled tree.
+   */
+  const onMenuSelect = useCallback(
+    (projectId: string, itemId: string): void => {
+      closeMenu();
+      if (itemId === "settings") openProjectSettings(projectId);
+      else if (itemId === "repair") openProjectRepair(projectId);
+      else if (itemId === "delete") openProjectDelete(projectId);
+    },
+    [closeMenu],
+  );
 
   if (isLoading) {
     return (
@@ -142,10 +171,7 @@ export function StudioProjectsSection({
                 open={openMenuProjectId === project.id}
                 portal
                 onClose={closeMenu}
-                // Every item is disabled, so nothing can be selected; the
-                // handler exists because the primitive requires one and B4b
-                // replaces this whole prop set.
-                onSelect={closeMenu}
+                onSelect={(itemId) => onMenuSelect(project.id, itemId)}
                 items={ROW_MENU_ENTRIES}
                 anchor={
                   <button

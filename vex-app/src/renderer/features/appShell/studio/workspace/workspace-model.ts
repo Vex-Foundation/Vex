@@ -21,6 +21,7 @@
  */
 
 import {
+  STUDIO_FILE_TABS_MAX,
   WORKSPACE_TERMINAL_GROUPS_MAX,
   type WorkspaceCleanupPlan,
   type WorkspaceFileTab,
@@ -45,6 +46,11 @@ function isGroup(tab: WorkspaceTab): tab is WorkspaceTerminalGroup {
 
 export function terminalGroupCount(state: WorkspaceState): number {
   return state.tabs.filter(isGroup).length;
+}
+
+/** Open file tabs. The quantity `STUDIO_FILE_TABS_MAX` bounds. */
+export function fileTabCount(state: WorkspaceState): number {
+  return state.tabs.filter((tab) => tab.kind === "file").length;
 }
 
 /**
@@ -125,6 +131,14 @@ export function addFileTab(
       };
     }
     return { ok: true, state: { ...state, activeTabId: existing.tabId } };
+  }
+  // THE BOUND, and it is checked HERE rather than above the dedupe on purpose:
+  // returning to a file that is already open opens nothing, so a full strip
+  // must still be able to select the tabs it already holds. Only a genuinely
+  // NEW tab is refused, and the refusal is named so the controller can say
+  // which bound stopped it instead of appearing to ignore the click.
+  if (fileTabCount(state) >= STUDIO_FILE_TABS_MAX) {
+    return { ok: false, reason: "file_tab_limit", state };
   }
   return {
     ok: true,

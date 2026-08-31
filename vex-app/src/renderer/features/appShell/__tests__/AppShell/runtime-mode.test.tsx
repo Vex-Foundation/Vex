@@ -36,24 +36,13 @@ vi.mock("../../screens/AgentScanScreen.js", () => ({ AgentScanScreen: () => null
 vi.mock("../../../wizard/steps/provider/ModelBrandIcon.js", () => ({
   ModelBrandIcon: () => null,
 }));
-vi.mock("@thesvg/react", () => ({
-  Docker: () => null,
-  Ethereum: () => null,
-  Solana: () => null,
-  Base: () => null,
-  Robinhood: () => null,
-  Polygon: () => null,
-  Optimism: () => null,
-  BnbChain: () => null,
-  Tether: () => null,
-  Circle: () => null,
-  Chainlink: () => null,
-  Postgresql: () => null,
-  Bitcoin: () => null,
-  Bnb: () => null,
-  DaiStablecoin: () => null,
-  Usdc: () => null,
-}));
+// Every brand mark stubs to null, whatever its name: the marks are
+// presentation-only here, and a hand-listed mock breaks the whole suite
+// file each time a component references a new mark.
+vi.mock("@thesvg/react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@thesvg/react")>();
+  return Object.fromEntries(Object.keys(actual).map((name) => [name, () => null]));
+});
 
 const { AppShell } = await import("../../AppShell.js");
 const { makeEngineBridgeStub } = await import(

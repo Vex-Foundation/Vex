@@ -18,11 +18,12 @@
  *    B4a passes none and the screen simply has no CTA; B4b passes the real one
  *    and the CTA appears with no change here.
  *
- * 2. NO PER-AGENT INSTALL STATE. The plan names it, and it cannot be rendered
- *    honestly yet: the bridge exposes no agent-detection capability on
- *    `window.vex.projects` or `window.vex.studio`, so every value on such a
- *    panel would be invented. It is excluded rather than stubbed - a placeholder
- *    for a fact we do not have is worse than its absence.
+ * 2. NO PER-AGENT STATE OF ANY KIND (owner decision 2026-08-31). Vex does not
+ *    detect agent CLIs: the user SELECTS agents in the project creator, the
+ *    installer writes their MCP files, and the selection is changed in the
+ *    project settings. Per-agent file state is a PROJECT fact and lives where
+ *    the project does - the row's drift badge and the settings/repair
+ *    envelope views - never on a screen that has no project.
  */
 
 import type { JSX } from "react";
