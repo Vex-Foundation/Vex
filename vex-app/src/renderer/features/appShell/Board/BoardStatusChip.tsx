@@ -94,13 +94,21 @@ export function BoardStatusChip({
       data-chip={newPair ? "new-pair" : "safety"}
       data-tone={tone}
       data-safety-state={verdict.state}
-      // The whole label on hover, because the visible run is `truncate`d by
-      // CSS on a narrow card: the string itself is never cut.
+      // The whole label, for the pointer. It is no longer the RECOVERY path:
+      // the label below is not clamped at all any more.
       title={label}
       className={cn("font-medium", className)}
     >
       <ToneIcon tone={tone} />
-      <span className="min-w-0 truncate">{label}</span>
+      {/* NO ELLIPSIS. A verdict that reads "Checks unavai..." is worse than
+        * no chip: a reader cannot tell an unavailable check from an
+        * unverified token from a check that describes another token, and
+        * those are three different things to do next. The widest label the
+        * frozen table can produce is 242px ("Checks unavailable in this
+        * response"), and that number is a term in the footer floors in
+        * `global-css/board-layout.css` - which is why the footer STACKS in
+        * compact mode rather than cutting this. */}
+      <span className="whitespace-nowrap">{label}</span>
     </Pill>
   );
 }

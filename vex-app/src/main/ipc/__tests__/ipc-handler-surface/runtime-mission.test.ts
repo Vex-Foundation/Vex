@@ -201,6 +201,7 @@ describe("runtime handlers", () => {
         leaseExpiresAt: null,
         pendingControlKind: null,
         hasPendingWake: false,
+        sessionWakeDueAt: null,
         hasPendingApproval: false,
         hasIncompleteApprovalLifecycle: false,
         hasOutstandingUserForm: false,

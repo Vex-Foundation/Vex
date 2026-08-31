@@ -95,6 +95,9 @@ describe("restartMissionWithInstruction", () => {
     expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
       "session-1",
       "Rebalance into USDC",
+      // M6: the restart's instruction waits for the new run's FIRST turn, so
+      // the honest disposition is `queued_interrupt`, not `steered`.
+      "queued_interrupt",
       { missionRestart: true, missionId: "mission-1" },
     );
   });

@@ -49,6 +49,14 @@ export interface UnpricedPoolFallbackOptions {
   readonly chainSlug: string;
   /** Provider-form addresses to re-read. Already normalized keys are fine too. */
   readonly addresses: readonly string[];
+  /**
+   * The CALLER's cancellation. This pass is up to
+   * {@link UNPRICED_POOL_FALLBACK_MAX_ADDRESSES} SEQUENTIAL provider reads, so
+   * without it an operator Stop waits for every remaining address. It reaches
+   * each request AND is re-checked between them, so a stop ends the pass at the
+   * next boundary instead of running the rest of the list.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /** What the pass actually spent, so the caller can log it truthfully. */
@@ -72,7 +80,13 @@ export interface UnpricedPoolFallbackOutcome {
  * The caller supplies `addresses` in PROVIDER form (what goes in the URL); the
  * accumulator's `unpricedAddresses()` is in NORMALIZED form, so the two are
  * matched through the caller's own normalization by comparing the normalized
- * set. Never throws.
+ * set.
+ *
+ * Never throws for a PROVIDER failure: a failed re-read is counted and reported
+ * through `onError`, and the address simply stays unpriced. The ONE exception is
+ * the caller's own cancellation, which propagates as the signal's reason - a
+ * Stop is not a provider fault to be logged and stepped over, and swallowing it
+ * here would keep issuing the remaining reads after the operator stopped.
  */
 export async function addPoolListsForUnpricedAddresses(
   options: UnpricedPoolFallbackOptions,
@@ -87,9 +101,24 @@ export async function addPoolListsForUnpricedAddresses(
   const attempted = targets.slice(0, UNPRICED_POOL_FALLBACK_MAX_ADDRESSES);
   let failed = 0;
   for (const address of attempted) {
+    // Between legs: a Stop that arrived while the previous read was settling
+    // ends the pass here rather than starting the next request.
+    options.signal?.throwIfAborted();
     try {
-      options.accumulator.addPairs(await readTokenPools(options.chainSlug, address));
+      // The options bag is passed ONLY when there is a signal, so a caller that
+      // asks for no cancellation still makes the exact two-argument call it
+      // always did. The EVM lane characterizes this call by its arguments, and
+      // a `{ signal: undefined }` appearing there would be a behavior-free diff
+      // in someone else's suite.
+      const pools = options.signal === undefined
+        ? await readTokenPools(options.chainSlug, address)
+        : await readTokenPools(options.chainSlug, address, { signal: options.signal });
+      options.accumulator.addPairs(pools);
     } catch (err) {
+      // A cancellation is the CALLER's outcome, never a provider failure to be
+      // counted and stepped over. Asked first, so an aborted read cannot be
+      // recorded as "this address is unpriced" and followed by 11 more.
+      if (options.signal?.aborted === true) throw options.signal.reason;
       failed += 1;
       onError(address, err);
     }

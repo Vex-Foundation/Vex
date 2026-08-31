@@ -32,13 +32,19 @@
  * ## Bounds
  *
  * One batched `tokens/v1` read per chain per cycle, 30 addresses per request
- * (the provider's cap), issued sequentially. Fail-soft per chain: a provider
- * error leaves that chain's rows exactly as Khalani sent them. DECLARED
- * OMISSION: no per-token `token-pairs/v1` second pass here (the wallet reads in
- * the per-chain wallet readers do have one). A Khalani scan can span many
- * chains in one
- * cycle, and a per-token second read would multiply that cost; a token whose
- * representative pool is tier-2 stays unpriced and is counted.
+ * (the provider's cap), issued sequentially, and the chain's wrapped native is
+ * ALWAYS one of those addresses - it anchors every tier-1 price and is the only
+ * source of a native row's own value. Fail-soft per chain: a provider error
+ * leaves that chain's rows exactly as Khalani sent them.
+ *
+ * A token the representative pool list leaves unpriced then gets the SAME
+ * bounded `token-pairs/v1` second pass the per-chain wallet readers run
+ * (`dexscreener/unpriced-pool-fallback.ts`: at most
+ * `UNPRICED_POOL_FALLBACK_MAX_ADDRESSES` sequential reads per chain, fail-soft
+ * per address, addresses beyond the cap reported as skipped). This lane used to
+ * declare that pass as an omission, which meant one token could carry two
+ * different prices depending on which lane read it - a portfolio disagreeing
+ * with itself about one number is worse than the request it saves.
  */
 
 import {
@@ -48,6 +54,7 @@ import {
 } from "@tools/dexscreener/best-liquidity-price.js";
 import { getEvmChainQuotePolicy } from "@tools/dexscreener/evm-chain-quote-policy.js";
 import { readTokensPairs } from "@tools/dexscreener/price-read.js";
+import { addPoolListsForUnpricedAddresses } from "@tools/dexscreener/unpriced-pool-fallback.js";
 import { isKhalaniNativeAlias } from "@tools/khalani/native-token-identity.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 import logger from "@utils/logger.js";
@@ -126,15 +133,27 @@ async function fillChainPrices(
       ? chain.policy.wrappedNative
       : row.tokenAddress.toLowerCase();
 
+  // COVERAGE set: exactly the addresses the rows need. `countTiers()` and the
+  // unpriced census are computed over this set, so the seed below stays out.
   const wanted = [...new Set(needPricing.map(lookupFor))];
   const accumulator = createBestLiquidityPriceAccumulator({
     wanted,
     normalizeAddress: (address) => address.toLowerCase(),
     quotePolicy: chain.policy,
+    expectedChainId: chain.slug,
   });
 
-  for (let i = 0; i < wanted.length; i += DEXSCREENER_TOKENS_BATCH) {
-    const batch = wanted.slice(i, i + DEXSCREENER_TOKENS_BATCH);
+  // REQUEST set: the wanted addresses PLUS the chain's wrapped native, always.
+  // The wrapped native is the anchor every tier-1 price is multiplied by, and
+  // seeding it only when a native ROW happens to need pricing left the anchor
+  // unreachable while a giant WETH/USDC pool sat one address away in the same
+  // request. It rides in a batch that is issued anyway, is not counted in the
+  // census, and does not consume a pool-list rescue slot.
+  const wrappedNative = chain.policy.wrappedNative.toLowerCase();
+  const pricingAddresses = wanted.includes(wrappedNative) ? wanted : [...wanted, wrappedNative];
+
+  for (let i = 0; i < pricingAddresses.length; i += DEXSCREENER_TOKENS_BATCH) {
+    const batch = pricingAddresses.slice(i, i + DEXSCREENER_TOKENS_BATCH);
     try {
       accumulator.addPairs(await readTokensPairs(chain.slug, batch.join(",")));
     } catch (err) {
@@ -144,6 +163,43 @@ async function fillChainPrices(
         error: err instanceof Error ? err.name : "unknown",
       });
     }
+  }
+
+  // Second, bounded pass, IDENTICAL to the one both wallet readers run: the
+  // provider's representative pool for a token can be the very tier-2 pool the
+  // rule refuses, while its full pool list carries a tier-0 one. Two lanes
+  // pricing one token differently is a portfolio that disagrees with itself,
+  // so this lane spends the same bounded budget
+  // (`UNPRICED_POOL_FALLBACK_MAX_ADDRESSES` sequential reads, fail-soft per
+  // address) on the ROW addresses only - the wrapped-native seed is not one of
+  // them.
+  const fallback = await addPoolListsForUnpricedAddresses(
+    { accumulator, chainSlug: chain.slug, addresses: wanted },
+    (address) => address.toLowerCase(),
+    (address, err) => {
+      logger.debug("sync.balance.price_fallback_pool_list_failed", {
+        chainId,
+        slug: chain.slug,
+        token: address,
+        error: err instanceof Error ? err.name : "unknown",
+      });
+    },
+  );
+  if (fallback.attempted > 0 || fallback.skipped > 0) {
+    logger.debug("sync.balance.price_fallback_pool_list", {
+      chainId,
+      slug: chain.slug,
+      ...fallback,
+    });
+  }
+
+  const foreignChainPairs = accumulator.foreignChainPairsRefused();
+  if (foreignChainPairs > 0) {
+    logger.warn("sync.balance.price_fallback_foreign_chain_pairs", {
+      chainId,
+      slug: chain.slug,
+      pairs: foreignChainPairs,
+    });
   }
 
   const prices = accumulator.toPriceMap();

@@ -98,6 +98,16 @@ export const chatSteerResultSchema = z
   .strict();
 export type ChatSteerResult = z.infer<typeof chatSteerResultSchema>;
 
+/**
+ * Hand-mirrored from the engine's canonical `STOP_REASONS` tuple
+ * (`src/vex-agent/engine/types/stop-reasons.ts`), business members first then
+ * runtime, in that exact order. `check:boundaries` forbids this package from
+ * importing the engine, so the list cannot be derived here; the sequence is
+ * pinned instead by the cross-package drift guard
+ * `src/__tests__/vex-agent/engine/stop-reason-vocabulary-drift.test.ts`.
+ * A reason missing here makes an honest engine stop fail strict validation at
+ * the IPC boundary, which is why the guard compares sequences and not sets.
+ */
 export const chatStopReasonSchema = z.enum([
   "goal_reached",
   "deadline_reached",
@@ -118,6 +128,8 @@ export const chatStopReasonSchema = z.enum([
   "plan_acceptance_required",
   "user_form_required",
   "no_progress",
+  "restart_orphan",
+  "tool_call_loop",
 ]);
 export type ChatStopReason = z.infer<typeof chatStopReasonSchema>;
 

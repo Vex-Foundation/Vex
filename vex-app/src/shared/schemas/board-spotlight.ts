@@ -140,8 +140,6 @@ export const boardTopTradersPanelSchema = z
      * so nothing behind it is reachable and nothing is cut on the way here.
      */
     rows: z.array(boardTopTraderSchema).max(100),
-    /** How many rows the provider's bounded leaderboard returned in total. */
-    rowsAvailable: z.number().int().min(0),
     lookbackDays: z.number().int().min(1).max(30),
     /** The heading this panel must be shown under. Frozen copy. */
     windowLabel: z.string().min(1).max(80),

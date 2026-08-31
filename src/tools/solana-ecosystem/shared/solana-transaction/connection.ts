@@ -26,6 +26,25 @@ export interface SolanaConnectionOptions {
    * Node 18+ (`lib/index.esm.js:4245`).
    */
   readonly fetch?: FetchFn;
+  /**
+   * Forwarded to `ConnectionConfig.disableRetryOnRateLimit`
+   * (`@solana/web3.js@1.98.4` `lib/index.d.ts:3184`).
+   *
+   * MEASURED behaviour of the default (`lib/index.cjs.js:5053-5075`): on HTTP
+   * 429 the client retries up to five times, sleeping 500, 1000, 2000 then
+   * 4000 ms - 7.5 s in total - and writes a `console.error` line per retry.
+   * A caller that owns a deadline of its own therefore has most of its budget
+   * spent inside the library, and reports a TIMEOUT for what was a rate limit.
+   *
+   * OMITTED BY DEFAULT, deliberately: the shared `getSolanaConnection()`
+   * singleton keeps web3.js's own retry behaviour, because it has no deadline
+   * of its own and no way to report the distinction. Only a caller that owns a
+   * deadline AND can surface a typed rate-limited outcome should pass `true`.
+   *
+   * Setting it true adds NO retry anywhere: it removes one, and hands the
+   * retry decision to whoever owns the deadline.
+   */
+  readonly disableRetryOnRateLimit?: boolean;
 }
 
 /**
@@ -40,7 +59,11 @@ export function createSolanaConnection(options: SolanaConnectionOptions = {}): C
   const cfg = loadConfig();
   const rpcUrl = options.rpcUrl ?? cfg.solana.rpcUrl;
   const commitment = options.commitment ?? ((cfg.solana.commitment ?? "confirmed") as Commitment);
-  return new Connection(rpcUrl, { commitment, fetch: options.fetch });
+  return new Connection(rpcUrl, {
+    commitment,
+    fetch: options.fetch,
+    disableRetryOnRateLimit: options.disableRetryOnRateLimit,
+  });
 }
 
 // ── Connection singleton ────────────────────────────────────────

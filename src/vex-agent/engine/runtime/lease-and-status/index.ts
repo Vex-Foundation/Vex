@@ -23,7 +23,10 @@ export {
   type ObserveControlOutcome,
 } from "./_types.js";
 
-export { claimRunLeaseAndFlipToRunning } from "./claim-run-lease.js";
+export {
+  claimRunLeaseAndFlipToRunning,
+  claimRunLeaseAndFlipToRunningWith,
+} from "./claim-run-lease.js";
 export {
   claimSessionLease,
   claimSessionLeaseWithClient,

@@ -24,6 +24,7 @@ const mockAddEngineMessage = vi.fn();
 const mockProcessAgentTurn = vi.fn();
 const mockProcessMissionSetupTurn = vi.fn();
 const mockResumeMissionRun = vi.fn();
+const mockGetLease = vi.fn();
 const mockAddOperatorInstruction = vi.fn();
 const mockAddOperatorCue = vi.fn();
 
@@ -119,13 +120,23 @@ vi.mock("@vex-agent/engine/runtime/release-and-emit.js", () => ({
   releaseLeaseAndEmitControlState: vi.fn().mockResolvedValue(undefined),
 }));
 
+// The lease is the route's evidence that a runner is actually executing, which
+// is what separates a `steered` instruction from a merely `queued` one.
+vi.mock("@vex-agent/db/repos/runner-leases.js", () => ({
+  getLease: (...a: unknown[]) => mockGetLease(...a),
+}));
+
 vi.mock("../../../vex-agent/engine/core/runner.js", () => ({
   processAgentTurn: (...a: unknown[]) => mockProcessAgentTurn(...a),
   processMissionSetupTurn: (...a: unknown[]) => mockProcessMissionSetupTurn(...a),
   resumeMissionRun: (...a: unknown[]) => mockResumeMissionRun(...a),
 }));
 
-vi.mock("../../../vex-agent/engine/core/operator-instructions.js", () => ({
+// The two WRITERS are mocked; `classifyOperatorInterruptDisposition` stays
+// REAL. It is the shared decision this route now defers to, and stubbing it
+// would let the route assert its own answer back at itself.
+vi.mock("../../../vex-agent/engine/core/operator-instructions.js", async (importActual) => ({
+  ...(await importActual<Record<string, unknown>>()),
   addOperatorInstruction: (...a: unknown[]) => mockAddOperatorInstruction(...a),
   addOperatorCue: (...a: unknown[]) => mockAddOperatorCue(...a),
 }));
@@ -138,6 +149,9 @@ const resumeResult = { text: null, toolCallsMade: 2, pendingApprovals: [], stopR
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // No lease by default: every route that does not stage one is, correctly,
+  // unable to prove anything is executing.
+  mockGetLease.mockResolvedValue(null);
   mockCancelForSession.mockResolvedValue(0);
   mockProcessAgentTurn.mockResolvedValue(agentResult);
   mockProcessMissionSetupTurn.mockResolvedValue(setupResult);
@@ -174,9 +188,13 @@ describe("ingress.routeUserMessage", () => {
         fromStatuses: ["paused_wake"],
       }),
     );
+    // M6: the wake-preempt route is the ONE disposition with an immediate
+    // consequence for the run, and it is now recorded as such rather than
+    // sharing a paragraph with every other queued write.
     expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
       "s1",
       "can you pause?",
+      "preempted_wake",
       expect.objectContaining({
         target: "mission_run",
         runId: "run-1",
@@ -196,20 +214,61 @@ describe("ingress.routeUserMessage", () => {
 
     const result = await routeUserMessage("s1", "wait!");
 
-    expect(result.text).toContain("queued");
+    // M6: `QUEUED_INTERRUPT_TEXT` as `TurnResult.text` is retired. The
+    // acknowledgement is a durable, user-visible engine notice row written in
+    // the same transaction as the instruction, so it survives a reload; the
+    // response object carries no ephemeral copy of it.
+    expect(result.text).toBeNull();
     expect(result.toolCallsMade).toBe(0);
-    expect(mockAddOperatorInstruction).toHaveBeenCalled();
+    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
+      "s1",
+      "wait!",
+      "queued_interrupt",
+      expect.objectContaining({ runStatus: "paused_approval" }),
+    );
     expect(mockResumeMissionRun).not.toHaveBeenCalled();
     expect(mockProcessAgentTurn).not.toHaveBeenCalled();
   });
 
-  it("persists an interrupt when the run is still running", async () => {
+  /**
+   * M6: this route used to hardcode `queued_interrupt` for `running`, so a
+   * message a live loop was about to merge told the operator it would be read
+   * "the next time it runs". It now asks the same classifier the steering
+   * entry point asks, and a live MATCHING lease is the proof it requires.
+   */
+  it("persists a STEERED interrupt when the run is running with a live lease", async () => {
     mockGetActiveRunBySession.mockResolvedValue({ id: "run-3", status: "running" });
+    mockGetLease.mockResolvedValue({
+      expiresAt: new Date(Date.now() + 60_000),
+      missionRunId: "run-3",
+    });
 
     await routeUserMessage("s1", "FYI");
 
-    expect(mockAddOperatorInstruction).toHaveBeenCalled();
+    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
+      "s1",
+      "FYI",
+      "steered",
+      expect.objectContaining({ runId: "run-3", runStatus: "running" }),
+    );
     expect(mockProcessAgentTurn).not.toHaveBeenCalled();
+  });
+
+  it("persists a QUEUED interrupt when the running run's lease is dead", async () => {
+    mockGetActiveRunBySession.mockResolvedValue({ id: "run-3", status: "running" });
+    mockGetLease.mockResolvedValue({
+      expiresAt: new Date(Date.now() - 1_000),
+      missionRunId: "run-3",
+    });
+
+    await routeUserMessage("s1", "FYI");
+
+    expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
+      "s1",
+      "FYI",
+      "queued_interrupt",
+      expect.objectContaining({ runId: "run-3", runStatus: "running" }),
+    );
   });
 
   it("returns a recovery hint instead of empty fallback for paused_error", async () => {
@@ -220,12 +279,49 @@ describe("ingress.routeUserMessage", () => {
     expect(mockAddOperatorInstruction).toHaveBeenCalledWith(
       "s1",
       "anything",
+      "queued_interrupt",
       expect.objectContaining({ target: "mission_run", runId: "run-4", runStatus: "paused_error" }),
     );
     expect(result.text).toContain("Recover button");
     expect(result.stopReason).toBeNull();
     expect(mockResumeMissionRun).not.toHaveBeenCalled();
     expect(mockProcessAgentTurn).not.toHaveBeenCalled();
+  });
+
+  // M3/M4: the hint must not CLAIM a provider/runtime error for a pause that
+  // had neither. `restart_orphan` was parked by the reclaim sweep after Vex
+  // died mid-slice; `tool_call_loop` was stopped by the detector. The shared
+  // tail (what happened to the message, what clears the pause) stays on all
+  // three.
+  it.each([
+    ["restart_orphan", "Vex restarted while it was executing"],
+    ["tool_call_loop", "repeated the same tool call without making progress"],
+  ])("names %s as the cause of the pause", async (stopReason, cause) => {
+    mockGetActiveRunBySession.mockResolvedValue({
+      id: "run-5",
+      status: "paused_error",
+      stopReason,
+    });
+
+    const result = await routeUserMessage("s1", "anything");
+
+    expect(result.text).toContain(cause);
+    expect(result.text).not.toContain("provider/runtime error");
+    expect(result.text).toContain("Recover button");
+  });
+
+  // An unnamed reason keeps today's generic wording rather than a wrong one.
+  it("falls back to the generic pause wording for an unnamed stop reason", async () => {
+    mockGetActiveRunBySession.mockResolvedValue({
+      id: "run-6",
+      status: "paused_error",
+      stopReason: "some_future_reason",
+    });
+
+    const result = await routeUserMessage("s1", "anything");
+
+    expect(result.text).toContain("provider/runtime error");
+    expect(result.text).toContain("Recover button");
   });
 
   it("routes to mission-setup when a draft mission exists and there is no run", async () => {

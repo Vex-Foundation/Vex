@@ -44,11 +44,16 @@ describe("missing-required rejection text", () => {
     const result = validateProtocolParams(MANIFEST, { limit: 5 });
     expect(result.ok).toBe(false);
     const reason = result.ok ? "" : result.reason;
-    expect(reason).toContain('Missing required parameter "query" (string) for dexscreener.search');
+    expect(reason).toContain('Missing required parameter "query" (string) for dexscreener__search');
     expect(reason).toContain("Required: query.");
     expect(reason).toContain("Optional: limit.");
-    expect(reason).toContain('Send: {"toolId":"dexscreener.search","params":{"query":"PEPE"}}');
-    expect(reason).toContain("You sent params keys: [limit]");
+    // DELIBERATE CONTRACT CHANGE (2026-08-28): the example is shown in the
+    // CURRENT calling convention - the tool is a function named by its
+    // publicName and its arguments are the params, flat. The retired
+    // `{toolId, params}` envelope taught the model a call shape that no longer
+    // exists, which is the same class of defect as naming the dotted toolId.
+    expect(reason).toContain('Send: dexscreener__search({"query":"PEPE"})');
+    expect(reason).toContain("You sent parameter keys: [limit]");
     expect(reason).toContain("Do not repeat the previous call");
   });
 
@@ -58,7 +63,7 @@ describe("missing-required rejection text", () => {
     // `limit`'s value (5) may appear only via the authored example, never via
     // the "you sent" lane; assert the lane itself carries keys only.
     const reason = result.ok ? "" : result.reason;
-    expect(reason).toContain("You sent params keys: [query, limit]");
+    expect(reason).toContain("You sent parameter keys: [query, limit]");
   });
 });
 

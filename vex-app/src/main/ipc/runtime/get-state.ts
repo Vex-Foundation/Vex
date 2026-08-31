@@ -18,13 +18,17 @@ import {
   runtimeRequestInputSchema,
   runtimeStateDtoSchema,
   type RuntimePausedWake,
+  MONEY_STATE_UNREADABLE,
+  type RuntimeRecoveryReadiness,
   type RuntimeStateDto,
 } from "@shared/schemas/runtime.js";
 import {
   isStoppable,
+  readSessionActivity,
   readSessionControlFacts,
   type RuntimeControlFacts,
 } from "../../database/session-control-state.js";
+import { ensureEngineDbUrl } from "./_ensure-engine-db-url.js";
 import { getPendingWakeForSession } from "../../database/wake-db.js";
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
@@ -49,7 +53,8 @@ export function registerRuntimeGetStateHandler(): () => void {
       }
       const facts = outcome.data;
       const pausedWake = await readPausedWake(facts);
-      const dto = projectRuntimeStateDto(facts, pausedWake);
+      const recoveryReady = await readRecoveryReadiness(facts, ctx.requestId);
+      const dto = projectRuntimeStateDto(facts, pausedWake, recoveryReady);
       log.info(
         `[ipc:vex:runtime:getState] ok sessionId=${input.sessionId} ` +
           `hasActiveRun=${facts.hasActiveRun} ` +
@@ -63,6 +68,8 @@ export function registerRuntimeGetStateHandler(): () => void {
           // Metadata only — the agent-authored reason text stays out of the
           // log line; `dueAt` is what makes a mis-timed wake diagnosable.
           `pausedWakeDueAt=${pausedWake?.dueAt ?? "none"} ` +
+          `activity=${dto.activity.kind} ` +
+          `recoveryReady=${recoveryReady?.kind ?? "n/a"} ` +
           `correlationId=${ctx.requestId}`,
       );
       return { ok: true, data: dto };
@@ -85,6 +92,7 @@ export function registerRuntimeGetStateHandler(): () => void {
 function projectRuntimeStateDto(
   facts: RuntimeControlFacts,
   pausedWake: RuntimePausedWake | null,
+  recoveryReady: RuntimeRecoveryReadiness | null,
 ): RuntimeStateDto {
   return {
     sessionId: facts.sessionId,
@@ -99,9 +107,57 @@ function projectRuntimeStateDto(
     leaseExpiresAt: facts.leaseExpiresAt,
     pendingControlKind: facts.pendingControlKind,
     stoppable: isStoppable(facts),
+    activity: readSessionActivity(facts),
     ...(facts.lastError === undefined ? {} : { lastError: facts.lastError }),
     ...(pausedWake === null ? {} : { pausedWake }),
+    ...(recoveryReady === null ? {} : { recoveryReady }),
   };
+}
+
+/**
+ * The Recover affordance's money-state mirror, or `null` for every status
+ * where Recover is not offered.
+ *
+ * READS THE SAME OWNER as the enforcement. `getUnresolvedMoneyStateForSession`
+ * is the single source of that answer; re-implementing its eleven predicates
+ * here would create a second, quietly diverging one, and the surface that
+ * diverged would be the one telling the operator it is safe to press.
+ *
+ * WITHOUT the session control lock, and that is deliberate. The lock is what
+ * makes the retry dispatcher's read a decision boundary; taking it on a
+ * read-only IPC that fires on every control-state push would put a poll in
+ * front of the operator's Stop, which is precisely the inversion the lock's own
+ * module forbids. So this answer is a possibly-stale MIRROR, which is all a
+ * button state may ever be: `runtime-retry-dispatch.ts` re-reads under the lock
+ * and refuses on its own answer.
+ *
+ * FAIL-CLOSED: any failure - unset DB url, connect error, malformed row -
+ * projects `blocked`, because an unreadable money state is not a clear one.
+ */
+async function readRecoveryReadiness(
+  facts: RuntimeControlFacts,
+  correlationId: string,
+): Promise<RuntimeRecoveryReadiness | null> {
+  if (facts.status !== "paused_error") return null;
+  try {
+    const dbUrl = await ensureEngineDbUrl(correlationId);
+    if (!dbUrl.ok) return { kind: "blocked", reasonKinds: [MONEY_STATE_UNREADABLE] };
+    const { withTransaction } = await import("@vex-agent/db/client.js");
+    const { getUnresolvedMoneyStateForSession } = await import(
+      "@vex-agent/db/repos/approval-intents/money-state.js"
+    );
+    const money = await withTransaction(async (client) =>
+      getUnresolvedMoneyStateForSession(client, facts.sessionId),
+    );
+    if (money.clear) return { kind: "ready" };
+    return {
+      kind: "blocked",
+      reasonKinds: [...new Set(money.reasons.map((reason) => reason.kind))],
+    };
+  } catch (cause) {
+    log.warn("[ipc:vex:runtime:getState] money-state mirror read failed", cause);
+    return { kind: "blocked", reasonKinds: [MONEY_STATE_UNREADABLE] };
+  }
 }
 
 /**

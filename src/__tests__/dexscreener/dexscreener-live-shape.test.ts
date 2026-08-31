@@ -34,6 +34,7 @@ const TOP_BOOSTS = loadCapture("token-boosts-top-v1");
 const LATEST_BOOSTS = loadCapture("token-boosts-latest-v1");
 const ORDERS_WITH_LEDGER = loadCapture("orders-v1-solana-boosted-token");
 const ORDERS_EMPTY_LEDGER = loadCapture("orders-v1-solana-empty-boost-ledger");
+const ETHEREUM_WETH_PAIRS = loadCapture("token-pairs-v1-ethereum-weth");
 
 // ── Regression witnesses ────────────────────────────────────────────
 //
@@ -53,6 +54,26 @@ describe("captured bytes still reproduce the defects that were fixed", () => {
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.filter((r) => "amount" in r)).toHaveLength(0);
     expect(rows.filter((r) => typeof r.totalAmount === "number")).toHaveLength(rows.length);
+  });
+
+  // The witness for the v4 pair-id grammar (`pairIdShapeForArchitecture`).
+  // Before it, every one of these rows was refused by `pairs_batch_get` as an
+  // address whose shape contradicts the chain architecture - a 64-hex id under
+  // an EVM slug - while the provider was publishing them under exactly that
+  // slug. The capture had no consumer at all, so nothing went red.
+  it("serves 64-hex EVM PAIR ids: uniswap v4 pools have a PoolId, not an address", () => {
+    const rows = ETHEREUM_WETH_PAIRS.response as Array<Record<string, unknown>>;
+    const v4 = rows.filter((row) =>
+      Array.isArray(row.labels) && (row.labels as unknown[]).includes("v4"));
+    expect(v4.length).toBeGreaterThan(0);
+    for (const row of v4) {
+      expect(row.chainId).toBe("ethereum");
+      expect(String(row.pairAddress)).toMatch(/^0x[0-9a-f]{64}$/);
+    }
+    // The 40-hex rows on the same chain are still there and still 40 hex: the
+    // grammar had to WIDEN, not move.
+    const legacy = rows.filter((row) => /^0x[0-9a-fA-F]{40}$/.test(String(row.pairAddress)));
+    expect(legacy.length).toBeGreaterThan(0);
   });
 
   it("latest boosts DO send `amount` — the path that must keep working", () => {

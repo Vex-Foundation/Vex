@@ -211,4 +211,26 @@ describe("setupAgentBridges mounts every board service an IPC handler consults",
     const result = await call(CH.boardSpotlight.topTraders, { subject: SUBJECT });
     expect(result.data.outcome).toEqual({ kind: "unavailable", reason: "not_mounted" });
   });
+
+  /**
+   * The disposer is MEMOIZED, so its body runs exactly once however many
+   * callers invoke it and however they interleave. Without the memo a second
+   * concurrent quit path would re-dispose the DexScreener bridge and re-drain
+   * already-unmounted services. `dispose()` on the bridge is the observable
+   * tail of the ordered teardown, so counting it counts whole executions.
+   */
+  it("executes the teardown body exactly once under concurrent invocation", async () => {
+    expect(teardownBridges).not.toBeNull();
+    const disposer = teardownBridges as () => Promise<void>;
+
+    await Promise.all([disposer(), disposer(), disposer()]);
+    expect(disposeBridge).toHaveBeenCalledTimes(1);
+
+    // A LATER caller joins the same settled drain rather than starting a new one.
+    await disposer();
+    expect(disposeBridge).toHaveBeenCalledTimes(1);
+
+    teardownBridges = null;
+    expect(getBoardSpotlightService()).toBeNull();
+  });
 });

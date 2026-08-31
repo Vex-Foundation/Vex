@@ -253,7 +253,7 @@ describe("AppShell", () => {
     fireEvent.change(draft, { target: { value: "Long-running research" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
-    const stopBtn = await screen.findByRole("button", { name: "Stop generating" });
+    const stopBtn = await screen.findByRole("button", { name: "Stop agent" });
     await waitFor(() =>
       expect(
         container.querySelector('[data-vex-tape-state="live"]'),

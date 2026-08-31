@@ -57,11 +57,14 @@ function safeSentryReport(input: {
  *    existing telemetry sink (`window.vex.telemetry.reportRendererError`, the
  *    same path `safeSentryReport` uses everywhere else here) plus `console.error`
  *    for a developer running the app locally.
- * 2. Build: the probe CONSUMES `ZOD_LOCALE_MARKER` in a value that reaches a
- *    call, so the literal survives renderer minification and
- *    `scripts/check-privileged-bundles.mjs` can assert its presence in
- *    `dist/renderer/assets/*.js`. Without a consumer the marker is dead code and
- *    the gate has nothing unique to look for.
+ * 2. Build: it reports the REGISTRATION marker, which `registerZodLocale()`
+ *    above is the only writer of. The probe no longer names
+ *    `ZOD_LOCALE_MARKER` itself - it used to, and that is exactly what made
+ *    the post-build gate vacuous, since a bundle could carry the literal
+ *    through the probe alone with registration tree-shaken away.
+ *    `scripts/check-privileged-bundles.mjs` asserts the literal's presence in
+ *    `dist/renderer/assets/*.js`, and now that presence means the registration
+ *    body survived.
  *
  * Never throws: a broken locale must not stop the app from mounting.
  */

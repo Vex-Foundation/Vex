@@ -81,3 +81,49 @@ describe("MissionErrorAlert - without durable evidence", () => {
     expect(alert.textContent).toContain("an unexpected error");
   });
 });
+
+/**
+ * M3/M4. `restart_orphan` and `tool_call_loop` are pauses the system
+ * understands exactly, and NEITHER carries provider or runtime evidence -
+ * nothing failed at the provider. So the classifier has nothing to classify
+ * and both used to land on "an unexpected error", which rule 08 forbids for a
+ * named cause.
+ */
+describe("MissionErrorAlert - causes that name themselves", () => {
+  it("explains a restart-orphaned run instead of calling it unexpected", () => {
+    const alert = renderAlert(undefined, "restart_orphan");
+    expect(alert.textContent).toContain("Vex restarted while this run was executing");
+    expect(alert.textContent).not.toContain("an unexpected error");
+    // Rule 90 honest uncertainty: the reclaim cannot promise that work already
+    // dispatched did nothing, so it must not imply a blind resume is safe.
+    expect(alert.textContent).toContain("review the transcript before recovering");
+  });
+
+  it("explains a detected tool-call loop instead of calling it unexpected", () => {
+    const alert = renderAlert(undefined, "tool_call_loop");
+    expect(alert.textContent).toContain("same tool with the same result");
+    expect(alert.textContent).not.toContain("an unexpected error");
+    expect(alert.textContent).toContain("earlier steps may have completed");
+  });
+
+  // The cause copy OUTRANKS the classifier: a run reclaimed after a restart is
+  // explained by the restart, even when a stale provider signal happens to sit
+  // on the row from an earlier failure.
+  it("wins over durable provider evidence for a named cause", () => {
+    const alert = renderAlert(
+      { errorType: "rate_limit_exceeded", statusCode: 429 },
+      "restart_orphan",
+    );
+    expect(alert.textContent).toContain("Vex restarted while this run was executing");
+    expect(alert.textContent).not.toContain("rate-limited");
+    // The bounded code trailer still carries the evidence for a bug report.
+    expect(alert.textContent).toContain("rate_limit_exceeded");
+  });
+
+  // An unnamed reason must degrade to today's behaviour, never to a crash.
+  it("leaves an unnamed stop reason on the generic wording", () => {
+    expect(renderAlert(undefined, "some_future_reason").textContent).toContain(
+      "an unexpected error",
+    );
+  });
+});

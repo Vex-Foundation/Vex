@@ -304,13 +304,13 @@ jobs:
           VITE_VEX_SETUP_TOUR: "1"
         run: pnpm run build
 
-      - name: Install Playwright system libraries
-        # Electron-only test — we drive the built bundle via
-        # `_electron.launch`, not a chromium binary. `install-deps`
-        # (vs the more common `install --with-deps chromium`) pulls
-        # just the system libs Playwright's runtime needs, without
-        # downloading a browser binary we never use.
-        run: pnpm exec playwright install-deps chromium
+      - name: Install Playwright chromium + system libraries
+        # Two projects run here: the Electron smoke (drives the built
+        # bundle via `_electron.launch`) and the board-layout geometry
+        # suite, which needs the real chromium headless-shell binary to
+        # measure computed grid tracks against the production stylesheet.
+        # `install --with-deps` pulls the browser AND the system libs.
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Run Playwright smoke (xvfb)
         # xvfb provides the X server Electron needs on headless
