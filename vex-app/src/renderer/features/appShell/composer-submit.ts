@@ -36,6 +36,7 @@ import { showToast } from "../../lib/toast.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useBoardAskIntentStore } from "./Board/board-ask-intent.js";
 import { readStopAvailability } from "./composer-submit/stop-availability.js";
+import { resolveStopAffordance } from "./composer-submit/stop-affordance.js";
 import {
   STEERED_TOAST_TEXT,
   trySteerLiveTurn,
@@ -90,6 +91,11 @@ export interface ComposerSubmit {
    * does not KNOW. See `StopAvailability`.
    */
   readonly stopAvailable: boolean;
+  /**
+   * The Stop key's accessible name for THIS session's mode ("Stop mission" /
+   * "Stop agent"), from the one selector `MissionControls` also reads.
+   */
+  readonly stopLabel: string;
   readonly awaitingApproval: boolean;
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   readonly onRetry: () => void;
@@ -181,6 +187,13 @@ export function useComposerSubmit(
    * SHOWING Stop — see `StopAvailability`.
    */
   const stopKnownUnavailable = availability === "known-unavailable";
+  // ONE selector for the offer and the words; `MissionControls` reads the same
+  // one so the two Stop surfaces cannot disagree about either.
+  const stopAffordance = resolveStopAffordance(
+    availability,
+    activeSession?.mode === "mission" ? "mission" : "agent",
+    submitPending,
+  );
   const handedOffRef = useRef<string | null>(null);
 
   // Per-session draft (B1): the store keyed by session survives switching
@@ -608,7 +621,8 @@ export function useComposerSubmit(
     notice,
     submitPending,
     stopRequested,
-    stopAvailable: submitPending || !stopKnownUnavailable,
+    stopAvailable: stopAffordance.offered,
+    stopLabel: stopAffordance.label,
     awaitingApproval,
     onSubmit,
     onRetry,

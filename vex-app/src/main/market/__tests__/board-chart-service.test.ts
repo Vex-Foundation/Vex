@@ -50,6 +50,7 @@ const { barTransportFor } = await import("@tools/dexscreener/endpoints/bars.js")
 const { DexScreenerSiteErrorCodes, siteError } = await import(
   "@tools/dexscreener/site-errors.js"
 );
+const { log } = await import("../../logger/index.js");
 const { BOARD_MAX_CANDLES } = await import("@vex-lib/board/index.js");
 const { BOARD_CHART_PILL_RESOLUTIONS } = await import(
   "@shared/schemas/board-chart.js"
@@ -265,6 +266,102 @@ describe("one poll", () => {
     const service = createBoardChartService({ now: () => NOW });
     const outcome = await service.poll({ subject: SUBJECT, resolution: "1m" });
     expect(outcome).toEqual({ kind: "unavailable", reason });
+    await service.dispose();
+  });
+
+  /**
+   * THE DEFECT. The catch-all returned `unavailable/provider` having DISCARDED
+   * the error object unseen, so nothing anywhere named what went wrong and
+   * diagnosis of a blank spotlight chart started from zero. Rule 05: the owner
+   * emits its failure signal once.
+   *
+   * The assertions are on the FIELDS a reader can act on, and on the level:
+   * warn, because packaged logging drops info and this is exactly the case a
+   * packaged install needs to have recorded.
+   */
+  it("logs ONE bounded warn line for a failure it could not classify", async () => {
+    // THE REAL SHAPE. `siteError` returns a `VexError`, and `utils/http.ts:160`
+    // is the one writer of its `httpStatus` - so this is exactly what an
+    // unclassified provider refusal looks like on this path. An earlier version
+    // of this test fabricated `status: 503`, which passed against a reader that
+    // only knew `status` while every genuine typed error logged `httpStatus=none`.
+    const refusal = siteError(
+      DexScreenerSiteErrorCodes.BARS_PROVIDER_TRANSIENT,
+      "gateway said no",
+    );
+    (refusal as { httpStatus?: number }).httpStatus = 503;
+    fetchBarsPage.mockRejectedValue(refusal);
+    const service = createBoardChartService({ now: () => NOW });
+    const outcome = await service.poll({ subject: SUBJECT, resolution: "1m" });
+
+    expect(outcome).toEqual({ kind: "unavailable", reason: "provider" });
+    expect(log.warn).toHaveBeenCalledTimes(1);
+    const line = vi.mocked(log.warn).mock.calls[0]?.[0];
+    expect(line).toContain(`code=${DexScreenerSiteErrorCodes.BARS_PROVIDER_TRANSIENT}`);
+    expect(line).toContain("name=VexError");
+    expect(line).toContain("httpStatus=503");
+    // BOUNDED: the provider's own message never reaches the log.
+    expect(line).not.toContain("gateway said no");
+    // ONCE: no second line for the same failure.
+    expect(log.info).not.toHaveBeenCalled();
+    expect(log.error).not.toHaveBeenCalled();
+    await service.dispose();
+  });
+
+  /**
+   * The FALLBACK, kept because the catch-all runs on values it could not
+   * classify: those need not be `VexError`s, and several third-party HTTP
+   * clients spell the field `status`.
+   */
+  it("falls back to an SDK-shaped `status` when there is no `httpStatus`", async () => {
+    fetchBarsPage.mockRejectedValue(
+      Object.assign(new Error("gateway said no"), { code: "SDK_SHAPE", status: 502 }),
+    );
+    const service = createBoardChartService({ now: () => NOW });
+    await service.poll({ subject: SUBJECT, resolution: "1m" });
+
+    const line = vi.mocked(log.warn).mock.calls[0]?.[0];
+    expect(line).toContain("code=SDK_SHAPE");
+    expect(line).toContain("httpStatus=502");
+    await service.dispose();
+  });
+
+  /** `httpStatus` WINS: the repo's own validated field is never shadowed. */
+  it("prefers the validated httpStatus over a stray SDK `status`", async () => {
+    const refusal = siteError(
+      DexScreenerSiteErrorCodes.BARS_PROVIDER_TRANSIENT,
+      "conflicting fields",
+    );
+    Object.assign(refusal, { httpStatus: 503, status: 200 });
+    fetchBarsPage.mockRejectedValue(refusal);
+    const service = createBoardChartService({ now: () => NOW });
+    await service.poll({ subject: SUBJECT, resolution: "1m" });
+
+    expect(vi.mocked(log.warn).mock.calls[0]?.[0]).toContain("httpStatus=503");
+    await service.dispose();
+  });
+
+  it("names a missing status and a missing code rather than inventing them", async () => {
+    fetchBarsPage.mockRejectedValue("a bare string nobody typed");
+    const service = createBoardChartService({ now: () => NOW });
+    await service.poll({ subject: SUBJECT, resolution: "1m" });
+
+    const line = vi.mocked(log.warn).mock.calls[0]?.[0];
+    expect(line).toContain("code=none");
+    expect(line).toContain("name=string");
+    expect(line).toContain("httpStatus=none");
+    await service.dispose();
+  });
+
+  /** A failure the owner DID classify is already named by its outcome. */
+  it("stays silent for a failure it could classify", async () => {
+    fetchBarsPage.mockRejectedValue(
+      siteError(DexScreenerSiteErrorCodes.TRANSPORT_TIMEOUT, "slow"),
+    );
+    const service = createBoardChartService({ now: () => NOW });
+    await service.poll({ subject: SUBJECT, resolution: "1m" });
+
+    expect(log.warn).not.toHaveBeenCalled();
     await service.dispose();
   });
 });

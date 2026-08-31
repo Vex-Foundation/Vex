@@ -21,7 +21,11 @@ import {
   TOOL_ARGS_DISPLAY_CEILING,
   toolCallDisplaySchema,
 } from "../../../shared/schemas/messages.js";
-import { BOARD_SPEC_MAX_BYTES } from "@vex-lib/board/index.js";
+import {
+  BOARD_SPEC_MAX_BYTES,
+  checkBoardSpecByteBudget,
+} from "@vex-lib/board/index.js";
+import { maximalBoardSpec } from "../../../../../src/__tests__/lib/board/maximal-board-spec.js";
 
 /** A BoardCompose-shaped call: the real producer that exposed the outage. */
 function boardComposeSizedArgs(): Record<string, unknown> {
@@ -127,14 +131,70 @@ describe("sanitizeToolArgs ships the WHOLE sanitized serialization", () => {
     const out = sanitizeToolArgs(args);
     expect(out).not.toBeNull();
     const serialized = out as string;
-    // Proof it is really board-budget-class rather than a small fixture.
-    expect(serialized.length).toBeGreaterThan(BOARD_SPEC_MAX_BYTES / 4);
+    // Proof it is really board-class rather than a small fixture. An ABSOLUTE
+    // floor, deliberately: this used to read `BOARD_SPEC_MAX_BYTES / 4` and
+    // broke when the budget rose to 512 KiB on 2026-08-29 - the fixture had
+    // not changed at all, only the constant it was pegged to. A fixture's size
+    // is its own fact and must not move with a budget it does not derive from.
+    expect(serialized.length).toBeGreaterThan(64 * 1024);
     expect(serialized).toContain("0.0125 shelf");
     expect(serialized).not.toContain("(truncated)");
     expect(serialized).not.toContain("[…]");
     expect(
       toolCallDisplaySchema.safeParse({
         toolCallId: "call_board",
+        toolName: "BoardCompose",
+        toolArgs: serialized,
+      }).success,
+    ).toBe(true);
+  });
+
+  /**
+   * THE BOUNDARY CASE the 2026-08-29 budget rise made worth pinning: a board
+   * spec of EXACTLY `BOARD_SPEC_MAX_BYTES` bytes is admitted by the budget,
+   * and its tool args must still reach the transcript WHOLE.
+   *
+   * The two guards now sit at the same number (524,288), so this walks the
+   * real path end to end rather than trusting the arithmetic: build a spec at
+   * exactly the byte budget, confirm the budget admits it, then put it through
+   * the REAL `sanitizeToolArgs` and confirm the mapper ships it rather than
+   * nulling it. The mapper counts pretty-printed CHARACTERS while the budget
+   * counts compact BYTES, which is exactly why this is measured, not reasoned.
+   */
+  it("ships the args of a spec sitting EXACTLY on the board budget", () => {
+    // REALISTIC PROSE as the padding, not a filler run. The redactor's
+    // value-shape layer treats a long unbroken run of one character as
+    // secret-shaped and replaces it - correctly - which would make the
+    // assertion below test the redactor rather than the ceiling.
+    const sentence =
+      "Depth returned on the 14:00 candle and the accumulation shelf held. ";
+    const spec = maximalBoardSpec({ script: "latin" }) as { notes: string[] };
+    const base = checkBoardSpecByteBudget(spec).byteLength;
+    const note = spec.notes[0];
+    if (note === undefined) throw new Error("the generated board has no notes");
+    const padBytes = BOARD_SPEC_MAX_BYTES - base;
+    // ASCII, so one character is one byte and the size is exact. Repeating
+    // then taking the leading `padBytes` characters BUILDS the fixture; it
+    // cuts no content that any reader was owed.
+    const padding = sentence
+      .repeat(Math.ceil(padBytes / sentence.length))
+      .slice(0, padBytes);
+    spec.notes[0] = note + padding;
+
+    const budget = checkBoardSpecByteBudget(spec);
+    expect(budget.byteLength).toBe(BOARD_SPEC_MAX_BYTES);
+    expect(budget.withinBudget).toBe(true);
+
+    const serialized = sanitizeToolArgs({ spec });
+    expect(serialized).not.toBeNull();
+    if (serialized === null) return;
+    // WHOLE: the padded prose survives intact, and nothing was cut.
+    expect(serialized.length).toBeLessThanOrEqual(TOOL_ARGS_DISPLAY_CEILING);
+    expect(serialized).toContain(sentence.repeat(20));
+    expect(serialized).not.toContain("(truncated)");
+    expect(
+      toolCallDisplaySchema.safeParse({
+        toolCallId: "call_board_edge",
         toolName: "BoardCompose",
         toolArgs: serialized,
       }).success,

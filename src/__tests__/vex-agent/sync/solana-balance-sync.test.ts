@@ -55,6 +55,9 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
 
 const { syncSolanaWalletBalances } = await import("../../../vex-agent/sync/solana-balance-sync.js");
 const { SOLANA_SYNTHETIC_CHAIN_ID } = await import("../../../constants/solana-chain.js");
+const { SolanaRpcRateLimitedError } = await import(
+  "@tools/solana-ecosystem/balances/read-wallet-balances.js"
+);
 
 const WALLET = "BfvP43eVzM7xAu6Pm7yYbqp8RVkbP8R8dCfTvgPp64Pg";
 const LAMPORTS = 96_740_111;
@@ -135,7 +138,12 @@ describe("syncSolanaWalletBalances", () => {
   it("writes the native row plus one row per non-zero mint, priced by our own DexScreener read", async () => {
     const result = await syncSolanaWalletBalances(WALLET, { rpc: scriptedRpc() });
 
-    expect(result).toEqual({ chainId: SOLANA_SYNTHETIC_CHAIN_ID, tokensUpdated: 9, skipped: false });
+    expect(result).toEqual({
+      chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+      tokensUpdated: 9,
+      skipped: false,
+      reason: null,
+    });
     const rows = writtenRows();
     expect(mockReplaceBalancesForChain).toHaveBeenCalledWith(WALLET, SOLANA_SYNTHETIC_CHAIN_ID, rows);
     expect(rows).toHaveLength(9);
@@ -199,7 +207,33 @@ describe("syncSolanaWalletBalances", () => {
     const result = await syncSolanaWalletBalances(WALLET, {
       rpc: scriptedRpc({ lamports: () => Promise.reject(new Error("connect ECONNREFUSED 127.0.0.1:8899")) }),
     });
-    expect(result).toEqual({ chainId: SOLANA_SYNTHETIC_CHAIN_ID, tokensUpdated: 0, skipped: true });
+    expect(result).toEqual({
+      chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+      tokensUpdated: 0,
+      skipped: true,
+      reason: "rpc_failed",
+    });
+    expect(mockReplaceBalancesForChain).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A RATE LIMIT IS NOT A DEAD ENDPOINT. `skipped: true` alone said only "not
+   * this cycle", so the two reached the caller as the same fact and the one
+   * whose remedy is pacing was indistinguishable from the one that needs
+   * diagnosis. Nothing retries it here: the reader stops and reports.
+   */
+  it("reports a 429 as skipped/rate_limited, distinct from any other RPC failure", async () => {
+    const result = await syncSolanaWalletBalances(WALLET, {
+      rpc: scriptedRpc({
+        lamports: () => Promise.reject(new SolanaRpcRateLimitedError("getBalance")),
+      }),
+    });
+    expect(result).toEqual({
+      chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+      tokensUpdated: 0,
+      skipped: true,
+      reason: "rate_limited",
+    });
     expect(mockReplaceBalancesForChain).not.toHaveBeenCalled();
   });
 
@@ -207,7 +241,12 @@ describe("syncSolanaWalletBalances", () => {
     const result = await syncSolanaWalletBalances(WALLET, {
       rpc: scriptedRpc({ token2022: () => Promise.reject(new Error("upstream 503")) }),
     });
-    expect(result).toEqual({ chainId: SOLANA_SYNTHETIC_CHAIN_ID, tokensUpdated: 0, skipped: true });
+    expect(result).toEqual({
+      chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+      tokensUpdated: 0,
+      skipped: true,
+      reason: "rpc_failed",
+    });
     // Writing the survivors would DELETE every Token-2022 holding.
     expect(mockReplaceBalancesForChain).not.toHaveBeenCalled();
   });
@@ -217,7 +256,12 @@ describe("syncSolanaWalletBalances", () => {
     const result = await syncSolanaWalletBalances(WALLET, {
       rpc: scriptedRpc({ spl: () => Promise.resolve([...accountsOf(splResponse), malformed]) }),
     });
-    expect(result).toEqual({ chainId: SOLANA_SYNTHETIC_CHAIN_ID, tokensUpdated: 0, skipped: true });
+    expect(result).toEqual({
+      chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+      tokensUpdated: 0,
+      skipped: true,
+      reason: "read_incomplete",
+    });
     expect(mockReplaceBalancesForChain).not.toHaveBeenCalled();
   });
 

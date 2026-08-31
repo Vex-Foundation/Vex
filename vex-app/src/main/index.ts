@@ -182,7 +182,10 @@ async function initializeMainRuntime(): Promise<void> {
   installAppProtocolHandler(rendererRoot);
 
   // 7. IPC surface
-  registerAllIpcHandlers();
+  // The agent-bridge disposer is handed back rather than self-registered: it
+  // drains the board read caches and the DexScreener transport, so it belongs
+  // to the ORDERED quit task below, not to a concurrent globalCleanup task.
+  const teardownAgentBridges = registerAllIpcHandlers();
 
   // 6-updater. User-triggered updater (M13): own the electron-updater event
   // stream so the renderer's update card reflects live status. Download +
@@ -340,6 +343,12 @@ async function initializeMainRuntime(): Promise<void> {
           log.error("[main] worker stop failed during quit", r.reason);
         }
       }
+      // LAST inside the ordered stop, and still before `cleanupOnQuit`: the
+      // bridges are the buses the workers above publish on, so they outlive
+      // the drain; and the board read caches + DexScreener transport they own
+      // must be closed before compose/Postgres teardown begins. The disposer
+      // is memoized in `setupAgentBridges`, so this is the only execution.
+      await teardownAgentBridges();
     }, cleanupOnQuit),
   );
   void cleanupOnBoot().catch((err) => {

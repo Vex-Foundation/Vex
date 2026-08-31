@@ -19,6 +19,12 @@
  * full pool list carries VEX/USDG at $0.002747. A token still without a price
  * keeps its balance with a null USD value - it is never dropped.
  *
+ * The chain's WRAPPED NATIVE is always seeded into the pricing request, whether
+ * or not the wallet holds it: it is the anchor every tier-1 price is multiplied
+ * by and the only source of the native coin's own USD value. It rides in a
+ * batch that is issued anyway, is never counted in the tier census, and never
+ * consumes one of the pool-list rescue slots, which belong to the scan set.
+ *
  * This module is RPC/pricing only: no DB access, no fail-soft policy. RPC and
  * pricing errors PROPAGATE (DexScreener failures excepted — pricing is
  * fail-soft to an empty map); callers own their failure semantics.
@@ -112,11 +118,14 @@ export async function readLocalChainBalances(
   const meta = await loadTokenMetadata(client, config.id, tokenAddrs);
   const balances = await readErc20Balances(client, walletAddress, tokenAddrs);
   const nativeWei = await client.getBalance({ address: getAddress(walletAddress) });
-  const { priceByLower, tiers } = await fetchPricesByLowerAddress(config, tokenAddrs);
+  const { priceByLower, tiers, nativeUsd } = await fetchPricesByLowerAddress(config, tokenAddrs);
 
   // The wrapped native IS the chain's native coin for pricing purposes, and the
-  // quote policy already names it - no label-matching heuristic needed.
-  const nativePriceUsd = priceByLower.get(config.quoteAssetPolicy.wrappedNative) ?? null;
+  // quote policy already names it - no label-matching heuristic needed. The
+  // pricing pass always seeds it into the request, so this is answerable even
+  // when the wallet holds no wrapped native at all.
+  const nativePriceUsd = nativeUsd;
+
 
   const tokens: LocalChainTokenRead[] = [];
   const tokenFailures: LocalChainTokenReadFailure[] = [];
@@ -211,6 +220,13 @@ interface LocalChainPricing {
   /** Lowercase token address -> USD price. Absent means unpriced. */
   readonly priceByLower: Map<string, number>;
   readonly tiers: PriceTierCounts;
+  /**
+   * The chain's native USD price, from the wrapped native the request always
+   * seeds. Null when no pool in this pass supplied one. It is NOT read out of
+   * `priceByLower`: the wrapped native only has an entry there when the wallet
+   * happens to hold it.
+   */
+  readonly nativeUsd: number | null;
 }
 
 /**
@@ -232,16 +248,35 @@ async function fetchPricesByLowerAddress(
     // EVM addresses are case-insensitive, so the injected identity policy is
     // lowercase and the returned map is keyed by lowercase address, exactly as
     // every caller of this function already reads it.
+    //
+    // COVERAGE SET, deliberately NOT the request set below: `countTiers()`
+    // counts these addresses, so the wrapped-native seed must not enter here or
+    // every census would gain a token this wallet does not hold.
     wanted: tokenAddrs,
     normalizeAddress: (address) => address.toLowerCase(),
     quotePolicy: config.quoteAssetPolicy,
+    expectedChainId: config.dexscreenerSlug,
   });
-  if (tokenAddrs.length === 0) {
-    return { priceByLower: new Map<string, number>(), tiers: accumulator.countTiers() };
-  }
 
-  for (let i = 0; i < tokenAddrs.length; i += DEXSCREENER_TOKENS_BATCH) {
-    const batch = tokenAddrs.slice(i, i + DEXSCREENER_TOKENS_BATCH);
+  // REQUEST set: the scanned tokens PLUS this chain's wrapped native, always.
+  // The wrapped native anchors `nativeUsd`, and without it in the request every
+  // tier-1 token on a scan set that happens to exclude it is unpriceable and the
+  // chain's own native coin has no price at all. It rides along in a batch that
+  // is issued anyway; it never consumes a rescue slot (the rescue pass below
+  // reads the scan set) and never appears in the tier census.
+  const wrappedNative = config.quoteAssetPolicy.wrappedNative.toLowerCase();
+  const pricingAddresses = [
+    ...tokenAddrs,
+    ...(tokenAddrs.some((address) => address.toLowerCase() === wrappedNative)
+      ? []
+      : [wrappedNative]),
+  ];
+  // An EMPTY scan set still issues this one request: the wallet's native coin
+  // is reported by this reader whether or not it holds any ERC-20, and its
+  // price comes from the wrapped native alone. Pricing nothing is what used to
+  // leave a native-only wallet with a null USD value.
+  for (let i = 0; i < pricingAddresses.length; i += DEXSCREENER_TOKENS_BATCH) {
+    const batch = pricingAddresses.slice(i, i + DEXSCREENER_TOKENS_BATCH);
     try {
       accumulator.addPairs(await readTokensPairs(config.dexscreenerSlug, batch.join(",")));
     } catch (err) {
@@ -273,6 +308,14 @@ async function fetchPricesByLowerAddress(
     });
   }
 
+  const foreignChainPairs = accumulator.foreignChainPairsRefused();
+  if (foreignChainPairs > 0) {
+    logger.warn("evm_chains.balances.foreign_chain_pairs_refused", {
+      slug: config.dexscreenerSlug,
+      pairs: foreignChainPairs,
+    });
+  }
+
   const tiers = accumulator.countTiers();
   if (tiers.unpriced > 0) {
     logger.debug("evm_chains.balances.unpriced_reasons", {
@@ -280,7 +323,7 @@ async function fetchPricesByLowerAddress(
       ...summarizeUnpricedReasons(accumulator),
     });
   }
-  return { priceByLower: accumulator.toPriceMap(), tiers };
+  return { priceByLower: accumulator.toPriceMap(), tiers, nativeUsd: accumulator.nativeUsd() };
 }
 
 /** Test-only: clear the in-process metadata cache. */

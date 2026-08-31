@@ -257,3 +257,58 @@ describe("local-chain price selection (characterization)", () => {
     expect(read.priceTiers).toEqual({ tier0: 0, tier1: 0, unpriced: 2 });
   });
 });
+
+describe("the wrapped-native seed (always requested, never counted)", () => {
+  it("prices the NATIVE coin for a wallet whose scan set holds no wrapped native", async () => {
+    mockReadTokensPairs.mockResolvedValue([
+      pair({ base: WETH, quote: USDG, priceUsd: "3000", liquidityUsd: 1_000_000 }),
+      pair({ base: VEX, quote: WETH, priceNative: "0.001", priceUsd: null, liquidityUsd: 50_000 }),
+    ]);
+
+    // VEX only: under the old request set WETH was never asked for, so the
+    // anchor did not exist, the native coin had no price and every WETH-quoted
+    // token was unpriceable.
+    const read = await readLocalChainBalances(config, WALLET, [VEX]);
+
+    expect(read.nativePriceUsd).toBe(3000);
+    expect(read.tokens[0]?.priceUsd).toBe(3);
+    expect(mockReadTokensPairs).toHaveBeenCalledWith(
+      "robinhood",
+      expect.stringContaining(WETH.toLowerCase()),
+    );
+    // The seed is NOT part of the coverage census: one scanned token, priced.
+    expect(read.priceTiers).toEqual({ tier0: 0, tier1: 1, unpriced: 0 });
+  });
+
+  it("prices the native coin for a wallet with NO tokens at all", async () => {
+    mockReadTokensPairs.mockResolvedValue([
+      pair({ base: WETH, quote: USDG, priceUsd: "3000", liquidityUsd: 1_000_000 }),
+    ]);
+
+    const read = await readLocalChainBalances(config, WALLET, []);
+
+    expect(read.nativePriceUsd).toBe(3000);
+    expect(read.tokens).toEqual([]);
+    expect(read.priceTiers).toEqual({ tier0: 0, tier1: 0, unpriced: 0 });
+    // One batch for the seed, and no rescue slot spent on it.
+    expect(mockReadTokensPairs).toHaveBeenCalledTimes(1);
+    expect(mockReadTokenPools).not.toHaveBeenCalled();
+  });
+
+  it("never spends a pool-list rescue on the seeded wrapped native", async () => {
+    // Nothing is priced, so every SCANNED address is a rescue candidate.
+    mockReadTokensPairs.mockResolvedValue([]);
+    await readLocalChainBalances(config, WALLET, [VEX]);
+    expect(mockReadTokenPools).toHaveBeenCalledTimes(1);
+    expect(mockReadTokenPools).toHaveBeenCalledWith("robinhood", VEX);
+  });
+
+  it("REFUSES pools the provider answers for another chain", async () => {
+    mockReadTokensPairs.mockResolvedValue([
+      { ...pair({ base: VEX, quote: USDG, priceUsd: "0.5", liquidityUsd: 50_000 }), chainId: "base" },
+    ]);
+    const read = await readLocalChainBalances(config, WALLET, [VEX]);
+    expect(read.tokens[0]?.priceUsd).toBe(null);
+    expect(read.priceTiers).toEqual({ tier0: 0, tier1: 0, unpriced: 1 });
+  });
+});

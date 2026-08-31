@@ -250,7 +250,7 @@ describe("composer capsule - send key", () => {
     expect(pending).not.toBeNull();
     expect(pending?.querySelector(".vex-composer-pending-dot")).not.toBeNull();
     expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Stop generating" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Stop agent" })).toBeTruthy();
   });
 });
 

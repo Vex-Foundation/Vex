@@ -91,8 +91,17 @@ interface CacheEntry<T> {
   readonly expiresAtMs: number;
 }
 
+/**
+ * What asking for a concurrency slot produced.
+ *
+ * `cancelled` is its own outcome and not a flavour of `refused`: the caller was
+ * not turned away by a full queue, its OWN read was abandoned while it waited,
+ * and the two say different things to the reader.
+ */
+type SlotOutcome = "admitted" | "refused" | "cancelled";
+
 interface QueueEntry {
-  readonly admit: (admitted: boolean) => void;
+  readonly settle: (outcome: SlotOutcome) => void;
 }
 
 /**
@@ -126,6 +135,8 @@ export function createBoardReadCache<T>(
   const queue: QueueEntry[] = [];
   let active = 0;
   let closed = false;
+  /** The one drain. Every `dispose()` caller joins it (see `dispose`). */
+  let pendingDispose: Promise<void> | undefined;
 
   function remember(key: string, value: T, expiresAtMs: number): void {
     entries.delete(key);
@@ -157,18 +168,45 @@ export function createBoardReadCache<T>(
       // The slot is taken HERE, by the pump, so a waiter wakes already counted
       // and cannot increment a second time on its own side.
       active += 1;
-      next.admit(true);
+      next.settle("admitted");
     }
   }
 
-  function acquireSlot(): Promise<boolean> {
+  /**
+   * Wait for a concurrency slot, watching the SHARED flight controller.
+   *
+   * The signal is the load's, not one caller's: a queued read is abandoned
+   * exactly when its last waiter left and `read` aborted that controller. Until
+   * this followed the abort, a dead queue entry survived, was admitted later,
+   * took a slot, and called `load()` with an already-aborted signal - and it
+   * counted against `queueMax` the whole time, refusing live callers as `busy`
+   * on behalf of a read nobody was waiting for.
+   */
+  function acquireSlot(signal: AbortSignal): Promise<SlotOutcome> {
+    if (signal.aborted) return Promise.resolve("cancelled");
     if (active < options.maxConcurrent) {
       active += 1;
-      return Promise.resolve(true);
+      return Promise.resolve("admitted");
     }
-    if (queue.length >= options.queueMax) return Promise.resolve(false);
-    return new Promise<boolean>((resolve) => {
-      queue.push({ admit: resolve });
+    if (queue.length >= options.queueMax) return Promise.resolve("refused");
+    return new Promise<SlotOutcome>((resolve) => {
+      const onAbort = (): void => {
+        const at = queue.indexOf(entry);
+        // Only a still-queued entry is cancellable here; once the pump has
+        // shifted it out, the slot is already taken and `runLoad` owns the
+        // abort through the same signal.
+        if (at === -1) return;
+        queue.splice(at, 1);
+        entry.settle("cancelled");
+      };
+      const entry: QueueEntry = {
+        settle: (outcome) => {
+          signal.removeEventListener("abort", onAbort);
+          resolve(outcome);
+        },
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      queue.push(entry);
     });
   }
 
@@ -182,8 +220,11 @@ export function createBoardReadCache<T>(
     load: (signal: AbortSignal) => Promise<BoardReadOutcome<T>>,
     controller: AbortController,
   ): Promise<T> {
-    const admitted = await acquireSlot();
-    if (!admitted) return options.refusal(closed ? "not_mounted" : "busy");
+    const slot = await acquireSlot(controller.signal);
+    // Abandoned while queued: no slot was ever taken, so none is released, and
+    // `load` is never called with a signal that is already aborted.
+    if (slot === "cancelled") return options.refusal("cancelled");
+    if (slot === "refused") return options.refusal(closed ? "not_mounted" : "busy");
     // Admission can close while a caller waits in the queue.
     if (closed) {
       releaseSlot();
@@ -308,27 +349,33 @@ export function createBoardReadCache<T>(
       return entries.size;
     },
 
-    async dispose(): Promise<void> {
-      if (closed) return;
-      // Order matters: close admission BEFORE aborting, so nothing queued
-      // starts a read into a cache that is tearing down.
-      closed = true;
-      // Refused, not admitted: a queued caller never held a slot, so waking it
-      // with `true` would let it release one it never took.
-      for (const waiting of queue.splice(0)) waiting.admit(false);
-      for (const controller of controllers) controller.abort();
-      // DRAIN rather than abandon: every in-flight read settles before this
-      // resolves, so no read outlives the transport it borrows. BOTH halves of
-      // the graph are awaited - what is still joinable, and what a last-waiter
-      // abort already unpublished but has not finished unwinding.
-      await Promise.allSettled([
-        ...[...inFlight.values()].map((running) => running.promise),
-        ...draining,
-      ]);
-      inFlight.clear();
-      draining.clear();
-      controllers.clear();
-      entries.clear();
+    dispose(): Promise<void> {
+      // MEMOIZED, not early-returned. `if (closed) return;` resolved a second
+      // caller IMMEDIATELY while the first was still draining, so a quit path
+      // that awaited dispose could proceed to tear the transport down under a
+      // read that was still running. Every caller now joins the SAME drain.
+      pendingDispose ??= (async () => {
+        // Order matters: close admission BEFORE aborting, so nothing queued
+        // starts a read into a cache that is tearing down.
+        closed = true;
+        // Refused, not admitted: a queued caller never held a slot, so waking
+        // it as admitted would let it release one it never took.
+        for (const waiting of queue.splice(0)) waiting.settle("refused");
+        for (const controller of controllers) controller.abort();
+        // DRAIN rather than abandon: every in-flight read settles before this
+        // resolves, so no read outlives the transport it borrows. BOTH halves
+        // of the graph are awaited - what is still joinable, and what a
+        // last-waiter abort already unpublished but has not finished unwinding.
+        await Promise.allSettled([
+          ...[...inFlight.values()].map((running) => running.promise),
+          ...draining,
+        ]);
+        inFlight.clear();
+        draining.clear();
+        controllers.clear();
+        entries.clear();
+      })();
+      return pendingDispose;
     },
   };
 }

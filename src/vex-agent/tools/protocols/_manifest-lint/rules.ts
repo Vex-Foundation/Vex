@@ -34,6 +34,11 @@ export type ManifestLintRule =
   // Only `publicName` is callable; the dotted id is the internal and audit
   // identity. Own rules module: `_manifest-lint/dotted-toolid-rules.ts`.
   | "dotted-toolid-reference"
+  // A model-facing string naming a `namespace__tool` the catalog does not
+  // register. The mirror of the rule above: a well-formed name for a tool that
+  // does not exist is actionable, and the unknown-tool refusal it earns carries
+  // no correction. Own rules module: `_manifest-lint/public-name-rules.ts`.
+  | "unknown-public-name-reference"
   | "chain-doc-parity"
   | "exclusive-param-groups"
   | "enum-declaration"

@@ -31,6 +31,11 @@ export type {
   RuntimeStopReason,
   StopReason,
 } from "./types/stop-reasons.js";
+export {
+  BUSINESS_STOP_REASONS,
+  RUNTIME_STOP_REASONS,
+  STOP_REASONS,
+} from "./types/stop-reasons.js";
 export type {
   MessageMetadata,
   MessageSource,

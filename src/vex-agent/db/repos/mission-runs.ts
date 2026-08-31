@@ -275,6 +275,58 @@ export async function updateStatusIfNotTerminal(
 }
 
 /**
+ * EXACT-status CAS: park a run that is STILL `running`, and only then.
+ *
+ * `updateStatusIfNotTerminal` is deliberately broad (`status NOT IN terminal`)
+ * because its callers are the run's OWN runner, parking work it was executing.
+ * The restart-orphan reclaim is the opposite case: it is a THIRD PARTY writing
+ * about a run no process is holding, and the only state that licences that
+ * write is `running`. A broad CAS would let a reclaim pass land on a run that
+ * had meanwhile been legitimately parked (`paused_approval`, `paused_wake`,
+ * `paused_user_form`, …) by a runner that came back or by an operator control,
+ * overwriting a live, meaningful pause with `paused_error` and stranding the
+ * pending approval or form behind it. The narrow CAS makes that impossible
+ * without the caller having to enumerate every pause status it must not touch.
+ *
+ * `client` is REQUIRED, unlike the sibling helpers. The exact-status CAS is a
+ * decision about a row the caller must already have re-read under
+ * `SELECT … FOR UPDATE` inside the session control lock; run outside such a
+ * transaction it is a check-then-act on a row anyone may be moving. Making the
+ * transaction client a required parameter is what stops that misuse at compile
+ * time (the same argument the money-state reader makes for its own client).
+ *
+ * `running` is excluded as a TARGET at the type level for the same reason as in
+ * `updateStatusIfNotTerminal`: this helper COALESCE-merges prior stop evidence,
+ * whereas a flip to `running` must clear it.
+ *
+ * Returns `true` when the row was parked, `false` when the run had already
+ * moved off `running` (or no longer exists).
+ */
+export async function updateStatusIfRunning(
+  id: string,
+  status: Exclude<MissionRunStatus, "running">,
+  stopReason: string,
+  stopPayload: { summary?: string; evidence?: Record<string, unknown> },
+  client: PoolClient,
+): Promise<boolean> {
+  const ended = TERMINAL_RUN_STATUSES.has(status) ? "NOW()" : "ended_at";
+  const sql = `UPDATE mission_runs SET status = $1,
+     stop_reason = $2,
+     stop_summary = COALESCE($3, stop_summary),
+     stop_evidence_json = COALESCE($4::jsonb, stop_evidence_json),
+     ended_at = ${ended}
+     WHERE id = $5 AND status = 'running'`;
+  const result = await client.query(sql, [
+    status,
+    stopReason,
+    stopPayload.summary ?? null,
+    nullableJsonb(stopPayload.evidence ?? null),
+    id,
+  ]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
  * Guarded `running` flip — the counterpart of `updateStatusIfNotTerminal` for
  * the one status that helper excludes at the type level.
  *

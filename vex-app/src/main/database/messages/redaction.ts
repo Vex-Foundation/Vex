@@ -196,8 +196,16 @@ export function sanitizeToolArgs(rawArgs: unknown): string | null {
   }
   // WHOLE or nothing, never a cut string (owner decree; see the block comment
   // above). The ceiling is the shared schema's own corruption guard: no
-  // legitimate producer can reach it (the largest, BoardCompose, refuses its
-  // own spec above BOARD_SPEC_MAX_BYTES, 320 KiB, measured in src/lib/board/spec.ts), so exceeding it means a corrupted row, and
-  // a corrupted row shows no args rather than misleading partial ones.
+  // legitimate producer can reach it. The largest, BoardCompose, refuses its
+  // own spec above BOARD_SPEC_MAX_BYTES (512 KiB, `src/lib/board/spec.ts`),
+  // and the biggest board that budget admits pretty-prints to 260,476
+  // characters - measured, and pinned beside the ceiling's own declaration.
+  // Exceeding this therefore means a corrupted row, and a corrupted row shows
+  // no args rather than misleading partial ones.
+  //
+  // STRICTLY GREATER, and deliberately: args of EXACTLY the ceiling are
+  // shipped whole. The board budget's own comparison is inclusive in the same
+  // direction, so the two agree at the edge instead of leaving a one-unit band
+  // where a board is stored but its arguments silently vanish.
   return serialized.length > TOOL_ARGS_DISPLAY_CEILING ? null : serialized;
 }

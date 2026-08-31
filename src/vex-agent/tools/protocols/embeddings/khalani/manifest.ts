@@ -59,6 +59,7 @@ export const KHALANI_MAIN_DISCOVERY = {
   "khalani.tokens.balances": {
     embeddingText: embeddingText(
       `Get a wallet's token balances across multiple EVM and Solana chains, with USD prices included. ` +
+      `EVM balances are read through Khalani; Solana balances are read directly from Solana RPC, the same read the portfolio uses. ` +
       `Use this when the user wants to check their portfolio, see what they hold across chains, find available source assets before bridging or swapping, or get USD value of their holdings. ` +
       `Example queries: what's my balance, show my portfolio across chains, how much usdc do I have, check my wallet on solana, find available funds before bridging, total holdings, my crypto worth.`,
     ),

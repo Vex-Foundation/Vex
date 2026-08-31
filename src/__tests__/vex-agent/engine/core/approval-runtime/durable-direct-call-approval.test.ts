@@ -190,6 +190,83 @@ describe("cold resume after a process restart", () => {
     expect(handler.mock.calls[0]?.[0]).toEqual(SWAP_PARAMS);
   });
 
+  /*
+   * THE OPTIONAL EMPTY LIST, ACROSS THE APPROVAL BOUNDARY (2026-08-28).
+   *
+   * `normalizeOptionalEmptyArrayParams` drops an optional `acceptsStringArray`
+   * param whose value is `[]`. It runs inside `executeProtocolTool`, which is
+   * AFTER the point where the turn loop captured `toolCall.arguments` for the
+   * approval row - so the durable envelope stores the raw model spelling.
+   *
+   * That is the CORRECT and deliberate contract, and these cases pin it, because
+   * "the envelope should store the normalized args instead" is the intuitive
+   * reading and it is wrong on this codebase:
+   *
+   *   - the envelope is a DURABLE record whose bytes are the `request_digest`
+   *     preimage (`computeRequestDigest`), and it is documented as the ORIGINAL
+   *     arguments object. The other runtime normalizations - flat-args
+   *     resolution, the JSON-string array coercion, the numeric-string coercion
+   *     - are likewise NOT stored and re-applied on the execute side. (The one
+   *     exception is the retired-alias rewrite, which param-aliases.ts
+   *     deliberately mutates in place BEFORE capture so the row stores the
+   *     canonical key; that is a spelling migration, not a semantic transform.)
+   *   - resume re-dispatches BY NAME with the stored args, so the identical
+   *     normalization runs again in the resuming process. Preview, digest and
+   *     execution are consistent because the transform is deterministic and
+   *     re-run, not because it was baked into the row.
+   *
+   * What must therefore be true, and is asserted below: whichever spelling of
+   * "no filter" the model used, the HANDLER sees the same params after a cold
+   * resume, and the empty key never reaches it.
+   */
+  const LIST_MANIFEST_OVERRIDE: Partial<ProtocolToolManifest> = {
+    params: [
+      { key: "chain", type: "string", required: true, description: "" },
+      {
+        key: "marketIds",
+        type: "string",
+        required: false,
+        acceptsStringArray: true,
+        description: "",
+      },
+    ],
+  };
+
+  it.each([
+    ["a real empty array", [] as unknown],
+    ["the JSON-string spelling", "[]" as unknown],
+  ])("drops an optional empty list at cold resume when the row stored %s", async (_label, sent) => {
+    const manifest = makeManifest(LIST_MANIFEST_OVERRIDE);
+    vi.mocked(catalog.getProtocolManifest).mockReturnValue(manifest);
+    const handler = vi.fn<ProtocolHandler>(async () => ({ success: true, output: "claimed" }));
+    vi.mocked(catalog.getProtocolHandler).mockReturnValue(handler);
+
+    const sentParams = { chain: "base", marketIds: sent };
+    recordDiscoveredTools(SESSION, [TOOL_ID]);
+    const stored = buildApprovalToolCall(INJECTED_NAME, sentParams);
+
+    // The row keeps the model's own spelling, verbatim - it is the digest
+    // preimage and must not be rewritten behind the human's approval.
+    expect(stored.args).toEqual({ toolId: TOOL_ID, params: sentParams });
+
+    clearDiscoveredTools(SESSION);
+    const result = await dispatchTool(
+      {
+        name: stored.command as string,
+        args: stored.args as Record<string, unknown>,
+        toolCallId: "tc-empty-list",
+      },
+      resumedContext,
+    );
+
+    expect(result.success).toBe(true);
+    // THE POINT: execution is identical for both spellings, and the empty
+    // filter never reaches the handler.
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.mock.calls[0]?.[0]).toEqual({ chain: "base" });
+    expect(handler.mock.calls[0]?.[0]).not.toHaveProperty("marketIds");
+  });
+
   it("REGRESSION: the raw injected name is what used to fail in a fresh process", async () => {
     vi.mocked(catalog.getProtocolManifest).mockReturnValue(makeManifest());
     const handler = vi.fn<ProtocolHandler>(async () => ({

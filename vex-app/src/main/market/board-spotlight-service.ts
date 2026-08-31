@@ -524,7 +524,6 @@ export function createBoardSpotlightService(
                 // has no offset, cursor or page, so a row dropped here would be
                 // a row no caller could ever ask for again.
                 rows: document.rows.map(toTopTrader),
-                rowsAvailable: document.rows.length,
                 lookbackDays: TOP_TRADERS_LOOKBACK_DAYS_MAX,
                 windowLabel: TRADERS_WINDOW_LABEL,
                 semanticsNote: TRADERS_SEMANTICS_NOTE,

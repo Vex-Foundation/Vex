@@ -358,7 +358,7 @@ describe("AppShell", () => {
     // mount-effect replay unsubscribes the observer mid-flight (detaching it
     // from the in-flight mutation with no reattach). Without the reset() guard
     // in useSubmitChat, the observer misses the settle and `isPending` freezes
-    // at true → the composer is stuck as a dead "Stop generating" button and
+    // at true → the composer is stuck as a dead "Stop agent" button and
     // the next message can never be sent. Use the no-provider error so the
     // submit settles immediately (the engine cannot be the slow part).
     sessionsListMock.mockResolvedValueOnce({ ok: true, data: [] });
@@ -392,6 +392,6 @@ describe("AppShell", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Send message" })).toBeTruthy(),
     );
-    expect(screen.queryByRole("button", { name: "Stop generating" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop agent" })).toBeNull();
   });
 });

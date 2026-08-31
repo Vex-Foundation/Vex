@@ -9,7 +9,7 @@
  * bordered box.
  */
 
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 import {
   IconData,
   IconGlobe,
@@ -90,14 +90,12 @@ export function SmartMoneySection({
                   <span className="w-5 shrink-0 tabular-nums text-ink-tertiary">
                     {trader.providerRank}
                   </span>
-                  <span
-                    className="min-w-0 flex-1 truncate font-mono text-ink-secondary"
-                    // The WHOLE address on hover: the visible run is clipped
-                    // by CSS, never by cutting the string.
-                    title={trader.maker}
-                  >
-                    {trader.label ?? trader.maker}
-                  </span>
+                  {/* Both facts, and both REVEALABLE without a pointer. */}
+                  <WalletIdentity
+                    area="board-spotlight-trader-identity"
+                    label={trader.label}
+                    maker={trader.maker}
+                  />
                   <span className="shrink-0 tabular-nums text-ink-tertiary">
                     {formatUsdNumber(trader.boughtUsd)} in
                   </span>
@@ -122,6 +120,76 @@ export function SmartMoneySection({
         </div>
       )}
     </SpotlightReadSection>
+  );
+}
+
+/**
+ * A WALLET IDENTITY THAT CAN ACTUALLY BE READ.
+ *
+ * THE DEFECT THIS REPLACES. The row rendered `label ?? maker`, clipped it with
+ * CSS, and hung the address on `title`. So the visible text was one fact while
+ * hover revealed a DIFFERENT one, and every reader without a pointer - keyboard
+ * or touch - had no way to reach either complete value. Moving the full string
+ * into an `sr-only` span fixed it for screen readers ONLY: a sighted keyboard
+ * or touch user still could not reveal a truncated address, which is most of
+ * them, since these are 40+ character addresses in a narrow column.
+ *
+ * THE FIX IS A REAL DISCLOSURE, not a second hidden copy. A semantic `button`
+ * gets keyboard focus, activates on Enter and Space with NO key handler of our
+ * own, works on touch, and shows a visible focus ring; expanding wraps both
+ * values so the whole label and the whole address are on screen. `title` stays
+ * as a convenience for mouse users and is no longer the only way to the fact.
+ *
+ * NOTHING IS EVER CUT: the clipping is `text-overflow` on the collapsed state,
+ * and the complete string is in the DOM in both states.
+ */
+function WalletIdentity({
+  area,
+  label,
+  maker,
+  makerTone = "text-ink-secondary",
+}: {
+  readonly area: string;
+  readonly label: string | null;
+  readonly maker: string;
+  /** The address's own colour when it stands alone. The tape reads quieter. */
+  readonly makerTone?: string;
+}): JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <button
+      type="button"
+      data-vex-area={area}
+      data-expanded={expanded ? "true" : "false"}
+      aria-expanded={expanded}
+      title={maker}
+      onClick={() => {
+        setExpanded((value) => !value);
+      }}
+      className="min-w-0 flex-1 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {label === null ? null : (
+        <span
+          data-vex-area={`${area}-label`}
+          className={cn(
+            "block text-ink-secondary",
+            expanded ? "break-words" : "truncate",
+          )}
+        >
+          {label}
+        </span>
+      )}
+      <span
+        data-vex-area={`${area}-maker`}
+        className={cn(
+          "block font-mono",
+          expanded ? "break-all" : "truncate",
+          label === null ? makerTone : "text-[11px] leading-[15px] text-ink-tertiary",
+        )}
+      >
+        {maker}
+      </span>
+    </button>
   );
 }
 
@@ -226,14 +294,22 @@ export function TapeSection({
                       <span className="w-20 shrink-0 text-ink-primary">
                         {formatBoardUsdCompact(trade.volumeUsd)}
                       </span>
-                      <span
-                        className="min-w-0 flex-1 truncate font-mono text-ink-tertiary"
-                        // The WHOLE address on hover. The visible run is
-                        // clipped by CSS, never by cutting the string.
-                        title={trade.maker ?? undefined}
-                      >
-                        {trade.maker ?? BOARD_EMPTY}
-                      </span>
+                      {/* Same rule as the trader rows. A row with NO maker is
+                        * a plain span rather than a button: there is nothing
+                        * to reveal, and a focus stop that discloses nothing is
+                        * noise in a long list. */}
+                      {trade.maker === null ? (
+                        <span className="min-w-0 flex-1 truncate font-mono text-ink-tertiary">
+                          {BOARD_EMPTY}
+                        </span>
+                      ) : (
+                        <WalletIdentity
+                          area="board-spotlight-tape-identity"
+                          label={null}
+                          maker={trade.maker}
+                          makerTone="text-ink-tertiary"
+                        />
+                      )}
                     </span>
                   </li>
                 ))}

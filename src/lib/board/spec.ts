@@ -212,10 +212,11 @@ export const BOARD_PROVENANCE_OBSERVATION_MAX_CHARS = 512;
 /**
  * Serialized ceiling for one persisted board document, in BYTES of UTF-8.
  *
- * 320 KiB. This is a REFUSAL threshold, never a trimming threshold: a board
- * over budget is refused with its measured size AND the pool that contributed
- * most named, because silently dropping pools, notes or candles would show the
- * user a board the agent did not compose. See {@link checkBoardSpecByteBudget}.
+ * 512 KiB (owner decision, 2026-08-29). This is a REFUSAL threshold, never a
+ * trimming threshold: a board over budget is refused with its measured size
+ * AND the pool that contributed most named, because silently dropping pools,
+ * notes or candles would show the user a board the agent did not compose. See
+ * {@link checkBoardSpecByteBudget}.
  *
  * THE NUMBER IS MEASURED, AND THE MEASUREMENT IS A TEST. The generator
  * `maximalBoardSpec()` in `src/__tests__/lib/board/maximal-board-spec.ts`
@@ -226,39 +227,78 @@ export const BOARD_PROVENANCE_OBSERVATION_MAX_CHARS = 512;
  * member of the union), and a full {@link BOARD_MAX_CANDLES}-bar series of
  * maximum-width decimals - and `spec.test.ts` measures it:
  *
+ *   - Latin: 161,945 bytes;
  *   - two-byte script (Cyrillic, Greek, Hebrew): 272,697 bytes;
- *   - Latin: 161,945 bytes.
+ *   - THREE-BYTE script (CJK): 383,449 bytes.
  *
- * 327,680 admits the two-byte worst case with 54,983 bytes of headroom. The
- * two-byte figure is the one the budget is sized against, because a user may
- * ask for analysis in such a script and the board must not become unstorable
- * for it.
+ * WHY 320 KiB WAS RAISED. The CJK figure is the one that forced it. A Chinese,
+ * Japanese or Korean ideograph is three UTF-8 bytes and ONE UTF-16 unit, so -
+ * unlike a 4-byte emoji - it is legal on EVERY field, including the provider
+ * labels and provenance strings that zod bounds by UTF-16 units. A whole-
+ * document CJK board is therefore fully schema-valid at 383,449 bytes, which
+ * the previous 327,680 refused by 55,769 bytes with NOTHING the model could
+ * shorten: every field already sat on its own bound, and the bounds count
+ * characters while the budget counts bytes. Asking for analysis in CJK is an
+ * ordinary request, not a corner, so the board must not become unstorable for
+ * it. The class was unmeasured until the `threeByte` filler was added; the
+ * budget decision was then made WITH the number rather than before it.
  *
- * WHY THE PREVIOUS 262,144 WAS WRONG. It was chosen from hand arithmetic over
- * a SUBSET of the fields, and the doc claimed a worst case of 251,963 bytes.
- * That figure omitted the provider descriptions at their bound together with
- * the maximum-width hydration labels, the widest decimals and the widest
- * annotation set; the real all-fields-max document is 272,697 bytes. A board
- * the schema ACCEPTED could therefore be refused by the budget with nothing
- * the model had authored that it could shorten. Any bound raised above now
- * moves the generated document, which moves the measured figure, which fails
- * `spec.test.ts` until this constant is re-derived.
+ * 524,288 admits the CJK worst case with 140,839 bytes of headroom.
  *
- * WHAT IS STILL REFUSED, deliberately: emoji-dense assessments at the same
- * bounds. `BOARD_ANALYSIS_RULE` counts CODE POINTS, so eight 10,000-code-point
- * assessments of 4-byte emoji are 320,000 bytes of analysis alone and the
- * document lands past this ceiling. That board is refused WHOLE, with its
- * measured size and heaviest pool named, and is never trimmed to fit.
+ * WHY THE EARLIER 262,144 WAS WRONG, kept because it is the same lesson twice:
+ * it was chosen from hand arithmetic over a SUBSET of the fields, and the doc
+ * claimed a worst case of 251,963 bytes. That figure omitted the provider
+ * descriptions at their bound together with the maximum-width hydration
+ * labels, the widest decimals and the widest annotation set. Any bound raised
+ * above moves the generated document, which moves the measured figure, which
+ * fails `spec.test.ts` until this constant is re-derived.
+ *
+ * WHAT THIS BUDGET NOW REFUSES, stated honestly: no schema-valid board at all.
+ * The byte-heaviest document the contract can express - 3-byte CJK on every
+ * field zod bounds by UTF-16 units, 4-byte astral on every code-point-bounded
+ * prose field, each being the heaviest legal character for its field -
+ * measures 480,569 bytes and clears this ceiling by 43,719. At 327,680 the
+ * emoji-assessment board WAS refused; at 524,288 it is admitted (432,697
+ * bytes).
+ *
+ * So this is now a CORRUPTION and FORWARD-COMPATIBILITY guard rather than a
+ * reachable refusal, and the change of role is deliberate. Both call sites run
+ * it AFTER a successful schema parse (`tools/internal/board/compose.ts`, and
+ * `extractBoard` in the transcript mapper), so what it still catches is a
+ * durable row written by a different schema version, or a field bound raised
+ * without re-deriving this constant. The refusal path stays exercised in
+ * `spec.test.ts` by an over-budget document built by construction, and the
+ * measurement above is what fails if a future bound makes it reachable again -
+ * which is precisely when this number must be re-read.
+ *
+ * Nothing is ever trimmed to fit: an over-budget board is refused WHOLE, with
+ * its measured size and heaviest pool named.
+ *
+ * THE BOUNDARY IS INCLUSIVE: a document of exactly this many bytes is
+ * ADMITTED (`byteLength <= BOARD_SPEC_MAX_BYTES` in
+ * {@link checkBoardSpecByteBudget}), and the transcript mapper's own guard is
+ * inclusive in the same direction, so the two agree at the edge rather than
+ * leaving a one-unit band where a board is stored but its args are not shown.
  *
  * DOWNSTREAM INVARIANT: `TOOL_ARGS_DISPLAY_CEILING` in
- * `vex-app/src/shared/schemas/messages.ts` must stay ABOVE this budget plus
- * the BoardCompose args envelope, or a legal board's tool args would fall off
- * the transcript as `null`. That invariant is pinned in
- * `vex-app/src/shared/schemas/__tests__/messages.test.ts` against the SAME
- * generator, so raising this constant re-measures the envelope rather than
- * re-guessing it.
+ * `vex-app/src/shared/schemas/messages.ts` must stay above what the transcript
+ * mapper can produce for the largest board this budget admits, or a legal
+ * board's tool args would fall off the transcript as `null`.
+ *
+ * THAT CEILING IS NO LONGER SIMPLY "ABOVE THIS NUMBER", and the difference
+ * matters now that both constants read 524,288. The mapper counts UTF-16 UNITS
+ * of a PRETTY-PRINTED string, while this budget counts UTF-8 BYTES of a
+ * compact one, so neither bounds the other by arithmetic alone: the pretty
+ * form ADDS indentation characters. What actually bounds the mapper is this
+ * schema's own CHARACTER bounds, which is why every single-script fill of the
+ * maximal document serializes to the same 180,476 pretty-printed characters
+ * whatever its byte size, and the heaviest admissible document measured
+ * (CJK everywhere, astral assessments) reaches 260,476. Both figures are
+ * pinned in `vex-app/src/shared/schemas/__tests__/messages.test.ts` against
+ * the SAME generator, so raising this constant re-measures that envelope
+ * rather than re-guessing it.
  */
-export const BOARD_SPEC_MAX_BYTES = 327_680;
+export const BOARD_SPEC_MAX_BYTES = 524_288;
 
 /**
  * Staleness horizon for hydrated market data, in milliseconds.
