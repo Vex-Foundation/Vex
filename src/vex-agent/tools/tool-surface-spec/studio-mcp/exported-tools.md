@@ -40,21 +40,21 @@ preconditions appear inside the first 2000 bytes.
 | name | title | lane | read only | destructive | always load | requires env | description bytes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AgentScan | Review this wallet's recorded activity | internal | yes | no | yes | - | 3661 |
-| BridgeExecute | Execute a cross-chain bridge | internal | no | yes | yes | - | 1926 |
-| BridgeExecuteRelay | Execute a Relay bridge | internal | no | yes | yes | - | 723 |
-| BridgeQuote | Quote a cross-chain bridge | internal | yes | no | yes | - | 1260 |
-| BridgeQuoteRelay | Quote a Relay bridge | internal | yes | no | yes | - | 578 |
+| BridgeExecute | Execute a cross-chain bridge | internal | no | yes | yes | - | 2730 |
+| BridgeExecuteRelay | Execute a Relay bridge | internal | no | yes | yes | - | 1512 |
+| BridgeQuote | Quote a cross-chain bridge | internal | yes | no | yes | - | 2094 |
+| BridgeQuoteRelay | Quote a Relay bridge | internal | yes | no | yes | - | 1410 |
 | BridgeStatus | Check a bridge order's status | internal | yes | no | yes | - | 1297 |
 | ChainRead | Read raw EVM chain data | internal | yes | no | yes | - | 1326 |
-| SwapExecute | Execute a token swap | internal | no | yes | yes | - | 1630 |
-| SwapExecuteUniswap | Execute a Uniswap swap | internal | no | yes | yes | - | 701 |
-| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 1321 |
-| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 656 |
-| TokenCheck | Check an EVM token for honeypot and tax | internal | yes | no | yes | - | 553 |
-| TokenFind | Find a token's address and decimals | internal | yes | no | yes | - | 1142 |
+| SwapExecute | Execute a token swap | internal | no | yes | yes | - | 2256 |
+| SwapExecuteUniswap | Execute a Uniswap swap | internal | no | yes | yes | - | 1442 |
+| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 1714 |
+| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 1082 |
+| TokenCheck | Check an EVM token for honeypot and tax | internal | yes | no | yes | - | 953 |
+| TokenFind | Find a token's address and decimals | internal | yes | no | yes | - | 2053 |
 | TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 2803 |
 | UnitsConvert | Convert token amounts and units | internal | yes | no | yes | - | 1397 |
-| WalletBalances | Read wallet balances across chains | internal | yes | no | yes | - | 2658 |
+| WalletBalances | Read wallet balances across chains | internal | yes | no | yes | - | 3111 |
 | WalletEvmTransactionConfirm | Broadcast a prepared EVM transaction | internal | no | yes | yes | - | 1804 |
 | WalletEvmTransactionPrepare | Prepare an EVM transaction | internal | no | no | yes | - | 2288 |
 | WalletSendConfirm | Broadcast a prepared wallet transfer | internal | no | yes | yes | - | 1503 |
@@ -96,14 +96,14 @@ preconditions appear inside the first 2000 bytes.
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| khalani__bridge_execute | Execute a Khalani bridge | protocol | no | yes | no | - | 2556 |
-| khalani__bridge_quote_get | Quote a Khalani bridge | protocol | yes | no | no | - | 1844 |
+| khalani__bridge_execute | Execute a Khalani bridge | protocol | no | yes | no | - | 2945 |
+| khalani__bridge_quote_get | Quote a Khalani bridge | protocol | yes | no | no | - | 2204 |
 | khalani__chains_list | List Khalani bridge chains | protocol | yes | no | no | - | 850 |
 | khalani__order_get | Read one Khalani bridge order | protocol | yes | no | no | - | 990 |
 | khalani__orders_list | List Khalani bridge orders | protocol | yes | no | no | - | 1066 |
-| khalani__token_balances_get | Read Khalani-chain wallet balances | protocol | yes | no | no | - | 2411 |
+| khalani__token_balances_get | Read Khalani-chain wallet balances | protocol | yes | no | no | - | 2804 |
 | khalani__tokens_autocomplete | Parse a token phrase into Khalani tokens | protocol | yes | no | no | - | 964 |
-| khalani__tokens_search | Search Khalani tokens | protocol | yes | no | no | - | 1253 |
+| khalani__tokens_search | Search Khalani tokens | protocol | yes | no | no | - | 1060 |
 | khalani__tokens_top_list | List top bridged tokens on Khalani | protocol | yes | no | no | - | 794 |
 
 ### kyberswap
@@ -191,8 +191,8 @@ preconditions appear inside the first 2000 bytes.
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| relay__bridge_execute | Execute a Relay cross-chain bridge | protocol | no | yes | no | - | 1782 |
-| relay__bridge_quote_get | Quote a Relay cross-chain bridge | protocol | yes | no | no | - | 1477 |
+| relay__bridge_execute | Execute a Relay cross-chain bridge | protocol | no | yes | no | - | 2270 |
+| relay__bridge_quote_get | Quote a Relay cross-chain bridge | protocol | yes | no | no | - | 1886 |
 
 ### solana
 

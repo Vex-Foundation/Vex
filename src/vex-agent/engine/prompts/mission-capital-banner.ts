@@ -195,6 +195,11 @@ function pushCaveatLines(
       "- The decimals declared for the deployed-capital asset did not match the decimals recorded for it, so the held amount is left out rather than rescaled.",
     );
   }
+  if (baseline.reasons.includes("deployed_capital_asset_ambiguous")) {
+    lines.push(
+      "- The deployed-capital asset identity is ambiguous between native SOL and wSOL, so the held amount is left out rather than guessed.",
+    );
+  }
   if (now === null) {
     lines.push(
       "- Portfolio now is unavailable this turn: the balance projection read did not return. Change since start cannot be shown.",

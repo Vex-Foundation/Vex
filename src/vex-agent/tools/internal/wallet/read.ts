@@ -653,6 +653,11 @@ function holdsBalance(token: ProjectedTokenRow): boolean {
   }
 }
 
+/** Structural native-SOL marker. No address or symbol decides this. */
+function isSolanaNativeRow(token: ProjectedTokenRow): token is SolanaWalletTokenRow {
+  return "assetKind" in token && token.assetKind === "native";
+}
+
 /**
  * Optionally trim a projected token list to the top-N by held USD value.
  *
@@ -686,13 +691,21 @@ function trimTokens(
   // Stable sort: rows with equal held USD (every unpriced row scores 0) keep
   // their scan order, so the retained set is deterministic.
   const sorted = [...tokens].sort((a, b) => projectedTokenUsd(b) - projectedTokenUsd(a));
-  const priced = sorted.filter(hasUsdPrice).slice(0, limit);
-  const unpricedHeld = sorted.filter((token) => !hasUsdPrice(token) && holdsBalance(token));
+  // C4.4: native SOL always exists, including at zero. It stays outside the
+  // display limit so a ranked token list cannot make the native asset appear
+  // absent. `assetKind` is the only discriminator; SOL_MINT also identifies
+  // wSOL and must never trigger this retention.
+  const native = sorted.filter(isSolanaNativeRow);
+  const limitCandidates = sorted.filter((token) => !isSolanaNativeRow(token));
+  const priced = limitCandidates.filter(hasUsdPrice).slice(0, limit);
+  const unpricedHeld = limitCandidates.filter(
+    (token) => !hasUsdPrice(token) && holdsBalance(token),
+  );
   const retained: WalletTokenRow[] = unpricedHeld
     .slice(0, MAX_UNPRICED_TOKENS_PER_SNAPSHOT)
     .map((token) => ({ ...token, priceUnavailable: true as const }));
   return {
-    tokens: [...priced, ...retained],
+    tokens: [...native, ...priced, ...retained],
     unpricedOmitted: unpricedHeld.length - retained.length,
   };
 }

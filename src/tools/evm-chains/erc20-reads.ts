@@ -44,17 +44,37 @@ export const ERC20_READ_ABI = [
 /** The only client capability these primitives need. */
 export type Erc20ReadClient = Pick<PublicClient, "readContract">;
 
+/** Caller-owned cancellation for one direct contract read. */
+export interface Erc20ReadOptions {
+  readonly signal?: AbortSignal;
+}
+
+/**
+ * Add viem's request-level signal without changing the public contract-read
+ * parameters. `readContract` forwards unknown call parameters to `call`, whose
+ * `requestOptions.signal` is the cancellation seam in the installed viem.
+ */
+function requestOptions(options: Erc20ReadOptions): {
+  readonly requestOptions?: { readonly signal: AbortSignal };
+} {
+  return options.signal === undefined
+    ? {}
+    : { requestOptions: { signal: options.signal } };
+}
+
 /** Raw `balanceOf(owner)`, in the token's smallest unit. Throws on failure. */
 export async function readErc20Balance(
   client: Erc20ReadClient,
   token: Address,
   owner: Address,
+  options: Erc20ReadOptions = {},
 ): Promise<bigint> {
   return await client.readContract({
     address: token,
     abi: ERC20_READ_ABI,
     functionName: "balanceOf",
     args: [owner],
+    ...requestOptions(options),
   });
 }
 
@@ -66,11 +86,27 @@ export async function readErc20Balance(
 export async function readErc20Decimals(
   client: Erc20ReadClient,
   token: Address,
+  options: Erc20ReadOptions = {},
 ): Promise<number> {
   const decimals = await client.readContract({
     address: token,
     abi: ERC20_READ_ABI,
     functionName: "decimals",
+    ...requestOptions(options),
   });
   return Number(decimals);
+}
+
+/** `symbol()` exactly as the token contract returns it. Throws on failure. */
+export async function readErc20Symbol(
+  client: Erc20ReadClient,
+  token: Address,
+  options: Erc20ReadOptions = {},
+): Promise<string> {
+  return await client.readContract({
+    address: token,
+    abi: ERC20_READ_ABI,
+    functionName: "symbol",
+    ...requestOptions(options),
+  });
 }

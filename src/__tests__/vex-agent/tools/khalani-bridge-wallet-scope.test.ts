@@ -180,12 +180,26 @@ const SESSION_CTX: ProtocolExecutionContext = {
   walletResolution: { source: "session", evm: { id: "w-evm", address: SEL_EVM }, solana: { id: "w-sol", address: SEL_SOL } },
   walletPolicy: { kind: "none" },
   sessionId: "session-1",
+  bridgeTokenPreview: {
+    source: {
+      family: "eip155", kind: "erc20", chainId: 1, tokenAddress: "USDC",
+      symbol: "USDC", decimals: 6, metadataSource: "rpc_contract", symbolSanitized: false,
+    },
+    destination: {
+      family: "eip155", kind: "erc20", chainId: 1, tokenAddress: "USDC",
+      symbol: "USDC", decimals: 6, metadataSource: "rpc_contract", symbolSanitized: false,
+    },
+    amountRaw: "1000000",
+    amountHuman: "1",
+  },
 };
 
 const baseParams = { fromChain: "ethereum", toChain: "ethereum", fromToken: "USDC", toToken: "USDC", amountRaw: "1000000" };
 
-function run(over: Record<string, unknown> = {}) {
-  return BRIDGE_HANDLERS["khalani.bridge"]!({ ...baseParams, ...over }, SESSION_CTX);
+function run(over: Record<string, unknown> = {}, context = SESSION_CTX) {
+  const handler = BRIDGE_HANDLERS["khalani.bridge"];
+  if (!handler) throw new Error("khalani.bridge handler missing");
+  return handler({ ...baseParams, ...over }, context);
 }
 
 beforeEach(() => {
@@ -228,6 +242,7 @@ beforeEach(() => {
   mockSubmitDeposit.mockResolvedValue({ orderId: "o1", txHash: "0xhash" });
   mockAttachProviderOrderId.mockResolvedValue({ outcome: "attached", row: { id: 200 } });
   mockPollOrderToTerminal.mockResolvedValue({ kind: "pending", status: "published" });
+  mockCreateBridgePreBroadcastFailure.mockResolvedValue({ executionId: 900 });
 });
 
 describe("khalani.bridge session wallet scope", () => {
@@ -236,6 +251,22 @@ describe("khalani.bridge session wallet scope", () => {
     expect(r.success).toBe(true); // dryRun stays a read-only preview
     expect(mockResolveSigningWallet).not.toHaveBeenCalled();
     expect(mockCreateBridgeActivityIntent).not.toHaveBeenCalled();
+    expect(mockSignStageKhalaniLeg).not.toHaveBeenCalled();
+  });
+
+  it("dryRun reports typed metadata degradation instead of throwing", async () => {
+    const { bridgeTokenPreview: _trustedPreview, ...descriptiveContext } = SESSION_CTX;
+    const result = await run({ dryRun: true }, descriptiveContext);
+    const output = JSON.parse(result.output) as {
+      tokenMetadata: { source: { kind: string; metadataErrorCode: string } };
+    };
+
+    expect(result.success).toBe(true);
+    expect(output.tokenMetadata.source).toMatchObject({
+      kind: "metadata_unavailable",
+      metadataErrorCode: "contract_metadata_unavailable",
+    });
+    expect(mockResolveSigningWallet).not.toHaveBeenCalled();
     expect(mockSignStageKhalaniLeg).not.toHaveBeenCalled();
   });
 
@@ -270,7 +301,21 @@ describe("khalani.bridge session wallet scope", () => {
       await hooks.onAccepted();
       return { kind: "confirmed", txHash: "5SoLSigBase58" };
     });
-    await run();
+    await run({}, {
+      ...SESSION_CTX,
+      bridgeTokenPreview: {
+        source: {
+          family: "solana", kind: "solana", chainId: 20_011_000_000, tokenAddress: "USDC",
+          symbol: null, decimals: null, metadataSource: "solana_not_read_by_evm_contract_resolver", symbolSanitized: false,
+        },
+        destination: {
+          family: "solana", kind: "solana", chainId: 20_011_000_000, tokenAddress: "USDC",
+          symbol: null, decimals: null, metadataSource: "solana_not_read_by_evm_contract_resolver", symbolSanitized: false,
+        },
+        amountRaw: "1000000",
+        amountHuman: null,
+      },
+    });
     // The source-family signer is resolved for the SOLANA origin family...
     expect(mockResolveSigningWallet).toHaveBeenCalledTimes(1);
     expect(mockResolveSigningWallet.mock.calls[0]![2]).toBe("solana");

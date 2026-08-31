@@ -208,6 +208,18 @@ function zeroValueAuthorization(to: string) {
 const FROM_TOKEN = "0xAAA0000000000000000000000000000000000000";
 const TO_TOKEN = "0xBBB0000000000000000000000000000000000000";
 const FUTURE = Math.floor(Date.now() / 1000) + 3600;
+const EVM_TOKEN_PREVIEW = {
+  source: {
+    family: "eip155", kind: "erc20", chainId: 8453, tokenAddress: FROM_TOKEN,
+    symbol: "USDC", decimals: 6, metadataSource: "rpc_contract", symbolSanitized: false,
+  },
+  destination: {
+    family: "eip155", kind: "erc20", chainId: 42161, tokenAddress: TO_TOKEN,
+    symbol: "USDC", decimals: 6, metadataSource: "rpc_contract", symbolSanitized: false,
+  },
+  amountRaw: "1500000",
+  amountHuman: "1.5",
+} as const;
 
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return {
@@ -216,6 +228,7 @@ function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionCon
     walletResolution: { source: "default" },
     walletPolicy: { kind: "none" },
     sessionId: "session-1",
+    bridgeTokenPreview: EVM_TOKEN_PREVIEW,
     ...over,
   } as ProtocolExecutionContext;
 }
@@ -302,7 +315,17 @@ describe("khalani.bridge — staged execute safety (W3a)", () => {
 
   it("CAS miss on markActivityBroadcast aborts BEFORE submit — same _executionId", async () => {
     mockMarkActivityBroadcast.mockResolvedValue({ applied: false, row: { id: 100 } });
-    const result = await execute();
+    const result = await execute({}, ctx({
+      bridgeTokenPreview: {
+        source: {
+          family: "solana", kind: "solana", chainId: 8453, tokenAddress: FROM_TOKEN,
+          symbol: null, decimals: null, metadataSource: "solana_not_read_by_evm_contract_resolver", symbolSanitized: false,
+        },
+        destination: EVM_TOKEN_PREVIEW.destination,
+        amountRaw: "1500000",
+        amountHuman: null,
+      },
+    }));
     expect(result.success).toBe(false);
     expect(parse(result.output)._executionId).toBe(42);
     expect(mockMarkActivityBroadcast).toHaveBeenCalledTimes(1);

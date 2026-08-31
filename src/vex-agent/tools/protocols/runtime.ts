@@ -30,6 +30,7 @@ import {
 } from "./swap-prequote.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { QuoteBindingPreview } from "./quote-authority/restore.js";
+import type { BridgeTokenIdentityPreview } from "./bridge-token-identity.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import { isExecutableNamespace, NAMESPACE_LIFECYCLE } from "./lifecycle.js";
@@ -281,6 +282,7 @@ export async function executeProtocolTool(
   let prequoteFeePreview: JupiterFeePreview | undefined;
   let prequoteRiskPreview: LendBorrowRiskPreview | undefined;
   let prequoteQuoteBinding: QuoteBindingPreview | undefined;
+  let prequoteBridgeTokenPreview: BridgeTokenIdentityPreview | undefined;
   const prequoteDecision = await evaluatePrequoteGateDecision(request.toolId, params, scopedContext);
   if (prequoteDecision.kind === "block") {
     return withActionKind({ success: false, output: prequoteDecision.message }, effectiveActionKind);
@@ -291,6 +293,7 @@ export async function executeProtocolTool(
   prequoteFeePreview = prequoteDecision.feePreview;
   prequoteRiskPreview = prequoteDecision.riskPreview;
   prequoteQuoteBinding = prequoteDecision.quoteBinding;
+  prequoteBridgeTokenPreview = prequoteDecision.bridgeTokenPreview;
 
   // Approval gate — mutating tools require approval under restricted permission.
   // Preview (dryRun) is read-only simulation — skip approval. The pending
@@ -299,11 +302,15 @@ export async function executeProtocolTool(
   const pendingApproval = evaluateApprovalGate(
     manifest, request, params, scopedContext,
     prequoteVerdict, prequoteFotTax, prequoteTermLock, prequoteFeePreview, prequoteRiskPreview,
-    prequoteQuoteBinding,
+    prequoteQuoteBinding, prequoteBridgeTokenPreview,
   );
   if (pendingApproval) {
     return withActionKind(pendingApproval, effectiveActionKind);
   }
+
+  const handlerContext: ProtocolExecutionContext = prequoteBridgeTokenPreview === undefined
+    ? scopedContext
+    : { ...scopedContext, bridgeTokenPreview: prequoteBridgeTokenPreview };
 
   // Determine preview BEFORE handler call — flag survives thrown exceptions
   const isPreview = isPreviewExecution(request.toolId, params);
@@ -312,7 +319,7 @@ export async function executeProtocolTool(
   // Execute + capture
   const startTime = Date.now();
   try {
-    const result = await handler(params, scopedContext);
+    const result = await handler(params, handlerContext);
     const durationMs = Date.now() - startTime;
 
     logger.info("protocol.execute.completed", {

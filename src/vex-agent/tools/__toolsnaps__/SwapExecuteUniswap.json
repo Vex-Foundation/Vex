@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Execute a REAL on-chain token swap on Uniswap. SPENDS FUNDS: it signs and broadcasts a transaction from your wallet, and it requires approval before it runs. REQUIRES a fresh matching SwapQuoteUniswap FIRST on the SAME venue — a KyberSwap quote cannot authorize it. EVM ONLY, and only on the EVM chains with a verified Vex Uniswap deployment. `amountIn` is the HUMAN decimal of tokenIn. Returns the transaction hash and the resulting wallet deltas; failed and pending attempts are recorded and shown with chain + tx hash + explorer link, same as confirmed ones. KyberSwap is the primary swap route — reach for this one when KyberSwap cannot serve the pair or its quote failed for a routing reason.",
+      "description": "Execute a REAL on-chain token swap on Uniswap. SPENDS FUNDS: it signs and broadcasts a transaction from your wallet. REQUIRES a fresh matching SwapQuoteUniswap FIRST on the SAME venue; a KyberSwap quote cannot authorize it. EVM ONLY, and only on the EVM chains with a verified Vex Uniswap deployment. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata. `amountIn` is the HUMAN decimal of tokenIn. Restricted approval shows chain, token addresses, human `amountIn`, and the quote/floor with its quote-time contract-read output symbol. It omits decimals and atomic input and does not independently re-read metadata. Execution re-reads both token contracts and refuses unreadable metadata before signing; the card is not proof. Full permission shows no card. Returns the transaction hash and the resulting wallet deltas; failed and pending attempts are recorded and shown with chain + tx hash + explorer link, same as confirmed ones. KyberSwap is the primary swap route - reach for this one when KyberSwap cannot serve the pair or its quote failed for a routing reason.",
       "name": "SwapExecuteUniswap",
       "parameters": {
         "additionalProperties": false,
@@ -19,11 +19,11 @@
             "type": "number"
           },
           "tokenIn": {
-            "description": "Input token — the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native.",
+            "description": "Input token: the token CONTRACT ADDRESS or native ETH/native. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata.",
             "type": "string"
           },
           "tokenOut": {
-            "description": "Output token — the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native.",
+            "description": "Output token: the token CONTRACT ADDRESS or native ETH/native. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata.",
             "type": "string"
           }
         },

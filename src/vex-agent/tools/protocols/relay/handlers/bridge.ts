@@ -86,6 +86,12 @@ import {
   NO_PROVIDER_STATUS_OBSERVED,
   type ProviderStatusRecording,
 } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
+import {
+  isBridgeTokenPreviewSigningReady,
+  isVerifiedEvmBridgeAssetIdentity,
+  resolveRelayBridgeTokenPreview,
+  type BridgeTokenIdentityPreview,
+} from "@vex-agent/tools/protocols/bridge-token-identity.js";
 
 /**
  * The two risk numbers an agent needs in order to DECLINE (W2c): the worst-case
@@ -126,6 +132,7 @@ async function relayQuoteGet(
   } catch (err) {
     return fail(summarizeProtocolError(err).message);
   }
+  const tokenIdentity = await resolveRelayBridgeTokenPreview(params, context.abortSignal, { relayChains: chains });
   let user: string;
   try {
     user = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
@@ -145,8 +152,8 @@ async function relayQuoteGet(
   const health = evaluateRelayRouteHealth(chains, legs.originChainId, legs.destinationChainId);
   const from = relayChainDisplay(legs.originChainId, chains);
   const to = relayChainDisplay(legs.destinationChainId, chains);
-  const inSide = bridgeSideDisplay(adapted.currencyIn, legs.originCurrency, legs.originChainId, chains, legs.amount);
-  const outSide = bridgeSideDisplay(adapted.currencyOut, legs.destinationCurrency, legs.destinationChainId, chains);
+  const inSide = bridgeSideDisplay(adapted.currencyIn, legs.originCurrency, legs.originChainId, chains, legs.amount, tokenIdentity.source);
+  const outSide = bridgeSideDisplay(adapted.currencyOut, legs.destinationCurrency, legs.destinationChainId, chains, undefined, tokenIdentity.destination);
 
   // result.data keeps the structural fields the prequote recorder re-validates
   // (`isValidRelayQuoteShape`: provider + origin/destination + step kinds/chainIds).
@@ -169,7 +176,8 @@ async function relayQuoteGet(
     bridgedAmount: legs.amount,
     tradeType: legs.tradeType,
     amounts: { in: inSide, out: outSide },
-    vexFee: relayFeeDisclosure(legs, adapted.currencyIn),
+    tokenMetadata: tokenIdentity,
+    vexFee: relayFeeDisclosure(legs, adapted.currencyIn, tokenIdentity.source),
     feeUsdByBucket: adapted.feeUsdByBucket,
     estimatedTimeSeconds: adapted.timeEstimateSeconds,
     minimumAmountOutRaw: adapted.currencyOut.minimumAmountRaw,
@@ -192,6 +200,8 @@ async function relayBridge(
   } catch (err) {
     return fail(summarizeProtocolError(err).message);
   }
+  const tokenIdentity: BridgeTokenIdentityPreview = context.bridgeTokenPreview
+    ?? await resolveRelayBridgeTokenPreview(params, context.abortSignal, { relayChains: chains });
 
   const from = relayChainDisplay(legs.originChainId, chains);
   const to = relayChainDisplay(legs.destinationChainId, chains);
@@ -218,6 +228,21 @@ async function relayBridge(
   let originLeg: AgentActivityLegInput = { tokenAddress: legs.originCurrency, amountRaw: legs.amount };
   let destLeg: AgentActivityLegInput = { tokenAddress: legs.destinationCurrency };
 
+  if (!dryRun && !isBridgeTokenPreviewSigningReady(tokenIdentity)) {
+    return failPreSign(
+      route,
+      walletAddress,
+      sessionId,
+      params,
+      "allowance_or_balance",
+      "Direct EVM token symbol and decimals are unavailable, so Vex refused before signing.",
+      from,
+      to,
+      originLeg,
+      destLeg,
+    );
+  }
+
   // ── Health gate (no quote needed) — fail fast on an unserviceable route ──
   const health = evaluateRelayRouteHealth(chains, legs.originChainId, legs.destinationChainId);
   if (!dryRun && !health.serviceable) {
@@ -239,10 +264,10 @@ async function relayBridge(
   }
 
   const adapted = adaptRelayQuote(quote);
-  const inSide = bridgeSideDisplay(adapted.currencyIn, legs.originCurrency, legs.originChainId, chains, legs.amount);
-  const outSide = bridgeSideDisplay(adapted.currencyOut, legs.destinationCurrency, legs.destinationChainId, chains);
-  originLeg = relayLegInput(adapted.currencyIn, legs.originCurrency, legs.amount);
-  destLeg = relayLegInput(adapted.currencyOut, legs.destinationCurrency);
+  const inSide = bridgeSideDisplay(adapted.currencyIn, legs.originCurrency, legs.originChainId, chains, legs.amount, tokenIdentity.source);
+  const outSide = bridgeSideDisplay(adapted.currencyOut, legs.destinationCurrency, legs.destinationChainId, chains, undefined, tokenIdentity.destination);
+  originLeg = relayLegInput(adapted.currencyIn, legs.originCurrency, legs.amount, tokenIdentity.source);
+  destLeg = relayLegInput(adapted.currencyOut, legs.destinationCurrency, undefined, tokenIdentity.destination);
 
   const correlation = assertRelayQuoteCorrelation(quote, loadConfig().services.relayApiUrl);
   const policy = classifyRelayBridgeSteps(quote, legs.originChainId);
@@ -259,7 +284,8 @@ async function relayBridge(
       fromChain: from,
       toChain: to,
       amounts: { in: inSide, out: outSide },
-      vexFee: relayFeeDisclosure(legs, adapted.currencyIn),
+      tokenMetadata: tokenIdentity,
+      vexFee: relayFeeDisclosure(legs, adapted.currencyIn, tokenIdentity.source),
       feeUsdByBucket: adapted.feeUsdByBucket,
       estimatedTimeSeconds: adapted.timeEstimateSeconds,
       minimumAmountOutRaw: adapted.currencyOut.minimumAmountRaw,
@@ -331,8 +357,10 @@ async function relayBridge(
   const feeLegInput: AgentActivityLegInput = {
     ...originLeg,
     amountRaw: legs.feeSplit.feeRaw.toString(),
-    ...(adapted.currencyIn.decimals !== null
-      ? { amountHuman: formatUnits(legs.feeSplit.feeRaw, adapted.currencyIn.decimals) }
+    ...(isVerifiedEvmBridgeAssetIdentity(tokenIdentity.source)
+      ? { amountHuman: formatUnits(legs.feeSplit.feeRaw, tokenIdentity.source.decimals) }
+      : adapted.currencyIn.decimals !== null
+        ? { amountHuman: formatUnits(legs.feeSplit.feeRaw, adapted.currencyIn.decimals) }
       : { amountHuman: undefined }),
   };
   const activityLegs: BridgeActivityLeg[] = signable.map((s, i) => ({
@@ -362,7 +390,7 @@ async function relayBridge(
       // Pass `adapted.currencyIn` (the RelayQuoteSide every `relayFeeDisclosure`
       // call site passes), NOT the local `inSide` — that is the display
       // projection and a different type.
-      usdVexFeeEst: relayFeeUsdEstimate(adapted.currencyIn, legs.feeSplit.feeRaw) ?? undefined,
+      usdVexFeeEst: relayFeeUsdEstimate(adapted.currencyIn, legs.feeSplit.feeRaw, tokenIdentity.source) ?? undefined,
       usdSource: adapted.usdSource,
     });
   }
@@ -419,7 +447,7 @@ async function relayBridge(
     pendingResult({
       executionId, requestId, from, to, inSide, outSide, feeUsdByBucket: adapted.feeUsdByBucket,
       broadcasts: args.broadcasts, poll: args.poll, depositUnconfirmed: args.depositUnconfirmed,
-      vexFee: relayFeeDisclosure(legs, adapted.currencyIn), feeCollection: args.feeCollection,
+      vexFee: relayFeeDisclosure(legs, adapted.currencyIn, tokenIdentity.source), feeCollection: args.feeCollection,
       providerStatusRecording: args.providerStatusRecording ?? NO_PROVIDER_STATUS_OBSERVED,
     });
 

@@ -105,6 +105,7 @@ function renderDeployedCapital(
   return {
     assetSymbol: declared.assetSymbol,
     assetAddress: declared.assetAddress,
+    assetKind: declared.assetKind,
     chainId: declared.chainId,
     declaredAmountRaw: declared.declaredAmountRaw,
     declaredDecimals: declared.declaredDecimals,

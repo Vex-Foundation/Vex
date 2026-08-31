@@ -48,6 +48,9 @@ const WALLET = "0x1111111111111111111111111111111111111111";
 const WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 
 const ensureErc20Balance = vi.fn();
+const readUniswapErc20Metadata = vi.fn(async (_client: unknown, address: string) => ({
+  address, symbol: "TKN", decimals: 18, isNative: false,
+}));
 const readUniswapAllowance = vi.fn();
 const signUniswapTransaction = vi.fn();
 const broadcastUniswapTransaction = vi.fn();
@@ -80,9 +83,7 @@ vi.mock("@tools/uniswap/evm-client.js", () => ({
   getUniswapEvmClients: vi.fn(() => ({ publicClient: {}, walletClient: {} })),
 }));
 vi.mock("@tools/uniswap/erc20.js", () => ({
-  readUniswapErc20Metadata: vi.fn(async (_client: unknown, address: string) => ({
-    address, symbol: "TKN", decimals: 18, isNative: false,
-  })),
+  readUniswapErc20Metadata: (...args: [unknown, string]) => readUniswapErc20Metadata(...args),
   validateUniswapSpender: vi.fn(),
   readUniswapAllowance: (...args: unknown[]) => readUniswapAllowance(...args),
 }));
@@ -213,6 +214,20 @@ describe("C24 — dryRun is hard-rejected (five-field contract is final)", () =>
     const result = await execute({ ...SWAP_ONLY_PARAMS, dryRun: true }, context);
     expect(result.success).toBe(false);
     expect(result.output).toContain("does not support dryRun");
+    expect(createAgentActivityIntent).not.toHaveBeenCalled();
+    expect(signUniswapTransaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("contract metadata is re-read before signing", () => {
+  it("refuses unreadable token metadata before claiming a quote or signing", async () => {
+    readUniswapErc20Metadata.mockRejectedValueOnce(new Error("symbol() unavailable"));
+
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+
+    expect(result.success).toBe(false);
+    expect(createAgentActivityPreBroadcastFailure).toHaveBeenCalledTimes(1);
+    expect(claimUniswapExecutionSnapshot).not.toHaveBeenCalled();
     expect(createAgentActivityIntent).not.toHaveBeenCalled();
     expect(signUniswapTransaction).not.toHaveBeenCalled();
   });

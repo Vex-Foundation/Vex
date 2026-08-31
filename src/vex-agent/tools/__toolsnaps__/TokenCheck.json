@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Safety-check an EVM token before trading it: detects honeypots and fee-on-transfer (tax) tokens via KyberSwap. Pass the chain and the token contract `tokenAddress` (resolve it with TokenFind first). The former key `address` is retired and is rejected by name. Read-only. RETURNS chain, chainId, tokenAddress, isHoneypot, isFOT and tax - a closed, validated shape, never a raw provider payload. A clean verdict here is not proof the token is safe: it answers only the honeypot and transfer-tax question, and says nothing about the contract's other risks.",
+      "description": "Safety-check an EVM token before trading it: detects honeypots and fee-on-transfer (tax) tokens via KyberSwap. Pass the chain and the exact token contract `tokenAddress`. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata. The former key `address` is retired and is rejected by name. Read-only. RETURNS chain, chainId, tokenAddress, isHoneypot, isFOT and tax - a closed, validated shape, never a raw provider payload. A clean verdict here is not proof the token is safe: it answers only the honeypot and transfer-tax question, and says nothing about the contract's other risks.",
       "name": "TokenCheck",
       "parameters": {
         "additionalProperties": false,
@@ -11,7 +11,7 @@
             "type": "string"
           },
           "tokenAddress": {
-            "description": "Token contract address to inspect (0x… on the named chain). Resolve it with TokenFind first — a symbol is not accepted. The former key `address` is retired and is rejected by name.",
+            "description": "Token contract address to inspect (0x form on the named chain). A symbol is not accepted. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata. The former key `address` is retired and is rejected by name.",
             "type": "string"
           }
         },

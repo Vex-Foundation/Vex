@@ -6,6 +6,7 @@ import {
   CANONICAL_SLIPPAGE_PARAGRAPH,
 } from "../../conventions.js";
 import { BRIDGE_FEE_BPS } from "@tools/bridge-fee/index.js";
+import { BRIDGE_TOKEN_METADATA_RESULT_DESCRIPTION } from "../../bridge-token-identity-contract.js";
 
 /**
  * The ONE raw-amount description both Relay bridge tools declare (W5b). It ends
@@ -61,13 +62,13 @@ export const RELAY_BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
     description:
       "PREVIEW a Relay cross-chain bridge without signing or sending anything. Use this before recommending a "
       + "bridge, and whenever the question is what would arrive on the other side, what it would cost, or how long "
-      + "it would take. Resolve token addresses first; `amountRaw` is in the source token's smallest units. "
+      + "it would take. Resolve each EVM token with TokenFind on its exact chain first; continue only from a mutation-ready identity. `amountRaw` is in the source token's smallest units. The quote path independently reads EVM symbol and decimals from the contract; provider-list decimals are used only for price estimates. "
       + `${RELAY_VEX_FEE_SENTENCE} `
       + "RETURNS `serviceable` plus the reason when a route is degraded, `fromChain`/`toChain` and their chain ids, "
       + "`amounts.in` and `amounts.out` each with token, human `amount`, `amountRaw` and a NULLABLE `usd` estimate, "
       + "`bridgedAmount` (the post-fee amount actually sent), `minimumAmountOutRaw`, `estimatedTimeSeconds`, "
       + "`totalImpactPercent`, `appliedSlippagePercent`, `steps`, `vexFee`, `feeUsdByBucket` and the `requestId` the "
-      + "execute correlates against. Every USD figure is an estimate, never a traded price. Read-only. "
+      + `execute correlates against. ${BRIDGE_TOKEN_METADATA_RESULT_DESCRIPTION} Every USD figure is an estimate, never a traded price. Read-only. `
       + "Relay is the ONLY bridge that reaches Robinhood Chain (4663), which Khalani does not cover. For every other "
       + "route Khalani is Vex's primary bridge: use this when Khalani does not cover the route, or when its quote "
       + "failed for a routing reason.",
@@ -91,12 +92,13 @@ export const RELAY_BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
     description:
       "Execute a REAL Relay cross-chain bridge. SPENDS FUNDS: it signs and broadcasts the origin-chain deposit from "
       + "the user's wallet, requires approval before it runs, and cannot be undone; the solver then fills on the "
-      + "destination. REQUIRES a fresh matching relay__bridge_quote_get first. `amountRaw` is in the source token's smallest "
-      + `units. ${RELAY_VEX_FEE_SENTENCE} `
+      + "destination. REQUIRES a fresh matching relay__bridge_quote_get first. Resolve each EVM token with TokenFind on its exact chain and continue only from a mutation-ready identity. `amountRaw` is in the source token's smallest "
+      + `units. The approval gate independently reads EVM symbol and decimals from the contract and refuses unavailable metadata; provider-list decimals are never signing authority. ${RELAY_VEX_FEE_SENTENCE} `
       + "THE CALL RETURNS BEFORE THE BRIDGE IS FINAL, and this is the fact to act on: the destination fill is still "
       + "in progress, so the result comes back with `status: \"pending\"` and success false. Vex's background sweep "
       + "owns confirmation and finalizes the record once the fill is independently verified. Do NOT re-bridge and do "
       + "NOT poll this tool in a loop. "
+      + `With \`dryRun: true\`, ${BRIDGE_TOKEN_METADATA_RESULT_DESCRIPTION} `
       + "RETURNS `status`, a `message` stating what is known, `requestId`, `legs[]` (role, chain, txHash, status), "
       + "`inTxHashes` for the origin broadcasts Vex signed, `txHashes` for any destination fill seen, `amounts.in` "
       + "and `amounts.out`, and `vexFee` with its collection outcome. `providerStatus` is Relay's own last reported "

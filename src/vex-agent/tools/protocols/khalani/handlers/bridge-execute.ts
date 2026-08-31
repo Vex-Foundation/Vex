@@ -62,6 +62,10 @@ import { runKhalaniBridgeLegs } from "./bridge-execute/legs.js";
 import { runKhalaniVexFeeLeg } from "./bridge-execute/fee-leg.js";
 import { submitKhalaniDeposit } from "./bridge-execute/submit.js";
 import type { KhalaniBridgePendingBase } from "./bridge-execute/types.js";
+import {
+  isBridgeTokenPreviewSigningReady,
+  resolveKhalaniBridgeTokenPreviewFromResolved,
+} from "@vex-agent/tools/protocols/bridge-token-identity.js";
 
 const PROTOCOL = "khalani";
 const NAMESPACE = "khalani";
@@ -129,8 +133,10 @@ export async function executeKhalaniBridge(
   const chains = await getCachedKhalaniChains();
   const fromFamily: BridgeChainFamily = getChainFamily(fromChainId, chains);
   const toFamily: BridgeChainFamily = getChainFamily(toChainId, chains);
-  const fromChainName = getChain(fromChainId, chains).name;
-  const toChainName = getChain(toChainId, chains).name;
+  const sourceChain = getChain(fromChainId, chains);
+  const destinationChain = getChain(toChainId, chains);
+  const fromChainName = sourceChain.name;
+  const toChainName = destinationChain.name;
 
   // 2. Source/recipient wallet scope (fail-closed, before quote + signing).
   const explicitFrom = str(params, "fromAddress") || undefined;
@@ -187,7 +193,6 @@ export async function executeKhalaniBridge(
   const { feeSplit, chargeFee, quoteId, selectedRoute } = quoted;
 
   // 6 + 7b. Deposit plan, its signable legs, and their native-cost classification.
-  const sourceChain = getChain(fromChainId, chains);
   const planning = await buildKhalaniDepositPlan({
     fromAddress: quoted.prepared.request.fromAddress,
     quoteId, routeId: selectedRoute.routeId,
@@ -199,11 +204,30 @@ export async function executeKhalaniBridge(
   if (planning.outcome === "failed") return planning.result;
   const { plannedLegs, planError, nativeCost, nativeCostError } = planning;
 
+  const tokenIdentity = context.bridgeTokenPreview
+    ?? await resolveKhalaniBridgeTokenPreviewFromResolved({
+      fromChain: sourceChain,
+      toChain: destinationChain,
+      fromToken,
+      toToken,
+      amountRaw: amount,
+      chains,
+      signal: context.abortSignal,
+    });
+  if (params.dryRun !== true && !isBridgeTokenPreviewSigningReady(tokenIdentity)) {
+    return failPreSign(
+      "allowance_or_balance",
+      "direct EVM token symbol and decimals are unavailable, so Vex refused before signing",
+    );
+  }
+
   // 7. USD + token facts (Khalani serves no USD) — resolved BEFORE the dryRun
   // branch so the preview discloses the SAME fee the execute charges.
   const { fromInfo, toInfo, feeAmountHuman, usdVexFee, vexFee } = await resolveKhalaniFeeDisclosure({
-    fromToken, toToken, fromChainId, toChainId, fromFamily,
+    fromToken, toToken, fromChainId, toChainId, fromFamily, toFamily,
     feeSplit, chargeFee, feeSkipReason: quoted.feeSkipReason,
+    signal: context.abortSignal,
+    tokenIdentity,
   });
 
   // 7c. dryRun — read-only preview (no recording, no signing). Carries the same
@@ -218,6 +242,7 @@ export async function executeKhalaniBridge(
         dryRun: true, quoteId,
         route: { ...projected, type: humanizeRouteType(selectedRoute.type) },
         fromChain: fromChainName, toChain: toChainName,
+        tokenMetadata: tokenIdentity,
         vexFee,
         nativeCost: nativeCostPreview(nativeCost, plannedLegs === null),
       }, null, 2),

@@ -87,6 +87,79 @@ describe("chain params — the menu must admit the form TokenFind hands back", (
   });
 });
 
+describe("TokenFind mutation contract is consistent across action aliases", () => {
+  const swapAliases = [
+    "SwapQuote",
+    "SwapExecute",
+    "SwapQuoteUniswap",
+    "SwapExecuteUniswap",
+  ] as const;
+  const bridgeAliases = [
+    "BridgeQuote",
+    "BridgeExecute",
+    "BridgeQuoteRelay",
+    "BridgeExecuteRelay",
+  ] as const;
+
+  it.each(swapAliases)("%s requires one target chain and a mutation-ready identity", (toolName) => {
+    for (const key of ["tokenIn", "tokenOut"]) {
+      const description = paramOf(toolName, key).description ?? "";
+      expect(description).toContain("exactly one target chain");
+      expect(description).toContain("mutationReady is true");
+      expect(description).toContain("symbol and decimals from the contract");
+      expect(description).toContain("exact base or quote token address");
+    }
+  });
+
+  it.each(bridgeAliases)("%s requires separate chain-scoped identity reads", (toolName) => {
+    const description = toolDefOf(toolName).description;
+    expect(description).toContain("fromToken and toToken separately");
+    expect(description).toContain("exactly one target chain");
+    expect(description).toContain("mutationReady is true");
+    expect(description).toContain("provider-list decimal is not signing authority");
+    expect(description).not.toContain("khalani.tokens.search");
+  });
+
+  it.each(bridgeAliases)("%s amountRaw names contract decimals as authority", (toolName) => {
+    const description = paramOf(toolName, "amountRaw").description ?? "";
+    expect(description).toContain("contract-verified TokenFind candidate");
+    expect(description).toContain("provider-list decimal is not signing authority");
+    expect(description).not.toContain("khalani.tokens.search");
+  });
+
+  it("TokenCheck refuses ambiguous or provider-only identity", () => {
+    const description = toolDefOf("TokenCheck").description;
+    expect(description).toContain("exactly one target chain");
+    expect(description).toContain("mutationReady is true");
+    expect(description).toContain("metadata-unreadable results are not executable identities");
+  });
+
+  it.each(["BridgeExecute", "BridgeExecuteRelay"])(
+    "%s requires approval to carry contract identity and both amount units",
+    (toolName) => {
+      const description = toolDefOf(toolName).description;
+      expect(description.toLowerCase()).toContain("approval card");
+      expect(description).toContain("contract-read symbol and decimals");
+      expect(description).toContain("human");
+      expect(description).toContain("atomic");
+    },
+  );
+
+  it.each(["SwapExecute", "SwapExecuteUniswap"])(
+    "%s states the current swap card boundary without promising bridge metadata",
+    (toolName) => {
+      const description = toolDefOf(toolName).description;
+      expect(description).toMatch(/(?:For EVM, r|R)estricted approval shows chain, token addresses, human `amountIn`/);
+      expect(description).toContain("quote-time contract-read output symbol");
+      expect(description).toContain("omits decimals and atomic input");
+      expect(description).toContain("re-reads both token contracts");
+      expect(description).toContain("card is not proof");
+      expect(description).toContain("Full permission shows no card");
+      expect(description).not.toContain("approval card must show");
+    },
+  );
+});
+
 const RELAY_BRIDGE_ALIASES = ["BridgeQuoteRelay", "BridgeExecuteRelay"] as const;
 
 describe("Relay bridge slippageBps — what it protects, and the ceiling it is held to", () => {

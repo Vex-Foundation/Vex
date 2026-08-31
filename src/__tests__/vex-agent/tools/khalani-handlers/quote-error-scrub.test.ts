@@ -8,9 +8,8 @@
  *  - the pre-quote route guard, which reads Khalani's LIVE registry, so its
  *    throw can carry PROVIDER-controlled text (`mapKhalaniError` builds its
  *    message straight from the response body) — a confirmed leak;
- *  - chain-family resolution, whose text is locally authored but echoes the
- *    MODEL-SUPPLIED `fromChain`/`toChain` verbatim, so model-injected content
- *    was emitted unredacted.
+ *  - route resolution, whose locally authored errors can echo the
+ *    MODEL-SUPPLIED `fromChain`/`toChain` verbatim.
  *
  * Only the two collaborators these paths use are mocked; the handler's own
  * control flow is real.
@@ -111,9 +110,9 @@ describe("khalani.quote.get — route-guard failures pass the scrub boundary", (
   });
 });
 
-describe("khalani.quote.get — chain-family failures pass the scrub boundary", () => {
+describe("khalani.quote.get - model-supplied chain failures pass the scrub boundary", () => {
   it("redacts a URL injected through the model-supplied fromChain", async () => {
-    mockResolveChainId.mockImplementation((input: string) => {
+    mockResolvePrequoteRoute.mockImplementation((input: string) => {
       throw new VexError(
         ErrorCodes.KHALANI_UNSUPPORTED_CHAIN,
         `Unsupported chain: ${input}`,

@@ -33,7 +33,7 @@ const MissionDraftUpdateArgs = z
     goal: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
     capitalSource: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
     startingCapital: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
-    // C3 - all five parts or none. Bounds mirror DEPLOYED_CAPITAL_BOUNDS so the
+    // C3 - all six parts or none. Bounds mirror DEPLOYED_CAPITAL_BOUNDS so the
     // model gets a located zod path (e.g. `deployedCapital.decimals`) instead of
     // a silent drop; the identity/family rules are applied afterwards by the one
     // shared normalizer in `engine/mission/deployed-capital.ts`.
@@ -42,6 +42,7 @@ const MissionDraftUpdateArgs = z
       decimals: z.number().int().min(0).max(36),
       chainId: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
       assetAddress: z.string().trim().min(1).max(128),
+      assetKind: z.enum(["native", "token"]),
       assetSymbol: z.string().trim().min(1).max(32),
     }).strict().nullable().optional(),
     allowedWallets: z.array(z.string().trim().min(1).max(MAX_ARRAY_ITEM_LENGTH)).max(MAX_ARRAY_ITEMS).nullable().optional(),

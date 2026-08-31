@@ -13,6 +13,10 @@ import { formatUnits } from "viem";
 import { RELAY_NATIVE_CURRENCY } from "@tools/relay/chains.js";
 import type { RelayChain } from "@tools/relay/types.js";
 import type { RelayQuoteSide } from "@tools/relay/quote.js";
+import {
+  isVerifiedEvmBridgeAssetIdentity,
+  type BridgeAssetIdentity,
+} from "@vex-agent/tools/protocols/bridge-token-identity.js";
 
 /** A bridge endpoint (origin / destination) projected for display. */
 export interface BridgeEndpointDisplay {
@@ -58,12 +62,21 @@ export interface BridgeOutputLeg {
  * estimate everywhere it surfaces. Returns null — never a fabricated figure —
  * whenever decimals, USD, or a positive human amount is missing.
  */
-export function relayFeeUsdEstimate(side: RelayQuoteSide, feeRaw: bigint): string | null {
-  const { decimals, amountUsd } = side;
+export function relayFeeUsdEstimate(
+  side: RelayQuoteSide,
+  feeRaw: bigint,
+  identity?: BridgeAssetIdentity,
+): string | null {
+  const direct = isVerifiedEvmBridgeAssetIdentity(identity) ? identity : undefined;
+  const decimals = direct?.decimals ?? side.decimals;
+  const { amountUsd } = side;
   if (decimals === null || amountUsd === null) return null;
 
-  const humanAmount = side.amountFormatted
-    ?? (side.amountRaw !== null && /^\d+$/.test(side.amountRaw) ? formatUnits(BigInt(side.amountRaw), decimals) : null);
+  const humanAmount = side.amountRaw !== null && /^\d+$/.test(side.amountRaw)
+    ? formatUnits(BigInt(side.amountRaw), decimals)
+    : direct !== undefined
+      ? null
+      : side.amountFormatted;
   if (humanAmount === null) return null;
 
   const sideAmount = Number(humanAmount);
@@ -104,15 +117,22 @@ export function bridgeSideDisplay(
   chainId: number,
   chains: readonly RelayChain[],
   rawFallback?: string,
+  identity?: BridgeAssetIdentity,
 ): BridgeAmountDisplay {
   const nativeSymbol = currencyAddress === RELAY_NATIVE_CURRENCY
     ? chains.find((c) => c.id === chainId)?.currency?.symbol
     : undefined;
-  const token = side.symbol ?? nativeSymbol ?? currencyAddress;
+  const direct = isVerifiedEvmBridgeAssetIdentity(identity) ? identity : undefined;
+  const token = direct !== undefined
+    ? direct.symbol
+    : side.symbol ?? nativeSymbol ?? currencyAddress;
 
-  let amount = side.amountFormatted;
-  if (amount === null && side.amountRaw !== null && side.decimals !== null && /^\d+$/.test(side.amountRaw)) {
-    amount = formatUnits(BigInt(side.amountRaw), side.decimals);
+  const decimals = direct?.decimals ?? side.decimals;
+  let amount = direct !== undefined ? null : side.amountFormatted;
+  if (side.amountRaw !== null && decimals !== null && /^\d+$/.test(side.amountRaw)) {
+    amount = formatUnits(BigInt(side.amountRaw), decimals);
+  } else if (amount === null && rawFallback !== undefined && decimals !== null && /^\d+$/.test(rawFallback)) {
+    amount = formatUnits(BigInt(rawFallback), decimals);
   }
   // The raw fallback is a smallest-unit value — keep it verbatim, but never as
   // the human `amount` (a consumer labels it "<raw> (raw units)" when needed).

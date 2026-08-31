@@ -60,10 +60,9 @@ vi.mock("@tools/solana-ecosystem/shared/solana-validation.js", () => ({
   solanaExplorerUrl: (sig: string) => `https://explorer.example/${sig}`,
 }));
 
+const mockResolveJupiterToken = vi.fn();
 vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
-  resolveJupiterToken: async () => {
-    throw new Error("no jupiter key in tests");
-  },
+  resolveJupiterToken: (...args: unknown[]) => mockResolveJupiterToken(...args),
 }));
 
 const activityHandle = {
@@ -130,6 +129,7 @@ function makeIntent(overrides: Partial<WalletIntent> = {}): WalletIntent {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockResolveJupiterToken.mockRejectedValue(new Error("no jupiter key in tests"));
   mockOpenActivity.mockResolvedValue(activityHandle);
   mockGetBalance.mockResolvedValue(Number.MAX_SAFE_INTEGER);
   mockPrepareLegacyTx.mockResolvedValue({
@@ -156,6 +156,20 @@ function signedLamports(): bigint {
 }
 
 describe("executeSolanaTransfer - exact decimal amounts", () => {
+  it("reads native spendability from account lamports and never from an SPL token resolver", async () => {
+    mockGetBalance.mockResolvedValue(1);
+
+    const outcome = await executeSolanaTransfer(makeIntent({ amount: "5" }), WALLET);
+
+    expect(outcome.kind).toBe("pre_broadcast_failed");
+    expect(mockGetBalance).toHaveBeenCalledOnce();
+    expect(mockGetBalance).toHaveBeenCalledWith(KEYPAIR.publicKey);
+    // Native intent resolution returns immediately after the account-lamport
+    // check. No wSOL mint metadata or token-account path can influence it.
+    expect(mockResolveJupiterToken).not.toHaveBeenCalled();
+    expect(mockPrepareLegacyTx).not.toHaveBeenCalled();
+  });
+
   it("derives lamports by exact arithmetic, not through a float", async () => {
     // 9-decimal SOL past 2^53 atomic units. `Number("9007199.254740993") * 1e9`
     // cannot represent this value, so the old `Math.round(Number(...))` returns

@@ -63,13 +63,13 @@ Use the Tool Map for the DIRECT tools: if a direct internal tool is not in it RI
 
 Every call example in this prompt is written as \`tool_name(param="value")\`. That notation shows INTENT, not wire format — always emit a real tool call through the tools API, never the example text as a message.
 
-### Shortcuts are the same engines
+### Shortcuts route through the owned engines
 
-The curated shortcuts below run the SAME protocol code as the protocol tools they route to. PREFER the shortcut: it is one call instead of a discovery round trip plus the protocol call, and its schema is already in front of you.
+The curated shortcuts below keep one stable name while routing through the protocol or chain capability that owns the request. PREFER the shortcut: it is one call instead of a discovery round trip plus the protocol call, and its schema is already in front of you.
 
 | Shortcut | Runs |
 | --- | --- |
-| \`TokenFind\` | \`khalani__tokens_search\` (canonical token resolver) |
+| \`TokenFind\` | EVM token identity router: Khalani search on Khalani-covered chains, local search plus contract validation on Robinhood Chain |
 | \`TokenCheck\` | \`kyberswap__token_safety_check\` (EVM honeypot / fee-on-transfer) |
 | \`SwapQuote\` / \`SwapExecute\` | the chain's swap venue (EVM → \`kyberswap__swap_*\`, \`chain="solana"\` → \`solana__swap_*\`) |
 | \`BridgeQuote\` / \`BridgeExecute\` | the route's bridge provider, auto-selected (Khalani, or Relay to/from Robinhood Chain) |

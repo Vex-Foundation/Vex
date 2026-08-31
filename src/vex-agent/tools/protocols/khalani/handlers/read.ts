@@ -16,6 +16,7 @@
 import { getKhalaniClient } from "@tools/khalani/client.js";
 import {
   getCachedKhalaniChains,
+  getChain,
   getChainFamily,
   resolveChainId,
 } from "@tools/khalani/chains.js";
@@ -36,7 +37,7 @@ import {
   splitBridgeAmountForFee,
   type BridgeFeeSplit,
 } from "@tools/bridge-fee/index.js";
-import { estimateUsd, humanizeAmount, resolveKhalaniTokenInfo } from "./bridge-usd.js";
+import { estimateUsd, humanizeAmount, resolveKhalaniBridgeTokenInfo } from "./bridge-usd.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ChainFamily, KhalaniChain } from "@tools/khalani/types.js";
 import { getLocalChain, resolveLocalChainId } from "@tools/evm-chains/registry.js";
@@ -58,6 +59,7 @@ import { renderProtocolFailureOutput, summarizeProtocolError } from "@vex-agent/
 import { readStringOrArrayParam } from "../../runtime/list-params.js";
 import { describeKhalaniOrderCorrelation } from "../order-correlation.js";
 import { throwIfAborted } from "@utils/cancellation.js";
+import { resolveKhalaniBridgeTokenPreviewFromResolved } from "@vex-agent/tools/protocols/bridge-token-identity.js";
 
 // ── Shared helpers (exported for bridge handler) ────────────────
 
@@ -416,13 +418,12 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     // Per-session wallet scope (5D-protocols p4) — the quote uses the session's
     // selected source/dest wallets, not the primary. Read-only (no signing).
     const chains = await getCachedKhalaniChains();
-    let fromChainId: number;
+    const { fromChainId, toChainId } = prequote;
     let fromFamily: "eip155" | "solana";
     let toFamily: "eip155" | "solana";
     try {
-      fromChainId = resolveChainId(fromChain, chains);
       fromFamily = getChainFamily(fromChainId, chains);
-      toFamily = getChainFamily(resolveChainId(toChain, chains), chains);
+      toFamily = getChainFamily(toChainId, chains);
     } catch (err) {
       // Locally authored, but it echoes the MODEL-SUPPLIED fromChain/toChain
       // verbatim — untrusted input reaching an output sink, so it goes through
@@ -509,7 +510,16 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
 
     // Fee disclosure (fail-soft token facts — a lookup miss degrades the human
     // amount and USD to null, never to a fabricated figure).
-    const fromInfo = await resolveKhalaniTokenInfo(fromToken, fromChainId);
+    const tokenIdentity = await resolveKhalaniBridgeTokenPreviewFromResolved({
+      fromChain: getChain(fromChainId, chains),
+      toChain: getChain(toChainId, chains),
+      fromToken,
+      toToken,
+      amountRaw: prepared.request.amount,
+      chains,
+      signal: context.abortSignal,
+    });
+    const fromInfo = await resolveKhalaniBridgeTokenInfo(fromToken, fromChainId, tokenIdentity.source);
     const vexFee = chargeFee
       ? buildBridgeFeeDisclosure({
           tokenAddress: fromToken,
@@ -536,10 +546,11 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
         routeCount: outcome.routes.length,
         routes: projectQuoteRoutes(outcome.routes, Date.now()),
         vexFee,
+        tokenMetadata: tokenIdentity,
         expiryNote: "khalani__bridge_execute re-quotes and hard-fails with deadline_expired once expiresAtUnixSeconds "
           + "passes — treat expiresInSeconds as the window you have to act in, not a guarantee the same route survives.",
       }, null, 2),
-      data: { quoteId: outcome.quoteId, routes: outcome.routes, vexFee },
+      data: { quoteId: outcome.quoteId, routes: outcome.routes, vexFee, tokenMetadata: tokenIdentity },
     };
   },
 

@@ -18,6 +18,10 @@
 import { projectBalanceRow } from "../../protocols/amount-display.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../constants/solana-chain.js";
 import type { SolanaBalanceRow } from "@tools/solana-ecosystem/balances/wallet-snapshot.js";
+import {
+  solanaAssetIdentity,
+  type SolanaAssetIdentity,
+} from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
 
 /**
  * A Solana holding as either tool emits it.
@@ -33,6 +37,14 @@ import type { SolanaBalanceRow } from "@tools/solana-ecosystem/balances/wallet-s
 export interface SolanaWalletTokenRow {
   symbol: string | null;
   name: string | null;
+  /** Structural spendability domain. Never inferred from `address`. */
+  assetKind: SolanaAssetIdentity["kind"];
+  /** `slip44:501` for native SOL, null for an SPL token. */
+  nativeAssetId: SolanaAssetIdentity["nativeAssetId"];
+  /** Mint Jupiter expects for this asset. Native SOL routes through wSOL. */
+  routeMint: string;
+  /** Mint whose market price values this row. Native SOL uses wSOL's price. */
+  pricingMint: string;
   address: string;
   chainId: number;
   decimals: number;
@@ -57,11 +69,20 @@ export interface SolanaWalletTokenRow {
  * atomic integer to divide.
  */
 export function solanaRowToWalletToken(row: SolanaBalanceRow): SolanaWalletTokenRow {
+  const identity = solanaAssetIdentity(
+    row.isNative ? { kind: "native" } : { kind: "spl", mint: row.mint },
+  );
   const priceUsd = row.priceUsd !== null ? String(row.priceUsd) : null;
   return {
     symbol: row.symbol,
     name: row.name,
-    address: row.mint,
+    assetKind: identity.kind,
+    nativeAssetId: identity.nativeAssetId,
+    routeMint: identity.routeMint,
+    pricingMint: identity.pricingMint,
+    // `address` stays route-compatible for the model. Persistence uses the
+    // identity's separate `persistedAddress`, never this field.
+    address: identity.routeMint,
     chainId: SOLANA_SYNTHETIC_CHAIN_ID,
     decimals: row.decimals,
     balanceRaw: row.amountRaw,

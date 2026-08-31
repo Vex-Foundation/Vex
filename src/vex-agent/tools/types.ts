@@ -459,6 +459,40 @@ export interface ToolResult {
      * the full economic disclosure before approving.
      */
     readonly feePreview?: JupiterFeePreview;
+    /**
+     * Bridge asset facts read at the pre-approval gate. EVM ERC-20 symbol and
+     * decimals come from the contract; native identity comes from the chain
+     * registry. Solana is explicitly marked as outside the EVM contract-read
+     * lane rather than guessed.
+     */
+    readonly bridgeTokenPreview?: {
+      readonly source: {
+        readonly family: "eip155" | "solana";
+        readonly kind: "erc20" | "native" | "solana" | "metadata_unavailable";
+        readonly chainId: number;
+        readonly tokenAddress: string;
+        readonly symbol: string | null;
+        readonly decimals: number | null;
+        readonly metadataSource: string;
+        readonly symbolSanitized: boolean;
+        readonly metadataErrorCode?: "contract_metadata_unavailable" | "native_registry_metadata_unavailable";
+        readonly metadataErrorMessage?: string;
+      };
+      readonly destination: {
+        readonly family: "eip155" | "solana";
+        readonly kind: "erc20" | "native" | "solana" | "metadata_unavailable";
+        readonly chainId: number;
+        readonly tokenAddress: string;
+        readonly symbol: string | null;
+        readonly decimals: number | null;
+        readonly metadataSource: string;
+        readonly symbolSanitized: boolean;
+        readonly metadataErrorCode?: "contract_metadata_unavailable" | "native_registry_metadata_unavailable";
+        readonly metadataErrorMessage?: string;
+      };
+      readonly amountRaw: string;
+      readonly amountHuman: string | null;
+    };
   };
   /**
    * Jupiter Lend Borrow LTV/health disclosure (Agent Scan Phase 3 Batch 5,

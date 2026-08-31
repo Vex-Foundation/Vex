@@ -88,6 +88,18 @@ const CTX: ProtocolExecutionContext = {
   walletResolution: { source: "session", evm: { id: "w-evm", address: SEL_EVM }, solana: null },
   walletPolicy: { kind: "none" },
   sessionId: "sess-1",
+  bridgeTokenPreview: {
+    source: {
+      family: "eip155", kind: "native", chainId: 8453, tokenAddress: "0x0000000000000000000000000000000000000000",
+      symbol: "ETH", decimals: 18, metadataSource: "chain_registry", symbolSanitized: false,
+    },
+    destination: {
+      family: "eip155", kind: "erc20", chainId: 4663, tokenAddress: ERC20,
+      symbol: "VIRTUAL", decimals: 18, metadataSource: "rpc_contract", symbolSanitized: false,
+    },
+    amountRaw: "1000000000000000",
+    amountHuman: "0.001",
+  },
 };
 const CHAINS = [
   { id: 8453, name: "base", displayName: "Base", currency: { symbol: "ETH", decimals: 18 }, vmType: "evm", depositEnabled: true, disabled: false },

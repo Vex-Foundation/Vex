@@ -104,7 +104,9 @@ describe("prompt-stack — permission & safety", () => {
     it("contains address-first rule", () => {
       const joined = joinedStack(makeContext());
       expect(joined).toContain("Address-first for EVM mutations");
-      expect(joined).toContain("khalani__tokens_search");
+      expect(joined).toContain('TokenFind(query="SYMBOL", chainIds="TARGET_CHAIN")');
+      expect(joined).toContain("mutation-ready");
+      expect(joined).not.toContain("khalani__tokens_search");
     });
 
     it("the swap task resolves token identity before venue execution", () => {

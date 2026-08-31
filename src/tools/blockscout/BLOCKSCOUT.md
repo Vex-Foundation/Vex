@@ -414,6 +414,37 @@ The non-4663 hosts are listed only so nobody re-derives them. Their paths were
 not probed under this scope and their behavior here is asserted for none of
 them.
 
+## Vex transport and client contract
+
+WP6a exposes one operation-specific transport method for
+`GET /api/v2/addresses/{address}/token-balances`. The shared contract accepts
+an address, not a URL. The Electron implementation composes the exact HTTPS
+host and path, refuses redirects, applies caller and lifecycle cancellation,
+and rejects the complete response when it passes 512 KiB. The client rejects
+an unpaginated array above 500 rows. Neither limit returns a prefix that looks
+complete.
+
+The client result has `inventoryScope: "erc20"` and one of these states:
+
+| state | `inventoryComplete` | candidates retained | meaning |
+| --- | --- | --- | --- |
+| `complete` | `true` | every validated ERC-20 identity | the whole bounded response validated; non-ERC-20 rows are reported by count and type census |
+| `incomplete / unavailable` | `false` | none | no usable provider response arrived, including a 403 HTML challenge |
+| `incomplete / over_cap` | `false` | none | the byte or row ceiling was exceeded; the response was rejected whole |
+| `incomplete / invalid_response` | `false` | every independently valid ERC-20 row | at least one row or the response document was invalid; invalid counts and any recoverable unprocessed contract addresses are reported |
+
+Candidates carry `address`, `indexerBalanceRaw`, `indexerDecimals`, token type,
+and the provider `reputation` label verbatim when it is a string. A missing or
+non-string future shape becomes `null`; it never removes an otherwise valid
+ERC-20 identity. The whole response byte ceiling bounds string labels without
+letting their content filter a token. The `indexer*` names are an authority
+warning, not decoration. Blockscout enumerates contract identities; WP6b must
+re-read balance, decimals, and symbol through RPC before publishing a wallet
+row. The client does not project `exchange_rate`, calculate a USD value, or
+filter on `reputation`. If token type is unreadable but the contract address is
+valid, that address is reported in `unprocessedContractAddresses` so the
+partial inventory names its residue.
+
 ## Where Blockscout is not an option
 
 Blockscout is a 4663-only balance source in Vex, by product decision, because

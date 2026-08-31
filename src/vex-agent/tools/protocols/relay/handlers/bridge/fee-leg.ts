@@ -37,6 +37,10 @@ import type { OriginBroadcast } from "./broadcast.js";
 import type { RelayLegs } from "./legs.js";
 import type { FeeNotTaken } from "./results.js";
 import { abortRemaining } from "./recording.js";
+import {
+  isVerifiedEvmBridgeAssetIdentity,
+  type BridgeAssetIdentity,
+} from "@vex-agent/tools/protocols/bridge-token-identity.js";
 
 export interface RelayFeeCollection {
   readonly collection: string;
@@ -55,19 +59,24 @@ export const NO_FEE_COLLECTION: RelayFeeCollection = {
  * derivation, so the disclosed number and the transferred number are the same
  * number by construction.
  */
-export function relayFeeDisclosure(legs: RelayLegs, inSide: RelayQuoteSide): BridgeFeeDisclosure {
+export function relayFeeDisclosure(
+  legs: RelayLegs,
+  inSide: RelayQuoteSide,
+  identity?: BridgeAssetIdentity,
+): BridgeFeeDisclosure {
   if (legs.feeSkipReason !== null) {
     return buildBridgeFeeSkippedDisclosure({ reason: legs.feeSkipReason, totalRaw: legs.feeSplit.totalRaw });
   }
+  const direct = isVerifiedEvmBridgeAssetIdentity(identity) ? identity : undefined;
   return buildBridgeFeeDisclosure({
     tokenAddress: legs.originCurrency,
-    tokenSymbol: inSide.symbol ?? undefined,
-    tokenDecimals: inSide.decimals ?? undefined,
+    tokenSymbol: direct?.symbol ?? inSide.symbol ?? undefined,
+    tokenDecimals: direct?.decimals ?? inSide.decimals ?? undefined,
     feeRaw: legs.feeSplit.feeRaw,
     bridgedRaw: legs.feeSplit.bridgedRaw,
     totalRaw: legs.feeSplit.totalRaw,
     receiver: BRIDGE_FEE_RECEIVER_EVM,
-    feeUsdEstimate: relayFeeUsdEstimate(inSide, legs.feeSplit.feeRaw) ?? undefined,
+    feeUsdEstimate: relayFeeUsdEstimate(inSide, legs.feeSplit.feeRaw, identity) ?? undefined,
   });
 }
 

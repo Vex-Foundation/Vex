@@ -21,15 +21,16 @@ export const MISSION_TOOLS: readonly ToolDef[] = [
       startingCapital: { type: "string", description: "Starting capital amount and asset" },
       deployedCapital: {
         type: "object",
-        description: "The capital this mission actually puts to work, typed so the runtime can measure against it. Save all five parts together or none: a raw amount without its decimals cannot be read. Example: 3044 VEX at 18 decimals is amountRaw=\"3044000000000000000000\". This is a measurement base, not a spend limit. Send null to clear it.",
+        description: "The capital this mission actually puts to work, typed so the runtime can measure against it. Save all six parts together or none: raw units require decimals and native-versus-token identity must be structural. wSOL is assetKind token even though it shares native SOL's route mint. Example: 3044 VEX at 18 decimals is amountRaw=\"3044000000000000000000\". This is a measurement base, not a spend limit. Send null to clear it.",
         properties: {
           amountRaw: { type: "string", description: "Integer base-unit amount as a string, digits only. 1.5 ETH is \"1500000000000000000\"." },
           decimals: { type: "number", description: "Decimals needed to read amountRaw (18 for ETH and most ERC-20s, 6 for USDC, 9 for SOL)." },
           chainId: { type: "number", description: "Numeric chain id the asset lives on (1 ethereum, 8453 base, 4663 robinhood, 20011000000 solana)." },
           assetAddress: { type: "string", description: "Token contract address, or 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE for a chain's native coin. On solana this is the base58 mint, sent exactly as given (case matters)." },
+          assetKind: { type: "string", enum: ["native", "token"], description: "Structural asset kind: native for the chain account coin, token for an ERC-20/SPL mint. wSOL is token." },
           assetSymbol: { type: "string", description: "Display symbol as agreed with the user, for example VEX or USDC." },
         },
-        required: ["amountRaw", "decimals", "chainId", "assetAddress", "assetSymbol"],
+        required: ["amountRaw", "decimals", "chainId", "assetAddress", "assetKind", "assetSymbol"],
         additionalProperties: false,
       },
       allowedWallets: { type: "array", items: { type: "string" }, description: "Wallet addresses or wallet identifiers allowed for the mission" },

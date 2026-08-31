@@ -21,6 +21,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PublicKey } from "@solana/web3.js";
 
 import type { SolanaBalanceRpc } from "@tools/solana-ecosystem/balances/read-wallet-balances.js";
+import { KHALANI_TOOLS } from "@vex-agent/tools/protocols/khalani/manifest.js";
 import { makeProtocolContext } from "../_test-context.js";
 
 const SOLANA_CHAIN_ID = 20_011_000_000;
@@ -169,6 +170,15 @@ function accountAt(index: number): string {
 }
 
 describe("khalani__token_balances_get - the solana family", () => {
+  it("describes the structural native/wSOL identity and fee boundary to the model", () => {
+    const description = KHALANI_TOOLS.find(
+      (tool) => tool.toolId === "khalani.tokens.balances",
+    )?.description;
+    expect(description).toContain("Only `assetKind: native` identifies account SOL");
+    expect(description).toContain("only that account balance pays network fees");
+    expect(description).toContain("native SOL and wSOL share a Jupiter route/pricing mint");
+  });
+
   it("answers a funded Solana wallet from RPC instead of Khalani's zero-token scan", async () => {
     const result = await handleTokenBalances(
       { walletFamily: "solana" },
@@ -189,6 +199,10 @@ describe("khalani__token_balances_get - the solana family", () => {
     expect(data.tokens[0]).toMatchObject({
       symbol: "SOL",
       name: "Solana",
+      assetKind: "native",
+      nativeAssetId: "slip44:501",
+      routeMint: SOL_MINT,
+      pricingMint: SOL_MINT,
       address: SOL_MINT,
       chainId: SOLANA_CHAIN_ID,
       decimals: 9,
@@ -223,13 +237,23 @@ describe("khalani__token_balances_get - the solana family", () => {
     );
 
     const data = JSON.parse(result.output);
-    expect(data.tokens).toHaveLength(1);
-    expect(data.tokens[0].symbol).toBeNull();
-    expect(data.tokens[0].name).toBeNull();
-    expect(data.tokens[0].address).toBe(UNLABELLED_MINT);
+    expect(data.tokens).toHaveLength(2);
+    expect(data.tokens[0]).toMatchObject({
+      symbol: "SOL",
+      assetKind: "native",
+      balanceRaw: "0",
+      balance: "0",
+    });
+    const unlabelled = data.tokens.find(
+      (row: { address: string }) => row.address === UNLABELLED_MINT,
+    );
+    expect(unlabelled).toBeDefined();
+    expect(unlabelled.symbol).toBeNull();
+    expect(unlabelled.name).toBeNull();
+    expect(unlabelled.address).toBe(UNLABELLED_MINT);
     // `decimals: 0` is legitimate: a `||` default would read this as 42e-18.
-    expect(data.tokens[0].balanceRaw).toBe("42");
-    expect(data.tokens[0].balance).toBe("42");
+    expect(unlabelled.balanceRaw).toBe("42");
+    expect(unlabelled.balance).toBe("42");
   });
 
   it("surfaces an untrusted token account as an accountError and still returns the readable rows", async () => {
@@ -369,9 +393,8 @@ describe("khalani__token_balances_get - the solana family", () => {
 
   it("a PARTIAL read keeps the valid SPL row: a zero-lamport wallet does not lose it to a broken sibling account", async () => {
     // THE DECISIVE CASE, mirrored for this tool. See the same test in the
-    // WalletBalances suite: with zero lamports there is no native row to mask
-    // a discarded holding, so a dropped SPL row shows up as "you hold nothing"
-    // on the very lane the model uses to find a funded source asset.
+    // WalletBalances suite: the required native zero row must not mask a
+    // discarded SPL holding on the lane used to find a funded source asset.
     //
     // The surviving row must also come back PRICED, which proves enrichment
     // still runs on a partial read instead of being skipped along with the

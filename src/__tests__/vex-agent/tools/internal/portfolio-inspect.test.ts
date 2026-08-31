@@ -214,6 +214,7 @@ describe("agent_scan tool", () => {
       deployedCapitalAtStart: {
         chainId: 4663,
         assetAddress: "0x0f9f",
+        assetKind: "token",
         assetSymbol: "VEX",
         declaredAmountRaw: "3044000000000000000000",
         declaredDecimals: 18,
@@ -260,6 +261,7 @@ describe("agent_scan tool", () => {
       expect((dataOf(r).now as Record<string, unknown>).totalUsdEstimate).toBe(34.4);
       expect(dataOf(r).changeSinceStartUsdEstimate).toBeCloseTo(2.3, 6);
       const deployed = dataOf(r).deployedCapital as Record<string, unknown>;
+      expect(deployed.assetKind).toBe("token");
       expect(deployed.declaredAmountHuman).toBe("3044");
       expect(deployed.heldAtStartHuman).toBe("6802.264854");
       expect(String(dataOf(r).note)).toContain("not trade PnL");

@@ -34,6 +34,11 @@
  *    legitimate token's symbol has a DIFFERENT `token_address`, so it can
  *    never coalesce into that token's line before the renderer's trust gate
  *    (address-verified brand icon) can act on it.
+ *  - native SOL uses its database-only System Program key while wSOL uses its
+ *    mint. SQL groups on those distinct persisted keys first. Only after that
+ *    grouping does the DTO map native SOL back to Jupiter's route mint, so the
+ *    two balances remain separate rows while every renderer action receives a
+ *    route-compatible address.
  *  - `token_name` (like `token_symbol`) is attacker-influenceable display
  *    metadata; it is sanitized through `sanitizeTokenName` HERE, before the
  *    DTO is built, because the output schema's `safeTokenNameSchema` is a
@@ -54,6 +59,7 @@ import type {
 } from "@shared/schemas/portfolio.js";
 import { familyForChainId } from "@shared/chains/display.js";
 import { sanitizeTokenName } from "@shared/token-name-sanitizer.js";
+import { solanaRouteMintFromPersistedAddress } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
 import { listInventoryWalletEntries } from "./inventory-wallets.js";
 import { getSessionWalletScope } from "./sessions-db.js";
 import { buildPoolConfig } from "./db-config.js";
@@ -266,7 +272,7 @@ function buildChainBreakdown(
     ) {
       current.tokens.push({
         symbol: row.token_symbol,
-        tokenAddress: row.token_address,
+        tokenAddress: routeCompatibleTokenAddress(chainId, row.token_address),
         tokenName: sanitizeTokenName(row.token_name),
         balanceUsd: tokenUsd,
         amount: tokenAmount,
@@ -302,6 +308,21 @@ function toNumberOrNull(value: number | string | null | undefined): number | nul
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Convert the native SOL database-only storage key back to Jupiter's route
+ * mint after SQL has grouped native SOL and wSOL under their distinct keys.
+ * Every non-Solana address and every SPL mint passes through unchanged.
+ */
+function routeCompatibleTokenAddress(
+  chainId: number | null,
+  persistedAddress: string | null,
+): string | null {
+  if (chainId === null || persistedAddress === null) return persistedAddress;
+  return familyForChainId(chainId) === "solana"
+    ? solanaRouteMintFromPersistedAddress(persistedAddress)
+    : persistedAddress;
 }
 
 /**
@@ -443,14 +464,17 @@ export async function getPortfolio(
       );
       const tokens: PositionTokenDto[] = tokensResult.rows
         .slice(0, MAX_TOKEN_LINES)
-        .map((row) => ({
-          chainId: toChainId(row.chain_id),
-          symbol: row.token_symbol,
-          tokenAddress: row.token_address,
-          tokenName: sanitizeTokenName(row.token_name),
-          balanceUsd: toNumberOrNull(row.usd),
-          amount: toNumberOrNull(row.amount),
-        }));
+        .map((row) => {
+          const chainId = toChainId(row.chain_id);
+          return {
+            chainId,
+            symbol: row.token_symbol,
+            tokenAddress: routeCompatibleTokenAddress(chainId, row.token_address),
+            tokenName: sanitizeTokenName(row.token_name),
+            balanceUsd: toNumberOrNull(row.usd),
+            amount: toNumberOrNull(row.amount),
+          };
+        });
 
       // (b2) Per-chain breakdown for the POSITION chain switcher — a
       // PURPOSE-BUILT window query over the FULL balance set (Codex plan

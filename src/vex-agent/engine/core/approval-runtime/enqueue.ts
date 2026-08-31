@@ -97,6 +97,7 @@ export function buildApprovalIntentPreview(
             termLock: input.result.prequote?.termLock,
             feePreview: input.result.prequote?.feePreview,
             quoteBinding: input.result.prequote?.quoteBinding,
+            bridgeTokenPreview: input.result.prequote?.bridgeTokenPreview,
             riskPreview: input.result.riskPreview,
           }
         : undefined,

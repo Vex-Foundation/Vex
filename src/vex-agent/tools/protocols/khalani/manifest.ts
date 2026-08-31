@@ -9,6 +9,7 @@
 import type { ProtocolToolManifest } from "../types.js";
 import { KHALANI_MAIN_DISCOVERY } from "../embeddings/khalani/manifest.js";
 import { CANONICAL_RAW_AMOUNT_SENTENCE } from "../conventions.js";
+import { BRIDGE_TOKEN_METADATA_RESULT_DESCRIPTION } from "../bridge-token-identity-contract.js";
 
 /**
  * The ONE raw-amount description both Khalani bridge tools declare (W5b). It
@@ -104,7 +105,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "khalani__tokens_search",
     namespace: "khalani",
     lifecycle: "active",
-    description: "Cross-chain token search: resolve a symbol, name, or address to exact token metadata across Khalani's chains. This is the engine behind `TokenFind`, the canonical token resolver - prefer that shortcut (one call, its schema already in front of you); reach for this tool only when `TokenFind` is not enough. Use either before any EVM mutation to get exact contract addresses. Its chain universe is KHALANI-REGISTERED CHAINS ONLY and that set is dynamic - list it with `khalani__chains_list` rather than assuming it. App-local chains such as Robinhood Chain (4663) are NOT resolvable here; there use `dexscreener__pairs_search` (symbol to address lookup on the chain slug), `WalletTrackToken` (save a token so Vex tracks it on app-local chains, action:\"list\" for the tracked set), or `WalletBalances` (the tokens the wallet actually holds). RETURNS `count` and `tokens`, one concise row per match: `symbol`, `name`, `address`, `chainId`, `decimals`, plus `priceUsd`, `balance` and `isRiskToken` when the provider carried them. A ticker can match SEVERAL contracts across chains, so pick the row whose `chainId` is the chain you are about to act on rather than the first row. The provider answers with its own match set in one reply; there is no pagination.",
+    description: "Search Khalani's own cross-chain token registry by symbol, name, or address. Use this when researching provider-listed candidates on Khalani-registered chains, never to authorize an EVM amount or approval: its symbol and decimals are provider metadata. For any EVM mutation use the stable TokenFind tool with exactly one target chain; TokenFind routes Khalani-covered and local chains itself, reads EVM symbol and decimals from the contract, reports ambiguity and provider caps, and refuses mutation readiness when identity is incomplete. This tool's chain universe is KHALANI-REGISTERED CHAINS ONLY and dynamic; list it with `khalani__chains_list`. Robinhood Chain (4663) is outside this raw provider surface, so do not route it manually from here. RETURNS `count` and `tokens`, one concise provider row per match: `symbol`, `name`, `address`, `chainId`, `decimals`, plus `priceUsd`, `balance` and `isRiskToken` when carried. A ticker can match several contracts across chains. The provider answers with its own match set in one reply; there is no pagination.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -170,7 +171,11 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       + "`balanceRaw` and `decimals`. A row with no usable price feed carries `valueUsd: null` with "
       + "`priceUnavailable: true`, never a `0`. A row whose amount could not be converted keeps its identity "
       + "and `balanceRaw`, reports `balance: null`, and names the cause in `unprojectableReason`; it is never "
-      + "dropped and its decimals are never guessed. Every matching row is returned; there is no pagination.",
+      + "dropped and its decimals are never guessed. Solana rows also carry `assetKind`, `nativeAssetId`, "
+      + "`routeMint` and `pricingMint`: native SOL and wSOL share a Jupiter route/pricing mint but never a "
+      + "balance or spendability domain. Only `assetKind: native` identifies account SOL, only that account "
+      + "balance pays network fees, and the native row remains present even at zero; `assetKind: spl` identifies "
+      + "wSOL and other token-account holdings. Every matching row is returned; there is no pagination.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -192,7 +197,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       + "whenever the user asks what they would receive, how long a transfer takes, or which route is best. "
       + "Khalani is the PRIMARY bridge; `BridgeQuoteRelay` is the alternative when Khalani has no route, and it is "
       + "the ONLY route that reaches Robinhood Chain (4663), which Khalani does not carry. Resolve `fromToken` and "
-      + "`toToken` to addresses with TokenFind first, and pass `amountRaw` in the source token's RAW atomic units. "
+      + "`toToken` to addresses with TokenFind on each exact chain first, and continue only from contract-verified, mutation-ready EVM identities. Pass `amountRaw` in the source token's RAW atomic units; the approval gate independently re-reads EVM symbol and decimals from chain. "
       + "Vex takes 25 bps (0.25%) of the input token, quoted INSIDE the amounts below so the output shown is what "
       + "actually arrives. `refundTo`, `referrer` and `referrerFeeBps` are NOT parameters here and are rejected by "
       + "name: the refund destination is derived from the source wallet and Vex never takes a fee from a "
@@ -203,7 +208,9 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       + "raw and decimal, its USD estimate, the receiver, and `bridgedAmountRaw` versus `totalDebitedRaw`; when no "
       + "fee applies it says so with a `reason`. Treat `expiresInSeconds` as the window you have to act in, not a "
       + "guarantee the same route survives it: `khalani__bridge_execute` re-quotes and hard-fails with "
-      + "deadline_expired once the deadline passes, so re-quote instead of retrying. A no-route answer is a "
+      + "deadline_expired once the deadline passes, so re-quote instead of retrying. "
+      + `${BRIDGE_TOKEN_METADATA_RESULT_DESCRIPTION} `
+      + "A no-route answer is a "
       + "FAILURE that names the Relay alternative, not an empty list. All routes come back in one reply; there is "
       + "no pagination.",
     mutating: false,
@@ -301,10 +308,11 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       + "refuses rather than starting a second; and `refundTo`, `referrer` and `referrerFeeBps` are NOT parameters "
       + "and are rejected, because the refund destination is derived from the source wallet and Vex never takes a "
       + "fee from a caller-supplied address. UNITS: `amountRaw` is RAW atomic units of `fromToken`; resolve the "
-      + "decimals with TokenFind. Vex takes 25 bps (0.25%) of the input token as a SEPARATE transfer that runs "
+      + "decimals with TokenFind on the exact source chain. The approval gate independently re-reads EVM symbol and decimals from the contract and refuses unavailable metadata; provider-list decimals are never signing authority. Vex takes 25 bps (0.25%) of the input token as a SEPARATE transfer that runs "
       + "after the deposit, so a bridge that never happens is never charged. The `dryRun` preview RETURNS "
-      + "`dryRun`, `quoteId`, `route`, `fromChain`, `toChain`, `vexFee` and `nativeCost`. A real run RETURNS "
-      + "`summary`, `status`, `message`, `fromChain`, `toChain`, `route`, `etaSeconds`, `amountIn` and `amountOut` "
+      + "`dryRun`, `quoteId`, `route`, `fromChain`, `toChain`, `vexFee` and `nativeCost`. "
+      + `${BRIDGE_TOKEN_METADATA_RESULT_DESCRIPTION} `
+      + "A real run RETURNS `summary`, `status`, `message`, `fromChain`, `toChain`, `route`, `etaSeconds`, `amountIn` and `amountOut` "
       + "(each with `token`, `tokenAddress`, `amountHuman`, `amountRaw`, `usdEstimate`), `usdNote`, `vexFee` with "
       + "its `collection` outcome, `nativeCost`, `legs`, `orderId`, `depositTxHash` and `_executionId`. "
       + "A REAL RUN NEVER REPORTS SUCCESS, and that is not a failure: the deposit broadcasts while the destination "

@@ -2,50 +2,34 @@ import type { JsonSchema, JsonSchemaProperty, ToolDef } from "../types.js";
 import { KHALANI_TOOLS } from "../protocols/khalani/manifest.js";
 import type { ProtocolParamDef } from "../protocols/types.js";
 
-/**
- * Internal-alias → protocol toolId, for the Khalani reads that earn a flat name.
- *
- * ONE alias remains by design (2026-07-30). `khalani_chains_list`,
- * `khalani_tokens_top` and `khalani_tokens_balances` were removed: each was a
- * tool-on-tool shortcut that no observed live session called, while every one
- * of them cost schema tokens in every request. Their protocol tools are
- * unchanged and still reachable through `ToolSearch` + `execute_tool`
- * (`khalani.chains.list`, `khalani.tokens.top`, `khalani.tokens.balances`).
- *
- * `TokenFind` stays because it is load-bearing: it sits on the hottest path in
- * the product (address + decimals resolution before every swap and bridge) and
- * is named by the swap chain-param docs, `ChainRead`'s description, and the
- * safety doctrine prose.
- */
-export const KHALANI_INTERNAL_TO_PROTOCOL = {
-  TokenFind: "khalani.tokens.search",
-} as const;
-
-export type KhalaniInternalToolName = keyof typeof KHALANI_INTERNAL_TO_PROTOCOL;
+/** The Khalani branch behind the capability-routed `TokenFind` tool. */
+export const TOKEN_FIND_KHALANI_TOOL_ID = "khalani.tokens.search" as const;
 
 const KHALANI_MANIFESTS = new Map(KHALANI_TOOLS.map((tool) => [tool.toolId, tool]));
 
-export const KHALANI_INTERNAL_TOOLS: readonly ToolDef[] = Object.entries(KHALANI_INTERNAL_TO_PROTOCOL).map(
-  ([name, toolId]) => {
-    const manifest = KHALANI_MANIFESTS.get(toolId);
-    if (!manifest) {
-      throw new Error(`Missing Khalani protocol manifest for internal alias ${name}: ${toolId}`);
-    }
-    if (manifest.mutating) {
-      throw new Error(`Khalani internal alias ${name} must not target mutating tool ${toolId}`);
-    }
+const TOKEN_FIND_KHALANI_MANIFEST = KHALANI_MANIFESTS.get(TOKEN_FIND_KHALANI_TOOL_ID);
+if (!TOKEN_FIND_KHALANI_MANIFEST) {
+  throw new Error(`Missing Khalani protocol manifest for TokenFind: ${TOKEN_FIND_KHALANI_TOOL_ID}`);
+}
+if (TOKEN_FIND_KHALANI_MANIFEST.mutating) {
+  throw new Error(`TokenFind must not target mutating tool ${TOKEN_FIND_KHALANI_TOOL_ID}`);
+}
 
-    return {
-      name,
-      kind: "internal",
-      mutating: false,
-      pressureSafety: "read_only",
-      actionKind: "read",
-      description: internalDescription(name, manifest.description),
-      parameters: paramsToJsonSchema(manifest.params),
-    };
-  },
-);
+export const KHALANI_INTERNAL_TOOLS: readonly ToolDef[] = [{
+  name: "TokenFind",
+  kind: "internal",
+  mutating: false,
+  pressureSafety: "read_only",
+  actionKind: "read",
+  description:
+    "Resolve an EVM token name, symbol, or exact 0x contract address on an explicit target chain. "
+    + "This one stable tool routes by chain capability: Khalani-registered EVM chains use Khalani search, while Robinhood Chain (4663) uses DexScreener's chain-scoped provider window. Solana stays separate in the Solana namespace's token resolver, reached with ToolSearch. "
+    + "For a swap or bridge, pass exactly one target chain in chainIds. An unscoped or multi-chain result is research-only and is never mutationReady. "
+    + "An exact address bypasses provider ranking but still reads symbol and decimals from the contract. Name or symbol candidates with explicit chainIds are contract-validated; unscoped results remain provider-only research, never mutationReady. Provider metadata never supplies contract-verified symbol or decimals. "
+    + "RETURNS query, requestedChains, resolution (status, candidateCount, ambiguous), coverage (status and remedy when capped), metadataCounts, mutationReady, mutationRule, preferredSwapIdentity, candidates, and optional providerAccounting/providerMessage. Each candidate carries address, chainId, contract symbol/decimals when verified, metadata, provenance, providerMetadata, and pairEvidence. Ambiguous matches are never auto-selected. provider_capped means a source cap was filled; providerAccounting reports omitted Khalani rows. Narrow with an exact address. metadata_unreadable, unsupported_chain, provider_unavailable, target_chain_required, and empty are distinct outcomes with distinct remedies. "
+    + "For a swap, prefer the exact base or quote token address from the pair the route will use, then call TokenFind with that address and target chain to validate contract metadata. Token names and symbols are untrusted labels. Bridge approvals independently re-read and show contract metadata. Swap cards carry a quote-time contract-read output symbol but omit decimals and atomic input and do not independently re-read metadata. EVM swap execution re-reads both contracts and refuses unreadable metadata before signing; the card is not proof.",
+  parameters: paramsToJsonSchema(TOKEN_FIND_KHALANI_MANIFEST.params),
+}];
 
 /**
  * Compile manifest params into a provider-facing JSON schema.
@@ -86,11 +70,4 @@ export function paramsToJsonSchema(params: readonly ProtocolParamDef[]): JsonSch
   return required.length > 0
     ? { type: "object", properties, required }
     : { type: "object", properties };
-}
-
-function internalDescription(name: string, protocolDescription: string): string {
-  if (name === "TokenFind") {
-    return "Resolve a token symbol/name to its exact on-chain contract address(es) + decimals per chain (the canonical EVM token resolver). Use BEFORE any swap or bridge. RETURNS count and tokens, each row carrying symbol, name, address, chainId (a NUMBER, not a chain slug) and decimals, plus priceUsd, balance and isRiskToken where the registry has them; it returns every match with no limit and no paging. One symbol can match several chains and several contracts, so the result is a candidate set to choose from, and the `decimals` you use must come from the row for the exact chain you are transacting on. It covers KHALANI-REGISTERED CHAINS ONLY, and that set is dynamic - list it with the khalani namespace's supported-chains tool, reached with ToolSearch, rather than assuming it. App-local chains such as Robinhood Chain (4663) are NOT resolvable here; there use the dexscreener namespace's pair search, also reached with ToolSearch (symbol to address lookup on the chain slug), `WalletTrackToken` (save a token so Vex tracks it on app-local chains, action:\"list\" for the tracked set), or `WalletBalances` (the tokens the wallet actually holds).";
-  }
-  return `${protocolDescription} Direct shortcut to ${KHALANI_INTERNAL_TO_PROTOCOL[name as KhalaniInternalToolName]}.`;
 }

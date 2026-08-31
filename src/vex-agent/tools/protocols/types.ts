@@ -15,6 +15,7 @@ import type { ActionKind } from "../taxonomy.js";
 import type { Permission, WalletPolicy } from "@vex-agent/engine/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { ApprovedQuoteAuthority } from "./quote-authority/approved-authority.js";
+import type { BridgeTokenIdentityPreview } from "./bridge-token-identity.js";
 
 // ── Protocol namespaces ──────────────────────────────────────────
 
@@ -382,6 +383,12 @@ export interface ProtocolExecutionContext {
    * approved can never be the one that executes. Absent on every live turn.
    */
   approvedQuoteAuthority?: ApprovedQuoteAuthority | null;
+  /**
+   * Bridge token facts produced by the runtime's direct metadata gate for this
+   * exact dispatch. Model params cannot populate this channel. A mutating
+   * bridge handler refuses to sign when it is absent or unavailable.
+   */
+  bridgeTokenPreview?: BridgeTokenIdentityPreview;
   /**
    * The provider's id for THIS tool call, threaded by the dispatcher from
    * `ToolCallRequest.toolCallId`. Host-side evidence like the provenance above:

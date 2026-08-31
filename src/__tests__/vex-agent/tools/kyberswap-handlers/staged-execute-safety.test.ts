@@ -272,6 +272,8 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
     const call = mockCreateAgentActivityPreBroadcastFailure.mock.calls[0]![0] as { event: { walletAddress: string } };
     expect(call.event.walletAddress).toBe(SESSION_EVM.address);
     expect(call.event.walletAddress).not.toBe("");
+    expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();
+    expect(mockSignStageBroadcast).not.toHaveBeenCalled();
   });
 
   it("C32: a settlement-decode throw AFTER on-chain confirmation never loses the tx hash — falls through to confirmed_pending_amounts, not the generic hashless post-intent failure", async () => {

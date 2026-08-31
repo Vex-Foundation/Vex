@@ -54,12 +54,12 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1926,
+      "descriptionBytes": 2730,
       "destructiveHint": true,
       "inputSchema": {
         "properties": {
           "amountRaw": {
-            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from TokenFind / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
+            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Read decimals from a contract-verified TokenFind candidate on the exact source chain. A provider-list decimal is not signing authority, and a raw amount without contract decimals is unsafe.",
             "type": "string"
           },
           "filler": {
@@ -112,12 +112,12 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 723,
+      "descriptionBytes": 1512,
       "destructiveHint": true,
       "inputSchema": {
         "properties": {
           "amountRaw": {
-            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from TokenFind / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
+            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Read decimals from a contract-verified TokenFind candidate on the exact source chain. A provider-list decimal is not signing authority, and a raw amount without contract decimals is unsafe.",
             "type": "string"
           },
           "fromChain": {
@@ -166,12 +166,12 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1260,
+      "descriptionBytes": 2094,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
           "amountRaw": {
-            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from TokenFind / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
+            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Read decimals from a contract-verified TokenFind candidate on the exact source chain. A provider-list decimal is not signing authority, and a raw amount without contract decimals is unsafe.",
             "type": "string"
           },
           "filler": {
@@ -224,12 +224,12 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 578,
+      "descriptionBytes": 1410,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
           "amountRaw": {
-            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from TokenFind / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
+            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Read decimals from a contract-verified TokenFind candidate on the exact source chain. A provider-list decimal is not signing authority, and a raw amount without contract decimals is unsafe.",
             "type": "string"
           },
           "fromChain": {
@@ -377,7 +377,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1630,
+      "descriptionBytes": 2256,
       "destructiveHint": true,
       "inputSchema": {
         "properties": {
@@ -394,11 +394,11 @@
             "type": "number"
           },
           "tokenIn": {
-            "description": "Input token. EVM: the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native. Solana: symbol or mint.",
+            "description": "Input token. EVM: the token CONTRACT ADDRESS or native ETH/native. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata. Solana: symbol or mint.",
             "type": "string"
           },
           "tokenOut": {
-            "description": "Output token. EVM: the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native. Solana: symbol or mint.",
+            "description": "Output token. EVM: the token CONTRACT ADDRESS or native ETH/native. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata. Solana: symbol or mint.",
             "type": "string"
           }
         },
@@ -418,7 +418,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 701,
+      "descriptionBytes": 1442,
       "destructiveHint": true,
       "inputSchema": {
         "properties": {
@@ -435,11 +435,11 @@
             "type": "number"
           },
           "tokenIn": {
-            "description": "Input token — the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native.",
+            "description": "Input token: the token CONTRACT ADDRESS or native ETH/native. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata.",
             "type": "string"
           },
           "tokenOut": {
-            "description": "Output token — the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native.",
+            "description": "Output token: the token CONTRACT ADDRESS or native ETH/native. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata.",
             "type": "string"
           }
         },
@@ -459,7 +459,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1321,
+      "descriptionBytes": 1714,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -476,11 +476,11 @@
             "type": "number"
           },
           "tokenIn": {
-            "description": "Input token. EVM: the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native. Solana: symbol or mint.",
+            "description": "Input token. EVM: the token CONTRACT ADDRESS or native ETH/native. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata. Solana: symbol or mint.",
             "type": "string"
           },
           "tokenOut": {
-            "description": "Output token. EVM: the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native. Solana: symbol or mint.",
+            "description": "Output token. EVM: the token CONTRACT ADDRESS or native ETH/native. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata. Solana: symbol or mint.",
             "type": "string"
           }
         },
@@ -500,7 +500,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 656,
+      "descriptionBytes": 1082,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -517,11 +517,11 @@
             "type": "number"
           },
           "tokenIn": {
-            "description": "Input token — the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native.",
+            "description": "Input token: the token CONTRACT ADDRESS or native ETH/native. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata.",
             "type": "string"
           },
           "tokenOut": {
-            "description": "Output token — the token CONTRACT ADDRESS (resolve a symbol with TokenFind first) or native ETH/native.",
+            "description": "Output token: the token CONTRACT ADDRESS or native ETH/native. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata.",
             "type": "string"
           }
         },
@@ -541,7 +541,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 553,
+      "descriptionBytes": 953,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -550,7 +550,7 @@
             "type": "string"
           },
           "tokenAddress": {
-            "description": "Token contract address to inspect (0x… on the named chain). Resolve it with TokenFind first — a symbol is not accepted. The former key `address` is retired and is rejected by name.",
+            "description": "Token contract address to inspect (0x form on the named chain). A symbol is not accepted. For an EVM token, call TokenFind with exactly one target chain and continue only when mutationReady is true. Ambiguous, provider-capped, or metadata-unreadable results are not executable identities. If the swap pair is already known, prefer its exact base or quote token address and use TokenFind to validate that address on the target chain. TokenFind reads symbol and decimals from the contract, never provider list metadata. The former key `address` is retired and is rejected by name.",
             "type": "string"
           }
         },
@@ -568,7 +568,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1142,
+      "descriptionBytes": 2053,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -905,7 +905,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 2658,
+      "descriptionBytes": 3111,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -924,7 +924,7 @@
             "description": "Optional. Omit (or pass empty) to scan all supported chains (Khalani + local). To restrict, pass chain IDs/aliases either comma-separated ('ethereum,base,solana') or as an array (['ethereum','base'])."
           },
           "limit": {
-            "description": "Optional. Caps the PRICED rows per wallet snapshot, top-N by held USD value. Held tokens with no usable price are appended after them, outside this limit, marked `priceUnavailable` so 'no price feed' never reads as 'not held'; they are capped at 20 with the surplus counted in `unpricedOmitted`. Only applied when response_format='concise'; ignored under the default 'detailed'. `tokenCount`/`totalUsd` always reflect the full scan.",
+            "description": "Optional. Caps the PRICED non-native rows per wallet snapshot, top-N by held USD value. The structural native SOL row and held tokens with no usable price are appended outside this limit; unpriced held tokens are marked `priceUnavailable` and capped at 20 with the surplus counted in `unpricedOmitted`. Only applied when response_format='concise'; ignored under the default 'detailed'. `tokenCount`/`totalUsd` always reflect the full scan.",
             "type": "number"
           },
           "response_format": {
@@ -4391,7 +4391,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2556,
+      "descriptionBytes": 2945,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -4485,7 +4485,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1844,
+      "descriptionBytes": 2204,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -4707,7 +4707,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2411,
+      "descriptionBytes": 2804,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -4799,7 +4799,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1253,
+      "descriptionBytes": 1060,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -8717,7 +8717,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1782,
+      "descriptionBytes": 2270,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -8796,7 +8796,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1477,
+      "descriptionBytes": 1886,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,

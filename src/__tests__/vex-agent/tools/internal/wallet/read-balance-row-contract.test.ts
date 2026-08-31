@@ -16,6 +16,10 @@ import assert from "node:assert/strict";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type { ChainFamily } from "@tools/khalani/types.js";
+import type {
+  SolanaBalanceRow,
+  SolanaWalletSnapshotReader,
+} from "@tools/solana-ecosystem/balances/wallet-snapshot.js";
 import { makeTestContext } from "../../_test-context.js";
 
 const LOCAL_CHAIN_ID = 4663;
@@ -112,8 +116,24 @@ function localRead(tokens: Array<{
   return { nativeWei: INCIDENT_RAW, nativePriceUsd: 2522.5, tokens, tokenFailures: [] };
 }
 
-function solanaSnapshot(rows: unknown[], totalUsd = 0) {
-  return async () => ({ rows, totalUsd, accountFailures: [] });
+function solanaSnapshot(
+  rows: readonly SolanaBalanceRow[],
+  totalUsd = 0,
+): SolanaWalletSnapshotReader {
+  return async (address) => ({
+    address,
+    rows,
+    totalUsd,
+    accountFailures: [],
+    stats: {
+      accountsScanned: 0,
+      zeroSkipped: 0,
+      frozenAccounts: 0,
+      metadataMissing: 0,
+      unpriced: 0,
+      priceTiers: { tier0: 0, tier1: 0, unpriced: 0 },
+    },
+  });
 }
 
 beforeEach(() => {
@@ -249,7 +269,7 @@ describe("WalletBalances - the Solana lane carries the same contract", () => {
           priceUsd: 150,
           usdValue: 185.185,
           isNative: true,
-        }], 185.185) as never,
+        }], 185.185),
       },
     );
 

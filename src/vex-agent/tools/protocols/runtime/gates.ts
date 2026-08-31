@@ -27,6 +27,11 @@ import { evaluateLendBorrowRiskPreview } from "../solana-jupiter/borrow-risk-pre
 import { summarizeProtocolError } from "./errors.js";
 import { isPreviewExecution } from "../capture-validator.js";
 import logger from "@utils/logger.js";
+import {
+  isBridgeTokenPreviewSigningReady,
+  resolveBridgeTokenPreview,
+  type BridgeTokenIdentityPreview,
+} from "../bridge-token-identity.js";
 
 /**
  * `solana.lend.borrowOperate`'s pre-approval LTV/health disclosure is NOT a
@@ -111,6 +116,7 @@ export type PrequoteGateDecision =
       readonly riskPreview: LendBorrowRiskPreview | undefined;
       /** The approved quote's card binding (typed, unspoofable) for a gated swap execute. */
       readonly quoteBinding: QuoteBindingPreview | undefined;
+      readonly bridgeTokenPreview: BridgeTokenIdentityPreview | undefined;
     }
   | { readonly kind: "block"; readonly message: string };
 
@@ -144,6 +150,37 @@ export async function evaluatePrequoteGateDecision(
       });
       return { kind: "block", message: decision.message };
     }
+    let bridgeTokenPreview: BridgeTokenIdentityPreview | undefined;
+    try {
+      bridgeTokenPreview = await resolveBridgeTokenPreview(
+        toolId,
+        params,
+        scopedContext.abortSignal,
+      );
+    } catch (error) {
+      logger.warn("protocol.execute.bridge_token_identity_blocked", {
+        toolId,
+        errorClass: error instanceof Error ? error.constructor.name : "unknown",
+      });
+      return {
+        kind: "block",
+        message: `${toolId} requires approval, but direct EVM token symbol/decimals could not be confirmed from the contract. Re-check the chain and token address, then quote again.`,
+      };
+    }
+    if (
+      bridgeTokenPreview !== undefined
+      && !isBridgeTokenPreviewSigningReady(bridgeTokenPreview)
+      && (scopedContext.approved || scopedContext.sessionPermission !== "restricted")
+    ) {
+      logger.warn("protocol.execute.bridge_token_identity_blocked", {
+        toolId,
+        reason: "contract_metadata_unavailable",
+      });
+      return {
+        kind: "block",
+        message: `${toolId} cannot sign because direct EVM token symbol/decimals are unavailable. Re-check the chain and token address, then quote again.`,
+      };
+    }
     return {
       kind: "allow",
       verdict: decision.verdict,
@@ -155,6 +192,7 @@ export async function evaluatePrequoteGateDecision(
       feePreview: decision.feePreview,
       riskPreview: undefined,
       quoteBinding: decision.quoteBinding,
+      bridgeTokenPreview,
     };
   }
 
@@ -171,6 +209,7 @@ export async function evaluatePrequoteGateDecision(
     feePreview: undefined,
     riskPreview: risk.riskPreview,
     quoteBinding: undefined,
+    bridgeTokenPreview: undefined,
   };
 }
 
@@ -255,6 +294,7 @@ export function evaluateApprovalGate(
   prequoteFeePreview: JupiterFeePreview | undefined,
   prequoteRiskPreview: LendBorrowRiskPreview | undefined,
   prequoteQuoteBinding: QuoteBindingPreview | undefined,
+  prequoteBridgeTokenPreview: BridgeTokenIdentityPreview | undefined,
 ): ToolResult | undefined {
   if (manifest.mutating && manifest.actionKind !== "local_write" && !context.approved && !isPreviewExecution(request.toolId, params)
     && context.sessionPermission === "restricted"
@@ -283,11 +323,13 @@ export function evaluateApprovalGate(
         termLock?: { maturityIso: string };
         feePreview?: JupiterFeePreview;
         quoteBinding?: QuoteBindingPreview;
+        bridgeTokenPreview?: BridgeTokenIdentityPreview;
       } = { verdict: prequoteVerdict };
       if (prequoteFotTax !== undefined) prequote.fotTax = prequoteFotTax;
       if (prequoteTermLock !== undefined) prequote.termLock = prequoteTermLock;
       if (prequoteFeePreview !== undefined) prequote.feePreview = prequoteFeePreview;
       if (prequoteQuoteBinding !== undefined) prequote.quoteBinding = prequoteQuoteBinding;
+      if (prequoteBridgeTokenPreview !== undefined) prequote.bridgeTokenPreview = prequoteBridgeTokenPreview;
       pending.prequote = prequote;
     }
     if (prequoteRiskPreview !== undefined) {
