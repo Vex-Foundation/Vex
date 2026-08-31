@@ -4,10 +4,43 @@ import { defineConfig } from "vitest/config";
 
 const root = resolve(__dirname, "..");
 
+/**
+ * The ONE `electron` module identity for this lane.
+ *
+ * MEASURED, not assumed (Stage B1): `electron` is a devDependency of `vex-app`
+ * only, so with this lane's `root` at the repository root, resolution of the
+ * bare specifier `electron` gives two different answers depending on who asks -
+ *
+ *   from ./src/__tests__/...     -> UNRESOLVED (MODULE_NOT_FOUND)
+ *   from ./vex-app/src/main/...  -> vex-app/node_modules/electron/index.js
+ *
+ * This is the only lane that includes test files from BOTH trees, so it is the
+ * only place that split can bite - and it bites SILENTLY: `vi.mock("electron")`
+ * in a root-side test registers under the unresolved specifier while the
+ * vex-app module under test imports the resolved path. The ids differ, the mock
+ * never applies, and the test either passes for the wrong reason or the module
+ * reaches for a real Electron runtime that is not there.
+ *
+ * `resolve.dedupe` was evaluated and REJECTED on that measurement: dedupe
+ * collapses several COPIES of a package into one, and there is exactly one copy
+ * here - the root side simply cannot reach it. An exact-match alias is what
+ * gives every importer in this lane one identical module id.
+ *
+ * Regression guard:
+ * src/__tests__/integration/engine/studio-electron-module-identity.int.test.ts
+ */
+const ELECTRON_MODULE = resolve(root, "vex-app/node_modules/electron");
+
 export default defineConfig({
   root,
   resolve: {
     alias: {
+      // Vite's object-form alias is PREFIX matching: this rewrites `electron`
+      // and would also rewrite `electron/<subpath>`. Nothing in either tree
+      // imports an electron subpath (verified), so the prefix form is safe and
+      // keeps this map in one style. If a subpath import ever appears, convert
+      // this map to the array form and pin `find: /^electron$/`.
+      electron: ELECTRON_MODULE,
       "@tools": resolve(root, "src/tools"),
       "@utils": resolve(root, "src/utils"),
       "@config": resolve(root, "src/config"),

@@ -42,6 +42,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 import { privilegedBundleChecks } from "./check-privileged-bundles.mjs";
+import { nativeArtifactChecks } from "./check-native-artifacts.mjs";
 
 const root = path.resolve(process.cwd());
 const distRendererHtml = path.join(root, "dist", "renderer", "index.html");
@@ -88,6 +89,13 @@ check("package.json `main` resolves to existing file", () => {
 
 // 2. privileged process bundles (dist/main/*.js + dist/preload/index.cjs)
 for (const { label, run } of privilegedBundleChecks) {
+  check(label, () => run(root));
+}
+
+// 2b. Vex Studio pty-host bundle + the native runtime dependencies it needs
+// (node-pty, @parcel/watcher): present, right architecture, unpacked from the
+// asar by both electron-builder profiles. Lives in check-native-artifacts.mjs.
+for (const { label, run } of nativeArtifactChecks) {
   check(label, () => run(root));
 }
 
@@ -274,6 +282,37 @@ await checkAsync("brand assets — exist, decode, dimensions, byte budget, no EX
 // with a declaration-position scan: find every `--color-x` occurrence in
 // VALUE context (after a `:` within the same declaration) that is NOT
 // wrapped in `var(...)`.
+check("renderer CSS - xterm's own layout sheet reached the bundle", () => {
+  // A REGRESSION GUARD for a dependency nothing else can see. xterm positions
+  // its screen, helper textarea and measure element from its own stylesheet;
+  // without it `Terminal.open()` builds a stack of unpositioned divs and the
+  // Studio terminal renders as a blank pane. That sheet reaches the bundle
+  // through ONE `@import` at the top of `styles/global-css/terminal.css`, and
+  // an `@import` is only valid at the top of its sheet - so an edit that adds a
+  // rule above it, or moves it, turns it into dead text rather than an error.
+  // No test can catch that: the failure is invisible in jsdom (which applies no
+  // stylesheets) and invisible in source (the line is still there). Only the
+  // built artifact shows it.
+  if (!existsSync(distRendererAssets)) {
+    throw new Error(`missing assets dir: ${distRendererAssets}`);
+  }
+  const cssFiles = readdirSync(distRendererAssets).filter((f) => f.endsWith(".css"));
+  const css = cssFiles
+    .map((file) => readFileSync(path.join(distRendererAssets, file), "utf8"))
+    .join("\n");
+  // Selectors xterm's sheet owns and nothing in this repo defines (read from
+  // node_modules/@xterm/xterm/css/xterm.css, not guessed), so their
+  // presence can only mean the vendor rules are actually in the bundle.
+  const required = [".xterm-screen", ".xterm-helper-textarea", ".xterm-char-measure-element"];
+  const missing = required.filter((selector) => !css.includes(selector));
+  if (missing.length > 0) {
+    throw new Error(
+      `xterm stylesheet missing from the renderer bundle (no ${missing.join(", ")}). ` +
+        `Keep \`@import "@xterm/xterm/css/xterm.css"\` as the FIRST rule of src/renderer/styles/global-css/terminal.css.`
+    );
+  }
+});
+
 check("renderer CSS — no bare --color-* references (must be wrapped in var(...))", () => {
   if (!existsSync(distRendererAssets)) {
     throw new Error(`missing assets dir: ${distRendererAssets}`);

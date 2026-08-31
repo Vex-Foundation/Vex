@@ -30,7 +30,7 @@
  *   - `pendingApproval` a call PARKED waiting for a human decision.
  *   - `render`          an installer job writing this project's artifacts.
  *   - `watcher`         a filesystem watcher (consumer arrives in a later stage).
- *   - `terminal`        an open terminal session (consumer arrives in B4).
+ *   - `terminal`        an open terminal session, taken by `terminals.ts`.
  *
  * `executingCall` and `dispatch` are DRAINED: they are bounded by their own
  * work and will finish. `pendingApproval` is PARKED and never drained, because
@@ -50,9 +50,13 @@
  * through the main-registered acquirer in
  * `engine/core/approval-runtime/studio/project-lease-registry.ts`.
  *
- * `watcher` and `terminal` have no consumers yet. They are defined now because
- * the delete ORDER has to reserve a place for closing them (step 6), and a
- * class added later would silently not be closed by deletes shipped before it.
+ * `terminal` HAS a consumer: `terminals.ts` takes one per terminal it opens and
+ * registers the close hook that step 6 of a delete runs, so a project delete
+ * closes that project's shells after its tombstone has committed.
+ *
+ * `watcher` still has none. It is defined now because the delete ORDER has to
+ * reserve a place for closing it (step 6), and a class added later would
+ * silently not be closed by deletes shipped before it.
  *
  * ## Bounds and ownership
  *
@@ -79,16 +83,28 @@ export type ProjectLeaseClass =
   | "pendingApproval"
   | "render"
   | "watcher"
-  | "terminal";
+  | "terminal"
+  | "terminalCreate";
 
 /**
  * The classes a delete WAITS for. Bounded work that finishes on its own.
  *
  * `pendingApproval` is deliberately absent - see the module doc.
+ *
+ * `terminalCreate` is present and `terminal` is not, and the difference is the
+ * whole reason they are two classes. An OPEN terminal is unbounded work: it
+ * lives until the user closes it, so a delete that waited for one would wait
+ * forever - that is what step 6's close hook is for. A terminal being CREATED
+ * is bounded: it resolves a cwd, asks the host to spawn, and finishes. Before
+ * this split an in-flight create was invisible to the delete - it held no lease
+ * yet and no record yet - so a create that started before the tombstone could
+ * insert a live terminal for a project that had already been deleted, after the
+ * close hook had already run and found nothing.
  */
 export const DRAINED_LEASE_CLASSES: readonly ProjectLeaseClass[] = [
   "executingCall",
   "dispatch",
+  "terminalCreate",
 ];
 
 /**
@@ -445,7 +461,58 @@ export async function drainProjectLeases(
   return { drained: true };
 }
 
+/* ------------------------------------------------------------------ *
+ * Step 6 of a delete: CLOSE what the project owns in this process
+ * ------------------------------------------------------------------ */
+
+/**
+ * Owners that must close a project's resources once its tombstone has COMMITTED.
+ *
+ * A registry rather than a direct call from `project-delete.ts` because the
+ * owners are process-local subsystems with their own lifetimes - the terminal
+ * domain registers when the first terminal is created and unregisters when the
+ * last one goes - and a delete must not import every one of them. The delete
+ * order names step 6; this is where step 6 finds its work.
+ *
+ * IT RUNS AFTER THE COMMIT, NEVER BEFORE. Closing a user's terminals for a
+ * delete that then fails its transaction would destroy work for a project that
+ * still exists. The tombstone is the point of no return, so the closing follows
+ * it.
+ *
+ * Each hook is awaited but never allowed to fail the delete: the authority
+ * change already committed, and a subsystem that could not close cleanly is an
+ * operator problem, not a reason to tell the user their delete did not happen.
+ */
+type ProjectCloseHook = (projectId: string) => Promise<void> | void;
+
+const closeHooks = new Set<ProjectCloseHook>();
+
+/** Register a close owner. Returns an idempotent unregister. */
+export function registerProjectCloseHook(hook: ProjectCloseHook): () => void {
+  closeHooks.add(hook);
+  let removed = false;
+  return () => {
+    if (removed) return;
+    removed = true;
+    closeHooks.delete(hook);
+  };
+}
+
+/** Run every close hook for a project whose tombstone has committed. */
+export async function closeProjectResources(projectId: string): Promise<void> {
+  for (const hook of [...closeHooks]) {
+    try {
+      await hook(projectId);
+    } catch {
+      log.warn(
+        `[studio:lifecycle] a close hook failed projectId=${projectId}; continuing`,
+      );
+    }
+  }
+}
+
 /** Test seam: forget every project's admission state and leases. */
 export function resetProjectLifecycleGateForTests(): void {
   entries.clear();
+  closeHooks.clear();
 }

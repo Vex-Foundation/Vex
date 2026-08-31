@@ -17,6 +17,7 @@ import {
   type ExternalAllowEntry,
 } from "../security/url.js";
 import { EXPLORER_EXTERNAL_ALLOW } from "@shared/explorer-links.js";
+import { observeWindowForTerminals } from "../studio/terminal-domain.js";
 import { CHART_ATTRIBUTION_EXTERNAL_ALLOW } from "@shared/chart-attribution.js";
 import {
   clampToVisibleArea,
@@ -217,6 +218,12 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     });
   };
   win.on("close", persistState);
+
+  // The window's terminals are released when the window goes - on a deliberate
+  // close AND on a renderer crash. Registered here because this is the owner of
+  // the window's lifetime; `observeWindowForTerminals` explains why both events
+  // are needed and what leaked while neither was wired.
+  observeWindowForTerminals(win);
 
   // Block window.open + redirect to allowlisted external opener.
   win.webContents.setWindowOpenHandler(({ url }) => {

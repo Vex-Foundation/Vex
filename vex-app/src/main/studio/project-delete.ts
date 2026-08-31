@@ -20,7 +20,9 @@
  *      tombstone, all under the session control lock.
  *   5. ANNOUNCE the refusals (the transaction does this after COMMIT), which is
  *      what releases the parked approvals.
- *   6. CLOSE TERMINALS AND VIEWERS. B4 registers these; the step is named now.
+ *   6. CLOSE TERMINALS AND VIEWERS, through the gate's close-hook registry.
+ *      B2 registers the terminal domain there; the hooks run only after the
+ *      tombstone has committed, and a failing hook never fails the delete.
  *   7. CLEANUP, under the ADMINISTRATIVE token - admission stays permanently
  *      closed for a tombstone, and the token is what lets the remover work
  *      inside a gate that refuses everyone else.
@@ -101,6 +103,7 @@ import {
 import {
   acquireProjectLease,
   closeProjectAdmission,
+  closeProjectResources,
   drainProjectLeases,
   reopenProjectAdmission,
   type ProjectDeletionToken,
@@ -112,14 +115,22 @@ import { resolveProjectDirectory, resolveProjectsRoot } from "./projects-root.js
 /**
  * The collaborators this module does not own.
  *
- * One entry today, and it earns the interface rather than a bare parameter: the
- * trash is the only DESKTOP-RUNTIME capability on an otherwise pure
- * database-plus-filesystem path, and naming it as a dependency is what keeps
- * `electron` out of this module's import graph. See `os-trash.ts`.
+ * Both are DESKTOP-RUNTIME capabilities on an otherwise pure
+ * database-plus-filesystem path, and naming them as dependencies is what keeps
+ * `electron` out of this module's import graph. See `os-trash.ts` and
+ * `pty-host-starter.ts`, where each is bound to the real runtime.
  */
 export interface ProjectDeleteDeps {
   /** Move an absolute path to the OS trash. Rejects when the platform refuses. */
   readonly trashItem: TrashItem;
+  /**
+   * Delete this project's terminal revive snapshot. Resolves `true` when the
+   * file is gone, INCLUDING when it was never there.
+   *
+   * A dependency because the snapshot lives under `userData`, which only the
+   * Electron runtime can locate, and this module must stay runnable without it.
+   */
+  readonly removeTerminalSnapshot: (projectId: string) => Promise<boolean>;
 }
 
 /**
@@ -216,7 +227,11 @@ export async function deleteProject(
     );
   }
 
-  // STEP 6. Terminals and viewers. B4 registers these - see the module doc.
+  // STEP 6. CLOSE TERMINALS AND VIEWERS, now that the tombstone has COMMITTED.
+  // Registered owners (B2 registers the terminal domain) close what they hold
+  // for this project. A hook failure never fails the delete - the authority
+  // change is already durable - and the gate logs every one.
+  await closeProjectResources(projectId);
 
   // STEP 7. Cleanup, under the administrative token.
   const cleanup = await runCleanup(
@@ -425,7 +440,31 @@ async function runCleanupJob(
         blocked += 1;
       }
     }
-    const removalsCompleted = blocked === 0;
+    // THE PROVENANCE-INDEPENDENT REMOVAL: the project's terminal revive
+    // snapshot.
+    //
+    // It is not in the project folder and it has no provenance row, because it
+    // is not an artifact Vex wrote INTO the user's repository - it lives under
+    // `userData` and is unambiguously Vex's own file. It is also the most
+    // sensitive thing this cleanup touches: a serialization of everything that
+    // scrolled through the project's terminals, which is command lines, tokens
+    // pasted at a prompt, and output from tools that print credentials when
+    // they fail. Leaving it behind means a deleted project's terminal output
+    // outlives the project, for as long as the snapshot directory bound
+    // tolerates it.
+    //
+    // ENOENT is SUCCESS. A project whose terminals were never opened has no
+    // snapshot, and treating its absence as a failure would leave every such
+    // delete permanently pending.
+    const snapshotRemoved = await deps.removeTerminalSnapshot(projectId);
+    if (!snapshotRemoved) {
+      log.error(
+        `[studio:delete] the terminal snapshot could not be removed `
+          + `projectId=${projectId} correlationId=${correlationId}`,
+      );
+    }
+
+    const removalsCompleted = blocked === 0 && snapshotRemoved;
 
     let trash: ProjectTrashOutcome = "not_requested";
     if (cleanupState === "trash_pending") {

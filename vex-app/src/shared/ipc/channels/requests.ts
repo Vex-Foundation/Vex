@@ -588,6 +588,44 @@ export const CH = {
     hostStatus: "vex:studio:hostStatus",
   },
 
+  /**
+   * Vex Studio TERMINALS (stage B2) - the CONTROL plane.
+   *
+   * Every channel here is authority: main mints terminal ids, enforces the
+   * per-project and global bounds, holds the project lifecycle gate's
+   * `terminal` lease for each live terminal, and decides which window may
+   * touch which id. The renderer never names a shell, a path or a pty.
+   *
+   * The high-volume DATA plane is deliberately NOT here. Terminal output and
+   * its flow-control acknowledgements travel over a `MessagePort` minted by
+   * `acquirePort` and handed to the window's preload; routing megabytes of
+   * shell output through the privileged process would make main the bottleneck
+   * for bytes nothing in it reads. The port carries no authority - the pty host
+   * revalidates `(windowId, terminalId)` ownership on every packet it receives.
+   *
+   * `acquirePort` returns a ONE-SHOT nonce that also travels with the
+   * transferred port, so preload can match the two; `confirmPort` is how
+   * preload says it arrived. An unconfirmed nonce expires in ten seconds and
+   * its port is torn down, so a port posted to a window that never came back
+   * does not linger as a live conduit into the host.
+   *
+   * `availability` is SEPARATE from `studio.hostStatus`: that describes the MCP
+   * host, a different process with a different failure mode, and collapsing the
+   * two would render "the terminal subsystem gave up after six restarts" as an
+   * MCP problem the user cannot act on.
+   */
+  terminal: {
+    create: "vex:terminal:create",
+    write: "vex:terminal:write",
+    resize: "vex:terminal:resize",
+    kill: "vex:terminal:kill",
+    acquirePort: "vex:terminal:acquirePort",
+    confirmPort: "vex:terminal:confirmPort",
+    persistWorkspace: "vex:terminal:persistWorkspace",
+    readWorkspace: "vex:terminal:readWorkspace",
+    availability: "vex:terminal:availability",
+  },
+
   // Cancellation
   cancel: "vex:cancel",
 } as const;

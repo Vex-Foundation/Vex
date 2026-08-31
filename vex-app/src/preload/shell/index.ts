@@ -25,6 +25,7 @@ import { secrets } from "./secrets.js";
 import { settings } from "./settings.js";
 import { support } from "./support.js";
 import { system } from "./system.js";
+import { terminal } from "./terminal.js";
 import { telemetry } from "./telemetry.js";
 import { updater } from "./updater.js";
 import { wallet } from "./wallet.js";
@@ -43,4 +44,5 @@ export const shellBridge = {
   updater,
   market,
   studio,
+  terminal,
 } satisfies VexShellBridge;

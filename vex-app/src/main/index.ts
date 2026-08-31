@@ -55,6 +55,7 @@ import { setupStudioHostStatusBridge } from "./studio/host-status-bridge.js";
 import { setupBoardLiveService } from "./market/board-live-owner.js";
 import { isSecretSessionUnlocked, lockSecretSession } from "./secrets/session.js";
 import { shutdownStudioMcpHost, startStudioMcpHost } from "./studio/mcp-host.js";
+import { disposeTerminalDomain } from "./studio/terminal-domain.js";
 import { disposeStudioApprovalBroker } from "./studio/approval-broker.js";
 import { refuseAllPendingStudioIntents } from "./studio/approval-refusals.js";
 import { disposeStudioDispatchPoisonRetry } from "./secrets/session.js";
@@ -318,6 +319,15 @@ async function initializeMainRuntime(): Promise<void> {
       // contract's 5 s deadline, so a peer that will not close cannot hold the
       // quit open.
       await shutdownStudioMcpHost();
+      // Vex Studio B2 - the pty host, inside the ordered task and BEFORE the
+      // workers drain. Its `shutdownAll` is what makes the host serialize every
+      // live terminal and commit its revive snapshots, and the request needs a
+      // live channel to arrive on. A fire-and-forget here, or a teardown left
+      // to process exit, would make snapshot durability depend on quit timing;
+      // the wait is bounded by the request timeout, so a wedged host cannot
+      // hold the quit open. Terminal snapshots are files, not database rows,
+      // so this is unaffected by Postgres stopping later in this same task.
+      await disposeTerminalDomain();
       await refuseAllPendingStudioIntents("vex_quit");
       disposeStudioApprovalBroker();
       // The Studio fence retry is one of two remaining Studio timers with an

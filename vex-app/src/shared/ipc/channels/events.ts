@@ -136,6 +136,32 @@ export const EV = {
      */
     activityProgress: "vex:event:portfolio:activityProgress",
   },
+  /**
+   * Vex Studio terminals (stage B2).
+   *
+   * `port` is NOT an ordinary event: it is the channel main uses to TRANSFER a
+   * `MessagePort` into a window's preload, alongside the one-shot nonce that
+   * correlates it with the `terminal.acquirePort` reply. Its payload therefore
+   * carries a nonce and nothing else - the port itself rides the transfer list,
+   * where the renderer can never reach it, because only preload owns the port
+   * object and the renderer sees domain methods.
+   *
+   * `availability` is the terminal subsystem's own honest state, including the
+   * durable "unavailable" a spent restart cap produces.
+   *
+   * `terminalsLost` is what an UNEXPECTED pty-host termination looks like from
+   * the renderer. Every pty in that process died with it, and the data-plane
+   * port they were reported over died too - so the `exit` events the renderer
+   * would ordinarily receive can never arrive. Without this event the tabs sit
+   * there looking alive, accepting keystrokes that go nowhere. It carries the
+   * ids main had recorded, so the renderer can mark exactly those dead and
+   * offer to revive from the last snapshot.
+   */
+  terminal: {
+    port: "vex:event:terminal:port",
+    availability: "vex:event:terminal:availability",
+    terminalsLost: "vex:event:terminal:terminalsLost",
+  },
   engine: {
     transcriptAppend: "vex:event:engine:transcriptAppend",
     controlState: "vex:event:engine:controlState",
