@@ -28,6 +28,43 @@
  * A cancelled id is answered with SILENCE. The port has already settled that
  * request for its caller, so a response would be an answer nobody holds.
  *
+ * ## THE ACCEPTED LATENCY CEILING, and the measurement behind it
+ *
+ * The consequence of "the running request cannot be interrupted" is a real
+ * product cost: a tab the user has just made VISIBLE waits for a hidden tab's
+ * tokenization to finish before its own starts. That wait is bounded by the
+ * longest tokenization this worker can be asked to perform, and the bound is
+ * MEASURED, not estimated.
+ *
+ * Measured 2026-08-31 on this repo's real worker path - the installed shiki
+ * 4.4.3 with `createJavaScriptRegexEngine({ forgiving: false })`, through the
+ * real `createTokenizer().tokenize`, grammar pre-warmed so the number is
+ * tokenization and not a module import. Node 24.15.0 on an AMD Ryzen 5 5600H
+ * under WSL2. Each sample is 512 KiB, which is `VIEWER_HIGHLIGHT_MAX_BYTES`,
+ * the largest input the session will ever submit:
+ *
+ * | sample                          | run 1     | run 2    | run 3    | tokens  |
+ * |---------------------------------|-----------|----------|----------|---------|
+ * | TypeScript source (512 KiB)     | 1144.6 ms | 854.4 ms | 812.8 ms |  51,678 |
+ * | densely punctuated JSON (512 KiB)|  426.0 ms | 420.7 ms | 477.4 ms | 230,510 |
+ *
+ * WORST OBSERVED: 1145 ms. The ACCEPTED CEILING is therefore 1500 ms of
+ * head-of-line delay for a newly visible tab, and passive cancellation stands.
+ * Preemption - terminating and rebuilding the worker to interrupt a run - was
+ * considered and REJECTED at this measurement: it would trade a bounded
+ * sub-1.2 s delay for a rebuilt worker, a re-imported grammar and a second
+ * failure mode (a restart budget that a fast tab-switcher can spend), which is
+ * a worse deal than the wait it removes.
+ *
+ * WHAT WOULD REOPEN THE DECISION: the byte bound rising, a grammar being added
+ * to the hot set that is materially slower than TypeScript's, or a shiki or
+ * engine upgrade. The ceiling is a claim about a measured input size, and the
+ * input size is what `VIEWER_HIGHLIGHT_MAX_BYTES` pins - `file-viewer-session`
+ * tests that no larger text is ever submitted, which is the deterministic guard
+ * that keeps this number meaningful. The timing itself is NOT asserted in a
+ * test: a wall-clock assertion on shared CI hardware would be flaky, and a
+ * flaky guard is worse than the recorded numbers above.
+ *
  * ## Bounds
  *
  * `queue` is bounded by the port, which holds at most one in-flight plus one
@@ -50,6 +87,7 @@ export type QueueTokenize = (
   text: string,
   language: string,
   maxLineLength: number,
+  maxTokens: number,
 ) => Promise<
   | { readonly ok: true; readonly result: TokenizeResult }
   | { readonly ok: false; readonly reason: HighlightFailureReason }
@@ -85,6 +123,10 @@ export function createHighlightQueue(options: HighlightQueueOptions): HighlightQ
           request.text,
           request.language,
           request.maxLineLength,
+          // The BOUND rides on the request, so the worker refuses exactly what
+          // the caller would have refused - and refuses it before the graph is
+          // finished, rather than after it has been cloned across.
+          request.maxTokens,
         );
         runningId = null;
         // THE CANCELLATION CHECK, at the only await point there is and before

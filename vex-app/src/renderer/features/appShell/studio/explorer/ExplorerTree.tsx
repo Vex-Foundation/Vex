@@ -35,6 +35,7 @@ import {
   useSyncExternalStore,
   type JSX,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { FileNode } from "@shared/schemas/files.js";
 import { cn } from "../../../../lib/utils.js";
@@ -99,6 +100,12 @@ export function ExplorerTree({
 }: ExplorerTreeProps): JSX.Element {
   const activeRegistry = registry ?? explorerRegistry;
   const scrollRef = useRef<HTMLDivElement>(null);
+  /**
+   * The `role="tree"` element: the ONE tab stop, and the only thing here that
+   * can hold DOM focus. A pointer press has to hand it focus explicitly; see
+   * `onMouseDown`.
+   */
+  const treeRef = useRef<HTMLDivElement>(null);
   const typeAheadRef = useRef<{ prefix: string; atMs: number } | null>(null);
   const [session, setSession] = useState<ExplorerSession | null>(null);
 
@@ -299,6 +306,34 @@ export function ExplorerTree({
     [activateRow, moveFocusTo, session, virtualizer],
   );
 
+  /**
+   * A POINTER PRESS FOCUSES THE CONTAINER.
+   *
+   * The rows are not focusable - that is the whole point of the
+   * `aria-activedescendant` model this tree uses - so a click has nothing to
+   * focus on its own, and the browser leaves focus wherever it was. The result
+   * is a tree the user has visibly selected a row in whose arrow keys go to the
+   * page instead, and a screen reader that never hears the active row because
+   * nothing is focused for the attribute to apply to.
+   *
+   * VS Code answers this the same way and for the same reason
+   * (`listWidget.ts:740-748`: `onMouseDown` calls `domFocus()` unless the press
+   * landed on the element that already has focus), and `preventScroll` is its
+   * choice too (`listWidget.ts:1714`): the virtualizer owns scrolling here, and
+   * a focus that also scrolled would fight the row reveal.
+   *
+   * MOUSEDOWN, not click: focus must be settled before the press completes, so
+   * a drag or a fast double click never runs with focus in the wrong place.
+   */
+  const onMouseDown = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    const container = treeRef.current;
+    if (container === null) return;
+    // Something focusable inside the tree was pressed and has its own claim on
+    // focus. Stealing it would break that element the moment it is added.
+    if (event.target !== container && event.target === document.activeElement) return;
+    container.focus({ preventScroll: true });
+  }, []);
+
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
       const intent = resolveExplorerKey(event);
@@ -337,6 +372,7 @@ export function ExplorerTree({
       className={cn("min-h-0 flex-1 overflow-auto bg-surface-sidebar", className)}
     >
       <div
+        ref={treeRef}
         role="tree"
         aria-label={EXPLORER_TREE_LABEL}
         tabIndex={0}
@@ -347,6 +383,7 @@ export function ExplorerTree({
           ? {}
           : { "aria-describedby": rootDescriptionId })}
         onKeyDown={onKeyDown}
+        onMouseDown={onMouseDown}
         style={listStyle}
         className="focus-visible:outline-none"
       >

@@ -162,6 +162,7 @@ describe("decideListingFailure", () => {
     invalid_utf8: "folderError",
     root_unavailable: "folderError",
     watcher_limit: "folderError",
+    subscription_limit: "folderError",
     watcher_unavailable: "folderError",
     unknown_subscription: "folderError",
     io_error: "folderError",

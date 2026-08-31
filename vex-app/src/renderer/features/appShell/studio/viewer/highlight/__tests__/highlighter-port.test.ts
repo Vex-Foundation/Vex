@@ -15,14 +15,16 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type {
-  HighlightMessage,
-  HighlightRequest,
-  HighlightResponse,
+import {
+  HIGHLIGHT_MAX_TOKENS,
+  type HighlightMessage,
+  type HighlightRequest,
+  type HighlightResponse,
 } from "../highlight-protocol.js";
 import {
   defaultHighlighterPort,
   HIGHLIGHT_WORKER_MAX_RESTARTS,
+  type HighlightOutcome,
   UnavailableHighlighterPort,
   WorkerHighlighterPort,
 } from "../highlighter-port.js";
@@ -110,7 +112,19 @@ function makePort(maxRestarts = HIGHLIGHT_WORKER_MAX_RESTARTS): WorkerHighlighte
   });
 }
 
-const ask = { language: "typescript", text: "const a = 1;", maxLineLength: 20_000 };
+/**
+ * The standard ask. ONE line of text, which every fixture answer below has to
+ * match: the port checks the answer's line count against the text it sent, so a
+ * fake answer with the wrong cardinality is a malformed result rather than a
+ * shortcut.
+ */
+const ask = {
+  language: "typescript",
+  text: "const a = 1;",
+  maxLineLength: 20_000,
+  maxTokens: HIGHLIGHT_MAX_TOKENS,
+};
+
 
 afterEach(() => {
   FakeWorker.built = [];
@@ -131,7 +145,7 @@ describe("WorkerHighlighterPort", () => {
 
     // Answered in REVERSE. A port that assumed FIFO would hand the second
     // file's tokens to the first tab.
-    worker?.answer({ kind: "result", requestId: idB ?? 0, ok: true, lines: [[]], longLines: 7 });
+    worker?.answer({ kind: "result", requestId: idB ?? 0, ok: true, lines: [[]], longLines: 1 });
     worker?.answer({
       kind: "result",
       requestId: idA ?? 0,
@@ -139,7 +153,7 @@ describe("WorkerHighlighterPort", () => {
       reason: "tokenize_failed",
     });
 
-    await expect(second).resolves.toEqual({ ok: true, lines: [[]], longLines: 7 });
+    await expect(second).resolves.toEqual({ ok: true, lines: [[]], longLines: 1 });
     await expect(first).resolves.toEqual({ ok: false, reason: "tokenize_failed" });
     port.dispose();
   });
@@ -159,10 +173,10 @@ describe("WorkerHighlighterPort", () => {
     const worker = FakeWorker.built[0];
     worker?.answer({ kind: "ready" });
     // An id nobody is waiting for: the fence, and it must not throw.
-    worker?.answer({ kind: "result", requestId: 999, ok: true, lines: [], longLines: 0 });
+    worker?.answer({ kind: "result", requestId: 999, ok: true, lines: [[]], longLines: 0 });
     const id = worker?.posted[0]?.requestId ?? 0;
-    worker?.answer({ kind: "result", requestId: id, ok: true, lines: [], longLines: 0 });
-    await expect(pending).resolves.toEqual({ ok: true, lines: [], longLines: 0 });
+    worker?.answer({ kind: "result", requestId: id, ok: true, lines: [[]], longLines: 0 });
+    await expect(pending).resolves.toEqual({ ok: true, lines: [[]], longLines: 0 });
     port.dispose();
   });
 
@@ -255,7 +269,7 @@ describe("WorkerHighlighterPort", () => {
     expect(worker?.cancelled).toEqual([id]);
 
     // A result that was already on its way in is dropped rather than published.
-    worker?.answer({ kind: "result", requestId: id, ok: true, lines: [[]], longLines: 3 });
+    worker?.answer({ kind: "result", requestId: id, ok: true, lines: [[]], longLines: 1 });
     await expect(handle.outcome).resolves.toEqual({ ok: false, reason: "cancelled" });
     port.dispose();
   });
@@ -275,9 +289,9 @@ describe("WorkerHighlighterPort", () => {
     // A DIFFERENT caller is untouched: they do not share a slot.
     const secondId = worker?.posted[1]?.requestId ?? 0;
     const otherId = worker?.posted[2]?.requestId ?? 0;
-    worker?.answer({ kind: "result", requestId: secondId, ok: true, lines: [], longLines: 0 });
+    worker?.answer({ kind: "result", requestId: secondId, ok: true, lines: [[]], longLines: 0 });
     worker?.answer({ kind: "result", requestId: otherId, ok: true, lines: [[]], longLines: 1 });
-    await expect(second.outcome).resolves.toEqual({ ok: true, lines: [], longLines: 0 });
+    await expect(second.outcome).resolves.toEqual({ ok: true, lines: [[]], longLines: 0 });
     await expect(other.outcome).resolves.toEqual({ ok: true, lines: [[]], longLines: 1 });
     port.dispose();
   });
@@ -287,8 +301,8 @@ describe("WorkerHighlighterPort", () => {
     const first = port.highlight({ ...ask, caller: "tab-1" });
     const worker = FakeWorker.built[0];
     const id = worker?.posted[0]?.requestId ?? 0;
-    worker?.answer({ kind: "result", requestId: id, ok: true, lines: [], longLines: 0 });
-    await expect(first.outcome).resolves.toEqual({ ok: true, lines: [], longLines: 0 });
+    worker?.answer({ kind: "result", requestId: id, ok: true, lines: [[]], longLines: 0 });
+    await expect(first.outcome).resolves.toEqual({ ok: true, lines: [[]], longLines: 0 });
 
     // The settled request is not cancelled retroactively by the next ask.
     port.highlight({ ...ask, caller: "tab-1" });
@@ -349,7 +363,7 @@ describe("WorkerHighlighterPort", () => {
       kind: "result",
       requestId: worker.posted[0]?.requestId ?? 0,
       ok: true,
-      lines: [],
+      lines: [[]],
       longLines: 0,
     });
     await expect(port.highlight(ask).outcome).resolves.toEqual({
@@ -357,6 +371,100 @@ describe("WorkerHighlighterPort", () => {
       reason: "worker_unavailable",
     });
     expect(FakeWorker.built).toHaveLength(1);
+  });
+});
+
+/**
+ * THE CEILINGS ON AN ANSWER.
+ *
+ * `isHighlightResponse` proves the SHAPE of a response and cannot prove its
+ * QUANTITY, because it does not know what was asked. The port does: it holds
+ * the text it sent, so it can hold the answer to an EXACT line count. This is
+ * the boundary check that stops a worker - ours, behind our own evolving build
+ * - from putting a file on screen whose rows do not correspond to the user's.
+ *
+ * The failure is `malformed_result`, the same fail-closed answer a
+ * wrong-shaped message gets, and the viewer shows honest plain text.
+ */
+describe("the response ceilings", () => {
+  /** A three-line text, so a wrong count is unambiguous in either direction. */
+  const threeLineAsk = { ...ask, text: "a\nb\nc" };
+
+  /** Answer the one outstanding request with whatever `build` makes of its id. */
+  function answerWith(
+    build: (requestId: number) => HighlightResponse,
+  ): Promise<HighlightOutcome> {
+    const port = makePort();
+    const pending = port.highlight(threeLineAsk).outcome;
+    const worker = FakeWorker.built[0];
+    worker?.answer(build(worker.posted[0]?.requestId ?? 0));
+    return pending;
+  }
+
+  it("refuses an answer with FEWER lines than the text that was sent", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // Two lines for a three-line file: the tail would be silently lost.
+    await expect(
+      answerWith((requestId) => ({ kind: "result", requestId, ok: true, lines: [[], []], longLines: 0 })),
+    ).resolves.toEqual({ ok: false, reason: "malformed_result" });
+  });
+
+  it("refuses an answer with MORE lines than the text that was sent", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expect(
+      answerWith((requestId) => ({
+        kind: "result",
+        requestId,
+        ok: true,
+        lines: [[], [], [], []],
+        longLines: 0,
+      })),
+    ).resolves.toEqual({ ok: false, reason: "malformed_result" });
+  });
+
+  it("accepts the EXACT count", async () => {
+    await expect(
+      answerWith((requestId) => ({
+        kind: "result",
+        requestId,
+        ok: true,
+        lines: [[], [], []],
+        longLines: 0,
+      })),
+    ).resolves.toEqual({ ok: true, lines: [[], [], []], longLines: 0 });
+  });
+
+  it("refuses a long-line count larger than the file has lines", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // The count is shown to the user as a count of THEIR file's lines.
+    await expect(
+      answerWith((requestId) => ({
+        kind: "result",
+        requestId,
+        ok: true,
+        lines: [[], [], []],
+        longLines: 4,
+      })),
+    ).resolves.toEqual({ ok: false, reason: "malformed_result" });
+  });
+
+  it("carries the token bound to the worker, so the worker can refuse first", () => {
+    const port = makePort();
+    port.highlight(ask);
+    expect(FakeWorker.built[0]?.posted[0]?.maxTokens).toBe(HIGHLIGHT_MAX_TOKENS);
+  });
+
+  it("passes the worker's own too_many_tokens refusal through", async () => {
+    const port = makePort();
+    const pending = port.highlight(ask).outcome;
+    const worker = FakeWorker.built[0];
+    worker?.answer({
+      kind: "result",
+      requestId: worker.posted[0]?.requestId ?? 0,
+      ok: false,
+      reason: "too_many_tokens",
+    });
+    await expect(pending).resolves.toEqual({ ok: false, reason: "too_many_tokens" });
   });
 });
 

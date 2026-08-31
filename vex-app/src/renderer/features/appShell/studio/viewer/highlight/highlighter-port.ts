@@ -45,6 +45,7 @@
  */
 
 import {
+  countLines,
   isHighlightResponse,
   type HighlightCancel,
   type HighlightRequest,
@@ -64,6 +65,12 @@ export const HIGHLIGHT_WORKER_MAX_RESTARTS = 3;
 export type HighlightUnavailableReason =
   | "grammar_unavailable"
   | "tokenize_failed"
+  /**
+   * The file would have produced more tokens than the ask allowed. The WORKER
+   * decides this, while it projects, so the oversized graph is never built and
+   * never crosses this boundary.
+   */
+  | "too_many_tokens"
   /** The worker died, or errored, while this request was outstanding. */
   | "worker_failed"
   /** No worker runtime, or the restart budget is spent. Durable. */
@@ -92,6 +99,14 @@ export interface HighlightAsk {
   /** The WHOLE file. */
   readonly text: string;
   readonly maxLineLength: number;
+  /**
+   * The most tokens this file may produce. Zero or less disables the bound.
+   *
+   * It goes to the WORKER, which refuses over it during projection. The port
+   * does not count tokens itself: by the time it could, the clone the bound
+   * exists to prevent has already happened.
+   */
+  readonly maxTokens: number;
   /**
    * Who is asking, when the caller wants the port to enforce its bound.
    *
@@ -173,6 +188,16 @@ function defaultWorkerFactory(): Worker {
 
 interface Pending {
   readonly resolve: (outcome: HighlightOutcome) => void;
+  /**
+   * How many lines the text of THIS request had.
+   *
+   * The port knows exactly what it sent, so it can hold the answer to an exact
+   * cardinality: a successful result must carry this many lines, no more and no
+   * fewer. It is kept per request because the ask is gone by the time the
+   * answer arrives, and re-deriving it from a text the port no longer holds is
+   * not possible.
+   */
+  readonly expectedLines: number;
   /** The named caller whose one slot this request holds, when there is one. */
   readonly caller?: string;
 }
@@ -252,9 +277,11 @@ export class WorkerHighlighterPort implements HighlighterPort {
     this.#nextRequestId += 1;
     if (caller !== undefined) this.#outstandingByCaller.set(caller, requestId);
 
+    const expectedLines = countLines(ask.text);
     const outcome = new Promise<HighlightOutcome>((resolve) => {
       this.#pending.set(requestId, {
         resolve,
+        expectedLines,
         ...(caller === undefined ? {} : { caller }),
       });
       const request: HighlightRequest = {
@@ -263,6 +290,7 @@ export class WorkerHighlighterPort implements HighlighterPort {
         language: ask.language,
         text: ask.text,
         maxLineLength: ask.maxLineLength,
+        maxTokens: ask.maxTokens,
       };
       try {
         worker.postMessage(request);
@@ -374,11 +402,49 @@ export class WorkerHighlighterPort implements HighlighterPort {
     if (pending === undefined) return;
     this.#pending.delete(response.requestId);
     this.#forgetCaller(pending, response.requestId);
-    pending.resolve(
-      response.ok
-        ? { ok: true, lines: response.lines, longLines: response.longLines }
-        : { ok: false, reason: response.reason },
-    );
+    if (!response.ok) {
+      pending.resolve({ ok: false, reason: response.reason });
+      return;
+    }
+    pending.resolve(this.#checkedSuccess(response.lines, response.longLines, pending));
+  }
+
+  /**
+   * THE CEILINGS on a successful answer, checked before it can become state.
+   *
+   * `isHighlightResponse` proves the SHAPE - that these are lines of tokens with
+   * the right field types. It cannot prove the QUANTITY, because it does not
+   * know what was asked. This does:
+   *
+   *  - the line count must EQUAL the line count of the text that was sent. A
+   *    file rendered from a projection with a different number of lines is a
+   *    file whose rows no longer correspond to the user's, and the viewer is the
+   *    one surface where showing that is unacceptable. Exact, not a maximum: a
+   *    result with too few lines would silently lose the tail.
+   *  - `longLines` cannot exceed the lines that exist, and cannot be negative or
+   *    fractional. It is shown to the user as a count of their own file's lines.
+   *
+   * A violation is `malformed_result`, the same fail-closed answer a message of
+   * the wrong shape gets, and the viewer shows honest plain text.
+   */
+  #checkedSuccess(
+    lines: readonly TokenLine[],
+    longLines: number,
+    pending: Pending,
+  ): HighlightOutcome {
+    if (lines.length !== pending.expectedLines) {
+      console.warn(
+        `studio viewer highlight: the worker answered with ${String(lines.length)} line(s) for a ${String(pending.expectedLines)}-line file`,
+      );
+      return { ok: false, reason: "malformed_result" };
+    }
+    if (!Number.isInteger(longLines) || longLines < 0 || longLines > lines.length) {
+      console.warn(
+        `studio viewer highlight: the worker reported ${String(longLines)} long line(s) in a ${String(lines.length)}-line file`,
+      );
+      return { ok: false, reason: "malformed_result" };
+    }
+    return { ok: true, lines, longLines };
   }
 
   /**

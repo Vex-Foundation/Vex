@@ -132,6 +132,8 @@ const LISTING_ERROR_COPY: Readonly<Record<FilesErrorCode, string>> = {
   root_unavailable: "The projects folder could not be read. Restart Vex to try again.",
   watcher_limit:
     "Vex is watching the maximum number of projects. Close a project to watch this one.",
+  subscription_limit:
+    "This window holds the maximum number of file subscriptions. Close some open files to add more.",
   watcher_unavailable:
     "The file watcher is not running for this project, so the tree will not update on its own.",
   unknown_subscription: "This project's file subscription ended. Refreshing will start a new one.",

@@ -75,7 +75,11 @@ import {
 } from "@shikijs/core";
 import { createJavaScriptRegexEngine } from "@shikijs/engine-javascript";
 import type { LanguageRegistration, ThemedToken } from "@shikijs/types";
-import type { HighlightToken, TokenizeResult, TokenLine } from "./highlight-protocol.js";
+import type {
+  HighlightToken,
+  TokenizeResult,
+  TokenLine,
+} from "./highlight-protocol.js";
 import { HOT_LANGUAGES, PLAIN_LANGUAGE, type HotLanguageId } from "./language-of-path.js";
 
 /**
@@ -180,7 +184,10 @@ const GRAMMAR_LOADERS: Readonly<Record<HotLanguageId, GrammarLoader>> = {
 /** The tokenizer's outcome. A refusal is an ANSWER, never a thrown error. */
 export type TokenizeOutcome =
   | { readonly ok: true; readonly result: TokenizeResult }
-  | { readonly ok: false; readonly reason: "grammar_unavailable" | "tokenize_failed" };
+  | {
+      readonly ok: false;
+      readonly reason: "grammar_unavailable" | "tokenize_failed" | "too_many_tokens";
+    };
 
 export interface ShikiTokenizer {
   /**
@@ -190,8 +197,16 @@ export interface ShikiTokenizer {
    * @param language a hot-set id or {@link PLAIN_LANGUAGE}
    * @param maxLineLength lines at or above this length are emitted plain and
    *   counted in `longLines`
+   * @param maxTokens the whole-file bound. Zero or less disables it. Enforced
+   *   WHILE projecting, so an oversized graph is abandoned rather than built
+   *   and handed to the caller to reject.
    */
-  tokenize(text: string, language: string, maxLineLength: number): Promise<TokenizeOutcome>;
+  tokenize(
+    text: string,
+    language: string,
+    maxLineLength: number,
+    maxTokens: number,
+  ): Promise<TokenizeOutcome>;
   /** Release the highlighter. Idempotent. */
   dispose(): void;
 }
@@ -286,14 +301,14 @@ export function createTokenizer(options: TokenizerOptions = {}): ShikiTokenizer 
   }
 
   return {
-    async tokenize(text, language, maxLineLength) {
+    async tokenize(text, language, maxLineLength, maxTokens) {
       if (disposed) return { ok: false, reason: "tokenize_failed" };
 
       // PLAIN TEXT never builds a highlighter and never loads a grammar. Shiki
       // would answer this correctly too, but paying for the engine to be told
       // "no grammar" is work with no product behind it.
       if (language === PLAIN_LANGUAGE) {
-        return { ok: true, result: plainTokenize(text, maxLineLength) };
+        return boundedPlain(text, maxLineLength, maxTokens);
       }
 
       let instance: HighlighterCore;
@@ -315,7 +330,7 @@ export function createTokenizer(options: TokenizerOptions = {}): ShikiTokenizer 
           theme: THEME_NAME,
           tokenizeMaxLineLength: maxLineLength,
         });
-        return { ok: true, result: projectLines(lines, text, maxLineLength) };
+        return projectLines(lines, text, maxLineLength, maxTokens);
       } catch (cause: unknown) {
         warn(`tokenizing ${language} failed`, cause);
         return { ok: false, reason: "tokenize_failed" };
@@ -401,7 +416,7 @@ function plainToken(text: string): HighlightToken {
 }
 
 /**
- * Project shiki's tokens onto the wire shape and count the long lines.
+ * Project shiki's tokens onto the wire shape, under both bounds.
  *
  * A line that shiki skipped for length comes back as EXACTLY ONE token whose
  * colour is the empty string. That is the marker, but it is not what is
@@ -411,29 +426,63 @@ function plainToken(text: string): HighlightToken {
  * Two spellings of "no colour" are normalised to `null` here - an absent
  * property (plain-language lines) and an empty string (over-length lines) - so
  * the renderer has one case.
+ *
+ * ## Cardinality is ALL-OR-NOTHING
+ *
+ * The tokenizer must return exactly as many lines as the source has. A count
+ * that disagrees is not a per-line problem to be patched over: it means the
+ * projection and the source no longer describe the same file, and there is no
+ * way to tell WHICH lines the surviving ones correspond to. Repairing it line
+ * by line would have shown the user a file that is partly the tokenizer's and
+ * partly theirs, silently mis-aligned - and, in the extra-lines direction, would
+ * have PRESERVED content the source does not contain. So a mismatch is a
+ * whole-file plain fallback, reported, and no line of it is trusted.
+ *
+ * Within a matching count the per-line reconstruction check still applies: the
+ * source line is the truth, and a line whose tokens do not concatenate back to
+ * it is replaced by one plain token carrying the source text. The colour is
+ * lost for that line; the bytes never are.
+ *
+ * ## The token bound is checked WHILE projecting
+ *
+ * `maxTokens` is refused as soon as it is crossed, so the oversized array is
+ * abandoned half-built and never finished, never returned and never cloned
+ * across the worker boundary.
  */
 /**
- * Exported for its COLOCATED test only, which drives the reconstruction rule
- * with token streams a real grammar will not produce on demand. It is a pure
- * function over its arguments; nothing outside this folder imports it.
+ * Exported for its COLOCATED test only, which drives the reconstruction and
+ * cardinality rules with token streams a real grammar will not produce on
+ * demand. It is a pure function over its arguments; nothing outside this folder
+ * imports it.
  */
 export function projectLines(
   lines: readonly (readonly ThemedToken[])[],
   text: string,
   maxLineLength: number,
-): TokenizeResult {
+  maxTokens: number,
+): TokenizeOutcome {
   const sourceLines = text.split(/\r?\n/);
+
+  if (lines.length !== sourceLines.length) {
+    warn(
+      `the tokenizer returned ${String(lines.length)} line(s) for a ${String(sourceLines.length)}-line file; showing it plain`,
+      null,
+    );
+    return boundedPlain(text, maxLineLength, maxTokens);
+  }
+
   const projected: TokenLine[] = [];
   let longLines = 0;
   let unreconstructed = 0;
+  let tokens = 0;
 
   for (const [index, line] of lines.entries()) {
     let rendered = "";
-    const tokens: HighlightToken[] = [];
+    const built: HighlightToken[] = [];
     for (const token of line) {
       rendered += token.content;
       const style = token.fontStyle ?? 0;
-      tokens.push({
+      built.push({
         text: token.content,
         color: token.color === undefined || token.color === "" ? null : token.color,
         italic: (style & FONT_STYLE_ITALIC) !== 0,
@@ -445,23 +494,20 @@ export function projectLines(
 
     // THE RECONSTRUCTION CHECK. The source line is the truth; the tokens are a
     // decoration over it, and a decoration that changed the text is discarded
-    // rather than shown.
-    const source = sourceLines[index];
-    if (source === undefined || source !== rendered) {
-      unreconstructed += 1;
-      const repaired = source ?? rendered;
-      projected.push(repaired.length === 0 ? [] : [plainToken(repaired)]);
-      continue;
-    }
-    projected.push(tokens);
-  }
-
-  // A line shiki never emitted is a line the user would not see at all, so the
-  // remainder of the source is carried through plain rather than dropped.
-  for (let index = lines.length; index < sourceLines.length; index += 1) {
+    // rather than shown. `source` cannot be undefined here: the cardinality
+    // check above proved the two arrays are the same length.
     const source = sourceLines[index] ?? "";
-    unreconstructed += 1;
-    projected.push(source.length === 0 ? [] : [plainToken(source)]);
+    let kept: TokenLine = built;
+    if (source !== rendered) {
+      unreconstructed += 1;
+      kept = source.length === 0 ? [] : [plainToken(source)];
+    }
+
+    tokens += kept.length;
+    if (isOverTokenBound(tokens, maxTokens)) {
+      return { ok: false, reason: "too_many_tokens" };
+    }
+    projected.push(kept);
   }
 
   if (unreconstructed > 0) {
@@ -471,7 +517,32 @@ export function projectLines(
     );
   }
 
-  return { lines: projected, longLines };
+  return { ok: true, result: { lines: projected, longLines } };
+}
+
+/**
+ * The uncoloured split, under the token bound.
+ *
+ * Plain text is one token per non-empty line, so a file of very short lines can
+ * still cross the bound - and it is refused there for the same reason a
+ * coloured one is: the array is what costs, and it costs the same whether or
+ * not the tokens carry a colour.
+ */
+function boundedPlain(
+  text: string,
+  maxLineLength: number,
+  maxTokens: number,
+): TokenizeOutcome {
+  const result = plainTokenize(text, maxLineLength);
+  let tokens = 0;
+  for (const line of result.lines) tokens += line.length;
+  if (isOverTokenBound(tokens, maxTokens)) return { ok: false, reason: "too_many_tokens" };
+  return { ok: true, result };
+}
+
+/** Zero or less disables the bound, the way `maxLineLength` does. */
+function isOverTokenBound(tokens: number, maxTokens: number): boolean {
+  return maxTokens > 0 && tokens > maxTokens;
 }
 
 /**

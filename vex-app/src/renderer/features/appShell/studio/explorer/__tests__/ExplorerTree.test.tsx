@@ -222,6 +222,51 @@ describe("aria", () => {
     expect(activeRow()?.textContent).toContain("src");
   });
 
+  /**
+   * A POINTER CLICK MUST LAND KEYBOARD FOCUS ON THE TREE.
+   *
+   * `aria-activedescendant` is only half the contract. It names the active row,
+   * but a screen reader announces it and the arrow keys reach it only while the
+   * CONTAINER holds real DOM focus - and the container is the only focusable
+   * element here, because the rows deliberately are not. A user who clicks a row
+   * and then presses ArrowDown must move within the tree, not scroll the page.
+   *
+   * The keyboard cases above dispatch keys AT the container and so can never
+   * observe this: they assume the focus that this test is about establishing.
+   */
+  it("puts DOM focus on the tree container when a row is CLICKED", async () => {
+    standardTree();
+    await mountTree();
+    expect(document.activeElement).not.toBe(tree());
+
+    const row = rowFor("readme.md");
+    fireEvent.mouseDown(row);
+    fireEvent.click(row);
+    await flush();
+
+    expect(document.activeElement).toBe(tree());
+    // And the click also moved the active row, so the two halves agree.
+    expect(activeRow()?.textContent).toContain("readme.md");
+  });
+
+  it("keeps the keyboard working after a click, from the clicked row", async () => {
+    standardTree();
+    await mountTree();
+
+    const row = rowFor("readme.md");
+    fireEvent.mouseDown(row);
+    fireEvent.click(row);
+    await flush();
+
+    // The proof that the focus above is the useful kind: the very next key is
+    // dispatched at whatever the DOCUMENT says is focused - not at the tree by
+    // name, which is what the keyboard cases above assume - and it still
+    // continues from where the pointer left off.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "ArrowDown" });
+    await flush();
+    expect(activeRow()?.textContent).toContain("tsconfig.json");
+  });
+
   it("describes a directory whose entries the ignore rules hid", async () => {
     api.listResponder = (call) =>
       call.nodeId === null

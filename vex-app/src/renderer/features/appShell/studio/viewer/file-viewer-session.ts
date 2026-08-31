@@ -82,7 +82,10 @@ import {
 } from "../explorer/index.js";
 import type { WorkspaceFileTab } from "../workspace/types.js";
 import type { HighlightHandle, HighlighterPort } from "./highlight/highlighter-port.js";
-import type { TokenLine } from "./highlight/highlight-protocol.js";
+import {
+  HIGHLIGHT_MAX_TOKENS,
+  type TokenLine,
+} from "./highlight/highlight-protocol.js";
 import { plainTokenize } from "./highlight/shiki-tokenizer.js";
 import {
   languageOfPath,
@@ -125,24 +128,22 @@ export const VIEWER_MAX_TOKENIZE_LINE_LENGTH = 20_000;
 /**
  * The most tokens a file may produce before the viewer shows it plain.
  *
- * 250,000, and the number is MEASURED rather than chosen. Against the installed
- * shiki 4.4.3 with this repo's hot grammars, ordinary TypeScript source runs at
- * about 122 tokens per KiB, so a file at {@link VIEWER_HIGHLIGHT_MAX_BYTES}
- * produces roughly 62,000 tokens; densely punctuated JSON runs at about 645
- * tokens per KiB, which at the same byte bound is roughly 330,000. The bound
- * therefore sits four times above anything real source can reach and below the
- * pathological shape, which is exactly the file it exists to decline.
+ * THE VALUE LIVES ON THE WIRE ({@link HIGHLIGHT_MAX_TOKENS}), because the
+ * WORKER is what enforces it: it stops projecting the moment the bound is
+ * crossed, so an oversized token graph is never finished and never structured-
+ * cloned into this process. The session states the same number on its request
+ * and re-checks the answer, and one constant is what keeps those three uses
+ * from drifting into a highlighter that refuses a file it elsewhere colours.
  *
- * It is a bound on the ARRAY, not on the DOM: `FileViewerLines` virtualizes, so
- * only the visible rows are ever mounted. What a quarter of a million tokens
- * costs is the structured clone out of the worker and the objects this session
- * then retains for as long as the tab is open, per tab.
+ * Re-exported under the viewer's own name because this is where a reader of the
+ * viewer's bounds looks for it, and because the tests that drive the at-bound
+ * behaviour are the viewer's.
  *
  * AT THE BOUND the file is shown in full as plain text and the chip names the
  * reason (`too_many_tokens`). Nothing is truncated and no line is dropped; the
  * user loses colour, which is all a highlighter provides.
  */
-export const VIEWER_MAX_TOKENS = 250_000;
+export const VIEWER_MAX_TOKENS = HIGHLIGHT_MAX_TOKENS;
 
 /**
  * How deep the reload queue goes: one running, one queued.
@@ -677,6 +678,9 @@ export class FileViewerSession {
       language: this.language,
       text: content.text,
       maxLineLength: VIEWER_MAX_TOKENIZE_LINE_LENGTH,
+      // The worker enforces this while it projects, so a file over the bound
+      // never becomes a token graph and never crosses the boundary.
+      maxTokens: VIEWER_MAX_TOKENS,
       // The tab id, so the port holds at most one request for this tab and a
       // burst of saves costs one tokenization rather than one per save.
       caller: this.tabId,
@@ -710,10 +714,17 @@ export class FileViewerSession {
   /**
    * Publish tokens, or decline them for being too many.
    *
-   * THE NODE BOUND, and it reports itself: a file over {@link VIEWER_MAX_TOKENS}
-   * is shown in full as plain text with `too_many_tokens` on the chip rather
-   * than retained as a quarter-million objects per tab. Counting is one pass
-   * over arrays we have already paid to clone.
+   * A CHEAP DEFENSE, not the enforcement. The bound is enforced in the worker,
+   * during projection, which is the only place that can stop the oversized
+   * graph from being built and cloned - a count here happens after every cost it
+   * was meant to avoid has been paid. It stays because a malformed or oversized
+   * answer must still fail CLOSED: a future worker, a bad chunk or a
+   * half-applied protocol change must not be able to put a quarter-million
+   * objects per tab into renderer state just because it did not honour the
+   * request's bound.
+   *
+   * At the bound the file is shown in full as plain text with `too_many_tokens`
+   * on the chip.
    */
   #publishTokens(lines: readonly TokenLine[], longLines: number): void {
     let tokens = 0;

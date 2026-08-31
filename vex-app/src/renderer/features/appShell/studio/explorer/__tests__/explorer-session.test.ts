@@ -607,6 +607,152 @@ describe("watcher states", () => {
     expect(api.listCalls).toEqual([]);
   });
 
+  /**
+   * A tree that has been cleared must not be repopulated by work that was
+   * already moving when it was cleared.
+   *
+   * Two mechanisms, and both are needed. A listing IN FLIGHT is a promise the
+   * bridge already owns and cannot be recalled, so it is dropped at the
+   * publication fence by the listing generation this transition bumps. A
+   * listing still WAITING has not been handed to anyone, so it is discarded
+   * outright. Without the first, an in-flight root listing repopulates a
+   * suspended tree or replaces its notice with an answer about a folder that is
+   * gone; without the second, a queued listing starts AFTER the suspension and
+   * does the same thing one round trip later.
+   */
+  describe("a cleared tree drops the listings that were already moving", () => {
+    /**
+     * Live, with the ROOT listing held open and a directory's listing waiting
+     * behind it.
+     *
+     * The root is what makes this test the one the fence is for: a listing for
+     * a CHILD is dropped anyway once the tree is cleared, because its row no
+     * longer exists and the fence's `hasNode` catches it. The root has no row,
+     * so the generation is the only thing that can stop it.
+     */
+    async function sessionWithRootListingInFlight(): Promise<ExplorerSession> {
+      api.listResponder = (call) =>
+        call.nodeId === null
+          ? {
+              ok: true,
+              data: { ok: true, value: listingOf([directoryNode("src", "src")]) },
+            }
+          : { ok: true, data: { ok: true, value: listingOf([fileNode("a.ts", "src/a.ts")]) } };
+      const session = makeSession();
+      await session.activate();
+      await flush();
+      session.expand("id:src");
+      await flush();
+
+      api.manual = true;
+      api.listCalls.length = 0;
+      // A full refresh: the root first, then every expanded directory. The
+      // queue is single-flight, so the root is in flight and `src` waits.
+      session.refreshNow();
+      await flush();
+      expect(api.pendingLists).toHaveLength(1);
+      expect(api.pendingLists[0]?.call.nodeId).toBeNull();
+      expect(api.listCalls).toHaveLength(1);
+      return session;
+    }
+
+    it("suspended: the IN-FLIGHT listing publishes nothing and the notice survives", async () => {
+      const session = await sessionWithRootListingInFlight();
+
+      api.emit(
+        statusEvent("suspended", { reason: "root_missing", watcherGeneration: 2 }),
+      );
+      expect(session.getState()).toBe("suspended");
+      expect(rowIds(session)).toEqual(["root::notice"]);
+
+      // The listing the bridge was already holding now answers. It describes a
+      // tree that no longer exists.
+      api.settleNextList({
+        ok: true,
+        data: { ok: true, value: listingOf([directoryNode("src", "src")]) },
+      });
+      await flush();
+
+      expect(rowIds(session)).toEqual(["root::notice"]);
+      expect(noticeTexts(session)[0]).toContain("not on disk");
+      expect(session.getState()).toBe("suspended");
+    });
+
+    it("suspended: the QUEUED listing never starts", async () => {
+      const session = await sessionWithRootListingInFlight();
+      const startedBefore = api.listCalls.length;
+
+      api.emit(
+        statusEvent("suspended", { reason: "root_missing", watcherGeneration: 2 }),
+      );
+      api.settleNextList({
+        ok: true,
+        data: { ok: true, value: listingOf([]) },
+      });
+      await flush();
+
+      // The queue drained to nothing rather than starting the next request.
+      expect(api.listCalls).toHaveLength(startedBefore);
+      expect(api.pendingLists).toHaveLength(0);
+      expect(session.getState()).toBe("suspended");
+    });
+
+    it("closed: the IN-FLIGHT listing publishes nothing and the notice survives", async () => {
+      const session = await sessionWithRootListingInFlight();
+
+      api.emit(
+        statusEvent("closed", { reason: "project_deleted", watcherGeneration: 3 }),
+      );
+      expect(rowIds(session)).toEqual(["root::notice"]);
+      const closedNotice = noticeTexts(session)[0];
+
+      api.settleNextList({
+        ok: true,
+        data: { ok: true, value: listingOf([directoryNode("src", "src")]) },
+      });
+      await flush();
+
+      expect(rowIds(session)).toEqual(["root::notice"]);
+      expect(noticeTexts(session)[0]).toBe(closedNotice);
+      expect(session.getState()).toBe("closed");
+    });
+
+    it("closed: the QUEUED listing never starts", async () => {
+      const session = await sessionWithRootListingInFlight();
+      const startedBefore = api.listCalls.length;
+
+      api.emit(
+        statusEvent("closed", { reason: "project_deleted", watcherGeneration: 3 }),
+      );
+      api.settleNextList({ ok: true, data: { ok: true, value: listingOf([]) } });
+      await flush();
+
+      expect(api.listCalls).toHaveLength(startedBefore);
+      expect(api.pendingLists).toHaveLength(0);
+    });
+
+    /**
+     * The counterexample, and the reason the fence keys on "the tree was
+     * cleared" rather than on "something went wrong": `unavailable` KEEPS its
+     * rows, so a listing already in flight for one of them still describes what
+     * the user is looking at and must still publish.
+     */
+    it("unavailable keeps its rows, so an in-flight listing still publishes", async () => {
+      const session = await sessionWithRootListingInFlight();
+
+      api.emit(statusEvent("unavailable", { reason: "io_error" }));
+      expect(session.getState()).toBe("unavailable");
+
+      api.settleNextList({
+        ok: true,
+        data: { ok: true, value: listingOf([directoryNode("src", "src"), fileNode("new.ts", "new.ts")]) },
+      });
+      await flush();
+
+      expect(rowIds(session)).toContain("id:new.ts");
+    });
+  });
+
   it("stays suspended on `watching` until the root_resumed resync arrives", async () => {
     vi.useFakeTimers();
     const session = await liveSession();

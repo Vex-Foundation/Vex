@@ -36,11 +36,20 @@
  *
  * ## Publication identity
  *
- * Every listing is issued under a `generation` that `activate`, `deactivate`
- * and `dispose` all bump. A result is published only when the generation still
- * matches AND the row it targets still exists AND is still expanded. Checking
- * at issue time is not enough: the interesting failures all happen during the
- * await (rule 05).
+ * Every listing is issued under a LISTING GENERATION. A result is published
+ * only when that generation still matches AND the row it targets still exists
+ * AND is still expanded. Checking at issue time is not enough: the interesting
+ * failures all happen during the await (rule 05).
+ *
+ * The listing generation is bumped everywhere the session generation is
+ * (`activate`, `deactivate`, `dispose`) and ALSO when a watcher state clears
+ * the tree (`suspended`, `closed`). It is therefore a strict refinement of the
+ * session generation rather than a second, independent fence: one counter is
+ * read on the publication path, and it invalidates strictly more.
+ *
+ * `unavailable` is deliberately NOT one of those states. It keeps its rows -
+ * they were true when they were read - so a listing already in flight for one
+ * of them still describes something the user is looking at and still publishes.
  *
  * ## The 500 ms scheduler is VS Code's, semantics included
  *
@@ -173,8 +182,22 @@ export class ExplorerSession {
   #state: ExplorerSessionState = "idle";
   readonly #stateListeners = new Set<() => void>();
 
-  /** Bumped by activate, deactivate and dispose. The publication fence. */
+  /**
+   * The SESSION generation: bumped by activate, deactivate and dispose.
+   *
+   * It identifies one activation of this session, and that is all it does: the
+   * activation itself and the event routing use it to tell "still me" from "a
+   * straggler for the session I used to be". The publication of a listing is
+   * fenced by {@link #listingGeneration}, which invalidates strictly more.
+   */
   #generation = 0;
+  /**
+   * The LISTING generation. THE publication fence.
+   *
+   * Bumped wherever `#generation` is, and additionally whenever a watcher state
+   * clears the tree (`suspended`, `closed`). See the module header.
+   */
+  #listingGeneration = 0;
   #activation: Promise<void> | null = null;
 
   #subscriptionId: string | null = null;
@@ -188,12 +211,12 @@ export class ExplorerSession {
   readonly #queue: SingleFlightQueue<ListRequest>;
 
   /**
-   * The generation the in-flight listing was issued under.
+   * The LISTING generation the in-flight listing was issued under.
    *
    * The queue is single-flight, so there is exactly one, and it is the fence a
    * REJECTION has to be judged against: by the time the rejection surfaces the
-   * session may have deactivated, and `#generation` alone would no longer say
-   * which session asked.
+   * session may have deactivated or been suspended, and the CURRENT listing
+   * generation alone would no longer say which one asked.
    */
   #inFlightGeneration = 0;
 
@@ -435,6 +458,7 @@ export class ExplorerSession {
     if (this.#subscriptionId !== null) return Promise.resolve();
 
     this.#generation += 1;
+    this.#listingGeneration += 1;
     const generation = this.#generation;
     this.#setState("activating");
     const activation = this.#runActivation(generation)
@@ -467,6 +491,7 @@ export class ExplorerSession {
       return;
     }
     this.#generation += 1;
+    this.#listingGeneration += 1;
     await this.#teardownSubscription();
     this.model.markAllStale();
     this.#setState("inactive");
@@ -476,6 +501,7 @@ export class ExplorerSession {
   async dispose(): Promise<void> {
     if (this.#state === "disposed") return;
     this.#generation += 1;
+    this.#listingGeneration += 1;
     await this.#teardownSubscription();
     this.#setState("disposed");
     this.#unsubscribeModel();
@@ -762,7 +788,17 @@ export class ExplorerSession {
   ): boolean {
     const decision = decideWatcherState(state, warnings, this.#state);
     if (decision.nextState === null) return decision.usable;
-    if (decision.clear) this.model.clear();
+    if (decision.clear) {
+      // The tree is going away, and every listing about it goes with it: the
+      // waiting ones are discarded outright and the one in flight - which the
+      // queue cannot recall, because the bridge already owns its promise - is
+      // dropped at the publication fence by this bump. Without both, an
+      // in-flight root listing would repopulate a suspended tree or overwrite
+      // its notice, and a queued one would start after the suspension.
+      this.#queue.clear();
+      this.#listingGeneration += 1;
+      this.model.clear();
+    }
     this.model.setNotice(null, decision.rootNotice);
     this.#setState(decision.nextState);
     return decision.usable;
@@ -875,7 +911,7 @@ export class ExplorerSession {
 
   /** One listing, start to finish. The queue owns when this runs. */
   async #performListing(request: ListRequest): Promise<void> {
-    const generation = this.#generation;
+    const generation = this.#listingGeneration;
     this.#inFlightGeneration = generation;
     const result = await listProjectChildren({
       projectId: this.projectId,
@@ -955,14 +991,19 @@ export class ExplorerSession {
   }
 
   /**
-   * THE FENCE, and all three parts of it matter: the generation says "this is
-   * still the same session", `hasNode` says "the row still exists", and
-   * `isExpanded` says "the user still wants to see it". Shared by the success
-   * and the rejection paths, because a rejection that arrives after deactivate
-   * is exactly as stale as a listing that does.
+   * THE FENCE, and all three parts of it matter: the LISTING generation says
+   * "the tree this describes is still the tree on screen", `hasNode` says "the
+   * row still exists", and `isExpanded` says "the user still wants to see it".
+   * Shared by the success and the rejection paths, because a rejection that
+   * arrives after deactivate is exactly as stale as a listing that does.
+   *
+   * The listing generation subsumes the session generation - it is bumped
+   * wherever that one is - so it is the only counter read here, and it also
+   * catches the suspend and close transitions the session generation does not
+   * move for.
    */
   #isPublishable(request: ListRequest, generation: number): boolean {
-    if (generation !== this.#generation) return false;
+    if (generation !== this.#listingGeneration) return false;
     if (this.#state === "disposed" || this.#state === "inactive") return false;
     const { parentId } = request;
     if (parentId !== null && !this.model.hasNode(parentId)) return false;

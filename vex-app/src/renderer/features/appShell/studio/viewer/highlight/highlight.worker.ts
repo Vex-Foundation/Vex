@@ -43,7 +43,8 @@ function post(message: HighlightResponse): void {
  * in the DOM project cannot import this file without dragging `self` in with it.
  */
 const queue = createHighlightQueue({
-  tokenize: (text, language, maxLineLength) => tokenizer.tokenize(text, language, maxLineLength),
+  tokenize: (text, language, maxLineLength, maxTokens) =>
+    tokenizer.tokenize(text, language, maxLineLength, maxTokens),
   post,
 });
 

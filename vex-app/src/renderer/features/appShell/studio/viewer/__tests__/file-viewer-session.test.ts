@@ -345,6 +345,9 @@ describe("highlighting", () => {
         language: "typescript",
         text: "hello\n",
         maxLineLength: VIEWER_MAX_TOKENIZE_LINE_LENGTH,
+        // The bound the WORKER enforces while projecting, so an oversized
+        // token graph is never built and never cloned into this process.
+        maxTokens: VIEWER_MAX_TOKENS,
         // NAMED, so the port holds at most one request for this tab.
         caller: "tab-1",
       },

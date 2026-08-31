@@ -44,7 +44,17 @@ export interface WatcherStateDecision {
    * is and change nothing else in this record.
    */
   readonly nextState: WatcherDrivenState | null;
-  /** Drop every node first: this state is not a tree with a warning on it. */
+  /**
+   * Drop every node first: this state is not a tree with a warning on it.
+   *
+   * It drops the LISTINGS with them. A state that clears the tree has declared
+   * there is nothing readable to list, so a listing waiting behind the
+   * transition must never start and one already in flight must never publish:
+   * either would repopulate a tree the user has just been told is gone, or
+   * replace its notice with an answer about a folder that no longer exists.
+   * The session clears its queue and invalidates its listing generation on
+   * exactly this flag - see `#applyWatcherState`.
+   */
   readonly clear: boolean;
   /** The root notice to set, or `null` to clear it. */
   readonly rootNotice: NoticeDescriptor | null;

@@ -11,7 +11,13 @@
 
 import { describe, expect, it } from "vitest";
 import { createHighlightQueue, type QueueTokenize } from "../highlight-queue.js";
-import type { HighlightRequest, HighlightResponse } from "../highlight-protocol.js";
+import {
+  HIGHLIGHT_MAX_TOKENS,
+  type HighlightRequest,
+  type HighlightResponse,
+} from "../highlight-protocol.js";
+import { createTokenizer } from "../shiki-tokenizer.js";
+import { PLAIN_LANGUAGE } from "../language-of-path.js";
 
 interface Harness {
   readonly accept: (message: Parameters<ReturnType<typeof createHighlightQueue>["accept"]>[0]) => void;
@@ -64,7 +70,14 @@ function harness(): Harness {
 }
 
 function request(requestId: number, language: string): HighlightRequest {
-  return { kind: "highlight", requestId, language, text: "x", maxLineLength: 20_000 };
+  return {
+    kind: "highlight",
+    requestId,
+    language,
+    text: "x",
+    maxLineLength: 20_000,
+    maxTokens: HIGHLIGHT_MAX_TOKENS,
+  };
 }
 
 /** Let the queue's own awaits settle. */
@@ -170,5 +183,71 @@ describe("the highlight queue", () => {
     expect(posted).toEqual([
       { kind: "result", requestId: 1, ok: false, reason: "grammar_unavailable" },
     ]);
+  });
+});
+
+/**
+ * NOTHING OVERSIZED CROSSES THE WIRE.
+ *
+ * This is the whole reason the token bound moved into the worker. A count on
+ * the renderer side can refuse to RENDER an oversized result, but by then the
+ * worker has already built the token graph and the structured clone has already
+ * carried it across - every cost the bound exists to avoid has been paid, and
+ * only the display was prevented.
+ *
+ * So the assertion is on what is POSTED, driven through the real tokenizer and
+ * the real queue: the response for an over-bound file must be a refusal with no
+ * lines on it at all.
+ */
+describe("the token bound never crosses the boundary", () => {
+  /** Every response the worker would have posted, in order. */
+  function realQueue(): { posted: HighlightResponse[]; accept: (r: HighlightRequest) => void } {
+    const tokenizer = createTokenizer();
+    const posted: HighlightResponse[] = [];
+    const queue = createHighlightQueue({
+      tokenize: (text, language, maxLineLength, maxTokens) =>
+        tokenizer.tokenize(text, language, maxLineLength, maxTokens),
+      post: (response) => posted.push(response),
+    });
+    return { posted, accept: (r) => { queue.accept(r); } };
+  }
+
+  it("posts a refusal, carrying NO lines, for a file over the bound", async () => {
+    const { posted, accept } = realQueue();
+    // Plain text is one token per non-empty line, so this is 12 tokens against
+    // a bound of 4 - the smallest honest way to be over it.
+    accept({
+      kind: "highlight",
+      requestId: 1,
+      language: PLAIN_LANGUAGE,
+      text: Array.from({ length: 12 }, (_, index) => `line ${String(index)}`).join("\n"),
+      maxLineLength: 20_000,
+      maxTokens: 4,
+    });
+    await flush();
+
+    expect(posted).toEqual([
+      { kind: "result", requestId: 1, ok: false, reason: "too_many_tokens" },
+    ]);
+    // Said explicitly, because this is the property under test: no token graph
+    // was posted for the caller to have to refuse.
+    expect(posted.every((response) => !("lines" in response))).toBe(true);
+  });
+
+  it("posts the tokens when the same file is under the bound", async () => {
+    const { posted, accept } = realQueue();
+    accept({
+      kind: "highlight",
+      requestId: 1,
+      language: PLAIN_LANGUAGE,
+      text: Array.from({ length: 12 }, (_, index) => `line ${String(index)}`).join("\n"),
+      maxLineLength: 20_000,
+      maxTokens: 12,
+    });
+    await flush();
+
+    const [response] = posted;
+    expect(response?.kind === "result" && response.ok).toBe(true);
+    expect(response?.kind === "result" && response.ok ? response.lines : []).toHaveLength(12);
   });
 });

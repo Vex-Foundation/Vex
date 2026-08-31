@@ -21,13 +21,65 @@
  *
  * ## Nothing here is a silent cut
  *
- * A successful result carries EVERY line of the file. `longLines` is the one
- * bound and it REPORTS itself: it counts the lines that were emitted as a
- * single unhighlighted token because they exceeded `maxLineLength`, so the
- * viewer can say "3 long lines are not highlighted" instead of leaving the
- * user to wonder why one row looks different. No line is ever dropped and no
- * line is ever shortened.
+ * A successful result carries EVERY line of the file. Two bounds exist and
+ * each REPORTS itself rather than trimming anything.
+ *
+ * `longLines` counts the lines that were emitted as a single unhighlighted
+ * token because they exceeded `maxLineLength`, so the viewer can say "3 long
+ * lines are not highlighted" instead of leaving the user to wonder why one row
+ * looks different.
+ *
+ * `maxTokens` is the whole-file bound, and it is REFUSED rather than trimmed: a
+ * file over it comes back as `{ ok: false, reason: "too_many_tokens" }` and the
+ * viewer shows every byte of it as plain text. It is enforced inside the
+ * WORKER, while the tokens are being projected, which is the only place that
+ * can stop an oversized token graph from being finished and structured-cloned
+ * across this boundary at all. A renderer-side count after the clone has
+ * already paid for everything the bound exists to prevent.
+ *
+ * No line is ever dropped and no line is ever shortened.
  */
+
+/**
+ * The most tokens a file may produce before the highlighter refuses it.
+ *
+ * 250,000, and the number is MEASURED rather than chosen. Against the installed
+ * shiki 4.4.3 with this repo's hot grammars, ordinary TypeScript source runs at
+ * about 122 tokens per KiB, so a file at the viewer's 512 KiB highlight bound
+ * produces roughly 62,000 tokens; densely punctuated JSON runs at about 645
+ * tokens per KiB, which at the same byte bound is roughly 330,000. The bound
+ * therefore sits four times above anything real source can reach and below the
+ * pathological shape, which is exactly the file it exists to decline.
+ *
+ * It is a bound on the ARRAY, not on the DOM: the viewer virtualizes, so only
+ * the visible rows are ever mounted. What a quarter of a million tokens costs
+ * is the structured clone out of the worker and the objects the session then
+ * retains for as long as the tab is open, per tab.
+ *
+ * It lives HERE, on the wire, because both ends need the same number: the
+ * worker enforces it while projecting, the session states it on the request,
+ * and the port re-checks the answer. Two copies would eventually disagree, and
+ * the disagreement would look like a highlighter that sometimes refuses a file
+ * it sometimes colours.
+ *
+ * AT THE BOUND the file is shown in full as plain text and the chip names the
+ * reason. Nothing is truncated and no line is dropped; the user loses colour,
+ * which is all a highlighter provides.
+ */
+export const HIGHLIGHT_MAX_TOKENS = 250_000;
+
+/**
+ * How many lines a text has, by the ONE definition this folder uses.
+ *
+ * CRLF and LF both terminate a line and a lone CR does not, which is shiki's
+ * own `RE_NEWLINE` and therefore what `plainTokenize` and `projectLines` split
+ * on. It lives on the wire module because BOTH ends need it and neither may
+ * import the other: the worker projects that many lines, and the port checks
+ * that the answer carries exactly as many as the text it sent.
+ */
+export function countLines(text: string): number {
+  return text.split(/\r?\n/).length;
+}
 
 /**
  * One styled run inside a line.
@@ -59,6 +111,10 @@ export type TokenLine = readonly HighlightToken[];
  * `grammar_unavailable` - the language has no loader in the hot set, or its
  * grammar module failed to import. A statement about our bounded table.
  *
+ * `too_many_tokens` - the file would produce more than the request's
+ * `maxTokens`. Refused DURING projection, so the oversized graph is never
+ * finished and never crosses the boundary.
+ *
  * `tokenize_failed` - a grammar was loaded and tokenizing threw. Measured
  * against shiki 4.4.3 with `forgiving: false`, this is also where an
  * unconvertible Oniguruma pattern surfaces: vscode-textmate compiles a rule
@@ -66,7 +122,10 @@ export type TokenLine = readonly HighlightToken[];
  * error during tokenization and never during `loadLanguage`. See the note on
  * `createTokenizer` in `shiki-tokenizer.ts`.
  */
-export type HighlightFailureReason = "grammar_unavailable" | "tokenize_failed";
+export type HighlightFailureReason =
+  | "grammar_unavailable"
+  | "tokenize_failed"
+  | "too_many_tokens";
 
 /** What the port sends. `requestId` correlates the answer. */
 export interface HighlightRequest {
@@ -78,6 +137,13 @@ export interface HighlightRequest {
   readonly text: string;
   /** Lines at or above this length are emitted as one unhighlighted token. */
   readonly maxLineLength: number;
+  /**
+   * The whole-file token bound. Zero or less disables it.
+   *
+   * Carried on the REQUEST so the worker enforces exactly the number the caller
+   * will check the answer against. See {@link HIGHLIGHT_MAX_TOKENS}.
+   */
+  readonly maxTokens: number;
 }
 
 /** A tokenized file: every line, in order, plus the reported long-line count. */
@@ -159,7 +225,11 @@ export function isHighlightResponse(value: unknown): value is HighlightResponse 
   };
   if (typeof result.requestId !== "number") return false;
   if (result.ok === false) {
-    return result.reason === "grammar_unavailable" || result.reason === "tokenize_failed";
+    return (
+      result.reason === "grammar_unavailable" ||
+      result.reason === "tokenize_failed" ||
+      result.reason === "too_many_tokens"
+    );
   }
   if (result.ok !== true) return false;
   if (typeof result.longLines !== "number") return false;

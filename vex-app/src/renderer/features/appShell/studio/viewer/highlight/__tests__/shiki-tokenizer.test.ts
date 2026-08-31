@@ -22,12 +22,15 @@ import {
   createTokenizer,
   hotLanguagesWithoutLoader,
   projectLines,
+  type TokenizeOutcome,
 } from "../shiki-tokenizer.js";
 import { HOT_LANGUAGES, PLAIN_LANGUAGE } from "../language-of-path.js";
 import type { ThemedToken } from "@shikijs/types";
-import type { TokenizeResult } from "../highlight-protocol.js";
+import type { TokenizeResult, TokenLine } from "../highlight-protocol.js";
 
 const NO_LINE_BOUND = 0;
+/** Zero disables the token bound, the way `NO_LINE_BOUND` disables the other. */
+const NO_TOKEN_BOUND = 0;
 
 function flatten(result: TokenizeResult): string {
   return result.lines.map((line) => line.map((token) => token.text).join("")).join("\n");
@@ -70,7 +73,7 @@ describe("tokenize", () => {
   it("gives a TypeScript keyword and string their own theme variables", async () => {
     const tokenizer = createTokenizer();
     const source = 'const greeting = "hello";\n';
-    const outcome = await tokenizer.tokenize(source, "typescript", NO_LINE_BOUND);
+    const outcome = await tokenizer.tokenize(source, "typescript", NO_LINE_BOUND, NO_TOKEN_BOUND);
     tokenizer.dispose();
 
     expect(outcome.ok).toBe(true);
@@ -94,6 +97,7 @@ describe("tokenize", () => {
       "alpha\nbeta\n\ngamma",
       PLAIN_LANGUAGE,
       NO_LINE_BOUND,
+      NO_TOKEN_BOUND,
     );
     tokenizer.dispose();
 
@@ -111,7 +115,7 @@ describe("tokenize", () => {
     const tokenizer = createTokenizer();
     const long = `const x = "${"a".repeat(200)}";`;
     const source = `const short = 1;\n${long}\nconst after = 2;`;
-    const outcome = await tokenizer.tokenize(source, "typescript", 100);
+    const outcome = await tokenizer.tokenize(source, "typescript", 100, NO_TOKEN_BOUND);
     tokenizer.dispose();
 
     expect(outcome.ok).toBe(true);
@@ -131,7 +135,12 @@ describe("tokenize", () => {
 
   it("applies the same long-line accounting to plain text", async () => {
     const tokenizer = createTokenizer();
-    const outcome = await tokenizer.tokenize(`${"z".repeat(50)}\nshort`, PLAIN_LANGUAGE, 10);
+    const outcome = await tokenizer.tokenize(
+      `${"z".repeat(50)}\nshort`,
+      PLAIN_LANGUAGE,
+      10,
+      NO_TOKEN_BOUND,
+    );
     tokenizer.dispose();
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
@@ -140,7 +149,7 @@ describe("tokenize", () => {
 
   it("answers grammar_unavailable for a language outside the hot set", async () => {
     const tokenizer = createTokenizer();
-    const outcome = await tokenizer.tokenize("SELECT 1", "cobol", NO_LINE_BOUND);
+    const outcome = await tokenizer.tokenize("SELECT 1", "cobol", NO_LINE_BOUND, NO_TOKEN_BOUND);
     tokenizer.dispose();
     expect(outcome).toEqual({ ok: false, reason: "grammar_unavailable" });
   });
@@ -151,7 +160,7 @@ describe("tokenize", () => {
         typescript: () => Promise.reject(new Error("chunk load failed")),
       },
     });
-    const outcome = await tokenizer.tokenize("const a = 1;", "typescript", NO_LINE_BOUND);
+    const outcome = await tokenizer.tokenize("const a = 1;", "typescript", NO_LINE_BOUND, NO_TOKEN_BOUND);
     tokenizer.dispose();
     expect(outcome).toEqual({ ok: false, reason: "grammar_unavailable" });
   });
@@ -170,11 +179,11 @@ describe("tokenize", () => {
       },
     });
 
-    expect(await tokenizer.tokenize("const a = 1;", "typescript", NO_LINE_BOUND)).toEqual({
+    expect(await tokenizer.tokenize("const a = 1;", "typescript", NO_LINE_BOUND, NO_TOKEN_BOUND)).toEqual({
       ok: false,
       reason: "grammar_unavailable",
     });
-    const second = await tokenizer.tokenize("const a = 1;", "typescript", NO_LINE_BOUND);
+    const second = await tokenizer.tokenize("const a = 1;", "typescript", NO_LINE_BOUND, NO_TOKEN_BOUND);
     tokenizer.dispose();
     expect(second.ok).toBe(true);
     expect(attempt).toBe(2);
@@ -189,7 +198,7 @@ describe("tokenize", () => {
     const source = line.repeat(Math.ceil((512 * 1024) / line.length));
     expect(source.length).toBeGreaterThanOrEqual(512 * 1024);
 
-    const outcome = await tokenizer.tokenize(source, "typescript", 20_000);
+    const outcome = await tokenizer.tokenize(source, "typescript", 20_000, NO_TOKEN_BOUND);
     tokenizer.dispose();
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
@@ -208,6 +217,7 @@ describe("tokenize", () => {
         '# a\nconst a = "b"\n<x y="z">\nSELECT 1;\n',
         language,
         20_000,
+        NO_TOKEN_BOUND,
       );
       if (!outcome.ok) failures.push(`${language}: ${outcome.reason}`);
     }
@@ -218,7 +228,7 @@ describe("tokenize", () => {
   it("stops answering after dispose", async () => {
     const tokenizer = createTokenizer();
     tokenizer.dispose();
-    expect(await tokenizer.tokenize("const a = 1;", "typescript", NO_LINE_BOUND)).toEqual({
+    expect(await tokenizer.tokenize("const a = 1;", "typescript", NO_LINE_BOUND, NO_TOKEN_BOUND)).toEqual({
       ok: false,
       reason: "tokenize_failed",
     });
@@ -237,25 +247,31 @@ describe("tokenize", () => {
 describe("projectLines: the source line is the truth", () => {
   const token = (content: string): ThemedToken => ({ content, offset: 0 });
 
+  /** The successful lines, or a failure the caller did not expect. */
+  function linesOf(outcome: TokenizeOutcome): readonly TokenLine[] {
+    if (!outcome.ok) throw new Error(`projection refused: ${outcome.reason}`);
+    return outcome.result.lines;
+  }
+
   it("keeps the tokens when they reconstruct the line exactly", () => {
-    const { lines } = projectLines([[token("const"), token(" a")]], "const a", 0);
+    const lines = linesOf(
+      projectLines([[token("const"), token(" a")]], "const a", 0, NO_TOKEN_BOUND),
+    );
     expect(lines[0]?.map((entry) => entry.text)).toEqual(["const", " a"]);
   });
 
   it("falls back to ONE plain token when a byte was dropped", () => {
     // The tokens say "ac"; the file says "abc". Rendering the tokens would show
     // the user a line their file does not contain.
-    const { lines } = projectLines([[token("a"), token("c")]], "abc", 0);
+    const lines = linesOf(projectLines([[token("a"), token("c")]], "abc", 0, NO_TOKEN_BOUND));
     expect(lines[0]).toEqual([
       { text: "abc", color: null, italic: false, bold: false, underline: false },
     ]);
   });
 
   it("falls back per LINE, leaving the good lines coloured", () => {
-    const { lines } = projectLines(
-      [[token("ok")], [token("x")]],
-      "ok\nbad",
-      0,
+    const lines = linesOf(
+      projectLines([[token("ok")], [token("x")]], "ok\nbad", 0, NO_TOKEN_BOUND),
     );
     expect(lines[0]?.map((entry) => entry.text)).toEqual(["ok"]);
     expect(lines[1]).toEqual([
@@ -263,19 +279,97 @@ describe("projectLines: the source line is the truth", () => {
     ]);
   });
 
-  it("carries through a line the tokenizer never emitted", () => {
-    const { lines } = projectLines([[token("a")]], "a\nb", 0);
-    expect(lines).toHaveLength(2);
-    expect(lines[1]?.[0]?.text).toBe("b");
-  });
-
   it("matches shiki's own split, so CRLF text reconstructs unchanged", () => {
     // MEASURED against shiki 4.4.3: a `\r\n` file comes back with the `\r`
     // already stripped, which is why `split(/\r?\n/)` is the right comparison
     // and a CRLF file is not silently demoted to plain text.
-    const { lines } = projectLines([[token("a")], [token("b")], []], "a\r\nb\r\n", 0);
+    const lines = linesOf(
+      projectLines([[token("a")], [token("b")], []], "a\r\nb\r\n", 0, NO_TOKEN_BOUND),
+    );
     expect(lines[0]?.[0]?.text).toBe("a");
     expect(lines[1]?.[0]?.text).toBe("b");
     expect(lines[2]).toEqual([]);
+  });
+
+  /**
+   * CARDINALITY IS ALL-OR-NOTHING.
+   *
+   * A projection with a different number of lines than the source does not
+   * correspond to the user's file line for line, and nothing can say which of
+   * its lines map to which of theirs. Repairing it per line would put a file on
+   * screen that is partly the tokenizer's invention and partly the user's, and
+   * in the extra-lines direction it would PRESERVE content the file does not
+   * contain. So the whole file falls back to plain, every line of it from the
+   * source.
+   */
+  describe("a line-count mismatch is a whole-file plain fallback", () => {
+    it("does not preserve a line the source does not have", () => {
+      // Three tokenizer lines for a two-line file. The third is not in the file.
+      const lines = linesOf(
+        projectLines(
+          [[token("a")], [token("b")], [token("INVENTED")]],
+          "a\nb",
+          0,
+          NO_TOKEN_BOUND,
+        ),
+      );
+      expect(lines).toHaveLength(2);
+      expect(lines.map((line) => line.map((entry) => entry.text).join(""))).toEqual([
+        "a",
+        "b",
+      ]);
+    });
+
+    it("keeps every source line when the tokenizer emitted too few", () => {
+      const lines = linesOf(projectLines([[token("a")]], "a\nb", 0, NO_TOKEN_BOUND));
+      expect(lines).toHaveLength(2);
+      expect(lines[1]?.[0]?.text).toBe("b");
+    });
+
+    it("trusts NO line from a mismatched projection, not even one that matched", () => {
+      // Line 0's tokens reconstruct "a" perfectly and carry a colour. Under a
+      // mismatch it is still discarded: the count says these tokens are not a
+      // description of this file, so no part of them is evidence about it.
+      const coloured: ThemedToken = { content: "a", offset: 0, color: "var(--x)" };
+      const lines = linesOf(
+        projectLines([[coloured], [token("b")], [token("c")]], "a\nb", 0, NO_TOKEN_BOUND),
+      );
+      expect(lines).toHaveLength(2);
+      expect(lines[0]).toEqual([
+        { text: "a", color: null, italic: false, bold: false, underline: false },
+      ]);
+    });
+  });
+
+  /**
+   * THE TOKEN BOUND, refused where it can still save the work.
+   *
+   * The point of enforcing it here rather than in the renderer is that the
+   * oversized array is abandoned rather than finished: nothing over the bound is
+   * ever returned, so nothing over the bound is ever structured-cloned across
+   * the worker boundary.
+   */
+  describe("the token bound", () => {
+    it("refuses a projection over the bound rather than returning it", () => {
+      const outcome = projectLines(
+        [[token("a"), token("b"), token("c")]],
+        "abc",
+        0,
+        2,
+      );
+      expect(outcome).toEqual({ ok: false, reason: "too_many_tokens" });
+    });
+
+    it("allows a projection exactly AT the bound", () => {
+      const outcome = projectLines([[token("a"), token("b")]], "ab", 0, 2);
+      expect(outcome.ok).toBe(true);
+    });
+
+    it("applies to the plain fallback too, where one token per line still counts", () => {
+      // Four source lines, so four plain tokens, against a bound of three - and
+      // the mismatch sends it down the plain path first.
+      const outcome = projectLines([[token("a")]], "a\nb\nc\nd", 0, 3);
+      expect(outcome).toEqual({ ok: false, reason: "too_many_tokens" });
+    });
   });
 });
