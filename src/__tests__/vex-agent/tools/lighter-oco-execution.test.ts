@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { buildLighterOcoPreview, buildLighterUnsignedOcoRequest } from "@tools/lighter/oco-order.js";
 import type { LighterOrderPreview } from "@tools/lighter/order-preview.js";
-import type { LighterAccountResponse, LighterMarketDetail } from "@tools/lighter/types.js";
+import type { LighterAccountOrder, LighterAccountResponse, LighterMarketDetail } from "@tools/lighter/types.js";
 import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
 import type { LighterOcoExecutionPlan } from "@vex-agent/tools/protocols/lighter/oco-execution-plan.js";
 import {
@@ -29,7 +29,12 @@ const BOOK = {
 const ACCOUNT: LighterAccountResponse = {
   code: 200, total: 1, accounts: [{
     index: 42, status: 1, collateral: "1000", available_balance: "900",
-    positions: [{ market_id: 0, symbol: "ETH", sign: 1, position: "1", avg_entry_price: "3000" }],
+    positions: [{
+      market_id: 0, symbol: "ETH", sign: 1, position: "1", avg_entry_price: "3000",
+      initial_margin_fraction: "5", open_order_count: 0, pending_order_count: 0,
+      position_tied_order_count: 0, position_value: "3000", unrealized_pnl: "0",
+      realized_pnl: "0", liquidation_price: "2000", margin_mode: 0, allocated_margin: "0",
+    }],
   }],
 };
 const PREVIEW = buildLighterOcoPreview({
@@ -69,13 +74,13 @@ function row(preview: LighterOrderPreview): LighterOrderPreviewRow {
   };
 }
 
-function active(index: 0 | 1) {
+function active(index: 0 | 1): LighterAccountOrder {
   return {
     order_index: index + 1, client_order_index: Number(GROUP.orders[index].clientOrderIndex),
     order_id: String(index + 1), client_order_id: GROUP.orders[index].clientOrderIndex,
-    market_index: 0, owner_account_index: 42, initial_base_amount: PLAN.baseAmountInteger,
-    remaining_base_amount: PLAN.baseAmountInteger, filled_base_amount: "0", filled_quote_amount: "0",
-    price: GROUP.orders[index].price, status: "open",
+    market_index: 0, owner_account_index: 42, initial_base_amount: PREVIEW.preview.baseAmount.display,
+    remaining_base_amount: PREVIEW.preview.baseAmount.display, filled_base_amount: "0", filled_quote_amount: "0",
+    price: (index === 0 ? PREVIEW.stopLoss : PREVIEW.takeProfit).preview.price.display, status: "open",
   };
 }
 
@@ -87,14 +92,14 @@ describe("approved Lighter native OCO execution", () => {
       .mockResolvedValueOnce({ code: 200, orders: [active(0), active(1)] });
     const dependencies: LighterOcoExecutionDeps = {
       secretReader: { readTradingApiPrivateKey: vi.fn(async () => `0x${"1".repeat(80)}`) },
-      authSigner: { source: "official_lighter_signer", createAccountAuth: vi.fn(async (input) => ({
+      authSigner: { source: "official_lighter_signer", createAccountAuth: vi.fn<LighterOcoExecutionDeps["authSigner"]["createAccountAuth"]>(async (input) => ({
         kind: "lighter_account_auth_signer_result", environment: input.environment,
         accountIndex: input.accountIndex, apiKeyIndex: input.apiKeyIndex,
         deadlineUnixSeconds: input.deadlineUnixSeconds,
         authToken: `${input.deadlineUnixSeconds}:42:7:${"a".repeat(128)}`,
         publicKey: PUBLIC_KEY,
       })), signCreateOrder: vi.fn() },
-      groupedSigner: { source: "official_lighter_signer", signCreateGroupedOrders: vi.fn(async (input) => ({
+      groupedSigner: { source: "official_lighter_signer", signCreateGroupedOrders: vi.fn<LighterOcoExecutionDeps["groupedSigner"]["signCreateGroupedOrders"]>(async (input) => ({
         kind: "lighter_create_grouped_orders_signer_result", environment: input.environment,
         accountIndex: input.accountIndex, apiKeyIndex: input.apiKeyIndex, nonce: input.nonce,
         clientOrderIndexes: [input.group.orders[0].clientOrderIndex, input.group.orders[1].clientOrderIndex],

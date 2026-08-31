@@ -978,7 +978,7 @@ describe("Lighter approved create execution pipeline", () => {
       },
       previews: { findFreshById: vi.fn(async () => protectiveRow) },
       reserveNonce: vi.fn(async () => ({
-        kind: "lighter_order_nonce_reservation",
+        kind: "lighter_order_nonce_reservation" as const,
         intentId: protectivePlan.intentId,
         sessionId: protectivePlan.sessionId,
         reservationId: `lighter-order:${protectivePlan.intentId}`,

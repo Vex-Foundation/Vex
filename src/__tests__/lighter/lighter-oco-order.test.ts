@@ -116,7 +116,7 @@ describe("Lighter native OCO protection", () => {
     });
     const adapter: LighterGroupedOrderSignerAdapter = {
       source: "official_lighter_signer",
-      signCreateGroupedOrders: vi.fn(async () => ({
+      signCreateGroupedOrders: vi.fn<LighterGroupedOrderSignerAdapter["signCreateGroupedOrders"]>(async () => ({
         kind: "lighter_create_grouped_orders_signer_result", environment: "core",
         accountIndex: 42, apiKeyIndex: 7, nonce: "9",
         clientOrderIndexes: [group.orders[0].clientOrderIndex, group.orders[1].clientOrderIndex],

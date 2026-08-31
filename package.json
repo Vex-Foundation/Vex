@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "test:lighter:live": "VEX_LIGHTER_LIVE=1 vitest run src/__tests__/lighter/lighter-live-market-data.test.ts",
     "test:lighter:live:apikeys": "VEX_LIGHTER_API_KEYS_LIVE=1 vitest run src/__tests__/lighter/lighter-live-api-keys.test.ts",
+    "test:lighter:live:accounts": "VEX_LIGHTER_ACCOUNT_READS_LIVE=1 vitest run src/__tests__/lighter/lighter-live-account-reads.test.ts",
     "test:lighter:live:preview": "VEX_LIGHTER_PREVIEW_LIVE=1 vitest run src/__tests__/lighter/lighter-live-order-preview.test.ts",
     "test:lighter:live:deposit-evidence": "VEX_LIGHTER_DEPOSIT_EVIDENCE_LIVE=1 vitest run src/__tests__/lighter/lighter-live-deposit-evidence.test.ts",
     "test:lighter:live:deposit-preflight": "VEX_LIGHTER_DEPOSIT_PREFLIGHT_LIVE=1 vitest run src/__tests__/lighter/lighter-live-deposit-preflight.test.ts",

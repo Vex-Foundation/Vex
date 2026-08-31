@@ -55,6 +55,8 @@ const mocks = vi.hoisted(() => ({
     markSequencerPending: vi.fn(),
   },
   lifecycleIntentsRepo: {
+    findLiveAccountWideCancel: vi.fn(),
+    findLiveOrderTarget: vi.fn(),
     findAnyLiveOrderMutation: vi.fn(),
     isSafelyExpirablePreSubmit: vi.fn(),
     expireStalePreSubmitWith: vi.fn(),
@@ -133,6 +135,8 @@ vi.mock("@vex-agent/db/repos/lighter-oco-execution-intents.js", () => ({
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-order-lifecycle-intents.js", () => ({
+  findLiveAccountWideCancel: mocks.lifecycleIntentsRepo.findLiveAccountWideCancel,
+  findLiveOrderTarget: mocks.lifecycleIntentsRepo.findLiveOrderTarget,
   findAnyLiveOrderMutation: mocks.lifecycleIntentsRepo.findAnyLiveOrderMutation,
   isSafelyExpirablePreSubmit: mocks.lifecycleIntentsRepo.isSafelyExpirablePreSubmit,
   expireStalePreSubmitWith: mocks.lifecycleIntentsRepo.expireStalePreSubmitWith,
@@ -560,6 +564,74 @@ beforeEach(() => {
 });
 
 describe("Lighter agent read handlers", () => {
+  it.each([
+    ["lighter.order.cancel.prepare", "lighter.order.cancel", "cancel_one"],
+    ["lighter.order.modify.prepare", "lighter.order.modify", "modify"],
+    ["lighter.order.cancelAll.prepare", "lighter.order.cancelAll", "cancel_all"],
+  ])("%s persists exact provider identity and returns the matching approval", async (toolId, executeId, actionType) => {
+    configureLighterTradingCredentialScopeResolver({
+      findSavedScope: (environment, accountIndex) => ({ environment, accountIndex, apiKeyIndex: 7 }),
+      listScopes: (environment) => [{ environment, accountIndex: 42, apiKeyIndex: 7 }],
+    });
+    const providerOrder = { ...accountOrder(), type: "limit", time_in_force: "good-till-time" };
+    mocks.client.getAccountActiveOrders.mockResolvedValue({ code: 200, orders: [providerOrder] });
+    mocks.client.getMarkets.mockResolvedValue({ code: 200, order_books: [MARKET] });
+    mocks.lifecycleIntentsRepo.findLiveAccountWideCancel.mockResolvedValue(null);
+    mocks.lifecycleIntentsRepo.findLiveOrderTarget.mockResolvedValue(null);
+    mocks.lifecycleIntentsRepo.findAnyLiveOrderMutation.mockResolvedValue(null);
+    mocks.lifecycleIntentsRepo.createApprovalPendingWith.mockImplementationOnce(async (_db, input) => ({
+      ...input, approvalStatus: "approval_pending", executionState: "approval_pending",
+    }));
+
+    const params = actionType === "cancel_all"
+      ? { environment: "rhc", accountIndex: 42 }
+      : { environment: "rhc", accountIndex: 42, marketId: 0, orderId: providerOrder.order_id,
+        ...(actionType === "modify" ? { totalBaseAmountIn: "100", price: "3500" } : {}) };
+    const result = await executeProtocolTool({ toolId, params }, READ_CTX);
+
+    expect(result.success, result.output).toBe(true);
+    expect(result.actionKind).toBe("approval_prepare");
+    expect(result.preparedActionFollowUp?.args).toMatchObject({ toolId: executeId });
+    const critical = result.preparedActionFollowUp?.approvalPreview?.criticalArgs;
+    expect(critical).toMatchObject({ environment: "rhc", accountIndex: 42, apiKeyIndex: 7 });
+    expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).toHaveBeenCalledWith({}, expect.objectContaining({
+      sessionId: READ_CTX.sessionId, environment: "rhc", accountIndex: 42, apiKeyIndex: 7, actionType,
+      ...(actionType === "cancel_all" ? {} : { providerOrderId: providerOrder.order_id }),
+    }));
+    if (actionType === "modify") {
+      expect(critical).toMatchObject({ requestedBaseAmountInteger: "1000000", requestedPriceInteger: "350000" });
+    }
+    expect(mocks.sessionLock.withSessionControlLock).toHaveBeenCalledOnce();
+  });
+
+  it("lighter.position.protect persists both exact child previews without trading access", async () => {
+    mocks.client.getMarkets.mockResolvedValue({ code: 200, order_books: [MARKET] });
+    mocks.client.getMarketDetails.mockResolvedValue({ code: 200, order_book_details: [DETAIL], spot_order_book_details: [] });
+    mocks.client.getOrderBookOrders.mockResolvedValue({
+      code: 200, total_asks: 1, asks: [order(1, "3500.50")], total_bids: 1, bids: [order(2, "3499.50")],
+    });
+    mocks.client.getAccount.mockResolvedValue({ code: 200, accounts: [ACCOUNT] });
+    mocks.client.getApiKeys.mockResolvedValue({ code: 200, api_keys: [] });
+    mocks.previewsRepo.create.mockResolvedValue(undefined);
+
+    const result = await executeProtocolTool({ toolId: "lighter.position.protect", params: {
+      environment: "rhc", accountIndex: 42, marketId: 0, side: "sell", baseAmountIn: "0.25",
+      stopLossTriggerPrice: "3400", stopLossPrice: "3300", takeProfitTriggerPrice: "3800",
+      takeProfitPrice: "3700", orderExpiryOffsetMinutes: 30,
+    } }, READ_CTX);
+
+    expect(result.success, result.output).toBe(true);
+    expect(result.preparedActionFollowUp).toBeUndefined();
+    expect(JSON.parse(result.output)).toMatchObject({ status: "oco_preview_ready", approvalReady: false });
+    expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(2);
+    for (const [index, kind, trigger] of [[0, "stop-loss", "340000"], [1, "take-profit", "380000"]] as const) {
+      expect(mocks.previewsRepo.create.mock.calls[index]?.[0]).toMatchObject({
+        preview: { identity: { orderType: kind, triggerPriceInteger: trigger, baseAmountInteger: "2500", reduceOnly: "1" } },
+      });
+    }
+    expect(mocks.ocoIntentsRepo.createApprovalPendingWith).not.toHaveBeenCalled();
+  });
+
   it("asks a new user only for their desired USDC deposit amount", async () => {
     mocks.onboarding.resolveStatus.mockResolvedValue({
       environment: "core",

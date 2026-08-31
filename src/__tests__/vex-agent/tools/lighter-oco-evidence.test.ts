@@ -26,11 +26,11 @@ function order(index: 0 | 1, status = "open"): LighterAccountOrder {
     client_order_id: GROUP.orders[index].clientOrderIndex,
     market_index: PLAN.marketIndex,
     owner_account_index: PLAN.accountIndex,
-    initial_base_amount: PLAN.baseAmountInteger,
-    remaining_base_amount: PLAN.baseAmountInteger,
+    initial_base_amount: "0.1",
+    remaining_base_amount: "0.1",
     filled_base_amount: "0",
     filled_quote_amount: "0",
-    price: GROUP.orders[index].price,
+    price: index === 0 ? "2850" : "3250",
     status,
   };
 }
@@ -49,11 +49,13 @@ describe("Lighter native OCO evidence", () => {
   it("does not attribute one shared grouped transaction hash to both children", () => {
     const oneTrade = {
       trade_id: 1,
+      type: "trade",
       trade_id_str: "1",
       tx_hash: "shared-tx",
       market_id: PLAN.marketIndex,
-      size: "1000",
-      price: "285000",
+      size: "0.1",
+      price: "2850",
+      usd_amount: "285",
       ask_account_id: PLAN.accountIndex,
       ask_client_id_str: GROUP.orders[0].clientOrderIndex,
       ask_id: 1,
