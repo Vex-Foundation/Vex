@@ -18,18 +18,38 @@ import { coerceBookWidth, coerceSidebarWidth } from "./layout.js";
 const MAX_BOOK_SECTION_ENTRIES = 32;
 const MAX_BOOK_SECTION_ID_LENGTH = 32;
 
+/**
+ * THE persisted-field list. One source of truth for BOTH directions.
+ *
+ * `partializeUiState` writes exactly these keys and `mergeUiState` reads
+ * exactly these keys, so the two cannot drift. Before this list existed the
+ * merge spread the whole user-writable payload over the live state, which meant
+ * a hand-edited `vex-ui` object could inject ANY slot the store declares -
+ * `runtimeMode`, `activeProjectId`, `currentView`, `activeSessionId` - and the
+ * store would rehydrate straight into it. localStorage is untrusted input, and
+ * a write-side whitelist alone never made the read side safe.
+ *
+ * Adding a slot here is the ONLY way to make it persist. A slot that is absent
+ * is ephemeral in both directions by construction.
+ */
+export const PERSISTED_UI_KEYS = [
+  "themePreference",
+  "sidebarOpen",
+  "bookOpen",
+  "sidebarWidth",
+  "bookWidth",
+  "hideDustBalances",
+  "notificationsEnabled",
+  "bookSectionOrder",
+  "bookTab",
+] as const satisfies readonly (keyof UiState)[];
+
+export type PersistedUiKey = (typeof PERSISTED_UI_KEYS)[number];
+
 export function partializeUiState(state: UiState): Record<string, unknown> {
-  return {
-    themePreference: state.themePreference,
-    sidebarOpen: state.sidebarOpen,
-    bookOpen: state.bookOpen,
-    sidebarWidth: state.sidebarWidth,
-    bookWidth: state.bookWidth,
-    hideDustBalances: state.hideDustBalances,
-    notificationsEnabled: state.notificationsEnabled,
-    bookSectionOrder: state.bookSectionOrder,
-    bookTab: state.bookTab,
-  };
+  const payload: Record<string, unknown> = {};
+  for (const key of PERSISTED_UI_KEYS) payload[key] = state[key];
+  return payload;
 }
 
 /**
@@ -153,9 +173,17 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     )
       ? incoming.bookSectionOrder
       : [];
+  // The whitelist REPLACES the old `...incoming` spread. Only a declared
+  // persisted key can come back from storage; everything else keeps the value
+  // the store was constructed with, so an injected `runtimeMode` or
+  // `currentView` in a hand-edited payload is dropped rather than merged.
+  const restored: Record<string, unknown> = {};
+  for (const key of PERSISTED_UI_KEYS) {
+    if (incoming !== undefined && key in incoming) restored[key] = incoming[key];
+  }
   return {
     ...current,
-    ...incoming,
+    ...(restored as Partial<UiState>),
     theme,
     themePreference,
     hideDustBalances,

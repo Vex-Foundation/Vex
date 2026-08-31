@@ -1,0 +1,316 @@
+/**
+ * THE STUDIO CENTRE - column 2 while `runtimeMode === "studio"`.
+ *
+ * It shows the welcome screen when nothing is selected and, otherwise, ONE
+ * `StudioWorkspaceController` per kept-alive project, with the inactive ones
+ * CSS-hidden rather than unmounted. That is the `BookPanel` precedent applied to
+ * a much more expensive subtree: unmounting a workspace would unmount its
+ * `XtermHost`es, detach every terminal, drop the restored layout and throw away
+ * the screen the user is reading. Hidden costs a DOM subtree; unmounted costs
+ * their work.
+ *
+ * ## What this component owns, and what it does not
+ *
+ * It owns EFFECTS and the store: the keep-alive set, the explorer session
+ * references, the close prompt, the terminal disposal on an explicit close. It
+ * owns no RULES - every transition of the set is a call into
+ * `workspace/keep-alive.ts`, which is pure and table-tested, exactly as
+ * `StudioWorkspaceController` stands to `workspace/workspace-model.ts`.
+ *
+ * ## The active project is uiStore state; the SET is component state
+ *
+ * `activeProjectId` lives in the uiStore because the sidebar writes it and the
+ * shell frame reads it for its welcome-stage solve. The kept-alive set lives
+ * here because nothing outside this column can act on it, and putting it in the
+ * store would invite a second writer for a bound only this component enforces.
+ * The two are reconciled in one effect, and the effect is the only place the
+ * refusal can happen.
+ *
+ * ## Explorer references
+ *
+ * Every kept-alive project holds ONE explorer reference for as long as it is in
+ * the set (`StudioProjectWorkspace` below), so a hidden project keeps its
+ * expanded tree. The ACTIVE project holds a SECOND one, moved by
+ * `explorerRegistry.switchTo(next, previous)` - the registry's own method,
+ * because the order it enforces (activate the new watcher BEFORE releasing the
+ * old) is a rule with a stated reason and must not be hand-rolled here. The
+ * arithmetic is: membership +1 on entering the set, switchTo +1 on becoming
+ * active and -1 on ceasing to be, membership -1 on leaving. A project in the set
+ * therefore never reaches zero, and one that leaves does.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import type { ProjectDto } from "@shared/schemas/projects.js";
+import { cn } from "../../../lib/utils.js";
+import { useProjects } from "../../../lib/api/projects.js";
+import { useUiStore } from "../../../stores/uiStore.js";
+import {
+  explorerRegistry as windowExplorerRegistry,
+  type ExplorerRegistry,
+} from "./explorer/index.js";
+import {
+  StudioWorkspaceController,
+  terminalRegistry as windowTerminalRegistry,
+  type TerminalRegistry,
+} from "./terminal/index.js";
+import { StudioWelcome } from "./welcome/StudioWelcome.js";
+import { StudioKeepAliveDialog } from "./StudioKeepAliveDialog.js";
+import { takeProjectTerminals } from "./workspace/project-terminals.js";
+import {
+  closeProject,
+  emptyKeepAlive,
+  repairAgainstProjects,
+  removedProjectIds,
+  selectProject,
+  selectWelcome,
+  type KeepAliveState,
+} from "./workspace/keep-alive.js";
+
+export interface StudioCenterProps {
+  /** Open the project creator; B4b supplies it. See `StudioWelcome`. */
+  readonly onCreateProject?: () => void;
+  /** Test seams; production uses the window's registries. */
+  readonly explorerRegistry?: ExplorerRegistry;
+  readonly terminalRegistry?: TerminalRegistry;
+}
+
+export function StudioCenter({
+  onCreateProject,
+  explorerRegistry,
+  terminalRegistry,
+}: StudioCenterProps): JSX.Element {
+  const activeProjectId = useUiStore((s) => s.activeProjectId);
+  const setActiveProjectId = useUiStore((s) => s.setActiveProjectId);
+  const query = useProjects();
+
+  const explorers = explorerRegistry ?? windowExplorerRegistry;
+  const terminals = terminalRegistry ?? windowTerminalRegistry;
+
+  const [keepAlive, setKeepAlive] = useState<KeepAliveState>(emptyKeepAlive);
+  /** The project a refusal parked for the close prompt. */
+  const [refusedProjectId, setRefusedProjectId] = useState<string | null>(null);
+
+  const projects: readonly ProjectDto[] = useMemo(
+    () => (query.data !== undefined && query.data.ok ? query.data.data : []),
+    [query.data],
+  );
+  const projectById = useMemo(() => {
+    const map = new Map<string, ProjectDto>();
+    for (const project of projects) map.set(project.id, project);
+    return map;
+  }, [projects]);
+
+  /**
+   * Dispose one project's terminals. The ONLY caller is an explicit close.
+   *
+   * The controller's own unmount deliberately disposes nothing (its teardown
+   * comment says why: each `XtermHost` owns its attachment and detaching twice
+   * gives one handle two owners). That is right for a mode switch, where the
+   * workspace comes back. It is wrong for a close, after which no component
+   * will ever name these xterm instances again, so they would be retained -
+   * buffers, theme observers and WebGL contexts - for the life of the window.
+   *
+   * The ptys are NOT killed. Closing a workspace is not closing a tab: the
+   * layout snapshot is on disk, the shells survive their grace period, and
+   * reopening the project reattaches them. Killing them here would destroy work
+   * on an action the user took to make room, not to end anything.
+   */
+  const disposeProjectTerminals = useCallback(
+    (projectId: string): void => {
+      for (const terminalId of takeProjectTerminals(projectId)) {
+        terminals.dispose(terminalId);
+      }
+    },
+    [terminals],
+  );
+
+  /**
+   * Apply a keep-alive transition, disposing whatever left the set.
+   *
+   * The transition is computed against a REF rather than inside a setState
+   * updater, because the disposal is an effect and React may invoke an updater
+   * twice (StrictMode) - which would dispose a project's terminals twice for one
+   * close. The ref is written alongside every set, so a second call in the same
+   * tick still sees the current set.
+   */
+  const keepAliveRef = useRef(keepAlive);
+  keepAliveRef.current = keepAlive;
+  const applyKeepAlive = useCallback(
+    (next: (current: KeepAliveState) => KeepAliveState): void => {
+      const current = keepAliveRef.current;
+      const updated = next(current);
+      if (updated === current) return;
+      keepAliveRef.current = updated;
+      for (const removed of removedProjectIds(current, updated)) {
+        disposeProjectTerminals(removed);
+      }
+      setKeepAlive(updated);
+    },
+    [disposeProjectTerminals],
+  );
+
+  /**
+   * Reconcile the uiStore's selection into the kept-alive set.
+   *
+   * This is where the bound is enforced, because this is the one place a new
+   * project can enter the set. A refusal parks the request for the prompt and
+   * RETURNS THE SELECTION to where it was, so the shell is never left pointing
+   * at a workspace that does not exist.
+   */
+  useEffect(() => {
+    if (activeProjectId === null) {
+      applyKeepAlive(selectWelcome);
+      return;
+    }
+    if (keepAlive.activeProjectId === activeProjectId) return;
+    const outcome = selectProject(keepAlive, activeProjectId);
+    if (outcome.ok) {
+      applyKeepAlive(() => outcome.state);
+      return;
+    }
+    setRefusedProjectId(outcome.requestedProjectId);
+    setActiveProjectId(keepAlive.activeProjectId);
+  }, [activeProjectId, applyKeepAlive, keepAlive, setActiveProjectId]);
+
+  /**
+   * STALE-SELECTION REPAIR against a SETTLED list.
+   *
+   * `query.isSuccess` plus an `ok` envelope: reconciling against a loading or
+   * failed read would close every workspace the moment a refetch blipped, which
+   * is the silent eviction the bound exists to prevent.
+   */
+  const listSettled = query.isSuccess && query.data.ok;
+  const existingIds = useMemo(() => projects.map((p) => p.id), [projects]);
+  useEffect(() => {
+    if (!listSettled) return;
+    applyKeepAlive((current) => repairAgainstProjects(current, existingIds));
+    if (activeProjectId !== null && !existingIds.includes(activeProjectId)) {
+      setActiveProjectId(null);
+    }
+  }, [
+    activeProjectId,
+    applyKeepAlive,
+    existingIds,
+    listSettled,
+    setActiveProjectId,
+  ]);
+
+  /**
+   * THE ACTIVE EXPLORER REFERENCE, moved by the registry's own `switchTo`.
+   *
+   * The guard is what makes it StrictMode-safe: the second setup pass sees the
+   * same value in the ref and does nothing, so the double-invoked effect cannot
+   * take a second reference that no cleanup gives back.
+   */
+  const activeExplorerRef = useRef<string | null>(null);
+  const shownProjectId = keepAlive.activeProjectId;
+  useEffect(() => {
+    const previous = activeExplorerRef.current;
+    if (previous === shownProjectId) return;
+    activeExplorerRef.current = shownProjectId;
+    if (shownProjectId === null) {
+      if (previous !== null) {
+        void explorers.deactivate(previous);
+        explorers.release(previous);
+      }
+      return;
+    }
+    void explorers.switchTo(shownProjectId, previous);
+  }, [explorers, shownProjectId]);
+
+  // Window/mode teardown: give back the active reference the effect above took.
+  // The MEMBERSHIP references are given back by each workspace's own unmount.
+  useEffect(() => {
+    return () => {
+      const held = activeExplorerRef.current;
+      activeExplorerRef.current = null;
+      if (held !== null) explorers.release(held);
+    };
+  }, [explorers]);
+
+  const handleCloseWorkspace = useCallback(
+    (projectId: string): void => {
+      applyKeepAlive((current) => closeProject(current, projectId));
+      setRefusedProjectId(null);
+    },
+    [applyKeepAlive],
+  );
+
+  const refusedProject =
+    refusedProjectId === null ? null : (projectById.get(refusedProjectId) ?? null);
+  const openProjects = keepAlive.projectIds
+    .map((id) => projectById.get(id))
+    .filter((project): project is ProjectDto => project !== undefined);
+
+  return (
+    <div
+      data-vex-area="studio-center"
+      className="relative flex h-full min-h-0 w-full min-w-0 flex-col"
+    >
+      {keepAlive.activeProjectId === null ? (
+        <StudioWelcome
+          onCreateProject={onCreateProject}
+          onSelectProject={setActiveProjectId}
+        />
+      ) : null}
+
+      {keepAlive.projectIds.map((projectId) => (
+        <StudioProjectWorkspace
+          key={projectId}
+          projectId={projectId}
+          active={projectId === keepAlive.activeProjectId}
+          explorers={explorers}
+          terminals={terminalRegistry}
+        />
+      ))}
+
+      <StudioKeepAliveDialog
+        requestedProject={refusedProject}
+        openProjects={openProjects}
+        onCancel={() => setRefusedProjectId(null)}
+        onCloseWorkspace={handleCloseWorkspace}
+      />
+    </div>
+  );
+}
+
+/**
+ * One kept-alive project workspace: the controller plus the explorer reference
+ * that keeps this project's tree alive while it is hidden.
+ *
+ * A component per project rather than a loop of effects, because a membership
+ * reference is a per-project lifetime and React gives a per-key component
+ * exactly that. The registry's deferred teardown absorbs the StrictMode
+ * setup/cleanup/setup pass; see `explorer-registry.ts`.
+ */
+function StudioProjectWorkspace({
+  projectId,
+  active,
+  explorers,
+  terminals,
+}: {
+  readonly projectId: string;
+  readonly active: boolean;
+  readonly explorers: ExplorerRegistry;
+  readonly terminals?: TerminalRegistry;
+}): JSX.Element {
+  useEffect(() => {
+    explorers.acquire(projectId);
+    return () => {
+      explorers.release(projectId);
+    };
+  }, [explorers, projectId]);
+
+  return (
+    // `hidden`, never unmounted, for as long as this project is kept alive.
+    // `min-h-0` on the shown branch so the controller's own flex column can
+    // scroll rather than push the frame.
+    <div
+      hidden={!active}
+      data-vex-studio-workspace={projectId}
+      className={cn("min-h-0 flex-1", !active && "hidden")}
+    >
+      <StudioWorkspaceController projectId={projectId} registry={terminals} />
+    </div>
+  );
+}

@@ -28,12 +28,21 @@ import {
 export interface ExplorerHeaderProps {
   readonly onRefresh: () => void;
   readonly onCollapseAll: () => void;
+  /**
+   * What this pane is showing. Defaults to the generic section label; the
+   * Studio sidebar passes the ROOT PROJECT'S NAME, which is what VS Code's own
+   * explorer view pane titles itself with (`explorerView.ts:250`) - the
+   * enclosing section already says the word "Explorer", and a pane that
+   * repeated it would name itself twice and name the folder never.
+   */
+  readonly title?: string;
   readonly className?: string;
 }
 
 export function ExplorerHeader({
   onRefresh,
   onCollapseAll,
+  title,
   className,
 }: ExplorerHeaderProps): JSX.Element {
   return (
@@ -44,7 +53,7 @@ export function ExplorerHeader({
       )}
     >
       <span className="flex-1 truncate text-[11px] font-medium tracking-wide text-ink-tertiary uppercase">
-        {EXPLORER_SECTION_LABEL}
+        {title ?? EXPLORER_SECTION_LABEL}
       </span>
       <Tooltip label={EXPLORER_REFRESH_TOOLTIP} side="bottom">
         <button

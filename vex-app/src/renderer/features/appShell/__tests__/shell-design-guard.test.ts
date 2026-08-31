@@ -214,6 +214,18 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "Glass is allowed ONLY on the two side rails.",
   },
   {
+    // Stage B4a: the Studio rail is the SAME rail as the sessions rail, in the
+    // same seat, wearing the same --vex-rail glass. It is one of the two side
+    // rails the law sanctions, not a third glass surface.
+    file: "features/appShell/studio/sidebar/StudioSidebar.tsx",
+    pattern: "backdrop-blur (glass)",
+    reason:
+      "User-sanctioned glass rail: the Studio sidebar replaces the sessions " +
+      "sidebar in column 1 and floats as the same translucent ink " +
+      "(--vex-rail) with backdrop-blur over the current shell photo backdrop. " +
+      "Glass is allowed ONLY on the two side rails.",
+  },
+  {
     file: "features/appShell/BookPanel.tsx",
     pattern: "backdrop-blur (glass)",
     reason:

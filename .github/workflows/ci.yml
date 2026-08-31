@@ -39,6 +39,12 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # Repo-wide, not diff-scoped, and cheap: a binary source file is exactly
+      # what makes every OTHER scanner in this job blind, so it runs on every
+      # event rather than pull requests only.
+      - name: Reject binary source files
+        run: pnpm check:no-binary-sources
+
       - name: Reject unsafe test escapes
         # PULL REQUESTS ONLY, by design. The deleted-test allowlist's lifecycle
         # is PR-scoped: an entry is consumed the moment its change merges, so a

@@ -21,7 +21,7 @@
  */
 
 import {
-  WORKSPACE_KEEP_ALIVE_MAX,
+  WORKSPACE_TERMINAL_GROUPS_MAX,
   type WorkspaceCleanupPlan,
   type WorkspaceFileTab,
   type WorkspaceMutation,
@@ -60,7 +60,7 @@ export function terminalGroupCount(state: WorkspaceState): number {
  * refusal creates nothing at all.
  */
 export function canAddTerminalGroup(state: WorkspaceState, pending: number): boolean {
-  return terminalGroupCount(state) + Math.max(0, pending) < WORKSPACE_KEEP_ALIVE_MAX;
+  return terminalGroupCount(state) + Math.max(0, pending) < WORKSPACE_TERMINAL_GROUPS_MAX;
 }
 
 /**
@@ -84,7 +84,7 @@ export function addTerminalGroup(
   state: WorkspaceState,
   group: WorkspaceTerminalGroup,
 ): WorkspaceMutation {
-  if (terminalGroupCount(state) >= WORKSPACE_KEEP_ALIVE_MAX) {
+  if (terminalGroupCount(state) >= WORKSPACE_TERMINAL_GROUPS_MAX) {
     return { ok: false, reason: "keep_alive_limit", state };
   }
   return {

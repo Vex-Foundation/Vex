@@ -22,7 +22,9 @@
  *
  * ## Keep-alive REFUSES, it does not evict
  *
- * At most `WORKSPACE_KEEP_ALIVE_MAX` terminal groups stay live per project.
+ * At most `WORKSPACE_TERMINAL_GROUPS_MAX` terminal groups stay live per project.
+ * (The number of PROJECT workspaces the Studio centre keeps mounted is a
+ * different bound with a different owner: `workspace/keep-alive.ts`.)
  * Reaching it refuses the new group and names the bound; it never closes a
  * user's running shell to make room, which is the same doctrine main applies to
  * the terminal count itself. The two bounds are different (this one is about
@@ -30,8 +32,14 @@
  * silently evicted at either would destroy work the user did not ask to lose.
  */
 
-/** Live, attached terminal groups per project. Refused, never evicted. */
-export const WORKSPACE_KEEP_ALIVE_MAX = 4;
+/**
+ * Live, attached terminal groups per project. Refused, never evicted.
+ *
+ * Renamed from `WORKSPACE_KEEP_ALIVE_MAX` in B4a: the plan's "keep-alive" bound
+ * is the number of kept-alive PROJECT WORKSPACES, and two different quantities
+ * cannot share one name. See `workspace/keep-alive.ts` for that one.
+ */
+export const WORKSPACE_TERMINAL_GROUPS_MAX = 4;
 
 /** One terminal inside a group. */
 export interface WorkspacePane {

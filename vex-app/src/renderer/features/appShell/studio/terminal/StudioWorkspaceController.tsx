@@ -57,6 +57,7 @@ import {
   toPersistedLayout,
 } from "../workspace/workspace-model.js";
 import { useFileOpenIntentStore } from "../workspace/file-open-intent.js";
+import { publishProjectTerminals } from "../workspace/project-terminals.js";
 import type { WorkspaceMutation, WorkspaceState } from "../workspace/types.js";
 import { TerminalTabs } from "./TerminalTabs.js";
 import { FileViewer } from "../viewer/index.js";
@@ -296,6 +297,23 @@ export function StudioWorkspaceController({
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [flushPersist]);
+
+  /**
+   * Mirror this project's terminal ids into the project index.
+   *
+   * The Studio centre needs them at exactly one moment: the user closing this
+   * kept-alive workspace, which happens WHILE this component is still mounted
+   * and which the teardown below deliberately does not handle. See
+   * `workspace/project-terminals.ts` for why the index exists at all.
+   */
+  useEffect(() => {
+    const terminalIds: string[] = [];
+    for (const tab of state.tabs) {
+      if (tab.kind !== "terminalGroup") continue;
+      for (const pane of tab.panes) terminalIds.push(pane.terminalId);
+    }
+    publishProjectTerminals(projectId, terminalIds);
+  }, [projectId, state]);
 
   /* ---------------- teardown ---------------- */
 
