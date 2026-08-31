@@ -95,10 +95,6 @@ const ALLOWLIST = new Map([
     "src/vex-agent/engine/prompts/capability-availability.ts",
     "Uses a literal NUL as a composite map-key separator.",
   ],
-  [
-    "vex-app/src/main/sessions/markdown-export.ts",
-    "Filename scrubbing: the control-character class in its regex starts at NUL.",
-  ],
 ]);
 
 function fail(message) {
