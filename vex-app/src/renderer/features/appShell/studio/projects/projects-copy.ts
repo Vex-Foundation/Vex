@@ -158,9 +158,29 @@ export const PROJECT_DELETE_TRASH_HELP =
  * checkbox that still moved after that point would let the user believe they
  * had spared or condemned their folder when nothing they did could change it,
  * which is the worst kind of lie a destructive dialog can tell.
+ *
+ * It says "as it was recorded" rather than "as you first asked it" because the
+ * recorded request is not always this window's: main echoes the tombstone's own
+ * intent, and when a second window created the tombstone the value shown here
+ * is that window's choice. Claiming the user asked for it would be false in
+ * exactly the case `PROJECT_DELETE_TRASH_ELSEWHERE_NOTE` exists to name.
  */
 export const PROJECT_DELETE_TRASH_LOCKED_NOTE =
-  "Vex recorded this choice when it deleted the project. Trying again resumes that same request with the folder choice exactly as you first asked it, so it can no longer be changed here.";
+  "Vex recorded this choice when it deleted the project. Trying again resumes that same request with the folder choice exactly as it was recorded, so it can no longer be changed here.";
+
+/**
+ * The extra sentence for the case where the recorded choice is NOT the one this
+ * dialog submitted.
+ *
+ * Main echoes the tombstone's intent on every outcome that resumes an
+ * unfinished cleanup, and it can disagree with this dialog's checkbox: another
+ * window deleted the same project first, or an earlier attempt from here
+ * recorded a choice the box has since moved off. The locked note alone would
+ * then read as though the user had made the shown choice, so this names the
+ * real provenance instead of quietly swapping the value under them.
+ */
+export const PROJECT_DELETE_TRASH_ELSEWHERE_NOTE =
+  "This delete was already in progress with the folder choice shown above, from another window or an earlier attempt, and that is the request Vex is finishing.";
 
 /**
  * The line above the typed confirmation. It names the action as irreversible in

@@ -57,6 +57,7 @@ import {
 import { ProjectDeleteDialog } from "../ProjectDeleteDialog.js";
 import {
   PROJECT_DELETE_OUTCOME_SENTENCES,
+  PROJECT_DELETE_TRASH_ELSEWHERE_NOTE,
   PROJECT_DELETE_TRASH_LABEL,
   PROJECT_DELETE_TRASH_LOCKED_NOTE,
   PROJECT_TRASH_SENTENCES,
@@ -236,7 +237,12 @@ describe("the frozen folder choice", () => {
     // would tell the user their folder was spared while it went to the trash.
     deleteMock.mockResolvedValue({
       ok: true,
-      data: { outcome: "cleanup_pending", ...cleanup, attempts: 2 },
+      data: {
+        outcome: "cleanup_pending",
+        ...cleanup,
+        trashRequested: true,
+        attempts: 2,
+      },
     });
     renderDialog();
 
@@ -267,7 +273,12 @@ describe("the frozen folder choice", () => {
     // pending IS the one that moves the folder.
     deleteMock.mockResolvedValue({
       ok: true,
-      data: { outcome: "cleanup_pending", ...cleanup, attempts: 1 },
+      data: {
+        outcome: "cleanup_pending",
+        ...cleanup,
+        trashRequested: true,
+        attempts: 1,
+      },
     });
     renderDialog();
     fireEvent.click(trashCheckbox());
@@ -285,7 +296,12 @@ describe("the frozen folder choice", () => {
     // `false` would promise a trash that never happens.
     deleteMock.mockResolvedValue({
       ok: true,
-      data: { outcome: "cleanup_pending", ...cleanup, attempts: 1 },
+      data: {
+        outcome: "cleanup_pending",
+        ...cleanup,
+        trashRequested: false,
+        attempts: 1,
+      },
     });
     renderDialog();
     await confirmDelete();
@@ -305,11 +321,16 @@ describe("the frozen folder choice", () => {
     // re-record: the value that created the tombstone is the only true one.
     deleteMock.mockResolvedValueOnce({
       ok: true,
-      data: { outcome: "cleanup_pending", ...cleanup, attempts: 1 },
+      data: {
+        outcome: "cleanup_pending",
+        ...cleanup,
+        trashRequested: true,
+        attempts: 1,
+      },
     });
     deleteMock.mockResolvedValue({
       ok: true,
-      data: { outcome: "cleanup_resumed", ...cleanup },
+      data: { outcome: "cleanup_resumed", ...cleanup, trashRequested: true },
     });
     renderDialog();
     fireEvent.click(trashCheckbox());
@@ -350,12 +371,107 @@ describe("the frozen folder choice", () => {
     expect(deleteMock.mock.calls[1]?.[0].alsoTrashFolder).toBe(true);
   });
 
+  it("freezes MAIN'S ECHO, not the value this dialog submitted", async () => {
+    // THE TWO-WINDOW DEFECT. Another window deleted this project with the
+    // folder box CHECKED and its cleanup did not finish; this window's dialog
+    // was already open with the box UNCHECKED. Main resumes the tombstone it
+    // found - `trashRequested: true` - and may move the folder to the trash.
+    // Freezing what THIS dialog sent would lock an unchecked box and call it
+    // the recorded choice, while the user's folder went to the trash anyway.
+    deleteMock.mockResolvedValue({
+      ok: true,
+      data: {
+        outcome: "cleanup_pending",
+        ...cleanup,
+        trashRequested: true,
+        attempts: 1,
+      },
+    });
+    renderDialog();
+
+    // Submitted UNCHECKED.
+    expect(trashCheckbox().checked).toBe(false);
+    await confirmDelete();
+    expect(deleteMock.mock.calls[0]?.[0].alsoTrashFolder).toBe(false);
+    await screen.findByText("Vex has attempted this cleanup once.");
+
+    // RED ON REVERT: drop the echo consumption (`setRecordedTrash((current) =>
+    // current ?? trashChoice)`) and this shows `false` - the stale submitted
+    // value presented as the recorded decision.
+    expect(trashCheckbox().checked).toBe(true);
+    expect(trashCheckbox().disabled).toBe(true);
+    // And it is said out loud, rather than the value silently swapping under
+    // the user: this request was already in progress with that choice.
+    expect(screen.getByText(PROJECT_DELETE_TRASH_ELSEWHERE_NOTE)).not.toBeNull();
+    expect(screen.getByText(PROJECT_DELETE_TRASH_LOCKED_NOTE)).not.toBeNull();
+    // The warning treatment follows the TRUTH, not the submission: the pending
+    // action is the one that moves the folder.
+    expect(
+      document.querySelector('[data-vex-delete-warned="true"]'),
+    ).not.toBeNull();
+
+    // And the retry carries the echoed value, not the one this window chose.
+    fireEvent.click(confirmButton());
+    await waitFor(() => {
+      expect(deleteMock).toHaveBeenCalledTimes(2);
+    });
+    expect(deleteMock.mock.calls[1]?.[0].alsoTrashFolder).toBe(true);
+  });
+
+  it("says nothing about another window when the echo AGREES", async () => {
+    // The ordinary case: this dialog created the tombstone, so the echo is its
+    // own choice coming back. The extra sentence would be a fabricated story
+    // about a second window that does not exist.
+    deleteMock.mockResolvedValue({
+      ok: true,
+      data: {
+        outcome: "cleanup_pending",
+        ...cleanup,
+        trashRequested: true,
+        attempts: 1,
+      },
+    });
+    renderDialog();
+    fireEvent.click(trashCheckbox());
+    await confirmDelete();
+    await screen.findByText("Vex has attempted this cleanup once.");
+
+    expect(trashCheckbox().checked).toBe(true);
+    expect(screen.queryByText(PROJECT_DELETE_TRASH_ELSEWHERE_NOTE)).toBeNull();
+  });
+
+  it("falls back to the submitted value on an outcome that carries NO echo", async () => {
+    // `removed` and `already_removed` carry no `trashRequested` (see the union's
+    // own note: neither can be answered to a caller that did not create the
+    // tombstone). A `removed` whose trash FAILED keeps the dialog open, and the
+    // freeze there has only the submitted value to stand on - which is correct,
+    // because for that member it IS the tombstone's value.
+    deleteMock.mockResolvedValue({
+      ok: true,
+      data: { outcome: "removed", cleanup: [], trash: "failed" },
+    });
+    renderDialog();
+    fireEvent.click(trashCheckbox());
+    await confirmDelete();
+    await screen.findByText(PROJECT_TRASH_SENTENCES.failed);
+
+    expect(trashCheckbox().checked).toBe(true);
+    expect(trashCheckbox().disabled).toBe(true);
+    expect(screen.getByText(PROJECT_DELETE_TRASH_LOCKED_NOTE)).not.toBeNull();
+    expect(screen.queryByText(PROJECT_DELETE_TRASH_ELSEWHERE_NOTE)).toBeNull();
+  });
+
   it("lifts the freeze when a NEW delete opens the dialog", async () => {
     // A new request is a new decision. The freeze belongs to the tombstone the
     // dialog created, not to the dialog.
     deleteMock.mockResolvedValue({
       ok: true,
-      data: { outcome: "cleanup_pending", ...cleanup, attempts: 1 },
+      data: {
+        outcome: "cleanup_pending",
+        ...cleanup,
+        trashRequested: true,
+        attempts: 1,
+      },
     });
     const { setProject } = renderDialog();
     fireEvent.click(trashCheckbox());
@@ -432,8 +548,16 @@ describe("every delete outcome", () => {
     [{ outcome: "removed", ...cleanup }, true],
     [{ outcome: "already_removed" }, true],
     [{ outcome: "not_found" }, false],
-    [{ outcome: "cleanup_resumed", ...cleanup }, false],
-    [{ outcome: "cleanup_pending", ...cleanup, attempts: 2 }, false],
+    [{ outcome: "cleanup_resumed", ...cleanup, trashRequested: false }, false],
+    [
+      {
+        outcome: "cleanup_pending",
+        ...cleanup,
+        trashRequested: false,
+        attempts: 2,
+      },
+      false,
+    ],
     [{ outcome: "blocked_active_calls", count: 3 }, false],
     [{ outcome: "blocked_pending_dispatch" }, false],
   ])("renders %o and closes only when it should", async (outcome, closes) => {
@@ -472,7 +596,12 @@ describe("every delete outcome", () => {
   it("reports the attempt count on cleanup_pending", async () => {
     deleteMock.mockResolvedValue({
       ok: true,
-      data: { outcome: "cleanup_pending", ...cleanup, attempts: 2 },
+      data: {
+        outcome: "cleanup_pending",
+        ...cleanup,
+        trashRequested: false,
+        attempts: 2,
+      },
     });
     renderDialog();
     await confirmDelete();
@@ -558,7 +687,12 @@ describe("the pinned row", () => {
     // report left on screen.
     deleteMock.mockResolvedValue({
       ok: true,
-      data: { outcome: "cleanup_pending", ...cleanup, attempts: 2 },
+      data: {
+        outcome: "cleanup_pending",
+        ...cleanup,
+        trashRequested: false,
+        attempts: 2,
+      },
     });
     const { onHoldOpen, setProject } = renderDialog();
     await confirmDelete();
@@ -613,7 +747,12 @@ describe("the pinned row", () => {
   it("releases the hold when the dialog goes away", async () => {
     deleteMock.mockResolvedValue({
       ok: true,
-      data: { outcome: "cleanup_pending", ...cleanup, attempts: 1 },
+      data: {
+        outcome: "cleanup_pending",
+        ...cleanup,
+        trashRequested: false,
+        attempts: 1,
+      },
     });
     const { onHoldOpen } = renderDialog();
     await confirmDelete();

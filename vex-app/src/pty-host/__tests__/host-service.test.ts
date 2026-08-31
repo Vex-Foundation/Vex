@@ -1599,11 +1599,13 @@ function projectLayout(
   terminalId: string,
   layoutVersion = 0,
   groupId = "g1",
+  final = false,
 ): TerminalHostRequest {
   return {
     kind: "persistWorkspace",
     projectId,
     layoutVersion,
+    final,
     layout: {
       projectId,
       groups: [
@@ -1722,9 +1724,12 @@ describe("a forgotten project is never committed again", () => {
     // The follow-up ran and found no layout: `gB` was never written. Without
     // the delete it is `["start gA", "end gA", "start gB", "end gB"]`.
     expect(store.events).toEqual(["start gA", "end gA"]);
-    const read = await store.read("doomed");
-    if (read.kind !== "ok") throw new Error(`snapshot not readable: ${read.kind}`);
-    expect(read.snapshot.layout.groups[0]?.groupId).toBe("gA");
+    // CONTRACT CHANGE, B4 round 3 finding 2: `gA`'s rename landed AFTER the
+    // forget, so the host now unlinks the file it just wrote rather than
+    // leaving it for the delete's cleanup - which, when main has stopped
+    // waiting for the forget, has already run. This assertion used to read the
+    // surviving `gA` snapshot back.
+    expect(await exists(path.join(directory, "doomed.json"))).toBe(false);
 
     await service.shutdownAll();
     // And the shutdown that follows does not commit it either.
@@ -1842,3 +1847,206 @@ async function exists(file: string): Promise<boolean> {
     return false;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * B4 round 3, finding 1: the close's snapshot must survive the quit
+ * ------------------------------------------------------------------ */
+
+/**
+ * THE FOURTH RESURRECTION ROUTE, running the other way: the host's autonomous
+ * shutdown commit DESTROYING a snapshot instead of recreating one.
+ *
+ * An explicit close persists the full buffer-bearing snapshot and then kills
+ * the ptys - and the host went on holding that layout. `runShutdown` commits
+ * every retained layout on its own initiative, reconciliation drops every pane
+ * whose terminal is dead, and the EMPTY result overwrote the file the close had
+ * just written. The user reopened the project after a restart and found the
+ * revive they had been promised gone, with nothing in any log to say why.
+ */
+describe("a workspace closed with a FINAL persist survives the quit that follows", () => {
+  it("is not recommitted by the shutdown, and its file keeps its panes", async () => {
+    const store = new RecordingSnapshotStore(directory);
+    const { service, ptys } = buildWith(store);
+    expect((await send(service, createIn("closed", "t1"))).ok).toBe(true);
+    expect((await send(service, createIn("kept", "t2"))).ok).toBe(true);
+
+    // A buffer worth reviving, so the assertion below is about content and not
+    // only about a file existing.
+    ptys[0]?.emit("VEX_CLOSED_BUFFER\r\n");
+    await service.terminal("t1")?.process.mirror.drain();
+
+    // THE CLOSE, in the renderer's order: the final commit, then the kills.
+    expect((await send(service, projectLayout("closed", "t1", 0, "g1", true))).ok).toBe(true);
+    expect((await send(service, projectLayout("kept", "t2"))).ok).toBe(true);
+    expect(
+      (await send(service, { kind: "kill", terminalId: "t1", windowId: "w1" })).ok,
+    ).toBe(true);
+
+    store.written.length = 0;
+    await service.shutdownAll();
+
+    // The shutdown did not so much as ATTEMPT the closed project, and the open
+    // one is still committed - so this is the flag, not a dead host.
+    expect(store.written).toEqual(["kept"]);
+
+    // THE WORLD: the file the close wrote, read back from disk. Without the
+    // flag this is `{ terminals: [], groups: [] }` - the empty reconciliation
+    // of a workspace whose only terminal the close had killed.
+    const saved = JSON.parse(
+      await fs.readFile(path.join(directory, "closed.json"), "utf8"),
+    ) as {
+      layout: { groups: Array<{ panes: Array<{ terminalId: string }> }> };
+      terminals: Array<{ terminalId: string; serialized: string }>;
+    };
+    expect(saved.terminals.map((entry) => entry.terminalId)).toEqual(["t1"]);
+    expect(saved.layout.groups[0]?.panes.map((pane) => pane.terminalId)).toEqual(["t1"]);
+    expect(saved.terminals[0]?.serialized).toContain("VEX_CLOSED_BUFFER");
+  });
+
+  /**
+   * THE RELEASE IS NOT A FORGET. The project is alive, and a workspace reopened
+   * in the same session persists again - which must put the host back in charge
+   * of committing it on quit, or the release would have traded one lost
+   * snapshot for another.
+   */
+  it("holds the project again as soon as it persists once more", async () => {
+    const store = new RecordingSnapshotStore(directory);
+    const { service } = buildWith(store);
+    expect((await send(service, createIn("reopened", "t1"))).ok).toBe(true);
+    expect((await send(service, projectLayout("reopened", "t1", 0, "g1", true))).ok).toBe(
+      true,
+    );
+    expect((await send(service, projectLayout("reopened", "t1", 1, "g2"))).ok).toBe(true);
+
+    store.written.length = 0;
+    await service.shutdownAll();
+
+    expect(store.written).toEqual(["reopened"]);
+  });
+
+  /**
+   * A persist that lands DURING the final commit owns the layout afterwards,
+   * and its workspace is still open. Releasing on the version the final request
+   * installed - rather than unconditionally - is what keeps that workspace's
+   * shutdown commit.
+   */
+  it("leaves a NEWER layout that arrived during the final commit in place", async () => {
+    const store = new GatedSnapshotStore(directory);
+    const { service } = buildWith(store);
+    expect((await send(service, createIn("racing", "t1"))).ok).toBe(true);
+
+    const inWrite = store.blockNextWrite();
+    const closing = service.handleMainMessage(
+      { requestId: "rA", request: projectLayout("racing", "t1", 0, "gA", true) },
+      [],
+    );
+    await inWrite;
+    // A background save of a workspace that is still open, admitted by main
+    // while the close's commit is inside its write.
+    const later = service.handleMainMessage(
+      { requestId: "rB", request: projectLayout("racing", "t1", 1, "gB") },
+      [],
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    store.releaseWrite();
+    await Promise.all([closing, later]);
+
+    store.events.length = 0;
+    await service.shutdownAll();
+
+    // The newer layout was still held, so the shutdown committed it.
+    expect(store.events).toEqual(["start gB", "end gB"]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * B4 round 3, finding 2: a timed-out forget must not resurrect the file
+ * ------------------------------------------------------------------ */
+
+/**
+ * THE WRITE THAT WAS ALREADY PAST EVERY CHECK.
+ *
+ * `forgetWorkspace` joins the commit in flight, which is what orders the
+ * delete's file removal after the host's last write - as long as MAIN WAITS.
+ * Main's join has a deadline and a filesystem write does not: hold a rename
+ * long enough and main logs the timeout, proceeds, and the cleanup removes the
+ * file before the rename lands. The file then comes back, for a project Vex has
+ * told the user is deleted, and no test that drives the host directly can see
+ * it because none of them passes through main's deadline.
+ *
+ * So the host compensates for its OWN rename: it is the only actor ordered
+ * after it.
+ */
+describe("a forget that main stopped waiting for still removes the file", () => {
+  it("UNLINKS a snapshot whose rename landed after the forget", async () => {
+    const store = new GatedSnapshotStore(directory);
+    const { service } = buildWith(store);
+    expect((await send(service, createIn("doomed", "t1"))).ok).toBe(true);
+    expect((await send(service, createIn("kept", "t2"))).ok).toBe(true);
+    expect((await send(service, projectLayout("kept", "t2"))).ok).toBe(true);
+
+    // A commit held INSIDE its write, which is where a real one is unbounded.
+    const inWrite = store.blockNextWrite();
+    const persist = service.handleMainMessage(
+      { requestId: "dA", request: projectLayout("doomed", "t1", 0, "gA") },
+      [],
+    );
+    await inWrite;
+
+    // MAIN'S DEADLINE PASSES. The forget is dispatched and its answer is never
+    // waited for - which is exactly what main does after it logs the timeout.
+    const forget = service.handleMainMessage(
+      { requestId: "dB", request: { kind: "forgetWorkspace", projectId: "doomed" } },
+      [],
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    // The delete's cleanup runs, believing the host is done with the file.
+    await fs.rm(path.join(directory, "doomed.json"), { force: true });
+
+    store.releaseWrite();
+    await Promise.all([persist, forget]);
+
+    // THE WORLD: the rename landed and the host took its own file back off
+    // disk. Without the post-rename unlink the deleted project's scrollback is
+    // sitting in `doomed.json` here, permanently.
+    expect(await exists(path.join(directory, "doomed.json"))).toBe(false);
+    // And a project nobody forgot was not touched by the compensation.
+    expect(await exists(path.join(directory, "kept.json"))).toBe(true);
+  });
+
+  /**
+   * THE MARK IS PER CAPTURE, NOT PER PROJECT. A generation compared against the
+   * value the capture read at its start needs no clearing rule, so an id that
+   * is RE-CREATED after a delete - which main admits only once its authority
+   * says the project is active again - is never poisoned by the fence.
+   */
+  it("persists normally again for a RE-CREATED project id", async () => {
+    const store = new GatedSnapshotStore(directory);
+    const { service } = buildWith(store);
+    expect((await send(service, createIn("recycled", "t1"))).ok).toBe(true);
+
+    const inWrite = store.blockNextWrite();
+    const persist = service.handleMainMessage(
+      { requestId: "cA", request: projectLayout("recycled", "t1", 0, "gA") },
+      [],
+    );
+    await inWrite;
+    const forget = service.handleMainMessage(
+      { requestId: "cB", request: { kind: "forgetWorkspace", projectId: "recycled" } },
+      [],
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    store.releaseWrite();
+    await Promise.all([persist, forget]);
+    expect(await exists(path.join(directory, "recycled.json"))).toBe(false);
+
+    // The id comes back. Its commits are ordinary commits again.
+    expect((await send(service, projectLayout("recycled", "t1", 1, "gB"))).ok).toBe(true);
+    expect(await exists(path.join(directory, "recycled.json"))).toBe(true);
+    const read = await store.read("recycled");
+    if (read.kind !== "ok") throw new Error(`snapshot not readable: ${read.kind}`);
+    expect(read.snapshot.layout.groups[0]?.groupId).toBe("gB");
+
+    await service.shutdownAll();
+  });
+});

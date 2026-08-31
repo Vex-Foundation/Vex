@@ -1102,6 +1102,45 @@ describe("persistWorkspace under the lifecycle gate", () => {
     await domain.dispose();
   });
 
+  /**
+   * `final` IS FORWARDED, AND ONLY AFTER THE AUTHORITY CHECK.
+   *
+   * The flag is what makes the host stop holding a closed workspace's layout,
+   * so its own shutdown commit cannot overwrite the snapshot the close just
+   * wrote. Main cannot derive it - a close and a debounced background save
+   * arrive here as the same call - so it travels, and it travels through the
+   * same gate as the layout: a refused persist forwards nothing at all.
+   */
+  it("FORWARDS the close's `final` flag, and never past a refusal", async () => {
+    const domain = build();
+    await domain.create("w1", "p1", 80, 24);
+    const [id] = starter.createdIds();
+    if (id === undefined) throw new Error("unreachable");
+
+    expect((await domain.persistWorkspace("p1", oneGroup(id))).ok).toBe(true);
+    expect((await domain.persistWorkspace("p1", oneGroup(id), true)).ok).toBe(true);
+
+    const finals = starter.requests
+      .filter(
+        (request): request is Extract<HostRequest, { kind: "persistWorkspace" }> =>
+          request.kind === "persistWorkspace",
+      )
+      .map((request) => request.final);
+    // The background save carries no flag; the close's last commit carries it.
+    expect(finals).toEqual([false, true]);
+
+    // A refused persist reaches the host with nothing - flag included.
+    gate.closeProjectAdmission("p1");
+    expect(await domain.persistWorkspace("p1", oneGroup(id), true)).toEqual({
+      ok: false,
+      code: "project_deleting",
+    });
+    expect(
+      starter.requests.filter((request) => request.kind === "persistWorkspace").length,
+    ).toBe(2);
+    await domain.dispose();
+  });
+
   it("holds a DRAINED `terminalPersist` lease while a commit is in flight", async () => {
     // DRAINED is the half the refusal cannot provide. Admission closes at step
     // 1 and the snapshot is removed at step 7; a commit ALREADY IN FLIGHT when

@@ -523,9 +523,20 @@ export function StudioWorkspaceController({
 
       const closing = stateRef.current;
 
-      // ---- the commit, CHECKED ----
+      // ---- the commit, CHECKED, and FINAL ----
+      //
+      // `final` is what makes this commit survive the quit that follows it. The
+      // host retains the layout of every project it is fed and commits every
+      // retained layout on its own shutdown, reconciled against what is still
+      // live - and the kills below leave nothing live, so that autonomous
+      // commit overwrote this snapshot with an empty one and the workspace this
+      // close promised to revive came back empty. The flag tells the host this
+      // layout has no successor: commit it, then stop holding it. The
+      // debounced background saves above never set it.
       if (hydratedRef.current) {
-        const persisted = await persistTerminalWorkspace(toPersistedLayout(closing));
+        const persisted = await persistTerminalWorkspace(toPersistedLayout(closing), {
+          final: true,
+        });
         if (!persisted.ok) return fail({ failure: "persist_unreachable" });
         if (!persisted.data.ok) return fail({ failure: "persist_refused" });
       }

@@ -28,9 +28,9 @@ import {
   terminalCreateResultSchema,
   terminalHostAvailabilitySchema,
   terminalIdInputSchema,
+  terminalPersistWorkspaceInputSchema,
   terminalPortTicketSchema,
   terminalResizeInputSchema,
-  terminalWorkspaceLayoutSchema,
   terminalWorkspaceRestoreSchema,
   terminalWriteInputSchema,
   terminalOutcomeSchema,
@@ -42,9 +42,14 @@ import { registerHandler, type HandlerContext } from "./register-handler.js";
 const empty = z.object({}).strict();
 const projectInput = z.object({ projectId: z.string().min(1).max(64) }).strict();
 const confirmInput = z.object({ nonce: z.string().min(16).max(128) }).strict();
-const persistInput = z
-  .object({ layout: terminalWorkspaceLayoutSchema })
-  .strict();
+/**
+ * ONE definition of this payload, shared with the preload gate.
+ *
+ * `final` is the close's LAST commit (see `terminalPersistWorkspaceInputSchema`
+ * for the trust posture); main forwards it only after its own authority check
+ * has admitted the persist.
+ */
+const persistInput = terminalPersistWorkspaceInputSchema;
 
 /**
  * A revived workspace, or `null` when the project has none to revive.
@@ -180,6 +185,7 @@ export function registerStudioTerminalHandlers(): Array<() => void> {
             await terminalDomain().persistWorkspace(
               input.layout.projectId,
               input.layout,
+              input.final === true,
             ),
           ),
         ),

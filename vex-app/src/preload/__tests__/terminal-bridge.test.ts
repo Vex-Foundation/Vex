@@ -732,6 +732,56 @@ describe("every terminal input is VALIDATED AT THE PRELOAD GATE", () => {
     }
   });
 
+  /**
+   * THE CLOSE'S `final` FLAG CROSSES INTACT.
+   *
+   * It is what tells the host to stop holding a closed workspace's layout, so
+   * its own shutdown commit cannot overwrite the snapshot the close just wrote.
+   * A gate that dropped an unknown key here would take that fix out silently -
+   * the persist would still succeed and the loss would only show up as an empty
+   * workspace after the next quit.
+   */
+  it("carries the close's `final` flag across, and refuses a non-boolean one", async () => {
+    invokeReply = () => ({ ok: true, data: { ok: true, value: null } });
+    const layout = {
+      projectId: "p1",
+      activeGroupIndex: 0,
+      groups: [
+        {
+          groupId: "g1",
+          orientation: "horizontal" as const,
+          activePaneIndex: 0,
+          panes: [{ terminalId: "t1", relativeSize: 1 }],
+        },
+      ],
+    };
+
+    invocations.length = 0;
+    await terminal.persistWorkspace({ layout, final: true });
+    expect(invocations).toEqual([
+      {
+        channel: expect.stringContaining("persistWorkspace") as unknown as string,
+        payload: { layout, final: true },
+      },
+    ]);
+
+    // A background save is the same call without the flag, and it stays that
+    // way: nothing invents a `final` the renderer did not send.
+    invocations.length = 0;
+    await terminal.persistWorkspace({ layout });
+    expect(invocations[0]?.payload).toEqual({ layout });
+
+    // And the flag is typed at the gate like every other field.
+    invocations.length = 0;
+    const hostile: { layout: typeof layout; final?: boolean } = JSON.parse(
+      JSON.stringify({ layout, final: "yes" }),
+    ) as { layout: typeof layout; final?: boolean };
+    // Refused at the gate: an `err` Result, and nothing crossed the process
+    // line - the same answer every other off-contract payload here gets.
+    expect((await terminal.persistWorkspace(hostile)).ok).toBe(false);
+    expect(invocations).toEqual([]);
+  });
+
   it("refuses an off-contract attach or detach without touching the port", async () => {
     const port = await acquire();
     const before = port.sent.length;

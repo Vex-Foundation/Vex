@@ -122,10 +122,24 @@ export function onTerminalRefused(
   return window.vex.terminal.onRefused(terminalId, cb);
 }
 
+/**
+ * Commit a project's terminal layout and buffers.
+ *
+ * `final` marks the LAST commit of an explicitly closed workspace. The host
+ * stops holding the layout once it has committed it, which is what keeps its
+ * own shutdown commit from overwriting this file with the empty reconciliation
+ * of terminals the close is about to kill. Background saves omit it.
+ */
 export function persistTerminalWorkspace(
   layout: TerminalWorkspaceLayout,
+  options: { readonly final?: boolean } = {},
 ): Promise<Result<TerminalAckResult>> {
-  return window.vex.terminal.persistWorkspace({ layout });
+  // The key is OMITTED rather than sent as `undefined` when the save is an
+  // ordinary one: the payload crosses a structured clone and two strict
+  // schemas, and a background persist has no business carrying the field.
+  return window.vex.terminal.persistWorkspace(
+    options.final === true ? { layout, final: true } : { layout },
+  );
 }
 
 /**

@@ -75,20 +75,32 @@
  * Main writes the trash intent onto the TOMBSTONE, and a retry resumes that
  * recorded request while ignoring the input the retry itself carries
  * (`main/studio/project-delete.ts`, the `already_tombstoned` branch). So from
- * the outcome that proves the tombstone exists, this dialog remembers the value
- * it SUBMITTED - which is by definition the value the tombstone recorded,
- * because that attempt is the one that created it - shows that value, freezes
- * the checkbox, and sends the remembered value on every retry. Leaving the
- * checkbox live would let a user uncheck it and watch the folder go to the
- * trash anyway, or check it and watch the folder stay: a destructive choice the
- * UI reported and the system did not honour.
+ * the outcome that proves the tombstone exists, this dialog shows that recorded
+ * value, freezes the checkbox, and sends the frozen value on every retry.
+ * Leaving the checkbox live would let a user uncheck it and watch the folder go
+ * to the trash anyway, or check it and watch the folder stay: a destructive
+ * choice the UI reported and the system did not honour.
+ *
+ * ### The frozen value is MAIN's, not this dialog's
+ *
+ * Freezing the value this dialog SUBMITTED is right only while this dialog is
+ * the attempt that created the tombstone, and TWO WINDOWS break that. Window A
+ * opens the dialog with the box unchecked; window B deletes the same project
+ * with it checked and its cleanup does not finish; A then submits, main finds
+ * B's `trash_pending` tombstone, resumes it and may move the folder to the
+ * trash - while A's checkbox would have locked itself UNCHECKED and called that
+ * the recorded choice. So `cleanup_pending` and `cleanup_resumed` carry
+ * `trashRequested`, the tombstone's OWN intent, and this dialog freezes THAT
+ * whenever it is present, falling back to the submitted value only for the
+ * outcomes that carry no echo. When the echo disagrees with what this dialog
+ * sent, the copy says so rather than silently swapping the value.
  *
  * The freeze cannot outlive the dialog, and does not need to. A tombstoned row
  * is `deleted_at IS NOT NULL`, `listProjects` reads `WHERE deleted_at IS NULL`
  * (`main/database/projects/read.ts`), and this dialog's row comes only from
  * that list through `StudioProjectDialogs` - so no delete dialog can ever be
- * opened again on a project whose cleanup is still pending, and there is no
- * reopened-after-restart case for the memory to miss.
+ * opened again on a project whose cleanup is still pending. That argument
+ * covers a RESTART, which is why it never covered the second window above.
  *
  * ## No auto-retry, and no "do not ask again"
  *
@@ -136,6 +148,7 @@ import {
   PROJECT_DELETE_RETRY,
   PROJECT_DELETE_SUBMIT,
   PROJECT_DELETE_TITLE,
+  PROJECT_DELETE_TRASH_ELSEWHERE_NOTE,
   PROJECT_DELETE_TRASH_HELP,
   PROJECT_DELETE_TRASH_LABEL,
   PROJECT_DELETE_TRASH_LOCKED_NOTE,
@@ -182,6 +195,21 @@ const CLOSING_OUTCOMES: ReadonlySet<ProjectDeleteResult["outcome"]> = new Set([
  */
 const DURABLE_TOMBSTONE_OUTCOMES: ReadonlySet<ProjectDeleteResult["outcome"]> =
   new Set(["removed", "already_removed", "cleanup_pending", "cleanup_resumed"]);
+
+/**
+ * Main's echo of the TOMBSTONE's own trash intent, or `null` when this outcome
+ * carries none.
+ *
+ * Keyed on the discriminant, never on `"trashRequested" in result`, so a member
+ * that gains the field later has to be named here before this dialog will trust
+ * it as authority over a destructive choice.
+ */
+function tombstoneTrashIntent(result: ProjectDeleteResult): boolean | null {
+  return result.outcome === "cleanup_pending"
+    || result.outcome === "cleanup_resumed"
+    ? result.trashRequested
+    : null;
+}
 
 /**
  * Does this outcome leave the dialog standing on a row the LIST is about to
@@ -249,10 +277,12 @@ export function ProjectDeleteDialog({
    */
   const [pinned, setPinned] = useState<ProjectDto | null>(null);
   /**
-   * The trash choice this dialog SUBMITTED on the attempt that made the delete
-   * durable, and therefore the one the tombstone recorded. `null` until such an
-   * outcome arrives, which is exactly the window in which the checkbox is still
-   * a real choice.
+   * The trash choice the TOMBSTONE recorded, which is the one main will honour.
+   *
+   * Main's own echo (`trashRequested`) whenever the outcome carries one, and
+   * only otherwise the value this dialog submitted. `null` until an outcome
+   * proves a tombstone exists, which is exactly the window in which the
+   * checkbox is still a real choice.
    */
   const [recordedTrash, setRecordedTrash] = useState<boolean | null>(null);
 
@@ -320,6 +350,17 @@ export function ProjectDeleteDialog({
    */
   const trashFrozen = recordedTrash !== null;
   const trashChoice = recordedTrash ?? alsoTrashFolder;
+  /**
+   * The frozen choice is NOT the one this dialog's checkbox asked for.
+   *
+   * Derived rather than stored: `alsoTrashFolder` is exactly what this window's
+   * box said, and the freeze disables that box, so it cannot move afterwards
+   * and cannot go stale. True only for a real disagreement, which means the
+   * tombstone was created elsewhere - another window, or an earlier attempt
+   * from here whose box the user has since moved.
+   */
+  const trashRecordedElsewhere =
+    recordedTrash !== null && recordedTrash !== alsoTrashFolder;
 
   const nameMatches = row !== null && typedName.trim() === row.name;
   const pending = deleteMutation.isPending;
@@ -338,12 +379,19 @@ export function ProjectDeleteDialog({
       return;
     }
     setOutcome(result.data);
-    // FREEZE the folder choice the moment the tombstone is proven to exist,
-    // recording the value this attempt sent. `current ?? ...` keeps the FIRST
-    // recording: a later `cleanup_resumed` reports on the same tombstone and
-    // must not overwrite what that tombstone was created with.
+    // FREEZE the folder choice the moment the tombstone is proven to exist.
+    //
+    // MAIN'S ECHO WINS. `trashRequested` is read off the tombstone row main
+    // just locked, so it is authoritative even when this dialog is not the
+    // attempt that created that tombstone - which is precisely the two-window
+    // case. Only an outcome that carries no echo falls back to the value this
+    // attempt sent, and for those (`removed`, `already_removed`) the two cannot
+    // disagree: neither can be answered to a caller that did not create the
+    // tombstone. `current ?? trashChoice` keeps the FIRST such fallback, so a
+    // later report on the same tombstone cannot rewrite it.
     if (DURABLE_TOMBSTONE_OUTCOMES.has(result.data.outcome)) {
-      setRecordedTrash((current) => current ?? trashChoice);
+      const echoed = tombstoneTrashIntent(result.data);
+      setRecordedTrash((current) => echoed ?? current ?? trashChoice);
     }
     // Pinned BEFORE anything that can close: the list invalidation this Result
     // just triggered is already in flight.
@@ -440,6 +488,14 @@ export function ProjectDeleteDialog({
               {trashFrozen ? (
                 <span className="text-xs text-ink-tertiary">
                   {PROJECT_DELETE_TRASH_LOCKED_NOTE}
+                </span>
+              ) : null}
+              {trashRecordedElsewhere ? (
+                <span
+                  className="text-xs text-warning"
+                  data-vex-delete-trash-elsewhere="true"
+                >
+                  {PROJECT_DELETE_TRASH_ELSEWHERE_NOTE}
                 </span>
               ) : null}
             </span>

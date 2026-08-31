@@ -76,13 +76,40 @@ import { dbError, withClient } from "../sessions/connection.js";
 /** What the tombstone still owes, recorded on the row. */
 export type ProjectCleanupState = "none" | "pending" | "trash_pending" | "done";
 
+/** A tombstone whose cleanup is still OWED, and therefore still speaks for it. */
+export type OwedProjectCleanupState = Exclude<
+  ProjectCleanupState,
+  "none" | "done"
+>;
+
+/**
+ * Did the delete that created this tombstone ask for the FOLDER too?
+ *
+ * `cleanup_state` is where `runDeleteTransaction` writes that decision (it is
+ * computed from `alsoTrashFolder` and stored on the row), so the column is the
+ * only durable record of the user's folder intent and the only honest source
+ * for an echo back to a caller. This is the one place that reads it as an
+ * intent, so a later state cannot start meaning something else in two places.
+ *
+ * The parameter EXCLUDES `done` and `none` on purpose: neither records an
+ * intent any more (`done` overwrites it once cleanup finishes), so answering
+ * `false` for them would report "the user did not ask for the folder" when the
+ * truth is "nobody knows any more". Callers holding one of those states have no
+ * intent to echo and must say nothing instead.
+ */
+export function tombstoneRequestedTrash(
+  cleanupState: OwedProjectCleanupState,
+): boolean {
+  return cleanupState === "trash_pending";
+}
+
 /** The transaction's verdict. */
 export type ProjectTombstoneOutcome =
   /** The tombstone committed. */
   | {
       readonly kind: "tombstoned";
       readonly slug: string;
-      readonly cleanupState: Exclude<ProjectCleanupState, "none" | "done">;
+      readonly cleanupState: OwedProjectCleanupState;
     }
   /** No such project, or its stored name did not match `expectedName`. */
   | { readonly kind: "not_found" }
@@ -318,8 +345,9 @@ async function runDeleteTransaction(
     [row.backing_session_id, VEX_STUDIO_SESSION_SCOPE],
   );
 
-  const cleanupState: Exclude<ProjectCleanupState, "none" | "done"> =
-    input.alsoTrashFolder ? "trash_pending" : "pending";
+  const cleanupState: OwedProjectCleanupState = input.alsoTrashFolder
+    ? "trash_pending"
+    : "pending";
 
   // The project row LAST, per the lock order. Guarded on `deleted_at IS NULL`
   // so two concurrent deletes cannot both claim to have tombstoned it.

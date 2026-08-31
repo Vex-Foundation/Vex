@@ -900,10 +900,23 @@ export class TerminalDomain {
    * that could not be READ at all is a different fact and gets a different
    * code: `snapshot_unavailable`, because the snapshot was not written and Vex
    * cannot claim to know whose it would have been. Both fail closed.
+   *
+   * ## `final` is FORWARDED, never decided here
+   *
+   * A close's last commit carries `final`, and the host stops holding the
+   * project's layout once it has committed it - which is what keeps the host's
+   * autonomous shutdown commit from overwriting a closed workspace's snapshot
+   * with the empty reconciliation of terminals the close has just killed. Main
+   * cannot derive the flag: a close and a debounced background save arrive on
+   * this method as the same request, and nothing else main holds distinguishes
+   * them. It is forwarded only AFTER the lease and the tombstone read above
+   * have admitted the persist, and it is bounded in what a hostile renderer can
+   * buy with it - see `terminalPersistWorkspaceInputSchema`.
    */
   async persistWorkspace(
     projectId: string,
     layout: TerminalWorkspaceLayout,
+    final = false,
   ): Promise<TerminalOutcome<unknown>> {
     const persisting = acquireProjectLease(projectId, "terminalPersist");
     if (!persisting.ok) return refuse("project_deleting");
@@ -921,6 +934,7 @@ export class TerminalDomain {
         projectId,
         layout,
         layoutVersion: version,
+        final,
       });
     } finally {
       persisting.lease.release();

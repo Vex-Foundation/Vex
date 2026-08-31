@@ -8,7 +8,10 @@
  * property of that composition:
  *
  *   - a repeated delete on an unfinished tombstone RESUMES, and honours the
- *     tombstone's recorded trash intent rather than the retry's checkbox;
+ *     tombstone's recorded trash intent rather than the retry's checkbox, and
+ *     ECHOES that intent back so a caller whose own input disagreed with it -
+ *     a second window's dialog, opened before this project was deleted at all -
+ *     learns which decision main is actually carrying out;
  *   - a trash failure AFTER the commit does not roll the commit back;
  *   - an in-flight call blocks the delete, reopens admission and writes NOTHING;
  *   - the teardown removes exactly Vex's own bytes and leaves every user byte,
@@ -945,6 +948,102 @@ describe("deleteProject: the trash step", () => {
       ),
     );
     expect(third.outcome).toBe("already_removed");
+  });
+
+  it("ECHOES the tombstone's own trash intent to a stale second window", async () => {
+    // THE TWO-WINDOW RACE, through the REAL main path.
+    //
+    // Window B deletes this project with the folder box CHECKED and its trash
+    // call fails, so the tombstone stands at `trash_pending`. Window A's delete
+    // dialog was already open, unchecked, against the row as the list still
+    // held it; A now submits. Main finds B's tombstone, resumes B's intent and
+    // moves the folder to the trash - a decision A neither made nor asked for.
+    //
+    // Nothing about what main DOES changes here; the point is that A is TOLD.
+    // Without the echo A's only information is its own input, and the dialog
+    // freezing that would lock an unchecked box while the folder went to the
+    // trash. The reviewer's finding is that lie, not the resume.
+    const project = await seedProject();
+    await installProjectArtifacts(project);
+    runtime.trashItem.mockRejectedValueOnce(new Error("EPERM"));
+
+    // WINDOW B: trash CHECKED. This is the attempt that records the intent.
+    const windowB = unwrap(
+      await deleteProject(
+        { projectId: project.projectId, alsoTrashFolder: true, expectedName: PROJECT_NAME },
+        "corr-two-window-b",
+        deps,
+      ),
+    );
+    expect(windowB.outcome).toBe("cleanup_pending");
+    if (windowB.outcome !== "cleanup_pending") return;
+    expect(windowB.trash).toBe("failed");
+    // Read straight off the row: this is the durable intent, and the column the
+    // echo below has to be derived from.
+    expect(await readTombstone(project.projectId)).toMatchObject({
+      deleted: true,
+      cleanup_state: "trash_pending",
+    });
+
+    // WINDOW A: the stale dialog, trash UNCHECKED, submitted against the same
+    // project. It hits the `already_tombstoned` resume.
+    const windowA = unwrap(
+      await deleteProject(
+        { projectId: project.projectId, alsoTrashFolder: false, expectedName: PROJECT_NAME },
+        "corr-two-window-a",
+        deps,
+      ),
+    );
+
+    expect(windowA.outcome).toBe("cleanup_resumed");
+    if (windowA.outcome !== "cleanup_resumed") return;
+    // THE ECHO, and the whole point: A asked for `false` and is answered
+    // `true`, because `true` is what the tombstone says and what main honours.
+    expect(windowA.trashRequested).toBe(true);
+    // Which is not a claim about A's input - it is a claim about the world, and
+    // the world agrees: the folder really did go to the trash on A's call.
+    expect(windowA.trash).toBe("trashed");
+    expect(runtime.trashItem).toHaveBeenCalledTimes(2);
+    expect(runtime.trashItem).toHaveBeenLastCalledWith(project.directory);
+    expect(await readTombstone(project.projectId)).toMatchObject({
+      deleted: true,
+      cleanup_state: "done",
+    });
+  });
+
+  it("ECHOES a tombstone that did NOT ask for the folder, to a window that did", async () => {
+    // THE MIRROR, and the reason the echo is the tombstone's boolean rather
+    // than a flag only raised for trash. Here the tombstone was recorded
+    // WITHOUT the folder and the stale window has its box CHECKED. Main is not
+    // going to touch the folder, so a dialog that froze its own submitted
+    // `true` would promise a trash that never happens - the same lie in the
+    // other direction.
+    //
+    // The tombstone is seeded with the production statement's own columns
+    // (`tombstoneWithPendingCleanup`, the helper the repair suite uses) rather
+    // than by a first `deleteProject`: a delete that asks for no trash and
+    // succeeds leaves `done`, and `done` records no intent to disagree with.
+    // What this needs is a live `pending` tombstone made by someone else, which
+    // is exactly the crashed-run state that helper writes.
+    const project = await seedProject();
+    await installProjectArtifacts(project);
+    await tombstoneWithPendingCleanup(project.projectId, "pending");
+
+    const staleWindow = unwrap(
+      await deleteProject(
+        { projectId: project.projectId, alsoTrashFolder: true, expectedName: PROJECT_NAME },
+        "corr-two-window-mirror",
+        deps,
+      ),
+    );
+
+    expect(staleWindow.outcome).toBe("cleanup_resumed");
+    if (staleWindow.outcome !== "cleanup_resumed") return;
+    // Asked for the trash, told `false`, and `false` is the truth.
+    expect(staleWindow.trashRequested).toBe(false);
+    expect(staleWindow.trash).toBe("not_requested");
+    expect(runtime.trashItem).not.toHaveBeenCalled();
+    expect(await exists(project.directory)).toBe(true);
   });
 });
 

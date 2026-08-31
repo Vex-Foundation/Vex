@@ -51,6 +51,15 @@ export interface TerminalBridgeStub {
   readonly creates: { projectId: string; cols: number; rows: number }[];
   readonly persisted: TerminalWorkspaceLayout[];
   /**
+   * Whether each persist carried the close's `final` flag, in call order.
+   *
+   * The flag is what stops the pty host from recommitting - and, after the
+   * kills, EMPTYING - a closed workspace's snapshot on its own shutdown, so a
+   * close that stopped sending it would lose the revive it just promised with
+   * every assertion in this suite still green.
+   */
+  readonly persistFinals: boolean[];
+  /**
    * Every persist and kill IN THE ORDER THE BRIDGE SAW THEM.
    *
    * The separate `persisted` and `kills` arrays cannot express an ordering
@@ -283,6 +292,7 @@ export function installTerminalBridge(): TerminalBridgeStub {
     kills: [],
     creates: [],
     persisted: [],
+    persistFinals: [],
     ops: [],
     pendingDataCompletions: [],
     nextCreate: {
@@ -458,12 +468,16 @@ export function installTerminalBridge(): TerminalBridgeStub {
     ) => subscribe(channels.exit, terminalId, cb),
     onRefused: (terminalId: string, cb: (code: TerminalErrorCode) => void) =>
       subscribe(channels.refused, terminalId, cb),
-    persistWorkspace: vi.fn(async (input: { layout: TerminalWorkspaceLayout }) => {
+    persistWorkspace: vi.fn(async (input: {
+      layout: TerminalWorkspaceLayout;
+      final?: boolean;
+    }) => {
       // Fixed WHEN THE CALL IS ISSUED, like `create` and `readWorkspace`: a
       // test that changes the answer while an earlier commit is withheld must
       // not rewrite that earlier commit's answer.
       const answer = stub.nextPersist;
       stub.persisted.push(input.layout);
+      stub.persistFinals.push(input.final === true);
       const panes = input.layout.groups.reduce(
         (sum, group) => sum + group.panes.length,
         0,

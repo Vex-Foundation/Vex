@@ -399,6 +399,56 @@ describe("a close whose COMMIT was refused destroys nothing", () => {
 });
 
 /* ------------------------------------------------------------------ *
+ * B4 review round 3, finding 1: the close's commit must outlive the quit
+ * ------------------------------------------------------------------ */
+
+/**
+ * THE COMMIT IS MARKED FINAL, and only it is.
+ *
+ * The pty host retains the layout of every project it is fed and commits every
+ * retained layout on its OWN shutdown, reconciled against the terminals still
+ * live at that moment. The kills this close performs leave none - so without a
+ * marker the next quit overwrote the buffer-bearing snapshot this close had
+ * just written with an empty one, and the workspace reopened blank. `final` is
+ * what tells the host that this layout has no successor.
+ */
+describe("the close's commit is the LAST one for its workspace", () => {
+  it("marks it FINAL, while the debounced background save is not", async () => {
+    vi.useFakeTimers();
+    const view = renderController("p1");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "a1", pid: 1, shellName: "a1", cwd: "/w" },
+    };
+    await act(async () => {
+      within(view.container).getByRole("button", { name: "New terminal" }).click();
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    // The ordinary background writer: a debounced save of a workspace that is
+    // still open, and it must NOT release the host's layout.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(bridge.persistFinals).toEqual([false]);
+
+    await act(async () => {
+      await lifecycleOf("p1").close();
+    });
+
+    // The close's commit, and it is the one carrying the flag.
+    expect(bridge.persistFinals).toEqual([false, true]);
+    expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
+      "persist:p1:1",
+      "persist:p1:1",
+    ]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
  * B4 review round 2, finding W2a: a failure BEFORE the commit and a
  * failure AFTER it are different states, and conflating them lost data
  * ------------------------------------------------------------------ */

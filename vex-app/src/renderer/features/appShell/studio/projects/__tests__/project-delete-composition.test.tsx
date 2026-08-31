@@ -188,7 +188,12 @@ describe("an outcome the user still has to act on", () => {
     // The retry is the only way its unfinished cleanup ever resumes.
     deleteMock.mockResolvedValue({
       ok: true,
-      data: { outcome: "cleanup_pending", ...cleanup, attempts: 2 },
+      data: {
+        outcome: "cleanup_pending",
+        ...cleanup,
+        trashRequested: false,
+        attempts: 2,
+      },
     });
     listMock.mockResolvedValueOnce({ ok: true, data: [ATLAS] });
     listMock.mockResolvedValue({ ok: true, data: [] });
@@ -224,9 +229,17 @@ describe("an outcome the user still has to act on", () => {
     // records it, the list drops the row, the user changes their mind, and the
     // retry still carries what main will actually honour. Reverting the freeze
     // fails the last assertion with `alsoTrashFolder: false`.
+    //
+    // This dialog IS the attempt that created the tombstone, so main's echo of
+    // that tombstone's intent is the same `true` this dialog sent.
     deleteMock.mockResolvedValue({
       ok: true,
-      data: { outcome: "cleanup_pending", ...cleanup, attempts: 1 },
+      data: {
+        outcome: "cleanup_pending",
+        ...cleanup,
+        trashRequested: true,
+        attempts: 1,
+      },
     });
     listMock.mockResolvedValueOnce({ ok: true, data: [ATLAS] });
     listMock.mockResolvedValue({ ok: true, data: [] });
