@@ -637,12 +637,19 @@ export const CH = {
    * on this surface accepts a path. `watchFile`/`unwatchFile` are the
    * subscription pair - one native watcher per project, many logical
    * subscriptions over it, each returning an idempotent release.
+   *
+   * `ackEvent` is FLOW CONTROL and is sent by PRELOAD, never by renderer code:
+   * `EV.files.changed` is a push with no backpressure of its own, so a stalled
+   * consumer would otherwise accumulate an unbounded IPC backlog in main. One
+   * ack per `changed` batch handed to the renderer's callback; main stops
+   * sending past `FILES_EVENTS_OUTSTANDING_MAX` and resumes with one `resync`.
    */
   files: {
     listChildren: "vex:files:listChildren",
     readFile: "vex:files:readFile",
     watchFile: "vex:files:watchFile",
     unwatchFile: "vex:files:unwatchFile",
+    ackEvent: "vex:files:ackEvent",
   },
 
   // Cancellation

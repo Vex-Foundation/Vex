@@ -123,6 +123,7 @@ export async function listDirectoryPage(options: {
   }
 
   const chain = await buildIgnoreChain(
+    options.projectId,
     options.projectDirectory,
     options.relativeDirectory,
   );

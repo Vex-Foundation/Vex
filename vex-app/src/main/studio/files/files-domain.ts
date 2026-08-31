@@ -43,12 +43,25 @@
  * which two projects are watched at once, which `FILES_WATCHERS_MAX` bounds
  * and which is cheap next to a tree that is silently wrong.
  *
- * PROJECT DELETION. The lifecycle gate's close hook runs AFTER the tombstone
- * commits. It tears the watcher down, tells every subscriber the project is
- * `closed`, releases the lease, and BUMPS THE PROJECT'S NODE EPOCH - which
- * spends every token that project ever issued, so a renderer still showing the
- * old tree cannot read a byte out of it even before it learns the project is
- * gone.
+ * PROJECT DELETION. Two halves, and neither is sufficient alone.
+ *
+ * BEFORE the tombstone, `listChildren` and `readFile` hold a DRAINED
+ * `fileOperation` lease, so step 3 of a delete WAITS for every read already in
+ * flight. Those reads finish and publish, which is correct: at the moment they
+ * were admitted the project existed, and the answer they return is the truth
+ * about a project that was alive when it was asked. Nothing new is admitted
+ * behind them - the gate closed admission in step 1, so the lease acquisition
+ * that opens each of those two methods is itself the admission check.
+ *
+ * AFTER the tombstone, the gate's close hook here BUMPS THE PROJECT'S NODE
+ * EPOCH on its first line - which spends every token that project ever issued,
+ * so a renderer still showing the old tree cannot read a byte out of it even
+ * before it learns the project is gone - and then tears the watcher down,
+ * tells every subscriber the project is `closed`, and releases the lease.
+ *
+ * The bump goes FIRST because this hook runs behind every other close hook and
+ * disposes a native watcher before it would otherwise bump; a fence that flips
+ * seconds after the tombstone is a fence with a window in front of it.
  *
  * WINDOW RELEASE. Every subscription a window owned is dropped when that window
  * closes or its renderer crashes, exactly as `terminal-domain.ts` releases that
@@ -66,11 +79,22 @@
  * changes to the subscription's scope. `resync` and `status` are never
  * filtered: a subscriber watching one file still needs to know the watcher
  * restarted, because its file may have changed while nothing was looking.
+ *
+ * Fan-out is also where BACKPRESSURE is applied. `publish` is a
+ * `webContents.send`, which never blocks and never says whether the renderer
+ * ran, so a stalled consumer would accumulate an unbounded IPC backlog in this
+ * process. Preload acknowledges each `changed` batch it has handed to the
+ * renderer's callback; a subscription owing more than
+ * `FILES_EVENTS_OUTSTANDING_MAX` of them stops being sent batches and is paid
+ * back, once, with a `consumer_backlog` resync naming exactly how many changes
+ * were withheld. `status` and `resync` are never withheld - a consumer that has
+ * fallen behind needs the honest signal more than one that has not.
  */
 
 import { randomUUID } from "node:crypto";
 
 import {
+  FILES_EVENTS_OUTSTANDING_MAX,
   FILES_SUBSCRIPTIONS_PER_WINDOW_MAX,
   FILES_WATCHERS_MAX,
   type FileListing,
@@ -142,6 +166,19 @@ interface Subscription {
   readonly projectId: string;
   /** `null` watches the whole tree; a path watches exactly that one file. */
   readonly relativePath: string | null;
+  /**
+   * `changed` batches SENT to this subscription and not yet acknowledged.
+   *
+   * Mutable, and deliberately owned by the subscription rather than by the
+   * window: two subscriptions of one window can be consumed at different rates
+   * (a tree the user is looking at, an editor tab behind it), and stopping both
+   * because one stalled would blind a consumer that is keeping up.
+   */
+  outstanding: number;
+  /** Individual changes withheld while `outstanding` sat at the bound. */
+  withheldChanges: number;
+  /** Set when a batch was withheld; cleared by the one `resync` that follows. */
+  resyncOwed: boolean;
 }
 
 interface ProjectEntry {
@@ -298,6 +335,21 @@ export class FilesDomain {
     readonly limit?: number;
     readonly cursor?: string | null;
   }): Promise<FilesOutcome<FileListing>> {
+    const leased = acquireProjectLease(input.projectId, "fileOperation");
+    if (!leased.ok) return { ok: false, code: "project_closed" };
+    try {
+      return await this.listChildrenUnderLease(input);
+    } finally {
+      leased.lease.release();
+    }
+  }
+
+  private async listChildrenUnderLease(input: {
+    readonly projectId: string;
+    readonly nodeId: string | null;
+    readonly limit?: number;
+    readonly cursor?: string | null;
+  }): Promise<FilesOutcome<FileListing>> {
     const located = await this.locate(input.projectId, input.nodeId);
     if (!located.ok) return { ok: false, code: located.code };
     if (located.kind === "symlink") return { ok: false, code: "symlinked_path" };
@@ -323,6 +375,19 @@ export class FilesDomain {
   }
 
   async readFile(input: {
+    readonly projectId: string;
+    readonly nodeId: string;
+  }): Promise<FilesOutcome<FileContent>> {
+    const leased = acquireProjectLease(input.projectId, "fileOperation");
+    if (!leased.ok) return { ok: false, code: "project_closed" };
+    try {
+      return await this.readFileUnderLease(input);
+    } finally {
+      leased.lease.release();
+    }
+  }
+
+  private async readFileUnderLease(input: {
     readonly projectId: string;
     readonly nodeId: string;
   }): Promise<FilesOutcome<FileContent>> {
@@ -362,7 +427,7 @@ export class FilesDomain {
         `[studio:files] refusing a subscription: window ${windowId} already holds `
           + `${String(FILES_SUBSCRIPTIONS_PER_WINDOW_MAX)}`,
       );
-      return { ok: false, code: "watcher_limit" };
+      return { ok: false, code: "subscription_limit" };
     }
 
     // THE INTENT IS RECORDED BEFORE THE FIRST AWAIT, so a `releaseWindow` that
@@ -442,6 +507,9 @@ export class FilesDomain {
         windowId,
         projectId: input.projectId,
         relativePath: input.nodeId === null ? null : located.relativePath,
+        outstanding: 0,
+        withheldChanges: 0,
+        resyncOwed: false,
       };
       entry.subscriptions.set(subscription.subscriptionId, subscription);
 
@@ -586,8 +654,71 @@ export class FilesDomain {
     for (const subscription of entry.subscriptions.values()) {
       const event = this.toEvent(subscription, emission);
       if (event === null) continue;
+      // FLOW CONTROL, and only over `changed`. `status` and `resync` are the
+      // honest signal about the watcher - "it is unavailable", "you have missed
+      // changes, re-list" - and a consumer that is behind needs them MORE than
+      // one that is keeping up. They are also self-limiting: a watcher produces
+      // a handful of them in its whole life. Batches are the unbounded thing,
+      // so batches are the thing that stops.
+      if (event.kind === "changed") {
+        if (subscription.outstanding >= FILES_EVENTS_OUTSTANDING_MAX) {
+          subscription.withheldChanges += event.changes.length;
+          subscription.resyncOwed = true;
+          continue;
+        }
+        subscription.outstanding += 1;
+      }
       this.deps.publish(subscription.windowId, event);
     }
+  }
+
+  /**
+   * PRELOAD acknowledges one `changed` batch it has handed to the renderer.
+   *
+   * The window comes from the IPC sender, never from the payload, so an ack
+   * addressed at a subscription this window does not own is refused by name
+   * rather than quietly crediting somebody else's flow control - the same
+   * ownership rule `unwatchFile` enforces, and for the same reason.
+   *
+   * An ack that brings the count back under the bound after batches were
+   * withheld pays the debt with exactly ONE `resync`, carrying the number of
+   * individual changes that were withheld. One, not one per withheld batch:
+   * the consumer's remedy is a single re-list, and telling it nine times to do
+   * the same thing once is noise.
+   */
+  ackEvent(windowId: string, subscriptionId: string): FilesOutcome<null> {
+    for (const entry of this.projects.values()) {
+      const subscription = entry.subscriptions.get(subscriptionId);
+      if (subscription === undefined) continue;
+      if (subscription.windowId !== windowId) {
+        return { ok: false, code: "unknown_subscription" };
+      }
+      // Never below zero: a duplicate or replayed ack must not buy headroom.
+      subscription.outstanding = Math.max(0, subscription.outstanding - 1);
+      if (
+        subscription.resyncOwed
+        && subscription.outstanding < FILES_EVENTS_OUTSTANDING_MAX
+      ) {
+        const droppedCount = subscription.withheldChanges;
+        subscription.resyncOwed = false;
+        subscription.withheldChanges = 0;
+        log.warn(
+          `[studio:files] subscription ${subscriptionId} fell behind; `
+            + `${String(droppedCount)} changes were withheld and it has been `
+            + `told to re-list`,
+        );
+        this.deps.publish(subscription.windowId, {
+          kind: "resync",
+          subscriptionId,
+          projectId: subscription.projectId,
+          watcherGeneration: entry.watcher.currentGeneration,
+          reason: "consumer_backlog",
+          droppedCount,
+        });
+      }
+      return { ok: true, value: null };
+    }
+    return { ok: false, code: "unknown_subscription" };
   }
 
   private toEvent(
@@ -662,11 +793,32 @@ export class FilesDomain {
   /**
    * The lifecycle gate's close hook. Runs only AFTER the tombstone committed.
    *
-   * The node epoch is bumped LAST, after subscribers have been told, so the
-   * `closed` status they receive is minted under an identity they can still
-   * correlate with the tokens they hold.
+   * THE EPOCH IS BUMPED FIRST, on the first line, and the ordering is the whole
+   * point. It used to be bumped LAST, on the reasoning that a `closed` status
+   * should be minted under an identity the subscriber could still correlate
+   * with the tokens it holds - but the only thing that reasoning protects is
+   * CHANGE events, which carry node ids, and no change event is emitted from
+   * here: the watcher is disposed a line later and the status this hook sends
+   * carries no token at all. What the old order DID leave was a window. Every
+   * close hook between the tombstone's commit and this one runs first, and this
+   * hook then disposes a native watcher before bumping - so a read parked in
+   * its filesystem work could be released, pass a fence against an epoch that
+   * had not moved yet, and PUBLISH bytes out of a project whose tombstone was
+   * already durable. Bumping first shrinks that window to nothing.
+   *
+   * The bump is the second half of a pair. `listChildren` and `readFile` hold a
+   * DRAINED `fileOperation` lease, so a read that was already in flight is
+   * waited for by step 3 and finishes BEFORE the tombstone - correctly, since
+   * at that moment the project still existed. The epoch fence is what refuses
+   * everything that comes after. Between them there is no interval in which a
+   * read of a tombstoned project can publish.
    */
   async closeProject(projectId: string): Promise<void> {
+    const epoch = invalidateProjectNodes(projectId);
+    log.info(
+      `[studio:files] every file token for projectId=${projectId} is spent `
+        + `(epoch=${String(epoch)})`,
+    );
     const entry = this.projects.get(projectId);
     if (entry !== undefined) {
       this.projects.delete(projectId);
@@ -685,11 +837,6 @@ export class FilesDomain {
       entry.subscriptions.clear();
       entry.lease.release();
     }
-    const epoch = invalidateProjectNodes(projectId);
-    log.info(
-      `[studio:files] every file token for projectId=${projectId} is spent `
-        + `(epoch=${String(epoch)})`,
-    );
   }
 
   /** Watchers this domain believes are running. Exposed for its own tests. */

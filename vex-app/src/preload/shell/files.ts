@@ -28,10 +28,23 @@
  * An event whose payload fails its schema is DROPPED before any callback runs.
  * Main is a different process; an off-contract payload never becomes renderer
  * state.
+ *
+ * ## Flow control lives HERE, not in the renderer
+ *
+ * `EV.files.changed` is a push, and `webContents.send` neither blocks nor
+ * reports whether the renderer ever ran - so a stalled consumer would leave
+ * main holding an unbounded IPC backlog. This module posts one `CH.files.ackEvent`
+ * per `changed` batch, AFTER the renderer callback has returned, and main
+ * stops sending batches to a subscription that owes more than
+ * `FILES_EVENTS_OUTSTANDING_MAX` of them. Doing it here rather than in the
+ * renderer is the same choice the terminal bridge made: a component that
+ * forgets to acknowledge cannot wedge its own subscription, because
+ * acknowledging is not something it was ever asked to do.
  */
 
 import { EV, CH } from "../../shared/ipc/channels.js";
 import {
+  filesAckEventInputSchema,
   filesEventSchema,
   filesListChildrenInputSchema,
   filesReadFileInputSchema,
@@ -61,8 +74,37 @@ let detach: (() => void) | null = null;
 function ensureAttached(): void {
   if (detach !== null) return;
   detach = subscribe(EV.files.changed, filesEventSchema, (event) => {
-    listeners.get(event.subscriptionId)?.callback(event);
+    const listener = listeners.get(event.subscriptionId);
+    if (listener === undefined) return;
+    listener.callback(event);
+    // ACK FROM CONSUMPTION, not from arrival. The ack is posted AFTER the
+    // renderer's callback has returned, so what it acknowledges is that the
+    // batch was consumed - the same thing the terminal bridge acknowledges from
+    // xterm's write completion. An ack sent on arrival would prove only that a
+    // message reached a process that may be doing nothing with it, which is
+    // precisely the stall main's bound exists to notice.
+    //
+    // Only `changed` is acknowledged, because only `changed` is counted: main
+    // never withholds a `status` or a `resync`.
+    if (event.kind === "changed") acknowledge(event.subscriptionId);
   });
+}
+
+/**
+ * Tell main one batch was consumed. Fire and forget, deliberately.
+ *
+ * The result gives this side nothing to act upon - a refusal means the subscription
+ * is gone, and a subscription that is gone will send no further batches to fall
+ * behind on. The promise is swallowed rather than left unhandled so a main
+ * process that is shutting down cannot turn a rejected invoke into an
+ * unhandled rejection in the preload realm.
+ */
+function acknowledge(subscriptionId: string): void {
+  void invokeWithSchema(
+    CH.files.ackEvent,
+    { subscriptionId },
+    filesAckEventInputSchema,
+  ).catch(() => undefined);
 }
 
 function releaseIfIdle(): void {

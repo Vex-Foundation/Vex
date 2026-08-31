@@ -26,17 +26,24 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  FILES_EVENTS_OUTSTANDING_MAX,
   FILES_SUBSCRIPTIONS_PER_WINDOW_MAX,
   type FilesEvent,
 } from "@shared/schemas/files.js";
 
 import {
+  closeProjectAdmission,
   closeProjectResources,
+  drainProjectLeases,
   heldProjectLeases,
   resetProjectLifecycleGateForTests,
 } from "../../project-lifecycle-gate.js";
 import { FilesDomain } from "../files-domain.js";
-import { invalidateProjectNodes, resetFileNodeEpochsForTests } from "../node-id.js";
+import {
+  invalidateProjectNodes,
+  projectNodeEpoch,
+  resetFileNodeEpochsForTests,
+} from "../node-id.js";
 import type { NativeEvent, NativeSubscribe } from "../watcher.js";
 
 const PROJECT = "11111111-2222-3333-4444-555555555555";
@@ -72,6 +79,14 @@ interface Native {
   /** Make the Nth subscribe REJECT instead of resolving. */
   readonly failures: Set<number>;
   readonly unsubscribes: () => number;
+  /**
+   * Run at the START of every `unsubscribe`, before it resolves.
+   *
+   * The seam for asserting what the DOMAIN has already done by the time it
+   * disposes a watcher - which is the only way to observe an ordering inside
+   * `closeProject` from outside it.
+   */
+  beforeUnsubscribe: (() => void) | null;
 }
 
 /**
@@ -99,22 +114,25 @@ function nativeLayer(): Native {
     callbacks[index] = callback;
     return {
       unsubscribe: () => {
+        layer.beforeUnsubscribe?.();
         unsubscribes += 1;
         return Promise.resolve();
       },
     };
   };
 
-  return {
+  const layer: Native = {
     subscribe,
     gates,
     failures,
+    beforeUnsubscribe: null,
     calls: () => calls,
     unsubscribes: () => unsubscribes,
     deliver: (index, events) => {
       callbacks[index]?.(null, events);
     },
   };
+  return layer;
 }
 
 /** Wait for a condition the domain reaches on its own microtask schedule. */
@@ -359,7 +377,7 @@ describe("the per-window subscription bound", () => {
     }
 
     // At the bound: refused by name, and nothing already held is evicted.
-    expect(await beginWatch(WINDOW_A)).toEqual({ ok: false, code: "watcher_limit" });
+    expect(await beginWatch(WINDOW_A)).toEqual({ ok: false, code: "subscription_limit" });
     expect(domain.watchedProjectCount).toBe(1);
 
     // ...and the bound is PER WINDOW, so another window is unaffected.
@@ -414,5 +432,277 @@ describe("a read that is still working when the project closes underneath it", (
     } finally {
       await racing.dispose();
     }
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The DRAINED `fileOperation` lease
+ * ------------------------------------------------------------------ */
+
+describe("a read in flight when a delete begins", () => {
+  it("is WAITED FOR by the drain, and publishes because it ran before the tombstone", async () => {
+    // The fence at publication refuses a read that finishes after the epoch
+    // moved. It is a refusal AFTER the fact, and it depends on the bump having
+    // already happened - which the files close hook does behind every other
+    // close hook. The lease closes that gap from the other side: step 3 of a
+    // delete WAITS for reads already in flight, so there is no interval to
+    // fence at all.
+    //
+    // The park is placed exactly where the real one is: inside the authority
+    // resolution, after the lease has been taken.
+    let park: () => void = () => undefined;
+    const parked = new Promise<void>((resolve) => {
+      park = resolve;
+    });
+    let armed = false;
+
+    const parking = new FilesDomain({
+      resolveProjectDirectory: async (projectId) => {
+        if (projectId !== PROJECT) return null;
+        if (armed) {
+          armed = false;
+          await parked;
+        }
+        return { anchoredRoot: path.dirname(root), projectDirectory: root };
+      },
+      subscribeNative: native.subscribe,
+      pollForRoot: () => () => undefined,
+      rootExists: () => Promise.resolve(true),
+      publish: () => undefined,
+    });
+
+    try {
+      armed = true;
+      const listing = parking.listChildren({ projectId: PROJECT, nodeId: null });
+      await until(
+        "the read to be counted as in-flight work",
+        () => heldProjectLeases(PROJECT, "fileOperation") === 1,
+      );
+
+      // THE DELETE'S FIRST TWO STEPS, exactly as `project-delete.ts` runs them:
+      // close admission, then drain. Nothing here is faked - `closeProjectAdmission`
+      // and `drainProjectLeases` are the production functions.
+      closeProjectAdmission(PROJECT);
+      let drained = false;
+      const draining = drainProjectLeases(PROJECT, 10_000).then((outcome) => {
+        drained = true;
+        return outcome;
+      });
+
+      // THE DRAIN IS WAITING. Several event-loop turns, and it has not settled:
+      // without the lease it would have returned `drained: true` immediately and
+      // the tombstone would commit over a live read.
+      for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(drained).toBe(false);
+
+      // A read STARTED now is refused: admission is closed, and the lease
+      // acquisition that opens `listChildren` is that admission check.
+      expect(
+        await parking.listChildren({ projectId: PROJECT, nodeId: null }),
+      ).toEqual({ ok: false, code: "project_closed" });
+
+      // Let the parked read go. It PUBLISHES - correctly: it was admitted while
+      // the project existed, and the tombstone has not committed, precisely
+      // because this read is what the delete is waiting for.
+      park();
+      const listed = await listing;
+      expect(listed.ok).toBe(true);
+
+      // ...and only now does the drain complete, which is what lets the delete
+      // proceed to its transaction.
+      expect(await draining).toEqual({ drained: true });
+      expect(heldProjectLeases(PROJECT, "fileOperation")).toBe(0);
+    } finally {
+      park();
+      await parking.dispose();
+    }
+  });
+
+  it("RELEASES the lease on a refusal, not only on a success", async () => {
+    // A lease leaked by a failing read is a project that can never be deleted.
+    const refused = await domain.readFile({ projectId: "no-such-project", nodeId: "x" });
+    expect(refused).toEqual({ ok: false, code: "project_closed" });
+    expect(heldProjectLeases("no-such-project", "fileOperation")).toBe(0);
+  });
+});
+
+describe("the node epoch, and WHEN it moves", () => {
+  it("is ALREADY SPENT by the time the close hook disposes the watcher", async () => {
+    // The bump used to be the LAST thing `closeProject` did: after the native
+    // watcher disposal, after the `closed` statuses, and behind every other
+    // close hook the delete runs first. A read released anywhere in that window
+    // passed a fence against an epoch that had not moved yet and PUBLISHED
+    // bytes out of a project whose tombstone was already durable.
+    //
+    // The disposal is the slow, awaited part of the teardown, so it is the
+    // honest place to ask what the epoch is. Under the fix it has already
+    // moved; under the old order it has not moved yet and this reads `before`.
+    const watching = beginWatch(WINDOW_A);
+    await until("the native subscribe to be requested", () => native.calls() === 1);
+    native.gates[0]?.resolve();
+    expect((await watching).ok).toBe(true);
+
+    const before = projectNodeEpoch(PROJECT);
+    let epochWhenTheWatcherWasDisposed = -1;
+    native.beforeUnsubscribe = () => {
+      epochWhenTheWatcherWasDisposed = projectNodeEpoch(PROJECT);
+    };
+
+    await closeProjectResources(PROJECT);
+
+    expect(native.unsubscribes()).toBe(1);
+    expect(epochWhenTheWatcherWasDisposed).toBe(before + 1);
+    expect(projectNodeEpoch(PROJECT)).toBe(before + 1);
+    expect(domain.watchedProjectCount).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Event backpressure
+ * ------------------------------------------------------------------ */
+
+describe("a consumer that stops acknowledging batches", () => {
+  /** Watch, open the native gate, and hand back the subscription id. */
+  async function watchAndSettle(windowId: string): Promise<string> {
+    const watching = beginWatch(windowId);
+    await until(
+      "a native subscribe to be requested",
+      () => native.gates.length > 0 && native.gates.at(-1) !== undefined,
+    );
+    native.gates.at(-1)?.resolve();
+    const outcome = await watching;
+    if (!outcome.ok) throw new Error(`watch refused: ${outcome.code}`);
+    return outcome.value.subscriptionId;
+  }
+
+  /** Force one `changed` batch through the whole fan-out. */
+  async function deliverOneBatch(index: number, name: string): Promise<void> {
+    native.deliver(index, [{ path: path.join(root, name), type: "create" }]);
+    // The watcher aggregates on a 75 ms timer and throttles emissions, so real
+    // time is what carries a batch out of it here.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+
+  it("STOPS RECEIVING batches past the bound, and gets exactly ONE resync when it drains", async () => {
+    const subscriptionId = await watchAndSettle(WINDOW_A);
+    const changed = (): FilesEvent[] =>
+      events.filter((e) => e.event.kind === "changed").map((e) => e.event);
+    const resyncs = (): FilesEvent[] =>
+      events
+        .filter((e) => e.event.kind === "resync" && e.event.reason === "consumer_backlog")
+        .map((e) => e.event);
+
+    const deliveredChanges = (): number =>
+      changed().reduce(
+        (total, event) => total + (event.kind === "changed" ? event.changes.length : 0),
+        0,
+      );
+
+    // Never acknowledged. `webContents.send` neither blocks nor reports whether
+    // the renderer ran, so without the bound this array grows for as long as
+    // the filesystem is busy.
+    const files = FILES_EVENTS_OUTSTANDING_MAX + 12;
+    for (let index = 0; index < files; index += 1) {
+      await deliverOneBatch(0, `f${String(index)}.txt`);
+    }
+
+    // THE BOUND HELD. Asserted as a ceiling and not as an exact count because
+    // how many BATCHES a given number of changes becomes is the watcher's
+    // aggregation window's business - two deliveries landing inside one 75 ms
+    // tick are one batch - and that is not this test's subject. The ceiling is.
+    expect(changed().length).toBeLessThanOrEqual(FILES_EVENTS_OUTSTANDING_MAX);
+    // Batches WERE withheld, so there is something to be owed. (If this ever
+    // fails the burst above stopped being big enough to reach the bound, and
+    // the ceiling assertion above would be passing for the wrong reason.)
+    expect(deliveredChanges()).toBeLessThan(files);
+    // Nothing has been said yet: the resync is owed, and it is paid when the
+    // consumer proves it is back rather than into a void it is not reading.
+    expect(resyncs()).toHaveLength(0);
+
+    // The consumer comes back and acknowledges ONE batch.
+    expect(domain.ackEvent(WINDOW_A, subscriptionId)).toEqual({ ok: true, value: null });
+
+    const paid = resyncs();
+    expect(paid).toHaveLength(1);
+    const only = paid[0];
+    expect(only?.kind === "resync" && only.reason).toBe("consumer_backlog");
+    // THE COUNT IS ON THE WIRE, not in a log, and it is EXACT: every change
+    // this subscription did not receive is in it. Conservation, which is the
+    // no-silent-cutting rule stated as arithmetic - what was delivered plus
+    // what was declared missing is everything that happened.
+    expect(
+      deliveredChanges() + (only?.kind === "resync" ? only.droppedCount : -1),
+    ).toBe(files);
+
+    // ...and exactly one, not one per withheld batch.
+    expect(domain.ackEvent(WINDOW_A, subscriptionId)).toEqual({ ok: true, value: null });
+    expect(resyncs()).toHaveLength(1);
+  });
+
+  it("does NOT let ANOTHER window's ack credit this subscription", async () => {
+    const subscriptionId = await watchAndSettle(WINDOW_A);
+    // COMFORTABLY past the bound. How many BATCHES a run of changes becomes is
+    // the aggregation window's business - two deliveries inside one 75 ms tick
+    // are one batch - so a burst sized to just clear the bound can, on a busy
+    // machine, coalesce to just under it and never reach the state this test is
+    // about. The margin makes the premise hold, and the assertion below proves
+    // it did rather than assuming it.
+    const files = FILES_EVENTS_OUTSTANDING_MAX + 12;
+    for (let index = 0; index < files; index += 1) {
+      await deliverOneBatch(0, `g${String(index)}.txt`);
+    }
+    const changedCount = (): number =>
+      events.filter((e) => e.event.kind === "changed").length;
+    const deliveredChanges = (): number =>
+      events.reduce(
+        (total, e) => total + (e.event.kind === "changed" ? e.event.changes.length : 0),
+        0,
+      );
+    // THE PREMISE: the bound was reached and batches are being withheld right
+    // now. Without this the assertions below would pass on a subscription that
+    // simply had nothing more to send.
+    expect(deliveredChanges()).toBeLessThan(files);
+    expect(changedCount()).toBe(FILES_EVENTS_OUTSTANDING_MAX);
+    const stoppedAt = changedCount();
+
+    // Window B claims to have consumed window A's batch. If this credited the
+    // subscription, a compromised or merely buggy renderer could buy another
+    // window unbounded headroom in the privileged process.
+    expect(domain.ackEvent(WINDOW_B, subscriptionId)).toEqual({
+      ok: false,
+      code: "unknown_subscription",
+    });
+    await deliverOneBatch(0, "after-the-foreign-ack.txt");
+    // NOT ONE MORE. The foreign ack bought nothing.
+    expect(changedCount()).toBe(stoppedAt);
+
+    // ...whereas the OWNER's ack does credit it, which is what proves the
+    // refusal above was about ownership and not about the flow control being
+    // stuck shut.
+    expect(domain.ackEvent(WINDOW_A, subscriptionId)).toEqual({ ok: true, value: null });
+    await deliverOneBatch(0, "after-the-owners-ack.txt");
+    expect(changedCount()).toBeGreaterThan(stoppedAt);
+  });
+
+  it("never withholds a STATUS, which is the honest signal", async () => {
+    const subscriptionId = await watchAndSettle(WINDOW_A);
+    for (let index = 0; index < FILES_EVENTS_OUTSTANDING_MAX + 12; index += 1) {
+      await deliverOneBatch(0, `h${String(index)}.txt`);
+    }
+    const statusesBefore = events.filter((e) => e.event.kind === "status").length;
+
+    // A watcher that has stopped seeing changes must say so to a consumer that
+    // is behind MORE than to one that is keeping up - it is the only thing that
+    // stops a tree looking live while it is not.
+    await closeProjectResources(PROJECT);
+    const closed = events.filter(
+      (e) => e.event.kind === "status" && e.event.state === "closed",
+    );
+    expect(closed).toHaveLength(1);
+    expect(events.filter((e) => e.event.kind === "status").length).toBeGreaterThan(
+      statusesBefore,
+    );
+    expect(closed[0]?.event.subscriptionId).toBe(subscriptionId);
   });
 });

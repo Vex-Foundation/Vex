@@ -212,13 +212,28 @@ async function readIgnoreFile(
  */
 const reportedOversize = new Set<string>();
 
-function reportOversizeIgnoreFile(relativePath: string): void {
-  if (reportedOversize.has(relativePath)) return;
-  reportedOversize.add(relativePath);
+/**
+ * The dedupe key is (projectId, relativePath), not the path alone.
+ *
+ * `.gitignore` is the SAME relative path in every project a user opens, so a
+ * key of the path alone means the first project to report an oversize ignore
+ * file silences the fact for every other project in the process. The log line
+ * names a workspace's file, so its identity is the workspace and the file
+ * together. NUL is the separator because it cannot occur in either half.
+ */
+function oversizeKey(projectId: string, relativePath: string): string {
+  return `${projectId}\u0000${relativePath}`;
+}
+
+function reportOversizeIgnoreFile(projectId: string, relativePath: string): void {
+  const key = oversizeKey(projectId, relativePath);
+  if (reportedOversize.has(key)) return;
+  reportedOversize.add(key);
   log.warn(
     `[studio:files] an ignore file is larger than `
       + `${String(IGNORE_FILE_MAX_BYTES)} bytes and was NOT applied: `
-      + `${relativePath}. Its rules are not hiding anything in the tree.`,
+      + `${relativePath} (projectId=${projectId}). Its rules are not hiding `
+      + `anything in the tree.`,
   );
 }
 
@@ -233,8 +248,13 @@ export function resetOversizeIgnoreReportsForTests(): void {
  * Reads the ignore files at the project root and at every directory on the way
  * down, INCLUDING `relativeDirectory` itself, because a `.gitignore` sitting in
  * a folder governs that folder's own children.
+ *
+ * `projectId` governs NO rule and resolves NO path - it is the identity half of
+ * the once-per-file oversize report, which without it silences one project's
+ * `.gitignore` because another project's `.gitignore` was reported first.
  */
 export async function buildIgnoreChain(
+  projectId: string,
   projectDirectory: string,
   relativeDirectory: string,
 ): Promise<IgnoreChain> {
@@ -252,7 +272,7 @@ export async function buildIgnoreChain(
       if (read.oversize) {
         const reported = relative === "" ? name : `${relative}/${name}`;
         oversize.push(reported);
-        reportOversizeIgnoreFile(reported);
+        reportOversizeIgnoreFile(projectId, reported);
         continue;
       }
       if (read.text === null) continue;

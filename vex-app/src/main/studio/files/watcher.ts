@@ -272,6 +272,19 @@ export class ProjectFileWatcher {
   }
 
   /**
+   * How many raw native events are held UNFOLDED right now.
+   *
+   * Exposed for `watcher-policy.test.ts`, which is the only way to prove the
+   * raw bound holds DURING a single native callback rather than after it: the
+   * peak this number reaches mid-callback is the bound's actual subject, and it
+   * is invisible from the emissions (a burst folded once at the end and a burst
+   * folded four times in the middle drop exactly the same count).
+   */
+  get rawEventCount(): number {
+    return this.raw.length;
+  }
+
+  /**
    * Begin watching. Idempotent and joinable.
    *
    * Two subscribers arriving in the same tick join ONE start rather than
@@ -347,22 +360,37 @@ export class ProjectFileWatcher {
         continue;
       }
       this.raw.push({ path: relative, type: event.type });
-    }
-    // THE RAW BOUND. The array below is filled by this callback and drained
-    // only when the aggregation timer fires, so a burst that outruns one 75 ms
-    // tick would grow it without limit. At the bound the fold is brought
-    // FORWARD rather than the events being dropped: coalescing is what turns a
-    // burst back into a bounded map, and the map's own bound is the one that
-    // drops and counts.
-    if (this.raw.length >= FILES_RAW_EVENTS_MAX) {
-      if (this.aggregateTimer !== null) {
-        clearTimeout(this.aggregateTimer);
-        this.aggregateTimer = null;
-      }
-      this.aggregate();
-      return;
+      // THE RAW BOUND, CHECKED INSIDE THE LOOP AND NOT AFTER IT.
+      //
+      // `events` is ONE array handed over by the native backend, and its length
+      // is the backend's business, not ours: @parcel/watcher coalesces its own
+      // kernel reads, so a `git checkout` of a large tree arrives as a single
+      // callback carrying far more than this bound. Appending the whole array
+      // and only THEN comparing is a bound that has already been exceeded by
+      // the time it is tested - the same defect the file-size bound in
+      // `read.ts` exists to refuse, in a different buffer. So the fold happens
+      // the moment the threshold is reached, mid-array, and the loop carries on
+      // filling a now-empty `raw`.
+      //
+      // Nothing is dropped HERE: `aggregate` moves the events into the pending
+      // map, and it is that map's bound which drops - and counts, into
+      // `droppedCount`, so every fold this loop forces reports its losses
+      // through the SAME overflow signal a timer-driven fold would.
+      if (this.raw.length >= FILES_RAW_EVENTS_MAX) this.foldNow();
     }
     this.scheduleAggregation();
+  }
+
+  /**
+   * Bring the aggregation forward, now, cancelling the timer that would have
+   * done it later. Safe to call repeatedly within one native callback.
+   */
+  private foldNow(): void {
+    if (this.aggregateTimer !== null) {
+      clearTimeout(this.aggregateTimer);
+      this.aggregateTimer = null;
+    }
+    this.aggregate();
   }
 
   private scheduleAggregation(): void {

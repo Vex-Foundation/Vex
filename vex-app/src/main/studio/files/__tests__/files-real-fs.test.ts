@@ -45,11 +45,36 @@ import {
   truncate,
   writeFile,
 } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { realpath } from "node:fs/promises";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * The main-process logger, captured rather than written.
+ *
+ * One test in this file asserts on a WARNING - the once-per-file oversize
+ * ignore report - because that log line IS the product behaviour being fixed:
+ * its dedupe key decides whether a second project's `.gitignore` is ever
+ * mentioned. There is nowhere else to observe it. Everything else in this file
+ * uses the real filesystem and the real domain, unchanged.
+ */
+const logged = vi.hoisted(() => ({ warnings: [] as string[] }));
+
+vi.mock("../../../logger/index.js", () => ({
+  log: {
+    error: () => undefined,
+    warn: (...args: unknown[]) => {
+      logged.warnings.push(args.map((arg) => String(arg)).join(" "));
+    },
+    info: () => undefined,
+    debug: () => undefined,
+    verbose: () => undefined,
+    silly: () => undefined,
+  },
+}));
 
 import {
   FILE_READ_MAX_BYTES,
@@ -58,7 +83,11 @@ import {
 } from "@shared/schemas/files.js";
 
 import { readTextFileBounded } from "../bounded-read.js";
-import { IGNORE_FILE_MAX_BYTES, resetOversizeIgnoreReportsForTests } from "../excludes.js";
+import {
+  IGNORE_FILE_MAX_BYTES,
+  buildIgnoreChain,
+  resetOversizeIgnoreReportsForTests,
+} from "../excludes.js";
 
 import {
   heldProjectLeases,
@@ -566,21 +595,94 @@ describe("excludes", () => {
     expect(again.value.children.map((c) => c.name)).not.toContain("hidden.ts");
   });
 
-  it("STOPS AT THE BOUND on a file with no end, which is the whole proof", async () => {
-    // The two assertions above hold for the OLD reader too: it also skipped an
-    // oversize file, having first pulled the entire thing into memory to find
-    // out. What they cannot show is the part that is the security property -
-    // that the bytes are bounded at the HANDLE - because a temporary file large
-    // enough to tell the two readers apart is a test that measures the disk.
+  it("REFUSES A FILE WITH NO END WITHOUT READING ONE BYTE OF IT", async () => {
+    // THIS TEST'S CONTRACT CHANGED, deliberately, and the old expectation is
+    // recorded here because the change is the point.
     //
-    // `/dev/zero` tells them apart with no ambiguity at all. MEASURED on this
-    // machine: `readFile("/dev/zero")` never returns (killed at 5 s, exit 124),
-    // because it reads until EOF and there is no EOF. Reaching a verdict here
-    // AT ALL is therefore only possible for a reader that stops counting at the
-    // limit it was given. That the verdict is also the right one is the second
-    // assertion.
+    // It used to expect `oversize`: the reader opened `/dev/zero`, read
+    // `maxBytes + 1` bytes from it and concluded from that one extra byte that
+    // the file was over the bound. MEASURED on this machine: `readFile
+    // ("/dev/zero")` never returns (killed at 5 s, exit 124) because it reads
+    // until an EOF that does not come - so reaching a verdict AT ALL proved the
+    // reader stopped counting at the limit it was given.
+    //
+    // The reader now `fstat`s the handle FIRST and refuses anything that is not
+    // a REGULAR FILE, so `/dev/zero` is `absent` - the same answer a symlink
+    // gets, for the same reason: a rule set this process will not read is a
+    // rule set that does not apply. That is strictly stronger. A character
+    // device is not a rule list under any reading, and 256 KiB is now never
+    // pulled out of one to discover it. The verdict is still reached, and now
+    // without touching the device's bytes at all.
+    //
+    // The read loop's own bound is unchanged and is still exercised by the
+    // oversize `.gitignore` above, on a real regular file.
     const read = await readTextFileBounded("/dev/zero", IGNORE_FILE_MAX_BYTES);
-    expect(read).toEqual({ kind: "oversize" });
+    expect(read).toEqual({ kind: "absent" });
+  });
+
+  it("REFUSES A FIFO INSTANTLY instead of parking a threadpool thread", async () => {
+    // `O_NOFOLLOW` refuses a LINK to a FIFO. It does not refuse a `.gitignore`
+    // that IS a FIFO, and opening one with no writer blocks in `open(2)`
+    // forever - on the libuv threadpool, which has four threads by default, so
+    // four such files in a user's projects starve every filesystem operation
+    // Vex makes. Under the DRAINED `fileOperation` lease this feature now takes
+    // it is also a project delete that can never finish.
+    //
+    // MEASURED on this machine (Linux 6.18, node's own `fs.promises.open`):
+    // with `O_RDONLY | O_NOFOLLOW` the open never returned and was killed at
+    // 10 s; adding `O_NONBLOCK` returned in 1 ms with `isFIFO()` true. So the
+    // proof that the fix is in is that this test REACHES A VERDICT at all - a
+    // reader without it hangs here until the suite's own timeout.
+    const fifo = path.join(root, ".gitignore");
+    await new Promise<void>((resolve, reject) => {
+      execFile("mkfifo", [fifo], (error) => {
+        if (error === null) resolve();
+        else reject(error);
+      });
+    });
+
+    const started = Date.now();
+    const read = await readTextFileBounded(fifo, IGNORE_FILE_MAX_BYTES);
+    // `absent`, the same answer a link gets and for the same reason: a rule set
+    // this process will not read is a rule set that does not apply.
+    expect(read).toEqual({ kind: "absent" });
+    // Instant, not "eventually". A blocking open would not be here to measure.
+    expect(Date.now() - started).toBeLessThan(1_000);
+
+    // ...and the LISTING that walks the chain over it completes too, rather
+    // than wedging the domain behind an unreadable rule file.
+    await writeFile(path.join(root, "visible.ts"), "x", "utf8");
+    const listed = await domain.listChildren({ projectId: PROJECT, nodeId: null });
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.value.children.map((c) => c.name)).toContain("visible.ts");
+  });
+
+  it("reports an oversize ignore file ONCE PER PROJECT, not once per process", async () => {
+    // The dedupe key used to be the relative path alone - and `.gitignore` is
+    // the same relative path in every project a user opens, so the first
+    // project to report one silenced the fact for every other project in the
+    // process. The key is (projectId, relativePath), and this is the second
+    // project.
+    const oversize = path.join(root, ".gitignore");
+    await writeFile(oversize, "#".repeat(IGNORE_FILE_MAX_BYTES + 1), "utf8");
+
+    const oversizeLines = (): string[] =>
+      logged.warnings.filter((line) => line.includes("is larger than"));
+    logged.warnings.length = 0;
+
+    await buildIgnoreChain("project-one", root, "");
+    await buildIgnoreChain("project-one", root, "");
+    // Same file, same project, twice: reported once. The once-per-file rule
+    // still holds, which is the half this change must NOT break.
+    expect(oversizeLines()).toHaveLength(1);
+
+    await buildIgnoreChain("project-two", root, "");
+    // A DIFFERENT project's identical path is a different fact about a
+    // different workspace, and is reported. Under the old path-only key this
+    // second line never appeared at all.
+    expect(oversizeLines()).toHaveLength(2);
+    expect(oversizeLines().at(-1)).toContain("projectId=project-two");
   });
 
   it("lets a .vexignore NEGATE a default exclude", async () => {

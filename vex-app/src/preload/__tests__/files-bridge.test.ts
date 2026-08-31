@@ -218,6 +218,64 @@ describe("vex.files.onFilesEvent", () => {
     expect(second).toEqual([VALID]);
   });
 
+  it("ACKNOWLEDGES a delivered batch, AFTER the callback has consumed it", () => {
+    // Flow control's whole premise is that the ack means CONSUMPTION. An ack
+    // posted on arrival would prove only that a message reached this process,
+    // which is exactly the stall main's bound exists to notice - so the order
+    // is asserted, not just the fact.
+    const order: string[] = [];
+    // `Once`, not a permanent implementation: `mockClear` between tests keeps
+    // call history but not implementations, so a permanent one would leak into
+    // every test after this.
+    invoke.mockImplementationOnce((channel: string) => {
+      order.push(`invoke:${channel}`);
+      return Promise.resolve({ ok: true, data: { ok: true, value: null } });
+    });
+    const release = files.onFilesEvent(SUBSCRIPTION, () => {
+      order.push("callback");
+    });
+    emit(VALID);
+    release();
+    expect(order).toEqual(["callback", `invoke:${CH.files.ackEvent}`]);
+    expect(invoke.mock.calls[0]?.[1]).toMatchObject({
+      payload: { subscriptionId: SUBSCRIPTION },
+    });
+  });
+
+  it("acknowledges ONLY `changed`, never a status or a resync", () => {
+    // `status` and `resync` are never withheld by main and are never counted,
+    // so acking them would credit a subscription for batches it never owed.
+    const release = files.onFilesEvent(SUBSCRIPTION, () => {});
+    emit({
+      kind: "status",
+      subscriptionId: SUBSCRIPTION,
+      projectId: "project-1",
+      watcherGeneration: 0,
+      state: "watching",
+      reason: "started",
+      warnings: [],
+    });
+    emit({
+      kind: "resync",
+      subscriptionId: SUBSCRIPTION,
+      projectId: "project-1",
+      watcherGeneration: 0,
+      reason: "overflow",
+      droppedCount: 3,
+    });
+    release();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("does NOT acknowledge a batch no callback consumed", () => {
+    // Nothing is registered for this subscription, so nothing consumed the
+    // batch. Acking would tell main a stalled consumer is keeping up.
+    const release = files.onFilesEvent(SUBSCRIPTION, () => {});
+    emit({ ...VALID, subscriptionId: "sub-nobody-is-listening-to" });
+    release();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it("DETACHES the channel listener when the last subscription goes", () => {
     const release = files.onFilesEvent(SUBSCRIPTION, () => {});
     expect(channelListenerCount()).toBe(1);

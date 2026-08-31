@@ -35,7 +35,11 @@
  *     shown is reachable by asking again, in the same total order;
  *   - a change batch that exceeded the pending-buffer bound carries
  *     `overflowed: true` and `droppedCount`, so a consumer knows exactly how
- *     many changes it did not receive and that its remedy is to re-list.
+ *     many changes it did not receive and that its remedy is to re-list;
+ *   - a consumer that stops acknowledging batches stops being sent them past
+ *     `FILES_EVENTS_OUTSTANDING_MAX`, and is told so with one `resync` whose
+ *     reason is `consumer_backlog` and whose `droppedCount` is exactly what
+ *     was withheld.
  *
  * A read that exceeds `FILE_READ_MAX_BYTES` is REFUSED with the real size
  * rather than served truncated, because half a file rendered as if it were the
@@ -144,11 +148,44 @@ export const FILES_WATCHERS_MAX = 8;
  * holds one per project tree plus one per open editor tab, so 64 is far above
  * any real workspace and far below a number that costs anything.
  *
- * AT THE BOUND: the request is REFUSED with `watcher_limit`. It is not queued
+ * AT THE BOUND: the request is REFUSED with `subscription_limit`. It is not queued
  * and nothing already held is evicted - a subscription the consumer believes it
  * has is the one thing this surface must not take away silently.
  */
 export const FILES_SUBSCRIPTIONS_PER_WINDOW_MAX = 64;
+
+/**
+ * The most `changed` batches main will have OUTSTANDING to one subscription.
+ *
+ * `webContents.send` does not block and does not tell the sender whether the
+ * renderer ever ran. A renderer wedged on a long task, or paused at a debugger
+ * breakpoint, still has every batch queued for it - so a `git checkout` behind
+ * a stalled consumer is an IPC backlog with no bound at all, in the privileged
+ * process, holding the change payloads alive.
+ *
+ * So delivery is ACKNOWLEDGED, and the acknowledgement comes from CONSUMPTION:
+ * preload posts one ack per `changed` batch it has already handed to the
+ * renderer's callback. That is the same discipline the terminal's flow control
+ * uses - there the ack comes from xterm's write completion, here from the
+ * callback returning - and for the same reason: an ack posted on arrival in
+ * preload would prove only that a message was delivered to a process that may
+ * still be doing nothing with it.
+ *
+ * 32, and the number is derived rather than picked. A watcher emits at most one
+ * batch per `FILES_EMIT_THROTTLE_MS`, so 32 outstanding batches is 6.4 seconds
+ * of un-consumed events: far beyond any renderer that is merely busy, and far
+ * short of a backlog worth worrying about in memory. A consumer that has not
+ * acked one batch in six seconds is not slow, it is not there.
+ *
+ * AT THE BOUND: main STOPS sending `changed` batches to that subscription and
+ * remembers that it did. `status` and `resync` still go - they are the honest
+ * signal about a watcher and must never be the thing that is dropped. When acks
+ * bring the count back under the bound, main sends exactly ONE `resync` with
+ * reason `consumer_backlog` and `droppedCount` set to the number of individual
+ * changes it withheld, so the consumer knows precisely what it missed and that
+ * its remedy is to re-list. Nothing is silently cut: the count is on the wire.
+ */
+export const FILES_EVENTS_OUTSTANDING_MAX = 32;
 
 /**
  * The most RAW native events held between two aggregation ticks.
@@ -332,6 +369,8 @@ export const filesErrorCodeSchema = z.enum([
   "root_unavailable",
   /** No watcher could be started: the per-process watcher bound is reached. */
   "watcher_limit",
+  /** This WINDOW holds the per-window subscription bound already. Release one. */
+  "subscription_limit",
   /** The watcher is not running for this project and cannot be started. */
   "watcher_unavailable",
   /** No subscription with that id belongs to this window. */
@@ -490,6 +529,12 @@ export const filesResyncReasonSchema = z.enum([
   "root_resumed",
   /** The pending buffer overflowed; `droppedCount` says by how much. */
   "overflow",
+  /**
+   * This consumer stopped acknowledging batches, so main stopped sending them
+   * past `FILES_EVENTS_OUTSTANDING_MAX` and has now resumed. `droppedCount` is
+   * the number of individual changes withheld while it was stopped.
+   */
+  "consumer_backlog",
 ]);
 export type FilesResyncReason = z.infer<typeof filesResyncReasonSchema>;
 
@@ -656,6 +701,25 @@ export const filesUnwatchInputSchema = z
   .object({ subscriptionId: z.string().min(1).max(64) })
   .strict();
 export type FilesUnwatchInput = z.infer<typeof filesUnwatchInputSchema>;
+
+/**
+ * Acknowledge ONE delivered `changed` batch.
+ *
+ * Sent by PRELOAD, not by the renderer: the renderer never learns that this
+ * channel exists, and a component that forgets to acknowledge cannot wedge its
+ * own subscription's flow control - exactly the placement the terminal bridge
+ * chose for the same reason. It carries no count, because one ack means one
+ * batch and a count would be a number a caller could inflate to buy itself
+ * headroom it never earned.
+ *
+ * The WINDOW is not on this packet. It comes from the sender of the IPC event,
+ * so one window cannot credit another window's subscription; an ack for a
+ * subscription this window does not own is refused with `unknown_subscription`.
+ */
+export const filesAckEventInputSchema = z
+  .object({ subscriptionId: z.string().min(1).max(64) })
+  .strict();
+export type FilesAckEventInput = z.infer<typeof filesAckEventInputSchema>;
 
 /** What a successful `watchFile` hands back. */
 export const filesSubscriptionSchema = z

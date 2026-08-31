@@ -454,6 +454,53 @@ describe("batching and overflow", () => {
     expect(emitted[0]?.droppedCount).toBe(FILES_RAW_EVENTS_MAX - FILES_PENDING_CHANGES_MAX);
   });
 
+  it("HOLDS THE RAW BOUND WITHIN ONE CALLBACK, folding mid-array", async () => {
+    // The bound used to be tested AFTER the whole `events` array had been
+    // appended, which is a bound already exceeded by the time it is checked -
+    // and @parcel/watcher hands over one array per callback whose length is the
+    // BACKEND's business, not ours: a `git checkout` of a large tree arrives as
+    // a single callback carrying far more than this bound.
+    //
+    // The peak `raw` reaches DURING the callback is the actual subject, and it
+    // is invisible from the emissions: a burst folded once at the end and the
+    // same burst folded four times in the middle drop exactly the same count.
+    // So the watcher's own buffer is sampled from inside the iteration, through
+    // a getter on each event's `path` - which is the field `onNative` reads
+    // first, before it pushes.
+    const h = harness();
+    await h.watcher.start();
+
+    let peak = 0;
+    class SampledEvent {
+      readonly type: NativeEvent["type"] = "create";
+      constructor(private readonly index: number) {}
+      get path(): string {
+        peak = Math.max(peak, h.watcher.rawEventCount);
+        return `${ROOT}/f${String(this.index)}.txt`;
+      }
+    }
+
+    // THREE TIMES the bound, in ONE callback.
+    const burst = FILES_RAW_EVENTS_MAX * 3;
+    h.deliver(Array.from({ length: burst }, (_, index) => new SampledEvent(index)));
+
+    // The buffer never reached the bound at any point inside the callback...
+    expect(peak).toBeLessThan(FILES_RAW_EVENTS_MAX);
+    // ...and it is empty afterwards, every event having been folded away.
+    expect(h.watcher.rawEventCount).toBeLessThanOrEqual(FILES_RAW_EVENTS_MAX);
+
+    // NOT ONE TIMER ADVANCED past a fraction of the aggregation tick: a watcher
+    // that only folds on the 75 ms timer would have nothing here at all.
+    await vi.advanceTimersByTimeAsync(10);
+    const emitted = batches(h.emissions);
+    expect(emitted.length).toBeGreaterThan(0);
+    // Nothing was dropped by the FOLD. What was dropped was dropped by the
+    // pending map's own bound, and it is counted into the same overflow signal
+    // a timer-driven fold would have used.
+    expect(emitted[0]?.overflowed).toBe(true);
+    expect(emitted[0]?.droppedCount).toBe(burst - FILES_PENDING_CHANGES_MAX);
+  });
+
   it("DROPS an event that does not map inside the project", async () => {
     const h = harness();
     await h.watcher.start();

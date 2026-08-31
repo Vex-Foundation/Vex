@@ -67,8 +67,20 @@ import {
 import { log } from "../../logger/index.js";
 import { describeFileFailure, isEnoentLike } from "./node-path.js";
 
-/** Read-only, and never through a link on the final component. */
-const READ_FLAGS = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0);
+/**
+ * Read-only, never through a link on the final component, and never blocking.
+ *
+ * `O_NONBLOCK` for the reason `bounded-read.ts` measures: `resolveNodePath`
+ * reports a FIFO as kind `other`, which `readFile` does not refuse, so the open
+ * below is reachable for one - and a FIFO with no writer blocks in `open(2)`
+ * forever, parking a libuv threadpool thread. That was a starved pool before
+ * this feature took a DRAINED lifecycle lease across the read; it is now also a
+ * project delete that can never drain. The `stat` inside the body refuses every
+ * non-regular file, and this flag is what lets the open reach that refusal.
+ * Inert on a regular file.
+ */
+const READ_FLAGS =
+  fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0);
 
 /**
  * Read a file for the viewer.

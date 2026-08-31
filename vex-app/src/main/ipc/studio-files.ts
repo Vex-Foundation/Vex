@@ -1,7 +1,7 @@
 /**
  * `vex.files.*` - the Vex Studio project-file surface (stage B3a).
  *
- * Four handlers, all through `registerHandler`, so each one gets sender and
+ * Five handlers, all through `registerHandler`, so each one gets sender and
  * subframe validation, a strict input schema, output validation and a redacted
  * `Result` for free. What is specific to this surface:
  *
@@ -16,6 +16,10 @@
  *    "That file is binary" and "the project was deleted" are answers the UI
  *    renders as statements about the file or the project, not as errors.
  *    Genuine infrastructure failure still travels as `Result.error`.
+ *  - ONE OF THE FIVE IS NOT A RENDERER CAPABILITY. `ackEvent` is the files
+ *    surface's flow control and is sent by PRELOAD; `FilesBridge` exposes no
+ *    method for it, so renderer code has nothing to call and cannot inflate its
+ *    own credit.
  *  - READ-ONLY. There is no write, create, rename or delete channel, and that
  *    is a product decision rather than an omission: mutating a user's
  *    repository from a tree is an approval-gated action that does not yet have
@@ -23,6 +27,7 @@
  */
 
 import {
+  filesAckEventInputSchema,
   filesAckResultSchema,
   filesListChildrenInputSchema,
   filesListChildrenResultSchema,
@@ -68,6 +73,21 @@ export function registerStudioFilesHandlers(): Array<() => void> {
       outputSchema: filesWatchResultSchema,
       handle: async (input, ctx) =>
         ok(await filesDomain().watchFile(windowIdOf(ctx), input)),
+    }),
+
+    // FLOW CONTROL, not a renderer capability. Preload sends one of these per
+    // `changed` batch it has handed to a renderer callback; nothing in
+    // `FilesBridge` exposes it, so renderer code cannot reach it. The window
+    // identity is the sender's, so an ack cannot credit another window.
+    registerHandler({
+      channel: CH.files.ackEvent,
+      domain: "studio",
+      inputSchema: filesAckEventInputSchema,
+      outputSchema: filesAckResultSchema,
+      handle: (input, ctx) =>
+        Promise.resolve(
+          ok(filesDomain().ackEvent(windowIdOf(ctx), input.subscriptionId)),
+        ),
     }),
 
     registerHandler({
