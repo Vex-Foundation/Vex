@@ -59,6 +59,7 @@ function solanaAccumulator(wanted: readonly string[]) {
     wanted,
     normalizeAddress: (address) => address,
     quotePolicy: SOLANA_QUOTE_ASSET_POLICY,
+    expectedChainId: "solana",
   });
 }
 
@@ -109,6 +110,7 @@ describe("quote-tier price selection over live provider bytes", () => {
       wanted: [JUP],
       normalizeAddress: (address) => address,
       quotePolicy: { ...SOLANA_QUOTE_ASSET_POLICY, wrappedNative: "not-a-quote-asset-here" },
+      expectedChainId: "solana",
     });
     stableOnly.addPairs(jupPools);
     expect(stableOnly.toPriceMap().get(JUP)).toBeCloseTo(0.217, 3);
@@ -124,6 +126,7 @@ describe("quote-tier price selection over live provider bytes", () => {
       wanted: [JUP, SOL_MINT],
       normalizeAddress: (address) => address,
       quotePolicy: nativeOnly,
+      expectedChainId: "solana",
     });
     accumulator.addPairs(wsolRepresentative);
     accumulator.addPairs(jupPools);
@@ -202,6 +205,7 @@ describe("depth ordering among trusted pools", () => {
       wanted,
       normalizeAddress: (address) => address,
       quotePolicy,
+      expectedChainId: "test",
     });
 
   it("a DEEPER native pool beats a SHALLOWER stable pool (the owner's memecoin case)", () => {
@@ -343,6 +347,7 @@ describe("depth ordering among trusted pools", () => {
       wanted: ["TOK"],
       normalizeAddress: (address) => address.toLowerCase(),
       quotePolicy: { stables: new Set(["STABLE"]), wrappedNative: "WNATIVE" },
+      expectedChainId: "test",
     });
     accumulator.addPairs(build([{ base: "tok", quote: "stable", priceUsd: "4", liquidityUsd: 9_000 }]));
     expect(accumulator.toPriceMap().get("tok")).toBe(4);
@@ -357,6 +362,7 @@ describe("nativeUsd derivation, both live routes", () => {
       wanted: [base.policy.wrappedNative],
       normalizeAddress: (address) => address.toLowerCase(),
       quotePolicy: base.policy,
+      expectedChainId: base.slug,
     });
     accumulator.addPairs(baseWethRepresentative);
     // Live capture: WETH/USDC, priceUsd 2472.15, $4.41M.
@@ -373,6 +379,7 @@ describe("nativeUsd derivation, both live routes", () => {
       wanted: [arbitrum.policy.wrappedNative],
       normalizeAddress: (address) => address.toLowerCase(),
       quotePolicy: arbitrum.policy,
+      expectedChainId: arbitrum.slug,
     });
     // Live capture: USDC/WETH, priceUsd 1.000021, priceNative 0.0004044.
     accumulator.addPairs(arbUsdcRepresentative);
@@ -391,6 +398,7 @@ describe("robinhood $VEX, the local-chain twin of the JUP defect", () => {
       wanted,
       normalizeAddress: (address) => address.toLowerCase(),
       quotePolicy: config.quoteAssetPolicy,
+      expectedChainId: config.dexscreenerSlug,
     });
 
   it("VEX's representative pool is VIRTUAL-quoted (tier 2) and prices nothing", () => {
@@ -413,5 +421,162 @@ describe("robinhood $VEX, the local-chain twin of the JUP defect", () => {
     // one, excluded; the deepest TRUSTED pool holds $69k. The VEX/WETH pool
     // ($1.2k) and the sub-floor VEX/USDG pools lose on depth.
     expect(decision?.liquidityUsd).toBeCloseTo(69463.21, 2);
+  });
+});
+
+/**
+ * Wire-value guards and the single-chain precondition, driven through the REAL
+ * response validator so what the accumulator sees is the shape production
+ * gets. The validator is deliberately LENIENT about `liquidity.usd` (any
+ * non-NaN number survives, including Infinity), which is precisely why the
+ * accumulator must not trust it: that field is the only tie-break between
+ * trusted pools.
+ */
+describe("hostile wire values and the single-chain precondition", () => {
+  const STABLE = "0x0000000000000000000000000000000000000001";
+  const WNATIVE = "0x0000000000000000000000000000000000000002";
+  const TOK = "0x0000000000000000000000000000000000000003";
+  const policy: QuoteAssetPolicy = { stables: new Set([STABLE]), wrappedNative: WNATIVE };
+
+  /** Rows go through `validateTokensResponse`, exactly like a live response. */
+  function pairs(
+    rows: ReadonlyArray<{
+      chainId?: string;
+      base: string;
+      quote: string | null;
+      priceUsd?: string | null;
+      priceNative?: string;
+      liquidityUsd?: unknown;
+      pairAddress?: string;
+    }>,
+  ): DexPair[] {
+    return validateTokensResponse(
+      rows.map((row, index) => ({
+        chainId: row.chainId ?? "base",
+        dexId: "test",
+        url: "https://dexscreener.com/base/test",
+        pairAddress: row.pairAddress ?? `0xpair${index}`,
+        baseToken: { address: row.base, name: "b", symbol: "B" },
+        quoteToken: { address: row.quote, name: null, symbol: null },
+        priceUsd: row.priceUsd ?? null,
+        priceNative: row.priceNative ?? "1",
+        liquidity: { usd: row.liquidityUsd, base: 0, quote: 0 },
+      })),
+    );
+  }
+
+  const accumulatorFor = (wanted: readonly string[], expectedChainId = "base") =>
+    createBestLiquidityPriceAccumulator({
+      wanted,
+      normalizeAddress: (address) => address.toLowerCase(),
+      quotePolicy: policy,
+      expectedChainId,
+    });
+
+  it("an Infinity liquidity never wins the tie-break (it is the ONLY tie-break)", () => {
+    const accumulator = accumulatorFor([TOK]);
+    accumulator.addPairs(
+      pairs([
+        // The validator keeps Infinity verbatim: `typeof Infinity === "number"`.
+        { base: TOK, quote: STABLE, priceUsd: "999999", liquidityUsd: Number.POSITIVE_INFINITY },
+        { base: TOK, quote: STABLE, priceUsd: "3", liquidityUsd: 40_000 },
+      ]),
+    );
+    // A depth that is not a number scores 0, i.e. sub-floor, i.e. no price
+    // source at all - it cannot outrank the real $40k pool.
+    expect(accumulator.toPriceMap().get(TOK)).toBe(3);
+    expect(accumulator.toDecisionMap().get(TOK)?.liquidityUsd).toBe(40_000);
+  });
+
+  it("a string and a negative liquidity never win the tie-break either", () => {
+    const accumulator = accumulatorFor([TOK]);
+    accumulator.addPairs(
+      pairs([
+        { base: TOK, quote: STABLE, priceUsd: "111", liquidityUsd: "9999999999" },
+        { base: TOK, quote: STABLE, priceUsd: "222", liquidityUsd: -5_000_000 },
+        { base: TOK, quote: STABLE, priceUsd: "3", liquidityUsd: 40_000 },
+      ]),
+    );
+    expect(accumulator.toPriceMap().get(TOK)).toBe(3);
+  });
+
+  it("an Infinity-liquidity pool alone prices NOTHING rather than everything", () => {
+    const accumulator = accumulatorFor([TOK]);
+    accumulator.addPairs(
+      pairs([{ base: TOK, quote: STABLE, priceUsd: "5", liquidityUsd: Number.POSITIVE_INFINITY }]),
+    );
+    expect(accumulator.toPriceMap().size).toBe(0);
+    expect(accumulator.unpricedReasons().get(TOK)).toBe("below_liquidity_floor");
+  });
+
+  it("a DENORMAL priceNative cannot emit a non-finite USD price on the quote side", () => {
+    const accumulator = accumulatorFor([STABLE]);
+    // priceUsd / priceNative = 1 / 5e-324 = Infinity. A "usd" candidate is
+    // returned verbatim, so an unguarded quotient would BE the displayed price.
+    accumulator.addPairs(
+      pairs([{ base: TOK, quote: STABLE, priceUsd: "1", priceNative: "5e-324", liquidityUsd: 80_000 }]),
+    );
+    expect(accumulator.toPriceMap().get(STABLE)).toBeUndefined();
+    for (const price of accumulator.toPriceMap().values()) expect(Number.isFinite(price)).toBe(true);
+  });
+
+  it("a DENORMAL priceNative cannot emit a non-finite implied nativeUsd", () => {
+    const accumulator = accumulatorFor([TOK]);
+    accumulator.addPairs(
+      pairs([{ base: TOK, quote: WNATIVE, priceUsd: "1", priceNative: "5e-324", liquidityUsd: 90_000 }]),
+    );
+    expect(accumulator.nativeUsd()).toBeNull();
+    expect(accumulator.toPriceMap().size).toBe(0);
+    expect(accumulator.unpricedReasons().get(TOK)).toBe("no_native_price");
+  });
+
+  it("a DEEPER invalid candidate cannot suppress a SHALLOWER valid one", () => {
+    const accumulator = accumulatorFor([STABLE]);
+    accumulator.addPairs(
+      pairs([
+        // Deepest by far, but its quote-side quotient is not a usable price, so
+        // it is never offered and cannot become the incumbent.
+        { base: TOK, quote: STABLE, priceUsd: "1", priceNative: "5e-324", liquidityUsd: 5_000_000 },
+        // 2.25 / 2.25 = $1.00, from a real $80k book.
+        { base: TOK, quote: STABLE, priceUsd: "2.25", priceNative: "2.25", liquidityUsd: 80_000 },
+      ]),
+    );
+    expect(accumulator.toPriceMap().get(STABLE)).toBe(1);
+    expect(accumulator.toDecisionMap().get(STABLE)?.liquidityUsd).toBe(80_000);
+  });
+
+  it("REGRESSION: a row for the SAME address on ANOTHER chain is refused, not priced", () => {
+    const accumulator = accumulatorFor([TOK]);
+    accumulator.addPairs(
+      pairs([
+        // Identical 20 bytes, different chain, different token, $9999 of it.
+        { chainId: "arbitrum", base: TOK, quote: STABLE, priceUsd: "9999", liquidityUsd: 5_000_000 },
+      ]),
+    );
+    expect(accumulator.toPriceMap().size).toBe(0);
+    expect(accumulator.foreignChainPairsRefused()).toBe(1);
+    // Refused rows are not evidence of anything, including of thin pools.
+    expect(accumulator.unpricedReasons().get(TOK)).toBe("no_trusted_pool");
+  });
+
+  it("a foreign-chain row cannot anchor nativeUsd or beat an on-chain pool", () => {
+    const accumulator = accumulatorFor([TOK]);
+    accumulator.addPairs(
+      pairs([
+        { chainId: "arbitrum", base: WNATIVE, quote: STABLE, priceUsd: "70000", liquidityUsd: 9_000_000 },
+        { base: WNATIVE, quote: STABLE, priceUsd: "10", liquidityUsd: 1_000_000 },
+        { base: TOK, quote: WNATIVE, priceNative: "3", liquidityUsd: 50_000 },
+      ]),
+    );
+    expect(accumulator.nativeUsd()).toBe(10);
+    expect(accumulator.toPriceMap().get(TOK)).toBe(30);
+    expect(accumulator.foreignChainPairsRefused()).toBe(1);
+  });
+
+  it("matches the chain identifier case-insensitively, and only that identifier", () => {
+    const accumulator = accumulatorFor([TOK], "BASE");
+    accumulator.addPairs(pairs([{ base: TOK, quote: STABLE, priceUsd: "7", liquidityUsd: 40_000 }]));
+    expect(accumulator.toPriceMap().get(TOK)).toBe(7);
+    expect(accumulator.foreignChainPairsRefused()).toBe(0);
   });
 });

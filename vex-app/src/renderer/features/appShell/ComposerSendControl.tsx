@@ -26,6 +26,12 @@ export interface ComposerSendControlProps {
    * the runtime state is unknown. Do NOT re-derive it here.
    */
   readonly stopAvailable: boolean;
+  /**
+   * The Stop key's accessible name, resolved per session mode by the owner's
+   * `resolveStopAffordance` ("Stop mission" / "Stop agent"). Named by TARGET,
+   * because the key stops a run or an autonomous session, not a generation.
+   */
+  readonly stopLabel: string;
   readonly stopRequested: boolean;
   readonly onStop: () => void;
   readonly submitDisabled: boolean;
@@ -41,6 +47,7 @@ export interface ComposerSendControlProps {
 
 export function ComposerSendControl({
   stopAvailable,
+  stopLabel,
   stopRequested,
   onStop,
   submitDisabled,
@@ -67,7 +74,7 @@ export function ComposerSendControl({
         type="button"
         onClick={onStop}
         onMouseDown={onKeepFocus}
-        aria-label="Stop generating"
+        aria-label={stopLabel}
         className={cn(
           SEND_KEY_BASE,
           "bg-button-accent text-ink-on-button-accent hover:bg-button-accent-hover",

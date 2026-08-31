@@ -85,6 +85,7 @@ function runFacts(status: string) {
     leaseExpiresAt: null,
     pendingControlKind: null,
     hasPendingWake: false,
+    sessionWakeDueAt: null,
     hasPendingApproval: false,
     hasIncompleteApprovalLifecycle: false,
     hasOutstandingUserForm: false,
@@ -222,6 +223,7 @@ describe("runtime.getState stoppable", () => {
       leaseExpiresAt: null,
       pendingControlKind: null,
       hasPendingWake: false,
+      sessionWakeDueAt: null,
       hasPendingApproval: false,
       hasIncompleteApprovalLifecycle: false,
       hasOutstandingUserForm: false,
@@ -287,6 +289,11 @@ describe("runtime.getState stoppable", () => {
     const r = await call();
 
     expect(Object.keys(r.data ?? {}).sort()).toEqual([
+      // M5: `activity` joins the projected set - a DERIVED policy over the
+      // private facts, never one of the private facts itself. `recoveryReady`
+      // is absent because this fixture is not `paused_error`, the one status
+      // it is computed for.
+      "activity",
       "hasActiveRun",
       "iterationCount",
       "lastCheckpointAt",

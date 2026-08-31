@@ -60,6 +60,10 @@ import {
   startPriceWatchPoller,
   type PriceWatchPollerHandle,
 } from "./price-watch-poller.js";
+import {
+  startRestartOrphanReclaim,
+  type RestartOrphanReclaimHandle,
+} from "../runtime/restart-orphan-reclaim.js";
 
 export type { ClaimedWakeOutcome, ClaimedWake } from "./executor/tick.js";
 export { tick } from "./executor/tick.js";
@@ -91,6 +95,18 @@ export interface StartOptions {
    * deadlines in a process with no executor to claim them is pure provider cost.
    */
   startPriceWatchPoller?: () => PriceWatchPollerHandle;
+  /**
+   * Restart-orphan reclaim override for tests. Same lifetime argument as the
+   * two above, plus one of its own: the reclaim is the RECURRING sweep for runs
+   * left `running` by a dead process, and the runner lease it waits on outlives
+   * that process by its full TTL. A boot-only scan would see a live lease and
+   * do nothing, so the sweep has to come back - and the host's supervisor timer
+   * cannot carry it, because that timer is cleared the moment this executor
+   * starts. This is the one process-local scheduler with the right lifetime:
+   * started once, after the DB is proven ready, and drained on quit before
+   * Postgres teardown.
+   */
+  startRestartOrphanReclaim?: () => RestartOrphanReclaimHandle;
 }
 
 /**
@@ -109,6 +125,9 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
   const deps = options.deps ?? buildProductionDeps();
   const promoter = (options.startWatchPromoter ?? startWakeWatchPromoter)();
   const pricePoller = (options.startPriceWatchPoller ?? (() => startPriceWatchPoller()))();
+  const orphanReclaim = (
+    options.startRestartOrphanReclaim ?? (() => startRestartOrphanReclaim())
+  )();
 
   let stopped = false;
   let inFlight: Promise<void> | null = null;
@@ -143,6 +162,9 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
       promoter.stop();
       // The poller abandons its in-flight wait at once and promotes nothing.
       await pricePoller.stop();
+      // Drains its in-flight pass; a reclaim transaction must finish against a
+      // live DB, and quit sequences this stop() before Postgres teardown.
+      await orphanReclaim.stop();
       if (timer) clearTimeout(timer);
       if (inFlight) {
         try {

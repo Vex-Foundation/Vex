@@ -268,7 +268,50 @@ function classifyFailure(error: unknown): BoardChartOutcome {
   if (error instanceof Error && error.name === "AbortError") {
     return { kind: "unavailable", reason: "cancelled" };
   }
+  // THE CATCH-ALL, AND THE ONE PLACE THE ERROR IS SEEN. Every branch above
+  // recognises the failure; this one does not, and it used to discard the
+  // object unseen - so `unavailable/provider` reached the renderer with nothing
+  // anywhere naming what happened, and diagnosis started from zero. Rule 05:
+  // the owner emits its failure signal ONCE. This is that emission, and there
+  // is deliberately no second log for the same failure.
+  //
+  // WARN, not info: packaged logging drops info, and a catch-all this owner
+  // could not classify is exactly what a packaged install needs to have said.
+  // BOUNDED and typed - a provider code, an error name and a nullable HTTP
+  // status. No message, no payload, no URL: the fields below are the ones a
+  // reader can act on, and everything else is uncontrolled provider text.
+  log.warn(
+    "[board-chart] unclassified provider failure " +
+      `code=${code ?? "none"} ` +
+      `name=${error instanceof Error ? error.name : typeof error} ` +
+      `httpStatus=${httpStatusOf(error) ?? "none"}`,
+  );
   return { kind: "unavailable", reason: "provider" };
+}
+
+/**
+ * The HTTP status a transport error carries, when it carries one.
+ *
+ * `httpStatus` FIRST, because that is this repo's own contract: `VexError`
+ * declares it (`src/errors.ts:16`) and `utils/http.ts:160` is its one writer,
+ * setting it from the response of a provider that ANSWERED. Reading `status`
+ * alone - as this did first - meant a real typed Vex error logged
+ * `httpStatus=none` while only a hand-made object carrying `status` produced a
+ * number, which is exactly backwards for the errors this path actually sees.
+ *
+ * `status` stays as a FALLBACK for third-party SDK shapes: this runs on a
+ * value the catch-all could not classify, so it need not be a `VexError` at
+ * all, and several HTTP clients spell the field that way. Read defensively
+ * rather than cast - nothing about the shape is known here.
+ */
+function httpStatusOf(error: unknown): number | null {
+  if (typeof error !== "object" || error === null) return null;
+  const candidate = error as { httpStatus?: unknown; status?: unknown };
+  return finiteStatus(candidate.httpStatus) ?? finiteStatus(candidate.status);
+}
+
+function finiteStatus(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 export interface BoardChartService {
@@ -525,7 +568,14 @@ export function createBoardChartService(
       ) {
         settled = await attempt(args);
       }
-      if (settled.kind !== "series") {
+      // The poll's own outcome trace. `unavailable/provider` is excluded
+      // because `classifyFailure` is its sole producer and already emitted the
+      // WARN that names the error - one failure, one signal (rule 05), and the
+      // warn carries strictly more than this line would.
+      if (
+        settled.kind !== "series" &&
+        !(settled.kind === "unavailable" && settled.reason === "provider")
+      ) {
         log.info(
           `[board-chart] ${args.resolution} produced ${settled.kind}` +
             `/${settled.reason}`,

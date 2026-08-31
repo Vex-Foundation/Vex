@@ -30,6 +30,8 @@ describe("runtime schemas", () => {
       leaseExpiresAt: null,
       pendingControlKind: null,
       stoppable: false,
+      // M5: required on the DTO alongside `stoppable`.
+      activity: { kind: "none" },
     });
     expect(parsed.success).toBe(true);
   });
@@ -48,6 +50,8 @@ describe("runtime schemas", () => {
       leaseExpiresAt: ISO,
       pendingControlKind: null,
       stoppable: false,
+      // M5: required on the DTO alongside `stoppable`.
+      activity: { kind: "none" },
     });
     expect(parsed.success).toBe(true);
   });
@@ -66,6 +70,8 @@ describe("runtime schemas", () => {
       leaseExpiresAt: null,
       pendingControlKind: null,
       stoppable: false,
+      // M5: required on the DTO alongside `stoppable`.
+      activity: { kind: "none" },
     });
     expect(parsed.success).toBe(true);
   });
@@ -84,6 +90,8 @@ describe("runtime schemas", () => {
       leaseExpiresAt: ISO,
       pendingControlKind: null,
       stoppable: false,
+      // M5: required on the DTO alongside `stoppable`.
+      activity: { kind: "none" },
     });
     expect(parsed.success).toBe(true);
     // OPTIONAL, not nullable: a state that is not sleeping carries no key at
@@ -105,6 +113,8 @@ describe("runtime schemas", () => {
       leaseExpiresAt: null,
       pendingControlKind: null,
       stoppable: false,
+      // M5: required on the DTO alongside `stoppable`.
+      activity: { kind: "none" },
       pausedWake: {
         dueAt: ISO,
         reason: "waiting for the ETH funding window",
@@ -130,6 +140,8 @@ describe("runtime schemas", () => {
       leaseExpiresAt: ISO,
       pendingControlKind: null,
       stoppable: false,
+      // M5: required on the DTO alongside `stoppable`.
+      activity: { kind: "none" },
       pausedWake: { dueAt: ISO, reason: null, watchSummary: null },
     });
     expect(parsed.success).toBe(false);
@@ -149,6 +161,8 @@ describe("runtime schemas", () => {
       leaseExpiresAt: null,
       pendingControlKind: null,
       stoppable: false,
+      // M5: required on the DTO alongside `stoppable`.
+      activity: { kind: "none" },
     });
     expect(parsed.success).toBe(true);
   });
@@ -167,6 +181,8 @@ describe("runtime schemas", () => {
       leaseExpiresAt: null,
       pendingControlKind: null,
       stoppable: false,
+      // M5: required on the DTO alongside `stoppable`.
+      activity: { kind: "none" },
     };
     expect(
       runtimeStateDtoSchema.safeParse({
@@ -202,6 +218,8 @@ describe("runtime schemas", () => {
       leaseExpiresAt: null,
       pendingControlKind: null,
       stoppable: false,
+      // M5: required on the DTO alongside `stoppable`.
+      activity: { kind: "none" },
     };
     expect(
       runtimeStateDtoSchema.safeParse({
@@ -399,6 +417,94 @@ describe("controlStateEventSchema", () => {
       controlStateEventSchema.safeParse({
         ...VALID,
         leaseOwnerId: "internal-owner",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+/**
+ * M5/M6 DTO invariants. Both exist so the DTO cannot carry two answers to one
+ * question - the exact failure the activity projection was introduced to end.
+ */
+describe("runtimeStateDto wave-2 invariants", () => {
+  const BASE = {
+    sessionId: SESSION,
+    hasActiveRun: false,
+    missionRunId: null,
+    status: null,
+    stopReason: null,
+    lastCheckpointAt: null,
+    startedAt: null,
+    iterationCount: null,
+    leaseActive: false,
+    leaseExpiresAt: null,
+    pendingControlKind: null,
+    stoppable: false,
+    activity: { kind: "none" as const },
+  };
+
+  it("rejects a running activity without the lease it is derived from", () => {
+    const parsed = runtimeStateDtoSchema.safeParse({
+      ...BASE,
+      activity: { kind: "running" },
+      leaseActive: false,
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("accepts a running activity backed by a live lease", () => {
+    expect(
+      runtimeStateDtoSchema.safeParse({
+        ...BASE,
+        activity: { kind: "running" },
+        leaseActive: true,
+      }).success,
+    ).toBe(true);
+  });
+
+  // The CONVERSE is deliberately not enforced: a lease held for a mission run's
+  // slice is legitimately active while the SESSION-scoped activity is `none`.
+  it("allows a live lease with no session-scoped activity (a mission run's slice)", () => {
+    expect(
+      runtimeStateDtoSchema.safeParse({ ...BASE, leaseActive: true }).success,
+    ).toBe(true);
+  });
+
+  it("requires an offset-bearing instant on the sleeping arm", () => {
+    expect(
+      runtimeStateDtoSchema.safeParse({
+        ...BASE,
+        activity: { kind: "sleeping", nextWakeAt: "2026-08-28T12:04:00.000Z" },
+      }).success,
+    ).toBe(true);
+    expect(
+      runtimeStateDtoSchema.safeParse({
+        ...BASE,
+        activity: { kind: "sleeping", nextWakeAt: "soon" },
+      }).success,
+    ).toBe(false);
+  });
+
+  // Recovery readiness gates a button that only exists on `paused_error`.
+  // Present anywhere else would let a surface enable or disable Recover from a
+  // fact that was never computed for that state.
+  it("accepts recoveryReady only on paused_error", () => {
+    expect(
+      runtimeStateDtoSchema.safeParse({
+        ...BASE,
+        hasActiveRun: true,
+        status: "paused_error",
+        missionRunId: "r1",
+        recoveryReady: { kind: "blocked", reasonKinds: ["wallet_intent_live"] },
+      }).success,
+    ).toBe(true);
+    expect(
+      runtimeStateDtoSchema.safeParse({
+        ...BASE,
+        hasActiveRun: true,
+        status: "running",
+        missionRunId: "r1",
+        recoveryReady: { kind: "ready" },
       }).success,
     ).toBe(false);
   });

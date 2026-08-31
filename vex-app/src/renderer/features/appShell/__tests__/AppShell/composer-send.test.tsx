@@ -370,7 +370,7 @@ describe("AppShell", () => {
     fireEvent.change(draft, { target: { value: "first" } });
     fireEvent.keyDown(draft, { key: "Enter" });
     await waitFor(() => expect(chatSubmitMock).toHaveBeenCalledTimes(1));
-    await screen.findByRole("button", { name: "Stop generating" });
+    await screen.findByRole("button", { name: "Stop agent" });
 
     // Type a NEW non-empty draft (so the empty-message guard is NOT what blocks)
     // and press Enter again — the pending guard must keep it at one submit.

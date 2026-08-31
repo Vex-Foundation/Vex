@@ -219,8 +219,11 @@ describe("board Ask VEX through the resident composer", () => {
     expect(mockMutateAsync).not.toHaveBeenCalled();
   });
 
-  it("4. a mission run refuses free text, and says so instead of sending", async () => {
-    runtimeState("running");
+  it("4. a PARKED mission run refuses free text, and says so instead of sending", async () => {
+    // M6 flip: the gated set no longer contains `running`. It still contains
+    // every state where the run is PARKED and free text cannot answer what it
+    // is parked on, which is what this scenario was always really pinning.
+    runtimeState("paused_approval");
     const { result } = mountComposer();
     await act(async () => {
       useBoardAskIntentStore.getState().publishBoardAskIntent(askIntent());
@@ -232,14 +235,15 @@ describe("board Ask VEX through the resident composer", () => {
     expect(readQueue(SESSION)).toHaveLength(0);
   });
 
-  it("4b. a mission run WITH a turn in flight refuses the question, and does not steer or queue it", async () => {
+  it("4b. a PARKED mission run WITH a turn in flight refuses the question, and does not steer or queue it", async () => {
     // The regression. `submitPending` sends a typed message down the steering
     // branch; before the fix that branch returned before the gate was ever
     // read, so the mission run received the board's free text as an interrupt.
     // Refusal is the whole point of the gate and it cannot depend on whether a
-    // turn happens to be running.
+    // turn happens to be running. Retargeted to a still-gated status by the M6
+    // flip; the branch coverage is what mattered, not the status name.
     submitPending = true;
-    runtimeState("running");
+    runtimeState("paused_approval");
     const { result } = mountComposer();
     await act(async () => {
       useBoardAskIntentStore.getState().publishBoardAskIntent(askIntent());
@@ -250,6 +254,42 @@ describe("board Ask VEX through the resident composer", () => {
     expect(mockSteer).not.toHaveBeenCalled();
     expect(readQueue(SESSION)).toHaveLength(0);
     expect(mockMutateAsync).not.toHaveBeenCalled();
+  });
+
+  // M6 (owner decision), the OTHER half of the flip. Steering a RUNNING mission
+  // is the designed path: `ingress.ts` persists the message as an operator
+  // instruction the loop merges at its next tool-step boundary, and the engine
+  // acknowledges it durably. The composer gate refused exactly that, which left
+  // Stop as the operator's only lever over a running run. These two pin that a
+  // board question now REACHES a running mission on both branches.
+  it("4c. a RUNNING mission accepts the question and sends it", async () => {
+    runtimeState("running");
+    const { result } = mountComposer();
+    await act(async () => {
+      useBoardAskIntentStore.getState().publishBoardAskIntent(askIntent());
+    });
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalled();
+    });
+    expect(result.current.notice?.tone).not.toBe("error");
+    expect(readQueue(SESSION)).toHaveLength(0);
+  });
+
+  it("4d. a RUNNING mission with a turn in flight receives the question as steering", async () => {
+    submitPending = true;
+    runtimeState("running");
+    mountComposer();
+    await act(async () => {
+      useBoardAskIntentStore.getState().publishBoardAskIntent(askIntent());
+    });
+    await waitFor(() => {
+      expect(mockSteer).toHaveBeenCalledTimes(1);
+    });
+    expect(mockSteer.mock.calls[0]?.[0]).toEqual({
+      sessionId: SESSION,
+      message: ENVELOPE,
+    });
+    expect(readQueue(SESSION)).toHaveLength(0);
   });
 
   it("5. a retryable failure arms Retry with the SAME envelope", async () => {
@@ -318,7 +358,9 @@ describe("board Ask VEX through the resident composer", () => {
 
 describe("the typed-message path is unchanged by the hand-off", () => {
   it("still keeps the draft when a mission run gates the send", async () => {
-    runtimeState("running");
+    // A still-gated status after the M6 flip: what this pins is that a REFUSED
+    // send preserves what the user typed, not which status does the refusing.
+    runtimeState("paused_approval");
     const { result } = mountComposer();
     act(() => {
       result.current.setDraft("hello");
@@ -393,7 +435,8 @@ describe("a gated send never eats the draft, busy or idle", () => {
     // the top of the dispatch means the busy path is refused too, so a guard
     // that still cleared the field first would delete what the user wrote.
     submitPending = busy;
-    runtimeState("running");
+    // Still-gated status after the M6 flip - see the note above.
+    runtimeState("paused_approval");
     render(createElement(ComposerForm), { wrapper });
     await typeAndSubmit("hello");
     expect(latestComposer?.notice?.tone).toBe("error");

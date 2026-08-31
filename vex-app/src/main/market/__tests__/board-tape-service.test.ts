@@ -510,4 +510,45 @@ describe("dispose", () => {
     await service.dispose();
     await expect(service.dispose()).resolves.toBeUndefined();
   });
+
+  /**
+   * THE DEFECT. `dispose` opened with `if (closed) return;`, so a second
+   * concurrent caller resolved IMMEDIATELY while the first was still draining -
+   * an awaited teardown reporting done with a poll still on the transport it
+   * borrows. Dispose is memoized now: every caller joins the SAME drain.
+   *
+   * `fetchPage` ignores its abort signal deliberately, so the drain can only
+   * end when this test releases the gate and an early resolve is visible.
+   */
+  it("holds a concurrent second dispose until the in-flight poll has unwound", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let unwound = false;
+    const service = createBoardTapeService({
+      resolveSubject: async () => PAIR,
+      fetchPage: async () => {
+        await gate;
+        unwound = true;
+        return page([trade(100, 1, 0)]);
+      },
+    });
+
+    const polling = service.poll({ subject: SUBJECT, reset: true });
+    await Promise.resolve();
+
+    const settled: string[] = [];
+    const first = service.dispose().then(() => settled.push("first"));
+    const second = service.dispose().then(() => settled.push("second"));
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    expect(settled).toEqual([]);
+    expect(unwound).toBe(false);
+
+    release();
+    await Promise.all([first, second]);
+    expect(settled).toHaveLength(2);
+    expect(unwound).toBe(true);
+    await polling;
+  });
 });

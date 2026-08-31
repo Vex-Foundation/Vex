@@ -146,7 +146,11 @@ export async function restartMissionWithInstruction(
 
   if (prepared.outcome === "prepared") {
     try {
-      await addOperatorInstruction(input.sessionId, instruction, {
+      // `queued_interrupt`: the run row exists and its lease is held, but the
+      // turn loop has not started yet (the caller starts it only after this
+      // returns), so the honest claim is that the instruction is waiting for
+      // the run's first turn rather than being merged into a live one.
+      await addOperatorInstruction(input.sessionId, instruction, "queued_interrupt", {
         missionRestart: true,
         missionId: input.missionId,
       });
