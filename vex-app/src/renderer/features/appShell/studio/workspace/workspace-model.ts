@@ -21,7 +21,8 @@
  */
 
 import {
-  WORKSPACE_KEEP_ALIVE_MAX,
+  STUDIO_FILE_TABS_MAX,
+  WORKSPACE_TERMINAL_GROUPS_MAX,
   type WorkspaceCleanupPlan,
   type WorkspaceFileTab,
   type WorkspaceMutation,
@@ -47,6 +48,11 @@ export function terminalGroupCount(state: WorkspaceState): number {
   return state.tabs.filter(isGroup).length;
 }
 
+/** Open file tabs. The quantity `STUDIO_FILE_TABS_MAX` bounds. */
+export function fileTabCount(state: WorkspaceState): number {
+  return state.tabs.filter((tab) => tab.kind === "file").length;
+}
+
 /**
  * Whether another terminal group may be opened, counting groups NOT YET IN THE
  * STATE.
@@ -60,7 +66,7 @@ export function terminalGroupCount(state: WorkspaceState): number {
  * refusal creates nothing at all.
  */
 export function canAddTerminalGroup(state: WorkspaceState, pending: number): boolean {
-  return terminalGroupCount(state) + Math.max(0, pending) < WORKSPACE_KEEP_ALIVE_MAX;
+  return terminalGroupCount(state) + Math.max(0, pending) < WORKSPACE_TERMINAL_GROUPS_MAX;
 }
 
 /**
@@ -84,7 +90,7 @@ export function addTerminalGroup(
   state: WorkspaceState,
   group: WorkspaceTerminalGroup,
 ): WorkspaceMutation {
-  if (terminalGroupCount(state) >= WORKSPACE_KEEP_ALIVE_MAX) {
+  if (terminalGroupCount(state) >= WORKSPACE_TERMINAL_GROUPS_MAX) {
     return { ok: false, reason: "keep_alive_limit", state };
   }
   return {
@@ -125,6 +131,14 @@ export function addFileTab(
       };
     }
     return { ok: true, state: { ...state, activeTabId: existing.tabId } };
+  }
+  // THE BOUND, and it is checked HERE rather than above the dedupe on purpose:
+  // returning to a file that is already open opens nothing, so a full strip
+  // must still be able to select the tabs it already holds. Only a genuinely
+  // NEW tab is refused, and the refusal is named so the controller can say
+  // which bound stopped it instead of appearing to ignore the click.
+  if (fileTabCount(state) >= STUDIO_FILE_TABS_MAX) {
+    return { ok: false, reason: "file_tab_limit", state };
   }
   return {
     ok: true,

@@ -797,6 +797,93 @@ describe("revive across a service restart", () => {
     },
     60_000,
   );
+
+  /**
+   * (d2) A WORKSPACE THAT WAS EXPLICITLY CLOSED, then quit on.
+   *
+   * The close is the whole sequence a user performs: commit the buffers, then
+   * kill the shells. Afterwards the host held that layout with nothing behind
+   * it, and `runShutdown` commits every retained layout on its own initiative -
+   * reconciled, at that moment, against terminals that are all dead. The empty
+   * result overwrote the file the close had just written, so the promise the
+   * close makes ("reopen and your terminals come back") was broken by the very
+   * next quit, silently.
+   *
+   * Driven end to end because that is where the defect lived: a real shell, a
+   * real buffer, a real ordered shutdown, and a SECOND service over the same
+   * directory - the restart. Removing `final` from the close's commit turns
+   * `snapshot.terminals` into `[]` here.
+   */
+  it(
+    "keeps a CLOSED workspace's buffers across an orderly quit and a restart",
+    async () => {
+      const first = buildService();
+      const port = new RecordingPort();
+      await send(first, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [
+        port,
+      ]);
+
+      const shell = await createTerminal(first, "t1");
+      port.receive({ kind: "attach", terminalId: "t1" });
+      await send(first, {
+        kind: "write",
+        terminalId: "t1",
+        windowId: WINDOW,
+        data: "echo VEX_CLOSED_THEN_QUIT\n",
+      });
+      await until(
+        () => dataOf(port).includes("VEX_CLOSED_THEN_QUIT"),
+        "output before the close",
+      );
+
+      // ---- THE CLOSE: the final commit, then the kills ----
+      const persisted = await send(first, {
+        kind: "persistWorkspace",
+        projectId: PROJECT,
+        layoutVersion: 0,
+        final: true,
+        layout: {
+          projectId: PROJECT,
+          groups: [
+            {
+              groupId: "g1",
+              orientation: "horizontal",
+              panes: [{ terminalId: "t1", relativeSize: 1 }],
+              activePaneIndex: 0,
+            },
+          ],
+          activeGroupIndex: 0,
+        },
+      });
+      expect(persisted.ok).toBe(true);
+      expect(
+        (await send(first, { kind: "kill", terminalId: "t1", windowId: WINDOW })).ok,
+      ).toBe(true);
+      expect(isAlive(shell.pid)).toBe(false);
+
+      // ---- THE QUIT, with the workspace closed and no reopen ----
+      await first.shutdownAll();
+
+      // ---- THE RESTART: a second service over the SAME directory ----
+      const second = buildService();
+      const outcome = await send(second, { kind: "readWorkspace", projectId: PROJECT });
+      expect(outcome.ok).toBe(true);
+      if (!outcome.ok) throw new Error("readWorkspace refused");
+
+      const snapshot = outcome.value as {
+        layout: TerminalWorkspaceLayout;
+        terminals: Array<{ terminalId: string; serialized: string }>;
+      } | null;
+      if (snapshot === null) throw new Error("the closed workspace's snapshot was lost");
+
+      expect(snapshot.layout.groups[0]?.panes[0]?.terminalId).toBe("t1");
+      const entry = snapshot.terminals.find((item) => item.terminalId === "t1");
+      expect(entry).toBeDefined();
+      const screen = await renderToScreen(entry?.serialized ?? "");
+      expect(screen).toContain("VEX_CLOSED_THEN_QUIT");
+    },
+    60_000,
+  );
 });
 
 /* ------------------------------------------------------------------ *

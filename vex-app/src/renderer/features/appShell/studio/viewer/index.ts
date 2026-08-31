@@ -18,7 +18,11 @@
  */
 
 export { FileViewer, type FileViewerProps } from "./FileViewer.js";
-export { FileViewerRegistry, fileViewerRegistry } from "./file-viewer-registry.js";
+export {
+  FileViewerRegistry,
+  fileViewerRegistry,
+  VIEWER_WARM_TABS_MAX,
+} from "./file-viewer-registry.js";
 export type { ViewerViewportObservers } from "./FileViewerLines.js";
 export type {
   HighlightAsk,

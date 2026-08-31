@@ -33,7 +33,9 @@ describe("icon glyphs", () => {
     // board's safety section and its clean-checks chip.
     // 79 -> 81 (B2 round 2c, 2026-08-30): IconSplitHorizontal and
     // IconSplitVertical joined for the Studio terminal's split affordances.
-    expect(entries.length).toBeGreaterThanOrEqual(81);
+    // 81 -> 82 (B4a, 2026-08-31): IconHome joined for the Studio sidebar's
+    // WELCOME row, which the owner's mockup marks with a house.
+    expect(entries.length).toBeGreaterThanOrEqual(82);
   });
 
   /**

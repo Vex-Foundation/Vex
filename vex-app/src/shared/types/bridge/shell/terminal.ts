@@ -122,9 +122,17 @@ export interface TerminalBridge {
     cb: (code: Extract<TerminalPortEvent, { kind: "refused" }>["code"]) => void,
   ) => () => void;
 
-  /** Persist a project's terminal layout and buffers. */
+  /**
+   * Persist a project's terminal layout and buffers.
+   *
+   * `final` marks the LAST commit of an explicitly closed workspace: the host
+   * commits it and then stops holding the layout, so its own shutdown commit
+   * cannot overwrite this file with the empty reconciliation of a workspace
+   * whose terminals the close has just killed. Background persists omit it.
+   */
   readonly persistWorkspace: (input: {
     layout: TerminalWorkspaceLayout;
+    final?: boolean;
   }) => Promise<Result<TerminalAckResult>>;
 
   /**

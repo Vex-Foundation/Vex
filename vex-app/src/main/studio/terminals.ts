@@ -77,10 +77,35 @@ export interface TerminalPortTarget {
   postMessage(channel: string, message: unknown, transfer?: MessagePortMain[]): void;
 }
 
+/**
+ * What the DATABASE says about a project id, reduced to the three answers this
+ * domain acts on differently.
+ *
+ * `absent` deliberately covers BOTH a committed tombstone and an id that names
+ * nothing. The projects repository makes those two indistinguishable on purpose
+ * (`main/database/projects/read.ts`: "a tombstone reads exactly like a project
+ * that never existed"), and a domain that reported them apart would be telling
+ * an untrusted renderer which ids once existed.
+ *
+ * `unreadable` is NOT `absent`. The authority could not be established at all -
+ * the database is unreachable, the projects root moved - and the two stay
+ * separate because "this project is gone" and "I could not find out" are
+ * different facts, and only one of them is about the project.
+ */
+export type ProjectActivation = "active" | "absent" | "unreadable";
+
 /** Everything this domain does not own and must be given. */
 export interface TerminalDomainDeps {
   /** Absolute working directory for a project, or `null` when unknown. */
   readonly resolveProjectCwd: (projectId: string) => Promise<string | null>;
+  /**
+   * Is this project still an ACTIVE row - present, with `deleted_at IS NULL`?
+   *
+   * The lifecycle gate cannot answer this. It is process-local and starts EMPTY
+   * on every main restart, so a tombstone that committed before the restart is
+   * not in it. The tombstone is the authority, and the authority is in Postgres.
+   */
+  readonly readProjectActivation: (projectId: string) => Promise<ProjectActivation>;
   /** The shell to launch for a project. Main decides; the renderer never names one. */
   readonly resolveShell: () => { executable: string; args: string[] };
   /** Post a transferable port to a window. */
@@ -814,25 +839,106 @@ export class TerminalDomain {
   }
 
   /**
-   * Record a project's topology and commit it.
+   * Record a project's topology and commit it. UNDER THE LIFECYCLE GATE.
    *
    * Main keeps its own copy because main answers the opens, and the version is
    * minted HERE because main is the only party that sees every persist for a
    * project. It is a plain counter: the contract is monotonicity, not time.
+   *
+   * ## Why a commit needs admission at all
+   *
+   * A commit WRITES A FILE, and a project delete DELETES that file. This used
+   * to be the one terminal operation with no lifecycle check: it minted a
+   * version and sent the request whoever asked and whenever. The chain that
+   * produced was measured, not theoretical - a deleted project's workspace
+   * controller unmounts, its teardown flushes one last persist, and the commit
+   * RECREATES `<userData>/studio/terminal-snapshots/<projectId>.json` for a
+   * project whose tombstone has committed and whose snapshot cleanup has
+   * already run. That file holds the project's terminal scrollback: command
+   * lines, whatever those commands printed, and whatever the user typed into
+   * them.
+   *
+   * The renderer latches the same write on its side, and that is not enough by
+   * itself: a renderer is untrusted for this decision, and a latch is a
+   * courtesy. The authority is here.
+   *
+   * ## The lease, and what makes it the RIGHT half of the fix
+   *
+   * `terminalPersist` is DRAINED, so a delete's step 3 waits for commits that
+   * were already in flight before it decides anything, and step 1 has already
+   * closed admission so no later commit is admitted. Together those leave no
+   * interval in which a commit can pass the check and land after the removal.
+   * Taken SYNCHRONOUSLY before the first await, because a lease taken after one
+   * describes a moment that has already passed.
+   *
+   * The version counter is not touched on a refusal: a refused commit is not a
+   * persist, and burning a version for it would make the host discard the next
+   * genuine one as out of order.
+   *
+   * ## Why the lease is only HALF the authority, and the database is the other
+   *
+   * The gate is PROCESS-LOCAL and starts EMPTY on every main restart: completed
+   * tombstones are never reinstalled in it. So after a restart - and for an id
+   * that names no project at all - the lease is granted, and a commit for a
+   * project Vex has already told the user is deleted would recreate
+   * `<userData>/studio/terminal-snapshots/<projectId>.json` with that project's
+   * scrollback in it. A renderer is untrusted for this decision by assumption,
+   * so "the renderer would not ask" is not a defence.
+   *
+   * The tombstone in Postgres is the authority (see `project-lifecycle-gate.ts`
+   * for why the two exist), so the commit reads it. ORDER MATTERS both ways:
+   *
+   *  - the lease is taken FIRST, because it is what serializes this commit
+   *    against a delete running in THIS process right now, and a read taken
+   *    without it describes a moment a concurrent delete can walk past;
+   *  - the read happens BEFORE the version is minted and before the host is
+   *    contacted, because those are the two effects a refusal must leave
+   *    untouched.
+   *
+   * A project that is not active is refused `project_deleting`, which is what a
+   * tombstone means and what the renderer already renders by name. An authority
+   * that could not be READ at all is a different fact and gets a different
+   * code: `snapshot_unavailable`, because the snapshot was not written and Vex
+   * cannot claim to know whose it would have been. Both fail closed.
+   *
+   * ## `final` is FORWARDED, never decided here
+   *
+   * A close's last commit carries `final`, and the host stops holding the
+   * project's layout once it has committed it - which is what keeps the host's
+   * autonomous shutdown commit from overwriting a closed workspace's snapshot
+   * with the empty reconciliation of terminals the close has just killed. Main
+   * cannot derive the flag: a close and a debounced background save arrive on
+   * this method as the same request, and nothing else main holds distinguishes
+   * them. It is forwarded only AFTER the lease and the tombstone read above
+   * have admitted the persist, and it is bounded in what a hostile renderer can
+   * buy with it - see `terminalPersistWorkspaceInputSchema`.
    */
   async persistWorkspace(
     projectId: string,
     layout: TerminalWorkspaceLayout,
+    final = false,
   ): Promise<TerminalOutcome<unknown>> {
-    const version = (this.layoutVersions.get(projectId) ?? -1) + 1;
-    this.layoutVersions.set(projectId, version);
-    this.layouts.set(projectId, layout);
-    return await this.starter.send({
-      kind: "persistWorkspace",
-      projectId,
-      layout,
-      layoutVersion: version,
-    });
+    const persisting = acquireProjectLease(projectId, "terminalPersist");
+    if (!persisting.ok) return refuse("project_deleting");
+
+    try {
+      const activation = await this.deps.readProjectActivation(projectId);
+      if (activation === "unreadable") return refuse("snapshot_unavailable");
+      if (activation === "absent") return refuse("project_deleting");
+
+      const version = (this.layoutVersions.get(projectId) ?? -1) + 1;
+      this.layoutVersions.set(projectId, version);
+      this.layouts.set(projectId, layout);
+      return await this.starter.send({
+        kind: "persistWorkspace",
+        projectId,
+        layout,
+        layoutVersion: version,
+        final,
+      });
+    } finally {
+      persisting.lease.release();
+    }
   }
 
 
@@ -919,6 +1025,37 @@ export class TerminalDomain {
   /**
    * Close every terminal a project owns. Called by the lifecycle gate's close
    * hook, which runs only AFTER the project's tombstone has committed.
+   *
+   * ## The HOST is told to forget too, and it is told FIRST
+   *
+   * Dropping main's copy of the layout is only half of it. The host keeps its
+   * own copy - fed by every `persistWorkspace` - and its ordered shutdown
+   * commits EVERY project still in that map, on its own initiative. So a
+   * graceful quit at any point after this hook ran RECREATED
+   * `<userData>/studio/terminal-snapshots/<projectId>.json` for the deleted
+   * project: a route that no check on the persist path can see, because nobody
+   * asks for it. `forgetWorkspace` is what closes it.
+   *
+   * FIRST, before the kills, for two reasons. The window in which a quit can
+   * still resurrect the file stays open for exactly as long as the host holds
+   * the layout, and the kills are SEQUENTIAL sends that each carry their own
+   * deadline - ordering the forget behind twelve of them would hold that window
+   * open for the length of all of them. And nothing forces the other order: the
+   * host's layout map is keyed by project and is not derived from its terminal
+   * registry, so forgetting the layout of terminals that are still live loses
+   * nothing that the kills would otherwise have contributed.
+   *
+   * ## A refused forget is LOGGED, not fatal, and not retried
+   *
+   * Same answer as the kill sends beside it, and for the same reason: this hook
+   * runs after the tombstone has COMMITTED, so there is no outcome it can
+   * refuse into - `closeProjectResources` documents that a hook failure never
+   * fails a delete, because the authority change is already durable. The two
+   * ways a send fails here are also the two ways the danger goes away by
+   * itself: an unavailable host is one whose layout map died with it, and a
+   * host that missed its deadline is one main marks unresponsive and restarts,
+   * which empties the map as well. What must not happen is a delete that
+   * reports failure over it.
    */
   async closeProject(projectId: string): Promise<void> {
     const doomed = [...this.terminals.values()].filter(
@@ -932,6 +1069,14 @@ export class TerminalDomain {
     // inherit a dead workspace's shape.
     this.layouts.delete(projectId);
     this.layoutVersions.delete(projectId);
+    const forgotten = await this.starter.send({ kind: "forgetWorkspace", projectId });
+    if (!forgotten.ok) {
+      log.warn(
+        `[studio:terminals] the pty host did not forget the layout for ${projectId}: `
+          + `${forgotten.code}; a quit before the host restarts could recommit its `
+          + "snapshot, which the delete's cleanup would then have to remove again",
+      );
+    }
     for (const entry of doomed) {
       await this.starter.send({
         kind: "kill",

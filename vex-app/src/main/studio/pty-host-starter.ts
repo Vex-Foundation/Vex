@@ -520,6 +520,12 @@ function deriveCreates(request: TerminalHostRequest): boolean {
  *    bounded with it.
  *  - `persistWorkspace` may wait behind one coalesced in-flight commit and then
  *    run as the follow-up: `TERMINAL_PERSIST_TIMEOUT_MS`.
+ *  - `forgetWorkspace` JOINS whatever commit is in flight for the project so it
+ *    cannot answer while a capture is still running, which is the same worst
+ *    case a persist has and therefore the same bound. The flat budget is
+ *    SHORTER than that worst case, and a forget declared late would mark a
+ *    healthy host unresponsive on the delete path - and leave the layout the
+ *    request exists to remove still held.
  *  - `shutdownAll` commits every project, then waits for every pty, then
  *    disposes: `TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS`.
  *
@@ -534,7 +540,9 @@ function deadlineFor(request: TerminalHostRequest): number {
       + request.assignments.length * TERMINAL_REVIVE_PER_TERMINAL_TIMEOUT_MS
     );
   }
-  if (request.kind === "persistWorkspace") return TERMINAL_PERSIST_TIMEOUT_MS;
+  if (request.kind === "persistWorkspace" || request.kind === "forgetWorkspace") {
+    return TERMINAL_PERSIST_TIMEOUT_MS;
+  }
   if (request.kind === "shutdownAll") return TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS;
   return TERMINAL_CREATE_TIMEOUT_MS;
 }

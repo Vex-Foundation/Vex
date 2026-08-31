@@ -32,7 +32,7 @@ import {
   toPersistedLayout,
 } from "../workspace-model.js";
 import {
-  WORKSPACE_KEEP_ALIVE_MAX,
+  WORKSPACE_TERMINAL_GROUPS_MAX,
   type WorkspaceState,
   type WorkspaceTerminalGroup,
 } from "../types.js";
@@ -69,7 +69,7 @@ describe("creation and selection", () => {
   });
 
   it("REFUSES past the keep-alive bound instead of evicting a running terminal", () => {
-    const ids = Array.from({ length: WORKSPACE_KEEP_ALIVE_MAX }, (_, index) =>
+    const ids = Array.from({ length: WORKSPACE_TERMINAL_GROUPS_MAX }, (_, index) =>
       `g${String(index)}`,
     );
     const full = withGroups(ids);
@@ -81,7 +81,7 @@ describe("creation and selection", () => {
     expect(refused.reason).toBe("keep_alive_limit");
     // Nothing was closed to make room. A UI that evicted here would kill a
     // process the user started and cannot recover.
-    expect(terminalGroupCount(refused.state)).toBe(WORKSPACE_KEEP_ALIVE_MAX);
+    expect(terminalGroupCount(refused.state)).toBe(WORKSPACE_TERMINAL_GROUPS_MAX);
     expect(refused.state.tabs.map((tab) => tab.tabId)).toEqual(ids);
   });
 

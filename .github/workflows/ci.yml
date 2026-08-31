@@ -39,6 +39,12 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # Repo-wide, not diff-scoped, and cheap: a binary source file is exactly
+      # what makes every OTHER scanner in this job blind, so it runs on every
+      # event rather than pull requests only.
+      - name: Reject binary source files
+        run: pnpm check:no-binary-sources
+
       - name: Reject unsafe test escapes
         # PULL REQUESTS ONLY, by design. The deleted-test allowlist's lifecycle
         # is PR-scoped: an entry is consumed the moment its change merges, so a
@@ -278,6 +284,24 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build (e2e needs the bundled main + preload + renderer)
+        # THE TOUR FLAG IS WHAT MAKES `studio.spec.ts` RUN AT ALL.
+        # `VITE_VEX_SETUP_TOUR` is a build-time renderer constant
+        # (`import.meta.env.VITE_VEX_SETUP_TOUR` in
+        # src/renderer/features/setup/SetupTour.tsx and
+        # features/wizard/WizardShell.tsx), so it must be set on the BUILD, not
+        # on the test run. Without it the built bundle renders no tour, the
+        # Studio journey cannot reach `appShell` without faking a route, and its
+        # own skip fires before the first assertion - a required gate that
+        # proved nothing.
+        #
+        # SCOPED TO THIS STEP, and this job's build output never leaves this
+        # job: `vex-app-e2e` uploads only `playwright-report/` (on failure), no
+        # job in this workflow declares `needs: vex-app-e2e` or any
+        # `download-artifact`, and every packaged/signed artifact is built by
+        # release.yml, which runs its own unflagged `pnpm run build` on its own
+        # runners. No production artifact can inherit this flag.
+        env:
+          VITE_VEX_SETUP_TOUR: "1"
         run: pnpm run build
 
       - name: Install Playwright chromium + system libraries
@@ -291,6 +315,15 @@ jobs:
       - name: Run Playwright smoke (xvfb)
         # xvfb provides the X server Electron needs on headless
         # Linux. `-a` picks a free display server number.
+        #
+        # `VEX_E2E_REQUIRE_TOUR` is the EXPECTATION half of the tour pair. The
+        # build step above bakes the tour in; this tells `e2e/studio.spec.ts`
+        # that CI promised Studio coverage, so a bundle without the tour FAILS
+        # here instead of firing the spec's local-developer skip. Without it,
+        # deleting the build step's `VITE_VEX_SETUP_TOUR` would silently reduce
+        # this required gate to zero Studio coverage while staying green.
+        env:
+          VEX_E2E_REQUIRE_TOUR: "1"
         run: xvfb-run -a pnpm run test:e2e
 
       - name: Upload Playwright report on failure

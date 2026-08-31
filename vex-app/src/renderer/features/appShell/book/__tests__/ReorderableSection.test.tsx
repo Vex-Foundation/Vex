@@ -23,6 +23,8 @@ import {
   useBookSectionReorder,
 } from "../ReorderableSection.js";
 import {
+  BOOK_SECTION_LABEL,
+  BOOK_SECTION_REGISTRY,
   DEFAULT_BOOK_SECTIONS,
   type BookSectionId,
 } from "../section-order.js";
@@ -36,16 +38,21 @@ function Harness({
   readonly initial?: readonly BookSectionId[];
 }): JSX.Element {
   const [order, setOrder] = useState(initial);
-  const reorder = useBookSectionReorder(order, (next) => {
-    setOrder(next);
-    onOrderChange(next);
-  });
+  const reorder = useBookSectionReorder(
+    order,
+    (next) => {
+      setOrder(next);
+      onOrderChange(next);
+    },
+    BOOK_SECTION_REGISTRY,
+  );
   return (
     <ul role="list">
       {order.map((id, index) => (
         <ReorderableSection
           key={id}
           id={id}
+          label={BOOK_SECTION_LABEL[id]}
           index={index}
           count={order.length}
           reorder={reorder}

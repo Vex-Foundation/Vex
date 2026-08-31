@@ -10,6 +10,7 @@ import { queryClient } from "./app/queryClient.js";
 import type { CreateBugReportInput } from "@shared/schemas/bug-reports.js";
 import { probeZodLocale, registerZodLocale } from "@vex-lib/zod-locale.js";
 import { rendererReportDedupe } from "./lib/report-dedupe.js";
+import { bindStudioRegistryTeardown } from "./features/appShell/studio/studio-registries.js";
 
 /**
  * zod declares `sideEffects: false` and registers its English error map as a
@@ -19,6 +20,15 @@ import { rendererReportDedupe } from "./lib/report-dedupe.js";
  * way.
  */
 registerZodLocale();
+
+/**
+ * WINDOW TEARDOWN for the Studio registries (terminals, explorer sessions, file
+ * viewers). Bound here because it belongs to the WINDOW, not to any component:
+ * the registries deliberately outlive every mount, so no unmount is the right
+ * moment to dispose them. Before this binding nothing called their `disposeAll`
+ * at all - see `features/appShell/studio/studio-registries.ts`.
+ */
+bindStudioRegistryTeardown(window);
 
 // Fire-and-forget helper: every renderer-auto-report path goes through here so
 // a failed report (preload validation reject, IPC unavailable, main throws)

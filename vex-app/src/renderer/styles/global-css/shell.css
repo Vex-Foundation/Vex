@@ -47,8 +47,18 @@
   --vex-pin-border: color-mix(in oklab, var(--vex-alias-state-warn) 40%, transparent);
   --vex-pin-fill: color-mix(in oklab, var(--vex-alias-state-warn) 10%, transparent);
   --vex-pin-fill-hover: color-mix(in oklab, var(--vex-alias-state-warn) 16%, transparent);
-  /* compaction permanently-failed text — danger family (unrecoverable). */
-  --vex-warn-text: color-mix(in oklab, var(--color-danger) 70%, white);
+  /* Hover for a SOLID pin plate (the approvals REVIEW key, whose label is
+   * --vex-surface-0). The mix partner is the theme's INK, not a literal
+   * white, because "lighten on hover" is only right in a dark room: chronos
+   * paints a bright amber plate under dark ink, so lightening widens the gap
+   * (11.49:1 -> 12.29:1), but celeris paints a dark amber plate under a WHITE
+   * label, where the same lightening collapsed it to 4.00:1 - below AA on a
+   * hover state a user holds while reading it. Mixing toward the theme's own
+   * label-primary moves the plate AWAY from its label in both themes by
+   * construction; celeris now measures 6.69:1. It reads the ALIAS directly,
+   * like the three --vex-pin-* lines above it, so status-contrast.test.ts can
+   * resolve the partner out of tokens.css and re-measure both themes. */
+  --vex-pin-hover: color-mix(in oklab, var(--vex-alias-state-warn) 85%, var(--vex-alias-label-primary));
   /* Glass instrument surface — user-sanctioned translucent ink for the
    * floating Signal Console composer (SessionComposer), paired with
    * backdrop-blur over the current shell backdrop (guard-whitelisted).

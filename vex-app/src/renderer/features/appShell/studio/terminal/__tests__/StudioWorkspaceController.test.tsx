@@ -23,7 +23,7 @@ import {
   type TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
 import { publishFileOpen, useFileOpenIntentStore } from "../../workspace/file-open-intent.js";
-import { WORKSPACE_KEEP_ALIVE_MAX } from "../../workspace/types.js";
+import { WORKSPACE_TERMINAL_GROUPS_MAX } from "../../workspace/types.js";
 import { StudioWorkspaceController } from "../StudioWorkspaceController.js";
 import { fileViewerRegistry } from "../../viewer/index.js";
 import { TerminalRegistry } from "../terminal-registry.js";
@@ -206,17 +206,21 @@ describe("StudioWorkspaceController restore", () => {
     bridge.savedWorkspace = savedWorkspace();
     renderController();
 
+    // WAIT FOR THE ATTACH, not for the tab. The two are populated by two
+    // INDEPENDENT paths - the controller's restore renders the tab, and each
+    // `XtermHost`'s own effect attaches its terminal - so waiting only for the
+    // tab and then asserting `attaches` raced the second path and failed about
+    // one run in seven in isolation. The assertion is unchanged; what changed
+    // is which condition the wait is on.
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
+      expect(bridge.attaches.toSorted()).toEqual(["t1", "t2"]);
     });
 
     const separator = screen.getByRole("separator");
     // 75/25, not 50/50. An equalizing restore would silently undo the split the
     // user sized, which is the whole reason the shares are persisted.
     expect(separator.getAttribute("aria-valuenow")).toBe("75");
-    // Both terminals are live and each reattached itself; the layout and the
-    // buffers restore through two independent paths.
-    expect(bridge.attaches.toSorted()).toEqual(["t1", "t2"]);
   });
 
   it("starts empty when the project has no saved workspace", async () => {
@@ -231,14 +235,14 @@ describe("StudioWorkspaceController restore", () => {
 });
 
 describe("StudioWorkspaceController refusals", () => {
-  it(`REFUSES past ${String(WORKSPACE_KEEP_ALIVE_MAX)} live groups instead of evicting one`, async () => {
+  it(`REFUSES past ${String(WORKSPACE_TERMINAL_GROUPS_MAX)} live groups instead of evicting one`, async () => {
     renderController();
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "New terminal" })).toBeTruthy();
     });
 
-    await openTerminals(WORKSPACE_KEEP_ALIVE_MAX);
-    expect(screen.getAllByRole("tab")).toHaveLength(WORKSPACE_KEEP_ALIVE_MAX);
+    await openTerminals(WORKSPACE_TERMINAL_GROUPS_MAX);
+    expect(screen.getAllByRole("tab")).toHaveLength(WORKSPACE_TERMINAL_GROUPS_MAX);
 
     const killsBefore = bridge.kills.length;
     await openTerminals(1);
@@ -246,7 +250,7 @@ describe("StudioWorkspaceController refusals", () => {
     // The bound is announced, the existing tabs are untouched, and NOTHING was
     // killed to make room.
     expect(screen.getByRole("status").textContent).toContain("Close one");
-    expect(screen.getAllByRole("tab")).toHaveLength(WORKSPACE_KEEP_ALIVE_MAX);
+    expect(screen.getAllByRole("tab")).toHaveLength(WORKSPACE_TERMINAL_GROUPS_MAX);
     expect(bridge.kills).toHaveLength(killsBefore);
   });
 
@@ -394,14 +398,14 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
       expect(screen.getByRole("button", { name: "New terminal" })).toBeTruthy();
     });
 
-    await openTerminals(WORKSPACE_KEEP_ALIVE_MAX);
-    expect(screen.getAllByRole("tab")).toHaveLength(WORKSPACE_KEEP_ALIVE_MAX);
+    await openTerminals(WORKSPACE_TERMINAL_GROUPS_MAX);
+    expect(screen.getAllByRole("tab")).toHaveLength(WORKSPACE_TERMINAL_GROUPS_MAX);
     const createsBefore = bridge.creates.length;
 
     await openTerminals(1);
 
     expect(screen.getByRole("status").textContent).toContain("Close one");
-    expect(screen.getAllByRole("tab")).toHaveLength(WORKSPACE_KEEP_ALIVE_MAX);
+    expect(screen.getAllByRole("tab")).toHaveLength(WORKSPACE_TERMINAL_GROUPS_MAX);
     // No pty was ever ASKED FOR, so there is nothing left running that the UI
     // cannot reach.
     expect(bridge.creates).toHaveLength(createsBefore);

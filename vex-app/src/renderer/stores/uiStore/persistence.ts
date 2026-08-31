@@ -1,7 +1,8 @@
 /**
  * uiStore persistence: the partialize whitelist, expand-only version
  * migrations, and the every-rehydrate merge coercion for the user-writable
- * localStorage payload. Extracted from uiStore.ts so the store file stays a
+ * localStorage payload. Every whitelisted key is coerced on the way in - being
+ * on the whitelist makes a key persistable, not trustworthy. Extracted from uiStore.ts so the store file stays a
  * readable slot registry.
  */
 
@@ -18,18 +19,65 @@ import { coerceBookWidth, coerceSidebarWidth } from "./layout.js";
 const MAX_BOOK_SECTION_ENTRIES = 32;
 const MAX_BOOK_SECTION_ID_LENGTH = 32;
 
+/**
+ * THE persisted-field list. One source of truth for BOTH directions.
+ *
+ * `partializeUiState` writes exactly these keys and `mergeUiState` reads
+ * exactly these keys, so the two cannot drift. Before this list existed the
+ * merge spread the whole user-writable payload over the live state, which meant
+ * a hand-edited `vex-ui` object could inject ANY slot the store declares -
+ * `runtimeMode`, `activeProjectId`, `currentView`, `activeSessionId` - and the
+ * store would rehydrate straight into it. localStorage is untrusted input, and
+ * a write-side whitelist alone never made the read side safe.
+ *
+ * Adding a slot here is the ONLY way to make it persist. A slot that is absent
+ * is ephemeral in both directions by construction.
+ */
+export const PERSISTED_UI_KEYS = [
+  "themePreference",
+  "sidebarOpen",
+  "bookOpen",
+  "sidebarWidth",
+  "bookWidth",
+  "hideDustBalances",
+  "notificationsEnabled",
+  "bookSectionOrder",
+  "studioBookSectionOrder",
+  "bookTab",
+] as const satisfies readonly (keyof UiState)[];
+
+export type PersistedUiKey = (typeof PERSISTED_UI_KEYS)[number];
+
 export function partializeUiState(state: UiState): Record<string, unknown> {
-  return {
-    themePreference: state.themePreference,
-    sidebarOpen: state.sidebarOpen,
-    bookOpen: state.bookOpen,
-    sidebarWidth: state.sidebarWidth,
-    bookWidth: state.bookWidth,
-    hideDustBalances: state.hideDustBalances,
-    notificationsEnabled: state.notificationsEnabled,
-    bookSectionOrder: state.bookSectionOrder,
-    bookTab: state.bookTab,
-  };
+  const payload: Record<string, unknown> = {};
+  for (const key of PERSISTED_UI_KEYS) payload[key] = state[key];
+  return payload;
+}
+
+/**
+ * A persisted rail SECTION ORDER, coerced from user-writable storage.
+ *
+ * HARD BOUND on both the list and each entry so a hand-written payload cannot
+ * make a resolver walk an unbounded array. Anything off-shape degrades to []
+ * - the default order, never a crash and never a blank rail. Both rails
+ * (`bookSectionOrder`, `studioBookSectionOrder`) read through this one
+ * function so their bounds cannot drift.
+ */
+function coerceSectionOrder(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  if (value.length > MAX_BOOK_SECTION_ENTRIES) return [];
+  const entries: string[] = [];
+  for (const entry of value) {
+    if (
+      typeof entry !== "string" ||
+      entry.length === 0 ||
+      entry.length > MAX_BOOK_SECTION_ID_LENGTH
+    ) {
+      return [];
+    }
+    entries.push(entry);
+  }
+  return entries;
 }
 
 /**
@@ -77,6 +125,12 @@ export function coerceBookTab(value: unknown): BookTab {
 //       `portfolio`, the same default a fresh install gets. The tab is a rail
 //       preference like `bookOpen`: the user picks it, and nothing in the
 //       product ever writes it programmatically.
+//   v15: `studioBookSectionOrder` added (the Studio rail's OWN section order).
+//       It cannot share `bookSectionOrder`'s key: the two registries have
+//       different id sets, so each rail's resolver would drop the other's
+//       ids. Seed [] - the same "no custom order, use the default" a fresh
+//       install gets. Expand-only like every hop above: an older payload
+//       gains the key, nothing is rewritten.
 export function migrateUiState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== "object") {
     return persisted;
@@ -113,6 +167,9 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
   if (version < 14 && !("bookTab" in next)) {
     next = { ...next, bookTab: "portfolio" };
   }
+  if (version < 15 && !("studioBookSectionOrder" in next)) {
+    next = { ...next, studioBookSectionOrder: [] };
+  }
   return next;
 }
 
@@ -139,28 +196,44 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     typeof incoming?.notificationsEnabled === "boolean"
       ? incoming.notificationsEnabled
       : true;
-  // HARD BOUND on both the list and each entry so a hand-written payload
-  // cannot make the resolver walk an unbounded array. Anything off-shape
-  // degrades to [] — the default order, never a crash and never a blank rail.
-  const bookSectionOrder: readonly string[] =
-    Array.isArray(incoming?.bookSectionOrder) &&
-    incoming.bookSectionOrder.length <= MAX_BOOK_SECTION_ENTRIES &&
-    incoming.bookSectionOrder.every(
-      (value) =>
-        typeof value === "string" &&
-        value.length > 0 &&
-        value.length <= MAX_BOOK_SECTION_ID_LENGTH,
-    )
-      ? incoming.bookSectionOrder
-      : [];
+  // The two RAIL booleans came back through the whitelist RAW: `sidebarOpen`
+  // and `bookOpen` are declared persisted keys, so a hand-edited `"yes"` used
+  // to land straight in the slot and reach the column solver and the rails'
+  // `hidden`/width props as a non-boolean. Same coercion as dust above, with
+  // the STORE-CONSTRUCTED default as the fallback rather than a literal, so
+  // this file never becomes a second place the shell's opening state is
+  // declared.
+  const sidebarOpen: boolean =
+    typeof incoming?.sidebarOpen === "boolean"
+      ? incoming.sidebarOpen
+      : current.sidebarOpen;
+  const bookOpen: boolean =
+    typeof incoming?.bookOpen === "boolean" ? incoming.bookOpen : current.bookOpen;
+  const bookSectionOrder = coerceSectionOrder(incoming?.bookSectionOrder);
+  // The Studio rail's order is the SAME class of untrusted payload, under the
+  // same bounds, coerced through the same reader.
+  const studioBookSectionOrder = coerceSectionOrder(
+    incoming?.studioBookSectionOrder,
+  );
+  // The whitelist REPLACES the old `...incoming` spread. Only a declared
+  // persisted key can come back from storage; everything else keeps the value
+  // the store was constructed with, so an injected `runtimeMode` or
+  // `currentView` in a hand-edited payload is dropped rather than merged.
+  const restored: Record<string, unknown> = {};
+  for (const key of PERSISTED_UI_KEYS) {
+    if (incoming !== undefined && key in incoming) restored[key] = incoming[key];
+  }
   return {
     ...current,
-    ...incoming,
+    ...(restored as Partial<UiState>),
     theme,
     themePreference,
+    sidebarOpen,
+    bookOpen,
     hideDustBalances,
     notificationsEnabled,
     bookSectionOrder,
+    studioBookSectionOrder,
     bookTab: coerceBookTab(incoming?.bookTab),
     sidebarWidth: coerceSidebarWidth(incoming?.sidebarWidth),
     bookWidth: coerceBookWidth(incoming?.bookWidth),

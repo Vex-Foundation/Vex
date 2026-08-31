@@ -336,6 +336,25 @@ const cleanupReportShape = {
 };
 
 /**
+ * The TOMBSTONE's recorded folder intent, echoed back by main.
+ *
+ * This is NOT the `alsoTrashFolder` the caller sent. It is what the durable
+ * tombstone row says the delete was asked to do (`projects.cleanup_state`:
+ * `trash_pending` means yes, `pending` means no), which is the value main will
+ * actually honour on this resume and on every later one.
+ *
+ * The two differ whenever the caller is not the attempt that created the
+ * tombstone: a second window whose dialog was already open, or an earlier
+ * attempt whose checkbox has since moved. A renderer that froze its own
+ * submitted value in that case would show the user a folder decision the system
+ * is not going to make, so every outcome that resumes or reports an unfinished
+ * cleanup carries this field and the renderer displays THIS, not its input.
+ */
+const tombstoneIntentShape = {
+  trashRequested: z.boolean(),
+};
+
+/**
  * `projects.delete` RESULT. Discriminated, strict, and deliberately NOT
  * collapsed: each member has a different remedy, and rule 04 forbids reporting
  * "unknown", "blocked" and "already done" as one outcome.
@@ -353,17 +372,37 @@ const cleanupReportShape = {
  *                              NOTHING was written and admission was reopened.
  *  - `blocked_pending_dispatch` an approved action was mid-dispatch; the
  *                              transaction aborted and wrote nothing.
+ *
+ * The two members that leave a LIVE tombstone behind - `cleanup_resumed` and
+ * `cleanup_pending` - are the only ones that carry `trashRequested`, and both
+ * carry it REQUIRED. They are exactly the outcomes where the folder decision is
+ * still owed, still knowable from the row, and still displayed by a dialog that
+ * stays open, so the caller must never have to guess it.
+ *
+ * `removed` deliberately does not carry it: only the attempt that CREATED the
+ * tombstone can be answered `removed` (the resume branch answers
+ * `cleanup_resumed`), so the intent is that caller's own input, and `trash`
+ * already reports what the trash arm actually DID, which is a stronger fact
+ * than the request. `already_removed` cannot carry it: its `cleanup_state` has
+ * been overwritten to `done`, so the original intent is no longer recorded
+ * anywhere and inventing one would be worse than saying nothing. The three
+ * members that write nothing have no tombstone to speak for.
  */
 export const projectDeleteResultSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("removed"), ...cleanupReportShape }).strict(),
   z.object({ outcome: z.literal("already_removed") }).strict(),
   z
-    .object({ outcome: z.literal("cleanup_resumed"), ...cleanupReportShape })
+    .object({
+      outcome: z.literal("cleanup_resumed"),
+      ...cleanupReportShape,
+      ...tombstoneIntentShape,
+    })
     .strict(),
   z
     .object({
       outcome: z.literal("cleanup_pending"),
       ...cleanupReportShape,
+      ...tombstoneIntentShape,
       /** Lifetime attempts against this tombstone, so the UI can go sticky. */
       attempts: z.number().int().nonnegative(),
     })

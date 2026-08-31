@@ -22,7 +22,9 @@
  *
  * ## Keep-alive REFUSES, it does not evict
  *
- * At most `WORKSPACE_KEEP_ALIVE_MAX` terminal groups stay live per project.
+ * At most `WORKSPACE_TERMINAL_GROUPS_MAX` terminal groups stay live per project.
+ * (The number of PROJECT workspaces the Studio centre keeps mounted is a
+ * different bound with a different owner: `workspace/keep-alive.ts`.)
  * Reaching it refuses the new group and names the bound; it never closes a
  * user's running shell to make room, which is the same doctrine main applies to
  * the terminal count itself. The two bounds are different (this one is about
@@ -30,8 +32,38 @@
  * silently evicted at either would destroy work the user did not ask to lose.
  */
 
-/** Live, attached terminal groups per project. Refused, never evicted. */
-export const WORKSPACE_KEEP_ALIVE_MAX = 4;
+/**
+ * Live, attached terminal groups per project. Refused, never evicted.
+ *
+ * Renamed from `WORKSPACE_KEEP_ALIVE_MAX` in B4a: the plan's "keep-alive" bound
+ * is the number of kept-alive PROJECT WORKSPACES, and two different quantities
+ * cannot share one name. See `workspace/keep-alive.ts` for that one.
+ */
+export const WORKSPACE_TERMINAL_GROUPS_MAX = 4;
+
+/**
+ * FILE TABS one project workspace may hold open. Refused, never evicted.
+ *
+ * The third bound in this family, and the one with the largest number because
+ * a file tab is the cheapest of the three: it holds no pty and no xterm
+ * instance, only a `FileViewerSession`. Sixteen is where the strip itself
+ * stops being readable, not where the memory stops being affordable - the
+ * memory half is bounded separately and independently by
+ * `VIEWER_WARM_TABS_MAX` in `viewer/file-viewer-registry.ts`, where beyond
+ * four HIDDEN tabs the least recently shown release their text and tokens and
+ * re-read when the user returns to them. Sixteen open tabs therefore cost at
+ * most five files' worth of held content, not sixteen.
+ *
+ * AT THE BOUND the open is REFUSED with `file_tab_limit` and
+ * `StudioWorkspaceController` renders that refusal by name. Refused rather
+ * than evicting the oldest tab, for the same reason as the two bounds beside
+ * it: closing a tab is the user's decision, and a strip that silently dropped
+ * the file someone was about to return to would spend their attention to save
+ * our memory. Re-opening a file that is ALREADY open is unaffected -
+ * `addFileTab` selects the existing tab and opens nothing - so the bound is
+ * never reached by returning to a file.
+ */
+export const STUDIO_FILE_TABS_MAX = 16;
 
 /** One terminal inside a group. */
 export interface WorkspacePane {
@@ -92,11 +124,26 @@ export interface WorkspaceState {
  * unchanged state: the UI has to say WHY nothing happened, and "the state came
  * back identical" is not something a component can distinguish from a no-op.
  */
+/**
+ * Why a mutation was refused. CLOSED, and named as its own type so the
+ * controller's copy table can be exhaustive over it: a new reason added here
+ * without a sentence beside it is a type error rather than a reason code
+ * printed at the user.
+ */
+export type WorkspaceRefusalReason =
+  /** The project already holds `WORKSPACE_TERMINAL_GROUPS_MAX` terminal groups. */
+  | "keep_alive_limit"
+  /** The project already holds `STUDIO_FILE_TABS_MAX` file tabs. */
+  | "file_tab_limit"
+  | "unknown_tab"
+  | "unknown_pane"
+  | "last_pane";
+
 export type WorkspaceMutation =
   | { readonly ok: true; readonly state: WorkspaceState }
   | {
       readonly ok: false;
-      readonly reason: "keep_alive_limit" | "unknown_tab" | "unknown_pane" | "last_pane";
+      readonly reason: WorkspaceRefusalReason;
       readonly state: WorkspaceState;
     };
 

@@ -269,6 +269,16 @@ export class FileViewerSession {
   /** Set when a highlight was wanted but the tab is hidden. */
   #highlightDeferred = false;
 
+  /**
+   * Set by `releaseContent`, cleared the moment a read is issued again.
+   *
+   * It is the difference between "never read" and "read, then released to hold
+   * the warm-tab bound", which the `idle` state alone cannot express: showing a
+   * never-read tab is `activate`'s job, showing an evicted one has to issue the
+   * read itself because `activate` is idempotent and has already run.
+   */
+  #evicted = false;
+
   #active = false;
   #activated = false;
   #deleteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -432,6 +442,15 @@ export class FileViewerSession {
     if (this.#state.kind === "disposed" || this.#active === active) return;
     this.#active = active;
     if (active) {
+      // EVICTED WHILE HIDDEN: the content was released to hold the warm-tab
+      // bound, so showing the tab reads the file again. Checked before the
+      // deferred highlight because an eviction cancelled that request too, and
+      // the read's own completion is what re-issues it.
+      if (this.#evicted) {
+        this.#highlightDeferred = false;
+        this.#requestRead();
+        return;
+      }
       if (this.#highlightDeferred) {
         this.#highlightDeferred = false;
         this.#startHighlight();
@@ -443,6 +462,53 @@ export class FileViewerSession {
     if (this.#highlightingHash === null) return;
     this.#highlightDeferred = true;
     this.#cancelHighlight();
+  }
+
+  /**
+   * Whether this session is holding a file's TEXT and TOKENS right now.
+   *
+   * The registry's warm-tab bound is enforced against this rather than against
+   * "has a session": an idle, refused or failed tab costs a few fields, and
+   * evicting one would be work that frees nothing.
+   *
+   * `orphaned` deliberately answers FALSE even though it holds content. Its
+   * bytes are the LAST ONES THE USER SAW of a file that is gone from disk, so
+   * they cannot be re-read: releasing them would turn the orphan notice into a
+   * bare `not_found` refusal on the next show and silently lose the only copy
+   * this process has. An orphan is therefore never evicted, and the bound is
+   * held by the tabs that can honestly get their content back.
+   */
+  holdsEvictableContent(): boolean {
+    return this.#state.kind === "ready";
+  }
+
+  /**
+   * INACTIVE-CONTENT EVICTION: drop the text and tokens, keep the tab.
+   *
+   * Called only by `FileViewerRegistry`, only for a HIDDEN tab, and only past
+   * the warm-tab bound. The session returns to `idle` - which is exactly the
+   * state a not-yet-read tab is in, so every consumer already renders it - and
+   * the identity that makes a re-read possible (`projectId`, `tabId`,
+   * `relativePath`, `nodeId`, `language`) is `readonly` and untouched.
+   *
+   * THE WATCH IS KEPT. `#unsubscribePath` and the explorer reference stay,
+   * because dropping them would release the project's watcher refcount and
+   * make an evicted tab stop following its file - the user would return to a
+   * tab that re-read stale-looking bytes with no event left to correct them.
+   * A path event on an evicted tab requests a read, which is the correct
+   * behaviour and simply un-evicts it.
+   *
+   * A no-op unless there is content to release, so a double call costs
+   * nothing.
+   */
+  releaseContent(): void {
+    if (!this.holdsEvictableContent()) return;
+    this.#evicted = true;
+    this.#cancelHighlight();
+    this.#highlightDeferred = false;
+    this.#plainLines = null;
+    this.#setState({ kind: "idle" });
+    this.#setHighlight({ kind: "plain", reason: "plain_language" });
   }
 
   /** The Retry affordance on a transport failure. */
@@ -527,6 +593,10 @@ export class FileViewerSession {
    */
   #requestRead(options: { afterDelete?: boolean } = {}): void {
     if (this.#state.kind === "disposed") return;
+    // ANY read un-evicts. `setActive` is not the only path back: a watcher
+    // event on an evicted tab requests a read too, and a flag only the show
+    // path cleared would make the next show issue a second, redundant read.
+    this.#evicted = false;
     if (options.afterDelete === true) this.#pendingDelete = true;
 
     if (this.#reading) {

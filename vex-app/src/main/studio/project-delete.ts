@@ -83,7 +83,8 @@ import {
   readTombstonedProject,
   recordProjectCleanupFailure,
   tombstoneProject,
-  type ProjectCleanupState,
+  tombstoneRequestedTrash,
+  type OwedProjectCleanupState,
 } from "../database/projects/delete.js";
 import {
   clearArtifactProvenance,
@@ -215,13 +216,25 @@ export async function deleteProject(
       correlationId,
       deps,
     );
+    // THE ECHO. What comes back is the TOMBSTONE's intent, read off the row
+    // this transaction just locked, NOT `input.alsoTrashFolder`. On this branch
+    // the two can genuinely disagree - a second window's dialog was already
+    // open, or an earlier attempt's checkbox has since moved - and the caller
+    // has no other way to learn which decision main is actually honouring.
+    const trashRequested = tombstoneRequestedTrash(outcome.cleanupState);
     return ok(
       resumed.finished
-        ? { outcome: "cleanup_resumed", cleanup: resumed.cleanup, trash: resumed.trash }
+        ? {
+            outcome: "cleanup_resumed",
+            cleanup: resumed.cleanup,
+            trash: resumed.trash,
+            trashRequested,
+          }
         : {
             outcome: "cleanup_pending",
             cleanup: resumed.cleanup,
             trash: resumed.trash,
+            trashRequested,
             attempts: resumed.attempts,
           },
     );
@@ -249,6 +262,9 @@ export async function deleteProject(
           outcome: "cleanup_pending",
           cleanup: cleanup.cleanup,
           trash: cleanup.trash,
+          // Read from the state the transaction WROTE, not from the input that
+          // produced it, so both `cleanup_pending` returns speak with one voice.
+          trashRequested: tombstoneRequestedTrash(outcome.cleanupState),
           attempts: cleanup.attempts,
         },
   );
@@ -273,7 +289,7 @@ interface CleanupReport {
 async function runCleanup(
   projectId: string,
   slug: string,
-  cleanupState: Exclude<ProjectCleanupState, "none" | "done">,
+  cleanupState: OwedProjectCleanupState,
   token: ProjectDeletionToken,
   correlationId: string,
   deps: ProjectDeleteDeps,
@@ -297,7 +313,7 @@ async function runCleanup(
 async function runCleanupJob(
   projectId: string,
   slug: string,
-  cleanupState: Exclude<ProjectCleanupState, "none" | "done">,
+  cleanupState: OwedProjectCleanupState,
   token: ProjectDeletionToken,
   correlationId: string,
   deps: ProjectDeleteDeps,

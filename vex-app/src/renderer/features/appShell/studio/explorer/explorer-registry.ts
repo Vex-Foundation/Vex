@@ -68,6 +68,21 @@ export class ExplorerRegistry {
   }
 
   /**
+   * Read a HELD session without taking a reference.
+   *
+   * For a caller that needs to act on a session someone else keeps mounted -
+   * the Studio sidebar's explorer header, whose Refresh and Collapse All sit
+   * beside the tree rather than inside it (a `role="tree"` may only contain
+   * tree items, so the header is a sibling and has no session of its own).
+   * Returns null when nothing holds the project, so a header rendered a frame
+   * before the tree's acquire effect is a no-op rather than a crash - and
+   * never, ever creates a session as a side effect of reading one.
+   */
+  peek(projectId: string): ExplorerSession | null {
+    return this.#records.get(projectId)?.session ?? null;
+  }
+
+  /**
    * Take a consumer reference, creating the session on first use.
    *
    * IDEMPOTENT per project id: the second call returns the same session and

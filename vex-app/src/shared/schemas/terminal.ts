@@ -645,10 +645,50 @@ export const terminalHostRequestSchema = z.discriminatedUnion("kind", [
        * per project and refuses anything below it.
        */
       layoutVersion: z.number().int().nonnegative(),
+      /**
+       * THE LAST COMMIT of an explicitly closed workspace.
+       *
+       * A close persists the full buffer-bearing snapshot and then kills the
+       * ptys. The host retains the layout of every project it has been fed, so
+       * it was left holding that layout with no terminal behind it - and
+       * `runShutdown` commits EVERY retained layout on its own initiative,
+       * reconciled against whatever is still live. A quit after a close
+       * therefore overwrote the buffer-bearing file with an EMPTY one, and the
+       * revive the close had just promised was gone.
+       *
+       * So a final persist tells the host this layout has no successor: commit
+       * it, then STOP HOLDING it. The file is not touched - a reopen while this
+       * host is still running reads it back through `readWorkspace` - and the
+       * autonomous shutdown commit simply has nothing left to overwrite.
+       *
+       * Background (debounced) persists never set it.
+       */
+      final: z.boolean().optional(),
     })
     .strict(),
   z
     .object({ kind: z.literal("readWorkspace"), projectId: z.string().min(1).max(64) })
+    .strict(),
+  /**
+   * FORGET a project's layout. Sent when the project's tombstone has committed.
+   *
+   * Main drops its own copy of a deleted project's topology, but the host keeps
+   * the copy every `persistWorkspace` fed it - and `runShutdown` commits EVERY
+   * key still in that map. So a graceful quit after a delete RECREATED
+   * `<snapshots>/<projectId>.json` for a project Vex had already told the user
+   * was gone, on the host's OWN initiative, past every check main had added on
+   * the persist route. This is what closes that: the host stops holding a
+   * layout it may never write again.
+   *
+   * The host does NOT touch the file. Removing it belongs to the delete's
+   * cleanup, which owns it and has already run or is about to; the host's whole
+   * obligation is to never write it a second time.
+   *
+   * IDEMPOTENT, and answers `ok` for a project it never held - "there is
+   * nothing to forget" is the same outcome as "forgotten".
+   */
+  z
+    .object({ kind: z.literal("forgetWorkspace"), projectId: z.string().min(1).max(64) })
     .strict(),
   /**
    * Bring a project's persisted terminals back as NEW ptys under NEW ids.
@@ -1137,8 +1177,23 @@ export const terminalIdInputSchema = z
  * the PAYLOAD it is given, not the field inside it, and a gate that parses only
  * part of its input is a gate with a hole in the shape of the rest.
  */
+/**
+ * A renderer's request to commit its project layout.
+ *
+ * `final` marks the LAST commit of an explicitly closed workspace, and the host
+ * drops the project's retained layout once it has committed it (see the
+ * `persistWorkspace` host request). TRUST POSTURE, because this field comes
+ * from the renderer and main forwards it: a hostile renderer that sets `final`
+ * on a background persist costs that project the host's AUTONOMOUS shutdown
+ * commit - the very latest unsaved layout delta - and nothing else. The file
+ * already on disk is never touched, the commit this request asks for still
+ * runs, and main's own authority check (the project lease plus the tombstone
+ * read in `TerminalDomain.persistWorkspace`) runs unchanged before the flag is
+ * forwarded. It can therefore cost availability of one delta, never integrity
+ * of the committed snapshot.
+ */
 export const terminalPersistWorkspaceInputSchema = z
-  .object({ layout: terminalWorkspaceLayoutSchema })
+  .object({ layout: terminalWorkspaceLayoutSchema, final: z.boolean().optional() })
   .strict();
 
 export const terminalProjectInputSchema = z

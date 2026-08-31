@@ -133,7 +133,6 @@ const BANNED: readonly BannedPattern[] = [
   },
   { name: "resting glow shadow", regex: /shadow-\[0_0_/ },
   // Signal Tape foundation (§0.4): the retired indigo/violet accent and the
-  // two raw status hexes are now tokens (--vex-pin / --vex-warn-text). Any raw
   // re-introduction in shell sources is a red build.
   { name: "legacy indigo/violet accent", regex: /#(?:6366f1|8b5cf6)/i },
   { name: "raw pin/warn status hex", regex: /#(?:ffd35c|ffce5a|f0a0a0)/i },
@@ -214,7 +213,24 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "Glass is allowed ONLY on the two side rails.",
   },
   {
-    file: "features/appShell/BookPanel.tsx",
+    // Stage B4a: the Studio rail is the SAME rail as the sessions rail, in the
+    // same seat, wearing the same --vex-rail glass. It is one of the two side
+    // rails the law sanctions, not a third glass surface.
+    file: "features/appShell/studio/sidebar/StudioSidebar.tsx",
+    pattern: "backdrop-blur (glass)",
+    reason:
+      "User-sanctioned glass rail: the Studio sidebar replaces the sessions " +
+      "sidebar in column 1 and floats as the same translucent ink " +
+      "(--vex-rail) with backdrop-blur over the current shell photo backdrop. " +
+      "Glass is allowed ONLY on the two side rails.",
+  },
+  {
+    // Stage B4c: the BOOK's chrome moved out of BookPanel.tsx into the frame
+    // both rails (agent + Studio) now share, so the sanction moved WITH the
+    // glass rather than being duplicated. BookPanel.tsx no longer names the
+    // utility at all, so its entry is deleted rather than left as a stale
+    // sanction.
+    file: "features/appShell/book/BookRailFrame.tsx",
     pattern: "backdrop-blur (glass)",
     reason:
       "User-sanctioned glass rail: the BOOK panel floats as translucent ink " +
@@ -410,7 +426,6 @@ describe("shell design guard (S7)", () => {
     expect(matchNames("text-[#f0a0a0]")).toContain("raw pin/warn status hex");
     // The accent root and the new semantic tokens are NOT raw-hex violations.
     expect(matchNames("text-[var(--vex-pin)]")).toEqual([]);
-    expect(matchNames("text-[var(--vex-warn-text)]")).toEqual([]);
   });
 
   it("flags theme-blind white/black utilities, in every alpha and variant form", () => {

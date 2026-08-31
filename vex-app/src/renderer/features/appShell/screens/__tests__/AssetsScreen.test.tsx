@@ -31,21 +31,13 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { PortfolioDto, PositionTokenDto } from "@shared/schemas/portfolio.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 
-vi.mock("@thesvg/react", () => ({
-  Bitcoin: () => null,
-  Bnb: () => null,
-  BnbChain: () => null,
-  Chainlink: () => null,
-  Circle: () => null,
-  DaiStablecoin: () => null,
-  Ethereum: () => null,
-  Optimism: () => null,
-  Polygon: () => null,
-  Robinhood: () => null,
-  Solana: () => null,
-  Tether: () => null,
-  Usdc: () => null,
-}));
+// Every brand mark stubs to null, whatever its name: the marks are
+// presentation-only here, and a hand-listed mock breaks the whole suite
+// file each time a component references a new mark.
+vi.mock("@thesvg/react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@thesvg/react")>();
+  return Object.fromEntries(Object.keys(actual).map((name) => [name, () => null]));
+});
 
 // Sibling screens pull heavy registers (MemoryPanel, the sessions library);
 // only the assets branch is under test.

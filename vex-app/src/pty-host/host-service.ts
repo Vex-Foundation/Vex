@@ -102,6 +102,17 @@ interface VersionedLayout {
 interface CommitRun {
   queued: boolean;
   readonly waiters: Array<(committed: boolean) => void>;
+  /**
+   * The whole run, INCLUDING every follow-up it goes on to schedule.
+   *
+   * Kept so a non-committing owner can JOIN the run rather than queue behind
+   * it: `forgetWorkspace` must not return while a capture of the project it is
+   * forgetting is still in flight, and asking `commitProject` to wait would
+   * have scheduled one more capture of a project that must never be written
+   * again. Assigned in the same synchronous span that publishes the entry, so
+   * an owner that finds the entry always finds the promise with it.
+   */
+  run: Promise<boolean>;
 }
 
 /**
@@ -139,6 +150,24 @@ export class PtyHostService {
    * await and deleted with no await between the last check and the delete.
    */
   private readonly commits = new Map<string, CommitRun>();
+  /**
+   * How many times each project has been FORGOTTEN, for the post-rename fence.
+   *
+   * A generation rather than a membership set, because the mark has to be read
+   * per CAPTURE and never cleared by a rule that can be raced. A capture reads
+   * the project's generation before it starts and compares it after its rename
+   * has landed: a change means a forget happened while this capture was in
+   * flight, and the file it just wrote must go (see `captureProject`). A
+   * project id RE-CREATED after a delete is therefore never poisoned - its
+   * captures read the current generation and match it - and there is no window
+   * in which clearing a mark could let an older capture's write survive.
+   *
+   * Entries are never removed: a capture in flight is comparing against one,
+   * and deleting it would reset the count to zero and unlink that capture's
+   * file by accident. The map is bounded by the number of project deletes in
+   * one host lifetime, at one small string each.
+   */
+  private readonly forgetGenerations = new Map<string, number>();
   private admitting = true;
   private shutdownPromise: Promise<void> | null = null;
   /**
@@ -310,9 +339,12 @@ export class PtyHostService {
           request.projectId,
           request.layout,
           request.layoutVersion,
+          request.final === true,
         );
       case "readWorkspace":
         return await this.readWorkspace(request.projectId);
+      case "forgetWorkspace":
+        return await this.forgetWorkspace(request.projectId);
       case "revive":
         return await this.reviveProject(request);
       case "abandonRequest":
@@ -622,6 +654,7 @@ export class PtyHostService {
     projectId: string,
     layout: unknown,
     layoutVersion: number,
+    final: boolean,
   ): Promise<TerminalOutcome<null>> {
     const parsed = terminalWorkspaceLayoutSchema.safeParse(layout);
     if (!parsed.success) return refuse("invalid_packet");
@@ -641,7 +674,45 @@ export class PtyHostService {
     }
     this.layouts.set(projectId, { layout: parsed.data, version: layoutVersion });
     const committed = await this.commitProject(projectId);
-    return committed ? accept(null) : refuse("snapshot_unavailable");
+    if (!committed) return refuse("snapshot_unavailable");
+    if (final) this.releaseFinalLayout(projectId, layoutVersion);
+    return accept(null);
+  }
+
+  /**
+   * STOP HOLDING a layout whose workspace has been explicitly CLOSED.
+   *
+   * ## The route this closes
+   *
+   * A close commits the full buffer-bearing snapshot and then kills the ptys.
+   * The host went on holding that layout with nothing behind it, and
+   * `runShutdown` commits EVERY retained layout on its own initiative -
+   * reconciled, at that moment, against terminals that are all dead. So an
+   * orderly quit after a close overwrote the file the close had just written
+   * with an EMPTY one, and the revive the user was promised was gone. No check
+   * on the persist route can see it: nobody asks for that commit.
+   *
+   * It is the same removal `forgetWorkspace` makes and it is deliberately NOT
+   * the same operation: no file is touched and no forget generation is bumped,
+   * because this project is alive and its snapshot is the one thing that must
+   * survive. A reopen while this host is still running reads the FILE through
+   * `readWorkspace`, so dropping the in-memory copy costs nothing that a live
+   * session can observe.
+   *
+   * VERSION-FENCED. The commit above is awaited, and a persist that arrived
+   * during it owns the map afterwards - dropping THAT layout would cost the
+   * shutdown commit of a workspace that is still open. So the entry goes only
+   * while it is still the one this request installed, checked with no await
+   * between the read and the delete.
+   */
+  private releaseFinalLayout(projectId: string, layoutVersion: number): void {
+    const held = this.layouts.get(projectId);
+    if (held === undefined || held.version !== layoutVersion) return;
+    this.layouts.delete(projectId);
+    this.log(
+      `[pty-host] released the layout for ${projectId} after its final commit `
+        + `(version ${String(layoutVersion)}); the shutdown has nothing to recommit`,
+    );
   }
 
   private async readWorkspace(projectId: string): Promise<TerminalOutcome<unknown>> {
@@ -649,6 +720,65 @@ export class PtyHostService {
     if (outcome.kind === "ok") return accept(outcome.snapshot);
     if (outcome.kind === "absent") return accept(null);
     this.reportDiscarded(projectId, outcome.reason);
+    return accept(null);
+  }
+
+  /**
+   * STOP HOLDING a deleted project's layout, and never commit it again.
+   *
+   * ## The route this closes
+   *
+   * Main's own copy of a project's topology goes when the tombstone commits,
+   * and every commit main can be ASKED to make is now refused for a deleted
+   * project. Neither reaches this map. The host is fed a layout by every
+   * `persistWorkspace` and `runShutdown` then commits EVERY key it still holds
+   * - on its own initiative, answering nobody - so a graceful quit at any point
+   * after a delete recreated `<snapshots>/<projectId>.json` for that project.
+   * The file the delete's cleanup removed came back, reconciled against
+   * whatever terminals were live, at no renderer's request.
+   *
+   * VS Code's terminal service does the same thing at the same seam: on a
+   * shutdown that must not persist it calls `setTerminalLayoutInfo(undefined)`
+   * so the backend forgets the layout, rather than relying on the frontend
+   * having dropped its own copy (`vs/workbench/contrib/terminal/browser/
+   * terminalService.ts`, `_onWillShutdown`). The layout owner has to be TOLD.
+   *
+   * ## Why removing the key is not by itself enough
+   *
+   * A capture already in flight read its layout before this request arrived and
+   * would write the file afterwards. So the forget both:
+   *
+   *  - DELETES the key first, which is what a queued follow-up run and every
+   *    later commit see - `runCommit` finds no layout and writes nothing; and
+   *  - JOINS the run that was already in flight, so this request does not
+   *    answer main while a capture of the project is still going. Joining is
+   *    the shape that cannot lose the race: the entry in `commits` IS the
+   *    mutual exclusion, it is published before that run's first await, and it
+   *    is read here synchronously after the delete - so either there is no run
+   *    to lose to, or it is the run this awaits.
+   *
+   * The joined capture cannot resurrect the file either: it re-reads this map
+   * at its commit point (see `captureProject`) and drops the write.
+   *
+   * THE FILE IS NOT TOUCHED HERE. Removing it belongs to the delete's cleanup,
+   * which owns it; the host's obligation is only to never write it again.
+   */
+  private async forgetWorkspace(projectId: string): Promise<TerminalOutcome<null>> {
+    const held = this.layouts.delete(projectId);
+    // BEFORE THE JOIN, and before any await: a capture already inside its write
+    // must find this generation changed when its rename lands. See the
+    // post-rename fence in `captureProject` for the case this covers.
+    this.forgetGenerations.set(projectId, (this.forgetGenerations.get(projectId) ?? 0) + 1);
+    const active = this.commits.get(projectId);
+    if (active !== undefined) await active.run;
+    // The join above is an await, and main dispatches control messages
+    // concurrently: a persist admitted before the tombstone committed could
+    // have landed in that window. Deleting again closes the handler's OWN
+    // window, so the postcondition main is told about - this host holds no
+    // layout for this project - is true at the moment of the reply. Anything
+    // arriving after it is refused by main's tombstone read on the persist.
+    this.layouts.delete(projectId);
+    if (held) this.log(`[pty-host] forgot the layout for ${projectId}`);
     return accept(null);
   }
 
@@ -829,10 +959,10 @@ export class PtyHostService {
       });
     }
 
-    const state: CommitRun = { queued: false, waiters: [] };
+    const state: CommitRun = { queued: false, waiters: [], run: Promise.resolve(true) };
     // Written BEFORE the first await, so a request in the same tick sees it.
     this.commits.set(projectId, state);
-    return (async (): Promise<boolean> => {
+    const run = (async (): Promise<boolean> => {
       let outcome = await this.runCommit(projectId);
       for (;;) {
         if (!state.queued) {
@@ -847,6 +977,10 @@ export class PtyHostService {
         for (const waiter of waiters) waiter(outcome);
       }
     })();
+    // Still the same synchronous span: the IIFE ran only as far as its first
+    // await, so nothing has been able to read `state` in between.
+    state.run = run;
+    return run;
   }
 
   /** One capture of one project. Only ever called by `commitProject`. */
@@ -876,6 +1010,10 @@ export class PtyHostService {
     layout: TerminalWorkspaceLayout,
     live: readonly PersistentTerminal[],
   ): Promise<boolean> {
+    // READ IN THE SAME SYNCHRONOUS SPAN as `runCommit`'s layout read, so no
+    // forget can land between the two. Compared again after the rename below.
+    const forgetGeneration = this.forgetGenerations.get(projectId) ?? 0;
+
     // ---- drain, bounded, while held, CONCURRENTLY ----
     //
     // In parallel because every producer is already stopped: what is being
@@ -967,10 +1105,57 @@ export class PtyHostService {
       layout: committed.layout,
       terminals: committed.entries,
     };
+
+    // THE FENCE, taken at the commit point rather than at the start.
+    //
+    // A `forgetWorkspace` can land at any await this capture has already
+    // passed - the drain above is bounded but it is not instant - and the
+    // layout this run is carrying was read before it. Re-reading the map with
+    // NO await between the check and the write is what stops a capture that
+    // began while the project was live from writing the file after main has
+    // told this host the project is deleted.
+    //
+    // Forgotten is not a failure, so it answers like the other "nothing to
+    // commit" case in `runCommit`: there is no snapshot the caller lost.
+    if (!this.layouts.has(projectId)) {
+      this.log(
+        `[pty-host] dropped a capture for ${projectId}: the project was forgotten `
+          + "while it was being serialized",
+      );
+      return true;
+    }
     const written = await this.deps.snapshotStore.write(snapshot);
     if (written.kind !== "ok") {
       this.log(`[pty-host] snapshot not committed for ${projectId}: ${written.kind}`);
       return false;
+    }
+
+    // THE POST-RENAME FENCE: compensation for the write the commit-point check
+    // could not stop.
+    //
+    // The check above the write covers a forget that arrives before the write
+    // starts. It cannot cover one that arrives while the write is INSIDE the
+    // filesystem: `write` awaits a real `writeFile` plus a `rename`, neither of
+    // which is hard-bounded, and main's own deadline on `forgetWorkspace` is.
+    // So the sequence the reviewer found is reachable - the persist times out
+    // in main, the forget times out too, main logs and proceeds, the delete's
+    // cleanup removes the file, and the held rename lands afterwards and
+    // RECREATES a snapshot for a project Vex has told the user is deleted. A
+    // longer deadline is no answer, because a filesystem write has no bound.
+    //
+    // The host is the only actor ordered after its own rename, so the host is
+    // where the compensation belongs: whenever that rename lands, this unlink
+    // follows it. Idempotent, and it removes only the file this capture wrote.
+    //
+    // Not a failure. Like the commit-point check, there is no snapshot the
+    // caller lost: the project it asked about is gone.
+    if ((this.forgetGenerations.get(projectId) ?? 0) !== forgetGeneration) {
+      await this.deps.snapshotStore.remove(projectId);
+      this.log(
+        `[pty-host] removed the snapshot for ${projectId}: the project was forgotten `
+          + "while this capture was inside its write",
+      );
+      return true;
     }
 
     const evicted = await this.deps.snapshotStore.enforceDirectoryBound(

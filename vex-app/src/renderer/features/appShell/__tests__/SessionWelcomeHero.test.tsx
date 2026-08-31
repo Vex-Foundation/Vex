@@ -1,9 +1,16 @@
 /**
  * SessionWelcomeHero — the rebrand hero contract (accepted mockup,
  * 2026-08-20): vx mark pair themed by CSS, micro-label date eyebrow carrying the
- * honest build-stage disclosure, the display headline, the reserved
- * Agent | Studio toggle (Studio disabled + lock, runtimeMode read-only),
- * and the retirement of the BACKED BY footer (studio seam #2).
+ * honest build-stage disclosure, the display headline, the LIVE Agent | Studio
+ * runtime-mode radiogroup, and the retirement of the BACKED BY footer.
+ *
+ * CONTRACT CHANGE, stage B4a: the two tests below used to pin the OPPOSITE
+ * contract - a disabled Studio button wearing a lock and an "coming soon"
+ * title, and an inert `<span aria-current>` for Agent. Vex Studio now ships, so
+ * both segments are radios that write `runtimeMode`. The tests are rewritten to
+ * the new contract rather than relaxed: they still assert exactly one current
+ * segment, they still assert the mark, and they now assert the store write that
+ * the old pair asserted must NOT happen.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -107,26 +114,41 @@ describe("SessionWelcomeHero", () => {
     expect(randSpy.mock.calls.length).toBeLessThanOrEqual(1);
   });
 
-  it("reserves the Studio seat: disabled, wearing the lock, and never writing runtimeMode", () => {
+  it("switches the shell to Studio, with no lock and no roadmap copy", () => {
     render(<SessionWelcomeHero />);
-    const studio = screen.getByRole("button", {
-      name: "Studio mode (coming soon)",
-    });
-    expect(studio).toHaveProperty("disabled", true);
-    expect(studio.querySelector("svg")).not.toBeNull();
+    const studio = screen.getByRole("radio", { name: "Studio" });
+    expect(studio).toHaveProperty("disabled", false);
+    expect(studio.getAttribute("aria-checked")).toBe("false");
+    // The lock glyph and the "coming soon" title are GONE, not merely hidden.
+    expect(studio.querySelector("svg")).toBeNull();
+    expect(studio.getAttribute("title")).toBeNull();
+
     fireEvent.click(studio);
-    expect(useUiStore.getState().runtimeMode).toBe("agent");
+    expect(useUiStore.getState().runtimeMode).toBe("studio");
   });
 
-  it("marks the Agent segment as the current runtime mode without offering a switch", () => {
+  it("marks exactly one segment as the current runtime mode, both ways", () => {
     render(<SessionWelcomeHero />);
-    const group = screen.getByRole("group", { name: "Runtime mode" });
-    const agent = Array.from(group.querySelectorAll("span")).find(
-      (el) => el.textContent === "Agent",
+    const group = screen.getByRole("radiogroup", { name: "Runtime mode" });
+    expect(group).not.toBeNull();
+
+    const agent = screen.getByRole("radio", { name: "Agent" });
+    expect(agent.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked")).toBe(
+      "false",
     );
-    expect(agent?.getAttribute("aria-current")).toBe("true");
-    // Agent is a state readout, not a control — no button, no store write.
-    expect(agent?.tagName).toBe("SPAN");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Studio" }));
+    expect(screen.getByRole("radio", { name: "Agent" }).getAttribute("aria-checked")).toBe(
+      "false",
+    );
+    expect(screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+
+    // And back: the segment is a switch in both directions.
+    fireEvent.click(screen.getByRole("radio", { name: "Agent" }));
+    expect(useUiStore.getState().runtimeMode).toBe("agent");
   });
 
   it("retires the BACKED BY footer band entirely (studio seam #2)", () => {

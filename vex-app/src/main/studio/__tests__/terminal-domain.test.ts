@@ -105,6 +105,31 @@ class FakeStarter implements PtyHost {
    * nothing to revive.
    */
   snapshot: unknown = null;
+  /**
+   * Freeze every `persistWorkspace` inside the host call. Returns the release.
+   *
+   * The window a delete's DRAIN has to wait through: a commit that has been
+   * admitted and has not yet written. Without it a test can only observe the
+   * lease before it is taken or after it is gone, which proves nothing about
+   * the interval the drain exists for.
+   */
+  private persistHold: Promise<void> | null = null;
+
+  /** A code the next `persistWorkspace` is refused with, then cleared. */
+  failNextPersist: import("@shared/schemas/terminal.js").TerminalErrorCode | null =
+    null;
+
+  holdPersists(): () => void {
+    let release: () => void = () => {};
+    this.persistHold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      this.persistHold = null;
+      release();
+    };
+  }
+
   /** Freeze every `revive` inside the host call, for the slow-restore race. */
   private reviveHold: Promise<void> | null = null;
 
@@ -162,6 +187,14 @@ class FakeStarter implements PtyHost {
           },
         },
       };
+    }
+    if (request.kind === "persistWorkspace") {
+      if (this.persistHold !== null) await this.persistHold;
+      const failure = this.failNextPersist;
+      if (failure !== null) {
+        this.failNextPersist = null;
+        return { ok: false, code: failure };
+      }
     }
     if (request.kind === "create") {
       for (const resolve of this.createSeen.splice(0)) resolve();
@@ -241,6 +274,13 @@ let lostSpy = vi.fn((_terminalIds: readonly string[]) => {});
  */
 let cwdHold: Promise<void> | null = null;
 
+/**
+ * What the fake projects repository says about each id. Unlisted ids are
+ * `active`, so every test that is not about the tombstone reads as it did
+ * before this dependency existed.
+ */
+const activations = new Map<string, import("../terminals.js").ProjectActivation>();
+
 function holdCwd(): () => void {
   let release: () => void = () => {};
   cwdHold = new Promise<void>((resolve) => {
@@ -259,6 +299,8 @@ function build(): InstanceType<typeof TerminalDomain> {
         if (cwdHold !== null) await cwdHold;
         return projectId === "missing" ? null : `/projects/${projectId}`;
       },
+      readProjectActivation: (projectId) =>
+        Promise.resolve(activations.get(projectId) ?? "active"),
       resolveShell: () => ({ executable: "/bin/bash", args: [] }),
       postPort: (_target, channel, payload, transfer) => {
         posted.push({ channel, payload, transfer });
@@ -291,6 +333,7 @@ beforeEach(() => {
   gate.resetProjectLifecycleGateForTests();
   posted.length = 0;
   cwdHold = null;
+  activations.clear();
   lostSpy = vi.fn((_terminalIds: readonly string[]) => {});
 });
 
@@ -998,5 +1041,270 @@ describe("a completed open answers from LIVE state", () => {
       .map((request) => request.layoutVersion);
     expect(versions).toEqual([0, 1, 2]);
     await domain.dispose();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * B4 review, finding W2: a workspace COMMIT is lifecycle-gated
+ * ------------------------------------------------------------------ */
+
+/**
+ * A commit writes a FILE, and a delete deletes that file.
+ *
+ * `persistWorkspace` was the one terminal operation with no lifecycle check: it
+ * minted a version and sent the request whoever asked and whenever. The chain
+ * that produced is the reason this section exists - a deleted project's
+ * workspace controller unmounts, its teardown flushes one last commit, and the
+ * host recreates `<userData>/studio/terminal-snapshots/<projectId>.json` for a
+ * project whose tombstone has committed and whose snapshot cleanup has already
+ * run. That file holds the project's terminal scrollback.
+ */
+describe("persistWorkspace under the lifecycle gate", () => {
+  function oneGroup(
+    terminalId: string,
+  ): import("@shared/schemas/terminal.js").TerminalWorkspaceLayout {
+    return {
+      projectId: "p1",
+      groups: [
+        {
+          groupId: "g1",
+          orientation: "horizontal",
+          panes: [{ terminalId, relativeSize: 1 }],
+          activePaneIndex: 0,
+        },
+      ],
+      activeGroupIndex: 0,
+    };
+  }
+
+  it("REFUSES a commit for a project whose admission has closed", async () => {
+    const domain = build();
+    await domain.create("w1", "p1", 80, 24);
+    const [id] = starter.createdIds();
+    if (id === undefined) throw new Error("unreachable");
+    const before = starter.requests.filter(
+      (request) => request.kind === "persistWorkspace",
+    ).length;
+
+    // What step 1 of a delete does, before its tombstone and long before its
+    // cleanup removes the snapshot file.
+    gate.closeProjectAdmission("p1");
+
+    expect(await domain.persistWorkspace("p1", oneGroup(id))).toEqual({
+      ok: false,
+      code: "project_deleting",
+    });
+    // NOTHING REACHED THE HOST, which is the fact that matters: the file is not
+    // recreated, and no version was burned on a commit that did not happen.
+    expect(
+      starter.requests.filter((request) => request.kind === "persistWorkspace").length,
+    ).toBe(before);
+    await domain.dispose();
+  });
+
+  /**
+   * `final` IS FORWARDED, AND ONLY AFTER THE AUTHORITY CHECK.
+   *
+   * The flag is what makes the host stop holding a closed workspace's layout,
+   * so its own shutdown commit cannot overwrite the snapshot the close just
+   * wrote. Main cannot derive it - a close and a debounced background save
+   * arrive here as the same call - so it travels, and it travels through the
+   * same gate as the layout: a refused persist forwards nothing at all.
+   */
+  it("FORWARDS the close's `final` flag, and never past a refusal", async () => {
+    const domain = build();
+    await domain.create("w1", "p1", 80, 24);
+    const [id] = starter.createdIds();
+    if (id === undefined) throw new Error("unreachable");
+
+    expect((await domain.persistWorkspace("p1", oneGroup(id))).ok).toBe(true);
+    expect((await domain.persistWorkspace("p1", oneGroup(id), true)).ok).toBe(true);
+
+    const finals = starter.requests
+      .filter(
+        (request): request is Extract<HostRequest, { kind: "persistWorkspace" }> =>
+          request.kind === "persistWorkspace",
+      )
+      .map((request) => request.final);
+    // The background save carries no flag; the close's last commit carries it.
+    expect(finals).toEqual([false, true]);
+
+    // A refused persist reaches the host with nothing - flag included.
+    gate.closeProjectAdmission("p1");
+    expect(await domain.persistWorkspace("p1", oneGroup(id), true)).toEqual({
+      ok: false,
+      code: "project_deleting",
+    });
+    expect(
+      starter.requests.filter((request) => request.kind === "persistWorkspace").length,
+    ).toBe(2);
+    await domain.dispose();
+  });
+
+  it("holds a DRAINED `terminalPersist` lease while a commit is in flight", async () => {
+    // DRAINED is the half the refusal cannot provide. Admission closes at step
+    // 1 and the snapshot is removed at step 7; a commit ALREADY IN FLIGHT when
+    // admission closed passed its check and would land in between. The drain is
+    // what makes the delete wait for it instead.
+    expect(gate.DRAINED_LEASE_CLASSES).toContain("terminalPersist");
+
+    const domain = build();
+    await domain.create("w1", "p1", 80, 24);
+    const [id] = starter.createdIds();
+    if (id === undefined) throw new Error("unreachable");
+
+    const release = starter.holdPersists();
+    const pending = domain.persistWorkspace("p1", oneGroup(id));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(gate.heldProjectLeases("p1", "terminalPersist")).toBe(1);
+    // A delete's drain is blocked on exactly this, and gives up rather than
+    // proceeding over a write it cannot see finish.
+    expect(await gate.drainProjectLeases("p1", 10)).toEqual({
+      drained: false,
+      remaining: 1,
+    });
+
+    release();
+    expect((await pending).ok).toBe(true);
+    expect(gate.heldProjectLeases("p1", "terminalPersist")).toBe(0);
+    expect(await gate.drainProjectLeases("p1", 10)).toEqual({ drained: true });
+    await domain.dispose();
+  });
+
+  it("releases the lease when the HOST refuses the commit", async () => {
+    // The mirror defect: a lease held past a failed commit would block the
+    // project's delete drain forever on work that already ended.
+    const domain = build();
+    starter.failNextPersist = "host_unavailable";
+
+    expect(await domain.persistWorkspace("p1", oneGroup("t1"))).toEqual({
+      ok: false,
+      code: "host_unavailable",
+    });
+    expect(gate.heldProjectLeases("p1", "terminalPersist")).toBe(0);
+    await domain.dispose();
+  });
+
+  /**
+   * THE GATE IS PROCESS-LOCAL, AND THE TOMBSTONE IS NOT.
+   *
+   * Nothing reinstalls a completed tombstone in the gate after a main restart,
+   * so admission for a long-deleted project is OPEN again the moment the
+   * process comes back - and so is admission for an id that never named a
+   * project at all. The lease therefore cannot be the whole answer here: what
+   * makes a commit authorized is the `deleted_at` read, and these tests drive
+   * it through the same dependency production wires `getProject` into.
+   *
+   * Each one asserts THREE facts, because the refusal alone is not the finding:
+   * the host was never contacted (so the snapshot file is not recreated), the
+   * lease came back (so no delete drain is blocked by a refusal), and the
+   * version counter was not burned (so the next genuine commit is not dropped
+   * by the host as out of order).
+   */
+  describe("the database, not the in-memory gate, is the authority", () => {
+    /** The `layoutVersion` on every commit that actually reached the host. */
+    function versionsSent(): number[] {
+      return starter.requests
+        .filter(
+          (request): request is Extract<HostRequest, { kind: "persistWorkspace" }> =>
+            request.kind === "persistWorkspace",
+        )
+        .map((request) => request.layoutVersion);
+    }
+
+    it("REFUSES a commit for a TOMBSTONED project even with admission wide open", async () => {
+      const domain = build();
+      // The restart, modelled at this level: the gate has never heard of this
+      // project, which is exactly its state after main comes back up.
+      expect(gate.isProjectAdmitting("p1")).toBe(true);
+      activations.set("p1", "absent");
+
+      const refused = await domain.persistWorkspace("p1", oneGroup("t1"));
+
+      expect(refused).toEqual({ ok: false, code: "project_deleting" });
+      expect(versionsSent()).toEqual([]);
+      expect(gate.heldProjectLeases("p1", "terminalPersist")).toBe(0);
+      await domain.dispose();
+    });
+
+    it("refuses an id that names NO project, with the same code a tombstone gets", async () => {
+      // The repository cannot tell the two apart, and neither should the
+      // renderer: reporting them differently would answer "did this project
+      // ever exist?" for an untrusted caller.
+      const domain = build();
+      activations.set("ghost", "absent");
+
+      expect(await domain.persistWorkspace("ghost", oneGroup("t1"))).toEqual({
+        ok: false,
+        code: "project_deleting",
+      });
+      expect(versionsSent()).toEqual([]);
+      await domain.dispose();
+    });
+
+    it("refuses with a DIFFERENT code when the authority cannot be read at all", async () => {
+      // Fail closed, and say which failure it was: an unreachable database is
+      // not evidence that the project is gone, and a commit that is refused
+      // because Vex could not check is not the same event as one refused
+      // because the project is deleted.
+      const domain = build();
+      activations.set("p1", "unreadable");
+
+      expect(await domain.persistWorkspace("p1", oneGroup("t1"))).toEqual({
+        ok: false,
+        code: "snapshot_unavailable",
+      });
+      expect(versionsSent()).toEqual([]);
+      expect(gate.heldProjectLeases("p1", "terminalPersist")).toBe(0);
+      await domain.dispose();
+    });
+
+    it("does not BURN a version on a refusal: the next genuine commit is still in order", async () => {
+      const domain = build();
+
+      expect((await domain.persistWorkspace("p1", oneGroup("t1"))).ok).toBe(true);
+      activations.set("p1", "absent");
+      expect((await domain.persistWorkspace("p1", oneGroup("t1"))).ok).toBe(false);
+      activations.set("p1", "active");
+      expect((await domain.persistWorkspace("p1", oneGroup("t1"))).ok).toBe(true);
+
+      // 0 then 1. A version consumed by the refusal would make this 0 then 2,
+      // and the host - which keeps the highest version it has seen - would be
+      // right to drop what came after.
+      expect(versionsSent()).toEqual([0, 1]);
+      await domain.dispose();
+    });
+
+    it("still reads the authority UNDER the lease, so an in-process delete wins first", async () => {
+      // Order claim: the lease is taken before the read, and a project whose
+      // admission has closed is refused without the database being consulted
+      // at all. The read is the RESTART half of the authority; the lease is the
+      // half that serializes against a delete running right now.
+      let reads = 0;
+      const counting = new TerminalDomain(
+        {
+          resolveProjectCwd: (projectId) => Promise.resolve(`/projects/${projectId}`),
+          readProjectActivation: (projectId) => {
+            reads += 1;
+            return Promise.resolve(activations.get(projectId) ?? "active");
+          },
+          resolveShell: () => ({ executable: "/bin/bash", args: [] }),
+          postPort: () => {},
+          publishAvailability: () => {},
+          publishTerminalsLost: () => {},
+        },
+        (observer) => new FakeStarter(observer),
+      );
+      gate.closeProjectAdmission("p2");
+
+      expect(await counting.persistWorkspace("p2", oneGroup("t1"))).toEqual({
+        ok: false,
+        code: "project_deleting",
+      });
+      expect(reads).toBe(0);
+      await counting.dispose();
+    });
   });
 });

@@ -181,6 +181,22 @@ export class TerminalSnapshotStore {
   }
 
   /**
+   * Remove a project's snapshot file. IDEMPOTENT, and never an error.
+   *
+   * The host's compensation path: a capture whose rename landed after the
+   * project was forgotten unlinks the file it just wrote (see the post-rename
+   * fence in `PtyHostService.captureProject`). "Already gone" is the outcome
+   * this asks for, so an absent file is success, and a removal that fails is
+   * not worth failing a commit over - the delete's own cleanup owns the file
+   * and runs against it too.
+   */
+  async remove(projectId: string): Promise<void> {
+    const name = snapshotFileName(projectId);
+    if (name === null) return;
+    await this.discard(path.join(this.directory, name));
+  }
+
+  /**
    * Bring the directory under `SNAPSHOT_DIR_MAX_BYTES`, oldest inactive first.
    *
    * Returns the project ids evicted so the caller can report each one. An empty
