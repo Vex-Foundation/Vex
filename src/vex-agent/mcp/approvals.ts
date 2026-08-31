@@ -158,6 +158,7 @@ export async function enqueueStudioApprovalIntent(
 interface ProjectGateRow {
   readonly scope_version: number;
   readonly permission: string;
+  readonly deleted_at: Date | string | null;
 }
 
 async function runStudioEnqueueGate(
@@ -167,11 +168,16 @@ async function runStudioEnqueueGate(
   await acquireSessionControlLockOn(client, input.scope.backingSessionId);
 
   const res = await client.query<ProjectGateRow>(
-    "SELECT scope_version, permission FROM projects WHERE id = $1 FOR SHARE",
+    "SELECT scope_version, permission, deleted_at FROM projects WHERE id = $1 FOR SHARE",
     [input.scope.projectId],
   );
   const row = res.rows[0];
-  if (row === undefined) {
+  // A TOMBSTONE READS EXACTLY LIKE AN ABSENT ROW. Deletion is a soft delete
+  // (the approval audit references the project with no cascade), so "no such
+  // project" and "the user deleted this project" are the same answer to the
+  // only question this gate asks: may an external agent still obtain authority
+  // under it? The sentence already says what a user needs to hear.
+  if (row === undefined || row.deleted_at !== null) {
     return {
       kind: "refused",
       reason:

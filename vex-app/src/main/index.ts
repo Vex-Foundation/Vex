@@ -51,6 +51,7 @@ import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
 import { setupVexMarketService } from "./market/vex-market-service.js";
+import { setupStudioHostStatusBridge } from "./studio/host-status-bridge.js";
 import { setupBoardLiveService } from "./market/board-live-owner.js";
 import { isSecretSessionUnlocked, lockSecretSession } from "./secrets/session.js";
 import { shutdownStudioMcpHost, startStudioMcpHost } from "./studio/mcp-host.js";
@@ -274,6 +275,15 @@ async function initializeMainRuntime(): Promise<void> {
   const stopMarketService = setupVexMarketService();
   globalCleanup.add(async () => {
     await stopMarketService();
+  });
+
+  // 6a-studio. Bridge the Studio MCP host's status transitions onto
+  // EV.studio.hostStatus (B0). The host itself owns the facts and stays free of
+  // Electron - its lock teardown is synchronous and must not enumerate windows
+  // - so this is the one piece that broadcasts. Synchronous, idempotent stop.
+  const stopStudioHostStatusBridge = setupStudioHostStatusBridge();
+  globalCleanup.add(() => {
+    stopStudioHostStatusBridge();
   });
 
   // 6a-board-live. Own the board's LIVE lease service (T4). It polls nothing

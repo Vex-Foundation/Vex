@@ -29,6 +29,24 @@ export const EV = {
   },
 
   /**
+   * Vex Studio MCP host status (stage B0). Main's host publishes a
+   * `StudioHostStatus` at every lifecycle transition: start publication, an
+   * established connection claimed or released, either capacity refusal, the
+   * lock teardown, and quit.
+   *
+   * BOUNDED CODES AND COUNTS ONLY. The payload never carries the endpoint path
+   * or pipe name - that is the address of a privileged local listener - and
+   * never carries the readiness barrier's prose cause or a bind error's text;
+   * see `@shared/schemas/studio.js`. Identical consecutive payloads are
+   * coalesced by the publisher, so a burst of connects emits one update per
+   * distinct state. Validated with `studioHostStatusSchema` at the preload
+   * boundary; the DB is not involved (the host's state is in-memory).
+   */
+  studio: {
+    hostStatus: "vex:event:studio:hostStatus",
+  },
+
+  /**
    * Board live lease events (ticks, degradation, terminal close).
    *
    * Unlike every other channel here, this one is NOT a broadcast: main sends it

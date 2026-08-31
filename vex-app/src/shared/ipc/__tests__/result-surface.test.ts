@@ -115,6 +115,8 @@ describe("result barrel surface", () => {
       "projects.scope_conflict",
       "projects.wallet_drift",
       "projects.backing_session_integrity",
+      "projects.deleting",
+      "projects.slug_cleanup_pending",
       "internal.contract_violation",
       "internal.cancelled",
       "internal.unexpected",
@@ -150,6 +152,7 @@ describe("result barrel surface", () => {
       "memory",
       "portfolio",
       "market",
+      "studio",
       "images",
       "tokenLaunch",
       // P3: a routing/ownership label only. `poolsLaunch` mints no error code

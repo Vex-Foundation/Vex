@@ -8,6 +8,7 @@
  */
 
 import { registerProjectsCreateHandler } from "./create.js";
+import { registerProjectsDeleteHandler } from "./delete.js";
 import { registerProjectsGetHandler, registerProjectsListHandler } from "./read.js";
 import { registerProjectsRepairFilesHandler } from "./repair.js";
 import { registerProjectsUpdateScopeHandler } from "./scope.js";
@@ -15,6 +16,7 @@ import { registerProjectsUpdateScopeHandler } from "./scope.js";
 export function registerProjectsHandlers(): Array<() => void> {
   return [
     registerProjectsCreateHandler(),
+    registerProjectsDeleteHandler(),
     registerProjectsGetHandler(),
     registerProjectsListHandler(),
     registerProjectsUpdateScopeHandler(),

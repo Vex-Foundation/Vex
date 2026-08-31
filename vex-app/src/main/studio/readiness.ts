@@ -54,10 +54,33 @@
 
 import { log } from "../logger/index.js";
 
+/**
+ * The CLOSED set of reasons Studio is not ready, as CODES.
+ *
+ * `cause` below is a sentence written for an MCP peer, and prose never crosses
+ * the IPC boundary to the renderer (every other event channel in this app
+ * refuses provider or runtime prose for the same reason). So each unready state
+ * carries a code as well, and the renderer-facing host-status contract is
+ * derived from THIS list rather than hand-spelled beside it: adding a member
+ * here is what makes it representable on the wire, and the shared schema's
+ * table test fails when the two drift.
+ */
+export const STUDIO_UNREADY_CODES = [
+  "starting",
+  "fence_uninitialized",
+  "shutting_down",
+] as const;
+
+export type StudioUnreadyCode = (typeof STUDIO_UNREADY_CODES)[number];
+
 /** Not ready, and the honest reason. Ready carries no reason at all. */
 export type StudioReadiness =
   | { readonly ready: true }
-  | { readonly ready: false; readonly cause: string };
+  | {
+      readonly ready: false;
+      readonly code: StudioUnreadyCode;
+      readonly cause: string;
+    };
 
 const STARTING_CAUSE =
   "Vex Studio is still starting, so this action was not queued. Nothing was "
@@ -71,7 +94,11 @@ const FENCE_CAUSE =
 const SHUTDOWN_CAUSE =
   "Vex is shutting down, so this action was not queued. Nothing was executed.";
 
-let readiness: StudioReadiness = { ready: false, cause: STARTING_CAUSE };
+let readiness: StudioReadiness = {
+  ready: false,
+  code: "starting",
+  cause: STARTING_CAUSE,
+};
 
 /**
  * The generation of the CURRENT initialization. Monotonic, and never reset:
@@ -97,7 +124,7 @@ export function isStudioRuntimeReady(): boolean {
  */
 export function beginStudioReadinessEpoch(): number {
   epoch += 1;
-  readiness = { ready: false, cause: STARTING_CAUSE };
+  readiness = { ready: false, code: "starting", cause: STARTING_CAUSE };
   return epoch;
 }
 
@@ -119,7 +146,7 @@ export function markStudioRuntimeReady(callerEpoch: number): void {
 /** The preflight could not be registered. Studio stays closed. */
 export function markStudioFenceUninitialized(callerEpoch: number): void {
   if (!ownsEpoch(callerEpoch, "fence_uninitialized")) return;
-  readiness = { ready: false, cause: FENCE_CAUSE };
+  readiness = { ready: false, code: "fence_uninitialized", cause: FENCE_CAUSE };
 }
 
 /**
@@ -129,7 +156,7 @@ export function markStudioFenceUninitialized(callerEpoch: number): void {
  */
 export function markStudioRuntimeShuttingDown(): void {
   epoch += 1;
-  readiness = { ready: false, cause: SHUTDOWN_CAUSE };
+  readiness = { ready: false, code: "shutting_down", cause: SHUTDOWN_CAUSE };
 }
 
 function ownsEpoch(callerEpoch: number, transition: string): boolean {
@@ -144,5 +171,5 @@ function ownsEpoch(callerEpoch: number, transition: string): boolean {
 /** Test seam: back to the pre-barrier state, on a fresh epoch. */
 export function resetStudioReadinessForTests(): void {
   epoch += 1;
-  readiness = { ready: false, cause: STARTING_CAUSE };
+  readiness = { ready: false, code: "starting", cause: STARTING_CAUSE };
 }

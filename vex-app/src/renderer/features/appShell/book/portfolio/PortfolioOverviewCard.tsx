@@ -33,7 +33,7 @@ import {
   type PortfolioWallet,
 } from "./wallet-scope.js";
 import {
-  scopeSessionId,
+  portfolioReadInputFor,
   type PortfolioCardScope,
 } from "./portfolio-scope.js";
 
@@ -43,7 +43,7 @@ export function PortfolioOverviewCard({
   /** Wallet scope this card reads (studio seam #3) — never session state read inside. */
   readonly scope: PortfolioCardScope;
 }): JSX.Element {
-  const globalQuery = usePortfolio(scopeSessionId(scope));
+  const globalQuery = usePortfolio(portfolioReadInputFor(scope));
   const walletsQuery = useAvailableWallets();
   const inventory = walletsQuery.data?.ok ? walletsQuery.data.data : null;
   const wallets = inventory !== null ? flattenPortfolioWallets(inventory) : [];

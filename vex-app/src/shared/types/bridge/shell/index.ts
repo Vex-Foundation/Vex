@@ -18,6 +18,7 @@ import type { MarketBridge } from "./market.js";
 import type { OnboardingBridge } from "./onboarding.js";
 import type { SecretsBridge } from "./secrets.js";
 import type { SettingsBridge } from "./settings.js";
+import type { StudioBridge } from "./studio.js";
 import type { SupportBridge } from "./support.js";
 import type { SystemBridge } from "./system.js";
 import type { TelemetryBridge } from "./telemetry.js";
@@ -31,6 +32,7 @@ export type { MarketBridge } from "./market.js";
 export type { OnboardingBridge } from "./onboarding.js";
 export type { SecretsBridge } from "./secrets.js";
 export type { SettingsBridge } from "./settings.js";
+export type { StudioBridge } from "./studio.js";
 export type { SupportBridge } from "./support.js";
 export type { SystemBridge } from "./system.js";
 export type { TelemetryBridge } from "./telemetry.js";
@@ -50,4 +52,5 @@ export interface VexShellBridge {
   readonly support: SupportBridge;
   readonly updater: UpdaterBridge;
   readonly market: MarketBridge;
+  readonly studio: StudioBridge;
 }

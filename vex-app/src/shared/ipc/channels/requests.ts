@@ -530,15 +530,40 @@ export const CH = {
    *
    * `updateScope` edits permission, wallet selection and the agent roster under
    * optimistic concurrency (`expectedScopeVersion`); a mismatch is refused with
-   * `projects.scope_conflict` and writes nothing. Deletion is deliberately not
-   * part of this surface yet - removing a project means removing a folder of
-   * the user's files, which gets its own explicit workflow.
+   * `projects.scope_conflict` and writes nothing.
    *
    * `updateScope` also RENDERS the project's coding-agent config files and
    * instruction files (stage A5b) and returns what that reconciliation did,
    * per artifact. `repairFiles` runs the same reconciliation on demand and is
    * the ONLY path that overwrites an artifact a human edited after Vex wrote
-   * it. There is deliberately NO delete channel: A5 never deletes files.
+   * it.
+   *
+   * ## `delete` - and the decision this surface reversed
+   *
+   * Through stage A5b this block read "Deletion is deliberately not part of
+   * this surface yet" and "There is deliberately NO delete channel: A5 never
+   * deletes files". THE OWNER REVERSED THAT ON 2026-08-28/29: a project the
+   * user can create and never remove is not a workflow, and leaving removal to
+   * the file manager left Vex's own durable rows - the backing session, the
+   * approval audit, the installed agent config files - orphaned behind it. So
+   * `delete` exists, and the constraints that motivated the original refusal
+   * are met by its DESIGN rather than by its absence:
+   *
+   *  - IT IS A SOFT DELETE. `approval_intents.project_id` references
+   *    `projects(id)` with no `ON DELETE` action precisely so the money-path
+   *    audit outlives the project, and the backing session is never hard
+   *    deleted anywhere in this app. A tombstone (`projects.deleted_at`) is
+   *    what "deleted" means here; every authority gate reads active-only.
+   *  - IT REMOVES ONLY WHAT VEX WROTE. Cleanup runs the `remove` subset of the
+   *    installer plan against `project_file_provenance`, so an artifact Vex
+   *    never recorded writing is never touched.
+   *  - THE USER'S FOLDER IS OPT-IN AND GOES TO THE TRASH. `alsoTrashFolder`
+   *    routes through `shell.trashItem` after a realpath check under the
+   *    projects root; it is never an unlink, and its failure never rolls back
+   *    the authority commit that already happened.
+   *  - IT IS TYPED-CONFIRMATION GATED. `expectedName` is revalidated in main
+   *    against the stored name, so a mis-aimed click cannot delete a project
+   *    the user was not looking at.
    */
   projects: {
     create: "vex:projects:create",
@@ -546,6 +571,21 @@ export const CH = {
     list: "vex:projects:list",
     updateScope: "vex:projects:updateScope",
     repairFiles: "vex:projects:repairFiles",
+    delete: "vex:projects:delete",
+  },
+
+  /**
+   * Vex Studio host status (stage B0). ONE read-only pull channel returning
+   * main's in-memory `StudioHostStatus` cache; the live updates arrive on
+   * `EV.studio.hostStatus`, which the same module publishes, so a pull and a
+   * push can never disagree.
+   *
+   * The renderer learns state, a closed cause code and connection counts. It
+   * never learns the endpoint path or pipe name, and never sees the readiness
+   * barrier's prose or a bind error's text.
+   */
+  studio: {
+    hostStatus: "vex:studio:hostStatus",
   },
 
   // Cancellation

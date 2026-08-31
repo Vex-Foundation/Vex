@@ -47,7 +47,7 @@ export const SCOPE_SNAPSHOT_SQL = `
          ) AS wallets
     FROM projects p
     LEFT JOIN project_wallets w ON w.project_id = p.id
-   WHERE p.id = $1
+   WHERE p.id = $1 AND p.deleted_at IS NULL
    GROUP BY p.id
 `;
 

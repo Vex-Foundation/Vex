@@ -49,7 +49,7 @@
 
 import { createHash } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 
 import type { StudioRefusalReason } from "@shared/schemas/studio-installer.js";
@@ -182,6 +182,107 @@ export async function readConfinedFile(
  * when the caller expects the file not to exist. A mismatch refuses; it never
  * overwrites.
  */
+/**
+ * DELETE a file Vex owns, under the same confinement and ownership discipline
+ * as a replacement (stage B0 teardown).
+ *
+ * Deletion is the one operation in this module that cannot be undone by writing
+ * different bytes, so it is the narrowest:
+ *
+ *   - CONTAINMENT is revalidated after resolution AND THE PARENT CHAIN'S
+ *     IDENTITY IS CAPTURED AND RE-CHECKED IMMEDIATELY BEFORE THE UNLINK, through
+ *     the same `captureDirectoryChain`/`verifyDirectoryChain` pair the
+ *     replacement uses. A lexical containment check cannot see a directory that
+ *     kept its name and became a symlink since the path walk, and that is
+ *     precisely how a delete lands somewhere it was never meant to. A
+ *     destructive operation must be at least as strict as a write, and until
+ *     this pair was here it was strictly weaker.
+ *
+ *     THE RESIDUAL IS THE SAME ONE THE REPLACEMENT DOCUMENTS: `unlink(2)`
+ *     re-resolves its path from the root and Node exposes no `unlinkat`, so the
+ *     microseconds between the final check and the syscall are NOT covered. What
+ *     the pair closes is the whole decide-read-verify window.
+ *   - `expectedHash` IS THE OWNERSHIP PROOF. The file is re-read and digested
+ *     immediately before the unlink, and a mismatch refuses with
+ *     `source_changed`. The caller passes the digest of the bytes it just
+ *     verified as Vex's own, so a file edited between the decision and this
+ *     call is never removed. Passing `null` means "only if it does not exist",
+ *     which is a no-op rather than an unconditional delete: there is no way to
+ *     ask this function to remove a file whose contents nobody checked.
+ *   - ENOENT IS SUCCESS. The obligation is that the file is not there, and it
+ *     is not there.
+ *
+ * There is deliberately no directory removal. An empty `.vex/` left behind is
+ * inert; removing directories walks into "whose directory is this" questions
+ * that a teardown has no authority to answer.
+ */
+export async function deleteConfinedFile(options: {
+  readonly projectDirectory: string;
+  readonly absolutePath: string;
+  readonly relativeLabel: string;
+  readonly expectedHash: string | null;
+}): Promise<ConfinedWrite> {
+  const { absolutePath, relativeLabel } = options;
+
+  if (!isInside(options.projectDirectory, absolutePath)) {
+    return {
+      kind: "refused",
+      reason: "path_escape",
+      detail: `"${relativeLabel}" no longer resolves inside the project folder.`,
+    };
+  }
+
+  // THE PARENT CHAIN'S IDENTITY. Captured before the digest is read and
+  // re-checked below, exactly as the replacement does around its rename.
+  const directory = path.dirname(absolutePath);
+  const captured = await captureDirectoryChain(options.projectDirectory, directory);
+  if (captured.kind === "refused") {
+    // A folder that is not there means the file is not there either, which is
+    // the post-condition a delete owes. Every other refusal stands.
+    if (captured.reason === "io_error" && !(await pathExists(directory))) {
+      return { kind: "written", hash: hashText("") };
+    }
+    return { kind: "refused", reason: captured.reason, detail: captured.detail };
+  }
+
+  const current = await readCurrentDigest(absolutePath, relativeLabel);
+  if (current.kind === "refused") return current;
+  if (current.digest === null) {
+    // Already gone. The post-condition holds, so this is not a failure.
+    return { kind: "written", hash: hashText("") };
+  }
+  if (current.digest !== options.expectedHash) {
+    return {
+      kind: "refused",
+      reason: "source_changed",
+      detail:
+        `"${relativeLabel}" changed on disk after Vex checked it, so it was left `
+        + "in place. Remove it by hand if you no longer want it.",
+    };
+  }
+
+  // THE LAST CHECK BEFORE THE ONE IRREVERSIBLE SYSCALL.
+  const swapped = await verifyDirectoryChain(captured.chain);
+  if (swapped !== null) {
+    return { kind: "refused", reason: swapped.reason, detail: swapped.detail };
+  }
+
+  try {
+    await unlink(absolutePath);
+  } catch (cause) {
+    if (isEnoent(cause)) return { kind: "written", hash: hashText("") };
+    log.warn(
+      `[studio:installer] could not remove ${relativeLabel} ` + describeIoFailure(cause),
+    );
+    return {
+      kind: "refused",
+      reason: "io_error",
+      detail: `"${relativeLabel}" could not be removed.`,
+    };
+  }
+  return { kind: "written", hash: hashText("") };
+}
+
 export async function replaceConfinedFile(options: {
   readonly projectDirectory: string;
   readonly absolutePath: string;
@@ -316,6 +417,16 @@ async function readCurrentDigest(
       reason: "io_error",
       detail: `"${relativeLabel}" could not be re-read before the update.`,
     };
+  }
+}
+
+/** `lstat`, never `stat`: a dangling symlink is still something being there. */
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await lstat(target);
+    return true;
+  } catch {
+    return false;
   }
 }
 

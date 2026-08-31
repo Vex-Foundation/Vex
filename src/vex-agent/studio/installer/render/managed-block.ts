@@ -145,10 +145,29 @@ export type StudioManagedBlockState =
   /** An opening marker with no closing marker, or the two in the wrong order. */
   | { readonly kind: "malformed"; readonly detail: string };
 
-export function inspectStudioManagedBlock(
+/**
+ * The block's OWNERSHIP state, without a brief.
+ *
+ * Everything `inspectStudioManagedBlock` decides except `upToDate` is
+ * brief-independent: whether a fence exists, whether it is well formed, and
+ * whether its body still hashes to the value in its own marker are all
+ * properties of the FILE. Only "does it match what we would render now" needs
+ * the project summary.
+ *
+ * TEARDOWN needs exactly the brief-independent half. A project being deleted
+ * has no scope left to render a brief from, and asking "is this block still
+ * ours" must not require inventing one. So the shared part lives here and
+ * `inspectStudioManagedBlock` adds the comparison on top.
+ */
+export type StudioManagedBlockOwnership =
+  | { readonly kind: "absent" }
+  | { readonly kind: "intact"; readonly bodyHash: string }
+  | { readonly kind: "drifted"; readonly recordedHash: string; readonly actualHash: string }
+  | { readonly kind: "malformed"; readonly detail: string };
+
+export function studioManagedBlockOwnership(
   existing: string,
-  brief: StudioProjectBrief,
-): StudioManagedBlockState {
+): StudioManagedBlockOwnership {
   const found = locateManagedBlock(existing);
   if (found === undefined) return { kind: "absent" };
   if (typeof found === "string") return { kind: "malformed", detail: found };
@@ -157,7 +176,20 @@ export function inspectStudioManagedBlock(
   if (actualHash !== found.recordedHash) {
     return { kind: "drifted", recordedHash: found.recordedHash, actualHash };
   }
-  return { kind: "intact", upToDate: found.body === renderStudioManagedBody(brief) };
+  return { kind: "intact", bodyHash: actualHash };
+}
+
+export function inspectStudioManagedBlock(
+  existing: string,
+  brief: StudioProjectBrief,
+): StudioManagedBlockState {
+  const ownership = studioManagedBlockOwnership(existing);
+  if (ownership.kind !== "intact") return ownership;
+
+  // The one question that needs the brief.
+  const found = locateManagedBlock(existing);
+  const body = typeof found === "object" && found !== undefined ? found.body : "";
+  return { kind: "intact", upToDate: body === renderStudioManagedBody(brief) };
 }
 
 /**

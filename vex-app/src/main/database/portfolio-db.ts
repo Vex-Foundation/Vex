@@ -56,6 +56,7 @@ import { familyForChainId } from "@shared/chains/display.js";
 import { sanitizeTokenName } from "@shared/token-name-sanitizer.js";
 import { listInventoryWalletEntries } from "./inventory-wallets.js";
 import { getSessionWalletScope } from "./sessions-db.js";
+import { readProjectPortfolioScope } from "./projects/portfolio-scope.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
 
@@ -368,6 +369,7 @@ function invalidWalletSelection(): Result<never, VexError> {
  */
 async function resolveAddresses(
   input: PortfolioReadInput,
+  correlationId: string,
 ): Promise<Result<readonly string[], VexError>> {
   if (input.scope === "global") {
     const entries = listInventoryWalletEntries();
@@ -381,12 +383,101 @@ async function resolveAddresses(
     // configured inventory would otherwise spuriously drop the snapshot total.
     return ok([...new Set(entries.map((e) => e.address))]);
   }
-  const scope = await getSessionWalletScope(input.sessionId);
-  if (!scope.ok) return scope;
-  const addrs = [scope.data.evm?.address, scope.data.solana?.address].filter(
-    (a): a is string => typeof a === "string",
+  if (input.scope === "session") {
+    const scope = await getSessionWalletScope(input.sessionId);
+    if (!scope.ok) return scope;
+    const addrs = [scope.data.evm?.address, scope.data.solana?.address].filter(
+      (a): a is string => typeof a === "string",
+    );
+    return ok([...new Set(addrs)]);
+  }
+  return resolveProjectAddresses(input, correlationId);
+}
+
+/**
+ * The PROJECT arm (B0).
+ *
+ * `project_wallets` is the authority, read through the projects repository so
+ * the inventory-drift policy has one owner. Every failure is named:
+ *
+ *   - unknown or TOMBSTONED project  -> `projects.not_found`
+ *   - a selection the inventory no longer backs -> `projects.wallet_drift`
+ *   - a `walletId` that is not one of THIS project's selections
+ *                                    -> `wallets.invalid_selection`
+ *
+ * The `walletId` check is the security-relevant one. It narrows WITHIN the
+ * project's own two selections, exactly as `walletAddress` narrows within the
+ * configured inventory on the global arm. Accepting any id that merely exists
+ * in the global inventory would turn this arm into a way to read any wallet's
+ * balances by quoting a project id, which is precisely the widening the
+ * server-side allow-list exists to prevent.
+ *
+ * A project with nothing selected resolves to `[]`, which the caller renders as
+ * an empty portfolio without issuing SQL. That is a real state, not a failure.
+ */
+async function resolveProjectAddresses(
+  input: Extract<PortfolioReadInput, { scope: "project" }>,
+  correlationId: string,
+): Promise<Result<readonly string[], VexError>> {
+  const scope = await readProjectPortfolioScope(input.projectId);
+  if (scope.kind === "not_found") return projectNotFound(correlationId);
+  if (scope.kind === "drift") return projectWalletDrift(scope.family, correlationId);
+  if (scope.kind === "missing_family" || scope.kind === "unavailable") {
+    // Both are infrastructure, not user-actionable: a project whose wallet rows
+    // are incomplete was written around, and an unreadable one is a database
+    // problem. Neither is an empty portfolio.
+    return dbError("the project's wallet selection could not be read");
+  }
+
+  const selected = [scope.wallets.evm, scope.wallets.solana].filter(
+    (ref): ref is { id: string; address: string } => ref !== null,
   );
-  return ok([...new Set(addrs)]);
+
+  if (input.walletId !== undefined) {
+    const match = selected.find((ref) => ref.id === input.walletId);
+    if (match === undefined) return invalidWalletSelection();
+    return ok([match.address]);
+  }
+  return ok([...new Set(selected.map((ref) => ref.address))]);
+}
+
+/**
+ * `projects.not_found` in the PORTFOLIO domain. Mirrors
+ * `studio/project-errors.ts`'s sentence; the domain differs because this is a
+ * portfolio read failing, and the correlationId is omitted for the reason
+ * documented on `invalidWalletSelection` above.
+ */
+function projectNotFound(correlationId: string): Result<never, VexError> {
+  return err({
+    code: "projects.not_found",
+    domain: "portfolio",
+    correlationId,
+    message: "That project no longer exists. Refresh your project list.",
+    retryable: false,
+    userActionable: true,
+    redacted: true,
+  });
+}
+
+/** `projects.wallet_drift` in the portfolio domain. Never an empty portfolio. */
+function projectWalletDrift(
+  family: "evm" | "solana",
+  correlationId: string,
+): Result<never, VexError> {
+  const label = family === "evm" ? "EVM" : "Solana";
+  return err({
+    code: "projects.wallet_drift",
+    domain: "portfolio",
+    correlationId,
+    message:
+      `The ${label} wallet saved for this project no longer matches the wallet in `
+      + "your inventory: it was removed, or re-imported over a different key. "
+      + "No balances were read. Select the wallet again in project settings to "
+      + "confirm which key it should use.",
+    retryable: false,
+    userActionable: true,
+    redacted: true,
+  });
 }
 
 /**
@@ -399,8 +490,15 @@ async function resolveAddresses(
  */
 export async function getPortfolio(
   input: PortfolioReadInput,
+  /**
+   * The request's correlation id, threaded through so the `projects.*` errors
+   * the project arm reports carry the SAME id `registerHandler` will stamp -
+   * it warns when a handler attaches a different one. Defaults to empty for
+   * the direct callers (tests) that never cross that boundary.
+   */
+  correlationId = "",
 ): Promise<Result<PortfolioDto, VexError>> {
-  const resolved = await resolveAddresses(input);
+  const resolved = await resolveAddresses(input, correlationId);
   if (!resolved.ok) return resolved;
   const addresses = resolved.data;
 
