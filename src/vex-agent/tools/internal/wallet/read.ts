@@ -25,10 +25,12 @@ import { resolveSelectedAddressForRead } from "./resolve.js";
 import {
   type BalanceChainSelection,
   type TokenBalanceScanResult,
+  calculateTokensTotalUsd,
   getSelectedChainIdsForFamily,
   getTokenBalancesAcrossChains,
   parseBalanceChainSelection,
 } from "@tools/khalani/balances.js";
+import { enrichKhalaniBalancePrices } from "@tools/khalani/balance-price-enrichment.js";
 import type { ChainFamily, KhalaniRejectedTokenBalanceEntry } from "@tools/khalani/types.js";
 import { readLocalChainBalances } from "@tools/evm-chains/balances.js";
 import {
@@ -467,12 +469,25 @@ export async function handleWalletBalances(
           includeNative: true,
         });
       }
+      // Fill the prices Khalani left null, through the SAME pass the background
+      // sync runs (`tools/khalani/balance-price-enrichment.ts`). It ran only on
+      // the sync path until 2026-08-31, so this tool reported a smaller
+      // portfolio than the sidebar for the same wallet at the same moment.
+      // Before the projection, so a filled row counts as PRICED for the
+      // valuation axis; Khalani's own prices are untouched, row order is the
+      // scan's, and provider failures are fail-soft per chain.
+      const enrichedTokens = (
+        await enrichKhalaniBalancePrices(scan.tokens, { signal: context.abortSignal })
+      ).rows.map((row) => row.token);
       // Slim each row at the handler seam (P1-7): reuse the Khalani projector so
       // the model sees identity + lifted priceUsd/balance, not the heavy logoURI
       // / open `extensions` bag. `tokenCount` / `totalUsd` stay computed off the
       // FULL scan so an optional `limit` trim never distorts the held totals.
-      const projected: ProjectedTokenRow[] = projectTokens(scan.tokens);
-      let totalUsd = scan.totalUsd;
+      const projected: ProjectedTokenRow[] = projectTokens(enrichedTokens);
+      // Recomputed off the ENRICHED rows through the scan's own reduce, so the
+      // compatibility number cannot disagree with `pricedTotalUsd`, which the
+      // completeness axis derives from the projected rows.
+      let totalUsd = calculateTokensTotalUsd(enrichedTokens);
       const scannedChainIds = [...scan.scannedChainIds];
       const chainErrors = [...scan.chainErrors];
       const tokenErrors: TokenReadError[] = [];

@@ -17,6 +17,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
 import { getAddress, parseUnits, type Hex } from "viem";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -42,9 +43,12 @@ vi.mock("@tools/uniswap/chains.js", () => ({
   })),
   resolveUniswapChainId: vi.fn(() => CHAIN_ID),
 }));
+// WP2-U: the quote and every leg's pre-sign gate read balances and price the
+// leg plan through this client. A SOLVENT default keeps this suite's subject -
+// the final-request fence - the thing that decides its outcome.
 vi.mock("@tools/uniswap/evm-client.js", () => ({
-  getUniswapPublicClient: vi.fn(() => ({})),
-  getUniswapEvmClients: vi.fn(() => ({ publicClient: {}, walletClient: {} })),
+  getUniswapPublicClient: vi.fn(() => uniswapSpendabilityFake()),
+  getUniswapEvmClients: vi.fn(() => ({ publicClient: uniswapSpendabilityFake(), walletClient: {} })),
 }));
 vi.mock("@tools/uniswap/erc20.js", () => ({
   readUniswapErc20Metadata: vi.fn(async (_client: unknown, address: string) => ({
@@ -194,7 +198,12 @@ beforeEach(async () => {
       const shown: FinalSignedRequest = alteredRequest
         ? alteredRequest(tx)
         : { to: tx.to as `0x${string}`, data: tx.data, value: tx.value, gas: 300_000n, nonce: 9 };
-      await onBeforeSign(shown);
+      // A real prepared request always carries a fee price - WP2-U's debit gate
+      // refuses one that does not, because a cost nobody can state cannot be
+      // checked against the ceiling the swap was totalled under. The stand-in
+      // price matches this suite's fake chain (`uniswapSpendabilityFake`), so
+      // the FENCE stays the only thing deciding these outcomes.
+      await onBeforeSign({ gasPrice: 1_000n, ...shown });
     }
     return { serializedTransaction: "0xsigned" as Hex, txHash: "0xswap" as Hex, fromAddress: WALLET, nonce: 9 };
   });

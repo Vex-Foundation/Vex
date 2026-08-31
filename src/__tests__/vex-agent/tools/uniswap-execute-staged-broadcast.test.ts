@@ -37,6 +37,7 @@
  *     a conflicting row is `confirmed_unrecorded`, not silently "confirmed".
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
 import { claimStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
 import { InvalidParamsRpcError } from "viem";
 import { VexError, ErrorCodes } from "../../../errors.js";
@@ -79,8 +80,11 @@ vi.mock("@tools/uniswap/chains.js", () => ({
   })),
 }));
 vi.mock("@tools/uniswap/evm-client.js", () => ({
-  getUniswapPublicClient: vi.fn(() => ({})),
-  getUniswapEvmClients: vi.fn(() => ({ publicClient: {}, walletClient: {} })),
+  // WP2-U: the quote and every leg's pre-sign gate read balances and price the
+  // leg plan through this client. A SOLVENT default keeps each suite's own
+  // subject the thing that decides its outcome.
+  getUniswapPublicClient: vi.fn(() => uniswapSpendabilityFake()),
+  getUniswapEvmClients: vi.fn(() => ({ publicClient: uniswapSpendabilityFake(), walletClient: {} })),
 }));
 vi.mock("@tools/uniswap/erc20.js", () => ({
   readUniswapErc20Metadata: (...args: [unknown, string]) => readUniswapErc20Metadata(...args),
@@ -91,7 +95,12 @@ vi.mock("@tools/uniswap/quote.js", () => ({
   quoteBestRoute: vi.fn(async () => ({ route: { version: "v2", path: [TOKEN_IN, TOKEN_OUT], amountOut: 10n } })),
   applySlippage: vi.fn((amount: bigint) => amount),
 }));
-vi.mock("@tools/uniswap/execute.js", () => ({
+// Spread over the REAL module so the refusal classes this venue throws
+// (`UniswapFeeCapExceededError`, and the final-request refusal the loop
+// re-throws by identity) are the real ones; the overrides below stay this
+// suite's own seams.
+vi.mock("@tools/uniswap/execute.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tools/uniswap/execute.js")>()),
   NATIVE_TOKEN_ADDRESS: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
   buildSwapTx: vi.fn(() => ({ to: "0xrouter", data: "0x", value: 0n })),
   buildApproveTx: vi.fn(() => ({ to: "0xtoken", data: "0x", value: 0n })),

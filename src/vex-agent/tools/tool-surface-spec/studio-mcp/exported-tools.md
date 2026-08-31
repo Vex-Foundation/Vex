@@ -111,8 +111,8 @@ preconditions appear inside the first 2000 bytes.
 | name | title | lane | read only | destructive | always load | requires env | description bytes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | kyberswap__chains_list | List KyberSwap chains | protocol | yes | no | no | - | 776 |
-| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3110 |
-| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 2569 |
+| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3718 |
+| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 3591 |
 | kyberswap__token_safety_check | Audit an EVM token with KyberSwap | protocol | yes | no | no | - | 1138 |
 
 ### morpho
@@ -252,8 +252,8 @@ preconditions appear inside the first 2000 bytes.
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| uniswap__swap_execute | Execute a Uniswap V2/V3 swap | protocol | no | yes | no | - | 1059 |
-| uniswap__swap_quote | Quote a Uniswap V2/V3 route | protocol | yes | no | no | - | 696 |
+| uniswap__swap_execute | Execute a Uniswap V2/V3 swap | protocol | no | yes | no | - | 1442 |
+| uniswap__swap_quote | Quote a Uniswap V2/V3 route | protocol | yes | no | no | - | 1790 |
 
 ### virtuals
 

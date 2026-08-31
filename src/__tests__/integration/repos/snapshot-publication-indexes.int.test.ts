@@ -106,6 +106,8 @@ interface PlanNode {
   readonly "Relation Name"?: string;
   readonly "Index Name"?: string;
   readonly Plans?: readonly PlanNode[];
+  /** EXPLAIN emits many more fields (buffer counters among them). */
+  readonly [key: string]: unknown;
 }
 
 interface ExplainRoot {
@@ -164,8 +166,9 @@ async function measure(sql: string, params: readonly unknown[]): Promise<Measure
 }
 
 function countBuffers(node: PlanNode): number {
-  const raw = node as unknown as Record<string, number | undefined>;
-  const own = (raw["Shared Hit Blocks"] ?? 0) + (raw["Shared Read Blocks"] ?? 0);
+  const hit = node["Shared Hit Blocks"];
+  const read = node["Shared Read Blocks"];
+  const own = (typeof hit === "number" ? hit : 0) + (typeof read === "number" ? read : 0);
   return own + (node.Plans ?? []).reduce((sum, child) => sum + countBuffers(child), 0);
 }
 

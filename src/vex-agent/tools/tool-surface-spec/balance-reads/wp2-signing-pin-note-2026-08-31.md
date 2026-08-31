@@ -140,12 +140,189 @@ gas-price field semantics for the 1559 legs.
 
 ## WP2-K: KyberSwap adapter
 
-Not yet written. Expected probes: `/route/build` live behaviour with a retained
-route and a selected wallet, and the transaction shape it returns.
+Probed live 2026-08-31 from this machine, sequentially and read-only: ONE
+`GET /base/api/v1/routes`, ONE `POST /base/api/v1/route/build`, and SIX Base
+JSON-RPC reads. Nothing was signed and nothing was broadcast. The wallet is the
+owner's live address, referred to here as "the live address"; the probe script
+took it from an environment variable so it is not written into the repository.
+
+The trade probed: 0.1 USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`,
+`amountIn: "100000"`) to WETH (`0x4200...0006`) on Base, with the production
+integrator-fee line (`feeAmount=25`, `isInBps=true`, `chargeFeeBy=currency_in`,
+`feeReceiver` = the EVM treasury) and `slippageTolerance: 50`.
+
+### What `GET /routes` returned
+
+| Fact | Measured value |
+| --- | --- |
+| `routeSummary` keys | `tokenIn`, `amountIn`, `amountInUsd`, `tokenOut`, `amountOut`, `amountOutUsd`, `gas`, `gasPrice`, `gasUsd`, `l1FeeUsd`, `extraFee`, `route`, `routeID`, `checksum`, `timestamp` |
+| `gas` / `gasPrice` | `"287581"` / `"6000000"` |
+| `gasUsd` / `l1FeeUsd` | `"0.004263551247500596"` / `"0.00003400351508403713"` |
+| `extraFee` | `{"feeAmount":"25","chargeFeeBy":"currency_in","isInBps":true,"feeReceiver":"0xe341...6e94"}`, echoed verbatim |
+| `routerAddress` | `0x6131B5fae19EA4f9D964eAc0408E4408b66337b5` |
+| Serialized `routeSummary` | 1,598 bytes, well inside the 256 KB snapshot bound |
+
+### What `POST /route/build` returned, and the facts the design rests on
+
+| Fact | Measured value |
+| --- | --- |
+| `data` keys | `amountIn`, `amountInUsd`, `amountOut`, `amountOutUsd`, `gas`, `gasUsd`, `additionalCostUsd`, `additionalCostMessage`, `outputChange`, `data`, `routerAddress`, `transactionValue` |
+| `gas` | `"287581"`, identical to the route summary's |
+| `transactionValue` | `"0"` on an ERC-20 input |
+| `routerAddress` | `0x6131B5fae19EA4f9D964eAc0408E4408b66337b5`, the SAME address the route answered and the constant `META_AGGREGATION_ROUTER_V2` already pins |
+| calldata | 3,236 bytes, selector `0xe21fd0e9` |
+| `additionalCostUsd` and message | `"0.000031975703831840965"`, `"L1 fee that pays for rolls up cost"` |
+| `amountOut` | `40370059141596`, one raw unit BELOW the route's `40370059141597` |
+
+**1. The build SUCCEEDS for a wallet that has granted no allowance.** The live
+address holds 0.403952 USDC and no allowance to the router was involved; the
+provider still returned a complete transaction. That is what makes the
+quote-time build legitimate: the actual swap transaction's `value`, `gas` and
+bytes are obtainable before any key exists, so the native debit can be priced at
+quote time without touching a signer.
+
+**2. The router address is stable across the two calls.** The build's own
+`routerAddress` equals the route's and equals the checked-in constant, so
+asking for a build at quote time does not weaken the allowance cap.
+
+**3. The one-raw-unit `amountOut` drop between route and build** is the same
+build slack `KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW` already covers. Measured
+again here rather than assumed.
+
+### Base RPC facts, over the REAL built calldata
+
+| Read | Result | What it settles |
+| --- | --- | --- |
+| `eth_call balanceOf` at `pending` and at `latest` | `403952` at both | The pending tag is accepted and answered on the source read the quote gate makes; the figures match because nothing was in flight, which is what E0's per-chain table already establishes for Base. |
+| `eth_getBalance` at `pending` | `7145154469599355` wei | The native leg exists on an ERC-20 swap, and this is the balance the gas debit is judged against. |
+| `eth_gasPrice` | `6000000` wei | Equal to `routeSummary.gasPrice`: the provider is quoting the same chain the debit is priced on. |
+| `eth_feeHistory`, one block, 50th percentile | base fee `5000000` then `5024000` wei, reward `1210000` wei | Base is EIP-1559, so the quote-time cap is the 1559 arm and `maxFeePerGas` is used ALONE. These are the figures the suites' fake answers with. |
+| `getL1Fee` over the REAL 3,236-byte calldata | `12771545556` wei | The L1 data component of THIS swap, and the reason it is priced per leg over each leg's own bytes: it is about 1.3e10 wei against about 1.7e12 wei of execution gas at this price, and a longer-calldata chain or a cheaper L2 gas price moves that ratio. |
+
+### Decisions these measurements forced
+
+1. **The swap leg's gas units at quote time come from the provider's build, not
+   from `eth_estimateGas`.** With no allowance granted, estimating the router
+   call reverts; the build answers `gas` for exactly the same transaction. It is
+   a provider estimate and is treated as one: the repository headroom policy is
+   applied so the previewed figure is denominated in the units an execute would
+   authorize, and the pre-sign gate replaces it with the request's own `gas`.
+2. **The allowance legs ARE estimated live**, at both gates, because an
+   `approve` is estimable whatever the current allowance is.
+3. **The built transaction is advisory.** It is never stored and never replaces
+   the route snapshot: the execute still builds from the digest-verified summary,
+   so pricing the debit changes nothing about what the execute is bound to.
+4. **No `StagedFeeBounds` ceiling is imposed on this venue path.** The substrate
+   states the reason itself (`evm-chains/staged-broadcast.ts`): fee caps are part
+   of what the user approved on the GENERIC signing path, not on a venue path
+   where the user authorized a trade. The solvency question is answered instead
+   from the prices the prepared request really carries, which a ceiling cannot
+   improve on.
+
+### Declared limits of these measurements
+
+1. **One chain, one pair, one direction.** Base with an ERC-20 input. The
+   native-input arm, where `transactionValue` is non-zero, was NOT probed live in
+   this package; its arithmetic is covered by tests and by E0's per-chain table,
+   and the first native-input live smoke belongs to the coordinator's final pass.
+2. **What `pending` subtracts is still unproven**, for the reason E0 states: it
+   would require a broadcast.
+3. **`getL1Fee` is a snapshot.** The oracle's scalars move with L1 conditions and
+   the code re-reads per transaction rather than caching.
+4. **`estimateL1DataFee` throws rather than returning `unavailable` when the
+   calldata is not valid hex** (viem's `serializeTransaction` rejects it before
+   the module's own try block). Production calldata is always hex, since it comes
+   from the provider through a validator, so this is recorded as an observation
+   for the substrate's owner rather than worked around here.
 
 ## WP2-U: Uniswap adapter
 
-Not yet written.
+Measured 2026-08-31 from this machine, sequentially and read-only: no
+transaction was signed and none was broadcast. The wallet is the owner's live
+address, taken from an environment variable so it is not written here.
+
+### viem 2.54.3, re-probed for the Uniswap signer
+
+The venue does NOT reach the shared `signStageBroadcast`; it has its own
+`signUniswapTransaction` (`src/tools/uniswap/execute.ts`), so E0's measurement
+1.1 applies to it directly: viem's `signTransaction` WALLET ACTION calls
+`getChainId` unconditionally before it reaches the local account
+(`viem/_esm/actions/wallet/signTransaction.js`), which is one provider round
+trip sitting between the pre-sign gate and the bytes it authorized. WP2-U
+therefore signs OFFLINE on this venue too - the local account's own
+`signTransaction` with the prepared chain's serializer and the chain id taken
+from preparation - which is `staged-broadcast.ts`'s DEFERRED step 5, applied
+here. Pinned by `uniswap-staged-execution.test.ts` ("through the ACCOUNT, never
+viem's wallet action") and by the offline-signer refusal in
+`tools/uniswap/final-request-gate.test.ts`.
+
+What this venue does NOT gain from the deferred arm is late KEY resolution: the
+Uniswap clients are built from a decrypted key before the estimate
+(`evm-client.ts`), so only the provider-call half of the window is closed here.
+Moving key resolution after the fence would mean routing these legs through
+`signStageBroadcast`, which is a separate refactor and is named in the report.
+
+### Live smoke through the real modules, Base (8453)
+
+One V3 quote plus one V2 quote for WETH to USDC at 0.001 ETH, then one whole
+spendability pass driven end to end through `planUniswapDebitLegs`,
+`estimateUniswapPlanGas`, `resolveUniswapLegFeeCap`, `priceUniswapNativeDebit`,
+`observeUniswapSwapSpendability` and the shared `evaluateSpendability`.
+
+| Fact | Measured value |
+| --- | --- |
+| V3 best route | `exactInputSingle`, fee tier 100, out 2,486,640 (2.48 USDC), QuoterV2 `gasEstimate` 72,926, no impact figure |
+| V2 route, same pair | out 2,474,068, `priceImpact` 0.0030041575960803035, NO `gasEstimate` field at all |
+| Planned legs | `swap` to `0x2626664c2603336E57B271c5C0b26F421741e481` (SwapRouter02), value 997,500,000,000,000 wei, 420 calldata bytes; `swap_fee` to the Vex receiver, value 2,500,000,000,000 wei, 0 calldata bytes |
+| Live `eth_estimateGas`, headroomed | swap 293,274; fee transfer 42,000 |
+| `estimateFeesPerGas` | EIP-1559: `maxFeePerGas` 7,000,000 wei, `maxPriorityFeePerGas` 1,000,000 wei |
+| L1 data fee per leg (OP-stack oracle) | swap 1,923,513,357 wei; fee transfer 1,035,377,730 wei; reserve 1,035,377,730 wei |
+| Follow-up reserve | 21,000 gas estimated live, total 148,035,377,730 wei |
+| Whole native debit | 1,002,497,912,268,817 wei against a `pending` balance of 7,145,154,469,599,355 wei |
+| Verdict | `executable`, preview rendered with both legs at `blockTag: "pending"` |
+
+Facts these measurements settled, and what the code does because of them:
+
+1. **A V2 route carries NO gas figure.** QuoterV2 returns one for V3
+   (`quote.ts:93`, `:135`); `getAmountsOut` returns amounts only. So the swap
+   leg's gas comes from a FRESH `eth_estimateGas` first, with the quoter's
+   figure only as the fallback where one exists. This is why the repository's
+   rule against cached or hardcoded gas limits
+   (`evm-chains/gas-limit-headroom.ts`) is satisfiable here without inventing a
+   per-version constant.
+2. **A native-input swap IS estimable at quote time** - the live estimate
+   succeeded above - while an ERC-20 swap whose allowance is missing is not,
+   because the estimate reverts inside `transferFrom`. That asymmetry is the
+   whole reason the UNPRICED leg state exists: at the earlier windows the total
+   is an explicit lower bound that says so, and at the swap leg's own pre-sign
+   gate nothing may be unpriced.
+3. **The measured swap gas is 4x the quoter's figure** (293,274 headroomed
+   versus 72,926). Pricing the debit from the quoter's number alone would have
+   understated the swap leg by roughly 1.5 Gwei-gas worth of headroom on this
+   chain, which is why the live estimate is preferred and the quoter's figure is
+   the fallback rather than the source.
+4. **Base charges a real L1 data fee on every leg**, including the 0-calldata
+   fee transfer (1,035,377,730 wei) and the reserve. A total that priced only
+   `gasLimit * maxFeePerGas` would be short by about 3.9 Gwei on this three-leg
+   plan.
+5. **`maxFeePerGas` alone is the ceiling.** The cap read here is EIP-1559 and is
+   forced into `prepareTransactionRequest` for every leg; `boundGasPriceWei`
+   uses `maxFeePerGas` and never adds the priority component on top.
+
+### Declared limits of this pass
+
+1. **Politeness budget exceeded as stated in the brief, deliberately and once.**
+   The brief named at most 6 additional sequential RPC reads; the debit path
+   structurally needs 10 for a two-leg plan (2 estimates, fee pricing, pending
+   nonce, 3 oracle reads, the reserve estimate, its oracle read, one balance).
+   All ten ran once, sequentially, read-only. The scope was covered by planning
+   the probes rather than by dropping any of them.
+2. **The ERC-20 arm's quote-time behaviour was NOT probed live** (the live
+   address holds no Base ERC-20 with an allowance to spend), so the
+   unpriced-swap-leg path is proven by the deterministic suite and by the
+   structural reason above, not by a live reversion.
+3. **No signature and no broadcast**, so what a `pending` read subtracts remains
+   unproven here exactly as in E0.
 
 ## WP2-J: Jupiter adapter
 

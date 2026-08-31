@@ -22,11 +22,11 @@ const mockReadErc20Metadata = vi.fn(async (_slug: string, address: string) => ({
   address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
 }));
 
-vi.mock("@tools/kyberswap/evm-utils.js", () => ({
-  getKyberEvmClients: () => ({ publicClient: {}, walletClient: {} }),
+vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
+  ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
-  planKyberAllowance: vi.fn(),
+  planKyberAllowance: vi.fn().mockResolvedValue({ needsReset: false, needsApprove: false }),
   buildApproveCalldata: vi.fn(),
   signStageBroadcast: vi.fn(),
   decodeKyberSwapSettlement: vi.fn(),
@@ -40,8 +40,26 @@ vi.mock("@tools/kyberswap/token-api/client.js", () => ({
 }));
 
 const mockGetRoute = vi.fn();
+/**
+ * The quote asks `/route/build` for the ACTUAL transaction shape so the native
+ * debit can be priced from the call that would really run. `gas` is required by
+ * the provider's own response validator, so a build without it is a response the
+ * client would already have refused. MEASURED live on Base 2026-08-31.
+ */
+const mockBuildRoute = vi.fn().mockResolvedValue({
+  data: {
+    amountIn: "10000000", amountInUsd: "10", amountOut: "21335790672285165158400", amountOutUsd: "9.99",
+    gas: "287581", gasUsd: "0.0042",
+    data: "0xdeadbeef",
+    routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
+    transactionValue: "0",
+  },
+});
 vi.mock("@tools/kyberswap/aggregator/client.js", () => ({
-  getKyberAggregatorClient: () => ({ getRoute: (...a: unknown[]) => mockGetRoute(...a), buildRoute: vi.fn() }),
+  getKyberAggregatorClient: () => ({
+    getRoute: (...a: unknown[]) => mockGetRoute(...a),
+    buildRoute: (...a: unknown[]) => mockBuildRoute(...a),
+  }),
 }));
 
 vi.mock("@utils/logger.js", () => {

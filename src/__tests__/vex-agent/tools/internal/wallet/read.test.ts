@@ -19,12 +19,21 @@ import type { ChainFamily } from "@tools/khalani/types.js";
 // ── Mocks ───────────────────────────────────────────────────────
 
 const mockScan = vi.fn();
+// The shared Khalani price enrichment now runs on this path too, so its ONE
+// provider boundary is scripted to answer nothing: rows Khalani left unpriced
+// stay unpriced, and no test in this suite reaches the network.
+vi.mock("@tools/dexscreener/price-read.js", () => ({
+  readTokensPairs: () => Promise.resolve([]),
+  readTokenPools: () => Promise.resolve([]),
+}));
+
 vi.mock("@tools/khalani/balances.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("@tools/khalani/balances.js")>();
   return {
     // Real selection helpers are trivially pure EXCEPT the parse (registry
     // fetch) — replace parse with a static two-chain registry (base + solana).
     getSelectedChainIdsForFamily: original.getSelectedChainIdsForFamily,
+    calculateTokensTotalUsd: original.calculateTokensTotalUsd,
     parseBalanceChainSelection: async (raw: string | undefined) => {
       if (!raw) return { rawProvided: false, byFamily: new Map() };
       const byFamily = new Map<ChainFamily, number[]>();
@@ -148,7 +157,30 @@ describe("handleWalletBalances — inclusive chain scope", () => {
   it("an omitted filter scans all Khalani chains AND every local chain", async () => {
     mockScan.mockImplementation(async ({ family, chainIds }: { family: ChainFamily; chainIds?: number[] }) => {
       expect(chainIds).toBeUndefined(); // unfiltered Khalani scan
-      return khalaniScan(family, family === "eip155" ? { totalUsd: 7, scannedChainIds: [8453] } : {});
+      // The Khalani $7 is carried by a real ROW, not by a bare `totalUsd`
+      // field: the handler now re-derives that number from the rows AFTER the
+      // shared price enrichment has filled whatever nulls it could, so a
+      // scripted total that no row backs would be a fiction no production scan
+      // can produce (the scan owner reduces the same rows).
+      return khalaniScan(
+        family,
+        family === "eip155"
+          ? {
+              tokens: [
+                {
+                  symbol: "KHL",
+                  name: "Khalani Token",
+                  address: "0xk",
+                  chainId: 8453,
+                  decimals: 18,
+                  extensions: { balance: "7000000000000000000", price: { usd: "1" } },
+                },
+              ],
+              totalUsd: 7,
+              scannedChainIds: [8453],
+            }
+          : {},
+      );
     });
     const res = await handleWalletBalances({ walletFamily: "eip155" }, CONTEXT);
     expect(res.success).toBe(true);

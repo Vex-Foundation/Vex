@@ -58,8 +58,8 @@ const mockDecodeKyberSwapSettlement = vi.fn(() => null as { amountInRaw: string;
 // Only the evm-utils BARREL is mocked; `evm/swap-calldata-guard.js` stays REAL,
 // so the fee line in the captured calldata is genuinely verified before the
 // handler records anything.
-vi.mock("@tools/kyberswap/evm-utils.js", () => ({
-  getKyberEvmClients: () => ({ publicClient: {}, walletClient: {} }),
+vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
+  ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
   planKyberAllowance: (...args: unknown[]) => mockPlanKyberAllowance(...args),
@@ -179,6 +179,9 @@ function buildResponse(over: Record<string, unknown> = {}) {
     data: {
       routerAddress: capture.routerAddress,
       data: capture.build.data as Hex,
+      // The provider's own gas figure for the swap leg. MEASURED live on Base
+      // 2026-08-31: `/route/build` answered `gas: "287581"` for a real USDC route.
+      gas: "287581",
       transactionValue: capture.build.transactionValue,
       amountIn: capture.build.amountIn,
       amountOut: capture.build.amountOut,

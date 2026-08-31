@@ -86,7 +86,36 @@ export interface RunUniswapFeeLegInput {
   readonly walletClient: Parameters<typeof signStageBroadcast>[1];
   /** Anchor on the block the swap confirmed in. */
   readonly priorLeg?: ConfirmedPriorLeg | undefined;
+  /**
+   * THE AUTHORITATIVE DEBIT READ for this leg, run inside its own pre-sign
+   * window (contract C2.6). The fee leg was counted in the plan before anything
+   * was signed; this is the second half of that promise - the wallet is re-read
+   * once the swap has actually taken its money.
+   *
+   * A throw from it is caught by this function like every other refusal:
+   * `not_attempted`, no fee, and the CONFIRMED swap untouched.
+   */
+  readonly debitGate?: UniswapFeeLegDebitGate | undefined;
 }
+
+/**
+ * The pre-sign gate this leg is handed, over the request that is about to be
+ * serialized.
+ *
+ * It carries the FEE PRICES as well as the gas, because gas units times an
+ * unknown price is not money: the gate both prices this leg's real cost and
+ * refuses a price above the ceiling the execution's debit total was computed
+ * under. No separate `StagedFeeBounds` is passed for this leg - a units ceiling
+ * frozen before the swap ran would refuse a transfer for a warm-storage
+ * difference rather than for a money fact.
+ */
+export type UniswapFeeLegDebitGate = (request: {
+  readonly gas: bigint;
+  readonly nonce: number;
+  readonly gasPrice?: bigint | undefined;
+  readonly maxFeePerGas?: bigint | undefined;
+  readonly maxPriorityFeePerGas?: bigint | undefined;
+}) => Promise<void>;
 
 /** Never throws. Every path returns a report. */
 export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<UniswapFeeCollection> {
@@ -99,6 +128,13 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
       input.walletClient,
       plan.txParams,
       {
+        ...(input.debitGate === undefined
+          ? {}
+          : {
+              onBeforeSign: async (request) => {
+                await input.debitGate?.(request);
+              },
+            }),
         onNonceReserved: (request) => reserveActivityEvmNonce(feeRowId, request),
         onHashStaged: async (handles) => {
           const res = await markActivityBroadcast(feeRowId, handles);

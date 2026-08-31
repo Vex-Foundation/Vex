@@ -15,7 +15,7 @@ import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 import { hasPendingActivityForWallets } from "@vex-agent/db/repos/agent-activity.js";
 import { resolveChainHint } from "./chains.js";
-import { computeBalanceUsd, fillMissingKhalaniPrices } from "./khalani-price-fallback.js";
+import { enrichKhalaniBalancePrices } from "@tools/khalani/balance-price-enrichment.js";
 import { syncLocalChainForWallet } from "./local-chain-balance-sync.js";
 import { syncSolanaWalletBalances } from "./solana-balance-sync.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../constants/solana-chain.js";
@@ -333,7 +333,16 @@ async function syncKhalaniWalletBalances(
   // Fetch from Khalani. Scanning per chain avoids incomplete multi-chain
   // balance responses and lets cleanup distinguish "empty" from "not scanned".
   const scan = await getTokenBalancesAcrossChains({ address, family, chainIds });
-  const tokens = scan.tokens;
+
+  // Khalani's own price wins wherever it exists; this only fills the nulls it
+  // started returning on 2026-08-26. It runs on the PROVIDER's rows, before
+  // they become durable rows and before the empty-chain cleanup and the Pendle
+  // merge, so it sees exactly what Khalani returned and nothing synthesized -
+  // and it is the SAME pass the live wallet read runs, so the two lanes cannot
+  // disagree about what a holding is worth. Fail-soft: an unpriceable chain
+  // keeps its rows untouched.
+  const enriched = await enrichKhalaniBalancePrices(scan.tokens);
+  const tokens = enriched.rows.map((row) => row.token);
 
   // Group by chainId for transactional replace
   const byChain = new Map<number, BalanceRow[]>();
@@ -343,12 +352,6 @@ async function syncKhalaniWalletBalances(
     existing.push(row);
     byChain.set(token.chainId, existing);
   }
-
-  // Khalani's own price wins wherever it exists; this only fills the nulls it
-  // started returning on 2026-08-26. Runs BEFORE the empty-chain cleanup and
-  // the Pendle merge, so it sees exactly the rows Khalani produced and nothing
-  // synthesized. Fail-soft: an unpriceable chain keeps its rows untouched.
-  await fillMissingKhalaniPrices(byChain);
 
   // Entries the Khalani boundary refused for their decimals alone. They are
   // holdings, so they are not allowed to vanish here; see
@@ -659,13 +662,41 @@ export async function selectiveBalanceSync(chainHint: string): Promise<Selective
 
 // ── Helpers ─────────────────────────────────────────────────────
 
+/**
+ * USD value of a raw token amount at a USD price, or null when either is absent.
+ *
+ * Exported for its own cases in `balance-sync.test.ts`; it is not a public
+ * contract. The float math is the pre-existing display boundary for the
+ * `balanceUsd` column and is deliberately unchanged: the raw amount stays a
+ * string, and only the USD DISPLAY value is a float.
+ *
+ * `decimals` is nullable on a persisted `BalanceRow`. Without it a raw amount
+ * has no human value at all, so the answer is null - never a raw integer
+ * multiplied by a price.
+ */
+export function computeBalanceUsd(
+  balanceRaw: string,
+  decimals: number | null,
+  priceUsd: number | null,
+): number | null {
+  if (priceUsd === null || decimals === null || balanceRaw === "0") return null;
+  try {
+    const balanceHuman = Number(BigInt(balanceRaw)) / Math.pow(10, decimals);
+    return balanceHuman * priceUsd;
+  } catch {
+    // BigInt parse failure - no USD value, never a guessed one.
+    return null;
+  }
+}
+
 function mapTokenToBalance(family: ChainFamily, walletAddress: string, token: KhalaniToken): BalanceRow {
   const balanceRaw = token.extensions?.balance ?? "0";
   const priceUsdStr = token.extensions?.price?.usd;
   const priceUsd = priceUsdStr ? parseFloat(priceUsdStr) : null;
 
-  // Same arithmetic the DexScreener price fallback uses, so a row priced by
-  // either source computes its USD value identically.
+  // One arithmetic for both sources: by the time a token reaches here its
+  // price is either Khalani's own or the one the shared enrichment filled in,
+  // and the column must not depend on which.
   const balanceUsd = computeBalanceUsd(balanceRaw, token.decimals, priceUsd);
 
   return {

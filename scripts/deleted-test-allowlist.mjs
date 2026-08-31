@@ -20,7 +20,13 @@
  * outlives its merge is stale by construction and the gate says so.
  */
 
-export const DELETED_TEST_ALLOWLIST = [];
+export const DELETED_TEST_ALLOWLIST = [
+  {
+    path: "src/__tests__/vex-agent/sync/live-khalani-price-fallback.test.ts",
+    reason: "Same subject removal: the gated live probe followed the code it probes.",
+    coveredBy: "src/__tests__/tools/khalani/live-balance-price-enrichment.test.ts.",
+  },
+];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
   DELETED_TEST_ALLOWLIST.map((entry) => entry.path),

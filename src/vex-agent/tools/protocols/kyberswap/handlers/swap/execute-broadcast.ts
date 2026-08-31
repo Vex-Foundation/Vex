@@ -20,7 +20,7 @@ import {
   type ApprovedKyberSwap,
   type KyberBuildVerdict,
 } from "@tools/kyberswap/evm/swap-calldata-guard.js";
-import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
+import type { DeferredEvmSigner, FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
 import type { ResolvedKyberTokenMetadata } from "@tools/kyberswap/helpers.js";
 import type { KyberChainSlug } from "@tools/kyberswap/types.js";
 import logger from "@utils/logger.js";
@@ -47,6 +47,7 @@ import { kyberFailureMessage } from "./error-output.js";
 import { buildPostIntentFailureResult } from "./execute-failure.js";
 import type { PreparedSwapExecution } from "./execute-plan.js";
 import { venueFallbackNoteOnMinedRevert } from "./fallback-messaging.js";
+import { assertKyberPreSignSpendability } from "./quote-spendability.js";
 import { safetyDisclosureSentence, type SafetyCheckUnavailable } from "./safety-disclosure.js";
 
 export interface SwapBroadcastInput {
@@ -109,7 +110,28 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
     safetyCheckUnavailable,
   } = input;
   const safetyDisclosure = safetyDisclosureSentence(safetyCheckUnavailable);
-  const { executionId, events, plans, buildResp, swapGuard } = prepared;
+  const { executionId, events, plans, buildResp, swapGuard, debitPlan } = prepared;
+
+  // THE DEFERRED SIGNER ARM, for the one property it exists to give: the
+  // signature is produced OFFLINE, so nothing at all reaches a provider between
+  // the pre-sign gate below and the bytes being signed. On the eager arm viem's
+  // wallet action awaits one `eth_chainId` of its own after that gate (measured
+  // in viem 2.54.3), and a gate whose subject is "can this wallet still pay"
+  // must not have a network round trip standing after it.
+  //
+  // The key is resolved before this function is called, as it always has been -
+  // this arm's OTHER property (a late key) is not what the venue path is using
+  // it for, which is why `createSigner` simply hands back the wallet client the
+  // execute already holds and `onBeforeSign` here is empty: the venue's gate is
+  // the `hooks.onBeforeSign` below, which `signStageBroadcast` runs strictly
+  // later, immediately before the signature.
+  const signer: DeferredEvmSigner = {
+    kind: "deferred",
+    address: walletAddress,
+    chain: walletClient.chain,
+    onBeforeSign: async () => {},
+    createSigner: async () => walletClient,
+  };
 
   let currentIndex = 0;
   // Read-after-write anchor for the NEXT leg: an allowance this loop just
@@ -129,7 +151,7 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
       const plan = plans[i]!;
       const eventRow = events[i]!;
       const outcome: StagedBroadcastOutcome = await signStageBroadcast(
-        publicClient, walletClient, plan.txParams,
+        publicClient, signer, plan.txParams,
         {
           onNonceReserved: (request) => reserveActivityEvmNonce(eventRow.id, request),
           onHashStaged: async (handles) => {
@@ -164,24 +186,41 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
           // calldata blob or a native value altered on that path would have been
           // signed under a verdict that never looked at it. So the router, the
           // embedded floor and the attached value are asserted against the
-          // request itself, through the same pure verdict - no IO, so the
-          // staged-broadcast pre-sign window stays provider-free.
-          ...(plan.eventRole === "swap"
-            ? {
-                onBeforeSign: async (request) => {
-                  const verdict = verifyFinalSwapRequest(request, swapGuard.approved);
-                  if (!verdict.ok) {
-                    throw new VexError(
-                      verdict.kind === "price_floor"
-                        ? ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED
-                        : ErrorCodes.KYBER_UNSAFE_BUILD,
-                      `Refused at signing: ${verdict.reason}.`,
-                      "Nothing was signed. Request a fresh kyberswap__swap_quote.",
-                    );
-                  }
-                },
+          // request itself, through the same pure verdict.
+          //
+          // THE SPENDABILITY HALF runs on EVERY leg, not only the swap: a wallet
+          // that can pay for the approval and not for the swap ends up with an
+          // allowance granted and no position, which is precisely the outcome a
+          // per-leg check cannot see. At leg N the check covers leg N as the
+          // request actually prices it, plus every leg still authorized after
+          // it, plus the measured follow-up reserve (contract C2.5). The
+          // quote-time preview is never the authority here - it states what was
+          // true when the quote was taken and says so on the card.
+          //
+          // This half DOES read the chain, and the hook is the one place it may:
+          // `signStageBroadcast` issues nothing of its own after the hook
+          // resolves, and the deferred arm above signs offline, so the state
+          // this gate validated is still the state the bytes commit to.
+          onBeforeSign: async (request) => {
+            if (plan.eventRole === "swap") {
+              const verdict = verifyFinalSwapRequest(request, swapGuard.approved);
+              if (!verdict.ok) {
+                throw new VexError(
+                  verdict.kind === "price_floor"
+                    ? ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED
+                    : ErrorCodes.KYBER_UNSAFE_BUILD,
+                  `Refused at signing: ${verdict.reason}.`,
+                  "Nothing was signed. Request a fresh kyberswap__swap_quote.",
+                );
               }
-            : {}),
+            }
+            await assertKyberPreSignSpendability({
+              client: publicClient,
+              plan: debitPlan,
+              legIndex: i,
+              request,
+            });
+          },
         },
         priorLeg,
       );

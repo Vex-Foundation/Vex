@@ -14,6 +14,7 @@
  */
 
 import { getKhalaniClient } from "@tools/khalani/client.js";
+import { enrichKhalaniBalancePrices } from "@tools/khalani/balance-price-enrichment.js";
 import {
   getCachedKhalaniChains,
   getChain,
@@ -21,6 +22,7 @@ import {
   resolveChainId,
 } from "@tools/khalani/chains.js";
 import {
+  calculateTokensTotalUsd,
   getSelectedChainIdsForFamily,
   getTokenBalancesAcrossChains,
   parseBalanceChainSelection,
@@ -266,6 +268,17 @@ export async function handleTokenBalances(
   // top-up, like WalletBalances. Only the sync/projection path stays
   // native-free (it full-replaces proj_balances).
   const scan = await getTokenBalancesAcrossChains({ address, family: walletFamily, chainIds, includeNative: true });
+  // Fill the prices Khalani left null, through the SAME pass the background
+  // sync and `WalletBalances` run (`tools/khalani/balance-price-enrichment.ts`).
+  // Without it the two agent-visible balance surfaces could answer different
+  // prices for the same token at the same moment. Khalani's own prices win,
+  // row order is the scan's, provider failures are fail-soft per chain, and
+  // the compatibility total is recomputed off the enriched rows so it cannot
+  // disagree with what the rows show.
+  const enrichedTokens = (
+    await enrichKhalaniBalancePrices(scan.tokens, { signal: context.abortSignal })
+  ).rows.map((row) => row.token);
+  const totalUsd = calculateTokensTotalUsd(enrichedTokens);
   // Entries the balances boundary refused for their `decimals` alone. They are
   // holdings the wallet really has, so reporting them is the difference between
   // "we could not read the scale of this token" and "you hold none of it"; the
@@ -282,8 +295,8 @@ export async function handleTokenBalances(
     output: JSON.stringify({
       address,
       wallet: walletFamily,
-      count: scan.tokens.length,
-      totalUsd: scan.totalUsd,
+      count: enrichedTokens.length,
+      totalUsd,
       scannedChainIds: scan.scannedChainIds,
       chainErrors: scan.chainErrors,
       // An EVM scan reads no Solana token accounts, so the field is present and
@@ -292,17 +305,17 @@ export async function handleTokenBalances(
       ...disclosure,
       // Project to concise token rows (P0-4): the balances path is where
       // `extensions.balance` lives, so the lifted balance/price stay surfaced.
-      tokens: projectTokens(scan.tokens),
+      tokens: projectTokens(enrichedTokens),
     }, null, 2),
     data: {
       address,
       wallet: walletFamily,
-      totalUsd: scan.totalUsd,
+      totalUsd,
       scannedChainIds: scan.scannedChainIds,
       chainErrors: scan.chainErrors,
       accountErrors: [],
       ...disclosure,
-      tokens: scan.tokens,
+      tokens: enrichedTokens,
     },
   };
 }

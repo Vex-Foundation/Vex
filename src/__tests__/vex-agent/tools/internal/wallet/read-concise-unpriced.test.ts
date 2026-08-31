@@ -16,10 +16,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ChainFamily } from "@tools/khalani/types.js";
 
 const mockScan = vi.fn();
+// The shared Khalani price enrichment now runs on this path too, so its ONE
+// provider boundary is scripted to answer nothing: rows Khalani left unpriced
+// stay unpriced, and no test in this suite reaches the network.
+vi.mock("@tools/dexscreener/price-read.js", () => ({
+  readTokensPairs: () => Promise.resolve([]),
+  readTokenPools: () => Promise.resolve([]),
+}));
+
 vi.mock("@tools/khalani/balances.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("@tools/khalani/balances.js")>();
   return {
     getSelectedChainIdsForFamily: original.getSelectedChainIdsForFamily,
+    calculateTokensTotalUsd: original.calculateTokensTotalUsd,
     parseBalanceChainSelection: async (raw: string | undefined) => {
       if (!raw) return { rawProvided: false, byFamily: new Map() };
       return { rawProvided: true, byFamily: new Map<ChainFamily, number[]>() };

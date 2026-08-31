@@ -85,7 +85,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   hasPendingActivityForWallets: (...a: unknown[]) => mockHasPendingActivity(...a),
 }));
 
-const { syncWalletBalances, fullBalanceSync, selectiveBalanceSync } = await import(
+const { syncWalletBalances, fullBalanceSync, selectiveBalanceSync, computeBalanceUsd } = await import(
   "../../../vex-agent/sync/balance-sync.js"
 );
 
@@ -425,5 +425,32 @@ describe("local-chain routing", () => {
     // 4663 still syncs via the local path during a Khalani outage.
     expect(mockLocalSync).toHaveBeenCalledWith("eip155", EVM_A, 4663);
     expect(mockScan).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The `balanceUsd` column of a projected row.
+ *
+ * MIGRATED 2026-08-31 from `khalani-price-fallback.test.ts`, which owned this
+ * arithmetic while it lived beside the price fallback. The fallback moved to
+ * `tools/khalani/balance-price-enrichment.ts` and works on provider rows, so
+ * the DB-row arithmetic stayed here with its only consumer, the sync mapper.
+ */
+describe("computeBalanceUsd", () => {
+  it("returns null rather than a guessed value when decimals are unknown", () => {
+    expect(computeBalanceUsd("1000000000000000000", null, 5)).toBe(null);
+  });
+
+  it("returns null for a zero balance and for a missing price", () => {
+    expect(computeBalanceUsd("0", 18, 5)).toBe(null);
+    expect(computeBalanceUsd("1000000000000000000", 18, null)).toBe(null);
+  });
+
+  it("returns null rather than throwing on an unparseable raw amount", () => {
+    expect(computeBalanceUsd("not-an-integer", 18, 5)).toBe(null);
+  });
+
+  it("converts a raw amount at its decimals", () => {
+    expect(computeBalanceUsd("400000", 6, 1.00014)).toBeCloseTo(0.400056, 6);
   });
 });

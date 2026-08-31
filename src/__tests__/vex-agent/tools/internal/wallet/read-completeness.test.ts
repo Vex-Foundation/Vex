@@ -28,10 +28,19 @@ const SOLANA_CHAIN_ID = 20_011_000_000;
 const ROBINHOOD_CHAIN_ID = 4663;
 
 const mockScan = vi.fn();
+// The shared Khalani price enrichment now runs on this path too, so its ONE
+// provider boundary is scripted to answer nothing: rows Khalani left unpriced
+// stay unpriced, and no test in this suite reaches the network.
+vi.mock("@tools/dexscreener/price-read.js", () => ({
+  readTokensPairs: () => Promise.resolve([]),
+  readTokenPools: () => Promise.resolve([]),
+}));
+
 vi.mock("@tools/khalani/balances.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("@tools/khalani/balances.js")>();
   return {
     getSelectedChainIdsForFamily: original.getSelectedChainIdsForFamily,
+    calculateTokensTotalUsd: original.calculateTokensTotalUsd,
     parseBalanceChainSelection: async (raw: string | undefined) => {
       if (!raw) return { rawProvided: false, byFamily: new Map() };
       const byFamily = new Map<ChainFamily, number[]>();
@@ -195,12 +204,21 @@ beforeEach(() => {
   mockScan.mockResolvedValue(emptyScan());
 });
 
+/** The one snapshot every case expects; a missing one fails with the envelope, not a TypeError. */
+function firstWallet<E extends { wallets: readonly unknown[] }>(envelope: E): NonNullable<E["wallets"][number]> {
+  const wallet = envelope.wallets[0];
+  if (wallet === undefined || wallet === null) {
+    throw new Error(`expected one wallet snapshot, got: ${JSON.stringify(envelope)}`);
+  }
+  return wallet as NonNullable<E["wallets"][number]>;
+}
+
 describe("WalletBalances completeness - the inventory axis", () => {
   it("reports a clean Khalani read as a complete, exhaustive inventory", async () => {
     mockScan.mockResolvedValue(emptyScan({ tokens: [khalaniToken()], totalUsd: 6 }));
 
     const envelope = await read({ walletFamily: "eip155", chainIds: "ethereum" });
-    const snapshot = envelope.wallets[0]!;
+    const snapshot = firstWallet(envelope);
 
     expect(snapshot.inventoryComplete).toBe(true);
     expect(snapshot.inventoryIncompleteReason).toBeUndefined();
@@ -220,7 +238,7 @@ describe("WalletBalances completeness - the inventory axis", () => {
     // Until the seed-plus-pin enumeration is replaced, a token outside that set
     // is INVISIBLE on this chain, not absent - and the agent has to be told.
     const envelope = await read({ walletFamily: "eip155", chainIds: "robinhood" });
-    const snapshot = envelope.wallets[0]!;
+    const snapshot = firstWallet(envelope);
 
     expect(snapshot.inventoryComplete).toBe(false);
     expect(snapshot.inventoryIncompleteReason).toBe("source_not_exhaustive");
@@ -242,7 +260,7 @@ describe("WalletBalances completeness - the inventory axis", () => {
   it("never stamps a failed read with a fresh observation time", async () => {
     mockReadLocal.mockRejectedValue(new Error("rpc down"));
 
-    const snapshot = (await read({ walletFamily: "eip155", chainIds: "robinhood" })).wallets[0]!;
+    const snapshot = firstWallet(await read({ walletFamily: "eip155", chainIds: "robinhood" }));
 
     expect(snapshot.inventoryIncompleteReason).toBe("chain_read_failed");
     expect(snapshot.failedChainIds).toEqual([ROBINHOOD_CHAIN_ID]);
@@ -256,7 +274,7 @@ describe("WalletBalances completeness - the inventory axis", () => {
       chainErrors: [{ chainId: 8453, chainName: "Base", message: "indexer down" }],
     }));
 
-    const snapshot = (await read({ walletFamily: "eip155", chainIds: "ethereum" })).wallets[0]!;
+    const snapshot = firstWallet(await read({ walletFamily: "eip155", chainIds: "ethereum" }));
 
     expect(snapshot.inventoryComplete).toBe(false);
     expect(snapshot.failedChainIds).toEqual([8453]);
@@ -274,7 +292,7 @@ describe("WalletBalances completeness - the inventory axis", () => {
       tokenFailures: [{ address: "0xdead", reason: "call reverted" }],
     });
 
-    const snapshot = (await read({ walletFamily: "eip155", chainIds: "robinhood" })).wallets[0]!;
+    const snapshot = firstWallet(await read({ walletFamily: "eip155", chainIds: "robinhood" }));
 
     // Worst cause wins, and a missing token outranks a bounded source.
     expect(snapshot.inventoryIncompleteReason).toBe("token_read_failed");
@@ -296,7 +314,7 @@ describe("WalletBalances completeness - the valuation axis", () => {
       tokenFailures: [],
     });
 
-    const snapshot = (await read({ walletFamily: "eip155", chainIds: "robinhood" })).wallets[0]!;
+    const snapshot = firstWallet(await read({ walletFamily: "eip155", chainIds: "robinhood" }));
 
     // The defect this replaces: `unpricedOmitted` is a drop counter and is
     // absent here because the detailed path drops nothing at all.
@@ -318,13 +336,13 @@ describe("WalletBalances completeness - the valuation axis", () => {
       tokenFailures: [],
     });
 
-    const detailed = (await read({ walletFamily: "eip155", chainIds: "robinhood" })).wallets[0]!;
-    const concise = (await read({
+    const detailed = firstWallet(await read({ walletFamily: "eip155", chainIds: "robinhood" }));
+    const concise = firstWallet(await read({
       walletFamily: "eip155",
       chainIds: "robinhood",
       response_format: "concise",
       limit: 1,
-    })).wallets[0]!;
+    }));
 
     expect(concise.tokens.length).toBeLessThan(detailed.tokens.length);
     for (const field of [
@@ -348,7 +366,7 @@ describe("WalletBalances completeness - the valuation axis", () => {
       tokenFailures: [],
     });
 
-    const snapshot = (await read({ walletFamily: "eip155", chainIds: "robinhood" })).wallets[0]!;
+    const snapshot = firstWallet(await read({ walletFamily: "eip155", chainIds: "robinhood" }));
 
     expect(snapshot.unpricedHeldCount).toBe(0);
     expect(snapshot.valuationComplete).toBe(true);
@@ -365,7 +383,7 @@ describe("WalletBalances completeness - the valuation axis", () => {
 
     const envelope = await read({ walletFamily: "eip155", chainIds: "ethereum" });
 
-    expect(envelope.wallets[0]!.pricedTotalUsd).toBe("0.3");
+    expect(firstWallet(envelope).pricedTotalUsd).toBe("0.3");
     // The compatibility number keeps its float identity, and now always
     // travels with the basis that says what it counted.
     expect(envelope.totalUsd).toBeCloseTo(0.3, 10);
@@ -391,7 +409,7 @@ describe("WalletBalances - refused balance entries (WP10-L)", () => {
       rejectedEntries: [rejected(0, "500")],
     }));
 
-    const snapshot = (await read({ walletFamily: "eip155", chainIds: "ethereum" })).wallets[0]!;
+    const snapshot = firstWallet(await read({ walletFamily: "eip155", chainIds: "ethereum" }));
 
     expect(snapshot.rejectedEntryCount).toBe(1);
     expect(snapshot.rejectedEntries).toEqual([rejected(0, "500")]);
@@ -407,7 +425,7 @@ describe("WalletBalances - refused balance entries (WP10-L)", () => {
   it("never echoes the refused decimals", async () => {
     mockScan.mockResolvedValue(emptyScan({ rejectedEntries: [rejected(0, "500")] }));
 
-    const snapshot = (await read({ walletFamily: "eip155", chainIds: "ethereum" })).wallets[0]!;
+    const snapshot = firstWallet(await read({ walletFamily: "eip155", chainIds: "ethereum" }));
 
     expect(snapshot.rejectedEntries[0]).not.toHaveProperty("decimals");
   });
@@ -417,7 +435,7 @@ describe("WalletBalances - refused balance entries (WP10-L)", () => {
       rejectedEntries: Array.from({ length: 26 }, (_unused, index) => rejected(index, "1")),
     }));
 
-    const snapshot = (await read({ walletFamily: "eip155", chainIds: "ethereum" })).wallets[0]!;
+    const snapshot = firstWallet(await read({ walletFamily: "eip155", chainIds: "ethereum" }));
 
     expect(snapshot.rejectedEntryCount).toBe(26);
     expect(snapshot.rejectedEntries).toHaveLength(20);
@@ -437,12 +455,12 @@ describe("WalletBalances - refused balance entries (WP10-L)", () => {
       rejectedEntries: Array.from({ length: 21 }, (_unused, index) => rejected(index, "1")),
     }));
 
-    const snapshot = (await read({
+    const snapshot = firstWallet(await read({
       walletFamily: "eip155",
       chainIds: "ethereum",
       response_format: "concise",
       limit: 1,
-    })).wallets[0]!;
+    }));
 
     expect(snapshot.truncated).toBe(true);
     expect(snapshot.truncationNote).toContain("response_format:\"detailed\"");
@@ -455,7 +473,7 @@ describe("WalletBalances - refused balance entries (WP10-L)", () => {
       rejectedEntries: [rejected(0, "0")],
     }));
 
-    const snapshot = (await read({ walletFamily: "eip155", chainIds: "ethereum" })).wallets[0]!;
+    const snapshot = firstWallet(await read({ walletFamily: "eip155", chainIds: "ethereum" }));
 
     expect(snapshot.rejectedEntryCount).toBe(1);
     expect(snapshot.inventoryComplete).toBe(true);
@@ -467,7 +485,7 @@ describe("WalletBalances - refused balance entries (WP10-L)", () => {
 describe("WalletBalances completeness - the top-level envelope", () => {
   it("carries the identical field set as a wallet snapshot", async () => {
     const envelope = await read({ walletFamily: "eip155", chainIds: "ethereum" });
-    const snapshot = envelope.wallets[0]!;
+    const snapshot = firstWallet(envelope);
 
     for (const field of [
       "inventoryComplete",
@@ -507,6 +525,6 @@ describe("WalletBalances completeness - the top-level envelope", () => {
     expect(envelope.inventoryIncompleteReason).toBe("wallet_read_failed");
     expect(envelope.totalUsdBasis).toBe("priced_only");
     // The surviving wallet's own axes are untouched by the sibling's failure.
-    expect(envelope.wallets[0]!.inventoryComplete).toBe(true);
+    expect(firstWallet(envelope).inventoryComplete).toBe(true);
   });
 });

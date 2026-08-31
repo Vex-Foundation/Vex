@@ -49,13 +49,17 @@ vi.mock("../../../vex-agent/sync/pendle-enrichment.js", () => ({
   }),
 }));
 
-// The price fallback is its own suite and would otherwise reach the network.
-// `computeBalanceUsd` stays REAL, because the USD arithmetic of a salvaged row
-// is part of what is under test here.
-vi.mock("../../../vex-agent/sync/khalani-price-fallback.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../vex-agent/sync/khalani-price-fallback.js")>();
-  return { ...actual, fillMissingKhalaniPrices: vi.fn().mockResolvedValue(undefined) };
-});
+// Price enrichment is its own suite and would otherwise reach the network. It
+// passes the provider's rows straight through here, unpriced; the USD
+// arithmetic of a salvaged row lives in the sync module itself and stays REAL,
+// because it is part of what is under test.
+vi.mock("@tools/khalani/balance-price-enrichment.js", () => ({
+  enrichKhalaniBalancePrices: (tokens: readonly unknown[]) =>
+    Promise.resolve({
+      rows: tokens.map((token) => ({ token, priceSource: null })),
+      counts: [],
+    }),
+}));
 
 const mockReplaceBalances = vi.fn().mockResolvedValue(0);
 const mockGetBalances = vi.fn().mockResolvedValue([]);

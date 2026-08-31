@@ -39,10 +39,20 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       + "newer quote for the same trade replaces it. `unpriceable_output` means KyberSwap priced the input but "
       + "returned no USD value for the output, so the trade cannot be checked against a reference price; "
       + "`excessive_impact` means the route gives up 15% or more of the input's reference value; "
-      + "`oversize_snapshot` means the route is too large to store verbatim for a later execute. Each of those "
-      + "answers with the full route and refuses to authorize a swap, and `summary` names the next step. A pair "
-      + "KyberSwap cannot price on either side is refused outright rather than quoted. The result is "
-      + "complete and there is no pagination.",
+      + "`oversize_snapshot` means the route is too large to store verbatim for a later execute. A ROUTE BEING "
+      + "AVAILABLE DOES NOT MEAN THE WALLET CAN PAY FOR IT, and three further outcomes say so: "
+      + "`insufficient_balance` means the selected wallet does not hold enough of the input token and names the "
+      + "required, current and missing amounts; `gas_reserve_insufficient` means it cannot cover this swap's TOTAL "
+      + "native debit, which is every transaction the swap would broadcast (an allowance reset and an allowance "
+      + "where they are needed, plus the swap) including the L1 data fee where the chain charges one, plus a "
+      + "measured reserve for one more transaction afterwards; `balance_unavailable` means a balance this trade "
+      + "depends on could not be READ, which is never the same statement as the wallet being short and always "
+      + "fails closed. Each of those answers with the full route and refuses to authorize a swap, and `summary` "
+      + "names the next step. Those balance figures are a QUOTE-TIME OBSERVATION read at the pending block: they "
+      + "are advisory, they age, and the authoritative read happens again immediately before each signature "
+      + "inside `kyberswap__swap_execute`, so an execute can still refuse for balance after this call said "
+      + "executable. A pair KyberSwap cannot price on either side is refused outright rather than quoted. The "
+      + "result is complete and there is no pagination.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -79,6 +89,12 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       + "quote, a quote superseded by a newer one for the same trade, and a quote whose stored route no longer "
       + "matches its digest are each refused BY NAME before anything is signed, and each refusal tells you to "
       + "request a fresh `kyberswap__swap_quote`. None of those refusals costs gas. "
+      + "BALANCE IS RE-READ HERE, AND THIS READ IS THE AUTHORITY: immediately before EVERY signature - the "
+      + "allowance transactions as well as the swap - the wallet's input-token and native balances are read again "
+      + "at the pending block, and the swap is refused unless they cover that transaction plus every transaction "
+      + "still to come plus a measured reserve for one more afterwards. The quote's own balance figures are "
+      + "advisory and older. A refusal here spends nothing and returns status \"not_attempted\"; it distinguishes "
+      + "a wallet that is SHORT from a balance that could not be READ, and the two have different remedies. "
       + "UNITS: `amountIn` is HUMAN decimals and is converted with the resolved token's own decimals; every amount "
       + "returned as `amountIn`/`amountOut` is HUMAN and is the amount DECODED FROM THE RECEIPT, which can differ "
       + "from what was requested. Vex also takes an integrator fee inside the route itself, disclosed on the quote "

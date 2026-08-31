@@ -71,6 +71,10 @@ vi.mock("@tools/khalani/balances.js", async (importOriginal) => {
 const mockReadTokensPairs = vi.fn();
 vi.mock("@tools/dexscreener/price-read.js", () => ({
   readTokensPairs: (...args: unknown[]) => mockReadTokensPairs(...args),
+  // The shared Khalani price enrichment runs on this path too and may spend its
+  // bounded pool-list rescue; it answers nothing here, so the EVM rows this
+  // Solana suite carries stay exactly as the scan produced them.
+  readTokenPools: () => Promise.resolve([]),
 }));
 vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
   getJupiterTokensByMint: async () => [],

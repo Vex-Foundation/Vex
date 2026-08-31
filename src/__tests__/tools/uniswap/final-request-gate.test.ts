@@ -317,7 +317,17 @@ const ALTERED = {
 };
 
 function harness() {
-  const prepared = { ...ALTERED, gas: 30_000n, nonce: 7, chain: CHAIN };
+  // A real `prepareTransactionRequest` always returns a priced request, and the
+  // offline signature this venue takes needs the fee fields to infer the
+  // transaction type - the same fields the pre-sign gate prices the leg from.
+  const prepared = {
+    ...ALTERED,
+    gas: 30_000n,
+    nonce: 7,
+    chain: CHAIN,
+    maxFeePerGas: 1_000_000n,
+    maxPriorityFeePerGas: 1_000n,
+  };
   const transport = (): Transport => http("http://127.0.0.1:1");
 
   const publicClient = Object.assign(
@@ -355,7 +365,35 @@ describe("signUniswapTransaction's pre-sign fence", () => {
       value: ALTERED.value,
       gas: gasLimitWithHeadroom(21_000n),
       nonce: 7,
+      // The PRICES the request carries, because gas units times an unknown
+      // price is not money and the debit gate needs both.
+      gasPrice: undefined,
+      maxFeePerGas: 1_000_000n,
+      maxPriorityFeePerGas: 1_000n,
     });
+  });
+
+  it("refuses to sign at all when the resolved wallet cannot sign locally", async () => {
+    const h = harness();
+    // A JSON-RPC account can only be signed for THROUGH the node, which is
+    // exactly the round trip the fence exists to exclude. Refused, rather than
+    // silently downgraded to the wallet action that reopens it.
+    const remote = createWalletClient({
+      account: getAddress("0x2222222222222222222222222222222222222222"),
+      chain: CHAIN,
+      transport: http("http://127.0.0.1:1"),
+    });
+    const walletClient = Object.assign(remote, {
+      chain: CHAIN,
+      prepareTransactionRequest: h.walletClient.prepareTransactionRequest,
+      signTransaction: h.signTransaction,
+    });
+
+    await expect(signUniswapTransaction(
+      h.publicClient, walletClient, REQUESTED, undefined, reserveNonce,
+    )).rejects.toMatchObject({ name: "UniswapOfflineSignerUnavailableError" });
+
+    expect(h.signTransaction).not.toHaveBeenCalled();
   });
 
   it("signs NOTHING when the gate refuses", async () => {
@@ -377,7 +415,11 @@ describe("signUniswapTransaction's pre-sign fence", () => {
       h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce,
     );
 
-    expect(signed.serializedTransaction).toBe(SERIALIZED);
-    expect(h.signTransaction).toHaveBeenCalledTimes(1);
+    // Signed OFFLINE by the local account, so these are real signed bytes and
+    // viem's wallet action - the one that would have asked the node for a chain
+    // id between the fence and the signature - was never taken.
+    expect(signed.serializedTransaction.startsWith("0x")).toBe(true);
+    expect(signed.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(h.signTransaction).not.toHaveBeenCalled();
   });
 });

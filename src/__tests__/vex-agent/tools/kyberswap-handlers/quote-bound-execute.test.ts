@@ -57,8 +57,8 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
 
 const mockSignStageBroadcast = vi.fn();
 
-vi.mock("@tools/kyberswap/evm-utils.js", () => ({
-  getKyberEvmClients: () => ({ publicClient: {}, walletClient: {} }),
+vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
+  ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: vi.fn(async (_slug: string, address: string) => ({
     address, symbol: "USDC", name: "USD Coin", decimals: 6, isNative: false as const,
   })),
@@ -251,6 +251,9 @@ function buildResponse(calldata: Hex = capture.build.data as Hex, amountOut = ca
     data: {
       routerAddress: capture.routerAddress,
       data: calldata,
+      // The provider's own gas figure for the swap leg. MEASURED live on Base
+      // 2026-08-31: `/route/build` answered `gas: "287581"` for a real USDC route.
+      gas: "287581",
       transactionValue: capture.build.transactionValue,
       amountIn: capture.build.amountIn,
       amountOut,
@@ -263,8 +266,10 @@ function buildResponse(calldata: Hex = capture.build.data as Hex, amountOut = ca
  * The swap leg's pre-sign gate, as the staged broadcast would call it.
  *
  * Reached through the recorded `signStageBroadcast` call rather than reimported,
- * so what is exercised is the hook the handler actually installed on the SWAP
- * leg (an allowance leg installs none).
+ * so what is exercised is the hook the handler actually installed. Every leg now
+ * carries one - the spendability half runs on all of them - and the calldata
+ * assertion inside it applies only to the swap; the claims in this file are
+ * about the swap leg, which is the only one these fixtures plan.
  */
 function swapPreSignGate(): (request: FinalSignedRequest) => Promise<void> {
   const hooks = required(mockSignStageBroadcast.mock.calls[0], "a staged broadcast")[3] as {
@@ -288,6 +293,13 @@ function finalRequest(patch: Partial<FinalSignedRequest> = {}): FinalSignedReque
     value: BigInt(capture.build.transactionValue),
     gas: 300_000n,
     nonce: 3,
+    // The prices the request REALLY carries - the pre-sign spendability gate
+    // computes the debit from these and refuses a request that names none, so a
+    // fixture without them would be a transaction no node ever produces.
+    // MEASURED on Base 2026-08-31: base fee 5,000,000 wei, priority 1,210,000.
+    gasPrice: undefined,
+    maxFeePerGas: 11_210_000n,
+    maxPriorityFeePerGas: 1_210_000n,
     ...patch,
   };
 }

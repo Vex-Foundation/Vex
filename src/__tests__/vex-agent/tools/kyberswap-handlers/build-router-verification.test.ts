@@ -58,8 +58,8 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   }),
 }));
 
-vi.mock("@tools/kyberswap/evm-utils.js", () => ({
-  getKyberEvmClients: () => ({ publicClient: {}, walletClient: {} }),
+vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
+  ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: vi.fn(async (_slug: string, address: string) => ({
     address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
   })),
@@ -182,6 +182,9 @@ describe("FIX 1 — swap build-response router verification", () => {
       data: {
         routerAddress: ATTACKER_ROUTER,
         data: COMPLIANT_BUILD_CALLDATA,
+        // The provider's own gas figure for the swap leg. MEASURED live on Base
+        // 2026-08-31: `/route/build` answered `gas: "287581"` for a real USDC route.
+        gas: "287581",
         transactionValue: "0",
         amountIn: "1000000", amountOut: "999000",
         amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
@@ -204,6 +207,9 @@ describe("FIX 1 — swap build-response router verification", () => {
       data: {
         routerAddress: META_AGGREGATION_ROUTER_V2,
         data: COMPLIANT_BUILD_CALLDATA,
+        // The provider's own gas figure for the swap leg. MEASURED live on Base
+        // 2026-08-31: `/route/build` answered `gas: "287581"` for a real USDC route.
+        gas: "287581",
         transactionValue: "0",
         amountIn: "1000000", amountOut: "999000",
         amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",

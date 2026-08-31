@@ -59,8 +59,8 @@ const mockReadErc20Metadata = vi.fn(async (_slug: string, address: string) => ({
 
 const mockVerifyRouterAddress = vi.fn();
 
-vi.mock("@tools/kyberswap/evm-utils.js", () => ({
-  getKyberEvmClients: () => ({ publicClient: {}, walletClient: {} }),
+vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
+  ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: (...args: unknown[]) => mockVerifyRouterAddress(...args),
   planKyberAllowance: vi.fn(),

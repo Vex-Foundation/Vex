@@ -40,8 +40,8 @@ const mockReadErc20Metadata = vi.fn(async (_slug: string, address: string) => ({
   address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
 }));
 
-vi.mock("@tools/kyberswap/evm-utils.js", () => ({
-  getKyberEvmClients: () => ({ publicClient: {}, walletClient: {} }),
+vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
+  ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
   planKyberAllowance: vi.fn().mockResolvedValue({ needsReset: false, needsApprove: false }),

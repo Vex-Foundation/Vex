@@ -4905,7 +4905,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 3110,
+      "descriptionBytes": 3718,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -4966,7 +4966,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2569,
+      "descriptionBytes": 3591,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -10699,7 +10699,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1059,
+      "descriptionBytes": 1442,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -10760,7 +10760,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 696,
+      "descriptionBytes": 1790,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
