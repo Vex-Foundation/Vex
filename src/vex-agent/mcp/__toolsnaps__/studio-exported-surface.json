@@ -905,7 +905,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 3111,
+      "descriptionBytes": 5184,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -4707,7 +4707,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2804,
+      "descriptionBytes": 3537,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -9895,7 +9895,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 526,
+      "descriptionBytes": 1222,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -9949,7 +9949,7 @@
             "type": "string"
           },
           "wrapAndUnwrapSol": {
-            "description": "Auto wrap/unwrap native SOL (default true).",
+            "description": "Auto wrap/unwrap native SOL (default true). It also decides WHICH SOL balance the input side spends, and the two are different balances: tokenIn \"SOL\" always means the wallet's own native lamports, while tokenIn set to the explicit wrapped-SOL mint So11111111111111111111111111111111111111112 with wrapAndUnwrapSol false means an existing wrapped-SOL token account. The explicit mint WITH wrapping enabled is REJECTED by name as ambiguous, and is never silently resolved to either balance.",
             "type": "boolean"
           }
         },
@@ -9970,7 +9970,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1189,
+      "descriptionBytes": 3052,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -10024,7 +10024,7 @@
             "type": "string"
           },
           "wrapAndUnwrapSol": {
-            "description": "Auto wrap/unwrap native SOL (default true).",
+            "description": "Auto wrap/unwrap native SOL (default true). It also decides WHICH SOL balance the input side spends, and the two are different balances: tokenIn \"SOL\" always means the wallet's own native lamports, while tokenIn set to the explicit wrapped-SOL mint So11111111111111111111111111111111111111112 with wrapAndUnwrapSol false means an existing wrapped-SOL token account. The explicit mint WITH wrapping enabled is REJECTED by name as ambiguous, and is never silently resolved to either balance.",
             "type": "boolean"
           }
         },

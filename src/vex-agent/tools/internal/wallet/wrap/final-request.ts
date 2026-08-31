@@ -36,12 +36,13 @@
  *    calldata alone would pass while the transaction moved a different quantity
  *    of the user's funds. Neither may a `withdraw` quietly attach native value.
  *  - `gas` must be within the approved gas LIMIT. The fee PRICE ceilings
- *    (`maxFeePerGas`, `maxPriorityFeePerGas`, `gasPrice`) are not carried by
- *    `FinalSignedRequest` at all; they are enforced by `assertWithinFeeBounds`
- *    on the very same object a few lines earlier in `signStageBroadcast`, which
- *    throws `StagedFeeBoundsExceededError` before this gate is reached. Gas is
- *    re-asserted here anyway because it is the one bound this type CAN see, and
- *    a bound proven twice on the signed object costs nothing.
+ *    (`maxFeePerGas`, `maxPriorityFeePerGas`, `gasPrice`) now ride on
+ *    `FinalSignedRequest` as observed facts (WP2-E0), but their ENFORCEMENT
+ *    still lives in `assertWithinFeeBounds`, which runs on the very same
+ *    object a few lines earlier in `signStageBroadcast` and throws
+ *    `StagedFeeBoundsExceededError` before this gate is reached. Gas is
+ *    re-asserted here anyway because a bound proven twice on the signed
+ *    object costs nothing.
  *
  * ## Contract
  *

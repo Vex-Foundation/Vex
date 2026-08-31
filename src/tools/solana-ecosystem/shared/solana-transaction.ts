@@ -29,6 +29,7 @@ export {
   type PreparedSolanaTx,
   type KnownSolanaBlockhash,
   type PrepareVersionedTxOptions,
+  type PreSignContext,
   type SolanaSignerContract,
 } from "./solana-transaction/prepare.js";
 export {

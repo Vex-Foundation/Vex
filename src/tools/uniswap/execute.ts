@@ -311,6 +311,13 @@ export async function signUniswapTransaction(
       value: finalRequest.value ?? 0n,
       gas: gasLimit,
       nonce,
+      // The prices the request actually carries. A debit gate needs them
+      // because `gas` is a COUNT: gas units times an unknown price is not
+      // money. Read off the same object, never re-derived, and never `??`-ed
+      // to zero - an absent price is reported absent (`FinalSignedRequest`).
+      gasPrice: finalRequest.gasPrice,
+      maxFeePerGas: finalRequest.maxFeePerGas,
+      maxPriorityFeePerGas: finalRequest.maxPriorityFeePerGas,
     });
   }
   const serializedTransaction = await walletClient.signTransaction(finalRequest);

@@ -29,6 +29,7 @@ import {
   prepareVersionedTx,
   type PreparedSolanaTx,
 } from "@tools/solana-ecosystem/shared/solana-transaction.js";
+import { resolveSolanaSwapInputAsset } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
 import { walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import { findFreshMatchedSwapPrequote } from "@vex-agent/tools/protocols/swap-prequote.js";
 import {
@@ -42,11 +43,17 @@ import { effectiveMaxSlippageBps } from "@vex-agent/tools/protocols/slippage-pol
 import { formatLamportsAsSol } from "@vex-agent/tools/protocols/amount-display.js";
 import logger from "@utils/logger.js";
 
+import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../../../constants/solana-chain.js";
 import type { ProtocolHandler } from "../../../types.js";
 import type { ToolResult } from "../../../../types.js";
 import { str, fail } from "../../../handler-helpers.js";
 import { buildActivityTokenLeg } from "../../activity-token-leg.js";
+import {
+  judgeJupiterSpendability,
+  observeJupiterSwapSpendability,
+  preSignSpendabilityRefusal,
+} from "../../swap-spendability.js";
 import { broadcastStagedSolanaTx } from "../../staged-broadcast.js";
 import { humanAmountToAtomic } from "./swap-amount.js";
 import {
@@ -94,6 +101,17 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
   const converted = humanAmountToAtomic("amountIn", amountInRaw, inputToken.decimals, inputToken.symbol);
   if (!converted.ok) return fail(`${toolId} failed: ${converted.reason}`);
   const amountRaw = converted.amountRaw;
+
+  // Same syntax rule as the quote (owner decision 2026-08-31), decided again
+  // here rather than restored from the row: the quote and the execute must
+  // reach the SAME asset from the same params, and a divergence must refuse
+  // rather than silently spend the other balance.
+  const inputAsset = resolveSolanaSwapInputAsset({
+    query: inputRaw,
+    resolvedMint: inputToken.address,
+    wrapAndUnwrapSol: knobs.wrapAndUnwrapSol,
+  });
+  if (!inputAsset.ok) return fail(`${toolId} failed: ${inputAsset.message}`);
 
   // R4: re-fetch the SAME fresh matched quote the prequote gate
   // (executeProtocolTool, BEFORE this handler runs) already proved exists.
@@ -236,10 +254,42 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
     signedTx = await prepareVersionedTx(prepared.unsignedTx.serialize(), keypair, {
       knownBlockhash: { blockhash: prepared.recentBlockhash, lastValidBlockHeight: prepared.lastValidBlockHeight },
       connection,
+      // THE AUTHORITATIVE READ (contract C2.6). The quote's numbers are
+      // minutes old and were disclosure; these are taken against the EXACT
+      // message about to be signed - its own fee, every lamport it debits from
+      // this wallet, the certified tip, every wallet-paid account rent, and the
+      // measured follow-up reserve - and a shortfall throws before a signature
+      // exists.
+      beforeSign: async ({ message, signer }) => {
+        const observation = await observeJupiterSwapSpendability({
+          connection,
+          owner: addr,
+          signer,
+          message,
+          inputAsset: inputAsset.asset,
+          principalRaw: prepared.raw.inAmount,
+          inputSymbol: inputToken.symbol,
+          inputDecimals: inputToken.decimals,
+        });
+        const judged = judgeJupiterSpendability(observation, {
+          kind: "executable",
+          priceImpactFraction: 0,
+          adverse: false,
+        });
+        const refusal = preSignSpendabilityRefusal(judged.eligibility);
+        if (refusal) throw refusal;
+      },
     });
   } catch (err) {
     const reason = swapFailureMessage(err);
-    await failActivityEvent(eventRow.id, { failureCode: "unknown", failureReason: reason });
+    // A pre-sign spendability refusal is a BALANCE outcome, not an unknown
+    // one: the row is what the agent and the activity feed read the cause
+    // from, and "unknown" would hide a remedy the wallet owner can act on.
+    const failureCode: AgentActivityFailureCode =
+      err instanceof VexError && err.code === ErrorCodes.SOLANA_INSUFFICIENT_BALANCE
+        ? "allowance_or_balance"
+        : "unknown";
+    await failActivityEvent(eventRow.id, { failureCode, failureReason: reason });
     return {
       success: false,
       output: `${toolId} failed: ${reason} — recorded (execution ${executionId}); nothing was broadcast.`,

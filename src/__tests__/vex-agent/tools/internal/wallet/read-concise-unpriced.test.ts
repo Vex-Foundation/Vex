@@ -89,9 +89,25 @@ type Snapshot = {
   tokens: Row[];
   tokenCount: number;
   unpricedOmitted?: number;
+  unpricedHeldCount: number;
+  inventorySources: Array<{ chainId: number; observedAt: string | null }>;
   truncated: boolean;
   truncationNote?: string;
 };
+
+/**
+ * A snapshot with its per-chain observation times replaced by a constant, so
+ * two live reads taken milliseconds apart can be compared field for field.
+ */
+function withNormalisedObservationTimes(snapshot: Snapshot): Snapshot {
+  return {
+    ...snapshot,
+    inventorySources: snapshot.inventorySources.map((source) => ({
+      ...source,
+      observedAt: source.observedAt === null ? null : "OBSERVED_AT",
+    })),
+  };
+}
 
 async function tokensFor(params: Record<string, unknown>): Promise<Row[]> {
   const res = await handleWalletBalances({ walletFamily: "eip155", chainIds: "robinhood", ...params }, CONTEXT);
@@ -290,10 +306,20 @@ describe("wallet_balances - the detailed default (D17 R2) and `truncated` (D16)"
     const conciseNoLimit = await snapshotFor({ response_format: "concise" });
 
     // Not just the token list: every field, so `truncated`, the omission
-    // counters and the totals are all proven equivalent, which is what makes
-    // "only the label differs" a measured claim rather than a reading of
-    // `trimTokens`.
-    expect(conciseNoLimit).toEqual(bare);
+    // counters, the completeness axes and the totals are all proven
+    // equivalent, which is what makes "only the label differs" a measured
+    // claim rather than a reading of `trimTokens`.
+    //
+    // `inventorySources[].observedAt` is the ONE legitimately time-varying
+    // field - two calls read the chain at two different moments, and stamping
+    // them with one clock would be the lie C3.5 forbids - so it is normalised
+    // rather than compared, and its PRESENCE is asserted separately below.
+    expect(withNormalisedObservationTimes(conciseNoLimit)).toEqual(
+      withNormalisedObservationTimes(bare),
+    );
+    for (const source of bare.inventorySources) {
+      expect(typeof source.observedAt).toBe("string");
+    }
   });
 
   it("`truncated` is present as false on the detailed path", async () => {
@@ -380,6 +406,11 @@ describe("wallet_balances - the detailed default (D17 R2) and `truncated` (D16)"
     if (!snap) throw new Error("wallet_balances returned no snapshot for the eip155 wallet");
 
     expect(snap.unpricedOmitted).toBe(5);
+    // The two figures answer different questions and must not be confused:
+    // `unpricedOmitted` is what the CAP dropped, `unpricedHeldCount` is how
+    // many unpriced holdings the wallet actually has. Only the second is
+    // reported on the detailed path, where nothing is dropped at all.
+    expect(snap.unpricedHeldCount).toBe(25);
     expect(snap.truncated).toBe(true);
     // Rows past the 20-row unpriced cap cannot come back through `limit`; the
     // note must send the agent to `detailed`, not to a bigger limit.

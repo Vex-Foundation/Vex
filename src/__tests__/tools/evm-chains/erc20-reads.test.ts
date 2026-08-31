@@ -4,7 +4,9 @@ import {
   readErc20Balance,
   readErc20Decimals,
   readErc20Symbol,
+  readNativeBalance,
   type Erc20ReadClient,
+  type NativeReadClient,
 } from "@tools/evm-chains/erc20-reads.js";
 
 const TOKEN = "0x1111111111111111111111111111111111111111";
@@ -60,5 +62,59 @@ describe("single-token ERC-20 reads", () => {
 
     await readErc20Balance(client, TOKEN, OWNER);
     expect(readContract.mock.calls[0]?.[0]).not.toHaveProperty("requestOptions");
+  });
+});
+
+describe("the explicit block tag", () => {
+  it("is OMITTED unless the caller names one, so no existing consumer moves block", async () => {
+    readContract.mockResolvedValueOnce(1n);
+
+    await readErc20Balance(client, TOKEN, OWNER);
+
+    expect(readContract.mock.calls[0]?.[0]).not.toHaveProperty("blockTag");
+  });
+
+  it("reaches the read verbatim when the caller names pending", async () => {
+    readContract.mockResolvedValueOnce(1n);
+
+    await readErc20Balance(client, TOKEN, OWNER, { blockTag: "pending" });
+
+    expect(readContract).toHaveBeenCalledWith(expect.objectContaining({ blockTag: "pending" }));
+  });
+
+  it("carries the tag and the cancellation signal together", async () => {
+    const controller = new AbortController();
+    readContract.mockResolvedValueOnce(1n);
+
+    await readErc20Balance(client, TOKEN, OWNER, {
+      blockTag: "latest",
+      signal: controller.signal,
+    });
+
+    expect(readContract).toHaveBeenCalledWith(expect.objectContaining({
+      blockTag: "latest",
+      requestOptions: { signal: controller.signal },
+    }));
+  });
+});
+
+describe("the native sibling read", () => {
+  it("reads the ACCOUNT balance at the named tag", async () => {
+    const getBalance = vi.fn<NativeReadClient["getBalance"]>();
+    getBalance.mockResolvedValueOnce(7n);
+
+    await expect(
+      readNativeBalance({ getBalance }, OWNER, { blockTag: "pending" }),
+    ).resolves.toBe(7n);
+    expect(getBalance).toHaveBeenCalledWith({ address: OWNER, blockTag: "pending" });
+  });
+
+  it("omits the tag when the caller names none", async () => {
+    const getBalance = vi.fn<NativeReadClient["getBalance"]>();
+    getBalance.mockResolvedValueOnce(0n);
+
+    await readNativeBalance({ getBalance }, OWNER);
+
+    expect(getBalance).toHaveBeenCalledWith({ address: OWNER });
   });
 });

@@ -758,7 +758,21 @@ describe("solana.swap.quote", () => {
     );
 
     // 6 decimals on both legs (the resolver mock above).
-    expect(result.data?.summary).toBe("Quote: 1000 BonkMint → ~100 SolMint on Solana.");
+    //
+    // The eligibility sentence is part of the summary from WP2-J on. This
+    // fixture's wallet and mints are readable NAMES, not base58 keys, so the
+    // spendability read cannot even be attempted and the quote takes the
+    // fail-closed `balance_unavailable` branch - which is the correct outcome
+    // for an unreadable wallet and is what this line pins. The eligibility
+    // verdicts themselves are owned by
+    // `protocols/solana-jupiter/solana-jupiter-swap-quote-eligibility.test.ts`,
+    // which drives the same handler over a scripted chain.
+    expect(result.data?.summary).toBe(
+      "Quote: 1000 BonkMint → ~100 SolMint on Solana."
+      + " NOT EXECUTABLE: the wallet's balance for this swap could not be read (quote_spendability_read_failed),"
+      + " so Vex refuses to treat it as funded. This quote authorizes nothing.",
+    );
+    expect(result.data?.eligibility).toEqual({ kind: "balance_unavailable", executable: false });
     expect(result.data?.inputAmountRaw).toBe("1000000000");
     expect(result.data?.outputAmountRaw).toBe("100000000");
     expect(result.data?.otherAmountThreshold).toBe("99000000");

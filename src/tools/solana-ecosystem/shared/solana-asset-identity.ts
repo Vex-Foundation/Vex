@@ -89,3 +89,76 @@ export function solanaAssetIdentity(
 export function solanaRouteMintFromPersistedAddress(address: string): string {
   return address === SOLANA_NATIVE_PERSISTED_ADDRESS ? SOL_MINT : address;
 }
+
+// ── Swap input syntax: native SOL versus SPL wSOL ───────────────────────
+
+/**
+ * Which asset a Solana swap actually SPENDS, decided from what the caller
+ * wrote rather than from the mint the resolver produced.
+ *
+ * Both `SOL` and the explicit `So111...` mint resolve to the SAME wSOL mint
+ * through `resolveJupiterTokenWithSafety`, so the resolved address alone cannot
+ * say whether the funds come from the wallet's lamports or from an SPL token
+ * account. They are different balances (contract C4.1: a native derivative may
+ * share the native asset's PRICE, never its SPENDABILITY), so the two must be
+ * read from different places, and the syntax is what disambiguates.
+ */
+export type SolanaSwapInputAsset =
+  /** The wallet's own lamports. Read with `getBalance`. */
+  | { readonly kind: "native" }
+  /** An SPL token account holding `mint`, wSOL included. Read from token accounts. */
+  | { readonly kind: "spl"; readonly mint: string };
+
+/**
+ * The resolution, or the named reason the request is ambiguous.
+ *
+ * `ambiguous_wrapped_sol_input` is REJECTED BY NAME rather than resolved to
+ * either side (owner decision 2026-08-31): an explicit wSOL mint asks to spend
+ * an SPL balance while `wrapAndUnwrapSol` asks Jupiter to create and fund that
+ * balance out of lamports, and guessing which the caller meant would spend the
+ * wrong asset. Rule 90 forbids resolving a money-path ambiguity silently.
+ */
+export type SolanaSwapInputResolution =
+  | { readonly ok: true; readonly asset: SolanaSwapInputAsset }
+  | { readonly ok: false; readonly reason: "ambiguous_wrapped_sol_input"; readonly message: string };
+
+/**
+ * Decide which balance a swap's input side spends.
+ *
+ * The three cases, per the owner decision:
+ *
+ * | `query` | `wrapAndUnwrapSol` | Result |
+ * | --- | --- | --- |
+ * | a symbol resolving to wSOL (`SOL`) | any | native lamports |
+ * | the explicit `So111...` mint | `false` | SPL wSOL |
+ * | the explicit `So111...` mint | `true` | REFUSED, ambiguous |
+ *
+ * Any other resolved mint is that mint's SPL balance, whatever the query said.
+ */
+export function resolveSolanaSwapInputAsset(input: {
+  /** The caller's own `tokenIn` text, before resolution. */
+  readonly query: string;
+  /** The mint `tokenIn` resolved to. */
+  readonly resolvedMint: string;
+  /** The knob as the swap will send it to `/build`. */
+  readonly wrapAndUnwrapSol: boolean;
+}): SolanaSwapInputResolution {
+  if (input.resolvedMint !== SOL_MINT) {
+    return { ok: true, asset: { kind: "spl", mint: input.resolvedMint } };
+  }
+  if (input.query.trim() !== SOL_MINT) {
+    // A symbol (`SOL`, `sol`) means the native asset the symbol names.
+    return { ok: true, asset: { kind: "native" } };
+  }
+  if (input.wrapAndUnwrapSol) {
+    return {
+      ok: false,
+      reason: "ambiguous_wrapped_sol_input",
+      message:
+        `tokenIn ${SOL_MINT} with wrapAndUnwrapSol enabled is ambiguous: the mint asks to spend an existing `
+        + "wrapped-SOL token account, while wrapping asks to fund one from native lamports. Pass tokenIn \"SOL\" "
+        + "to spend native SOL, or keep the mint and set wrapAndUnwrapSol to false to spend wrapped SOL.",
+    };
+  }
+  return { ok: true, asset: { kind: "spl", mint: SOL_MINT } };
+}

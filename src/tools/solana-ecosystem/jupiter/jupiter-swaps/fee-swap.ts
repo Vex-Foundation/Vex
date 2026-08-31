@@ -127,6 +127,14 @@ export interface PreparedFeeBearingSwap {
   readonly feeMint: string;
   readonly feeAccount: string;
   readonly feeAccountExists: boolean;
+  /**
+   * Rent for the TREASURY fee account only, and only when it does not exist
+   * yet. NOT the swap's account-rent cost: `/build` routinely splices its own
+   * taker-paid account creations (live 2026-08-31: two of them on a single
+   * SOL to USDC swap), so a spend guard that summed this field alone would
+   * understate the debit. The whole wallet-paid debit is measured off the
+   * assembled message by `./spendability.ts`; this stays a DISCLOSURE field.
+   */
   readonly ataRentLamports: number | null;
   readonly knobs: JupiterFeeSwapKnobs;
   /**

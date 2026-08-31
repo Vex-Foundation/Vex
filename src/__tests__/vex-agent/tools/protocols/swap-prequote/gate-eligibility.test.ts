@@ -19,7 +19,8 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
 import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
-import type { ProtocolExecutionContext, ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
+import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { getProtocolManifest } from "@vex-agent/tools/protocols/catalog.js";
 import type {
   CreatePrequoteInput,
   PrequoteEligibilityKind,
@@ -262,8 +263,10 @@ describe("the quote-time spendability facts reach the approval card", () => {
       ctx(),
     );
     if (decision.kind !== "allow") throw new Error("expected an allow");
+    const manifest = getProtocolManifest("kyberswap.swap.execute");
+    if (!manifest) throw new Error("kyberswap.swap.execute manifest missing");
     const pending = evaluateApprovalGate(
-      { mutating: true, actionKind: "swap" } as unknown as ProtocolToolManifest,
+      manifest,
       { toolId: "kyberswap.swap.execute" },
       EVM_PARAMS,
       ctx({ approved: false, sessionPermission: "restricted" }),
@@ -282,7 +285,7 @@ describe("the quote-time spendability facts reach the approval card", () => {
       toolArgs: EVM_PARAMS,
       result: pending,
     });
-    return preview.criticalArgs as unknown as Record<string, unknown>;
+    return preview.criticalArgs;
   }
 
   it("the recorder validates the handoff and persists it in the bounded safety block", async () => {

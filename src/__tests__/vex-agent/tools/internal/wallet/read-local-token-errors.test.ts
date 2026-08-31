@@ -89,6 +89,10 @@ interface Snapshot {
   tokenErrorsOmitted?: number;
   tokenCount: number;
   totalUsd: number;
+  inventoryComplete: boolean;
+  inventoryIncompleteReason?: string;
+  valuationComplete: boolean;
+  totalUsdBasis: string;
 }
 
 function snapshotOf(res: { data?: unknown }): Snapshot {
@@ -161,5 +165,25 @@ describe("wallet_balances - per-token read failures", () => {
 
     expect(snap.tokenErrors.length).toBeLessThanOrEqual(20);
     expect(snap.tokenErrorsOmitted).toBe(30 - snap.tokenErrors.length);
+    // The bounded LIST does not bound the axis: every failed token is an
+    // inventory gap, including the ones the 20-row cap left out.
+    expect(snap.inventoryComplete).toBe(false);
+    expect(snap.inventoryIncompleteReason).toBe("token_read_failed");
+  });
+
+  it("a per-token failure costs the INVENTORY axis and not the valuation axis", async () => {
+    mockReadLocal.mockImplementation(async (config: { id: number }) =>
+      config.id === 4663
+        ? chainRead([{ address: TOKEN_A, reason: "balance-read-failed" }])
+        : chainRead(),
+    );
+
+    const snap = snapshotOf(await handleWalletBalances({ walletFamily: "eip155" }, CONTEXT));
+
+    expect(snap.inventoryComplete).toBe(false);
+    expect(snap.inventoryIncompleteReason).toBe("token_read_failed");
+    // The rows that DID answer are fully valued; only the basis degrades.
+    expect(snap.valuationComplete).toBe(true);
+    expect(snap.totalUsdBasis).toBe("priced_only");
   });
 });

@@ -29,7 +29,7 @@ import {
   getTokenBalancesAcrossChains,
   parseBalanceChainSelection,
 } from "@tools/khalani/balances.js";
-import type { ChainFamily } from "@tools/khalani/types.js";
+import type { ChainFamily, KhalaniRejectedTokenBalanceEntry } from "@tools/khalani/types.js";
 import { readLocalChainBalances } from "@tools/evm-chains/balances.js";
 import {
   readSolanaWalletSnapshot,
@@ -41,13 +41,31 @@ import { getLocalChain, listLocalChains } from "@tools/evm-chains/registry.js";
 import { resolveInclusiveEvmChain } from "@tools/evm-chains/resolver.js";
 import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 import { buildTokenScanSet } from "@vex-agent/sync/local-chain-balance-sync.js";
-import { responseFormatSchema, type ResponseFormat } from "@vex-agent/response-format.js";
+import { responseFormatSchema } from "@vex-agent/response-format.js";
 import {
   type ConciseKhalaniToken,
   projectTokens,
 } from "../../protocols/khalani/projectors.js";
 import { isTokenDecimals, projectBalanceRow } from "../../protocols/amount-display.js";
-import { solanaRowToWalletToken, type SolanaWalletTokenRow } from "./solana-row.js";
+import {
+  combineWalletCompleteness,
+  computeWalletCompleteness,
+  hasUsdPrice,
+  holdsBalance,
+  type CompletenessEnvelope,
+  type InventorySource,
+} from "@vex-agent/wallet-inventory/completeness.js";
+import {
+  REJECTED_ENTRIES_NOTE,
+  boundRejectedEntries,
+} from "@vex-agent/wallet-inventory/rejected-entries.js";
+import { solanaRowToWalletToken } from "./solana-row.js";
+import {
+  TRUNCATION_NOTE,
+  trimTokens,
+  type ProjectedTokenRow,
+  type WalletTokenRow,
+} from "./token-trim.js";
 import { summarizeProtocolError } from "../../protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
 
@@ -127,17 +145,15 @@ interface AccountReadError {
  */
 const MAX_ACCOUNT_ERRORS_PER_SNAPSHOT = 20;
 
-/** Either lane's projected row, before the concise trim. */
-type ProjectedTokenRow = ConciseKhalaniToken | SolanaWalletTokenRow;
-
 /**
- * A projected token row as `WalletBalances` emits it. `priceUnavailable` is
- * added only by the concise trim, on a held token with no price feed, so the
- * agent can tell "no USD price" from "not held".
+ * One wallet's snapshot.
+ *
+ * It EXTENDS {@link CompletenessEnvelope} rather than restating its eight
+ * fields: the snapshot and the top-level envelope must carry the identical
+ * completeness contract, and a second hand-written copy of the field list is
+ * how the two drift apart.
  */
-type WalletTokenRow = ProjectedTokenRow & { priceUnavailable?: true };
-
-interface WalletSnapshot {
+interface WalletSnapshot extends CompletenessEnvelope {
   wallet: ChainFamily;
   address: string;
   tokenCount: number;
@@ -151,16 +167,32 @@ interface WalletSnapshot {
   accountErrors: AccountReadError[];
   /** Present only when the 20-row `accountErrors` bound dropped entries. */
   accountErrorsOmitted?: number;
-  /** Held-but-unpriced rows the concise trim's cap dropped. Present only when non-zero. */
+  /**
+   * Held-but-unpriced rows the CONCISE TRIM's 20-row cap dropped. Present only
+   * when non-zero, and it is a drop counter, NOT a census: the full number of
+   * held rows with no price feed is `unpricedHeldCount`, which is reported on
+   * every path including `detailed`, where nothing is dropped at all.
+   */
   unpricedOmitted?: number;
   /**
-   * Whether `tokens` is short of the full projected scan for this wallet (D16,
-   * bounded_non_pageable class). ALWAYS PRESENT, including as `false` on the
-   * `detailed` path and on a `{limit}` call that carried no `response_format`:
-   * an absent field would read as "no answer", and the whole point of the
-   * field is that the agent can tell a complete row set from a trimmed one
-   * without re-deriving the trim rules. There is no continuation to fetch;
-   * `truncationNote` names the narrowing action instead.
+   * Balance entries the Khalani boundary refused for their `decimals` alone.
+   * Their identity and exact atomic amount are still true facts about the
+   * wallet, so they are reported rather than dropped; the bad scale itself is
+   * never echoed and never guessed (C1.2).
+   */
+  rejectedEntryCount: number;
+  rejectedEntries: KhalaniRejectedTokenBalanceEntry[];
+  /** Present only when the 20-row `rejectedEntries` bound dropped entries. */
+  rejectedEntriesOmitted?: number;
+  /**
+   * Whether this snapshot is short of what a full answer would carry (D16,
+   * bounded_non_pageable class): rows missing from `tokens` after the concise
+   * trim, or rejected entries the 20-row bound left out. ALWAYS PRESENT,
+   * including as `false` on the `detailed` path and on a `{limit}` call that
+   * carried no `response_format`: an absent field would read as "no answer",
+   * and the whole point of the field is that the agent can tell a complete
+   * answer from a bounded one without re-deriving the rules. There is no
+   * continuation to fetch; `truncationNote` names the narrowing action instead.
    */
   truncated: boolean;
   /** The recovery instruction. Present only when `truncated` is true. */
@@ -169,34 +201,10 @@ interface WalletSnapshot {
 }
 
 /**
- * Narrowing action for a trimmed snapshot, phrased against the FULL projected
- * scan, which is what `truncated` is measured against. The concise trim drops
- * rows three ways (priced rows past `limit`, unpriced rows past the 20-row
- * cap, unpriced rows with a zero balance) and only the first is recoverable by
- * raising `limit`; the `detailed` format is the one recovery that returns
- * every row. There is no cursor and no page, so the note must not imply a
- * next call, and it must not promise `limit` more than it can deliver.
- */
-const TRUNCATION_NOTE =
-  "Some rows of the FULL projected scan for this wallet are not listed: the concise trim "
-  + "keeps the top `limit` priced rows, then at most 20 held-but-unpriced rows, and drops "
-  + "unpriced rows with a zero balance. There is no continuation to fetch. To see every row, "
-  + "pass response_format:\"detailed\" (the only complete recovery). Raising `limit` recovers "
-  + "only the priced rows it cut, never the rows the 20-row unpriced cap or the zero-balance "
-  + "rule removed. `tokenCount` and `totalUsd` already describe the FULL scan.";
-
-/**
  * A broken scan set can fail on hundreds of tokens; the agent needs to know it
  * happened and on which tokens, not to have its context filled with the list.
  */
 const MAX_TOKEN_ERRORS_PER_SNAPSHOT = 20;
-
-/**
- * Same bound, same reason, for the held-but-unpriced rows the concise trim
- * retains outside the caller's `limit`: the agent must learn that unpriced
- * holdings exist without a dust wallet flooding its context.
- */
-const MAX_UNPRICED_TOKENS_PER_SNAPSHOT = 20;
 
 // ── Chain scope (Khalani-first, local fallback) ─────────────────
 
@@ -471,6 +479,33 @@ export async function handleWalletBalances(
       let tokenErrorsOmitted = 0;
       const accountErrors: AccountReadError[] = [];
       let accountErrorsOmitted = 0;
+      // The inventory axis is evidence, not inference: every lane records what
+      // its own enumeration did, and a FAILED read is never stamped with a
+      // fresh observation time (C3.5) - that is how a gap gets renamed fresh
+      // and the retry is suppressed.
+      const inventorySources: InventorySource[] = [];
+      const rejectedEntries: KhalaniRejectedTokenBalanceEntry[] = [...(scan.rejectedEntries ?? [])];
+      if (khalaniRequested) {
+        const khalaniObservedAt = new Date().toISOString();
+        for (const scannedChainId of scan.scannedChainIds) {
+          inventorySources.push({
+            chainId: scannedChainId,
+            source: "khalani_registry_scan",
+            result: "read",
+            exhaustive: true,
+            observedAt: khalaniObservedAt,
+          });
+        }
+        for (const chainError of scan.chainErrors) {
+          inventorySources.push({
+            chainId: chainError.chainId,
+            source: "khalani_registry_scan",
+            result: "failed",
+            exhaustive: true,
+            observedAt: null,
+          });
+        }
+      }
 
       // Solana - direct RPC through the shared snapshot service, never Khalani.
       // A failure here is a per-chain error like any other, so the family
@@ -483,6 +518,16 @@ export async function handleWalletBalances(
           projected.push(...snapshot.rows.map(solanaRowToWalletToken));
           totalUsd += snapshot.totalUsd;
           scannedChainIds.push(SOLANA_SYNTHETIC_CHAIN_ID);
+          // Exhaustive: the snapshot service enumerates every token ACCOUNT the
+          // wallet owns plus the account balance, so a holding is never outside
+          // the set it looked at.
+          inventorySources.push({
+            chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+            source: "solana_rpc_accounts",
+            result: "read",
+            exhaustive: true,
+            observedAt: new Date().toISOString(),
+          });
           // A partial read still returns its readable rows. The sync lane's
           // skip-the-chain policy is deliberately NOT copied: it exists because
           // the sync REPLACES the whole chain, and this tool has nothing to
@@ -515,6 +560,13 @@ export async function handleWalletBalances(
             chainName: "Solana",
             message: `Solana RPC read failed: ${summary.message}`,
           });
+          inventorySources.push({
+            chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+            source: "solana_rpc_accounts",
+            result: "failed",
+            exhaustive: true,
+            observedAt: null,
+          });
         }
       }
 
@@ -539,10 +591,30 @@ export async function handleWalletBalances(
         // Unreachable while `mapWithConcurrency` visits every index; treated as
         // a per-chain failure rather than asserted, because the alternative is
         // losing a whole family snapshot to a bookkeeping slip.
+        // A local chain reads a BOUNDED token set (seed ∪ pinned), so even a
+        // fully successful read cannot claim it saw every holding: a token
+        // outside that set is invisible here, not absent. That is the
+        // `source_not_exhaustive` the inventory axis reports, and it is why
+        // Robinhood Chain (4663) never claims a complete inventory.
+        const exhaustive = false;
         if (local === undefined) {
           chainErrors.push({ chainId: localChainId, message: "local chain scan produced no result" });
+          inventorySources.push({
+            chainId: localChainId,
+            source: "local_chain_seed_and_pins",
+            result: "failed",
+            exhaustive,
+            observedAt: null,
+          });
           return;
         }
+        inventorySources.push({
+          chainId: localChainId,
+          source: "local_chain_seed_and_pins",
+          result: local.ok ? "read" : "failed",
+          exhaustive,
+          observedAt: local.ok ? new Date().toISOString() : null,
+        });
         if (local.ok) {
           projected.push(...local.tokens);
           totalUsd += local.totalUsd;
@@ -557,12 +629,29 @@ export async function handleWalletBalances(
       });
 
       const trimmed = trimTokens(projected, parsed.data.limit, parsed.data.response_format);
-      // Measured against the FULL projected set, so it covers all three ways a
-      // row can be missing: the priced overflow past `limit`, the 20-row
+      // Both axes are computed off the FULL PRE-TRIM row set: a display trim
+      // must never be able to move a completeness field, or "I asked for fewer
+      // rows" would read as "the wallet became fully priced".
+      const completeness = computeWalletCompleteness({
+        rows: projected,
+        sources: inventorySources,
+        tokenErrorCount: tokenErrors.length + tokenErrorsOmitted,
+        accountErrorCount: accountErrors.length + accountErrorsOmitted,
+        rejectedEntries,
+      });
+      const bounded = boundRejectedEntries(rejectedEntries);
+      // Rows measured against the FULL projected set, so it covers all three
+      // ways a row can be missing: the priced overflow past `limit`, the 20-row
       // unpriced cap, and the zero-balance unpriced rows the trim drops (which
-      // `unpricedOmitted` deliberately does not count).
-      const truncated = trimmed.tokens.length < projected.length;
+      // `unpricedOmitted` deliberately does not count). Every note that applies
+      // is carried; a bound that reported only the first would hide the other.
+      const truncationNotes = [
+        ...(trimmed.tokens.length < projected.length ? [TRUNCATION_NOTE] : []),
+        ...(bounded.rejectedEntriesOmitted !== undefined ? [REJECTED_ENTRIES_NOTE] : []),
+      ];
+      const truncated = truncationNotes.length > 0;
       snapshots.push({
+        ...completeness,
         wallet: family,
         address,
         tokenCount: projected.length,
@@ -574,8 +663,9 @@ export async function handleWalletBalances(
         accountErrors,
         ...(accountErrorsOmitted > 0 ? { accountErrorsOmitted } : {}),
         ...(trimmed.unpricedOmitted > 0 ? { unpricedOmitted: trimmed.unpricedOmitted } : {}),
+        ...bounded,
         truncated,
-        ...(truncated ? { truncationNote: TRUNCATION_NOTE } : {}),
+        ...(truncated ? { truncationNote: truncationNotes.join(" ") } : {}),
         tokens: trimmed.tokens,
       });
     } catch (err) {
@@ -602,7 +692,13 @@ export async function handleWalletBalances(
     // Echoes the PARAM the caller filled in, under the same name.
     walletFamily: parsed.data.walletFamily,
     walletCount: snapshots.length,
+    // Kept a NUMBER for compatibility, and it now always travels with the
+    // basis that says what it counted: an unknown slice never silently reads
+    // as a complete portfolio value (C3.2, C3.3).
     totalUsd: snapshots.reduce((sum, snapshot) => sum + snapshot.totalUsd, 0),
+    // A family that produced no snapshot at all is the ENVELOPE's inventory
+    // failure, and outranks every per-wallet reason.
+    ...combineWalletCompleteness(snapshots, walletErrors.length),
     walletErrors,
     wallets: snapshots,
   });
@@ -611,103 +707,6 @@ export async function handleWalletBalances(
 function requestedWalletFamilies(wallet: "eip155" | "solana" | "all"): ChainFamily[] {
   if (wallet === "all") return ["eip155", "solana"];
   return [wallet];
-}
-
-/**
- * Held USD value of a projected token row: `balance × priceUsd`, normalised to a
- * smallest-unit → human conversion (mirrors the canonical `tokenUsd` used for
- * `totalUsd`). Missing / malformed price or balance is null-safe → `0`, so a
- * row with no price/balance signal sorts last rather than throwing.
- */
-function projectedTokenUsd(token: ProjectedTokenRow): number {
-  const { balanceRaw, priceUsd, decimals } = token;
-  if (!balanceRaw || !priceUsd) return 0;
-  try {
-    const balanceHuman = Number(BigInt(balanceRaw)) / Math.pow(10, decimals);
-    const price = Number(priceUsd);
-    if (!Number.isFinite(balanceHuman) || !Number.isFinite(price)) return 0;
-    return balanceHuman * price;
-  } catch {
-    return 0;
-  }
-}
-
-/**
- * True when the row carries a usable USD price feed. A finite ZERO is a feed
- * (the provider quoted it), so only a missing, malformed, or negative price
- * counts as "no price".
- */
-function hasUsdPrice(token: ProjectedTokenRow): boolean {
-  if (token.priceUsd === undefined || token.priceUsd === null || token.priceUsd.trim() === "") return false;
-  const price = Number(token.priceUsd);
-  return Number.isFinite(price) && price >= 0;
-}
-
-/** True when the row reports a balance the wallet actually holds. */
-function holdsBalance(token: ProjectedTokenRow): boolean {
-  if (!token.balanceRaw) return false;
-  try {
-    return BigInt(token.balanceRaw) !== 0n;
-  } catch {
-    return false;
-  }
-}
-
-/** Structural native-SOL marker. No address or symbol decides this. */
-function isSolanaNativeRow(token: ProjectedTokenRow): token is SolanaWalletTokenRow {
-  return "assetKind" in token && token.assetKind === "native";
-}
-
-/**
- * Optionally trim a projected token list to the top-N by held USD value.
- *
- * Compatibility-first: a trim only happens when `response_format` is 'concise'
- * AND a positive `limit` was supplied. The default 'detailed' format (or an
- * omitted `limit`) returns every row untouched, so existing callers are
- * unaffected. The sort is a stable copy (no in-place mutation of the input).
- *
- * A held token with NO price feed scores 0 here, so the limit used to cut it
- * first and the agent could not tell it apart from a token it does not hold
- * (2026-08-10 incident). Such rows are therefore retained, after the priced
- * rows and outside the limit, flagged with `priceUnavailable` so the missing
- * USD figure reads as "no price feed", not "no balance".
- *
- * Retention is bounded BY THE CAP below, not by the scan set: only the local
- * chains scan a bounded set (seed ∪ pinned), while the Khalani read requests
- * every holding the provider knows with no token cap of its own
- * (`tools/khalani/balances/scan.ts`), so a wallet full of unpriced dust would
- * otherwise turn `limit:1` into an unbounded answer. Drops are reported as
- * `unpricedOmitted`, mirroring `tokenErrorsOmitted`.
- *
- * Totals are computed upstream off the full scan and are untouched by this
- * display trim.
- */
-function trimTokens(
-  tokens: ProjectedTokenRow[],
-  limit: number | undefined,
-  responseFormat: ResponseFormat,
-): { tokens: WalletTokenRow[]; unpricedOmitted: number } {
-  if (responseFormat === "detailed" || limit === undefined) return { tokens, unpricedOmitted: 0 };
-  // Stable sort: rows with equal held USD (every unpriced row scores 0) keep
-  // their scan order, so the retained set is deterministic.
-  const sorted = [...tokens].sort((a, b) => projectedTokenUsd(b) - projectedTokenUsd(a));
-  // C4.4: native SOL always exists, including at zero. It stays outside the
-  // display limit so a ranked token list cannot make the native asset appear
-  // absent. `assetKind` is the only discriminator; SOL_MINT also identifies
-  // wSOL and must never trigger this retention.
-  const native = sorted.filter(isSolanaNativeRow);
-  const limitCandidates = sorted.filter((token) => !isSolanaNativeRow(token));
-  const priced = limitCandidates.filter(hasUsdPrice).slice(0, limit);
-  const unpricedHeld = limitCandidates.filter(
-    (token) => !hasUsdPrice(token) && holdsBalance(token),
-  );
-  const retained: WalletTokenRow[] = unpricedHeld
-    .slice(0, MAX_UNPRICED_TOKENS_PER_SNAPSHOT)
-    .map((token) => ({ ...token, priceUnavailable: true as const }));
-  return {
-    tokens: [...native, ...priced, ...retained],
-    unpricedOmitted: unpricedHeld.length - retained.length,
-  };
 }
 
 function formatWalletErrors(errors: Array<{ wallet: ChainFamily; message: string }>): string {

@@ -46,6 +46,10 @@ import {
   type SolanaWalletSnapshotReader,
 } from "@tools/solana-ecosystem/balances/wallet-snapshot.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../../constants/solana-chain.js";
+import {
+  REJECTED_ENTRIES_NOTE,
+  boundRejectedEntries,
+} from "@vex-agent/wallet-inventory/rejected-entries.js";
 
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import type { ToolResult } from "../../../types.js";
@@ -242,6 +246,13 @@ export async function handleTokenBalances(
       chainErrors: [],
       accountErrors,
       ...(accountErrorsOmitted > 0 ? { accountErrorsOmitted } : {}),
+      // A Solana read never crosses the Khalani balances boundary, so it has no
+      // refusals to report. The fields are PRESENT and empty rather than
+      // absent: an absent field would read as "no answer" on the one surface
+      // whose EVM half does report refusals.
+      rejectedEntryCount: 0,
+      rejectedEntries: [],
+      truncated: false,
       tokens,
     };
     return {
@@ -255,6 +266,17 @@ export async function handleTokenBalances(
   // top-up, like WalletBalances. Only the sync/projection path stays
   // native-free (it full-replaces proj_balances).
   const scan = await getTokenBalancesAcrossChains({ address, family: walletFamily, chainIds, includeNative: true });
+  // Entries the balances boundary refused for their `decimals` alone. They are
+  // holdings the wallet really has, so reporting them is the difference between
+  // "we could not read the scale of this token" and "you hold none of it"; the
+  // bad scale itself is never echoed and never guessed (C1.2).
+  const rejected = boundRejectedEntries(scan.rejectedEntries ?? []);
+  const truncated = rejected.rejectedEntriesOmitted !== undefined;
+  const disclosure = {
+    ...rejected,
+    truncated,
+    ...(truncated ? { truncationNote: REJECTED_ENTRIES_NOTE } : {}),
+  };
   return {
     success: true,
     output: JSON.stringify({
@@ -267,6 +289,7 @@ export async function handleTokenBalances(
       // An EVM scan reads no Solana token accounts, so the field is present and
       // empty rather than absent: an absent field would read as "no answer".
       accountErrors: [],
+      ...disclosure,
       // Project to concise token rows (P0-4): the balances path is where
       // `extensions.balance` lives, so the lifted balance/price stay surfaced.
       tokens: projectTokens(scan.tokens),
@@ -278,6 +301,7 @@ export async function handleTokenBalances(
       scannedChainIds: scan.scannedChainIds,
       chainErrors: scan.chainErrors,
       accountErrors: [],
+      ...disclosure,
       tokens: scan.tokens,
     },
   };

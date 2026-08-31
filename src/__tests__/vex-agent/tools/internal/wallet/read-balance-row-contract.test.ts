@@ -100,6 +100,22 @@ function rowsOf(res: { data?: unknown }, index = 0): Row[] {
   return snapshot.tokens;
 }
 
+/** The completeness half of a snapshot: the axes these rows have to agree with. */
+interface SnapshotAxes {
+  inventoryComplete: boolean;
+  inventoryIncompleteReason?: string;
+  valuationComplete: boolean;
+  unpricedHeldCount: number;
+  pricedTotalUsd: string;
+  totalUsdBasis: string;
+}
+
+function snapshotOf(res: { data?: unknown }, index = 0): SnapshotAxes {
+  const snapshot = (res.data as { wallets: SnapshotAxes[] }).wallets[index];
+  assert.ok(snapshot, "handler returned no wallet snapshot");
+  return snapshot;
+}
+
 function find(rows: Row[], address: string): Row {
   const row = rows.find((candidate) => candidate.address === address);
   assert.ok(row, `no row for ${address}`);
@@ -195,12 +211,21 @@ describe("WalletBalances - the incident row, end to end", () => {
       { address: WETH, symbol: "WETH", decimals: Number.POSITIVE_INFINITY, balanceWei: INCIDENT_RAW, priceUsd: 2522.5 },
     ]));
 
-    const row = find(rowsOf(await handleWalletBalances({ walletFamily: "eip155" }, CONTEXT)), WETH);
+    const res = await handleWalletBalances({ walletFamily: "eip155" }, CONTEXT);
+    const row = find(rowsOf(res), WETH);
 
     expect(row.balanceRaw).toBe(INCIDENT_RAW.toString());
     expect(row.balance).toBeNull();
     expect(row.valueUsd).toBeNull();
     expect(row.unprojectableReason).toBe("decimals_invalid");
+    // The row-level refusal and the envelope agree: the holding was ENUMERATED
+    // and could not be VALUED, so the total is priced-only. The unconvertible
+    // row adds NO inventory gap of its own - the only reason reported is the
+    // local chain's bounded token set.
+    const snapshot = snapshotOf(res);
+    expect(snapshot.inventoryIncompleteReason).toBe("source_not_exhaustive");
+    expect(snapshot.valuationComplete).toBe(false);
+    expect(snapshot.totalUsdBasis).toBe("priced_only");
   });
 });
 

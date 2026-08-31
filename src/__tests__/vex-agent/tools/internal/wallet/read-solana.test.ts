@@ -507,5 +507,31 @@ describe("WalletBalances - the Solana family", () => {
     expect(snapshot.accountErrors).toHaveLength(20);
     // The agent is told exactly what the cap left out, never silently trimmed.
     expect(snapshot.accountErrorsOmitted).toBe(6);
+    // An account the read could not trust is a HOLDING that is absent from
+    // `tokens`, so it is an inventory gap - and the bounded list does not bound
+    // the axis.
+    expect(snapshot.inventoryComplete).toBe(false);
+    expect(snapshot.inventoryIncompleteReason).toBe("account_read_failed");
+  });
+
+  it("attributes the Solana lane to its own exhaustive RPC source", async () => {
+    mockReadTokensPairs.mockResolvedValue([pair(SOL_MINT, "200")]);
+    const result = await handleWalletBalances(
+      { walletFamily: "solana" },
+      baseContext,
+      withRpc(scriptedRpc({ lamports: 1_000_000_000, spl: [] })),
+    );
+
+    expect(result.success).toBe(true);
+    const snapshot = solanaSnapshotOf(result.output);
+    expect(snapshot.inventorySources).toEqual([
+      {
+        chainId: SOLANA_CHAIN_ID,
+        source: "solana_rpc_accounts",
+        result: "read",
+        exhaustive: true,
+        observedAt: expect.any(String),
+      },
+    ]);
   });
 });

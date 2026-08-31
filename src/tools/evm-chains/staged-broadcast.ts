@@ -79,6 +79,32 @@ export interface FinalSignedRequest {
   readonly value: bigint;
   readonly gas: bigint;
   readonly nonce: number;
+  /**
+   * THE ACTUAL PRICE FIELDS OF THE REQUEST BEING SIGNED, exactly as they stand
+   * on it - never re-derived, never defaulted.
+   *
+   * WHY A GATE NEEDS THEM. A pre-sign check that asks "can this wallet pay for
+   * everything still to come" cannot answer without the price this very
+   * transaction commits to: `gas` is a COUNT, and a count times an unknown
+   * price is not money. Before these fields the only prices a gate could see
+   * were the ones it had asked for, which is precisely the class of mistake
+   * `FinalSignedRequest` exists to end - viem fills the fee fields when the
+   * caller supplies no ceiling, so the request's prices are frequently not the
+   * caller's.
+   *
+   * EXACTLY ONE PRICING MODE IS POPULATED, because a transaction has exactly
+   * one: an EIP-1559 request carries `maxFeePerGas` and `maxPriorityFeePerGas`
+   * with `gasPrice` undefined, and a legacy request the reverse. A consumer
+   * computing a debit uses `maxFeePerGas` ALONE on the 1559 arm - the priority
+   * fee is paid out of that ceiling, not beside it, and adding the two is a
+   * double count (`./swap-native-debit.ts` owns that arithmetic).
+   *
+   * `undefined` is a real state and is not a zero: it means the request is not
+   * priced that way. A gate that needs a price and finds none must refuse.
+   */
+  readonly gasPrice: bigint | undefined;
+  readonly maxFeePerGas: bigint | undefined;
+  readonly maxPriorityFeePerGas: bigint | undefined;
 }
 
 /** Persisted BEFORE the signed payload is broadcast. */
@@ -326,10 +352,29 @@ export interface StagedBroadcastHooks {
    * resolution) and immediately before the signature - a throw here means
    * NOTHING was signed and nothing was sent.
    *
-   * The caller's check must be PURE: no provider call may sit between this hook
-   * and the signature, or the state it just validated can move before the bytes
-   * commit to it. The KyberSwap swap leg uses it to re-assert the approved price
-   * floor against the calldata that is actually about to be signed, which the
+   * THE HOOK ITSELF MAY READ THE CHAIN, and on the money path it must: the
+   * authoritative balance and debit read belongs in THIS window, not at quote
+   * time, because only here is the transaction that will be signed already
+   * fixed (contract C2.6; MetaMask re-reads the live balance at submit for the
+   * same reason, `strategy/server/server-submit.ts:518-565`). What the contract
+   * forbids is a provider call AFTER the hook resolves and before the
+   * signature: state validated at the end of the hook must still be the state
+   * the bytes commit to.
+   *
+   * `signStageBroadcast` therefore issues NOTHING of its own between this hook
+   * and the signature, and the DEFERRED arm signs offline so that literally no
+   * request reaches the network in that window. The EAGER arm goes through
+   * viem's wallet action, which awaits exactly one `eth_chainId` of its own
+   * before it reaches the local signer (measured in viem 2.54.3,
+   * `viem/_esm/actions/wallet/signTransaction.js`: `getChainId` is called
+   * unconditionally); that single round trip is the whole residual window on
+   * that arm, it belongs to viem rather than to any Vex gate, and
+   * `staged-broadcast-offline-signature.test.ts` pins both arms so the difference
+   * can never widen unnoticed. A lane that needs the window fully closed uses
+   * the deferred arm, which exists for exactly that.
+   *
+   * The KyberSwap swap leg uses this hook to re-assert the approved price floor
+   * against the calldata that is actually about to be signed, which the
    * allowance-stage checks alone cannot cover.
    *
    * The FINAL PREPARED REQUEST is passed in, and a gate about the transaction
@@ -487,6 +532,13 @@ async function runStagedBroadcast(
     value: signedRequest.value ?? 0n,
     gas: gasLimit,
     nonce,
+    // Read off the prepared request, not off `bounds`: the ceiling is what was
+    // ASKED for and this is what viem is about to serialize. `??` never appears
+    // here - an absent price is reported absent, because a gate told `0n` would
+    // price the transaction as free.
+    gasPrice: signedRequest.gasPrice,
+    maxFeePerGas: signedRequest.maxFeePerGas,
+    maxPriorityFeePerGas: signedRequest.maxPriorityFeePerGas,
   };
   if (bounds !== undefined) {
     assertWithinFeeBounds(signedRequest, bounds);
@@ -505,9 +557,11 @@ async function runStagedBroadcast(
     finalRequest,
   );
 
-  // The caller's own pre-sign gate, on BOTH arms and with nothing awaited
-  // between it and the signature below that could reach a provider. It is given
-  // the request that is about to be serialized, never the caller's inputs.
+  // THE LAST GATE. On BOTH arms, and the LAST awaited call this function makes
+  // before the signature: nothing below reaches a provider from here. The hook
+  // itself may read the chain (that is where the authoritative debit read
+  // lives); what must not happen is a read AFTER it. It is given the request
+  // that is about to be serialized, never the caller's inputs.
   await hooks.onBeforeSign?.(finalRequest);
 
   // THE SIGNATURE. The eager arm keeps viem's wallet action verbatim; the
