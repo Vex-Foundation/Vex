@@ -38,13 +38,37 @@
  *
  * `projectDeleteResultSchema` is a seven-member union precisely because each
  * member has a different remedy, and this dialog spends that. Two of them
- * (`removed`, `already_removed`) close and toast. `not_found` closes with its
- * own copy. The two blocked members keep the dialog open with a retry and,
- * where main sent one, the count of what was still running. `cleanup_pending`
- * keeps it open with its attempt count, and `cleanup_resumed` reports what that
- * pass did. `trash: "failed"` is reported on every member that carries it and
- * is never swallowed - the project is still deleted and the folder is still on
- * disk, and both halves are said.
+ * (`removed`, `already_removed`) close and toast. The two blocked members keep
+ * the dialog open with a retry and, where main sent one, the count of what was
+ * still running. `cleanup_pending` keeps it open with its attempt count, and
+ * `cleanup_resumed` reports what that pass did. `trash: "failed"` is reported on
+ * every member that carries it and is never swallowed - the project is still
+ * deleted and the folder is still on disk, and both halves are said.
+ *
+ * ## `not_found` is NOT a delete, and this dialog stopped claiming it was
+ *
+ * Main answers `not_found` for a project it cannot find AND for one whose
+ * stored name did not match the `expectedName` this dialog sent - a concurrent
+ * rename of a project that is still there. Reporting it as a delete closed a
+ * possibly live workspace, cleared the selection for a project that still
+ * exists, and toasted `Deleted "name"` about a row nothing happened to. So it
+ * keeps the dialog open on its own uncertain pane, tells the shell nothing, and
+ * toasts nothing. The reconciliation is the LIST: `useDeleteProject`
+ * invalidates it on this Result like any other, and the host then closes the
+ * dialog if the project really is gone, or leaves it standing under the fresh
+ * name if it was renamed.
+ *
+ * ## The row is PINNED once an outcome leaves the dialog open
+ *
+ * `cleanup_pending`, `cleanup_resumed` and a `removed` whose trash failed all
+ * report on a project that is already tombstoned, so the invalidated list drops
+ * it and the host's settled-list guard would close this dialog over the retry
+ * the user is the only one who can press. The row this dialog SUBMITTED
+ * AGAINST is therefore pinned at that moment and the dialog goes on rendering
+ * from the pin, while `onHoldOpen` tells the host to hold the request open.
+ * `not_found` is the one open outcome that is deliberately not pinned: its
+ * whole remedy is the reloaded list, so a project that really is gone should
+ * take the dialog with it.
  *
  * ## No auto-retry, and no "do not ask again"
  *
@@ -104,18 +128,43 @@ import {
 } from "./projects-copy.js";
 
 /**
- * The outcomes that END the interaction: there is nothing left for the user to
- * decide, so the dialog closes and a toast carries the fact.
+ * The outcomes that END the interaction: the project is gone, Vex is certain of
+ * it, and there is nothing left for the user to decide - so the dialog closes
+ * and a toast carries the fact.
  *
  * `cleanup_pending` is deliberately NOT here even though the project is gone:
  * cleanup did not finish, retrying RESUMES it, and closing over that would hide
  * a job the user is the only one who can ask to complete.
+ *
+ * `not_found` is not here either, and that is the whole of finding 5a. It means
+ * "no such project, OR the name did not match" - the second half is a project
+ * that still exists under a new name, and there is no reading of it under which
+ * `onDeleted` and a `Deleted "name"` toast are true.
  */
 const CLOSING_OUTCOMES: ReadonlySet<ProjectDeleteResult["outcome"]> = new Set([
   "removed",
   "already_removed",
-  "not_found",
 ]);
+
+/**
+ * Does this outcome leave the dialog standing on a row the LIST is about to
+ * drop?
+ *
+ * `useDeleteProject` invalidates the list on every ok Result, so a tombstoned
+ * row leaves it moments later. Every outcome that keeps this dialog open about
+ * a project main has already written off - `cleanup_pending`, `cleanup_resumed`
+ * and a `removed` whose trash failed - therefore pins the row it submitted
+ * against. The two `blocked_*` members wrote nothing and their row survives,
+ * but they pin on the same rule rather than on the hope that it does.
+ *
+ * `not_found` is the exception, on purpose: it is the one open outcome whose
+ * remedy IS the reloaded list.
+ */
+function outcomePinsRow(result: ProjectDeleteResult): boolean {
+  if (result.outcome === "not_found") return false;
+  if (!CLOSING_OUTCOMES.has(result.outcome)) return true;
+  return "trash" in result && result.trash === "failed";
+}
 
 export interface ProjectDeleteDialogProps {
   /** `null` closes the dialog. The row as the list holds it. */
@@ -124,22 +173,64 @@ export interface ProjectDeleteDialogProps {
   /**
    * The project is gone. The caller repairs its own selection and workspace
    * state; this dialog owns no shell state.
+   *
+   * Called ONLY for an outcome that proves the project was removed. `not_found`
+   * proves nothing of the kind and never calls it.
    */
   readonly onDeleted: (projectId: string) => void;
+  /**
+   * This dialog is reporting an outcome about a row the list is dropping, and
+   * the host must HOLD THE REQUEST OPEN until the user leaves.
+   *
+   * The signal is a boolean because the decision belongs here: this component
+   * already owns which outcomes end the interaction, and duplicating that rule
+   * in the host would be a second source of truth for it. The host owns the
+   * other half - whether the standing request survives a project leaving the
+   * list - and nothing but this flag crosses between them.
+   *
+   * Must be referentially stable; a `useState` setter is.
+   */
+  readonly onHoldOpen: (held: boolean) => void;
 }
 
 export function ProjectDeleteDialog({
   project,
   onClose,
   onDeleted,
+  onHoldOpen,
 }: ProjectDeleteDialogProps): JSX.Element {
-  const open = project !== null;
   const deleteMutation = useDeleteProject();
 
   const [alsoTrashFolder, setAlsoTrashFolder] = useState(false);
   const [typedName, setTypedName] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<ProjectDeleteResult | null>(null);
+  /**
+   * The row this dialog SUBMITTED AGAINST, kept once an outcome left the dialog
+   * open about a project the list is dropping. Null until that happens, so the
+   * ordinary path reads the live row and nothing here goes stale.
+   */
+  const [pinned, setPinned] = useState<ProjectDto | null>(null);
+
+  /**
+   * The row this dialog is about. The live list row while there is one, the pin
+   * afterwards. Everything below reads THIS, never `project`: with the row
+   * tombstoned and gone from the list the pin is the only remaining statement
+   * of what the retry is for.
+   */
+  const row = project ?? pinned;
+  const open = row !== null;
+
+  // A DIFFERENT live row is a different dialog (the intent store lets one
+  // request replace another), so a pin from the previous one must not survive
+  // into it. Returning `current` unchanged when the ids match keeps every list
+  // refetch, which hands us a fresh DTO identity, from re-rendering.
+  useEffect(() => {
+    if (project === null) return;
+    setPinned((current) =>
+      current !== null && current.id !== project.id ? null : current,
+    );
+  }, [project]);
 
   // Reset on every (re)open. A checkbox or a typed name surviving from the
   // previous project would arm this dialog against a row the user has not
@@ -150,7 +241,18 @@ export function ProjectDeleteDialog({
     setTypedName("");
     setSubmitError(null);
     setOutcome(null);
-  }, [open, project?.id]);
+  }, [open, row?.id]);
+
+  // Tell the host whether the standing request must outlive the row.
+  useEffect(() => {
+    onHoldOpen(pinned !== null);
+  }, [onHoldOpen, pinned]);
+  // And release the hold when this dialog goes, whatever took it away.
+  useEffect(() => {
+    return () => {
+      onHoldOpen(false);
+    };
+  }, [onHoldOpen]);
 
   /**
    * How many terminals this project has live IN THIS WINDOW, or null when the
@@ -159,44 +261,44 @@ export function ProjectDeleteDialog({
    * changed under the confirmation would be a different dialog.
    */
   const liveTerminalCount = useMemo(() => {
-    if (project === null) return null;
-    return peekProjectTerminals(project.id)?.length ?? null;
-    // `project?.id` rather than `project`: the DTO object identity changes on
-    // every list refetch and would re-read a count that must not move.
+    if (row === null) return null;
+    return peekProjectTerminals(row.id)?.length ?? null;
+    // `row?.id` rather than `row`: the DTO object identity changes on every
+    // list refetch and would re-read a count that must not move.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.id]);
+  }, [row?.id]);
 
-  const nameMatches =
-    project !== null && typedName.trim() === project.name;
+  const nameMatches = row !== null && typedName.trim() === row.name;
   const pending = deleteMutation.isPending;
   const confirmDisabled = !nameMatches || pending;
 
   const onConfirm = useCallback(async (): Promise<void> => {
-    if (project === null || !nameMatches || pending) return;
+    if (row === null || !nameMatches || pending) return;
     setSubmitError(null);
     const result = await deleteMutation.mutateAsync({
-      projectId: project.id,
+      projectId: row.id,
       alsoTrashFolder,
-      expectedName: project.name,
+      expectedName: row.name,
     });
     if (!result.ok) {
       setSubmitError(result.error.message);
       return;
     }
     setOutcome(result.data);
+    // Pinned BEFORE anything that can close: the list invalidation this Result
+    // just triggered is already in flight.
+    if (outcomePinsRow(result.data)) setPinned(row);
     if (CLOSING_OUTCOMES.has(result.data.outcome)) {
       // A trash that FAILED keeps the dialog open even on `removed`: the folder
       // is still on disk and that is a fact the user has to act on, not one to
       // flash past in a toast.
       const trashFailed =
         "trash" in result.data && result.data.trash === "failed";
+      onDeleted(row.id);
       if (!trashFailed) {
-        onDeleted(project.id);
-        showToast(projectDeletedToast(project.name));
+        showToast(projectDeletedToast(row.name));
         onClose();
-        return;
       }
-      onDeleted(project.id);
     }
   }, [
     alsoTrashFolder,
@@ -205,10 +307,10 @@ export function ProjectDeleteDialog({
     onClose,
     onDeleted,
     pending,
-    project,
+    row,
   ]);
 
-  const name = project?.name ?? "";
+  const name = row?.name ?? "";
   // The warning treatment is the CHECKBOX's, not the dialog's: it appears the
   // moment the action starts touching the user's files and goes when it stops.
   const warned = alsoTrashFolder;

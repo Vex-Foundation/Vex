@@ -10,6 +10,12 @@
  * ours is the `VexMark` at low opacity, placed exactly as the terminal's own
  * watermark is (`studio/terminal/XtermHost.tsx`).
  *
+ * It also carries the `RuntimeModeToggle` - the same Agent | Studio capsule the
+ * agent welcome hero renders, not a second affordance in different words.
+ * Without it Studio would be a one-way door: the sidebar has no mode control,
+ * so a user who switched into Studio from the hero would have no rendered path
+ * back to the agent shell.
+ *
  * ## Two things this screen deliberately does NOT have
  *
  * 1. THE CREATE CTA IS CONDITIONAL. The ProjectCreator is stage B4b's. A button
@@ -33,6 +39,8 @@ import { Button } from "../../../../components/ui/button.js";
 import { RailGroup } from "../../../../components/ui/rail-list.js";
 import { IconPlus } from "../../../../components/icons/index.js";
 import { useProjects } from "../../../../lib/api/projects.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
+import { RuntimeModeToggle } from "../../RuntimeModeToggle.js";
 import { ProjectRailRow } from "../sidebar/ProjectRailRow.js";
 import {
   STUDIO_WELCOME_CREATE_LABEL,
@@ -57,9 +65,20 @@ export function StudioWelcome({
   onCreateProject,
   onSelectProject,
 }: StudioWelcomeProps): JSX.Element {
+  const runtimeMode = useUiStore((state) => state.runtimeMode);
+  const setRuntimeMode = useUiStore((state) => state.setRuntimeMode);
   const query = useProjects();
   const projects: readonly ProjectDto[] =
     query.data !== undefined && query.data.ok ? query.data.data : [];
+  // "We could not look" is a different fact from "you have none", and BOTH
+  // ways the read can fail have to reach it: a settled Result that says
+  // `ok: false`, and a REJECTED call that leaves no Result at all (the preload
+  // bridge throwing, the window tearing down mid-call). The second used to
+  // fall through to `[]` and paint the empty state. A failed refetch that
+  // still has a good earlier list is NOT this state - the rows on screen are
+  // real, so `query.isError` alone would be a lie in the other direction.
+  const readFailed =
+    query.data === undefined ? query.isError : !query.data.ok;
 
   return (
     <section
@@ -88,6 +107,14 @@ export function StudioWelcome({
           ))}
         </div>
 
+        {/* The way back to the agent shell. THE SAME control the agent
+          * welcome hero renders, mounted here so Studio is not a one-way
+          * door; the wrapper only keeps the capsule at its content width in
+          * this left-aligned column (the hero's column centres it instead). */}
+        <div className="flex">
+          <RuntimeModeToggle runtimeMode={runtimeMode} onChange={setRuntimeMode} />
+        </div>
+
         {onCreateProject !== undefined ? (
           <div>
             <Button variant="accent" onClick={onCreateProject}>
@@ -105,7 +132,7 @@ export function StudioWelcome({
             <li className="px-2 py-1 text-[13px] leading-[20px] text-ink-tertiary">
               {STUDIO_WELCOME_RECENT_LOADING}
             </li>
-          ) : query.data !== undefined && !query.data.ok ? (
+          ) : readFailed ? (
             <li
               role="status"
               className="px-2 py-1 text-[13px] leading-[20px] text-warning"

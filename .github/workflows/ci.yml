@@ -284,6 +284,24 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build (e2e needs the bundled main + preload + renderer)
+        # THE TOUR FLAG IS WHAT MAKES `studio.spec.ts` RUN AT ALL.
+        # `VITE_VEX_SETUP_TOUR` is a build-time renderer constant
+        # (`import.meta.env.VITE_VEX_SETUP_TOUR` in
+        # src/renderer/features/setup/SetupTour.tsx and
+        # features/wizard/WizardShell.tsx), so it must be set on the BUILD, not
+        # on the test run. Without it the built bundle renders no tour, the
+        # Studio journey cannot reach `appShell` without faking a route, and its
+        # own skip fires before the first assertion - a required gate that
+        # proved nothing.
+        #
+        # SCOPED TO THIS STEP, and this job's build output never leaves this
+        # job: `vex-app-e2e` uploads only `playwright-report/` (on failure), no
+        # job in this workflow declares `needs: vex-app-e2e` or any
+        # `download-artifact`, and every packaged/signed artifact is built by
+        # release.yml, which runs its own unflagged `pnpm run build` on its own
+        # runners. No production artifact can inherit this flag.
+        env:
+          VITE_VEX_SETUP_TOUR: "1"
         run: pnpm run build
 
       - name: Install Playwright system libraries

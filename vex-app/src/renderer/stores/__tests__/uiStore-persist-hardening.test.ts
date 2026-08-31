@@ -104,6 +104,37 @@ describe("mergeUiState rejects everything outside the persisted whitelist", () =
     expect(merged.bookTab).toBe("board");
   });
 
+  it("coerces the rail booleans, which the whitelist let through RAW", () => {
+    // Being ON the whitelist makes a key persistable, not trustworthy.
+    // `sidebarOpen` and `bookOpen` are declared persisted keys, so before this
+    // coercion a hand-edited value went straight into the slot and reached the
+    // column solver and the rails' width/hidden props as a non-boolean.
+    const current = currentState();
+    const hostile = [
+      "yes",
+      "false",
+      0,
+      1,
+      null,
+      [],
+      {},
+      () => undefined,
+    ] as const;
+
+    for (const value of hostile) {
+      const merged = mergeUiState(
+        { sidebarOpen: value, bookOpen: value } as unknown,
+        current,
+      );
+      // The fallback is the STORE-CONSTRUCTED value, not a literal written a
+      // second time here.
+      expect(merged.sidebarOpen).toBe(current.sidebarOpen);
+      expect(merged.bookOpen).toBe(current.bookOpen);
+      expect(typeof merged.sidebarOpen).toBe("boolean");
+      expect(typeof merged.bookOpen).toBe("boolean");
+    }
+  });
+
   it("survives a payload that is not an object at all", () => {
     const current = currentState();
     for (const hostile of [null, 42, "vex", true]) {

@@ -50,19 +50,28 @@ export function approvalProjectDetail(
  * one". `tool` arrives already resolved by the caller ("(unknown tool)" is the
  * established fallback), and nothing here is derived from an approval's
  * arguments.
+ *
+ * `othersAwaiting` is the count of the OTHER cross-mode approvals observed in
+ * the same tick. There is one transient slot, so a toast per row would
+ * overwrite itself and the user would see only the last; but the batch-mates
+ * are all marked announced and never get a line of their own, so a bare
+ * single-row sentence would be an undercount of what is waiting. The named
+ * approval stays the subject and the rest are counted, which is a bound that
+ * REPORTS what it left out rather than a cut that hides it.
  */
 export function crossModeApprovalToast(input: {
   readonly originatedInStudio: boolean;
   readonly tool: string;
   readonly projectId: string | null;
   readonly projectName: string | null;
+  readonly othersAwaiting: number;
 }): string {
-  if (!input.originatedInStudio) {
-    return `Approval waiting in the agent shell: ${input.tool}`;
-  }
-  const where =
-    input.projectId === null
+  const where = input.originatedInStudio
+    ? input.projectId === null
       ? "Vex Studio"
-      : approvalProjectDisplay(input.projectId, input.projectName);
-  return `Approval waiting in ${where}: ${input.tool}`;
+      : approvalProjectDisplay(input.projectId, input.projectName)
+    : "the agent shell";
+  const line = `Approval waiting in ${where}: ${input.tool}`;
+  if (input.othersAwaiting <= 0) return line;
+  return `${line}, and ${String(input.othersAwaiting)} more awaiting`;
 }

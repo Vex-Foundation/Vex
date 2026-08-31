@@ -59,7 +59,14 @@ export function PortfolioOverviewCard({
   const globalQuery = usePortfolio(portfolioReadInputFor(scope));
   // The scope chips are a GLOBAL-inventory affordance; see the module doc.
   const chipsAllowed = scope.kind !== "project";
-  const walletsQuery = useAvailableWallets();
+  // ...and so is the read behind them. Under a project scope the card renders
+  // nothing from the global inventory, so it must not FETCH it either: the
+  // hook call stays unconditional (stable hook order) while the query is
+  // disabled, which keeps a project rail from firing the
+  // `wallets.listAvailable` IPC and from populating the shared global
+  // inventory cache row that every other consumer reads. The derivations
+  // below then degrade exactly as they do before the inventory resolves.
+  const walletsQuery = useAvailableWallets(chipsAllowed);
   const inventory = walletsQuery.data?.ok ? walletsQuery.data.data : null;
   const wallets = inventory !== null ? flattenPortfolioWallets(inventory) : [];
 

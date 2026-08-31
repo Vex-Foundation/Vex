@@ -14,6 +14,7 @@ import { makeError, makeProject } from "../../__tests__/studio-fixtures.js";
 const projectsListMock = vi.fn<() => Promise<Result<ProjectList>>>();
 
 const { StudioWelcome } = await import("../StudioWelcome.js");
+const { useUiStore } = await import("../../../../../stores/uiStore.js");
 
 function renderWelcome(props: {
   readonly onCreateProject?: () => void;
@@ -35,6 +36,7 @@ function renderWelcome(props: {
 }
 
 beforeEach(() => {
+  useUiStore.setState({ runtimeMode: "studio" });
   projectsListMock.mockReset();
   projectsListMock.mockResolvedValue({ ok: true, data: [] });
   Object.defineProperty(window, "vex", {
@@ -116,6 +118,39 @@ describe("the project list", () => {
     expect(line.textContent).toBe("Vex could not read your projects.");
     // NOT the empty state: "you have none" and "we could not look" are
     // different facts and must not collapse into one.
+    expect(screen.queryByText("No projects yet.")).toBeNull();
+  });
+});
+
+describe("the way back to the agent shell", () => {
+  it("renders the SAME runtime-mode capsule the agent hero renders", () => {
+    renderWelcome({});
+    const group = screen.getByRole("radiogroup", { name: "Runtime mode" });
+    const segments = screen.getAllByRole("radio");
+    expect(group.contains(segments[0] ?? null)).toBe(true);
+    expect(segments.map((el) => el.textContent)).toEqual(["Agent", "Studio"]);
+    // Studio is the mode we are in, so Studio is the checked segment.
+    expect(
+      screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked"),
+    ).toBe("true");
+  });
+
+  it("choosing Agent leaves Studio - without it the screen is a one-way door", () => {
+    renderWelcome({});
+    fireEvent.click(screen.getByRole("radio", { name: "Agent" }));
+    expect(useUiStore.getState().runtimeMode).toBe("agent");
+  });
+});
+
+describe("a REJECTED projects read", () => {
+  it("reports the failure instead of the empty state", async () => {
+    // Not an `ok: false` Result - the call itself rejects, which is what a
+    // preload bridge throwing or a window tearing down mid-call looks like.
+    // That leaves no Result at all, and the row list falls back to [].
+    projectsListMock.mockRejectedValue(new Error("bridge gone"));
+    renderWelcome({});
+    const line = await screen.findByRole("status");
+    expect(line.textContent).toBe("Vex could not read your projects.");
     expect(screen.queryByText("No projects yet.")).toBeNull();
   });
 });

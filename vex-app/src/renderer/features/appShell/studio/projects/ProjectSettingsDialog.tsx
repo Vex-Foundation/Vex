@@ -24,6 +24,13 @@
  * stored, and the user makes the choice again with the current facts in front
  * of them. Nothing is resent on the user's behalf.
  *
+ * The RELOAD WINDOW is part of that contract and has its own state. Clearing
+ * the conflict before awaiting the refetch put the stale form and its enabled
+ * Save back on screen for the length of an IPC roundtrip, which is a second
+ * submission against the version the first one already consumed. So the pane
+ * stays mounted through an explicit `reloading` state and the fresh row
+ * replaces the draft in one transition.
+ *
  * ## Every render outcome is surfaced
  *
  * A scope edit rewrites files in the user's repository. `updateScope` returns
@@ -42,7 +49,14 @@
  * something changed rather than having it happen behind the Save button.
  */
 
-import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
 import type {
   ProjectDto,
   ProjectUpdateScopeInput,
@@ -77,6 +91,7 @@ import {
   PROJECT_CLOSE,
   PROJECT_SCOPE_CONFLICT_BODY,
   PROJECT_SCOPE_CONFLICT_RELOAD,
+  PROJECT_SCOPE_CONFLICT_RELOADING,
   PROJECT_SCOPE_CONFLICT_TITLE,
   PROJECT_SETTINGS_LOADING,
   PROJECT_SETTINGS_PENDING,
@@ -93,6 +108,21 @@ import {
  * is for the human and the code is for the branch.
  */
 export const SCOPE_CONFLICT_CODE = "projects.scope_conflict";
+
+/**
+ * Where this dialog stands with respect to a REFUSED save.
+ *
+ * A discriminated state rather than a boolean pair (rule 08): `reloading` is
+ * not "conflict, plus a spinner somewhere". It is the window in which the
+ * consumed scope version is gone and the fresh one has not arrived, and the
+ * editable form must not EXIST in it - a Save pressed there would carry the
+ * version the refused attempt already spent. Modelling it as
+ * `conflict === false && draft === stale` was exactly the defect.
+ */
+type ScopeConflictState =
+  | { readonly kind: "none" }
+  | { readonly kind: "conflict" }
+  | { readonly kind: "reloading" };
 
 /** The form's editable state. Exactly the fields `updateScope` accepts. */
 interface ScopeDraft {
@@ -128,8 +158,20 @@ export function ProjectSettingsDialog({
 
   const [draft, setDraft] = useState<ScopeDraft | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [conflict, setConflict] = useState(false);
+  const [conflictState, setConflictState] = useState<ScopeConflictState>({
+    kind: "none",
+  });
   const [render, setRender] = useState<StudioRenderOutcome | null>(null);
+  /**
+   * Single-flight for the reload. The disabled button is the affordance; this
+   * is the guard, because a keyboard repeat or a re-render racing the state
+   * update must not put two reads in flight against one conflict.
+   */
+  const reloadingRef = useRef(false);
+
+  /** The conflict pane is on screen: as a refusal, or mid-reload. */
+  const showingConflict = conflictState.kind !== "none";
+  const reloading = conflictState.kind === "reloading";
 
   /**
    * The scope version this dialog is editing AGAINST.
@@ -162,8 +204,9 @@ export function ProjectSettingsDialog({
       setDraft(null);
       setEditingVersion(null);
       setSubmitError(null);
-      setConflict(false);
+      setConflictState({ kind: "none" });
       setRender(null);
+      reloadingRef.current = false;
       return;
     }
     if (draft !== null || project === null) return;
@@ -207,26 +250,47 @@ export function ProjectSettingsDialog({
    * So the draft is held until the new row is in hand and replaced in one step.
    */
   const reload = useCallback(async (): Promise<void> => {
-    setConflict(false);
-    setSubmitError(null);
-    setRender(null);
-    const outcome = await projectQuery.refetch();
-    const result = outcome.data;
-    if (result === undefined || !result.ok || result.data === null) {
-      // The read failed, or the project is gone. Drop the draft rather than
-      // leave the form editable against a row Vex could not confirm; the body
-      // then renders the unreadable or loading state, which is the truth.
-      setDraft(null);
-      setEditingVersion(null);
-      return;
+    if (reloadingRef.current) return;
+    reloadingRef.current = true;
+    // The pane STAYS. Only the fresh row may take it down, and until it lands
+    // there is no form on screen and therefore no Save to press.
+    setConflictState({ kind: "reloading" });
+    try {
+      const outcome = await projectQuery.refetch();
+      const result = outcome.data;
+      if (result === undefined || !result.ok || result.data === null) {
+        // The read failed, or the project is gone. Drop the draft rather than
+        // leave the form editable against a row Vex could not confirm; the body
+        // then renders the unreadable or loading state, which is the truth.
+        setDraft(null);
+        setEditingVersion(null);
+        setSubmitError(null);
+        setRender(null);
+        setConflictState({ kind: "none" });
+        return;
+      }
+      // ONE transition out of the conflict: the fresh row seeds the draft and
+      // the version, and the pane comes down in the same commit. React batches
+      // these, so no render ever shows the form before it is reseeded.
+      seedFrom(result.data);
+      setSubmitError(null);
+      setRender(null);
+      setConflictState({ kind: "none" });
+    } finally {
+      reloadingRef.current = false;
     }
-    seedFrom(result.data);
   }, [projectQuery, seedFrom]);
 
   const onSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
       event.preventDefault();
       if (
+        // The conflict pane renders no Save, but the FORM is still mounted
+        // under it and a stray submit (an Enter, a queued event) would carry
+        // the version the refused attempt already consumed. The guard lives
+        // here because this is where the version is spent, not in the markup
+        // that happens to hide the button.
+        conflictState.kind !== "none" ||
         draft === null ||
         editingVersion === null ||
         projectId === null ||
@@ -248,7 +312,7 @@ export function ProjectSettingsDialog({
       if (!result.ok) {
         if (result.error.code === SCOPE_CONFLICT_CODE) {
           // ITS OWN PANE, and no resubmit. See the module note.
-          setConflict(true);
+          setConflictState({ kind: "conflict" });
           return;
         }
         setSubmitError(result.error.message);
@@ -260,6 +324,7 @@ export function ProjectSettingsDialog({
       seedFrom(result.data.project);
     },
     [
+      conflictState.kind,
       dirty,
       draft,
       editingVersion,
@@ -281,10 +346,12 @@ export function ProjectSettingsDialog({
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
           <DialogHeader className="gap-2.5 border-line-2 px-8 py-5">
             <DialogTitle className="vex-eyebrow">
-              {conflict ? PROJECT_SCOPE_CONFLICT_TITLE : PROJECT_SETTINGS_TITLE}
+              {showingConflict
+                ? PROJECT_SCOPE_CONFLICT_TITLE
+                : PROJECT_SETTINGS_TITLE}
             </DialogTitle>
             <DialogDescription className="text-xs text-ink-tertiary">
-              {conflict
+              {showingConflict
                 ? PROJECT_SCOPE_CONFLICT_BODY
                 : project === null
                   ? PROJECT_SETTINGS_LOADING
@@ -293,7 +360,7 @@ export function ProjectSettingsDialog({
           </DialogHeader>
 
           <DialogBody className="gap-6 px-8">
-            {conflict ? null : <SettingsBody
+            {showingConflict ? null : <SettingsBody
               project={project}
               projectId={projectId}
               queryFailed={
@@ -306,14 +373,14 @@ export function ProjectSettingsDialog({
               onDraftChange={setDraft}
             />}
 
-            {!conflict ? <SubmitError submitError={submitError} /> : null}
-            {!conflict && render !== null ? (
+            {!showingConflict ? <SubmitError submitError={submitError} /> : null}
+            {!showingConflict && render !== null ? (
               <RenderOutcomePanel render={render} />
             ) : null}
           </DialogBody>
 
           <DialogFooter className="border-line-2 px-8 py-4">
-            {conflict ? (
+            {showingConflict ? (
               <>
                 <Button
                   type="button"
@@ -326,10 +393,13 @@ export function ProjectSettingsDialog({
                 <Button
                   type="button"
                   onClick={() => void reload()}
+                  disabled={reloading}
                   className="h-10 px-6"
                   autoFocus
                 >
-                  {PROJECT_SCOPE_CONFLICT_RELOAD}
+                  {reloading
+                    ? PROJECT_SCOPE_CONFLICT_RELOADING
+                    : PROJECT_SCOPE_CONFLICT_RELOAD}
                 </Button>
               </>
             ) : (

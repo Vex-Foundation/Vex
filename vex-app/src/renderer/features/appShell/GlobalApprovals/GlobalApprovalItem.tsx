@@ -41,6 +41,7 @@ export function GlobalApprovalItem({
 }: GlobalApprovalItemProps): JSX.Element {
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
   const setShellRoute = useUiStore((s) => s.setShellRoute);
+  const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
 
   // A5 nulls `sessionId` for session-less / deleted-session rows upstream, so
   // "Open session" gates on it directly.
@@ -48,8 +49,31 @@ export function GlobalApprovalItem({
   const sessionLabel =
     row.sessionTitle ?? (row.sessionId !== null ? "Untitled session" : "Background approval");
 
+  /**
+   * Jump to the session that raised this approval.
+   *
+   * The strip is mounted ABOVE the mode dispatch, so this panel is reachable
+   * from Studio - and a session transcript only exists in the agent shell.
+   * Selecting the session without switching the mode left the user in Studio
+   * looking at a project workspace, having pressed a control that promised a
+   * session. So the three writes are ONE navigation and land together.
+   *
+   * ORDER: mode first, then the selection, then the covering screen. Zustand's
+   * `set` goes through React's `useSyncExternalStore` subscription, and all
+   * three run inside one click handler, so React 18 batches them into a single
+   * commit - no intermediate frame exists in practice. The order is chosen for
+   * the case where that is not true (a future non-batched dispatcher): mode
+   * first means the worst intermediate frame is the agent shell still showing
+   * the PREVIOUS selection for one frame, never the Studio chrome painted over
+   * a session the user cannot see.
+   *
+   * Neither write is an authority change: `runtimeMode` decides which surfaces
+   * mount, and the approval is still decided in its own card under the same
+   * two-step confirm.
+   */
   const openSession = (): void => {
     if (row.sessionId === null) return;
+    setRuntimeMode("agent");
     setActiveSessionId(row.sessionId);
     // A full-app screen (Memory / Missions / …) may be covering the shell —
     // close it so the jump actually lands on the session transcript.

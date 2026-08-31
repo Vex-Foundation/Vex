@@ -54,6 +54,7 @@ import { filesystemLaunchProbe } from "../../../pty-host/launch-probe.js";
 import { createNodePtySpawner } from "../../../pty-host/node-pty-spawner.js";
 import { scrubEnvironment } from "../../../pty-host/process-env.js";
 import { TerminalSnapshotStore } from "../../../pty-host/snapshot-store.js";
+import { terminalCreateValueSchema } from "@shared/schemas/terminal.js";
 import type { TerminalOutcome } from "@shared/schemas/terminal.js";
 import type { PtyHost, PtyHostObserver } from "../pty-host-starter.js";
 import { TerminalDomain } from "../terminals.js";
@@ -1765,6 +1766,124 @@ describe("deleteProject: step 6, closing what the project owns", () => {
           process.kill(pid, "SIGKILL");
         } catch {
           // Already gone, which is the outcome this test asserts.
+        }
+      }
+      await rm(snapshotDirectory, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  /**
+   * FINDING W2, END TO END: a deleted project's terminal SNAPSHOT stays deleted.
+   *
+   * The chain this closes was traced through production code and every link of
+   * it is exercised here rather than modelled. A commit serializes every live
+   * mirror of a project - its terminal scrollback, which is command lines,
+   * whatever those commands printed and whatever the user typed - into
+   * `<snapshots>/<projectId>.json`. A delete removes that file during cleanup.
+   * The two were unordered and unauthorized: `persistWorkspace` took no lease
+   * and asked the lifecycle gate nothing, so a commit arriving after cleanup
+   * RECREATED the file for a project Vex had just told the user was deleted.
+   *
+   * What makes this an end-to-end proof rather than a unit assertion: the
+   * snapshot removal here is the REAL one, wired exactly where production wires
+   * it, and the final claim is READ BACK FROM THE FILESYSTEM after the delete
+   * has fully returned - not from any component's report of its own behaviour.
+   */
+  it("REFUSES a late commit and leaves the snapshot file absent on disk", async () => {
+    const doomed = await seedProject();
+    const snapshotDirectory = await mkdtemp(path.join(tmpdir(), "vex-del-snap-"));
+    const snapshotFile = path.join(snapshotDirectory, `${doomed.projectId}.json`);
+    const wiring = inProcessPtyHost(snapshotDirectory);
+
+    // The REAL removal, at the seam production hands `removeTerminalSnapshot`.
+    runtime.removeTerminalSnapshot.mockImplementation(async (projectId) => {
+      await rm(path.join(snapshotDirectory, `${projectId}.json`), { force: true });
+      return true;
+    });
+
+    const domain = new TerminalDomain(
+      {
+        resolveProjectCwd: () => Promise.resolve(doomed.directory),
+        resolveShell: () => ({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
+        postPort: () => undefined,
+        publishAvailability: () => undefined,
+        publishTerminalsLost: () => undefined,
+      },
+      wiring.starterFactory,
+    );
+
+    let pid = -1;
+    try {
+      const created = await domain.create("w1", doomed.projectId, 80, 24);
+      if (!created.ok) throw new Error(`create refused: ${created.code}`);
+      // PARSED, not cast: `create` answers with the host's own value and this
+      // suite must not assert against a shape it merely assumed.
+      const value = terminalCreateValueSchema.parse(created.value);
+      pid = value.pid;
+      const terminalId = value.terminalId;
+
+      // THE PREMISE. A commit before the delete really does write the file, so
+      // its absence at the end is a fact about the delete rather than about a
+      // commit that never worked.
+      const committed = await domain.persistWorkspace(doomed.projectId, {
+        projectId: doomed.projectId,
+        groups: [
+          {
+            groupId: "g1",
+            orientation: "horizontal",
+            panes: [{ terminalId, relativeSize: 1 }],
+            activePaneIndex: 0,
+          },
+        ],
+        activeGroupIndex: 0,
+      });
+      expect(committed.ok).toBe(true);
+      expect(await exists(snapshotFile)).toBe(true);
+
+      const result = unwrap(
+        await deleteProject(
+          {
+            projectId: doomed.projectId,
+            alsoTrashFolder: false,
+            expectedName: PROJECT_NAME,
+          },
+          "corr-late-persist",
+          deps,
+        ),
+      );
+      expect(result.outcome).toBe("removed");
+      expect(await exists(snapshotFile)).toBe(false);
+
+      // THE LATE COMMIT, which is what an unmounting workspace controller does
+      // on the teardown flush of a project that has just been deleted.
+      const late = await domain.persistWorkspace(doomed.projectId, {
+        projectId: doomed.projectId,
+        groups: [
+          {
+            groupId: "g1",
+            orientation: "horizontal",
+            panes: [{ terminalId, relativeSize: 1 }],
+            activePaneIndex: 0,
+          },
+        ],
+        activeGroupIndex: 0,
+      });
+
+      // THE WORLD FIRST. Re-read from the filesystem, not reported: the file
+      // the delete removed is still gone. This is the assertion the whole
+      // finding is about, so it is the one a regression must name.
+      expect(await exists(snapshotFile)).toBe(false);
+      // And it is gone because the commit was REFUSED by the lifecycle gate,
+      // with the typed outcome the renderer already renders by name.
+      expect(late).toEqual({ ok: false, code: "project_deleting" });
+    } finally {
+      await domain.dispose().catch(() => undefined);
+      await wiring.shutdown();
+      if (pid > 0) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Already gone, which is what the delete's close hook did.
         }
       }
       await rm(snapshotDirectory, { recursive: true, force: true });

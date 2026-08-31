@@ -20,7 +20,7 @@
  * only thing that decides which terminals a project has, and this module only
  * ever mirrors it.
  *
- * ## The CLOSE HANDLER travels the same way, and for the same reason
+ * ## The workspace LIFECYCLE travels the same way, and for the same reason
  *
  * B4b-C made an explicit close kill the project's ptys, which turned the close
  * into an ORDERED operation: the buffer-bearing snapshot must be committed
@@ -28,25 +28,61 @@
  * halves need the workspace LAYOUT, which lives in the controller's state - and
  * the centre, which is where the user's close gesture lands, does not have it.
  *
- * So the controller also publishes a `close` handler here, and the centre TAKES
- * it and awaits it before removing the project from the kept-alive set. The
- * ordering therefore lives with the state it orders, and the centre keeps the
- * one decision that is genuinely its own: when a workspace leaves the set.
+ * So the controller also publishes a {@link ProjectWorkspaceLifecycle} here and
+ * the centre CALLS it. The ordering therefore lives with the state it orders,
+ * and the centre keeps the one decision that is genuinely its own: when a
+ * workspace leaves the set.
+ *
+ * ## Two operations on one handle, not two registries
+ *
+ * `close` and `discard` are the same owner answering the same question - what
+ * happens to this workspace's unsaved layout - with opposite answers, and the
+ * controller publishes them in one effect from one closure. A second map would
+ * make each publisher responsible for not clobbering the other's half for no
+ * gain, which is precisely the lost update the terminal-id index is kept
+ * separate to avoid (that one IS published by a different effect on different
+ * dependencies).
  *
  * NOT PERSISTED and process-local, like the registries it serves.
  */
 
+import type { WorkspaceCloseOutcome } from "./close-lifecycle.js";
+
 const terminalIdsByProject = new Map<string, readonly string[]>();
 
 /**
- * Each mounted workspace's ordered close, keyed by project.
+ * What a mounted workspace can be asked to do about its unsaved layout.
  *
- * A SECOND map rather than a field beside the terminal ids, because the two are
- * published by different effects on different dependencies: merging them would
- * make each publisher responsible for preserving the other's half, which is a
- * lost-update waiting to happen for no gain.
+ * Both members are owned by the `StudioWorkspaceController` for this project
+ * and both go through its close-lifecycle state machine, so a caller cannot put
+ * the workspace into an inconsistent phase by choosing the wrong one.
  */
-const closeByProject = new Map<string, () => Promise<void>>();
+export interface ProjectWorkspaceLifecycle {
+  /**
+   * CLOSE: commit the buffer-bearing snapshot, then end the shells.
+   *
+   * SINGLE-FLIGHT. A second call while the first is running joins it and
+   * resolves with the same outcome; it never starts a second commit and never
+   * returns before the first has finished. The caller must act on the outcome:
+   * a failed close has destroyed nothing and its workspace must stay mounted.
+   */
+  readonly close: () => Promise<WorkspaceCloseOutcome>;
+  /**
+   * DISCARD: this project has been DELETED, so nothing here may ever be
+   * written again.
+   *
+   * Synchronous by contract, because the only correct moment to call it is
+   * BEFORE the controller unmounts - the unmount flush is one of the writers it
+   * exists to stop, and an async latch would land after it.
+   *
+   * Kills nothing: the delete's own close hook in main has already ended the
+   * project's shells under authority this renderer does not have.
+   */
+  readonly discard: () => void;
+}
+
+/** Each mounted workspace's lifecycle handle, keyed by project. */
+const lifecycleByProject = new Map<string, ProjectWorkspaceLifecycle>();
 
 /**
  * Mirror one project's terminal ids. Called by the controller that owns them.
@@ -100,41 +136,48 @@ export function takeProjectTerminals(projectId: string): readonly string[] {
 }
 
 /**
- * Register this project's ordered close. Returns the unregister.
+ * Register this project's lifecycle handle. Returns the unregister.
  *
  * Identity-checked on the way out, like every other single-slot registration in
  * this feature: a controller that unmounted AFTER its successor mounted must
- * not delete the successor's handler.
+ * not delete the successor's handle.
  */
-export function publishProjectWorkspaceClose(
+export function publishProjectWorkspaceLifecycle(
   projectId: string,
-  close: () => Promise<void>,
+  lifecycle: ProjectWorkspaceLifecycle,
 ): () => void {
-  closeByProject.set(projectId, close);
+  lifecycleByProject.set(projectId, lifecycle);
   return () => {
-    if (closeByProject.get(projectId) === close) closeByProject.delete(projectId);
+    if (lifecycleByProject.get(projectId) === lifecycle) {
+      lifecycleByProject.delete(projectId);
+    }
   };
 }
 
 /**
- * Read AND FORGET this project's ordered close, or `null` when no workspace is
- * mounted for it.
+ * Read this project's lifecycle handle WITHOUT taking it, or `null` when no
+ * workspace is mounted for it.
  *
- * TAKE-ONCE, and that is the whole concurrency control on the close path: a
- * second close gesture arriving while the first is still persisting and killing
- * gets `null` and does nothing, rather than committing a second snapshot and
- * killing terminals the first close has already ended.
+ * NON-DESTRUCTIVE, and the change is load-bearing. This used to be a take-once
+ * read, and the take-once WAS the concurrency control: a second close gesture
+ * arriving while the first was still persisting found `null`, concluded there
+ * was no workspace, and unmounted the controller mid-commit - destroying the
+ * only owner of the layout being written. Concurrency is now owned where the
+ * in-flight work is, by the controller's single-flight close, so a second
+ * caller gets the SAME handle and joins the SAME completion.
+ *
+ * It also has to survive a failed close. A close that refused leaves its
+ * workspace mounted and retryable, and a registry that had already forgotten
+ * its handle would leave the retry with nothing to call.
  */
-export function takeProjectWorkspaceClose(
+export function peekProjectWorkspaceLifecycle(
   projectId: string,
-): (() => Promise<void>) | null {
-  const close = closeByProject.get(projectId) ?? null;
-  closeByProject.delete(projectId);
-  return close;
+): ProjectWorkspaceLifecycle | null {
+  return lifecycleByProject.get(projectId) ?? null;
 }
 
 /** Drop every entry. The window teardown path, beside the registries' own. */
 export function clearProjectTerminals(): void {
   terminalIdsByProject.clear();
-  closeByProject.clear();
+  lifecycleByProject.clear();
 }

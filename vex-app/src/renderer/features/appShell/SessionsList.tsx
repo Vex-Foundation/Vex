@@ -365,6 +365,14 @@ export function SessionsList({
             sidebarOpen={wide}
             message={query.data.error.message}
           />
+        ) : query.isError ? (
+          // A TRANSPORT rejection never produces a Result, so without this
+          // branch it fell through to `null` and the rail went blank - a lie
+          // by omission (rule 08: failure is a distinct state, not emptiness).
+          <SessionsErrorPlaceholder
+            sidebarOpen={wide}
+            message="Vex could not read your sessions."
+          />
         ) : query.data && query.data.ok ? (
           visibleRows.length === 0 ? (
             <SessionsEmptyPlaceholder sidebarOpen={wide} />

@@ -31,6 +31,7 @@
  *   - `render`          an installer job writing this project's artifacts.
  *   - `watcher`         a filesystem watcher (consumer arrives in a later stage).
  *   - `terminal`        an open terminal session, taken by `terminals.ts`.
+ *   - `terminalPersist` ONE workspace snapshot commit in flight.
  *   - `fileOperation`   ONE `listChildren` or `readFile` in flight.
  *
  * `executingCall` and `dispatch` are DRAINED: they are bounded by their own
@@ -86,6 +87,7 @@ export type ProjectLeaseClass =
   | "watcher"
   | "terminal"
   | "terminalCreate"
+  | "terminalPersist"
   | "fileOperation";
 
 /**
@@ -102,6 +104,19 @@ export type ProjectLeaseClass =
  * yet and no record yet - so a create that started before the tombstone could
  * insert a live terminal for a project that had already been deleted, after the
  * close hook had already run and found nothing.
+ *
+ * `terminalPersist` is present for the same reason and closes the same kind of
+ * hole one operation over. A workspace commit SERIALIZES EVERY LIVE MIRROR of
+ * the project - its terminal scrollback - into
+ * `<userData>/studio/terminal-snapshots/<projectId>.json`, and a delete's
+ * cleanup REMOVES that file. Without a lease the two are unordered: a commit
+ * admitted before the tombstone can land after the removal and recreate a file
+ * holding a deleted project's command lines and whatever those shells printed,
+ * which then outlives the project for as long as the snapshot directory bound
+ * allows. Draining makes the delete WAIT for commits already in flight, and the
+ * admission check on the same call refuses every later one. It is bounded work:
+ * one host round trip capped by `TERMINAL_PERSIST_TIMEOUT_MS`, waiting on no
+ * human.
  *
  * `fileOperation` is present for the SAME reason `terminalCreate` is, one layer
  * down. A `listChildren` or a `readFile` resolves its authority through
@@ -122,6 +137,7 @@ export const DRAINED_LEASE_CLASSES: readonly ProjectLeaseClass[] = [
   "executingCall",
   "dispatch",
   "terminalCreate",
+  "terminalPersist",
   "fileOperation",
 ];
 

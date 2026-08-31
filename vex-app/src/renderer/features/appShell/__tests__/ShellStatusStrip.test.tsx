@@ -1,12 +1,14 @@
 /**
  * The strip's three zones, in both modes.
  *
- * The centre word is the thing that changes with the mode; the flanks are the
- * things that must NOT be forked. `MissionRail` and `SessionExportControl` are
- * session-scoped and already render nothing without a resolved session, so
- * Studio mode gets an empty left flank for free - these tests assert that
- * rather than trusting it, because "it already returns null" is exactly the
- * kind of claim that stops being true silently.
+ * The centre word is the thing that changes with the mode, and the flanks
+ * divide by WHOSE they are. `MissionRail` and `SessionExportControl` are scoped
+ * to a session, and a session belongs to the agent shell: `activeSessionId`
+ * survives a mode switch, so in Studio both would otherwise paint a mission
+ * badge and an export key over a project workspace that has nothing to do with
+ * them. The approvals cluster is the opposite - one app-wide queue, visible in
+ * whichever mode the user is in. These tests assert both rather than trusting
+ * them.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -170,9 +172,20 @@ describe("the flanks", () => {
     expect(screen.queryByTestId("export-control")).toBeNull();
   });
 
-  it("the session-scoped flanks render WITH a session, unforked by mode", () => {
+  it("the session-scoped flanks render WITH a session in agent mode", () => {
     renderStrip("agent", "44444444-4444-4444-8444-444444444444");
     expect(screen.getByTestId("mission-rail")).not.toBeNull();
     expect(screen.getByTestId("export-control")).not.toBeNull();
+  });
+
+  it("STUDIO gets no session flanks even when a session is still selected", () => {
+    // The store keeps the agent selection across a mode switch (so switching
+    // back returns to it), so "no session id" is not what silences these here
+    // - the strip has to hand them null itself.
+    renderStrip("studio", "44444444-4444-4444-8444-444444444444");
+    expect(screen.queryByTestId("mission-rail")).toBeNull();
+    expect(screen.queryByTestId("export-control")).toBeNull();
+    // ... and the app-wide cluster is NOT gated with them.
+    expect(screen.getByTestId("approvals-badge")).not.toBeNull();
   });
 });

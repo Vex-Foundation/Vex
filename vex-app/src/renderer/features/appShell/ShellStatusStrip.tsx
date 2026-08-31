@@ -14,10 +14,26 @@
  * changes with the mode. The hook stays inside `GlobalApprovals` - the plan
  * ratified that simplification; it is already mode-independent.
  *
- * `MissionRail` and `SessionExportControl` are SESSION-scoped and already
- * render nothing without a resolved session, so Studio mode gets an empty left
- * flank and a bare approvals cluster on the right without either component
- * being forked or gated here. `ShellStatusStrip.test.tsx` asserts that rather
+ * `MissionRail` and `SessionExportControl` are SESSION-scoped, and the session
+ * they scope to belongs to the AGENT shell. Because this strip is mounted above
+ * the mode dispatch it keeps rendering while Studio is on screen, and
+ * `activeSessionId` survives a mode switch (the store keeps the selection so
+ * switching back returns to it) - so in Studio both components would otherwise
+ * receive a live session id and paint a mission badge and an export key over a
+ * project workspace that has nothing to do with them. This file gates that at
+ * the source: in Studio they are handed `null`.
+ *
+ * `null` rather than not rendering them, because `null` is what each of them
+ * already treats as "no session": `MissionRail` returns null (its render gate
+ * requires a non-null id) and `SessionExportControl` returns null (no resolved
+ * session, nothing to export), and both hand `null` on to `useSession`, whose
+ * `enabled: false` means Studio also fires no session IPC for a session nobody
+ * is looking at. Not rendering them would have the same pixels and would fork
+ * the strip's composition by mode for no gain.
+ *
+ * `GlobalErrorBanner` and `GlobalApprovals` are deliberately NOT gated:
+ * approvals are one app-wide queue and are meant to be visible in whichever
+ * mode the user is in. `ShellStatusStrip.test.tsx` asserts all of this rather
  * than trusting it.
  */
 
@@ -39,13 +55,15 @@ export function ShellStatusStrip({
   runtimeMode,
   activeSessionId,
 }: ShellStatusStripProps): JSX.Element {
+  // See the module note: the session-scoped flanks belong to the agent shell.
+  const sessionScopedId = runtimeMode === "studio" ? null : activeSessionId;
   return (
     <header
       className="relative grid h-11 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-6"
       data-vex-area="shell-status-strip"
     >
       <div className="flex min-w-0 items-center justify-start">
-        <MissionRail activeSessionId={activeSessionId} />
+        <MissionRail activeSessionId={sessionScopedId} />
       </div>
       <div className="flex min-w-0 items-center justify-center">
         {runtimeMode === "studio" ? (
@@ -59,7 +77,7 @@ export function ShellStatusStrip({
          * belong to no conversation. Renders null when idle. */}
         <GlobalErrorBanner />
         <GlobalApprovals />
-        <SessionExportControl activeSessionId={activeSessionId} />
+        <SessionExportControl activeSessionId={sessionScopedId} />
       </div>
     </header>
   );

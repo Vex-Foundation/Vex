@@ -188,11 +188,21 @@ test("Studio journey: the shell switches to Studio and opens the project creator
   await modeGroup.getByRole("radio", { name: "Studio" }).click();
 
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
-  // The hero itself is an agent-mode surface: Studio replaces the welcome
-  // stage with its own centre, so the capsule that made the choice is gone
-  // once the choice lands. Asserted rather than assumed, because a stale
-  // radiogroup left mounted behind the Studio columns would be a real defect.
-  await expect(modeGroup).toHaveCount(0);
+  // Studio is NOT a one-way door: its welcome mounts the SAME runtime-mode
+  // capsule the agent hero renders (B4 review blocker 1). The invariant is no
+  // longer "the capsule is gone" but "exactly one capsule, owned by the Studio
+  // welcome, showing Studio as checked" - a stale hero capsule orphaned behind
+  // the Studio columns would double the count and still fails here.
+  await expect(modeGroup).toHaveCount(1);
+  await expect(
+    page
+      .locator('[data-vex-area="studio-welcome"]')
+      .getByRole("radiogroup", { name: "Runtime mode" }),
+  ).toHaveCount(1);
+  await expect(modeGroup.getByRole("radio", { name: "Studio" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
   // The screen attribute did not MOVE to a different element: the mode switch
   // repaints the columns inside one shell rather than mounting a second one.
   // This is what `[data-vex-screen="appShell"]` being a stable e2e selector in

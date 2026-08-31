@@ -814,25 +814,62 @@ export class TerminalDomain {
   }
 
   /**
-   * Record a project's topology and commit it.
+   * Record a project's topology and commit it. UNDER THE LIFECYCLE GATE.
    *
    * Main keeps its own copy because main answers the opens, and the version is
    * minted HERE because main is the only party that sees every persist for a
    * project. It is a plain counter: the contract is monotonicity, not time.
+   *
+   * ## Why a commit needs admission at all
+   *
+   * A commit WRITES A FILE, and a project delete DELETES that file. This used
+   * to be the one terminal operation with no lifecycle check: it minted a
+   * version and sent the request whoever asked and whenever. The chain that
+   * produced was measured, not theoretical - a deleted project's workspace
+   * controller unmounts, its teardown flushes one last persist, and the commit
+   * RECREATES `<userData>/studio/terminal-snapshots/<projectId>.json` for a
+   * project whose tombstone has committed and whose snapshot cleanup has
+   * already run. That file holds the project's terminal scrollback: command
+   * lines, whatever those commands printed, and whatever the user typed into
+   * them.
+   *
+   * The renderer latches the same write on its side, and that is not enough by
+   * itself: a renderer is untrusted for this decision, and a latch is a
+   * courtesy. The authority is here.
+   *
+   * ## The lease, and what makes it the RIGHT half of the fix
+   *
+   * `terminalPersist` is DRAINED, so a delete's step 3 waits for commits that
+   * were already in flight before it decides anything, and step 1 has already
+   * closed admission so no later commit is admitted. Together those leave no
+   * interval in which a commit can pass the check and land after the removal.
+   * Taken SYNCHRONOUSLY before the first await, because a lease taken after one
+   * describes a moment that has already passed.
+   *
+   * The version counter is not touched on a refusal: a refused commit is not a
+   * persist, and burning a version for it would make the host discard the next
+   * genuine one as out of order.
    */
   async persistWorkspace(
     projectId: string,
     layout: TerminalWorkspaceLayout,
   ): Promise<TerminalOutcome<unknown>> {
-    const version = (this.layoutVersions.get(projectId) ?? -1) + 1;
-    this.layoutVersions.set(projectId, version);
-    this.layouts.set(projectId, layout);
-    return await this.starter.send({
-      kind: "persistWorkspace",
-      projectId,
-      layout,
-      layoutVersion: version,
-    });
+    const persisting = acquireProjectLease(projectId, "terminalPersist");
+    if (!persisting.ok) return refuse("project_deleting");
+
+    try {
+      const version = (this.layoutVersions.get(projectId) ?? -1) + 1;
+      this.layoutVersions.set(projectId, version);
+      this.layouts.set(projectId, layout);
+      return await this.starter.send({
+        kind: "persistWorkspace",
+        projectId,
+        layout,
+        layoutVersion: version,
+      });
+    } finally {
+      persisting.lease.release();
+    }
   }
 
 

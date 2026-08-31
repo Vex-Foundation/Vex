@@ -9,9 +9,13 @@
  *  - the CHECKBOX upgrades the dialog to the warning treatment AND is what
  *    puts `alsoTrashFolder: true` on the wire;
  *  - the TERMINAL LINE is present only when the renderer actually knows;
- *  - each of the SEVEN outcomes renders distinctly, and the three that end the
+ *  - each of the SEVEN outcomes renders distinctly, and the TWO that end the
  *    interaction are the only ones that close;
  *  - `trash: "failed"` keeps the dialog open even on `removed`;
+ *  - `not_found` claims NOTHING: no `onDeleted`, no toast, no close. What the
+ *    real composition then does with it is `project-delete-composition.test.tsx`;
+ *  - an outcome that leaves the dialog open about a tombstoned row raises
+ *    `onHoldOpen`, and the row survives the list dropping it;
  *  - FOCUS lands on Cancel.
  *
  * Matchers are plain Vitest/Chai: this repository does not install
@@ -24,7 +28,14 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup as cleanupTrees,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import type { JSX } from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
 import type {
@@ -32,6 +43,7 @@ import type {
   ProjectDeleteResult,
   ProjectDto,
 } from "@shared/schemas/projects.js";
+import { clearToast, getToastSnapshot } from "../../../../../lib/toast.js";
 import {
   installStudioDomStubs,
   makeProject,
@@ -57,6 +69,10 @@ beforeEach(() => {
   deleteMock.mockReset();
   deleteMock.mockResolvedValue({ ok: true, data: { outcome: "already_removed" } });
   clearProjectTerminals();
+  // The toast store is module state; a toast raised by a previous case would
+  // make "no toast was shown" pass for the wrong reason.
+  const standing = getToastSnapshot();
+  if (standing !== null) clearToast(standing.id);
   Object.defineProperty(window, "vex", {
     configurable: true,
     value: { projects: { delete: deleteMock } },
@@ -67,25 +83,39 @@ interface Harness {
   readonly project: ProjectDto;
   readonly onClose: ReturnType<typeof vi.fn>;
   readonly onDeleted: ReturnType<typeof vi.fn>;
+  readonly onHoldOpen: ReturnType<typeof vi.fn>;
+  /** Re-render with a different `project` prop, as the host does. */
+  readonly setProject: (next: ProjectDto | null) => void;
 }
 
 function renderDialog(overrides: Partial<ProjectDto> = {}): Harness {
   const project = makeProject({ name: "atlas", ...overrides });
   const onClose = vi.fn();
   const onDeleted = vi.fn();
+  const onHoldOpen = vi.fn();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  render(
+  const tree = (next: ProjectDto | null): JSX.Element => (
     <QueryClientProvider client={client}>
       <ProjectDeleteDialog
-        project={project}
+        project={next}
         onClose={onClose}
         onDeleted={onDeleted}
+        onHoldOpen={onHoldOpen}
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
-  return { project, onClose, onDeleted };
+  const view = render(tree(project));
+  return {
+    project,
+    onClose,
+    onDeleted,
+    onHoldOpen,
+    setProject: (next) => {
+      view.rerender(tree(next));
+    },
+  };
 }
 
 function confirmButton(): HTMLButtonElement {
@@ -204,6 +234,7 @@ describe("the running-terminal line", () => {
           project={project}
           onClose={() => undefined}
           onDeleted={() => undefined}
+          onHoldOpen={() => undefined}
         />
       </QueryClientProvider>,
     );
@@ -226,6 +257,7 @@ describe("the running-terminal line", () => {
           project={project}
           onClose={() => undefined}
           onDeleted={() => undefined}
+          onHoldOpen={() => undefined}
         />
       </QueryClientProvider>,
     );
@@ -241,7 +273,7 @@ describe("every delete outcome", () => {
   it.each<[ProjectDeleteResult, boolean]>([
     [{ outcome: "removed", ...cleanup }, true],
     [{ outcome: "already_removed" }, true],
-    [{ outcome: "not_found" }, true],
+    [{ outcome: "not_found" }, false],
     [{ outcome: "cleanup_resumed", ...cleanup }, false],
     [{ outcome: "cleanup_pending", ...cleanup, attempts: 2 }, false],
     [{ outcome: "blocked_active_calls", count: 3 }, false],
@@ -320,6 +352,21 @@ describe("every delete outcome", () => {
     });
   });
 
+  it("claims NOTHING on not_found: no onDeleted, no toast, no close", async () => {
+    // `not_found` is "no such project OR the name did not match", and the
+    // second half is a project that still exists under a new name. Every one
+    // of the three things a delete used to do here would be a false claim
+    // about it.
+    deleteMock.mockResolvedValue({ ok: true, data: { outcome: "not_found" } });
+    const { onClose, onDeleted } = renderDialog();
+    await confirmDelete();
+
+    await screen.findByText(PROJECT_DELETE_OUTCOME_SENTENCES.not_found);
+    expect(onDeleted).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(getToastSnapshot()).toBeNull();
+  });
+
   it("renders a refusal Result by name rather than as a generic error", async () => {
     deleteMock.mockResolvedValue({
       ok: false,
@@ -340,6 +387,84 @@ describe("every delete outcome", () => {
         "A wallet selected by this project no longer matches its stored address.",
       ),
     ).not.toBeNull();
+  });
+});
+
+describe("the pinned row", () => {
+  const cleanup = { cleanup: [], trash: "not_requested" as const };
+
+  it("holds the request open and survives the row leaving the list", async () => {
+    // The production sequence: `useDeleteProject` invalidates the list on this
+    // ok Result, the tombstoned row leaves it, and the host hands this dialog
+    // `project={null}`. Without the pin there is no name, no retry and no
+    // report left on screen.
+    deleteMock.mockResolvedValue({
+      ok: true,
+      data: { outcome: "cleanup_pending", ...cleanup, attempts: 2 },
+    });
+    const { onHoldOpen, setProject } = renderDialog();
+    await confirmDelete();
+    await screen.findByText("Vex has attempted this cleanup 2 times.");
+    await waitFor(() => {
+      expect(onHoldOpen).toHaveBeenLastCalledWith(true);
+    });
+
+    setProject(null);
+
+    expect(
+      document.querySelector('[data-vex-delete-outcome="cleanup_pending"]'),
+    ).not.toBeNull();
+    expect(screen.getByText("Type the project name to confirm: atlas")).not.toBeNull();
+
+    // And the retry still goes to the row this dialog acted on.
+    fireEvent.click(confirmButton());
+    await waitFor(() => {
+      expect(deleteMock).toHaveBeenCalledTimes(2);
+    });
+    expect(deleteMock.mock.calls[1]?.[0].expectedName).toBe("atlas");
+  });
+
+  it("does not hold the request open for not_found", async () => {
+    // The one open outcome whose remedy IS the reloaded list: a project that
+    // really is gone must still take the dialog with it.
+    deleteMock.mockResolvedValue({ ok: true, data: { outcome: "not_found" } });
+    const { onHoldOpen } = renderDialog();
+    await confirmDelete();
+    await screen.findByText(PROJECT_DELETE_OUTCOME_SENTENCES.not_found);
+    expect(onHoldOpen).not.toHaveBeenCalledWith(true);
+  });
+
+  it("holds the request open on a removed whose trash failed", async () => {
+    // Same defect class: the project IS gone, so the list drops it, and the
+    // folder-still-on-disk report would be swept off screen with it.
+    deleteMock.mockResolvedValue({
+      ok: true,
+      data: { outcome: "removed", cleanup: [], trash: "failed" },
+    });
+    const { onHoldOpen, setProject } = renderDialog();
+    await confirmDelete();
+    await screen.findByText(PROJECT_TRASH_SENTENCES.failed);
+    await waitFor(() => {
+      expect(onHoldOpen).toHaveBeenLastCalledWith(true);
+    });
+
+    setProject(null);
+    expect(screen.getByText(PROJECT_TRASH_SENTENCES.failed)).not.toBeNull();
+  });
+
+  it("releases the hold when the dialog goes away", async () => {
+    deleteMock.mockResolvedValue({
+      ok: true,
+      data: { outcome: "cleanup_pending", ...cleanup, attempts: 1 },
+    });
+    const { onHoldOpen } = renderDialog();
+    await confirmDelete();
+    await waitFor(() => {
+      expect(onHoldOpen).toHaveBeenLastCalledWith(true);
+    });
+
+    cleanupTrees();
+    expect(onHoldOpen).toHaveBeenLastCalledWith(false);
   });
 });
 

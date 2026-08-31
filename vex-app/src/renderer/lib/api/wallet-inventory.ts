@@ -21,15 +21,31 @@ import { walletsKeys } from "./queryKeys.js";
 
 const STALE_MS = 10_000;
 
-export function availableWalletsOptions() {
+export function availableWalletsOptions(enabled: boolean = true) {
   return queryOptions({
     queryKey: walletsKeys.available(),
     queryFn: () => window.vex.wallets.listAvailable({}),
     staleTime: STALE_MS,
+    enabled,
   });
 }
 
-/** Inventory wallets available to pick from (session create) or extend (onboarding). */
-export function useAvailableWallets(): UseQueryResult<Result<AvailableWalletsDto>> {
-  return useQuery(availableWalletsOptions());
+/**
+ * Inventory wallets available to pick from (session create) or extend
+ * (onboarding).
+ *
+ * `enabled` gates the read for a caller that must not TOUCH the global
+ * inventory at all - a project-scoped surface, whose identities are the
+ * project's own selection, not this global list. `false` keeps the hook call
+ * unconditional (stable hook order) while the query never runs: no
+ * `wallets.listAvailable` IPC, and no row written into the shared global cache
+ * key that every other consumer reads. The caller then degrades exactly as it
+ * does for an inventory that has not resolved yet. Same shape as
+ * `useProviderModels` in `provider.ts`, the other query here with no domain
+ * input of its own to gate on.
+ */
+export function useAvailableWallets(
+  enabled: boolean = true,
+): UseQueryResult<Result<AvailableWalletsDto>> {
+  return useQuery(availableWalletsOptions(enabled));
 }

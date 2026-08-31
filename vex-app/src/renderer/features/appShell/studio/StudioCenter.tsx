@@ -57,8 +57,8 @@ import { StudioWelcome } from "./welcome/StudioWelcome.js";
 import { StudioKeepAliveDialog } from "./StudioKeepAliveDialog.js";
 import { openProjectCreator, StudioProjectDialogs } from "./projects/index.js";
 import {
+  peekProjectWorkspaceLifecycle,
   takeProjectTerminals,
-  takeProjectWorkspaceClose,
 } from "./workspace/project-terminals.js";
 import {
   closeProject,
@@ -98,6 +98,17 @@ export function StudioCenter({
   const [keepAlive, setKeepAlive] = useState<KeepAliveState>(emptyKeepAlive);
   /** The project a refusal parked for the close prompt. */
   const [refusedProjectId, setRefusedProjectId] = useState<string | null>(null);
+
+  /**
+   * The live selection, for the async close continuation.
+   *
+   * A close resolves after an await, and the callback's captured
+   * `activeProjectId` is whatever it was when the callback was made. The
+   * selection repair below acts on the selection AS IT IS WHEN THE CLOSE
+   * FINISHES, so it reads the ref.
+   */
+  const activeProjectIdRef = useRef(activeProjectId);
+  activeProjectIdRef.current = activeProjectId;
 
   const projects: readonly ProjectDto[] = useMemo(
     () => (query.data !== undefined && query.data.ok ? query.data.data : []),
@@ -240,6 +251,29 @@ export function StudioCenter({
   }, [explorers]);
 
   /**
+   * A project workspace LEAVES the kept-alive set, selection included.
+   *
+   * The second half is not a nicety, it is what makes a close a close. The set
+   * transition alone drops the workspace and falls the CENTRE back to welcome,
+   * but `uiStore.activeProjectId` still names the project - and the
+   * reconciliation effect above exists precisely to mount a workspace for the
+   * selection, so on its very next run it re-added the project the user had
+   * just closed. Closing the active workspace was a no-op with an extra
+   * remount. Giving up the selection at the same moment is what makes the two
+   * owners agree.
+   *
+   * A project that was not active keeps whatever selection there is: closing a
+   * hidden workspace must not move the user off the one they are looking at.
+   */
+  const leaveKeepAlive = useCallback(
+    (projectId: string): void => {
+      applyKeepAlive((current) => closeProject(current, projectId));
+      if (activeProjectIdRef.current === projectId) setActiveProjectId(null);
+    },
+    [applyKeepAlive, setActiveProjectId],
+  );
+
+  /**
    * THE EXPLICIT CLOSE, and it is ordered.
    *
    * Closing a kept-alive workspace follows VS Code's CLOSE semantics rather
@@ -262,17 +296,24 @@ export function StudioCenter({
   const handleCloseWorkspace = useCallback(
     (projectId: string): void => {
       setRefusedProjectId(null);
-      const close = takeProjectWorkspaceClose(projectId);
-      if (close === null) {
-        applyKeepAlive((current) => closeProject(current, projectId));
+      const lifecycle = peekProjectWorkspaceLifecycle(projectId);
+      if (lifecycle === null) {
+        leaveKeepAlive(projectId);
         return;
       }
       void (async () => {
-        await close();
-        applyKeepAlive((current) => closeProject(current, projectId));
+        const outcome = await lifecycle.close();
+        // A FAILED CLOSE CHANGES NOTHING HERE. The snapshot was not committed
+        // or the shells were not ended, so the workspace stays mounted and
+        // fully usable, and the controller is already showing the user what
+        // happened and offering the retry. Removing it from the set would
+        // unmount the only owner of a layout that is still only in memory,
+        // which is exactly the loss the outcome check exists to prevent.
+        if (!outcome.ok) return;
+        leaveKeepAlive(projectId);
       })();
     },
-    [applyKeepAlive],
+    [leaveKeepAlive],
   );
 
   /**
@@ -291,6 +332,14 @@ export function StudioCenter({
    */
   const handleProjectDeleted = useCallback(
     (deletedProjectId: string): void => {
+      // BEFORE THE UNMOUNT, and synchronously. The delete has already removed
+      // this project's terminal snapshot in main; the controller's teardown
+      // flush would write a persist for the deleted project and RECREATE that
+      // file, which holds the user's terminal scrollback. Latching the
+      // workspace first is what stops it at the source. Main refuses such a
+      // persist as well - see `TerminalDomain.persistWorkspace` - because a
+      // renderer latch is a courtesy and not authority.
+      peekProjectWorkspaceLifecycle(deletedProjectId)?.discard();
       applyKeepAlive((current) => closeProject(current, deletedProjectId));
       setRefusedProjectId((current) =>
         current === deletedProjectId ? null : current,

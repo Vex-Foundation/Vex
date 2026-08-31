@@ -9,7 +9,11 @@
  *  - delete the `result.error.code === SCOPE_CONFLICT_CODE` branch so a
  *    conflict falls through to `setSubmitError`, and "renders its own copy on a
  *    scope conflict" fails: the reload affordance is absent and Save is still
- *    the primary action.
+ *    the primary action;
+ *  - collapse the `reloading` state back to "clear the conflict, then await the
+ *    refetch" and "keeps the stale form off screen for the whole reload"
+ *    fails on its first assertion: a Save button is mounted inside the window,
+ *    and the submission it accepts carries the consumed version 7.
  *
  * Matchers are plain Vitest/Chai (this repository installs no jest-dom).
  */
@@ -29,7 +33,11 @@ import {
   makeProject,
 } from "../../__tests__/studio-fixtures.js";
 import { ProjectSettingsDialog } from "../ProjectSettingsDialog.js";
-import { PROJECT_SCOPE_CONFLICT_RELOAD } from "../projects-copy.js";
+import {
+  PROJECT_SCOPE_CONFLICT_RELOAD,
+  PROJECT_SCOPE_CONFLICT_RELOADING,
+  PROJECT_SCOPE_CONFLICT_TITLE,
+} from "../projects-copy.js";
 
 const getMock = vi.fn<() => Promise<Result<ProjectGetResult>>>();
 const updateMock =
@@ -252,6 +260,76 @@ describe("the scope conflict", () => {
       expect(updateMock).toHaveBeenCalledTimes(2);
     });
     expect(updateMock.mock.calls[1]?.[0].expectedScopeVersion).toBe(9);
+  });
+});
+
+describe("the reload window", () => {
+  /**
+   * The window between pressing Reload and the fresh row landing. The refetch
+   * is held open deliberately - the same shape `agents-colab/vscode`'s dialog
+   * suite uses when it keeps `dialog.show()`'s promise pending across its
+   * assertions - because the defect only exists for the length of one IPC
+   * roundtrip and a resolved mock would step straight over it.
+   */
+  it("keeps the stale form off screen for the whole reload", async () => {
+    updateMock.mockResolvedValue(conflictError());
+    renderSettings();
+    await loaded();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Cursor/ }));
+    fireEvent.click(saveButton());
+    await screen.findByRole("button", { name: PROJECT_SCOPE_CONFLICT_RELOAD });
+
+    let releaseRead = (): void => undefined;
+    getMock.mockReturnValue(
+      new Promise<Result<ProjectGetResult>>((resolve) => {
+        releaseRead = () => {
+          resolve({
+            ok: true,
+            data: { ...STORED, scopeVersion: 9, permission: "full" },
+          });
+        };
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: PROJECT_SCOPE_CONFLICT_RELOAD }),
+    );
+
+    // THE WINDOW, and the assertion that matters most goes first: a submission
+    // dispatched here - a stray Enter, an event already queued behind the
+    // click - must not reach the mutation, because the only version it could
+    // carry is the 7 the refused attempt already consumed.
+    const form = document.querySelector("form");
+    if (form === null) throw new Error("no settings form");
+    fireEvent.submit(form);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // Asserted as the VERSIONS rather than a call count, so a regression names
+    // the stale number it sent instead of only how many times it sent it.
+    expect(
+      updateMock.mock.calls.map((call) => call[0].expectedScopeVersion),
+    ).toEqual([7]);
+
+    // And the pane is still up, with the busy label and no editable form.
+    await screen.findByRole("button", { name: PROJECT_SCOPE_CONFLICT_RELOADING });
+    expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /Codex CLI/ })).toBeNull();
+    expect(screen.getByText(PROJECT_SCOPE_CONFLICT_TITLE)).not.toBeNull();
+
+    // And the reload is single-flight while it is in the air.
+    fireEvent.click(
+      screen.getByRole("button", { name: PROJECT_SCOPE_CONFLICT_RELOADING }),
+    );
+    expect(getMock).toHaveBeenCalledTimes(2);
+
+    releaseRead();
+    await loaded();
+    // One transition out: the pane is gone and the form is the FRESH row.
+    expect(screen.queryByText(PROJECT_SCOPE_CONFLICT_TITLE)).toBeNull();
+    expect(
+      (screen.getByRole("radio", { name: /Full access/ }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(saveButton().disabled).toBe(true);
   });
 });
 

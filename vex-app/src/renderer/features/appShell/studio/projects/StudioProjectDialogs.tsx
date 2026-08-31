@@ -31,9 +31,27 @@
  *
  * A request naming a project the list no longer carries CLOSES itself rather
  * than rendering an empty dialog: the row is gone, so the action is gone.
+ *
+ * ## ...unless the delete dialog is holding the request open
+ *
+ * That guard and the delete dialog's own recovery affordances were in direct
+ * conflict. `useDeleteProject` invalidates the list on every ok Result, so a
+ * `cleanup_pending` - the project IS deleted, its cleanup did NOT finish, and
+ * only the user can ask for the resume - drops its row from the list, and this
+ * effect then closed the dialog over the Retry the user was meant to press. The
+ * affordance was unreachable in production while passing every dialog-level
+ * test, because the dialog alone never sees the invalidation.
+ *
+ * So the dialog raises `onHoldOpen` while it is reporting an outcome about a
+ * row the list is dropping, and this host suspends the guard for exactly that
+ * window. The split is deliberate: WHICH outcomes hold is the dialog's rule
+ * (it already owns which ones close), and whether the standing request outlives
+ * the row is this host's. Every other closing case - the project vanishing
+ * while the user types the confirmation name, a settings target deleted from
+ * another window - is untouched, because no outcome is being reported then.
  */
 
-import { useEffect, type JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import type { ProjectDto } from "@shared/schemas/projects.js";
 import { useProjects } from "../../../../lib/api/projects.js";
 import { ProjectCreator } from "./ProjectCreator.js";
@@ -79,10 +97,17 @@ export function StudioProjectDialogs({
    * someone typing a project name to confirm a delete.
    */
   const listSettled = query.isSuccess && query.data.ok;
+  /**
+   * Set by `ProjectDeleteDialog` while it is reporting on a row the list is
+   * dropping. Released by that dialog on unmount, so a request replaced or
+   * closed by any route clears it.
+   */
+  const [deleteHoldsRequest, setDeleteHoldsRequest] = useState(false);
   useEffect(() => {
+    if (deleteHoldsRequest) return;
     if (!listSettled || targetId === null || target !== null) return;
     closeProjectDialog();
-  }, [listSettled, target, targetId]);
+  }, [deleteHoldsRequest, listSettled, target, targetId]);
 
   if (request === null) return null;
 
@@ -116,6 +141,9 @@ export function StudioProjectDialogs({
       project={target}
       onClose={closeProjectDialog}
       onDeleted={onProjectDeleted}
+      // A `useState` setter, so it is stable by React's own contract and the
+      // dialog's hold effect does not re-run on every render of this host.
+      onHoldOpen={setDeleteHoldsRequest}
     />
   );
 }

@@ -141,6 +141,21 @@ export function StudioSidebar({
     () => (searchOpen ? filterProjectsByName(allProjects, searchText) : allProjects),
     [allProjects, searchOpen, searchText],
   );
+  // A failed projects read is its OWN state, and both shapes of failure reach
+  // it: a settled `ok: false` Result, and a REJECTED call that leaves no
+  // Result at all (the preload bridge throwing, the window tearing down
+  // mid-call). The second used to fall through to the `[]` above and paint
+  // "No projects yet." - the sidebar telling the user they own nothing when
+  // what actually happened is that Vex could not look (rule 08: failure is not
+  // emptiness). A failed REFETCH that still has a good earlier list is
+  // deliberately not this state: those rows are real and stay on screen, which
+  // is why the derivation asks "is there a usable payload" rather than
+  // `query.isError` alone.
+  const readFailed =
+    query.data === undefined ? query.isError : !query.data.ok;
+  // Derived from the same rows the list renders, so a failed read gives no
+  // active project and the EXPLORER section below is absent rather than
+  // titled with a name nothing confirmed.
   const activeProject =
     activeProjectId === null
       ? null
@@ -293,7 +308,7 @@ export function StudioSidebar({
             activeProjectId={activeProjectId}
             collapsed={!wide}
             isLoading={query.isLoading}
-            hasError={query.data !== undefined && !query.data.ok}
+            hasError={readFailed}
             onRetry={retry}
             onSelect={onSelectProject}
             searching={searchOpen && searchText.trim().length > 0}

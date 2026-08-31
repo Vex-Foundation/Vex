@@ -21,8 +21,9 @@ import { TerminalRegistry } from "../terminal/index.js";
 import {
   clearProjectTerminals,
   publishProjectTerminals,
-  publishProjectWorkspaceClose,
+  publishProjectWorkspaceLifecycle,
 } from "../workspace/project-terminals.js";
+import type { WorkspaceCloseOutcome } from "../workspace/close-lifecycle.js";
 import { STUDIO_WORKSPACE_KEEP_ALIVE_MAX } from "../workspace/keep-alive.js";
 import { installStudioDomStubs, makeError, makeProject } from "./studio-fixtures.js";
 
@@ -32,6 +33,30 @@ vi.mock("../terminal/StudioWorkspaceController.js", () => ({
   StudioWorkspaceController: ({ projectId }: { projectId: string }) => (
     <div data-testid={`workspace-${projectId}`} />
   ),
+}));
+
+/**
+ * The centre's DELETE REPORT, captured.
+ *
+ * `StudioProjectDialogs` is the surface that tells the centre a project was
+ * deleted, and reaching that report through the real dialog would mean driving
+ * the whole delete flow - its intent channel, its confirmation, its mutation -
+ * to observe one callback the centre owns. The dialogs have their own suite;
+ * this one is about what the CENTRE does when the report arrives, so the report
+ * is delivered directly.
+ */
+const deleted = { report: null as ((projectId: string) => void) | null };
+
+vi.mock("../projects/index.js", () => ({
+  openProjectCreator: (): void => undefined,
+  StudioProjectDialogs: ({
+    onProjectDeleted,
+  }: {
+    onProjectDeleted: (projectId: string) => void;
+  }) => {
+    deleted.report = onProjectDeleted;
+    return null;
+  },
 }));
 
 const { StudioCenter } = await import("../StudioCenter.js");
@@ -259,7 +284,13 @@ describe("keep-alive", () => {
     const committed = new Promise<void>((resolve) => {
       commit = resolve;
     });
-    publishProjectWorkspaceClose(firstProject.id, async () => await committed);
+    publishProjectWorkspaceLifecycle(firstProject.id, {
+      close: async () => {
+        await committed;
+        return { ok: true };
+      },
+      discard: () => undefined,
+    });
 
     select(fifth.id);
     await screen.findByText("Close a project workspace first");
@@ -411,5 +442,154 @@ describe("explorer sessions", () => {
     });
     expect(harness.explorers.has(second.id)).toBe(true);
     expect(harness.explorers.consumerCount(first.id)).toBeGreaterThan(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * B4 review, finding W1: the close must not be undone by reconciliation
+ * ------------------------------------------------------------------ */
+
+/** A lifecycle handle whose calls are recorded. */
+function publishRecordingLifecycle(
+  projectId: string,
+  outcome: WorkspaceCloseOutcome = { ok: true },
+): { closes: number; discards: number } {
+  const calls = { closes: 0, discards: 0 };
+  publishProjectWorkspaceLifecycle(projectId, {
+    close: () => {
+      calls.closes += 1;
+      return Promise.resolve(outcome);
+    },
+    discard: () => {
+      calls.discards += 1;
+    },
+  });
+  return calls;
+}
+
+describe("closing the ACTIVE workspace", () => {
+  /**
+   * The close of the shown workspace used to be a no-op with an extra remount.
+   *
+   * `closeProject` drops it from the set and falls the CENTRE back to welcome,
+   * but `uiStore.activeProjectId` still named it - and the reconciliation
+   * effect exists precisely to mount a workspace for the selection, so its next
+   * run put the project straight back. The two owners of "which project is
+   * shown" have to agree at the same moment.
+   */
+  it("gives up the selection, so reconciliation does not re-add it", async () => {
+    const projects = Array.from({ length: 5 }, (_, index) =>
+      makeProject({ name: `p${String(index + 1)}` }),
+    );
+    const [first] = projects;
+    const fifth = projects[projects.length - 1];
+    if (first === undefined || fifth === undefined) throw new Error("fixture");
+    projectsListMock.mockResolvedValue({ ok: true, data: projects });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    for (const project of projects.slice(0, STUDIO_WORKSPACE_KEEP_ALIVE_MAX)) {
+      select(project.id);
+      await screen.findByTestId(`workspace-${project.id}`);
+    }
+    // Back to p1, so the workspace about to be closed is the SHOWN one.
+    select(first.id);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    publishRecordingLifecycle(first.id);
+
+    // The refusal returns the selection to where it was, which is p1.
+    select(fifth.id);
+    await screen.findByText("Close a project workspace first");
+    await waitFor(() => {
+      expect(useUiStore.getState().activeProjectId).toBe(first.id);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Close the p1 workspace" }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId(`workspace-${first.id}`)).toBeNull();
+    });
+    // THE ASSERTION. p1 is still in the project list and the reconciliation
+    // effect runs on every render, so a selection left pointing at it would
+    // have remounted the workspace by the next tick.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.queryByTestId(`workspace-${first.id}`)).toBeNull();
+    expect(useUiStore.getState().activeProjectId).toBeNull();
+  });
+
+  it("a FAILED close leaves the workspace mounted and the selection alone", async () => {
+    const projects = Array.from({ length: 5 }, (_, index) =>
+      makeProject({ name: `p${String(index + 1)}` }),
+    );
+    const [first] = projects;
+    const fifth = projects[projects.length - 1];
+    if (first === undefined || fifth === undefined) throw new Error("fixture");
+    projectsListMock.mockResolvedValue({ ok: true, data: projects });
+    const harness = renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    for (const project of projects.slice(0, STUDIO_WORKSPACE_KEEP_ALIVE_MAX)) {
+      select(project.id);
+      await screen.findByTestId(`workspace-${project.id}`);
+    }
+    publishProjectTerminals(first.id, ["t-a"]);
+    publishRecordingLifecycle(first.id, { ok: false, failure: "persist_refused" });
+
+    select(fifth.id);
+    await screen.findByText("Close a project workspace first");
+    fireEvent.click(screen.getByRole("button", { name: "Close the p1 workspace" }));
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // NOTHING moved. The snapshot was not committed, so the workspace is still
+    // the only owner of a layout that exists nowhere else, and its xterms must
+    // not be destroyed.
+    expect(screen.queryByTestId(`workspace-${first.id}`)).not.toBeNull();
+    expect(harness.disposedTerminals).toEqual([]);
+  });
+});
+
+describe("a DELETED project", () => {
+  /**
+   * The renderer half of the two-sided fix. The delete has already removed this
+   * project's terminal snapshot in main, and the controller's teardown flush
+   * would write a persist that RECREATES it - a file holding a deleted
+   * project's terminal scrollback. The latch has to reach the controller BEFORE
+   * the unmount, which is why `discard` is synchronous and why the centre calls
+   * it first.
+   */
+  it("DISCARDS its workspace layout before unmounting the controller", async () => {
+    const projects = [makeProject({ name: "p1" })];
+    const [first] = projects;
+    if (first === undefined) throw new Error("fixture");
+    projectsListMock.mockResolvedValue({ ok: true, data: projects });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+    select(first.id);
+    const mounted = await screen.findByTestId(`workspace-${first.id}`);
+    const calls = publishRecordingLifecycle(first.id);
+
+    // What `StudioProjectDialogs` reports when a delete completes.
+    const report = deleted.report;
+    if (report === null) throw new Error("the dialogs never reported in");
+    act(() => {
+      report(first.id);
+    });
+
+    expect(calls.discards).toBe(1);
+    // A DISCARD, never a close: there is nothing to commit for a project that
+    // is gone, and main's delete has already ended its shells.
+    expect(calls.closes).toBe(0);
+    await waitFor(() => {
+      expect(mounted.isConnected).toBe(false);
+    });
   });
 });

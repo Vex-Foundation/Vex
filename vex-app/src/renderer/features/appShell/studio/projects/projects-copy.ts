@@ -118,6 +118,13 @@ export const PROJECT_SCOPE_CONFLICT_TITLE = "This project changed while you were
 export const PROJECT_SCOPE_CONFLICT_BODY =
   "Someone or something else saved a change to this project's scope after this dialog was opened, so Vex wrote nothing. Reload the project and make your edits again against what is stored now.";
 export const PROJECT_SCOPE_CONFLICT_RELOAD = "Reload the project";
+/**
+ * The reload is IN FLIGHT. Said on the button rather than by swapping the pane,
+ * because the pane is still telling the truth: the save was refused and nothing
+ * was written. What has changed is only that the fresh read has not landed yet,
+ * and until it does there is no form to edit.
+ */
+export const PROJECT_SCOPE_CONFLICT_RELOADING = "Reloading";
 
 /* --------------------------------- repair --------------------------------- */
 
@@ -167,6 +174,12 @@ export function projectDeleteTerminalsLine(count: number): string {
  * Seven members, seven sentences. `removed` and `already_removed` are the two
  * that end the dialog; the rest keep it open because the user still has a
  * decision or a retry in front of them.
+ *
+ * `not_found` is one of those five and its sentence has to carry the
+ * UNCERTAINTY the wire member actually holds: main answers it both for a
+ * project that is gone AND for one whose stored name no longer matches the one
+ * this dialog sent, which is a concurrent rename of a project that still
+ * exists. "Deleted" is therefore a claim this outcome cannot support.
  */
 export const PROJECT_DELETE_OUTCOME_SENTENCES: Readonly<
   Record<ProjectDeleteResult["outcome"], string>
@@ -178,7 +191,7 @@ export const PROJECT_DELETE_OUTCOME_SENTENCES: Readonly<
   cleanup_pending:
     "The project is deleted and will not come back, but Vex could not finish cleaning up its files. Try again to resume; it will not delete anything a second time.",
   not_found:
-    "Vex found no project by that name. It may already be gone, or the name did not match.",
+    "Vex could not match this to a project it holds, so it deleted NOTHING. The row this dialog opened is either already gone or has been renamed since. The project list has been reloaded; check it before trying again.",
   blocked_active_calls:
     "Calls from this project were still running, so Vex wrote nothing and left the project exactly as it was. Stop them, or wait for them, then try again.",
   blocked_pending_dispatch:

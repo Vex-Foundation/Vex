@@ -1,19 +1,21 @@
 /**
  * Welcome stage crown - the rebrand hero (accepted mockup, 2026-08-20): the
- * vx script mark over a micro-label date eyebrow, the time-of-day greeting headline, and the
- * Agent | Studio runtime-mode toggle (Studio reserved: disabled with a lock
- * until vex-studio ships - seam #2). The parent (`SessionPanel`) seats this
- * directly above the composer and centers the column; the "BACKED BY"
- * footer band is retired. Load-in rides the one-shot `.vex-rise`
- * choreography; the composer and chips stagger on sibling elements.
+ * vx script mark over a micro-label date eyebrow, the time-of-day greeting
+ * headline, and the Agent | Studio runtime-mode toggle. The toggle itself lives
+ * in `RuntimeModeToggle.tsx`: the Studio welcome screen mounts the same
+ * control, so this hero is one of its two callers, not its owner. The parent
+ * (`SessionPanel`) seats this directly above the composer and centers the
+ * column; the "BACKED BY" footer band is retired. Load-in rides the one-shot
+ * `.vex-rise` choreography; the composer and chips stagger on sibling
+ * elements.
  */
 
 import { useState, type JSX } from "react";
 import { VexMark } from "../../components/common/VexMark.js";
 import { pickGreeting } from "../../lib/greeting.js";
 import { useUserProfile } from "../../lib/api/user-profile.js";
-import { cn } from "../../lib/utils.js";
-import { useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
+import { useUiStore } from "../../stores/uiStore.js";
+import { RuntimeModeToggle } from "./RuntimeModeToggle.js";
 
 /** Honest build-stage disclosure (carried from the retired PREVIEW badge). */
 const PREVIEW_TITLE =
@@ -75,63 +77,3 @@ export function SessionWelcomeHero(): JSX.Element {
     </div>
   );
 }
-
-/**
- * Agent | Studio segmented capsule. LIVE since stage B4a.
- *
- * CONTRACT CHANGE, stated because two tests pinned the old one: the Studio
- * segment used to be a disabled button wearing a lock and a "coming soon"
- * title, and the Agent segment used to be an inert `<span aria-current>`. Both
- * are now real radios in a `role="radiogroup"`, the current one carries
- * `aria-checked`, and choosing one dispatches the shell.
- *
- * A radiogroup rather than a tablist: the two segments select a MODE for the
- * whole shell, not a panel this capsule labels, and neither segment is the
- * accessible owner of the columns it switches. The choice is a UI intent and
- * nothing more (rule 08) - it decides which surfaces mount and grants no
- * authority; every privileged Studio call is still checked in main.
- */
-function RuntimeModeToggle({
-  runtimeMode,
-  onChange,
-}: {
-  readonly runtimeMode: RuntimeMode;
-  readonly onChange: (mode: RuntimeMode) => void;
-}): JSX.Element {
-  return (
-    <div
-      role="radiogroup"
-      aria-label="Runtime mode"
-      className="flex h-9 items-center gap-0.5 rounded-capsule border border-line-2 bg-surface-1 p-0.5 shadow-lv1"
-    >
-      {RUNTIME_MODE_SEGMENTS.map((segment) => {
-        const current = runtimeMode === segment.mode;
-        return (
-          <button
-            key={segment.mode}
-            type="button"
-            role="radio"
-            aria-checked={current}
-            onClick={() => onChange(segment.mode)}
-            className={cn(
-              "inline-flex h-full items-center rounded-capsule px-3.5 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
-              current
-                ? "bg-interactive-active font-medium text-ink-primary"
-                : "text-ink-tertiary hover:text-ink-primary",
-            )}
-          >
-            {segment.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-const RUNTIME_MODE_SEGMENTS: readonly {
-  readonly mode: RuntimeMode;
-  readonly label: string;
-}[] = [
-  { mode: "agent", label: "Agent" },
-  { mode: "studio", label: "Studio" },
-];

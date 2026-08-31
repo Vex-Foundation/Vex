@@ -68,13 +68,21 @@ export function approvalOriginMode(
 }
 
 /**
- * Announce the OLDEST newly-observed approval that came from the other mode.
+ * Announce the OLDEST newly-observed approval that came from the other mode,
+ * and COUNT the ones observed with it.
  *
  * One toast per observation, not one per row: the transient slot holds a single
  * message, so firing per row would show only the last one anyway while
- * restarting the cycle for each. Every fresh id is recorded regardless of
- * whether it was announced, so a row that becomes cross-mode later (the user
- * switches modes) is not re-announced - it was already observed.
+ * restarting the cycle for each. But every fresh id is marked announced whether
+ * or not it was named, so the batch-mates of the oldest row would otherwise be
+ * silently swallowed - observed, recorded, never announced by anything. The
+ * toast therefore names the oldest and reports how many others came with it.
+ * Nothing is throttled or dropped: the badge beside it already carries the
+ * exact live count, and this line agrees with it.
+ *
+ * Recording every fresh id (not only the announced one) is what keeps a row
+ * that becomes cross-mode LATER (the user switches modes) from being
+ * re-announced - it was already observed.
  *
  * `rows === null` (loading, or a failed read) records nothing: an unknown list
  * is not evidence that anything was seen.
@@ -105,6 +113,10 @@ export function useCrossModeApprovalToast(
         tool: oldest.preview?.toolName ?? oldest.toolName ?? "(unknown tool)",
         projectId: oldest.projectId,
         projectName: oldest.projectName,
+        // The rest of THIS observation's cross-mode batch. They are marked
+        // announced on the line above and get no toast of their own, so the
+        // count is the only place they are reported.
+        othersAwaiting: crossMode.length - 1,
       }),
     );
   }, [rows]);

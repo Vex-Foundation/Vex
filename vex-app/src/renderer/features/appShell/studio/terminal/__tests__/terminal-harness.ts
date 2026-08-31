@@ -87,6 +87,29 @@ export interface TerminalBridgeStub {
   pendingCreates: Array<() => void>;
   /** Answer every withheld create, in issue order. */
   settleCreates: () => void;
+  /**
+   * How the next `persistWorkspace` answers.
+   *
+   * The close COMMITS THE BUFFERS and only then kills, so "the commit was
+   * refused" is the case the whole ordering exists for and the one a suite
+   * cannot reach without this: a bridge that always says yes can only ever
+   * prove the happy path, and the defect it hid was that the kills ran anyway.
+   */
+  nextPersist: { ok: true } | { ok: false; code: TerminalErrorCode };
+  /** Hold `persistWorkspace` in flight, for the same reason as `deferCreate`. */
+  deferPersist: boolean;
+  /** Issued commits whose answer is still being withheld. */
+  pendingPersists: Array<() => void>;
+  /** Answer every withheld commit, in issue order. */
+  settlePersists: () => void;
+  /**
+   * Codes `kill` answers with, per terminal id. Absent means it succeeds.
+   *
+   * Per id rather than a single next-answer because the close kills a whole
+   * workspace in one `Promise.all`, and the interesting cases are partial: one
+   * shell that is already gone beside one the host could not reach.
+   */
+  readonly killRefusals: Map<string, TerminalErrorCode>;
   /** Hold `readWorkspace` in flight, for the same reason as `deferCreate`. */
   deferReadWorkspace: boolean;
   /** Issued restores whose answer is still being withheld. */
@@ -267,6 +290,14 @@ export function installTerminalBridge(): TerminalBridgeStub {
       value: { terminalId: "t1", pid: 4242, shellName: "bash", cwd: "/w" },
     },
     savedWorkspace: null,
+    nextPersist: { ok: true },
+    deferPersist: false,
+    pendingPersists: [],
+    settlePersists: () => {
+      const owed = stub.pendingPersists.splice(0);
+      for (const settle of owed) settle();
+    },
+    killRefusals: new Map<string, TerminalErrorCode>(),
     deferCreate: false,
     pendingCreates: [],
     settleCreates: () => {
@@ -374,6 +405,12 @@ export function installTerminalBridge(): TerminalBridgeStub {
           stub.pendingCreates.push(resolve);
         });
       }
+      // A CREATED PTY IS A RUNNING PTY, and the fake host has to know it. Only
+      // `revive` used to record one, so a suite could assert that a terminal
+      // the controller opened was killed while being unable to ask the simpler
+      // question underneath it - is that shell still running - which is the
+      // question a refused close turns on.
+      if (answer.ok) stub.livePtys.add(answer.value.terminalId);
       return { ok: true as const, data: answer };
     }),
     write: vi.fn(async (input: { terminalId: string; data: string }) => {
@@ -387,6 +424,13 @@ export function installTerminalBridge(): TerminalBridgeStub {
     kill: vi.fn(async (input: { terminalId: string }) => {
       stub.kills.push(input.terminalId);
       stub.ops.push(`kill:${input.terminalId}`);
+      const refusal = stub.killRefusals.get(input.terminalId);
+      if (refusal !== undefined) {
+        // A REFUSED kill does not end the pty. Leaving it in `livePtys` is what
+        // makes "the shell survived the close" an assertion rather than a
+        // matter of trusting the recorded call.
+        return { ok: true as const, data: { ok: false as const, code: refusal } };
+      }
       // THE PTY ACTUALLY GOES. A kill recorded but not modelled would let a
       // leak test pass by counting a shell the controller had already ended.
       stub.livePtys.delete(input.terminalId);
@@ -415,12 +459,24 @@ export function installTerminalBridge(): TerminalBridgeStub {
     onRefused: (terminalId: string, cb: (code: TerminalErrorCode) => void) =>
       subscribe(channels.refused, terminalId, cb),
     persistWorkspace: vi.fn(async (input: { layout: TerminalWorkspaceLayout }) => {
+      // Fixed WHEN THE CALL IS ISSUED, like `create` and `readWorkspace`: a
+      // test that changes the answer while an earlier commit is withheld must
+      // not rewrite that earlier commit's answer.
+      const answer = stub.nextPersist;
       stub.persisted.push(input.layout);
       const panes = input.layout.groups.reduce(
         (sum, group) => sum + group.panes.length,
         0,
       );
       stub.ops.push(`persist:${input.layout.projectId}:${String(panes)}`);
+      if (stub.deferPersist) {
+        await new Promise<void>((resolve) => {
+          stub.pendingPersists.push(resolve);
+        });
+      }
+      if (!answer.ok) {
+        return { ok: true as const, data: { ok: false as const, code: answer.code } };
+      }
       return { ok: true as const, data: { ok: true as const, value: null } };
     }),
     readWorkspace: vi.fn(async (input: { projectId: string }) => {

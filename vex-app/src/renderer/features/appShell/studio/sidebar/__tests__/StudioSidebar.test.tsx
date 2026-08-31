@@ -49,7 +49,8 @@ interface RenderOptions {
   readonly strict?: boolean;
 }
 
-function renderSidebar(options: RenderOptions = {}): void {
+/** Returns the client so a test can drive a real refetch through it. */
+function renderSidebar(options: RenderOptions = {}): QueryClient {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
@@ -68,6 +69,7 @@ function renderSidebar(options: RenderOptions = {}): void {
     </QueryClientProvider>
   );
   render(options.strict === true ? <StrictMode>{tree}</StrictMode> : tree);
+  return client;
 }
 
 beforeAll(() => {
@@ -356,6 +358,40 @@ describe("list states", () => {
     });
     fireEvent.click(retry);
     await screen.findByText("vex-core");
+  });
+
+  it("a REJECTED read is a failure, not an empty list", async () => {
+    // The other failure shape: the call rejects rather than settling to an
+    // `ok: false` Result, which is what a preload bridge throwing or a window
+    // tearing down mid-call looks like. There is no Result to inspect, so the
+    // rows fall back to [] - and "you have no projects" is a different fact
+    // from "Vex could not look".
+    projectsListMock.mockRejectedValue(new Error("bridge gone"));
+    renderSidebar();
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toContain("Vex could not read your projects.");
+    expect(screen.queryByText("No projects yet.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull();
+  });
+
+  it("keeps the rows on screen when a REFETCH fails over a good list", async () => {
+    // The other direction of the same rule: a failed refetch that still has a
+    // real earlier list must not replace those rows with the failure line.
+    // Those projects exist; the read that failed was the newer one.
+    projectsListMock.mockResolvedValue({
+      ok: true,
+      data: [makeProject({ name: "vex-core" })],
+    });
+    const client = renderSidebar();
+    await screen.findByText("vex-core");
+
+    projectsListMock.mockRejectedValue(new Error("bridge gone"));
+    await client.refetchQueries({ queryKey: ["projects", "list"] });
+    await waitFor(() => {
+      expect(projectsListMock).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByText("vex-core")).not.toBeNull();
+    expect(screen.queryByText("Vex could not read your projects.")).toBeNull();
   });
 });
 

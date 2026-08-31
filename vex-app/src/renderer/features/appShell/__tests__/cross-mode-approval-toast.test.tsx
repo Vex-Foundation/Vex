@@ -178,6 +178,57 @@ describe("a Studio-raised approval seen from agent mode", () => {
   });
 });
 
+describe("a BATCH observed in one tick", () => {
+  it("names the oldest and REPORTS how many came with it", () => {
+    // Three cross-mode rows arrive together. All three are marked announced by
+    // the observation, and there is one transient slot, so only the oldest can
+    // be named - which is exactly why the other two have to be counted. A bare
+    // single-row line would silently swallow them.
+    setRows([
+      STUDIO_ROW,
+      makeRow({
+        id: "studio-2",
+        projectId: PROJECT,
+        projectName: "Acme Trading",
+        origin: "studio_mcp",
+        toolName: "wallet:swap",
+        createdAt: "2026-05-28T10:01:00.000Z",
+      }),
+      makeRow({
+        id: "studio-3",
+        projectId: PROJECT,
+        projectName: "Acme Trading",
+        origin: "studio_mcp",
+        toolName: "wallet:approve",
+        createdAt: "2026-05-28T10:02:00.000Z",
+      }),
+    ]);
+    renderBadge();
+    expect(shown).toEqual([
+      "Approval waiting in Acme Trading: wallet:send, and 2 more awaiting",
+    ]);
+  });
+
+  it("counts only the CROSS-MODE rows, not the same-mode ones beside them", () => {
+    // Two agent rows ride along in the same tick. From agent mode they are not
+    // cross-mode, they raise no announcement, and counting them would tell the
+    // user there is more waiting elsewhere than there is.
+    setRows([
+      STUDIO_ROW,
+      makeRow({ id: "agent-1", origin: "agent", createdAt: "2026-05-28T10:01:00.000Z" }),
+      makeRow({ id: "agent-2", origin: "agent", createdAt: "2026-05-28T10:02:00.000Z" }),
+    ]);
+    renderBadge();
+    expect(shown).toEqual(["Approval waiting in Acme Trading: wallet:send"]);
+  });
+
+  it("a single cross-mode row carries no count", () => {
+    setRows([STUDIO_ROW]);
+    renderBadge();
+    expect(shown).toEqual(["Approval waiting in Acme Trading: wallet:send"]);
+  });
+});
+
 describe("same-mode approvals stay silent", () => {
   it("an agent approval seen from agent mode announces nothing", () => {
     setRows([makeRow({ origin: "agent" })]);

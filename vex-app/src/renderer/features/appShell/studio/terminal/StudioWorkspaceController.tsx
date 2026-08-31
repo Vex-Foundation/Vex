@@ -30,7 +30,6 @@
 
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import type { FileNode } from "@shared/schemas/files.js";
-import type { TerminalErrorCode } from "@shared/schemas/terminal.js";
 import { cn } from "../../../../lib/utils.js";
 import {
   createTerminal,
@@ -59,17 +58,32 @@ import {
 import { useFileOpenIntentStore } from "../workspace/file-open-intent.js";
 import {
   publishProjectTerminals,
-  publishProjectWorkspaceClose,
+  publishProjectWorkspaceLifecycle,
 } from "../workspace/project-terminals.js";
-import { STUDIO_FILE_TABS_MAX } from "../workspace/types.js";
-import type {
-  WorkspaceMutation,
-  WorkspaceRefusalReason,
-  WorkspaceState,
-} from "../workspace/types.js";
+import {
+  admitsPersist,
+  admitsTerminalCreate,
+  beginClose,
+  closeCommitted,
+  closeFailed,
+  discardWorkspace,
+  killProvedGone,
+  openWorkspaceClose,
+  type WorkspaceCloseFailure,
+  type WorkspaceCloseOutcome,
+  type WorkspaceCloseState,
+} from "../workspace/close-lifecycle.js";
+import type { WorkspaceMutation, WorkspaceState } from "../workspace/types.js";
 import { TerminalTabs } from "./TerminalTabs.js";
 import { FileViewer } from "../viewer/index.js";
 import { terminalRegistry, type TerminalRegistry } from "./terminal-registry.js";
+import {
+  CLOSE_FAILURE_COPY,
+  CLOSING_CREATE_COPY,
+  KEEP_ALIVE_COPY,
+  MUTATION_REFUSAL_COPY,
+  REFUSAL_COPY,
+} from "./terminal-copy.js";
 
 /**
  * How long a burst of layout changes coalesces before it is written.
@@ -92,40 +106,6 @@ const PERSIST_DEBOUNCE_MS = 400;
  */
 const CREATE_COLS = 80;
 const CREATE_ROWS = 24;
-
-/** Why nothing happened, in words the person reading it can act on. */
-const REFUSAL_COPY: Partial<Record<TerminalErrorCode, string>> = {
-  limit_project_terminals:
-    "This project already has the maximum number of terminals. Close one to open another.",
-  limit_global_terminals:
-    "Vex has the maximum number of terminals open. Close one to open another.",
-  host_unavailable:
-    "The terminal service is not running and could not be restarted. Restart Vex to try again.",
-  project_deleting: "This project is being deleted, so no new terminal can open.",
-  create_timeout: "The terminal service did not answer in time. Try again.",
-  snapshot_unavailable: "Vex could not read this project's saved terminal layout.",
-};
-
-const KEEP_ALIVE_COPY =
-  "This project already has the maximum number of live terminal tabs. Close one to open another - Vex never closes a running shell for you.";
-
-/**
- * What a refused mutation SAYS, per reason.
- *
- * A lookup rather than a chain of ternaries because `WorkspaceMutation` gained
- * a second bound in B4b and the two read identically in code while meaning
- * different things to a user. Every member of the union has an entry, so a
- * refusal can never fall through to a reason code printed at the user.
- */
-const MUTATION_REFUSAL_COPY: Readonly<Record<WorkspaceRefusalReason, string>> = {
-  keep_alive_limit: KEEP_ALIVE_COPY,
-  file_tab_limit:
-    `This project already has ${String(STUDIO_FILE_TABS_MAX)} files open. Close one to open another; Vex never closes a tab for you.`,
-  unknown_tab: "That tab is no longer open.",
-  unknown_pane: "That pane is no longer open.",
-  last_pane:
-    "That is the last pane in this tab. Close the tab itself to close it.",
-};
 
 export interface StudioWorkspaceControllerProps {
   readonly projectId: string;
@@ -163,17 +143,37 @@ export function StudioWorkspaceController({
   const hydratedRef = useRef(false);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
-   * This workspace has been CLOSED, so it may never persist again.
+   * THE CLOSE PHASE. One owner, and this is it.
    *
-   * The close commits the snapshot itself and then kills the ptys, and every
-   * persist that could follow describes a project whose shells are gone: the
-   * host reconciles a layout against what is LIVE, so a later commit would
-   * write the intersection - an empty snapshot - over the buffers the close had
-   * just saved. The two paths that could do it are this controller's debounce
-   * and its unmount flush, and this latch closes both at their source rather
-   * than at two call sites that must both remember.
+   * `workspace/close-lifecycle.ts` holds the rules; this ref holds the current
+   * value and `closePhase` renders it. The ref is what every effect reads,
+   * because the phase changes across awaits and inside teardowns where a
+   * closure's captured value is whatever it was when the closure was made.
+   *
+   * It replaced a `closedRef` boolean, which could not tell "this workspace was
+   * saved and its shells ended" from "the commit was REFUSED and everything is
+   * still running" - and, unable to tell them apart, killed the shells either
+   * way.
    */
-  const closedRef = useRef(false);
+  const closeStateRef = useRef<WorkspaceCloseState>(openWorkspaceClose());
+  const [closePhase, setClosePhase] = useState<WorkspaceCloseState>(
+    closeStateRef.current,
+  );
+  const publishCloseState = useCallback((next: WorkspaceCloseState): void => {
+    closeStateRef.current = next;
+    setClosePhase(next);
+  }, []);
+
+  /**
+   * The close that is RUNNING, or `null`.
+   *
+   * The mechanism behind the model's `join` admission: a second close gesture
+   * awaits this exact promise instead of starting a second commit. Held in a
+   * ref rather than in state because a caller arriving in the same tick must
+   * see it, and a render has not happened yet.
+   */
+  const closeRunRef = useRef<Promise<WorkspaceCloseOutcome> | null>(null);
+
 
   /**
    * THE WORKSPACE GENERATION. Bumped whenever the workspace this controller is
@@ -199,12 +199,37 @@ export function StudioWorkspaceController({
   /**
    * Opens that have been admitted but whose pty does not exist yet.
    *
-   * Counted so the keep-alive bound is decided against the world INCLUDING
-   * them: four groups plus two in-flight opens is six, and the model must
-   * refuse the second of those two rather than admit both against a count of
-   * four.
+   * A SET OF PROMISES rather than a counter, and it does two jobs.
+   *
+   * The keep-alive bound is decided against the world INCLUDING them: four
+   * groups plus two in-flight opens is six, and the model must refuse the
+   * second of those two rather than admit both against a count of four. `size`
+   * is what the counter used to answer.
+   *
+   * The close JOINS them. A create issued before `closing` began resolves after
+   * it, and until it has resolved the close cannot know whether a pty exists.
+   * Awaiting the whole set is what makes the late-create fence total: every
+   * such create has either published into the layout the close is about to
+   * commit, or - having found the workspace closing at its own publication
+   * fence - killed the pty it alone holds. Neither outcome can leave an orphan
+   * behind the close.
    */
-  const pendingOpensRef = useRef(0);
+  const pendingOpensRef = useRef<Set<Promise<void>>>(new Set());
+
+  /**
+   * Ptys that landed DURING a close, with no pane to belong to.
+   *
+   * A create issued before the close resolves after it, into a workspace that
+   * is no longer accepting terminals. The pty exists; nothing references it;
+   * nobody else has ever seen its id. Rather than have that call kill it
+   * blindly, it is handed HERE and the close adds it to the same kill sweep it
+   * runs for the layout - so it gets an outcome-checked kill and a shell that
+   * could not be ended fails the close instead of vanishing from the report.
+   *
+   * The close is what drains this: it joins the creates first, so every id that
+   * can arrive has arrived before the sweep is built.
+   */
+  const strandedTerminalsRef = useRef<Set<string>>(new Set());
 
   /**
    * Apply a model mutation. The ONE place a refusal becomes visible, so no
@@ -231,7 +256,7 @@ export function StudioWorkspaceController({
       persistTimerRef.current = null;
     }
     if (!hydratedRef.current) return;
-    if (closedRef.current) return;
+    if (!admitsPersist(closeStateRef.current)) return;
     void persistTerminalWorkspace(toPersistedLayout(stateRef.current));
   }, []);
 
@@ -276,8 +301,15 @@ export function StudioWorkspaceController({
       //    nothing in this window will ever reference them. They are ours to
       //    end, and leaving them is what "an invisible running shell" means.
       if (generation !== generationRef.current) {
+        // THE THIRD KIND OF STALE, beside the two named above: this workspace
+        // is CLOSING, CLOSED or DISCARDED. Like a project switch and unlike a
+        // remount, nothing in this window will ever reference these ids - the
+        // close captured its kill set before this revive existed - so they are
+        // ours to end, and leaving them is what "an invisible running shell"
+        // means.
         if (
-          opened !== projectIdRef.current
+          (opened !== projectIdRef.current
+            || !admitsTerminalCreate(closeStateRef.current))
           && result.ok
           && result.data.ok
           && result.data.value !== null
@@ -307,13 +339,13 @@ export function StudioWorkspaceController({
 
   useEffect(() => {
     if (!hydratedRef.current) return undefined;
-    if (closedRef.current) return undefined;
+    if (!admitsPersist(closeStateRef.current)) return undefined;
     if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current);
     persistTimerRef.current = setTimeout(() => {
       persistTimerRef.current = null;
-      // Re-checked at the timer, not only when it was armed: the close latches
+      // Re-checked at the timer, not only when it was armed: the phase moves
       // between the two, and the check that matters is the one at the write.
-      if (closedRef.current) return;
+      if (!admitsPersist(closeStateRef.current)) return;
       void persistTerminalWorkspace(toPersistedLayout(stateRef.current));
     }, PERSIST_DEBOUNCE_MS);
     return () => {
@@ -355,7 +387,8 @@ export function StudioWorkspaceController({
   }, [projectId, state]);
 
   /**
-   * CLOSING this workspace: commit the buffers, THEN kill the shells.
+   * CLOSING this workspace: commit the buffers, THEN kill the shells - and
+   * CHECK EVERY OUTCOME on the way.
    *
    * VS Code's own semantics, and the reason the order is the whole of this
    * function. Closing a window disposes its terminals rather than detaching
@@ -363,53 +396,175 @@ export function StudioWorkspaceController({
    * `persistentSessionReviveProcess` defaults to `onExit`: the BUFFERS come
    * back, the PROCESSES do not. Reopening the project therefore has to find a
    * snapshot carrying every screen, and there is exactly one moment at which
-   * such a snapshot can be written - while the ptys are still running.
+   * such a snapshot can be written - while the ptys are still running. VS Code
+   * awaits its own persist inside `_onWillShutdown` and lets the shutdown
+   * proceed on its result rather than in parallel with it; the same discipline
+   * is what the outcome checks below implement.
    *
    * ## Why each step is where it is
    *
-   *  1. LATCH FIRST, before any await. Everything after this point would write
-   *     a snapshot describing shells that are about to stop existing; the host
-   *     reconciles a persisted layout against what is live, so such a write
-   *     lands as an EMPTY snapshot over the one this function is about to save.
-   *  2. PERSIST AND AWAIT IT. `persistTerminalWorkspace` does not resolve on
-   *     delivery: main records the topology and the host's commit owner
-   *     serializes every live mirror into the project's snapshot file before
-   *     the reply comes back. Awaiting it is what makes "the buffers are on
-   *     disk" a fact rather than a hope, and it is why no separate
-   *     "serialize now" request had to be invented.
-   *  3. KILL, through the model's own `closing` intent, so "a close kills"
-   *     stays one decision in `workspace-model.ts` rather than two.
+   *  1. SHUT ADMISSION, before any await. `closing` stops every background
+   *     persist (the debounce, the visibility flush, the unmount flush) and
+   *     refuses every new terminal. A snapshot written after this point would
+   *     describe shells that are about to stop existing; the host reconciles a
+   *     persisted layout against what is live, so such a write lands as an
+   *     EMPTY snapshot over the one this function is about to save.
+   *  2. CANCEL THE RESTORE, then JOIN THE IN-FLIGHT CREATES. Both are opens
+   *     that can still put a pty into this project after the close has captured
+   *     the layout it commits, and a pty that arrives then is in no snapshot
+   *     and in no kill set.
+   *
+   *     The restore is CANCELLED rather than awaited, and the difference
+   *     matters: a `readWorkspace` that never answers - a wedged host, a
+   *     dropped reply - would make an awaited close hang forever with the
+   *     user's gesture unanswered. Cancellation is free and total because the
+   *     restore ALREADY has a generation fence for exactly this: bumping the
+   *     generation makes it publish nothing, and its own stale compensation
+   *     kills whatever ptys the revive produced (see the restore effect, which
+   *     treats a workspace that no longer admits terminals the same way it
+   *     treats a project switch). The layout on disk is untouched either way,
+   *     because an unhydrated workspace never commits.
+   *
+   *     The creates are JOINED rather than cancelled, because a create that has
+   *     already been issued may already own a pty, and the close cannot know
+   *     whether one exists until that call has answered. Whatever they land
+   *     with goes into `strandedTerminalsRef` and from there into step 4's
+   *     kill sweep, so a late pty is ended with the same outcome check as the
+   *     rest rather than by an unread `void kill` racing the close's own
+   *     report.
+   *  3. PERSIST AND AWAIT IT, THEN CHECK IT. `persistTerminalWorkspace` does
+   *     not resolve on delivery: main records the topology and the host's
+   *     commit owner serializes every live mirror into the project's snapshot
+   *     file before the reply comes back. A REFUSED or UNREACHABLE commit means
+   *     the buffers are NOT on disk, and killing after one is the data loss
+   *     this whole ordering exists to prevent - so the close stops, the phase
+   *     becomes `failed`, nothing is killed, and the workspace stays exactly as
+   *     the user left it.
+   *  4. KILL, through the model's own `closing` intent, so "a close kills"
+   *     stays one decision in `workspace-model.ts` rather than two. Refusals
+   *     are read, not discarded: a code that PROVES the shell is gone
+   *     (`killProvedGone`) settles it, and anything else leaves a possibly
+   *     running shell and fails the close.
    *
    * ## Before the restore has landed, nothing is persisted
    *
    * An unhydrated workspace's state is EMPTY, and persisting it would overwrite
    * the very snapshot the mount was about to restore from - the same reason the
-   * debounce is latched behind hydration. So the close skips step 2 and the
-   * file on disk stays the last good one. Any terminals a revive had already
-   * produced stay live and are found by the next open, which main answers from
-   * live state rather than from the snapshot.
+   * debounce is latched behind hydration. Step 2 settles the restore first, so
+   * this is now only reached when the read genuinely produced nothing; the file
+   * on disk stays the last good one and any terminals a revive had already
+   * produced are found by the next open, which main answers from live state.
    */
-  const closeWorkspace = useCallback(async (): Promise<void> => {
-    if (closedRef.current) return;
-    closedRef.current = true;
+  const runClose = useCallback(async (): Promise<WorkspaceCloseOutcome> => {
     if (persistTimerRef.current !== null) {
       clearTimeout(persistTimerRef.current);
       persistTimerRef.current = null;
     }
-    const closing = stateRef.current;
-    if (hydratedRef.current) {
-      await persistTerminalWorkspace(toPersistedLayout(closing));
-    }
-    const plan = collectCleanups(closing.tabs, "closing");
-    await Promise.all(
-      plan.killTerminalIds.map(async (terminalId) => await killTerminal(terminalId)),
-    );
-  }, []);
 
-  useEffect(() => publishProjectWorkspaceClose(projectId, closeWorkspace), [
-    closeWorkspace,
-    projectId,
-  ]);
+    // ---- stop everything that could still change the layout ----
+    // Cancels the mount's restore and any create issued before this line; both
+    // recheck the generation at publication and clean up what they own.
+    generationRef.current += 1;
+    // Snapshotted before the await: a create admitted after `closing` is
+    // refused, so the set cannot grow past this point, and iterating the live
+    // set while entries remove themselves is a mutation during traversal.
+    await Promise.all([...pendingOpensRef.current]);
+
+    const closing = stateRef.current;
+
+    // ---- the commit, CHECKED ----
+    if (hydratedRef.current) {
+      const persisted = await persistTerminalWorkspace(toPersistedLayout(closing));
+      if (!persisted.ok) return fail("persist_unreachable");
+      if (!persisted.data.ok) return fail("persist_refused");
+    }
+
+    // ---- the kills, CHECKED ----
+    const stranded = [...strandedTerminalsRef.current];
+    strandedTerminalsRef.current = new Set();
+    const plan = collectCleanups(closing.tabs, "closing");
+    const outcomes = await Promise.all(
+      [...plan.killTerminalIds, ...stranded].map(
+        async (terminalId) => await killTerminal(terminalId),
+      ),
+    );
+    const ended = outcomes.every(
+      (outcome) =>
+        outcome.ok && (outcome.data.ok || killProvedGone(outcome.data.code)),
+    );
+    if (!ended) return fail("kill_incomplete");
+
+    publishCloseState(closeCommitted(closeStateRef.current));
+    return { ok: true };
+
+    function fail(failure: WorkspaceCloseFailure): WorkspaceCloseOutcome {
+      publishCloseState(closeFailed(closeStateRef.current, failure));
+      setNotice(CLOSE_FAILURE_COPY[failure]);
+      return { ok: false, failure };
+    }
+  }, [publishCloseState]);
+
+  /**
+   * The close as its callers see it: SINGLE-FLIGHT, and answered.
+   *
+   * A second gesture arriving while the first is committing awaits the SAME
+   * completion and gets the SAME outcome. It used to find nothing - the handler
+   * was taken once from the registry - and the centre, reading that as "no
+   * workspace is mounted", unmounted the controller mid-commit and destroyed
+   * the only owner of the layout being written.
+   */
+  const closeWorkspace = useCallback(async (): Promise<WorkspaceCloseOutcome> => {
+    const admission = beginClose(closeStateRef.current);
+    if (admission.admitted === "settled") return admission.outcome;
+    if (admission.admitted === "join") {
+      const running = closeRunRef.current;
+      // `closing` with no run in flight is not reachable - the phase is
+      // published inside the same synchronous block that stores the run - and
+      // reporting success for a close that never happened would unmount a live
+      // workspace, so the honest answer is the retryable one.
+      if (running === null) return { ok: false, failure: "persist_unreachable" };
+      return await running;
+    }
+    publishCloseState(admission.state);
+    setNotice(null);
+    const run = runClose();
+    closeRunRef.current = run;
+    try {
+      return await run;
+    } finally {
+      closeRunRef.current = null;
+    }
+  }, [publishCloseState, runClose]);
+
+  /**
+   * THE DELETION LATCH. Synchronous, and it must run BEFORE the unmount.
+   *
+   * The chain it breaks: a delete's cleanup removes this project's snapshot
+   * file, the centre drops the project from the kept-alive set, this controller
+   * unmounts, and its teardown flush writes a persist for a project that no
+   * longer exists - RECREATING a file that holds the user's terminal
+   * scrollback, for a project Vex has just told them was deleted.
+   *
+   * It is deliberately not a close: there is nothing to commit and nothing to
+   * kill, because main's delete already ended the shells through its own close
+   * hook, under authority this renderer does not have.
+   */
+  const discardWorkspaceLayout = useCallback((): void => {
+    publishCloseState(discardWorkspace());
+    if (persistTimerRef.current !== null) {
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
+  }, [publishCloseState]);
+
+  useEffect(
+    () =>
+      publishProjectWorkspaceLifecycle(projectId, {
+        close: closeWorkspace,
+        discard: discardWorkspaceLayout,
+      }),
+    [closeWorkspace, discardWorkspaceLayout, projectId],
+  );
 
   /* ---------------- teardown ---------------- */
 
@@ -523,6 +678,17 @@ export function StudioWorkspaceController({
    * A stale completion KILLS ITS OWN PTY. It is the only holder of that id -
    * nothing else ever saw it - so discarding without killing is precisely how
    * the invisible shell was created.
+   *
+   * ## The CLOSE is a third staleness, and it needs both halves of the fence
+   *
+   * A close shuts admission, so a gesture arriving after it is REFUSED here by
+   * name rather than silently ignored. A create already IN FLIGHT when the
+   * close began cannot be refused - it may already have a pty - so it is caught
+   * at the publication fence instead and kills its own terminal, and the close
+   * awaits this call's promise (`pendingOpensRef`) before it captures the
+   * layout it commits. Without both halves a terminal created during the close
+   * publishes after the snapshot was captured and is in no kill set: an orphan
+   * shell holding a lease and a host slot for a workspace that is gone.
    */
   const openTerminal = useCallback(
     async (
@@ -531,8 +697,12 @@ export function StudioWorkspaceController({
       const generation = generationRef.current;
 
       // ---- admissibility, before anything exists ----
+      if (!admitsTerminalCreate(closeStateRef.current)) {
+        setNotice(CLOSING_CREATE_COPY);
+        return;
+      }
       if (into.kind === "tab") {
-        if (!canAddTerminalGroup(stateRef.current, pendingOpensRef.current)) {
+        if (!canAddTerminalGroup(stateRef.current, pendingOpensRef.current.size)) {
           setNotice(KEEP_ALIVE_COPY);
           return;
         }
@@ -544,7 +714,15 @@ export function StudioWorkspaceController({
         return;
       }
 
-      pendingOpensRef.current += 1;
+      // Registered BEFORE the await and removed in a `finally`, so a close
+      // starting at any point during the create finds this call in the set and
+      // waits for it. The promise resolves on every path, including a rejected
+      // bridge call, so a failing create cannot park a close forever.
+      let settleOpen = (): void => undefined;
+      const open = new Promise<void>((resolve) => {
+        settleOpen = resolve;
+      });
+      pendingOpensRef.current.add(open);
       let result;
       try {
         result = await createTerminal({
@@ -553,7 +731,8 @@ export function StudioWorkspaceController({
           rows: CREATE_ROWS,
         });
       } finally {
-        pendingOpensRef.current -= 1;
+        pendingOpensRef.current.delete(open);
+        settleOpen();
       }
 
       if (!result.ok) {
@@ -576,11 +755,22 @@ export function StudioWorkspaceController({
       // ---- the fence ----
       const stale =
         generation !== generationRef.current
+        || !admitsTerminalCreate(closeStateRef.current)
         || (into.kind === "pane"
           && stateRef.current.tabs.find((tab) => tab.tabId === into.tabId) === undefined);
       if (stale) {
         // Nothing references this terminal and nothing ever will. It is ours to
         // end, and leaving it is what "an invisible running shell" means.
+        //
+        // WHO ends it depends on why it is stale. A close is running and is
+        // already awaiting this call, so the pty is handed to its checked kill
+        // sweep; killing here instead would be an unread `void` on the one path
+        // where the close is about to report whether every shell ended. Every
+        // other staleness has no such owner, so this call ends it itself.
+        if (!admitsTerminalCreate(closeStateRef.current)) {
+          strandedTerminalsRef.current.add(terminalId);
+          return;
+        }
         void killTerminal(terminalId);
         return;
       }
@@ -776,7 +966,11 @@ export function StudioWorkspaceController({
             </div>
           ) : notice === null ? null : (
             <div
-              role="status"
+              // A FAILED CLOSE IS AN ERROR, not a status: the user asked for
+              // something, it did not happen, and their shells are still
+              // running. `alert` is what makes a screen reader say so without
+              // waiting for the next focus move.
+              role={closePhase.phase === "failed" ? "alert" : "status"}
               className="flex shrink-0 items-start gap-2 border-b border-line-3 bg-warning-wash px-3 py-2 text-[12px] leading-4 text-ink-primary"
             >
               <span className="flex-1">{notice}</span>

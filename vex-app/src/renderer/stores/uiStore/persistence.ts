@@ -1,7 +1,8 @@
 /**
  * uiStore persistence: the partialize whitelist, expand-only version
  * migrations, and the every-rehydrate merge coercion for the user-writable
- * localStorage payload. Extracted from uiStore.ts so the store file stays a
+ * localStorage payload. Every whitelisted key is coerced on the way in - being
+ * on the whitelist makes a key persistable, not trustworthy. Extracted from uiStore.ts so the store file stays a
  * readable slot registry.
  */
 
@@ -195,6 +196,19 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     typeof incoming?.notificationsEnabled === "boolean"
       ? incoming.notificationsEnabled
       : true;
+  // The two RAIL booleans came back through the whitelist RAW: `sidebarOpen`
+  // and `bookOpen` are declared persisted keys, so a hand-edited `"yes"` used
+  // to land straight in the slot and reach the column solver and the rails'
+  // `hidden`/width props as a non-boolean. Same coercion as dust above, with
+  // the STORE-CONSTRUCTED default as the fallback rather than a literal, so
+  // this file never becomes a second place the shell's opening state is
+  // declared.
+  const sidebarOpen: boolean =
+    typeof incoming?.sidebarOpen === "boolean"
+      ? incoming.sidebarOpen
+      : current.sidebarOpen;
+  const bookOpen: boolean =
+    typeof incoming?.bookOpen === "boolean" ? incoming.bookOpen : current.bookOpen;
   const bookSectionOrder = coerceSectionOrder(incoming?.bookSectionOrder);
   // The Studio rail's order is the SAME class of untrusted payload, under the
   // same bounds, coerced through the same reader.
@@ -214,6 +228,8 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     ...(restored as Partial<UiState>),
     theme,
     themePreference,
+    sidebarOpen,
+    bookOpen,
     hideDustBalances,
     notificationsEnabled,
     bookSectionOrder,

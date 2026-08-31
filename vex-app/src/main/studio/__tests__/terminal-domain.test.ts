@@ -105,6 +105,31 @@ class FakeStarter implements PtyHost {
    * nothing to revive.
    */
   snapshot: unknown = null;
+  /**
+   * Freeze every `persistWorkspace` inside the host call. Returns the release.
+   *
+   * The window a delete's DRAIN has to wait through: a commit that has been
+   * admitted and has not yet written. Without it a test can only observe the
+   * lease before it is taken or after it is gone, which proves nothing about
+   * the interval the drain exists for.
+   */
+  private persistHold: Promise<void> | null = null;
+
+  /** A code the next `persistWorkspace` is refused with, then cleared. */
+  failNextPersist: import("@shared/schemas/terminal.js").TerminalErrorCode | null =
+    null;
+
+  holdPersists(): () => void {
+    let release: () => void = () => {};
+    this.persistHold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      this.persistHold = null;
+      release();
+    };
+  }
+
   /** Freeze every `revive` inside the host call, for the slow-restore race. */
   private reviveHold: Promise<void> | null = null;
 
@@ -162,6 +187,14 @@ class FakeStarter implements PtyHost {
           },
         },
       };
+    }
+    if (request.kind === "persistWorkspace") {
+      if (this.persistHold !== null) await this.persistHold;
+      const failure = this.failNextPersist;
+      if (failure !== null) {
+        this.failNextPersist = null;
+        return { ok: false, code: failure };
+      }
     }
     if (request.kind === "create") {
       for (const resolve of this.createSeen.splice(0)) resolve();
@@ -997,6 +1030,111 @@ describe("a completed open answers from LIVE state", () => {
       )
       .map((request) => request.layoutVersion);
     expect(versions).toEqual([0, 1, 2]);
+    await domain.dispose();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * B4 review, finding W2: a workspace COMMIT is lifecycle-gated
+ * ------------------------------------------------------------------ */
+
+/**
+ * A commit writes a FILE, and a delete deletes that file.
+ *
+ * `persistWorkspace` was the one terminal operation with no lifecycle check: it
+ * minted a version and sent the request whoever asked and whenever. The chain
+ * that produced is the reason this section exists - a deleted project's
+ * workspace controller unmounts, its teardown flushes one last commit, and the
+ * host recreates `<userData>/studio/terminal-snapshots/<projectId>.json` for a
+ * project whose tombstone has committed and whose snapshot cleanup has already
+ * run. That file holds the project's terminal scrollback.
+ */
+describe("persistWorkspace under the lifecycle gate", () => {
+  function oneGroup(
+    terminalId: string,
+  ): import("@shared/schemas/terminal.js").TerminalWorkspaceLayout {
+    return {
+      projectId: "p1",
+      groups: [
+        {
+          groupId: "g1",
+          orientation: "horizontal",
+          panes: [{ terminalId, relativeSize: 1 }],
+          activePaneIndex: 0,
+        },
+      ],
+      activeGroupIndex: 0,
+    };
+  }
+
+  it("REFUSES a commit for a project whose admission has closed", async () => {
+    const domain = build();
+    await domain.create("w1", "p1", 80, 24);
+    const [id] = starter.createdIds();
+    if (id === undefined) throw new Error("unreachable");
+    const before = starter.requests.filter(
+      (request) => request.kind === "persistWorkspace",
+    ).length;
+
+    // What step 1 of a delete does, before its tombstone and long before its
+    // cleanup removes the snapshot file.
+    gate.closeProjectAdmission("p1");
+
+    expect(await domain.persistWorkspace("p1", oneGroup(id))).toEqual({
+      ok: false,
+      code: "project_deleting",
+    });
+    // NOTHING REACHED THE HOST, which is the fact that matters: the file is not
+    // recreated, and no version was burned on a commit that did not happen.
+    expect(
+      starter.requests.filter((request) => request.kind === "persistWorkspace").length,
+    ).toBe(before);
+    await domain.dispose();
+  });
+
+  it("holds a DRAINED `terminalPersist` lease while a commit is in flight", async () => {
+    // DRAINED is the half the refusal cannot provide. Admission closes at step
+    // 1 and the snapshot is removed at step 7; a commit ALREADY IN FLIGHT when
+    // admission closed passed its check and would land in between. The drain is
+    // what makes the delete wait for it instead.
+    expect(gate.DRAINED_LEASE_CLASSES).toContain("terminalPersist");
+
+    const domain = build();
+    await domain.create("w1", "p1", 80, 24);
+    const [id] = starter.createdIds();
+    if (id === undefined) throw new Error("unreachable");
+
+    const release = starter.holdPersists();
+    const pending = domain.persistWorkspace("p1", oneGroup(id));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(gate.heldProjectLeases("p1", "terminalPersist")).toBe(1);
+    // A delete's drain is blocked on exactly this, and gives up rather than
+    // proceeding over a write it cannot see finish.
+    expect(await gate.drainProjectLeases("p1", 10)).toEqual({
+      drained: false,
+      remaining: 1,
+    });
+
+    release();
+    expect((await pending).ok).toBe(true);
+    expect(gate.heldProjectLeases("p1", "terminalPersist")).toBe(0);
+    expect(await gate.drainProjectLeases("p1", 10)).toEqual({ drained: true });
+    await domain.dispose();
+  });
+
+  it("releases the lease when the HOST refuses the commit", async () => {
+    // The mirror defect: a lease held past a failed commit would block the
+    // project's delete drain forever on work that already ended.
+    const domain = build();
+    starter.failNextPersist = "host_unavailable";
+
+    expect(await domain.persistWorkspace("p1", oneGroup("t1"))).toEqual({
+      ok: false,
+      code: "host_unavailable",
+    });
+    expect(gate.heldProjectLeases("p1", "terminalPersist")).toBe(0);
     await domain.dispose();
   });
 });

@@ -122,11 +122,16 @@ beforeEach(() => {
   useUiStore.setState({
     activeSessionId: null,
     shellRoute: { kind: "memory", origin: null },
+    runtimeMode: "agent",
   });
 });
 
 afterEach(() => {
-  useUiStore.setState({ activeSessionId: null, shellRoute: { kind: "none" } });
+  useUiStore.setState({
+    activeSessionId: null,
+    shellRoute: { kind: "none" },
+    runtimeMode: "agent",
+  });
 });
 
 describe("GlobalApprovals - badge visibility", () => {
@@ -217,6 +222,37 @@ describe("GlobalApprovals - panel", () => {
     // Any covering full-app screen closes so the jump lands on the transcript.
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("Open session from STUDIO switches to the agent shell with the selection", () => {
+    // The strip is mounted above the mode dispatch, so this panel is reachable
+    // from Studio - and a session transcript only exists in the agent shell.
+    // Selecting the session without switching the mode leaves the user in
+    // Studio, looking at a project workspace, having pressed a control that
+    // promised them a session.
+    useUiStore.setState({ runtimeMode: "studio" });
+    pendingState = {
+      data: {
+        ok: true,
+        data: [
+          makeRow({
+            id: "g-a",
+            sessionId: SESSION_A,
+            sessionTitle: "Alpha session",
+          }),
+        ],
+      },
+    };
+    renderBadge();
+    fireEvent.click(getBadge());
+    fireEvent.click(screen.getByRole("button", { name: /open session/i }));
+
+    // ONE navigation: the mode and the selection land together, not one
+    // without the other.
+    const state = useUiStore.getState();
+    expect(state.runtimeMode).toBe("agent");
+    expect(state.activeSessionId).toBe(SESSION_A);
+    expect(state.shellRoute).toEqual({ kind: "none" });
   });
 
   it("approve on a rendered card fires the mutation with the approval id", () => {
