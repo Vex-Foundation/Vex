@@ -180,9 +180,8 @@ describe("smart money is a 30-day pair-local cash flow panel and says so", () =>
     expect(outcome.rows.map((row) => row.providerRank)).toEqual([
       1, 2, 3, 4, 5, 6, 7,
     ]);
-    // The echoed count matches what was delivered: nothing was withheld.
-    expect(outcome.rowsAvailable).toBe(7);
-    expect(outcome.rows).toHaveLength(outcome.rowsAvailable);
+    // Nothing was withheld: every row the provider returned is here.
+    expect(outcome.rows).toHaveLength(7);
     await service.dispose();
   });
 

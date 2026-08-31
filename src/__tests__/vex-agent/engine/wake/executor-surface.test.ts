@@ -136,4 +136,26 @@ describe("startWakeExecutor — self-scheduling lifecycle (fake timers)", () => 
     await vi.advanceTimersByTimeAsync(10_000);
     expect(claimDue).toHaveBeenCalledTimes(1);
   });
+
+  it("owns the restart-orphan reclaim handle and drains it on stop()", async () => {
+    // The reclaim has no other lifecycle owner: the host's supervisor timer is
+    // cleared the moment this executor starts, so if stop() did not stop the
+    // sweep, a quit would leave a reclaim transaction running against a
+    // Postgres pool being torn down.
+    vi.useFakeTimers();
+    const stopReclaim = vi.fn().mockResolvedValue(undefined);
+    const startReclaim = vi.fn(() => ({ stop: stopReclaim }));
+
+    const handle = startWakeExecutor({
+      intervalMs: 2000,
+      deps: makeDeps(),
+      startRestartOrphanReclaim: startReclaim,
+    });
+
+    expect(startReclaim).toHaveBeenCalledTimes(1);
+    expect(stopReclaim).not.toHaveBeenCalled();
+
+    await handle.stop();
+    expect(stopReclaim).toHaveBeenCalledTimes(1);
+  });
 });

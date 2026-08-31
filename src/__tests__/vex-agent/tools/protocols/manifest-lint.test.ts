@@ -40,6 +40,8 @@ import {
   lintSlippageDefaultHome,
   lintStaleOutputCapClaims,
   lintToolSubject,
+  lintUnknownPublicNameProse,
+  lintUnknownPublicNameSources,
   MANIFEST_LINT_ALLOWLIST,
   SLIPPAGE_DEFAULT_OWNER,
   staleAllowlistKeys,
@@ -89,29 +91,41 @@ const aliasIssues = [...ACTION_ALIAS_TOOLS, ...WALLET_TOOLS, ...WALLET_TRANSACTI
 const protocolSources = readSources("src/vex-agent/tools/protocols");
 
 /**
- * The scan roots for `stale-output-cap-claim`, which is DELIBERATELY wider than
- * the protocol tree.
+ * EVERY tree that authors agent-facing tool output. Declared ONCE, because two
+ * source-level rules need the same answer to the same question ("where can a
+ * string the model reads be written?") and a root missing from one of them is a
+ * blind spot, not a scope decision.
  *
- * The phantom 16,384 B cap was asserted from four different owners: the research
- * system prompt (`engine/prompts`), two internal tool definitions
- * (`tools/registry`), a runtime error returned to the model (`tools/internal`),
- * and protocol manifests + their comments (`tools/protocols`). A rule scoped to
- * the protocol tree alone would have caught three of eight model-facing sites,
- * so it would not be the guard it claims to be.
+ * How the list was built, root by root, so an addition is a reasoned one:
+ *  - `engine/prompts` - the standing prompt layers, incl. the shortcut table.
+ *  - `tools/protocols` - manifests, param descriptions and handler refusals.
+ *  - `tools/registry` - internal `ToolDef` descriptions and schemas.
+ *  - `tools/internal` - runtime errors returned to the model.
+ *  - `src/tools` - THE PROVIDER ADAPTERS, added 2026-08-28 after external
+ *    review found two live sites outside every existing root:
+ *    `src/tools/pools-fun/errors.ts` and `src/tools/relay/native-value.ts`
+ *    both author remediation hints naming tools by `publicName`. The adapters
+ *    are not "below" the model-facing boundary: an error mapper's guidance
+ *    string is read by the agent exactly like a manifest description.
+ *
+ * The phantom 16,384 B cap was asserted from four different owners at once,
+ * which is why the output-cap rule was never scoped to the protocol tree; the
+ * phantom tool name at `screening.ts:408` is the same lesson for names.
  */
-const OUTPUT_CAP_SCAN_ROOTS: readonly string[] = [
+const MODEL_FACING_SOURCE_ROOTS: readonly string[] = [
   "src/vex-agent/engine/prompts",
   "src/vex-agent/tools/protocols",
   "src/vex-agent/tools/registry",
   "src/vex-agent/tools/internal",
+  "src/tools",
 ];
 
-const outputCapSources = OUTPUT_CAP_SCAN_ROOTS.flatMap((root) => readSources(root));
+const modelFacingSources = MODEL_FACING_SOURCE_ROOTS.flatMap((root) => readSources(root));
 
 const sourceIssues = [
   ...lintGenericErrorLiterals(protocolSources),
   ...lintSlippageDefaultHome([...protocolSources, ...readSources("src/tools")]),
-  ...lintStaleOutputCapClaims(outputCapSources),
+  ...lintStaleOutputCapClaims(modelFacingSources),
 ];
 
 /**
@@ -146,7 +160,34 @@ const dottedIssues = lintDottedToolIdReferences(dottedCatalog, [
   ...Object.values(PROTOCOL_NAMESPACE_NAVIGATION).map(navigationProseSubject),
 ]);
 
-const allIssues = [...protocolIssues, ...aliasIssues, ...sourceIssues, ...dottedIssues];
+/**
+ * The dotted rule's mirror image: a token already written in the CALLABLE
+ * grammar that names no tool at all.
+ *
+ * Two surfaces, because the defect that motivated it lives on the one the
+ * dotted rule declares out of scope. `screening.ts:408` told the agent to call
+ * `dexscreener__narratives_trending`, a tool that has never existed, from
+ * inside a runtime refusal - so the SOURCE half is not an extra, it is the
+ * half that would have caught the measured defect.
+ */
+const publicNames = PROTOCOL_TOOLS.map((manifest) => manifest.publicName);
+
+const publicNameIssues = [
+  ...lintUnknownPublicNameProse(publicNames, [
+    ...PROTOCOL_TOOLS.map((manifest) => toolProseSubject({
+      toolId: manifest.toolId,
+      publicName: manifest.publicName,
+      description: manifest.description,
+      params: manifest.params.map((param) => ({ key: param.key, description: param.description })),
+    })),
+    ...Object.values(PROTOCOL_NAMESPACE_NAVIGATION).map(navigationProseSubject),
+  ]),
+  ...lintUnknownPublicNameSources(publicNames, modelFacingSources),
+];
+
+const allIssues = [
+  ...protocolIssues, ...aliasIssues, ...sourceIssues, ...dottedIssues, ...publicNameIssues,
+];
 
 /** Three live Morpho ids, as identity only, for the reintroduction fixture. */
 const MORPHO_FIXTURE_CATALOG = [
@@ -227,7 +268,7 @@ describe("W0 — manifest convention linter", () => {
   // occurrences, not a recorded set. Asserting the allowlist is empty for this
   // rule is what stops a future claim from being re-admitted as debt.
   it("no model-visible string asserts a global tool-output cap, and none is allowlisted", () => {
-    const capIssues = lintStaleOutputCapClaims(outputCapSources);
+    const capIssues = lintStaleOutputCapClaims(modelFacingSources);
     expect(
       capIssues,
       "these strings assert a tool-output byte cap the runtime does not enforce:\n"
@@ -391,6 +432,110 @@ describe("W0 — manifest convention linter", () => {
     );
 
     expect(issues).toEqual([]);
+  });
+
+  // ZERO, and no allowlist row, exactly like the dotted rule. A well-formed
+  // name for a tool that does not exist is the worse of the two defects: the
+  // agent CAN act on it, and the unknown-tool refusal it earns carries no
+  // correction. Measured: `dexscreener__narratives_trending` in a runtime
+  // refusal at `dexscreener/handlers/screening.ts:408`.
+  it("no model-facing string names a tool the catalog does not register", () => {
+    expect(
+      publicNameIssues,
+      `phantom tool names reach the model here:\n${format(publicNameIssues)}`,
+    ).toEqual([]);
+    expect(
+      MANIFEST_LINT_ALLOWLIST.filter((e) => e.rule === "unknown-public-name-reference"),
+    ).toEqual([]);
+  });
+
+  // The regression for the measured defect. If the scanner cannot see a phantom
+  // name inside a handler's refusal template, the rule above is green for the
+  // wrong reason.
+  it("catches a phantom tool name in a handler refusal template", () => {
+    const issues = lintUnknownPublicNameSources(
+      ["dexscreener__narratives_list"],
+      [{
+        path: "src/vex-agent/tools/protocols/dexscreener/handlers/screening.ts",
+        text: [
+          "  throw siteError(",
+          "    CODE,",
+          "    `Call dexscreener__narratives_trending for the ids; the catalog has ${n}.`",
+          "  );",
+        ].join("\n"),
+      }],
+    );
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.detail).toBe("3/dexscreener__narratives_trending");
+    expect(issues[0]?.message).toContain("not a registered tool");
+  });
+
+  // The PROVIDER-ADAPTER root (`src/tools`), added after external review found
+  // two live sites outside every previous scan root: `pools-fun/errors.ts`
+  // authors a `pools__tokens_search` hint and `relay/native-value.ts` names
+  // `relay__bridge_quote_get` and `khalani__bridge_execute`. An error mapper's
+  // guidance string is read by the agent exactly like a manifest description,
+  // so a phantom introduced there must fail the same way.
+  it("catches a phantom tool name in a provider adapter under src/tools", () => {
+    const issues = lintUnknownPublicNameSources(
+      ["relay__bridge_quote_get", "khalani__bridge_execute"],
+      [{
+        path: "src/tools/relay/native-value.ts",
+        text: "    `Re-quote with relay__bridge_quote_all and try once more.`",
+      }],
+    );
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.subject).toBe("src/tools/relay/native-value.ts");
+    expect(issues[0]?.detail).toBe("1/relay__bridge_quote_all");
+  });
+
+  it("scans the provider-adapter root for real, not just in the fixture", () => {
+    // Proves the ROOT LIST reaches `src/tools`: the live names those two
+    // adapters already author must be present in what the scan actually read.
+    // Without `src/tools` in `MODEL_FACING_SOURCE_ROOTS` this is zero.
+    const scanned = modelFacingSources.filter((file) =>
+      file.path === "src/tools/relay/native-value.ts"
+      || file.path === "src/tools/pools-fun/errors.ts");
+    expect(scanned).toHaveLength(2);
+    expect(scanned.some((file) => file.text.includes("relay__bridge_quote_get"))).toBe(true);
+    expect(scanned.some((file) => file.text.includes("pools__tokens_search"))).toBe(true);
+  });
+
+  it("accepts the live name the phantom was replaced with", () => {
+    expect(
+      lintUnknownPublicNameSources(
+        ["dexscreener__narratives_list"],
+        [{
+          path: "handlers/screening.ts",
+          text: "  const hint = `Call dexscreener__narratives_list for the ids.`;",
+        }],
+      ),
+    ).toEqual([]);
+  });
+
+  // The five deliberate FAMILY spellings. They name two or more real tools in
+  // one phrase and are allowlisted by their exact token, never by prefix.
+  it("does not flag a deliberate wildcard family", () => {
+    expect(
+      lintUnknownPublicNameProse(["kyberswap__swap_quote", "solana__swap_quote"], [{
+        subject: "prompt",
+        fields: [{
+          field: "shortcuts",
+          text: "EVM -> `kyberswap__swap_*`, chain=\"solana\" -> `solana__swap_*`",
+        }],
+      }]),
+    ).toEqual([]);
+  });
+
+  it("does not read a comment line as an instruction to the model", () => {
+    expect(
+      lintUnknownPublicNameSources(["dexscreener__narratives_list"], [{
+        path: "handlers/screening.ts",
+        text: " * Renamed from dexscreener__narratives_trending in batch 2.",
+      }]),
+    ).toEqual([]);
   });
 
   it("the allowlist carries no stale entry (a fixed violation must be deleted, not kept)", () => {

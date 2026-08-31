@@ -137,6 +137,53 @@ Consequences for Batch 3:
   model forms from the prompt hit the tools that exist. Read it, then write
   the map to speak the same language.
 
+### D9 amendment: one-time unfreeze for `khalani.tokens.balances`
+
+Ruled 2026-08-29 by the owner, scoped to the wallet-solana arc.
+
+The freeze is lifted ONCE, for the `discovery.embeddingText` of
+`khalani.tokens.balances` only. Every other D9-frozen field stays frozen and
+this is not a precedent for the retrieval exercise.
+
+Why the exception was granted: the frozen text advertised a Solana balance
+scan that the tool no longer performs and that Khalani never performed
+correctly. Khalani's Solana scan answers ZERO tokens, so both agent tools
+reported `$0` for a funded wallet while the Portfolio sidebar showed the real
+balance (owner screenshot, 2026-08-28). The arc routed Solana to direct RPC in
+both tools; leaving the retrieval text advertising the old, wrong source would
+keep pointing the model at a capability description that no longer matches the
+lane. A freeze that preserves an inaccurate claim about a money-path read is
+protecting the wrong thing.
+
+What changed: one clause added, stating that EVM balances are read through
+Khalani while Solana balances are read directly from Solana RPC. The wording
+matches the model-facing manifest description in the same change, so the two
+surfaces speak the same language (the D9 vocabulary constraint above).
+
+Consequences carried out with the edit:
+
+- `__promptsnaps__/navigation-retrieval-fields.json` regenerated through the
+  fixture's own escape flag, `UPDATE_RETRIEVAL_FIELDS_FIXTURE=true`. That flag
+  exists, in the suite's own words, "for the day the owner unfreezes them";
+  this ruling is that day, for this one field;
+- the canonical lexical baseline recaptured. It did NOT move: measured
+  2026-08-29, zero metric values changed. That is not luck, it is the lane's
+  construction - `protocols/lexical-score.ts` scores navigation strings,
+  param text and the manifest `description`, and contains no reference to
+  `embeddingText` at all. The lexical movement earlier in this arc came from
+  the description edits, which were never D9-frozen.
+
+One consequence this amendment does NOT close. D9 above reasons that
+"description edits cannot move [dense vectors], because dense vectors read
+`embeddingText`, which does not change". For this one tool that premise is now
+false: `khalani.tokens.balances` has a dense vector embedded from the OLD text.
+Until it is re-embedded, its stored vector and its manifest disagree. Nothing
+in the shipped product reads that vector today (the dense lane is opt-in,
+`pnpm test:eval:dense`, and per OPEN-DECISIONS O18 the seed dense baseline is
+already stale at v3-agent-200 and behind its floors), so this is a recorded
+debt for the retrieval exercise rather than a live defect: whoever runs the
+next re-embedding pass picks it up with everything else.
+
 ## D10. The capability map names every protocol and what it does
 
 Recorded 2026-08-21, correcting the plan's "thin capability map".

@@ -99,8 +99,16 @@ export function evaluateZodLocaleBundles(bundles) {
       violations.push(`${name}: no built files to scan`);
       continue;
     }
-    const hasMarker = sources.some((src) => src.includes(ZOD_LOCALE_MARKER));
-    const hasLocaleText = sources.some((src) => src.includes(ZOD_EN_LOCALE_TEXT));
+    // EXECUTABLE TEXT ONLY. `dist/main` is emitted with `minify: false`, so our
+    // own source comments survive into it - and `src/lib/zod-locale.ts`
+    // legitimately SPELLS the marker out in the doc block that explains why it
+    // exists. Scanning raw text would let that comment satisfy this gate with
+    // the registration tree-shaken away, which is the same vacuity the marker's
+    // ownership move closes. The sibling `__filename` check already reads
+    // chunks this way.
+    const code = sources.map(stripWholeLineComments);
+    const hasMarker = code.some((src) => src.includes(ZOD_LOCALE_MARKER));
+    const hasLocaleText = code.some((src) => src.includes(ZOD_EN_LOCALE_TEXT));
     if (!hasMarker) {
       violations.push(
         `${name}: no \`${ZOD_LOCALE_MARKER}\` marker - registerZodLocale() was tree-shaken out or never called from the entry` +
@@ -131,6 +139,23 @@ export function evaluateZodLocaleBundles(bundles) {
  * a silent miss of a real executable reference.
  */
 const COMMENT_LINE_RE = /^(?:\/\/|\/\*|\*)/;
+
+/**
+ * Drop every whole-line comment, keeping the line count so a caller that
+ * resolves positions is unaffected.
+ *
+ * Shared by the `__filename` scan and the zod-locale scan, because both ask
+ * the same question: does the EXECUTED code contain this token? Same
+ * conservative rule as {@link COMMENT_LINE_RE}: a trailing comment after code
+ * is not recognised, so the worst case is a loud false positive, never a
+ * silent miss.
+ */
+export function stripWholeLineComments(source) {
+  return source
+    .split("\n")
+    .map((line) => (COMMENT_LINE_RE.test(line.trim()) ? "" : line))
+    .join("\n");
+}
 
 function walkFiles(dir, predicate) {
   const found = [];

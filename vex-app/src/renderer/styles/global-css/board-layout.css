@@ -1,0 +1,347 @@
+/* BOARD LAYOUT - the single owner of every board geometry threshold.
+ *
+ * THE CONTAINER, NOT THE VIEWPORT. The Ask VEX drawer removes 360px from the
+ * board plate without changing the window by a pixel, so a viewport media
+ * query decides columns from a number that is not the number the cards have
+ * to live in. That was the production defect: at a 1440px window with the
+ * drawer open the grid still asked for three tracks and each one measured
+ * 268px, below the 300 the stat block needs and the 316 the price row needs.
+ * Every rule below is a `@container` query on the plate's own inline size, so
+ * the drawer, a narrower window and a future side panel are all the same
+ * event to this file.
+ *
+ * THIS FILE IS THE ONLY PLACE A THRESHOLD LIVES. There is no TypeScript
+ * solver, no ResizeObserver, no mirrored table and no JavaScript that reads
+ * layout back. `--vex-board-mode` is published purely so a browser test can
+ * read the computed value and name which mode it measured; nothing in the
+ * application reads it.
+ *
+ * WHERE THE NUMBERS COME FROM. Every one of them is measured, and the
+ * derivation is a committed artifact:
+ * `features/appShell/Board/board-layout-measurements.md`. Sections 4b and 4c
+ * are the tables this file implements. In short, with realistic DexScreener
+ * figures and the widest label the frozen safety table can produce:
+ *
+ *   WIDE anatomy    (sparkline in the price row, 4 stat columns, one-row
+ *                    footer) needs 460px of inner width, so a 502px card.
+ *                    Binding constraint: 316 figures + 12 gap + 132 sparkline.
+ *   COMPACT anatomy (sparkline in its own slot, 2x2 stats, stacked footer)
+ *                    needs 316px of inner width, so a 358px card.
+ *                    Binding constraint: `$0.000001230 +661.00% 24h` = 316.
+ *
+ * A card's OUTER width is its inner floor plus 40px of `px-5` padding AND the
+ * 2px its own border occupies. That border was left out of the first pass of
+ * this table and it is not a rounding detail: at the old 356px floor the hero
+ * price had 196px for a string that wants 197.29, so the one figure the whole
+ * ladder is derived from was cut by two pixels at every floor on it. The
+ * constrained 800px case in `e2e/board-layout.spec.ts` is what says so.
+ *
+ * Card = (C - 16 x (n - 1)) / n for n columns in a container of C. The ladder
+ * takes the MOST columns whose card clears the compact floor, then uses wide
+ * anatomy if that card also clears the wide floor:
+ *
+ *   C >= 1538  3 columns WIDE       (3 x 502 + 32)
+ *   C >= 1106  3 columns compact    (3 x 358 + 32)
+ *   C >= 1020  2 columns WIDE       (2 x 502 + 16)
+ *   C >=  732  2 columns compact    (2 x 358 + 16)
+ *   C >=  502  1 column  WIDE
+ *   C >=  358  1 column  compact
+ *   C <   358  1 column  compact, pinned at 358, the plate side-scrolls
+ *
+ * NOTHING HERE TRANSITIONS. Geometry that animated would reflow the grid
+ * under a reader's pointer and, with the drawer, would put the cards through
+ * a squeezed interim layout on every open - which is the second half of the
+ * defect this file fixes. There is no `transition` on a layout property in
+ * this file at all, which is why the reduced-motion block at the bottom has
+ * nothing to still: it exists to say so, and to catch a future addition. */
+
+/* ------------------------------------------------------------------ */
+/* The container                                                       */
+/* ------------------------------------------------------------------ */
+
+/* `inline-size` and not `size`: the plate's height must stay content-driven
+ * (a board of eight cards is taller than a board of two), and only the inline
+ * axis is being queried. The query size is the plate's CONTENT box, which is
+ * the width the grid actually gets - the `p-4` is already subtracted. */
+.vex-board-plate {
+  container-type: inline-size;
+  container-name: vex-board-plate;
+}
+
+/* THE SIDE-SCROLL LIVES HERE, NOT ON THE PLATE. Giving the plate itself
+ * `overflow-x: auto` would make it a scroll container too, and the modal body
+ * already owns the board's vertical scrolling. So the horizontal escape hatch
+ * is a wrapper around the grid: below the compact floor the track stays 358px
+ * wide and this element scrolls, rather than a figure being cut.
+ *
+ * `overflow-y: visible` IS NOT AVAILABLE HERE, and asking for it was wrong.
+ * CSS overflow computes a `visible` on one axis to `auto` whenever the other
+ * axis is not `visible`, so this element is a scroll container on BOTH axes
+ * whatever is written for the block axis - and its block-axis padding box is
+ * exactly the grid, which clips the cards' hover shadow (`--shadow-lv2`
+ * reaches 16px below a card and 8px above).
+ *
+ * So the room is MADE rather than asked for: block padding wide enough for
+ * the shadow, cancelled by an equal negative margin so the plate's own
+ * spacing is unchanged. The inline axis deliberately gets none of this - an
+ * inline padding here would shrink the grid below the width the container
+ * query just decided the columns from, which is the whole defect this file
+ * exists to fix. A first card's leading shadow is reachable by the scroll
+ * that owns that axis. */
+.vex-board-grid-scroller {
+  overflow-x: auto;
+  padding-block: 16px;
+  margin-block: -16px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Columns                                                             */
+/* ------------------------------------------------------------------ */
+
+/* One column is the floor case, so it is the unconditional rule. `minmax` and
+ * not `1fr`: below 358px the track REFUSES to shrink and the scroller above
+ * takes over, which is the uniswap-table policy the plan adopted - a reader
+ * scrolls to a figure rather than being shown a truncated one. */
+.vex-board-grid {
+  display: grid;
+  align-items: stretch;
+  gap: 16px;
+  grid-template-columns: minmax(358px, 1fr);
+}
+
+@container vex-board-plate (min-width: 732px) {
+  .vex-board-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container vex-board-plate (min-width: 1106px) {
+  .vex-board-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Mode                                                                */
+/* ------------------------------------------------------------------ */
+
+/* THE MODE IS DECLARED ON THE GRID, NOT ON THE PLATE, and that is a rule of
+ * the mechanism rather than a preference: `@container` styles apply to a
+ * container's DESCENDANTS and never to the container element itself, so mode
+ * variables written onto `.vex-board-plate` would sit in a block that can
+ * never match. The grid is the right owner anyway - it is the one element
+ * every card shares, which is what makes the mode grid-wide and therefore
+ * makes the cards equal.
+ *
+ * COMPACT IS THE DEFAULT, and that is a deliberate direction. A card that is
+ * narrower than expected must degrade into the anatomy that fits rather than
+ * out of the anatomy that does not, so the failure mode of a query that never
+ * matches is a readable card, never a cut figure.
+ *
+ * Every mode difference is a VALUE, so the three wide windows are one block
+ * rather than three copies of the anatomy. */
+.vex-board-grid {
+  --vex-board-mode: compact;
+  --vex-board-sparkline-inline-display: none;
+  --vex-board-sparkline-slot-display: block;
+  --vex-board-stat-columns: repeat(2, minmax(0, 1fr));
+  --vex-board-stat-height: 92px;
+  --vex-board-footer-direction: column;
+  --vex-board-footer-align: flex-start;
+  --vex-board-footer-justify: flex-start;
+  --vex-board-footer-gap: 8px;
+}
+
+/* The three windows in which the chosen column count leaves a 500px card.
+ * They are ranges rather than a single `min-width` because the card width is
+ * a sawtooth in the container width: gaining a column makes every card
+ * narrower again. See section 4c of the measurements. */
+@container vex-board-plate ((min-width: 502px) and (max-width: 731.98px)) or
+  ((min-width: 1020px) and (max-width: 1105.98px)) or (min-width: 1538px) {
+  .vex-board-grid {
+    --vex-board-mode: wide;
+    --vex-board-sparkline-inline-display: block;
+    --vex-board-sparkline-slot-display: none;
+    --vex-board-stat-columns: repeat(4, minmax(0, 1fr));
+    --vex-board-stat-height: 46px;
+    --vex-board-footer-direction: row;
+    --vex-board-footer-align: center;
+    --vex-board-footer-justify: space-between;
+    --vex-board-footer-gap: 12px;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* The card's mode-dependent anatomy                                   */
+/* ------------------------------------------------------------------ */
+
+/* The sparkline ADAPTS, it is never deleted. In wide mode it sits in the
+ * price row beside the figures at a FIXED 132px - a percentage would shrink
+ * the figures' budget faster than the card shrinks, which is what made the
+ * delta and its `24h` window wrap out of a 44px row at 1920px with no drawer
+ * at all. In compact mode it takes its own full-width slot below the row, so
+ * the figures get the whole inner width and the reader still gets the line. */
+.vex-board-card-sparkline-inline {
+  display: var(--vex-board-sparkline-inline-display);
+  width: 132px;
+  height: 44px;
+  flex: none;
+}
+
+.vex-board-card-sparkline-slot {
+  display: var(--vex-board-sparkline-slot-display);
+  height: 36px;
+  margin-top: 12px;
+}
+
+.vex-board-card-stats {
+  display: grid;
+  grid-template-columns: var(--vex-board-stat-columns);
+  column-gap: 12px;
+  row-gap: 12px;
+  height: var(--vex-board-stat-height);
+}
+
+.vex-board-card-footer {
+  display: flex;
+  flex-direction: var(--vex-board-footer-direction);
+  align-items: var(--vex-board-footer-align);
+  justify-content: var(--vex-board-footer-justify);
+  gap: var(--vex-board-footer-gap);
+}
+
+/* ------------------------------------------------------------------ */
+/* Spotlight                                                           */
+/* ------------------------------------------------------------------ */
+
+/* THE SPOTLIGHT'S REGIONS DECIDE THEIR OWN THRESHOLDS. A card threshold must
+ * never decide a spotlight region: the two surfaces hold different content in
+ * the same shrinking container, and borrowing a number would be a second
+ * source of truth wearing a first source's clothes. Each rule below is named
+ * for the content that binds it.
+ *
+ * The spotlight plate is its own container because the drawer shrinks it the
+ * same way it shrinks the grid. */
+.vex-board-spotlight-plate {
+  container-type: inline-size;
+  container-name: vex-board-spotlight;
+}
+
+/* HERO. Four tracks: an 88px photo, the identity, the price block and the
+ * Spotlight button. The price block holds `$0.000001230 +661.00% 24h` at the
+ * hero's 40px type, which is 1.43x the card's 28px, so 316 x 1.43 = 452, plus
+ * 88 photo, 2 x 24 gaps, a 200 identity minimum and a 96 button = 884. Below
+ * that the hero stacks rather than crushing the price. */
+.vex-board-spotlight-hero {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 24px;
+  row-gap: 12px;
+}
+
+/* THE STACKED ROWS ARE PLACED, NOT AUTO-PLACED, and that is the whole fix.
+ * The hero has FOUR children and, below the threshold, TWO tracks: grid
+ * auto-placement therefore put the price block into row 2 column 1 - the 88px
+ * photo track - and the Spotlight toggle beside it in column 2. The largest
+ * type on the surface was being asked to render `$0.000001230 +661.00% 24h`
+ * inside 88px. Spanning both of them across the hero is what "the hero stacks
+ * rather than crushing the price" actually requires. */
+.vex-board-spotlight-hero-price,
+.vex-board-spotlight-hero-action {
+  grid-column: 1 / -1;
+}
+
+.vex-board-spotlight-hero-action {
+  justify-self: start;
+}
+
+@container vex-board-spotlight (min-width: 884px) {
+  .vex-board-spotlight-hero {
+    grid-template-columns: 88px minmax(200px, 1fr) auto auto;
+  }
+
+  /* Four tracks, four children, one row: the placement above is RESET rather
+   * than overridden per-property, so the wide hero is exactly the layout
+   * auto-placement gives it. */
+  .vex-board-spotlight-hero-price,
+  .vex-board-spotlight-hero-action {
+    grid-column: auto;
+    justify-self: auto;
+  }
+}
+
+/* CHART BESIDE ITS METRICS COLUMN. The metrics track is a fixed 360px and the
+ * chart needs 480px to be a chart rather than a smear, so the pair needs
+ * 480 + 16 + 360 = 856. */
+.vex-board-spotlight-chart-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+@container vex-board-spotlight (min-width: 856px) {
+  .vex-board-spotlight-chart-row {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+}
+
+/* THE THREE FACTUAL SECTIONS. A section's own binding content is the safety
+ * check rows, which need 280px to keep a check name beside its verdict:
+ * 3 x 280 + 2 x 16 = 872. Two of them fit at 2 x 280 + 16 = 576. */
+.vex-board-spotlight-row-3 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+@container vex-board-spotlight (min-width: 576px) {
+  .vex-board-spotlight-row-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container vex-board-spotlight (min-width: 872px) {
+  .vex-board-spotlight-row-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* THE SPOTLIGHT+ PAIRS. The binding content is the tape, whose row is a time,
+ * a side, a size and a price: 320px. Two of them need 656. */
+.vex-board-spotlight-row-2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+@container vex-board-spotlight (min-width: 656px) {
+  .vex-board-spotlight-row-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced motion                                                      */
+/* ------------------------------------------------------------------ */
+
+/* Nothing above transitions a geometric property, so there is nothing here to
+ * still. The block is the standing contract (`board.css` holds the same one
+ * for the two things that DO animate): a layout in this file changes in one
+ * paint, never over time. If a future edit adds a transition to a width, a
+ * height, a gap or a grid track, it belongs in this block first. */
+@media (prefers-reduced-motion: reduce) {
+  .vex-board-grid,
+  .vex-board-card-stats,
+  .vex-board-card-footer,
+  .vex-board-card-sparkline-inline,
+  .vex-board-card-sparkline-slot,
+  .vex-board-spotlight-hero,
+  .vex-board-spotlight-hero-price,
+  .vex-board-spotlight-hero-action,
+  .vex-board-spotlight-chart-row,
+  .vex-board-spotlight-row-2,
+  .vex-board-spotlight-row-3 {
+    transition: none;
+  }
+}

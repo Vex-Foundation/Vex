@@ -13,7 +13,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeTestContext } from "./_test-context.js";
-import { BOARD_SPEC_MAX_BYTES } from "../../../lib/board/index.js";
+import {
+  BOARD_SPEC_MAX_BYTES,
+  boardSpecV1Schema,
+  checkBoardSpecByteBudget,
+} from "../../../lib/board/index.js";
+import { maximalBoardSpec } from "../../lib/board/maximal-board-spec.js";
 
 const hydrateBoard = vi.fn();
 
@@ -309,16 +314,36 @@ describe("BoardCompose staging outcomes", () => {
     expect(staged?.notes).toHaveLength(12);
   });
 
-  it("refuses an over-budget board naming its size, and shortens nothing", async () => {
+  /**
+   * CONTRACT CHANGE, stated (owner decision, 2026-08-29: the budget rose from
+   * 327,680 to 524,288 bytes on the measured CJK worst case).
+   *
+   * THIS TEST USED TO ASSERT A REFUSAL, and it can no longer assert one
+   * honestly. Its fixture - the maximal board with FOUR-byte emoji prose,
+   * 8 x 10,000 code points at 4 bytes each - was 432,697 bytes: over the old
+   * ceiling, comfortably under the new one. So the board is now STAGED.
+   *
+   * IT CANNOT SIMPLY BE MADE BIGGER, and that is the finding rather than a
+   * shortcut. `handleBoardCompose` schema-validates the ASSEMBLED document
+   * TWICE (`boardSpecV1Schema` on the candidate, then again after the lossless
+   * detach) BEFORE it measures the budget, so anything padded past the ceiling
+   * is refused earlier with the "could not assemble a valid document" wording
+   * instead. Asserting the size-refusal semantics on that path would be a test
+   * that passes for the wrong reason. And no legal document can reach the
+   * budget branch either: every field in the contract is bounded, and the
+   * byte-maximal legal board measures 480,569 bytes - see the test below,
+   * which is what fails if that ever stops being true.
+   *
+   * The refusal MACHINERY is still fully covered where it is reachable:
+   * `checkBoardSpecByteBudget` and `describeBoardByteBudgetFailure` are driven
+   * over-budget by construction in `src/__tests__/lib/board/spec.test.ts`,
+   * because that function takes `unknown` and does not schema-validate.
+   *
+   * What survives here is the half that still has meaning: the board is staged
+   * WHOLE, and nothing the model wrote is shortened to make it fit.
+   */
+  it("stages the emoji-dense board the old budget refused, shortening nothing", async () => {
     beginPresentationScope(SESSION);
-    // MEASURED: maximal rows plus eight 10,000-character two-byte assessments
-    // plus a full 200-candle series of maximum-width decimals fits, and the
-    // budget ADMITS it - that board is exactly what the budget was sized for
-    // (the schema-valid ALL-FIELDS-MAX document is 272,697 bytes against a
-    // 327,680 ceiling; see `src/__tests__/lib/board/maximal-board-spec.ts`).
-    // What still exceeds it is the case the budget doc names: the same board
-    // with FOUR-byte emoji-dense prose, 8 x 10,000 code points at 4 bytes each
-    // = 320,000 bytes of analysis alone.
     hydrateBoard.mockResolvedValueOnce({
       ...maximalRows(),
       unmatchedMarkerAtMs: [],
@@ -337,28 +362,67 @@ describe("BoardCompose staging outcomes", () => {
       },
     });
 
+    const analysis = "\u{1F680}".repeat(10_000);
     const result = await handleBoardCompose(
       {
         ...maximalInput(),
-        pools: maximalInput().pools.map((pool) => ({
-          ...pool,
-          analysis: "\u{1F680}".repeat(10_000),
-        })),
+        pools: maximalInput().pools.map((pool) => ({ ...pool, analysis })),
         chart: { poolIndex: 0, resolution: "1h" },
       },
       modelContext,
     );
 
-    expect(result.success).toBe(false);
-    expect(result.output).toMatch(/\d+ bytes serialized/);
-    // The refusal quotes the CONSTANT, so raising the budget cannot leave this
-    // test asserting a number the tool no longer prints.
-    expect(result.output).toContain(String(BOARD_SPEC_MAX_BYTES));
-    // The refusal points at the pool worth shortening, not just at the total.
-    expect(result.output).toMatch(/pool \d+ at \d+ bytes/);
-    expect(result.output).toContain("nothing was truncated");
-    // Refused whole: no shortened board is left behind for the reply to carry.
-    expect(hasPendingPresentation(SESSION)).toBe(false);
+    expect(result.success).toBe(true);
+    const staged = consumePendingPresentation(SESSION)?.spec;
+    expect(staged).toBeDefined();
+    if (staged === undefined) return;
+
+    // NOTHING SHORTENED: every assessment is the whole string the model wrote,
+    // code point for code point.
+    expect(staged.pools).toHaveLength(8);
+    for (const pool of staged.pools) expect(pool.analysis).toBe(analysis);
+
+    // Measured against the CONSTANT, never a hardcoded size, so a future
+    // budget change moves this comparison instead of silently defusing it.
+    const budget = checkBoardSpecByteBudget(staged);
+    expect(budget.withinBudget).toBe(true);
+    expect(budget.byteLength).toBeLessThanOrEqual(BOARD_SPEC_MAX_BYTES);
+  });
+
+  /**
+   * THE GUARD ON THE TEST ABOVE, and the tripwire for the refusal's return.
+   *
+   * The handler's byte-budget branch is unreachable only while the budget
+   * exceeds the byte-heaviest document the contract can express: 3-byte CJK on
+   * every field zod bounds by UTF-16 units, 4-byte astral on every
+   * code-point-bounded prose field - the heaviest legal character for each.
+   * Everything relative to `BOARD_SPEC_MAX_BYTES`, so lowering the budget (or
+   * raising a field bound far enough) turns this RED, which is exactly when
+   * the over-budget handler test above must be written back.
+   */
+  it("keeps the byte-budget refusal unreachable for every board the schema admits", () => {
+    const spec = maximalBoardSpec({ script: "threeByte" }) as {
+      title: string;
+      pools: { caption: string; analysis: string }[];
+      notes: string[];
+      chart: { annotations: { label: string }[] };
+      hydration: { rows: { description: string }[] };
+    };
+    const astral = (run: string): string => "\u{1F680}".repeat([...run].length);
+    spec.title = astral(spec.title);
+    for (const pool of spec.pools) {
+      pool.caption = astral(pool.caption);
+      pool.analysis = astral(pool.analysis);
+    }
+    spec.notes = spec.notes.map(astral);
+    for (const annotation of spec.chart.annotations) {
+      annotation.label = astral(annotation.label);
+    }
+    for (const row of spec.hydration.rows) row.description = astral(row.description);
+
+    // Legal on every field - that is what makes the comparison binding.
+    expect(boardSpecV1Schema.safeParse(spec).success).toBe(true);
+    expect(checkBoardSpecByteBudget(spec).withinBudget).toBe(true);
   });
 });
 

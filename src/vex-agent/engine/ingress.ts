@@ -27,15 +27,79 @@ import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import {
   addOperatorCue,
   addOperatorInstruction,
+  classifyOperatorInterruptDisposition,
 } from "./core/operator-instructions.js";
+import { getLease } from "@vex-agent/db/repos/runner-leases.js";
 import logger from "@utils/logger.js";
 import { releaseLeaseAndEmitControlState } from "./runtime/release-and-emit.js";
 
-const QUEUED_INTERRUPT_TEXT =
-  "Operator instruction queued for the active run. The model will read it at the next safe iteration boundary and continue.";
+/**
+ * Whether a runner is demonstrably executing THIS work right now.
+ *
+ * Two conditions, and both matter. The lease must be UNEXPIRED - an expired row
+ * is the fingerprint of a crashed runner, not a live one, and it is exactly
+ * what the restart-orphan sweep reclaims. And it must MATCH: a lease held for a
+ * different mission run belongs to another turn, and nothing in that turn will
+ * merge a message written for this one. `missionRunId` is `null` on both sides
+ * for an agent session, which matches by the same rule.
+ *
+ * This is the only input to `classifyOperatorInterruptDisposition` that needs a
+ * query, which is why it lives here beside its callers: the classifier stays a
+ * pure decision over facts it is handed.
+ */
+async function hasLiveMatchingLease(
+  sessionId: string,
+  missionRunId: string | null,
+): Promise<boolean> {
+  const lease = await getLease(sessionId);
+  if (lease === null) return false;
+  if (lease.expiresAt <= new Date()) return false;
+  return lease.missionRunId === missionRunId;
+}
 
-const PAUSED_ERROR_TEXT =
-  "Run is paused after a provider/runtime error. I saved your instruction; use the Recover button to re-attempt.";
+/**
+ * `QUEUED_INTERRUPT_TEXT` is RETIRED (M6). It was a paragraph returned as
+ * `TurnResult.text` from three different branches with three different
+ * meanings, and it did not survive a reload. The acknowledgement is now a
+ * durable, user-visible engine notice row written in the same transaction as
+ * the instruction itself, with the disposition typed - see
+ * `core/operator-instructions.ts`. These branches return `text: null` because
+ * the acknowledgement is on the tape where the operator can still find it
+ * tomorrow, not in a response object that is gone once rendered.
+ */
+
+/**
+ * Why the run is parked, per stop reason, for the hint returned to a user who
+ * typed at a `paused_error` run.
+ *
+ * CAUSE-SPECIFIC, because the generic sentence below CLAIMS a provider or
+ * runtime error, and for these two reasons that claim is simply false: nothing
+ * failed at the provider. `restart_orphan` was parked by the reclaim sweep
+ * after Vex died mid-slice (M3); `tool_call_loop` was stopped by the detector
+ * after repeating itself (M4). Keyed by the closed engine stop-reason union, so
+ * an unnamed reason falls through to the generic wording rather than to a
+ * wrong one.
+ */
+const PAUSED_ERROR_CAUSE_TEXT: Readonly<Record<string, string>> = {
+  restart_orphan:
+    "Run is paused because Vex restarted while it was executing. Steps already in flight"
+    + " may or may not have completed.",
+  tool_call_loop:
+    "Run is paused because it repeated the same tool call without making progress.",
+};
+
+const PAUSED_ERROR_GENERIC_TEXT = "Run is paused after a provider/runtime error.";
+
+/** The one shared tail: what was done with the message, and what clears it. */
+const PAUSED_ERROR_TAIL =
+  "I saved your instruction; use the Recover button to re-attempt.";
+
+function pausedErrorText(stopReason: string | null): string {
+  const cause =
+    (stopReason === null ? undefined : PAUSED_ERROR_CAUSE_TEXT[stopReason])
+    ?? PAUSED_ERROR_GENERIC_TEXT;
+  return `${cause} ${PAUSED_ERROR_TAIL}`;
+}
 
 /**
  * Route an incoming user message to the correct runtime. Always cancels any
@@ -65,7 +129,10 @@ export async function routeUserMessage(
       // but return a clear hint instead of letting the shell render the
       // empty-fallback `(no text — stopReason: unknown)` string. The
       // operator drives recovery via the Recover button.
-      await addOperatorInstruction(sessionId, userInput, {
+      // `queued_interrupt`, not `steered`: a run parked on an error is not
+      // executing a turn, so nothing will merge this until the operator
+      // recovers it.
+      await addOperatorInstruction(sessionId, userInput, "queued_interrupt", {
         target: "mission_run",
         runId: activeRun.id,
         runStatus: activeRun.status,
@@ -73,7 +140,7 @@ export async function routeUserMessage(
       await addOperatorCue(sessionId);
       logger.info("ingress.paused_error_hint", { sessionId, runId: activeRun.id });
       return {
-        text: PAUSED_ERROR_TEXT,
+        text: pausedErrorText(activeRun.stopReason),
         toolCallsMade: 0,
         pendingApprovals: [],
         stopReason: null,
@@ -84,7 +151,20 @@ export async function routeUserMessage(
     // but do NOT fire a new turn here. Approvals resume through their own
     // flow (`approveAndResume`); a running run will pick up the message on
     // its next iteration.
-    await addOperatorInstruction(sessionId, userInput, {
+    //
+    // The disposition comes from the ONE classifier, which means this route
+    // now ASKS whether a runner is executing instead of assuming it is not.
+    // It previously hardcoded `queued_interrupt` for both statuses, so a
+    // genuinely steered message told the operator it would be read "the next
+    // time it runs" while the loop was about to merge it at the next step.
+    const disposition = classifyOperatorInterruptDisposition({
+      runStatus: activeRun.status,
+      hasLiveMatchingLease: await hasLiveMatchingLease(
+        sessionId,
+        activeRun.id,
+      ),
+    });
+    await addOperatorInstruction(sessionId, userInput, disposition, {
       target: "mission_run",
       runId: activeRun.id,
       runStatus: activeRun.status,
@@ -95,7 +175,7 @@ export async function routeUserMessage(
       runStatus: activeRun.status,
     });
     return {
-      text: QUEUED_INTERRUPT_TEXT,
+      text: null,
       toolCallsMade: 0,
       pendingApprovals: [],
       stopReason: null,
@@ -153,7 +233,17 @@ export async function submitSteeringMessage(
     if (activeRun.status !== "running" && activeRun.status !== "paused_approval") {
       return { outcome: "no_active_turn" };
     }
-    await addOperatorInstruction(sessionId, userInput, {
+    // The SAME classifier, so this route can no longer disagree with the one
+    // above about the same session. It used to hardcode `steered` for both
+    // statuses, which told the operator that a run parked on an approval - a
+    // run with nothing executing at all - would pick their message up mid-turn.
+    // `paused_approval` now correctly reads `queued_interrupt`, and a `running`
+    // run with a dead lease does too.
+    const disposition = classifyOperatorInterruptDisposition({
+      runStatus: activeRun.status,
+      hasLiveMatchingLease: await hasLiveMatchingLease(sessionId, activeRun.id),
+    });
+    await addOperatorInstruction(sessionId, userInput, disposition, {
       target: "mission_run",
       runId: activeRun.id,
       runStatus: activeRun.status,
@@ -162,17 +252,29 @@ export async function submitSteeringMessage(
       sessionId,
       runId: activeRun.id,
       runStatus: activeRun.status,
+      disposition,
     });
     return { outcome: "queued_live" };
   }
 
-  const { getLease } = await import("@vex-agent/db/repos/runner-leases.js");
-  const lease = await getLease(sessionId);
-  if (lease === null || lease.expiresAt < new Date()) {
-    return { outcome: "no_active_turn" };
-  }
-  await addOperatorInstruction(sessionId, userInput, { target: "agent_turn" });
-  logger.info("ingress.steer_persisted", { sessionId, target: "agent_turn" });
+  // An agent session has no run row, so `runStatus` is null and the lease is
+  // the whole question. Routed through the same classifier as the mission
+  // paths: one function decides `steered` everywhere, and it can only say so
+  // on a live matching lease.
+  const live = await hasLiveMatchingLease(sessionId, null);
+  if (!live) return { outcome: "no_active_turn" };
+  const disposition = classifyOperatorInterruptDisposition({
+    runStatus: null,
+    hasLiveMatchingLease: live,
+  });
+  await addOperatorInstruction(sessionId, userInput, disposition, {
+    target: "agent_turn",
+  });
+  logger.info("ingress.steer_persisted", {
+    sessionId,
+    target: "agent_turn",
+    disposition,
+  });
   return { outcome: "queued_live" };
 }
 
@@ -204,13 +306,17 @@ async function resumeMissionRunWithPreempt(
       runId,
       outcome: claim.outcome,
     });
-    await addOperatorInstruction(sessionId, userInput, {
+    // The preempt lost its race, so the wake was NOT preempted by us and the
+    // run is not ours to resume. `queued_interrupt` is the truthful record of
+    // what this call achieved: the row is on the tape and whoever won the
+    // claim will read it.
+    await addOperatorInstruction(sessionId, userInput, "queued_interrupt", {
       target: "mission_run",
       runId,
       runStatus: "claim_lost",
     });
     return {
-      text: QUEUED_INTERRUPT_TEXT,
+      text: null,
       toolCallsMade: 0,
       pendingApprovals: [],
       stopReason: null,
@@ -227,7 +333,7 @@ async function resumeMissionRunWithPreempt(
     ttlMs: 5 * 60_000,
   });
   try {
-    await addOperatorInstruction(sessionId, userInput, {
+    await addOperatorInstruction(sessionId, userInput, "preempted_wake", {
       target: "mission_run",
       runId,
       preempt: "wake",

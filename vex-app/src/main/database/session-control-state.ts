@@ -41,7 +41,10 @@ import {
   missionRunStatusSchema,
   type MissionRunStatus,
 } from "@shared/schemas/sessions.js";
-import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
+import type {
+  RuntimeActivity,
+  RuntimeStateDto,
+} from "@shared/schemas/runtime.js";
 import {
   engineCauseCodeSchema,
   engineErrorClassSchema,
@@ -90,6 +93,16 @@ export interface RuntimeControlFacts {
   readonly lastError?: RuntimeStateDto["lastError"];
   /** MAIN-INTERNAL. A `loop_defer` / continuation park is live. */
   readonly hasPendingWake: boolean;
+  /**
+   * `due_at` of the earliest pending SESSION-SCOPED wake (`mission_run_id IS
+   * NULL`), or `null`.
+   *
+   * Deliberately narrower than `hasPendingWake`, which counts every pending
+   * wake including a mission run's own. This one answers "is the SESSION
+   * asleep", which is the question the agent-session surfaces ask and the one
+   * `pausedWake` (mission-scoped, status-gated) does not answer.
+   */
+  readonly sessionWakeDueAt: string | null;
   /** MAIN-INTERNAL. The user still owes an approval decision. */
   readonly hasPendingApproval: boolean;
   /** MAIN-INTERNAL. Durable approval work the system still owes (D1). */
@@ -131,6 +144,29 @@ export function isStoppable(facts: RuntimeControlFacts): boolean {
   );
 }
 
+/**
+ * THE activity policy, in one named place (M5), derived from the SAME snapshot
+ * `isStoppable` reads.
+ *
+ * PRECEDENCE, and it is not arbitrary: a held lease outranks a pending wake.
+ * The two overlap for exactly one real interval - the executor claims a wake
+ * row and acquires the lease before it marks the row consumed - and during it
+ * the honest word is "running", because a runner is attached and burning
+ * money. Reporting "sleeping until 12:04" while the slice executes is the
+ * same class of lie the sawtooth produced in the other direction.
+ *
+ * Consumers (the composer strip, the tape word) read THIS, never `leaseActive`
+ * plus a wake read of their own; two derivations is how the strip and the tape
+ * came to disagree.
+ */
+export function readSessionActivity(facts: RuntimeControlFacts): RuntimeActivity {
+  if (facts.leaseActive) return { kind: "running" };
+  if (facts.sessionWakeDueAt !== null) {
+    return { kind: "sleeping", nextWakeAt: facts.sessionWakeDueAt };
+  }
+  return { kind: "none" };
+}
+
 interface ControlFactsRow {
   readonly mission_run_id: string | null;
   readonly status: string | null;
@@ -142,6 +178,7 @@ interface ControlFactsRow {
   readonly lease_expires_at: Date | null;
   readonly pending_control_kind: string | null;
   readonly has_pending_wake: boolean | null;
+  readonly session_wake_due_at: string | Date | null;
   readonly has_pending_approval: boolean | null;
   readonly has_incomplete_approval_lifecycle: boolean | null;
   readonly has_outstanding_user_form: boolean | null;
@@ -179,6 +216,18 @@ const CONTROL_FACTS_SQL = `
          EXISTS (SELECT 1 FROM loop_wake_requests w
                   WHERE w.session_id = s.session_id
                     AND w.status = 'pending')            AS has_pending_wake,
+         -- SESSION-scoped park only (mission_run_id IS NULL, migration 057).
+         -- A mission run's own wake is described by pausedWake under its
+         -- paused_wake status; mixing the two here would make a sleeping
+         -- mission report session activity and give the tape two answers.
+         -- NOTE: no backticks in this comment. The whole statement is a
+         -- template literal, so a backtick here ends the SQL string.
+         (SELECT sw.due_at FROM loop_wake_requests sw
+           WHERE sw.session_id = s.session_id
+             AND sw.status = 'pending'
+             AND sw.mission_run_id IS NULL
+           ORDER BY sw.due_at ASC
+           LIMIT 1)                                      AS session_wake_due_at,
          EXISTS (SELECT 1 FROM approval_queue a
                   WHERE a.session_id = s.session_id
                     AND a.status = 'pending')            AS has_pending_approval,
@@ -255,6 +304,7 @@ function toFacts(sessionId: string, row: ControlFactsRow): RuntimeControlFacts {
     leaseExpiresAt: row.lease_expires_at ? toIso(row.lease_expires_at) : null,
     pendingControlKind: normalisePendingControlKind(row.pending_control_kind),
     hasPendingWake: Boolean(row.has_pending_wake),
+    sessionWakeDueAt: toIsoOrNull(row.session_wake_due_at ?? null),
     hasPendingApproval: Boolean(row.has_pending_approval),
     hasIncompleteApprovalLifecycle: Boolean(
       row.has_incomplete_approval_lifecycle,

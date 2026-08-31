@@ -65,7 +65,7 @@ export const BOARD_ICON_NOT_FOUND_STALE_MS = 600_000;
  *
  *   image               the bytes are in hand and the handle is immutable;
  *   absent/not_found    settled only as long as main says it is;
- *   absent/other        the bytes the provider serves under this handle are not
+ *   refused_by_policy   the bytes the provider serves under this handle are not
  *                       an image this app can identify, or are past the cap.
  *                       Settled for those bytes, and re-asking would only
  *                       re-download them;
@@ -79,9 +79,11 @@ export function boardIconFreshnessMs(
   if (result === undefined || !result.ok) return Number.POSITIVE_INFINITY;
   const { icon } = result.data;
   if (icon.kind === "unavailable") return BOARD_ICON_TRANSIENT_STALE_MS;
-  if (icon.kind === "absent" && icon.reason === "not_found") {
-    return BOARD_ICON_NOT_FOUND_STALE_MS;
-  }
+  // `absent` carries exactly one reason - `not_found` - and main holds it for
+  // its own negative-cache window, which this constant mirrors.
+  if (icon.kind === "absent") return BOARD_ICON_NOT_FOUND_STALE_MS;
+  // `image` and `refused_by_policy` are both settled: asking again cannot
+  // change the answer, so the query never refetches.
   return Number.POSITIVE_INFINITY;
 }
 
@@ -108,17 +110,20 @@ export function useBoardTokenIcon(
 /**
  * What the photo slot may truthfully say about one card's icon.
  *
- * FOUR outcomes, and the two that are NOT `image` are kept apart on purpose:
+ * FIVE outcomes, and the three that are NOT `image` are kept apart on purpose:
  * `absent` is a claim about the token (the provider was asked and has no
  * picture, or nothing was ever asked because the pool carries no handle);
- * `unavailable` is a claim about THIS READ (nothing was learned). A card that
- * draws its "no image" note over a transport failure states as fact something
- * the provider never said, which is the defect this union exists to prevent.
+ * `refused_by_policy` is a claim about the PUBLISHED ARTWORK (it exists and
+ * this app declined to draw it); `unavailable` is a claim about THIS READ
+ * (nothing was learned). A card that draws its "no image" note over a transport
+ * failure - or over artwork it refused - states as fact something the provider
+ * never said, which is the defect this union exists to prevent.
  */
 export type BoardTokenIconOutcome =
   | { readonly kind: "loading" }
   | { readonly kind: "image"; readonly dataUrl: string }
   | { readonly kind: "absent" }
+  | { readonly kind: "refused_by_policy" }
   | { readonly kind: "unavailable" };
 
 /**
@@ -130,9 +135,13 @@ export type BoardTokenIconOutcome =
  *                so the slot does not blink on every cadence tick;
  *   image        the bytes are in hand;
  *   absent       `iconId === null` (nothing was asked; the common case), or the
- *                read settled `absent` for any reason: main answered
- *                `not_found` from the provider, or bytes it could not identify
- *                as an image. Both are settled facts about the handle;
+ *                read settled `absent`: main asked the provider and it has no
+ *                artwork under this handle;
+ *   refused_by_policy
+ *                the provider published artwork and main declined it - bytes it
+ *                could not identify as an image, or past the byte ceiling. A
+ *                settled fact about those bytes, so it is never re-asked, and
+ *                NOT the same claim as `absent`;
  *   unavailable  the read settled `unavailable` (busy, transport, not mounted),
  *                the `Result` failed (input or sender rejected), or the query
  *                itself errored. In none of these was anything learned about
@@ -160,6 +169,8 @@ export function boardTokenIconOutcome(
       return { kind: "image", dataUrl: icon.dataUrl };
     case "absent":
       return { kind: "absent" };
+    case "refused_by_policy":
+      return { kind: "refused_by_policy" };
     case "unavailable":
       return { kind: "unavailable" };
     default: {

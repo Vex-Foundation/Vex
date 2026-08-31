@@ -78,8 +78,20 @@ import { registerUsageHandlers } from "./usage.js";
 import { registerWalletExportHandler } from "./wallet-export.js";
 import { registerWalletsSessionHandlers } from "./wallets-session.js";
 
-export function registerAllIpcHandlers(): void {
-  const teardowns: Array<() => void> = [];
+/**
+ * Install every IPC handler and mount the agent bridges.
+ *
+ * Returns the agent-bridge teardown. It is deliberately NOT pushed into the
+ * `teardowns` array below: that array is drained by an independent
+ * `globalCleanup` task, and `CleanupRegistry.runAll()` runs its tasks
+ * CONCURRENTLY, so the bridge drain - which owns the board read caches and the
+ * DexScreener transport - would race `cleanupOnQuit()`. Ownership is
+ * TRANSFERRED to the caller, which composes it into the ordered quit task
+ * (`makeOrderedQuitCleanup`) so it completes BEFORE compose/Postgres teardown.
+ * One owner, one execution path.
+ */
+export function registerAllIpcHandlers(): () => Promise<void> {
+  const teardowns: Array<() => void | Promise<void>> = [];
 
   teardowns.push(registerCancelHandler());
   teardowns.push(registerCapabilitiesHandler());
@@ -193,7 +205,9 @@ export function registerAllIpcHandlers(): void {
   // Agent integration puzzle 2: engine -> renderer transcript event spine.
   // Subscribes the in-process transcript bus to the IPC broadcaster so
   // committed `messages` INSERTs surface as `EV.engine.transcriptAppend`.
-  teardowns.push(setupAgentBridges());
+  // Ownership transfer, not a teardown entry: the returned disposer travels to
+  // the ordered quit owner (see this function's doc comment).
+  const teardownAgentBridges = setupAgentBridges();
   // Vex Studio A3 - install the approval broker's collaborators before any MCP
   // call can block on one. The broker owns no policy: the refusal owner and the
   // engine's expiry entry point are injected here, which is also what keeps the
@@ -249,9 +263,13 @@ export function registerAllIpcHandlers(): void {
   // `configureUpdater()` in index.ts.
   teardowns.push(...registerUpdaterHandlers());
 
-  globalCleanup.add(() => {
-    for (const t of teardowns) t();
+  // Sequential await: a teardown that returns a promise is a drain, and the
+  // next one may depend on it having finished.
+  globalCleanup.add(async () => {
+    for (const t of teardowns) await t();
   });
+
+  return teardownAgentBridges;
 }
 
 /**

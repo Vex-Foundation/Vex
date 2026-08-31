@@ -201,6 +201,18 @@ export const missionRetryResultSchema = z.discriminatedUnion("outcome", [
     })
     .strict(),
   z.object({ outcome: z.literal("status_changed") }).strict(),
+  // The session still carries money-path work whose outcome is not proven (an
+  // undecided approval, a broadcast awaiting confirmation, a wallet intent in
+  // flight). Resuming would run the mission on top of an unresolved money
+  // state, so Recover refuses and names the structural reasons. Fail-closed and
+  // decided by the privileged handler, never by the renderer.
+  z
+    .object({
+      outcome: z.literal("blocked_money_state"),
+      /** Structural `MoneyStateReason.kind` labels only, never row content. */
+      reasonKinds: z.array(z.string()).max(50),
+    })
+    .strict(),
   z
     .object({
       outcome: z.literal("lease_busy"),

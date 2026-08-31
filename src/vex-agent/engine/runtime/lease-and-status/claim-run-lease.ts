@@ -22,6 +22,8 @@
  * One commit; no inter-statement race window.
  */
 
+import type { PoolClient } from "pg";
+
 import {
   withTransaction,
   queryOneWith,
@@ -38,7 +40,32 @@ import {
 export async function claimRunLeaseAndFlipToRunning(
   input: ClaimRunInput,
 ): Promise<ClaimRunOutcome> {
-  return withTransaction(async (client) => {
+  return withTransaction(async (client) =>
+    claimRunLeaseAndFlipToRunningWith(client, input),
+  );
+}
+
+/**
+ * The same claim, on a transaction the CALLER already owns.
+ *
+ * Exists for one reason: a caller that must decide something ELSE about this
+ * session in the same commit as the claim. The recovery money gate is that
+ * caller - it reads the unresolved money state under the session control lock,
+ * and while the claim ran in its own later transaction a money writer could
+ * commit between the two, so Recover resumed over an outcome nobody had proven.
+ * Joining the caller's transaction is what closes that window; two statements
+ * cannot be one decision from two transactions.
+ *
+ * The wrapper above is unchanged for every other caller, so this is a seam and
+ * not a second implementation - both run this body. Lock ORDER is the caller's
+ * responsibility: the session control lock is taken BEFORE this, never after,
+ * matching every other holder of that lock.
+ */
+export async function claimRunLeaseAndFlipToRunningWith(
+  client: PoolClient,
+  input: ClaimRunInput,
+): Promise<ClaimRunOutcome> {
+  {
     // 1. Lock mission_runs row.
     const run = await queryOneWith<MissionRunRow>(
       client,
@@ -125,5 +152,5 @@ export async function claimRunLeaseAndFlipToRunning(
       lease,
       wakeCancelledCount,
     };
-  });
+  }
 }

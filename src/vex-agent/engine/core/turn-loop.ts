@@ -90,6 +90,7 @@ import {
   MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
   isProductiveRound,
 } from "./runner/unproductive-rounds.js";
+import { createToolCallLoopDetector } from "./runner/tool-call-loop-detector.js";
 
 /**
  * Run the turn loop.
@@ -125,6 +126,14 @@ export async function runTurnLoop(
   // tool call; reset by every productive round. See `runner/unproductive-rounds.ts`
   // for why it must stay separate from `maxIterations` and why the bound is small.
   let consecutiveUnproductiveRounds = 0;
+  // REPETITION detector, and a third bound distinct from both of the above:
+  // `maxIterations` counts work, `consecutiveUnproductiveRounds` counts
+  // silence, this counts a model doing the same productive thing forever. Its
+  // lifetime is exactly this turn loop, which is what lets the graduated second
+  // strike land on a LATER round than the correction that preceded it, while
+  // never carrying one turn's history into the next. See
+  // `runner/tool-call-loop-detector.ts`.
+  const loopDetector = createToolCallLoopDetector();
   // Rounds actually entered, so the exhaustion events can report what the turn
   // consumed rather than only which bound fired (rule 05).
   let iterationsUsed = 0;
@@ -448,6 +457,9 @@ export async function runTurnLoop(
           turnTimeoutAtMs: startTime + loopConfig.timeoutMs,
           missionDeadlineAtMs: loopConfig.missionDeadlineMs ?? null,
         },
+        // Turn-scoped, so a repetition that starts in one batch is still
+        // remembered when the model repeats it in the next one.
+        loopDetector,
       });
       totalToolCalls += batchOutcome.toolCallsExecuted;
       lastText = batchOutcome.lastText;

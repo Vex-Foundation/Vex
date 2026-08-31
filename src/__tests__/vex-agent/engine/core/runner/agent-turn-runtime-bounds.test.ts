@@ -121,6 +121,7 @@ const {
   ITERATION_LIMIT_REPLY,
   TIMEOUT_REPLY,
   NO_PROGRESS_REPLY,
+  TOOL_CALL_LOOP_REPLY,
 } = await import("../../../../../vex-agent/engine/core/runner/shared.js");
 const { MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS } = await import(
   "../../../../../vex-agent/engine/core/runner/unproductive-rounds.js"
@@ -244,7 +245,15 @@ describe("Full-Autonomous agent session continuation", () => {
         expect.objectContaining({ sessionId: "session-1", missionRunId: null }),
         expect.anything(),
       );
-      expect(result.stopReason).toBe(trigger);
+      // M2 contract change: a SUCCESSFULLY continued full-autonomy turn
+      // reports `waiting_for_wake`, not the raw slice guard. The guard names
+      // what fired inside the turn; the stop reason is read downstream as an
+      // account of how the turn ENDED, and this one ended parked on a live
+      // wake the executor resumes in seconds. Reporting `timeout` here is what
+      // made the composer render a terminal failure banner over work that was
+      // still running. The raw guard is still reported everywhere else - see
+      // the restricted-session and scheduling-failure cases below.
+      expect(result.stopReason).toBe("waiting_for_wake");
       // The session continues — no user-visible "I gave up" paragraph.
       expect(mockAddMessage).not.toHaveBeenCalledWith(
         "session-1",
@@ -579,5 +588,108 @@ describe("foreground stop — committed-wake cleanup", () => {
     const result = await processAgentTurn("session-1", "go", abortedSignal());
 
     expect(result.text).toBe("partial");
+  });
+});
+
+// ── 5. M2: the reported stop reason is an account of the TURN ──
+
+/**
+ * `stopReason` is read downstream as "how did this turn end". For a
+ * successfully continued full-autonomy turn the honest answer is
+ * `waiting_for_wake`, not the slice guard that fired inside it - the composer
+ * renders a terminal failure banner for `timeout`, exports record it as the
+ * ending, bug reports classify on it, and none of those are true of a turn the
+ * executor is about to resume.
+ *
+ * The remap is NARROW, and the tests below are what keeps it narrow. Every
+ * path that does NOT actually leave a live wake behind must keep the raw
+ * guard, because promising a resume nothing will perform is the same
+ * dishonesty pointed the other way.
+ */
+describe("M2 - only a CONTINUED full-autonomy turn reports waiting_for_wake", () => {
+  for (const trigger of ["iteration_limit", "timeout"] as const) {
+    it(`a RESTRICTED session keeps the raw ${trigger} - it was never continued`, async () => {
+      mockHydrate.mockResolvedValue(makeHydratedSession("restricted"));
+      mockRunTurnLoop.mockResolvedValue({
+        text: null, toolCallsMade: 4, pendingApprovals: [], stopReason: trigger,
+      });
+
+      const result = await processAgentTurn("session-1", "go");
+
+      expect(mockEnqueueWake).not.toHaveBeenCalled();
+      expect(result.stopReason).toBe(trigger);
+      expect(result.text).toBe(
+        trigger === "timeout" ? TIMEOUT_REPLY : ITERATION_LIMIT_REPLY,
+      );
+    });
+  }
+
+  it("a full-autonomy turn whose SCHEDULING FAILED keeps the raw guard", async () => {
+    // The operator stopped the session while the slice was unwinding, so the
+    // gate refuses and no wake row exists. Nothing is going to resume this.
+    mockHydrate.mockResolvedValue(makeHydratedSession("full"));
+    mockGateOnOperatorStop.mockResolvedValue({ kind: "stopped", runStatus: "stopped" });
+    mockRunTurnLoop.mockResolvedValue({
+      text: null, toolCallsMade: 12, pendingApprovals: [], stopReason: "timeout",
+    });
+
+    const result = await processAgentTurn("session-1", "go");
+
+    expect(mockEnqueueWake).not.toHaveBeenCalled();
+    expect(result.stopReason).toBe("timeout");
+    expect(result.text).toBe(TIMEOUT_REPLY);
+  });
+
+  it("a stall is never remapped - no_progress is not continued under any permission", async () => {
+    mockHydrate.mockResolvedValue(makeHydratedSession("full"));
+    mockRunTurnLoop.mockResolvedValue({
+      text: null, toolCallsMade: 0, pendingApprovals: [], stopReason: "no_progress",
+    });
+
+    const result = await processAgentTurn("session-1", "go");
+
+    expect(mockEnqueueWake).not.toHaveBeenCalled();
+    expect(result.stopReason).toBe("no_progress");
+    expect(result.text).toBe(NO_PROGRESS_REPLY);
+  });
+});
+
+// ── 6. M4: the tool-call repetition arm, beside the stall arm ──
+
+describe("tool_call_loop - the agent-session synthesis arm", () => {
+  it("synthesises the repetition reply and schedules NOTHING, even under full autonomy", async () => {
+    // The decisive property. Waking a session that just proved it repeats
+    // itself schedules the repetition; the reply must also be the repetition
+    // one, not the stall one - they describe opposite things about what ran.
+    mockHydrate.mockResolvedValue(makeHydratedSession("full"));
+    mockRunTurnLoop.mockResolvedValue({
+      text: null, toolCallsMade: 6, pendingApprovals: [], stopReason: "tool_call_loop",
+    });
+
+    const result = await processAgentTurn("session-1", "go");
+
+    expect(mockEnqueueWake).not.toHaveBeenCalled();
+    expect(result.stopReason).toBe("tool_call_loop");
+    expect(result.text).toBe(TOOL_CALL_LOOP_REPLY);
+    expect(result.text).not.toBe(NO_PROGRESS_REPLY);
+  });
+
+  it("preserves partial model text instead of overwriting it with the canned reply", async () => {
+    mockHydrate.mockResolvedValue(makeHydratedSession("full"));
+    mockRunTurnLoop.mockResolvedValue({
+      text: "Here is what I found before I got stuck.",
+      toolCallsMade: 6,
+      pendingApprovals: [],
+      stopReason: "tool_call_loop",
+    });
+
+    const result = await processAgentTurn("session-1", "go");
+
+    expect(result.text).toBe("Here is what I found before I got stuck.");
+    expect(mockAddMessage).not.toHaveBeenCalledWith(
+      "session-1",
+      expect.objectContaining({ content: TOOL_CALL_LOOP_REPLY }),
+      expect.anything(),
+    );
   });
 });

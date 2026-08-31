@@ -7,7 +7,7 @@
  * `{toolId: "dexscreener.search", query: "robinhood", limit: "10", …}`. Once
  * the flat-args lift (see `execute-tool-flat-args.test.ts`) put `limit` in the
  * bag, the strict gate answered
- * `Parameter "limit" for dexscreener.search has invalid type: expected number,
+ * `Parameter "limit" for dexscreener__pairs_search has invalid type: expected number,
  * got string` — correct, and still a burnt call for a value that means exactly
  * one number and nothing else.
  *
@@ -164,7 +164,7 @@ describe("execute_tool — the live `limit: \"10\"` call now reaches the handler
     );
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain('Parameter "limit" for dexscreener.search has invalid type');
+    expect(result.output).toContain('Parameter "limit" for dexscreener__pairs_search has invalid type');
     expect(result.output).toContain("expected number, got string");
   });
 });
