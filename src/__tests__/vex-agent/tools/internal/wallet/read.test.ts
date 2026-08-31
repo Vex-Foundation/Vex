@@ -131,7 +131,8 @@ describe("handleWalletBalances — inclusive chain scope", () => {
     const tokens = snap.tokens as Array<Record<string, unknown>>;
     const native = tokens.find((t) => t.address === NATIVE)!;
     expect(native.symbol).toBe("ETH");
-    expect(native.balance).toBe("5000000000000000");
+    expect(native.balanceRaw).toBe("5000000000000000");
+    expect(native.balance).toBe("0.005");
     expect(native.priceUsd).toBe("2000");
     // 0.005 * 2000 + 2 * 0.5 = 11.
     expect(data.totalUsd).toBeCloseTo(11);

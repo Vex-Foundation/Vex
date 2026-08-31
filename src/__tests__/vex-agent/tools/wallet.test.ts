@@ -205,7 +205,10 @@ describe("WalletBalances", () => {
       symbol: "SOL",
       address: "So11111111111111111111111111111111111111112",
       decimals: 9,
-      balance: "3000000000",
+      balanceRaw: "3000000000",
+      // The human amount travels BESIDE the raw one so the model never divides.
+      balance: "3",
+      valueUsd: "450",
     });
     expect(data.wallets[0].scannedChainIds).toEqual([20011000000]);
   });
@@ -269,7 +272,9 @@ describe("WalletBalances", () => {
     // threw on a missing price and that a holding is never silently hidden.
     expect(tokens.map((t: { symbol: string }) => t.symbol)).toEqual(["ETH", "USDC", "NOPX"]);
     expect(tokens[2].priceUnavailable).toBe(true);
-    expect(tokens[2].priceUsd).toBeUndefined();
+    expect(tokens[2].priceUsd).toBeNull();
+    // Never a zero: zero as "I do not know" is a one-way door.
+    expect(tokens[2].valueUsd).toBeNull();
   });
 
   it("default (no limit / detailed) returns all tokens unchanged", async () => {

@@ -1,5 +1,5 @@
 /**
- * balances repo — per-wallet portfolio snapshot semantics (puzzle 5 phase 5E-1).
+ * balances repo - per-wallet portfolio snapshot semantics (puzzle 5 phase 5E-1).
  * Mocks the db client to assert SQL + params without a live Postgres.
  */
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
@@ -13,11 +13,21 @@ function resetMocks() {
 }
 resetMocks();
 
+// `insertSnapshot` / `getLatestSnapshot` now take an optional `Executor` so a
+// snapshot GROUP can be published inside one transaction (WP8). The default
+// executor is still the shared pool, so the SQL and params these tests assert
+// on are unchanged - they just arrive through the `…With` helpers.
+// Both consumers below take `unknown`, so the stub needs no cast.
+const POOL = { query: vi.fn() };
 vi.mock("@vex-agent/db/client.js", () => ({
   query: (sql: string, params?: unknown[]) => mockQuery(sql, params),
   queryOne: (sql: string, params?: unknown[]) => mockQueryOne(sql, params),
+  queryWith: (_e: unknown, sql: string, params?: unknown[]) => mockQuery(sql, params),
+  queryOneWith: (_e: unknown, sql: string, params?: unknown[]) => mockQueryOne(sql, params),
+  executeWith: vi.fn().mockResolvedValue(1),
   execute: vi.fn().mockResolvedValue(1),
-  getPool: vi.fn(),
+  withTransaction: (fn: (c: unknown) => Promise<unknown>) => fn(POOL),
+  getPool: () => POOL,
 }));
 
 const repo = await import("@vex-agent/db/repos/balances.js");
@@ -29,11 +39,11 @@ beforeEach(() => {
 const findCall = (calls: unknown[][], needle: string): unknown[] | undefined =>
   calls.find((c) => String(c[0]).includes(needle));
 
-describe("insertSnapshot — per-wallet PnL", () => {
+describe("insertSnapshot - per-wallet PnL", () => {
   it("writes wallet dimension + group id and null PnL for a wallet's FIRST snapshot", async () => {
     mockQueryOne.mockImplementation(async (sql: string) => {
       if (sql.includes("INSERT INTO proj_portfolio_snapshots")) return { id: 42 };
-      return null; // getLatestSnapshot — no prior row for this wallet
+      return null; // getLatestSnapshot - no prior row for this wallet
     });
 
     const res = await repo.insertSnapshot({
@@ -82,7 +92,7 @@ describe("insertSnapshot — per-wallet PnL", () => {
   });
 });
 
-describe("getTotalUsd — wallet set filter", () => {
+describe("getTotalUsd - wallet set filter", () => {
   it("filters by the wallet set with ANY()", async () => {
     mockQueryOne.mockResolvedValue({ total: "250" });
     await repo.getTotalUsd(["0xA", "0xB"]);
@@ -104,7 +114,7 @@ describe("getTotalUsd — wallet set filter", () => {
   });
 });
 
-describe("aggregate snapshots — per-cycle, complete groups only", () => {
+describe("aggregate snapshots - per-cycle, complete groups only", () => {
   it("groups by snapshot_group_id (complete-group HAVING) + computes pnl deltas + flattens chains", async () => {
     mockQuery.mockResolvedValue([
       { snapshot_group_id: "g1", total_usd: "1000", at: "2026-05-24T00:00:00.000Z", chains: [["1"], ["8453"]] },
@@ -145,7 +155,7 @@ describe("aggregate snapshots — per-cycle, complete groups only", () => {
   });
 });
 
-describe("getLatestSnapshot / getSnapshotHistory — wallet scoping", () => {
+describe("getLatestSnapshot / getSnapshotHistory - wallet scoping", () => {
   it("scopes the latest-snapshot query to the wallet filter", async () => {
     mockQueryOne.mockResolvedValue(null);
     await repo.getLatestSnapshot({ walletFamily: "solana", walletAddress: "SoLA" });

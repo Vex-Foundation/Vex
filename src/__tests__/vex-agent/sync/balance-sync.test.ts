@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mocks ───────────────────────────────────────────────────────
 // `listWallets` drives which wallets the background sync projects (puzzle 5
-// phase 5E-1 — sync iterates the whole inventory, NOT just the primary).
+// phase 5E-1 - sync iterates the whole inventory, NOT just the primary).
 const mockListWallets = vi.fn();
 vi.mock("@tools/wallet/inventory.js", () => ({
   listWallets: (family: string) => mockListWallets(family),
@@ -14,7 +14,7 @@ vi.mock("@tools/khalani/balances.js", () => ({
   getTokenBalancesAcrossChains: (...args: unknown[]) => mockScan(...args),
 }));
 
-// Khalani dynamic registry — drives the Khalani-first partition in
+// Khalani dynamic registry - drives the Khalani-first partition in
 // syncWalletBalances (and resolveChainHint via sync/chains.js). Default fixture
 // below does NOT contain 4663, so 4663 routes to the local path.
 const mockGetCachedKhalaniChains = vi.fn();
@@ -63,6 +63,23 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
 // Wave P: `fullBalanceSync` consults the group-wide pending predicate before it
 // may snapshot. Default is "nothing pending" so every pre-existing case keeps
 // exercising the snapshot path unchanged.
+/**
+ * WP8 - the snapshot group is published inside ONE transaction that locks
+ * `agent_activity` and re-checks the gate under that lock. These suites are
+ * about sync/single-flight, not about the gate, so the fake client answers
+ * "nothing in flight, and the activity generation did not move".
+ */
+const mockDbQuery = vi.fn(async (sql: string) =>
+  String(sql).includes("MAX(id)")
+    ? { rows: [{ max_id: "0", max_updated_at: "epoch", row_count: "0" }], rowCount: 1 }
+    : { rows: [], rowCount: 0 },
+);
+const fakeDbClient = { query: (sql: string, params?: unknown[]) => mockDbQuery(sql, params) };
+vi.mock("@vex-agent/db/client.js", () => ({
+  getPool: () => fakeDbClient,
+  withTransaction: (fn: (c: unknown) => Promise<unknown>) => fn(fakeDbClient),
+}));
+
 const mockHasPendingActivity = vi.fn();
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   hasPendingActivityForWallets: (...a: unknown[]) => mockHasPendingActivity(...a),
@@ -140,7 +157,7 @@ describe("syncWalletBalances", () => {
   it("never requests the native top-up (no includeNative) so it cannot delete cached native rows", async () => {
     const NATIVE_SENTINEL = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
     // Even though a real RPC would report 5 ETH, the sync scan returns ERC-20s
-    // only — the mock proves syncWalletBalances asks for a native-free scan.
+    // only - the mock proves syncWalletBalances asks for a native-free scan.
     mockScan.mockResolvedValue({
       tokens: [
         { chainId: 1, address: "0xUSDC", symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "1000000", price: { usd: "1.0" } } },
@@ -218,7 +235,7 @@ describe("fullBalanceSync", () => {
 // never actually held, and every later `pnlVsPrev` is computed against it. The
 // guard therefore suppresses the snapshot for the WHOLE cycle, never per wallet.
 
-describe("fullBalanceSync — snapshot guard", () => {
+describe("fullBalanceSync - snapshot guard", () => {
   const threeWallets = (family: string) =>
     family === "solana"
       ? [{ id: "sol_1", address: SOL_A, label: "S1", createdAt: "" }]
@@ -233,7 +250,7 @@ describe("fullBalanceSync — snapshot guard", () => {
 
     const result = await fullBalanceSync();
 
-    // Not one partial group — ZERO snapshot rows. A half-populated
+    // Not one partial group - ZERO snapshot rows. A half-populated
     // snapshotGroupId is the failure this guard exists to prevent.
     expect(mockInsertSnapshot).not.toHaveBeenCalled();
     expect(result.snapshots).toEqual([]);
@@ -283,19 +300,26 @@ describe("fullBalanceSync — snapshot guard", () => {
     expect(groupIds.size).toBe(1);
   });
 
-  it("snapshot:'always' bypasses the guard without even asking", async () => {
+  it("snapshot:'always' NO LONGER bypasses the guard (WP8)", async () => {
     mockListWallets.mockImplementation(threeWallets);
     mockHasPendingActivity.mockResolvedValue(true);
 
-    // `initSync`'s startup snapshot is authoritative by design, and so is a
-    // user-initiated refresh — both mean "record what is true right now".
+    // It used to skip the probe entirely on the theory that a startup snapshot
+    // and a user refresh are "authoritative by design". They are not: neither
+    // makes a half-settled portfolio true, and the row they write becomes the
+    // baseline every later P&L figure is measured against. There is no caller
+    // important enough to corrupt the baseline for.
     const result = await fullBalanceSync({ snapshot: "always" });
 
-    expect(mockHasPendingActivity).not.toHaveBeenCalled();
-    expect(result.snapshots).toHaveLength(3);
+    expect(mockHasPendingActivity).toHaveBeenCalledWith([EVM_A, EVM_B, SOL_A]);
+    expect(mockInsertSnapshot).not.toHaveBeenCalled();
+    expect(result.snapshots).toHaveLength(0);
+    expect(result.snapshotSkippedReason).toBe("in_flight_money_state");
+    // Balances still refreshed - only publication was withheld.
+    expect(result.wallets).toHaveLength(3);
   });
 
-  it("a failed pending probe defers the snapshot — it never guesses 'settled'", async () => {
+  it("a failed pending probe defers the snapshot - it never guesses 'settled'", async () => {
     mockListWallets.mockImplementation(threeWallets);
     mockHasPendingActivity.mockRejectedValue(new Error("db unavailable"));
 
@@ -345,7 +369,7 @@ describe("local-chain routing", () => {
   it("full EVM sync also invokes the local direct-RPC path for chain 4663", async () => {
     await syncWalletBalances("eip155", EVM_A);
     expect(mockLocalSync).toHaveBeenCalledWith("eip155", EVM_A, 4663);
-    // Khalani still scanned with the all-chains filter — unchanged.
+    // Khalani still scanned with the all-chains filter - unchanged.
     expect(mockScan).toHaveBeenCalledWith({ address: EVM_A, family: "eip155", chainIds: undefined });
   });
 
@@ -376,7 +400,7 @@ describe("local-chain routing", () => {
   });
 
   // ── Khalani-first partition (Codex final-review item 2) ────────
-  it("Khalani WINS when its registry lists 4663 — local path not used", async () => {
+  it("Khalani WINS when its registry lists 4663 - local path not used", async () => {
     mockGetCachedKhalaniChains.mockResolvedValue([
       { id: 1, name: "Ethereum", type: "eip155" },
       { id: 4663, name: "Robinhood Chain", type: "eip155" },

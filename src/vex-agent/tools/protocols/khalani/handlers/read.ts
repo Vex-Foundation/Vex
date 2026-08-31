@@ -42,7 +42,6 @@ import type { ChainFamily, KhalaniChain } from "@tools/khalani/types.js";
 import { getLocalChain, resolveLocalChainId } from "@tools/evm-chains/registry.js";
 import {
   readSolanaWalletSnapshot,
-  type SolanaBalanceRow,
   type SolanaWalletSnapshotReader,
 } from "@tools/solana-ecosystem/balances/wallet-snapshot.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../../constants/solana-chain.js";
@@ -52,6 +51,7 @@ import type { ToolResult } from "../../../types.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "../../../internal/wallet/resolve.js";
 import { str, toResultData } from "../../handler-helpers.js";
 import { projectChain, projectChains, projectQuoteRoutes, projectToken, projectTokens } from "../projectors.js";
+import { solanaRowToWalletToken } from "../../../internal/wallet/solana-row.js";
 import { venueFallbackNoteOnKhalaniFailure } from "./fallback.js";
 import { resolveKhalaniPrequoteRoute } from "@tools/khalani/prequote-route-guard.js";
 import { renderProtocolFailureOutput, summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
@@ -156,26 +156,6 @@ export function resolveWalletAddress(
 // ── khalani.tokens.balances ──────────────────────────────────────
 
 /**
- * A Solana balance row as this tool emits it.
- *
- * SEPARATE from `ConciseKhalaniToken` on purpose: Solana mint metadata is
- * genuinely optional, so `symbol` / `name` stay NULLABLE and a mint no source
- * can label is reported honestly rather than relabelled with its own address.
- * `ConciseKhalaniToken` is deliberately NOT widened - its Khalani rows always
- * carry both labels, and widening it would make every other Khalani read tool
- * claim a nullability it does not have.
- */
-interface SolanaBalanceTokenRow {
-  symbol: string | null;
-  name: string | null;
-  address: string;
-  chainId: number;
-  decimals: number;
-  priceUsd?: string;
-  balance?: string;
-}
-
-/**
  * One TOKEN ACCOUNT the Solana read could not trust. Never folded into a token
  * row: the holdings behind these accounts are ABSENT from `tokens`, and an
  * agent that cannot see that would read the gap as "you hold none of it".
@@ -188,18 +168,6 @@ interface AccountReadError {
 
 /** Same bound and reason as the `WalletBalances` snapshot's own account-error cap. */
 const MAX_ACCOUNT_ERRORS = 20;
-
-function solanaRowToTokenRow(row: SolanaBalanceRow): SolanaBalanceTokenRow {
-  return {
-    symbol: row.symbol,
-    name: row.name,
-    address: row.mint,
-    chainId: SOLANA_SYNTHETIC_CHAIN_ID,
-    decimals: row.decimals,
-    balance: row.amountRaw,
-    ...(row.priceUsd !== null ? { priceUsd: String(row.priceUsd) } : {}),
-  };
-}
 
 /**
  * The narrow, optional dependency this handler takes so a test can drive the
@@ -262,7 +230,7 @@ export async function handleTokenBalances(
         });
       } else accountErrorsOmitted += 1;
     }
-    const tokens = snapshot.rows.map(solanaRowToTokenRow);
+    const tokens = snapshot.rows.map(solanaRowToWalletToken);
     const payload = {
       address,
       wallet: walletFamily,

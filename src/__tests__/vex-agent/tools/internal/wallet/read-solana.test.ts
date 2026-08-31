@@ -214,7 +214,10 @@ describe("WalletBalances - the Solana family", () => {
       name: "Solana",
       chainId: SOLANA_CHAIN_ID,
       decimals: 9,
-      balance: "2500000000",
+      balanceRaw: "2500000000",
+      // The human amount travels BESIDE the raw one so the model never divides.
+      balance: "2.5",
+      valueUsd: "500",
       priceUsd: "200",
     });
     expect(snapshot.totalUsd).toBeCloseTo(500.2, 4);
@@ -245,8 +248,12 @@ describe("WalletBalances - the Solana family", () => {
     expect(row.symbol).toBeNull();
     expect(row.name).toBeNull();
     // The mint is never substituted as a label, and the holding is never dropped.
-    expect(row.balance).toBe("777000000");
-    expect(row.priceUsd).toBeUndefined();
+    expect(row.balanceRaw).toBe("777000000");
+    expect(row.balance).toBe("7770");
+    // No price feed: null plus the flag, never a zero that reads as worthless.
+    expect(row.priceUsd).toBeNull();
+    expect(row.valueUsd).toBeNull();
+    expect(row.priceUnavailable).toBe(true);
   });
 
   it("surfaces an untrusted token account as an accountError and still returns the readable rows", async () => {
@@ -401,7 +408,8 @@ describe("WalletBalances - the Solana family", () => {
     const snapshot = solanaSnapshotOf(result.output);
     const bonk = snapshot.tokens.find((row: { address: string }) => row.address === BONK_MINT);
     expect(bonk).toBeDefined();
-    expect(bonk.balance).toBe("4000000");
+    expect(bonk.balanceRaw).toBe("4000000");
+    expect(bonk.balance).toBe("40");
     // The failure is still reported: partial is partial, not silently whole.
     expect(snapshot.accountErrors).toEqual([
       { chainId: SOLANA_CHAIN_ID, accountAddress: ACCOUNT_A, reason: "schema-parse-failed" },

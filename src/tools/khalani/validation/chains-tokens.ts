@@ -17,6 +17,7 @@ import type {
 } from "../types.js";
 import {
   asNumber,
+  asTokenDecimals,
   asOptionalString,
   asString,
   isRecordValue,
@@ -41,7 +42,7 @@ const nativeCurrencySchema = z
       // Read raw name/symbol/decimals; symbol+decimals required, name optional.
       name: asOptionalString,
       symbol: asString("chain.nativeCurrency.symbol"),
-      decimals: asNumber("chain.nativeCurrency.decimals"),
+      decimals: asTokenDecimals("chain.nativeCurrency.decimals"),
     }),
   )
   .transform((nc) => ({
@@ -102,6 +103,31 @@ const tokenSchema: z.ZodType<KhalaniToken> = z
       chainId: asNumber("token.chainId"),
       name: asString("token.name"),
       symbol: asString("token.symbol"),
+      // TOKEN decimals stay TOLERANT (`asNumber`), while `chain.nativeCurrency
+      // .decimals` above is STRICT (`asTokenDecimals`). That asymmetry is
+      // deliberate; do not "fix" it into consistency.
+      //
+      // REACHABILITY is the difference. Anyone can mint a token and airdrop it
+      // into a wallet, so `token.decimals` is ATTACKER-CONTROLLED input arriving
+      // at scale. Rejecting it here throws away the WHOLE chain's token list
+      // (`validateTokensResponse` is `raw.map(parseToken)`), so one hostile
+      // token would blank a funded wallet: a denial of service bought for the
+      // price of an airdrop. Nobody can add an entry to Khalani's own chain
+      // registry, so a poisoned NATIVE decimals is a provider defect that
+      // SHOULD fail loudly instead of degrading quietly.
+      //
+      // The invariant is not dropped, it MOVES to the projection seam, where a
+      // bad value costs one row instead of a wallet: `projectBalanceRow`
+      // (`@vex-agent/tools/protocols/amount-display.ts`) validates with
+      // `isTokenDecimals` and emits the row with its identity and `balanceRaw`
+      // intact, `balance: null`, `valueUsd: null` and a named
+      // `unprojectableReason` (frozen contract C1.2). `heldUsd` in
+      // `internal/wallet/read.ts` carries the same guard, because `formatUnits`
+      // THROWS on a non-integer scale.
+      //
+      // Making this boundary strict AND keeping every row is WP10, which needs
+      // the validators to return rejected entries alongside valid ones and so
+      // changes `TokenBalanceScanResult`.
       decimals: asNumber("token.decimals"),
       logoURI: asOptionalString,
       extensions: optionalRecord,

@@ -82,7 +82,7 @@ function localRead() {
   };
 }
 
-type Row = { symbol: string; priceUsd?: string; priceUnavailable?: boolean };
+type Row = { symbol: string; priceUsd?: string | null; priceUnavailable?: boolean };
 
 /** Only the fields these tests assert on; the handler emits more. */
 type Snapshot = {
@@ -115,9 +115,8 @@ describe("wallet_balances concise+limit - unpriced holdings are never silently c
     expect(tokens.slice(0, 2).every((t) => t.priceUnavailable === undefined)).toBe(true);
     // The marker states WHY there is no USD figure, so "no price feed" can
     // never read as "not held".
-    expect(tokens[2]).toMatchObject({ symbol: "UNP", priceUnavailable: true });
+    expect(tokens[2]).toMatchObject({ symbol: "UNP", priceUnavailable: true, priceUsd: null });
     expect(tokens[3]).toMatchObject({ symbol: "UN2", priceUnavailable: true });
-    expect(tokens[2]!.priceUsd).toBeUndefined();
   });
 
   it("treats a provider price of '0' as PRICED - a zero quote is a feed, not a missing one", async () => {
@@ -215,10 +214,16 @@ describe("wallet_balances concise+limit - unpriced holdings are never silently c
     expect("unpricedOmitted" in snap).toBe(false);
   });
 
-  it("detailed mode (the default) returns every row untouched, unmarked", async () => {
+  it("detailed mode (the default) returns every row untouched and in scan order", async () => {
     const detailed = await tokensFor({});
     expect(detailed.map((t) => t.symbol)).toEqual(["AAA", "UNP", "BBB", "CCC", "UN2", "DDD"]);
-    expect(detailed.some((t) => t.priceUnavailable !== undefined)).toBe(false);
+    // `priceUnavailable` is now a ROW-LEVEL fact (WP1 C1.5): it means "this row
+    // has no usable price feed", on every format, so it is no longer a proxy
+    // for "the concise trim ran". The invariants this test owns are the full
+    // row set, the untouched order, and `truncated`; the marker is asserted for
+    // what it now means, which is that the PRICED rows never carry it.
+    expect(detailed.filter((t) => t.priceUnavailable === true).map((t) => t.symbol))
+      .toEqual(["UNP", "UN2"]);
 
     const explicitDetailedWithLimit = await tokensFor({ response_format: "detailed", limit: 1 });
     expect(explicitDetailedWithLimit).toEqual(detailed);
@@ -227,7 +232,13 @@ describe("wallet_balances concise+limit - unpriced holdings are never silently c
   it("concise WITHOUT a limit still returns every row untouched", async () => {
     const tokens = await tokensFor({ response_format: "concise" });
     expect(tokens.map((t) => t.symbol)).toEqual(["AAA", "UNP", "BBB", "CCC", "UN2", "DDD"]);
-    expect(tokens.some((t) => t.priceUnavailable !== undefined)).toBe(false);
+    // `priceUnavailable` is now a ROW-LEVEL fact (WP1 C1.5): it means "this row
+    // has no usable price feed", on every format, so it is no longer a proxy
+    // for "the concise trim ran". The invariants this test owns are the full
+    // row set, the untouched order, and `truncated`; the marker is asserted for
+    // what it now means, which is that the PRICED rows never carry it.
+    expect(tokens.filter((t) => t.priceUnavailable === true).map((t) => t.symbol))
+      .toEqual(["UNP", "UN2"]);
   });
 });
 
@@ -256,14 +267,20 @@ describe("wallet_balances - the detailed default (D17 R2) and `truncated` (D16)"
     return snap;
   }
 
-  it("`{limit: N}` with NO response_format returns every row, unmarked and untruncated", async () => {
+  it("`{limit: N}` with NO response_format returns every row, unranked and untruncated", async () => {
     const snap = await snapshotFor({ limit: 2 });
 
     // The whole point of R2: `limit` is inert under the default format. If this
     // ever returns 4 rows, the default was flipped and a wallet read started
     // hiding holdings nobody asked it to hide.
     expect(snap.tokens.map((t) => t.symbol)).toEqual(["AAA", "UNP", "BBB", "CCC", "UN2", "DDD"]);
-    expect(snap.tokens.some((t) => t.priceUnavailable !== undefined)).toBe(false);
+    // `priceUnavailable` is now a ROW-LEVEL fact (WP1 C1.5): it means "this row
+    // has no usable price feed", on every format, so it is no longer a proxy
+    // for "the concise trim ran". The invariants this test owns are the full
+    // row set, the untouched order, and `truncated`; the marker is asserted for
+    // what it now means, which is that the PRICED rows never carry it.
+    expect(snap.tokens.filter((t) => t.priceUnavailable === true).map((t) => t.symbol))
+      .toEqual(["UNP", "UN2"]);
     expect(snap.truncated).toBe(false);
     expect(snap.truncationNote).toBeUndefined();
   });

@@ -5,7 +5,7 @@
  * per call and inserts a full set of per-wallet snapshot rows, so two calls
  * overlapping IN TIME record two competing groups for one moment and corrupt
  * the `pnlVsPrev` chain for every wallet. The mutex previously sat on
- * `refreshPortfolioNow` alone, guarding one of five callers — startup, the
+ * `refreshPortfolioNow` alone, guarding one of five callers - startup, the
  * periodic `balances` job and both sync-worker branches called the unguarded
  * function directly, so the most likely overlap of all (a user pressing refresh
  * during the 300 s periodic run) was entirely unguarded.
@@ -13,11 +13,11 @@
  * What is pinned here:
  *
  * 1. NEVER TWO CORES IN FLIGHT, whatever the mix of callers.
- * 2. COMPATIBLE callers JOIN — one run, ONE snapshot group.
+ * 2. COMPATIBLE callers JOIN - one run, ONE snapshot group.
  * 3. An `"always"` caller does NOT join a `"when-settled"` run, because that
  *    run's snapshot may have been suppressed; it QUEUES and takes its own. Two
- *    groups is the CORRECT outcome there — they are sequential moments, not a
- *    contested one — and the user's explicit refresh is not silently answered
+ *    groups is the CORRECT outcome there - they are sequential moments, not a
+ *    contested one - and the user's explicit refresh is not silently answered
  *    with a cycle that recorded nothing.
  */
 
@@ -72,6 +72,23 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
   insertSnapshot: (...a: unknown[]) => mockInsertSnapshot(...a),
   getLatestSnapshot: vi.fn().mockResolvedValue(null),
   getSnapshotHistory: vi.fn().mockResolvedValue([]),
+}));
+
+/**
+ * WP8 - the snapshot group is published inside ONE transaction that locks
+ * `agent_activity` and re-checks the gate under that lock. These suites are
+ * about sync/single-flight, not about the gate, so the fake client answers
+ * "nothing in flight, and the activity generation did not move".
+ */
+const mockDbQuery = vi.fn(async (sql: string) =>
+  String(sql).includes("MAX(id)")
+    ? { rows: [{ max_id: "0", max_updated_at: "epoch", row_count: "0" }], rowCount: 1 }
+    : { rows: [], rowCount: 0 },
+);
+const fakeDbClient = { query: (sql: string, params?: unknown[]) => mockDbQuery(sql, params) };
+vi.mock("@vex-agent/db/client.js", () => ({
+  getPool: () => fakeDbClient,
+  withTransaction: (fn: (c: unknown) => Promise<unknown>) => fn(fakeDbClient),
 }));
 
 const mockHasPendingActivity = vi.fn();
@@ -135,7 +152,7 @@ describe("overlapping callers", () => {
     expect(mockInsertSnapshot).toHaveBeenCalledTimes(1);
   });
 
-  it("a manual refresh joins an in-flight ALWAYS run — one group, one snapshot", async () => {
+  it("a manual refresh joins an in-flight ALWAYS run - one group, one snapshot", async () => {
     const startup = fullBalanceSync({ snapshot: "always" });
     const manual = fullBalanceSync({ snapshot: "always" });
 
@@ -149,7 +166,7 @@ describe("overlapping callers", () => {
   });
 
   it("a manual refresh QUEUES behind a periodic run instead of overlapping it", async () => {
-    // The periodic run suppresses its snapshot (something is in flight) — which
+    // The periodic run suppresses its snapshot (something is in flight) - which
     // is exactly why the manual refresh must not adopt its result.
     mockHasPendingActivity.mockResolvedValue(true);
 
@@ -167,12 +184,18 @@ describe("overlapping callers", () => {
     const manualResult = await manual;
 
     expect(maxConcurrentScans).toBe(1);
-    // Sequential moments, not a contested one — and the user's refresh recorded
-    // its own authoritative snapshot rather than inheriting a suppressed one.
+    // Sequential moments, not a contested one: the refresh got its OWN cycle
+    // and its own group id rather than adopting an answer computed earlier.
+    //
+    // WP8 changed what the refresh's own cycle concludes. `"always"` no longer
+    // bypasses the guard, so with something still in flight BOTH runs withhold
+    // publication - the queue/join distinction is now about freshness (whose
+    // moment is evaluated), never about a licence to publish regardless.
     expect(periodicResult.snapshots).toHaveLength(0);
-    expect(manualResult.snapshots).toHaveLength(1);
+    expect(manualResult.snapshots).toHaveLength(0);
+    expect(manualResult.snapshotSkippedReason).toBe("in_flight_money_state");
     expect(manualResult.snapshotGroupId).not.toBe(periodicResult.snapshotGroupId);
-    expect(mockInsertSnapshot).toHaveBeenCalledTimes(1);
+    expect(mockInsertSnapshot).not.toHaveBeenCalled();
   });
 
   it("a queued run still starts after the run ahead of it REJECTED", async () => {

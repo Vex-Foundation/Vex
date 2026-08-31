@@ -160,11 +160,17 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       + "`{chainId, accountAddress, reason}`, whose holdings are therefore absent from `tokens`; empty on an EVM "
       + "scan), `accountErrorsOmitted` (present only when more than 20 accounts failed, counting those the cap "
       + "left out, so a truncated error list is never mistaken for the whole story), and `tokens`, one concise "
-      + "row each: `symbol`, `name`, `address`, `chainId`, "
-      + "`decimals`, plus `priceUsd`, `balance` and `isRiskToken` when carried. On Solana rows `symbol` and `name` "
+      + "row each: `symbol`, `name`, `address`, `chainId`, `decimals`, `balanceRaw` (atomic units, a DECIMAL "
+      + "string), `balance` (the SAME holding already converted to a full-precision human amount as a string - "
+      + "read this one, never divide `balanceRaw` yourself), `priceUsd` and `valueUsd`, plus `isRiskToken` when "
+      + "carried. On Solana rows `symbol` and `name` "
       + "are NULL when no metadata source could label the mint - an unlabelled holding, not a missing balance, and "
-      + "the mint address is never substituted for a ticker. Balances are RAW base units; read "
-      + "them with the row's own `decimals`. Every matching row is returned; there is no pagination.",
+      + "the mint address is never substituted for a ticker. `valueUsd` is a DISPLAY-GRADE ESTIMATE: the "
+      + "provider price is a float, so it is for showing the user, never for sizing a trade - size from "
+      + "`balanceRaw` and `decimals`. A row with no usable price feed carries `valueUsd: null` with "
+      + "`priceUnavailable: true`, never a `0`. A row whose amount could not be converted keeps its identity "
+      + "and `balanceRaw`, reports `balance: null`, and names the cause in `unprojectableReason`; it is never "
+      + "dropped and its decimals are never guessed. Every matching row is returned; there is no pagination.",
     mutating: false,
     actionKind: "read",
     params: [

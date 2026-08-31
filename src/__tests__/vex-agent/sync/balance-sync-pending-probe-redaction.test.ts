@@ -1,19 +1,18 @@
 /**
- * CANARY — the pending-activity snapshot probe must never log a raw throw.
+ * CANARY - the pending-activity snapshot probe must never log a raw throw.
  *
- * `fullBalanceSync({ snapshot: "when-settled" })` — the PERIODIC/worker policy,
- * which is the one the background pipeline actually uses — asks
+ * `fullBalanceSync({ snapshot: "when-settled" })` - the PERIODIC/worker policy,
+ * which is the one the background pipeline actually uses - asks
  * `hasPendingActivityForWallets` whether any row is still in flight. That probe
  * talks to Postgres, and a driver/connection failure carries the connection
  * string (and therefore the password) in its message. The site logged
  * `err.message` verbatim, so a DB outage wrote the credential into the log file;
  * the logger performs no redaction of its own (rule 06).
  *
- * This suite drives the REAL `isSnapshotAllowed` path by rejecting the probe,
- * and asserts that not one fragment of the secret-bearing text survives into the
- * emitted log line. The pre-existing IPC-level canary cannot see this: it mocks
- * `refreshPortfolioNow` wholesale, and manual refresh uses `snapshot: "always"`,
- * which bypasses the probe entirely.
+ * This suite drives the REAL probe path (`isObviouslyBlocked`, WP8's renamed
+ * pre-flight) by rejecting it, and asserts that not one fragment of the
+ * secret-bearing text survives into the emitted log line. The pre-existing
+ * IPC-level canary cannot see this: it mocks `refreshPortfolioNow` wholesale.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -63,6 +62,23 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
   getSnapshotHistory: vi.fn().mockResolvedValue([]),
 }));
 
+/**
+ * WP8 - the snapshot group is published inside ONE transaction that locks
+ * `agent_activity` and re-checks the gate under that lock. These suites are
+ * about sync/single-flight, not about the gate, so the fake client answers
+ * "nothing in flight, and the activity generation did not move".
+ */
+const mockDbQuery = vi.fn(async (sql: string) =>
+  String(sql).includes("MAX(id)")
+    ? { rows: [{ max_id: "0", max_updated_at: "epoch", row_count: "0" }], rowCount: 1 }
+    : { rows: [], rowCount: 0 },
+);
+const fakeDbClient = { query: (sql: string, params?: unknown[]) => mockDbQuery(sql, params) };
+vi.mock("@vex-agent/db/client.js", () => ({
+  getPool: () => fakeDbClient,
+  withTransaction: (fn: (c: unknown) => Promise<unknown>) => fn(fakeDbClient),
+}));
+
 const mockHasPendingActivity = vi.fn();
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   hasPendingActivityForWallets: (...a: unknown[]) => mockHasPendingActivity(...a),
@@ -70,7 +86,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
 
 const { fullBalanceSync } = await import("../../../vex-agent/sync/balance-sync.js");
 
-/** The literal shape a `pg` connection failure carries — password included. */
+/** The literal shape a `pg` connection failure carries - password included. */
 const SECRET_PASSWORD = "sup3rS3cretVexPgPassw0rd";
 const SECRET_BEARING_MESSAGE =
   `connection to server at "db.internal" failed: ` +

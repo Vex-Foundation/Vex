@@ -33,6 +33,7 @@
  */
 
 import type { ChainFamily, KhalaniChain, KhalaniToken, QuoteRoute } from "@tools/khalani/types.js";
+import { projectBalanceRow } from "../amount-display.js";
 
 // ── Concise output shapes ────────────────────────────────────────
 
@@ -49,10 +50,29 @@ export interface ConciseKhalaniToken {
   address: string;
   chainId: number;
   decimals: number;
+  /**
+   * The balance quartet, present TOGETHER or not at all.
+   *
+   * A token row that carries no `extensions.balance` (the `tokens.search` /
+   * `tokens.top` / `autocomplete` paths) is a pure IDENTITY row and stays one:
+   * emitting four nulls there would read as "you hold zero of it", which is a
+   * different claim from "this lookup did not ask about your wallet".
+   *
+   * On the balances path all four are present. `balanceRaw` is the atomic
+   * amount as a DECIMAL string (never hex) and is what a trade is sized from,
+   * together with `decimals`. `balance` is the exact human amount as a STRING;
+   * `valueUsd` is a DISPLAY-GRADE estimate derived from a provider float and
+   * never gates a spend.
+   */
+  balanceRaw?: string;
+  balance?: string | null;
+  valueUsd?: string | null;
   /** Lifted from `extensions.price.usd` (string from upstream). */
-  priceUsd?: string;
-  /** Lifted from `extensions.balance` (smallest-unit string; balances path). */
-  balance?: string;
+  priceUsd?: string | null;
+  /** Set when the row has a balance but no usable price feed. Never `valueUsd: 0`. */
+  priceUnavailable?: true;
+  /** Named cause when `balance` could not be derived. The row still stands. */
+  unprojectableReason?: string;
   /** Lifted from `extensions.isRiskToken`. */
   isRiskToken?: boolean;
 }
@@ -158,11 +178,20 @@ export function projectToken(t: KhalaniToken): ConciseKhalaniToken {
   const ext: unknown = t.extensions;
   if (isRecord(ext)) {
     const price: unknown = ext.price;
-    if (isRecord(price) && typeof price.usd === "string") {
-      out.priceUsd = price.usd;
-    }
+    const priceUsd = isRecord(price) && typeof price.usd === "string" ? price.usd : null;
     if (typeof ext.balance === "string") {
-      out.balance = ext.balance;
+      // A balance row. The model never divides: the human amount and the USD
+      // estimate are derived HERE, by the single conversion owner.
+      out.balanceRaw = ext.balance;
+      out.priceUsd = priceUsd;
+      const projected = projectBalanceRow(ext.balance, t.decimals, priceUsd);
+      out.balance = projected.balance;
+      out.valueUsd = projected.valueUsd;
+      if (projected.priceUnavailable) out.priceUnavailable = true;
+      if (projected.unprojectableReason) out.unprojectableReason = projected.unprojectableReason;
+    } else if (priceUsd !== null) {
+      // Identity row: a price is still useful, a balance quartet is not.
+      out.priceUsd = priceUsd;
     }
     if (typeof ext.isRiskToken === "boolean") {
       out.isRiskToken = ext.isRiskToken;

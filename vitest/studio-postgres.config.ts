@@ -25,6 +25,9 @@ export default defineConfig({
       "src/__tests__/integration/migrations/096-wallet-wrap-intents.int.test.ts",
       "src/__tests__/integration/engine/studio-*.int.test.ts",
       "src/__tests__/integration/repos/money-state-reader.int.test.ts",
+      // WP8: the wallet-scoped reading of that same money-state doctrine, plus
+      // the activity-table lock the snapshot publisher depends on.
+      "src/__tests__/integration/repos/snapshot-publication-gate.int.test.ts",
       "src/__tests__/integration/repos/session-control-state-wake.int.test.ts",
       "src/__tests__/integration/repos/recovery-money-gate-race.int.test.ts",
       "src/__tests__/integration/repos/recovery-reverse-lock-order.int.test.ts",

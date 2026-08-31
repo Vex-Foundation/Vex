@@ -46,6 +46,8 @@ import {
   type ConciseKhalaniToken,
   projectTokens,
 } from "../../protocols/khalani/projectors.js";
+import { isTokenDecimals, projectBalanceRow } from "../../protocols/amount-display.js";
+import { solanaRowToWalletToken, type SolanaWalletTokenRow } from "./solana-row.js";
 import { summarizeProtocolError } from "../../protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
 
@@ -124,24 +126,6 @@ interface AccountReadError {
  * happened and on which accounts, not to have its context filled with the list.
  */
 const MAX_ACCOUNT_ERRORS_PER_SNAPSHOT = 20;
-
-/**
- * A Solana token row. It exists SEPARATELY from `ConciseKhalaniToken` because
- * Solana mint metadata is genuinely optional: a mint no source can label keeps
- * `symbol: null` / `name: null` rather than being relabelled with its own
- * address, which an agent would read as a ticker that does not exist.
- * `ConciseKhalaniToken` is deliberately NOT widened - its Khalani rows always
- * carry both labels.
- */
-interface SolanaWalletTokenRow {
-  symbol: string | null;
-  name: string | null;
-  address: string;
-  chainId: number;
-  decimals: number;
-  priceUsd?: string;
-  balance?: string;
-}
 
 /** Either lane's projected row, before the concise trim. */
 type ProjectedTokenRow = ConciseKhalaniToken | SolanaWalletTokenRow;
@@ -277,8 +261,48 @@ type LocalChainSnapshot =
  */
 const LOCAL_CHAIN_SCAN_CONCURRENCY = 4;
 
+/**
+ * Build one local-chain row with its human amount already derived.
+ *
+ * The conversion is the shared owner's (`projectBalanceRow`), not this file's:
+ * the human amount an agent reads and the one the sync writes must come from
+ * the same place, or a correction lands in only one of them.
+ */
+function localChainTokenRow(input: {
+  symbol: string;
+  name: string;
+  address: string;
+  chainId: number;
+  decimals: number;
+  balanceWei: bigint;
+  priceUsd: number | null;
+}): ConciseKhalaniToken {
+  const balanceRaw = input.balanceWei.toString();
+  const priceUsd = input.priceUsd !== null ? String(input.priceUsd) : null;
+  return {
+    symbol: input.symbol,
+    name: input.name,
+    address: input.address,
+    chainId: input.chainId,
+    decimals: input.decimals,
+    balanceRaw,
+    priceUsd,
+    ...projectBalanceRow(balanceRaw, input.decimals, priceUsd),
+  };
+}
+
+/**
+ * The numeric contribution one row makes to a snapshot's `totalUsd`.
+ *
+ * The decimals guard is LOAD-BEARING, not defensive noise: `formatUnits` THROWS
+ * on a non-integer scale, and this runs inside the per-chain try, so a single
+ * token whose provider reported `Infinity` decimals used to take the whole
+ * chain's snapshot down with it and report the wallet as holding nothing there.
+ * An unconvertible row contributes 0 to the total and says why in its own
+ * `unprojectableReason`; it never removes its neighbours.
+ */
 function heldUsd(balanceWei: bigint, decimals: number, priceUsd: number | null): number {
-  if (priceUsd === null) return 0;
+  if (priceUsd === null || !isTokenDecimals(decimals)) return 0;
   const human = Number(formatUnits(balanceWei, decimals));
   return Number.isFinite(human) ? human * priceUsd : 0;
 }
@@ -303,27 +327,31 @@ async function readLocalChainSnapshot(
     let totalUsd = 0;
     // Zero native balances are skipped (Khalani parity, same as the sync path).
     if (read.nativeWei > 0n) {
-      tokens.push({
-        symbol: config.nativeCurrency.symbol,
-        name: config.nativeCurrency.name,
-        address: NATIVE_TOKEN_ADDRESS,
-        chainId: config.id,
-        decimals: config.nativeCurrency.decimals,
-        balance: read.nativeWei.toString(),
-        ...(read.nativePriceUsd !== null ? { priceUsd: String(read.nativePriceUsd) } : {}),
-      });
+      tokens.push(
+        localChainTokenRow({
+          symbol: config.nativeCurrency.symbol,
+          name: config.nativeCurrency.name,
+          address: NATIVE_TOKEN_ADDRESS,
+          chainId: config.id,
+          decimals: config.nativeCurrency.decimals,
+          balanceWei: read.nativeWei,
+          priceUsd: read.nativePriceUsd,
+        }),
+      );
       totalUsd += heldUsd(read.nativeWei, config.nativeCurrency.decimals, read.nativePriceUsd);
     }
     for (const token of read.tokens) {
-      tokens.push({
-        symbol: token.symbol,
-        name: token.symbol,
-        address: token.address,
-        chainId: config.id,
-        decimals: token.decimals,
-        balance: token.balanceWei.toString(),
-        ...(token.priceUsd !== null ? { priceUsd: String(token.priceUsd) } : {}),
-      });
+      tokens.push(
+        localChainTokenRow({
+          symbol: token.symbol,
+          name: token.symbol,
+          address: token.address,
+          chainId: config.id,
+          decimals: token.decimals,
+          balanceWei: token.balanceWei,
+          priceUsd: token.priceUsd,
+        }),
+      );
       totalUsd += heldUsd(token.balanceWei, token.decimals, token.priceUsd);
     }
     return {
@@ -360,25 +388,6 @@ async function readLocalChainSnapshot(
 }
 
 // ── Solana live snapshot ────────────────────────────────────────
-
-/**
- * Map one canonical Solana row onto this tool's token shape.
- *
- * `priceUsd` is stringified because that is the shape every other row in this
- * output already uses (it is lifted from Khalani's own string field), and the
- * agent reads them all the same way. `balance` stays the raw u64 STRING.
- */
-export function solanaRowToWalletToken(row: SolanaBalanceRow): SolanaWalletTokenRow {
-  return {
-    symbol: row.symbol,
-    name: row.name,
-    address: row.mint,
-    chainId: SOLANA_SYNTHETIC_CHAIN_ID,
-    decimals: row.decimals,
-    balance: row.amountRaw,
-    ...(row.priceUsd !== null ? { priceUsd: String(row.priceUsd) } : {}),
-  };
-}
 
 /**
  * The narrow, optional dependency this handler takes so a test can drive the
@@ -611,10 +620,10 @@ function requestedWalletFamilies(wallet: "eip155" | "solana" | "all"): ChainFami
  * row with no price/balance signal sorts last rather than throwing.
  */
 function projectedTokenUsd(token: ProjectedTokenRow): number {
-  const { balance, priceUsd, decimals } = token;
-  if (!balance || !priceUsd) return 0;
+  const { balanceRaw, priceUsd, decimals } = token;
+  if (!balanceRaw || !priceUsd) return 0;
   try {
-    const balanceHuman = Number(BigInt(balance)) / Math.pow(10, decimals);
+    const balanceHuman = Number(BigInt(balanceRaw)) / Math.pow(10, decimals);
     const price = Number(priceUsd);
     if (!Number.isFinite(balanceHuman) || !Number.isFinite(price)) return 0;
     return balanceHuman * price;
@@ -629,16 +638,16 @@ function projectedTokenUsd(token: ProjectedTokenRow): number {
  * counts as "no price".
  */
 function hasUsdPrice(token: ProjectedTokenRow): boolean {
-  if (token.priceUsd === undefined || token.priceUsd.trim() === "") return false;
+  if (token.priceUsd === undefined || token.priceUsd === null || token.priceUsd.trim() === "") return false;
   const price = Number(token.priceUsd);
   return Number.isFinite(price) && price >= 0;
 }
 
 /** True when the row reports a balance the wallet actually holds. */
 function holdsBalance(token: ProjectedTokenRow): boolean {
-  if (!token.balance) return false;
+  if (!token.balanceRaw) return false;
   try {
-    return BigInt(token.balance) !== 0n;
+    return BigInt(token.balanceRaw) !== 0n;
   } catch {
     return false;
   }

@@ -192,7 +192,10 @@ describe("khalani__token_balances_get - the solana family", () => {
       address: SOL_MINT,
       chainId: SOLANA_CHAIN_ID,
       decimals: 9,
-      balance: "4000000000",
+      balanceRaw: "4000000000",
+      // The human amount travels BESIDE the raw one so the model never divides.
+      balance: "4",
+      valueUsd: "600",
       priceUsd: "150",
     });
   });
@@ -224,6 +227,8 @@ describe("khalani__token_balances_get - the solana family", () => {
     expect(data.tokens[0].symbol).toBeNull();
     expect(data.tokens[0].name).toBeNull();
     expect(data.tokens[0].address).toBe(UNLABELLED_MINT);
+    // `decimals: 0` is legitimate: a `||` default would read this as 42e-18.
+    expect(data.tokens[0].balanceRaw).toBe("42");
     expect(data.tokens[0].balance).toBe("42");
   });
 
@@ -332,7 +337,10 @@ describe("khalani__token_balances_get - the solana family", () => {
     const data = JSON.parse(result.output);
     expect(mockKhalaniScan).toHaveBeenCalledTimes(1);
     expect(data.tokens).toEqual([
-      { symbol: "USDC", name: "USD Coin", address: "0xUSDC", chainId: 1, decimals: 6, priceUsd: "1.00", balance: "100000000" },
+      {
+        symbol: "USDC", name: "USD Coin", address: "0xUSDC", chainId: 1, decimals: 6,
+        priceUsd: "1.00", balanceRaw: "100000000", balance: "100", valueUsd: "100",
+      },
     ]);
     // Present and empty, never absent: an absent field reads as "no answer".
     expect(data.accountErrors).toEqual([]);
@@ -385,7 +393,8 @@ describe("khalani__token_balances_get - the solana family", () => {
     const data = JSON.parse(result.output);
     const bonk = data.tokens.find((row: { address: string }) => row.address === BONK_MINT);
     expect(bonk).toBeDefined();
-    expect(bonk.balance).toBe("4000000");
+    expect(bonk.balanceRaw).toBe("4000000");
+    expect(typeof bonk.balance).toBe("string");
     expect(data.accountErrors).toEqual([
       { chainId: SOLANA_CHAIN_ID, accountAddress: ACCOUNT_A, reason: "schema-parse-failed" },
     ]);
@@ -411,5 +420,38 @@ describe("khalani__token_balances_get - the solana family", () => {
     const data = JSON.parse(result.output);
     expect(data.accountErrors).toHaveLength(20);
     expect(data.accountErrorsOmitted).toBe(6);
+  });
+
+  // WP1: this tool's own description tells the model to use it to find a funded
+  // source asset before quoting a swap, so a row it cannot read correctly is a
+  // MONEY decision made on a wrong number, not a display slip.
+  it("carries the human amount and a null-not-zero USD estimate on every row", async () => {
+    mockReadTokensPairs.mockResolvedValue([]);
+
+    const result = await handleTokenBalances(
+      { walletFamily: "solana" },
+      makeProtocolContext(),
+      withRpc(scriptedRpc({
+        lamports: 9_873_301,
+        spl: [{ pubkey: ACCOUNT_A, mint: UNLABELLED_MINT, amount: "9873301706589007", decimals: 18 }],
+      })),
+    );
+
+    const data = JSON.parse(result.output);
+    for (const row of data.tokens) {
+      expect(row).toHaveProperty("balanceRaw");
+      expect(row).toHaveProperty("balance");
+      expect(row).toHaveProperty("valueUsd");
+      expect(typeof row.decimals).toBe("number");
+      // No price feed in this run: null plus the flag, never a zero that reads
+      // as "this holding is worthless".
+      expect(row.valueUsd).toBeNull();
+      expect(row.priceUnavailable).toBe(true);
+    }
+
+    const unlabelled = data.tokens.find((row: { address: string }) => row.address === UNLABELLED_MINT);
+    expect(unlabelled.balanceRaw).toBe("9873301706589007");
+    expect(unlabelled.balance).toBe("0.009873301706589007");
+    expect(data.tokens[0].balance).toBe("0.009873301");
   });
 });
