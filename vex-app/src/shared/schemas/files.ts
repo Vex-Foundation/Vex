@@ -134,14 +134,140 @@ export const FILES_SUSPEND_POLL_MS = 5_007;
  */
 export const FILES_WATCHERS_MAX = 8;
 
+/**
+ * The most file subscriptions ONE WINDOW may hold at once.
+ *
+ * Subscriptions are cheap individually - they are filters over a project's one
+ * native watch - but every native event fans out to EVERY one of them, so an
+ * unbounded count turns a single `git checkout` into work proportional to
+ * however many subscriptions a renderer chose to open. A window legitimately
+ * holds one per project tree plus one per open editor tab, so 64 is far above
+ * any real workspace and far below a number that costs anything.
+ *
+ * AT THE BOUND: the request is REFUSED with `watcher_limit`. It is not queued
+ * and nothing already held is evicted - a subscription the consumer believes it
+ * has is the one thing this surface must not take away silently.
+ */
+export const FILES_SUBSCRIPTIONS_PER_WINDOW_MAX = 64;
+
+/**
+ * The most RAW native events held between two aggregation ticks.
+ *
+ * `FILES_PENDING_CHANGES_MAX` bounds the map that survives coalescing, but the
+ * array feeding it is filled by the native callback and drained only when the
+ * 75 ms timer fires - so a burst large enough to outrun one tick grows it with
+ * no bound at all. Four aggregation windows' worth is the ceiling: enough that
+ * an ordinary burst never pays for an early fold, small enough that the array
+ * cannot become the leak the pending map was bounded to prevent.
+ *
+ * AT THE BOUND: the watcher AGGREGATES EAGERLY rather than dropping. Nothing is
+ * lost here; the fold moves the events into the pending map, whose own bound
+ * drops and COUNTS, and reports both on the next batch as `overflowed` with
+ * `droppedCount`.
+ */
+export const FILES_RAW_EVENTS_MAX = FILES_PENDING_CHANGES_MAX * 4;
+
 /** The longest project-relative path this surface will carry. */
 export const FILES_RELATIVE_PATH_MAX = 4_096;
 
-/** The longest node token this surface will accept. */
-export const FILES_NODE_ID_MAX = 1_024;
+/** The longest project id this surface will carry. */
+export const FILES_PROJECT_ID_MAX = 64;
 
-/** The longest listing cursor this surface will accept. */
-export const FILES_CURSOR_MAX = 4_096;
+/**
+ * The token and cursor bounds are DERIVED, never chosen.
+ *
+ * Both values are ENCODINGS of a path this surface already declared it will
+ * carry, so a bound picked by eye is a bound that rejects a path the contract
+ * promises. It did: `FILES_NODE_ID_MAX` was 1024 while a token minted from a
+ * path of `FILES_RELATIVE_PATH_MAX` is several thousand characters, so a
+ * legitimately deep file was refused by the surface's own `.strict()` output
+ * validation rather than by anything about the file.
+ *
+ * So the arithmetic is written down and the constants fall out of it. Every
+ * step is an upper bound, and each one is stated where it is taken.
+ */
+
+/**
+ * Bytes an unpadded base64url string costs per input byte, rounded up.
+ *
+ * base64 encodes three input bytes as four characters and drops the padding,
+ * so `ceil(n * 4 / 3)` is exact for the unpadded form (16 bytes -> 22 chars,
+ * which is the signature length this surface actually emits).
+ */
+function base64urlLength(bytes: number): number {
+  return Math.ceil((bytes * 4) / 3);
+}
+
+/**
+ * The most UTF-8 bytes one UTF-16 code unit can cost.
+ *
+ * `z.string().max()` counts UTF-16 code units. A code point in U+0800..U+FFFF
+ * is one code unit and three UTF-8 bytes, which is the worst ratio: a
+ * non-BMP code point costs four bytes but spends TWO code units to do it.
+ */
+const UTF8_BYTES_PER_CODE_UNIT_MAX = 3;
+
+/** Decimal digits an epoch can reach. `Number.MAX_SAFE_INTEGER` has 16. */
+const NODE_EPOCH_DIGITS_MAX = 20;
+
+/** `f1.` plus the `.` before the signature. */
+const NODE_TOKEN_FRAMING_CHARS = 4;
+
+/** The HMAC prefix the token carries, in bytes, before base64url. */
+const NODE_TOKEN_SIGNATURE_BYTES = 16;
+
+/**
+ * `epoch NUL projectId NUL relativePath`, in UTF-8 bytes, at its worst.
+ *
+ * The two NUL separators are one byte each.
+ */
+const NODE_TOKEN_PAYLOAD_BYTES_MAX =
+  NODE_EPOCH_DIGITS_MAX
+  + 1
+  + FILES_PROJECT_ID_MAX * UTF8_BYTES_PER_CODE_UNIT_MAX
+  + 1
+  + FILES_RELATIVE_PATH_MAX * UTF8_BYTES_PER_CODE_UNIT_MAX;
+
+/**
+ * The longest node token this surface will accept.
+ *
+ * `f1.<base64url(payload)>.<base64url(signature)>` at the payload's worst case.
+ * With today's inputs that is 4 + ceil(12502 * 4 / 3) + 22 = 16_696 characters.
+ */
+export const FILES_NODE_ID_MAX =
+  NODE_TOKEN_FRAMING_CHARS
+  + base64urlLength(NODE_TOKEN_PAYLOAD_BYTES_MAX)
+  + base64urlLength(NODE_TOKEN_SIGNATURE_BYTES);
+
+/**
+ * `{"v":1,"n":"","r":0,"k":""}` with both strings empty, in characters.
+ *
+ * The cursor is that JSON object, UTF-8 encoded and base64url'd; `ordering.ts`
+ * owns the shape and this constant is its fixed cost.
+ */
+const CURSOR_JSON_FRAMING_CHARS = 27;
+
+/**
+ * The most UTF-8 bytes `JSON.stringify` can spend on one code unit.
+ *
+ * A control character becomes `\uXXXX`, six ASCII bytes, and a filename may
+ * legally contain control characters on POSIX. That is worse than the three
+ * bytes an unescaped code unit can cost, so six is the bound.
+ */
+const CURSOR_JSON_BYTES_PER_CODE_UNIT_MAX = 6;
+
+/**
+ * The longest listing cursor this surface will accept.
+ *
+ * The cursor names a directory (`n`) and one of its children by name (`k`),
+ * and that child's own path is `n/k` - so `n.length + 1 + k.length` cannot
+ * exceed `FILES_RELATIVE_PATH_MAX` and the two strings share one budget.
+ * With today's inputs that is ceil((27 + 4096 * 6) * 4 / 3) = 32_804.
+ */
+export const FILES_CURSOR_MAX = base64urlLength(
+  CURSOR_JSON_FRAMING_CHARS
+  + FILES_RELATIVE_PATH_MAX * CURSOR_JSON_BYTES_PER_CODE_UNIT_MAX,
+);
 
 /* ------------------------------------------------------------------ *
  * Identity
@@ -156,7 +282,7 @@ export const FILES_CURSOR_MAX = 4_096;
 export const fileNodeIdSchema = z.string().min(1).max(FILES_NODE_ID_MAX);
 export type FileNodeId = z.infer<typeof fileNodeIdSchema>;
 
-export const filesProjectIdSchema = z.string().min(1).max(64);
+export const filesProjectIdSchema = z.string().min(1).max(FILES_PROJECT_ID_MAX);
 
 /**
  * A project-relative POSIX path, for DISPLAY and for change identity.

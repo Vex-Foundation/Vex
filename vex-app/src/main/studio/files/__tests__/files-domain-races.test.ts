@@ -25,7 +25,10 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { FilesEvent } from "@shared/schemas/files.js";
+import {
+  FILES_SUBSCRIPTIONS_PER_WINDOW_MAX,
+  type FilesEvent,
+} from "@shared/schemas/files.js";
 
 import {
   closeProjectResources,
@@ -33,7 +36,7 @@ import {
   resetProjectLifecycleGateForTests,
 } from "../../project-lifecycle-gate.js";
 import { FilesDomain } from "../files-domain.js";
-import { resetFileNodeEpochsForTests } from "../node-id.js";
+import { invalidateProjectNodes, resetFileNodeEpochsForTests } from "../node-id.js";
 import type { NativeEvent, NativeSubscribe } from "../watcher.js";
 
 const PROJECT = "11111111-2222-3333-4444-555555555555";
@@ -140,8 +143,15 @@ beforeEach(async () => {
   // place the directory actually is, and on macOS `os.tmpdir()` is a symlink.
   root = await realpath(await mkdtemp(path.join(tmpdir(), "vex-files-race-")));
   domain = new FilesDomain({
+    // The ANCHOR and the directory, as production supplies them: the projects
+    // root is the realpath'd parent, and the project directory is the lexical
+    // join beneath it, unresolved. `realProjectDirectory` proves the pair.
     resolveProjectDirectory: (projectId) =>
-      Promise.resolve(projectId === PROJECT ? root : null),
+      Promise.resolve(
+        projectId === PROJECT
+          ? { anchoredRoot: path.dirname(root), projectDirectory: root }
+          : null,
+      ),
     subscribeNative: native.subscribe,
     pollForRoot: () => () => undefined,
     rootExists: () => Promise.resolve(true),
@@ -283,5 +293,126 @@ describe("the publication fence", () => {
     expect(await watching).toEqual({ ok: false, code: "watcher_unavailable" });
     expect(domain.watchedProjectCount).toBe(0);
     expect(heldProjectLeases(PROJECT, "watcher")).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The other party to the fence: the WINDOW that asked
+ * ------------------------------------------------------------------ */
+
+describe("a window that goes away while its own watch is in flight", () => {
+  it("PUBLISHES NOTHING, and leaves no subscription and no lease behind", async () => {
+    // The publication fence checked that the ENTRY was still the live one, and
+    // that is only half of it. `releaseWindow` walks SETTLED subscriptions, and
+    // during a native subscribe this window owns none - so the release removed
+    // nothing, the acquisition then published a subscription for a window that
+    // is already gone, and the result was an orphan holding a native OS watch
+    // that no `unwatchFile` will ever arrive for.
+    const watching = beginWatch(WINDOW_A);
+    await until("the native subscribe to be requested", () => native.calls() === 1);
+
+    // The window closes - or its renderer crashed - mid-acquisition.
+    await domain.releaseWindow(WINDOW_A);
+
+    native.gates[0]?.resolve();
+    const outcome = await watching;
+
+    expect(outcome).toEqual({ ok: false, code: "watcher_unavailable" });
+    // The entry was collected because nothing is joining it and nothing holds
+    // it, so no native watch and no lease are left for a dead window.
+    expect(domain.watchedProjectCount).toBe(0);
+    expect(heldProjectLeases(PROJECT, "watcher")).toBe(0);
+    expect(native.unsubscribes()).toBe(1);
+  });
+
+  it("does NOT refuse a DIFFERENT window's watch that was in flight at the same time", async () => {
+    // The invalidation is per window. A release must not cancel a watch some
+    // other window is legitimately waiting on.
+    // Both join ONE native subscribe - that is the single-flight the watcher
+    // owns - so both are in flight behind the same gate.
+    const forA = beginWatch(WINDOW_A);
+    const forB = beginWatch(WINDOW_B);
+    await until("the native subscribe to be requested", () => native.calls() === 1);
+
+    await domain.releaseWindow(WINDOW_A);
+    native.gates[0]?.resolve();
+
+    expect(await forA).toEqual({ ok: false, code: "watcher_unavailable" });
+    expect((await forB).ok).toBe(true);
+    expect(domain.watchedProjectCount).toBe(1);
+  });
+});
+
+describe("the per-window subscription bound", () => {
+  it("REFUSES past FILES_SUBSCRIPTIONS_PER_WINDOW_MAX rather than fanning out forever", async () => {
+    // Every native event fans out to EVERY subscription, so an unbounded count
+    // turns one `git checkout` into work a renderer chose the size of.
+    // The first watch is the only one that reaches the OS; every later one
+    // joins the same watcher, which is the whole point of a refcounted watch.
+    const first = beginWatch(WINDOW_A);
+    await until("the native subscribe to be requested", () => native.calls() === 1);
+    native.gates[0]?.resolve();
+    expect((await first).ok).toBe(true);
+
+    for (let index = 1; index < FILES_SUBSCRIPTIONS_PER_WINDOW_MAX; index += 1) {
+      expect((await beginWatch(WINDOW_A)).ok).toBe(true);
+    }
+
+    // At the bound: refused by name, and nothing already held is evicted.
+    expect(await beginWatch(WINDOW_A)).toEqual({ ok: false, code: "watcher_limit" });
+    expect(domain.watchedProjectCount).toBe(1);
+
+    // ...and the bound is PER WINDOW, so another window is unaffected.
+    expect((await beginWatch(WINDOW_C)).ok).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The fence at PUBLICATION, on its own
+ * ------------------------------------------------------------------ */
+
+describe("a read that is still working when the project closes underneath it", () => {
+  it("REFUSES at publication, not having noticed anything at the start", async () => {
+    // The e2e in the Postgres lane proves a parked listing is refused, but it
+    // cannot say WHICH fence refused it: `locate` re-checks the epoch straight
+    // after the authority read, and either fence alone is enough to catch a
+    // request parked THERE. Reverting either one on its own leaves that test
+    // green. So this is the case that isolates the second one - a close that
+    // lands after `locate` has already finished checking, while the request is
+    // inside its filesystem work, which only a fence at PUBLICATION can catch.
+    //
+    // The seam is the dependency contract itself. `locate` reads
+    // `projectDirectory` off the returned location AFTER its own epoch check,
+    // so a getter there fires in exactly the window being modelled: authority
+    // said ACTIVE, the start-of-request check passed, and the delete commits
+    // while the listing is being built.
+    let closedDuringTheWork = false;
+    const racing = new FilesDomain({
+      resolveProjectDirectory: () =>
+        Promise.resolve({
+          anchoredRoot: path.dirname(root),
+          get projectDirectory(): string {
+            if (!closedDuringTheWork) {
+              closedDuringTheWork = true;
+              invalidateProjectNodes(PROJECT);
+            }
+            return root;
+          },
+        }),
+      subscribeNative: native.subscribe,
+      pollForRoot: () => () => undefined,
+      rootExists: () => Promise.resolve(true),
+      publish: () => undefined,
+    });
+
+    try {
+      const listed = await racing.listChildren({ projectId: PROJECT, nodeId: null });
+      expect(closedDuringTheWork).toBe(true);
+      // Not bytes. The directory is real and readable; the ONLY thing standing
+      // between this call and its contents is the fence.
+      expect(listed).toEqual({ ok: false, code: "project_closed" });
+    } finally {
+      await racing.dispose();
+    }
   });
 });

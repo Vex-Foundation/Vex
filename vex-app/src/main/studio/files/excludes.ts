@@ -38,10 +38,14 @@
  *
  * ## Bounded
  *
- * An ignore file over `IGNORE_FILE_MAX_BYTES` is not read, and the fact is
- * carried on the chain rather than swallowed: `oversizeIgnoreFiles` names every
- * one that was skipped, so a listing can say why a rule the user wrote is not
- * taking effect instead of appearing to ignore it.
+ * An ignore file over `IGNORE_FILE_MAX_BYTES` is never read WHOLE - the bound
+ * is enforced on the handle, so the oversize case costs one buffer of the
+ * bound's size and not the file's - and the fact is carried on the chain rather
+ * than swallowed: `oversizeIgnoreFiles` names every one that was skipped, and
+ * `reportOversizeIgnoreFile` says so once per file, so a rule the user wrote
+ * that is not taking effect is discoverable instead of silent.
+ *
+ * A SYMLINKED ignore file is treated as absent. See `readIgnoreFile`.
  *
  * ## What is NOT here, and why
  *
@@ -54,13 +58,13 @@
  * with the project and travels with it.
  */
 
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import ignore from "ignore";
 
 import { log } from "../../logger/index.js";
-import { describeFileFailure, isEnoentLike } from "./node-path.js";
+import { readTextFileBounded } from "./bounded-read.js";
+import { describeFileFailure } from "./node-path.js";
 
 /**
  * `ignore` uses a CJS `export =`, so its `Ignore` interface is a namespace
@@ -158,28 +162,69 @@ function defaultsLevel(): IgnoreLevel {
   return { directory: "", matcher };
 }
 
+/**
+ * Read one ignore file, through the handle-based reader and never through a
+ * link.
+ *
+ * A `.gitignore` sits in a directory anything can write to, so it gets the same
+ * two defences a viewer read gets, and for the same reasons. `O_NOFOLLOW` means
+ * a SYMLINKED ignore file is `ELOOP` and is treated as ABSENT, which is the
+ * safe answer and also the honest one: a rule set this process may not follow
+ * is a rule set that does not apply. And the bound is enforced on bytes read
+ * from the handle rather than on the length of a buffer already in memory - the
+ * old `readFile` pulled the WHOLE file in before comparing it to the limit,
+ * which made a link to a huge file or to a device unbounded main-process
+ * memory.
+ */
 async function readIgnoreFile(
   absoluteDirectory: string,
   name: string,
 ): Promise<{ text: string | null; oversize: boolean }> {
   const target = path.join(absoluteDirectory, name);
-  try {
-    const bytes = await readFile(target);
-    if (bytes.byteLength > IGNORE_FILE_MAX_BYTES) {
-      return { text: null, oversize: true };
-    }
-    // A malformed byte in an ignore file is not worth refusing a whole listing
-    // over, and a lenient decode here cannot corrupt anything: nothing is
-    // written back, and a replaced byte can only affect which rows are hidden.
-    return { text: bytes.toString("utf8"), oversize: false };
-  } catch (cause) {
-    if (!isEnoentLike(cause)) {
-      log.warn(
-        `[studio:files] an ignore file could not be read ${describeFileFailure(cause)}`,
-      );
-    }
-    return { text: null, oversize: false };
+  const read = await readTextFileBounded(target, IGNORE_FILE_MAX_BYTES);
+  if (read.kind === "text") return { text: read.text, oversize: false };
+  if (read.kind === "oversize") return { text: null, oversize: true };
+  if (read.kind === "error") {
+    log.warn(
+      `[studio:files] an ignore file could not be read `
+        + `${describeFileFailure(read.cause)}`,
+    );
   }
+  return { text: null, oversize: false };
+}
+
+/**
+ * Say, ONCE PER FILE PER PROCESS, that an ignore file was too large to apply.
+ *
+ * WHY A LOG AND NOT THE WIRE, which is the question the no-silent-cutting rule
+ * makes the author answer. Nothing is cut from the listing: every row the
+ * directory holds is still returned, and `totalCount` and `excludedCount`
+ * already account for every one of them. An unread ignore file makes the
+ * listing show MORE than it otherwise would, not less, so there is no omission
+ * for a reader to discover and no page to ask for again. What there is instead
+ * is a fact about the WORKSPACE - "this 256 KiB file is not a rule list" - and
+ * its audience is whoever wrote it, once, not every listing of every directory
+ * beneath it. Putting it on `FileListing` would add a required field to a
+ * contract every renderer surface constructs, for a value no surface displays.
+ *
+ * The chain still carries `oversizeIgnoreFiles`, so a future exclude-settings
+ * surface has the fact without re-reading anything.
+ */
+const reportedOversize = new Set<string>();
+
+function reportOversizeIgnoreFile(relativePath: string): void {
+  if (reportedOversize.has(relativePath)) return;
+  reportedOversize.add(relativePath);
+  log.warn(
+    `[studio:files] an ignore file is larger than `
+      + `${String(IGNORE_FILE_MAX_BYTES)} bytes and was NOT applied: `
+      + `${relativePath}. Its rules are not hiding anything in the tree.`,
+  );
+}
+
+/** Test seam: forget which oversize ignore files have already been reported. */
+export function resetOversizeIgnoreReportsForTests(): void {
+  reportedOversize.clear();
 }
 
 /**
@@ -205,7 +250,9 @@ export async function buildIgnoreChain(
     for (const name of IGNORE_FILE_NAMES) {
       const read = await readIgnoreFile(absolute, name);
       if (read.oversize) {
-        oversize.push(relative === "" ? name : `${relative}/${name}`);
+        const reported = relative === "" ? name : `${relative}/${name}`;
+        oversize.push(reported);
+        reportOversizeIgnoreFile(reported);
         continue;
       }
       if (read.text === null) continue;

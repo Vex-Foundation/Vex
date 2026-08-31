@@ -151,22 +151,66 @@ export async function resolveNodePath(
 }
 
 /**
- * The realpath of a project's directory, or why there is not one.
+ * The realpath of a project's directory, ANCHORED to the projects root.
  *
- * REALPATH, not the joined string: every containment comparison in this feature
- * is made against the place the directory actually is, so a projects root that
- * is itself a symlink (a very ordinary thing on macOS, where `/tmp` is one) is
- * compared as its target rather than as its name.
+ * ## Why an anchor, and not just a realpath
+ *
+ * Resolving the directory and then blessing whatever came back is the hole this
+ * function exists to close. Every containment check in this feature compares
+ * against the value returned here, so if `<projectsRoot>/<slug>` is ITSELF a
+ * symbolic link, `realpath` follows it out of the workspace and the target
+ * becomes the confinement root: the root listing, every token minted under it,
+ * every read and a RECURSIVE WATCH of an arbitrary directory all pass, and each
+ * of them is doing exactly what it was told. `resolveNodePath` refuses an
+ * intermediate link on the way DOWN, but nothing refused the link at the top,
+ * because the walk starts at a directory it was handed as already-proven.
+ *
+ * ## The predicate
+ *
+ * A project directory is a REAL DIRECTORY LOCATED DIRECTLY UNDER THE ANCHORED
+ * ROOT. Two comparisons say that, and both are needed:
+ *
+ *  - `realpath(dir) === path.resolve(dir)`. The lexical path is
+ *    `<realRoot>/<slug>` and `realRoot` is already a realpath, so equality here
+ *    means no component of the final name is a link. A link is refused whether
+ *    it points out of the workspace or at a SIBLING PROJECT - the second is not
+ *    an escape, but it is one project's slug serving another project's bytes,
+ *    which is an identity confusion this surface has no way to describe.
+ *  - the resolved directory's parent IS the anchored root. Projects are never
+ *    nested, which `resolveProjectDirectory` in `projects-root.ts` already
+ *    states on the write side; this is the same rule enforced on the read side.
+ *
+ * `isInside` is the shared containment predicate and is used for the anchor
+ * check itself, so the two features cannot drift apart on what "inside" means.
+ *
+ * PROBED on Linux against a real temporary root: a real directory is accepted;
+ * a symlink to an outside directory and a symlink to a sibling inside the root
+ * are both refused by the first comparison; an absent directory is `not_found`.
+ *
+ * `anchoredRoot` must ALREADY be a realpath - `resolveProjectsRoot` returns
+ * one - so a projects root that is itself a symlink (a very ordinary thing on
+ * macOS, where `/tmp` is one) is compared as its target rather than as its name.
  */
 export async function realProjectDirectory(
+  anchoredRoot: string,
   projectDirectory: string,
 ): Promise<{ ok: true; directory: string } | { ok: false; reason: NodePathRefusal }> {
+  let resolved: string;
   try {
-    return { ok: true, directory: await realpath(projectDirectory) };
+    resolved = await realpath(projectDirectory);
   } catch (cause) {
     if (isEnoentLike(cause)) return { ok: false, reason: "not_found" };
     return { ok: false, reason: "io_error" };
   }
+
+  const lexical = path.resolve(projectDirectory);
+  const root = path.resolve(anchoredRoot);
+  // A link AT the slug: the name and the place it points to are not the same.
+  if (resolved !== lexical) return { ok: false, reason: "outside_project" };
+  if (!isInside(root, resolved)) return { ok: false, reason: "outside_project" };
+  // Directly under the root. A project directory is never nested.
+  if (path.dirname(resolved) !== root) return { ok: false, reason: "outside_project" };
+  return { ok: true, directory: resolved };
 }
 
 /**
@@ -181,10 +225,15 @@ export async function realProjectDirectory(
  *    prefix case-insensitively and maps the remainder back onto the root's own
  *    casing - so the ENTRY's case, which is the part the user sees and the part
  *    a case-only rename changes, is always preserved exactly as reported.
- *  - UNICODE FORM. macOS delivers decomposed (NFD) filenames while the same
- *    name typed in a terminal or read from a git index is composed (NFC). Two
- *    spellings of one name are two rows in a tree and two entries in a change
- *    map. Everything this feature emits is NFC.
+ *  - UNICODE FORM, and the fact that this function does NOT change it. Both
+ *    sources of a path in this feature are the operating system - `readdir` in
+ *    `listing.ts` and the native watcher here - so both already agree, and
+ *    normalising one of them to NFC is what made them disagree. Measured on
+ *    Linux: a file stored with a decomposed name is returned decomposed by
+ *    `readdir`, and `lstat` of its composed spelling is ENOENT. A path that has
+ *    been normalised is therefore a path that may name nothing, and a node
+ *    token minted from one cannot be resolved. Normalisation is a DISPLAY
+ *    concern and belongs where the value is displayed, not where it is minted.
  *  - CONTAINMENT. Anything that is not under the root after all of that is
  *    dropped rather than reported, because a change outside the project is not
  *    this project's change.
@@ -210,7 +259,7 @@ export function toProjectRelative(
   if (remainder.split(path.sep).some((s) => s === "" || s === "." || s === "..")) {
     return null;
   }
-  return remainder.split(path.sep).join("/").normalize("NFC");
+  return remainder.split(path.sep).join("/");
 }
 
 /** `ENOENT`, without asserting a shape onto an unknown catch value. */

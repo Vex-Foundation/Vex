@@ -91,6 +91,7 @@ import {
   FILES_EMIT_MAX_ITEMS,
   FILES_EMIT_THROTTLE_MS,
   FILES_PENDING_CHANGES_MAX,
+  FILES_RAW_EVENTS_MAX,
   FILES_WATCHER_MAX_RESTARTS,
   FILES_WATCHER_RESTART_DELAY_MS,
   type FileChangeKind,
@@ -347,6 +348,20 @@ export class ProjectFileWatcher {
       }
       this.raw.push({ path: relative, type: event.type });
     }
+    // THE RAW BOUND. The array below is filled by this callback and drained
+    // only when the aggregation timer fires, so a burst that outruns one 75 ms
+    // tick would grow it without limit. At the bound the fold is brought
+    // FORWARD rather than the events being dropped: coalescing is what turns a
+    // burst back into a bounded map, and the map's own bound is the one that
+    // drops and counts.
+    if (this.raw.length >= FILES_RAW_EVENTS_MAX) {
+      if (this.aggregateTimer !== null) {
+        clearTimeout(this.aggregateTimer);
+        this.aggregateTimer = null;
+      }
+      this.aggregate();
+      return;
+    }
     this.scheduleAggregation();
   }
 
@@ -484,9 +499,22 @@ export class ProjectFileWatcher {
     this.restart();
   }
 
-  /** STOP BEFORE RESTART: never two recursive watches of one tree. */
+  /**
+   * STOP BEFORE RESTART: never two recursive watches of one tree.
+   *
+   * The buffers are DISCARDED first, exactly as `suspend` discards them and for
+   * the same reason. A restart bumps the generation and resets `batchSeq`, so
+   * events buffered before it would flush under a NEW generation with a fresh
+   * sequence base - a batch describing the old tree, wearing the new tree's
+   * identity, which is precisely the confusion generations exist to prevent.
+   * The consumer is told to re-list by the restart's own `resync`, so nothing
+   * that is dropped here is anything it still needs.
+   */
   private restart(): void {
     if (this.restartTimer !== null) return;
+    this.raw = [];
+    this.pending.clear();
+    this.droppedCount = 0;
     void this.stopNative().then(() => {
       if (this.disposed) return;
       this.restartTimer = setTimeout(() => {

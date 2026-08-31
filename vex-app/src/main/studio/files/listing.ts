@@ -130,9 +130,19 @@ export async function listDirectoryPage(options: {
   const candidates: Candidate[] = [];
   let excludedCount = 0;
   for (const entry of entries) {
-    // NFC at the boundary: macOS hands back decomposed names, and the same file
-    // must not be two rows depending on which API named it.
-    const name = entry.name.normalize("NFC");
+    // THE OS'S OWN BYTES, unnormalised. This used to normalise to NFC, and that
+    // was a defect with a measurement behind it: on Linux a file created with a
+    // DECOMPOSED name is stored decomposed, `readdir` returns it decomposed, and
+    // the composed spelling names NOTHING - probed on this filesystem, `lstat`
+    // of the NFC form of a real NFD file is ENOENT. So normalising here minted a
+    // token for a path that does not exist and stat-ed a path that does not
+    // exist: the row appeared with null metadata and opening it was `not_found`.
+    //
+    // Both spellings render identically, so nothing a user sees changes. What
+    // changes is that ONE form - the operating system's - is now the form the
+    // token carries, the form `resolveNodePath` walks, and the form the watcher
+    // reports (see `toProjectRelative`), so mint and resolve cannot disagree.
+    const name = entry.name;
     const relativePath = options.relativeDirectory === ""
       ? name
       : `${options.relativeDirectory}/${name}`;

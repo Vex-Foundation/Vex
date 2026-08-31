@@ -35,7 +35,16 @@
  *  - The 800 ms restart delay, for the same reason plus the sleep.
  */
 
-import { mkdir, mkdtemp, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  truncate,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { realpath } from "node:fs/promises";
@@ -47,6 +56,9 @@ import {
   type FileChange,
   type FilesEvent,
 } from "@shared/schemas/files.js";
+
+import { readTextFileBounded } from "../bounded-read.js";
+import { IGNORE_FILE_MAX_BYTES, resetOversizeIgnoreReportsForTests } from "../excludes.js";
 
 import {
   heldProjectLeases,
@@ -111,14 +123,22 @@ async function watchTree(): Promise<string> {
 beforeEach(async () => {
   resetProjectLifecycleGateForTests();
   resetFileNodeEpochsForTests();
+  resetOversizeIgnoreReportsForTests();
   events = [];
   // REALPATH: on macOS `os.tmpdir()` is itself a symlink, and every containment
   // comparison in this feature is made against the place the directory actually
   // is.
   root = await realpath(await mkdtemp(path.join(tmpdir(), "vex-files-")));
   domain = new FilesDomain({
+    // The ANCHOR and the directory, as production supplies them: the projects
+    // root is the realpath'd parent, and the project directory is the lexical
+    // join beneath it, unresolved. `realProjectDirectory` proves the pair.
     resolveProjectDirectory: (projectId) =>
-      Promise.resolve(projectId === PROJECT ? root : null),
+      Promise.resolve(
+        projectId === PROJECT
+          ? { anchoredRoot: path.dirname(root), projectDirectory: root }
+          : null,
+      ),
     subscribeNative: subscribeNativeWatcher,
     pollForRoot: pollForRootReturn,
     rootExists: projectRootExists,
@@ -190,6 +210,94 @@ describe("containment against a real filesystem", () => {
   it("REFUSES every read for a project with no active row", async () => {
     const listed = await domain.listChildren({ projectId: "not-a-project", nodeId: null });
     expect(listed).toEqual({ ok: false, code: "project_closed" });
+  });
+
+  it("REFUSES a project DIRECTORY that is itself a symlink out of the root", async () => {
+    // THE ESCAPE THE WALK CANNOT SEE. `resolveNodePath` refuses an intermediate
+    // link on the way DOWN, but it starts at a directory it is handed as
+    // already-proven. If `<projectsRoot>/<slug>` is a link, `realpath` follows
+    // it out and the TARGET becomes the confinement root - so the root listing,
+    // every token minted under it, every read, and a RECURSIVE OS WATCH of an
+    // arbitrary directory all pass while doing exactly what they were told.
+    const outside = await realpath(await mkdtemp(path.join(tmpdir(), "vex-outside-")));
+    await writeFile(path.join(outside, "secret.txt"), "not yours", "utf8");
+    const anchoredRoot = path.dirname(root);
+    const linkedSlug = path.join(anchoredRoot, `${path.basename(root)}-link`);
+    await symlink(outside, linkedSlug, "dir");
+
+    const escaping = new FilesDomain({
+      resolveProjectDirectory: (projectId) =>
+        Promise.resolve(
+          projectId === PROJECT
+            ? { anchoredRoot, projectDirectory: linkedSlug }
+            : null,
+        ),
+      subscribeNative: subscribeNativeWatcher,
+      pollForRoot: pollForRootReturn,
+      rootExists: projectRootExists,
+      publish: () => undefined,
+    });
+
+    try {
+      // ALL THREE, because all three resolve through the same anchor and a fix
+      // that closed only the read would leave the watch holding the directory.
+      expect(
+        await escaping.listChildren({ projectId: PROJECT, nodeId: null }),
+      ).toEqual({ ok: false, code: "project_closed" });
+      expect(
+        await escaping.readFile({
+          projectId: PROJECT,
+          nodeId: mintFileNodeId(PROJECT, "secret.txt"),
+        }),
+      ).toEqual({ ok: false, code: "project_closed" });
+      expect(
+        await escaping.watchFile(WINDOW, { projectId: PROJECT, nodeId: null }),
+      ).toEqual({ ok: false, code: "project_closed" });
+      // Nothing was watched, so nothing holds a lease on the escaped target.
+      expect(escaping.watchedProjectCount).toBe(0);
+      expect(heldProjectLeases(PROJECT, "watcher")).toBe(0);
+    } finally {
+      await escaping.dispose();
+      await rm(linkedSlug, { force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("REFUSES a project directory that is a symlink to a SIBLING inside the root", async () => {
+    // Not an escape, and still refused: one project's slug serving another
+    // project's bytes is an identity confusion this surface cannot describe.
+    const anchoredRoot = path.dirname(root);
+    const sibling = await realpath(await mkdtemp(path.join(tmpdir(), "vex-sibling-")));
+    const linkedSlug = path.join(anchoredRoot, `${path.basename(root)}-sib`);
+    await symlink(sibling, linkedSlug, "dir");
+
+    const confused = new FilesDomain({
+      resolveProjectDirectory: () =>
+        Promise.resolve({ anchoredRoot, projectDirectory: linkedSlug }),
+      subscribeNative: subscribeNativeWatcher,
+      pollForRoot: pollForRootReturn,
+      rootExists: projectRootExists,
+      publish: () => undefined,
+    });
+    try {
+      expect(
+        await confused.listChildren({ projectId: PROJECT, nodeId: null }),
+      ).toEqual({ ok: false, code: "project_closed" });
+    } finally {
+      await confused.dispose();
+      await rm(linkedSlug, { force: true });
+      await rm(sibling, { recursive: true, force: true });
+    }
+  });
+
+  it("LISTS a project directory that is a real directory under the anchored root", async () => {
+    // The other half of the predicate: the refusal above must not be a refusal
+    // of everything. This is the ordinary case and it still works.
+    await writeFile(path.join(root, "ok.txt"), "x", "utf8");
+    const listed = await domain.listChildren({ projectId: PROJECT, nodeId: null });
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.value.children.map((c) => c.name)).toContain("ok.txt");
   });
 });
 
@@ -411,6 +519,70 @@ describe("excludes", () => {
     expect(atRoot.value.children.map((c) => c.name)).not.toContain("top.log");
   });
 
+  it("does NOT apply a SYMLINKED ignore file, and does not follow it", async () => {
+    // `readFile` followed the link and read whatever it pointed at, which for a
+    // link to a huge file or a device is unbounded main-process memory. The
+    // handle is opened `O_NOFOLLOW` now, so this is ELOOP - and an ignore file
+    // this process may not follow is an ignore file that does not apply.
+    const outside = await realpath(await mkdtemp(path.join(tmpdir(), "vex-ign-")));
+    await writeFile(path.join(outside, "rules"), "hidden.ts\n", "utf8");
+    await symlink(path.join(outside, "rules"), path.join(root, ".gitignore"));
+    await writeFile(path.join(root, "hidden.ts"), "x", "utf8");
+
+    try {
+      const listed = await domain.listChildren({ projectId: PROJECT, nodeId: null });
+      expect(listed.ok).toBe(true);
+      if (!listed.ok) return;
+      // The rule did NOT take effect: the link was refused, not followed.
+      expect(listed.value.children.map((c) => c.name)).toContain("hidden.ts");
+      expect(listed.value.excludedCount).toBe(0);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("SKIPS an ignore file one byte over the bound WITHOUT reading its length", async () => {
+    // The old reader pulled the WHOLE file in and then compared its length to
+    // the bound, so the bound was already exceeded by the time it was checked.
+    // The bound is on the handle now: at most `IGNORE_FILE_MAX_BYTES + 1` bytes
+    // are ever read, and that one extra byte IS the proof it is oversize.
+    const oversize = path.join(root, ".gitignore");
+    await writeFile(oversize, "#".repeat(IGNORE_FILE_MAX_BYTES) + "\nhidden.ts\n", "utf8");
+    await writeFile(path.join(root, "hidden.ts"), "x", "utf8");
+
+    const listed = await domain.listChildren({ projectId: PROJECT, nodeId: null });
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    // Skipped: its rules did not hide anything.
+    expect(listed.value.children.map((c) => c.name)).toContain("hidden.ts");
+
+    // ...and the SAME file trimmed to exactly the bound DOES apply, which is
+    // what proves the refusal above was the bound and not a read failure.
+    await truncate(oversize, IGNORE_FILE_MAX_BYTES);
+    await writeFile(oversize, "hidden.ts\n", "utf8");
+    const again = await domain.listChildren({ projectId: PROJECT, nodeId: null });
+    expect(again.ok).toBe(true);
+    if (!again.ok) return;
+    expect(again.value.children.map((c) => c.name)).not.toContain("hidden.ts");
+  });
+
+  it("STOPS AT THE BOUND on a file with no end, which is the whole proof", async () => {
+    // The two assertions above hold for the OLD reader too: it also skipped an
+    // oversize file, having first pulled the entire thing into memory to find
+    // out. What they cannot show is the part that is the security property -
+    // that the bytes are bounded at the HANDLE - because a temporary file large
+    // enough to tell the two readers apart is a test that measures the disk.
+    //
+    // `/dev/zero` tells them apart with no ambiguity at all. MEASURED on this
+    // machine: `readFile("/dev/zero")` never returns (killed at 5 s, exit 124),
+    // because it reads until EOF and there is no EOF. Reaching a verdict here
+    // AT ALL is therefore only possible for a reader that stops counting at the
+    // limit it was given. That the verdict is also the right one is the second
+    // assertion.
+    const read = await readTextFileBounded("/dev/zero", IGNORE_FILE_MAX_BYTES);
+    expect(read).toEqual({ kind: "oversize" });
+  });
+
   it("lets a .vexignore NEGATE a default exclude", async () => {
     // The default set is the SHALLOWEST level in the chain, which is what makes
     // it a default rather than a law.
@@ -421,6 +593,39 @@ describe("excludes", () => {
     expect(listed.ok).toBe(true);
     if (!listed.ok) return;
     expect(listed.value.children.map((c) => c.name)).toContain("dist");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Unicode form: the OS's bytes are the identity
+ * ------------------------------------------------------------------ */
+
+describe("a decomposed (NFD) filename", () => {
+  it("LISTS, resolves and READS, because the token carries the OS's own bytes", async () => {
+    // MEASURED on this filesystem: a file stored with a decomposed name is
+    // returned decomposed by `readdir`, and `lstat` of its COMPOSED spelling is
+    // ENOENT - the two are different files as far as Linux is concerned. The
+    // listing used to normalise the name to NFC, so it minted a token for a
+    // path that does not exist and stat-ed a path that does not exist.
+    const decomposed = "cafe\u0301.txt";
+    expect(decomposed).not.toBe(decomposed.normalize("NFC"));
+    await writeFile(path.join(root, decomposed), "espresso", "utf8");
+
+    const listed = await domain.listChildren({ projectId: PROJECT, nodeId: null });
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    const row = listed.value.children.find((child) => child.name.includes("caf"));
+    expect(row?.name).toBe(decomposed);
+    // The row carries real metadata rather than the nulls a failed `lstat` left.
+    expect(row?.size).toBe(8);
+    expect(row?.modifiedMs).not.toBeNull();
+
+    // ...and the token the listing minted actually opens the file.
+    const opened = await domain.readFile({
+      projectId: PROJECT,
+      nodeId: row?.nodeId ?? "",
+    });
+    expect(opened).toEqual({ ok: true, value: expect.objectContaining({ text: "espresso" }) });
   });
 });
 

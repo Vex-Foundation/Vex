@@ -21,7 +21,9 @@
  * ## A file over the bound is REFUSED, never truncated
  *
  * `too_large` carries the real size so the UI can say "12 MB, larger than the
- * 2 MB the viewer will open". Serving the first 2 MB and rendering it as if it
+ * 2 MB the viewer will open", and that size is the LARGER of what `fstat` said
+ * and what the handle actually produced: the fstat ran first and a growing file
+ * can outrun it, while a byte already read cannot become unread. Serving the first 2 MB and rendering it as if it
  * were the file is exactly the silent cut the repository forbids: the reader
  * cannot tell what was left out or how to get it.
  *
@@ -124,8 +126,14 @@ export async function readFileForViewer(options: {
       total += chunk.bytesRead;
     }
     if (total > FILE_READ_MAX_BYTES) {
-      // The real size comes from the SAME handle these bytes came from.
-      return { ok: false, code: "too_large", size: stats.size };
+      // The size comes from the SAME handle these bytes came from - and the
+      // BYTES READ are the floor under it. `fstat` ran before the read, and a
+      // file being appended to between the two (a log, the ordinary case) has
+      // an fstat size that is already stale and can be SMALLER than what was
+      // actually read. Reporting that would tell the user their 3 MB file is
+      // 1 MB and still refused. The count of bytes this handle produced can
+      // never be stale, so it is the one that wins when the two disagree.
+      return { ok: false, code: "too_large", size: Math.max(stats.size, total) };
     }
 
     const bytes = body.subarray(0, total);

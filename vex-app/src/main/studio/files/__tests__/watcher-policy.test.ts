@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   FILES_PENDING_CHANGES_MAX,
+  FILES_RAW_EVENTS_MAX,
   FILES_WATCHER_MAX_RESTARTS,
 } from "@shared/schemas/files.js";
 
@@ -338,6 +339,35 @@ describe("the watcher's restart policy", () => {
   });
 });
 
+describe("a restart and the buffer it inherits", () => {
+  it("EMITS NOTHING from events buffered before the restart", async () => {
+    // A restart bumps the generation and resets `batchSeq`. Events buffered
+    // BEFORE it would then flush under the NEW generation with a fresh sequence
+    // base - a batch describing the old tree while wearing the new tree's
+    // identity, which is exactly the confusion generations exist to prevent.
+    // The restart's own `resync` tells the consumer to re-list, so nothing
+    // dropped here is anything it still needs.
+    const h = harness();
+    await h.watcher.start();
+
+    // Buffered, and deliberately NOT yet aggregated: the 75 ms tick has not run.
+    h.deliver([{ path: `${ROOT}/stale.txt`, type: "create" }]);
+
+    // The native layer fails, which restarts the watcher.
+    h.fail(Object.assign(new Error("transient"), { code: "EIO" }));
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    const emitted = batches(h.emissions);
+    expect(emitted.flatMap((b) => b.paths)).not.toContain("stale.txt");
+    // The consumer was told to start over, which is the honest answer.
+    expect(
+      h.emissions.some(
+        (e) => e.payload.kind === "resync" && e.payload.reason === "watcher_restarted",
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("batching and overflow", () => {
   it("issues MONOTONIC batchSeq within one generation", async () => {
     const h = harness();
@@ -389,6 +419,39 @@ describe("batching and overflow", () => {
     expect(emitted.every((b) => b.paths.length <= 500)).toBe(true);
     expect(emitted.reduce((sum, b) => sum + b.paths.length, 0)).toBe(1_200);
     expect(emitted.map((b) => b.batchSeq)).toEqual([0, 1, 2]);
+  });
+
+  it("AGGREGATES EARLY at the raw bound instead of growing the buffer", async () => {
+    // The raw array is filled by the native callback and drained only when the
+    // 75 ms aggregation timer fires, so a burst that outruns one tick used to
+    // grow it without limit. At the bound the fold is brought FORWARD - nothing
+    // is dropped here, and the pending map's own bound reports what it drops.
+    const h = harness();
+    await h.watcher.start();
+
+    // One delivery past the bound, and NOT a single timer advanced afterwards:
+    // if the buffer were still waiting for the aggregation tick there would be
+    // nothing to see. The fold has to have happened inside the callback.
+    h.deliver(
+      Array.from({ length: FILES_RAW_EVENTS_MAX }, (_, index) => ({
+        path: `${ROOT}/f${String(index)}.txt`,
+        type: "create" as const,
+      })),
+    );
+
+    // LESS THAN ONE AGGREGATION TICK. This is what makes the assertion a proof
+    // rather than a restatement: the aggregation timer is 75 ms, so a watcher
+    // that only ever folds on that timer has done NOTHING yet at 10 ms and has
+    // FILES_RAW_EVENTS_MAX events still sitting in `raw`. A batch existing here
+    // at all means the fold was brought forward into the native callback, which
+    // is the bound. (The flush that carries it is immediate because the emit
+    // throttle has no previous emission to space this one against.)
+    await vi.advanceTimersByTimeAsync(10);
+    const emitted = batches(h.emissions);
+    expect(emitted.length).toBeGreaterThan(0);
+    // The pending bound took over, dropped the excess and COUNTED it.
+    expect(emitted[0]?.overflowed).toBe(true);
+    expect(emitted[0]?.droppedCount).toBe(FILES_RAW_EVENTS_MAX - FILES_PENDING_CHANGES_MAX);
   });
 
   it("DROPS an event that does not map inside the project", async () => {

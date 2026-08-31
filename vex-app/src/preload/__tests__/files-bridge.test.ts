@@ -18,7 +18,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { FilesEvent } from "../../shared/schemas/files.js";
+import {
+  FILES_CURSOR_MAX,
+  type FilesEvent,
+} from "../../shared/schemas/files.js";
 
 const listeners = new Map<string, Array<(event: unknown, raw: unknown) => void>>();
 /**
@@ -101,10 +104,16 @@ afterEach(() => {
 
 describe("vex.files input validation", () => {
   it("REFUSES a listing whose cursor is longer than the bound, without invoking", async () => {
+    // DERIVED from the bound rather than a number typed next to it. The literal
+    // that used to be here was 9000, chosen when the cursor bound was 4096;
+    // when that bound was corrected to the value the declared path length
+    // actually encodes to, the literal quietly became a VALID cursor and this
+    // test started asserting that the bridge refuses a legal input - which it
+    // does not. One past the bound is the only length that tests the bound.
     const result = await files.listChildren({
       projectId: "project-1",
       nodeId: null,
-      cursor: "x".repeat(9_000),
+      cursor: "x".repeat(FILES_CURSOR_MAX + 1),
     });
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error.code).toBe("validation.invalid_input");

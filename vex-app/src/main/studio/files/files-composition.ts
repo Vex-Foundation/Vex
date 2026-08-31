@@ -19,7 +19,7 @@ import type { FilesEvent } from "@shared/schemas/files.js";
 import { getProject } from "../../database/projects/read.js";
 import { log } from "../../logger/index.js";
 import { resolveProjectDirectory, resolveProjectsRoot } from "../projects-root.js";
-import { FilesDomain } from "./files-domain.js";
+import { FilesDomain, type ProjectFilesLocation } from "./files-domain.js";
 import {
   pollForRootReturn,
   projectRootExists,
@@ -27,7 +27,7 @@ import {
 } from "./native-adapters.js";
 
 /**
- * A project's directory, derived in MAIN from its slug.
+ * Where a project's files are, derived in MAIN from its slug.
  *
  * The renderer sends a project id and never a path, and `getProject` reads
  * ACTIVE projects only - so a tombstoned project resolves to `null` here and
@@ -35,14 +35,26 @@ import {
  * tombstone is. Identical to `terminal-domain.ts`'s cwd resolution, and
  * deliberately so: two different answers to "where does this project live"
  * would be two sources of truth.
+ *
+ * BOTH HALVES CROSS, and the pair is the point. `resolveProjectsRoot` returns
+ * the REALPATH of the projects root, and that value is the ANCHOR the domain
+ * proves the project directory against. The directory itself is joined
+ * lexically and is deliberately NOT resolved here: if it were, a slug that is a
+ * symbolic link would be resolved to its target and handed over as an
+ * established fact, which is exactly the escape `realProjectDirectory` exists
+ * to refuse. The domain resolves it, against the anchor, on every call.
  */
-async function resolveFilesProjectDirectory(projectId: string): Promise<string | null> {
+async function resolveFilesProjectDirectory(
+  projectId: string,
+): Promise<ProjectFilesLocation | null> {
   const correlationId = `files-dir-${projectId}`;
   const rootOutcome = await resolveProjectsRoot(correlationId);
   if (!rootOutcome.ok) return null;
   const project = await getProject(projectId, correlationId);
   if (!project.ok || project.data === null) return null;
-  return resolveProjectDirectory(rootOutcome.data, project.data.slug);
+  const directory = resolveProjectDirectory(rootOutcome.data, project.data.slug);
+  if (directory === null) return null;
+  return { anchoredRoot: rootOutcome.data, projectDirectory: directory };
 }
 
 /** Send one event to one window, by its `webContents` id. */

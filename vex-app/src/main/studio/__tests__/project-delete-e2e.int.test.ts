@@ -1891,7 +1891,13 @@ describe("deleteProject: the file watcher", () => {
       resolveProjectDirectory: async (projectId) => {
         const row = await getProject(projectId, "corr-files");
         if (!row.ok || row.data === null) return null;
-        return path.join(projectsRoot, row.data.slug);
+        // The ANCHOR and the directory, exactly as `files-composition.ts`
+        // supplies them: the projects root realpath, and the lexical join
+        // beneath it that the domain proves on every call.
+        return {
+          anchoredRoot: projectsRoot,
+          projectDirectory: path.join(projectsRoot, row.data.slug),
+        };
       },
       subscribeNative: subscribeNativeWatcher,
       pollForRoot: pollForRootReturn,
@@ -1970,6 +1976,109 @@ describe("deleteProject: the file watcher", () => {
       });
       expect(rewatched).toEqual({ ok: false, code: "project_closed" });
     } finally {
+      await filesDomain.dispose();
+    }
+  });
+
+  it("REFUSES a listing that was already PARKED when the tombstone committed", async () => {
+    // THE INTERLEAVING THE TEST ABOVE CANNOT REACH, because it starts its read
+    // AFTER the delete has finished. A read resolves its authority through
+    // `getProject` - which serves ACTIVE projects only - and then does
+    // filesystem work across several awaits. A request parked in that work
+    // while a delete commits passed a check that is now minutes of scheduler
+    // time behind the answer it is about to return, and without a fence at
+    // PUBLICATION it hands the renderer bytes out of a tombstoned project.
+    //
+    // The park is real and is placed where a real one would be: inside the
+    // authority resolution itself, held open by a deferred this test resolves
+    // by hand. Everything else is the real delete, on the real database.
+    const project = await seedProject();
+    await seedProjectWallets(project.projectId);
+    await installProjectArtifacts(project);
+    await writeFile(path.join(project.directory, "notes.md"), "user bytes", "utf8");
+
+    // The deferred is initialised with a no-op rather than `null` so it stays
+    // CALLABLE: the executor runs synchronously and always reassigns it, but
+    // that assignment happens inside a closure the compiler cannot follow, so a
+    // `null` seed would narrow the binding to `null` at every release site.
+    let park: () => void = () => undefined;
+    const parked = new Promise<void>((resolve) => {
+      park = resolve;
+    });
+    let armed = false;
+
+    const filesDomain = new FilesDomain({
+      resolveProjectDirectory: async (projectId) => {
+        const row = await getProject(projectId, "corr-files-parked");
+        if (!row.ok || row.data === null) return null;
+        const location = {
+          anchoredRoot: projectsRoot,
+          projectDirectory: path.join(projectsRoot, row.data.slug),
+        };
+        // THE PARK, and its position is the whole point: AFTER the authority
+        // has answered. That is the real gap - `getProject` said ACTIVE, and
+        // the request then sat there while a delete committed underneath it -
+        // and a park placed before this line would merely be re-testing that
+        // `getProject` refuses a tombstoned project, which it plainly does.
+        if (armed) {
+          armed = false;
+          await parked;
+        }
+        return location;
+      },
+      subscribeNative: subscribeNativeWatcher,
+      pollForRoot: pollForRootReturn,
+      rootExists: projectRootExists,
+      publish: () => undefined,
+    });
+
+    try {
+      // The same call succeeds before the delete, so the refusal below is the
+      // delete and nothing else about the project, the path or the directory.
+      const beforeDelete = await filesDomain.listChildren({
+        projectId: project.projectId,
+        nodeId: null,
+      });
+      expect(beforeDelete.ok).toBe(true);
+
+      // PARK A ROOT LISTING. Deliberately a listing of the ROOT and not a file
+      // read: `nodeId: null` verifies NO token, so the node epoch - which is a
+      // fence on NAMES - never gets a say. Authority is the only thing standing
+      // between this call and the contents of a tombstoned project's directory,
+      // which is exactly what makes it the honest test of the fence.
+      armed = true;
+      const listing = filesDomain.listChildren({
+        projectId: project.projectId,
+        nodeId: null,
+      });
+
+      // The real delete runs to completion underneath it: drain, tombstone
+      // transaction, artifact teardown, and step 6's close hook - which is what
+      // bumps the node epoch.
+      const result = unwrap(
+        await deleteProject(
+          {
+            projectId: project.projectId,
+            alsoTrashFolder: false,
+            expectedName: PROJECT_NAME,
+          },
+          "corr-files-parked-delete",
+          deps,
+        ),
+      );
+      expect(result.outcome).toBe("removed");
+
+      // ...and only NOW is the parked listing let go.
+      park();
+      const after = await listing;
+
+      // The directory and its user bytes are still on disk - `notes.md` is a
+      // user file the teardown deliberately leaves - so there is a real listing
+      // to be had here, and the ONLY thing refusing it is the fence.
+      expect(await exists(path.join(project.directory, "notes.md"))).toBe(true);
+      expect(after).toEqual({ ok: false, code: "project_closed" });
+    } finally {
+      park();
       await filesDomain.dispose();
     }
   });
