@@ -29,6 +29,7 @@ import { registerDatabaseHandlers } from "./database.js";
 import { registerLongMemoryHandlers } from "./long-memory.js";
 import { registerMarketHandlers } from "./market.js";
 import { registerStudioHandlers } from "./studio.js";
+import { registerStudioFilesHandlers } from "./studio-files.js";
 import { registerStudioTerminalHandlers } from "./studio-terminal.js";
 import { registerMemoryHandlers } from "./memory.js";
 import { registerMemoryInspectorHandlers } from "./memory-inspector.js";
@@ -177,6 +178,11 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // per-project and global bounds, and mints the data-plane MessagePort. The
   // pty host itself is a utilityProcess started lazily on the first create.
   teardowns.push(...registerStudioTerminalHandlers());
+  // B3a: the Vex Studio project-file surface. Main mints opaque node tokens,
+  // holds the lifecycle gate's `watcher` lease per WATCHED PROJECT (one native
+  // watcher however many subscriptions ride it), and enforces the read bound on
+  // the open handle. Read-only: there is no write channel on this surface.
+  teardowns.push(...registerStudioFilesHandlers());
   // Agent integration stage 7-1: read-only Track-2 compaction status for the
   // runtime bar. The Track-2 executor itself is owned by main and started in
   // `index.ts` (see `setupCompactWorker`), not here. Stage 7-2a extends this

@@ -55,6 +55,7 @@ import { setupStudioHostStatusBridge } from "./studio/host-status-bridge.js";
 import { setupBoardLiveService } from "./market/board-live-owner.js";
 import { isSecretSessionUnlocked, lockSecretSession } from "./secrets/session.js";
 import { shutdownStudioMcpHost, startStudioMcpHost } from "./studio/mcp-host.js";
+import { disposeFilesDomain } from "./studio/files/files-composition.js";
 import { disposeTerminalDomain } from "./studio/terminal-domain.js";
 import { disposeStudioApprovalBroker } from "./studio/approval-broker.js";
 import { refuseAllPendingStudioIntents } from "./studio/approval-refusals.js";
@@ -328,6 +329,13 @@ async function initializeMainRuntime(): Promise<void> {
       // hold the quit open. Terminal snapshots are files, not database rows,
       // so this is unaffected by Postgres stopping later in this same task.
       await disposeTerminalDomain();
+      // File watchers next. They own no durable state - the filesystem is the
+      // source of truth - so unlike the terminal host there is nothing to
+      // commit; what this releases is the recursive OS watches and the
+      // lifecycle-gate leases behind them. It follows the terminal teardown
+      // because a terminal being serialized is still writing into a project
+      // directory, and disposing its watcher first would emit nothing anyway.
+      await disposeFilesDomain();
       await refuseAllPendingStudioIntents("vex_quit");
       disposeStudioApprovalBroker();
       // The Studio fence retry is one of two remaining Studio timers with an

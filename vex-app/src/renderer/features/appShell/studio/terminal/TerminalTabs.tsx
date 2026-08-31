@@ -42,7 +42,7 @@ import {
 } from "../../../../components/icons/index.js";
 import { Tabs, TabsList, TabsTrigger } from "../../../../components/ui/tabs.js";
 import { cn } from "../../../../lib/utils.js";
-import type { WorkspaceState, WorkspaceTab } from "../workspace/types.js";
+import type { WorkspaceFileTab, WorkspaceState, WorkspaceTab } from "../workspace/types.js";
 import { TerminalPaneGroup } from "./TerminalPaneGroup.js";
 import type { TerminalRegistry } from "./terminal-registry.js";
 
@@ -68,6 +68,19 @@ export interface TerminalTabsProps {
     paneId: string,
     info: { exitCode: number; signal: number | null },
   ) => void;
+  /**
+   * How a FILE tab's panel is filled.
+   *
+   * REQUIRED, not optional. An optional render prop would leave a code path in
+   * which a file tab renders nothing at all - a tab in the strip with an empty
+   * panel behind it - and the caller would find out by looking. The viewer is
+   * the workspace's to supply because `projectId` lives there and not here.
+   *
+   * `isActive` is passed through rather than derived by the callee: this
+   * component owns which panel is on screen, and the viewer needs it to decide
+   * whether to hold a highlight request.
+   */
+  readonly renderFileTab: (tab: WorkspaceFileTab, isActive: boolean) => ReactNode;
   /** A refusal or a status line, rendered above the panels. */
   readonly notice?: ReactNode;
   /**
@@ -89,6 +102,7 @@ export function TerminalTabs({
   onClosePane,
   onTitleChange,
   onPaneExit,
+  renderFileTab,
   notice,
   lostTerminalIds,
 }: TerminalTabsProps): JSX.Element {
@@ -167,12 +181,7 @@ export function TerminalTabs({
                   }}
                 />
               ) : (
-                // File tabs already have a place in the model's ONE ordered
-                // strip; the editor that fills them is B4's. Rendering the
-                // placeholder keeps the strip honest instead of hiding the tab.
-                <div className="flex h-full items-center justify-center text-[12px] text-ink-tertiary">
-                  {tab.relativePath}
-                </div>
+                renderFileTab(tab, isActive)
               )}
             </div>
           );

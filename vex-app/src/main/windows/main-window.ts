@@ -17,6 +17,7 @@ import {
   type ExternalAllowEntry,
 } from "../security/url.js";
 import { EXPLORER_EXTERNAL_ALLOW } from "@shared/explorer-links.js";
+import { observeWindowForFiles } from "../studio/files/files-composition.js";
 import { observeWindowForTerminals } from "../studio/terminal-domain.js";
 import { CHART_ATTRIBUTION_EXTERNAL_ALLOW } from "@shared/chart-attribution.js";
 import {
@@ -224,6 +225,10 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   // the window's lifetime; `observeWindowForTerminals` explains why both events
   // are needed and what leaked while neither was wired.
   observeWindowForTerminals(win);
+  // Same two triggers, same owner, for the window's FILE subscriptions: an
+  // unreleased subscription holds a recursive OS watch for a window that is
+  // gone.
+  observeWindowForFiles(win);
 
   // Block window.open + redirect to allowlisted external opener.
   win.webContents.setWindowOpenHandler(({ url }) => {

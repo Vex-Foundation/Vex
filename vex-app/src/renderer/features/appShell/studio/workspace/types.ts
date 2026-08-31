@@ -58,6 +58,20 @@ export interface WorkspaceFileTab {
   readonly title: string;
   /** Project-root-relative. The renderer never holds an absolute path. */
   readonly relativePath: string;
+  /**
+   * The main-minted node token this tab reads its file through.
+   *
+   * PROCESS-LOCAL and NEVER PERSISTED. The token binds a project, a path and
+   * the project's node EPOCH under main's own key, so it stops verifying when
+   * the project is deleted and it means nothing to a future run. That is why
+   * both fields exist: `relativePath` is the DISPLAY and DEDUPE identity, and a
+   * file deleted and recreated is the same tab to the user while being a
+   * different token to main.
+   *
+   * File tabs are already excluded from the persisted layout (see
+   * `toPersistedLayout`), so there is no path by which this value reaches disk.
+   */
+  readonly nodeId: string;
   readonly dirty: boolean;
 }
 

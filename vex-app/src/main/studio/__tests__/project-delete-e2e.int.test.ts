@@ -57,6 +57,15 @@ import { TerminalSnapshotStore } from "../../../pty-host/snapshot-store.js";
 import type { TerminalOutcome } from "@shared/schemas/terminal.js";
 import type { PtyHost, PtyHostObserver } from "../pty-host-starter.js";
 import { TerminalDomain } from "../terminals.js";
+import { FilesDomain } from "../files/files-domain.js";
+import {
+  pollForRootReturn,
+  projectRootExists,
+  subscribeNativeWatcher,
+} from "../files/native-adapters.js";
+import { mintFileNodeId } from "../files/node-id.js";
+import type { FilesEvent } from "@shared/schemas/files.js";
+import { getProject } from "../../database/projects/read.js";
 
 const runtime = vi.hoisted(() => ({
   /** The configured projects root, rewritten per test. */
@@ -1841,3 +1850,284 @@ function inProcessPtyHost(snapshotDirectory: string): {
     shutdown: () => service.shutdownAll().catch(() => undefined),
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * Stage B3a: the FILE WATCHER is a lease, and a delete spends its tokens
+ * ------------------------------------------------------------------ */
+
+/**
+ * The files domain, wired against THIS lane's real database and real
+ * filesystem.
+ *
+ * Only the event sink is substituted (there is no `BrowserWindow` here). The
+ * native watcher is the real @parcel/watcher through production's own adapters,
+ * and `resolveProjectDirectory` goes through the REAL `getProject` - which is
+ * the link this section is actually about, because `getProject` serves ACTIVE
+ * projects only and is therefore what turns a committed tombstone into a
+ * refused read.
+ *
+ * WHY THIS BELONGS IN THE POSTGRES LANE rather than beside the other file
+ * tests: the subject is `deleteProject` end to end - the drain, the tombstone
+ * transaction, the artifact teardown, and THEN step 6's close hooks - and every
+ * one of those needs a real database with every migration applied. The
+ * `node`-lane suite (`files/__tests__/files-real-fs.test.ts`) proves the close
+ * hook's BEHAVIOUR by calling it directly; this proves the real delete actually
+ * REACHES it, which is the half a direct call can never establish.
+ */
+describe("deleteProject: the file watcher", () => {
+  it("TEARS THE WATCHER DOWN and SPENDS every node token the project issued", async () => {
+    const project = await seedProject();
+    // `getProject` - the authority this whole section turns on - resolves a
+    // project's wallets, and a project missing a family row is a write-around it
+    // refuses. Without this seed the watch is refused with `project_closed`
+    // before the delete has done anything, and the test would pass its
+    // read-after-delete assertions for entirely the wrong reason.
+    await seedProjectWallets(project.projectId);
+    await installProjectArtifacts(project);
+    await writeFile(path.join(project.directory, "notes.md"), "user bytes", "utf8");
+
+    const events: FilesEvent[] = [];
+    const filesDomain = new FilesDomain({
+      resolveProjectDirectory: async (projectId) => {
+        const row = await getProject(projectId, "corr-files");
+        if (!row.ok || row.data === null) return null;
+        // The ANCHOR and the directory, exactly as `files-composition.ts`
+        // supplies them: the projects root realpath, and the lexical join
+        // beneath it that the domain proves on every call.
+        return {
+          anchoredRoot: projectsRoot,
+          projectDirectory: path.join(projectsRoot, row.data.slug),
+        };
+      },
+      subscribeNative: subscribeNativeWatcher,
+      pollForRoot: pollForRootReturn,
+      rootExists: projectRootExists,
+      publish: (_windowId, event) => {
+        events.push(event);
+      },
+    });
+
+    try {
+      const nodeId = mintFileNodeId(project.projectId, "notes.md");
+      const watched = await filesDomain.watchFile("1", {
+        projectId: project.projectId,
+        nodeId: null,
+      });
+      // toEqual on the whole outcome, so a refusal PRINTS ITS CODE.
+      expect(watched).toEqual({ ok: true, value: expect.anything() });
+
+      // The lease is REAL and the gate can see it. A delete's step 6 exists
+      // precisely because this class is never drained.
+      expect(heldProjectLeases(project.projectId, "watcher")).toBe(1);
+      const before = await filesDomain.readFile({
+        projectId: project.projectId,
+        nodeId,
+      });
+      expect(before.ok).toBe(true);
+
+      const result = unwrap(
+        await deleteProject(
+          {
+            projectId: project.projectId,
+            alsoTrashFolder: false,
+            expectedName: PROJECT_NAME,
+          },
+          "corr-files-delete",
+          deps,
+        ),
+      );
+      expect(result.outcome).toBe("removed");
+
+      // STEP 6 RAN. The close hook the domain registered at construction was
+      // reached by the real delete, after the tombstone committed.
+      expect(filesDomain.watchedProjectCount).toBe(0);
+      expect(heldProjectLeases(project.projectId, "watcher")).toBe(0);
+
+      // The subscriber was TOLD, rather than left with a tree that silently
+      // stopped updating.
+      const closed = events.findLast((event) => event.kind === "status");
+      expect(closed?.kind === "status" && closed.state).toBe("closed");
+      expect(closed?.kind === "status" && closed.reason).toBe("project_deleted");
+
+      // READ AFTER DELETE IS REFUSED. `notes.md` is a USER file, so the
+      // teardown deliberately left it on disk - which is exactly what makes
+      // this assertion mean something: the bytes are still there, and the only
+      // thing stopping the read is that the project's authority is gone.
+      expect(await exists(path.join(project.directory, "notes.md"))).toBe(true);
+      const after = await filesDomain.readFile({
+        projectId: project.projectId,
+        nodeId,
+      });
+      expect(after.ok).toBe(false);
+
+      // ...and a FRESHLY MINTED token does not help either, because the
+      // authority the epoch fences is not the only gate: `getProject` no longer
+      // answers for a tombstoned project.
+      const reminted = await filesDomain.readFile({
+        projectId: project.projectId,
+        nodeId: mintFileNodeId(project.projectId, "notes.md"),
+      });
+      expect(reminted).toEqual({ ok: false, code: "project_closed" });
+
+      // A new watcher is refused too: admission is closed for good.
+      const rewatched = await filesDomain.watchFile("1", {
+        projectId: project.projectId,
+        nodeId: null,
+      });
+      expect(rewatched).toEqual({ ok: false, code: "project_closed" });
+    } finally {
+      await filesDomain.dispose();
+    }
+  });
+
+  it("MAKES THE DELETE WAIT for a listing that was already in flight", async () => {
+    // THIS TEST'S SHAPE CHANGED with the `fileOperation` lease, and the old
+    // shape is recorded here because the change is the point.
+    //
+    // It used to park a listing, run the whole delete to completion underneath
+    // it, and then assert the listing was REFUSED with `project_closed` by the
+    // publication fence. That was the best available answer while a parked read
+    // and a committing tombstone could race at all: the fence catches the read
+    // after the fact, but it depends on the node epoch having already moved,
+    // and the files close hook that moves it runs behind every other close
+    // hook. The window was small and it was real.
+    //
+    // `listChildren` and `readFile` now take a DRAINED `fileOperation` lease,
+    // so step 3 of a delete WAITS for reads already in flight and there is no
+    // race left to fence. The interleaving under test is therefore the new one:
+    // the delete BLOCKS at the drain while the read is parked, the read
+    // PUBLISHES when it is released - correctly, because it was admitted while
+    // the project still existed and the tombstone has not committed - and the
+    // delete only then proceeds.
+    //
+    // The park is real and is placed where a real one would be: inside the
+    // authority resolution itself, which is AFTER the lease is taken, held open
+    // by a deferred this test resolves by hand. Everything else is the real
+    // delete, on the real database.
+    const project = await seedProject();
+    await seedProjectWallets(project.projectId);
+    await installProjectArtifacts(project);
+    await writeFile(path.join(project.directory, "notes.md"), "user bytes", "utf8");
+
+    // The deferred is initialised with a no-op rather than `null` so it stays
+    // CALLABLE: the executor runs synchronously and always reassigns it, but
+    // that assignment happens inside a closure the compiler cannot follow, so a
+    // `null` seed would narrow the binding to `null` at every release site.
+    let park: () => void = () => undefined;
+    const parked = new Promise<void>((resolve) => {
+      park = resolve;
+    });
+    let armed = false;
+
+    const filesDomain = new FilesDomain({
+      resolveProjectDirectory: async (projectId) => {
+        const row = await getProject(projectId, "corr-files-parked");
+        if (!row.ok || row.data === null) return null;
+        const location = {
+          anchoredRoot: projectsRoot,
+          projectDirectory: path.join(projectsRoot, row.data.slug),
+        };
+        // THE PARK, and its position is the whole point: AFTER the authority
+        // has answered. That is the real gap - `getProject` said ACTIVE, and
+        // the request then sat there while a delete committed underneath it -
+        // and a park placed before this line would merely be re-testing that
+        // `getProject` refuses a tombstoned project, which it plainly does.
+        if (armed) {
+          armed = false;
+          await parked;
+        }
+        return location;
+      },
+      subscribeNative: subscribeNativeWatcher,
+      pollForRoot: pollForRootReturn,
+      rootExists: projectRootExists,
+      publish: () => undefined,
+    });
+
+    try {
+      // The same call succeeds before the delete, so the refusal below is the
+      // delete and nothing else about the project, the path or the directory.
+      const beforeDelete = await filesDomain.listChildren({
+        projectId: project.projectId,
+        nodeId: null,
+      });
+      expect(beforeDelete.ok).toBe(true);
+
+      // PARK A ROOT LISTING. Deliberately a listing of the ROOT and not a file
+      // read: `nodeId: null` verifies NO token, so the node epoch - which is a
+      // fence on NAMES - never gets a say. The lifecycle gate is the only thing
+      // standing between this call and a delete, which is exactly what makes it
+      // the honest test of the drain.
+      armed = true;
+      const listing = filesDomain.listChildren({
+        projectId: project.projectId,
+        nodeId: null,
+      });
+      // The lease is REAL and the gate can see it. Without it the delete below
+      // would drain instantly and commit over a live read.
+      await until(
+        "the parked listing to be counted as in-flight work",
+        () => heldProjectLeases(project.projectId, "fileOperation") === 1,
+      );
+
+      // The real delete starts: step 1 closes admission, step 3 drains - and
+      // the drain is where it now stops, because this project has in-flight
+      // work that has not finished.
+      let settled = false;
+      const deleting = deleteProject(
+        {
+          projectId: project.projectId,
+          alsoTrashFolder: false,
+          expectedName: PROJECT_NAME,
+        },
+        "corr-files-parked-delete",
+        deps,
+      ).then((outcome) => {
+        settled = true;
+        return outcome;
+      });
+
+      // IT IS WAITING. Well inside `PROJECT_DELETE_DRAIN_DEADLINE_MS`, so this
+      // is the drain holding rather than the delete having failed.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(settled).toBe(false);
+
+      // A listing STARTED now is refused: admission closed in step 1, and the
+      // lease acquisition that opens `listChildren` is that admission check.
+      expect(
+        await filesDomain.listChildren({
+          projectId: project.projectId,
+          nodeId: null,
+        }),
+      ).toEqual({ ok: false, code: "project_closed" });
+
+      // Release the parked listing. It PUBLISHES, and that is now the correct
+      // answer rather than a leak: it was admitted while the project existed,
+      // and the tombstone has not committed precisely because this read is what
+      // the delete is waiting for.
+      park();
+      const after = await listing;
+      expect(after.ok).toBe(true);
+
+      // ...and only now does the delete get to run.
+      const result = unwrap(await deleting);
+      expect(result.outcome).toBe("removed");
+      expect(heldProjectLeases(project.projectId, "fileOperation")).toBe(0);
+
+      // The directory and its user bytes are still on disk - `notes.md` is a
+      // user file the teardown deliberately leaves - so there is a real listing
+      // to be had, and the only thing refusing it now is the committed
+      // tombstone.
+      expect(await exists(path.join(project.directory, "notes.md"))).toBe(true);
+      expect(
+        await filesDomain.listChildren({
+          projectId: project.projectId,
+          nodeId: null,
+        }),
+      ).toEqual({ ok: false, code: "project_closed" });
+    } finally {
+      park();
+      await filesDomain.dispose();
+    }
+  });
+});

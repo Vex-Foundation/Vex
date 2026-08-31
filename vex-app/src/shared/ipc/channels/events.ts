@@ -162,6 +162,21 @@ export const EV = {
     availability: "vex:event:terminal:availability",
     terminalsLost: "vex:event:terminal:terminalsLost",
   },
+  /**
+   * Vex Studio project files (stage B3a).
+   *
+   * NOT a broadcast: main sends to the single window that owns the
+   * subscription, because a file subscription is owned rather than observed -
+   * the same posture as `EV.board.live`.
+   *
+   * The payload is a DISCRIMINATED UNION (`changed` | `resync` | `status`),
+   * validated with `filesEventSchema` at the preload boundary. Nothing durable
+   * is involved: the filesystem is the source of truth and a `resync` is main
+   * telling the consumer to go read it again.
+   */
+  files: {
+    changed: "vex:event:files:changed",
+  },
   engine: {
     transcriptAppend: "vex:event:engine:transcriptAppend",
     controlState: "vex:event:engine:controlState",

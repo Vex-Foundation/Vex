@@ -31,6 +31,7 @@
  *   - `render`          an installer job writing this project's artifacts.
  *   - `watcher`         a filesystem watcher (consumer arrives in a later stage).
  *   - `terminal`        an open terminal session, taken by `terminals.ts`.
+ *   - `fileOperation`   ONE `listChildren` or `readFile` in flight.
  *
  * `executingCall` and `dispatch` are DRAINED: they are bounded by their own
  * work and will finish. `pendingApproval` is PARKED and never drained, because
@@ -84,7 +85,8 @@ export type ProjectLeaseClass =
   | "render"
   | "watcher"
   | "terminal"
-  | "terminalCreate";
+  | "terminalCreate"
+  | "fileOperation";
 
 /**
  * The classes a delete WAITS for. Bounded work that finishes on its own.
@@ -100,11 +102,27 @@ export type ProjectLeaseClass =
  * yet and no record yet - so a create that started before the tombstone could
  * insert a live terminal for a project that had already been deleted, after the
  * close hook had already run and found nothing.
+ *
+ * `fileOperation` is present for the SAME reason `terminalCreate` is, one layer
+ * down. A `listChildren` or a `readFile` resolves its authority through
+ * `getProject`, which serves ACTIVE projects only, and then does filesystem
+ * work across several awaits; a request parked in that work while a tombstone
+ * commits passed a check that is now far behind the answer it is about to
+ * return. The node-epoch fence catches it at PUBLICATION, but a fence is a
+ * refusal after the fact - it depends on the epoch bump having already
+ * happened, and the files close hook that bumps it runs behind every other
+ * close hook. Draining instead makes the tombstone WAIT for the reads already
+ * in flight, so there is no interval to fence at all. It is bounded work: both
+ * operations are capped by `FILE_READ_MAX_BYTES` and `FILES_LIST_PAGE_MAX`,
+ * neither waits on a human, and `read.ts` opens `O_NONBLOCK` so a FIFO cannot
+ * park one forever. `watcher` stays out, unchanged: an open watch is unbounded
+ * and is what step 6's close hook is for.
  */
 export const DRAINED_LEASE_CLASSES: readonly ProjectLeaseClass[] = [
   "executingCall",
   "dispatch",
   "terminalCreate",
+  "fileOperation",
 ];
 
 /**

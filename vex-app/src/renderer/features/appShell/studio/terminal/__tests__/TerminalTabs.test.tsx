@@ -12,11 +12,12 @@
  * `display: none` and therefore measures 0x0, so activation MUST re-measure.
  */
 
+import type { JSX } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TerminalRegistry } from "../terminal-registry.js";
 import { TerminalTabs } from "../TerminalTabs.js";
-import type { WorkspaceState } from "../../workspace/types.js";
+import type { WorkspaceFileTab, WorkspaceState } from "../../workspace/types.js";
 import {
   installMatchMedia,
   installResizeObserver,
@@ -32,6 +33,7 @@ beforeEach(() => {
   installResizeObserver();
   installTerminalBridge();
   registry = new TerminalRegistry(noWebgl);
+  renderFileTabCalls.length = 0;
   document.body.innerHTML = "";
 });
 
@@ -62,6 +64,37 @@ function twoTabs(activeTabId: string): WorkspaceState {
 
 const noop = (): void => undefined;
 
+/**
+ * The file-tab render prop, as a recording stub.
+ *
+ * `TerminalTabs` deliberately does not know what fills a file panel - the
+ * viewer needs a `projectId` this component has no business holding - so the
+ * contract to test HERE is that the panel loop calls the prop with the tab and
+ * with whether the panel is the visible one. The viewer's own behaviour is
+ * `viewer/__tests__/FileViewer.test.tsx`.
+ */
+const renderFileTabCalls: { tabId: string; isActive: boolean }[] = [];
+
+function renderFileTabStub(tab: WorkspaceFileTab, isActive: boolean): JSX.Element {
+  renderFileTabCalls.push({ tabId: tab.tabId, isActive });
+  return (
+    <div data-testid={`file-panel-${tab.tabId}`} data-active={String(isActive)}>
+      {tab.relativePath}
+    </div>
+  );
+}
+
+function fileTab(tabId: string, relativePath: string): WorkspaceFileTab {
+  return {
+    kind: "file",
+    tabId,
+    title: relativePath.slice(relativePath.lastIndexOf("/") + 1),
+    relativePath,
+    nodeId: `node:${relativePath}`,
+    dirty: false,
+  };
+}
+
 function renderTabs(state: WorkspaceState, overrides: Record<string, unknown> = {}) {
   return render(
     <TerminalTabs
@@ -76,6 +109,7 @@ function renderTabs(state: WorkspaceState, overrides: Record<string, unknown> = 
       onClosePane={noop}
       onTitleChange={noop}
       onPaneExit={noop}
+      renderFileTab={renderFileTabStub}
       {...overrides}
     />,
   );
@@ -114,6 +148,7 @@ describe("TerminalTabs keep-alive", () => {
         onClosePane={noop}
         onTitleChange={noop}
         onPaneExit={noop}
+        renderFileTab={renderFileTabStub}
       />,
     );
 
@@ -143,6 +178,7 @@ describe("TerminalTabs keep-alive", () => {
         onClosePane={noop}
         onTitleChange={noop}
         onPaneExit={noop}
+        renderFileTab={renderFileTabStub}
       />,
     );
 
@@ -238,7 +274,14 @@ describe("TerminalTabs keyboard and controls", () => {
       projectId: "p1",
       activeTabId: "f1",
       tabs: [
-        { kind: "file", tabId: "f1", title: "README.md", relativePath: "docs/README.md", dirty: false },
+        {
+          kind: "file",
+          tabId: "f1",
+          title: "README.md",
+          relativePath: "docs/README.md",
+          nodeId: "node-readme",
+          dirty: false,
+        },
       ],
     };
     renderTabs(state);
@@ -247,5 +290,45 @@ describe("TerminalTabs keyboard and controls", () => {
     // No split affordance on a file tab, and no terminal mounted for it.
     expect(screen.queryByRole("button", { name: /^Split/ })).toBeNull();
     expect(panelFor("f1").querySelector(".vex-terminal-surface")).toBeNull();
+  });
+});
+
+/**
+ * The file-panel seam (stage B3c).
+ *
+ * `renderFileTab` is REQUIRED rather than optional on purpose: an optional
+ * prop would leave a code path in which a file tab appears in the strip with an
+ * empty panel behind it, and nothing would catch that but a person looking.
+ */
+describe("file tabs", () => {
+  function mixed(activeTabId: string): WorkspaceState {
+    const base = twoTabs(activeTabId);
+    return { ...base, tabs: [...base.tabs, fileTab("f1", "src/deep/service.ts")] };
+  }
+
+  it("fills a file panel through the render prop, with the tab and its visibility", () => {
+    renderTabs(mixed("f1"));
+
+    expect(screen.getByTestId("file-panel-f1").textContent).toBe("src/deep/service.ts");
+    expect(renderFileTabCalls).toContainEqual({ tabId: "f1", isActive: true });
+    // A file tab creates no terminal and offers no split.
+    expect(registry.has("f1")).toBe(false);
+  });
+
+  it("keeps a hidden file panel MOUNTED and tells the prop it is not active", () => {
+    renderTabs(mixed("g1"));
+
+    const panel = panelFor("f1");
+    expect(panel.hidden).toBe(true);
+    // Mounted behind the hidden panel: unmounting it would throw away the
+    // viewer's session and re-read the file on every tab switch.
+    expect(panel.querySelector('[data-testid="file-panel-f1"]')).not.toBeNull();
+    expect(screen.getByTestId("file-panel-f1").getAttribute("data-active")).toBe("false");
+  });
+
+  it("gives a file tab a tabpanel and a close control like any other", () => {
+    renderTabs(mixed("f1"));
+    expect(screen.getByRole("tab", { name: /service\.ts/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close service.ts" })).toBeTruthy();
   });
 });

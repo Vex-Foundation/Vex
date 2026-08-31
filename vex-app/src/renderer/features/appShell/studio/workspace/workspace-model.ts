@@ -107,6 +107,23 @@ export function addFileTab(
     (candidate) => candidate.kind === "file" && candidate.relativePath === tab.relativePath,
   );
   if (existing !== undefined) {
+    // The PATH is the identity, the TOKEN is not. A file deleted and recreated,
+    // or a project re-subscribed in a new session, is the same tab to the user
+    // and a different `nodeId` to main - and the old token no longer verifies,
+    // so a tab that kept it could never read its file again. Adopt the incoming
+    // one; the tab, its position and its dirty flag stay exactly where they are.
+    if (existing.kind === "file" && existing.nodeId !== tab.nodeId) {
+      return {
+        ok: true,
+        state: {
+          ...state,
+          tabs: state.tabs.map((candidate) =>
+            candidate.tabId === existing.tabId ? { ...existing, nodeId: tab.nodeId } : candidate,
+          ),
+          activeTabId: existing.tabId,
+        },
+      };
+    }
     return { ok: true, state: { ...state, activeTabId: existing.tabId } };
   }
   return {
