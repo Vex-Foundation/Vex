@@ -760,7 +760,7 @@ describe("every terminal input is VALIDATED AT THE PRELOAD GATE", () => {
     await terminal.persistWorkspace({ layout, final: true });
     expect(invocations).toEqual([
       {
-        channel: expect.stringContaining("persistWorkspace") as unknown as string,
+        channel: "vex:terminal:persistWorkspace",
         payload: { layout, final: true },
       },
     ]);
