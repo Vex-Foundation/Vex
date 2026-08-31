@@ -651,6 +651,27 @@ export const terminalHostRequestSchema = z.discriminatedUnion("kind", [
     .object({ kind: z.literal("readWorkspace"), projectId: z.string().min(1).max(64) })
     .strict(),
   /**
+   * FORGET a project's layout. Sent when the project's tombstone has committed.
+   *
+   * Main drops its own copy of a deleted project's topology, but the host keeps
+   * the copy every `persistWorkspace` fed it - and `runShutdown` commits EVERY
+   * key still in that map. So a graceful quit after a delete RECREATED
+   * `<snapshots>/<projectId>.json` for a project Vex had already told the user
+   * was gone, on the host's OWN initiative, past every check main had added on
+   * the persist route. This is what closes that: the host stops holding a
+   * layout it may never write again.
+   *
+   * The host does NOT touch the file. Removing it belongs to the delete's
+   * cleanup, which owns it and has already run or is about to; the host's whole
+   * obligation is to never write it a second time.
+   *
+   * IDEMPOTENT, and answers `ok` for a project it never held - "there is
+   * nothing to forget" is the same outcome as "forgotten".
+   */
+  z
+    .object({ kind: z.literal("forgetWorkspace"), projectId: z.string().min(1).max(64) })
+    .strict(),
+  /**
    * Bring a project's persisted terminals back as NEW ptys under NEW ids.
    *
    * The host reads the serialized buffers from its OWN store rather than being

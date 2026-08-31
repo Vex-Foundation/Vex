@@ -57,7 +57,7 @@ import { TerminalSnapshotStore } from "../../../pty-host/snapshot-store.js";
 import { terminalCreateValueSchema } from "@shared/schemas/terminal.js";
 import type { TerminalOutcome } from "@shared/schemas/terminal.js";
 import type { PtyHost, PtyHostObserver } from "../pty-host-starter.js";
-import { TerminalDomain } from "../terminals.js";
+import { TerminalDomain, type ProjectActivation } from "../terminals.js";
 import { FilesDomain } from "../files/files-domain.js";
 import {
   pollForRootReturn,
@@ -1613,6 +1613,20 @@ describe("deleteProject: the startup repair sweep", () => {
  * SECOND project's terminal lease is untouched (so the close is scoped to the
  * project being deleted, not to every terminal in the process).
  */
+/**
+ * The commit path's AUTHORITY READ, wired exactly as `terminal-domain.ts` wires
+ * it in production: the real `getProject`, which serves ACTIVE projects only.
+ *
+ * A failed read is never `absent`. An unreachable database says nothing about
+ * whether this project was deleted, and the domain refuses on it for a
+ * different reason and with a different code.
+ */
+async function realProjectActivation(projectId: string): Promise<ProjectActivation> {
+  const project = await getProject(projectId, `corr-terminal-activation-${projectId}`);
+  if (!project.ok) return "unreadable";
+  return project.data === null ? "absent" : "active";
+}
+
 describe("deleteProject: step 6, closing what the project owns", () => {
   it("closes a live terminal only AFTER the tombstone transaction has committed", async () => {
     const doomed = await seedProject();
@@ -1715,6 +1729,7 @@ describe("deleteProject: step 6, closing what the project owns", () => {
     const domain = new TerminalDomain(
       {
         resolveProjectCwd: () => Promise.resolve(doomed.directory),
+        readProjectActivation: realProjectActivation,
         // A shell that will not leave voluntarily, so the delete is what ends it.
         resolveShell: () => ({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
         postPort: () => undefined,
@@ -1791,6 +1806,11 @@ describe("deleteProject: step 6, closing what the project owns", () => {
    */
   it("REFUSES a late commit and leaves the snapshot file absent on disk", async () => {
     const doomed = await seedProject();
+    // The commit path now reads the projects repository, and `getProject`
+    // refuses a project missing a wallet family row as a write-around. Without
+    // this seed the PREMISE commit below would be refused and the test would
+    // assert the file's absence for entirely the wrong reason.
+    await seedProjectWallets(doomed.projectId);
     const snapshotDirectory = await mkdtemp(path.join(tmpdir(), "vex-del-snap-"));
     const snapshotFile = path.join(snapshotDirectory, `${doomed.projectId}.json`);
     const wiring = inProcessPtyHost(snapshotDirectory);
@@ -1804,6 +1824,7 @@ describe("deleteProject: step 6, closing what the project owns", () => {
     const domain = new TerminalDomain(
       {
         resolveProjectCwd: () => Promise.resolve(doomed.directory),
+        readProjectActivation: realProjectActivation,
         resolveShell: () => ({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
         postPort: () => undefined,
         publishAvailability: () => undefined,
@@ -1884,6 +1905,308 @@ describe("deleteProject: step 6, closing what the project owns", () => {
           process.kill(pid, "SIGKILL");
         } catch {
           // Already gone, which is what the delete's close hook did.
+        }
+      }
+      await rm(snapshotDirectory, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  /**
+   * ROUND 2, THE RESTART: the lifecycle gate FORGETS, and the tombstone does not.
+   *
+   * The refusal above is real but it is process-local. `closeProjectAdmission`
+   * lives in memory and nothing reinstalls a completed tombstone in it, so the
+   * instant main restarts the gate is empty again: admission for a project Vex
+   * deleted last week is OPEN, and so is admission for an id that never named a
+   * project at all. A commit for either one used to pass the lease, mint a
+   * version, and have the host RECREATE
+   * `<snapshots>/<projectId>.json` - the deleted project's scrollback, back on
+   * disk, at the request of a renderer that is hostile by assumption.
+   *
+   * So this test restarts the parts that hold that state. The gate is reset and
+   * a SECOND `TerminalDomain` over a SECOND `PtyHostService` is built over the
+   * same snapshot directory and the same database: empty in-memory state, real
+   * durable state. The only thing that can refuse the commit at that point is
+   * the `deleted_at` read, which is precisely the claim.
+   *
+   * The final assertion is READ BACK FROM THE FILESYSTEM after the commit has
+   * returned, not from any component's report of itself. Remove the read from
+   * `persistWorkspace` and this goes red on that line: the commit is accepted
+   * and the file is there.
+   */
+  it("REFUSES a commit after a RESTART has emptied the gate, and the snapshot stays gone", async () => {
+    const doomed = await seedProject();
+    // `getProject` refuses a project missing a wallet family row as a
+    // write-around, so without this the PREMISE commit below would fail and
+    // every later assertion would hold for the wrong reason.
+    await seedProjectWallets(doomed.projectId);
+    const snapshotDirectory = await mkdtemp(path.join(tmpdir(), "vex-del-snap-"));
+    const snapshotFile = path.join(snapshotDirectory, `${doomed.projectId}.json`);
+
+    // The REAL removal, at the seam production hands `removeTerminalSnapshot`.
+    runtime.removeTerminalSnapshot.mockImplementation(async (projectId) => {
+      await rm(path.join(snapshotDirectory, `${projectId}.json`), { force: true });
+      return true;
+    });
+
+    const layoutFor = (
+      terminalId: string,
+    ): import("@shared/schemas/terminal.js").TerminalWorkspaceLayout => ({
+      projectId: doomed.projectId,
+      groups: [
+        {
+          groupId: "g1",
+          orientation: "horizontal",
+          panes: [{ terminalId, relativeSize: 1 }],
+          activePaneIndex: 0,
+        },
+      ],
+      activeGroupIndex: 0,
+    });
+
+    const depsFor = (): import("../terminals.js").TerminalDomainDeps => ({
+      resolveProjectCwd: () => Promise.resolve(doomed.directory),
+      readProjectActivation: realProjectActivation,
+      resolveShell: () => ({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
+      postPort: () => undefined,
+      publishAvailability: () => undefined,
+      publishTerminalsLost: () => undefined,
+    });
+
+    // The run BEFORE the restart, and the one after it. Both are torn down in
+    // the same `finally`, AFTER the assertions - see the restart note below for
+    // why the first one is not shut down in between.
+    const first = inProcessPtyHost(snapshotDirectory);
+    const beforeRestart = new TerminalDomain(depsFor(), first.starterFactory);
+    let second: ReturnType<typeof inProcessPtyHost> | null = null;
+    let afterRestart: TerminalDomain | null = null;
+    let pid = -1;
+
+    try {
+      const created = await beforeRestart.create("w1", doomed.projectId, 80, 24);
+      if (!created.ok) throw new Error(`create refused: ${created.code}`);
+      const value = terminalCreateValueSchema.parse(created.value);
+      pid = value.pid;
+
+      // THE PREMISE, asserted on the world: a commit for a LIVE project really
+      // does put this file on disk, so its absence at the end is a fact about
+      // the refusal and not about a commit path that never worked.
+      const committed = await beforeRestart.persistWorkspace(
+        doomed.projectId,
+        layoutFor(value.terminalId),
+      );
+      expect(committed.ok).toBe(true);
+      expect(await exists(snapshotFile)).toBe(true);
+
+      const result = unwrap(
+        await deleteProject(
+          {
+            projectId: doomed.projectId,
+            alsoTrashFolder: false,
+            expectedName: PROJECT_NAME,
+          },
+          "corr-restart-persist",
+          deps,
+        ),
+      );
+      expect(result.outcome).toBe("removed");
+      expect(await exists(snapshotFile)).toBe(false);
+
+      /* ---- THE RESTART ---- */
+      //
+      // Everything main held in memory about this delete goes: the closed
+      // admission, the drained leases, the domain's version counter, the host's
+      // layouts. What survives is the database and the disk, which is the point
+      // - and after this line the ONLY thing that can refuse a commit for this
+      // project is the tombstone.
+      //
+      // The old process is ABANDONED rather than shut down, and that is
+      // deliberate. A GRACEFUL quit reaches this same file by a DIFFERENT
+      // route - `PtyHostService.runShutdown` commits every key still in its
+      // `layouts` map, on its own initiative - and that route is closed by
+      // separate code: `TerminalDomain.closeProject` now sends the host a
+      // `forgetWorkspace`, which is proved end to end by the graceful-quit test
+      // below. Running a quit HERE would make this assertion pass or fail for a
+      // reason that has nothing to do with the commit path under test.
+      resetProjectLifecycleGateForTests();
+      expect(isProjectAdmitting(doomed.projectId)).toBe(true);
+
+      second = inProcessPtyHost(snapshotDirectory);
+      afterRestart = new TerminalDomain(depsFor(), second.starterFactory);
+
+      const afterDelete = await afterRestart.persistWorkspace(
+        doomed.projectId,
+        layoutFor(randomUUID()),
+      );
+
+      // THE WORLD FIRST. Re-read from the filesystem: the file the delete
+      // removed was NOT recreated by a commit arriving in a fresh process with
+      // an empty gate. This is the assertion the finding is about.
+      expect(await exists(snapshotFile)).toBe(false);
+      // And it is absent because the TOMBSTONE refused the commit, with the
+      // typed outcome the renderer already renders by name.
+      expect(afterDelete).toEqual({ ok: false, code: "project_deleting" });
+
+      // The same answer for an id that names NOTHING - equally unrefusable by
+      // an empty gate, and equally able to write a file before this fix.
+      const ghost = randomUUID();
+      expect(
+        await afterRestart.persistWorkspace(ghost, {
+          projectId: ghost,
+          groups: [],
+          activeGroupIndex: 0,
+        }),
+      ).toEqual({ ok: false, code: "project_deleting" });
+      expect(await exists(path.join(snapshotDirectory, `${ghost}.json`))).toBe(false);
+    } finally {
+      await afterRestart?.dispose().catch(() => undefined);
+      await second?.shutdown();
+      await beforeRestart.dispose().catch(() => undefined);
+      await first.shutdown();
+      if (pid > 0) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Already gone, which is what the delete's close hook did.
+        }
+      }
+      await rm(snapshotDirectory, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  /**
+   * ROUND 2, THE GRACEFUL QUIT: the host is TOLD to forget, or it recommits.
+   *
+   * The two tests above close the routes a COMMIT can take to the file. This
+   * one closes the route that asks for no commit at all. The host keeps its own
+   * copy of every project's layout - fed by every `persistWorkspace` - and its
+   * ordered shutdown commits EVERY key still in that map. Main dropped its own
+   * copy in `closeProject` and never told the host, so an ordinary quit after a
+   * delete put `<snapshots>/<projectId>.json` back on disk for a project Vex
+   * had already told the user was gone, past every check on the persist path,
+   * because nothing on the persist path is involved.
+   *
+   * What makes this end to end rather than a unit assertion: the delete is the
+   * REAL `deleteProject` against this lane's database, its snapshot removal is
+   * the real one wired where production wires it, the shutdown is the host's
+   * REAL `runShutdown` reached through `TerminalDomain.dispose`, and the final
+   * claim is read back from the FILESYSTEM after the quit has returned.
+   *
+   * A SURVIVING project is committed in the same quit, so the assertion is that
+   * the host forgot ONE project rather than that its shutdown stopped working.
+   */
+  it("does NOT recommit a deleted project's snapshot on a graceful quit", async () => {
+    const doomed = await seedProject();
+    const kept = await seedProject();
+    // `getProject` refuses a project missing a wallet family row as a
+    // write-around, so without these the PREMISE commits below would be refused
+    // and every later assertion would hold for the wrong reason.
+    await seedProjectWallets(doomed.projectId);
+    await seedProjectWallets(kept.projectId);
+
+    const snapshotDirectory = await mkdtemp(path.join(tmpdir(), "vex-del-snap-"));
+    const doomedFile = path.join(snapshotDirectory, `${doomed.projectId}.json`);
+    const keptFile = path.join(snapshotDirectory, `${kept.projectId}.json`);
+    const wiring = inProcessPtyHost(snapshotDirectory);
+
+    // The REAL removal, at the seam production hands `removeTerminalSnapshot`.
+    runtime.removeTerminalSnapshot.mockImplementation(async (projectId) => {
+      await rm(path.join(snapshotDirectory, `${projectId}.json`), { force: true });
+      return true;
+    });
+
+    const directories = new Map([
+      [doomed.projectId, doomed.directory],
+      [kept.projectId, kept.directory],
+    ]);
+    const domain = new TerminalDomain(
+      {
+        resolveProjectCwd: (projectId) =>
+          Promise.resolve(directories.get(projectId) ?? null),
+        readProjectActivation: realProjectActivation,
+        resolveShell: () => ({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
+        postPort: () => undefined,
+        publishAvailability: () => undefined,
+        publishTerminalsLost: () => undefined,
+      },
+      wiring.starterFactory,
+    );
+
+    const pids: number[] = [];
+    let disposed = false;
+    try {
+      const layoutFor = (
+        projectId: string,
+        terminalId: string,
+      ): import("@shared/schemas/terminal.js").TerminalWorkspaceLayout => ({
+        projectId,
+        groups: [
+          {
+            groupId: "g1",
+            orientation: "horizontal",
+            panes: [{ terminalId, relativeSize: 1 }],
+            activePaneIndex: 0,
+          },
+        ],
+        activeGroupIndex: 0,
+      });
+
+      for (const project of [doomed, kept]) {
+        const created = await domain.create("w1", project.projectId, 80, 24);
+        if (!created.ok) throw new Error(`create refused: ${created.code}`);
+        const value = terminalCreateValueSchema.parse(created.value);
+        pids.push(value.pid);
+        // THE PREMISE, on the world: a commit for a live project really does
+        // write this file, AND it is what puts the layout into the host's map -
+        // which is the state the quit would otherwise recommit.
+        const committed = await domain.persistWorkspace(
+          project.projectId,
+          layoutFor(project.projectId, value.terminalId),
+        );
+        expect(committed.ok).toBe(true);
+      }
+      expect(await exists(doomedFile)).toBe(true);
+      expect(await exists(keptFile)).toBe(true);
+
+      const result = unwrap(
+        await deleteProject(
+          {
+            projectId: doomed.projectId,
+            alsoTrashFolder: false,
+            expectedName: PROJECT_NAME,
+          },
+          "corr-graceful-quit",
+          deps,
+        ),
+      );
+      expect(result.outcome).toBe("removed");
+      expect(await exists(doomedFile)).toBe(false);
+      // The surviving project was untouched by the delete.
+      expect(await exists(keptFile)).toBe(true);
+
+      /* ---- THE GRACEFUL QUIT ---- */
+      //
+      // `dispose` is what main runs on quit, and it reaches the host's real
+      // ordered shutdown: close admission, COMMIT EVERY PROJECT IT STILL HOLDS,
+      // then kill the ptys. Nothing here asks for a commit; the host decides.
+      await domain.dispose();
+      disposed = true;
+
+      // THE WORLD, re-read from the filesystem after the quit has returned. The
+      // file the delete removed did NOT come back.
+      expect(await exists(doomedFile)).toBe(false);
+      // And the quit's commit phase really did run - the surviving project's
+      // snapshot is still there, so the assertion above is about the host
+      // FORGETTING one project rather than about a shutdown that wrote nothing.
+      expect(await exists(keptFile)).toBe(true);
+    } finally {
+      if (!disposed) await domain.dispose().catch(() => undefined);
+      await wiring.shutdown();
+      for (const pid of pids) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Already gone, which is what the delete and the quit did.
         }
       }
       await rm(snapshotDirectory, { recursive: true, force: true });

@@ -8,6 +8,8 @@
  *  - the TYPED-NAME GATE arms the confirm and nothing else does;
  *  - the CHECKBOX upgrades the dialog to the warning treatment AND is what
  *    puts `alsoTrashFolder: true` on the wire;
+ *  - the FOLDER CHOICE freezes once an outcome proves the tombstone exists,
+ *    because main resumes the recorded request and ignores the retry's input;
  *  - the TERMINAL LINE is present only when the renderer actually knows;
  *  - each of the SEVEN outcomes renders distinctly, and the TWO that end the
  *    interaction are the only ones that close;
@@ -56,6 +58,7 @@ import { ProjectDeleteDialog } from "../ProjectDeleteDialog.js";
 import {
   PROJECT_DELETE_OUTCOME_SENTENCES,
   PROJECT_DELETE_TRASH_LABEL,
+  PROJECT_DELETE_TRASH_LOCKED_NOTE,
   PROJECT_TRASH_SENTENCES,
 } from "../projects-copy.js";
 
@@ -212,6 +215,161 @@ describe("the trash checkbox", () => {
     expect(deleteMock).toHaveBeenCalledWith(
       expect.objectContaining({ alsoTrashFolder: true }),
     );
+  });
+});
+
+describe("the frozen folder choice", () => {
+  const cleanup = { cleanup: [], trash: "not_requested" as const };
+
+  function trashCheckbox(): HTMLInputElement {
+    const box = screen.getByLabelText(PROJECT_DELETE_TRASH_LABEL, {
+      exact: false,
+    });
+    if (!(box instanceof HTMLInputElement)) throw new Error("no trash checkbox");
+    return box;
+  }
+
+  it("freezes the submitted choice once a cleanup is pending, and retries send it", async () => {
+    // The defect this exists for: main records the trash intent on the
+    // TOMBSTONE and its `already_tombstoned` branch RESUMES that recorded
+    // request, ignoring the retry's own input. A checkbox that still moved
+    // would tell the user their folder was spared while it went to the trash.
+    deleteMock.mockResolvedValue({
+      ok: true,
+      data: { outcome: "cleanup_pending", ...cleanup, attempts: 2 },
+    });
+    renderDialog();
+
+    fireEvent.click(trashCheckbox());
+    expect(trashCheckbox().checked).toBe(true);
+    await confirmDelete();
+    await screen.findByText("Vex has attempted this cleanup 2 times.");
+
+    // The user tries to take it back. The control does not move.
+    expect(trashCheckbox().disabled).toBe(true);
+    fireEvent.click(trashCheckbox());
+    expect(trashCheckbox().checked).toBe(true);
+    // And the dialog SAYS why, rather than presenting a dead control.
+    expect(screen.getByText(PROJECT_DELETE_TRASH_LOCKED_NOTE)).not.toBeNull();
+
+    // RED ON REVERT: drop the freeze (send `alsoTrashFolder` instead of the
+    // recorded value, or leave the checkbox enabled) and this assertion fails
+    // with `alsoTrashFolder: false` - the retry carrying the toggled value.
+    fireEvent.click(confirmButton());
+    await waitFor(() => {
+      expect(deleteMock).toHaveBeenCalledTimes(2);
+    });
+    expect(deleteMock.mock.calls[1]?.[0].alsoTrashFolder).toBe(true);
+  });
+
+  it("keeps the warning treatment on the recorded choice", async () => {
+    // The wash is the visible half of the same fact: the action that is
+    // pending IS the one that moves the folder.
+    deleteMock.mockResolvedValue({
+      ok: true,
+      data: { outcome: "cleanup_pending", ...cleanup, attempts: 1 },
+    });
+    renderDialog();
+    fireEvent.click(trashCheckbox());
+    await confirmDelete();
+    await screen.findByText("Vex has attempted this cleanup once.");
+
+    fireEvent.click(trashCheckbox());
+    expect(
+      document.querySelector('[data-vex-delete-warned="true"]'),
+    ).not.toBeNull();
+  });
+
+  it("freezes an UNCHECKED choice just as hard", async () => {
+    // The symmetric lie: checking the box after the tombstone recorded
+    // `false` would promise a trash that never happens.
+    deleteMock.mockResolvedValue({
+      ok: true,
+      data: { outcome: "cleanup_pending", ...cleanup, attempts: 1 },
+    });
+    renderDialog();
+    await confirmDelete();
+    await screen.findByText("Vex has attempted this cleanup once.");
+
+    fireEvent.click(trashCheckbox());
+    expect(trashCheckbox().checked).toBe(false);
+    fireEvent.click(confirmButton());
+    await waitFor(() => {
+      expect(deleteMock).toHaveBeenCalledTimes(2);
+    });
+    expect(deleteMock.mock.calls[1]?.[0].alsoTrashFolder).toBe(false);
+  });
+
+  it("holds the FIRST recorded choice across a cleanup_resumed", async () => {
+    // `cleanup_resumed` reports on the SAME tombstone, so it must not
+    // re-record: the value that created the tombstone is the only true one.
+    deleteMock.mockResolvedValueOnce({
+      ok: true,
+      data: { outcome: "cleanup_pending", ...cleanup, attempts: 1 },
+    });
+    deleteMock.mockResolvedValue({
+      ok: true,
+      data: { outcome: "cleanup_resumed", ...cleanup },
+    });
+    renderDialog();
+    fireEvent.click(trashCheckbox());
+    await confirmDelete();
+    await screen.findByText("Vex has attempted this cleanup once.");
+
+    fireEvent.click(confirmButton());
+    await screen.findByText(PROJECT_DELETE_OUTCOME_SENTENCES.cleanup_resumed);
+    fireEvent.click(confirmButton());
+    await waitFor(() => {
+      expect(deleteMock).toHaveBeenCalledTimes(3);
+    });
+    expect(deleteMock.mock.calls[2]?.[0].alsoTrashFolder).toBe(true);
+  });
+
+  it("leaves the choice editable after a blocked outcome, which wrote nothing", async () => {
+    // No tombstone, so no recorded decision: the retry is a first attempt and
+    // its checkbox is still a real choice. Freezing here would take away a
+    // decision the user still owns.
+    deleteMock.mockResolvedValue({
+      ok: true,
+      data: { outcome: "blocked_active_calls", count: 1 },
+    });
+    renderDialog();
+    await confirmDelete();
+    await screen.findByText(
+      PROJECT_DELETE_OUTCOME_SENTENCES.blocked_active_calls,
+    );
+
+    expect(trashCheckbox().disabled).toBe(false);
+    expect(screen.queryByText(PROJECT_DELETE_TRASH_LOCKED_NOTE)).toBeNull();
+    fireEvent.click(trashCheckbox());
+    expect(trashCheckbox().checked).toBe(true);
+    fireEvent.click(confirmButton());
+    await waitFor(() => {
+      expect(deleteMock).toHaveBeenCalledTimes(2);
+    });
+    expect(deleteMock.mock.calls[1]?.[0].alsoTrashFolder).toBe(true);
+  });
+
+  it("lifts the freeze when a NEW delete opens the dialog", async () => {
+    // A new request is a new decision. The freeze belongs to the tombstone the
+    // dialog created, not to the dialog.
+    deleteMock.mockResolvedValue({
+      ok: true,
+      data: { outcome: "cleanup_pending", ...cleanup, attempts: 1 },
+    });
+    const { setProject } = renderDialog();
+    fireEvent.click(trashCheckbox());
+    await confirmDelete();
+    await screen.findByText("Vex has attempted this cleanup once.");
+    expect(trashCheckbox().disabled).toBe(true);
+
+    setProject(null);
+    setProject(makeProject({ name: "borealis" }));
+    await screen.findByText("Type the project name to confirm: borealis");
+
+    expect(trashCheckbox().disabled).toBe(false);
+    expect(trashCheckbox().checked).toBe(false);
+    expect(screen.queryByText(PROJECT_DELETE_TRASH_LOCKED_NOTE)).toBeNull();
   });
 });
 

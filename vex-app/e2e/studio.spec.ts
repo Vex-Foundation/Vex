@@ -22,6 +22,15 @@
  * every release build). Without it this spec skips and says so; it never
  * pokes the uiStore to fake a route.
  *
+ * A SKIP IS ONLY HONEST WHERE NOBODY PROMISED COVERAGE. In CI the Studio
+ * journey is a required gate, so the runner declares that promise with
+ * `VEX_E2E_REQUIRE_TOUR=1` on the TEST step, paired with `VITE_VEX_SETUP_TOUR=1`
+ * on the BUILD step (`.github/workflows/ci.yml`, job `vex-app-e2e`). With that
+ * expectation set, a missing tour FAILS here instead of skipping: otherwise
+ * deleting one line from the build step would restore zero Studio coverage
+ * while the required gate stayed green. Local runs that set neither flag keep
+ * the named skip below.
+ *
  * A DATABASE. Every Studio project operation past the creator's form is
  * DB-backed: `vex.projects.*` goes through `main/database/projects/*`, and
  * `terminalDomain().create` resolves its cwd from `getProject(projectId)`, so
@@ -50,6 +59,15 @@
 
 import { test, expect, type VexElectronFixture } from "./fixtures/electron-app.js";
 import type { Page, TestInfo } from "@playwright/test";
+
+/**
+ * Does this run PROMISE Studio coverage?
+ *
+ * Set by the CI test step alongside the build step's `VITE_VEX_SETUP_TOUR=1`.
+ * Read once, at module scope, so the expectation is a property of the run
+ * rather than something the journey could reinterpret mid-flight.
+ */
+const TOUR_REQUIRED = process.env.VEX_E2E_REQUIRE_TOUR === "1";
 
 /**
  * Console errors this journey tolerates, and nothing else.
@@ -162,6 +180,19 @@ test("Studio journey: the shell switches to Studio and opens the project creator
   // observable state that says the orchestrator is done writing views.
   await expect(page.locator('[data-vex-screen="systemCheck"]')).toBeVisible();
   const tourPresent = (await page.locator("[data-vex-setup-tour]").count()) > 0;
+  if (TOUR_REQUIRED && !tourPresent) {
+    // FAIL, never skip: this run declared that it covers the Studio journey.
+    throw new Error(
+      "VEX_E2E_REQUIRE_TOUR=1 declares this run must cover the Studio journey, " +
+        "but the built bundle renders no `[data-vex-setup-tour]`, so it was " +
+        "built without `VITE_VEX_SETUP_TOUR=1`. Those two flags are a pair: " +
+        "`VITE_VEX_SETUP_TOUR=1` on the build step and `VEX_E2E_REQUIRE_TOUR=1` " +
+        "on the test step of job `vex-app-e2e` in `.github/workflows/ci.yml`. " +
+        "Losing either one would otherwise turn this required gate into a " +
+        "silent skip that proves nothing about Studio. Rebuild with " +
+        "`VITE_VEX_SETUP_TOUR=1 pnpm --dir vex-app build` and rerun.",
+    );
+  }
   test.skip(
     !tourPresent,
     "the Studio journey reaches the shell through the diagnostic setup tour, " +

@@ -30,6 +30,7 @@
 
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import type { FileNode } from "@shared/schemas/files.js";
+import type { TerminalErrorCode } from "@shared/schemas/terminal.js";
 import { cn } from "../../../../lib/utils.js";
 import {
   createTerminal,
@@ -66,12 +67,15 @@ import {
   beginClose,
   closeCommitted,
   closeFailed,
+  closeInFlight,
+  closeIsFailed,
   discardWorkspace,
   killProvedGone,
   openWorkspaceClose,
-  type WorkspaceCloseFailure,
+  type WorkspaceCloseFailureReport,
   type WorkspaceCloseOutcome,
   type WorkspaceCloseState,
+  type WorkspaceCloseWork,
 } from "../workspace/close-lifecycle.js";
 import type { WorkspaceMutation, WorkspaceState } from "../workspace/types.js";
 import { TerminalTabs } from "./TerminalTabs.js";
@@ -111,12 +115,28 @@ export interface StudioWorkspaceControllerProps {
   readonly projectId: string;
   readonly registry?: TerminalRegistry;
   readonly className?: string;
+  /**
+   * Ask this workspace's HOST to run the close again, after one failed.
+   *
+   * The retry cannot simply call `closeWorkspace` here, and the difference is
+   * the whole reason this prop exists: a close that succeeds must also remove
+   * the project from the kept-alive set, and that transition belongs to
+   * `StudioCenter` alone. A retry answered inside this component would commit
+   * the snapshot, end the shells and then leave a `closed` workspace mounted
+   * and shown - a surface that can no longer persist, open a terminal or be
+   * closed again.
+   *
+   * Absent only where no such host exists (a controller mounted on its own),
+   * where the local close is the honest fallback: there is no set to leave.
+   */
+  readonly onRetryClose?: () => void;
 }
 
 export function StudioWorkspaceController({
   projectId,
   registry,
   className,
+  onRetryClose,
 }: StudioWorkspaceControllerProps): JSX.Element {
   const [state, setState] = useState<WorkspaceState>(() => emptyWorkspace(projectId));
   const [notice, setNotice] = useState<string | null>(null);
@@ -401,6 +421,14 @@ export function StudioWorkspaceController({
    * proceed on its result rather than in parallel with it; the same discipline
    * is what the outcome checks below implement.
    *
+   * ## What it is asked to do comes from the model
+   *
+   * `work` is the model's answer, not this function's: a first attempt commits
+   * and then kills, while a retry of an attempt that ALREADY committed finishes
+   * the outstanding kills and persists nothing at all. Deciding that here as
+   * well as in `beginClose` is how the two would drift, and the drift is a
+   * data-loss one - see `close-lifecycle.ts` on why the failure is two phases.
+   *
    * ## Why each step is where it is
    *
    *  1. SHUT ADMISSION, before any await. `closing` stops every background
@@ -427,24 +455,34 @@ export function StudioWorkspaceController({
    *
    *     The creates are JOINED rather than cancelled, because a create that has
    *     already been issued may already own a pty, and the close cannot know
-   *     whether one exists until that call has answered. Whatever they land
-   *     with goes into `strandedTerminalsRef` and from there into step 4's
-   *     kill sweep, so a late pty is ended with the same outcome check as the
-   *     rest rather than by an unread `void kill` racing the close's own
-   *     report.
-   *  3. PERSIST AND AWAIT IT, THEN CHECK IT. `persistTerminalWorkspace` does
+   *     whether one exists until that call has answered.
+   *  3. SWEEP THE STRANDED PTYS, on EVERY path and BEFORE the commit is
+   *     attempted. A create that landed during the close published nothing:
+   *     no pane names its terminal, no snapshot can carry it, and this attempt
+   *     is the only thing that knows it exists. Sweeping it after the commit
+   *     block - which is where this used to live - leaked it on every failed
+   *     commit, because a refused persist returns first and takes the only
+   *     reference to that pty with it. Killing it before the commit costs the
+   *     snapshot nothing: it was never in the layout being written.
+   *
+   *     A stranded kill that is not proven gone goes BACK into the set, so the
+   *     next attempt sweeps it again rather than dropping it silently.
+   *  4. PERSIST AND AWAIT IT, THEN CHECK IT. `persistTerminalWorkspace` does
    *     not resolve on delivery: main records the topology and the host's
    *     commit owner serializes every live mirror into the project's snapshot
    *     file before the reply comes back. A REFUSED or UNREACHABLE commit means
    *     the buffers are NOT on disk, and killing after one is the data loss
    *     this whole ordering exists to prevent - so the close stops, the phase
-   *     becomes `failed`, nothing is killed, and the workspace stays exactly as
-   *     the user left it.
-   *  4. KILL, through the model's own `closing` intent, so "a close kills"
+   *     becomes `failed_before_commit`, no shell of the layout is touched, and
+   *     the workspace stays exactly as the user left it.
+   *  5. KILL, through the model's own `closing` intent, so "a close kills"
    *     stays one decision in `workspace-model.ts` rather than two. Refusals
-   *     are read, not discarded: a code that PROVES the shell is gone
-   *     (`killProvedGone`) settles it, and anything else leaves a possibly
-   *     running shell and fails the close.
+   *     are read, not discarded: `unknown_terminal` PROVES the shell is gone
+   *     (`killProvedGone`) and settles it, `foreign_terminal` says the host
+   *     holds it for another window and fails the close as `kill_not_owned`,
+   *     and anything else leaves a possibly running shell. Whatever is left
+   *     unended travels into the failed phase, so the retry knows which shells
+   *     it still owes.
    *
    * ## Before the restore has landed, nothing is persisted
    *
@@ -455,54 +493,77 @@ export function StudioWorkspaceController({
    * on disk stays the last good one and any terminals a revive had already
    * produced are found by the next open, which main answers from live state.
    */
-  const runClose = useCallback(async (): Promise<WorkspaceCloseOutcome> => {
-    if (persistTimerRef.current !== null) {
-      clearTimeout(persistTimerRef.current);
-      persistTimerRef.current = null;
-    }
+  const runClose = useCallback(
+    async (work: WorkspaceCloseWork): Promise<WorkspaceCloseOutcome> => {
+      if (persistTimerRef.current !== null) {
+        clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
 
-    // ---- stop everything that could still change the layout ----
-    // Cancels the mount's restore and any create issued before this line; both
-    // recheck the generation at publication and clean up what they own.
-    generationRef.current += 1;
-    // Snapshotted before the await: a create admitted after `closing` is
-    // refused, so the set cannot grow past this point, and iterating the live
-    // set while entries remove themselves is a mutation during traversal.
-    await Promise.all([...pendingOpensRef.current]);
+      // ---- stop everything that could still change the layout ----
+      // Cancels the mount's restore and any create issued before this line;
+      // both recheck the generation at publication and clean up what they own.
+      generationRef.current += 1;
+      // Snapshotted before the await: a create admitted after `closing` is
+      // refused, so the set cannot grow past this point, and iterating the live
+      // set while entries remove themselves is a mutation during traversal.
+      await Promise.all([...pendingOpensRef.current]);
 
-    const closing = stateRef.current;
+      // ---- the stranded sweep, on EVERY path ----
+      const stranded = [...strandedTerminalsRef.current];
+      strandedTerminalsRef.current = new Set();
+      const strandedUnended = await endTerminals(stranded);
+      for (const entry of strandedUnended) {
+        strandedTerminalsRef.current.add(entry.terminalId);
+      }
 
-    // ---- the commit, CHECKED ----
-    if (hydratedRef.current) {
-      const persisted = await persistTerminalWorkspace(toPersistedLayout(closing));
-      if (!persisted.ok) return fail("persist_unreachable");
-      if (!persisted.data.ok) return fail("persist_refused");
-    }
+      if (work.kind === "finish_kills") {
+        return settle(await endTerminals(work.terminalIds));
+      }
 
-    // ---- the kills, CHECKED ----
-    const stranded = [...strandedTerminalsRef.current];
-    strandedTerminalsRef.current = new Set();
-    const plan = collectCleanups(closing.tabs, "closing");
-    const outcomes = await Promise.all(
-      [...plan.killTerminalIds, ...stranded].map(
-        async (terminalId) => await killTerminal(terminalId),
-      ),
-    );
-    const ended = outcomes.every(
-      (outcome) =>
-        outcome.ok && (outcome.data.ok || killProvedGone(outcome.data.code)),
-    );
-    if (!ended) return fail("kill_incomplete");
+      const closing = stateRef.current;
 
-    publishCloseState(closeCommitted(closeStateRef.current));
-    return { ok: true };
+      // ---- the commit, CHECKED ----
+      if (hydratedRef.current) {
+        const persisted = await persistTerminalWorkspace(toPersistedLayout(closing));
+        if (!persisted.ok) return fail({ failure: "persist_unreachable" });
+        if (!persisted.data.ok) return fail({ failure: "persist_refused" });
+      }
 
-    function fail(failure: WorkspaceCloseFailure): WorkspaceCloseOutcome {
-      publishCloseState(closeFailed(closeStateRef.current, failure));
-      setNotice(CLOSE_FAILURE_COPY[failure]);
-      return { ok: false, failure };
-    }
-  }, [publishCloseState]);
+      // ---- the kills, CHECKED ----
+      const plan = collectCleanups(closing.tabs, "closing");
+      return settle(await endTerminals(plan.killTerminalIds));
+
+      /**
+       * Turn what survived the sweep into the attempt's outcome.
+       *
+       * The stranded leftovers COUNT towards failure - a shell nothing can name
+       * is the worst kind to leave running - but they are not `outstanding`,
+       * because their retry path is `strandedTerminalsRef`, which every attempt
+       * drains first. Only shells of the committed layout belong in the phase.
+       */
+      function settle(unended: readonly UnendedTerminal[]): WorkspaceCloseOutcome {
+        const all = [...unended, ...strandedUnended];
+        if (all.length === 0) {
+          publishCloseState(closeCommitted(closeStateRef.current));
+          return { ok: true };
+        }
+        return fail({
+          failure: all.some((entry) => entry.code === "foreign_terminal")
+            ? "kill_not_owned"
+            : "kill_incomplete",
+          outstandingKillIds: unended.map((entry) => entry.terminalId),
+        });
+      }
+
+      function fail(report: WorkspaceCloseFailureReport): WorkspaceCloseOutcome {
+        publishCloseState(closeFailed(closeStateRef.current, report));
+        setNotice(CLOSE_FAILURE_COPY[report.failure]);
+        return { ok: false, failure: report.failure };
+      }
+    },
+    [publishCloseState],
+  );
 
   /**
    * The close as its callers see it: SINGLE-FLIGHT, and answered.
@@ -527,7 +588,7 @@ export function StudioWorkspaceController({
     }
     publishCloseState(admission.state);
     setNotice(null);
-    const run = runClose();
+    const run = runClose(admission.work);
     closeRunRef.current = run;
     try {
       return await run;
@@ -762,12 +823,15 @@ export function StudioWorkspaceController({
         // Nothing references this terminal and nothing ever will. It is ours to
         // end, and leaving it is what "an invisible running shell" means.
         //
-        // WHO ends it depends on why it is stale. A close is running and is
+        // WHO ends it depends on why it is stale. A close that is RUNNING is
         // already awaiting this call, so the pty is handed to its checked kill
         // sweep; killing here instead would be an unread `void` on the one path
         // where the close is about to report whether every shell ended. Every
-        // other staleness has no such owner, so this call ends it itself.
-        if (!admitsTerminalCreate(closeStateRef.current)) {
+        // other staleness has no such owner, so this call ends it itself - and
+        // the question is `closeInFlight`, not "does this phase admit a
+        // create", because `failed_after_commit` refuses creates while no close
+        // is running to sweep what it was handed.
+        if (closeInFlight(closeStateRef.current)) {
           strandedTerminalsRef.current.add(terminalId);
           return;
         }
@@ -970,10 +1034,35 @@ export function StudioWorkspaceController({
               // something, it did not happen, and their shells are still
               // running. `alert` is what makes a screen reader say so without
               // waiting for the next focus move.
-              role={closePhase.phase === "failed" ? "alert" : "status"}
+              role={closeIsFailed(closePhase) ? "alert" : "status"}
               className="flex shrink-0 items-start gap-2 border-b border-line-3 bg-warning-wash px-3 py-2 text-[12px] leading-4 text-ink-primary"
             >
               <span className="flex-1">{notice}</span>
+              {/* THE RETRY, beside the sentence that says a retry is worth
+                * making. The copy has always said "Try closing again" while the
+                * row offered only Dismiss, so the only way to act on it was to
+                * find the close gesture again in another column. Same shape as
+                * the host-loss row's "Restore terminals" action above, which is
+                * this surface's pattern for an error row with one repair.
+                *
+                * `kill_not_owned` is the one failure with no retry: the host
+                * reports the shell as another window's, and asking this window
+                * again cannot change that. */}
+              {closeIsFailed(closePhase) && closePhase.failure !== "kill_not_owned" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onRetryClose === undefined) {
+                      void closeWorkspace();
+                      return;
+                    }
+                    onRetryClose();
+                  }}
+                  className="rounded px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
+                  Try closing again
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
@@ -989,6 +1078,48 @@ export function StudioWorkspaceController({
       />
     </div>
   );
+}
+
+/**
+ * A shell the host did NOT prove ended, with the code it answered.
+ *
+ * `code` is `null` when the call did not reach main at all, which is a
+ * different fact from a refusal and is kept separate for that reason: only a
+ * refusal can carry `foreign_terminal`, the one code that says the shell exists
+ * and belongs to somebody else.
+ */
+interface UnendedTerminal {
+  readonly terminalId: string;
+  readonly code: TerminalErrorCode | null;
+}
+
+/**
+ * Kill every one of these, CONCURRENTLY, and report what survived.
+ *
+ * Returning the survivors rather than a boolean is what lets a retry finish the
+ * close: `close-lifecycle.ts` puts these ids in the failed phase, and the next
+ * attempt kills exactly them instead of re-running a commit that would write a
+ * snapshot reconciled against a half-killed workspace.
+ */
+async function endTerminals(
+  terminalIds: readonly string[],
+): Promise<readonly UnendedTerminal[]> {
+  const outcomes = await Promise.all(
+    terminalIds.map(async (terminalId) => ({
+      terminalId,
+      outcome: await killTerminal(terminalId),
+    })),
+  );
+  const unended: UnendedTerminal[] = [];
+  for (const { terminalId, outcome } of outcomes) {
+    if (!outcome.ok) {
+      unended.push({ terminalId, code: null });
+      continue;
+    }
+    if (outcome.data.ok || killProvedGone(outcome.data.code)) continue;
+    unended.push({ terminalId, code: outcome.data.code });
+  }
+  return unended;
 }
 
 let idCounter = 0;

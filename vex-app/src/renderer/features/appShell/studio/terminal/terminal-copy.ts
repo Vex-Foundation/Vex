@@ -43,7 +43,12 @@ export const REFUSAL_COPY: Partial<Record<TerminalErrorCode, string>> = {
  * error rather than a reason code printed at the user. Each one names what did
  * or did not survive, because that is the fact the user needs before deciding
  * whether to retry - the first two mean nothing was saved AND nothing was lost,
- * the third means the layout is safe and some shells are not.
+ * the last two mean the layout is safe and a shell is not.
+ *
+ * Only three of the four invite a retry. `kill_not_owned` says the host
+ * reported a shell as belonging to ANOTHER Vex window, which no retry from this
+ * one can change, so its sentence names the owner instead of asking the user to
+ * try the same thing again.
  *
  * These live here rather than in `studio-copy.ts` deliberately: that module
  * owns the SHELL's vocabulary and says so in its own doc ("the terminal, the
@@ -58,6 +63,8 @@ export const CLOSE_FAILURE_COPY: Readonly<Record<WorkspaceCloseFailure, string>>
     "The terminal service refused to save this workspace, so nothing was closed. Your terminals are still running. Try closing again.",
   kill_incomplete:
     "This workspace was saved, but at least one shell could not be ended. Your work is safe. Try closing again.",
+  kill_not_owned:
+    "This workspace was saved, but the terminal service reports at least one of its shells as belonging to another Vex window, so this window cannot end it. Your work is safe. Close that window to end the shell.",
 };
 
 /** Refused because this workspace is closing. Not a bound; a phase. */

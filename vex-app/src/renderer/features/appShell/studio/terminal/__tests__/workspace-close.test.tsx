@@ -398,6 +398,218 @@ describe("a close whose COMMIT was refused destroys nothing", () => {
   });
 });
 
+/* ------------------------------------------------------------------ *
+ * B4 review round 2, finding W2a: a failure BEFORE the commit and a
+ * failure AFTER it are different states, and conflating them lost data
+ * ------------------------------------------------------------------ */
+
+describe("a close that failed AFTER the commit never persists again", () => {
+  /**
+   * THE ROUND-2 DATA-LOSS PROOF.
+   *
+   * The host does not write the layout it is handed: it reconciles that layout
+   * against the terminals that are LIVE at the moment of the commit
+   * (`host-service.ts`, `reconcile(layout, entries)`) and writes the
+   * intersection. So after a PARTIAL kill sweep - the ordinary "one shell would
+   * not die" case - a second commit writes a snapshot with the killed
+   * terminals missing, over the one that carried their buffers.
+   *
+   * With one `failed` phase the retry re-ran the whole close, second commit
+   * included. The two phases are what make the retry finish the kills instead.
+   */
+  it("RETRIES the kills only, so the committed snapshot keeps both terminals", async () => {
+    const view = renderController("p1");
+    await settleRestore();
+    await openTerminals(view, ["a1", "a2"]);
+
+    bridge.killRefusals.set("a1", "host_unavailable");
+    expect(await closeWorkspace("p1")).toEqual({
+      ok: false,
+      failure: "kill_incomplete",
+    });
+    // The commit happened and it carried BOTH terminals; a2 is gone and a1
+    // survived its refused kill.
+    expect(bridge.ops[0]).toBe("persist:p1:2");
+    expect([...bridge.livePtys]).toEqual(["a1"]);
+
+    bridge.killRefusals.delete("a1");
+    expect(await closeWorkspace("p1")).toEqual({ ok: true });
+
+    // ONE commit for the whole close, and it is still the one holding two
+    // panes. A second one here would have been reconciled against a workspace
+    // where only a1 was left running, and a2's scrollback would be gone.
+    expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
+      "persist:p1:2",
+    ]);
+    expect(bridge.persisted).toHaveLength(1);
+    expect(
+      bridge.persisted[0]?.groups.flatMap((group) =>
+        group.panes.map((pane) => pane.terminalId),
+      ),
+    ).toEqual(["a1", "a2"]);
+    // The retry killed exactly what was outstanding: a1 twice in total (the
+    // refused attempt and the one that worked), a2 once.
+    expect(bridge.kills).toEqual(["a1", "a2", "a1"]);
+    expect([...bridge.livePtys]).toEqual([]);
+  });
+
+  it("suppresses the debounce and the visibility flush while the retry is owed", async () => {
+    vi.useFakeTimers();
+    const view = renderController("p1");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    for (const [index, terminalId] of ["a1", "a2"].entries()) {
+      bridge.nextCreate = {
+        ok: true,
+        value: { terminalId, pid: index, shellName: terminalId, cwd: "/w" },
+      };
+      await act(async () => {
+        within(view.container).getByRole("button", { name: "New terminal" }).click();
+        await vi.advanceTimersByTimeAsync(10);
+      });
+    }
+
+    bridge.killRefusals.set("a1", "host_unavailable");
+    await act(async () => {
+      await lifecycleOf("p1").close();
+    });
+    expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
+      "persist:p1:2",
+    ]);
+
+    // Every background writer, driven while the workspace sits in
+    // `failed_after_commit`. a2 is already dead, so any write now commits a
+    // snapshot without it.
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    await act(async () => {
+      view.unmount();
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
+      "persist:p1:2",
+    ]);
+  });
+
+  it("REFUSES a new terminal there, which no snapshot and no retry could reach", async () => {
+    const view = renderController("p1");
+    await settleRestore();
+    await openTerminals(view, ["a1"]);
+
+    bridge.killRefusals.set("a1", "host_unavailable");
+    await closeWorkspace("p1");
+
+    const creates = bridge.creates.length;
+    await act(async () => {
+      within(view.container).getByRole("button", { name: "New terminal" }).click();
+      await Promise.resolve();
+    });
+    // No pty was ever asked for, so there is none to strand.
+    expect(bridge.creates.length).toBe(creates);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * B4 review round 2, finding W2c: `foreign_terminal` says the shell
+ * EXISTS, so it cannot settle a kill
+ * ------------------------------------------------------------------ */
+
+describe("a shell the host says belongs to ANOTHER window", () => {
+  /**
+   * `PtyHostService.owned` returns `unknown_terminal` when it holds no record
+   * and `foreign_terminal` when it holds one owned by a different window, and
+   * says so in its own doc: "the first says the terminal is gone and the UI
+   * should forget it, the second says the caller asked about someone else's".
+   * Treating the second as proof of death reported a close as complete while
+   * the shell was still running, and unmounted the workspace over it.
+   */
+  it("FAILS the close and names the ownership problem, without offering a retry", async () => {
+    const view = renderController("p1");
+    await settleRestore();
+    await openTerminals(view, ["a1", "a2"]);
+
+    bridge.killRefusals.set("a1", "foreign_terminal");
+    expect(await closeWorkspace("p1")).toEqual({
+      ok: false,
+      failure: "kill_not_owned",
+    });
+    // The refused kill left the shell running, which is the fact the old code
+    // reported as success.
+    expect([...bridge.livePtys]).toEqual(["a1"]);
+
+    const alert = await within(view.container).findByRole("alert");
+    expect(alert.textContent).toContain("another Vex window");
+    // No retry from this window can change whose shell it is, so the row does
+    // not offer one.
+    expect(
+      within(alert).queryByRole("button", { name: "Try closing again" }),
+    ).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * B4 review round 2, finding W2d: the failure notice can be ACTED on
+ * ------------------------------------------------------------------ */
+
+describe("the failure notice carries the retry it tells the user to make", () => {
+  it("re-enters the close from the alert, and the retry commits nothing new", async () => {
+    const view = renderController("p1");
+    await settleRestore();
+    await openTerminals(view, ["a1", "a2"]);
+
+    bridge.killRefusals.set("a1", "host_unavailable");
+    await closeWorkspace("p1");
+    const alert = await within(view.container).findByRole("alert");
+    expect(alert.textContent).toContain("Try closing again");
+
+    bridge.killRefusals.delete("a1");
+    await act(async () => {
+      within(alert).getByRole("button", { name: "Try closing again" }).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The close FINISHED from the notice: every shell ended, and the snapshot
+    // that carried them was not rewritten.
+    expect([...bridge.livePtys]).toEqual([]);
+    expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
+      "persist:p1:2",
+    ]);
+    expect(within(view.container).queryByRole("alert")).toBeNull();
+  });
+
+  it("a pre-commit failure retries the WHOLE close from the same button", async () => {
+    const view = renderController("p1");
+    await settleRestore();
+    await openTerminals(view, ["a1"]);
+
+    bridge.nextPersist = { ok: false, code: "host_unavailable" };
+    await closeWorkspace("p1");
+    const alert = await within(view.container).findByRole("alert");
+
+    bridge.nextPersist = { ok: true };
+    await act(async () => {
+      within(alert).getByRole("button", { name: "Try closing again" }).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Nothing was on disk, so this retry DOES commit - a second write, which
+    // is the right number here because the first was REFUSED and left the
+    // snapshot untouched - and only then kills.
+    expect(bridge.ops).toEqual(["persist:p1:1", "persist:p1:1", "kill:a1"]);
+    expect([...bridge.livePtys]).toEqual([]);
+  });
+});
+
 describe("the LATE-CREATE fence: nothing escapes the kill set", () => {
   /**
    * A create issued before the close and landing after it.
@@ -449,6 +661,82 @@ describe("the LATE-CREATE fence: nothing escapes the kill set", () => {
     expect(bridge.ops.indexOf("persist:p1:1")).toBeLessThan(
       bridge.ops.indexOf("kill:a1"),
     );
+  });
+
+  /**
+   * B4 review round 2, finding W2b: THE STRANDED PTY LEAKED ON A FAILED
+   * COMMIT.
+   *
+   * The sweep used to be read AFTER the commit block, so a refused persist
+   * returned first and took the only reference to the late pty with it: no
+   * pane, no snapshot entry, no kill set, and a shell holding a host slot and
+   * a project lease for the rest of the window's life.
+   */
+  it("unwinds a late create even when the commit is REFUSED", async () => {
+    const view = renderController("p1");
+    await settleRestore();
+    await openTerminals(view, ["a1"]);
+
+    bridge.deferCreate = true;
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "late", pid: 9, shellName: "late", cwd: "/w" },
+    };
+    await act(async () => {
+      within(view.container).getByRole("button", { name: "New terminal" }).click();
+      await Promise.resolve();
+    });
+
+    bridge.nextPersist = { ok: false, code: "host_unavailable" };
+    let settled: WorkspaceCloseOutcome | null = null;
+    await act(async () => {
+      const running = lifecycleOf("p1").close();
+      await Promise.resolve();
+      bridge.settleCreates();
+      settled = await running;
+    });
+
+    expect(settled).toEqual({ ok: false, failure: "persist_refused" });
+    // THE LEAK ASSERTION. `a1` is a published terminal of a workspace whose
+    // close failed, so it stays running - that is the failed-state contract.
+    // `late` is referenced by nothing and nobody has ever seen its id, so it
+    // is gone.
+    expect([...bridge.livePtys]).toEqual(["a1"]);
+    expect(bridge.kills).toEqual(["late"]);
+  });
+
+  it("KEEPS a stranded pty it could not end, so the next attempt sweeps it again", async () => {
+    const view = renderController("p1");
+    await settleRestore();
+    await openTerminals(view, ["a1"]);
+
+    bridge.deferCreate = true;
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "late", pid: 9, shellName: "late", cwd: "/w" },
+    };
+    await act(async () => {
+      within(view.container).getByRole("button", { name: "New terminal" }).click();
+      await Promise.resolve();
+    });
+
+    bridge.killRefusals.set("late", "host_unavailable");
+    bridge.nextPersist = { ok: false, code: "host_unavailable" };
+    await act(async () => {
+      const running = lifecycleOf("p1").close();
+      await Promise.resolve();
+      bridge.settleCreates();
+      await running;
+    });
+    expect([...bridge.livePtys].toSorted()).toEqual(["a1", "late"]);
+
+    // The id was NOT dropped with the failed attempt: it is swept again, and
+    // this time the host ends it.
+    bridge.killRefusals.delete("late");
+    bridge.nextPersist = { ok: true };
+    expect(await closeWorkspace("p1")).toEqual({ ok: true });
+    expect([...bridge.livePtys]).toEqual([]);
+    expect(bridge.kills).toEqual(["late", "late", "a1"]);
   });
 
   it("REFUSES a new terminal gesture made while the workspace is closing", async () => {

@@ -303,17 +303,39 @@ export function StudioCenter({
       }
       void (async () => {
         const outcome = await lifecycle.close();
-        // A FAILED CLOSE CHANGES NOTHING HERE. The snapshot was not committed
+        // A FAILED CLOSE KEEPS THE WORKSPACE. The snapshot was not committed
         // or the shells were not ended, so the workspace stays mounted and
-        // fully usable, and the controller is already showing the user what
-        // happened and offering the retry. Removing it from the set would
-        // unmount the only owner of a layout that is still only in memory,
-        // which is exactly the loss the outcome check exists to prevent.
-        if (!outcome.ok) return;
+        // fully usable. Removing it from the set would unmount the only owner
+        // of a layout that may still be only in memory, which is exactly the
+        // loss the outcome check exists to prevent.
+        //
+        // IT ALSO HAS TO BE SEEN. The controller renders the failure as an
+        // alert inside its own subtree, and every workspace but the active one
+        // is CSS-hidden here - so a failed close of a hidden workspace put an
+        // error, and its retry, somewhere nobody was looking, while the prompt
+        // that started the gesture had already closed. Making the failed
+        // workspace active is what puts the alert in front of the person who
+        // asked for the close. It cannot be refused: `selectProject` always
+        // admits a project already in the set.
+        //
+        // The alternative was to hold the keep-alive prompt open with per-row
+        // pending and error state, which preserves the user's original intent
+        // (they were opening a fifth project). Rejected: it gives one close
+        // outcome a second observer with its own copy of the failure, in a
+        // modal that would then be showing the same error the workspace's own
+        // alert shows, and it leaves the retry in a dialog rather than beside
+        // the shells it is about. The intent is cheap to repeat; the error is
+        // not cheap to miss.
+        if (!outcome.ok) {
+          if (activeProjectIdRef.current !== projectId) {
+            setActiveProjectId(projectId);
+          }
+          return;
+        }
         leaveKeepAlive(projectId);
       })();
     },
-    [leaveKeepAlive],
+    [leaveKeepAlive, setActiveProjectId],
   );
 
   /**
@@ -374,6 +396,7 @@ export function StudioCenter({
           active={projectId === keepAlive.activeProjectId}
           explorers={explorers}
           terminals={terminalRegistry}
+          onRetryClose={handleCloseWorkspace}
         />
       ))}
 
@@ -411,11 +434,18 @@ function StudioProjectWorkspace({
   active,
   explorers,
   terminals,
+  onRetryClose,
 }: {
   readonly projectId: string;
   readonly active: boolean;
   readonly explorers: ExplorerRegistry;
   readonly terminals?: TerminalRegistry;
+  /**
+   * The controller's failure notice asks for the close again THROUGH THE
+   * CENTRE, so a retry that succeeds also leaves the kept-alive set. The
+   * controller cannot do that half itself; the set is this component's.
+   */
+  readonly onRetryClose: (projectId: string) => void;
 }): JSX.Element {
   useEffect(() => {
     explorers.acquire(projectId);
@@ -423,6 +453,10 @@ function StudioProjectWorkspace({
       explorers.release(projectId);
     };
   }, [explorers, projectId]);
+
+  const retryClose = useCallback((): void => {
+    onRetryClose(projectId);
+  }, [onRetryClose, projectId]);
 
   return (
     // `hidden`, never unmounted, for as long as this project is kept alive.
@@ -433,7 +467,11 @@ function StudioProjectWorkspace({
       data-vex-studio-workspace={projectId}
       className={cn("min-h-0 flex-1", !active && "hidden")}
     >
-      <StudioWorkspaceController projectId={projectId} registry={terminals} />
+      <StudioWorkspaceController
+        projectId={projectId}
+        registry={terminals}
+        onRetryClose={retryClose}
+      />
     </div>
   );
 }

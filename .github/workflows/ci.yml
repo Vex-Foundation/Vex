@@ -315,6 +315,15 @@ jobs:
       - name: Run Playwright smoke (xvfb)
         # xvfb provides the X server Electron needs on headless
         # Linux. `-a` picks a free display server number.
+        #
+        # `VEX_E2E_REQUIRE_TOUR` is the EXPECTATION half of the tour pair. The
+        # build step above bakes the tour in; this tells `e2e/studio.spec.ts`
+        # that CI promised Studio coverage, so a bundle without the tour FAILS
+        # here instead of firing the spec's local-developer skip. Without it,
+        # deleting the build step's `VITE_VEX_SETUP_TOUR` would silently reduce
+        # this required gate to zero Studio coverage while staying green.
+        env:
+          VEX_E2E_REQUIRE_TOUR: "1"
         run: xvfb-run -a pnpm run test:e2e
 
       - name: Upload Playwright report on failure

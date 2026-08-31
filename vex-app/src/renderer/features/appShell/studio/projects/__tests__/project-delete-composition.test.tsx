@@ -21,7 +21,11 @@
  *  3. `cleanup_pending` keeps its Retry reachable after the invalidation
  *     (finding 5b). Revert the pin and "keeps the cleanup retry reachable"
  *     fails: the request is closed and the dialog is off screen.
- *  4. The ratified guard is INTACT: a project that vanishes while the user is
+ *  4. A pending cleanup's retry carries the RECORDED folder choice, not the
+ *     one the user toggled afterwards. Revert the freeze and "resumes a
+ *     pending cleanup with the folder choice as first asked" fails on the
+ *     retry's `alsoTrashFolder`.
+ *  5. The ratified guard is INTACT: a project that vanishes while the user is
  *     typing the confirmation name still closes the dialog.
  *
  * Matchers are plain Vitest/Chai (this repository installs no jest-dom).
@@ -50,6 +54,8 @@ import {
 } from "../project-dialog-intent.js";
 import {
   PROJECT_DELETE_OUTCOME_SENTENCES,
+  PROJECT_DELETE_TRASH_LABEL,
+  PROJECT_DELETE_TRASH_LOCKED_NOTE,
   PROJECT_TRASH_SENTENCES,
 } from "../projects-copy.js";
 
@@ -111,6 +117,14 @@ function confirmButton(): HTMLButtonElement {
   });
   if (!(button instanceof HTMLButtonElement)) throw new Error("no confirm button");
   return button;
+}
+
+function trashCheckbox(): HTMLInputElement {
+  const box = screen.getByLabelText(PROJECT_DELETE_TRASH_LABEL, {
+    exact: false,
+  });
+  if (!(box instanceof HTMLInputElement)) throw new Error("no trash checkbox");
+  return box;
 }
 
 async function confirmDelete(): Promise<void> {
@@ -201,6 +215,47 @@ describe("an outcome the user still has to act on", () => {
     expect(deleteMock.mock.calls[1]?.[0]).toEqual({
       projectId: ATLAS.id,
       alsoTrashFolder: false,
+      expectedName: "atlas",
+    });
+  });
+
+  it("resumes a pending cleanup with the folder choice as first asked", async () => {
+    // The whole chain, real: the user asks for the trash, the tombstone
+    // records it, the list drops the row, the user changes their mind, and the
+    // retry still carries what main will actually honour. Reverting the freeze
+    // fails the last assertion with `alsoTrashFolder: false`.
+    deleteMock.mockResolvedValue({
+      ok: true,
+      data: { outcome: "cleanup_pending", ...cleanup, attempts: 1 },
+    });
+    listMock.mockResolvedValueOnce({ ok: true, data: [ATLAS] });
+    listMock.mockResolvedValue({ ok: true, data: [] });
+
+    renderHost();
+    await openDelete();
+    fireEvent.click(trashCheckbox());
+    await confirmDelete();
+
+    await screen.findByText("Vex has attempted this cleanup once.");
+    await waitFor(() => {
+      expect(listMock.mock.calls.length).toBeGreaterThan(1);
+    });
+    expect(deleteMock.mock.calls[0]?.[0].alsoTrashFolder).toBe(true);
+
+    // The row is gone from the list, the dialog stands on its pin, and the
+    // folder choice is now main's to keep.
+    expect(trashCheckbox().disabled).toBe(true);
+    expect(screen.getByText(PROJECT_DELETE_TRASH_LOCKED_NOTE)).not.toBeNull();
+    fireEvent.click(trashCheckbox());
+    expect(trashCheckbox().checked).toBe(true);
+
+    fireEvent.click(confirmButton());
+    await waitFor(() => {
+      expect(deleteMock).toHaveBeenCalledTimes(2);
+    });
+    expect(deleteMock.mock.calls[1]?.[0]).toEqual({
+      projectId: ATLAS.id,
+      alsoTrashFolder: true,
       expectedName: "atlas",
     });
   });

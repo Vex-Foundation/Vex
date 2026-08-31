@@ -1554,3 +1554,291 @@ describe("the orderly shutdown drains CONCURRENTLY", () => {
 
 /** Every terminal the concurrency test drains. Named so the gate reads once. */
 const TERMINAL_GLOBAL_DRAINS = TERMINALS_GLOBAL_MAX;
+
+/* ------------------------------------------------------------------ *
+ * B4 round 2: the host FORGETS a deleted project, or the quit resurrects it
+ * ------------------------------------------------------------------ */
+
+/** A store that records the projects it was asked to write, in order. */
+class RecordingSnapshotStore extends TerminalSnapshotStore {
+  readonly written: string[] = [];
+
+  override async write(
+    snapshot: import("@shared/schemas/terminal.js").TerminalWorkspaceSnapshot,
+  ): Promise<import("../snapshot-store.js").SnapshotWriteOutcome> {
+    this.written.push(snapshot.projectId);
+    return await super.write(snapshot);
+  }
+}
+
+function buildWith(store: TerminalSnapshotStore): {
+  service: PtyHostService;
+  ptys: ScriptedPty[];
+} {
+  const pool = scriptedSpawnerPool();
+  const service = new PtyHostService({
+    spawn: pool.spawn,
+    probe: fakeProbe({
+      directories: [CWD],
+      files: [SHELL],
+      executables: { bash: SHELL, [SHELL]: SHELL },
+    }),
+    baseEnv: { PATH: "/usr/bin" },
+    snapshotStore: store,
+    scrollbackRows: 1000,
+    graceMs: 60_000,
+    shortGraceMs: 6_000,
+    sendToMain: (message) => toMain.push(message),
+    platform: "linux",
+  });
+  return { service, ptys: pool.ptys };
+}
+
+function projectLayout(
+  projectId: string,
+  terminalId: string,
+  layoutVersion = 0,
+  groupId = "g1",
+): TerminalHostRequest {
+  return {
+    kind: "persistWorkspace",
+    projectId,
+    layoutVersion,
+    layout: {
+      projectId,
+      groups: [
+        {
+          groupId,
+          orientation: "horizontal",
+          panes: [{ terminalId, relativeSize: 1 }],
+          activePaneIndex: 0,
+        },
+      ],
+      activeGroupIndex: 0,
+    },
+  };
+}
+
+function createIn(
+  projectId: string,
+  terminalId: string,
+  windowId = "w1",
+): TerminalHostRequest {
+  return {
+    kind: "create",
+    terminalId,
+    windowId,
+    projectId,
+    launch: { executable: "bash", args: [], cwd: CWD, cols: 80, rows: 24, env: {} },
+  };
+}
+
+/**
+ * THE THIRD RESURRECTION ROUTE, and the only one no check on the persist path
+ * can see: the host commits on its OWN initiative.
+ *
+ * Main drops a deleted project's layout and refuses every commit it is asked
+ * to make for it. Neither reaches the host's own copy, and `runShutdown`
+ * commits EVERY key still in that map - so a graceful quit at any point after
+ * the delete put `<snapshots>/<projectId>.json` back on disk, reconciled
+ * against whatever terminals were live, at nobody's request.
+ */
+describe("a forgotten project is never committed again", () => {
+  it("commits NOTHING for it on the ordered shutdown, and still commits the survivors", async () => {
+    const store = new RecordingSnapshotStore(directory);
+    const { service } = buildWith(store);
+    expect((await send(service, createIn("doomed", "t1"))).ok).toBe(true);
+    expect((await send(service, createIn("kept", "t2"))).ok).toBe(true);
+
+    // THE PREMISE, on the world: both projects really do write a file, so the
+    // absence at the end is a fact about the forget.
+    expect((await send(service, projectLayout("doomed", "t1"))).ok).toBe(true);
+    expect((await send(service, projectLayout("kept", "t2"))).ok).toBe(true);
+    expect(await exists(path.join(directory, "doomed.json"))).toBe(true);
+    expect(await exists(path.join(directory, "kept.json"))).toBe(true);
+
+    expect(await send(service, { kind: "forgetWorkspace", projectId: "doomed" })).toEqual(
+      { ok: true, value: null },
+    );
+    // The delete's cleanup owns the file and removes it. The host must not.
+    await fs.rm(path.join(directory, "doomed.json"), { force: true });
+
+    store.written.length = 0;
+    await service.shutdownAll();
+
+    // THE WORLD FIRST: read back from the filesystem, not from any report.
+    expect(await exists(path.join(directory, "doomed.json"))).toBe(false);
+    expect(await exists(path.join(directory, "kept.json"))).toBe(true);
+    // And the shutdown did not so much as ATTEMPT the doomed project.
+    expect(store.written).toEqual(["kept"]);
+  });
+
+  it("answers ok for a project it never held, so a repeated delete is not an error", async () => {
+    const { service } = buildWith(new TerminalSnapshotStore(directory));
+
+    expect(await send(service, { kind: "forgetWorkspace", projectId: "never-seen" })).toEqual(
+      { ok: true, value: null },
+    );
+
+    await service.shutdownAll();
+  });
+
+  /**
+   * A QUEUED commit is a commit that has not read its layout yet. Deleting the
+   * key is what it finds when it runs, and that is the whole mechanism - but it
+   * only holds if the forget cannot be answered while the run that would
+   * schedule it is still in flight, which is why the handler JOINS.
+   */
+  it("drops a commit that was COALESCED behind an in-flight one", async () => {
+    const store = new GatedSnapshotStore(directory);
+    const { service } = buildWith(store);
+    expect((await send(service, createIn("doomed", "t1"))).ok).toBe(true);
+
+    // The first persist reaches its write and stops inside it.
+    const inWrite = store.blockNextWrite();
+    const first = service.handleMainMessage(
+      { requestId: "fA", request: projectLayout("doomed", "t1", 0, "gA") },
+      [],
+    );
+    await inWrite;
+
+    // The second arrives during that write and coalesces into ONE follow-up run
+    // that has not read a layout yet.
+    const second = service.handleMainMessage(
+      { requestId: "fB", request: projectLayout("doomed", "t1", 1, "gB") },
+      [],
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    expect(store.events).toEqual(["start gA"]);
+
+    // The delete lands here. It cannot answer until the run it joined is done.
+    const forget = service.handleMainMessage(
+      { requestId: "fC", request: { kind: "forgetWorkspace", projectId: "doomed" } },
+      [],
+    );
+    store.releaseWrite();
+    await Promise.all([first, second, forget]);
+
+    // The follow-up ran and found no layout: `gB` was never written. Without
+    // the delete it is `["start gA", "end gA", "start gB", "end gB"]`.
+    expect(store.events).toEqual(["start gA", "end gA"]);
+    const read = await store.read("doomed");
+    if (read.kind !== "ok") throw new Error(`snapshot not readable: ${read.kind}`);
+    expect(read.snapshot.layout.groups[0]?.groupId).toBe("gA");
+
+    await service.shutdownAll();
+    // And the shutdown that follows does not commit it either.
+    expect(store.events).toEqual(["start gA", "end gA"]);
+  });
+
+  /**
+   * THE JOIN, which is the half the FENCE cannot cover.
+   *
+   * A capture that is already INSIDE `write` is past every check the host can
+   * make: the rename will land. What must not happen is main being told the
+   * project is forgotten while that rename is still outstanding - the delete's
+   * next step REMOVES the snapshot file, and a rename completing after it puts
+   * the file back for good. So the handler does not answer until the run it
+   * joined has finished, which is what puts the removal after the last write
+   * this host will ever make for the project.
+   */
+  it("does not ANSWER while a capture of the project is inside its write", async () => {
+    const store = new GatedSnapshotStore(directory);
+    const { service } = buildWith(store);
+    expect((await send(service, createIn("doomed", "t1"))).ok).toBe(true);
+
+    const inWrite = store.blockNextWrite();
+    const persist = service.handleMainMessage(
+      { requestId: "hA", request: projectLayout("doomed", "t1", 0, "gA") },
+      [],
+    );
+    await inWrite;
+
+    let answered = false;
+    const forget = service
+      .handleMainMessage(
+        { requestId: "hB", request: { kind: "forgetWorkspace", projectId: "doomed" } },
+        [],
+      )
+      .then(() => {
+        answered = true;
+      });
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+
+    // STILL UNANSWERED. Without the join this is `true` here, and the delete
+    // would go on to remove a file this host is still in the middle of writing.
+    expect(answered).toBe(false);
+    expect(store.events).toEqual(["start gA"]);
+
+    store.releaseWrite();
+    await Promise.all([persist, forget]);
+    expect(answered).toBe(true);
+    expect(store.events).toEqual(["start gA", "end gA"]);
+
+    await service.shutdownAll();
+    expect(store.events).toEqual(["start gA", "end gA"]);
+  });
+
+  /**
+   * THE FENCE, which is the half deleting the key cannot cover.
+   *
+   * A capture already past `runCommit`'s read is carrying the layout in a local
+   * and would write the file whatever the map says. The drain it is waiting on
+   * is bounded but it is not instant, and a forget landing inside it must still
+   * cost that capture its write - so the map is re-read at the commit point,
+   * with no await between the check and the write.
+   */
+  it("drops a capture that was ALREADY DRAINING when the forget arrived", async () => {
+    const store = new GatedSnapshotStore(directory);
+    const { service } = buildWith(store);
+    expect((await send(service, createIn("doomed", "t1"))).ok).toBe(true);
+
+    // Hold the capture inside its drain - after it has read the layout, before
+    // it has written anything.
+    const terminal = service.terminal("t1");
+    if (terminal === undefined) throw new Error("unreachable");
+    let openDrain: () => void = () => {};
+    const draining = new Promise<void>((resolve) => {
+      openDrain = resolve;
+    });
+    let entered: () => void = () => {};
+    const inDrain = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    terminal.process.mirror.drain = async (): Promise<void> => {
+      entered();
+      await draining;
+    };
+
+    const persist = service.handleMainMessage(
+      { requestId: "gA", request: projectLayout("doomed", "t1", 0, "gA") },
+      [],
+    );
+    await inDrain;
+    expect(store.events).toEqual([]);
+
+    const forget = service.handleMainMessage(
+      { requestId: "gB", request: { kind: "forgetWorkspace", projectId: "doomed" } },
+      [],
+    );
+    openDrain();
+    await Promise.all([persist, forget]);
+
+    // The capture reached its commit point, re-read the map, and wrote nothing.
+    expect(store.events).toEqual([]);
+    expect(await exists(path.join(directory, "doomed.json"))).toBe(false);
+
+    await service.shutdownAll();
+    expect(store.events).toEqual([]);
+  });
+});
+
+/** Whether a path exists, read from the FILESYSTEM. */
+async function exists(file: string): Promise<boolean> {
+  try {
+    await fs.stat(file);
+    return true;
+  } catch {
+    return false;
+  }
+}

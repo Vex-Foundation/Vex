@@ -102,6 +102,17 @@ interface VersionedLayout {
 interface CommitRun {
   queued: boolean;
   readonly waiters: Array<(committed: boolean) => void>;
+  /**
+   * The whole run, INCLUDING every follow-up it goes on to schedule.
+   *
+   * Kept so a non-committing owner can JOIN the run rather than queue behind
+   * it: `forgetWorkspace` must not return while a capture of the project it is
+   * forgetting is still in flight, and asking `commitProject` to wait would
+   * have scheduled one more capture of a project that must never be written
+   * again. Assigned in the same synchronous span that publishes the entry, so
+   * an owner that finds the entry always finds the promise with it.
+   */
+  run: Promise<boolean>;
 }
 
 /**
@@ -313,6 +324,8 @@ export class PtyHostService {
         );
       case "readWorkspace":
         return await this.readWorkspace(request.projectId);
+      case "forgetWorkspace":
+        return await this.forgetWorkspace(request.projectId);
       case "revive":
         return await this.reviveProject(request);
       case "abandonRequest":
@@ -652,6 +665,61 @@ export class PtyHostService {
     return accept(null);
   }
 
+  /**
+   * STOP HOLDING a deleted project's layout, and never commit it again.
+   *
+   * ## The route this closes
+   *
+   * Main's own copy of a project's topology goes when the tombstone commits,
+   * and every commit main can be ASKED to make is now refused for a deleted
+   * project. Neither reaches this map. The host is fed a layout by every
+   * `persistWorkspace` and `runShutdown` then commits EVERY key it still holds
+   * - on its own initiative, answering nobody - so a graceful quit at any point
+   * after a delete recreated `<snapshots>/<projectId>.json` for that project.
+   * The file the delete's cleanup removed came back, reconciled against
+   * whatever terminals were live, at no renderer's request.
+   *
+   * VS Code's terminal service does the same thing at the same seam: on a
+   * shutdown that must not persist it calls `setTerminalLayoutInfo(undefined)`
+   * so the backend forgets the layout, rather than relying on the frontend
+   * having dropped its own copy (`vs/workbench/contrib/terminal/browser/
+   * terminalService.ts`, `_onWillShutdown`). The layout owner has to be TOLD.
+   *
+   * ## Why removing the key is not by itself enough
+   *
+   * A capture already in flight read its layout before this request arrived and
+   * would write the file afterwards. So the forget both:
+   *
+   *  - DELETES the key first, which is what a queued follow-up run and every
+   *    later commit see - `runCommit` finds no layout and writes nothing; and
+   *  - JOINS the run that was already in flight, so this request does not
+   *    answer main while a capture of the project is still going. Joining is
+   *    the shape that cannot lose the race: the entry in `commits` IS the
+   *    mutual exclusion, it is published before that run's first await, and it
+   *    is read here synchronously after the delete - so either there is no run
+   *    to lose to, or it is the run this awaits.
+   *
+   * The joined capture cannot resurrect the file either: it re-reads this map
+   * at its commit point (see `captureProject`) and drops the write.
+   *
+   * THE FILE IS NOT TOUCHED HERE. Removing it belongs to the delete's cleanup,
+   * which owns it; the host's obligation is only to never write it again.
+   */
+  private async forgetWorkspace(projectId: string): Promise<TerminalOutcome<null>> {
+    const held = this.layouts.delete(projectId);
+    const active = this.commits.get(projectId);
+    if (active !== undefined) await active.run;
+    // The join above is an await, and main dispatches control messages
+    // concurrently: a persist admitted before the tombstone committed could
+    // have landed in that window. Deleting again closes the handler's OWN
+    // window, so the postcondition main is told about - this host holds no
+    // layout for this project - is true at the moment of the reply. Anything
+    // arriving after it is refused by main's tombstone read on the persist.
+    this.layouts.delete(projectId);
+    if (held) this.log(`[pty-host] forgot the layout for ${projectId}`);
+    return accept(null);
+  }
+
   /* ---------------------------------------------------------------- *
    * Revive
    * ---------------------------------------------------------------- */
@@ -829,10 +897,10 @@ export class PtyHostService {
       });
     }
 
-    const state: CommitRun = { queued: false, waiters: [] };
+    const state: CommitRun = { queued: false, waiters: [], run: Promise.resolve(true) };
     // Written BEFORE the first await, so a request in the same tick sees it.
     this.commits.set(projectId, state);
-    return (async (): Promise<boolean> => {
+    const run = (async (): Promise<boolean> => {
       let outcome = await this.runCommit(projectId);
       for (;;) {
         if (!state.queued) {
@@ -847,6 +915,10 @@ export class PtyHostService {
         for (const waiter of waiters) waiter(outcome);
       }
     })();
+    // Still the same synchronous span: the IIFE ran only as far as its first
+    // await, so nothing has been able to read `state` in between.
+    state.run = run;
+    return run;
   }
 
   /** One capture of one project. Only ever called by `commitProject`. */
@@ -967,6 +1039,25 @@ export class PtyHostService {
       layout: committed.layout,
       terminals: committed.entries,
     };
+
+    // THE FENCE, taken at the commit point rather than at the start.
+    //
+    // A `forgetWorkspace` can land at any await this capture has already
+    // passed - the drain above is bounded but it is not instant - and the
+    // layout this run is carrying was read before it. Re-reading the map with
+    // NO await between the check and the write is what stops a capture that
+    // began while the project was live from writing the file after main has
+    // told this host the project is deleted.
+    //
+    // Forgotten is not a failure, so it answers like the other "nothing to
+    // commit" case in `runCommit`: there is no snapshot the caller lost.
+    if (!this.layouts.has(projectId)) {
+      this.log(
+        `[pty-host] dropped a capture for ${projectId}: the project was forgotten `
+          + "while it was being serialized",
+      );
+      return true;
+    }
     const written = await this.deps.snapshotStore.write(snapshot);
     if (written.kind !== "ok") {
       this.log(`[pty-host] snapshot not committed for ${projectId}: ${written.kind}`);

@@ -70,6 +70,26 @@
  * whole remedy is the reloaded list, so a project that really is gone should
  * take the dialog with it.
  *
+ * ## The folder choice FREEZES once the delete is durable
+ *
+ * Main writes the trash intent onto the TOMBSTONE, and a retry resumes that
+ * recorded request while ignoring the input the retry itself carries
+ * (`main/studio/project-delete.ts`, the `already_tombstoned` branch). So from
+ * the outcome that proves the tombstone exists, this dialog remembers the value
+ * it SUBMITTED - which is by definition the value the tombstone recorded,
+ * because that attempt is the one that created it - shows that value, freezes
+ * the checkbox, and sends the remembered value on every retry. Leaving the
+ * checkbox live would let a user uncheck it and watch the folder go to the
+ * trash anyway, or check it and watch the folder stay: a destructive choice the
+ * UI reported and the system did not honour.
+ *
+ * The freeze cannot outlive the dialog, and does not need to. A tombstoned row
+ * is `deleted_at IS NOT NULL`, `listProjects` reads `WHERE deleted_at IS NULL`
+ * (`main/database/projects/read.ts`), and this dialog's row comes only from
+ * that list through `StudioProjectDialogs` - so no delete dialog can ever be
+ * opened again on a project whose cleanup is still pending, and there is no
+ * reopened-after-restart case for the memory to miss.
+ *
  * ## No auto-retry, and no "do not ask again"
  *
  * `useDeleteProject` sets `retry: false` and this dialog never resubmits on the
@@ -118,6 +138,7 @@ import {
   PROJECT_DELETE_TITLE,
   PROJECT_DELETE_TRASH_HELP,
   PROJECT_DELETE_TRASH_LABEL,
+  PROJECT_DELETE_TRASH_LOCKED_NOTE,
   PROJECT_TRASH_SENTENCES,
   projectDeleteActiveCallsLine,
   projectDeleteAttemptsLine,
@@ -145,6 +166,22 @@ const CLOSING_OUTCOMES: ReadonlySet<ProjectDeleteResult["outcome"]> = new Set([
   "removed",
   "already_removed",
 ]);
+
+/**
+ * The outcomes that prove a TOMBSTONE EXISTS for this project, so main now owns
+ * the trash decision and a retry only resumes the request it recorded.
+ *
+ * Deliberately NOT `outcomePinsRow`: both `blocked_*` members pin the row but
+ * wrote NOTHING, so their retry is a first attempt and its checkbox is still a
+ * real choice. Only the four below mean the durable decision has been made.
+ *
+ * Within one dialog's life the FIRST of these is always the attempt that
+ * created the tombstone, because a row that is already tombstoned cannot be in
+ * the list this dialog's project comes from (`listProjects` reads
+ * `WHERE deleted_at IS NULL`).
+ */
+const DURABLE_TOMBSTONE_OUTCOMES: ReadonlySet<ProjectDeleteResult["outcome"]> =
+  new Set(["removed", "already_removed", "cleanup_pending", "cleanup_resumed"]);
 
 /**
  * Does this outcome leave the dialog standing on a row the LIST is about to
@@ -211,6 +248,13 @@ export function ProjectDeleteDialog({
    * ordinary path reads the live row and nothing here goes stale.
    */
   const [pinned, setPinned] = useState<ProjectDto | null>(null);
+  /**
+   * The trash choice this dialog SUBMITTED on the attempt that made the delete
+   * durable, and therefore the one the tombstone recorded. `null` until such an
+   * outcome arrives, which is exactly the window in which the checkbox is still
+   * a real choice.
+   */
+  const [recordedTrash, setRecordedTrash] = useState<boolean | null>(null);
 
   /**
    * The row this dialog is about. The live list row while there is one, the pin
@@ -238,6 +282,7 @@ export function ProjectDeleteDialog({
   useEffect(() => {
     if (!open) return;
     setAlsoTrashFolder(false);
+    setRecordedTrash(null);
     setTypedName("");
     setSubmitError(null);
     setOutcome(null);
@@ -268,6 +313,14 @@ export function ProjectDeleteDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row?.id]);
 
+  /**
+   * The value that goes on the wire and the value the checkbox shows: the
+   * recorded one once the delete is durable, the user's live one before that.
+   * One expression, so what is displayed and what is sent cannot diverge.
+   */
+  const trashFrozen = recordedTrash !== null;
+  const trashChoice = recordedTrash ?? alsoTrashFolder;
+
   const nameMatches = row !== null && typedName.trim() === row.name;
   const pending = deleteMutation.isPending;
   const confirmDisabled = !nameMatches || pending;
@@ -277,7 +330,7 @@ export function ProjectDeleteDialog({
     setSubmitError(null);
     const result = await deleteMutation.mutateAsync({
       projectId: row.id,
-      alsoTrashFolder,
+      alsoTrashFolder: trashChoice,
       expectedName: row.name,
     });
     if (!result.ok) {
@@ -285,6 +338,13 @@ export function ProjectDeleteDialog({
       return;
     }
     setOutcome(result.data);
+    // FREEZE the folder choice the moment the tombstone is proven to exist,
+    // recording the value this attempt sent. `current ?? ...` keeps the FIRST
+    // recording: a later `cleanup_resumed` reports on the same tombstone and
+    // must not overwrite what that tombstone was created with.
+    if (DURABLE_TOMBSTONE_OUTCOMES.has(result.data.outcome)) {
+      setRecordedTrash((current) => current ?? trashChoice);
+    }
     // Pinned BEFORE anything that can close: the list invalidation this Result
     // just triggered is already in flight.
     if (outcomePinsRow(result.data)) setPinned(row);
@@ -301,19 +361,19 @@ export function ProjectDeleteDialog({
       }
     }
   }, [
-    alsoTrashFolder,
     deleteMutation,
     nameMatches,
     onClose,
     onDeleted,
     pending,
     row,
+    trashChoice,
   ]);
 
   const name = row?.name ?? "";
   // The warning treatment is the CHECKBOX's, not the dialog's: it appears the
   // moment the action starts touching the user's files and goes when it stops.
-  const warned = alsoTrashFolder;
+  const warned = trashChoice;
 
   return (
     <Dialog
@@ -345,16 +405,23 @@ export function ProjectDeleteDialog({
 
           <label
             className={cn(
-              "flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 transition-colors",
+              "flex items-start gap-2.5 rounded-lg border px-3 py-2.5 transition-colors",
+              trashFrozen ? "cursor-default" : "cursor-pointer",
               warned
                 ? "border-warning/40 bg-warning-wash"
-                : "border-line-2 hover:bg-interactive-hover",
+                : trashFrozen
+                  ? "border-line-2"
+                  : "border-line-2 hover:bg-interactive-hover",
             )}
+            data-vex-delete-trash-frozen={trashFrozen ? "true" : undefined}
           >
             <input
               type="checkbox"
-              checked={alsoTrashFolder}
-              disabled={pending}
+              checked={trashChoice}
+              // Frozen, not merely busy: main owns this decision from the
+              // tombstone onwards, so the control must stop offering a choice
+              // it can no longer carry.
+              disabled={pending || trashFrozen}
               onChange={(event) => setAlsoTrashFolder(event.target.checked)}
               className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-warning)]"
             />
@@ -370,6 +437,11 @@ export function ProjectDeleteDialog({
               <span className="text-xs text-ink-tertiary">
                 {PROJECT_DELETE_TRASH_HELP}
               </span>
+              {trashFrozen ? (
+                <span className="text-xs text-ink-tertiary">
+                  {PROJECT_DELETE_TRASH_LOCKED_NOTE}
+                </span>
+              ) : null}
             </span>
           </label>
 

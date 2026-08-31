@@ -13,7 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
-import type { ProjectList } from "@shared/schemas/projects.js";
+import type { ProjectDto, ProjectList } from "@shared/schemas/projects.js";
 import { projectKeys } from "../../../../lib/api/projects.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { ExplorerRegistry } from "../explorer/index.js";
@@ -29,9 +29,28 @@ import { installStudioDomStubs, makeError, makeProject } from "./studio-fixtures
 
 const projectsListMock = vi.fn<() => Promise<Result<ProjectList>>>();
 
+/**
+ * The controller marker also plays its RETRY half of the contract.
+ *
+ * The real controller renders a failed close as an alert with a "Try closing
+ * again" action, and that action must reach the CENTRE rather than the
+ * controller's own close - a retry that succeeds has to leave the kept-alive
+ * set, and the set is this component's. A marker with no such button could not
+ * tell a wired retry from an unwired one.
+ */
 vi.mock("../terminal/StudioWorkspaceController.js", () => ({
-  StudioWorkspaceController: ({ projectId }: { projectId: string }) => (
-    <div data-testid={`workspace-${projectId}`} />
+  StudioWorkspaceController: ({
+    projectId,
+    onRetryClose,
+  }: {
+    projectId: string;
+    onRetryClose?: () => void;
+  }) => (
+    <div data-testid={`workspace-${projectId}`}>
+      <button type="button" onClick={onRetryClose}>
+        {`Try closing ${projectId} again`}
+      </button>
+    </div>
   ),
 }));
 
@@ -554,6 +573,148 @@ describe("closing the ACTIVE workspace", () => {
     // not be destroyed.
     expect(screen.queryByTestId(`workspace-${first.id}`)).not.toBeNull();
     expect(harness.disposedTerminals).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * B4 review round 2, finding W2d: a failed close of a HIDDEN workspace
+ * put its alert where nobody was looking
+ * ------------------------------------------------------------------ */
+
+describe("a FAILED close of a workspace that is not the active one", () => {
+  /** The four-project set, with the fifth left over to raise the prompt. */
+  async function openFour(): Promise<{
+    readonly projects: readonly ProjectDto[];
+    readonly harness: Harness;
+  }> {
+    const projects = Array.from({ length: 5 }, (_, index) =>
+      makeProject({ name: `p${String(index + 1)}` }),
+    );
+    projectsListMock.mockResolvedValue({ ok: true, data: projects });
+    const harness = renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+    for (const project of projects.slice(0, STUDIO_WORKSPACE_KEEP_ALIVE_MAX)) {
+      select(project.id);
+      await screen.findByTestId(`workspace-${project.id}`);
+    }
+    return { projects, harness };
+  }
+
+  function projectAt(projects: readonly ProjectDto[], index: number): ProjectDto {
+    const project = projects[index];
+    if (project === undefined) throw new Error("fixture");
+    return project;
+  }
+
+  /**
+   * THE VISIBILITY PROOF.
+   *
+   * Every kept-alive workspace but the active one is CSS-hidden here, and the
+   * controller renders a failed close as an alert inside its own subtree. So a
+   * close that failed for a hidden workspace raised an error, and its retry,
+   * in a subtree with `hidden` on it - while the prompt that started the
+   * gesture had already closed on the click. The user saw nothing at all.
+   */
+  it("ACTIVATES it, so the alert and its retry are where the user is looking", async () => {
+    const { projects } = await openFour();
+    const first = projectAt(projects, 0);
+    const fourth = projectAt(projects, STUDIO_WORKSPACE_KEEP_ALIVE_MAX - 1);
+    const fifth = projectAt(projects, projects.length - 1);
+    publishRecordingLifecycle(first.id, { ok: false, failure: "kill_incomplete" });
+
+    select(fifth.id);
+    await screen.findByText("Close a project workspace first");
+    // p4 is the shown workspace; p1, the one about to be closed, is hidden.
+    await waitFor(() => {
+      expect(useUiStore.getState().activeProjectId).toBe(fourth.id);
+    });
+    expect(
+      screen
+        .getByTestId(`workspace-${first.id}`)
+        .closest("[data-vex-studio-workspace]")
+        ?.hasAttribute("hidden"),
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close the p1 workspace" }));
+
+    await waitFor(() => {
+      expect(useUiStore.getState().activeProjectId).toBe(first.id);
+    });
+    // Still mounted - a failed close destroys nothing - and now SHOWN.
+    expect(
+      screen
+        .getByTestId(`workspace-${first.id}`)
+        .closest("[data-vex-studio-workspace]")
+        ?.hasAttribute("hidden"),
+    ).toBe(false);
+  });
+
+  it("leaves the selection alone when the failed workspace was already active", async () => {
+    const { projects } = await openFour();
+    const first = projectAt(projects, 0);
+    const fifth = projectAt(projects, projects.length - 1);
+    select(first.id);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    publishRecordingLifecycle(first.id, { ok: false, failure: "persist_refused" });
+
+    select(fifth.id);
+    await screen.findByText("Close a project workspace first");
+    fireEvent.click(screen.getByRole("button", { name: "Close the p1 workspace" }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(useUiStore.getState().activeProjectId).toBe(first.id);
+  });
+
+  /**
+   * The retry must go through THIS component, not the controller's own close.
+   *
+   * A retry answered inside the controller would commit the snapshot, end the
+   * shells and leave a `closed` workspace mounted and shown here: a surface
+   * that can no longer persist, open a terminal, or be closed again.
+   */
+  it("routes the notice's retry through the centre, so a second attempt leaves the set", async () => {
+    const { projects, harness } = await openFour();
+    const first = projectAt(projects, 0);
+    const fifth = projectAt(projects, projects.length - 1);
+    publishProjectTerminals(first.id, ["t-a"]);
+    let outcome: WorkspaceCloseOutcome = {
+      ok: false,
+      failure: "kill_incomplete",
+    };
+    const calls = { closes: 0 };
+    publishProjectWorkspaceLifecycle(first.id, {
+      close: () => {
+        calls.closes += 1;
+        return Promise.resolve(outcome);
+      },
+      discard: () => undefined,
+    });
+
+    select(fifth.id);
+    await screen.findByText("Close a project workspace first");
+    fireEvent.click(screen.getByRole("button", { name: "Close the p1 workspace" }));
+    await waitFor(() => {
+      expect(calls.closes).toBe(1);
+    });
+    expect(screen.queryByTestId(`workspace-${first.id}`)).not.toBeNull();
+
+    outcome = { ok: true };
+    fireEvent.click(
+      screen.getByRole("button", { name: `Try closing ${first.id} again` }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId(`workspace-${first.id}`)).toBeNull();
+    });
+    expect(calls.closes).toBe(2);
+    // The set transition ran, which is the half the controller cannot do.
+    expect(harness.disposedTerminals).toEqual(["t-a"]);
+    expect(useUiStore.getState().activeProjectId).toBeNull();
   });
 });
 

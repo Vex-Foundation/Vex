@@ -15,7 +15,7 @@ import type { TerminalHostAvailability } from "@shared/schemas/terminal.js";
 import { getProject } from "../database/projects/read.js";
 import { log } from "../logger/index.js";
 import { resolveProjectDirectory, resolveProjectsRoot } from "./projects-root.js";
-import { TerminalDomain } from "./terminals.js";
+import { TerminalDomain, type ProjectActivation } from "./terminals.js";
 
 /**
  * The shell Vex launches.
@@ -53,6 +53,22 @@ async function resolveProjectCwd(projectId: string): Promise<string | null> {
   return resolveProjectDirectory(rootOutcome.data, project.data.slug);
 }
 
+/**
+ * The DATABASE's answer about a project id, for the commit path.
+ *
+ * `getProject` is the repository's ACTIVE-ONLY read - `deleted_at IS NULL` in
+ * the statement - and it is the same read the rest of this file already trusts
+ * for `resolveProjectCwd`. It answers `ok(null)` for a tombstone and for an id
+ * that names nothing alike, which is exactly the `absent` this domain refuses
+ * on. A failed read is never `absent`: it becomes `unreadable`, and the domain
+ * fails closed on it rather than treating an unreachable database as consent.
+ */
+async function readProjectActivation(projectId: string): Promise<ProjectActivation> {
+  const project = await getProject(projectId, `terminal-activation-${projectId}`);
+  if (!project.ok) return "unreadable";
+  return project.data === null ? "absent" : "active";
+}
+
 /** Broadcast to every open window. */
 function broadcast(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -71,6 +87,7 @@ let instance: TerminalDomain | null = null;
 export function terminalDomain(): TerminalDomain {
   instance ??= new TerminalDomain({
     resolveProjectCwd,
+    readProjectActivation,
     resolveShell,
     postPort: (target, channel, payload, transfer) => {
       // `postMessage` is the only Electron API that can move a MessagePort into

@@ -150,6 +150,19 @@ export const PROJECT_DELETE_TRASH_HELP =
   "The folder goes to your operating system's trash, where you can still recover it. Everything in it goes with it.";
 
 /**
+ * Why the folder choice stops being editable once the delete is durable.
+ *
+ * Main records the trash intent on the TOMBSTONE and a retry RESUMES that
+ * recorded request, ignoring whatever the retry's own input carries
+ * (`main/studio/project-delete.ts`, the `already_tombstoned` branch). A
+ * checkbox that still moved after that point would let the user believe they
+ * had spared or condemned their folder when nothing they did could change it,
+ * which is the worst kind of lie a destructive dialog can tell.
+ */
+export const PROJECT_DELETE_TRASH_LOCKED_NOTE =
+  "Vex recorded this choice when it deleted the project. Trying again resumes that same request with the folder choice exactly as you first asked it, so it can no longer be changed here.";
+
+/**
  * The line above the typed confirmation. It names the action as irreversible in
  * Vex, which is true whether or not the folder is trashed: the project row, its
  * scope and its backing session are gone either way.

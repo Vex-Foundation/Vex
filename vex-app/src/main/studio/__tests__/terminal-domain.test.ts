@@ -274,6 +274,13 @@ let lostSpy = vi.fn((_terminalIds: readonly string[]) => {});
  */
 let cwdHold: Promise<void> | null = null;
 
+/**
+ * What the fake projects repository says about each id. Unlisted ids are
+ * `active`, so every test that is not about the tombstone reads as it did
+ * before this dependency existed.
+ */
+const activations = new Map<string, import("../terminals.js").ProjectActivation>();
+
 function holdCwd(): () => void {
   let release: () => void = () => {};
   cwdHold = new Promise<void>((resolve) => {
@@ -292,6 +299,8 @@ function build(): InstanceType<typeof TerminalDomain> {
         if (cwdHold !== null) await cwdHold;
         return projectId === "missing" ? null : `/projects/${projectId}`;
       },
+      readProjectActivation: (projectId) =>
+        Promise.resolve(activations.get(projectId) ?? "active"),
       resolveShell: () => ({ executable: "/bin/bash", args: [] }),
       postPort: (_target, channel, payload, transfer) => {
         posted.push({ channel, payload, transfer });
@@ -324,6 +333,7 @@ beforeEach(() => {
   gate.resetProjectLifecycleGateForTests();
   posted.length = 0;
   cwdHold = null;
+  activations.clear();
   lostSpy = vi.fn((_terminalIds: readonly string[]) => {});
 });
 
@@ -1136,5 +1146,126 @@ describe("persistWorkspace under the lifecycle gate", () => {
     });
     expect(gate.heldProjectLeases("p1", "terminalPersist")).toBe(0);
     await domain.dispose();
+  });
+
+  /**
+   * THE GATE IS PROCESS-LOCAL, AND THE TOMBSTONE IS NOT.
+   *
+   * Nothing reinstalls a completed tombstone in the gate after a main restart,
+   * so admission for a long-deleted project is OPEN again the moment the
+   * process comes back - and so is admission for an id that never named a
+   * project at all. The lease therefore cannot be the whole answer here: what
+   * makes a commit authorized is the `deleted_at` read, and these tests drive
+   * it through the same dependency production wires `getProject` into.
+   *
+   * Each one asserts THREE facts, because the refusal alone is not the finding:
+   * the host was never contacted (so the snapshot file is not recreated), the
+   * lease came back (so no delete drain is blocked by a refusal), and the
+   * version counter was not burned (so the next genuine commit is not dropped
+   * by the host as out of order).
+   */
+  describe("the database, not the in-memory gate, is the authority", () => {
+    /** The `layoutVersion` on every commit that actually reached the host. */
+    function versionsSent(): number[] {
+      return starter.requests
+        .filter(
+          (request): request is Extract<HostRequest, { kind: "persistWorkspace" }> =>
+            request.kind === "persistWorkspace",
+        )
+        .map((request) => request.layoutVersion);
+    }
+
+    it("REFUSES a commit for a TOMBSTONED project even with admission wide open", async () => {
+      const domain = build();
+      // The restart, modelled at this level: the gate has never heard of this
+      // project, which is exactly its state after main comes back up.
+      expect(gate.isProjectAdmitting("p1")).toBe(true);
+      activations.set("p1", "absent");
+
+      const refused = await domain.persistWorkspace("p1", oneGroup("t1"));
+
+      expect(refused).toEqual({ ok: false, code: "project_deleting" });
+      expect(versionsSent()).toEqual([]);
+      expect(gate.heldProjectLeases("p1", "terminalPersist")).toBe(0);
+      await domain.dispose();
+    });
+
+    it("refuses an id that names NO project, with the same code a tombstone gets", async () => {
+      // The repository cannot tell the two apart, and neither should the
+      // renderer: reporting them differently would answer "did this project
+      // ever exist?" for an untrusted caller.
+      const domain = build();
+      activations.set("ghost", "absent");
+
+      expect(await domain.persistWorkspace("ghost", oneGroup("t1"))).toEqual({
+        ok: false,
+        code: "project_deleting",
+      });
+      expect(versionsSent()).toEqual([]);
+      await domain.dispose();
+    });
+
+    it("refuses with a DIFFERENT code when the authority cannot be read at all", async () => {
+      // Fail closed, and say which failure it was: an unreachable database is
+      // not evidence that the project is gone, and a commit that is refused
+      // because Vex could not check is not the same event as one refused
+      // because the project is deleted.
+      const domain = build();
+      activations.set("p1", "unreadable");
+
+      expect(await domain.persistWorkspace("p1", oneGroup("t1"))).toEqual({
+        ok: false,
+        code: "snapshot_unavailable",
+      });
+      expect(versionsSent()).toEqual([]);
+      expect(gate.heldProjectLeases("p1", "terminalPersist")).toBe(0);
+      await domain.dispose();
+    });
+
+    it("does not BURN a version on a refusal: the next genuine commit is still in order", async () => {
+      const domain = build();
+
+      expect((await domain.persistWorkspace("p1", oneGroup("t1"))).ok).toBe(true);
+      activations.set("p1", "absent");
+      expect((await domain.persistWorkspace("p1", oneGroup("t1"))).ok).toBe(false);
+      activations.set("p1", "active");
+      expect((await domain.persistWorkspace("p1", oneGroup("t1"))).ok).toBe(true);
+
+      // 0 then 1. A version consumed by the refusal would make this 0 then 2,
+      // and the host - which keeps the highest version it has seen - would be
+      // right to drop what came after.
+      expect(versionsSent()).toEqual([0, 1]);
+      await domain.dispose();
+    });
+
+    it("still reads the authority UNDER the lease, so an in-process delete wins first", async () => {
+      // Order claim: the lease is taken before the read, and a project whose
+      // admission has closed is refused without the database being consulted
+      // at all. The read is the RESTART half of the authority; the lease is the
+      // half that serializes against a delete running right now.
+      let reads = 0;
+      const counting = new TerminalDomain(
+        {
+          resolveProjectCwd: (projectId) => Promise.resolve(`/projects/${projectId}`),
+          readProjectActivation: (projectId) => {
+            reads += 1;
+            return Promise.resolve(activations.get(projectId) ?? "active");
+          },
+          resolveShell: () => ({ executable: "/bin/bash", args: [] }),
+          postPort: () => {},
+          publishAvailability: () => {},
+          publishTerminalsLost: () => {},
+        },
+        (observer) => new FakeStarter(observer),
+      );
+      gate.closeProjectAdmission("p2");
+
+      expect(await counting.persistWorkspace("p2", oneGroup("t1"))).toEqual({
+        ok: false,
+        code: "project_deleting",
+      });
+      expect(reads).toBe(0);
+      await counting.dispose();
+    });
   });
 });
