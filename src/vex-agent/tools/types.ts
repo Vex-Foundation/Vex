@@ -244,6 +244,48 @@ export type ToolFailure = {
   readonly env: readonly string[];
 };
 
+/**
+ * The quote-time spendability facts, as the tool vocabulary states them.
+ *
+ * Typed structurally rather than by importing the protocol module: `types.ts`
+ * is the tool vocabulary and must not depend on one protocol family's
+ * implementation. The producing module's `SpendabilityPreview`
+ * (`protocols/quote-authority/spendability-contract.ts`) is assignable to this,
+ * and the compiler checks that at the assignment - so the two cannot drift
+ * without a build failure.
+ *
+ * QUOTE-TIME ONLY. It states what a chain read said when the quote was taken;
+ * the authoritative debit check belongs to the pre-sign window, and the
+ * rendered card line says so in words.
+ */
+export interface ToolSpendabilityPreview {
+  readonly cardVersion: string;
+  readonly source: ToolSpendabilityLeg;
+  readonly native: ToolSpendabilityLeg;
+}
+
+/** One asset's side of {@link ToolSpendabilityPreview}. */
+export interface ToolSpendabilityLeg {
+  readonly asset: {
+    readonly chainId: number;
+    readonly address: string;
+    readonly symbol: string | null;
+  };
+  readonly wallet: string;
+  readonly blockTag: "pending" | "latest";
+  readonly observedAt: string;
+  readonly required: ToolSpendabilityAmount;
+  readonly current: ToolSpendabilityAmount;
+}
+
+/** An atomic amount travelling with what is needed to read it (rule 90). */
+export interface ToolSpendabilityAmount {
+  readonly raw: string;
+  readonly human: string | null;
+  readonly decimals: number | null;
+  readonly symbol: string | null;
+}
+
 export interface ToolResult {
   /** Whether the tool executed successfully */
   success: boolean;
@@ -350,6 +392,17 @@ export interface ToolResult {
       readonly safetyVerdict: "pass" | "fail" | "unknown";
       readonly safetyDetail: Record<string, unknown>;
     };
+    /**
+     * The quote-time spendability facts, when the venue measured them: what the
+     * swap debits from the source asset and from native, against what the
+     * wallet actually held. The recorder validates this and persists it in the
+     * row's bounded `safety_detail`, from which the execute-time gate restores
+     * it for the approval card.
+     *
+     * Present only on an `executable` quote: an ineligible one carries its
+     * facts inside its own eligibility member and has no card to render.
+     */
+    readonly spendability?: ToolSpendabilityPreview;
   };
   /** Engine signal — structured command from tool to engine (e.g. stop_mission) */
   engineSignal?: EngineSignal;
@@ -493,6 +546,18 @@ export interface ToolResult {
       readonly amountRaw: string;
       readonly amountHuman: string | null;
     };
+    /**
+     * What the wallet could pay when the matched quote was taken: the source
+     * principal and the total native debit against the balances read at that
+     * moment. Restored from the matched prequote's persisted `safetyDetail`
+     * (NEVER from raw args), so the Required / Current figures on the card are
+     * the store's figures and the model cannot state different ones.
+     *
+     * The rendered line labels itself as a quote-time observation. Sign-time
+     * code must never treat it as authority - the authoritative read lives in
+     * the pre-sign window.
+     */
+    readonly spendability?: ToolSpendabilityPreview;
   };
   /**
    * Jupiter Lend Borrow LTV/health disclosure (Agent Scan Phase 3 Batch 5,

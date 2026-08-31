@@ -12,7 +12,9 @@ import { VexError, ErrorCodes } from "../../../errors.js";
 import type {
   AutocompleteResponse,
   KhalaniChain,
+  KhalaniRejectedTokenBalanceEntry,
   KhalaniToken,
+  KhalaniTokenBalancesResponse,
   TokenSearchResponse,
 } from "../types.js";
 import {
@@ -103,31 +105,29 @@ const tokenSchema: z.ZodType<KhalaniToken> = z
       chainId: asNumber("token.chainId"),
       name: asString("token.name"),
       symbol: asString("token.symbol"),
-      // TOKEN decimals stay TOLERANT (`asNumber`), while `chain.nativeCurrency
-      // .decimals` above is STRICT (`asTokenDecimals`). That asymmetry is
-      // deliberate; do not "fix" it into consistency.
+      // TOKEN decimals stay TOLERANT (`asNumber`) HERE, while
+      // `chain.nativeCurrency.decimals` above and the WALLET-BALANCES boundary
+      // below are STRICT (`asTokenDecimals`). That asymmetry is deliberate; do
+      // not "fix" it into consistency.
       //
-      // REACHABILITY is the difference. Anyone can mint a token and airdrop it
-      // into a wallet, so `token.decimals` is ATTACKER-CONTROLLED input arriving
-      // at scale. Rejecting it here throws away the WHOLE chain's token list
-      // (`validateTokensResponse` is `raw.map(parseToken)`), so one hostile
-      // token would blank a funded wallet: a denial of service bought for the
-      // price of an airdrop. Nobody can add an entry to Khalani's own chain
-      // registry, so a poisoned NATIVE decimals is a provider defect that
-      // SHOULD fail loudly instead of degrading quietly.
+      // REACHABILITY is the difference, and this schema serves only the CURATED
+      // surfaces: `/v1/tokens` (top), token search, and autocomplete. Nobody can
+      // add an entry to those, so they stay ALL-OR-NOTHING: a malformed entry is
+      // a provider defect and the caller learns about it by the request failing.
+      // The wallet-balances array is the opposite case - anyone can mint a token
+      // and airdrop it into a wallet - so it gets its own per-entry boundary in
+      // `validateTokenBalancesResponse`, which admits only strict decimals and
+      // REPORTS every entry it refuses instead of failing the chain.
       //
-      // The invariant is not dropped, it MOVES to the projection seam, where a
-      // bad value costs one row instead of a wallet: `projectBalanceRow`
+      // Because a curated list can still carry a scale nothing can convert from
+      // (`Infinity`, a fraction), the projection seam stays defensive for rows
+      // sourced from these surfaces: `projectBalanceRow`
       // (`@vex-agent/tools/protocols/amount-display.ts`) validates with
       // `isTokenDecimals` and emits the row with its identity and `balanceRaw`
       // intact, `balance: null`, `valueUsd: null` and a named
       // `unprojectableReason` (frozen contract C1.2). `heldUsd` in
       // `internal/wallet/read.ts` carries the same guard, because `formatUnits`
       // THROWS on a non-integer scale.
-      //
-      // Making this boundary strict AND keeping every row is WP10, which needs
-      // the validators to return rejected entries alongside valid ones and so
-      // changes `TokenBalanceScanResult`.
       decimals: asNumber("token.decimals"),
       logoURI: asOptionalString,
       extensions: optionalRecord,
@@ -146,6 +146,96 @@ const tokenSchema: z.ZodType<KhalaniToken> = z
 
 export function parseToken(raw: unknown): KhalaniToken {
   return parseOrThrow(tokenSchema, raw);
+}
+
+// ---------------------------------------------------------------------------
+// Wallet-balances boundary (strict decimals, per-entry rejection)
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything a balance entry must have BESIDES `decimals`.
+ *
+ * Field order matches {@link tokenSchema} so a structurally broken entry
+ * surfaces the SAME first-issue message it always did (address, chainId, name,
+ * symbol). `logoURI` and `extensions` never throw.
+ */
+const tokenBalanceIdentitySchema = z.object(
+  {
+    address: asString("token.address"),
+    chainId: asNumber("token.chainId"),
+    name: asString("token.name"),
+    symbol: asString("token.symbol"),
+    logoURI: asOptionalString,
+    extensions: optionalRecord,
+  },
+  { message: "Invalid Khalani response: token must be an object" },
+);
+
+const balanceDecimalsSchema = asTokenDecimals("token.decimals");
+
+/** An atomic amount is EXACT only as an unsigned decimal integer string. */
+const EXACT_ATOMIC_AMOUNT = /^\d+$/;
+
+/**
+ * The provider's raw balance for an entry, but only when it is an EXACT integer.
+ *
+ * A float, a hex string, a JS number (already through `JSON.parse`, so already
+ * lossy above 2^53) or an absent value all yield `null`. Frozen contract C1.3:
+ * a raw amount is never reconstructed from an inexact value.
+ */
+function exactBalanceRaw(extensions: Record<string, unknown> | undefined): string | null {
+  const balance = extensions?.balance;
+  if (typeof balance !== "string" || !EXACT_ATOMIC_AMOUNT.test(balance)) return null;
+  return balance;
+}
+
+type TokenBalanceEntry =
+  | { kind: "token"; token: KhalaniToken }
+  | { kind: "rejected"; entry: KhalaniRejectedTokenBalanceEntry };
+
+/**
+ * Parse ONE wallet-balance entry.
+ *
+ * Throws (failing the whole chain) for any identity or structural defect, which
+ * is a provider-shape problem no consumer can act on. Returns a REJECTION when
+ * the entry is otherwise well formed and its `decimals` alone fail the strict
+ * rule: that entry keeps its identity and its exact `balanceRaw`, and the
+ * invalid scale is neither echoed nor guessed.
+ */
+function parseTokenBalanceEntry(raw: unknown, entryIndex: number): TokenBalanceEntry {
+  const identity = parseOrThrow(tokenBalanceIdentitySchema, raw);
+  const extensions = identity.extensions as KhalaniToken["extensions"];
+  const decimals = balanceDecimalsSchema.safeParse(
+    isRecordValue(raw) ? raw.decimals : undefined,
+  );
+
+  if (decimals.success) {
+    return {
+      kind: "token",
+      token: {
+        address: identity.address,
+        chainId: identity.chainId,
+        name: identity.name,
+        symbol: identity.symbol,
+        decimals: decimals.data,
+        logoURI: identity.logoURI,
+        extensions,
+      },
+    };
+  }
+
+  return {
+    kind: "rejected",
+    entry: {
+      entryIndex,
+      chainId: identity.chainId,
+      address: identity.address,
+      name: identity.name,
+      symbol: identity.symbol,
+      balanceRaw: exactBalanceRaw(identity.extensions),
+      reason: "token_decimals_invalid",
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +278,33 @@ export function validateTokensResponse(raw: unknown): KhalaniToken[] {
     throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected token array");
   }
   return raw.map(parseToken);
+}
+
+/**
+ * Wallet balances: STRICT per entry, all-or-nothing only for identity.
+ *
+ * Every admitted token is guaranteed `Number.isInteger(decimals) && 0 <=
+ * decimals <= 36`, so downstream conversion (`formatUnits`, which THROWS on a
+ * non-integer scale) is total on `tokens`. Entries refused for their decimals
+ * alone are returned in `rejectedEntries` with identity and exact `balanceRaw`,
+ * so nothing is silently dropped (output-envelope spec, section 4).
+ */
+export function validateTokenBalancesResponse(raw: unknown): KhalaniTokenBalancesResponse {
+  if (!Array.isArray(raw)) {
+    throw new VexError(ErrorCodes.KHALANI_API_ERROR, "Invalid Khalani response: expected token array");
+  }
+
+  const tokens: KhalaniToken[] = [];
+  const rejectedEntries: KhalaniRejectedTokenBalanceEntry[] = [];
+  raw.forEach((entry, entryIndex) => {
+    const parsed = parseTokenBalanceEntry(entry, entryIndex);
+    if (parsed.kind === "token") {
+      tokens.push(parsed.token);
+    } else {
+      rejectedEntries.push(parsed.entry);
+    }
+  });
+  return { tokens, rejectedEntries };
 }
 
 export function validateTokenSearchResponse(raw: unknown): TokenSearchResponse {

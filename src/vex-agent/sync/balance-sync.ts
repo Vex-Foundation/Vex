@@ -28,6 +28,7 @@ import {
   readPublicationBlockers,
   type ActivityFence,
 } from "./balance-sync/publication-gate.js";
+import { salvageRejectedEntries } from "./balance-sync/rejected-entry-salvage.js";
 import {
   logPublicationOutcome,
   publishSnapshotGroup,
@@ -349,6 +350,17 @@ async function syncKhalaniWalletBalances(
   // synthesized. Fail-soft: an unpriceable chain keeps its rows untouched.
   await fillMissingKhalaniPrices(byChain);
 
+  // Entries the Khalani boundary refused for their decimals alone. They are
+  // holdings, so they are not allowed to vanish here; see
+  // `salvageRejectedEntries` for what each of the two cases costs.
+  const rejectedEntries = scan.rejectedEntries ?? [];
+  const replaceBlockedChainIds = salvageRejectedEntries({
+    family,
+    address,
+    rejectedEntries,
+    byChain,
+  });
+
   // Get previously known chains - if Khalani now returns nothing for a chain,
   // we must replace with empty to remove stale "ghost" balances
   const previousChains = await balancesRepo.getBalancesByChain(address);
@@ -357,6 +369,9 @@ async function syncKhalaniWalletBalances(
   for (const prev of previousChains) {
     // Only clean chains that the scanner actually refreshed successfully.
     if (!refreshedChainIds.has(prev.chainId)) continue;
+    // A chain whose inventory is not fully recoverable is never emptied either:
+    // the destructive replace is off for it this cycle.
+    if (replaceBlockedChainIds.has(prev.chainId)) continue;
     if (byChain.has(prev.chainId)) continue;
     if (protectedChainIds.has(prev.chainId)) {
       // Khalani is only the fallback here and it returned nothing for this
@@ -378,6 +393,7 @@ async function syncKhalaniWalletBalances(
   // Khalani rows); the DB read inside PROPAGATES (2b doctrine).
   for (const chainId of PENDLE_SUPPORTED_CHAIN_IDS) {
     if (!refreshedChainIds.has(chainId)) continue;
+    if (replaceBlockedChainIds.has(chainId)) continue;
     const existing = byChain.get(chainId) ?? [];
     const merged = await enrichPendleBalances(family, address, chainId, existing);
     if (merged.length > 0 || byChain.has(chainId)) {
@@ -402,6 +418,8 @@ async function syncKhalaniWalletBalances(
     tokens: tokensUpdated,
     chains: byChain.size,
     chainErrors: scan.chainErrors.length,
+    rejectedEntries: rejectedEntries.length,
+    replaceBlockedChains: replaceBlockedChainIds.size,
     totalUsd: totalUsd.toFixed(2),
   });
 

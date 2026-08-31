@@ -30,6 +30,8 @@ const SWAP_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   // but the reason map must be total over GateBlockReason.
   unbindable_param:
     "Swap blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+  not_executable:
+    "Swap blocked: the newest quote for these exact params did not authorize an execute - it was recorded as not executable (an unusable or too-costly route, or a wallet that could not pay for it). Re-run the swap quote and read the eligibility it returns before retrying; if it names a balance, fund the wallet first.",
 };
 
 const BRIDGE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
@@ -53,6 +55,8 @@ const BRIDGE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Bridge blocked: no wallet is selected (or configured) for one of the bridge's chains in the current session. Select a wallet, then retry — do NOT re-quote.",
   unbindable_param:
     "Bridge blocked: routeId/depositMethod cannot be bound to a quote — omit them (the bridge selects the best route) or this execute can't be verified.",
+  not_executable:
+    "Bridge blocked: the newest bridge quote for these exact params did not authorize an execute - it was recorded as not executable. Re-run BridgeQuote and read the eligibility it returns before retrying.",
 };
 
 const REDEEM_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
@@ -76,6 +80,8 @@ const REDEEM_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   // reason map must be total over GateBlockReason.
   unbindable_param:
     "Redeem blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+  not_executable:
+    "Redeem blocked: the newest redeem quote for this PT did not authorize an execute - it was recorded as not executable. Re-run pendle__pt_quote and read the eligibility it returns before retrying.",
 };
 
 const MINT_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
@@ -97,6 +103,8 @@ const MINT_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Mint blocked: no wallet is selected (or configured) for this mint's chain in the current session. Select a wallet, then retry — do NOT re-quote.",
   unbindable_param:
     "Mint blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+  not_executable:
+    "Mint blocked: the newest mint quote for these params did not authorize an execute - it was recorded as not executable. Re-run pendle__py_quote (direction mint) and read the eligibility it returns before retrying.",
 };
 
 const REDEEM_PY_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
@@ -118,6 +126,8 @@ const REDEEM_PY_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Redeem blocked: no wallet is selected (or configured) for this redeem's chain in the current session. Select a wallet, then retry — do NOT re-quote.",
   unbindable_param:
     "Redeem blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+  not_executable:
+    "Redeem blocked: the newest redeem quote for these params did not authorize an execute - it was recorded as not executable. Re-run pendle__py_quote (direction redeem) and read the eligibility it returns before retrying.",
 };
 
 const LP_ADD_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
@@ -139,6 +149,8 @@ const LP_ADD_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Add liquidity blocked: no wallet is selected (or configured) for this add's chain in the current session. Select a wallet, then retry — do NOT re-quote.",
   unbindable_param:
     "Add liquidity blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+  not_executable:
+    "Add liquidity blocked: the newest add quote for this market did not authorize an execute - it was recorded as not executable. Re-run pendle__lp_quote (direction add) and read the eligibility it returns before retrying.",
 };
 
 const LP_REMOVE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
@@ -160,6 +172,8 @@ const LP_REMOVE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Remove liquidity blocked: no wallet is selected (or configured) for this remove's chain in the current session. Select a wallet, then retry — do NOT re-quote.",
   unbindable_param:
     "Remove liquidity blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+  not_executable:
+    "Remove liquidity blocked: the newest remove quote for this market did not authorize an execute - it was recorded as not executable. Re-run pendle__lp_quote (direction remove) and read the eligibility it returns before retrying.",
 };
 
 /**
@@ -190,6 +204,8 @@ const LEND_DEPOSIT_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Vault deposit blocked: no wallet is selected (or configured) for this vault's chain in the current session. Select a wallet, then retry; do NOT re-quote.",
   unbindable_param:
     "Vault deposit blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+  not_executable:
+    "Vault deposit blocked: the newest vault quote for these params did not authorize an execute - it was recorded as not executable. Re-run morpho__vault_quote (direction deposit) and read the eligibility it returns before retrying.",
 };
 
 /** Morpho vault WITHDRAW (E3b-2). The mirror map; see the deposit map above. */
@@ -212,6 +228,8 @@ const LEND_WITHDRAW_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Vault withdrawal blocked: no wallet is selected (or configured) for this vault's chain in the current session. Select a wallet, then retry; do NOT re-quote.",
   unbindable_param:
     "Vault withdrawal blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+  not_executable:
+    "Vault withdrawal blocked: the newest vault quote for these params did not authorize an execute - it was recorded as not executable. Re-run morpho__vault_quote (direction withdraw) and read the eligibility it returns before retrying.",
 };
 
 /**
@@ -250,6 +268,8 @@ const LEND_SUPPLY_COLLATERAL_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Collateral supply blocked: no wallet is selected (or configured) for this market's chain in the current session. Select a wallet, then retry; do NOT re-quote.",
   unbindable_param:
     "Collateral supply blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+  not_executable:
+    "Collateral supply blocked: the newest quote for this market did not authorize an execute - it was recorded as not executable. Re-run morpho__market_quote (direction supplyCollateral) and read the eligibility it returns before retrying.",
 };
 
 /** Morpho Blue collateral WITHDRAW. Reduces the wallet's safety margin. */
@@ -272,6 +292,8 @@ const LEND_WITHDRAW_COLLATERAL_BLOCK_MESSAGES: Record<GateBlockReason, string> =
     "Collateral withdrawal blocked: no wallet is selected (or configured) for this market's chain in the current session. Select a wallet, then retry; do NOT re-quote.",
   unbindable_param:
     "Collateral withdrawal blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+  not_executable:
+    "Collateral withdrawal blocked: the newest quote for this market did not authorize an execute - it was recorded as not executable. Re-run morpho__market_quote (direction withdrawCollateral) and read the eligibility it returns before retrying.",
 };
 
 /** Morpho Blue BORROW: the operation that takes on debt. */
@@ -294,6 +316,8 @@ const LEND_BORROW_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Borrow blocked: no wallet is selected (or configured) for this market's chain in the current session. Select a wallet, then retry; do NOT re-quote.",
   unbindable_param:
     "Borrow blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+  not_executable:
+    "Borrow blocked: the newest quote for this market did not authorize an execute - it was recorded as not executable. Re-run morpho__market_quote (direction borrow) and read the eligibility it returns before retrying.",
 };
 
 /** Morpho Blue REPAY: the operation that reduces debt. */
@@ -315,6 +339,8 @@ const LEND_REPAY_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   wallet_not_selected:
     "Repay blocked: no wallet is selected (or configured) for this market's chain in the current session. Select a wallet, then retry; do NOT re-quote.",
   unbindable_param: "Repay blocked: a parameter cannot be bound to a quote. Remove it and retry.",
+  not_executable:
+    "Repay blocked: the newest quote for this market did not authorize an execute - it was recorded as not executable. Re-run morpho__market_quote (direction repay) and read the eligibility it returns before retrying.",
 };
 
 /**
@@ -338,7 +364,27 @@ const BLOCK_MESSAGES_BY_KIND: Partial<Record<PrequoteKind, Record<GateBlockReaso
   lend_repay: LEND_REPAY_BLOCK_MESSAGES,
 };
 
-export function block(reason: GateBlockReason, kind: PrequoteKind): GateDecision {
+/**
+ * Build a block decision.
+ *
+ * `detail` appends ONE further sentence naming a bounded structural fact the
+ * caller already holds - today, which eligibility a `not_executable` row
+ * carried. It exists because the reason class alone sends an agent back to
+ * re-quote without telling it what to change, and "the wallet is short" and
+ * "the route is too expensive" have opposite remedies. Callers pass only
+ * closed-union names; row contents, addresses and raw error text never reach
+ * this parameter.
+ */
+export function block(
+  reason: GateBlockReason,
+  kind: PrequoteKind,
+  detail?: string,
+): GateDecision {
   const messages = BLOCK_MESSAGES_BY_KIND[kind] ?? SWAP_BLOCK_MESSAGES;
-  return { kind: "block", reason, message: messages[reason] };
+  const message = messages[reason];
+  return {
+    kind: "block",
+    reason,
+    message: detail === undefined ? message : `${message} ${detail}`,
+  };
 }

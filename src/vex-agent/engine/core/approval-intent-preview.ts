@@ -30,6 +30,7 @@ import {
   renderQuoteBinding,
   type QuoteBindingPreview,
 } from "../../tools/protocols/quote-authority/restore.js";
+import { renderSpendability } from "../../tools/protocols/quote-authority/spendability.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import { formatLamportsAsSol } from "@vex-agent/tools/protocols/amount-display.js";
@@ -38,6 +39,10 @@ import type { ToolResult } from "../../tools/types.js";
 
 type ApprovalBridgeTokenPreview = NonNullable<
   NonNullable<ToolResult["prequote"]>["bridgeTokenPreview"]
+>;
+
+type ApprovalSpendabilityPreview = NonNullable<
+  NonNullable<ToolResult["prequote"]>["spendability"]
 >;
 
 /**
@@ -205,6 +210,17 @@ export interface IntentPreviewExtras {
    * refuses it rather than confirming a line whose meaning has changed.
    */
   quoteBinding?: QuoteBindingPreview;
+  /**
+   * What the wallet could pay when the matched quote was taken (WP2). Sourced
+   * ONLY from the matched prequote's persisted `safetyDetail` (NOT raw args -
+   * `spendability` is deliberately NOT in PREVIEW_KEY_ALLOWLIST), so the
+   * Required / Current figures on the card are the store's figures.
+   *
+   * Rendered into `criticalArgs.spendability`. The line states that the numbers
+   * are quote-time and are re-read before signing, because a person reading a
+   * balance on a card has no other way to know how old it is.
+   */
+  spendability?: ApprovalSpendabilityPreview;
   /** Direct EVM bridge token identity, sourced by the gate rather than args. */
   bridgeTokenPreview?: ApprovalBridgeTokenPreview;
 }
@@ -356,6 +372,13 @@ export function buildIntentPreview(
   // money line sits next to the safety line on the card.
   if (extras?.quoteBinding !== undefined) {
     criticalArgs.quoteBinding = renderQuoteBinding(extras.quoteBinding);
+  }
+
+  // WP2: what the wallet could pay when the quote was taken. Rendered next to
+  // the quote binding, because the two answer the two halves of "is this trade
+  // real": what it promises, and whether it can be funded.
+  if (extras?.spendability !== undefined) {
+    criticalArgs.spendability = renderSpendability(extras.spendability);
   }
 
   if (extras?.bridgeTokenPreview !== undefined) {

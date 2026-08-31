@@ -30,6 +30,7 @@ import {
 } from "./swap-prequote.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { QuoteBindingPreview } from "./quote-authority/restore.js";
+import type { SpendabilityPreview } from "./quote-authority/spendability-contract.js";
 import type { BridgeTokenIdentityPreview } from "./bridge-token-identity.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
@@ -282,6 +283,7 @@ export async function executeProtocolTool(
   let prequoteFeePreview: JupiterFeePreview | undefined;
   let prequoteRiskPreview: LendBorrowRiskPreview | undefined;
   let prequoteQuoteBinding: QuoteBindingPreview | undefined;
+  let prequoteSpendability: SpendabilityPreview | undefined;
   let prequoteBridgeTokenPreview: BridgeTokenIdentityPreview | undefined;
   const prequoteDecision = await evaluatePrequoteGateDecision(request.toolId, params, scopedContext);
   if (prequoteDecision.kind === "block") {
@@ -293,6 +295,7 @@ export async function executeProtocolTool(
   prequoteFeePreview = prequoteDecision.feePreview;
   prequoteRiskPreview = prequoteDecision.riskPreview;
   prequoteQuoteBinding = prequoteDecision.quoteBinding;
+  prequoteSpendability = prequoteDecision.spendability;
   prequoteBridgeTokenPreview = prequoteDecision.bridgeTokenPreview;
 
   // Approval gate — mutating tools require approval under restricted permission.
@@ -302,7 +305,7 @@ export async function executeProtocolTool(
   const pendingApproval = evaluateApprovalGate(
     manifest, request, params, scopedContext,
     prequoteVerdict, prequoteFotTax, prequoteTermLock, prequoteFeePreview, prequoteRiskPreview,
-    prequoteQuoteBinding, prequoteBridgeTokenPreview,
+    prequoteQuoteBinding, prequoteSpendability, prequoteBridgeTokenPreview,
   );
   if (pendingApproval) {
     return withActionKind(pendingApproval, effectiveActionKind);

@@ -99,11 +99,18 @@ export type SafetyVerdict = "pass" | "fail" | "unknown";
 /**
  * The closed quote-eligibility union, mirrored from
  * `tools/protocols/quote-authority/eligibility.ts`. Only `executable` may be
- * claimed by an execute; the other four are the REASONS a quote authorized
+ * claimed by an execute; the other seven are the REASONS a quote authorized
  * nothing, recorded so a later ineligible quote still supersedes an older
  * priced one for the same identity.
  *
- * Held in lockstep with the SQL CHECK (migration 095) by
+ * The last three are SPENDABILITY reasons (WP2, contract C2): the wallet could
+ * not pay the principal, a balance could not be read at all, or the native
+ * balance did not cover the swap's full fee debit. `balance_unavailable` is
+ * deliberately its own member and is never merged into `insufficient_balance` -
+ * an unreadable balance and a known shortfall are different facts with
+ * different remedies.
+ *
+ * Held in lockstep with the SQL CHECK (migration 095, widened by 097) by
  * `__tests__/vex-agent/db/repos/swap-prequotes-kind-lockstep.test.ts`.
  */
 export type PrequoteEligibilityKind =
@@ -111,7 +118,10 @@ export type PrequoteEligibilityKind =
   | "unpriceable_output"
   | "excessive_impact"
   | "oversize_snapshot"
-  | "provider_usd_invalid";
+  | "provider_usd_invalid"
+  | "insufficient_balance"
+  | "balance_unavailable"
+  | "gas_reserve_insufficient";
 
 export interface SwapPrequote {
   prequoteId: string;

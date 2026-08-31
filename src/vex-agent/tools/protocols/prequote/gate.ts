@@ -2,7 +2,9 @@
  * Stage 7 — execute-time prequote gate.
  *
  * Quote-before-transaction: a swap EXECUTE may broadcast ONLY when a fresh
- * matching `swap` prequote exists and that prequote is not a confirmed scam.
+ * matching `swap` prequote exists, that prequote is not a confirmed scam, and
+ * that prequote actually AUTHORIZED an execute (its eligibility is
+ * `executable`).
  * The gate is the INVERSE of the recorder: the recorder swallows its errors
  * (a missing prequote is safe), but the gate FAILS CLOSED — any error, a
  * missing session, or an un-gateable token identity → BLOCK. The gate runs
@@ -35,6 +37,7 @@ import { readQuoteBindingPreview } from "../quote-authority/restore.js";
 import {
   feePreviewFromSafetyDetail,
   maxFotTaxFromSafetyDetail,
+  spendabilityFromSafetyDetail,
   termLockFromSafetyDetail,
 } from "./gate/safety-detail.js";
 
@@ -81,6 +84,30 @@ export async function evaluatePrequoteGate(
     // fail, never allow a `fail` latest row (guardrail #1).
     if (latest.safetyVerdict === "fail") return block("safety_fail", gateKind);
 
+    // Guardrail #2 - EXECUTABILITY. The newest row for this identity is the one
+    // authority, and a row that recorded any eligibility other than
+    // `executable` authorized nothing: an unusable route, or (WP2) a wallet
+    // that could not pay for the quote.
+    //
+    // This check lives HERE, in the COMMON gate, and not only in the claim.
+    // The claim's `eligibility_kind = 'executable'` predicate covers exactly
+    // the venues that record a route snapshot and take the claim lane; Jupiter
+    // has no claim lane at all, so before this an ineligible Jupiter row
+    // blocked nothing and the execute proceeded on a quote that had refused.
+    // The claim predicate stays where it is, as defense in depth.
+    if (latest.eligibilityKind !== "executable") {
+      logger.info("protocol.prequote.gate.not_executable", {
+        toolId,
+        family,
+        eligibilityKind: latest.eligibilityKind,
+      });
+      return block(
+        "not_executable",
+        gateKind,
+        `Recorded eligibility: ${latest.eligibilityKind}.`,
+      );
+    }
+
     if (latest.safetyVerdict === "unknown") {
       // Surface that an un-audited identity is being allowed (preview/full-auto
       // see it downstream). Prefix only — never the full hash or any address.
@@ -105,11 +132,17 @@ export async function evaluatePrequoteGate(
     // when the row carries no readable executable snapshot - the venues that
     // record none keep their existing card exactly.
     const quoteBinding = readQuoteBindingPreview(latest.prequoteId, latest.routeRef, latest.expiresAt);
+    // What the wallet could pay when this quote was taken (WP2). Restored from
+    // the row's own bounded `safetyDetail`, so the card's Required/Current
+    // figures are the store's figures. Quote-time DISCLOSURE only - the
+    // authoritative debit read belongs to the pre-sign window.
+    const spendability = spendabilityFromSafetyDetail(latest.safetyDetail);
     let allow: GateDecision = { kind: "allow", verdict: latest.safetyVerdict, prequoteId: latest.prequoteId };
     if (fotTax !== undefined) allow = { ...allow, fotTax };
     if (termLock !== undefined) allow = { ...allow, termLock };
     if (feePreview !== undefined) allow = { ...allow, feePreview };
     if (quoteBinding !== undefined) allow = { ...allow, quoteBinding };
+    if (spendability !== undefined) allow = { ...allow, spendability };
     return allow;
   } catch (err) {
     const reason = classifyGateBlockReason(err, context.walletPolicy);

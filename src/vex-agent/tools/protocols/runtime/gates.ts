@@ -23,6 +23,7 @@ import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import type { QuoteBindingPreview } from "../quote-authority/restore.js";
+import type { SpendabilityPreview } from "../quote-authority/spendability-contract.js";
 import { evaluateLendBorrowRiskPreview } from "../solana-jupiter/borrow-risk-preview.js";
 import { summarizeProtocolError } from "./errors.js";
 import { isPreviewExecution } from "../capture-validator.js";
@@ -116,6 +117,8 @@ export type PrequoteGateDecision =
       readonly riskPreview: LendBorrowRiskPreview | undefined;
       /** The approved quote's card binding (typed, unspoofable) for a gated swap execute. */
       readonly quoteBinding: QuoteBindingPreview | undefined;
+      /** Quote-time spendability facts (typed, unspoofable) for the approval card. */
+      readonly spendability: SpendabilityPreview | undefined;
       readonly bridgeTokenPreview: BridgeTokenIdentityPreview | undefined;
     }
   | { readonly kind: "block"; readonly message: string };
@@ -192,6 +195,7 @@ export async function evaluatePrequoteGateDecision(
       feePreview: decision.feePreview,
       riskPreview: undefined,
       quoteBinding: decision.quoteBinding,
+      spendability: decision.spendability,
       bridgeTokenPreview,
     };
   }
@@ -209,6 +213,7 @@ export async function evaluatePrequoteGateDecision(
     feePreview: undefined,
     riskPreview: risk.riskPreview,
     quoteBinding: undefined,
+    spendability: undefined,
     bridgeTokenPreview: undefined,
   };
 }
@@ -294,6 +299,7 @@ export function evaluateApprovalGate(
   prequoteFeePreview: JupiterFeePreview | undefined,
   prequoteRiskPreview: LendBorrowRiskPreview | undefined,
   prequoteQuoteBinding: QuoteBindingPreview | undefined,
+  prequoteSpendability: SpendabilityPreview | undefined,
   prequoteBridgeTokenPreview: BridgeTokenIdentityPreview | undefined,
 ): ToolResult | undefined {
   if (manifest.mutating && manifest.actionKind !== "local_write" && !context.approved && !isPreviewExecution(request.toolId, params)
@@ -323,12 +329,14 @@ export function evaluateApprovalGate(
         termLock?: { maturityIso: string };
         feePreview?: JupiterFeePreview;
         quoteBinding?: QuoteBindingPreview;
+        spendability?: SpendabilityPreview;
         bridgeTokenPreview?: BridgeTokenIdentityPreview;
       } = { verdict: prequoteVerdict };
       if (prequoteFotTax !== undefined) prequote.fotTax = prequoteFotTax;
       if (prequoteTermLock !== undefined) prequote.termLock = prequoteTermLock;
       if (prequoteFeePreview !== undefined) prequote.feePreview = prequoteFeePreview;
       if (prequoteQuoteBinding !== undefined) prequote.quoteBinding = prequoteQuoteBinding;
+      if (prequoteSpendability !== undefined) prequote.spendability = prequoteSpendability;
       if (prequoteBridgeTokenPreview !== undefined) prequote.bridgeTokenPreview = prequoteBridgeTokenPreview;
       pending.prequote = prequote;
     }

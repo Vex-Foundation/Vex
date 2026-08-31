@@ -5,6 +5,7 @@
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { WalletPolicy } from "@vex-agent/engine/types.js";
 import type { QuoteBindingPreview } from "../../quote-authority/restore.js";
+import type { SpendabilityPreview } from "../../quote-authority/spendability-contract.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 
@@ -49,6 +50,17 @@ export type GateDecision =
        * state a floor the store does not hold.
        */
       readonly quoteBinding?: QuoteBindingPreview;
+      /**
+       * What the wallet could pay when the matched quote was taken (WP2): the
+       * source principal and the total native debit against the balances read
+       * at that instant. Sourced from the matched row's persisted
+       * `safetyDetail`, NEVER from raw args.
+       *
+       * DISCLOSURE, not authority. The card line says the numbers are
+       * quote-time and re-read before signing; sign-time code must perform its
+       * own authoritative read rather than consulting this.
+       */
+      readonly spendability?: SpendabilityPreview;
     }
   | { readonly kind: "block"; readonly reason: GateBlockReason; readonly message: string };
 

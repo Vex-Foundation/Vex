@@ -102,7 +102,62 @@ Supports both **EVM chains** (Ethereum, Arbitrum, Base, etc.) and **Solana**.
 | `client.getTopTokens(chainIds?)` | `GET /v1/tokens` | `KhalaniToken[]` — flat array of top tokens |
 | `client.searchTokens(query, chainIds?)` | `GET /v1/tokens/search` | `{ data: KhalaniToken[] }` — search by name/symbol/address |
 | `client.autocompleteToken(keyword, opts?)` | `GET /v1/tokens/autocomplete/{keyword}` | `{ data[], parsed, nextSlots }` — semantic NLU autocomplete |
-| `client.getTokenBalances(address, chainIds?)` | `GET /v1/tokens/balances/{address}` | `KhalaniToken[]` — with `extensions.balance` and `extensions.price.usd` |
+| `client.getTokenBalances(address, chainIds?)` | `GET /v1/tokens/balances/{address}` | `{ tokens: KhalaniToken[]; rejectedEntries: KhalaniRejectedTokenBalanceEntry[] }` - tokens carry `extensions.balance` and `extensions.price.usd` |
+
+### The wallet-balances boundary is STRICT per entry (2026-08-31)
+
+`/v1/tokens/balances/{address}` is the ONE Khalani surface an attacker can write
+to: anyone can mint a token and airdrop it into a wallet, so every field of an
+entry there is attacker-controlled input arriving at scale. The other token
+surfaces (`/v1/tokens`, search, autocomplete) are provider-curated.
+
+That split is why the two use DIFFERENT validators, and the asymmetry is
+deliberate:
+
+| Surface | Validator | `decimals` rule | A bad entry costs |
+|---------|-----------|-----------------|-------------------|
+| `/v1/tokens`, search, autocomplete | `validateTokensResponse` / `parseToken` | tolerant `asNumber` (accepts `Infinity`, fractions, negatives) | the WHOLE call throws - a curated list nobody outside Khalani can add to should fail loudly |
+| `/v1/tokens/balances/{address}` | `validateTokenBalancesResponse` | strict `asTokenDecimals`: `Number.isInteger(d) && 0 <= d <= 36` | that ONE entry, reported in `rejectedEntries` |
+
+Contract of `validateTokenBalancesResponse`:
+
+- every token in `tokens` has a usable scale, so `formatUnits` (which THROWS on
+  a fractional scale) is total on them;
+- an entry whose ONLY defect is `decimals` becomes a
+  `KhalaniRejectedTokenBalanceEntry`: `entryIndex`, `chainId`, `address`,
+  `name`, `symbol`, `balanceRaw`, `reason: "token_decimals_invalid"`. Nothing is
+  dropped silently (output-envelope spec, section 4);
+- the invalid `decimals` value is NEVER echoed and NEVER guessed. No consumer
+  may substitute 18 (frozen contract C1.2; `decimals || 18` is the Rabby
+  anti-pattern this refuses);
+- `balanceRaw` is the provider's amount only when it is an EXACT unsigned
+  decimal integer string. A float, a hex string or an absent value yields
+  `null`, because a size we cannot state exactly is unknown, not zero (C1.3);
+- an entry with ANY other defect (identity, structure, a non-object entry, a
+  non-array document) still throws, which the scan records as a CHAIN failure.
+
+`getTokenBalancesAcrossChains` carries the refusals through as
+`TokenBalanceScanResult.rejectedEntries` (per-chain attribution comes from
+`entry.chainId`). The field is typed optional so a caller may construct an empty
+placeholder scan result; the scanner ALWAYS populates it. Read it as
+`rejectedEntries ?? []`.
+
+Consequences for the sync path
+(`vex-agent/sync/balance-sync/rejected-entry-salvage.ts`):
+
+- a refusal WITH an exact `balanceRaw` is retained as a `BalanceRow` with
+  `decimals: null` and `balanceUsd: null` - the INVENTORY stays complete, the
+  VALUATION of that row is honestly unknown;
+- a refusal WITHOUT an exact `balanceRaw` means that chain's inventory cannot be
+  reconstructed, so its destructive `replaceBalancesForChain` is skipped for the
+  cycle and the last-good rows keep their timestamps (C3.5). Other chains in the
+  same scan are written normally.
+
+Scan output is also deterministic: rows are sorted by held USD descending, then
+chain id, then lowercased address, then the raw address, symbol, name, decimals
+and raw balance. Rows arrive in RPC completion order under concurrency, so held
+USD alone (all-zero on an unpriced wallet) left the model's view of a wallet -
+and the float `totalUsd` sum - varying between two identical reads.
 
 ### Balance source: SPLIT by family (2026-08-28)
 
@@ -288,7 +343,7 @@ policy block in `request.ts` and the same doctrine in
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `extensions.balance` | String, smallest units | From `/v1/tokens/balances` |
+| `extensions.balance` | String, smallest units | From `/v1/tokens/balances`. Exact unsigned decimal integer; anything else is treated as an ABSENT amount on the balances boundary |
 | `extensions.price.usd` | String, USD | `"1.00"` |
 | `extensions.isRiskToken` | Boolean | Risk flag |
 | `extensions.marketCap` | String | Market cap |

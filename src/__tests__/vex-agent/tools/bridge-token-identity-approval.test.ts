@@ -227,6 +227,7 @@ describe("bridge approval card", () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       bridgePreview,
     );
 

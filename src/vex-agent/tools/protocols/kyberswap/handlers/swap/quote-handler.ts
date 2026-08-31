@@ -24,6 +24,7 @@ import { VEX_INTEGRATOR_FEE_ROUTE_PARAMS, type KyberGetRouteResponse } from "./r
 import { computeApprovedMinOut } from "@tools/kyberswap/swap-price-floor.js";
 import { PREQUOTE_MAX_AGE_MS } from "../../../prequote/registry.js";
 import { evmQuoteSafetyVerdict } from "../../../prequote/safety/extract/kyberswap.js";
+import { formatShortfall } from "../../../quote-authority/spendability.js";
 import {
   classifyQuoteEligibility,
   type QuoteEligibility,
@@ -70,6 +71,20 @@ function eligibilityNote(eligibility: QuoteEligibility, slug: string, wrapPairRe
         + (wrapPairRefusal !== null
           ? ` ${wrapPairRefusal}`
           : " This quote does NOT authorize an execute. Request a fresh quote, or price this pair with a market read first.");
+    // WP2 spendability. The route above is real and was returned deliberately;
+    // what it is not is an offer the wallet can accept.
+    case "insufficient_balance":
+      return ` The wallet does not hold enough of the input token for this trade: required ${formatShortfall(eligibility.required)},`
+        + ` current ${formatShortfall(eligibility.current)}, missing ${formatShortfall(eligibility.missing)}.`
+        + " The route is shown, but this quote does NOT authorize an execute. Fund the wallet or trade a smaller size, then quote again.";
+    case "balance_unavailable":
+      return ` A balance this trade depends on could not be read (${eligibility.cause}), so it is unknown whether the wallet can pay for it.`
+        + " The route is shown, but this quote does NOT authorize an execute - an unreadable balance fails closed. Retry the quote; if it keeps failing, check the chain connection before trading.";
+    case "gas_reserve_insufficient":
+      return ` The wallet cannot cover this swap's native gas debit: required ${formatShortfall(eligibility.required)},`
+        + ` current ${formatShortfall(eligibility.current)}, missing ${formatShortfall(eligibility.missing)}.`
+        + " The required figure covers every transaction this swap would broadcast plus a reserve for the next one."
+        + " The route is shown, but this quote does NOT authorize an execute. Top up the native balance, then quote again.";
   }
 }
 

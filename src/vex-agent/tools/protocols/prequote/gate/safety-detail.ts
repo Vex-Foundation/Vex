@@ -9,6 +9,26 @@ import {
   type JupiterFeePreview,
 } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 
+import { spendabilityPreviewSchema } from "../../quote-authority/spendability.js";
+import type { SpendabilityPreview } from "../../quote-authority/spendability-contract.js";
+
+/**
+ * Extract the quote-time spendability facts (WP2) from a matched prequote's
+ * bounded `safetyDetail`, for the approval card.
+ *
+ * Re-parsed with the SAME schema the recorder validated against, because the
+ * value has crossed persistence as JSONB since (rule 04). A row written before
+ * this lane existed, by a venue that measures no balances, or by an older card
+ * version yields `undefined` - and the card then simply carries no spendability
+ * line, which is honest, rather than a partial one.
+ */
+export function spendabilityFromSafetyDetail(
+  safetyDetail: Record<string, unknown>,
+): SpendabilityPreview | undefined {
+  const parsed = spendabilityPreviewSchema.safeParse(safetyDetail.spendability);
+  return parsed.success ? parsed.data : undefined;
+}
+
 /**
  * Extract the Pendle term-lock maturity from a matched swap prequote's bounded
  * `safetyDetail`, for the approval preview. The detail is `Record<string,

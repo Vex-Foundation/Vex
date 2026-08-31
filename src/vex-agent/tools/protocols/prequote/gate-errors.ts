@@ -19,8 +19,11 @@ export type GateBlockReason =
   | "wallet_scope"      // selected wallet can't be used: drift/removal, or — when a
                         // mission is active — not in the accepted allowed set
   | "wallet_not_selected" // no wallet selected for the required chain family
-  | "unbindable_param"; // bridge execute carries an EXECUTE-ONLY param (routeId /
-                        // depositMethod) the quote can never bind — fail-closed
+  | "unbindable_param" // bridge execute carries an EXECUTE-ONLY param (routeId /
+                       // depositMethod) the quote can never bind - fail-closed
+  | "not_executable";  // the newest matching quote recorded an eligibility other
+                       // than `executable` (unusable route, or the wallet could
+                       // not pay for it), so that quote authorizes nothing
 
 /** A thrown identity-build error that already names its block reason. */
 export class GateIdentityError extends Error {
