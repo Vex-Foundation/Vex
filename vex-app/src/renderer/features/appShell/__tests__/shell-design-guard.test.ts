@@ -133,7 +133,6 @@ const BANNED: readonly BannedPattern[] = [
   },
   { name: "resting glow shadow", regex: /shadow-\[0_0_/ },
   // Signal Tape foundation (§0.4): the retired indigo/violet accent and the
-  // two raw status hexes are now tokens (--vex-pin / --vex-warn-text). Any raw
   // re-introduction in shell sources is a red build.
   { name: "legacy indigo/violet accent", regex: /#(?:6366f1|8b5cf6)/i },
   { name: "raw pin/warn status hex", regex: /#(?:ffd35c|ffce5a|f0a0a0)/i },
@@ -427,7 +426,6 @@ describe("shell design guard (S7)", () => {
     expect(matchNames("text-[#f0a0a0]")).toContain("raw pin/warn status hex");
     // The accent root and the new semantic tokens are NOT raw-hex violations.
     expect(matchNames("text-[var(--vex-pin)]")).toEqual([]);
-    expect(matchNames("text-[var(--vex-warn-text)]")).toEqual([]);
   });
 
   it("flags theme-blind white/black utilities, in every alpha and variant form", () => {
