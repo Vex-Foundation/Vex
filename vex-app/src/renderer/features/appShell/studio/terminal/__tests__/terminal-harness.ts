@@ -50,6 +50,17 @@ export interface TerminalBridgeStub {
   readonly kills: string[];
   readonly creates: { projectId: string; cols: number; rows: number }[];
   readonly persisted: TerminalWorkspaceLayout[];
+  /**
+   * Every persist and kill IN THE ORDER THE BRIDGE SAW THEM.
+   *
+   * The separate `persisted` and `kills` arrays cannot express an ordering
+   * between the two, and the close path's whole contract is an ordering: the
+   * buffer-bearing commit happens BEFORE the first kill, and nothing persists
+   * after it. Entries are `persist:<projectId>:<paneCount>` and
+   * `kill:<terminalId>`, so a proof can also see whether a late persist carried
+   * a full workspace or an emptied one.
+   */
+  readonly ops: string[];
   /** How the next `create` answers. Set a code to make it refuse. */
   nextCreate: { ok: true; value: CreateAnswer } | { ok: false; code: TerminalErrorCode };
   /** What `readWorkspace` returns. `null` means "nothing to revive". */
@@ -249,6 +260,7 @@ export function installTerminalBridge(): TerminalBridgeStub {
     kills: [],
     creates: [],
     persisted: [],
+    ops: [],
     pendingDataCompletions: [],
     nextCreate: {
       ok: true,
@@ -374,6 +386,7 @@ export function installTerminalBridge(): TerminalBridgeStub {
     }),
     kill: vi.fn(async (input: { terminalId: string }) => {
       stub.kills.push(input.terminalId);
+      stub.ops.push(`kill:${input.terminalId}`);
       // THE PTY ACTUALLY GOES. A kill recorded but not modelled would let a
       // leak test pass by counting a shell the controller had already ended.
       stub.livePtys.delete(input.terminalId);
@@ -403,6 +416,11 @@ export function installTerminalBridge(): TerminalBridgeStub {
       subscribe(channels.refused, terminalId, cb),
     persistWorkspace: vi.fn(async (input: { layout: TerminalWorkspaceLayout }) => {
       stub.persisted.push(input.layout);
+      const panes = input.layout.groups.reduce(
+        (sum, group) => sum + group.panes.length,
+        0,
+      );
+      stub.ops.push(`persist:${input.layout.projectId}:${String(panes)}`);
       return { ok: true as const, data: { ok: true as const, value: null } };
     }),
     readWorkspace: vi.fn(async (input: { projectId: string }) => {

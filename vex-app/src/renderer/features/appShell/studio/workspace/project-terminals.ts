@@ -20,10 +20,33 @@
  * only thing that decides which terminals a project has, and this module only
  * ever mirrors it.
  *
+ * ## The CLOSE HANDLER travels the same way, and for the same reason
+ *
+ * B4b-C made an explicit close kill the project's ptys, which turned the close
+ * into an ORDERED operation: the buffer-bearing snapshot must be committed
+ * while every shell is still alive, and only then may they be killed. Both
+ * halves need the workspace LAYOUT, which lives in the controller's state - and
+ * the centre, which is where the user's close gesture lands, does not have it.
+ *
+ * So the controller also publishes a `close` handler here, and the centre TAKES
+ * it and awaits it before removing the project from the kept-alive set. The
+ * ordering therefore lives with the state it orders, and the centre keeps the
+ * one decision that is genuinely its own: when a workspace leaves the set.
+ *
  * NOT PERSISTED and process-local, like the registries it serves.
  */
 
 const terminalIdsByProject = new Map<string, readonly string[]>();
+
+/**
+ * Each mounted workspace's ordered close, keyed by project.
+ *
+ * A SECOND map rather than a field beside the terminal ids, because the two are
+ * published by different effects on different dependencies: merging them would
+ * make each publisher responsible for preserving the other's half, which is a
+ * lost-update waiting to happen for no gain.
+ */
+const closeByProject = new Map<string, () => Promise<void>>();
 
 /**
  * Mirror one project's terminal ids. Called by the controller that owns them.
@@ -76,7 +99,42 @@ export function takeProjectTerminals(projectId: string): readonly string[] {
   return ids;
 }
 
+/**
+ * Register this project's ordered close. Returns the unregister.
+ *
+ * Identity-checked on the way out, like every other single-slot registration in
+ * this feature: a controller that unmounted AFTER its successor mounted must
+ * not delete the successor's handler.
+ */
+export function publishProjectWorkspaceClose(
+  projectId: string,
+  close: () => Promise<void>,
+): () => void {
+  closeByProject.set(projectId, close);
+  return () => {
+    if (closeByProject.get(projectId) === close) closeByProject.delete(projectId);
+  };
+}
+
+/**
+ * Read AND FORGET this project's ordered close, or `null` when no workspace is
+ * mounted for it.
+ *
+ * TAKE-ONCE, and that is the whole concurrency control on the close path: a
+ * second close gesture arriving while the first is still persisting and killing
+ * gets `null` and does nothing, rather than committing a second snapshot and
+ * killing terminals the first close has already ended.
+ */
+export function takeProjectWorkspaceClose(
+  projectId: string,
+): (() => Promise<void>) | null {
+  const close = closeByProject.get(projectId) ?? null;
+  closeByProject.delete(projectId);
+  return close;
+}
+
 /** Drop every entry. The window teardown path, beside the registries' own. */
 export function clearProjectTerminals(): void {
   terminalIdsByProject.clear();
+  closeByProject.clear();
 }

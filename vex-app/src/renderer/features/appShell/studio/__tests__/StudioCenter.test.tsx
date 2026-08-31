@@ -18,7 +18,11 @@ import { projectKeys } from "../../../../lib/api/projects.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { ExplorerRegistry } from "../explorer/index.js";
 import { TerminalRegistry } from "../terminal/index.js";
-import { publishProjectTerminals } from "../workspace/project-terminals.js";
+import {
+  clearProjectTerminals,
+  publishProjectTerminals,
+  publishProjectWorkspaceClose,
+} from "../workspace/project-terminals.js";
 import { STUDIO_WORKSPACE_KEEP_ALIVE_MAX } from "../workspace/keep-alive.js";
 import { installStudioDomStubs, makeError, makeProject } from "./studio-fixtures.js";
 
@@ -95,6 +99,9 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  // The project index is a MODULE SINGLETON. Terminal ids or a close handler
+  // left by the previous test would be taken by this one.
+  clearProjectTerminals();
   projectsListMock.mockReset();
   projectsListMock.mockResolvedValue({ ok: true, data: [] });
   useUiStore.setState({ activeProjectId: null, runtimeMode: "studio" });
@@ -221,6 +228,93 @@ describe("keep-alive", () => {
     // The xterm instances are destroyed through the registry seam - otherwise
     // they would be retained for the life of the window, named by nothing.
     expect(harness.disposedTerminals.toSorted()).toEqual(["t-a", "t-b"]);
+  });
+
+  /**
+   * THE AWAIT IS THE CONTRACT.
+   *
+   * The controller's close commits the buffer-bearing snapshot with every pty
+   * still running and only then kills them. The set transition unmounts that
+   * controller and disposes its xterms, so performing it first would tear down
+   * the only owner of the layout mid-commit - and the snapshot the reopen
+   * revives from is what would be lost.
+   */
+  it("AWAITS the workspace's ordered close before unmounting it", async () => {
+    const projects = Array.from({ length: 5 }, (_, index) =>
+      makeProject({ name: `p${String(index + 1)}` }),
+    );
+    const [firstProject] = projects;
+    const fifth = projects[projects.length - 1];
+    if (firstProject === undefined || fifth === undefined) throw new Error("fixture");
+    projectsListMock.mockResolvedValue({ ok: true, data: projects });
+    const harness = renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    for (const project of projects.slice(0, STUDIO_WORKSPACE_KEEP_ALIVE_MAX)) {
+      select(project.id);
+      await screen.findByTestId(`workspace-${project.id}`);
+    }
+    publishProjectTerminals(firstProject.id, ["t-a", "t-b"]);
+    let commit = (): void => undefined;
+    const committed = new Promise<void>((resolve) => {
+      commit = resolve;
+    });
+    publishProjectWorkspaceClose(firstProject.id, async () => await committed);
+
+    select(fifth.id);
+    await screen.findByText("Close a project workspace first");
+    fireEvent.click(screen.getByRole("button", { name: "Close the p1 workspace" }));
+
+    // Mid-commit: the workspace is STILL mounted and nothing has been disposed.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByTestId(`workspace-${firstProject.id}`)).not.toBeNull();
+    expect(harness.disposedTerminals).toEqual([]);
+
+    await act(async () => {
+      commit();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId(`workspace-${firstProject.id}`)).toBeNull();
+    });
+    expect(harness.disposedTerminals.toSorted()).toEqual(["t-a", "t-b"]);
+  });
+
+  it("states per row how many running terminals the close would END", async () => {
+    const projects = Array.from({ length: 5 }, (_, index) =>
+      makeProject({ name: `p${String(index + 1)}` }),
+    );
+    const fifth = projects[projects.length - 1];
+    if (fifth === undefined) throw new Error("fixture");
+    projectsListMock.mockResolvedValue({ ok: true, data: projects });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    for (const project of projects.slice(0, STUDIO_WORKSPACE_KEEP_ALIVE_MAX)) {
+      select(project.id);
+      await screen.findByTestId(`workspace-${project.id}`);
+    }
+    const [p1, p2, p3] = projects;
+    if (p1 === undefined || p2 === undefined || p3 === undefined) {
+      throw new Error("fixture");
+    }
+    publishProjectTerminals(p1.id, ["t-a", "t-b"]);
+    publishProjectTerminals(p2.id, ["t-c"]);
+    publishProjectTerminals(p3.id, []);
+    // p4 publishes NOTHING, which is a different fact from "none".
+
+    select(fifth.id);
+    await screen.findByText("Close a project workspace first");
+
+    const rows = screen.getByLabelText("Open project workspaces").querySelectorAll("li");
+    expect(rows[0]?.textContent).toContain("Closes 2 running terminals");
+    // SINGULAR at one: the count is a consequence the user is choosing on.
+    expect(rows[1]?.textContent).toContain("Closes 1 running terminal");
+    expect(rows[2]?.textContent).toContain("No running terminals");
+    // Nothing invented for the row whose workspace published no count.
+    expect(rows[3]?.textContent).toBe("p4Close");
   });
 });
 

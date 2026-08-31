@@ -8,9 +8,15 @@
  * "do not ask again" - the whole point is that closing a workspace with a
  * running shell in it is a choice, and a choice that can be suppressed once and
  * applied forever is not one.
+ *
+ * It is also the CONFIRMATION for a destructive act, and says so per row. A
+ * close ends that project's shells (VS Code's close semantics: the buffers
+ * revive on reopen, the processes do not), so each row carries the number it
+ * would end. That is `confirmOnExit`'s job here, and it is why the dialog kept
+ * its focus on Cancel.
  */
 
-import type { JSX } from "react";
+import { useMemo, type JSX } from "react";
 import type { ProjectDto } from "@shared/schemas/projects.js";
 import { Button } from "../../../components/ui/button.js";
 import {
@@ -23,6 +29,7 @@ import {
   DialogTitle,
 } from "../../../components/ui/dialog.js";
 import { STUDIO_WORKSPACE_KEEP_ALIVE_MAX } from "./workspace/keep-alive.js";
+import { peekProjectTerminals } from "./workspace/project-terminals.js";
 import {
   STUDIO_KEEP_ALIVE_CANCEL,
   STUDIO_KEEP_ALIVE_CLOSE,
@@ -30,6 +37,7 @@ import {
   STUDIO_KEEP_ALIVE_TITLE,
   studioKeepAliveCloseLabel,
   studioKeepAliveDescription,
+  studioKeepAliveTerminalsLine,
 } from "./studio-copy.js";
 
 export interface StudioKeepAliveDialogProps {
@@ -48,6 +56,25 @@ export function StudioKeepAliveDialog({
   onCloseWorkspace,
 }: StudioKeepAliveDialogProps): JSX.Element {
   const open = requestedProject !== null;
+
+  /**
+   * How many shells each row would end, read ONCE PER OPENING.
+   *
+   * The same rule the delete dialog states: a count that moved under the
+   * confirmation would be a different dialog from the one the user read. So the
+   * memo is keyed on `open` and on the row ids, never on the DTO identities,
+   * which change on every list refetch.
+   */
+  const rowIds = openProjects.map((project) => project.id).join("\u0000");
+  const terminalCounts = useMemo(() => {
+    const counts = new Map<string, number | null>();
+    if (!open) return counts;
+    for (const id of rowIds === "" ? [] : rowIds.split("\u0000")) {
+      counts.set(id, peekProjectTerminals(id)?.length ?? null);
+    }
+    return counts;
+  }, [open, rowIds]);
+
   return (
     <Dialog
       open={open}
@@ -73,10 +100,24 @@ export function StudioKeepAliveDialog({
             {openProjects.map((project) => (
               <li
                 key={project.id}
-                className="flex h-9 items-center gap-2 rounded-lg px-2"
+                className="flex min-h-9 items-center gap-2 rounded-lg px-2 py-1"
               >
-                <span className="min-w-0 flex-1 truncate text-[14px] leading-[20px] text-ink-primary">
-                  {project.name}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-[14px] leading-[20px] text-ink-primary">
+                    {project.name}
+                  </span>
+                  {/* Omitted, never guessed, when no workspace published a
+                    * count: printing "0" for a project whose terminals the
+                    * renderer cannot see would be an invented fact about an
+                    * action that ends running shells. */}
+                  {(() => {
+                    const count = terminalCounts.get(project.id);
+                    return count === null || count === undefined ? null : (
+                      <span className="truncate text-[12px] leading-4 text-ink-secondary">
+                        {studioKeepAliveTerminalsLine(count)}
+                      </span>
+                    );
+                  })()}
                 </span>
                 <Button
                   type="button"

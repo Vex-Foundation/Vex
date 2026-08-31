@@ -57,7 +57,10 @@ import {
   toPersistedLayout,
 } from "../workspace/workspace-model.js";
 import { useFileOpenIntentStore } from "../workspace/file-open-intent.js";
-import { publishProjectTerminals } from "../workspace/project-terminals.js";
+import {
+  publishProjectTerminals,
+  publishProjectWorkspaceClose,
+} from "../workspace/project-terminals.js";
 import { STUDIO_FILE_TABS_MAX } from "../workspace/types.js";
 import type {
   WorkspaceMutation,
@@ -159,6 +162,18 @@ export function StudioWorkspaceController({
   stateRef.current = state;
   const hydratedRef = useRef(false);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * This workspace has been CLOSED, so it may never persist again.
+   *
+   * The close commits the snapshot itself and then kills the ptys, and every
+   * persist that could follow describes a project whose shells are gone: the
+   * host reconciles a layout against what is LIVE, so a later commit would
+   * write the intersection - an empty snapshot - over the buffers the close had
+   * just saved. The two paths that could do it are this controller's debounce
+   * and its unmount flush, and this latch closes both at their source rather
+   * than at two call sites that must both remember.
+   */
+  const closedRef = useRef(false);
 
   /**
    * THE WORKSPACE GENERATION. Bumped whenever the workspace this controller is
@@ -216,6 +231,7 @@ export function StudioWorkspaceController({
       persistTimerRef.current = null;
     }
     if (!hydratedRef.current) return;
+    if (closedRef.current) return;
     void persistTerminalWorkspace(toPersistedLayout(stateRef.current));
   }, []);
 
@@ -291,9 +307,13 @@ export function StudioWorkspaceController({
 
   useEffect(() => {
     if (!hydratedRef.current) return undefined;
+    if (closedRef.current) return undefined;
     if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current);
     persistTimerRef.current = setTimeout(() => {
       persistTimerRef.current = null;
+      // Re-checked at the timer, not only when it was armed: the close latches
+      // between the two, and the check that matters is the one at the write.
+      if (closedRef.current) return;
       void persistTerminalWorkspace(toPersistedLayout(stateRef.current));
     }, PERSIST_DEBOUNCE_MS);
     return () => {
@@ -333,6 +353,63 @@ export function StudioWorkspaceController({
     }
     publishProjectTerminals(projectId, terminalIds);
   }, [projectId, state]);
+
+  /**
+   * CLOSING this workspace: commit the buffers, THEN kill the shells.
+   *
+   * VS Code's own semantics, and the reason the order is the whole of this
+   * function. Closing a window disposes its terminals rather than detaching
+   * them (`terminalService.ts` detaches only on `ShutdownReason.RELOAD`), and
+   * `persistentSessionReviveProcess` defaults to `onExit`: the BUFFERS come
+   * back, the PROCESSES do not. Reopening the project therefore has to find a
+   * snapshot carrying every screen, and there is exactly one moment at which
+   * such a snapshot can be written - while the ptys are still running.
+   *
+   * ## Why each step is where it is
+   *
+   *  1. LATCH FIRST, before any await. Everything after this point would write
+   *     a snapshot describing shells that are about to stop existing; the host
+   *     reconciles a persisted layout against what is live, so such a write
+   *     lands as an EMPTY snapshot over the one this function is about to save.
+   *  2. PERSIST AND AWAIT IT. `persistTerminalWorkspace` does not resolve on
+   *     delivery: main records the topology and the host's commit owner
+   *     serializes every live mirror into the project's snapshot file before
+   *     the reply comes back. Awaiting it is what makes "the buffers are on
+   *     disk" a fact rather than a hope, and it is why no separate
+   *     "serialize now" request had to be invented.
+   *  3. KILL, through the model's own `closing` intent, so "a close kills"
+   *     stays one decision in `workspace-model.ts` rather than two.
+   *
+   * ## Before the restore has landed, nothing is persisted
+   *
+   * An unhydrated workspace's state is EMPTY, and persisting it would overwrite
+   * the very snapshot the mount was about to restore from - the same reason the
+   * debounce is latched behind hydration. So the close skips step 2 and the
+   * file on disk stays the last good one. Any terminals a revive had already
+   * produced stay live and are found by the next open, which main answers from
+   * live state rather than from the snapshot.
+   */
+  const closeWorkspace = useCallback(async (): Promise<void> => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    if (persistTimerRef.current !== null) {
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
+    const closing = stateRef.current;
+    if (hydratedRef.current) {
+      await persistTerminalWorkspace(toPersistedLayout(closing));
+    }
+    const plan = collectCleanups(closing.tabs, "closing");
+    await Promise.all(
+      plan.killTerminalIds.map(async (terminalId) => await killTerminal(terminalId)),
+    );
+  }, []);
+
+  useEffect(() => publishProjectWorkspaceClose(projectId, closeWorkspace), [
+    closeWorkspace,
+    projectId,
+  ]);
 
   /* ---------------- teardown ---------------- */
 

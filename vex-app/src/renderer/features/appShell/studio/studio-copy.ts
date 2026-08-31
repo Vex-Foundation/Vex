@@ -170,4 +170,20 @@ export function studioKeepAliveCloseLabel(projectName: string): string {
   return `Close the ${projectName} workspace`;
 }
 
+/**
+ * What closing THIS row costs, in shells.
+ *
+ * Closing a workspace ends its terminals, so the count is the consequence the
+ * user is choosing between rows on, and a dialog that offered four
+ * indistinguishable "Close" buttons would be asking them to choose blind.
+ * Present tense, because the button beside it performs it.
+ *
+ * Shown only when the renderer KNOWS the count; see `peekProjectTerminals` for
+ * why `null` and `0` are different facts and why neither is guessed.
+ */
+export function studioKeepAliveTerminalsLine(count: number): string {
+  if (count === 0) return "No running terminals";
+  return count === 1 ? "Closes 1 running terminal" : `Closes ${String(count)} running terminals`;
+}
+
 export const STUDIO_KEEP_ALIVE_CLOSE = "Close";

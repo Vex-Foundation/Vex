@@ -56,7 +56,10 @@ import {
 import { StudioWelcome } from "./welcome/StudioWelcome.js";
 import { StudioKeepAliveDialog } from "./StudioKeepAliveDialog.js";
 import { openProjectCreator, StudioProjectDialogs } from "./projects/index.js";
-import { takeProjectTerminals } from "./workspace/project-terminals.js";
+import {
+  takeProjectTerminals,
+  takeProjectWorkspaceClose,
+} from "./workspace/project-terminals.js";
 import {
   closeProject,
   emptyKeepAlive,
@@ -116,10 +119,12 @@ export function StudioCenter({
    * will ever name these xterm instances again, so they would be retained -
    * buffers, theme observers and WebGL contexts - for the life of the window.
    *
-   * The ptys are NOT killed. Closing a workspace is not closing a tab: the
-   * layout snapshot is on disk, the shells survive their grace period, and
-   * reopening the project reattaches them. Killing them here would destroy work
-   * on an action the user took to make room, not to end anything.
+   * The PTYS are not this function's business either. An explicit close kills
+   * them, but only after the buffer-bearing snapshot has been committed, and
+   * that ordering belongs to the controller that holds the layout - see
+   * `handleCloseWorkspace` and the controller's `closeWorkspace`. This one runs
+   * for every departure from the set, including a deleted project's, where the
+   * lifecycle gate is already killing the shells.
    */
   const disposeProjectTerminals = useCallback(
     (projectId: string): void => {
@@ -234,10 +239,38 @@ export function StudioCenter({
     };
   }, [explorers]);
 
+  /**
+   * THE EXPLICIT CLOSE, and it is ordered.
+   *
+   * Closing a kept-alive workspace follows VS Code's CLOSE semantics rather
+   * than its reload: the project's shells are ENDED, and reopening the project
+   * revives fresh ones with the restored screens through the snapshot machinery
+   * that already exists. Nothing here builds a second revive; the reopen is the
+   * ordinary mount, which reads the workspace main answers from the snapshot
+   * once no terminal of the project is live.
+   *
+   * The AWAIT is the contract. `close` commits the snapshot with every pty
+   * still running and only then kills them, so the set transition - which
+   * unmounts the controller and disposes its xterms - must not happen until it
+   * has finished. Removing the workspace first would tear down the only owner
+   * of the layout mid-commit.
+   *
+   * A close for a project with no mounted workspace (nothing published) still
+   * leaves the set: the transition is the centre's own decision and does not
+   * depend on a controller being there to answer.
+   */
   const handleCloseWorkspace = useCallback(
     (projectId: string): void => {
-      applyKeepAlive((current) => closeProject(current, projectId));
       setRefusedProjectId(null);
+      const close = takeProjectWorkspaceClose(projectId);
+      if (close === null) {
+        applyKeepAlive((current) => closeProject(current, projectId));
+        return;
+      }
+      void (async () => {
+        await close();
+        applyKeepAlive((current) => closeProject(current, projectId));
+      })();
     },
     [applyKeepAlive],
   );
