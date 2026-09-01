@@ -47,6 +47,12 @@ export interface NotificationActionInput {
   readonly label: string;
   readonly rank: NotificationActionRank;
   readonly run: () => void;
+  /**
+   * The action exists and still belongs on the notification, but cannot be
+   * taken RIGHT NOW (its mutation is already in flight). Distinct from a
+   * detached action (`disposeActions`), which is gone for good and says so.
+   */
+  readonly disabled?: boolean;
 }
 
 /** Absent `total` means an indeterminate operation. */
@@ -64,18 +70,23 @@ export interface NotificationProgressState {
 }
 
 /**
- * Which surfaces present this notification. Both default to `true`.
- *
- * REMOVAL CONDITION: this field exists for ONE consumer - the `lib/toast.ts`
- * legacy adapter, which mirrors an already-rendered, already-announced legacy
- * toast into the center so the user can re-read it, without painting it twice
- * or speaking it twice. When B2.2 migrates those call sites to `notify`, this
- * field and its only caller go with them.
+ * WHY a notification stopped existing. The producing surface needs this to
+ * tell "the user got rid of my toast" (which for an update prompt means
+ * snooze, and must be recorded) from "I closed it myself" (a status change) -
+ * without it, a producer that re-raises on close loops, and one that treats
+ * every close as a user gesture snoozes itself.
  */
-export interface NotificationDelivery {
-  readonly toast?: boolean;
-  readonly announce?: boolean;
-}
+export type NotificationCloseReason =
+  /** The user dismissed it from a toast or the center. */
+  | "user"
+  /** A primary action ran and closed the notification with it. */
+  | "action"
+  /** The producer called `handle.close()`. */
+  | "producer"
+  /** A newer raising of the same `id` / `dedupKey` took its place. */
+  | "replaced"
+  /** The retention cap evicted it (oldest first). */
+  | "evicted";
 
 export interface NotificationInput {
   /**
@@ -97,16 +108,35 @@ export interface NotificationInput {
   readonly scope: NotificationScope;
   /** Short producer code, e.g. `studio.watcher`. Shown as provenance. */
   readonly source: string;
+  /**
+   * Optional headline above the message, in the surfaces' micro label slot.
+   *
+   * It is the notification's own name for the event ("Ready to install"), not
+   * its provenance - `source` stays the provenance and is what the center
+   * shows when there is no title. Sanitized, already-public text like
+   * `message`.
+   */
+  readonly title?: string;
   /** Sanitized, already-public text. */
   readonly message: string;
   readonly actions?: readonly NotificationActionInput[];
   readonly progress?: NotificationProgressInput;
   /** Explicit stickiness. Sticky is otherwise DERIVED - see `isSticky`. */
   readonly sticky?: boolean;
+  /**
+   * Whether the USER may remove it. Defaults to `true`.
+   *
+   * `false` is for a notification that IS the only affordance for an operation
+   * the user has not finished deciding about - an update download in flight,
+   * a critical update - where removing it would silently take the controls
+   * away with no way back. The producer still owns it and closes it, so this
+   * is not an unbounded pin: it is a statement that dismissal is the
+   * producer's call, not a stray click's.
+   */
+  readonly dismissible?: boolean;
   readonly priority?: NotificationPriority;
   /** Ties the notification to the operation's log record when one exists. */
   readonly correlationId?: string;
-  readonly deliver?: NotificationDelivery;
 }
 
 /**
@@ -119,6 +149,7 @@ export interface NotificationAction {
   readonly label: string;
   readonly rank: NotificationActionRank;
   readonly run: (() => void) | null;
+  readonly disabled: boolean;
   readonly unavailableReason: string | null;
 }
 
@@ -139,16 +170,17 @@ export interface NotificationView {
   readonly severity: NotificationSeverity;
   readonly scope: NotificationScope;
   readonly source: string;
+  readonly title: string | null;
   readonly message: string;
   readonly actions: readonly NotificationAction[];
   readonly progress: NotificationProgressState | null;
   /** Derived; see `isSticky` in the model. */
   readonly sticky: boolean;
+  readonly dismissible: boolean;
   readonly priority: NotificationPriority;
   /** Epoch milliseconds. */
   readonly createdAt: number;
   readonly correlationId: string | null;
-  readonly deliver: Required<NotificationDelivery>;
   readonly toastPhase: NotificationToastPhase;
 }
 
@@ -171,6 +203,17 @@ export interface NotificationHandle {
   /** `"done"` completes the operation, which also un-sticks the notification. */
   updateProgress: (progress: NotificationProgressInput | "done") => void;
   /**
+   * Replace the action row in place.
+   *
+   * A long-lived notification's remedies change with the operation behind it
+   * (an update that starts downloading offers Cancel, not Update now). Doing
+   * that by re-raising would replay the entrance and speak the message again
+   * on every tick, so the row is updatable. NOT announceable: the message is
+   * what the announcer speaks, and a control appearing is not new information
+   * to read out.
+   */
+  updateActions: (actions: readonly NotificationActionInput[]) => void;
+  /**
    * Detach the actions when the producing surface unmounts.
    *
    * A retained notification outlives the component that raised it, and its
@@ -180,8 +223,8 @@ export interface NotificationHandle {
    * the control renders inert instead of silently doing nothing.
    */
   disposeActions: (reason: string) => void;
-  /** Returns its own unsubscribe. Fires at most once. */
-  onDidClose: (listener: () => void) => () => void;
+  /** Returns its own unsubscribe. Fires at most once, with WHY it closed. */
+  onDidClose: (listener: (reason: NotificationCloseReason) => void) => () => void;
 }
 
 /** One immutable read of the whole subsystem, for `useSyncExternalStore`. */

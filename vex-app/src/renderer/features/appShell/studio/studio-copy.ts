@@ -61,6 +61,13 @@ export const STUDIO_HOST_CAUSE_SENTENCES: Readonly<
     "No agent executor is installed, so Vex Studio has nothing to serve.",
   endpoint_unavailable:
     "Vex Studio could not open its local endpoint on this machine.",
+  // Says the true thing: it is off, it is off on purpose, and there is nothing
+  // on this machine for the user to repair. Naming the working platforms is
+  // the only remedy that exists.
+  windows_transport_disabled:
+    "Vex Studio is not available on Windows yet: its Windows connection has "
+    + "been kept switched off until its security has been verified. Use Vex "
+    + "Studio on Linux or macOS.",
 };
 
 /** Accessible name for the word itself, so the state is never colour-only. */

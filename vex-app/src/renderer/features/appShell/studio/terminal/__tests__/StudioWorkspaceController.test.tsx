@@ -25,6 +25,7 @@ import {
 import { publishFileOpen, useFileOpenIntentStore } from "../../workspace/file-open-intent.js";
 import { WORKSPACE_TERMINAL_GROUPS_MAX } from "../../workspace/types.js";
 import { StudioWorkspaceController } from "../StudioWorkspaceController.js";
+import { notifications } from "../../../../../lib/notifications/index.js";
 import { fileViewerRegistry } from "../../viewer/index.js";
 import { TerminalRegistry } from "../terminal-registry.js";
 import {
@@ -128,6 +129,9 @@ beforeEach(() => {
   registry = new TerminalRegistry(noWebgl);
   fileReads.length = 0;
   fileViewerRegistry.disposeAll();
+  // The notification model is a MODULE SINGLETON: a retained loss notification
+  // would count itself into the next test in this file.
+  notifications.reset();
   document.body.innerHTML = "";
 });
 
@@ -983,6 +987,92 @@ describe("a lost pty host is REPORTED, not hidden", () => {
     });
     expect(bridge.reviveCount).toBe(before + 1);
     expect(bridge.livePtys.size).toBe(2);
+  });
+
+  it("raises ONE app-wide notification per loss and closes it when the shells come back", async () => {
+    // The inline bar only exists while this project's workspace is on screen.
+    // A user in another project, or in agent mode, learns about a dead pty
+    // host from the notification or not at all.
+    bridge.savedWorkspace = savedWorkspace();
+    renderStrict("p1");
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
+    });
+
+    await act(async () => {
+      bridge.emitTerminalsLost(["t1"]);
+      await Promise.resolve();
+    });
+    const first = notifications.getSnapshot().items;
+    expect({
+      count: first.length,
+      title: first[0]?.title,
+      message: first[0]?.message,
+      severity: first[0]?.severity,
+      scope: first[0]?.scope,
+      action: first[0]?.actions.map((entry) => entry.label),
+      // Derived sticky: an error whose remedy is on the notification must not
+      // purge itself and take the remedy with it.
+      sticky: first[0]?.sticky,
+    }).toEqual({
+      count: 1,
+      title: "The terminal service stopped",
+      message: "1 shell ended with it. Their saved output can be restored.",
+      severity: "error",
+      scope: { kind: "project", projectId: "p1" },
+      action: ["Restore terminals"],
+      sticky: true,
+    });
+
+    // A SECOND batch is the same unresolved loss: the count moves, and no
+    // second row appears to report it twice.
+    await act(async () => {
+      bridge.emitTerminalsLost(["t2"]);
+      await Promise.resolve();
+    });
+    const second = notifications.getSnapshot().items;
+    expect({ count: second.length, message: second[0]?.message }).toEqual({
+      count: 1,
+      message: "2 shells ended with it. Their saved output can be restored.",
+    });
+
+    // Restoring resolves it, so the notification goes with the inline bar.
+    await act(async () => {
+      screen.getByRole("button", { name: "Restore terminals" }).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(notifications.getSnapshot().items).toHaveLength(0);
+    });
+  });
+
+  it("detaches the action on unmount rather than holding the workspace alive behind it", async () => {
+    bridge.savedWorkspace = savedWorkspace();
+    const view = renderStrict("p1");
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
+    });
+    await act(async () => {
+      bridge.emitTerminalsLost(["t1"]);
+      await Promise.resolve();
+    });
+
+    view.unmount();
+
+    const item = notifications.getSnapshot().items[0];
+    expect({
+      // The row survives: the shells are still dead and the user has not read
+      // it yet.
+      retained: item?.title,
+      // But the control is honestly inert rather than quietly doing nothing.
+      run: item?.actions[0]?.run,
+      reason: item?.actions[0]?.unavailableReason,
+    }).toEqual({
+      retained: "The terminal service stopped",
+      run: null,
+      reason: "the project workspace is no longer open",
+    });
   });
 });
 

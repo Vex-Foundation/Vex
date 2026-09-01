@@ -48,6 +48,28 @@ beforeEach(() => {
   });
 });
 
+/**
+ * The panel, by the attribute that names it.
+ *
+ * NOT `getByRole("alert")` any more: since B2.2 the live role sits on the
+ * `SetupStatusCard` inside the panel (the word, the title and the sentence ARE
+ * the diagnosis) rather than on the whole section, so that a screen reader is
+ * not handed two nested live regions for one appearance. Querying the section
+ * keeps these assertions about everything the panel renders, guidance body
+ * included.
+ */
+function panelOrNull(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-vex-area="studio-bridge-readiness"]');
+}
+
+async function findPanel(): Promise<HTMLElement> {
+  // The card announces; this waits on the same commit through it.
+  await screen.findByRole("alert");
+  const node = panelOrNull();
+  if (node === null) throw new Error("the bridge readiness panel is not rendered");
+  return node;
+}
+
 describe("a healthy installation", () => {
   it("renders nothing at all", async () => {
     readinessMock.mockResolvedValue(ready({ kind: "ready" }));
@@ -55,7 +77,7 @@ describe("a healthy installation", () => {
     await waitFor(() => {
       expect(readinessMock).toHaveBeenCalled();
     });
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(panelOrNull()).toBeNull();
     expect(screen.queryByRole("button", { name: "Re-check" })).toBeNull();
   });
 
@@ -63,7 +85,7 @@ describe("a healthy installation", () => {
     readinessMock.mockReturnValue(new Promise(() => undefined));
     renderPanel();
     // No flash of a diagnostic that will then disappear.
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(panelOrNull()).toBeNull();
   });
 });
 
@@ -74,14 +96,14 @@ describe("a packaged app with a missing bridge", () => {
 
   it("says the installation is damaged and to reinstall Vex", async () => {
     renderPanel();
-    const alert = await screen.findByRole("alert");
+    const alert = await findPanel();
     expect(alert.textContent).toContain("missing from this installation");
     expect(alert.textContent).toContain("Reinstall Vex");
   });
 
   it("NEVER mentions Go, a toolchain, or a build command", async () => {
     renderPanel();
-    const alert = await screen.findByRole("alert");
+    const alert = await findPanel();
     const text = alert.textContent ?? "";
     expect(text).not.toMatch(/\bGo\b/);
     expect(text).not.toMatch(/toolchain/i);
@@ -101,7 +123,7 @@ describe("a from-source run with no built bridge", () => {
       }),
     );
     renderPanel();
-    const alert = await screen.findByRole("alert");
+    const alert = await findPanel();
     expect(alert.textContent).toContain("has not been built yet");
     expect(alert.textContent).toContain(
       `Go ${PIN} is installed, so all that is missing is the build`,
@@ -121,7 +143,7 @@ describe("a from-source run with no built bridge", () => {
       }),
     );
     renderPanel();
-    const alert = await screen.findByRole("alert");
+    const alert = await findPanel();
     expect(alert.textContent).toContain("reports Go go1.28.1");
     expect(alert.textContent).toContain(`pinned to Go ${PIN}`);
     expect(alert.textContent).toContain("exact, not a minimum");
@@ -137,7 +159,7 @@ describe("a from-source run with no built bridge", () => {
       }),
     );
     renderPanel();
-    const alert = await screen.findByRole("alert");
+    const alert = await findPanel();
     expect(alert.textContent).toContain("no go was found on your PATH");
   });
 
@@ -151,7 +173,7 @@ describe("a from-source run with no built bridge", () => {
       }),
     );
     renderPanel();
-    const alert = await screen.findByRole("alert");
+    const alert = await findPanel();
     expect(alert.textContent).toContain("did not report a version");
   });
 });
@@ -174,10 +196,16 @@ describe("per-operating-system guidance, chosen by what MAIN reports", () => {
       }),
     );
     renderPanel();
-    const alert = await screen.findByRole("alert");
+    const alert = await findPanel();
     const text = alert.textContent ?? "";
     expect(text).toContain(pinnedPhrase);
-    expect(text).toContain("https://go.dev/dl/");
+    // The address is an ANCHOR the user can activate, never spelled into the
+    // sentence: a raw URL in prose cannot be clicked, cannot be tabbed to, and
+    // is read out character by character.
+    expect(text).not.toContain("https://go.dev");
+    const download = screen.getByRole("link", { name: /Go downloads/ });
+    expect(download.getAttribute("href")).toBe("https://go.dev/dl/");
+    expect(download.getAttribute("rel")).toBe("noopener noreferrer");
     if (packagedPhrase !== null) {
       expect(text).toContain(packagedPhrase);
       // The honest caveat, not an unqualified recommendation: the pin is exact
@@ -198,7 +226,7 @@ describe("per-operating-system guidance, chosen by what MAIN reports", () => {
       }),
     );
     renderPanel();
-    const alert = await screen.findByRole("alert");
+    const alert = await findPanel();
     expect(alert.textContent).toContain("Windows installer");
   });
 });
@@ -207,7 +235,7 @@ describe("the two remaining states", () => {
   it("names an unsupported platform without blaming the developer", async () => {
     readinessMock.mockResolvedValue(ready({ kind: "unsupported_platform" }));
     renderPanel();
-    const alert = await screen.findByRole("alert");
+    const alert = await findPanel();
     expect(alert.textContent).toContain("builds no Studio bridge for this system");
     expect(alert.textContent).not.toContain("build:bridge:dev");
   });
@@ -215,7 +243,7 @@ describe("the two remaining states", () => {
   it("names an incomplete checkout rather than guessing a Go version", async () => {
     readinessMock.mockResolvedValue(ready({ kind: "pin_unreadable" }));
     renderPanel();
-    const alert = await screen.findByRole("alert");
+    const alert = await findPanel();
     expect(alert.textContent).toContain("REQUIRED_GO_VERSION");
     expect(alert.textContent).not.toContain(PIN);
   });
@@ -236,7 +264,7 @@ describe("a failed check is not a missing bridge", () => {
       },
     });
     renderPanel();
-    const alert = await screen.findByRole("alert");
+    const alert = await findPanel();
     expect(alert.textContent).toContain("could not check");
     expect(alert.textContent).toContain("says nothing about whether the bridge is there");
     expect(alert.textContent).not.toContain("Reinstall Vex");
@@ -245,7 +273,7 @@ describe("a failed check is not a missing bridge", () => {
   it("says the same when the call rejects outright", async () => {
     readinessMock.mockRejectedValue(new Error("bridge torn down"));
     renderPanel();
-    const alert = await screen.findByRole("alert");
+    const alert = await findPanel();
     expect(alert.textContent).toContain("could not check");
     // The thrown message never reaches the screen.
     expect(alert.textContent).not.toContain("torn down");
@@ -285,7 +313,7 @@ describe("the re-check", () => {
     fireEvent.click(button);
 
     await waitFor(() => {
-      expect(screen.queryByRole("alert")).toBeNull();
+      expect(panelOrNull()).toBeNull();
     });
     expect(screen.queryByRole("button", { name: "Re-check" })).toBeNull();
   });

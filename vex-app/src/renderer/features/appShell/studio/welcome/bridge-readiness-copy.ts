@@ -18,15 +18,21 @@
  * named second, and the reason it may not work is stated rather than left for
  * the user to discover twice.
  *
- * ## Why the URLs are text and not links (for now)
+ * ## The guidance is PARTS, not sentences with addresses in them
  *
- * `go.dev/dl` and `go.dev/doc/install` ARE path-scoped entries on the
- * `shell.openExternal` allowlist (added with this feature), but the guidance
- * sentences embed the addresses inline, so turning them into `DocsLink`
- * anchors means restructuring each sentence into parts. That restructuring
- * belongs to the notification/a11y sweep, not to a copy table. Until then the
- * reader can select and copy the address; this panel is reachable only from a
- * from-source run, so its audience already has a terminal open.
+ * `go.dev/dl` and `go.dev/doc/install` are path-scoped entries on the
+ * `shell.openExternal` allowlist, and the guidance is now structured so the
+ * panel can render them as `DocsLink` anchors: a `text` that reads as a
+ * complete sentence on its own, plus the links that follow it. A raw address
+ * inside a sentence is not a link - it cannot be activated, it cannot be
+ * reached by keyboard, and a screen reader spells it out character by
+ * character. Keeping the sentence whole without the address is what makes both
+ * readings work.
+ *
+ * Every `href` here must stay inside an allowlisted prefix. A link this table
+ * invents that main refuses opens nothing at all and says nothing about why,
+ * so `bridge-readiness-copy.test.ts` pins the hosts and prefixes rather than
+ * trusting the table.
  *
  * NO ROADMAP COPY and no em dashes, same as the rest of the Studio shell.
  */
@@ -122,8 +128,34 @@ export function needsGoInstallGuidance(go: StudioBridgeGoToolchain): boolean {
  * first. `packaged` names the operating system's usual package manager and
  * states plainly why it may not satisfy an exact pin.
  */
+export interface GuidanceLink {
+  /** Must sit under an allowlisted `shell.openExternal` prefix. */
+  readonly href: string;
+  /** What the anchor says. Never a bare URL. */
+  readonly label: string;
+}
+
+/** The Go download index, the only route that can land an exact version. */
+export const GO_DOWNLOADS_LINK: GuidanceLink = {
+  href: "https://go.dev/dl/",
+  label: "Go downloads",
+};
+
+/** Go's own install instructions, for the tarball route. */
+export const GO_INSTALL_DOC_LINK: GuidanceLink = {
+  href: "https://go.dev/doc/install",
+  label: "Installing Go",
+};
+
+export interface GoInstallStep {
+  /** Reads as a complete sentence WITHOUT any of the links. */
+  readonly text: string;
+  /** Rendered after the sentence, in reading order. */
+  readonly links: readonly GuidanceLink[];
+}
+
 export interface GoInstallGuidance {
-  readonly pinned: string;
+  readonly pinned: GoInstallStep;
   readonly packaged: string | null;
 }
 
@@ -133,9 +165,10 @@ export function studioGoInstallGuidance(
 ): GoInstallGuidance {
   if (platform === "win32") {
     return {
-      pinned:
-        `Download the Windows installer for ${requiredGoVersion} from `
-        + "https://go.dev/dl/ and run it.",
+      pinned: {
+        text: `Download the Windows installer for ${requiredGoVersion} and run it.`,
+        links: [GO_DOWNLOADS_LINK],
+      },
       packaged:
         "winget can install Go, but it tracks the latest release, which may "
         + "not be the pinned version.",
@@ -143,9 +176,10 @@ export function studioGoInstallGuidance(
   }
   if (platform === "darwin") {
     return {
-      pinned:
-        `Download the macOS package for ${requiredGoVersion} from `
-        + "https://go.dev/dl/ and run it.",
+      pinned: {
+        text: `Download the macOS package for ${requiredGoVersion} and run it.`,
+        links: [GO_DOWNLOADS_LINK],
+      },
       packaged:
         "Homebrew's go formula tracks the latest release, which may not be "
         + "the pinned version.",
@@ -153,17 +187,22 @@ export function studioGoInstallGuidance(
   }
   if (platform === "linux") {
     return {
-      pinned:
-        `Download the Linux tarball for ${requiredGoVersion} from `
-        + "https://go.dev/dl/ and install it as described at "
-        + "https://go.dev/doc/install.",
+      pinned: {
+        text:
+          `Download the Linux tarball for ${requiredGoVersion} and install it `
+          + "as described in Go's own install guide.",
+        links: [GO_DOWNLOADS_LINK, GO_INSTALL_DOC_LINK],
+      },
       packaged:
         "Your distribution's Go package tracks its own version, which may not "
         + "be the pinned version.",
     };
   }
   return {
-    pinned: `Install Go ${requiredGoVersion} from https://go.dev/dl/.`,
+    pinned: {
+      text: `Install Go ${requiredGoVersion} from the Go download index.`,
+      links: [GO_DOWNLOADS_LINK],
+    },
     packaged: null,
   };
 }

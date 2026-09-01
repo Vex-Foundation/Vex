@@ -33,6 +33,8 @@ import type { FileNode } from "@shared/schemas/files.js";
 import type { TerminalErrorCode } from "@shared/schemas/terminal.js";
 import { cn } from "../../../../lib/utils.js";
 import { reportRendererFailure } from "../../../../lib/renderer-error-report.js";
+import { notify } from "../../../../lib/notifications/index.js";
+import type { NotificationHandle } from "../../../../lib/notifications/types.js";
 import {
   createTerminal,
   killTerminal,
@@ -837,6 +839,82 @@ export function StudioWorkspaceController({
       }
     })();
   }, [restoring]);
+
+  /**
+   * TELL THE USER THE SHELLS DIED, even when they are not looking at this
+   * project.
+   *
+   * The inline bar below is the CONTEXTUAL surface and stays: it is where the
+   * loss is read in place, beside the dead panes it is about. But a workspace
+   * whose tab is not on screen paints nothing, and the pty host dying is
+   * exactly the kind of failure a user finds out about by typing into a shell
+   * that is no longer there. So the transition also raises an app-wide
+   * notification, which announces once and is re-readable in the center.
+   *
+   * ONE notification per LOSS, not per render and not per terminal:
+   *  - it is raised on the transition into a loss and closed on the transition
+   *    out of one, so a re-render with the same dead set does nothing, and a
+   *    second batch of dead terminals moves the count rather than raising a
+   *    duplicate;
+   *  - the id is per PROJECT, so a crash that costs two projects their shells
+   *    is two notifications and not one overwriting the other;
+   *  - the action is the same `handleRestoreLost` the inline bar calls, read
+   *    through a ref, so the two controls can never mean different things.
+   *
+   * The action is DETACHED on unmount rather than left live: the notification
+   * outlives this component (that is the point of raising it), and its closure
+   * holds this workspace's state - including the project's file tokens - alive
+   * for as long as the center keeps the row. The center then renders the
+   * control inert with the reason instead of silently doing nothing.
+   */
+  const restoreLostRef = useRef(handleRestoreLost);
+  restoreLostRef.current = handleRestoreLost;
+  const lostNotificationRef = useRef<NotificationHandle | null>(null);
+  const lostCount = lostTerminalIds.size;
+  useEffect(() => {
+    if (lostCount === 0) {
+      lostNotificationRef.current?.close();
+      lostNotificationRef.current = null;
+      return undefined;
+    }
+    const lostSentence =
+      `${String(lostCount)} ${lostCount === 1 ? "shell" : "shells"} ended with it. `
+      + "Their saved output can be restored.";
+    if (lostNotificationRef.current !== null) {
+      // A SECOND batch of dead terminals is the same loss, still unresolved:
+      // the count moves, the notification does not re-announce itself and the
+      // user is not told twice. A no-op on a handle the user already dismissed.
+      lostNotificationRef.current.updateMessage(lostSentence);
+      return undefined;
+    }
+    lostNotificationRef.current = notify({
+      id: `studio.terminals-lost:${projectIdRef.current}`,
+      severity: "error",
+      scope: { kind: "project", projectId: projectIdRef.current },
+      source: "studio.terminal",
+      title: "The terminal service stopped",
+      message: lostSentence,
+      actions: [
+        {
+          id: "restore",
+          label: "Restore terminals",
+          rank: "primary",
+          run: () => {
+            restoreLostRef.current();
+          },
+        },
+      ],
+    });
+    return undefined;
+  }, [lostCount]);
+
+  useEffect(() => {
+    return () => {
+      lostNotificationRef.current?.disposeActions(
+        "the project workspace is no longer open",
+      );
+    };
+  }, []);
 
   /* ---------------- actions ---------------- */
 

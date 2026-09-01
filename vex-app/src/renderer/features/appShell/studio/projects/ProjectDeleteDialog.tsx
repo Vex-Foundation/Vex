@@ -125,6 +125,7 @@ import {
   DialogContent,
   DialogDescription,
   DialogFooter,
+  DialogPinnedSlot,
   DialogHeader,
   DialogTitle,
 } from "../../../../components/ui/dialog.js";
@@ -532,10 +533,20 @@ export function ProjectDeleteDialog({
             ) : null}
           </div>
 
-          <SubmitError submitError={submitError} />
-
           {outcome !== null ? <DeleteOutcome outcome={outcome} /> : null}
         </DialogBody>
+
+        {/* PINNED, not the last child of the scrolling body. A refusal for a
+         * destructive action has to be next to the button the user just
+         * pressed; inside the body it sat below the fold of a dialog tall
+         * enough to scroll, which is how a "delete failed" line ends up never
+         * being painted. Same one-line pattern as the other project dialogs;
+         * announcement stays with the live region below. */}
+        {submitError !== null ? (
+          <DialogPinnedSlot>
+            <SubmitError submitError={submitError} />
+          </DialogPinnedSlot>
+        ) : null}
 
         {liveRegion}
 

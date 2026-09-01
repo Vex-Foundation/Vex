@@ -432,7 +432,11 @@ async function runStartAttempt(epoch: number): Promise<StudioHostStart> {
   // refused until a Windows runner has measured its security descriptor.
   const gated = unprovenWindowsTransport(plan);
   if (gated !== null && gated.kind === "refused") {
-    return refusedStart(gated.message, "endpoint_unavailable");
+    // Its OWN cause, not `endpoint_unavailable`: nothing failed here. The pipe
+    // was planned correctly and Vex declined to open it, so the renderer must
+    // be able to say that instead of sending a Windows user to debug an
+    // endpoint that is working exactly as designed.
+    return refusedStart(gated.message, "windows_transport_disabled");
   }
 
   let verifyDirectoryIdentity = (): string | null => null;

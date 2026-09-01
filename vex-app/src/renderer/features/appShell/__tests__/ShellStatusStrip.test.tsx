@@ -37,7 +37,6 @@ vi.mock("../SessionExportControl.js", () => ({
   SessionExportControl: ({ activeSessionId }: { activeSessionId: string | null }) =>
     activeSessionId === null ? null : <div data-testid="export-control" />,
 }));
-vi.mock("../GlobalErrorBanner.js", () => ({ GlobalErrorBanner: () => null }));
 vi.mock("../GlobalApprovals.js", () => ({
   GlobalApprovals: () => <div data-testid="approvals-badge" />,
 }));

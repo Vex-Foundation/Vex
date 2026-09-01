@@ -4,12 +4,12 @@
  * WHY IT LIVES HERE and not in `components/ui/`: it is not a primitive. It
  * reads the window's notification model directly, it is mounted exactly once
  * by `ShellStatusStrip` above the mode dispatch, and it sits in the same flank
- * as `GlobalErrorBanner` and `GlobalApprovals`, whose anchored-panel chrome it
- * generalizes. A primitive would have to take all of that as props from its
- * single caller, which is ceremony, not a boundary.
+ * as `GlobalApprovals`, whose anchored-panel chrome it generalizes. A
+ * primitive would have to take all of that as props from its single caller,
+ * which is ceremony, not a boundary.
  *
  * Chrome is the repo-native anchored panel (`components/ui/select-menu.tsx`,
- * as both flank neighbours use it): no portal, no inline style, outside
+ * as its flank neighbour uses it): no portal, no inline style, outside
  * pointerdown and Escape close, focus moved into the panel on open and
  * restored to the trigger on close.
  *
@@ -17,10 +17,14 @@
  * evicts oldest-first; the footer states how many were evicted, because a user
  * who cannot see that a bound exists cannot know a signal is missing.
  *
- * B2.2 migrates `GlobalErrorBanner` and `GlobalApprovals` into this list. They
- * are deliberately untouched here: both own live subscriptions and per-row
- * authority surfaces that move as their own change, not as a side effect of
- * this one.
+ * B2.2 folded the separate system-error pill into this list: session-less
+ * engine failures are notifications now, so they announce once, are bounded
+ * with a stated cap and are re-readable here instead of sitting silently in a
+ * popover of their own.
+ *
+ * `GlobalApprovals` is deliberately still its own surface. An approval is an
+ * authority decision with a per-row commit path, not a message to read, and it
+ * owns a live subscription this list has no business holding.
  */
 
 import {
@@ -75,18 +79,30 @@ function NotificationRow({ item }: { readonly item: NotificationView }): JSX.Ele
                 : "text-[var(--vex-text-2)]",
           )}
         >
-          {item.source}
+          {item.title ?? item.source}
+          {/* Provenance never disappears: a titled row shows both, because the
+           * title names the event and the source names who raised it. */}
+          {item.title === null ? null : (
+            <span className="ml-1.5 font-normal text-[var(--vex-text-3)]">
+              {item.source}
+            </span>
+          )}
         </p>
-        <button
-          type="button"
-          aria-label={`Dismiss notification: ${item.message}`}
-          onClick={() => {
-            notifications.close(item.id);
-          }}
-          className="vex-micro text-[var(--vex-text-3)] transition-colors hover:text-danger"
-        >
-          Dismiss
-        </button>
+        {/* Non-dismissible rows are the producer's to clear (the model refuses
+         * a user close for them); a button that would be refused is worse than
+         * no button. */}
+        {item.dismissible ? (
+          <button
+            type="button"
+            aria-label={`Dismiss notification: ${item.title ?? item.message}`}
+            onClick={() => {
+              notifications.close(item.id, "user");
+            }}
+            className="vex-micro text-[var(--vex-text-3)] transition-colors hover:text-danger"
+          >
+            Dismiss
+          </button>
+        ) : null}
       </div>
       <p className="mt-1 text-xs text-[var(--vex-text-1)]">{item.message}</p>
       {item.actions.length > 0 ? (
@@ -95,10 +111,10 @@ function NotificationRow({ item }: { readonly item: NotificationView }): JSX.Ele
             <button
               key={action.id}
               type="button"
-              disabled={action.run === null}
+              disabled={action.run === null || action.disabled}
               onClick={() => {
                 action.run?.();
-                if (action.rank === "primary") notifications.close(item.id);
+                if (action.rank === "primary") notifications.close(item.id, "action");
               }}
               className="vex-micro rounded-[3px] border border-[var(--vex-rule)] px-1.5 py-0.5 text-[var(--vex-text-1)] transition-colors hover:border-[var(--vex-accent)] disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -156,7 +172,7 @@ export function NotificationCenter(): JSX.Element | null {
     if (snapshot.items.length === 0 && open) setOpen(false);
   }, [snapshot.items.length, open]);
 
-  // Nothing to say - the flank stays empty, as both neighbours do when idle.
+  // Nothing to say - the flank stays empty, as its neighbour does when idle.
   if (snapshot.items.length === 0) return null;
 
   const count = snapshot.items.length;

@@ -58,6 +58,7 @@ import {
   type TerminalRegistry,
 } from "./terminal/index.js";
 import { StudioWelcome } from "./welcome/StudioWelcome.js";
+import { StudioBridgeReadinessPanel } from "./welcome/StudioBridgeReadinessPanel.js";
 import { StudioKeepAliveDialog } from "./StudioKeepAliveDialog.js";
 import { openProjectCreator, StudioProjectDialogs } from "./projects/index.js";
 import {
@@ -392,6 +393,36 @@ export function StudioCenter({
           onSelectProject={setActiveProjectId}
         />
       ) : null}
+
+      {/* THE BRIDGE DIAGNOSTIC, in the OPEN-PROJECT view.
+        *
+        * WHY IT IS ALSO HERE. `StudioWelcome` shows it above the create-project
+        * button, which is right for the user who has not opened anything yet.
+        * But a user who already has projects goes straight into a workspace and
+        * never sees the welcome screen again - and a missing bridge means
+        * Studio writes no coding-agent config files for the project they are
+        * standing in. They were told once, at a moment they may not have been
+        * present for, and never again.
+        *
+        * ONE MOUNT POINT, not two live at once: welcome renders only while
+        * `activeProjectId` is null and this renders only while it is not, so
+        * the panel exists exactly once in the tree at any time and there is one
+        * `useStudioBridgeReadiness` subscription behind it. It renders nothing
+        * while the first check is in flight and nothing when the bridge is
+        * there, so a healthy installation pays no space for it.
+        *
+        * OUTSIDE the per-workspace error boundaries, deliberately. Those
+        * contain one project's subtree so a bad snapshot cannot take the others
+        * down; a diagnostic that says "Studio has no bridge" is about the
+        * INSTALLATION, not about any project, and putting it inside one
+        * workspace's boundary would make it disappear exactly when that
+        * workspace fell over. It is `shrink-0` so the workspace column below it
+        * keeps its own scrolling. */}
+      {keepAlive.activeProjectId === null ? null : (
+        <div className="shrink-0 px-6 py-3">
+          <StudioBridgeReadinessPanel />
+        </div>
+      )}
 
       {keepAlive.projectIds.map((projectId) => (
         <StudioProjectWorkspace

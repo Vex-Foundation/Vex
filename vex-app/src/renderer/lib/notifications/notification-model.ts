@@ -55,7 +55,9 @@
 
 import type {
   NotificationAction,
+  NotificationActionInput,
   NotificationChange,
+  NotificationCloseReason,
   NotificationHandle,
   NotificationInput,
   NotificationProgressInput,
@@ -115,20 +117,34 @@ interface MutableItem {
   severity: NotificationSeverity;
   readonly scope: NotificationScope;
   readonly source: string;
+  title: string | null;
   message: string;
   actions: NotificationAction[];
   progress: NotificationProgressState | null;
   readonly explicitSticky: boolean;
+  readonly dismissible: boolean;
   readonly priority: "default" | "urgent";
   readonly createdAt: number;
   readonly correlationId: string | null;
-  readonly deliver: { readonly toast: boolean; readonly announce: boolean };
   toastPhase: NotificationToastPhase;
   purgeTimer: ReturnType<typeof setTimeout> | null;
   exitTimer: ReturnType<typeof setTimeout> | null;
   readonly pause: PauseState;
-  readonly closeListeners: Set<() => void>;
+  readonly closeListeners: Set<(reason: NotificationCloseReason) => void>;
   closed: boolean;
+}
+
+function toActions(
+  actions: readonly NotificationActionInput[],
+): NotificationAction[] {
+  return actions.map((action) => ({
+    id: action.id,
+    label: action.label,
+    rank: action.rank,
+    run: action.run,
+    disabled: action.disabled === true,
+    unavailableReason: null,
+  }));
 }
 
 function toProgressState(
@@ -176,14 +192,15 @@ function toView(item: MutableItem): NotificationView {
     severity: item.severity,
     scope: item.scope,
     source: item.source,
+    title: item.title,
     message: item.message,
     actions: item.actions,
     progress: item.progress,
     sticky: isSticky(item),
+    dismissible: item.dismissible,
     priority: item.priority,
     createdAt: item.createdAt,
     correlationId: item.correlationId,
-    deliver: item.deliver,
     toastPhase: item.toastPhase,
   };
 }
@@ -218,24 +235,16 @@ export class NotificationsModel {
       severity: input.severity,
       scope: input.scope,
       source: input.source,
+      title: input.title ?? null,
       message: input.message,
-      actions: (input.actions ?? []).map((action) => ({
-        id: action.id,
-        label: action.label,
-        rank: action.rank,
-        run: action.run,
-        unavailableReason: null,
-      })),
+      actions: toActions(input.actions ?? []),
       progress: input.progress === undefined ? null : toProgressState(input.progress),
       explicitSticky: input.sticky === true,
+      dismissible: input.dismissible !== false,
       priority: input.priority ?? "default",
       createdAt: Date.now(),
       correlationId: input.correlationId ?? null,
-      deliver: {
-        toast: input.deliver?.toast ?? true,
-        announce: input.deliver?.announce ?? true,
-      },
-      toastPhase: input.deliver?.toast === false ? "purged" : "queued",
+      toastPhase: "queued",
       purgeTimer: null,
       exitTimer: null,
       pause: { hovered: false, focused: false },
@@ -243,7 +252,7 @@ export class NotificationsModel {
       closed: false,
     };
 
-    if (duplicate !== undefined) this.#removeItem(duplicate);
+    if (duplicate !== undefined) this.#removeItem(duplicate, "replaced");
     this.#items.unshift(item);
     this.#evictOverCap();
     this.#reconcileToasts();
@@ -253,11 +262,21 @@ export class NotificationsModel {
     return this.#createHandle(item);
   }
 
-  /** Close by id from outside a handle (the center's per-item dismiss). */
-  close(id: string): void {
+  /**
+   * Close by id from outside a handle: the toast's and the center's dismiss
+   * controls (`"user"`, the default) and their action rows (`"action"`).
+   *
+   * A NON-DISMISSIBLE notification refuses `"user"` and only that: the
+   * producer's own `handle.close`, a primary action closing itself, a
+   * replacement and the retention cap all still apply. Enforcing it here and
+   * not only by hiding the button is the same rule every other surface in this
+   * repo follows - a hidden control is not enforcement.
+   */
+  close(id: string, reason: NotificationCloseReason = "user"): void {
     const item = this.#items.find((candidate) => candidate.id === id);
     if (item === undefined) return;
-    this.#removeItem(item);
+    if (reason === "user" && !item.dismissible) return;
+    this.#removeItem(item, reason);
     this.#reconcileToasts();
     this.#invalidate();
   }
@@ -319,7 +338,6 @@ export class NotificationsModel {
       .map(toView);
     const overflowCount = this.#items.filter(
       (item) =>
-        item.deliver.toast &&
         (item.toastPhase === "queued" || item.toastPhase === "visible") &&
         !visible.has(item.id),
     ).length;
@@ -338,7 +356,7 @@ export class NotificationsModel {
    * Production holds exactly one model for the life of the window.
    */
   reset(): void {
-    for (const item of [...this.#items]) this.#removeItem(item);
+    for (const item of [...this.#items]) this.#removeItem(item, "producer");
     this.#visibleIds = [];
     this.#droppedFromHistory = 0;
     this.#modalOpen = false;
@@ -350,7 +368,7 @@ export class NotificationsModel {
       id: item.id,
       close: () => {
         if (item.closed) return;
-        this.#removeItem(item);
+        this.#removeItem(item, "producer");
         this.#reconcileToasts();
         this.#invalidate();
       },
@@ -386,6 +404,16 @@ export class NotificationsModel {
         this.#invalidate();
         this.#emitChange({ kind: "update", item: toView(item), announceable: false });
       },
+      updateActions: (actions: readonly NotificationActionInput[]) => {
+        if (item.closed) return;
+        item.actions = toActions(actions);
+        // Gaining or losing a working primary action can flip derived
+        // stickiness both ways, so the purge state is reconciled rather than
+        // left at whatever the previous row implied.
+        this.#reconcileToasts();
+        this.#invalidate();
+        this.#emitChange({ kind: "update", item: toView(item), announceable: false });
+      },
       disposeActions: (reason: string) => {
         if (item.closed || item.actions.length === 0) return;
         item.actions = item.actions.map((action) => ({
@@ -399,9 +427,12 @@ export class NotificationsModel {
         this.#invalidate();
         this.#emitChange({ kind: "update", item: toView(item), announceable: false });
       },
-      onDidClose: (listener: () => void) => {
+      onDidClose: (listener: (reason: NotificationCloseReason) => void) => {
         if (item.closed) {
-          listener();
+          // Already gone before the caller subscribed. The reason is not
+          // retained (the item is discarded on removal), and "producer" is the
+          // only honest answer that cannot be mistaken for a user gesture.
+          listener("producer");
           return () => {};
         }
         item.closeListeners.add(listener);
@@ -412,7 +443,7 @@ export class NotificationsModel {
     };
   }
 
-  #removeItem(item: MutableItem): void {
+  #removeItem(item: MutableItem, reason: NotificationCloseReason): void {
     const index = this.#items.indexOf(item);
     if (index >= 0) this.#items.splice(index, 1);
     this.#visibleIds = this.#visibleIds.filter((id) => id !== item.id);
@@ -422,7 +453,7 @@ export class NotificationsModel {
     const listeners = [...item.closeListeners];
     item.closeListeners.clear();
     const view = toView(item);
-    for (const listener of listeners) listener();
+    for (const listener of listeners) listener(reason);
     this.#emitChange({ kind: "remove", item: view, announceable: false });
   }
 
@@ -442,7 +473,7 @@ export class NotificationsModel {
       const oldest = this.#items[this.#items.length - 1];
       if (oldest === undefined) return;
       this.#droppedFromHistory += 1;
-      this.#removeItem(oldest);
+      this.#removeItem(oldest, "evicted");
     }
   }
 
@@ -455,11 +486,8 @@ export class NotificationsModel {
    * notifications are not subject to the cap or to modal deferral at all.
    */
   #reconcileToasts(): void {
-    const showable = (item: MutableItem): boolean => {
-      if (!item.deliver.toast) return false;
-      if (this.#modalOpen && item.priority !== "urgent") return false;
-      return true;
-    };
+    const showable = (item: MutableItem): boolean =>
+      !this.#modalOpen || item.priority === "urgent";
     /** A toast mid-exit KEEPS its slot until its fade ends; a purged one does not. */
     const holdsSlot = (item: MutableItem): boolean =>
       showable(item) && item.toastPhase !== "purged";

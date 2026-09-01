@@ -58,11 +58,27 @@ export const studioHostUnavailableCauseSchema = z.enum([
   /** No executor is installed, so the host refuses to serve calls it cannot run. */
   "not_configured",
   /**
-   * The endpoint could not be planned, verified, or bound. Covers the Windows
-   * transport gate, directory ownership and mode checks, the stale-endpoint
-   * probe, and `listen` failures. The specific sentence stays in main's log.
+   * The endpoint could not be planned, verified, or bound. Covers directory
+   * ownership and mode checks, the stale-endpoint probe, and `listen`
+   * failures. The specific sentence stays in main's log.
    */
   "endpoint_unavailable",
+  /**
+   * The Windows named-pipe transport is DISABLED, pending the measurement of
+   * its pipe security descriptor on a Windows runner
+   * (`WINDOWS_TRANSPORT_PROVEN` in `main/studio/mcp-host/endpoint.ts`).
+   *
+   * ADDITIVE, and its own member rather than another `endpoint_unavailable`,
+   * because it is the only unavailable cause that is not a failure at all: the
+   * endpoint was planned correctly and Vex refused to open it. Telling a
+   * Windows user "Vex Studio could not open its local endpoint on this
+   * machine" invites them to go looking for a broken installation, when the
+   * honest sentence is that this platform's transport is switched off until
+   * its cross-user access has been proven and there is nothing for them to
+   * fix. Renderer and main ship in one artifact, so the reader and the writer
+   * change together and no rollout ordering applies.
+   */
+  "windows_transport_disabled",
 ]);
 export type StudioHostUnavailableCause = z.infer<
   typeof studioHostUnavailableCauseSchema

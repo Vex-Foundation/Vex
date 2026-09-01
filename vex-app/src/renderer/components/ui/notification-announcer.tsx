@@ -64,6 +64,15 @@ interface PendingAnnouncement {
   readonly message: string;
 }
 
+/**
+ * What the user HEARS. A titled notification reads its title first, because
+ * the title is the sentence that names the event ("Ready to install") and the
+ * message alone ("Vex 1.1.0 is ready...") would arrive without its subject.
+ */
+function spokenText(item: NotificationView): string {
+  return item.title === null ? item.message : `${item.title}. ${item.message}`;
+}
+
 export function NotificationAnnouncer(): JSX.Element {
   const announcer = useLiveAnnouncer();
   const announceRef = useRef(announcer.announce);
@@ -74,19 +83,18 @@ export function NotificationAnnouncer(): JSX.Element {
     let modalOpen = notifications.getSnapshot().modalOpen;
 
     const speak = (item: NotificationView): void => {
-      if (!item.deliver.announce) return;
       if (modalOpen) {
-        pending.push({ severity: item.severity, message: item.message });
+        pending.push({ severity: item.severity, message: spokenText(item) });
         while (pending.length > MAX_PENDING_ANNOUNCEMENTS) pending.shift();
         return;
       }
-      announceRef.current(item.severity, item.message);
+      announceRef.current(item.severity, spokenText(item));
     };
 
     const offChange = notifications.onDidChange((change) => {
       if (change.kind === "remove") return;
       if (change.kind === "add" && change.item.severity === "error") {
-        console.error(`[${change.item.source}] ${change.item.message}`);
+        console.error(`[${change.item.source}] ${spokenText(change.item)}`);
       }
       if (!change.announceable) return;
       speak(change.item);

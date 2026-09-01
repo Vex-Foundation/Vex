@@ -1,15 +1,22 @@
 /**
- * Pure update-toast projection: which statuses toast, the per-state copy,
- * action rows, roles, and Escape semantics - the contract the sticky
- * surface renders from.
+ * Pure update-toast projection: which statuses notify, the per-state copy,
+ * severity (which replaced the ARIA role), progress, action rows, dismissal
+ * and Escape semantics - the contract `UpdateToastSurface` binds to the
+ * notification model.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { UpdateStatus } from "@shared/schemas/updater.js";
 import {
-  buildUpdateToastEntry,
+  actionsFor,
+  bodyFor,
   escapeActionFor,
+  isDismissible,
   isToastKind,
+  progressFor,
+  severityFor,
+  titleFor,
+  toastIdentity,
   type ToastableUpdateStatus,
 } from "../update-toast-model.js";
 
@@ -57,6 +64,8 @@ const ERROR = {
   retryable: true,
 } as ToastableUpdateStatus;
 
+const EVERY_STATE = [AVAILABLE, CRITICAL, DOWNLOADING, DOWNLOADED, BLOCKED, ERROR];
+
 describe("update-toast-model", () => {
   it("only the five prompt-worthy kinds toast; current/checking/idle stay silent", () => {
     const silent: UpdateStatus[] = [
@@ -70,59 +79,87 @@ describe("update-toast-model", () => {
     }
   });
 
-  it("available offers Release notes / Later / Update now; critical drops Later and escalates to role=alert", () => {
-    const normal = buildUpdateToastEntry(AVAILABLE, false, () => {});
-    expect(normal.actions.map((a) => a.id)).toEqual([
+  it("available offers Release notes / Later / Update now; critical drops Later", () => {
+    expect(actionsFor(AVAILABLE, false).map((a) => a.id)).toEqual([
       "release-notes",
       "later",
       "update-now",
     ]);
-    expect(normal.role).toBe("status");
-    const critical = buildUpdateToastEntry(CRITICAL, false, () => {});
-    expect(critical.actions.map((a) => a.id)).toEqual([
+    expect(actionsFor(CRITICAL, false).map((a) => a.id)).toEqual([
       "release-notes",
       "update-now",
     ]);
-    expect(critical.role).toBe("alert");
-    expect(critical.title).toContain("Critical update");
+    expect(titleFor(CRITICAL)).toContain("Critical update");
   });
 
-  it("busy disables the mutating action but never the snooze/link actions", () => {
-    const entry = buildUpdateToastEntry(AVAILABLE, true, () => {});
-    const byId = new Map(entry.actions.map((a) => [a.id, a]));
+  it("severity carries what the retired ARIA role carried: critical is assertive, ordinary is polite", () => {
+    // The announcer routes error and warning to the assertive live region and
+    // info to the polite one, so this IS the alert/status split.
+    expect(severityFor(AVAILABLE)).toBe("info");
+    expect(severityFor(CRITICAL)).toBe("warning");
+    expect(severityFor(DOWNLOADING)).toBe("info");
+    expect(severityFor(DOWNLOADED)).toBe("info");
+    // A blocked step is the updater deferring to a financial or destructive
+    // operation, not a failure.
+    expect(severityFor(BLOCKED)).toBe("warning");
+    expect(severityFor(ERROR)).toBe("error");
+  });
+
+  it("busy disables the mutating action but never the snooze or link actions", () => {
+    const byId = new Map(actionsFor(AVAILABLE, true).map((a) => [a.id, a]));
     expect(byId.get("update-now")?.disabled).toBe(true);
-    expect(byId.get("later")?.disabled).toBeUndefined();
-    expect(byId.get("release-notes")?.disabled).toBeUndefined();
+    expect(byId.get("later")?.disabled).toBe(false);
+    expect(byId.get("release-notes")?.disabled).toBe(false);
+    expect(actionsFor(DOWNLOADING, true)[0]?.disabled).toBe(true);
+    expect(actionsFor(DOWNLOADING, false)[0]?.disabled).toBe(false);
   });
 
-  it("downloading carries its percent as progress and offers only Cancel", () => {
-    const entry = buildUpdateToastEntry(DOWNLOADING, false, () => {});
-    expect(entry.progress).toBe(40);
-    expect(entry.actions.map((a) => a.id)).toEqual(["cancel"]);
-    expect(entry.text).toContain("40% complete.");
+  it("only the mutating action is ranked primary, so only it closes the toast when it runs", () => {
+    const primaries = (status: ToastableUpdateStatus): readonly string[] =>
+      actionsFor(status, false)
+        .filter((a) => a.rank === "primary")
+        .map((a) => a.id);
+    expect(primaries(AVAILABLE)).toEqual(["update-now"]);
+    expect(primaries(DOWNLOADED)).toEqual(["restart"]);
+    expect(primaries(BLOCKED)).toEqual(["try-again"]);
+    expect(primaries(ERROR)).toEqual(["try-again"]);
+    // Cancel must NOT close: the download is still running until the status
+    // says otherwise, and the toast is where the user watches it stop.
+    expect(primaries(DOWNLOADING)).toEqual([]);
+  });
+
+  it("downloading carries its percent ONLY as progress, never in the sentence", () => {
+    // The regression this guards: a percent inside the message makes every
+    // tick a message change, and the announcer speaks message changes.
+    expect(progressFor(DOWNLOADING)).toEqual({ total: 100, worked: 40 });
+    expect(bodyFor(DOWNLOADING)).not.toContain("40");
+    expect(bodyFor(DOWNLOADING)).toBe(
+      bodyFor({ ...DOWNLOADING, percent: 91 } as ToastableUpdateStatus),
+    );
+    expect(actionsFor(DOWNLOADING, false).map((a) => a.id)).toEqual(["cancel"]);
+    for (const state of EVERY_STATE) {
+      if (state.kind === "downloading") continue;
+      expect(progressFor(state)).toBeNull();
+    }
   });
 
   it("downloaded offers Later + Restart & install", () => {
-    const entry = buildUpdateToastEntry(DOWNLOADED, false, () => {});
-    expect(entry.actions.map((a) => a.label)).toEqual([
+    expect(actionsFor(DOWNLOADED, false).map((a) => a.label)).toEqual([
       "Later",
       "Restart & install",
     ]);
   });
 
   it("blocked surfaces the reason verbatim with a single Try again", () => {
-    const entry = buildUpdateToastEntry(BLOCKED, false, () => {});
-    expect(entry.text).toBe("A database migration is still running.");
-    expect(entry.actions.map((a) => a.id)).toEqual(["try-again"]);
+    expect(bodyFor(BLOCKED)).toBe("A database migration is still running.");
+    expect(actionsFor(BLOCKED, false).map((a) => a.id)).toEqual(["try-again"]);
   });
 
-  it("error carries the dismiss X (accessible name preserved) that routes to dismiss-error", () => {
-    const onAction = vi.fn();
-    const entry = buildUpdateToastEntry(ERROR, false, onAction);
-    expect(entry.dismiss?.label).toBe("Dismiss update notification");
-    entry.dismiss?.onDismiss();
-    expect(onAction).toHaveBeenCalledWith("dismiss-error");
-    expect(entry.actions.map((a) => a.id)).toEqual([
+  it("error surfaces its sanitized message with Open download page + Try again", () => {
+    expect(bodyFor(ERROR)).toBe(
+      "Update failed. Check your connection and try again.",
+    );
+    expect(actionsFor(ERROR, false).map((a) => a.id)).toEqual([
       "release-notes",
       "try-again",
     ]);
@@ -137,15 +174,25 @@ describe("update-toast-model", () => {
     expect(escapeActionFor(BLOCKED)).toBeNull();
   });
 
-  it("the entry id tracks the state kind, so a progress tick updates in place while a state change remounts", () => {
-    const a = buildUpdateToastEntry(DOWNLOADING, false, () => {});
-    const b = buildUpdateToastEntry(
-      { ...DOWNLOADING, percent: 90 } as ToastableUpdateStatus,
-      false,
-      () => {},
+  it("dismissible is exactly the states Escape acts on, in every state", () => {
+    for (const state of EVERY_STATE) {
+      expect(isDismissible(state)).toBe(escapeActionFor(state) !== null);
+    }
+    // Stated positively too, so a change to escapeActionFor cannot quietly
+    // make a running download dismissable and keep this test green.
+    expect(isDismissible(DOWNLOADING)).toBe(false);
+    expect(isDismissible(BLOCKED)).toBe(false);
+    expect(isDismissible(CRITICAL)).toBe(false);
+    expect(isDismissible(AVAILABLE)).toBe(true);
+  });
+
+  it("identity holds across a progress tick and changes on state or version", () => {
+    expect(toastIdentity(DOWNLOADING)).toBe(
+      toastIdentity({ ...DOWNLOADING, percent: 90 } as ToastableUpdateStatus),
     );
-    expect(a.id).toBe(b.id);
-    const c = buildUpdateToastEntry(DOWNLOADED, false, () => {});
-    expect(c.id).not.toBe(a.id);
+    expect(toastIdentity(DOWNLOADED)).not.toBe(toastIdentity(DOWNLOADING));
+    expect(
+      toastIdentity({ ...AVAILABLE, latestVersion: "2.0.0" } as ToastableUpdateStatus),
+    ).not.toBe(toastIdentity(AVAILABLE));
   });
 });

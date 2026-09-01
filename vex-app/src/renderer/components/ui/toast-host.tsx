@@ -1,35 +1,20 @@
 /**
- * ToastHost: the app's one transient-surface mount.
+ * ToastHost: the app's one floating-notification mount.
  *
- * It renders three things and owns one signal:
+ * It renders the model's toast stack and owns one signal the model cannot
+ * observe for itself. Since B2.2 there is nothing else here: the pre-model
+ * transient slot and the bottom-right sticky slot were migrated onto the
+ * model, so this host mounts one region instead of three.
  *
- *  - the MODEL's toast stack (`NotificationToastStack`). The model's single
- *    aria owner is mounted by `ShellStatusStrip` instead: a live region is a
- *    permanent, always-present node, and parking one inside a host that other
- *    surfaces query for `role="alert"` would make every such query ambiguous;
- *  - the pre-model transient slot and sticky slot from `lib/toast.ts`, kept
- *    working unchanged for their existing call sites (B2.2 migrates them to
- *    `notify`, and both slots plus the offset below go with them);
- *  - the MODAL TOP-LAYER signal the model needs, because only a DOM mount can
- *    observe it.
- *
- * The legacy transient banner and the model stack share the top-center anchor,
- * so while the legacy one is on screen the stack renders below it rather than
- * over it. One attribute, one rule in `overlays.css`, removed with B2.2.
+ * The model's single aria owner is mounted by `ShellStatusStrip` instead: a
+ * live region is a permanent, always-present node, and parking one inside a
+ * host that other surfaces query for `role="alert"` would make every such
+ * query ambiguous.
  */
 
-import { useCallback, useEffect, useSyncExternalStore, type JSX } from "react";
-import { Toast } from "./toast.js";
-import { StickyToast } from "./sticky-toast.js";
+import { useEffect, type JSX } from "react";
 import { NotificationToastStack } from "./notification-toast.js";
 import { notifications } from "../../lib/notifications/index.js";
-import {
-  clearToast,
-  getStickyToastSnapshot,
-  getToastSnapshot,
-  subscribeStickyToast,
-  subscribeToast,
-} from "../../lib/toast.js";
 
 /**
  * Tell the model when a native dialog holds the top layer.
@@ -63,22 +48,5 @@ function useModalTopLayerSignal(): void {
 
 export function ToastHost(): JSX.Element {
   useModalTopLayerSignal();
-  const toast = useSyncExternalStore(subscribeToast, getToastSnapshot);
-  const sticky = useSyncExternalStore(
-    subscribeStickyToast,
-    getStickyToastSnapshot,
-  );
-  const id = toast?.id;
-  const onDone = useCallback(() => {
-    if (id !== undefined) clearToast(id);
-  }, [id]);
-  return (
-    <>
-      {toast !== null ? (
-        <Toast key={toast.id} text={toast.text} tone={toast.tone} onDone={onDone} />
-      ) : null}
-      {sticky !== null ? <StickyToast key={sticky.id} entry={sticky} /> : null}
-      <NotificationToastStack legacyToastVisible={toast !== null} />
-    </>
-  );
+  return <NotificationToastStack />;
 }

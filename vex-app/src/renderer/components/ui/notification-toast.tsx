@@ -1,9 +1,13 @@
 /**
- * THE TOAST STACK - the model's transient surface.
+ * THE TOAST STACK - the model's ONE transient surface.
  *
- * Up to three notifications on the same dark plate the single transient toast
- * used, stacked top-center, longest-waiting first. Three differences from the
- * slot it generalizes, all of them model-owned rather than markup-owned:
+ * Up to three notifications on the dark chrome plate, stacked top-center,
+ * longest-waiting first. Since B2.2 this is the only floating toast region in
+ * the app: the pre-model single slot and the separate bottom-right sticky card
+ * were folded into it, so one owner answers "what is on screen", one cap
+ * bounds it and one report ("+N more") covers everything it did not fit.
+ *
+ * Model-owned rather than markup-owned:
  *
  *  - dismissal TIMING lives in the model (`PURGE_MS` per severity), not in a
  *    stylesheet delay that a component timer had to be kept equal to. The
@@ -11,6 +15,8 @@
  *    one constant both sides share.
  *  - hovering a toast, or focusing anything inside it, pauses its purge: a
  *    message the user is reading does not vanish under them.
+ *  - a STICKY notification never purges at all, which is what lets a long-
+ *    running operation (the updater) own a row for as long as it runs.
  *  - what does not fit is NOT dropped. It waits in the center, and this region
  *    reports the count, because a bound that does not report is a silent cut.
  *
@@ -26,15 +32,28 @@ import { notifications } from "../../lib/notifications/index.js";
 import type { NotificationView } from "../../lib/notifications/types.js";
 
 const ACTION_CLASS: Readonly<Record<"primary" | "secondary", string>> = {
-  // Plate-local capsules, matching `sticky-toast.tsx`: the Button primitive's
-  // fills flip with the theme and would paint ink-on-ink on this dark plate.
+  // Plate-local capsules: the Button primitive's fills flip with the theme and
+  // would paint ink-on-ink on this theme-invariant dark plate.
   primary:
     "h-7 rounded-full bg-accent-primary px-3 text-[12px] font-medium text-ink-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40",
   secondary:
-    "vex-toast-sticky-ghost h-7 rounded-full px-2.5 text-[12px] text-ink-on-chrome disabled:cursor-not-allowed disabled:opacity-40",
+    "vex-notification-ghost h-7 rounded-full px-2.5 text-[12px] text-ink-on-chrome disabled:cursor-not-allowed disabled:opacity-40",
 };
 
+/**
+ * Determinate progress as a percentage, or `null` when the operation is
+ * indeterminate or finished. Clamped, because the bar is 0-100 and a provider
+ * that reports 103% must not paint past the track.
+ */
+function progressPercent(item: NotificationView): number | null {
+  const progress = item.progress;
+  if (progress === null || progress.done || progress.total === null) return null;
+  if (progress.total <= 0) return null;
+  return Math.min(100, Math.max(0, Math.round((progress.worked / progress.total) * 100)));
+}
+
 function NotificationToast({ item }: { readonly item: NotificationView }): JSX.Element {
+  const percent = progressPercent(item);
   return (
     <div
       className="vex-notification-toast"
@@ -65,19 +84,52 @@ function NotificationToast({ item }: { readonly item: NotificationView }): JSX.E
             <IconWarning size={16} />
           </span>
         )}
-        <span className="min-w-0 flex-1 text-[13px] leading-[19px]">
-          {item.message}
-        </span>
-        <button
-          type="button"
-          aria-label={`Dismiss notification: ${item.message}`}
-          onClick={() => {
-            notifications.close(item.id);
-          }}
-          className="vex-toast-sticky-ghost -mr-1 -mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-ink-on-chrome"
-        >
-          <IconClose size={12} />
-        </button>
+        <div className="min-w-0 flex-1">
+          {item.title === null ? null : (
+            <p className="vex-micro-label uppercase">{item.title}</p>
+          )}
+          <p
+            className={
+              item.title === null
+                ? "text-[13px] leading-[19px]"
+                : "mt-1 text-[12px] leading-[18px]"
+            }
+          >
+            {item.message}
+          </p>
+          {percent === null ? null : (
+            <div
+              className="vex-notification-track mt-2 h-1.5 w-full overflow-hidden rounded-full"
+              role="progressbar"
+              aria-valuenow={percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              {/* The only inline style: CSSOM width write, CSP-safe per
+               * MOTION-POLICY.md. */}
+              <div
+                className="h-full bg-accent-primary transition-[width] duration-150 ease-out"
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+          )}
+        </div>
+        {/* A non-dismissible notification IS the controls for an operation the
+         * user has not finished deciding about; the model refuses a user close
+         * for it, and offering a button that would be refused is worse than
+         * offering none. */}
+        {item.dismissible ? (
+          <button
+            type="button"
+            aria-label={`Dismiss notification: ${item.title ?? item.message}`}
+            onClick={() => {
+              notifications.close(item.id, "user");
+            }}
+            className="vex-notification-ghost -mr-1 -mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-ink-on-chrome"
+          >
+            <IconClose size={12} />
+          </button>
+        ) : null}
       </div>
       {item.actions.length > 0 ? (
         <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
@@ -85,13 +137,13 @@ function NotificationToast({ item }: { readonly item: NotificationView }): JSX.E
             <button
               key={action.id}
               type="button"
-              disabled={action.run === null}
+              disabled={action.run === null || action.disabled}
               title={action.unavailableReason ?? undefined}
               onClick={() => {
                 action.run?.();
                 // Primary closes on run, secondary keeps the notification
                 // open (VS Code's action split).
-                if (action.rank === "primary") notifications.close(item.id);
+                if (action.rank === "primary") notifications.close(item.id, "action");
               }}
               className={ACTION_CLASS[action.rank]}
             >
@@ -104,16 +156,7 @@ function NotificationToast({ item }: { readonly item: NotificationView }): JSX.E
   );
 }
 
-/**
- * @param legacyToastVisible - the pre-model transient slot (`lib/toast.ts`) is
- * on screen, so the stack moves below it instead of painting over it. Removed
- * with that slot in B2.2.
- */
-export function NotificationToastStack({
-  legacyToastVisible,
-}: {
-  readonly legacyToastVisible: boolean;
-}): ReactPortal | null {
+export function NotificationToastStack(): ReactPortal | null {
   const snapshot = useSyncExternalStore(
     (listener) => notifications.subscribe(listener),
     () => notifications.getSnapshot(),
@@ -122,7 +165,6 @@ export function NotificationToastStack({
   return createPortal(
     <div
       className="vex-notification-stack"
-      data-legacy-offset={legacyToastVisible ? "true" : "false"}
       data-vex-area="notification-stack"
       role="region"
       aria-label="Notifications"

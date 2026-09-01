@@ -183,8 +183,9 @@ export function App(): JSX.Element {
       {/* Global, view-independent: a user-triggered update prompt can appear
           over any screen. No-ops when the updater bridge is absent. */}
       <UpdateLayer />
-      {/* Single mount of both toast slots (transient + sticky). The update
-          layer and feature showToast callers all render through it. */}
+      {/* Single mount of the notification toast stack. Every floating signal -
+          feature showToast calls, engine failures, the update prompt - renders
+          through this one region. */}
       <ToastHost />
       {import.meta.env.DEV ? <DevDiagnostics /> : null}
       {/* Diagnostic screen tour — renders only when VITE_VEX_SETUP_TOUR=1

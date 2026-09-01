@@ -245,15 +245,15 @@ describe("NotificationAnnouncer", () => {
     });
   });
 
-  it("does not announce a delivery-suppressed notification", () => {
+  it("speaks a titled notification title-first, so the message arrives with its subject", () => {
     render(<NotificationAnnouncer />);
     act(() => {
       notifications.notify(
-        input({ message: "mirrored", deliver: { announce: false } }),
+        input({ title: "Ready to install", message: "Restart to finish." }),
       );
     });
 
     const region = document.querySelector("[data-vex-live-region]");
-    expect(region?.textContent).toBe("");
+    expect(region?.textContent).toContain("Ready to install. Restart to finish.");
   });
 });

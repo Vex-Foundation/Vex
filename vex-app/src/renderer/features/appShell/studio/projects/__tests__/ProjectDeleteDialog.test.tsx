@@ -45,7 +45,7 @@ import type {
   ProjectDeleteResult,
   ProjectDto,
 } from "@shared/schemas/projects.js";
-import { clearToast, getToastSnapshot } from "../../../../../lib/toast.js";
+import { notifications } from "../../../../../lib/notifications/index.js";
 import {
   installStudioDomStubs,
   makeProject,
@@ -73,10 +73,9 @@ beforeEach(() => {
   deleteMock.mockReset();
   deleteMock.mockResolvedValue({ ok: true, data: { outcome: "already_removed" } });
   clearProjectTerminals();
-  // The toast store is module state; a toast raised by a previous case would
-  // make "no toast was shown" pass for the wrong reason.
-  const standing = getToastSnapshot();
-  if (standing !== null) clearToast(standing.id);
+  // The notification model is module state; a toast raised by a previous case
+  // would make "no toast was shown" pass for the wrong reason.
+  notifications.reset();
   Object.defineProperty(window, "vex", {
     configurable: true,
     value: { projects: { delete: deleteMock } },
@@ -651,7 +650,7 @@ describe("every delete outcome", () => {
     await screen.findByText(PROJECT_DELETE_OUTCOME_SENTENCES.not_found);
     expect(onDeleted).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
-    expect(getToastSnapshot()).toBeNull();
+    expect(notifications.getSnapshot().items).toHaveLength(0);
   });
 
   it("renders a refusal Result by name rather than as a generic error", async () => {
@@ -669,11 +668,14 @@ describe("every delete outcome", () => {
     });
     renderDialog();
     await confirmDelete();
-    expect(
-      await screen.findByText(
-        "A wallet selected by this project no longer matches its stored address.",
-      ),
-    ).not.toBeNull();
+    const line = await screen.findByText(
+      "A wallet selected by this project no longer matches its stored address.",
+    );
+    expect(line).not.toBeNull();
+    // PINNED, not the last child of the scrolling body. A refusal for a
+    // destructive action that lands below the fold of a tall dialog is a
+    // refusal the user never sees, next to a button they will press again.
+    expect(line.closest("[data-vex-dialog-pinned]")).not.toBeNull();
   });
 });
 

@@ -26,18 +26,25 @@
  *
  * ## Accessibility
  *
- * The failure panel is `role="alert"`: it appears without the user asking, it
- * is the reason the screen looks different, and a screen-reader user who is
- * not told about it has no other route to the fact. The re-check progress line
- * is `role="status"` instead, because a polite update is exactly right for
- * work the user just started themselves. The button is an ordinary `Button`,
- * so it is in the tab order and operable from the keyboard with no extra
- * handling.
+ * The panel appears without the user asking and is the reason the screen looks
+ * different, so it has to be announced. The announcement belongs to the
+ * `SetupStatusCard` inside it, which since B2.2 carries `role="alert"` for its
+ * alert tones - the word, the title and the sentence ARE the diagnosis. This
+ * section therefore carries a LABEL and no live role of its own: two nested
+ * live regions over one appearance is how a screen reader ends up saying the
+ * same failure twice, and the outer one would additionally re-announce every
+ * time the guidance body below it changed.
+ *
+ * The re-check progress line is `role="status"`, because a polite update is
+ * exactly right for work the user just started themselves. The button is an
+ * ordinary `Button`, so it is in the tab order and operable from the keyboard
+ * with no extra handling.
  */
 
 import type { JSX, ReactNode } from "react";
 import type { StudioBridgeReadiness } from "@shared/schemas/studio-bridge-readiness.js";
 import { Button } from "../../../../components/ui/button.js";
+import { DocsLink } from "../../../../components/onboarding/DocsLink.js";
 import { SetupStatusCard } from "../../../../components/onboarding/SetupStatusCard.js";
 import { useStudioBridgeReadiness } from "../../../../lib/api/studio.js";
 import {
@@ -153,8 +160,15 @@ export function StudioBridgeReadinessPanel(): JSX.Element | null {
       {guidance !== null ? (
         <div className="flex flex-col gap-1">
           <p className="text-xs leading-relaxed text-ink-secondary">
-            {guidance.pinned}
+            {guidance.pinned.text}
           </p>
+          {/* The addresses are ANCHORS, not text inside the sentence: an
+            * address a user cannot click, cannot tab to and hears spelled out
+            * letter by letter is not a route to anywhere. Both hosts are
+            * path-scoped entries on main's openExternal allowlist. */}
+          {guidance.pinned.links.map((link) => (
+            <DocsLink key={link.href} href={link.href} label={link.label} />
+          ))}
           {guidance.packaged !== null ? (
             <p className="text-xs leading-relaxed text-ink-tertiary">
               {guidance.packaged}
@@ -202,7 +216,6 @@ function ReadinessShell({
 }): JSX.Element {
   return (
     <section
-      role="alert"
       aria-label={STUDIO_BRIDGE_PANEL_LABEL}
       data-vex-area="studio-bridge-readiness"
       className="flex flex-col gap-4"

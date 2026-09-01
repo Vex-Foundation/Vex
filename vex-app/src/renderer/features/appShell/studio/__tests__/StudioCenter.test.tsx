@@ -170,6 +170,15 @@ beforeEach(() => {
     configurable: true,
     value: {
       projects: { list: projectsListMock },
+      // A READY bridge, so the readiness panel renders nothing. Without the
+      // stub the query rejects and the panel renders its honest "the check did
+      // not answer" branch, which is a real alert and would make every
+      // "no alert here" assertion in this suite pass or fail for the wrong
+      // reason. `bridge-readiness` has its own suite.
+      studio: {
+        getBridgeReadiness: () =>
+          Promise.resolve({ ok: true, data: { kind: "ready" } }),
+      },
       files: {
         list: () => Promise.resolve({ ok: true, data: null }),
         watch: () => Promise.resolve({ ok: true, data: null }),
@@ -192,6 +201,72 @@ describe("welcome versus workspace", () => {
 
     select(project.id);
     await screen.findByTestId(`workspace-${project.id}`);
+  });
+});
+
+describe("the bridge diagnostic in the open-project view", () => {
+  /**
+   * A user with projects goes straight into a workspace and never sees the
+   * welcome screen again, so a bridge that is missing would have been reported
+   * once - at a moment they may not have been present for - and never after.
+   */
+  function unbuiltBridge(): void {
+    Object.defineProperty(window, "vex", {
+      configurable: true,
+      value: {
+        projects: { list: projectsListMock },
+        studio: {
+          getBridgeReadiness: () =>
+            Promise.resolve({
+              ok: true,
+              data: {
+                kind: "missing_dev",
+                platform: "linux",
+                requiredGoVersion: "go1.27.0",
+                go: { kind: "absent" },
+              },
+            }),
+        },
+        files: {
+          list: () => Promise.resolve({ ok: true, data: null }),
+          watch: () => Promise.resolve({ ok: true, data: null }),
+        },
+      },
+    });
+  }
+
+  it("reports a missing bridge beside an OPEN project, not only on welcome", async () => {
+    unbuiltBridge();
+    const project = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    select(project.id);
+    await screen.findByTestId(`workspace-${project.id}`);
+    const panels = document.querySelectorAll(
+      '[data-vex-area="studio-bridge-readiness"]',
+    );
+    // Exactly ONE: welcome and the open-project view are mutually exclusive,
+    // so the panel is never in the tree twice.
+    expect(panels).toHaveLength(1);
+    expect(panels[0]?.textContent).toContain("has not been built yet");
+    // And it is NOT inside a workspace subtree, so a workspace that falls over
+    // cannot take the installation-level diagnostic down with it.
+    expect(panels[0]?.closest("[data-vex-studio-workspace]")).toBeNull();
+  });
+
+  it("renders nothing at all when the bridge is there", async () => {
+    const project = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+    select(project.id);
+    await screen.findByTestId(`workspace-${project.id}`);
+
+    expect(
+      document.querySelector('[data-vex-area="studio-bridge-readiness"]'),
+    ).toBeNull();
   });
 });
 

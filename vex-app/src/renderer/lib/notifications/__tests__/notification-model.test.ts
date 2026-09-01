@@ -445,15 +445,179 @@ describe("change stream", () => {
   });
 });
 
-describe("delivery suppression", () => {
-  it("keeps a toast-suppressed notification in the center only", () => {
-    model.notify(input({ message: "mirrored", deliver: { toast: false } }));
+describe("title", () => {
+  it("carries a title beside the source rather than instead of it", () => {
+    model.notify(input({ title: "Ready to install", message: "Restart to finish." }));
+    const item = model.getSnapshot().items[0];
 
-    expect(shape(model.getSnapshot())).toEqual({
-      items: ["mirrored"],
-      toasts: [],
-      overflowCount: 0,
-      droppedFromHistory: 0,
+    expect({ title: item?.title, source: item?.source, message: item?.message }).toEqual({
+      title: "Ready to install",
+      source: "test",
+      message: "Restart to finish.",
+    });
+    // Untitled is the common case and must stay explicitly absent, not "".
+    model.notify(input({ message: "plain" }));
+    expect(model.getSnapshot().items[0]?.title).toBeNull();
+  });
+});
+
+describe("close reasons", () => {
+  /** Every way a notification can stop existing, and what each one reports. */
+  function reasonFor(act: (id: string) => void): string | null {
+    let reported: string | null = null;
+    const handle = model.notify(input({ id: "subject", message: "subject" }));
+    handle.onDidClose((reason) => {
+      reported = reason;
+    });
+    act(handle.id);
+    return reported;
+  }
+
+  it("distinguishes a user dismissal from an action, a producer close, a replacement and an eviction", () => {
+    expect({
+      user: reasonFor((id) => {
+        model.close(id, "user");
+      }),
+      action: reasonFor((id) => {
+        model.close(id, "action");
+      }),
+      producer: reasonFor(() => {
+        // The handle's own close is the producer's.
+        model.getSnapshot();
+      }),
+      defaulted: reasonFor((id) => {
+        model.close(id);
+      }),
+    }).toEqual({
+      user: "user",
+      action: "action",
+      // Nothing closed it, so nothing was reported.
+      producer: null,
+      // A surface that does not name a reason IS a user gesture: only the
+      // surfaces the user clicks call `close` without a handle.
+      defaulted: "user",
+    });
+  });
+
+  it("reports producer for handle.close, replaced for a re-raise, evicted for the cap", () => {
+    const reasons: string[] = [];
+    const own = model.notify(input({ id: "own", message: "own" }));
+    own.onDidClose((reason) => reasons.push(`own:${reason}`));
+    own.close();
+
+    const first = model.notify(input({ id: "dup", message: "first" }));
+    first.onDidClose((reason) => reasons.push(`dup:${reason}`));
+    model.notify(input({ id: "dup", message: "second" }));
+
+    const oldest = model.notify(input({ message: "oldest" }));
+    oldest.onDidClose((reason) => reasons.push(`cap:${reason}`));
+    for (let index = 0; index < HISTORY_CAP; index += 1) {
+      model.notify(input({ message: `filler-${index}` }));
+    }
+
+    expect(reasons).toEqual(["own:producer", "dup:replaced", "cap:evicted"]);
+  });
+});
+
+describe("dismissible", () => {
+  it("refuses a USER close and nothing else", () => {
+    const handle = model.notify(
+      input({ id: "pinned", message: "pinned", dismissible: false, sticky: true }),
+    );
+    model.close("pinned", "user");
+    const afterUser = model.getSnapshot().items.map((item) => item.message);
+
+    // A primary action closing itself is still allowed: the user chose it.
+    model.close("pinned", "action");
+    const afterAction = model.getSnapshot().items.map((item) => item.message);
+
+    // And the producer always wins over the flag.
+    const second = model.notify(
+      input({ id: "pinned2", message: "pinned2", dismissible: false }),
+    );
+    second.close();
+
+    expect({
+      afterUser,
+      afterAction,
+      dismissible: handle.id === "pinned",
+      finally: model.getSnapshot().items.map((item) => item.message),
+    }).toEqual({
+      afterUser: ["pinned"],
+      afterAction: [],
+      dismissible: true,
+      finally: [],
+    });
+  });
+
+  it("defaults to dismissible so an ordinary notification is never pinned by omission", () => {
+    model.notify(input({ id: "ordinary", message: "ordinary" }));
+    expect(model.getSnapshot().items[0]?.dismissible).toBe(true);
+    model.close("ordinary");
+    expect(model.getSnapshot().items).toEqual([]);
+  });
+});
+
+describe("updateActions", () => {
+  it("replaces the row in place without announcing, and re-derives stickiness", () => {
+    const changes: NotificationChange[] = [];
+    model.onDidChange((change) => changes.push(change));
+    const handle = model.notify(
+      input({
+        severity: "error",
+        message: "failed",
+        actions: [{ id: "retry", label: "Retry", rank: "primary", run: () => {} }],
+      }),
+    );
+    const stickyWithRemedy = model.getSnapshot().items[0]?.sticky;
+
+    // Losing the primary remedy un-sticks it: there is nothing left to keep on
+    // screen, so it becomes purgeable.
+    handle.updateActions([
+      { id: "details", label: "Details", rank: "secondary", run: () => {}, disabled: true },
+    ]);
+    const item = model.getSnapshot().items[0];
+
+    expect({
+      stickyWithRemedy,
+      stickyAfter: item?.sticky,
+      labels: item?.actions.map((action) => action.label),
+      disabled: item?.actions.map((action) => action.disabled),
+      announceable: changes
+        .filter((change) => change.kind === "update")
+        .map((change) => change.announceable),
+    }).toEqual({
+      stickyWithRemedy: true,
+      stickyAfter: false,
+      labels: ["Details"],
+      disabled: [true],
+      announceable: [false],
+    });
+  });
+
+  it("a disabled action is still a live action, unlike a disposed one", () => {
+    const handle = model.notify(
+      input({
+        message: "busy",
+        actions: [
+          { id: "go", label: "Go", rank: "primary", run: () => {}, disabled: true },
+        ],
+      }),
+    );
+    const busy = model.getSnapshot().items[0]?.actions[0];
+    handle.disposeActions("the surface is gone");
+    const disposed = model.getSnapshot().items[0]?.actions[0];
+
+    expect({
+      busyRun: busy?.run !== null,
+      busyReason: busy?.unavailableReason,
+      disposedRun: disposed?.run !== null,
+      disposedReason: disposed?.unavailableReason,
+    }).toEqual({
+      busyRun: true,
+      busyReason: null,
+      disposedRun: false,
+      disposedReason: "the surface is gone",
     });
   });
 });

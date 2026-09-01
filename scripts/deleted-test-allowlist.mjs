@@ -20,7 +20,32 @@
  * outlives its merge is stale by construction and the gate says so.
  */
 
-export const DELETED_TEST_ALLOWLIST = [];
+export const DELETED_TEST_ALLOWLIST = [
+  {
+    path: "vex-app/src/renderer/components/ui/__tests__/toast.test.tsx",
+    reason:
+      "Its subjects (components/ui/toast.tsx and the lib/toast.ts single-slot "
+      + "store) were deleted by the batch-2 transient-toast migration onto the "
+      + "notification model.",
+    coveredBy:
+      "vex-app/src/renderer/lib/notifications/__tests__/notification-model.test.ts "
+      + "(timing, stacking, purge pause, unmount leak gate) and "
+      + "vex-app/src/renderer/components/ui/__tests__/notification-toast.test.tsx "
+      + "(render, tones, announcement).",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/GlobalErrorBanner.test.tsx",
+    reason:
+      "Its subject (features/appShell/GlobalErrorBanner.tsx, the header pill "
+      + "and popover) was deleted by the batch-2 engine-error migration onto "
+      + "the notification model and center.",
+    coveredBy:
+      "vex-app/src/renderer/features/appShell/__tests__/engine-error-notifications.test.tsx "
+      + "(event projection, scoping, announcement, dismissal) and "
+      + "vex-app/src/renderer/features/appShell/__tests__/notification-center.test.tsx "
+      + "(the center chrome that replaced the popover).",
+  },
+];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
   DELETED_TEST_ALLOWLIST.map((entry) => entry.path),
