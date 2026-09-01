@@ -88,8 +88,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   notifications.reset();
-  // @ts-expect-error - test cleanup
-  delete window.vex;
+  Reflect.deleteProperty(window, "vex");
 });
 
 const emit = (event: EngineErrorEvent): void => {

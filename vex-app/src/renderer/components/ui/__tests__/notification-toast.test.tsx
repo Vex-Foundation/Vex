@@ -49,15 +49,16 @@ describe("NotificationToastStack", () => {
 
     const stack = document.querySelector('[data-vex-area="notification-stack"]');
     const toasts = document.querySelectorAll('[data-vex-area="notification-toast"]');
+    const toastTexts = [...toasts].map((node) => node.textContent ?? "");
     expect({
-      toasts: [...toasts].map((node) => node.textContent),
+      messagesShown: ["m0", "m1", "m2"].map((message, index) =>
+        toastTexts[index]?.includes(message),
+      ),
       overflow: stack?.textContent?.includes("+2 more in the notification center"),
       // Announcement is the announcer's job; the visible node claims no role.
       liveRoles: [...toasts].map((node) => node.getAttribute("role")),
     }).toEqual({
-      toasts: ["m0", "m1", "m2"].map((message) =>
-        expect.stringContaining(message) as unknown as string,
-      ),
+      messagesShown: [true, true, true],
       overflow: true,
       liveRoles: [null, null, null],
     });
