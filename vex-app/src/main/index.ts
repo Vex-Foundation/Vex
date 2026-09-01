@@ -4,6 +4,8 @@
  * Order of operations:
  *   1. Acquire single-instance lock (refuse second launch, focus existing).
  *   2. Register custom app://vex/ scheme privileges (must precede app.ready).
+ *   2b. Bind the Windows app identity (AUMID) so taskbar grouping and
+ *       turn-complete toasts resolve to the installed shortcut.
  *   3. Install lifecycle hooks (window-all-closed, before-quit, will-quit).
  *   4. await app.whenReady().
  *   4b. Evaluate the e2e database door (inert unless an e2e run asked for it).
@@ -22,6 +24,7 @@ import { loadProviderDotenv } from "@vex-lib/runtime-env.js";
 import { probeZodLocale, registerZodLocale } from "@vex-lib/zod-locale.js";
 import { configureLogger, log } from "./logger/index.js";
 import { acquireSingleInstanceLock } from "./lifecycle/single-instance.js";
+import { applyAppUserModelId } from "./lifecycle/app-user-model-id.js";
 import { installWindowAllClosedHook } from "./lifecycle/window-all-closed.js";
 import { installBeforeQuitHook } from "./lifecycle/before-quit.js";
 import { installPermissionHandlers } from "./permissions.js";
@@ -149,6 +152,16 @@ if (!acquireSingleInstanceLock()) {
 
 // 2. Privileged scheme registration — must run before app.ready
 registerAppProtocolPrivileges();
+
+// 2b. Windows app identity (AUMID). Before any window and before the IPC
+// surface exists, so no `vex.system.notifyTurnComplete` toast can be raised
+// under the default executable-derived identity. No-op off win32.
+applyAppUserModelId({
+  platform: process.platform,
+  setAppUserModelId: (id) => {
+    app.setAppUserModelId(id);
+  },
+});
 
 // 3. Lifecycle hooks
 installWindowAllClosedHook();

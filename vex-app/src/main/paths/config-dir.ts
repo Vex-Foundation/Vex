@@ -1,12 +1,16 @@
 /**
- * Pure CONFIG_DIR resolver — mirrors `/mnt/x/Vex/src/config/paths.ts`
+ * Pure CONFIG_DIR resolver. Mirrors the repository-root `src/config/paths.ts`
  * exactly so vex-app and the local agent runtime agree on a single
  * `~/.config/vex` (Linux) / `~/Library/Application Support/vex` (macOS) /
  * `%APPDATA%/vex` (Windows).
  *
- * No Electron imports here — must remain consumable from plain Node /
- * tsx contexts so the future M5 compose render module (also pure)
- * can derive shared paths without dragging Electron in.
+ * The citation is REPO-RELATIVE on purpose: it previously named an absolute
+ * path on one contributor's machine (`/mnt/x/Vex/...`), which is a path nobody
+ * else has and which stops being true the moment the checkout moves.
+ *
+ * No Electron imports here: this module must remain consumable from plain Node
+ * and tsx contexts so the compose render module (also pure) can derive shared
+ * paths without dragging Electron in.
  */
 
 import { homedir } from "node:os";

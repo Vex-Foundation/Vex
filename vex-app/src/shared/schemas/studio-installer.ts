@@ -88,6 +88,13 @@ export const studioRefusalReasonSchema = z.enum([
   "path_escape",
   /** The write itself failed (permissions, disk, a vanished directory). */
   "io_error",
+  /**
+   * The final rename stayed blocked for the whole retry budget: another program
+   * holds the file open (the sharing violation Windows raises as EPERM), or the
+   * folder is not writable. Distinct from `io_error` because the remedy is
+   * "close the program holding it", which no generic write failure implies.
+   */
+  "file_locked",
 ]);
 export type StudioRefusalReason = z.infer<typeof studioRefusalReasonSchema>;
 

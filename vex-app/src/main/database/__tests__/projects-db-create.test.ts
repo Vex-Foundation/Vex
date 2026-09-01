@@ -294,9 +294,15 @@ describe("createProject - root contract", () => {
     // was recorded before this configuration changed, or a concurrent
     // first-creation won the row. Either way this transaction must not insert a
     // project whose `root_path` is relative to a root that is not the anchor.
+    // The anchor names a directory that EXISTS and is a different one. Root
+    // equality is filesystem identity (B3), so an anchor pointing at a path
+    // that is not on disk is the separate `projects.root_unverifiable`.
+    // OUTSIDE the projects root, so the compensation assertion below still sees
+    // an empty root directory.
+    const otherRoot = await realpath(await mkdtemp(path.join(tmpdir(), "vex-other-root-")));
     const query = scriptClient((sql) => {
       if (sql.includes("INSERT INTO studio_settings")) {
-        return { rows: [{ projects_root: path.join(root, "somewhere-else") }] };
+        return { rows: [{ projects_root: otherRoot }] };
       }
       return { rows: [] };
     });
@@ -316,6 +322,7 @@ describe("createProject - root contract", () => {
 
     // The directory this request created is removed again.
     expect(await readdir(root)).toEqual([]);
+    await rm(otherRoot, { recursive: true, force: true });
   });
 
   it("proceeds when the anchor returns the same root by a different but equivalent path form", async () => {

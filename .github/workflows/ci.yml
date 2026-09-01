@@ -283,6 +283,22 @@ jobs:
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
 
+      # The Studio journey spec creates a real project, and since the batch-1
+      # contract change project creation renders agent config files through the
+      # Go bridge. Without the bridge binary the spec fails honestly with
+      # `bridge_unavailable`, so the bridge is an e2e build prerequisite here
+      # exactly as it is in `pnpm dev`.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
+      - name: Build the Studio bridge for this runner
+        env:
+          GOTOOLCHAIN: local
+        run: pnpm run build:bridge:dev
+
       - name: Build (e2e needs the bundled main + preload + renderer)
         # THE TOUR FLAG IS WHAT MAKES `studio.spec.ts` RUN AT ALL.
         # `VITE_VEX_SETUP_TOUR` is a build-time renderer constant
@@ -506,6 +522,16 @@ jobs:
 
       - name: Package (--dir) and check the packaged payload
         run: pnpm run package
+
+      # GitHub's ubuntu runners install node_modules as an unprivileged user,
+      # so Electron's SUID sandbox helper is not root:4755 and a RAW `electron`
+      # launch aborts with a FATAL setuid_sandbox_host error (the e2e job never
+      # hits this because Playwright's launcher passes --no-sandbox). Restore
+      # the helper's expected ownership in BOTH the installed tree and the
+      # freshly packaged output so the probes run with the sandbox ON; never
+      # work around this with ELECTRON_DISABLE_SANDBOX.
+      - name: Restore Electron SUID sandbox helpers
+        run: sudo find "$PWD" -name chrome-sandbox -type f -exec chown root:root {} + -exec chmod 4755 {} +
 
       # xvfb because Electron initializes its display layer at startup even
       # when the probe opens no window. The unpackaged probe runs first: if it

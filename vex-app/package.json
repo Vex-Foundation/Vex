@@ -48,6 +48,7 @@
     "check:package": "node scripts/check-packaged-payload.mjs",
     "probe:node-pty": "electron scripts/probe-node-pty.mjs",
     "probe:node-pty:packaged": "electron scripts/probe-node-pty.mjs --packaged",
+    "probe:pg-connect": "node scripts/probes/pg-connect-latency.mjs",
     "check:boundaries": "node scripts/check-process-boundaries.mjs"
   },
   "dependencies": {

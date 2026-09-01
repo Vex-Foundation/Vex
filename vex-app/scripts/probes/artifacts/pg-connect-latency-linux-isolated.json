@@ -1,0 +1,203 @@
+{
+  "probe": "pg-connect-latency",
+  "artifactVersion": 1,
+  "label": "linux-docker-engine-isolated-container",
+  "runs": 20,
+  "gapMs": 100,
+  "target": {
+    "host": "127.0.0.1",
+    "port": 55432,
+    "portSource": "--port",
+    "database": "vex",
+    "user": "vex",
+    "configDir": "/tmp/vex-probe-iso-XnhocZ",
+    "passwordPath": "/tmp/vex-probe-iso-XnhocZ/local-infra/secrets/pg_password"
+  },
+  "productConnectTimeoutMs": 2000,
+  "environment": {
+    "timestamp": "2026-09-01T16:14:03.433Z",
+    "platform": "linux",
+    "osType": "Linux",
+    "osRelease": "6.18.33.2-microsoft-standard-WSL2",
+    "arch": "x64",
+    "nodeVersion": "v24.15.0",
+    "dockerVersion": "29.6.1",
+    "serverVersion": "18.4 (Debian 18.4-1.pgdg13+1)"
+  },
+  "samples": [
+    {
+      "attempt": 1,
+      "connectMs": 30.017273999999986,
+      "queryMs": 3.0774059999999963,
+      "endMs": 7.529156999999998,
+      "serverVersion": "18.4 (Debian 18.4-1.pgdg13+1)"
+    },
+    {
+      "attempt": 2,
+      "connectMs": 19.672271000000023,
+      "queryMs": 1.6564579999999864,
+      "endMs": 5.419663999999955,
+      "serverVersion": null
+    },
+    {
+      "attempt": 3,
+      "connectMs": 21.231607999999994,
+      "queryMs": 6.598173999999972,
+      "endMs": 5.346767,
+      "serverVersion": null
+    },
+    {
+      "attempt": 4,
+      "connectMs": 11.360117999999943,
+      "queryMs": 1.16361100000006,
+      "endMs": 7.155122000000006,
+      "serverVersion": null
+    },
+    {
+      "attempt": 5,
+      "connectMs": 19.015953999999965,
+      "queryMs": 1.690841999999975,
+      "endMs": 5.77078599999993,
+      "serverVersion": null
+    },
+    {
+      "attempt": 6,
+      "connectMs": 11.581002000000012,
+      "queryMs": 1.054208000000017,
+      "endMs": 6.051248999999984,
+      "serverVersion": null
+    },
+    {
+      "attempt": 7,
+      "connectMs": 16.56660599999998,
+      "queryMs": 1.2397169999999278,
+      "endMs": 5.408776999999986,
+      "serverVersion": null
+    },
+    {
+      "attempt": 8,
+      "connectMs": 10.161522999999988,
+      "queryMs": 1.2560419999999795,
+      "endMs": 7.1977730000000975,
+      "serverVersion": null
+    },
+    {
+      "attempt": 9,
+      "connectMs": 16.98863799999981,
+      "queryMs": 1.1680559999999787,
+      "endMs": 6.134970000000067,
+      "serverVersion": null
+    },
+    {
+      "attempt": 10,
+      "connectMs": 10.843700000000126,
+      "queryMs": 0.8247289999999339,
+      "endMs": 4.393734999999879,
+      "serverVersion": null
+    },
+    {
+      "attempt": 11,
+      "connectMs": 14.423336999999947,
+      "queryMs": 0.8919959999998355,
+      "endMs": 4.576571999999942,
+      "serverVersion": null
+    },
+    {
+      "attempt": 12,
+      "connectMs": 9.580064999999877,
+      "queryMs": 1.0587920000000395,
+      "endMs": 3.9752940000000763,
+      "serverVersion": null
+    },
+    {
+      "attempt": 13,
+      "connectMs": 14.344974999999977,
+      "queryMs": 1.2225350000001072,
+      "endMs": 4.70383599999991,
+      "serverVersion": null
+    },
+    {
+      "attempt": 14,
+      "connectMs": 10.456137000000126,
+      "queryMs": 0.8650250000000597,
+      "endMs": 4.1903389999999945,
+      "serverVersion": null
+    },
+    {
+      "attempt": 15,
+      "connectMs": 26.266290000000026,
+      "queryMs": 1.194001999999955,
+      "endMs": 5.204530999999861,
+      "serverVersion": null
+    },
+    {
+      "attempt": 16,
+      "connectMs": 12.51699100000019,
+      "queryMs": 0.7434690000000046,
+      "endMs": 4.2307630000000245,
+      "serverVersion": null
+    },
+    {
+      "attempt": 17,
+      "connectMs": 11.70280700000012,
+      "queryMs": 2.619818000000123,
+      "endMs": 6.695843999999852,
+      "serverVersion": null
+    },
+    {
+      "attempt": 18,
+      "connectMs": 13.883839999999964,
+      "queryMs": 0.9064840000000913,
+      "endMs": 4.327260000000024,
+      "serverVersion": null
+    },
+    {
+      "attempt": 19,
+      "connectMs": 15.84485900000027,
+      "queryMs": 0.9732129999997596,
+      "endMs": 5.6782899999998335,
+      "serverVersion": null
+    },
+    {
+      "attempt": 20,
+      "connectMs": 11.381523000000016,
+      "queryMs": 0.8507270000000062,
+      "endMs": 4.232852999999977,
+      "serverVersion": null
+    }
+  ],
+  "summaries": {
+    "connect": {
+      "count": 20,
+      "min": 9.580064999999877,
+      "p50": 13.883839999999964,
+      "p95": 26.266290000000026,
+      "max": 30.017273999999986,
+      "mean": 15.391975900000016
+    },
+    "query": {
+      "count": 20,
+      "min": 0.7434690000000046,
+      "p50": 1.16361100000006,
+      "p95": 3.0774059999999963,
+      "max": 6.598173999999972,
+      "mean": 1.5527651999999903
+    },
+    "end": {
+      "count": 20,
+      "min": 3.9752940000000763,
+      "p50": 5.346767,
+      "p95": 7.1977730000000975,
+      "max": 7.529156999999998,
+      "mean": 5.41117909999997
+    }
+  },
+  "verdict": {
+    "classification": "not-implicated",
+    "slowMs": 1000,
+    "connectTimeoutMs": 2000,
+    "samplesAtOrOverSlow": 0,
+    "samplesAtOrOverTimeout": 0,
+    "total": 20
+  }
+}

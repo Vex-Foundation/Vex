@@ -88,6 +88,30 @@ describe("path derivation and traversal", () => {
     expect(isInside("/a/b", "/a/b-evil/x")).toBe(false);
     expect(isInside("/a/b", "/a/b/x")).toBe(true);
   });
+
+  /**
+   * THE CONTAINMENT CASE DECISION, PINNED (B3).
+   *
+   * `isInside` compares byte-exactly on EVERY platform, and this test exists so
+   * that a future "fix" for win32 or darwin has to delete a stated decision
+   * rather than quietly widen a `startsWith` into a case-folding compare.
+   *
+   * Why refusing is the safe direction: accepting `/a/B/x` as inside `/a/b`
+   * would be true on NTFS and on a default APFS volume, and FALSE on ext4, on a
+   * case-sensitive APFS volume (macOS still offers one) and on a case-sensitive
+   * mount attached to a Windows box. The platform the check RUNS on does not
+   * tell you the case behaviour of the volume the path is ON, which is why
+   * there is no `process.platform` branch here either. A false refusal costs a
+   * refusal; a false acceptance costs a write outside the project.
+   */
+  it("compares case-sensitively on every platform (a false refusal beats a false match)", () => {
+    expect(isInside("/a/b", "/a/B/x")).toBe(false);
+    expect(isInside("/a/B", "/a/b/x")).toBe(false);
+    expect(isInside("/a/b", "/A/b/x")).toBe(false);
+    // The exact-case pair still passes, so the check is strict rather than
+    // broken.
+    expect(isInside("/a/B", "/a/B/x")).toBe(true);
+  });
 });
 
 describe("symlinks", () => {

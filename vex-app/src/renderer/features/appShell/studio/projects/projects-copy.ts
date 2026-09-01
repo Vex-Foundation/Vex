@@ -453,6 +453,8 @@ export const REFUSAL_REASON_SENTENCES: Readonly<
   source_changed: "The file changed on disk while Vex was writing it.",
   path_escape: "The resolved path led outside the project folder.",
   io_error: "The write itself failed. Check the folder's permissions and free space.",
+  file_locked:
+    "Another program is holding this file open, so Vex could not replace it. Close your editor, or whatever else has it open, then repair again.",
 };
 
 export const DRIFT_BLOCKED_SENTENCE =
