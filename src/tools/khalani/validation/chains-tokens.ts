@@ -105,30 +105,28 @@ const tokenSchema: z.ZodType<KhalaniToken> = z
       chainId: asNumber("token.chainId"),
       name: asString("token.name"),
       symbol: asString("token.symbol"),
-      // TOKEN decimals stay TOLERANT (`asNumber`) HERE, while
+      // TOKEN decimals are STRICT here (`asTokenDecimals`), exactly as
       // `chain.nativeCurrency.decimals` above and the WALLET-BALANCES boundary
-      // below are STRICT (`asTokenDecimals`). That asymmetry is deliberate; do
-      // not "fix" it into consistency.
+      // below. The three differ only in what a FAILURE costs.
       //
-      // REACHABILITY is the difference, and this schema serves only the CURATED
-      // surfaces: `/v1/tokens` (top), token search, and autocomplete. Nobody can
-      // add an entry to those, so they stay ALL-OR-NOTHING: a malformed entry is
-      // a provider defect and the caller learns about it by the request failing.
-      // The wallet-balances array is the opposite case - anyone can mint a token
-      // and airdrop it into a wallet - so it gets its own per-entry boundary in
+      // REACHABILITY is what decides that, and this schema serves only the
+      // CURATED surfaces: `/v1/tokens` (top), token search, and autocomplete.
+      // Nobody can add an entry to those, so they stay ALL-OR-NOTHING: a
+      // malformed entry is a provider defect, and the caller learns about it by
+      // the REQUEST failing rather than by reasoning over a scale nothing can
+      // convert from (`Infinity`, a fraction, a negative). The wallet-balances
+      // array is the opposite case - anyone can mint a token and airdrop it
+      // into a wallet, so failing whole there is a denial of service for the
+      // price of an airdrop - and it gets its own per-entry boundary in
       // `validateTokenBalancesResponse`, which admits only strict decimals and
       // REPORTS every entry it refuses instead of failing the chain.
       //
-      // Because a curated list can still carry a scale nothing can convert from
-      // (`Infinity`, a fraction), the projection seam stays defensive for rows
-      // sourced from these surfaces: `projectBalanceRow`
-      // (`@vex-agent/tools/protocols/amount-display.ts`) validates with
-      // `isTokenDecimals` and emits the row with its identity and `balanceRaw`
-      // intact, `balance: null`, `valueUsd: null` and a named
-      // `unprojectableReason` (frozen contract C1.2). `heldUsd` in
-      // `internal/wallet/read.ts` carries the same guard, because `formatUnits`
-      // THROWS on a non-integer scale.
-      decimals: asNumber("token.decimals"),
+      // `projectBalanceRow` (`@vex-agent/tools/protocols/amount-display.ts`)
+      // stays defensive for rows reaching it from OUTSIDE this boundary
+      // (frozen contract C1.2): it keeps identity and `balanceRaw`, emits
+      // `balance: null`, `valueUsd: null` and a named `unprojectableReason`.
+      // That is a second line, not this one's substitute.
+      decimals: asTokenDecimals("token.decimals"),
       logoURI: asOptionalString,
       extensions: optionalRecord,
     },

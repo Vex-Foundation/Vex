@@ -33,9 +33,9 @@ function entry(overrides: Record<string, unknown> = {}): Record<string, unknown>
 }
 
 /**
- * Every value that must NOT become a token's scale, and why each one is here.
- * `asNumber` (the tolerant primitive the curated token lists still use) accepts
- * the first four of these.
+ * Every value that must NOT become a token's scale. The first four are the ones
+ * the plain numeric primitive (`asNumber`) still accepts, which is why token
+ * `decimals` uses `asTokenDecimals` on EVERY Khalani surface.
  */
 const INVALID_DECIMALS: ReadonlyArray<readonly [label: string, value: unknown]> = [
   ["Infinity", Number.POSITIVE_INFINITY],
@@ -210,13 +210,29 @@ describe("khalani wallet-balances boundary: the airdrop denial of service", () =
     ]);
   });
 
-  it("the CURATED token list still fails whole on the same hostile entry", () => {
+  it.each([
+    ["null", null],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["fractional", 6.5],
+    ["negative", -1],
+    ["above the 36 ceiling", 37],
+    ["a decimal STRING", "18"],
+  ])("the CURATED token list fails whole on %s decimals", (_label, value) => {
     // `/v1/tokens`, search and autocomplete are provider-curated: nobody can add
     // an entry, so a malformed one is a provider defect that must fail loudly
     // rather than degrade quietly. Only the wallet-balances array is reachable
-    // by an airdrop, and only it recovers per entry.
-    expect(() => validateTokensResponse([entry({ decimals: null })])).toThrow(
-      "Invalid Khalani response: missing token.decimals",
+    // by an airdrop, and only it recovers per entry. Extended 2026-09-01: the
+    // curated surfaces apply the SAME strict rule, so the values that only the
+    // per-entry boundary used to catch now fail the request here too.
+    expect(() => validateTokensResponse([entry({ decimals: value })])).toThrow(
+      "Invalid Khalani response: token.decimals must be a whole number of decimals between 0 and 36",
     );
+  });
+
+  it("admits the same whole scales on both surfaces", () => {
+    // The rule is identical; only the COST of breaking it differs.
+    const curated = validateTokensResponse([entry({ decimals: 0 }), entry({ decimals: 36 })]);
+
+    expect(curated.map((token) => token.decimals)).toEqual([0, 36]);
   });
 });

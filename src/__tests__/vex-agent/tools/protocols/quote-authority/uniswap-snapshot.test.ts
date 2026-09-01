@@ -72,11 +72,11 @@ function fields(overrides: Partial<UniswapSnapshotFields> = {}): UniswapSnapshot
  */
 const PLAN: BoundDebitPlan = buildBoundDebitPlan({
   legs: [
-    { role: "allowance", unpriced: false },
+    { role: "allowance", pricing: "measured" as const },
     // The first-time ERC-20 case, ratified: the swap cannot be simulated before
     // its allowance lands, so its UNITS are unknown and the leg says so.
-    { role: "swap", unpriced: true },
-    { role: "swap_fee", unpriced: false },
+    { role: "swap", pricing: "conservative" as const },
+    { role: "swap_fee", pricing: "measured" as const },
   ],
   feeCap: { mode: "eip1559", maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
 });
@@ -125,10 +125,10 @@ describe("the snapshot codec", () => {
     ["the bound leg set", {
       debitPlan: buildBoundDebitPlan({
         legs: [
-          { role: "allowance_reset" as const, unpriced: false },
-          { role: "allowance" as const, unpriced: false },
-          { role: "swap" as const, unpriced: true },
-          { role: "swap_fee" as const, unpriced: false },
+          { role: "allowance_reset" as const, pricing: "measured" as const },
+          { role: "allowance" as const, pricing: "measured" as const },
+          { role: "swap" as const, pricing: "conservative" as const },
+          { role: "swap_fee" as const, pricing: "measured" as const },
         ],
         feeCap: { mode: "eip1559" as const, maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
       }),
@@ -136,19 +136,19 @@ describe("the snapshot codec", () => {
     ["the bound gas-price ceiling", {
       debitPlan: buildBoundDebitPlan({
         legs: [
-          { role: "allowance" as const, unpriced: false },
-          { role: "swap" as const, unpriced: true },
-          { role: "swap_fee" as const, unpriced: false },
+          { role: "allowance" as const, pricing: "measured" as const },
+          { role: "swap" as const, pricing: "conservative" as const },
+          { role: "swap_fee" as const, pricing: "measured" as const },
         ],
         feeCap: { mode: "eip1559" as const, maxFeePerGasWei: 999_000_000n, maxPriorityFeePerGasWei: 1_210_000n },
       }),
     }],
-    ["a leg's unpriced marker", {
+    ["a leg's pricing basis", {
       debitPlan: buildBoundDebitPlan({
         legs: [
-          { role: "allowance" as const, unpriced: false },
-          { role: "swap" as const, unpriced: false },
-          { role: "swap_fee" as const, unpriced: false },
+          { role: "allowance" as const, pricing: "measured" as const },
+          { role: "swap" as const, pricing: "measured" as const },
+          { role: "swap_fee" as const, pricing: "measured" as const },
         ],
         feeCap: { mode: "eip1559" as const, maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
       }),
@@ -374,7 +374,7 @@ describe("the digest is a function of the bound fields only", () => {
       digestUniswapSnapshot(fields({ expiresAt: "2026-01-01T00:00:00.000Z" })),
       digestUniswapSnapshot(fields({
         debitPlan: buildBoundDebitPlan({
-          legs: [{ role: "swap", unpriced: false }],
+          legs: [{ role: "swap", pricing: "measured" as const }],
           feeCap: { mode: "legacy", gasPriceWei: 1n },
         }),
       })),

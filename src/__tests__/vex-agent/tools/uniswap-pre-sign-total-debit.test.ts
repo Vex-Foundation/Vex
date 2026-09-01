@@ -93,6 +93,18 @@ function recordingClient(): ReturnType<typeof uniswapSpendabilityFake> {
   };
 }
 
+vi.mock("@vex-agent/db/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/client.js")>()),
+  // The ONE durable question the spendability lane asks since 2026-09-01: does
+  // this wallet have a broadcast of ours outstanding on a chain whose `pending`
+  // tag subtracts nothing (chain 4663 is such an endpoint, measured). Only the
+  // DATABASE is doubled - the capability table, the policy and the fail-closed
+  // verdict are the production modules, and their own suites drive the other
+  // answers. Without this the query reaches a pool that does not exist and
+  // every read here refuses, correctly, for a reason no suite here is about.
+  queryOne: vi.fn(async () => ({ in_flight: false })),
+}));
+
 vi.mock("@tools/uniswap/chains.js", () => ({
   resolveUniswapDeployment: vi.fn(() => ({
     key: "robinhood", name: "Robinhood Chain", chainId: CHAIN_ID, weth: WETH,
@@ -101,7 +113,14 @@ vi.mock("@tools/uniswap/chains.js", () => ({
 }));
 vi.mock("@tools/uniswap/evm-client.js", () => ({
   getUniswapPublicClient: vi.fn(() => recordingClient()),
-  getUniswapEvmClients: vi.fn(() => ({ publicClient: recordingClient(), walletClient: {} })),
+  // The wallet client carries an ACCOUNT and a CHAIN because production's type
+  // guarantees both, and the fee leg now reads them to build its deferred
+  // signer (`fee/run.ts`): a bare `{}` would make that leg fail as
+  // `not_attempted` for a reason no production client can have.
+  getUniswapEvmClients: vi.fn(() => ({
+    publicClient: recordingClient(),
+    walletClient: { account: { address: WALLET, type: "local" }, chain: { id: CHAIN_ID } },
+  })),
 }));
 vi.mock("@tools/uniswap/erc20.js", () => ({
   readUniswapErc20Metadata: vi.fn(async (_client: unknown, address: string) => ({
@@ -341,6 +360,18 @@ describe("the Vex fee leg is counted first and checked again", () => {
     expect(broadcastUniswapTransaction).toHaveBeenCalledBefore(signStageBroadcast);
     const hooks = signStageBroadcast.mock.calls[0]?.[3] as { onBeforeSign?: unknown };
     expect(hooks.onBeforeSign).toBeTypeOf("function");
+  });
+
+  it("signs the fee leg on the DEFERRED arm, so no provider call follows its debit gate", async () => {
+    await run();
+    // The eager arm signs through viem's wallet action, which awaits an
+    // `eth_chainId` of its own AFTER the authoritative hook resolves (measured
+    // in viem 2.54.3). The fee leg carries a money gate, so it is exactly the
+    // leg that may not have a round trip in that window; the other Uniswap legs
+    // already sign offline. This asserts the ARM, which is the only thing that
+    // closes the window - a hook alone does not.
+    const signer = signStageBroadcast.mock.calls[0]?.[1] as { kind?: unknown };
+    expect(signer.kind).toBe("deferred");
   });
 
   it("leaves a CONFIRMED swap confirmed when the fee leg's own gate refuses", async () => {

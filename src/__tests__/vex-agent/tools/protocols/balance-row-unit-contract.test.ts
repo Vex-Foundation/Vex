@@ -250,14 +250,17 @@ describe("lane row contract - every balance row carries the quartet", () => {
 /**
  * The BOUNDARY plus the PROJECTION, driven together.
  *
- * `token.decimals` is validated tolerantly and `chain.nativeCurrency.decimals`
- * strictly, and the asymmetry is a deliberate REACHABILITY decision recorded at
- * the call site in `validation/chains-tokens.ts`. Anyone can mint a token and
- * airdrop it; nobody can add an entry to Khalani's chain registry.
+ * The CURATED Khalani surfaces (`/v1/tokens`, search, autocomplete) validate
+ * `decimals` STRICTLY, exactly like `chain.nativeCurrency.decimals`: nobody
+ * outside Khalani can add an entry to a curated list, so a malformed one is a
+ * provider defect and the request fails loudly instead of handing the agent a
+ * scale nothing can convert from (review finding 9, 2026-09-01). Per-entry
+ * recovery exists only on the wallet-balances array, the one surface an
+ * airdrop can reach, and is pinned in `khalani-token-balances-boundary`.
  *
- * This suite is the proof that the tolerant half does not leak: the poisoned
- * value gets through the validator and is caught one layer later, where it
- * costs ONE ROW instead of the whole chain's token list.
+ * `projectBalanceRow` stays defensive for rows arriving from OUTSIDE that
+ * boundary, which is what the first half of this file pins; the two are
+ * independent lines, and this suite proves the curated one now holds first.
  */
 describe("the Khalani boundary and the projection, end to end", () => {
   function poisonedToken(decimals: unknown) {
@@ -271,7 +274,7 @@ describe("the Khalani boundary and the projection, end to end", () => {
     };
   }
 
-  const goodToken = {
+  const goodToken: KhalaniToken = {
     address: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
     chainId: 1,
     name: "USD Coin",
@@ -280,23 +283,52 @@ describe("the Khalani boundary and the projection, end to end", () => {
     extensions: { balance: "1500000", price: { usd: "1.0001" } },
   };
 
-  it("does NOT throw the whole token list away for one hostile token", () => {
-    // A validator that threw here would blank a funded wallet for the price of
-    // an airdrop. This is the denial of service the tolerant half prevents.
-    const tokens = validateTokensResponse([
-      goodToken,
-      poisonedToken(Number.POSITIVE_INFINITY),
-      poisonedToken(-1),
-    ]);
+  /**
+   * The same hostile row as a TYPED token, for the lanes that reach the
+   * projection without crossing the Khalani validator. `Infinity` is a `number`
+   * at the type level, which is exactly why the runtime guard has to exist and
+   * why no cast is needed to express the case.
+   */
+  function unvalidatedRow(decimals: number): KhalaniToken {
+    return {
+      address: "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      chainId: 1,
+      name: "Airdropped Thing",
+      symbol: "EVIL",
+      decimals,
+      extensions: { balance: "1000", price: { usd: "1" } },
+    };
+  }
 
-    expect(tokens).toHaveLength(3);
+  it.each([
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["-Infinity", Number.NEGATIVE_INFINITY],
+    ["NaN", Number.NaN],
+    ["fractional", 6.5],
+    ["negative", -1],
+    ["above the 36 ceiling", 37],
+  ])("fails the WHOLE curated list on %s decimals, rather than degrading", (_label, value) => {
+    // Reversed 2026-09-01 (review finding 9). This used to assert the opposite:
+    // that all three entries came through and the poison was caught one layer
+    // later. A curated list is not reachable by an airdrop, so the all-or-
+    // nothing rule applies and the caller learns by the REQUEST failing.
+    expect(() => validateTokensResponse([goodToken, poisonedToken(value)])).toThrow(
+      "Invalid Khalani response: token.decimals must be a whole number of decimals between 0 and 36",
+    );
   });
 
-  it("projects the hostile row as unprojectable while its neighbours convert", () => {
-    const rows = projectTokens(validateTokensResponse([
-      goodToken,
-      poisonedToken(Number.POSITIVE_INFINITY),
-    ]));
+  it("still returns every well-formed curated row", () => {
+    const rows = projectTokens(validateTokensResponse([goodToken]));
+
+    expect(rows.map((row) => row.symbol)).toEqual(["USDC"]);
+    expect(rows[0]?.balance).toBe("1.5");
+    expect(rows[0]?.unprojectableReason).toBeUndefined();
+  });
+
+  it("projects a hostile row from OUTSIDE the boundary as unprojectable", () => {
+    // The projection seam is the second line, still load-bearing: rows reach it
+    // from lanes that never crossed the Khalani validator at all.
+    const rows = projectTokens([goodToken, unvalidatedRow(Number.POSITIVE_INFINITY)]);
 
     const good = rows.find((row) => row.symbol === "USDC");
     expect(good?.balance).toBe("1.5");

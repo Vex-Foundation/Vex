@@ -123,10 +123,66 @@ const feePreview = {
   landingMode: "self_managed_submit",
 };
 
-const mockFindMatched = vi.fn(async () => ({
-  prequoteId: "prequote-1",
-  safetyDetail: { feePreview },
-}));
+/**
+ * The quote-time spendability statement the APPROVAL CARD carried, as the gate
+ * restores it from the row. `native.required.raw` is the whole measured native
+ * debit of the quoted message, and it is what execution is bound to: a fresh
+ * `/build` may not cost more than the person was shown.
+ */
+const approvedSpendability = {
+  cardVersion: "spendability-v2",
+  source: {
+    asset: { chainId: 101, address: USDC.toBase58(), symbol: "USDC" },
+    wallet: WALLET,
+    blockTag: "pending" as const,
+    observedAt: "2026-09-01T00:00:00.000Z",
+    required: { raw: String(PRINCIPAL), human: "10", decimals: 6, symbol: "USDC" },
+    current: { raw: String(PRINCIPAL), human: "10", decimals: 6, symbol: "USDC" },
+  },
+  native: {
+    asset: { chainId: 101, address: "11111111111111111111111111111111", symbol: "SOL" },
+    wallet: WALLET,
+    blockTag: "pending" as const,
+    observedAt: "2026-09-01T00:00:00.000Z",
+    required: { raw: String(NATIVE_DEBIT), human: null, decimals: 9, symbol: "SOL" },
+    current: { raw: String(NATIVE_DEBIT), human: null, decimals: 9, symbol: "SOL" },
+  },
+};
+
+/**
+ * The guarded re-read outcome, as the handler now receives it. Typed as the
+ * full union so a test can script a REFUSAL without a cast: the race cases
+ * below depend on the `ok: false` arm being reachable here.
+ */
+type MatchedForTest =
+  | {
+    readonly ok: true;
+    readonly prequote: { readonly prequoteId: string; readonly safetyDetail: Record<string, unknown> };
+    readonly spendability: typeof approvedSpendability | undefined;
+  }
+  | {
+    readonly ok: false;
+    readonly reason: "no_quote" | "safety_fail" | "not_executable" | "not_gated";
+    readonly eligibilityKind?: string;
+  };
+
+function matchedRow(overrides: { readonly approvedNativeRaw?: string } = {}): MatchedForTest {
+  return {
+    ok: true as const,
+    prequote: { prequoteId: "prequote-1", safetyDetail: { feePreview } },
+    spendability: overrides.approvedNativeRaw === undefined
+      ? approvedSpendability
+      : {
+        ...approvedSpendability,
+        native: {
+          ...approvedSpendability.native,
+          required: { ...approvedSpendability.native.required, raw: overrides.approvedNativeRaw },
+        },
+      },
+  };
+}
+
+const mockFindMatched = vi.fn<() => Promise<MatchedForTest>>(async () => matchedRow());
 vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
   findFreshMatchedSwapPrequote: () => mockFindMatched(),
 }));
@@ -216,7 +272,7 @@ function execute() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockFindMatched.mockResolvedValue({ prequoteId: "prequote-1", safetyDetail: { feePreview } });
+  mockFindMatched.mockResolvedValue(matchedRow());
   mockCreateIntent.mockResolvedValue({ executionId: "exec-1", events: [{ id: "event-1" }] });
   mockMarkBroadcast.mockResolvedValue({ applied: true });
   mockBroadcast.mockResolvedValue({ kind: "accepted" as const });
@@ -279,6 +335,20 @@ describe("solana.swap.execute pre-sign authority", () => {
     expect(String(result.output)).toContain("could not be verified before signing");
   });
 
+  it("refuses a lamport balance the node could not state exactly, never rounding it", async () => {
+    // `getBalance` is typed `number`; past 2^53 - 1 the JSON parse has already
+    // rounded, and `Number.isInteger` still accepts it. The read is UNKNOWN.
+    chain.lamports = Number.MAX_SAFE_INTEGER + 2;
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(mockBroadcast).not.toHaveBeenCalled();
+    expect(mockMarkBroadcast).not.toHaveBeenCalled();
+    expect(String(result.output)).toContain("could not be verified before signing");
+    expect(String(result.output)).toContain("native_balance_read_failed");
+  });
+
   it("refuses when the balance itself could not be read, never on a zero", async () => {
     chain.splAccounts = [{ amount: String(PRINCIPAL), state: "aStateThisBuildDoesNotKnow" }];
 
@@ -287,5 +357,105 @@ describe("solana.swap.execute pre-sign authority", () => {
     expect(result.success).toBe(false);
     expect(mockBroadcast).not.toHaveBeenCalled();
     expect(String(result.output)).toContain("spl_account_state_unreadable");
+  });
+});
+
+describe("solana.swap.execute binds the cost to what the card disclosed", () => {
+  it("refuses when the fresh build costs more than the approved quote stated", async () => {
+    // The wallet can pay: it holds far more than the transaction needs. What it
+    // never agreed to is the higher price. Solvency is not consent.
+    chain.lamports = 10_000_000_000;
+    mockFindMatched.mockResolvedValue(matchedRow({ approvedNativeRaw: String(NATIVE_DEBIT - 1) }));
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(mockBroadcast).not.toHaveBeenCalled();
+    expect(mockMarkBroadcast).not.toHaveBeenCalled();
+    expect(String(result.output)).toContain("above the");
+    expect(String(result.output)).toContain("the approved quote disclosed");
+    expect(String(result.output)).toContain("nothing was broadcast");
+    // Not a balance failure: the wallet was solvent. The row must not tell the
+    // agent to add funds it already has.
+    expect(mockFailEvent).toHaveBeenCalledWith(
+      "event-1",
+      expect.objectContaining({ failureCode: "route_not_found" }),
+    );
+  });
+
+  it("signs when the fresh build costs exactly the approved figure", async () => {
+    mockFindMatched.mockResolvedValue(matchedRow({ approvedNativeRaw: String(NATIVE_DEBIT) }));
+
+    const result = await execute();
+
+    expect(mockBroadcast).toHaveBeenCalledTimes(1);
+    expect(String(result.output)).toContain("broadcast");
+  });
+
+  it("signs when the fresh build costs LESS than the approved figure", async () => {
+    mockFindMatched.mockResolvedValue(matchedRow({ approvedNativeRaw: String(NATIVE_DEBIT + 500_000) }));
+
+    await execute();
+
+    expect(mockBroadcast).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses rather than executing unbound when the row carries no cost disclosure", async () => {
+    mockFindMatched.mockResolvedValue({
+      ok: true,
+      prequote: { prequoteId: "prequote-1", safetyDetail: { feePreview } },
+      spendability: undefined,
+    });
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(mockCreateIntent).not.toHaveBeenCalled();
+    expect(mockBroadcast).not.toHaveBeenCalled();
+    expect(String(result.output)).toContain("no readable native-cost disclosure");
+  });
+});
+
+describe("solana.swap.execute re-validates the authorizing quote", () => {
+  it("refuses when a newer quote for the same request authorizes nothing", async () => {
+    // THE RACE. The common gate approved the row that was latest at its
+    // instant; a concurrent quote then recorded a newer, ineligible row for the
+    // same identity. Before this the handler re-read the store with no
+    // guardrails and executed on it.
+    mockFindMatched.mockResolvedValue({
+      ok: false,
+      reason: "not_executable",
+      eligibilityKind: "insufficient_balance",
+    });
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(mockCreateIntent).not.toHaveBeenCalled();
+    expect(mockBroadcast).not.toHaveBeenCalled();
+    expect(String(result.output)).toContain("superseded");
+    expect(String(result.output)).toContain("insufficient_balance");
+    // The remedy names the quote tool, or an autonomous agent cannot recover.
+    expect(String(result.output)).toContain("solana__swap_quote");
+  });
+
+  it("refuses when a confirmed safety failure lands for the same request", async () => {
+    mockFindMatched.mockResolvedValue({ ok: false, reason: "safety_fail" });
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(mockBroadcast).not.toHaveBeenCalled();
+    expect(String(result.output)).toContain("confirmed safety failure");
+  });
+
+  it("still refuses when no fresh quote exists at all", async () => {
+    mockFindMatched.mockResolvedValue({ ok: false, reason: "no_quote" });
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(mockBroadcast).not.toHaveBeenCalled();
+    expect(String(result.output)).toContain("no matching fee-bearing quote found");
   });
 });

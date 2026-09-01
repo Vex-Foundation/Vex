@@ -100,7 +100,12 @@ vi.mock("@tools/uniswap/evm-client.js", () => ({
   // leg plan through this client. A SOLVENT default keeps each suite's own
   // subject the thing that decides its outcome.
   getUniswapPublicClient: vi.fn(() => uniswapSpendabilityFake()),
-  getUniswapEvmClients: vi.fn(() => ({ publicClient: uniswapSpendabilityFake(), walletClient: {} })),
+  // ACCOUNT and CHAIN are present because production's type guarantees both and
+  // the fee leg reads them to build its deferred signer (`fee/run.ts`).
+  getUniswapEvmClients: vi.fn(() => ({
+    publicClient: uniswapSpendabilityFake(),
+    walletClient: { account: { address: WALLET, type: "local" }, chain: { id: 4663 } },
+  })),
 }));
 vi.mock("@tools/uniswap/erc20.js", () => ({
   readUniswapErc20Metadata: vi.fn(async (_c: unknown, address: string) => ({

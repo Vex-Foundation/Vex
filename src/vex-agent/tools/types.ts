@@ -283,8 +283,13 @@ export interface ToolDebitPlan {
   readonly legs: readonly {
     readonly role: "allowance_reset" | "allowance" | "swap" | "swap_fee";
     readonly feeCap: ToolLegFeeCap;
-    /** True when the leg's gas units could not be measured at quote time. */
-    readonly unpriced: boolean;
+    /**
+     * How the leg's gas units were reached: `measured` from a live estimate of
+     * that exact call, `conservative` from the venue's own quoter plus headroom
+     * when the call could not be simulated yet. A leg with NEITHER cannot reach
+     * a bound plan - the quote that would have carried one is not executable.
+     */
+    readonly pricing: "measured" | "conservative";
   }[];
   readonly reserve: {
     readonly kind: "zero_value_self_transfer";

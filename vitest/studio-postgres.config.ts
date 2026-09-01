@@ -30,6 +30,8 @@ export default defineConfig({
       "src/__tests__/integration/repos/snapshot-publication-gate.int.test.ts",
       // WP11: migration 098's access path for that same gate, proved by real plans.
       "src/__tests__/integration/repos/snapshot-publication-indexes.int.test.ts",
+      // F-EVM: the pending-debit compensation's in-flight SQL against the real schema.
+      "src/__tests__/integration/repos/pending-debit-compensation.int.test.ts",
       "src/__tests__/integration/repos/session-control-state-wake.int.test.ts",
       "src/__tests__/integration/repos/recovery-money-gate-race.int.test.ts",
       "src/__tests__/integration/repos/recovery-reverse-lock-order.int.test.ts",

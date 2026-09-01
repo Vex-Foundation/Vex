@@ -21,9 +21,14 @@ export type GateBlockReason =
   | "wallet_not_selected" // no wallet selected for the required chain family
   | "unbindable_param" // bridge execute carries an EXECUTE-ONLY param (routeId /
                        // depositMethod) the quote can never bind - fail-closed
-  | "not_executable";  // the newest matching quote recorded an eligibility other
+  | "not_executable"   // the newest matching quote recorded an eligibility other
                        // than `executable` (unusable route, or the wallet could
                        // not pay for it), so that quote authorizes nothing
+  | "card_plan_disagreement"; // the row carries TWO descriptions of the same
+                       // transactions - the plan the approval card would state
+                       // and the plan its route snapshot sealed - and they are
+                       // not the same plan, so consent and enforcement would
+                       // describe different things
 
 /** A thrown identity-build error that already names its block reason. */
 export class GateIdentityError extends Error {

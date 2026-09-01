@@ -39,6 +39,16 @@ const CHAIN_ID = 4663;
 
 const quoteBestRoute = vi.fn();
 
+vi.mock("@vex-agent/db/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/client.js")>()),
+  // Only the DATABASE is doubled. Since 2026-09-01 the spendability lane asks
+  // one durable question - has this wallet a broadcast of ours outstanding on a
+  // chain whose `pending` tag subtracts nothing - and this suite's chain is such
+  // an endpoint (measured). The capability table, the policy and the fail-closed
+  // verdict stay production code, driven by their own suites.
+  queryOne: vi.fn(async () => ({ in_flight: false })),
+}));
+
 vi.mock("@tools/uniswap/chains.js", () => ({
   resolveUniswapDeployment: vi.fn(() => ({
     key: "robinhood", name: "Robinhood Chain", chainId: CHAIN_ID, weth: WETH,

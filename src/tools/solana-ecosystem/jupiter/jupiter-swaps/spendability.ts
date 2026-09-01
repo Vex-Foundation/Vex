@@ -239,13 +239,29 @@ export async function readSplSpendability(
   };
 }
 
-/** Read the owner's own lamports at the spendability commitment. */
+/**
+ * Read the owner's own lamports at the spendability commitment.
+ *
+ * `getBalance` is typed `number`, but lamports are a u64: a balance above
+ * 2^53 - 1 has ALREADY lost precision in the JSON parse before this function
+ * sees it, and `Number.isInteger` still says yes to it. Widening such a value
+ * to `BigInt` would produce an exact-looking figure that is off by up to a few
+ * hundred lamports, and a money comparison is not allowed to run on a number
+ * that was silently repaired (rule 90). `Number.isSafeInteger` is therefore the
+ * boundary: beyond it the balance is UNKNOWN, the throw becomes
+ * `balance_unavailable` upstream, and the swap fails closed rather than
+ * judging solvency from a rounded read.
+ *
+ * 2^53 - 1 lamports is about 9,007,199 SOL, so no ordinary wallet is refused by
+ * this; the wallets it does refuse are exactly the ones whose figure cannot be
+ * stated exactly.
+ */
 export async function readNativeLamports(rpc: SolanaSourceBalanceRpc, owner: string): Promise<string> {
   const lamports = await rpc.getBalance(new PublicKey(owner), SOLANA_SPENDABILITY_COMMITMENT);
-  if (!Number.isInteger(lamports) || lamports < 0) {
+  if (!Number.isSafeInteger(lamports) || lamports < 0) {
     throw new VexError(
       ErrorCodes.SOLANA_RPC_ERROR,
-      "The node returned a lamport balance that is not a whole number of lamports.",
+      "The node returned a lamport balance this build cannot state exactly: it is not a whole, precisely representable number of lamports.",
     );
   }
   return BigInt(lamports).toString(10);

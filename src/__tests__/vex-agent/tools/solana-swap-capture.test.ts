@@ -173,13 +173,37 @@ const VALID_FEE_PREVIEW = {
   landingMode: "self_managed_submit",
 };
 
+/**
+ * The gate-guarded re-read of the authorizing row, as the handler now receives
+ * it: the row itself plus the quote-time spendability statement whose native
+ * `required` figure execution is bound to. An `executable` row always carries
+ * one, so a fixture without it would not be a real row.
+ */
 function matchedPrequote(feePreview: Record<string, unknown> = VALID_FEE_PREVIEW) {
   return {
-    prequoteId: "prequote-1", sessionId: "sess-1", matchHash: "h".repeat(64),
-    kind: "swap", family: "solana", provider: "jupiter", chainId: null,
-    walletAddress: "SignerWallet", tokenIn: "BonkMint", tokenOut: "SolMint", amount: "1000",
-    slippageBps: null, safetyVerdict: "pass", safetyDetail: { feePreview }, routeRef: null, eligibilityKind: "executable", claimedAt: null, claimedBy: null,
-    createdAt: "2026-01-01T00:00:00.000Z", expiresAt: "2099-01-01T00:00:00.000Z",
+    ok: true,
+    prequote: {
+      prequoteId: "prequote-1", sessionId: "sess-1", matchHash: "h".repeat(64),
+      kind: "swap", family: "solana", provider: "jupiter", chainId: null,
+      walletAddress: "SignerWallet", tokenIn: "BonkMint", tokenOut: "SolMint", amount: "1000",
+      slippageBps: null, safetyVerdict: "pass", safetyDetail: { feePreview }, routeRef: null, eligibilityKind: "executable", claimedAt: null, claimedBy: null,
+      createdAt: "2026-01-01T00:00:00.000Z", expiresAt: "2099-01-01T00:00:00.000Z",
+    },
+    spendability: {
+      cardVersion: "spendability-v2",
+      source: {
+        asset: { chainId: 101, address: "BonkMint", symbol: "BONK" },
+        wallet: "SignerWallet", blockTag: "pending", observedAt: "2026-01-01T00:00:00.000Z",
+        required: { raw: "1000", human: null, decimals: 6, symbol: "BONK" },
+        current: { raw: "1000", human: null, decimals: 6, symbol: "BONK" },
+      },
+      native: {
+        asset: { chainId: 101, address: "11111111111111111111111111111111", symbol: "SOL" },
+        wallet: "SignerWallet", blockTag: "pending", observedAt: "2026-01-01T00:00:00.000Z",
+        required: { raw: "10000000", human: null, decimals: 9, symbol: "SOL" },
+        current: { raw: "10000000", human: null, decimals: 9, symbol: "SOL" },
+      },
+    },
   };
 }
 
@@ -531,7 +555,7 @@ describe("solana.swap.execute capture", () => {
   });
 
   it("blocks with a clear message when no matching fee-bearing quote is found (no broadcast, no intent)", async () => {
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue(null);
+    mockFindFreshMatchedSwapPrequote.mockResolvedValue({ ok: false, reason: "no_quote" });
 
     const result = await CORE_HANDLERS["solana.swap.execute"](
       { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },

@@ -38,6 +38,8 @@ const TOKEN_OUT = getAddress("0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31");
 const WALLET = getAddress("0x1111111111111111111111111111111111111111");
 const WETH = getAddress("0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73");
 const ROUTER = getAddress("0x89e5db8b5aa49aa85ac63f691524311aeb649eba");
+/** The V3 SwapRouter02 of the same deployment: a V3 route's swap leg goes here. */
+const ROUTER_V3 = getAddress("0xcaf681a66d020601342297493863e78c959e5cb2");
 const CHAIN_ID = 4663;
 /** The shared EVM native sentinel, as every Vex row spells it. */
 const NATIVE_SENTINEL = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
@@ -52,10 +54,32 @@ let clientOptions: UniswapSpendabilityFakeOptions = {};
 let nativeInput = false;
 let feeDeclined = false;
 
+vi.mock("@vex-agent/db/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/client.js")>()),
+  // The ONE durable question the spendability lane asks since 2026-09-01: does
+  // this wallet have a broadcast of ours outstanding on a chain whose `pending`
+  // tag subtracts nothing (chain 4663 is such an endpoint, measured). Only the
+  // DATABASE is doubled - the capability table, the policy and the fail-closed
+  // verdict are the production modules, and their own suites drive the other
+  // answers. Without this the query reaches a pool that does not exist and
+  // every read here refuses, correctly, for a reason no suite here is about.
+  queryOne: vi.fn(async () => ({ in_flight: false })),
+}));
+
 vi.mock("@tools/uniswap/chains.js", () => ({
   resolveUniswapDeployment: vi.fn(() => ({
     key: "robinhood", name: "Robinhood Chain", chainId: CHAIN_ID, weth: WETH,
     v2: { router02: ROUTER, factory: "0x2222222222222222222222222222222222222222" },
+    // Both versions are deployed, as they are on the real chain 4663, so a
+    // suite can quote either shape. The V3 half matters because only QuoterV2
+    // states a gas figure, which is the conservative basis a swap leg falls
+    // back to when it cannot be simulated.
+    v3: {
+      factory: "0x3333333333333333333333333333333333333333",
+      swapRouter02: ROUTER_V3,
+      quoterV2: "0x4444444444444444444444444444444444444444",
+      feeTiers: [500, 3000, 10000],
+    },
   })),
   resolveUniswapChainId: vi.fn(() => CHAIN_ID),
 }));
@@ -121,6 +145,25 @@ const context: ProtocolExecutionContext = {
 function benignRoute(priceImpact = 0.001) {
   return {
     route: { version: "v2" as const, path: [TOKEN_IN, TOKEN_OUT], amountOut: QUOTED_OUT },
+    priceImpact,
+  };
+}
+
+/**
+ * The same trade quoted through V3, whose QuoterV2 states a `gasEstimate`
+ * (measured live: 72,926 for a single-hop exact-input). That figure is the only
+ * conservative basis a swap leg has when it cannot be simulated, so the two
+ * route shapes now reach materially different verdicts and both are pinned.
+ */
+function benignV3Route(priceImpact = 0.001) {
+  return {
+    route: {
+      version: "v3" as const,
+      path: [TOKEN_IN, TOKEN_OUT],
+      fees: [3000],
+      amountOut: QUOTED_OUT,
+      gasEstimate: 72_926n,
+    },
     priceImpact,
   };
 }
@@ -292,18 +335,44 @@ describe("uniswap.swap.quote when the wallet CAN pay", () => {
     expect(String(data.eligibilityNote)).toContain("authoritative read happens immediately before signing");
   });
 
-  it("says out loud when the swap leg could not be priced yet, instead of implying the whole cost was checked", async () => {
+  it("prices an unsimulatable swap leg CONSERVATIVELY and says so, instead of stating a lower bound", async () => {
     // The real shape: an ERC-20 the router may not move yet cannot be simulated,
-    // so the SWAP leg's gas is unknown until the allowance lands, while the
-    // approve leg and the reserve estimate normally.
-    clientOptions = { ...clientOptions, estimateFailsForTargets: [ROUTER] };
+    // so the SWAP leg's own estimate reverts until the allowance lands, while
+    // the approve leg and the reserve estimate normally. The V3 quoter still
+    // stated a gas figure for that swap, so the leg has a conservative basis.
+    quoteBestRoute.mockResolvedValue(benignV3Route());
+    clientOptions = { ...clientOptions, estimateFailsForTargets: [ROUTER_V3] };
 
     const { result, data } = await run();
 
     expect(result.quoteAuthority?.eligibilityKind).toBe("executable");
     const note = String(data.eligibilityNote);
-    expect(note).toContain("LOWER BOUND");
-    expect(note).toContain("could not be estimated");
+    // The total is WHOLE - every leg is in it - and the caveat is about the
+    // BASIS of one component, not about a missing component. The old wording
+    // ("LOWER BOUND") described a total the human was asked to authorize
+    // without knowing what it left out, which is the defect this pins closed.
+    expect(note).toContain("CONSERVATIVELY");
+    expect(note).not.toContain("LOWER BOUND");
+    // The plan the card binds records the basis per leg, so the approval
+    // surface can name the leg that was not measured.
+    const legs = result.quoteAuthority?.spendability?.debitPlan?.legs ?? [];
+    expect(legs.find((leg) => leg.role === "swap")?.pricing).toBe("conservative");
+    expect(legs.find((leg) => leg.role === "swap_fee")?.pricing).toBe("measured");
+  });
+
+  it("refuses to call a quote executable when a leg has NO figure at all, measured or conservative", async () => {
+    // A V2 route carries no quoter gas figure (measured live 2026-08-31), so a
+    // swap leg that cannot be simulated has no conservative basis either. That
+    // is a cost nobody can state, and a quote may not authorize an execute
+    // against it - the whole point of the 2026-09-01 correction.
+    clientOptions = { ...clientOptions, estimateFailsForTargets: [ROUTER] };
+
+    const { result } = await run();
+
+    expect(result.quoteAuthority?.eligibilityKind).toBe("balance_unavailable");
+    // An ineligible quote seals nothing an execute could later claim.
+    expect(result.quoteAuthority?.routeSnapshot).toBeNull();
+    expect(result.quoteAuthority?.spendability?.debitPlan).toBeUndefined();
   });
 });
 

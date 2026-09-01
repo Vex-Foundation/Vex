@@ -69,7 +69,7 @@ if (!ENCODED.ok) throw new Error("fixture route must encode");
 const RAW = ENCODED.raw;
 /** The one-leg transaction set this fixture's quote bound. */
 const PLAN = buildBoundDebitPlan({
-  legs: [{ role: "swap", unpriced: false }],
+  legs: [{ role: "swap", pricing: "measured" as const }],
   feeCap: { mode: "legacy", gasPriceWei: 1_000n },
 });
 

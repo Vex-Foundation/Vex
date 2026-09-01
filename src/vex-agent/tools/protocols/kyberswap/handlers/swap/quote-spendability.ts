@@ -68,8 +68,13 @@ import { ErrorCodes, VexError } from "../../../../../../errors.js";
 import {
   buildBoundDebitPlan,
   planFeeCapForRole,
+  toLegFeeCap,
   type BoundDebitPlan,
 } from "../../../quote-authority/debit-plan.js";
+import {
+  judgePendingObservation,
+  type InFlightBroadcastReader,
+} from "../../../quote-authority/pending-debit-compensation.js";
 import type { QuoteEligibility } from "../../../quote-authority/eligibility.js";
 import {
   evaluateSpendability,
@@ -240,7 +245,19 @@ function feeCapOfRequest(request: FinalSignedRequest): LegFeeCap | null {
 }
 
 /**
- * Price every still-unbroadcast leg plus the follow-up reserve at one basis.
+ * Price every still-unbroadcast leg plus the follow-up reserve.
+ *
+ * THE CAP IS PER LEG, and that is the correction of 2026-09-01. The pre-sign
+ * gate knows the EXACT price of the one leg it is standing in front of, because
+ * it reads it off the request about to be serialized - but every leg AFTER that
+ * one is still unprepared, and each of them may legally be prepared at anything
+ * up to the ceiling the approved quote bound for its role. Pricing the whole
+ * remainder at the current request's price understates the exposure whenever
+ * the node's suggestion has fallen since the quote: the allowance lands cheaply,
+ * the swap is prepared at the approved ceiling, and the wallet is short with the
+ * allowance already granted. So the caller supplies a resolver, and at the gate
+ * it answers with the request's real price for the leg being signed and with the
+ * APPROVED ceiling for everything still to come, including the reserve.
  *
  * The L1 data component is priced over each leg's OWN bytes, with the nonce it
  * will carry, because the serialized length is what an OP-stack chain charges
@@ -255,11 +272,15 @@ async function priceNativeDebit(
     readonly legs: readonly KyberDebitLeg[];
     readonly firstNonce: number;
     readonly reserveGasUnits: bigint;
-    readonly feeCap: LegFeeCap;
+    /** The ceiling one leg is charged at, by its position in `legs`. */
+    readonly feeCapForLeg: (leg: KyberDebitLeg, offset: number) => LegFeeCap;
+    /** The ceiling the follow-up reserve is charged at. */
+    readonly reserveFeeCap: LegFeeCap;
   },
 ): Promise<SwapNativeDebit> {
   const legs: NativeDebitLeg[] = [];
   for (const [offset, leg] of input.legs.entries()) {
+    const feeCap = input.feeCapForLeg(leg, offset);
     const l1 = await estimateLegL1DataFee(client, {
       chainId: input.chainId,
       transaction: {
@@ -269,13 +290,13 @@ async function priceNativeDebit(
         gas: leg.gasUnits,
         nonce: input.firstNonce + offset,
       },
-      feeCap: input.feeCap,
+      feeCap,
     });
     legs.push({
       role: leg.role,
       valueWei: leg.valueWei,
       gasLimit: leg.gasUnits,
-      feeCap: input.feeCap,
+      feeCap,
       l1,
       broadcast: false,
     });
@@ -289,11 +310,11 @@ async function priceNativeDebit(
       gas: input.reserveGasUnits,
       nonce: input.firstNonce + input.legs.length,
     },
-    feeCap: input.feeCap,
+    feeCap: input.reserveFeeCap,
   });
   const reserve: FollowUpReserve = {
     gasLimit: input.reserveGasUnits,
-    feeCap: input.feeCap,
+    feeCap: input.reserveFeeCap,
     l1: reserveL1,
   };
   return computeSwapNativeDebit({ legs, reserve });
@@ -318,6 +339,8 @@ async function judgeSpendability(
     readonly nativeRequiredRaw: string;
     /** Carried onto the approval card when the quote seals one. */
     readonly debitPlan?: BoundDebitPlan;
+    /** Injectable for tests; production reads Vex's own durable broadcast record. */
+    readonly readInFlightBroadcast?: InFlightBroadcastReader | undefined;
   },
 ): Promise<SpendabilityOutcome> {
   const native = getEvmNativeCurrency(input.chainId);
@@ -341,6 +364,38 @@ async function judgeSpendability(
     symbol: native?.symbol ?? null,
     blockTag: "pending" as const,
   };
+
+  // DOES `pending` MEAN ANYTHING ON THIS CHAIN. Seven of the eighteen endpoints
+  // a Vex venue reaches answer the tag with the head block or expose no pending
+  // block at all (measured, `evm-chains/pending-block-capability.ts`); on those
+  // the reads below cannot see this wallet's own in-flight spending, so Vex's
+  // durable record of what it broadcast stands in for the tag. Asked BEFORE the
+  // reads: a refusing verdict makes both of them unusable.
+  const pending = await judgePendingObservation(
+    { chainId: input.chainId, wallet: input.wallet },
+    input.readInFlightBroadcast,
+  );
+  if (!pending.ok) {
+    const sourceRef: AssetRef = {
+      chainId: input.chainId,
+      address: input.source.address,
+      symbol: input.source.symbol,
+    };
+    return evaluateSpendability({
+      routeEligibility: input.routeEligibility,
+      source: {
+        read: { ok: false, asset: sourceRef, cause: pending.cause },
+        requiredRaw: input.sourceRequiredRaw,
+        symbol: input.source.symbol,
+      },
+      native: {
+        read: { ok: false, asset: nativeAssetRef(input.chainId), cause: pending.cause },
+        requiredRaw: input.nativeRequiredRaw,
+        symbol: native?.symbol ?? null,
+      },
+      ...(input.debitPlan === undefined ? {} : { debitPlan: input.debitPlan }),
+    });
+  }
 
   const reads = await observeEvmSwapBalances(client, {
     source: sourceRequest,
@@ -379,6 +434,8 @@ export type KyberQuoteSpendabilityOutcome = SpendabilityOutcome & {
 };
 
 export interface KyberQuoteSpendabilityInput {
+  /** Injectable for tests; production reads Vex's own durable broadcast record. */
+  readonly readInFlightBroadcast?: InFlightBroadcastReader | undefined;
   /** The verdict the route classifier already reached. A non-executable one is returned unchanged. */
   readonly routeEligibility: QuoteEligibility;
   readonly client: KyberSpendabilityClient;
@@ -460,25 +517,28 @@ export async function evaluateKyberQuoteSpendability(
   const reserveGasUnits = await measureReserveGas(input.client, input.wallet);
   if (reserveGasUnits === null) return refuse(CAUSES.legGasUnavailable);
 
+  // At QUOTE time one ceiling covers everything: it is the ceiling being
+  // established, and it is what the plan below binds for every role.
   const debit = await priceNativeDebit(input.client, {
     chainId: input.chainId,
     wallet: input.wallet,
     legs,
     firstNonce,
     reserveGasUnits,
-    feeCap,
+    feeCapForLeg: () => feeCap,
+    reserveFeeCap: feeCap,
   });
   if (!debit.ok) return refuse(debit.cause);
 
   // The plan the SNAPSHOT binds: the roles in broadcast order and the one
-  // ceiling they were all costed at. Every leg here is PRICED - the approve legs
-  // estimate live and the swap leg carries the provider's own build figure, and
-  // a leg that could not be measured refused above - so none carries the
-  // unpriced marker. Gas UNITS are deliberately absent: they drift 2.07x
+  // ceiling they were all costed at. Every leg here is MEASURED - the approve
+  // legs estimate live and the swap leg carries the provider's own build
+  // figure, and a leg that could not be measured refused above. Gas UNITS are
+  // deliberately absent: they drift 2.07x
   // block-to-block inside the quote window (measured on Base 2026-08-31), so
   // binding them would refuse fundable swaps.
   const debitPlan = buildBoundDebitPlan({
-    legs: legs.map((leg) => ({ role: leg.role, unpriced: false })),
+    legs: legs.map((leg) => ({ role: leg.role, pricing: "measured" as const })),
     feeCap,
   });
   const outcome = await judgeSpendability(input.client, {
@@ -489,6 +549,9 @@ export async function evaluateKyberQuoteSpendability(
     sourceRequiredRaw: input.amountIn.toString(10),
     nativeRequiredRaw: debit.totalRaw,
     debitPlan,
+    ...(input.readInFlightBroadcast === undefined
+      ? {}
+      : { readInFlightBroadcast: input.readInFlightBroadcast }),
   });
   return { ...outcome, debitPlan: outcome.preview === undefined ? undefined : debitPlan };
 }
@@ -706,6 +769,8 @@ export interface KyberPreSignSpendabilityInput {
   readonly legIndex: number;
   /** The request that will be serialized - the only place its real prices exist. */
   readonly request: FinalSignedRequest;
+  /** Injectable for tests; production reads Vex's own durable broadcast record. */
+  readonly readInFlightBroadcast?: InFlightBroadcastReader | undefined;
 }
 
 /**
@@ -773,14 +838,37 @@ export async function assertKyberPreSignSpendability(
       : leg,
   );
 
+  // EVERY LATER LEG IS CHARGED AT ITS APPROVED CEILING, not at this request's
+  // price. This leg's price is a fact about bytes that exist; a later leg's is
+  // not yet decided, and the only thing known about it is that this gate will
+  // let it be prepared anywhere up to the ceiling its role was quoted under. A
+  // ceiling that has not been bound for a role is a leg this execution cannot
+  // reason about at all, and it refuses (`legNotInPlan`) rather than falling
+  // back to a cheaper number.
+  let missingRoleCap = false;
+  const capForRemainingLeg = (leg: KyberDebitLeg, offset: number): LegFeeCap => {
+    if (offset === 0) return feeCap;
+    const approved = planFeeCapForRole(plan.approvedPlan, leg.role);
+    if (approved === null) {
+      missingRoleCap = true;
+      return feeCap;
+    }
+    return approved;
+  };
+  const reserveFeeCap = toLegFeeCap(plan.approvedPlan.reserve.feeCap);
+
   const debit = await priceNativeDebit(input.client, {
     chainId: plan.chainId,
     wallet: plan.wallet,
     legs: remaining,
     firstNonce: request.nonce,
     reserveGasUnits: plan.reserveGasUnits,
-    feeCap,
+    feeCapForLeg: capForRemainingLeg,
+    reserveFeeCap,
   });
+  if (missingRoleCap) {
+    throw refusal(unavailable(nativeAssetRef(plan.chainId), CAUSES.legNotInPlan));
+  }
   if (!debit.ok) {
     throw refusal(unavailable(nativeAssetRef(plan.chainId), debit.cause));
   }
@@ -796,6 +884,9 @@ export async function assertKyberPreSignSpendability(
     source: plan.source,
     sourceRequiredRaw: plan.sourceRequiredRaw,
     nativeRequiredRaw: debit.totalRaw,
+    ...(input.readInFlightBroadcast === undefined
+      ? {}
+      : { readInFlightBroadcast: input.readInFlightBroadcast }),
   });
   if (outcome.eligibility.kind !== "executable") {
     throw refusal(outcome.eligibility);

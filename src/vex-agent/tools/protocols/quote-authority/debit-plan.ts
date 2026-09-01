@@ -96,20 +96,37 @@ const boundFeeCapSchema = z.discriminatedUnion("mode", [
 ]);
 
 /**
+ * How a leg's gas UNITS were arrived at when the quote was answered.
+ *
+ *   - `measured`: a fresh `eth_estimateGas` of that leg's own calldata.
+ *   - `conservative`: the leg could not be simulated yet - a swap through an
+ *     ERC-20 the router may not yet move reverts inside `transferFrom` before
+ *     its allowance leg lands - so the figure came from the venue's own quoter
+ *     with this repository's headroom policy applied on top.
+ *
+ * THERE IS NO THIRD MEMBER, and that is the correction of 2026-09-01. A leg
+ * with no figure at all used to be carried as `unpriced`, which let a quote
+ * answer `executable` against a total that was an explicit LOWER BOUND and let
+ * an allowance leg be signed before the swap's cost was known. A leg for which
+ * neither a measurement nor a conservative figure exists now makes the whole
+ * debit unstatable, so the quote is not executable and the execute refuses
+ * before the FIRST signature.
+ */
+export type LegGasPricing = "measured" | "conservative";
+
+/**
  * One leg of the approved plan.
  *
- * `unpriced` is the honest marker for a leg whose gas UNITS could not be
- * measured when the quote was answered - a swap through an ERC-20 the router may
- * not yet move cannot be simulated before its allowance leg lands, so its
- * estimate reverts inside `transferFrom`. Such a leg is bound by ROLE and by
- * PRICE CAP and left unbound in units, and the disclosed debit total that
- * included it was an explicit LOWER BOUND (ratified 2026-08-31). It is not the
- * same statement as a leg that costs nothing.
+ * `pricing` records the BASIS of the units figure, not the figure itself: gas
+ * units are deliberately never bound quote-to-execute (see this file's header).
+ * It travels so the approval card can say which legs were priced from a
+ * conservative estimate rather than a measurement, which is a materially
+ * different statement to a person deciding whether to sign.
  */
 export interface BoundDebitLeg {
   readonly role: NativeDebitLegRole;
   readonly feeCap: BoundFeeCap;
-  readonly unpriced: boolean;
+  readonly pricing: LegGasPricing;
 }
 
 /**
@@ -133,6 +150,7 @@ export interface BoundDebitPlan {
 }
 
 const legRoleSchema = z.enum(["allowance_reset", "allowance", "swap", "swap_fee"]);
+const legGasPricingSchema = z.enum(["measured", "conservative"]);
 
 /**
  * The shape a bound plan must still have when it comes back out of storage.
@@ -147,7 +165,7 @@ export const boundDebitPlanSchema = z.object({
       z.object({
         role: legRoleSchema,
         feeCap: boundFeeCapSchema,
-        unpriced: z.boolean(),
+        pricing: legGasPricingSchema,
       }),
     )
     .min(1)
@@ -191,12 +209,12 @@ export function toLegFeeCap(cap: BoundFeeCap): LegFeeCap {
  * ceiling today's executors take.
  */
 export function buildBoundDebitPlan(input: {
-  readonly legs: readonly { readonly role: NativeDebitLegRole; readonly unpriced: boolean }[];
+  readonly legs: readonly { readonly role: NativeDebitLegRole; readonly pricing: LegGasPricing }[];
   readonly feeCap: LegFeeCap;
 }): BoundDebitPlan {
   const feeCap = boundFeeCapFrom(input.feeCap);
   return {
-    legs: input.legs.map((leg) => ({ role: leg.role, feeCap, unpriced: leg.unpriced })),
+    legs: input.legs.map((leg) => ({ role: leg.role, feeCap, pricing: leg.pricing })),
     reserve: { kind: "zero_value_self_transfer", feeCap },
   };
 }
@@ -258,7 +276,7 @@ export function canonicalizeDebitPlan(plan: BoundDebitPlan): string {
       ? `eip1559:${value.maxFeePerGasWei}:${value.maxPriorityFeePerGasWei}`
       : `legacy:${value.gasPriceWei}`;
   const legs = plan.legs
-    .map((leg) => `${leg.role}@${cap(leg.feeCap)}@${leg.unpriced ? "unpriced" : "priced"}`)
+    .map((leg) => `${leg.role}@${cap(leg.feeCap)}@${leg.pricing}`)
     .join(";");
   return `legs[${legs}]|reserve[${plan.reserve.kind}@${cap(plan.reserve.feeCap)}]`;
 }

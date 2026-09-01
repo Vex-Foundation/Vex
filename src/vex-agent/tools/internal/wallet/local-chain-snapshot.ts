@@ -29,6 +29,7 @@ import type {
 import { isTokenDecimals, projectBalanceRow } from "../../protocols/amount-display.js";
 import type { ConciseKhalaniToken } from "../../protocols/khalani/projectors.js";
 import { summarizeProtocolError } from "../../protocols/runtime/errors.js";
+import { throwIfAborted } from "@utils/cancellation.js";
 import logger from "@utils/logger.js";
 
 /**
@@ -161,6 +162,11 @@ export async function readLocalChainSnapshot(
       );
       totalUsd += heldUsd(token.balanceWei, token.decimals, token.priceUsd);
     }
+    // The balance read itself takes no signal, so a Stop that lands entirely
+    // inside it raises nothing. Checked here, at this lane's single publication
+    // point, so a cancelled turn can never contribute rows to an answer: the
+    // handler publishes a snapshot only from reads that were still wanted.
+    throwIfAborted(signal);
     return {
       ok: true,
       scan,
@@ -173,6 +179,14 @@ export async function readLocalChainSnapshot(
       })),
     };
   } catch (err) {
+    // An operator Stop is the CALLER's outcome, never this chain's. It is
+    // rethrown BEFORE the fail-soft mapping, because a cancelled read observed
+    // nothing: folding it into a degraded chain result would let the caller
+    // publish a successful-looking envelope, with this chain merely listed as
+    // failed, out of a turn the user stopped (rule 05: cancelled is a distinct
+    // state, not an ordinary failure). Same rule as the sibling Solana and
+    // Khalani branches in `internal/wallet/read.ts`.
+    throwIfAborted(signal);
     // Owner decree (2026-08-02): the REAL cause reaches the agent. This was a
     // bare `catch {}` - the error object was dropped on the floor, so a dead
     // RPC, a bad token in the scan set and a chain misconfiguration were all

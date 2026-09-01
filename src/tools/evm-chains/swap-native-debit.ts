@@ -33,8 +33,6 @@
  * top double-counts it, and is the arithmetic mistake this module's tests pin.
  */
 
-import { z } from "zod";
-
 import type { Address, Hex } from "viem";
 
 import {

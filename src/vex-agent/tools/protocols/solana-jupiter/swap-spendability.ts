@@ -279,3 +279,63 @@ export function preSignSpendabilityRefusal(eligibility: QuoteEligibility): VexEr
       return null;
   }
 }
+
+/**
+ * The refusal a swap earns when it costs MORE than the card disclosed.
+ *
+ * WHY SOLVENCY IS NOT CONSENT. The approval card states one native figure for
+ * this swap: the `required` leg of the quote-time {@link SpendabilityPreview},
+ * which is the whole measured debit of the quoted message - principal when SOL
+ * itself is spent, the exact message fee (network plus priority), the certified
+ * tip, every wallet-paid account rent, and the follow-up reserve. Execute then
+ * takes a FRESH `/build`, and the only bound on its priority fee was Vex's
+ * global 10,000,000-lamport ceiling in `build-response-guard.ts`. A person who
+ * approved a 7,321-lamport cost could therefore have signed a transaction
+ * costing three orders of magnitude more, and every balance check would still
+ * have passed because the wallet could afford it. Being able to pay is not
+ * agreeing to pay.
+ *
+ * So the disclosed figure becomes the BOUND: the fresh message's own measured
+ * debit may not exceed the number the card carried. The comparison is absolute
+ * and in atomic lamports (rule 90: a money tolerance is never a percentage),
+ * and it is made in the pre-sign window against the exact message, on the same
+ * derivation the quote used, so the two figures cannot drift by construction.
+ *
+ * A rise is RECOVERABLE and says so: priority fees swing by the minute, and a
+ * new quote both re-prices the swap and discloses the new ceiling for the
+ * person to approve.
+ *
+ * `approvedCeilingRaw` is the untrusted string restored from the row's
+ * persisted preview. A value that is not an exact atomic integer is refused
+ * rather than coerced: a ceiling this build cannot read is a ceiling it cannot
+ * enforce, and rule 90 fails closed there.
+ */
+export function approvedNativeCostRefusal(
+  observation: JupiterSpendabilityObservation,
+  approvedCeilingRaw: string,
+): VexError | null {
+  if (observation.debit === null) {
+    // The debit could not be measured at all. That is `balance_unavailable`
+    // and `preSignSpendabilityRefusal` already owns the refusal for it; this
+    // check has nothing to compare and must not invent a second verdict.
+    return null;
+  }
+  if (!/^\d+$/.test(approvedCeilingRaw)) {
+    return new VexError(
+      ErrorCodes.SOLANA_RPC_ERROR,
+      "Refusing to sign: the approved native cost recorded with this quote could not be read, so what the swap may cost cannot be bound.",
+      "Nothing was signed or broadcast. This is a fail-closed refusal; call solana__swap_quote again and approve the fresh quote.",
+    );
+  }
+  const ceiling = BigInt(approvedCeilingRaw);
+  const actual = BigInt(observation.debit.totalLamports);
+  if (actual <= ceiling) return null;
+  return new VexError(
+    // NOT an insufficient-balance code: the wallet can pay. This is a
+    // quote-to-execute cost divergence, and the activity row files it as one.
+    ErrorCodes.SOLANA_SWAP_FAILED,
+    `Refusing to sign: this transaction's native cost is ${actual} lamports (${formatRawAmount(observation.debit.totalLamports, SOL_DECIMALS) ?? observation.debit.totalLamports} SOL),`
+      + ` above the ${ceiling} lamports (${formatRawAmount(approvedCeilingRaw, SOL_DECIMALS) ?? approvedCeilingRaw} SOL) the approved quote disclosed. The wallet can afford it; nobody agreed to it.`,
+    "Nothing was signed or broadcast. Priority fees move by the minute: call solana__swap_quote again and approve the new cost, or lower computeUnitPricePercentile.",
+  );
+}

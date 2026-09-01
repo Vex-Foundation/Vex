@@ -110,28 +110,55 @@ export type SolanaSwapInputAsset =
   | { readonly kind: "spl"; readonly mint: string };
 
 /**
- * The resolution, or the named reason the request is ambiguous.
+ * The resolution, or the named reason the request cannot be resolved.
  *
- * `ambiguous_wrapped_sol_input` is REJECTED BY NAME rather than resolved to
- * either side (owner decision 2026-08-31): an explicit wSOL mint asks to spend
- * an SPL balance while `wrapAndUnwrapSol` asks Jupiter to create and fund that
- * balance out of lamports, and guessing which the caller meant would spend the
- * wrong asset. Rule 90 forbids resolving a money-path ambiguity silently.
+ * Two DISTINCT refusals, never collapsed into one (rule 04):
+ *
+ * `ambiguous_wrapped_sol_input` - an explicit wSOL mint asks to spend an SPL
+ * balance while `wrapAndUnwrapSol` asks Jupiter to create and fund that balance
+ * out of lamports. Guessing which the caller meant would spend the wrong asset.
+ *
+ * `native_sol_without_wrapping` - the symbol asks for native lamports while
+ * wrapping is disabled, and the provider has no native landing for that
+ * combination. See the live proof cited on
+ * {@link resolveSolanaSwapInputAsset}.
+ *
+ * Rule 90 forbids resolving a money-path ambiguity or contradiction silently.
  */
+export type SolanaSwapInputRefusal =
+  | "ambiguous_wrapped_sol_input"
+  | "native_sol_without_wrapping";
+
 export type SolanaSwapInputResolution =
   | { readonly ok: true; readonly asset: SolanaSwapInputAsset }
-  | { readonly ok: false; readonly reason: "ambiguous_wrapped_sol_input"; readonly message: string };
+  | { readonly ok: false; readonly reason: SolanaSwapInputRefusal; readonly message: string };
 
 /**
  * Decide which balance a swap's input side spends.
  *
- * The three cases, per the owner decision:
+ * The four cases:
  *
  * | `query` | `wrapAndUnwrapSol` | Result |
  * | --- | --- | --- |
- * | a symbol resolving to wSOL (`SOL`) | any | native lamports |
+ * | a symbol resolving to wSOL (`SOL`) | `true` | native lamports |
+ * | a symbol resolving to wSOL (`SOL`) | `false` | REFUSED, contradictory |
  * | the explicit `So111...` mint | `false` | SPL wSOL |
  * | the explicit `So111...` mint | `true` | REFUSED, ambiguous |
+ *
+ * WHY `SOL` PLUS WRAPPING-OFF IS A CONTRADICTION, measured rather than
+ * reasoned. Live `/build` probe 2026-09-01, wSOL to USDC, 0.01 SOL, the SAME
+ * taker and amount on both calls (archived with provenance at
+ * `src/__tests__/solana/fixtures/live-captures/jupiter-build-wrap-knob-2026-09-01.json`):
+ *
+ *   - `wrapAndUnwrapSol: true` returned setup instructions carrying a System
+ *     `Transfer` of exactly `inAmount` lamports from the taker followed by
+ *     `SyncNative`, and a cleanup `CloseAccount`. The lamports ARE the source.
+ *   - `wrapAndUnwrapSol: false` returned NO transfer, NO `SyncNative` and NO
+ *     cleanup. The swap spends an existing wrapped-SOL token account.
+ *
+ * So there is no provider-supported native landing for wrapping-off, and
+ * classifying it as native would have checked the wallet's lamports while the
+ * transaction drew on a wSOL token account. It is refused BY NAME instead.
  *
  * Any other resolved mint is that mint's SPL balance, whatever the query said.
  */
@@ -147,7 +174,19 @@ export function resolveSolanaSwapInputAsset(input: {
     return { ok: true, asset: { kind: "spl", mint: input.resolvedMint } };
   }
   if (input.query.trim() !== SOL_MINT) {
-    // A symbol (`SOL`, `sol`) means the native asset the symbol names.
+    // A symbol (`SOL`, `sol`) means the native asset the symbol names, and
+    // Jupiter can only spend that by wrapping it.
+    if (!input.wrapAndUnwrapSol) {
+      return {
+        ok: false,
+        reason: "native_sol_without_wrapping",
+        message:
+          `tokenIn "${input.query.trim()}" with wrapAndUnwrapSol disabled is contradictory: the symbol names native SOL, `
+          + "which Jupiter can only spend by wrapping it, and with wrapping disabled the build spends an existing "
+          + "wrapped-SOL token account instead. Enable wrapAndUnwrapSol to spend native SOL, or pass tokenIn "
+          + `"${SOL_MINT}" to spend wrapped SOL you already hold.`,
+      };
+    }
     return { ok: true, asset: { kind: "native" } };
   }
   if (input.wrapAndUnwrapSol) {

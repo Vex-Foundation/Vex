@@ -254,6 +254,35 @@ export interface UniswapLegFeeBounds {
 }
 
 /**
+ * The chain now REQUIRES more per gas than the approved quote's ceiling.
+ *
+ * A distinct failure from {@link UniswapFeeCapExceededError}, and it exists
+ * because the two describe opposite directions of the same window. That one
+ * catches a prepared request priced ABOVE the ceiling. This one catches the
+ * case the ceiling itself creates: because the cap is forced into preparation,
+ * the request can never exceed it, so a base-fee rise produces a signed
+ * transaction priced BELOW what the node currently wants - underpriced, stuck
+ * pending, and ambiguous rather than refused. MetaMask has the same shape in
+ * its own submit path (`strategy/server/server-submit.ts:518-565` re-reads the
+ * live requirement before committing rather than trusting the quote's copy).
+ *
+ * Recoverable and named, in the same family as the leg-set refusal: nothing was
+ * signed, and a fresh quote prices the swap at the market that exists now.
+ */
+export class UniswapApprovedGasPriceExceededError extends Error {
+  constructor(field: string, liveRaw: string, approvedRaw: string) {
+    super(
+      `Refused before signing: the gas price moved past what you approved - the chain now asks `
+      + `${liveRaw} for ${field} and this quote was approved at ${approvedRaw}. Signing at the `
+      + "approved ceiling would broadcast an underpriced transaction that sits pending instead of "
+      + "settling. Nothing was signed and nothing was broadcast. Request a fresh "
+      + "uniswap__swap_quote and execute against that.",
+    );
+    this.name = "UniswapApprovedGasPriceExceededError";
+  }
+}
+
+/**
  * A leg whose current requirement no longer fits the ceiling its debit was
  * computed under.
  *
@@ -408,6 +437,11 @@ export async function signUniswapTransaction(
   const finalRequest = { ...prepared, gas: gasLimit, nonce };
   if (bounds !== undefined) {
     assertWithinLegFeeBounds(finalRequest, bounds);
+    // THE OTHER DIRECTION. The line above proves the bytes are not priced above
+    // the ceiling; this proves the ceiling is still enough for the chain. Read
+    // here rather than inside the fence because it IS a provider call and
+    // nothing may reach the network after `onBeforeSign` resolves.
+    await assertApprovedCapStillSuffices(publicClient, bounds);
   }
   // THE FENCE. Every field below is read off the object on the next line, so a
   // guard cannot pass on a value the signer does not receive.
@@ -487,6 +521,86 @@ function assertWithinLegFeeBounds(
   if (!verdict.withinCap) {
     throw new UniswapFeeCapExceededError(verdict.field, verdict.requiredRaw, verdict.approvedRaw);
   }
+}
+
+/**
+ * Refuse when the LIVE fee requirement has risen above the approved ceiling.
+ *
+ * SAME BASIS ON BOTH SIDES, which is what makes the comparison meaningful: the
+ * quote established its ceiling from `estimateFeesPerGas` (falling back to
+ * `getGasPrice`) in `native-debit-plan.ts`'s `resolveUniswapLegFeeCap`, and this
+ * reads the same two actions in the same order. A rise between them is a rise
+ * in the same number the human approved, not a comparison of two different
+ * quantities.
+ *
+ * A READ THAT FAILS DOES NOT REFUSE. The ceiling is still enforced in the other
+ * direction by `assertWithinLegFeeBounds`, the wallet's solvency is still proven
+ * by the debit gate, and turning an RPC hiccup into a refused swap would trade a
+ * real failure for a hypothetical one. What this cannot do is claim a check it
+ * did not perform, so it stays silent rather than asserting.
+ *
+ * A PRICING-MODE CHANGE IS NOT A RISE. If the chain now answers in the other
+ * shape than the cap was approved in, nothing here can compare them; the
+ * mode-mismatch refusal on the prepared request is the owner of that case.
+ */
+async function assertApprovedCapStillSuffices(
+  publicClient: PublicClient<Transport, Chain>,
+  bounds: UniswapLegFeeBounds,
+): Promise<void> {
+  let live: LegFeeCap | null;
+  try {
+    live = await readLiveFeeRequirement(publicClient);
+  } catch {
+    return;
+  }
+  if (live === null || live.mode !== bounds.cap.mode) return;
+
+  if (live.mode === "eip1559" && bounds.cap.mode === "eip1559") {
+    if (live.maxFeePerGasWei > bounds.cap.maxFeePerGasWei) {
+      throw new UniswapApprovedGasPriceExceededError(
+        "maxFeePerGas",
+        live.maxFeePerGasWei.toString(10),
+        bounds.cap.maxFeePerGasWei.toString(10),
+      );
+    }
+    if (live.maxPriorityFeePerGasWei > bounds.cap.maxPriorityFeePerGasWei) {
+      throw new UniswapApprovedGasPriceExceededError(
+        "maxPriorityFeePerGas",
+        live.maxPriorityFeePerGasWei.toString(10),
+        bounds.cap.maxPriorityFeePerGasWei.toString(10),
+      );
+    }
+    return;
+  }
+  if (live.mode === "legacy" && bounds.cap.mode === "legacy"
+    && live.gasPriceWei > bounds.cap.gasPriceWei) {
+    throw new UniswapApprovedGasPriceExceededError(
+      "gasPrice",
+      live.gasPriceWei.toString(10),
+      bounds.cap.gasPriceWei.toString(10),
+    );
+  }
+}
+
+/** The chain's CURRENT suggestion, in the same order the quote's cap was read. */
+async function readLiveFeeRequirement(
+  publicClient: PublicClient<Transport, Chain>,
+): Promise<LegFeeCap | null> {
+  try {
+    const fees = await publicClient.estimateFeesPerGas();
+    if (fees.maxFeePerGas !== undefined) {
+      return {
+        mode: "eip1559",
+        maxFeePerGasWei: fees.maxFeePerGas,
+        maxPriorityFeePerGasWei: fees.maxPriorityFeePerGas ?? 0n,
+      };
+    }
+    if (fees.gasPrice !== undefined) return { mode: "legacy", gasPriceWei: fees.gasPrice };
+  } catch {
+    // Same fall-through the quote-time reader uses: a chain that cannot answer
+    // the 1559 question can still state a gas price.
+  }
+  return { mode: "legacy", gasPriceWei: await publicClient.getGasPrice() };
 }
 
 /**

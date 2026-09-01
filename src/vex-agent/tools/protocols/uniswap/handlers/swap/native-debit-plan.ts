@@ -20,23 +20,31 @@
  * plan is how a wallet funds the swap, watches it confirm, and then cannot pay
  * the fee leg it was told about (contract C2.5).
  *
- * ## What "unpriced" means, and why it is not a silent gap
+ * ## MEASURED, CONSERVATIVE, or NO TOTAL AT ALL
  *
  * A leg's gas comes from a FRESH `eth_estimateGas` of that leg's own calldata
  * (the policy `evm-chains/gas-limit-headroom.ts` states: never a cached or
- * hardcoded limit), or from the venue's own QuoterV2 figure for the swap - and
- * a V2 route carries none at all, measured live 2026-08-31. A swap through an
- * ERC-20 the router may not yet move CANNOT be estimated before its allowance
- * leg lands - the estimate reverts inside `transferFrom` - so at the earlier
- * windows that leg's gas is genuinely unknown.
+ * hardcoded limit). That is the MEASURED basis. A swap through an ERC-20 the
+ * router may not yet move CANNOT be estimated before its allowance leg lands -
+ * the estimate reverts inside `transferFrom` - so for that leg the venue's own
+ * QuoterV2 figure is used instead, with the same headroom policy applied on
+ * top. That is the CONSERVATIVE basis, and it is a real number the total
+ * contains, not a gap in it.
  *
- * Such a leg is carried as UNPRICED rather than as zero: the total becomes an
- * explicit LOWER BOUND, a shortfall against it still refuses (a wallet that
- * cannot cover even the priceable legs cannot cover them all), and coverage
- * against it is disclosed as provisional, never as proof. The window that
- * actually matters admits none of it: at the swap leg's own pre-sign gate the
- * swap gas is exact, the fee leg is a plain transfer that estimates, and the
- * reserve is priced - so the money moment is fully priced or it refuses.
+ * A leg with NEITHER is the correction of 2026-09-01. Until then such a leg was
+ * carried as "unpriced": the total was an explicit LOWER BOUND, the quote could
+ * still answer `executable` against it, and an allowance leg could therefore be
+ * SIGNED before the swap's own cost was known - allowance granted, and only
+ * then the discovery that the swap cannot be paid for. So a leg with no figure
+ * now makes the whole debit UNSTATABLE: the quote is not executable, and every
+ * pre-sign gate refuses before the first signature. The disclosed total is
+ * never again a bound the human is asked to authorize.
+ *
+ * The remaining honest gap is a V2 route on a first-time ERC-20 allowance:
+ * QuoterV2 states a `gasEstimate` and the V2 `getAmountsOut` path states none
+ * (measured live 2026-08-31), so that combination has no conservative figure
+ * and refuses. Refusing costs a re-quote after the allowance lands; the
+ * alternative cost the user an allowance and a stranded position.
  */
 
 import { type Address, type Hex } from "viem";
@@ -60,6 +68,8 @@ import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
 // executor cannot disagree about where the fee goes.
 import { UNISWAP_FEE_RECEIVER_EVM as FEE_RECEIVER, type UniswapFeeCharge } from "@tools/uniswap/fee/index.js";
 import type { UniswapToken } from "@tools/uniswap/types.js";
+
+import type { LegGasPricing } from "../../../quote-authority/debit-plan.js";
 
 import type { QuotedRoute } from "./route-quote.js";
 
@@ -126,19 +136,27 @@ export interface UniswapSpendabilityClient extends NativeReadClient {
 }
 
 /**
- * One leg of the plan as this venue builds it: the exact transaction, and the
- * gas the leg is authorized for when that can be measured yet.
+ * The gas a leg is authorized for, together with HOW that figure was reached.
  *
- * `gasLimit: null` is the UNPRICED case documented in the file header. It is a
- * distinct state from `0n`, which would silently price a real transaction as
- * free.
+ * `null` is a distinct state from `{ limit: 0n }`, which would silently price a
+ * real transaction as free, and from a conservative figure, which is a real
+ * number arrived at without a simulation. It means no figure exists at all, and
+ * every consumer of this module treats it as a refusal.
+ */
+export type PlannedLegGas =
+  | { readonly limit: bigint; readonly pricing: LegGasPricing }
+  | null;
+
+/**
+ * One leg of the plan as this venue builds it: the exact transaction, and the
+ * gas the leg is authorized for when a figure exists.
  */
 export interface UniswapPlannedLeg {
   readonly role: NativeDebitLegRole;
   readonly to: Address;
   readonly data: Hex;
   readonly valueWei: bigint;
-  readonly gasLimit: bigint | null;
+  readonly gas: PlannedLegGas;
   /** True once this leg's bytes are already in flight: its money is spent. */
   readonly broadcast: boolean;
 }
@@ -153,11 +171,12 @@ export type UniswapNativeDebit =
       readonly legs: readonly NativeDebitLegCost[];
       readonly reserveWei: bigint;
       /**
-       * Legs whose gas could not be measured yet and are therefore NOT in the
-       * total. Non-empty means `totalWei` is a LOWER BOUND, and every consumer
-       * says so out loud.
+       * Legs whose gas figure came from the quoter plus headroom rather than
+       * from a simulation of that exact call. They ARE in the total - non-empty
+       * does not make it a bound - and every consumer names them so a person
+       * knows which component was not measured.
        */
-      readonly unpricedRoles: readonly NativeDebitLegRole[];
+      readonly conservativeRoles: readonly NativeDebitLegRole[];
     }
   | { readonly ok: false; readonly cause: string; readonly role: string };
 
@@ -183,13 +202,13 @@ export function planUniswapDebitLegs(input: {
   readonly charge: UniswapFeeCharge;
   readonly currentAllowance: bigint;
   readonly now?: () => number;
-}): readonly Omit<UniswapPlannedLeg, "gasLimit" | "broadcast">[] {
+}): readonly Omit<UniswapPlannedLeg, "gas" | "broadcast">[] {
   const { tokenIn, charge, quoted } = input;
   const swapAmount = charge.swapAmountRaw;
   const needsAllowance = !tokenIn.isNative && input.currentAllowance < swapAmount;
   const needsReset = needsAllowance && input.currentAllowance > 0n;
 
-  const legs: Omit<UniswapPlannedLeg, "gasLimit" | "broadcast">[] = [];
+  const legs: Omit<UniswapPlannedLeg, "gas" | "broadcast">[] = [];
   if (needsReset) {
     const reset = buildApproveTx(tokenIn.address as Address, input.router, 0n);
     legs.push({ role: "allowance_reset", to: reset.to, data: reset.data, valueWei: reset.value });
@@ -235,7 +254,7 @@ export function planUniswapDebitLegs(input: {
 async function estimateLegGas(
   client: UniswapSpendabilityClient,
   wallet: Address,
-  leg: Omit<UniswapPlannedLeg, "gasLimit" | "broadcast">,
+  leg: Omit<UniswapPlannedLeg, "gas" | "broadcast">,
 ): Promise<bigint | null> {
   try {
     const estimate = await client.estimateGas({
@@ -298,21 +317,28 @@ export async function priceUniswapNativeDebit(input: {
   readonly signal?: AbortSignal;
 }): Promise<UniswapNativeDebit> {
   const priced: NativeDebitLeg[] = [];
-  const unpricedRoles: NativeDebitLegRole[] = [];
+  const conservativeRoles: NativeDebitLegRole[] = [];
 
   for (const leg of input.legs) {
     if (leg.broadcast) continue;
-    if (leg.gasLimit === null) {
-      unpricedRoles.push(leg.role);
-      continue;
+    // NO FIGURE, NO TOTAL. A leg this build cannot cost is a leg nobody can be
+    // asked to authorize, so the whole debit is unstatable rather than short by
+    // one component (see this file's header).
+    if (leg.gas === null) {
+      return {
+        ok: false,
+        cause: UNISWAP_SPENDABILITY_CAUSES.legGasUnpriceable,
+        role: leg.role,
+      };
     }
+    if (leg.gas.pricing === "conservative") conservativeRoles.push(leg.role);
     const l1 = await estimateLegL1DataFee(input.client, {
       chainId: input.chainId,
       transaction: {
         to: leg.to,
         data: leg.data,
         value: leg.valueWei,
-        gas: leg.gasLimit,
+        gas: leg.gas.limit,
         nonce: input.nonce,
       },
       feeCap: input.feeCap,
@@ -321,7 +347,7 @@ export async function priceUniswapNativeDebit(input: {
     priced.push({
       role: leg.role,
       valueWei: leg.valueWei,
-      gasLimit: leg.gasLimit,
+      gasLimit: leg.gas.limit,
       feeCap: input.feeCap,
       l1,
       broadcast: false,
@@ -353,15 +379,23 @@ export async function priceUniswapNativeDebit(input: {
     totalRaw: total.totalRaw,
     legs: total.legs,
     reserveWei: total.reserveWei,
-    unpricedRoles,
+    conservativeRoles,
   };
 }
 
-/** Price one leg's gas where it can be measured, else carry it unpriced. */
+/**
+ * Give every leg a gas figure and the BASIS it came from.
+ *
+ * The order is deliberate: an already-broadcast leg needs none, a leg whose
+ * request has fixed its gas is measured by definition, a live estimate is
+ * MEASURED, and only a swap leg that could not be simulated falls back to the
+ * quoter's own figure as CONSERVATIVE. A leg that reaches the end of that list
+ * with nothing gets `null`, and the debit refuses on it.
+ */
 export async function estimateUniswapPlanGas(input: {
   readonly client: UniswapSpendabilityClient;
   readonly wallet: Address;
-  readonly legs: readonly Omit<UniswapPlannedLeg, "gasLimit" | "broadcast">[];
+  readonly legs: readonly Omit<UniswapPlannedLeg, "gas" | "broadcast">[];
   /**
    * The venue's OWN gas figure for the swap, when QuoterV2 stated one. Used
    * only when the live estimate could not run - it is a measurement by the
@@ -377,20 +411,23 @@ export async function estimateUniswapPlanGas(input: {
   for (const leg of input.legs) {
     const broadcast = input.broadcastRoles?.has(leg.role) ?? false;
     if (broadcast) {
-      out.push({ ...leg, gasLimit: null, broadcast: true });
+      out.push({ ...leg, gas: null, broadcast: true });
       continue;
     }
     const fixed = input.fixedGas?.get(leg.role);
     if (fixed !== undefined) {
-      out.push({ ...leg, gasLimit: fixed, broadcast: false });
+      // The request that is about to be signed carries this figure, so it is a
+      // fact about the exact bytes rather than an estimate of them.
+      out.push({ ...leg, gas: { limit: fixed, pricing: "measured" }, broadcast: false });
       continue;
     }
     const estimated = await estimateLegGas(input.client, input.wallet, leg);
-    const gasLimit = estimated
-      ?? (leg.role === "swap" && input.quotedSwapGas !== undefined
-        ? gasLimitWithHeadroom(input.quotedSwapGas)
-        : null);
-    out.push({ ...leg, gasLimit, broadcast: false });
+    const gas: PlannedLegGas = estimated !== null
+      ? { limit: estimated, pricing: "measured" }
+      : leg.role === "swap" && input.quotedSwapGas !== undefined
+        ? { limit: gasLimitWithHeadroom(input.quotedSwapGas), pricing: "conservative" }
+        : null;
+    out.push({ ...leg, gas, broadcast: false });
   }
   return out;
 }

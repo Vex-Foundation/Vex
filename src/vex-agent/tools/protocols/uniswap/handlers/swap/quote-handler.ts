@@ -383,15 +383,20 @@ async function measureSpendability(input: {
       debit,
     });
     // The plan the SNAPSHOT binds, built from the very legs just priced: the
-    // roles in broadcast order, each leg's unpriced marker, and the one ceiling
-    // every leg was costed at. A leg whose gas could not be measured is bound by
-    // role and by price and left unbound in units - that is the ratified
-    // treatment of the first-time ERC-20 allowance case, and gas UNITS are never
-    // bound quote-to-execute (2.07x measured drift, WP2-K).
-    const debitPlan = buildBoundDebitPlan({
-      legs: legs.map((leg) => ({ role: leg.role, unpriced: leg.gasLimit === null })),
-      feeCap,
-    });
+    // roles in broadcast order, each leg's PRICING BASIS, and the one ceiling
+    // every leg was costed at. Gas UNITS are never bound quote-to-execute
+    // (2.07x measured drift, WP2-K); the basis is, because a conservatively
+    // priced leg is a materially different statement to the person signing.
+    //
+    // A leg with NO figure at all cannot reach here: `priceUniswapNativeDebit`
+    // already refused the whole debit, `debit.ok` is false, and the plan is
+    // omitted so the ineligible quote seals nothing it could later authorize.
+    const boundLegs = legs.flatMap((leg) =>
+      leg.gas === null ? [] : [{ role: leg.role, pricing: leg.gas.pricing }],
+    );
+    const debitPlan = debit.ok && boundLegs.length === legs.length
+      ? buildBoundDebitPlan({ legs: boundLegs, feeCap })
+      : undefined;
     const judged = judgeUniswapSpendability(observation, routeEligibility, debitPlan);
     return {
       eligibility: judged.eligibility,
@@ -400,7 +405,7 @@ async function measureSpendability(input: {
       debitPlan,
       note: uniswapSpendabilityNote(
         judged.eligibility,
-        debit.ok ? debit.unpricedRoles : [],
+        debit.ok ? debit.conservativeRoles : [],
       ),
     };
   } catch (err) {

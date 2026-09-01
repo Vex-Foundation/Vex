@@ -36,9 +36,13 @@
  * only meaningful immediately before signing.
  */
 
-import { formatUnits } from "viem";
+import { formatUnits, type Account, type Chain, type Transport, type WalletClient } from "viem";
 
-import { signStageBroadcast, type StagedBroadcastOutcome } from "@tools/evm-chains/staged-broadcast.js";
+import {
+  signStageBroadcast,
+  type DeferredEvmSigner,
+  type StagedBroadcastOutcome,
+} from "@tools/evm-chains/staged-broadcast.js";
 import type { ConfirmedPriorLeg } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import {
   classifyNativeValue,
@@ -83,7 +87,12 @@ export interface RunUniswapFeeLegInput {
   readonly chainId: number;
   readonly tokenDecimals: number;
   readonly publicClient: Parameters<typeof signStageBroadcast>[0];
-  readonly walletClient: Parameters<typeof signStageBroadcast>[1];
+  /**
+   * The account-bound client this leg signs with. Taken as the EAGER shape the
+   * caller already holds and wrapped into the deferred arm below - see
+   * {@link runUniswapFeeLeg} for why the arm matters here.
+   */
+  readonly walletClient: WalletClient<Transport, Chain, Account>;
   /** Anchor on the block the swap confirmed in. */
   readonly priorLeg?: ConfirmedPriorLeg | undefined;
   /**
@@ -117,15 +126,43 @@ export type UniswapFeeLegDebitGate = (request: {
   readonly maxPriorityFeePerGas?: bigint | undefined;
 }) => Promise<void>;
 
-/** Never throws. Every path returns a report. */
+/**
+ * Never throws. Every path returns a report.
+ *
+ * THE DEFERRED ARM, and why this leg may not use the eager one. The eager arm
+ * signs through viem's `signTransaction` WALLET ACTION, which awaits an
+ * `eth_chainId` of its own before it reaches the local account's signer
+ * (measured in viem 2.54.3; `staged-broadcast.ts` documents the same fact for
+ * every venue that reaches the shared primitive). That single round trip sits
+ * BETWEEN the authoritative debit hook and the bytes it authorized, which is the
+ * window contract C2.6 exists to close - and this leg carries a money gate
+ * (`debitGate`), so it is exactly the leg that must not have one. The other
+ * Uniswap legs already sign offline through `signUniswapTransaction`; this makes
+ * the fee leg the same.
+ *
+ * The wrapper's own `onBeforeSign` is deliberately a no-op: the caller's gate
+ * belongs in `hooks.onBeforeSign`, which is the LAST call before the signature
+ * on both arms, whereas the signer's runs one step earlier (before the key is
+ * resolved). Putting it in the later slot is what keeps "nothing between the
+ * gate and the signature" literally true.
+ */
 export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<UniswapFeeCollection> {
   const { plan, feeRowId } = input;
   try {
     assertFeeValueAuthorized(input.chainId, plan);
 
+    const walletClient = input.walletClient;
+    const deferredSigner: DeferredEvmSigner = {
+      kind: "deferred",
+      address: walletClient.account.address,
+      chain: walletClient.chain,
+      onBeforeSign: async () => {},
+      createSigner: async () => walletClient,
+    };
+
     const outcome: StagedBroadcastOutcome = await signStageBroadcast(
       input.publicClient,
-      input.walletClient,
+      deferredSigner,
       plan.txParams,
       {
         ...(input.debitGate === undefined

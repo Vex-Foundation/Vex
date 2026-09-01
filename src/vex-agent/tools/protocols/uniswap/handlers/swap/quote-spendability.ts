@@ -25,6 +25,10 @@ import type { UniswapToken } from "@tools/uniswap/types.js";
 
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import type { BoundDebitPlan } from "../../../quote-authority/debit-plan.js";
+import {
+  judgePendingObservation,
+  type InFlightBroadcastReader,
+} from "../../../quote-authority/pending-debit-compensation.js";
 import type { QuoteEligibility } from "../../../quote-authority/eligibility.js";
 import {
   evaluateSpendability,
@@ -77,6 +81,8 @@ export async function observeUniswapSwapSpendability(input: {
   readonly sourceRequiredRaw: bigint;
   readonly debit: UniswapNativeDebit;
   readonly signal?: AbortSignal;
+  /** Injectable for tests; production reads Vex's own durable broadcast record. */
+  readonly readInFlightBroadcast?: InFlightBroadcastReader | undefined;
 }): Promise<UniswapSpendabilityObservation> {
   const { client, chainId, wallet, tokenIn } = input;
   const nativeSymbol = nativeSymbolFor(chainId);
@@ -85,6 +91,37 @@ export async function observeUniswapSwapSpendability(input: {
     address: NATIVE_TOKEN_ADDRESS,
     symbol: nativeSymbol,
   };
+  const sourceAsset: AssetRef = {
+    chainId,
+    address: tokenIn.isNative ? NATIVE_TOKEN_ADDRESS : tokenIn.address,
+    symbol: tokenIn.isNative ? nativeSymbol : tokenIn.symbol,
+  };
+
+  // DOES `pending` MEAN ANYTHING ON THIS CHAIN. Seven of the eighteen endpoints
+  // a Vex venue reaches answer the tag with the head block or expose no pending
+  // block at all (measured, `evm-chains/pending-block-capability.ts`), so on
+  // those the read below cannot see this wallet's own in-flight spending and is
+  // compensated by Vex's durable record of what it broadcast. Asked BEFORE the
+  // reads: a verdict that refuses makes both reads unusable, and taking them
+  // anyway would spend two round trips to produce numbers no gate may use.
+  // `undefined` selects the parameter's own default reader; it is never a
+  // silent "skip the check".
+  const pending = await judgePendingObservation({ chainId, wallet }, input.readInFlightBroadcast);
+  if (!pending.ok) {
+    return {
+      source: {
+        read: { ok: false, asset: sourceAsset, cause: pending.cause },
+        requiredRaw: input.sourceRequiredRaw.toString(10),
+        symbol: tokenIn.isNative ? nativeSymbol : tokenIn.symbol,
+      },
+      native: {
+        read: { ok: false, asset: nativeAsset, cause: pending.cause },
+        requiredRaw: input.debit.ok ? input.debit.totalRaw : "0",
+        symbol: nativeSymbol,
+      },
+      debit: input.debit,
+    };
+  }
 
   const nativeRead: SourceBalanceRead = await observeNativeSourceBalance(client, {
     chainId,
@@ -159,12 +196,12 @@ export function judgeUniswapSpendability(
  * mean exactly the same thing on both and an agent should not have to learn two
  * vocabularies for one union.
  *
- * The executable arm is not silent when something was left out: a lower-bound
- * total says so, with the leg it could not price and why.
+ * The executable arm is not silent about HOW the total was reached: a leg priced
+ * conservatively is named, with the reason it could not be simulated.
  */
 export function uniswapSpendabilityNote(
   eligibility: QuoteEligibility,
-  unpricedRoles: readonly NativeDebitLegRole[] = [],
+  conservativeRoles: readonly NativeDebitLegRole[] = [],
 ): string {
   switch (eligibility.kind) {
     case "insufficient_balance":
@@ -182,13 +219,15 @@ export function uniswapSpendabilityNote(
         + " plus a measured reserve for the next one."
         + " The route is shown, but this quote does NOT authorize an execute. Top up the native balance, then quote again.";
     default:
-      return unpricedRoles.length === 0
+      return conservativeRoles.length === 0
         ? "The wallet's input balance and its whole native debit (every leg this swap broadcasts, plus a measured follow-up reserve)"
           + " were read at the pending block and both cover this trade. That is a quote-time observation; the authoritative read happens"
           + " immediately before signing."
-        : `The wallet covers the part of this swap's native debit that could be priced, but the ${unpricedRoles.join(" and ")} leg's gas`
-          + " could not be estimated yet (an ERC-20 swap cannot be simulated before its allowance exists), so the figure checked here is a"
-          + " LOWER BOUND, not the whole cost. The authoritative read happens immediately before signing, where every remaining leg is priced.";
+        : `The wallet's input balance and this swap's WHOLE native debit were read at the pending block and both cover this trade.`
+          + ` The ${conservativeRoles.join(" and ")} leg could not be simulated yet (an ERC-20 swap cannot be simulated before its`
+          + " allowance exists), so its gas was priced CONSERVATIVELY from the quoter's own estimate plus headroom rather than measured."
+          + " The total is a whole cost, not a lower bound. The authoritative read happens immediately before signing, where every"
+          + " remaining leg is priced again.";
   }
 }
 
@@ -287,7 +326,7 @@ export function createUniswapPreSignDebitGate(input: {
   readonly wallet: Address;
   readonly tokenIn: UniswapToken;
   /** The whole plan, in broadcast order, from {@link planUniswapDebitLegs}. */
-  readonly legs: readonly Omit<UniswapPlannedLeg, "gasLimit" | "broadcast">[];
+  readonly legs: readonly Omit<UniswapPlannedLeg, "gas" | "broadcast">[];
   readonly feeCap: LegFeeCap;
   /** The FULL requested input amount - swap leg plus fee leg. */
   readonly principalRaw: bigint;
@@ -295,6 +334,8 @@ export function createUniswapPreSignDebitGate(input: {
   readonly feeRaw: bigint;
   /** The venue's own QuoterV2 figure, used only when a live estimate cannot run. */
   readonly quotedSwapGas?: bigint | undefined;
+  /** Injectable for tests; production reads Vex's own durable broadcast record. */
+  readonly readInFlightBroadcast?: InFlightBroadcastReader | undefined;
 }): (role: NativeDebitLegRole) => (request: PreSignRequestFacts) => Promise<void> {
   return (role) => async (request) => {
     const index = input.legs.findIndex((leg) => leg.role === role);
@@ -330,7 +371,13 @@ export function createUniswapPreSignDebitGate(input: {
       fixedGas: new Map([[role, request.gas]]),
     });
 
-    let debit = await priceUniswapNativeDebit({
+    // EVERY REMAINING LEG CARRIES A FIGURE OR THIS REFUSES. `priceUniswapNativeDebit`
+    // owns that rule now: a leg with neither a measurement nor a conservative
+    // estimate makes the debit unstatable, which becomes `balance_unavailable`
+    // below and refuses the signature. There is no window in which a prior leg
+    // may be signed against a total that left a later leg out - which is exactly
+    // what the ratified LOWER BOUND used to permit at an allowance leg.
+    const debit = await priceUniswapNativeDebit({
       client: input.client,
       chainId: input.chainId,
       wallet: input.wallet,
@@ -338,22 +385,6 @@ export function createUniswapPreSignDebitGate(input: {
       feeCap: input.feeCap,
       nonce: request.nonce,
     });
-    // THE MONEY MOMENT ADMITS NO LOWER BOUND. Before the swap is signed, every
-    // remaining leg is estimable - the allowance legs have landed, the swap is
-    // this request, and the fee leg is a plain transfer - so an unpriced leg
-    // here is a fact this build cannot establish, and it fails closed. At an
-    // ALLOWANCE leg the swap genuinely cannot be simulated yet (the allowance
-    // it needs is the leg being signed), and the lower bound stands: a
-    // shortfall against it still refuses, and the swap leg's own gate is where
-    // the whole cost must be proven.
-    const boundIsFinal = role !== "allowance_reset" && role !== "allowance";
-    if (boundIsFinal && debit.ok && debit.unpricedRoles.length > 0) {
-      debit = {
-        ok: false,
-        cause: UNISWAP_SPENDABILITY_CAUSES.legGasUnpriceable,
-        role: debit.unpricedRoles.join(","),
-      };
-    }
 
     const observation = await observeUniswapSwapSpendability({
       client: input.client,
@@ -365,6 +396,9 @@ export function createUniswapPreSignDebitGate(input: {
       // the fee both come out of it.
       sourceRequiredRaw: role === "swap_fee" ? input.feeRaw : input.principalRaw,
       debit,
+      ...(input.readInFlightBroadcast === undefined
+        ? {}
+        : { readInFlightBroadcast: input.readInFlightBroadcast }),
     });
     const judged = judgeUniswapSpendability(observation, PRE_SIGN_ROUTE_EXECUTABLE);
     const refusal = preSignSpendabilityRefusal(judged.eligibility);

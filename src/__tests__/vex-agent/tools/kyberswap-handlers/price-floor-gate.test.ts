@@ -143,7 +143,7 @@ import { buildBoundDebitPlan } from "@vex-agent/tools/protocols/quote-authority/
  * the ceiling itself is the subject of its own suite.
  */
 const APPROVED_PLAN = buildBoundDebitPlan({
-  legs: [{ role: "swap" as const, unpriced: false }],
+  legs: [{ role: "swap" as const, pricing: "measured" as const }],
   feeCap: { mode: "eip1559", maxFeePerGasWei: 10n ** 15n, maxPriorityFeePerGasWei: 10n ** 15n },
 });
 

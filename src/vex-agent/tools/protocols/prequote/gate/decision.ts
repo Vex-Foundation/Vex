@@ -9,6 +9,7 @@ import type { SpendabilityPreview } from "../../quote-authority/spendability-con
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 
+import { canonicalizeDebitPlan, type BoundDebitPlan } from "../../quote-authority/debit-plan.js";
 import { GateIdentityError } from "../gate-errors.js";
 import type { GateBlockReason } from "../gate-errors.js";
 
@@ -104,4 +105,62 @@ export function classifyGateBlockReason(err: unknown, policy: WalletPolicy): Gat
     }
   }
   return "gate_error";
+}
+
+/**
+ * Hold the plan the CARD would state against the plan the SNAPSHOT sealed.
+ *
+ * ## Why this check exists
+ *
+ * One row carries two independently written descriptions of the same set of
+ * transactions. The spendability preview in `safety_detail` is what a person
+ * READS on the approval card ("held 0.42 ETH covers this, and it will send
+ * allowance -> swap"). The debit plan inside the route snapshot is what the
+ * execute is HELD TO before signing (`compareDebitPlanRoles`). Nothing but this
+ * comparison made the two agree, so a row whose card said one thing and whose
+ * enforcement said another would have shown a human one plan and executed
+ * against a different one. Rule 09 and rule 90 both put approval on the exact
+ * proposal; two proposals in one row is not one proposal.
+ *
+ * ## The comparison
+ *
+ * Through {@link canonicalizeDebitPlan}, the same canonical form both venues
+ * already digest their snapshots over, so the comparison is exactly the
+ * equality the seal itself is built on - never a field-by-field re-derivation
+ * that could drift from it.
+ *
+ * ## What is deliberately NOT refused
+ *
+ * A row that carries only ONE of the two artifacts passes through untouched.
+ * Jupiter records no route snapshot at all (it has no claim lane), a venue that
+ * measures no balances records no spendability preview, and a row written
+ * before either lane existed carries neither. In every one of those cases there
+ * is no second description to disagree with, and blocking would refuse quotes
+ * that are perfectly consistent with themselves. This is a check for
+ * CONTRADICTION, not a requirement that both artifacts exist.
+ *
+ * Returns the fail-closed block decision, or `null` when there is nothing to
+ * refuse. The bounded `reason` is `card_plan_disagreement`, this class's own
+ * member of the gate vocabulary, so the log line is as specific as the
+ * message.
+ */
+export function checkSealedDebitPlanAgreement(
+  cardPlan: BoundDebitPlan | undefined,
+  sealedPlan: BoundDebitPlan | undefined,
+): GateDecision | null {
+  if (cardPlan === undefined || sealedPlan === undefined) return null;
+  const card = canonicalizeDebitPlan(cardPlan);
+  const sealed = canonicalizeDebitPlan(sealedPlan);
+  if (card === sealed) return null;
+  return {
+    kind: "block",
+    reason: "card_plan_disagreement",
+    message:
+      "Execute blocked: the card's plan and the sealed plan disagree - request a fresh quote."
+      + ` The approval card would state the transaction plan recorded with this quote's spendability`
+      + ` observation (${card}), while the execute would enforce the plan sealed into the quote's own`
+      + ` route snapshot (${sealed}).`
+      + " One of those two is not the thing you would be consenting to, so nothing was signed and"
+      + " nothing was broadcast.",
+  };
 }

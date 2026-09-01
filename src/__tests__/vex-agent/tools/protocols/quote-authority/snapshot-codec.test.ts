@@ -55,13 +55,13 @@ const ROUTE_SUMMARY = {
  * The transaction set this venue binds for an ERC-20 input whose allowance is
  * still short: reset, approve, swap. Every leg is priced at quote time here -
  * the approve legs estimate live and the swap carries the provider's own build
- * figure - so none is marked unpriced.
+ * figure - so every leg's pricing basis is `measured`.
  */
 const PLAN: BoundDebitPlan = buildBoundDebitPlan({
   legs: [
-    { role: "allowance_reset", unpriced: false },
-    { role: "allowance", unpriced: false },
-    { role: "swap", unpriced: false },
+    { role: "allowance_reset", pricing: "measured" as const },
+    { role: "allowance", pricing: "measured" as const },
+    { role: "swap", pricing: "measured" as const },
   ],
   feeCap: { mode: "eip1559", maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
 });
@@ -177,10 +177,10 @@ describe("restoreRouteSnapshot", () => {
     // the card never mentioned, on a row that keeps its own digest.
     const widened = buildBoundDebitPlan({
       legs: [
-        { role: "allowance_reset", unpriced: false },
-        { role: "allowance", unpriced: false },
-        { role: "swap", unpriced: false },
-        { role: "swap_fee", unpriced: false },
+        { role: "allowance_reset", pricing: "measured" as const },
+        { role: "allowance", pricing: "measured" as const },
+        { role: "swap", pricing: "measured" as const },
+        { role: "swap_fee", pricing: "measured" as const },
       ],
       feeCap: { mode: "eip1559", maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
     });
@@ -195,7 +195,7 @@ describe("restoreRouteSnapshot", () => {
   it("refuses a durable row whose bound GAS-PRICE CEILING was lifted", () => {
     const good = snapshotFor();
     const lifted = buildBoundDebitPlan({
-      legs: PLAN.legs.map((leg) => ({ role: leg.role, unpriced: leg.unpriced })),
+      legs: PLAN.legs.map((leg) => ({ role: leg.role, pricing: leg.pricing })),
       feeCap: { mode: "eip1559", maxFeePerGasWei: 10n ** 18n, maxPriorityFeePerGasWei: 1_210_000n },
     });
 
@@ -238,7 +238,7 @@ describe("restoreRouteSnapshot", () => {
     });
     expect(restoreRouteSnapshot({
       ...good,
-      debitPlan: { legs: [{ role: "swap", feeCap: { mode: "legacy", gasPriceWei: "-1" }, unpriced: false }], reserve: PLAN.reserve },
+      debitPlan: { legs: [{ role: "swap", feeCap: { mode: "legacy", gasPriceWei: "-1" }, pricing: "measured" as const }], reserve: PLAN.reserve },
     })).toMatchObject({ ok: false, refusal: { kind: "snapshot_unreadable" } });
   });
 
@@ -287,7 +287,7 @@ describe("the digest covers the plan as well as the bytes", () => {
         ...snapshotFor(),
         raw: encoded.raw,
         debitPlan: buildBoundDebitPlan({
-          legs: [{ role: "swap", unpriced: false }],
+          legs: [{ role: "swap", pricing: "measured" as const }],
           feeCap: { mode: "eip1559", maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
         }),
       }),
@@ -295,7 +295,7 @@ describe("the digest covers the plan as well as the bytes", () => {
         ...snapshotFor(),
         raw: encoded.raw,
         debitPlan: buildBoundDebitPlan({
-          legs: [{ role: "swap", unpriced: true }],
+          legs: [{ role: "swap", pricing: "conservative" as const }],
           feeCap: { mode: "eip1559", maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
         }),
       }),
@@ -303,7 +303,7 @@ describe("the digest covers the plan as well as the bytes", () => {
         ...snapshotFor(),
         raw: encoded.raw,
         debitPlan: buildBoundDebitPlan({
-          legs: [{ role: "swap", unpriced: false }],
+          legs: [{ role: "swap", pricing: "measured" as const }],
           feeCap: { mode: "legacy", gasPriceWei: 11_210_000n },
         }),
       }),

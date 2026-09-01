@@ -78,8 +78,8 @@ export interface ApprovedSnapshotInput {
   readonly currentAllowance?: bigint;
   /** The per-gas ceiling every leg was quoted under, and is signed under. */
   readonly feeCap?: LegFeeCap;
-  /** Roles whose gas units the quote could not measure (the unpriced marker). */
-  readonly unpricedLegs?: readonly NativeDebitLegRole[];
+  /** Roles the quote priced CONSERVATIVELY rather than from a live estimate. */
+  readonly conservativeLegs?: readonly NativeDebitLegRole[];
 }
 
 export async function approvedUniswapSnapshot(
@@ -110,7 +110,7 @@ export async function approvedUniswapSnapshot(
         feeApplies: charge.feeRaw !== null && charge.feeTokenAddress !== null,
       })).map((role) => ({
         role,
-        unpriced: input.unpricedLegs?.includes(role) ?? false,
+        pricing: input.conservativeLegs?.includes(role) === true ? "conservative" : "measured",
       })),
       feeCap: input.feeCap ?? DEFAULT_FEE_CAP,
     }),

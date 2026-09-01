@@ -24,14 +24,22 @@ import {
 import { computeApprovedMinOut } from "@tools/kyberswap/swap-price-floor.js";
 
 /**
- * The default bound ceiling: high enough that no suite's prepared request is
- * above it, so a suite whose subject is something else is never refused for a
- * gas price it never chose. The suites that ARE about the ceiling pass their own.
+ * The default bound ceiling: well above every suite's prepared request, so a
+ * suite whose subject is something else is never refused for a gas price it
+ * never chose. The suites that ARE about the ceiling pass their own.
+ *
+ * 1 gwei, not the 1e15 wei/gas this used to carry. Since 2026-09-01 the
+ * pre-sign gate prices every leg AFTER the one being signed, and the follow-up
+ * reserve, at this APPROVED ceiling rather than at the current request's price
+ * (a later leg may legally rise to it). A ceiling of 1e15 therefore made the
+ * reserve alone cost ~1e21 wei against the fakes' 1e18 balance and refused every
+ * swap for gas - which is the gate working, and the fixture being wrong. A
+ * realistic ceiling is what "generous" has to mean now.
  */
 const GENEROUS_CAP: LegFeeCap = {
   mode: "eip1559",
-  maxFeePerGasWei: 10n ** 15n,
-  maxPriorityFeePerGasWei: 10n ** 15n,
+  maxFeePerGasWei: 10n ** 9n,
+  maxPriorityFeePerGasWei: 10n ** 9n,
 };
 
 export interface ApprovedClaimOptions {
@@ -92,7 +100,7 @@ export function approvedClaim(
       expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
       eligibility: { kind: "executable" as const, priceImpactFraction: 0.001, adverse: false },
       debitPlan: buildBoundDebitPlan({
-        legs: (options.legs ?? ["swap"]).map((role) => ({ role, unpriced: false })),
+        legs: (options.legs ?? ["swap"]).map((role) => ({ role, pricing: "measured" as const })),
         feeCap: options.feeCap ?? GENEROUS_CAP,
       }),
     }),

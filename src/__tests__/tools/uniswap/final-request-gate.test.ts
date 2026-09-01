@@ -22,7 +22,7 @@
  *      deterministic, which is the exact non-proof this guard exists to replace.
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   createPublicClient,
   createWalletClient,
@@ -329,10 +329,22 @@ function harness() {
     maxPriorityFeePerGas: 1_000n,
   };
   const transport = (): Transport => http("http://127.0.0.1:1");
+  const liveFees = liveFeeSuggestion;
 
   const publicClient = Object.assign(
     createPublicClient({ chain: CHAIN, transport: transport() }),
-    { estimateGas: vi.fn(async () => 21_000n) },
+    {
+      estimateGas: vi.fn(async () => 21_000n),
+      // The chain's CURRENT suggestion. Read in the same order and from the
+      // same actions the quote's ceiling was established with
+      // (`resolveUniswapLegFeeCap`), so a comparison between them is a
+      // comparison of one number with itself at two moments.
+      estimateFeesPerGas: vi.fn(async () => ({
+        maxFeePerGas: liveFees.maxFeePerGas,
+        maxPriorityFeePerGas: liveFees.maxPriorityFeePerGas,
+      })),
+      getGasPrice: vi.fn(async () => liveFees.maxFeePerGas),
+    },
   );
   const signTransaction = vi.fn(async (_request: Record<string, unknown>) => SERIALIZED);
   const walletClient = Object.assign(
@@ -345,6 +357,13 @@ function harness() {
   );
   return { publicClient, walletClient, signTransaction };
 }
+
+/**
+ * What the node currently asks for, per gas. Mutable so one scenario can move
+ * the market underneath an already-approved ceiling; it starts at the price the
+ * prepared request itself carries, which is the ordinary case.
+ */
+let liveFeeSuggestion = { maxFeePerGas: 1_000_000n, maxPriorityFeePerGas: 1_000n };
 
 const reserveNonce = async (r: { nodePendingNonce: number }) => r.nodePendingNonce;
 
@@ -421,5 +440,100 @@ describe("signUniswapTransaction's pre-sign fence", () => {
     expect(signed.serializedTransaction.startsWith("0x")).toBe(true);
     expect(signed.txHash).toMatch(/^0x[0-9a-f]{64}$/);
     expect(h.signTransaction).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The ceiling protects the user in ONE direction only, and this is the other.
+ *
+ * `bounds` forces the approved fee fields into `prepareTransactionRequest`, so
+ * the request can never come back priced above the ceiling and the existing
+ * assertion can never fire on a rise. What a rise DOES produce is a signed
+ * transaction priced below what the chain now wants: it sits in the mempool,
+ * unmined, and every outcome downstream is ambiguous rather than refused. So
+ * the live requirement is read in the pre-sign window - BEFORE the fence, since
+ * it is itself a provider call - and a requirement above the approved ceiling
+ * refuses by name.
+ */
+describe("the approved gas-price ceiling is checked against the LIVE requirement", () => {
+  const APPROVED_CAP = {
+    mode: "eip1559" as const,
+    maxFeePerGasWei: 1_000_000n,
+    maxPriorityFeePerGasWei: 1_000n,
+  };
+
+  beforeEach(() => {
+    liveFeeSuggestion = { maxFeePerGas: 1_000_000n, maxPriorityFeePerGas: 1_000n };
+  });
+
+  it("signs when the chain still wants no more than the approved ceiling", async () => {
+    liveFeeSuggestion = { maxFeePerGas: 900_000n, maxPriorityFeePerGas: 900n };
+    const h = harness();
+
+    const signed = await signUniswapTransaction(
+      h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce,
+      undefined, { cap: APPROVED_CAP },
+    );
+
+    expect(signed.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+
+  it("refuses BY NAME, before the fence, when the base fee moved past the ceiling", async () => {
+    liveFeeSuggestion = { maxFeePerGas: 5_000_000n, maxPriorityFeePerGas: 1_000n };
+    const h = harness();
+    const onBeforeSign = vi.fn(async (_r: FinalSignedRequest) => {});
+
+    await expect(signUniswapTransaction(
+      h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce,
+      onBeforeSign, { cap: APPROVED_CAP },
+    )).rejects.toMatchObject({ name: "UniswapApprovedGasPriceExceededError" });
+
+    // Nothing signed, and the money gate was never even reached: this is a
+    // provider read, so it belongs strictly before the window in which no
+    // provider call may happen.
+    expect(onBeforeSign).not.toHaveBeenCalled();
+    expect(h.signTransaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses on the TIP alone, which is a real component of what the chain wants", async () => {
+    liveFeeSuggestion = { maxFeePerGas: 1_000_000n, maxPriorityFeePerGas: 900_000n };
+    const h = harness();
+
+    await expect(signUniswapTransaction(
+      h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce,
+      undefined, { cap: APPROVED_CAP },
+    )).rejects.toMatchObject({ name: "UniswapApprovedGasPriceExceededError" });
+  });
+
+  it("names the way out, because a re-quote is the only thing that clears it", async () => {
+    liveFeeSuggestion = { maxFeePerGas: 5_000_000n, maxPriorityFeePerGas: 1_000n };
+    const h = harness();
+
+    const failure = await signUniswapTransaction(
+      h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce,
+      undefined, { cap: APPROVED_CAP },
+    ).catch((err: unknown) => err);
+
+    expect(failure).toBeInstanceOf(Error);
+    const message = failure instanceof Error ? failure.message : "";
+    expect(message).toContain("the gas price moved past what you approved");
+    expect(message).toContain("Nothing was signed and nothing was broadcast");
+    expect(message).toContain("uniswap__swap_quote");
+  });
+
+  it("does NOT refuse when the live read itself fails - an RPC hiccup is not a price rise", async () => {
+    const h = harness();
+    h.publicClient.estimateFeesPerGas.mockRejectedValue(new Error("node down"));
+    h.publicClient.getGasPrice.mockRejectedValue(new Error("node down"));
+
+    const signed = await signUniswapTransaction(
+      h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce,
+      undefined, { cap: APPROVED_CAP },
+    );
+
+    // The ceiling is still enforced in the other direction and the wallet's
+    // solvency is still proven by the debit gate. Turning an unreadable fee
+    // market into a refused swap would trade a real failure for a guess.
+    expect(signed.txHash).toMatch(/^0x[0-9a-f]{64}$/);
   });
 });

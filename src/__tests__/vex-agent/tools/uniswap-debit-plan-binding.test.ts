@@ -60,6 +60,18 @@ const createAgentActivityIntent = vi.fn();
 const createAgentActivityPreBroadcastFailure = vi.fn();
 const readUniswapAllowance = vi.fn();
 
+vi.mock("@vex-agent/db/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/client.js")>()),
+  // The ONE durable question the spendability lane asks since 2026-09-01: does
+  // this wallet have a broadcast of ours outstanding on a chain whose `pending`
+  // tag subtracts nothing (chain 4663 is such an endpoint, measured). Only the
+  // DATABASE is doubled - the capability table, the policy and the fail-closed
+  // verdict are the production modules, and their own suites drive the other
+  // answers. Without this the query reaches a pool that does not exist and
+  // every read here refuses, correctly, for a reason no suite here is about.
+  queryOne: vi.fn(async () => ({ in_flight: false })),
+}));
+
 vi.mock("@tools/uniswap/chains.js", () => ({
   resolveUniswapDeployment: vi.fn(() => ({
     key: "robinhood", name: "Robinhood Chain", chainId: CHAIN_ID, weth: WETH,

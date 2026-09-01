@@ -557,3 +557,162 @@ not assumed). Total 70774944000000 wei.
    pinned by a test, not closed. Closing it means signing offline on the eager
    arm too, which also removes viem's only node chain-identity assertion; that
    trade is named in the E0 report for the coordinator.
+
+---
+
+## F-EVM: the pre-sign window and the pending tag, re-measured 2026-09-01
+
+Everything below was measured from this machine on 2026-09-01, sequentially,
+read-only, with a bounded politeness budget (at most four JSON-RPC calls per
+endpoint, 250 to 400 ms apart). No key was used, nothing was signed, nothing
+was broadcast. The balance reads used the zero address, because the pending
+question is a property of the ENDPOINT and no wallet identity is needed to ask
+it - and a real address would have put a person's holdings into a repository
+file.
+
+### 1. The E0 pending table is wrong, and the METHOD is why
+
+E0 classified each endpoint by comparing the NUMBER of the block returned at
+`pending` with the number returned at `latest`. That comparison is a race: the
+two are separate JSON-RPC calls, so on a fast chain the head advances between
+them and an endpoint that merely aliases `pending` to `latest` reports a
+positive delta from call latency alone.
+
+Measured, on the very endpoint E0 used as its example of the negative case:
+
+```
+{"slug":"arbitrum","head":"500567174","pending":"500567178","delta":4,
+ "state":"distinct","balancesEqual":true}
+```
+
+E0 records Arbitrum as `equal`. The same endpoint answered `+4` here. Nothing
+about Arbitrum changed; the probe measured latency.
+
+The replacement is an IDENTITY test, which block production cannot perturb:
+
+1. `eth_getBlockByNumber("pending")` returns `null` -> `absent`.
+2. the pending block's hash is UNSEALED (JSON `null`, or the all-zero hash
+   op-geth uses for the same thing) -> `distinct`: a block that is not mined is
+   a block being assembled.
+3. otherwise ask for the canonical block AT `pending.number`. If its hash IS
+   the pending block's hash, `pending` handed back a mined block -> `head_alias`.
+4. a sealed pending block whose hash is not canonical at its height is
+   INCONCLUSIVE and is recorded as `head_alias`. Not proven distinct is not
+   distinct on a money path.
+
+### 2. The corrected table
+
+Verbatim from the second of two runs, minutes apart, which agreed on every row:
+
+```
+{"slug":"ethereum","verdict":"distinct","why":"hash null"}
+{"slug":"optimism","verdict":"head_alias","why":"pending hash IS the canonical block at that height"}
+{"slug":"bsc","state":"absent","reason":"pending returned null"}
+{"slug":"unichain","verdict":"inconclusive -> head_alias","why":"sealed, not canonical at that height"}
+{"slug":"polygon","verdict":"distinct","why":"hash null"}
+{"slug":"monad","verdict":"head_alias","why":"pending hash IS the canonical block at that height"}
+{"slug":"sonic","verdict":"head_alias","why":"pending hash IS the canonical block at that height"}
+{"slug":"hyperevm","state":"absent","reason":"pending returned null"}
+{"slug":"ronin","verdict":"inconclusive -> head_alias","why":"sealed, not canonical at that height"}
+{"slug":"megaeth","state":"absent","reason":"pending returned null"}
+{"slug":"robinhood","verdict":"head_alias","why":"pending hash IS the canonical block at that height"}
+{"slug":"mantle","verdict":"head_alias","why":"pending hash IS the canonical block at that height"}
+{"slug":"base","verdict":"distinct","why":"hash all-zero (unsealed)"}
+{"slug":"plasma","verdict":"head_alias","why":"pending hash IS the canonical block at that height"}
+{"slug":"arbitrum","verdict":"head_alias","why":"pending hash IS the canonical block at that height"}
+{"slug":"avalanche","verdict":"head_alias","why":"pending hash IS the canonical block at that height"}
+{"slug":"linea","verdict":"distinct","why":"hash null"}
+{"slug":"berachain","verdict":"inconclusive -> head_alias","why":"sealed, not canonical at that height"}
+```
+
+FOUR of eighteen endpoints assemble a real pending block: Ethereum, Polygon,
+Base and Linea. Fourteen do not. E0 reported seven; the four it got wrong in
+the dangerous direction are Mantle, Plasma, Avalanche and Robinhood, plus three
+it could not decide (Unichain, Ronin, Berachain) which are now conservative.
+
+E0 and this re-measure AGREE on every row E0 decided negatively: Arbitrum,
+Optimism, Sonic and Monad alias; BSC, HyperEVM and MegaETH expose no pending
+block. The disagreements are all in the direction where E0's proxy read latency
+as a pending state.
+
+Note for whoever reads Base's row and expects an OP-stack alias: the endpoint
+answers `pending` with a block whose hash is all zeroes, which is op-geth's
+encoding of "not sealed". That is a real pending state, and it is why Base was
+NOT reclassified even though four of its OP-stack siblings were.
+
+### 3. What the code may therefore rely on
+
+`tools/evm-chains/pending-block-capability.ts` carries these rows. A chain with
+no row REFUSES rather than assuming, exactly as the L1-fee table does.
+
+On a non-`distinct` endpoint the observation is compensated by Vex's OWN
+durable record of what it has broadcast
+(`quote-authority/pending-debit-compensation.ts`): an EXISTS over pending
+`agent_activity` rows carrying a `tx_hash` for this wallet and chain, unioned
+with `evm_nonce_reservations` in `staged`/`accepted`. Any hit means the read
+cannot prove spendability and the verdict is `balance_unavailable`, never
+`insufficient_balance`.
+
+IN FLIGHT MEANS BROADCAST, NOT RESERVED. A row that owns a nonce but has no
+transaction hash has spent nothing - the signature does not exist yet. That is
+also what lets the pre-sign gate of the leg being signed run at all, since that
+leg has reserved its nonce and has no hash.
+
+### 4. The declared limit of the compensation
+
+**A spend from the same key by anything that is not this Vex install is
+invisible to it.** Another wallet application holding the same seed, a hardware
+signer, a reinstall whose database is gone: on a `head_alias` or `absent`
+endpoint the node's answer cannot see such a transaction either, and neither
+can the local record. What bounds it: on a `distinct` endpoint the tag itself
+covers that case, and everywhere else the pre-sign gate re-reads the balance
+immediately before signing, so a third-party spend that has CONFIRMED is seen.
+Only a third-party spend that is broadcast AND unconfirmed at the instant of
+signing escapes both. It is a real gap, not a theoretical one, and it is stated
+here rather than papered over.
+
+A second, smaller limit: an ambiguous broadcast of ours leaves a pending row
+with a hash until the reconciler resolves it, and on these chains every
+spendability read for that wallet and chain refuses in the meantime. That is
+the intended direction, and it is why the reconciler's latency is now also a
+liveness property of quoting.
+
+### 5. Uniswap's approved gas ceiling versus the live requirement
+
+`signUniswapTransaction` forces the approved cap into
+`prepareTransactionRequest`, so the prepared request can never come back priced
+ABOVE the ceiling - which means the existing `assertWithinLegFeeBounds` cannot
+fire on a market rise, and a rise instead produces a SIGNED transaction priced
+below what the chain wants. Measured, with a deliberately low synthetic cap of
+1,000,000 wei/gas and the same composition viem's `estimateFeesPerGas` uses
+(`baseFeePerGas * 1.2 + eth_maxPriorityFeePerGas`):
+
+```
+{"slug":"arbitrum","baseFeePerGas":"20000000","maxPriorityFeePerGas":"0",
+ "gasPrice":"20056000","viemStyleMaxFeePerGas":"24000000",
+ "syntheticApprovedCapWei":"1000000","liveExceedsSyntheticCap":true}
+{"slug":"base","baseFeePerGas":"5000000","maxPriorityFeePerGas":"1000000",
+ "gasPrice":"6000000","viemStyleMaxFeePerGas":"7000000",
+ "syntheticApprovedCapWei":"1000000","liveExceedsSyntheticCap":true}
+```
+
+Both live requirements exceed that cap, which is the condition the new
+`UniswapApprovedGasPriceExceededError` refuses on. The read happens BEFORE the
+pre-sign hook, because it is itself a provider call and the window after the
+hook admits none. A read that FAILS does not refuse: the ceiling is still
+enforced in the other direction and solvency is still proven by the debit gate,
+so an unreadable fee market must not become a refused swap.
+
+### 6. QuoterV2's gas figure, and the one route shape that has none
+
+Read from the code paths rather than re-probed this round: `quoteExactInputSingle`
+and `quoteExactInput` both return a `gasEstimate` as their fourth output
+(`tools/uniswap/quote.ts:93` and `:135`, decoded from the ABI at
+`abis.ts:219`/`:234`), and the V2 `getAmountsOut` path returns amounts only
+(`quote.ts:60-73`). E0's live figure for a single-hop V3 exact-input was 72,926.
+
+Consequence, and it is a deliberate product cost: a V2 route whose swap leg
+cannot be simulated - a first-time ERC-20 allowance - has NO conservative basis
+and its quote is not executable. The alternative was the behaviour this arc
+removed: a total that silently excluded that leg, presented to a human as
+something to authorize.

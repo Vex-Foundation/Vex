@@ -292,9 +292,9 @@ describe("the durable preview", () => {
    */
   const PLAN = buildBoundDebitPlan({
     legs: [
-      { role: "allowance", unpriced: false },
-      { role: "swap", unpriced: true },
-      { role: "swap_fee", unpriced: false },
+      { role: "allowance", pricing: "measured" as const },
+      { role: "swap", pricing: "conservative" as const },
+      { role: "swap_fee", pricing: "measured" as const },
     ],
     feeCap: { mode: "eip1559", maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
   });
@@ -378,11 +378,15 @@ describe("the durable preview", () => {
     expect(line).toContain(OBSERVED_AT);
     expect(line).toContain("re-read before signing");
     // The PLAN the binding will enforce, in the same line: the transaction set,
-    // the ceiling, and the honest lower-bound caveat for the unpriceable leg.
+    // the ceiling, and the caveat naming which leg was priced CONSERVATIVELY
+    // rather than measured. It is no longer a lower bound - a leg with no
+    // figure at all cannot reach a sealed plan since 2026-09-01 - and the card
+    // must therefore not say the total is one.
     expect(line).toContain("will send allowance -> swap -> swap_fee");
     expect(line).toContain("at most 11210000 wei/gas");
     expect(line).toContain("zero_value_self_transfer");
-    expect(line).toContain("swap gas not yet measurable");
-    expect(line).toContain("LOWER BOUND");
+    expect(line).toContain("swap gas could not be simulated yet");
+    expect(line).toContain("CONSERVATIVELY");
+    expect(line).not.toContain("LOWER BOUND");
   });
 });

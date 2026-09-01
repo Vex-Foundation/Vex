@@ -52,6 +52,10 @@ import {
   REJECTED_ENTRIES_NOTE,
   boundRejectedEntries,
 } from "@vex-agent/wallet-inventory/rejected-entries.js";
+import {
+  computeWalletCompleteness,
+  type InventorySource,
+} from "@vex-agent/wallet-inventory/completeness.js";
 
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import type { ToolResult } from "../../../types.js";
@@ -239,6 +243,28 @@ export async function handleTokenBalances(
       } else accountErrorsOmitted += 1;
     }
     const tokens = snapshot.rows.map(solanaRowToWalletToken);
+    // The SAME owner `WalletBalances` computes its axes with, over the same
+    // evidence: this surface and that one answer for one wallet, and an agent
+    // that reads both must not find two different completeness contracts.
+    // The snapshot service enumerates every token ACCOUNT the wallet owns plus
+    // the account balance, so the source is exhaustive; a read that FAILED
+    // never reaches here (the catch above returns a failure result), so there
+    // is no failed source to record and no `failedChainIds` entry to invent.
+    const completeness = computeWalletCompleteness({
+      rows: tokens,
+      sources: [{
+        chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+        source: "solana_rpc_accounts",
+        result: "read",
+        exhaustive: true,
+        observedAt: new Date().toISOString(),
+      }],
+      tokenErrorCount: 0,
+      // The CAP must not shrink the axis: an account error the 20-row bound
+      // left out still cost the inventory a holding.
+      accountErrorCount: accountErrors.length + accountErrorsOmitted,
+      rejectedEntries: [],
+    });
     const payload = {
       address,
       wallet: walletFamily,
@@ -248,6 +274,7 @@ export async function handleTokenBalances(
       chainErrors: [],
       accountErrors,
       ...(accountErrorsOmitted > 0 ? { accountErrorsOmitted } : {}),
+      ...completeness,
       // A Solana read never crosses the Khalani balances boundary, so it has no
       // refusals to report. The fields are PRESENT and empty rather than
       // absent: an absent field would read as "no answer" on the one surface
@@ -283,13 +310,47 @@ export async function handleTokenBalances(
   // holdings the wallet really has, so reporting them is the difference between
   // "we could not read the scale of this token" and "you hold none of it"; the
   // bad scale itself is never echoed and never guessed (C1.2).
-  const rejected = boundRejectedEntries(scan.rejectedEntries ?? []);
+  const rejectedEntries = scan.rejectedEntries ?? [];
+  const rejected = boundRejectedEntries(rejectedEntries);
   const truncated = rejected.rejectedEntriesOmitted !== undefined;
   const disclosure = {
     ...rejected,
     truncated,
     ...(truncated ? { truncationNote: REJECTED_ENTRIES_NOTE } : {}),
   };
+  // Same fields, same owner and the same meanings as `WalletBalances` (C3):
+  // the two agent-visible balance surfaces must not diverge on what "complete"
+  // means. A chain that failed is evidence of an UNKNOWN holding set, so it is
+  // recorded as a failed source with `observedAt: null` (C3.5 - a failed read
+  // observed nothing and is never stamped fresh) and lands in `failedChainIds`.
+  const khalaniObservedAt = new Date().toISOString();
+  const inventorySources: InventorySource[] = [
+    ...scan.scannedChainIds.map((scannedChainId): InventorySource => ({
+      chainId: scannedChainId,
+      source: "khalani_registry_scan",
+      result: "read",
+      exhaustive: true,
+      observedAt: khalaniObservedAt,
+    })),
+    ...scan.chainErrors.map((chainError): InventorySource => ({
+      chainId: chainError.chainId,
+      source: "khalani_registry_scan",
+      result: "failed",
+      exhaustive: true,
+      observedAt: null,
+    })),
+  ];
+  // Rows are the FULL projected set and the rejections are the FULL list, both
+  // taken before any display bound: a cap on what is SHOWN must never be able
+  // to move a completeness field.
+  const projectedTokens = projectTokens(enrichedTokens);
+  const completeness = computeWalletCompleteness({
+    rows: projectedTokens,
+    sources: inventorySources,
+    tokenErrorCount: 0,
+    accountErrorCount: 0,
+    rejectedEntries,
+  });
   return {
     success: true,
     output: JSON.stringify({
@@ -302,10 +363,11 @@ export async function handleTokenBalances(
       // An EVM scan reads no Solana token accounts, so the field is present and
       // empty rather than absent: an absent field would read as "no answer".
       accountErrors: [],
+      ...completeness,
       ...disclosure,
       // Project to concise token rows (P0-4): the balances path is where
       // `extensions.balance` lives, so the lifted balance/price stay surfaced.
-      tokens: projectTokens(enrichedTokens),
+      tokens: projectedTokens,
     }, null, 2),
     data: {
       address,
@@ -314,6 +376,7 @@ export async function handleTokenBalances(
       scannedChainIds: scan.scannedChainIds,
       chainErrors: scan.chainErrors,
       accountErrors: [],
+      ...completeness,
       ...disclosure,
       tokens: enrichedTokens,
     },

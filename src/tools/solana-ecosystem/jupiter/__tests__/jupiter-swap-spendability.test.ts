@@ -196,7 +196,28 @@ describe("SPL source spendability", () => {
   });
 
   it("refuses a lamport balance the node did not state as a whole number", async () => {
-    await expect(readNativeLamports(splRpc([], 1.5), SIGNER.toBase58())).rejects.toThrow(/whole number of lamports/);
+    await expect(readNativeLamports(splRpc([], 1.5), SIGNER.toBase58()))
+      .rejects.toThrow(/cannot state exactly/);
+  });
+
+  it("reads the largest exactly representable balance, and refuses the first one past it", async () => {
+    // THE BOUNDARY. `getBalance` is typed `number` but lamports are a u64, so
+    // a balance past 2^53 - 1 has already been rounded by the JSON parse.
+    // `Number.isInteger` says yes to the rounded value; only
+    // `Number.isSafeInteger` catches it. One lamport on either side:
+    await expect(readNativeLamports(splRpc([], Number.MAX_SAFE_INTEGER), SIGNER.toBase58()))
+      .resolves.toBe("9007199254740991");
+    await expect(readNativeLamports(splRpc([], Number.MAX_SAFE_INTEGER + 1), SIGNER.toBase58()))
+      .rejects.toThrow(/cannot state exactly/);
+  });
+
+  it("refuses a lamport balance that is not a number at all", async () => {
+    await expect(readNativeLamports(splRpc([], Number.NaN), SIGNER.toBase58()))
+      .rejects.toThrow(/cannot state exactly/);
+    await expect(readNativeLamports(splRpc([], Number.POSITIVE_INFINITY), SIGNER.toBase58()))
+      .rejects.toThrow(/cannot state exactly/);
+    await expect(readNativeLamports(splRpc([], -1), SIGNER.toBase58()))
+      .rejects.toThrow(/cannot state exactly/);
   });
 });
 

@@ -111,12 +111,13 @@ to: anyone can mint a token and airdrop it into a wallet, so every field of an
 entry there is attacker-controlled input arriving at scale. The other token
 surfaces (`/v1/tokens`, search, autocomplete) are provider-curated.
 
-That split is why the two use DIFFERENT validators, and the asymmetry is
-deliberate:
+Both validators apply the SAME strict `decimals` rule
+(`Number.isInteger(d) && 0 <= d <= 36`). What differs is what a violation
+COSTS, and that difference is the deliberate one:
 
 | Surface | Validator | `decimals` rule | A bad entry costs |
 |---------|-----------|-----------------|-------------------|
-| `/v1/tokens`, search, autocomplete | `validateTokensResponse` / `parseToken` | tolerant `asNumber` (accepts `Infinity`, fractions, negatives) | the WHOLE call throws - a curated list nobody outside Khalani can add to should fail loudly |
+| `/v1/tokens`, search, autocomplete | `validateTokensResponse` / `parseToken` | strict `asTokenDecimals` (same rule) | the WHOLE call throws - a curated list nobody outside Khalani can add to should fail loudly, and the request fails rather than handing the agent a scale nothing can convert from |
 | `/v1/tokens/balances/{address}` | `validateTokenBalancesResponse` | strict `asTokenDecimals`: `Number.isInteger(d) && 0 <= d <= 36` | that ONE entry, reported in `rejectedEntries` |
 
 Contract of `validateTokenBalancesResponse`:
@@ -135,6 +136,16 @@ Contract of `validateTokenBalancesResponse`:
   `null`, because a size we cannot state exactly is unknown, not zero (C1.3);
 - an entry with ANY other defect (identity, structure, a non-object entry, a
   non-array document) still throws, which the scan records as a CHAIN failure.
+
+Consequence for the CURATED surfaces, decided 2026-09-01 (review finding 9): a
+curated row with unusable `decimals` now fails the REQUEST rather than reaching
+`khalani.tokens.top`, `khalani.tokens.search`, `khalani.tokens.autocomplete` or
+their consumers (`TokenFind`, the bridge USD estimator, the Khalani read
+handlers). That is the intended contract. Nobody outside Khalani can add an
+entry to those lists, so a malformed one is a provider defect, and a loud
+failure the agent can report beats a row whose scale no consumer can use.
+Per-entry `rejectedEntries` recovery exists ONLY on the wallet-balances array,
+which is the only reachable-by-airdrop surface.
 
 `getTokenBalancesAcrossChains` carries the refusals through as
 `TokenBalanceScanResult.rejectedEntries` (per-chain attribution comes from

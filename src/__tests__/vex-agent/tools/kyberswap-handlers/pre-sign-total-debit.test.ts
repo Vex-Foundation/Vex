@@ -135,7 +135,7 @@ import { buildBoundDebitPlan } from "@vex-agent/tools/protocols/quote-authority/
  * the ceiling itself is the subject of its own suite.
  */
 const APPROVED_PLAN = buildBoundDebitPlan({
-  legs: [{ role: "allowance" as const, unpriced: false }, { role: "swap" as const, unpriced: false }],
+  legs: [{ role: "allowance" as const, pricing: "measured" as const }, { role: "swap" as const, pricing: "measured" as const }],
   feeCap: { mode: "eip1559", maxFeePerGasWei: 10n ** 15n, maxPriorityFeePerGasWei: 10n ** 15n },
 });
 import { resetEvmFake, setEvmFake } from "./evm-client.test-fixtures.js";
@@ -426,8 +426,8 @@ describe("the approved TRANSACTION SET and its ceiling are bound quote-to-execut
     // check alone cannot see that.
     mockClaim.mockResolvedValue(claimedSnapshot(buildBoundDebitPlan({
       legs: [
-        { role: "allowance" as const, unpriced: false },
-        { role: "swap" as const, unpriced: false },
+        { role: "allowance" as const, pricing: "measured" as const },
+        { role: "swap" as const, pricing: "measured" as const },
       ],
       feeCap: {
         mode: "eip1559",
@@ -475,3 +475,91 @@ async function refusalAmount(index: number): Promise<bigint> {
   }
   throw new Error(`the gate on leg ${index} did not refuse a one-wei wallet`);
 }
+
+/**
+ * WHAT THE GATE MUST RESERVE FOR A LEG THAT IS NOT PREPARED YET.
+ *
+ * The defect (found in review, 2026-09-01): after checking the CURRENT request
+ * against its approved ceiling, the gate priced every REMAINING leg and the
+ * follow-up reserve at that current request's price. That is a price about
+ * bytes that exist, applied to bytes that do not. Nothing stops the swap leg
+ * from being prepared later at anything up to the ceiling its role was quoted
+ * under - this same gate will accept it - so a wallet could fund the allowance
+ * at a cheap moment, sign it, and then be short for a swap the gate itself was
+ * about to authorize at a higher price. Allowance granted, position not
+ * entered.
+ *
+ * The fix is one sentence: this leg at its real price, everything after it and
+ * the reserve at the APPROVED ceiling.
+ *
+ * The experiment holds the prepared request identical and moves ONLY the
+ * approved ceiling. Before the fix the two figures were equal by construction.
+ */
+describe("the remainder is reserved at the ceiling the quote approved, not at this leg's price", () => {
+  const REQUEST_CAP = { maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n };
+
+  function planAtCeiling(maxFeePerGasWei: bigint): ReturnType<typeof buildBoundDebitPlan> {
+    return buildBoundDebitPlan({
+      legs: [
+        { role: "allowance" as const, pricing: "measured" as const },
+        { role: "swap" as const, pricing: "measured" as const },
+      ],
+      feeCap: {
+        mode: "eip1559",
+        maxFeePerGasWei,
+        maxPriorityFeePerGasWei: REQUEST_CAP.maxPriorityFeePerGasWei,
+      },
+    });
+  }
+
+  it("charges MORE at the allowance leg when the approved ceiling is above the current price", async () => {
+    mockClaim.mockResolvedValue(claimedSnapshot(planAtCeiling(REQUEST_CAP.maxFeePerGasWei)));
+    await execute();
+    const atCurrentPrice = await refusalAmount(0);
+
+    vi.clearAllMocks();
+    resetEvmFake();
+    mockClaim.mockResolvedValue(claimedSnapshot(planAtCeiling(REQUEST_CAP.maxFeePerGasWei * 4n)));
+    mockBuildRoute.mockResolvedValue(BUILD_RESPONSE);
+    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: true });
+    mockCreateAgentActivityIntent.mockResolvedValue({
+      executionId: 42,
+      events: [{ id: 100 }, { id: 101 }],
+    });
+    await execute();
+    const atApprovedCeiling = await refusalAmount(0);
+
+    // The swap leg and the reserve may both legally cost four times as much as
+    // this allowance does, and the wallet must be shown to cover that BEFORE
+    // the allowance is signed.
+    expect(atApprovedCeiling).toBeGreaterThan(atCurrentPrice);
+  });
+
+  it("prices the leg being signed at the request's OWN price, never at the ceiling", async () => {
+    // The other half of the same rule. If the leg being signed were also
+    // charged at the ceiling, the figure would rise with the ceiling even for a
+    // single-leg remainder - which would refuse swaps the wallet can pay for,
+    // for a price those bytes will never carry.
+    mockClaim.mockResolvedValue(claimedSnapshot(planAtCeiling(REQUEST_CAP.maxFeePerGasWei)));
+    await execute();
+    const swapLegAtCurrentPrice = await refusalAmount(1);
+
+    vi.clearAllMocks();
+    resetEvmFake();
+    mockClaim.mockResolvedValue(claimedSnapshot(planAtCeiling(REQUEST_CAP.maxFeePerGasWei * 4n)));
+    mockBuildRoute.mockResolvedValue(BUILD_RESPONSE);
+    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: true });
+    mockCreateAgentActivityIntent.mockResolvedValue({
+      executionId: 42,
+      events: [{ id: 100 }, { id: 101 }],
+    });
+    await execute();
+    const swapLegAtApprovedCeiling = await refusalAmount(1);
+
+    // Only the RESERVE moves at the last leg, so the figure rises - but by far
+    // less than the leg itself would have. The assertion that matters is that
+    // the swap leg's own gas is not multiplied by the ceiling: at 4x, a
+    // ceiling-priced last leg would have roughly quadrupled the whole figure.
+    expect(swapLegAtApprovedCeiling).toBeLessThan(swapLegAtCurrentPrice * 4n);
+  });
+});

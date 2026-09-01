@@ -101,7 +101,7 @@ preconditions appear inside the first 2000 bytes.
 | khalani__chains_list | List Khalani bridge chains | protocol | yes | no | no | - | 850 |
 | khalani__order_get | Read one Khalani bridge order | protocol | yes | no | no | - | 990 |
 | khalani__orders_list | List Khalani bridge orders | protocol | yes | no | no | - | 1066 |
-| khalani__token_balances_get | Read Khalani-chain wallet balances | protocol | yes | no | no | - | 3537 |
+| khalani__token_balances_get | Read Khalani-chain wallet balances | protocol | yes | no | no | - | 4836 |
 | khalani__tokens_autocomplete | Parse a token phrase into Khalani tokens | protocol | yes | no | no | - | 964 |
 | khalani__tokens_search | Search Khalani tokens | protocol | yes | no | no | - | 1060 |
 | khalani__tokens_top_list | List top bridged tokens on Khalani | protocol | yes | no | no | - | 794 |

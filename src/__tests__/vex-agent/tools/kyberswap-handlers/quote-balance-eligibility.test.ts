@@ -284,8 +284,8 @@ describe("a wallet that can pay", () => {
     expect(preview.debitPlan?.legs.map((leg) => leg.role)).toEqual(["allowance", "swap"]);
     // Gas UNITS are deliberately not bound (2.07x measured drift); every leg
     // this venue prices at quote time carries a real estimate, so none is
-    // marked unpriced.
-    expect(preview.debitPlan?.legs.every((leg) => !leg.unpriced)).toBe(true);
+    // priced from a live measurement.
+    expect(preview.debitPlan?.legs.every((leg) => leg.pricing === "measured")).toBe(true);
     // The tag is the whole point: `pending` is the only state that subtracts the
     // wallet's own in-flight spending (contract C2.4).
     expect(preview.source.blockTag).toBe("pending");

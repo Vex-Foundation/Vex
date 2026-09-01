@@ -306,9 +306,14 @@ function renderLeg(label: string, leg: SpendabilityLeg): string {
  *
  * The leg SET and the per-gas ceiling, because those are what the execute is
  * held to: a swap that would broadcast a different set, or sign above this
- * ceiling, is refused before anything is signed. An unpriceable leg is named
- * rather than omitted - the debit figure beside it is then a LOWER BOUND, and a
- * card that did not say so would present a partial total as the whole cost.
+ * ceiling, is refused before anything is signed.
+ *
+ * A CONSERVATIVELY PRICED leg is named rather than omitted. The total beside it
+ * is a whole cost, not a lower bound - every leg is in it - but one of its
+ * components came from the venue's own quoter with headroom rather than from a
+ * simulation of that exact call, and a person deciding whether to sign is
+ * entitled to know which. A leg with NO figure at all cannot appear here: the
+ * quote that would have contained one is not executable and seals no plan.
  */
 function renderPlan(plan: BoundDebitPlan): string {
   const cap = uniformPlanFeeCap(plan);
@@ -317,12 +322,19 @@ function renderPlan(plan: BoundDebitPlan): string {
     : cap.mode === "eip1559"
       ? `at most ${cap.maxFeePerGasWei} wei/gas (tip up to ${cap.maxPriorityFeePerGasWei})`
       : `at most ${cap.gasPriceWei} wei/gas`;
-  const unpriced = plan.legs.filter((leg) => leg.unpriced).map((leg) => leg.role);
-  const unpricedText = unpriced.length === 0
+  const conservative = plan.legs
+    .filter((leg) => leg.pricing === "conservative")
+    .map((leg) => leg.role);
+  const conservativeText = conservative.length === 0
     ? ""
-    : ` (${unpriced.join(" and ")} gas not yet measurable, so the debit above is a LOWER BOUND)`;
+    : ` (${conservative.join(" and ")} gas could not be simulated yet, so it is priced`
+      + " CONSERVATIVELY from the quoter's own estimate plus headroom, not measured)";
   return `will send ${plan.legs.map((leg) => leg.role).join(" -> ")}, ${capText},`
-    + ` plus a reserved ${plan.reserve.kind}${unpricedText}`;
+    + ` plus a reserved ${plan.reserve.kind}${conservativeText}`
+    // Consent, not just disclosure: the ceiling above is ENFORCED, so the
+    // stated price is the most this swap may pay per gas - a higher
+    // requirement at signing is refused by name instead of paid.
+    + "; this ceiling is enforced - a higher gas price at signing is refused, never paid";
 }
 
 /**
