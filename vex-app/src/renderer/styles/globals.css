@@ -15,8 +15,10 @@
 @import "./global-css/chronos-motion.css";
 @import "./global-css/chat-transcript.css";
 @import "./global-css/board.css";
+@import "./global-css/board-layout.css";
 @import "./global-css/scrollbars.css";
 @import "./global-css/ui-primitives.css";
 @import "./global-css/console.css";
 @import "./global-css/pending-ring.css";
 @import "./global-css/chronos-gate.css";
+@import "./global-css/terminal.css";

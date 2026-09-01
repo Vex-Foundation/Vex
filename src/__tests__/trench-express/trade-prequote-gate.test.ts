@@ -75,6 +75,12 @@ function prequoteRow(verdict: SafetyVerdict): SwapPrequote {
     safetyVerdict: verdict,
     safetyDetail: {},
     routeRef: null,
+    // Migration 095: a row that predates the claim lane reads as an
+    // executable, unclaimed quote. It authorizes nothing on its own - the
+    // claim additionally requires a stored route snapshot.
+    eligibilityKind: "executable",
+    claimedAt: null,
+    claimedBy: null,
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   } as SwapPrequote;

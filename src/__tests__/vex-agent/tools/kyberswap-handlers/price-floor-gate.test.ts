@@ -9,14 +9,18 @@
  * response, so "the build was refused" means the actual decoder rejected
  * actual provider bytes.
  *
- * The floor the build is held to is derived from the FRESH route summary at
- * the caller's own `slippageBps`. There is no longer a second, quote-time
- * floor: comparing `freshOut × (1−s)` against `quotedOut × (1−s)` reduced to
- * `freshOut >= quotedOut`, i.e. a zero tolerance for price movement stacked
- * on top of the caller's own, which stranded an autonomous agent on any pair
- * that repriced between quote and build. Removed by owner decision
- * (2026-07-25) — `slippageBps` is the price protection, and the first case
- * below pins that a repriced route now signs.
+ * The floor the build is held to is the APPROVED one: derived once, at quote
+ * time, from the output the agent was shown, at the caller's own
+ * `slippageBps`. It is NOT rederived from a fresh route at execute time - that
+ * rederivation made the floor follow the market instead of bounding it and
+ * produced the 2026-08-27 incident (a 313,879.7 CCF quote filling at 1,190.145
+ * CCF without a revert). The incident itself is reproduced in
+ * `quote-bound-execute.test.ts`; this file keeps the BUILD-INTEGRITY half -
+ * what the provider's opaque calldata may and may not contain - plus the
+ * slippage ceiling.
+ *
+ * There is still no zero-tolerance comparison anywhere: movement within the
+ * approved slippage signs, which `quote-bound-execute.test.ts` pins.
  *
  * The load-bearing property in every refusal case: `signStageBroadcast` is
  * never called. Nothing is signed, so nothing can be broadcast.
@@ -106,6 +110,16 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
   pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
+// The execute claims its approved quote instead of re-quoting. The claim's DB
+// half is exercised against real Postgres in
+// `integration/repos/swap-prequotes-claim.int.test.ts`; here it hands back the
+// snapshot for the route each test set up, so the build-integrity cases below
+// drive the real handler unchanged.
+const mockClaim = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
+  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
@@ -114,6 +128,11 @@ vi.mock("@utils/logger.js", () => {
 import { KYBERSWAP_HANDLERS } from "@vex-agent/tools/protocols/kyberswap/handlers.js";
 import { META_AGGREGATION_ROUTER_V2_SWAP_ABI } from "@tools/kyberswap/evm/swap-calldata-guard.js";
 import { computeApprovedMinOut } from "@tools/kyberswap/swap-price-floor.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
+import {
+  ROUTE_SNAPSHOT_VERSION,
+  encodeRouteSnapshotRaw,
+} from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
 
 const TOKEN_IN = getAddress(capture.request.tokenIn);
 const TOKEN_OUT = capture.request.tokenOut;
@@ -129,6 +148,44 @@ const ROUTE_PATHS = compliantRoutePaths({
 });
 /** 10 USDC at 6 decimals — matches the capture's `amountIn` of 10000000. */
 const AMOUNT_IN_HUMAN = "10";
+
+/**
+ * The claim result for a quote of `amountOut` at `slippageBps`.
+ *
+ * The tolerance defaults to the repo default because `execute()` below omits
+ * `slippageBps`, and the handler refuses a snapshot priced at a different one:
+ * the quote and the execute must agree on the number the floor was derived at.
+ */
+function claimed(amountOut: string = ROUTE_OUT, slippageBps = VEX_DEFAULT_SLIPPAGE_BPS) {
+  const summary = {
+    amountIn: capture.routeSummary.amountIn,
+    amountOut,
+    amountInUsd: "10", amountOutUsd: "9.99",
+    gasUsd: "0.01", routeID: "r1", checksum: "c1",
+    route: ROUTE_PATHS,
+  };
+  const encoded = encodeRouteSnapshotRaw(summary);
+  if (!encoded.ok) throw new Error("fixture route must encode");
+  return {
+    ok: true as const,
+    prequoteId: "prequote-1",
+    routeSummary: summary,
+    snapshot: {
+      v: ROUTE_SNAPSHOT_VERSION,
+      provider: "kyberswap" as const,
+      raw: encoded.raw,
+      digest: encoded.digest,
+      approvedAmountOutRaw: amountOut,
+      approvedMinOutRaw: computeApprovedMinOut(amountOut, slippageBps).toString(),
+      approvedAmountOutHuman: "0.005376",
+      approvedMinOutHuman: "0.005349",
+      tokenOutSymbol: "NATIVE (ETH)",
+      effectiveSlippageBps: slippageBps,
+      expiresAt: "2026-08-28T10:00:00.000Z",
+      eligibility: { kind: "executable" as const, priceImpactFraction: 0.001, adverse: false },
+    },
+  };
+}
 
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return {
@@ -163,14 +220,14 @@ function patchedCalldata(patch: Record<string, unknown>): Hex {
   } as never);
 }
 
-function buildResponse(calldata: Hex = capture.build.data as Hex) {
+function buildResponse(calldata: Hex = capture.build.data as Hex, amountOut = capture.build.amountOut) {
   return {
     data: {
       routerAddress: capture.routerAddress,
       data: calldata,
       transactionValue: capture.build.transactionValue,
       amountIn: capture.build.amountIn,
-      amountOut: capture.build.amountOut,
+      amountOut,
       amountInUsd: "10", amountOutUsd: "10", gasUsd: "0.01",
     },
   };
@@ -209,6 +266,7 @@ describe("kyberswap.swap.execute — build calldata price floor", () => {
         routerAddress: capture.routerAddress,
       },
     });
+    mockClaim.mockResolvedValue(claimed());
     mockBuildRoute.mockResolvedValue(buildResponse());
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 100 }] });
     mockCreateAgentActivityPreBroadcastFailure.mockResolvedValue({ executionId: 7, event: { id: 7 } });
@@ -226,26 +284,14 @@ describe("kyberswap.swap.execute — build calldata price floor", () => {
     expect(mockSignStageBroadcast).toHaveBeenCalledTimes(1);
   });
 
-  it("a route that repriced against the user since the quote SIGNS — the removed gate refused exactly this", async () => {
-    // The whole route now returns 10% less than the quote did, and the build
-    // carries an honest floor for that worse output. Under the deleted
-    // quote-to-quote comparison this was a refusal the agent could not act on:
-    // a re-quote hits the same repriced market. `slippageBps` is what bounds
-    // the loss now, so this must reach the signer.
-    const repricedOut = ((BigInt(ROUTE_OUT) * 90n) / 100n).toString();
-    mockGetRoute.mockResolvedValue({
-      data: {
-        routeSummary: {
-          amountIn: capture.routeSummary.amountIn,
-          amountOut: repricedOut,
-          gasUsd: "0.01", routeID: "r1", checksum: "c1",
-          route: ROUTE_PATHS,
-        },
-        routerAddress: capture.routerAddress,
-      },
-    });
+  it("a market that repriced WITHIN the approved slippage still signs - the floor is the quote's, not the market's", async () => {
+    // 20 bps against the user since the quote, inside the 50 bps authorized.
+    // The build is honest about the movement; the approved floor still admits
+    // it, so this must reach the signer. A guard that refused here would strand
+    // an autonomous agent on every pair that moves at all.
+    const movedOut = ((BigInt(ROUTE_OUT) * 9980n) / 10000n).toString();
     mockBuildRoute.mockResolvedValue(
-      buildResponse(patchedCalldata({ minReturnAmount: computeApprovedMinOut(repricedOut, 50) })),
+      buildResponse(patchedCalldata({ minReturnAmount: computeApprovedMinOut(ROUTE_OUT, 50) }), movedOut),
     );
 
     const result = await execute();
@@ -316,6 +362,7 @@ describe("kyberswap.swap.execute — slippage ceiling", () => {
         routerAddress: capture.routerAddress,
       },
     });
+    mockClaim.mockResolvedValue(claimed());
     mockBuildRoute.mockResolvedValue(buildResponse());
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 100 }] });
     mockCreateAgentActivityPreBroadcastFailure.mockResolvedValue({ executionId: 7, event: { id: 7 } });
@@ -326,6 +373,7 @@ describe("kyberswap.swap.execute — slippage ceiling", () => {
   });
 
   it("accepts 1000 bps — exactly the owner-pinned ceiling", async () => {
+    mockClaim.mockResolvedValue(claimed(ROUTE_OUT, 1000));
     const result = await execute({ slippageBps: 1000 });
 
     expect(result.success).toBe(true);
@@ -338,8 +386,10 @@ describe("kyberswap.swap.execute — slippage ceiling", () => {
 
     expect(result.success).toBe(false);
     expectNothingSigned();
-    expect(mockGetRoute).not.toHaveBeenCalled();
+    // The execute never fetches a route at all now; the load-bearing half is
+    // that the tolerance is refused before the BUILD, so nothing was priced.
     expect(mockBuildRoute).not.toHaveBeenCalled();
+    expect(mockClaim).not.toHaveBeenCalled();
     expect(result.output).toContain("must not exceed 1000");
   });
 

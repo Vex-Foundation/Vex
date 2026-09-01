@@ -102,6 +102,24 @@ export type ApprovalExecutionStatus = z.infer<
 >;
 
 /**
+ * WHO asked for this action - the provenance recorded on `approval_intents`.
+ *
+ * `agent` is Vex's own agent loop; `studio_mcp` is an external coding agent
+ * that reached Vex through the Vex Studio MCP host. The distinction is a
+ * money-path fact: "an external tool asked my wallet to do this" is a different
+ * thing for a user to approve than "the assistant I was talking to asked".
+ *
+ * NULL on the DTO means something specific and narrower than "unknown": the
+ * approval has no companion `approval_intents` row at all (it predates
+ * migration 024). It never means "we could not tell", and an off-enum value
+ * from a drifted schema normalizes to null rather than to `agent` - labelling a
+ * Studio-originated row as agent-originated would be a lie about authority, and
+ * the safe direction is to claim less, not more.
+ */
+export const approvalOriginSchema = z.enum(["agent", "studio_mcp"]);
+export type ApprovalOrigin = z.infer<typeof approvalOriginSchema>;
+
+/**
  * Renderer-safe preview projection from `approval_intents.preview_json`.
  * The main-side mapper allow-lists keys via the same defensive style as
  * `extractToolName`: never recurses, never returns raw blobs. Values are
@@ -157,6 +175,10 @@ export const approvalSummaryDtoSchema = z
     decision: approvalDecisionSchema.nullable(),
     decisionReason: z.string().nullable(),
     executionStatus: approvalExecutionStatusSchema.nullable(),
+    /** Provenance (B0). Null when the approval has no companion intent row. */
+    origin: approvalOriginSchema.nullable(),
+    /** The Vex Studio project this action was proposed for, when any. */
+    projectId: z.string().uuid().nullable(),
   })
   .strict();
 export type ApprovalSummaryDto = z.infer<typeof approvalSummaryDtoSchema>;
@@ -174,6 +196,16 @@ export type ApprovalSummaryDto = z.infer<typeof approvalSummaryDtoSchema>;
 export const approvalPendingGlobalDtoSchema = approvalSummaryDtoSchema
   .extend({
     sessionTitle: z.string().nullable(),
+    /**
+     * The project's display name, joined at read time. DELIBERATELY SURVIVES A
+     * TOMBSTONE: a pending approval that outlived its project should still say
+     * which project asked, because "some deleted project wanted your wallet to
+     * do this" is not an answer a user can act on.
+     *
+     * Display only. `projectId` is the identity anything binds on; this is
+     * user-authored free text and is bounded to the column's own CHECK.
+     */
+    projectName: z.string().max(80).nullable(),
   })
   .strict();
 export type ApprovalPendingGlobalDto = z.infer<

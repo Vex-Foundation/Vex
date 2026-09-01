@@ -167,6 +167,12 @@ describe("swap_execute alias × Stage-7 gate — fresh prequote present", () => 
       safetyVerdict: verdict,
       safetyDetail: {},
       routeRef: null,
+    // Migration 095: a row that predates the claim lane reads as an
+    // executable, unclaimed quote. It authorizes nothing on its own - the
+    // claim additionally requires a stored route snapshot.
+    eligibilityKind: "executable",
+    claimedAt: null,
+    claimedBy: null,
       createdAt: "2026-06-04T00:00:00Z",
       expiresAt: "2999-01-01T00:00:00Z",
     };

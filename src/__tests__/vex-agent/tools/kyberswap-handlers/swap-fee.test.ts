@@ -83,13 +83,27 @@ vi.mock("@tools/kyberswap/token-api/client.js", () => ({
 }));
 
 const mockGetRoute = vi.fn();
+const mockBuildRoute = vi.fn();
 
 vi.mock("@tools/kyberswap/aggregator/client.js", () => ({
   getKyberAggregatorClient: () => ({
     getRoute: (...args: unknown[]) => mockGetRoute(...args),
-    buildRoute: vi.fn(),
+    buildRoute: (...args: unknown[]) => mockBuildRoute(...args),
   }),
 }));
+
+/** The one route summary this file's provider mock returns, quote and build alike. */
+const ROUTE_SUMMARY = {
+  amountIn: "1000000",
+  amountInUsd: "1.00",
+  amountOut: "999000",
+  amountOutUsd: "0.99",
+  gasUsd: "0.5",
+  route: [[{ pool: "0xpool1" }]],
+};
+function routeSummaryTheQuoteReturned(): unknown {
+  return ROUTE_SUMMARY;
+}
 
 const mockCreateAgentActivityPreBroadcastFailure = vi.fn().mockResolvedValue({
   executionId: 1,
@@ -109,11 +123,23 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
   pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
+// The execute CLAIMS the approved quote instead of fetching a route (the
+// 2026-08-27 quote-binding change). The claim's own behaviour is covered by
+// `quote-bound-execute.test.ts` and the Postgres claim suite; here it hands
+// back a real snapshot of this file's own route so the handler reaches the
+// behaviour under test.
+const mockClaim = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
+  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
 });
 
+import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 
 const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
@@ -132,24 +158,39 @@ describe("Vex integrator fee on KyberSwap route calls", () => {
     mockGetHoneypotFotInfo.mockReset();
     mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
     mockGetRoute.mockReset();
-    mockGetRoute.mockResolvedValue({
+    const routeResponse = {
       data: {
-        routeSummary: {
-          amountIn: "1000000",
-          amountInUsd: "1.00",
-          amountOut: "999000",
-          amountOutUsd: "0.99",
-          gasUsd: "0.5",
-          route: [[{ pool: "0xpool1" }]],
-        },
+        routeSummary: ROUTE_SUMMARY,
         routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
       },
+    };
+    mockGetRoute.mockResolvedValue(routeResponse);
+    mockBuildRoute.mockReset();
+    // The build is stopped at the router check: this file is about the fee
+    // params, and the staged-broadcast path is covered elsewhere.
+    mockBuildRoute.mockResolvedValue({
+      data: {
+        routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
+        data: "0xdead", transactionValue: "0",
+        amountIn: "1000000", amountOut: "999000",
+        amountInUsd: "1.00", amountOutUsd: "0.99", gasUsd: "0.5",
+      },
     });
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+        approvedClaim(
+          routeResponse.data.routeSummary,
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        ),
+    );
     mockReadErc20Metadata.mockReset();
     mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
       address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
     }));
     mockVerifyRouterAddress.mockReset();
+    mockVerifyRouterAddress.mockImplementation(() => {
+      throw new Error("stop-at-router-check (test boundary)");
+    });
     mockCreateAgentActivityPreBroadcastFailure.mockClear();
   });
 
@@ -166,48 +207,34 @@ describe("Vex integrator fee on KyberSwap route calls", () => {
     expect(params.feeReceiver).toBe(KYBERSWAP_FEE_RECEIVER);
   });
 
-  it("execute handler's route call sends the SAME four fee fields (stopped right after getRoute)", async () => {
-    // Force a stop right after getRoute — proves the fee params without
-    // needing the full staged-broadcast path mocked.
-    mockVerifyRouterAddress.mockImplementation(() => {
-      throw new Error("stop-after-getRoute (test boundary)");
-    });
-
-    const result = await KYBERSWAP_HANDLERS["kyberswap.swap.execute"]!(
-      { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
-      ctx(),
-    );
-    expect(result.success).toBe(false);
-    expect(mockGetRoute).toHaveBeenCalledTimes(1);
-    const params = mockGetRoute.mock.calls[0]![1] as Record<string, unknown>;
-    expect(params).toMatchObject(EXPECTED_FEE);
-    expect(params.feeReceiver).toBe(KYBERSWAP_FEE_RECEIVER);
-  });
-
-  it("quote and execute send IDENTICAL fee fields (same route the user saw executes)", async () => {
+  it("the execute makes NO route call at all - the fee the quote applied is the fee that executes", async () => {
+    // Stronger than the fee-field comparison this replaces. The execute used
+    // to fetch its own route, so the two calls' integrator-fee params had to
+    // be compared to prove the user got the route they were shown. Since
+    // 2026-08-28 the execute BUILDS FROM THE QUOTE'S OWN ROUTE SUMMARY, so the
+    // fee is the quoted one by construction - and the property to pin is that
+    // no second, unpriced route call exists to diverge from it.
     await KYBERSWAP_HANDLERS["kyberswap.swap.quote"]!(
       { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
       ctx({ sessionPermission: "restricted", approved: false }),
     );
-    const quoteParams = mockGetRoute.mock.calls[0]![1] as Record<string, unknown>;
+    const quoteCall = mockGetRoute.mock.calls[0];
+    if (quoteCall === undefined) throw new Error("test expected the quote to fetch a route");
+    const quoteParams = quoteCall[1] as Record<string, unknown>;
+    expect(quoteParams).toMatchObject(EXPECTED_FEE);
+    expect(quoteParams.feeReceiver).toBe(KYBERSWAP_FEE_RECEIVER);
 
     mockGetRoute.mockClear();
-    mockVerifyRouterAddress.mockImplementation(() => {
-      throw new Error("stop-after-getRoute (test boundary)");
-    });
     await KYBERSWAP_HANDLERS["kyberswap.swap.execute"]!(
       { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
       ctx(),
     );
-    const execParams = mockGetRoute.mock.calls[0]![1] as Record<string, unknown>;
 
-    const feeOf = (p: Record<string, unknown>) => ({
-      feeAmount: p.feeAmount,
-      isInBps: p.isInBps,
-      chargeFeeBy: p.chargeFeeBy,
-      feeReceiver: p.feeReceiver,
-    });
-    expect(feeOf(quoteParams)).toEqual(feeOf(execParams));
-    expect(feeOf(quoteParams)).toEqual(EXPECTED_FEE);
+    expect(mockGetRoute).not.toHaveBeenCalled();
+    const buildCall = mockBuildRoute.mock.calls[0];
+    if (buildCall === undefined) throw new Error("test expected the execute to build a route");
+    const body = buildCall[1] as { routeSummary: unknown };
+    // The very summary the quote's own fee-bearing route call produced.
+    expect(body.routeSummary).toEqual(routeSummaryTheQuoteReturned());
   });
 });

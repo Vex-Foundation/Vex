@@ -50,6 +50,8 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   WalletEvmTransactionConfirm: "Broadcast a prepared EVM transaction",
   WalletSolanaTransactionPrepare: "Prepare a Solana transaction",
   WalletSolanaTransactionConfirm: "Broadcast a prepared Solana transaction",
+  WalletWrapPrepare: "Prepare a native / wrapped-native conversion",
+  WalletWrapConfirm: "Broadcast a prepared wrap or unwrap",
   UnitsConvert: "Convert token amounts and units",
 
   // ── khalani ───────────────────────────────────────────────────────────────

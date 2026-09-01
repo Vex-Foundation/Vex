@@ -1,0 +1,40 @@
+{
+  // The ONE module in the renderer tree that runs in a Web Worker (the Studio
+  // file viewer's shiki tokenizer) plus the lib-neutral modules it imports.
+  //
+  // It gets its own project because `lib` is a PROJECT-WIDE setting: adding
+  // "WebWorker" to tsconfig.renderer.json would put `self`, `postMessage` and
+  // `onmessage` in scope for every component in the app, where calling one is a
+  // bug that would no longer be a type error. So the worker entry is excluded
+  // there and compiled here instead, with no DOM at all.
+  //
+  // `highlight-protocol.ts`, `shiki-tokenizer.ts` and `language-of-path.ts` are
+  // compiled by BOTH projects. That double compilation is the PROOF that they
+  // are lib-neutral - they reference neither a DOM type nor a worker type - and
+  // it is why the tokenizer can be tested in the ordinary renderer suite with no
+  // worker runtime at all. A comment claiming that would decay; this does not.
+  //
+  // This project is HARD-GATED in `lint:tsc` rather than ratcheted: it is new
+  // and clean, which is exactly the condition `scripts/check-type-baseline.mjs`
+  // names for a project belonging in the hard gate.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    // Matches tsconfig.renderer.json: these files are compiled by both projects
+    // and must not disagree about strictness. See that file's header for why
+    // exactOptionalPropertyTypes is off and noUncheckedIndexedAccess stays on.
+    "exactOptionalPropertyTypes": false,
+    "lib": ["ES2024", "WebWorker"],
+    "types": [],
+    "paths": {
+      "@/*": ["./src/renderer/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@vex-lib/*": ["../src/lib/*"]
+    }
+  },
+  "include": [
+    "src/renderer/features/appShell/studio/viewer/highlight/highlight.worker.ts",
+    "src/renderer/features/appShell/studio/viewer/highlight/highlight-protocol.ts",
+    "src/renderer/features/appShell/studio/viewer/highlight/shiki-tokenizer.ts",
+    "src/renderer/features/appShell/studio/viewer/highlight/language-of-path.ts"
+  ]
+}

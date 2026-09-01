@@ -16,6 +16,11 @@ import {
   type BuiltSwapTx,
   type SignedUniswapTransaction,
 } from "@tools/uniswap/execute.js";
+import {
+  assertFinalUniswapSwapRequest,
+  UniswapFinalRequestRefusal,
+  type ApprovedFinalRequest,
+} from "@tools/uniswap/final-request-guard.js";
 import { DependentLegGasEstimateError } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
 import type { UniswapDecodableReceipt } from "@tools/uniswap/receipt-decoder.js";
@@ -77,6 +82,17 @@ export async function runStagedBroadcast(
   clients: ReturnType<typeof getUniswapEvmClients>,
   what: string,
   priorLeg: ConfirmedPriorLeg | undefined,
+  /**
+   * The approved authority this leg's FINAL request is proven against, passed
+   * only for the swap leg. An allowance leg has no floor and no router input to
+   * bind; omitting it is not a weaker gate, it is a different transaction.
+   *
+   * The BUILT-TRANSACTION half is deliberately NOT passed in with it: it is
+   * taken from this function's own `tx`, the very object handed to the signer,
+   * so the byte-equality check cannot be pointed at some other transaction than
+   * the one about to be signed.
+   */
+  approvedFinalRequest?: Omit<ApprovedFinalRequest, "builtTransaction">,
 ): Promise<StageOutcome> {
   let signed: SignedUniswapTransaction;
   let broadcastHash: Hex;
@@ -87,6 +103,14 @@ export async function runStagedBroadcast(
       tx,
       priorLeg,
       (request) => reserveActivityEvmNonce(event.id, request),
+      approvedFinalRequest === undefined
+        ? undefined
+        : async (request) => {
+            assertFinalUniswapSwapRequest(request, {
+              ...approvedFinalRequest,
+              builtTransaction: { to: tx.to, data: tx.data, value: tx.value },
+            });
+          },
     );
   } catch (err) {
     // A leg whose estimate never succeeded after an approval THIS execute
@@ -97,6 +121,13 @@ export async function runStagedBroadcast(
     // support, so it goes to the outer C18 handler, which finalizes the
     // never-signed rows as "not attempted" and says so honestly.
     if (err instanceof DependentLegGasEstimateError) throw err;
+    // A PRE-SIGN AUTHORITY REFUSAL is not a router revert and must never be
+    // classified as one: `classifyUniswapRevertError` would flatten it to
+    // `unknown` and the canned guidance would replace the only sentence that
+    // says what was actually wrong. It leaves this loop intact, the same way
+    // the estimate refusal does, and the orchestrator's outer handler
+    // finalizes the never-signed rows and renders the refusal verbatim.
+    if (err instanceof UniswapFinalRequestRefusal) throw err;
     // Sign-time only (prepare/estimate/local signing) — no `sendRawTransaction`
     // call has happened yet, so nothing was ever submitted to the network.
     // Unlike a broadcast failure (C15), a sign-time failure is UNAMBIGUOUSLY

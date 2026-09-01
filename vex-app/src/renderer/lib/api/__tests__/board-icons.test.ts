@@ -74,13 +74,13 @@ describe("boardIconFreshnessMs", () => {
     expect(boardIconFreshnessMs(IMAGE)).toBe(Number.POSITIVE_INFINITY);
   });
 
-  it("settles a definitive absence forever", () => {
+  it("settles a policy refusal forever - re-asking would only re-download the refused bytes", () => {
     expect(
-      boardIconFreshnessMs(ok({ kind: "absent", reason: "unsupported_image" })),
+      boardIconFreshnessMs(ok({ kind: "refused_by_policy", reason: "unsupported_image" })),
     ).toBe(Number.POSITIVE_INFINITY);
-    expect(boardIconFreshnessMs(ok({ kind: "absent", reason: "over_cap" }))).toBe(
-      Number.POSITIVE_INFINITY,
-    );
+    expect(
+      boardIconFreshnessMs(ok({ kind: "refused_by_policy", reason: "over_cap" })),
+    ).toBe(Number.POSITIVE_INFINITY);
   });
 
   it("holds a 404 for exactly main's negative-cache window", () => {
@@ -156,8 +156,8 @@ describe("boardTokenIconOutcome", () => {
     { label: "in flight", iconId: ID, data: undefined, kind: "loading" },
     { label: "image", iconId: ID, data: IMAGE, kind: "image" },
     { label: "absent/not_found", iconId: ID, data: ok({ kind: "absent", reason: "not_found" }), kind: "absent" },
-    { label: "absent/unsupported_image", iconId: ID, data: ok({ kind: "absent", reason: "unsupported_image" }), kind: "absent" },
-    { label: "absent/over_cap", iconId: ID, data: ok({ kind: "absent", reason: "over_cap" }), kind: "absent" },
+    { label: "refused/unsupported_image", iconId: ID, data: ok({ kind: "refused_by_policy", reason: "unsupported_image" }), kind: "refused_by_policy" },
+    { label: "refused/over_cap", iconId: ID, data: ok({ kind: "refused_by_policy", reason: "over_cap" }), kind: "refused_by_policy" },
     { label: "unavailable/busy", iconId: ID, data: ok({ kind: "unavailable", reason: "busy" }), kind: "unavailable" },
     { label: "unavailable/transport", iconId: ID, data: ok({ kind: "unavailable", reason: "transport" }), kind: "unavailable" },
     { label: "unavailable/not_mounted", iconId: ID, data: ok({ kind: "unavailable", reason: "not_mounted" }), kind: "unavailable" },

@@ -28,6 +28,7 @@
  */
 
 import { realpath } from "node:fs/promises";
+import { acquireProjectLease } from "./project-lifecycle-gate.js";
 import { app } from "electron";
 
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
@@ -62,7 +63,7 @@ import {
   type ProjectRenderScope,
 } from "../database/projects/render-scope.js";
 import { log } from "../logger/index.js";
-import { projectNotFoundError } from "./project-errors.js";
+import { projectDeletingError, projectNotFoundError } from "./project-errors.js";
 import {
   resolveProjectDirectory,
   resolveProjectsRoot,
@@ -124,6 +125,24 @@ export async function renderProjectFiles(
 }
 
 async function runRender(
+  projectId: string,
+  trigger: StudioRenderTrigger,
+  correlationId: string,
+): Promise<Result<StudioRenderOutcome, VexError>> {
+  // A RENDER LEASE, before the first await. A render writes into the project's
+  // folder, so a delete has to be able to both refuse new ones and know this
+  // one is running. The teardown that runs during a delete holds the
+  // administrative token and is admitted through the same gate.
+  const admission = acquireProjectLease(projectId, "render");
+  if (!admission.ok) return err(projectDeletingError(correlationId));
+  try {
+    return await runRenderAdmitted(projectId, trigger, correlationId);
+  } finally {
+    admission.lease.release();
+  }
+}
+
+async function runRenderAdmitted(
   projectId: string,
   trigger: StudioRenderTrigger,
   correlationId: string,

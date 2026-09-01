@@ -162,7 +162,7 @@ describe("createProject - directory claim", () => {
     expect(callsMatching(query, "ROLLBACK")).toHaveLength(0);
   });
 
-  it("refuses an occupied slug with projects.slug_taken and touches neither the folder nor the DB", async () => {
+  it("refuses an occupied slug with projects.slug_taken, writing nothing", async () => {
     const existing = path.join(root, "my-app");
     await mkdir(existing);
     await writeFile(path.join(existing, "user-file.txt"), "important");
@@ -176,8 +176,18 @@ describe("createProject - directory claim", () => {
     expect(outcome.error.message).toContain("my-app");
     // The user's file survives: the claim never overwrites and never renames.
     expect(await readdir(existing)).toEqual(["user-file.txt"]);
-    // Nothing reached the database.
-    expect(query).not.toHaveBeenCalled();
+    // B0 changed this from "nothing reached the database" to "nothing WROTE to
+    // it". The create path now asks, before claiming the directory, whether the
+    // slug belongs to a tombstone whose cleanup is unfinished - because the
+    // remover still owns that folder and racing it would delete the new
+    // project's files. That is exactly one read-only lookup and no writes.
+    const statements = query.mock.calls.map((call) => String(call[0]));
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toContain("FROM projects");
+    expect(statements[0]).toContain("cleanup_state IN ('pending', 'trash_pending')");
+    expect(
+      statements.some((sql) => /\b(INSERT|UPDATE|DELETE|BEGIN)\b/i.test(sql)),
+    ).toBe(false);
   });
 
   it("refuses a name that derives no slug rather than inventing a folder name", async () => {

@@ -284,6 +284,7 @@ describe("uiStore", () => {
       hideDustBalances: true,
       notificationsEnabled: true,
       bookSectionOrder: [],
+      studioBookSectionOrder: [],
       bookTab: "portfolio",
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
@@ -617,6 +618,7 @@ describe("uiStore", () => {
       hideDustBalances: true,
       notificationsEnabled: true,
       bookSectionOrder: [],
+      studioBookSectionOrder: [],
       bookTab: "portfolio",
     });
     expect(parsed.state.logBuffer).toBeUndefined();

@@ -1,15 +1,38 @@
 /**
- * The renderer's ONE syntax highlighter: a small synchronous line tokenizer
- * that returns classed text runs for React to render — never an HTML string
+ * THE CHAT TRANSCRIPT's syntax highlighter: a small synchronous line tokenizer
+ * that returns classed text runs for React to render - never an HTML string
  * (the build bans HTML sinks). Colors live on `.vex-code-*` classes in
  * chat-transcript.css, tokens-only. An unknown or absent language returns
- * null and the caller renders its plain fallback — never an error.
+ * null and the caller renders its plain fallback - never an error.
  *
- * Deliberately NOT shiki: the reference's sync core would add several new
- * dependencies and megabytes of grammar for the handful of languages Vex chat
- * actually shows. This tokenizer covers comments, strings, numbers, keywords
- * and JSON keys — the readability payload — in a few hundred lines of owned,
- * auditable code.
+ * ## TWO highlighters, one product, and why that is right
+ *
+ * This module was once the renderer's only one. Since stage B3c it is one of
+ * two, and the split is a difference of POLICY rather than duplication:
+ *
+ *  - HERE, the chat transcript. A snippet arrives mid-stream and has to paint
+ *    in the same frame, so the tokenizer is SYNCHRONOUS and in-bundle. It
+ *    covers comments, strings, numbers, keywords and JSON keys - the
+ *    readability payload - for the handful of languages chat actually shows,
+ *    in a few hundred lines of owned, auditable code. Shiki cannot serve this:
+ *    a worker round trip per snippet would leave code grey while it streamed,
+ *    and its grammars are megabytes for languages chat never renders.
+ *
+ *  - `features/appShell/studio/viewer/highlight/`, the Studio file viewer. A
+ *    WHOLE FILE in an arbitrary language needs real TextMate grammars, and it
+ *    can afford a worker round trip because it happens once when a tab opens.
+ *    That owner runs shiki 4 in a module worker, with a bounded hot set of
+ *    grammars loaded on demand. The shiki dependency was accepted for it in
+ *    stage B1.
+ *
+ * The two share a PALETTE DIRECTION, not code: keywords carry the accent,
+ * strings the success tone, comments recede. `.vex-code-*` here and
+ * `--vex-alias-code-token-*` there both resolve to the same aliases, which is
+ * what makes a snippet in chat and a file in the viewer read as one product.
+ *
+ * Do not migrate this to shiki without measuring the streaming frame cost
+ * first, and do not grow it toward real grammars: the viewer already owns that
+ * problem.
  */
 
 /** One highlighted run of a line. */

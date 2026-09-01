@@ -448,3 +448,81 @@ describe("portfolio dto schema", () => {
     ).toBe(false);
   });
 });
+
+describe("portfolioReadInputSchema - the project arm (B0)", () => {
+  const PROJECT = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+
+  it("accepts a bare project read", () => {
+    expect(
+      portfolioReadInputSchema.safeParse({ scope: "project", projectId: PROJECT })
+        .success,
+    ).toBe(true);
+  });
+
+  it("accepts an inventory-shaped walletId", () => {
+    const parsed = portfolioReadInputSchema.safeParse({
+      scope: "project",
+      projectId: PROJECT,
+      walletId: "evm_3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("REJECTS a missing or non-uuid projectId", () => {
+    expect(
+      portfolioReadInputSchema.safeParse({ scope: "project" }).success,
+    ).toBe(false);
+    expect(
+      portfolioReadInputSchema.safeParse({ scope: "project", projectId: "nope" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("REJECTS a stray field from another arm", () => {
+    // `.strict()` is what stops a malformed request from silently widening
+    // into a different scope than the caller asked for.
+    expect(
+      portfolioReadInputSchema.safeParse({
+        scope: "project",
+        projectId: PROJECT,
+        sessionId: PROJECT,
+      }).success,
+    ).toBe(false);
+    expect(
+      portfolioReadInputSchema.safeParse({
+        scope: "project",
+        projectId: PROJECT,
+        walletAddress: "0x1111111111111111111111111111111111111111",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("REJECTS an address supplied where an id belongs", () => {
+    // The renderer never supplies an address on any arm; ids are resolved
+    // server-side. A 0x address is over the id bound only by accident, so the
+    // real guarantee is main's membership check - this pins the intent.
+    const parsed = portfolioReadInputSchema.safeParse({
+      scope: "project",
+      projectId: PROJECT,
+      walletId: "x".repeat(129),
+    });
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe("portfolioDtoSchema - the project scope (B0)", () => {
+  it("accepts scope: project", () => {
+    expect(
+      portfolioDtoSchema.safeParse({
+        scope: "project",
+        walletCount: 1,
+        liveTotalUsd: 10,
+        snapshotTotalUsd: null,
+        pnlVsPrev: null,
+        snapshotAt: null,
+        tokens: [],
+        chains: [],
+      }).success,
+    ).toBe(true);
+  });
+});

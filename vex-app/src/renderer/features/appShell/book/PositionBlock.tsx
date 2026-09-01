@@ -38,6 +38,10 @@ import {
 import { useSessionWallets } from "../../../lib/api/session-wallets.js";
 import { formatUsd, formatUsdDelta } from "../../../lib/format.js";
 import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
+import {
+  portfolioReadInputFor,
+  sessionPortfolioScope,
+} from "./portfolio/portfolio-scope.js";
 import { GlobalWalletSwitcher } from "./GlobalWalletSwitcher.js";
 import { PositionChains } from "./PositionChains.js";
 import { PortfolioRefreshButton } from "./PortfolioRefreshButton.js";
@@ -57,7 +61,9 @@ export function PositionBlock({
   const isSession = activeSessionId !== null;
   const title = isSession ? "Position" : "Portfolio";
 
-  const query = usePortfolio(activeSessionId);
+  const query = usePortfolio(
+    portfolioReadInputFor(sessionPortfolioScope(activeSessionId)),
+  );
   const result = query.data;
   const portfolio = result?.ok ? result.data : null;
 

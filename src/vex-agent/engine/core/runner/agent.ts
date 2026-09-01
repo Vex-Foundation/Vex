@@ -448,8 +448,31 @@ export async function runAgentTurnUnderLease(
   // means a woken slice would re-send the identical request and stall again -
   // a wake loop that spends input tokens forever. Both permissions get the
   // honest reply and the turn ends.
-  if (result.stopReason === "no_progress") {
-    if (!text) await persistSynthesisedReply(runtimeBoundExhaustedReply("no_progress"));
+  //
+  // ── Tool-call repetition ───────────────────────────────────────
+  //
+  // A SECOND arm on the same principle, and deliberately its own branch rather
+  // than a second literal in the stall test: the two stops mean opposite
+  // things about what happened. A stall produced nothing; a repetition
+  // produced real, executed tool calls over and over. They owe the user
+  // different sentences (`runtimeBoundExhaustedReply` picks), and they must
+  // never be conflated in a log or a copy change. What they share is the one
+  // decision that matters here - never continued, not even under full
+  // autonomy. Waking a session that just proved it repeats itself schedules
+  // the repetition.
+  //
+  // The stop reason returned below is the RAW `tool_call_loop`: this turn was
+  // not continued, so claiming `waiting_for_wake` would be a lie about a
+  // session nothing is going to wake.
+  /**
+   * The reason reported to the caller. It is the loop's own reason EXCEPT on
+   * the one path that changes what actually happens to the session - see the
+   * continuation branch below.
+   */
+  let reportedStopReason = result.stopReason;
+
+  if (result.stopReason === "no_progress" || result.stopReason === "tool_call_loop") {
+    if (!text) await persistSynthesisedReply(runtimeBoundExhaustedReply(result.stopReason));
   } else if (isContinuableRuntimeStop(result.stopReason)) {
     // The slice's own cancellation signal (a wake-driven slice carries it in
     // both positions). Handed to the scheduler, which re-reads it INSIDE the
@@ -463,7 +486,26 @@ export async function runAgentTurnUnderLease(
       })
       : { scheduled: false };
 
-    if (!continuation.scheduled && !text) {
+    if (continuation.scheduled) {
+      // ── M2: report what actually happened, not what the guard was called ──
+      //
+      // A continued full-autonomy turn is NOT over. `iteration_limit` and
+      // `timeout` describe the slice guard that fired INSIDE it, and every
+      // consumer downstream reads a stop reason as an account of the turn's
+      // outcome: the composer renders a terminal failure banner for `timeout`,
+      // exports record it as how the work ended, bug reports classify on it.
+      // The turn is parked with a live wake and the executor will resume it in
+      // seconds, so `waiting_for_wake` is the only honest answer, and it is
+      // the same reason a mission run reports for the same situation.
+      //
+      // Narrow ON PURPOSE. Only this arm remaps: a restricted session was
+      // never continued, and a full-autonomy session whose scheduling FAILED
+      // (`scheduled === false`, gated by an operator stop or a lost race) is
+      // genuinely over on the raw guard. Reporting `waiting_for_wake` there
+      // would promise a resume that nothing is going to perform - the exact
+      // dishonesty this change exists to remove, pointed the other way.
+      reportedStopReason = "waiting_for_wake";
+    } else if (!text) {
       await persistSynthesisedReply(runtimeBoundExhaustedReply(result.stopReason));
     }
   }
@@ -472,7 +514,7 @@ export async function runAgentTurnUnderLease(
     text,
     toolCallsMade: result.toolCallsMade,
     pendingApprovals: result.pendingApprovals,
-    stopReason: result.stopReason,
+    stopReason: reportedStopReason,
     missionStatus: null,
   };
 }

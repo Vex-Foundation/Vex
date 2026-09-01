@@ -62,11 +62,13 @@ describe("the exported inventory covers exactly the export scope", () => {
     // tools (EVM and Solana prepare/confirm).
     // 159 -> 165: the dexscreener protocol replaced its 12 public-API tools
     // with the 18-tool website-API surface (S10).
-    // 165 -> 178: the indexify namespace landed with 13 tools (10 reads,
-    // trade_execute, order_resolve, stack_create) — the first custodial API
-    // venue. Every namespace exports, so all 13 appear here.
-    expect(inventory).toHaveLength(178);
-    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(25);
+    // 165 -> 180, two independent additions composing at this merge:
+    //  - +13 protocol: the indexify namespace (10 reads, trade_execute,
+    //    order_resolve, stack_create) — the first custodial API venue.
+    //  - +2 internal: the native <-> wrapped-native pair, exported by
+    //    default like every other wallet tool (`mcp-export-scope.md`).
+    expect(inventory).toHaveLength(180);
+    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
     expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(153);
   });
 

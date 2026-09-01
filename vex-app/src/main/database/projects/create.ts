@@ -52,8 +52,10 @@ import {
 } from "@shared/schemas/projects.js";
 import { log } from "../../logger/index.js";
 import { deriveProjectSlug } from "../../studio/project-slug.js";
+import { slugHeldByUnfinishedCleanup } from "./delete.js";
 import {
   projectNameUnusableError,
+  projectSlugCleanupPendingError,
   projectSlugTakenError,
   projectsRootUnavailableError,
 } from "../../studio/project-errors.js";
@@ -180,6 +182,22 @@ export async function createProject(
       `[projects-db] refused a project directory outside the projects root correlationId=${correlationId}`,
     );
     return err(projectsRootUnavailableError(correlationId));
+  }
+
+  // THE TOMBSTONE CHECK, BEFORE THE DIRECTORY IS CLAIMED (B0).
+  //
+  // The partial unique index frees a slug at the DATABASE level as soon as the
+  // project is tombstoned, so an insert would succeed. The FILESYSTEM is the
+  // problem: a tombstone whose cleanup has not finished still owns that folder,
+  // and its remover is going to delete entries from it. Claiming it now would
+  // mean the remover deleting the NEW project's files.
+  //
+  // Retryable, because cleanup is a durable obligation with two recovery owners
+  // (the startup sweep and a repeated delete), so waiting actually resolves it.
+  const heldByCleanup = await slugHeldByUnfinishedCleanup(slug);
+  if (!heldByCleanup.ok) return heldByCleanup;
+  if (heldByCleanup.data) {
+    return err(projectSlugCleanupPendingError(correlationId));
   }
 
   // Exclusive claim: no `recursive`, so an existing directory is EEXIST.

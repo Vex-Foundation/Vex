@@ -22,6 +22,7 @@ import {
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
+import type { QuoteBindingPreview } from "../quote-authority/restore.js";
 import { evaluateLendBorrowRiskPreview } from "../solana-jupiter/borrow-risk-preview.js";
 import { summarizeProtocolError } from "./errors.js";
 import { isPreviewExecution } from "../capture-validator.js";
@@ -108,6 +109,8 @@ export type PrequoteGateDecision =
       readonly feePreview: JupiterFeePreview | undefined;
       /** Jupiter Lend Borrow LTV/health disclosure (B1) for the approval preview (typed, unspoofable). */
       readonly riskPreview: LendBorrowRiskPreview | undefined;
+      /** The approved quote's card binding (typed, unspoofable) for a gated swap execute. */
+      readonly quoteBinding: QuoteBindingPreview | undefined;
     }
   | { readonly kind: "block"; readonly message: string };
 
@@ -151,6 +154,7 @@ export async function evaluatePrequoteGateDecision(
       termLock: decision.termLock,
       feePreview: decision.feePreview,
       riskPreview: undefined,
+      quoteBinding: decision.quoteBinding,
     };
   }
 
@@ -166,6 +170,7 @@ export async function evaluatePrequoteGateDecision(
     termLock: undefined,
     feePreview: undefined,
     riskPreview: risk.riskPreview,
+    quoteBinding: undefined,
   };
 }
 
@@ -249,6 +254,7 @@ export function evaluateApprovalGate(
   prequoteTermLock: { readonly maturityIso: string } | undefined,
   prequoteFeePreview: JupiterFeePreview | undefined,
   prequoteRiskPreview: LendBorrowRiskPreview | undefined,
+  prequoteQuoteBinding: QuoteBindingPreview | undefined,
 ): ToolResult | undefined {
   if (manifest.mutating && manifest.actionKind !== "local_write" && !context.approved && !isPreviewExecution(request.toolId, params)
     && context.sessionPermission === "restricted"
@@ -276,10 +282,12 @@ export function evaluateApprovalGate(
         fotTax?: number;
         termLock?: { maturityIso: string };
         feePreview?: JupiterFeePreview;
+        quoteBinding?: QuoteBindingPreview;
       } = { verdict: prequoteVerdict };
       if (prequoteFotTax !== undefined) prequote.fotTax = prequoteFotTax;
       if (prequoteTermLock !== undefined) prequote.termLock = prequoteTermLock;
       if (prequoteFeePreview !== undefined) prequote.feePreview = prequoteFeePreview;
+      if (prequoteQuoteBinding !== undefined) prequote.quoteBinding = prequoteQuoteBinding;
       pending.prequote = prequote;
     }
     if (prequoteRiskPreview !== undefined) {

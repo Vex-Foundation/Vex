@@ -37,6 +37,8 @@
  */
 
 import { z } from "zod";
+
+import { projectWalletIdSchema } from "./projects.js";
 import {
   TOKEN_NAME_MAX_LENGTH,
   sanitizeTokenName,
@@ -78,6 +80,13 @@ const tokenAddressSchema = z
  *    inventory is rejected, never silently widened back to the aggregate.
  *  - `session` — requires a UUID `sessionId`; aggregates only that
  *    session's selected wallets.
+ *  - `project` - requires a UUID `projectId`; aggregates the wallets a Vex
+ *    Studio project has SELECTED, read from `project_wallets` (authoritative),
+ *    with an OPTIONAL `walletId` narrowing to one of them. The id is an
+ *    inventory id (`evm_<uuid>` / `sol_<uuid>`), never an address, and main
+ *    rejects an id that is not one of THAT project's two selections - an id
+ *    that merely exists in the global inventory is refused, or the arm would
+ *    become a way to read any wallet by quoting a project id.
  *
  * `.strict()` on each member rejects a stray `sessionId` on a global
  * request and a missing/invalid `sessionId` on a session request, so a
@@ -94,6 +103,13 @@ export const portfolioReadInputSchema = z.discriminatedUnion("scope", [
     })
     .strict(),
   z.object({ scope: z.literal("session"), sessionId: z.string().uuid() }).strict(),
+  z
+    .object({
+      scope: z.literal("project"),
+      projectId: z.string().uuid(),
+      walletId: projectWalletIdSchema.optional(),
+    })
+    .strict(),
 ]);
 export type PortfolioReadInput = z.infer<typeof portfolioReadInputSchema>;
 
@@ -206,7 +222,7 @@ export type PositionChainDto = z.infer<typeof positionChainDtoSchema>;
  */
 export const portfolioDtoSchema = z
   .object({
-    scope: z.enum(["global", "session"]),
+    scope: z.enum(["global", "session", "project"]),
     walletCount: z.number().int().nonnegative(),
     liveTotalUsd: z.number(),
     snapshotTotalUsd: z.number().nullable(),

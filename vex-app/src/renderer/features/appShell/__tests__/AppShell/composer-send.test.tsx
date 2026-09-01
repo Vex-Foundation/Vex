@@ -30,24 +30,13 @@ vi.mock("../../screens/SettingsScreen.js", () => ({
   SettingsScreen: () => null,
 }));
 
-vi.mock("@thesvg/react", () => ({
-  Docker: () => null,
-  Ethereum: () => null,
-  Solana: () => null,
-  Base: () => null,
-  Robinhood: () => null,
-  Polygon: () => null,
-  Optimism: () => null,
-  BnbChain: () => null,
-  Tether: () => null,
-  Circle: () => null,
-  Chainlink: () => null,
-  Postgresql: () => null,
-  Bitcoin: () => null,
-  Bnb: () => null,
-  DaiStablecoin: () => null,
-  Usdc: () => null,
-}));
+// Every brand mark stubs to null, whatever its name: the marks are
+// presentation-only here, and a hand-listed mock breaks the whole suite
+// file each time a component references a new mark.
+vi.mock("@thesvg/react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@thesvg/react")>();
+  return Object.fromEntries(Object.keys(actual).map((name) => [name, () => null]));
+});
 
 // Stage 4: the always-mounted BookPanel renders SessionRuntimeBar (in the
 // RUNTIME & COST block) → ModelBrandIcon, which statically imports ~20 brand
@@ -370,7 +359,7 @@ describe("AppShell", () => {
     fireEvent.change(draft, { target: { value: "first" } });
     fireEvent.keyDown(draft, { key: "Enter" });
     await waitFor(() => expect(chatSubmitMock).toHaveBeenCalledTimes(1));
-    await screen.findByRole("button", { name: "Stop generating" });
+    await screen.findByRole("button", { name: "Stop agent" });
 
     // Type a NEW non-empty draft (so the empty-message guard is NOT what blocks)
     // and press Enter again — the pending guard must keep it at one submit.

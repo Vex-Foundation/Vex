@@ -106,4 +106,12 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   WalletSolanaTransactionConfirm: async () =>
     (await import("../internal/wallet/transaction/confirm-solana.js"))
       .handleWalletSolanaTransactionConfirm,
+
+  // Native <-> wrapped-native conversion. Its own pair and its own lazy
+  // modules: a wrap intent lives in its own table and neither confirm above may
+  // consume its row.
+  WalletWrapPrepare: async () =>
+    (await import("../internal/wallet/wrap/prepare.js")).handleWalletWrapPrepare,
+  WalletWrapConfirm: async () =>
+    (await import("../internal/wallet/wrap/confirm.js")).handleWalletWrapConfirm,
 };

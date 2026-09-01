@@ -53,6 +53,29 @@ export const BATCH_ABORTED_BY_DEADLINE_OUTPUT =
   + "It did NOT execute and had no effect.";
 
 /**
+ * Synthetic tool-result emitted for batch tool calls that were never dispatched
+ * because the loop detector's FIRST strike landed earlier in the same batch.
+ *
+ * Same pairing contract as every other drain. It says "not dispatched" rather
+ * than "cancelled" because the turn is not ending: the very next thing the
+ * model reads is the correction cue, and a drain message implying the turn died
+ * would contradict it.
+ */
+export const BATCH_ABORTED_BY_LOOP_CORRECTION_OUTPUT =
+  "batch_aborted_by_loop_correction: a repeated tool call was detected earlier in this batch, "
+  + "so this tool call was not dispatched. It did NOT execute and had no effect. Read the engine "
+  + "correction that follows before deciding what to call next.";
+
+/**
+ * Synthetic tool-result for batch tool calls never dispatched because the loop
+ * detector's SECOND strike ended the turn. Distinct from the correction drain
+ * above because the consequence differs: nothing follows this one.
+ */
+export const BATCH_ABORTED_BY_TOOL_CALL_LOOP_OUTPUT =
+  "batch_aborted_by_tool_call_loop: the turn was ended because the same tool call kept repeating, "
+  + "so this tool call was not dispatched. It did NOT execute and had no effect.";
+
+/**
  * Synthetic tool-result for a call that returned "approval required" onto a
  * run that had already gone terminal. The approval is auto-rejected in the
  * enqueue transaction; this keeps the call/result pairing intact.

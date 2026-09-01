@@ -24,16 +24,40 @@ import { z } from "zod";
 
 /**
  * Distinctive literal that exists only because `registerZodLocale` is reachable
- * from a bundle entry. The post-build gate greps emitted chunks for it, so it
- * must stay a plain inline string literal that no minifier can fold away, and
- * must stay referenced from the exported functions below.
+ * from a bundle entry. It must stay a plain inline string literal that no
+ * minifier can fold away.
+ *
+ * ITS ONE REFERENCE IN THIS MODULE IS THE ASSIGNMENT INSIDE
+ * `registerZodLocale`, AND THAT IS THE WHOLE GATE. The marker used to be read
+ * by the PROBE as well, and the probe is reachable without registration ever
+ * happening - so a bundle that called `probeZodLocale()` and never
+ * `registerZodLocale()` still carried the literal and passed the post-build
+ * check. That gate proved the string had been compiled in, which was never the
+ * question. Now the literal survives tree-shaking only if the registration
+ * body does, so its presence in a chunk IS registration reachability.
+ *
+ * Consequence for anyone editing this file: do NOT reference
+ * `ZOD_LOCALE_MARKER` from any other function here. Read
+ * {@link ZodLocaleProbe.marker} instead, which is null exactly when
+ * registration has not run.
  */
 export const ZOD_LOCALE_MARKER = "vex-zod-locale:en";
 
 /** Message zod core produces when no locale error map is registered. */
 const GENERIC_ZOD_MESSAGE = "Invalid input";
 
-let registered = false;
+/**
+ * The sample value the probe parses. Deliberately NOT the marker: a bundle
+ * that only probes must not be able to carry it (see {@link ZOD_LOCALE_MARKER}).
+ */
+const PROBE_SAMPLE = "zod-locale-probe";
+
+/**
+ * Registration state, written ONLY by {@link registerZodLocale}: null until it
+ * runs, the marker afterwards. One variable carries both the idempotence flag
+ * and the marker, so there is no second place the literal could leak in from.
+ */
+let registrationMarker: string | null = null;
 
 /**
  * Register the English locale on zod's global config. Idempotent: safe to call
@@ -41,15 +65,19 @@ let registered = false;
  * also imports, and a re-register is a plain overwrite of the same map).
  */
 export function registerZodLocale(): void {
-  if (registered) return;
+  if (registrationMarker !== null) return;
   z.config(z.locales.en());
-  registered = true;
+  registrationMarker = ZOD_LOCALE_MARKER;
 }
 
 /** Result of the boot-time self-check. */
 export interface ZodLocaleProbe {
-  /** Marker string, so a caller's log line is greppable in a built bundle. */
-  readonly marker: string;
+  /**
+   * The registration marker, or null when `registerZodLocale()` never ran in
+   * this process. A caller logging it makes the fact greppable in a running
+   * app; it is NOT how the built artifact is gated (see the marker's own doc).
+   */
+  readonly marker: string | null;
   /** False when zod is still emitting the generic core message. */
   readonly localized: boolean;
   /** The message the probe schema actually produced. */
@@ -61,7 +89,7 @@ export interface ZodLocaleProbe {
  * resulting issue message. Exported only as the injection seam for tests.
  */
 export function readZodLocaleSampleMessage(): string {
-  const parsed = z.array(z.string()).max(0).safeParse([ZOD_LOCALE_MARKER]);
+  const parsed = z.array(z.string()).max(0).safeParse([PROBE_SAMPLE]);
   if (parsed.success) return "";
   const [issue] = parsed.error.issues;
   return issue?.message ?? "";
@@ -77,7 +105,7 @@ export function probeZodLocale(
 ): ZodLocaleProbe {
   const sampleMessage = readSampleMessage();
   return {
-    marker: ZOD_LOCALE_MARKER,
+    marker: registrationMarker,
     localized: sampleMessage !== GENERIC_ZOD_MESSAGE && sampleMessage !== "",
     sampleMessage,
   };

@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-dexscreener",
   "datasetVersion": "dexscreener-v5",
   "status": "captured",
-  "capturedAt": "2026-08-25T22:50:46.930Z",
+  "capturedAt": "2026-09-01T21:11:00.033Z",
   "metrics": {
     "overall": {
       "count": 62,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-dexscreener@dexscreener-v5, mode lexical, 62 cases evaluated.",
     "overall recall@1 0.452, recall@5 0.71, coverage@5 0.694, mrr@5 0.549, groupMrr@5 0.547.",
-    "Measured delta vs previous baseline (dexscreener-v5, captured 2026-08-25T12:46:59.606Z): 12 metric values moved; overall recall@5 0.71 -> 0.71, overall mrr@5 0.541 -> 0.549, case count 62 -> 62."
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

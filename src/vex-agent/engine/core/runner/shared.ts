@@ -30,10 +30,20 @@ export const DEFAULT_LOOP_CONFIG: TurnLoopConfig = {
   // Mission runs use this cap (50). Agent (one-shot) and mission setup
   // override it locally — see processAgentTurn (50) and
   // processMissionSetupTurn (25). All three are finite, deliberate
-  // backstops against runaway tool-call loops; the 10-minute timeoutMs and
+  // backstops against runaway tool-call loops; the 30-minute timeoutMs and
   // context-pressure compaction are the independent wall-clock backstops.
   maxIterations: 50,
-  timeoutMs: 600_000, // 10 minutes
+  // 30 minutes, and never below it (owner decision 2026-08-28, pinned by
+  // `DEFAULT_LOOP_CONFIG.timeoutMs >= 1_800_000`). Ten minutes was cutting
+  // real autonomous work in half: a slice that does genuine research and
+  // several on-chain reads spends most of it waiting on providers, so the
+  // clock was ending productive turns and charging a fresh full-context
+  // continuation to resume them. The bound still exists - it is the backstop
+  // against a turn that never ends - it is just no longer the thing that
+  // normally ends a turn. Setup inherits it through the spread below, which
+  // is accepted fleet-wide: a setup turn that runs long is a conversation
+  // the operator is still in.
+  timeoutMs: 1_800_000,
   contextLimit: 256_000,
 };
 
@@ -100,6 +110,34 @@ export const NO_PROGRESS_REPLY =
   "different model if it keeps happening.";
 
 /**
+ * The `tool_call_loop` sibling of `ITERATION_LIMIT_REPLY`.
+ *
+ * Says the one thing the user needs to decide what to do next: the model was
+ * repeating an identical call that kept returning an identical result, it was
+ * told so once, and it did it again. Naming the repetition is what separates
+ * this from a budget message - "continue" is precisely the wrong next step
+ * here, because continuing is what the model already proved it would do.
+ *
+ * Like `NO_PROGRESS_REPLY` it does NOT claim that nothing ran: the repeated
+ * calls DID execute up to the correction, and earlier rounds in the turn can
+ * have done real work, including work that moved funds. It points at the
+ * transcript instead, which is both honest and the same policy the renderer's
+ * notice uses to withhold one-click retry.
+ *
+ * It deliberately names no tool and no arguments. The arguments are the
+ * sensitive part (a repeated call can carry an address, an amount, a key
+ * fragment in an error string), and a reply the user reads is not the place to
+ * re-print them; the structured facts on the stop payload carry the tool name
+ * and the counts for operators.
+ */
+export const TOOL_CALL_LOOP_REPLY =
+  "I stopped this turn early: I kept repeating the same tool call and getting the "
+  + "same result back, and I did it again after being asked to change approach, so "
+  + "continuing would just repeat it. Check the transcript above for what did run, "
+  + "then tell me what to try differently - a different approach, a narrower step, "
+  + "or a different tool.";
+
+/**
  * A runtime bound that ends a turn and therefore owes the user a deterministic
  * reply when the model produced no text.
  *
@@ -112,7 +150,7 @@ export const NO_PROGRESS_REPLY =
  */
 export type RuntimeBoundStop = Extract<
   RuntimeStopReason,
-  "iteration_limit" | "timeout" | "no_progress"
+  "iteration_limit" | "timeout" | "no_progress" | "tool_call_loop"
 >;
 
 export function isRuntimeBoundStop(
@@ -122,6 +160,10 @@ export function isRuntimeBoundStop(
     stopReason === "iteration_limit"
     || stopReason === "timeout"
     || stopReason === "no_progress"
+    // Same reason `no_progress` is here and not in `isContinuableRuntimeStop`:
+    // a turn that ended on a repetition must never be silent, and must never
+    // be auto-continued into repeating it again.
+    || stopReason === "tool_call_loop"
   );
 }
 
@@ -133,5 +175,6 @@ export function isRuntimeBoundStop(
 export function runtimeBoundExhaustedReply(trigger: RuntimeBoundStop): string {
   if (trigger === "timeout") return TIMEOUT_REPLY;
   if (trigger === "no_progress") return NO_PROGRESS_REPLY;
+  if (trigger === "tool_call_loop") return TOOL_CALL_LOOP_REPLY;
   return ITERATION_LIMIT_REPLY;
 }

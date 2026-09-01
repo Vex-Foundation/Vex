@@ -80,6 +80,71 @@ describe("pre-shell plate", () => {
   });
 });
 
+/**
+ * The Studio file viewer's code tokens (B3c).
+ *
+ * The same contract the gate group above enforces, for a family that fails in a
+ * quieter way. Shiki writes `var(--vex-alias-code-token-keyword)` directly into
+ * a token's inline colour, so a slot this sheet stops declaring does not throw
+ * and does not warn - the token simply renders with no colour, and only in the
+ * theme that lost it. A dark-only declaration would ship as grey code for every
+ * light-theme user.
+ */
+const CODE_THEME_SLOTS = [
+  "foreground",
+  "background",
+  "token-constant",
+  "token-string",
+  "token-comment",
+  "token-keyword",
+  "token-parameter",
+  "token-function",
+  "token-string-expression",
+  "token-punctuation",
+  "token-link",
+  "token-inserted",
+  "token-deleted",
+  "token-changed",
+] as const;
+
+describe("file-viewer code tokens", () => {
+  it.each(CODE_THEME_SLOTS)(
+    "--vex-alias-code-%s is declared in BOTH themes",
+    (slot) => {
+      const alias = `--vex-alias-code-${slot}:`;
+      expect(chronosBlock, "chronos (:root)").toContain(alias);
+      expect(celerisBlock, "celeris").toContain(alias);
+    },
+  );
+
+  it("resolves every code token through an alias, never a raw colour", () => {
+    // A hex here would be invisible to the theme flip, exactly the defect the
+    // pre-shell plate case above exists for.
+    for (const block of [chronosBlock, celerisBlock]) {
+      for (const match of block.matchAll(/--vex-alias-code-[a-z-]+:\s*([^;]+);/g)) {
+        const value = (match[1] ?? "").trim();
+        expect(value === "transparent" || value.startsWith("var(--vex-alias-")).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  it("declares every slot the tokenizer's own table names, and no more", () => {
+    // The tokenizer reads these names out of the installed @shikijs/core. If
+    // the two lists drift, one of them is describing a theme that does not
+    // exist.
+    const declared = [
+      ...new Set(
+        [...chronosBlock.matchAll(/--vex-alias-code-([a-z-]+)\s*:/g)].map(
+          (match) => match[1] as string,
+        ),
+      ),
+    ].sort();
+    expect(declared).toEqual([...CODE_THEME_SLOTS].sort());
+  });
+});
+
 describe("pre-shell alias group", () => {
   it("has aliases at all (the regex above is load-bearing)", () => {
     expect(gateAliases.length).toBeGreaterThanOrEqual(9);

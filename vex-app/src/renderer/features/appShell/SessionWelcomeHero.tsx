@@ -1,20 +1,21 @@
 /**
  * Welcome stage crown - the rebrand hero (accepted mockup, 2026-08-20): the
- * vx script mark over a micro-label date eyebrow, the time-of-day greeting headline, and the
- * Agent | Studio runtime-mode toggle (Studio reserved: disabled with a lock
- * until vex-studio ships - seam #2). The parent (`SessionPanel`) seats this
- * directly above the composer and centers the column; the "BACKED BY"
- * footer band is retired. Load-in rides the one-shot `.vex-rise`
- * choreography; the composer and chips stagger on sibling elements.
+ * vx script mark over a micro-label date eyebrow, the time-of-day greeting
+ * headline, and the Agent | Studio runtime-mode toggle. The toggle itself lives
+ * in `RuntimeModeToggle.tsx`: the Studio welcome screen mounts the same
+ * control, so this hero is one of its two callers, not its owner. The parent
+ * (`SessionPanel`) seats this directly above the composer and centers the
+ * column; the "BACKED BY" footer band is retired. Load-in rides the one-shot
+ * `.vex-rise` choreography; the composer and chips stagger on sibling
+ * elements.
  */
 
 import { useState, type JSX } from "react";
-import { IconLock } from "../../components/icons/index.js";
 import { VexMark } from "../../components/common/VexMark.js";
 import { pickGreeting } from "../../lib/greeting.js";
 import { useUserProfile } from "../../lib/api/user-profile.js";
-import { cn } from "../../lib/utils.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { RuntimeModeToggle } from "./RuntimeModeToggle.js";
 
 /** Honest build-stage disclosure (carried from the retired PREVIEW badge). */
 const PREVIEW_TITLE =
@@ -31,9 +32,8 @@ function eyebrowDate(): string {
 }
 
 export function SessionWelcomeHero(): JSX.Element {
-  // READ-ONLY seam: the slot exists so the toggle can light up the moment
-  // Studio ships; nothing here may switch it.
   const runtimeMode = useUiStore((s) => s.runtimeMode);
+  const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
 
   // Headline greeting (owner decision 2026-08-20, rotating pools): the
   // Vex-setup displayName through the SAME profile read SidebarProfile uses,
@@ -69,50 +69,11 @@ export function SessionWelcomeHero(): JSX.Element {
         <h1 className="font-display text-[30px] font-medium leading-[38px] tracking-[-0.01em] text-ink-primary">
           {headline}
         </h1>
-        <RuntimeModeToggle runtimeMode={runtimeMode} />
+        <RuntimeModeToggle
+          runtimeMode={runtimeMode}
+          onChange={setRuntimeMode}
+        />
       </div>
-    </div>
-  );
-}
-
-/**
- * Agent | Studio segmented capsule. Studio is a reserved seat: disabled,
- * wearing the lock, explained by its title - the interaction space ships now
- * so the studio mode plugs in without a layout change. Neither segment
- * writes the store.
- */
-function RuntimeModeToggle({
-  runtimeMode,
-}: {
-  readonly runtimeMode: "agent" | "studio";
-}): JSX.Element {
-  return (
-    <div
-      role="group"
-      aria-label="Runtime mode"
-      className="flex h-9 items-center gap-0.5 rounded-capsule border border-line-2 bg-surface-1 p-0.5 shadow-lv1"
-    >
-      <span
-        aria-current={runtimeMode === "agent" ? "true" : undefined}
-        className={cn(
-          "inline-flex h-full items-center rounded-capsule px-3.5 text-[12.5px]",
-          runtimeMode === "agent"
-            ? "bg-interactive-active font-medium text-ink-primary"
-            : "text-ink-tertiary",
-        )}
-      >
-        Agent
-      </span>
-      <button
-        type="button"
-        disabled
-        title="Vex Studio - coming soon"
-        aria-label="Studio mode (coming soon)"
-        className="inline-flex h-full cursor-not-allowed items-center gap-1.5 rounded-capsule px-3.5 text-[12.5px] text-ink-caption"
-      >
-        Studio
-        <IconLock size={12} className="shrink-0" />
-      </button>
     </div>
   );
 }

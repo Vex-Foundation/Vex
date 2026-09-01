@@ -13,6 +13,7 @@
 import type { ToolResult } from "../types.js";
 import type { Permission, SessionKind, WalletPolicy } from "@vex-agent/engine/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
+import type { ApprovedQuoteAuthority } from "../protocols/quote-authority/approved-authority.js";
 
 /** Result from an internal tool handler */
 export type InternalToolResult = ToolResult;
@@ -56,6 +57,17 @@ export interface InternalToolContext {
    * builder legitimately has none.
    */
   approvalId?: string | null;
+  /**
+   * WHICH QUOTE the approval being resumed authorized, when the stored envelope
+   * recorded one. Host-side evidence exactly like `approvalId`: it is read from
+   * `approval_queue.tool_call`, which the request digest covers, and never from
+   * tool arguments or model output.
+   *
+   * ABSENT on every live turn and on every historical approval, which is why the
+   * claim treats it as "bind to this row when present" rather than as a required
+   * field - see `protocols/prequote/claim.ts`.
+   */
+  approvedQuoteAuthority?: ApprovedQuoteAuthority | null;
   /**
    * True ONLY for a call the model emitted in a live turn. Set in exactly one
    * place — `engine/core/turn-loop-tool-batch/execute.ts`'s `buildToolContext`

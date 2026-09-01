@@ -20,10 +20,6 @@
  * outlives its merge is stale by construction and the gate says so.
  */
 
-// Stale-entry maintenance, 2026-08-28: the boardChartArea.test.ts row was
-// consumed when the board-v4 change carrying it (#122) merged to main — its
-// deletion stopped being a deletion against the new base, and the gate
-// correctly flagged the row as stale on the first PR rebased past that merge.
 export const DELETED_TEST_ALLOWLIST = [];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(

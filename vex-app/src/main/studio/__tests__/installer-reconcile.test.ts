@@ -71,7 +71,10 @@ const BRIEF: StudioProjectBrief = {
 };
 
 let project: string;
-let store: Map<string, { entryHash: string | null; contentHash: string }>;
+let store: Map<
+  string,
+  { entryHash: string | null; contentHash: string; origin: "written" | "adopted" }
+>;
 
 beforeEach(async () => {
   project = await realpath(await mkdtemp(path.join(tmpdir(), "vex-reconcile-")));
@@ -85,6 +88,7 @@ function io(overrides: Partial<ReconcileIo> = {}): ReconcileIo {
       store.set(record.artifactKey, {
         entryHash: record.entryHash,
         contentHash: record.contentHash,
+        origin: record.origin,
       });
       return true;
     },
@@ -247,6 +251,7 @@ describe("provenance", () => {
     store.set("agent:claude-code", {
       entryHash: region.hash,
       contentHash: hashText(await readFile(target, "utf8")),
+      origin: "written",
     });
 
     const outcomes = await run({ agents: ["claude-code"] });
@@ -628,5 +633,66 @@ describe("a provenance commit that fails", () => {
     // The stale claim is still there, which is the safe direction: a claim Vex
     // still holds refuses a rewrite, where a dropped one would let anything in.
     expect(store.has(key)).toBe(true);
+  });
+});
+
+describe("provenance origin: what Vex WROTE vs what it ADOPTED", () => {
+  /**
+   * The distinction the B0 teardown depends on, proven through the REAL
+   * reconciler rather than seeded.
+   *
+   * A provenance row used to record only WHAT Vex owns, never HOW it came to
+   * own it - and the reconciler writes rows for two materially different
+   * events. That was harmless while the record only authorized rewriting
+   * identical bytes with identical bytes, and harmful the moment it authorized
+   * a DELETION: the project teardown read every row as authorship proof and so
+   * deleted a `vex` entry, or an `@AGENTS.md` import line, that the user had
+   * authored themselves before ever installing Vex.
+   */
+  it("records `written` for an entry this run actually replaced", async () => {
+    const outcomes = await run({ agents: ["claude-code"] });
+    expect(outcomeFor(outcomes, (o) => o.agentId === "claude-code").status).toBe(
+      "written",
+    );
+    expect(store.get(agentArtifactKey("claude-code"))?.origin).toBe("written");
+    // The whole-file artifacts of the same run, likewise.
+    expect(store.get("protocols-doc")?.origin).toBe("written");
+    expect(store.get("agents-md")?.origin).toBe("written");
+  });
+
+  it("records `adopted` for bytes that were ALREADY on disk and identical", async () => {
+    // FIRST: the user writes the exact entry Vex would write, by hand, with no
+    // provenance anywhere - which is what "before they installed Vex" means.
+    const agent = writable("claude-code");
+    const rendered = renderStudioAgentConfig(agent, FACTS);
+    if (rendered.status !== "rendered") throw new Error("render failed");
+    const target = path.join(project, agent.configPath);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, rendered.text, "utf8");
+    expect(store.size).toBe(0);
+
+    // THEN Vex installs. The bytes are already right, so nothing is replaced.
+    const outcomes = await run({ agents: ["claude-code"] });
+    expect(outcomeFor(outcomes, (o) => o.agentId === "claude-code").status).toBe(
+      "unchanged",
+    );
+
+    // The record exists - without it the NEXT run would refuse these bytes as a
+    // collision forever - but it says only what is provable.
+    const record = store.get(agentArtifactKey("claude-code"));
+    expect(record).toBeDefined();
+    expect(record?.origin).toBe("adopted");
+    // And the file is untouched.
+    expect(await readFile(target, "utf8")).toBe(rendered.text);
+  });
+
+  it("does not downgrade a `written` record when a later run changes nothing", async () => {
+    await run({ agents: ["claude-code"] });
+    expect(store.get(agentArtifactKey("claude-code"))?.origin).toBe("written");
+    // A second identical run adopts nothing: the adopt branch only fires when
+    // the store has NO record. A downgrade here would quietly make the teardown
+    // stop removing an entry Vex really did write.
+    await run({ agents: ["claude-code"] });
+    expect(store.get(agentArtifactKey("claude-code"))?.origin).toBe("written");
   });
 });

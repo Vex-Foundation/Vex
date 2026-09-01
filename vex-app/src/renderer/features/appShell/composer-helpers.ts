@@ -9,14 +9,29 @@
 
 import type { Result } from "@shared/ipc/result.js";
 import type { ChatSubmitResult } from "@shared/schemas/chat.js";
-import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
+import type {
+  RuntimeActivity,
+  RuntimeStateDto,
+} from "@shared/schemas/runtime.js";
 import type {
   MissionRunStatus,
   SessionListItem,
 } from "@shared/schemas/sessions.js";
 
+/**
+ * Statuses in which free text cannot reach the run.
+ *
+ * `running` IS DELIBERATELY ABSENT (M6, owner decision). Steering a running
+ * mission is the DESIGNED path: `ingress.ts` persists a mid-run user message
+ * as an operator instruction that the loop merges at its next tool-step
+ * boundary, and the engine acknowledges it with a durable disposition row. The
+ * composer gate contradicted the product - it refused the one thing the engine
+ * was built to accept, and the operator's only remaining lever over a running
+ * mission was Stop. The remaining members are all states where the run is
+ * PARKED and free text genuinely cannot answer what it is parked on; each has
+ * its own control, named in `gatedReason`.
+ */
 export const FREE_TEXT_DISALLOWED: ReadonlySet<MissionRunStatus> = new Set([
-  "running",
   "paused_approval",
   "paused_user",
   "paused_wake",
@@ -35,10 +50,30 @@ export function readRunStatus(
   return data.data.status;
 }
 
+/**
+ * The session's activity projection, or `null` when the runtime state has not
+ * been read (or failed to read).
+ *
+ * NULL IS NOT IDLE. A surface that cannot read the state must say nothing
+ * rather than assert the session is doing nothing - the same distinction
+ * `StopAvailability` draws for the Stop key.
+ *
+ * The `?? null` is not dead code over a required DTO field: this value crossed
+ * the IPC boundary, so what arrived is unknown until checked (rule 04), and the
+ * sibling readout draws the same line for the same reason. The cost of being
+ * wrong is asymmetric - an absent field must not throw out of the composer and
+ * take the surrounding surface down with it, which is what an unguarded read
+ * did here.
+ */
+export function readActivity(
+  data: Result<RuntimeStateDto> | undefined,
+): RuntimeActivity | null {
+  if (!data || !data.ok) return null;
+  return data.data.activity ?? null;
+}
+
 export function gatedReason(status: MissionRunStatus | null): string {
   switch (status) {
-    case "running":
-      return "Mission is running. Use the Stop button first, or wait for the next paused state.";
     case "paused_approval":
       return "Mission is paused for approval. Resolve the approval first.";
     case "paused_user":
@@ -147,6 +182,19 @@ export function submitFailureNotice(
         data,
         "Vex stopped before completing the task because of an internal error.",
       );
+    case "tool_call_loop":
+      // NEVER one-click retryable, and not through `incompleteTurnNotice`:
+      // reaching this stop reason MEANS tool calls executed - five identical
+      // ones, plus everything before them - so `toolCallsMade === 0` is not a
+      // reachable state here and a retry arm gated on it would be dead code
+      // pretending to be a safety check. Same policy as the tool-activity arm
+      // above, stated unconditionally.
+      return {
+        text:
+          "Vex stopped because it repeated the same tool call without making progress. "
+          + "Review the transcript before trying again; earlier steps may have completed.",
+        retryable: false,
+      };
     case "compact_unable_at_critical":
       return {
         text: "Vex stopped because this conversation ran out of usable context. Start a new session or try a narrower request.",

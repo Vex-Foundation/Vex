@@ -178,7 +178,7 @@ function matchedPrequote(feePreview: Record<string, unknown> = VALID_FEE_PREVIEW
     prequoteId: "prequote-1", sessionId: "sess-1", matchHash: "h".repeat(64),
     kind: "swap", family: "solana", provider: "jupiter", chainId: null,
     walletAddress: "SignerWallet", tokenIn: "BonkMint", tokenOut: "SolMint", amount: "1000",
-    slippageBps: null, safetyVerdict: "pass", safetyDetail: { feePreview }, routeRef: null,
+    slippageBps: null, safetyVerdict: "pass", safetyDetail: { feePreview }, routeRef: null, eligibilityKind: "executable", claimedAt: null, claimedBy: null,
     createdAt: "2026-01-01T00:00:00.000Z", expiresAt: "2099-01-01T00:00:00.000Z",
   };
 }

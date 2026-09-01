@@ -118,11 +118,23 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
 
 const mockLoggerWarn = vi.fn();
 
+// The execute CLAIMS the approved quote instead of fetching a route (the
+// 2026-08-27 quote-binding change). The claim's own behaviour is covered by
+// `quote-bound-execute.test.ts` and the Postgres claim suite; here it hands
+// back a real snapshot of this file's own route so the handler reaches the
+// behaviour under test.
+const mockClaim = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
+  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: (...args: unknown[]) => mockLoggerWarn(...args), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
 });
 
+import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import { compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
@@ -144,7 +156,7 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
     }));
     mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
     mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
-    mockGetRoute.mockResolvedValue({
+    const routeResponse = {
       data: {
         routeSummary: {
           amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
@@ -156,7 +168,15 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
         },
         routerAddress: ROUTER,
       },
-    });
+    };
+    mockGetRoute.mockResolvedValue(routeResponse);
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+        approvedClaim(
+          routeResponse.data.routeSummary,
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        ),
+    );
     // REAL router calldata (re-encoded from a captured build): the handler
     // decodes and asserts it before signing, so a placeholder string would be
     // refused at the pre-sign gate and never reach the staged loop.
@@ -399,7 +419,11 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
   // `summarizeProtocolError(err).message` — a thin delegate, never a fork.
   it("C37: kyberFailureMessage is a thin summarizeProtocolError(err).message delegate — no local transformation", async () => {
     const RAW = "Request failed: Authorization: Bearer delegate-identity-canary Cookie: session=xyz789secret";
-    mockGetRoute.mockRejectedValueOnce(new Error(RAW));
+    // The provider call on the EXECUTE path is `/route/build`: the execute no
+    // longer fetches a route, it builds from the quote it claimed. The
+    // redaction contract under test is the same one, at the call that still
+    // reaches a provider.
+    mockBuildRoute.mockRejectedValueOnce(new Error(RAW));
 
     const result = await execute({ chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" });
 
@@ -415,7 +439,11 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
     // convention) — the assignment-pattern scrub consumes ANY `apiKey=` value,
     // and a realistic-length key here would trip GitHub push protection.
     const RAW = "Route fetch failed: 503 apiKey=sk_live_ABC";
-    mockGetRoute.mockRejectedValueOnce(new Error(RAW));
+    // The provider call on the EXECUTE path is `/route/build`: the execute no
+    // longer fetches a route, it builds from the quote it claimed. The
+    // redaction contract under test is the same one, at the call that still
+    // reaches a provider.
+    mockBuildRoute.mockRejectedValueOnce(new Error(RAW));
 
     const result = await execute({ chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" });
 
@@ -426,7 +454,11 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
 
   it("C31/C37: a JSON response body (with a nested secret field) never reaches ToolResult.output (shared core, unchanged shape)", async () => {
     const RAW = 'Bad request: {"chainId":1,"secret":"nested-leak-value","amount":"1000"}';
-    mockGetRoute.mockRejectedValueOnce(new Error(RAW));
+    // The provider call on the EXECUTE path is `/route/build`: the execute no
+    // longer fetches a route, it builds from the quote it claimed. The
+    // redaction contract under test is the same one, at the call that still
+    // reaches a provider.
+    mockBuildRoute.mockRejectedValueOnce(new Error(RAW));
 
     const result = await execute({ chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" });
 
@@ -477,7 +509,11 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
   it("C31/C37: a token=<value> assignment never reaches ToolResult.output (shared core, unchanged shape)", async () => {
     // Short fake canary — see the apiKey= test above for why not full-length.
     const RAW = "Config error: token=sk_live_ABC";
-    mockGetRoute.mockRejectedValueOnce(new Error(RAW));
+    // The provider call on the EXECUTE path is `/route/build`: the execute no
+    // longer fetches a route, it builds from the quote it claimed. The
+    // redaction contract under test is the same one, at the call that still
+    // reaches a provider.
+    mockBuildRoute.mockRejectedValueOnce(new Error(RAW));
 
     const result = await execute({ chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" });
 
@@ -488,7 +524,11 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
 
   it("C31/C37: a provider error message longer than the shared cap is truncated in ToolResult.output", async () => {
     const RAW = `Route fetch failed: ${"x".repeat(400)}`;
-    mockGetRoute.mockRejectedValueOnce(new Error(RAW));
+    // The provider call on the EXECUTE path is `/route/build`: the execute no
+    // longer fetches a route, it builds from the quote it claimed. The
+    // redaction contract under test is the same one, at the call that still
+    // reaches a provider.
+    mockBuildRoute.mockRejectedValueOnce(new Error(RAW));
 
     const result = await execute({ chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" });
 

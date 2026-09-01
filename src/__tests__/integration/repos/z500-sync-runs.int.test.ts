@@ -1,6 +1,6 @@
 /**
  * z500_sync_runs over REAL Postgres — the claim/takeover SQL that carries the
- * workflow's whole idempotency story (migration 095).
+ * workflow's whole idempotency story (migration 099).
  *
  * The unit suite proves the runner honors whatever the repo answers; THIS
  * suite proves the repo's answers are the database facts the spec demands:

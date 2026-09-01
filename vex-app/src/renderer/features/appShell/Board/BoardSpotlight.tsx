@@ -114,6 +114,12 @@ export const SPOTLIGHT_LIVE_LABEL = "updated now";
 export const SPOTLIGHT_NO_ANALYSIS = "No saved analysis";
 export const SPOTLIGHT_ASSESSMENT_TITLE = "VEX assessment";
 export const SPOTLIGHT_NO_IMAGE_LINE = "No image published on DexScreener yet";
+/**
+ * The hero's line for artwork this app declined. A DIFFERENT sentence from the
+ * one above, because the fact is different: DexScreener did publish an image.
+ */
+export const SPOTLIGHT_IMAGE_REFUSED_LINE =
+  "Published image was not accepted by Vex's image checks";
 export const SPOTLIGHT_CHART_ABSENT =
   "No chart source is connected on this surface.";
 
@@ -267,7 +273,12 @@ export function BoardSpotlight({
         </Pill>
       </div>
 
-      <div className="vex-board-surface flex min-h-0 flex-col gap-4 rounded-2xl border border-line-1 p-4">
+      {/* THE SPOTLIGHT PLATE IS ITS OWN CONTAINER, and every region below
+        * carries a class whose threshold `global-css/board-layout.css` names
+        * for the content that binds it. A TokenCard threshold never decides a
+        * region here: the two surfaces hold different content in the same
+        * shrinking container, and the Ask VEX drawer shrinks this one too. */}
+      <div className="vex-board-surface vex-board-spotlight-plate flex min-h-0 flex-col gap-4 rounded-2xl border border-line-1 p-4">
         <Hero
           heading={heading}
           ticker={ticker}
@@ -290,7 +301,10 @@ export function BoardSpotlight({
         {/* CHART beside the metrics column, as the mockup has them. The
           * chart's FRAME is this file's; its canvas, tabs and caption are the
           * chart's own. */}
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div
+          data-vex-area="board-spotlight-chart-row"
+          className="vex-board-spotlight-chart-row"
+        >
           <div
             data-vex-area="board-spotlight-chart-card"
             className="min-h-[340px] min-w-0 rounded-2xl border border-line-2 bg-board-card p-4"
@@ -331,7 +345,10 @@ export function BoardSpotlight({
         />
 
         {/* THE FACTUAL ROW. */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div
+          data-vex-area="board-spotlight-factual-row"
+          className="vex-board-spotlight-row-3"
+        >
           <BuySellSection buys={row?.txns.buys ?? null} sells={row?.txns.sells ?? null} />
           <LockSection details={details} />
           <SafetyChecksSection
@@ -342,7 +359,10 @@ export function BoardSpotlight({
         </div>
 
         {/* SPOTLIGHT+ - the same grammar, one row of context per section. */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div
+          data-vex-area="board-spotlight-plus-row"
+          className="vex-board-spotlight-row-2"
+        >
           <SmartMoneySection read={traders} />
           <TapeSection
             read={tape}
@@ -351,7 +371,10 @@ export function BoardSpotlight({
             live={live}
           />
         </div>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div
+          data-vex-area="board-spotlight-context-row"
+          className="vex-board-spotlight-row-2"
+        >
           <MomentumSection read={momentum} />
           <PromotionSection read={context} />
         </div>
@@ -398,7 +421,7 @@ function Hero(props: {
   return (
     <header
       data-vex-area="board-spotlight-hero"
-      className="grid grid-cols-[88px_minmax(0,1fr)_auto_auto] items-center gap-x-6 gap-y-3"
+      className="vex-board-spotlight-hero"
     >
       <TokenPhotoFrame
         view={photo}
@@ -441,6 +464,17 @@ function Hero(props: {
             {SPOTLIGHT_NO_IMAGE_LINE}
           </span>
         ) : null}
+        {/* Also settled, also said - and deliberately NOT the sentence above:
+          * the provider published artwork, so claiming it did not would be
+          * false, and the reader has nothing to retry. */}
+        {photo.state === "refused" ? (
+          <span
+            data-vex-area="board-spotlight-image-refused"
+            className="text-[12px] leading-[16px] text-ink-tertiary"
+          >
+            {SPOTLIGHT_IMAGE_REFUSED_LINE}
+          </span>
+        ) : null}
         {/* The provider's description, WHOLE: plain React text (never
           * markup), no cap, no truncation. Absent on the card, which stays
           * equal-height; present here where there is room to read it. */}
@@ -454,7 +488,15 @@ function Hero(props: {
         )}
       </div>
 
-      <div className="flex min-w-0 flex-col gap-1.5">
+      {/* THE PRICE BLOCK IS PLACED, NOT AUTO-PLACED. Below the hero's own
+        * threshold the grid is `88px 1fr` and auto-placement would drop this
+        * into row 2 COLUMN 1 - the 88px photo track - with the toggle beside
+        * it. `board-layout.css` spans both stacked rows across the hero and
+        * resets the placement in the four-track window. */}
+      <div
+        data-vex-area="board-spotlight-price-block"
+        className="vex-board-spotlight-hero-price flex min-w-0 flex-col gap-1.5"
+      >
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span
             data-vex-area="board-spotlight-price"
@@ -513,7 +555,7 @@ function Hero(props: {
         aria-pressed
         aria-label={`Leave the spotlight on ${props.ticker}`}
         onClick={props.onLeave}
-        className="inline-flex h-7 shrink-0 items-center gap-1.5 self-start rounded-capsule border border-accent-primary/40 bg-accent-wash px-3 text-[13px] font-medium text-accent-primary transition-colors duration-150 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+        className="vex-board-spotlight-hero-action inline-flex h-7 shrink-0 items-center gap-1.5 self-start rounded-capsule border border-accent-primary/40 bg-accent-wash px-3 text-[13px] font-medium text-accent-primary transition-colors duration-150 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
       >
         <IconFullscreen size={14} />
         {SPOTLIGHT_PILL_LABEL}
@@ -609,7 +651,12 @@ function StatRow(props: {
       <span aria-hidden className="flex shrink-0 items-center text-ink-tertiary">
         {props.icon}
       </span>
-      <dt className="min-w-0 flex-1 truncate text-[14px] leading-[20px] text-ink-secondary">
+      {/* NOT TRUNCATED. The metrics track is a fixed 360px whenever it is
+        * beside the chart, and the widest label in it is "24h Volume"; below
+        * that threshold the column takes the full plate width. Either way
+        * there is room, so an ellipsis here could only ever hide a label a
+        * reader needs to know which figure they are looking at. */}
+      <dt className="min-w-0 flex-1 whitespace-nowrap text-[14px] leading-[20px] text-ink-secondary">
         {props.label}
       </dt>
       {props.value === null ? (

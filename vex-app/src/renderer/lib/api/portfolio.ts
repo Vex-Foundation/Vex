@@ -1,13 +1,15 @@
 /**
  * Portfolio TanStack Query hook (stage 3).
  *
- * Read-only dual-scope POSITION portfolio. A `null` active session reads
- * the GLOBAL inventory portfolio; a non-null active session reads that
- * session's wallet-scope portfolio. The renderer derives the discriminated
- * input here — it never supplies a wallet address. Empty scopes resolve to
- * the empty portfolio DTO, never an error.
+ * Read-only multi-scope POSITION portfolio. `usePortfolio` takes the WHOLE
+ * validated `PortfolioReadInput` discriminant rather than a `string | null`
+ * session id: the B0 `project` scope has no session id, so the old parameter
+ * could not express it and every project would have read - and cached as - the
+ * global inventory aggregate. Callers holding a card scope go through
+ * `portfolioReadInputFor` (`book/portfolio/portfolio-scope.ts`), which is the
+ * one place that maps a scope to this input.
  *
- * Not rendered yet (stage 4 wires the panel).
+ * Empty scopes resolve to the empty portfolio DTO, never an error.
  */
 
 import {
@@ -47,16 +49,11 @@ const STALE_MS = 15_000;
  */
 const REFETCH_MS = 60_000;
 
-function portfolioInput(activeSessionId: string | null): PortfolioReadInput {
-  return activeSessionId === null
-    ? { scope: "global" }
-    : { scope: "session", sessionId: activeSessionId };
-}
-
-function portfolioOptions(activeSessionId: string | null) {
-  const input = portfolioInput(activeSessionId);
+function portfolioOptions(input: PortfolioReadInput) {
   return queryOptions({
-    queryKey: portfolioKeys.read(input.scope, activeSessionId),
+    // The WHOLE input, so no two reads that cover different wallets can share a
+    // cache row. See `portfolioKeys.read`.
+    queryKey: portfolioKeys.read(input),
     queryFn: () => window.vex.portfolio.read(input),
     staleTime: STALE_MS,
     refetchInterval: REFETCH_MS,
@@ -64,9 +61,9 @@ function portfolioOptions(activeSessionId: string | null) {
 }
 
 export function usePortfolio(
-  activeSessionId: string | null,
+  input: PortfolioReadInput,
 ): UseQueryResult<Result<PortfolioDto>> {
-  return useQuery(portfolioOptions(activeSessionId));
+  return useQuery(portfolioOptions(input));
 }
 
 /**

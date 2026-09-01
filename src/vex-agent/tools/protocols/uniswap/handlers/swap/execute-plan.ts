@@ -67,6 +67,12 @@ export interface PlanSwapEventsInput {
   readonly amountInHuman: string;
   readonly quoted: QuotedRoute;
   readonly currentAllowance: bigint;
+  /**
+   * The floor the approved quote authorized, duplicated onto the swap row so a
+   * post-crash settlement sweep can assess the executed fill against what was
+   * authorized without re-reading the prequote. NOT an attested field.
+   */
+  readonly approvedMinOutRaw: string;
 }
 
 export function planSwapEvents(input: PlanSwapEventsInput): PlannedEvent[] {
@@ -99,6 +105,9 @@ export function planSwapEvents(input: PlanSwapEventsInput): PlannedEvent[] {
     tokenOut: { ...legFor(tokenOut), amountHuman: formatUnits(quoted.amountOut, tokenOut.decimals), amountRaw: quoted.amountOut.toString() },
     routeProvenance: {
       version: quoted.route.version, path: quoted.route.path, fees: quoted.route.fees ?? null,
+      // The approved floor, non-attested: the AgentScan mapper does not read it
+      // and `amount_out_raw` keeps its meaning (the executed output).
+      approvedMinOutRaw: input.approvedMinOutRaw,
       // R1 Step 5a — the decode inputs, persisted at INTENT time. The router is
       // the deployment's own verified `router02`, never a provider-supplied
       // address; `declaredValueRaw` is written only for a native input, and the

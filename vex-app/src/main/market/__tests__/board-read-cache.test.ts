@@ -54,11 +54,13 @@ async function flush(): Promise<void> {
   await Promise.resolve();
 }
 
-function createCache(overrides: { maxConcurrent?: number } = {}) {
+function createCache(
+  overrides: { maxConcurrent?: number; queueMax?: number } = {},
+) {
   return createBoardReadCache<Answer>({
     capacity: 8,
     maxConcurrent: overrides.maxConcurrent ?? 2,
-    queueMax: 8,
+    queueMax: overrides.queueMax ?? 8,
     now: () => 1_000,
     refusal: (reason) => ({ kind: "refused", text: reason }),
   });
@@ -316,5 +318,170 @@ describe("single-flight and teardown are unchanged by the waiter count", () => {
     expect(disposed).toBe(true);
     // Nothing is left running behind the disposed cache.
     expect(settled).toBe(1);
+  });
+});
+
+describe("queue admission follows the shared flight controller", () => {
+  /**
+   * THE DEFECT. A queued read whose last waiter left was aborted on the SHARED
+   * flight controller, but its queue entry survived: the pump later admitted
+   * it, it took a concurrency slot, and it called `load()` with a signal that
+   * was already aborted - a provider read started for nobody, on a slot a live
+   * caller was waiting for.
+   */
+  it("never admits a queued read whose last waiter already left", async () => {
+    const cache = createCache({ maxConcurrent: 1 });
+    const holding = deferred<void>();
+    const started: string[] = [];
+
+    // Occupies the only slot.
+    const first = cache.read("solana:pool-a", async () => {
+      started.push("pool-a");
+      await holding.promise;
+      return { value: { kind: "value", text: "a" } as Answer, expiresAtMs: 2_000 };
+    });
+    await flush();
+    expect(started).toEqual(["pool-a"]);
+
+    // Queued behind it, then abandoned while still queued.
+    const caller = new AbortController();
+    const queued = cache.read(
+      "solana:pool-b",
+      async () => {
+        started.push("pool-b");
+        return { value: { kind: "value", text: "b" } as Answer, expiresAtMs: 2_000 };
+      },
+      caller.signal,
+    );
+    await flush();
+    expect(started).toEqual(["pool-a"]);
+
+    caller.abort();
+    await expect(queued).resolves.toEqual({ kind: "refused", text: "cancelled" });
+
+    // Releasing the slot must NOT wake the dead entry.
+    holding.resolve();
+    await first;
+    await flush();
+    expect(started).toEqual(["pool-a"]);
+    await cache.dispose();
+  });
+
+  /**
+   * A caller with two waiters is NOT abandoned by one of them leaving, so the
+   * queued read is still admitted and the survivor gets its answer. This is the
+   * other half of the same rule, and it is what keeps the fix from degrading
+   * into "any abort kills the queued read".
+   */
+  it("still loads for the surviving waiter when one of two same-key callers aborts while queued", async () => {
+    const cache = createCache({ maxConcurrent: 1 });
+    const holding = deferred<void>();
+    let loads = 0;
+
+    const blocker = cache.read("solana:pool-a", async () => {
+      await holding.promise;
+      return { value: { kind: "value", text: "a" } as Answer, expiresAtMs: 2_000 };
+    });
+    await flush();
+
+    const leaving = new AbortController();
+    const load = async (): Promise<{ value: Answer; expiresAtMs: number }> => {
+      loads += 1;
+      return { value: { kind: "value", text: "b" } as Answer, expiresAtMs: 2_000 };
+    };
+    const abandoning = cache.read("solana:pool-b", load, leaving.signal);
+    const surviving = cache.read("solana:pool-b", load);
+    await flush();
+    expect(loads).toBe(0);
+
+    leaving.abort();
+    await expect(abandoning).resolves.toEqual({ kind: "refused", text: "cancelled" });
+
+    holding.resolve();
+    await blocker;
+    // THE PROPERTY: a waiter is still there, so the queued read runs and it is
+    // the shared single flight, not a second one.
+    await expect(surviving).resolves.toEqual({ kind: "value", text: "b" });
+    expect(loads).toBe(1);
+    await cache.dispose();
+  });
+
+  /** A dead queue entry must not spend a `queueMax` place on a live caller. */
+  it("does not let abandoned entries consume queueMax", async () => {
+    const cache = createCache({ maxConcurrent: 1, queueMax: 1 });
+    const holding = deferred<void>();
+
+    const blocker = cache.read("solana:pool-a", async () => {
+      await holding.promise;
+      return { value: { kind: "value", text: "a" } as Answer, expiresAtMs: 2_000 };
+    });
+    await flush();
+
+    const caller = new AbortController();
+    const abandoned = cache.read(
+      "solana:pool-b",
+      async () => ({ value: { kind: "value", text: "b" } as Answer, expiresAtMs: 2_000 }),
+      caller.signal,
+    );
+    await flush();
+
+    // The one queue place is taken. A third key is refused as `busy`.
+    await expect(
+      cache.read("solana:pool-c", async () => ({
+        value: { kind: "value", text: "c" } as Answer,
+        expiresAtMs: 2_000,
+      })),
+    ).resolves.toEqual({ kind: "refused", text: "busy" });
+
+    caller.abort();
+    await expect(abandoned).resolves.toEqual({ kind: "refused", text: "cancelled" });
+
+    // THE PROPERTY: the place is back, so a live caller is queued rather than
+    // refused on behalf of a read nobody was waiting for.
+    const admitted = cache.read("solana:pool-d", async () => ({
+      value: { kind: "value", text: "d" } as Answer,
+      expiresAtMs: 2_000,
+    }));
+    await flush();
+    holding.resolve();
+    await blocker;
+    await expect(admitted).resolves.toEqual({ kind: "value", text: "d" });
+    await cache.dispose();
+  });
+});
+
+describe("dispose is one drain, joined by every caller", () => {
+  /**
+   * THE DEFECT. `dispose` opened with `if (closed) return;`, so a second
+   * concurrent caller resolved IMMEDIATELY while the first was still draining -
+   * and an awaited teardown that reports done with a read still on the
+   * transport is precisely what lets the bridge be disposed underneath it.
+   */
+  it("holds a concurrent second dispose until the in-flight read has unwound", async () => {
+    const cache = createCache();
+    const gate = deferred<void>();
+    let unwound = false;
+
+    // Ignores its abort signal on purpose: the drain may end only when this
+    // test releases the gate, so an early-resolving dispose is visible.
+    const answer = cache.read("solana:pool-a", async () => {
+      await gate.promise;
+      unwound = true;
+      return { value: { kind: "value", text: "a" } as Answer, expiresAtMs: 2_000 };
+    });
+    await flush();
+
+    const settled: string[] = [];
+    const first = cache.dispose().then(() => settled.push("first"));
+    const second = cache.dispose().then(() => settled.push("second"));
+    await flush();
+    expect(settled).toEqual([]);
+    expect(unwound).toBe(false);
+
+    gate.resolve();
+    await Promise.all([first, second]);
+    expect(settled).toHaveLength(2);
+    expect(unwound).toBe(true);
+    await answer;
   });
 });

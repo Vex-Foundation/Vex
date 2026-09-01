@@ -16,6 +16,7 @@
 import assert from "node:assert/strict";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { claimStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
 import { decodeFunctionData, getAddress, parseAbi, type Address, type Hex, type TransactionReceipt } from "viem";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -158,6 +159,16 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSigningWallet: vi.fn(() => ({ family: "eip155", address: WALLET, privateKey: `0x${"ab".repeat(32)}` })),
   walletScopeErrorToResult: vi.fn((err: unknown) => ({ success: false, output: String(err) })),
 }));
+// The execute is bound to an APPROVED quote (2026-08-27 incident): it claims one
+// before it prices anything. This suite's subject is elsewhere, so the claim
+// stands in with the quote this very call would have produced - see
+// `_uniswap-approved-snapshot.ts`.
+const claimUniswapExecutionSnapshot = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
+  claimSwapExecutionSnapshot: vi.fn(),
+  claimUniswapExecutionSnapshot: (...args: unknown[]) => claimUniswapExecutionSnapshot(...args),
+}));
+
 vi.mock("@utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
@@ -212,6 +223,9 @@ function feeOutcome(kind: StagedBroadcastOutcome["kind"]): StagedBroadcastOutcom
 
 beforeEach(() => {
   vi.clearAllMocks();
+  claimUniswapExecutionSnapshot.mockImplementation(
+    claimStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
+  );
   plannedEvents = [];
   feeTxs = [];
   ensureErc20Balance.mockResolvedValue(undefined);
@@ -482,6 +496,9 @@ describe("quote / execute parity", () => {
     });
 
     vi.clearAllMocks();
+    claimUniswapExecutionSnapshot.mockImplementation(
+      claimStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
+    );
     beforeEachDefaults();
     const executed = await execute(ERC20_PARAMS, context);
     const executedFor = lastRouteQuoteRequest();

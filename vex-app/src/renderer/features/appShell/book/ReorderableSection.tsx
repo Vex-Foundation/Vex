@@ -1,6 +1,13 @@
 /**
- * DRAG-TO-REORDER for the BOOK rail — native HTML5 drag-and-drop, zero new
+ * DRAG-TO-REORDER for the BOOK rails - native HTML5 drag-and-drop, zero new
  * dependencies.
+ *
+ * MECHANISM ONLY, generic over the rail's id type. It knows no section ids: the
+ * agent rail and the Studio rail pass their own `SectionRegistry`
+ * (`section-registry.ts`), which supplies the drop validator and the labels.
+ * That is not tidiness - two of the ids are spelled the same on both rails and
+ * one is not, so a shared id table would validate a drop from the wrong rail
+ * and move the wrong card.
  *
  * Motion's `<Reorder>` is banned by `MOTION-POLICY.md`: `Reorder.Item` is a
  * `layout` component by construction, and `layout` is on the same Phase-1 ban
@@ -25,7 +32,7 @@
  *  - the ONLY motion added is the drop settle (the owner's "plum"): the single
  *    card that moved plays a one-shot transform-only keyframe from
  *    `globals.css`, which is the sanctioned route (MOTION-POLICY "Allowed":
- *    build-time keyframes). The STACK is not animated — cards keep the existing
+ *    build-time keyframes). The STACK is not animated - cards keep the existing
  *    `cardVariants` cascade and `key={id}` keeps React's reconciliation stable,
  *    so a reorder moves DOM nodes rather than rebuilding them and the focused
  *    drag handle survives a keyboard move.
@@ -45,38 +52,33 @@ import { prefersReducedMotion } from "./portfolio/portfolio-motion.js";
 import { IconGripVertical } from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
 import {
-  BOOK_SECTION_LABEL,
-  isBookSectionId,
   moveSection,
   moveSectionRelative,
-  type BookSectionId,
   type DropEdge,
-} from "./section-order.js";
+  type SectionRegistry,
+} from "./section-registry.js";
 
 /** Must match `.vex-section-settle`'s duration in `motion-primitives.css`. */
 const SECTION_SETTLE_MS = 240;
 
-interface DragState {
-  readonly draggedId: BookSectionId;
-  readonly overId: BookSectionId | null;
+interface DragState<Id extends string> {
+  readonly draggedId: Id;
+  readonly overId: Id | null;
   readonly edge: DropEdge | null;
 }
 
-export interface BookSectionReorder {
-  readonly drag: DragState | null;
+export interface BookSectionReorder<Id extends string> {
+  readonly drag: DragState<Id> | null;
   /** The card that just landed, and is playing its settle. Null when none. */
-  readonly settlingId: BookSectionId | null;
+  readonly settlingId: Id | null;
   /** Live-region text for the last keyboard move, or "" when there was none. */
   readonly announcement: string;
-  readonly onHandleDragStart: (
-    id: BookSectionId,
-    event: React.DragEvent,
-  ) => void;
-  readonly onRowDragOver: (id: BookSectionId, event: React.DragEvent) => void;
-  readonly onRowDrop: (id: BookSectionId, event: React.DragEvent) => void;
+  readonly onHandleDragStart: (id: Id, event: React.DragEvent) => void;
+  readonly onRowDragOver: (id: Id, event: React.DragEvent) => void;
+  readonly onRowDrop: (id: Id, event: React.DragEvent) => void;
   readonly onDragEnd: () => void;
   readonly onHandleKeyDown: (
-    id: BookSectionId,
+    id: Id,
     index: number,
     event: React.KeyboardEvent,
   ) => void;
@@ -85,18 +87,23 @@ export interface BookSectionReorder {
 /**
  * The list-level drag state and every mutation the rail can make to its own
  * order. `onOrderChange` receives a NEW array; it never mutates `order`.
+ *
+ * `registry` is the RAIL'S OWN id set (agent or Studio): it supplies the drop
+ * validator and the human labels. The mechanism below knows no ids of its own,
+ * so a drop payload valid on one rail can never move a card on the other.
  */
-export function useBookSectionReorder(
-  order: readonly BookSectionId[],
-  onOrderChange: (next: readonly BookSectionId[]) => void,
-): BookSectionReorder {
-  const [drag, setDrag] = useState<DragState | null>(null);
+export function useBookSectionReorder<Id extends string>(
+  order: readonly Id[],
+  onOrderChange: (next: readonly Id[]) => void,
+  registry: SectionRegistry<Id>,
+): BookSectionReorder<Id> {
+  const [drag, setDrag] = useState<DragState<Id> | null>(null);
   // `nonce` is what lets the SAME card settle twice in a row: the class must
   // come fully off between moves or the keyframe cannot restart on a reused
-  // DOM node (and the node IS reused — `key={id}` is what keeps the focused
+  // DOM node (and the node IS reused - `key={id}` is what keeps the focused
   // drag handle alive across a keyboard move).
   const [settle, setSettle] = useState<{
-    readonly id: BookSectionId;
+    readonly id: Id;
     readonly nonce: number;
   } | null>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -107,28 +114,32 @@ export function useBookSectionReorder(
   // order without re-creating every row's handlers on each reorder.
   const orderRef = useRef(order);
   orderRef.current = order;
+  // Same reason as `orderRef`: the registry is stable in practice, but reading
+  // it through a ref keeps every handler below referentially stable.
+  const registryRef = useRef(registry);
+  registryRef.current = registry;
 
   const applyMove = useCallback(
-    (next: readonly BookSectionId[], id: BookSectionId): void => {
+    (next: readonly Id[], id: Id): void => {
       const current = orderRef.current;
       if (next === current) return;
       onOrderChange(next);
       // The settle is a REACTION to a landing, so it is armed for the moved
-      // card only, and identically for the pointer and keyboard paths — the
+      // card only, and identically for the pointer and keyboard paths - the
       // affordance must not depend on which one the user reached for.
       if (!reduced) {
         setSettle((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }));
       }
       setAnnouncement(
-        `${BOOK_SECTION_LABEL[id]} moved to position ${next.indexOf(id) + 1} of ${next.length}`,
+        `${registryRef.current.label[id]} moved to position ${next.indexOf(id) + 1} of ${next.length}`,
       );
     },
     [onOrderChange, reduced],
   );
 
   const onHandleDragStart = useCallback(
-    (id: BookSectionId, event: React.DragEvent): void => {
-      // The payload is a section id and nothing else — no user data ever
+    (id: Id, event: React.DragEvent): void => {
+      // The payload is a section id and nothing else - no user data ever
       // enters the drag channel.
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", id);
@@ -138,7 +149,7 @@ export function useBookSectionReorder(
   );
 
   const onRowDragOver = useCallback(
-    (id: BookSectionId, event: React.DragEvent): void => {
+    (id: Id, event: React.DragEvent): void => {
       // Without preventDefault the element is not a valid drop target at all.
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
@@ -153,11 +164,11 @@ export function useBookSectionReorder(
   );
 
   const onRowDrop = useCallback(
-    (id: BookSectionId, event: React.DragEvent): void => {
+    (id: Id, event: React.DragEvent): void => {
       event.preventDefault();
       const payload = event.dataTransfer.getData("text/plain");
       setDrag(null);
-      if (!isBookSectionId(payload)) return;
+      if (!registryRef.current.isId(payload)) return;
       const rect = event.currentTarget.getBoundingClientRect();
       const edge: DropEdge =
         event.clientY < rect.top + rect.height / 2 ? "before" : "after";
@@ -170,7 +181,7 @@ export function useBookSectionReorder(
     setDrag(null);
   }, []);
 
-  // One bounded timer per landing — not an `animationend` listener. That event
+  // One bounded timer per landing - not an `animationend` listener. That event
   // BUBBLES, so any animation inside a card would clear the settle early, and
   // it is not observable in this jsdom build, which would leave the
   // second-move re-trigger unprovable. A single timeout is cheaper than the
@@ -182,7 +193,7 @@ export function useBookSectionReorder(
   }, [settle]);
 
   const onHandleKeyDown = useCallback(
-    (id: BookSectionId, index: number, event: React.KeyboardEvent): void => {
+    (id: Id, index: number, event: React.KeyboardEvent): void => {
       const count = orderRef.current.length;
       const target =
         event.key === "ArrowUp"
@@ -231,20 +242,23 @@ export function useBookSectionReorder(
  * untouched, so no card learns that it can be dragged.
  *
  * `motion.li` (not a plain `li`) so the stack's stagger keeps cascading through
- * to each card's `cardVariants` — variant propagation needs an unbroken chain
+ * to each card's `cardVariants` - variant propagation needs an unbroken chain
  * of motion components. It declares no variants of its own and no `layout`.
  */
-export function ReorderableSection({
+export function ReorderableSection<Id extends string>({
   id,
+  label,
   index,
   count,
   reorder,
   children,
 }: {
-  readonly id: BookSectionId;
+  readonly id: Id;
+  /** The rail registry's human name for `id` - the row holds no id table. */
+  readonly label: string;
   readonly index: number;
   readonly count: number;
-  readonly reorder: BookSectionReorder;
+  readonly reorder: BookSectionReorder<Id>;
   readonly children: ReactNode;
 }): JSX.Element {
   const { drag } = reorder;
@@ -262,7 +276,7 @@ export function ReorderableSection({
         "group relative list-none",
         settling && "vex-section-settle",
         drag?.draggedId === id && "opacity-60",
-        // The drop indicator is a CSS-only hairline on the row's own edge — no
+        // The drop indicator is a CSS-only hairline on the row's own edge - no
         // JS positioning, no injected style.
         dropEdge === "before" &&
           "before:absolute before:inset-x-0 before:-top-1 before:h-0.5 before:rounded-full before:bg-accent-primary",
@@ -276,7 +290,7 @@ export function ReorderableSection({
         onDragStart={(event) => reorder.onHandleDragStart(id, event)}
         onDragEnd={reorder.onDragEnd}
         onKeyDown={(event) => reorder.onHandleKeyDown(id, index, event)}
-        aria-label={`Reorder ${BOOK_SECTION_LABEL[id]} - position ${index + 1} of ${count}`}
+        aria-label={`Reorder ${label} - position ${index + 1} of ${count}`}
         className="absolute right-2 top-2 z-10 cursor-grab rounded p-1 text-ink-tertiary opacity-0 transition-opacity hover:text-ink-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary group-hover:opacity-100"
       >
         <IconGripVertical size={12} />

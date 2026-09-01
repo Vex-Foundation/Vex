@@ -8,7 +8,7 @@
 import { loadConfig } from "../../../config/store.js";
 import { fetchWithTimeout, readJson } from "../../../utils/http.js";
 import { mapKyberTransportError, readKyberErrorBody } from "../errors.js";
-import { mapAggregatorError } from "./errors.js";
+import { mapAggregatorError, mapUncodedAggregatorEnvelope, readAggregatorEnvelope } from "./errors.js";
 import { validateSwapRouteResponse, validateSwapBuildResponse } from "./validation.js";
 import { KYBERSWAP_REQUEST_HEADERS, AGGREGATOR_TIMEOUT_MS } from "../constants.js";
 import logger from "../../../utils/logger.js";
@@ -65,6 +65,13 @@ export class KyberAggregatorClient {
         // Reads the body WHATEVER its content type: an edge challenge answers
         // HTML, and `readJson` used to drop it, leaving a bare "HTTP 403".
         const body = await readKyberErrorBody(response);
+        if (body.code === null && body.uncodedEnvelope === true) {
+          logger.warn({
+            event: "kyberswap.aggregator.request.uncoded_envelope",
+            chain, path, status: response.status,
+          });
+          throw mapUncodedAggregatorEnvelope(chain, response.status, body.requestId);
+        }
 
         logger.warn({
           event: "kyberswap.aggregator.request.error",
@@ -78,6 +85,33 @@ export class KyberAggregatorClient {
       }
 
       const raw = await readJson(response);
+      // A 2xx does NOT mean the aggregator succeeded. Its envelope is
+      // `{code, message, data}` and `code: 0` is the only success; a nonzero
+      // code arrives with the SAME 200 status and no usable `data`, where the
+      // validator would refuse it as a shape error and the real, documented
+      // cause (route not found, fee exceeds amount, token not found, WETH not
+      // configured) would never reach the agent. Mapped through the one error
+      // mapper so a 200-with-code-4008 and a 422-with-code-4008 are the same
+      // typed outcome.
+      const envelope = readAggregatorEnvelope(raw);
+      if (envelope.kind === "provider_code") {
+        logger.warn({
+          event: "kyberswap.aggregator.request.ok_error_code",
+          chain, path, status: response.status, code: envelope.code,
+        });
+        throw mapAggregatorError(response.status, envelope.code, envelope.message, envelope.requestId);
+      }
+      if (envelope.kind === "uncoded") {
+        // MEASURED 2026-08-28: an unserved chain slug answers
+        // `{message, path, request_id, request_ip, status}` - a DIFFERENT
+        // envelope with no `code` at all. It is its own outcome, not a generic
+        // provider error: the chain is the thing to change.
+        logger.warn({
+          event: "kyberswap.aggregator.request.uncoded_envelope",
+          chain, path, status: response.status,
+        });
+        throw mapUncodedAggregatorEnvelope(chain, response.status, envelope.requestId);
+      }
       const result = validator(raw);
 
       logger.debug({ event: "kyberswap.aggregator.request.success", chain, path });

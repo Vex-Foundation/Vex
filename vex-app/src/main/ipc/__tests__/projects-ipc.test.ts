@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   updateProjectScope: vi.fn(),
   renderProjectFiles: vi.fn(),
   enrichProjectFiles: vi.fn(),
+  deleteProject: vi.fn(),
   resolveWalletRef: vi.fn(),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -67,6 +68,14 @@ vi.mock("../../studio/installer.js", () => ({
   renderProjectFiles: mocks.renderProjectFiles,
   enrichProjectFiles: mocks.enrichProjectFiles,
 }));
+// The delete OWNER. Mocked like every other owner so this suite keeps testing
+// the boundary (sender, schema, cancellation) rather than the lifecycle gate,
+// the tombstone transaction and the filesystem teardown, which have their own
+// live-Postgres suite.
+vi.mock("../../studio/project-delete.js", () => ({
+  deleteProject: mocks.deleteProject,
+}));
+
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
 const { registerProjectsHandlers } = await import("../projects/index.js");
@@ -164,10 +173,18 @@ const CHANNELS = [
     },
   },
   { channel: CH.projects.repairFiles, payload: { projectId: PROJECT_ID } },
+  {
+    channel: CH.projects.delete,
+    payload: {
+      projectId: PROJECT_ID,
+      alsoTrashFolder: false,
+      expectedName: "My App",
+    },
+  },
 ] as const;
 
 describe("vex:projects:* - registration and the shared boundary paths", () => {
-  it("registers exactly the five declared channels", () => {
+  it("registers exactly the six declared channels", () => {
     expect([...handlers.keys()].sort()).toEqual(
       [
         CH.projects.create,
@@ -175,13 +192,23 @@ describe("vex:projects:* - registration and the shared boundary paths", () => {
         CH.projects.list,
         CH.projects.updateScope,
         CH.projects.repairFiles,
+        CH.projects.delete,
       ].sort(),
     );
   });
 
-  it("has NO delete channel: A5 never deletes a user's files", () => {
-    expect(Object.keys(CH.projects)).not.toContain("delete");
-    expect([...handlers.keys()].some((c) => c.includes("delete"))).toBe(false);
+  it("HAS a delete channel, reversing the stage-A5 decision", () => {
+    // Through A5b this suite asserted the opposite - "has NO delete channel:
+    // A5 never deletes a user's files". The owner reversed that on 2026-08-29:
+    // a project the user can create and never remove is not a workflow, and
+    // leaving removal to the file manager orphaned Vex's own durable rows.
+    //
+    // The constraints behind the original refusal are met by the DESIGN rather
+    // than by the channel's absence: it is a SOFT delete (the money-path audit
+    // references the project with no cascade), it removes only artifacts Vex
+    // recorded writing, and the user's folder is opt-in and goes to the TRASH.
+    expect(Object.keys(CH.projects)).toContain("delete");
+    expect(handlers.has(CH.projects.delete)).toBe(true);
   });
 
   it.each(CHANNELS)("$channel rejects an untrusted sender", async ({ channel, payload }) => {
@@ -207,6 +234,7 @@ describe("vex:projects:* - registration and the shared boundary paths", () => {
         mocks.listProjects,
         mocks.updateProjectScope,
         mocks.renderProjectFiles,
+        mocks.deleteProject,
       ];
       // Abort while the owner is in flight, exactly as `vex:cancel` would.
       for (const owner of owners) {

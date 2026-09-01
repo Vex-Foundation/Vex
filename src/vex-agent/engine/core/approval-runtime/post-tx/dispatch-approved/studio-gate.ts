@@ -55,7 +55,10 @@ export type StudioGateOutcome =
   | { readonly kind: "claimed" }
   | {
       readonly kind: "refused";
-      readonly reason: StudioPostDecisionRefusalReason | "scope_changed";
+      readonly reason:
+        | StudioPostDecisionRefusalReason
+        | "scope_changed"
+        | "project_deleted";
       readonly output: string;
       readonly refusalCommitted: boolean;
     };
@@ -72,6 +75,9 @@ export const STUDIO_REFUSAL_CAUSES = {
   scope_changed:
     "the project's permission or wallet selection changed before this action "
     + "could start",
+  project_deleted:
+    "the Vex project that authorized this action was deleted before it could "
+    + "start",
   scope_unreadable:
     "the Vex project that authorized this action could not be read",
   scope_version_missing:
@@ -136,15 +142,53 @@ export async function runStudioDispatchGate(input: {
         // transaction has COMMITTED and released, so a scope edit could have
         // landed in between.
         if (input.projectId !== null) {
-          const res = await client.query<{ scope_version: number }>(
-            "SELECT scope_version FROM projects WHERE id = $1 FOR UPDATE",
+          const res = await client.query<{
+            scope_version: number;
+            deleted_at: Date | string | null;
+          }>(
+            "SELECT scope_version, deleted_at FROM projects WHERE id = $1 FOR UPDATE",
             [input.projectId],
           );
           const project = res.rows[0];
-          if (
-            project === undefined
-            || Number(project.scope_version) !== input.expectedScopeVersion
-          ) {
+
+          // THE TOMBSTONE CHECK, AND WHY IT LIVES HERE.
+          //
+          // The delete transaction and this gate serialize on the SAME session
+          // control lock (edge 0 of the global lock order), so by the time this
+          // row lock is granted the tombstone is either committed and visible
+          // or has not happened. That is what makes a post-delete dispatch
+          // impossible rather than merely unlikely.
+          //
+          // It is checked BEFORE the version comparison and reported as its own
+          // cause: a deleted project is not a changed scope, and the two have
+          // different remedies. `refusePendingStudioIntents` cannot have
+          // settled this row - its CAS is guarded on `status = 'pending'` and
+          // this row was already approved - so this gate is the ONLY thing
+          // standing between an approved action and a wallet.
+          if (project === undefined || project.deleted_at !== null) {
+            const body = buildStudioRefusalSettlement(
+              STUDIO_REFUSAL_CAUSES.project_deleted,
+            );
+            const settled = await approvalIntentsRepo.commitStudioSettlementWith(
+              client,
+              {
+                approvalId: input.approvalId,
+                status: "failed",
+                refusalReason: "project_deleted",
+                resultHash: body.resultHash,
+                settlementJson: body.settlementJson,
+                settlementBytes: body.settlementBytes,
+              },
+            );
+            return {
+              kind: "refused",
+              reason: "project_deleted",
+              output: body.output,
+              refusalCommitted: settled,
+            };
+          }
+
+          if (Number(project.scope_version) !== input.expectedScopeVersion) {
             // The claim already committed this row to `dispatching` inside THIS
             // transaction, so the refusal has to settle it in the same
             // transaction: a gate that refuses must never commit a claim.
@@ -232,7 +276,7 @@ export async function runStudioDispatchGate(input: {
  */
 export async function refuseStudioBeforeDispatch(
   approvalId: string,
-  reason: StudioPostDecisionRefusalReason,
+  reason: StudioPostDecisionRefusalReason | "project_deleted",
   cause: string,
 ): Promise<Extract<StudioGateOutcome, { kind: "refused" }>> {
   const body = buildStudioRefusalSettlement(cause);

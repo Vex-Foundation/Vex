@@ -132,8 +132,22 @@ export interface UiState {
   readonly theme: VexTheme;
   /** Persisted theme choice; "system" re-resolves on OS scheme changes. */
   readonly themePreference: VexThemePreference;
-  /** vex-studio seam: no UI logic reads this yet. NOT persisted. */
+  /**
+   * Which shell the frame dispatches: the agent columns or the Studio ones.
+   *
+   * NOT persisted (ratified decision 4). A launch always lands in agent mode,
+   * and `partializeUiState` is the only writer of the persisted payload, so a
+   * hand-edited `vex-ui` object cannot inject this slot either (see
+   * `uiStore/persistence.ts`).
+   */
   readonly runtimeMode: RuntimeMode;
+  /**
+   * Currently-selected Studio project. `null` means the Studio welcome screen.
+   *
+   * NOT persisted, for the same reason `activeSessionId` is not: a selection is
+   * launch-ephemeral, and the project row it names may not exist next launch.
+   */
+  readonly activeProjectId: string | null;
   readonly sidebarOpen: boolean;
   /**
    * Persisted sidebar drag width (px, clamped 264-420). The rendered track is
@@ -254,6 +268,19 @@ export interface UiState {
    */
   readonly bookSectionOrder: readonly string[];
   /**
+   * User's custom order for the STUDIO rail's sections, with its own id set
+   * (`book/studio-section-order.ts`: Portfolio Overview / Wallets / Balances).
+   *
+   * A SEPARATE key from `bookSectionOrder` on purpose: the two rails are
+   * separate registries whose id sets already differ, so one shared key would
+   * make a reorder on either rail rewrite the other, and each rail's resolver
+   * would drop the other's ids. `[]` means "no custom order - use the
+   * default". Same class as `bookSectionOrder`: COSMETIC, persisted (v15), and
+   * coerced on every rehydrate because the payload is user-writable
+   * localStorage.
+   */
+  readonly studioBookSectionOrder: readonly string[];
+  /**
    * Which BOOK tab is selected: the portfolio instrument or the board.
    *
    * A RAIL PREFERENCE, in the same class as `bookOpen` and
@@ -289,6 +316,16 @@ export interface UiState {
   readonly openWizard: (mode: WizardEntryMode) => void;
   readonly openUnlock: (returnView: UnlockReturnView) => void;
   readonly setActiveSessionId: (value: string | null) => void;
+  /**
+   * Switch the shell between the agent columns and the Studio columns.
+   *
+   * A UI intent and nothing more (rule 08): it selects which surfaces mount and
+   * grants no authority. Every privileged Studio operation is still checked by
+   * its own handler in main.
+   */
+  readonly setRuntimeMode: (value: RuntimeMode) => void;
+  /** Select a Studio project, or `null` for the Studio welcome screen. */
+  readonly setActiveProjectId: (value: string | null) => void;
   /**
    * Replace the shell-screen route atomically — open a screen (with its
    * trigger-rect origin and any payload) or close with `{ kind: "none" }`.
@@ -341,6 +378,8 @@ export interface UiState {
   readonly setHideDustBalances: (value: boolean) => void;
   readonly setNotificationsEnabled: (value: boolean) => void;
   readonly setBookSectionOrder: (order: readonly string[]) => void;
+  /** The Studio rail's own order. See `studioBookSectionOrder`. */
+  readonly setStudioBookSectionOrder: (order: readonly string[]) => void;
   /** User-driven only: the tab control calls this and nothing else does. */
   readonly setBookTab: (tab: BookTab) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
@@ -372,6 +411,7 @@ export const useUiStore = create<UiState>()(
       logBuffer: [],
       sessionModeFilter: "all",
       activeSessionId: null,
+      activeProjectId: null,
       shellRoute: { kind: "none" },
       createSessionOpen: false,
       createSessionInitialTurn: null,
@@ -381,6 +421,7 @@ export const useUiStore = create<UiState>()(
       hideDustBalances: true,
       notificationsEnabled: true,
       bookSectionOrder: [],
+      studioBookSectionOrder: [],
       bookTab: "portfolio",
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setSidebarWidth: (px) => set({ sidebarWidth: clampSidebarWidth(px) }),
@@ -404,6 +445,8 @@ export const useUiStore = create<UiState>()(
       openUnlock: (unlockReturnView) =>
         set({ currentView: "unlock", unlockReturnView }),
       setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
+      setRuntimeMode: (runtimeMode) => set({ runtimeMode }),
+      setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
       setShellRoute: (shellRoute) => set({ shellRoute }),
       openCreateSession: (initialMessage = null, reasoningEffort = null) => {
         const trimmed =
@@ -439,6 +482,8 @@ export const useUiStore = create<UiState>()(
       setHideDustBalances: (hideDustBalances) => set({ hideDustBalances }),
       setNotificationsEnabled: (notificationsEnabled) => set({ notificationsEnabled }),
       setBookSectionOrder: (bookSectionOrder) => set({ bookSectionOrder }),
+      setStudioBookSectionOrder: (studioBookSectionOrder) =>
+        set({ studioBookSectionOrder }),
       setBookTab: (bookTab) => set({ bookTab }),
       appendLog: (entry) =>
         set((state) => ({
@@ -448,7 +493,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 14,
+      version: 15,
       // Re-stamp the document root once the coerced, resolved theme is
       // known - theme-boot.js painted the pre-bundle frame from the RAW
       // payload, and a tampered value must not survive on <html>.

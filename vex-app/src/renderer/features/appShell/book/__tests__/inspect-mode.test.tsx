@@ -14,8 +14,8 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 vi.mock("../PositionBlock.js", () => ({
   PositionBlock: () => <div data-testid="card-position" />,
 }));
-vi.mock("../SessionWalletsCard.js", () => ({
-  SessionWalletsCard: () => <div data-testid="card-wallets" />,
+vi.mock("../WalletPairCard.js", () => ({
+  WalletPairCard: () => <div data-testid="card-wallets" />,
 }));
 vi.mock("../portfolio/BalancesCard.js", () => ({
   BalancesCard: () => <div data-testid="card-balances" />,

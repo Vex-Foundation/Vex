@@ -14,6 +14,7 @@ The MCP server exports the tool surface EXCEPT the session-bound groups:
 | Trading aliases | YES | token_find, token_check, swap_quote, swap_execute, swap_quote_uniswap, swap_execute_uniswap, bridge, bridge_quote, bridge_status, bridge_quote_relay, bridge_execute_relay |
 | Wallet / on-chain | YES | wallet_balances, wallet_track_token, wallet_send_prepare, wallet_send_confirm, chain_read, agent_scan |
 | Generic transaction signing | YES | wallet_evm_transaction_prepare, wallet_evm_transaction_confirm, wallet_solana_transaction_prepare, wallet_solana_transaction_confirm |
+| Native wrap conversion | YES | wallet_wrap_prepare, wallet_wrap_confirm |
 | Research | YES | web_research, twitter_account |
 | Math | YES | units_convert |
 | Protocol tools | YES, all namespaces | the full catalog (134 toolIds today), under their publicName |

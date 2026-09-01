@@ -1,0 +1,78 @@
+/**
+ * The refusal vocabulary shared by every venue that binds an execute to an
+ * approved quote.
+ *
+ * It lives apart from the per-provider snapshot codecs because BOTH of them
+ * produce it and the card reader dispatches between them: a single module
+ * owning the words keeps the two venues saying the same thing about the same
+ * state, and keeps the import direction one-way (codec -> vocabulary).
+ *
+ * Every kind here is RECOVERABLE by design (owner constraint 2026-08-28):
+ * "safe, and it has to keep working". None of them is a price comparison -
+ * market movement inside the approved slippage passes by construction, because
+ * the floor was derived once at quote time. What is refused is a snapshot that
+ * is not the one the human approved: consumed, superseded, expired, or
+ * byte-different.
+ */
+
+/** Why an execute may not proceed against a stored snapshot. */
+export type SnapshotRefusalKind =
+  | "missing_snapshot"
+  | "snapshot_unreadable"
+  | "not_executable"
+  | "already_claimed"
+  | "superseded"
+  | "expired"
+  | "digest_mismatch"
+  | "unbound_approval";
+
+export interface SnapshotRefusal {
+  readonly kind: SnapshotRefusalKind;
+  /** Agent-facing sentence: the real state, then the way forward. Never a dead end. */
+  readonly message: string;
+}
+
+const REFUSAL_CAUSE: Record<SnapshotRefusalKind, string> = {
+  missing_snapshot:
+    "the matched quote carries no stored route snapshot, so there is nothing to execute against",
+  snapshot_unreadable:
+    "the stored route snapshot is not in a shape this build can read",
+  not_executable:
+    "the matched quote was recorded as not executable, so it never authorized a swap",
+  already_claimed:
+    "this quote has already been claimed by an execute; a quote authorizes exactly one attempt",
+  superseded:
+    "a newer quote for the same trade has replaced this one, and the newer quote is the authority",
+  expired: "this quote has expired",
+  digest_mismatch:
+    "the stored route snapshot no longer matches its own digest, so it cannot be proven to be the route that was approved",
+  // FAIL-CLOSED, not a fallback. An approval that names no quote cannot say
+  // WHICH quote it authorized, and the alternative - executing whichever quote
+  // is newest at resume time - is exactly the substitution the binding exists to
+  // prevent. Recoverable like every other kind here: the way out is a fresh
+  // quote and a fresh approval, which this build does bind.
+  unbound_approval:
+    "this approval predates quote binding, so Vex cannot prove which quote it authorized",
+};
+
+/** The quote tool a refusal points the agent back at, per venue. */
+export const KYBER_FRESH_QUOTE_TOOL = "kyberswap__swap_quote";
+export const UNISWAP_FRESH_QUOTE_TOOL = "uniswap__swap_quote";
+
+/**
+ * Build the typed refusal. One sentence shape: what happened, then what to do.
+ *
+ * `freshQuoteTool` names the venue's OWN quote tool. A refusal that sends the
+ * agent to the wrong venue's quote would produce a prequote the execute cannot
+ * match (the provider is part of the match identity), so the caller states its
+ * own tool rather than inheriting a default it did not choose.
+ */
+export function snapshotRefusal(
+  kind: SnapshotRefusalKind,
+  freshQuoteTool: string = KYBER_FRESH_QUOTE_TOOL,
+): SnapshotRefusal {
+  return {
+    kind,
+    message: `Refused before signing: ${REFUSAL_CAUSE[kind]}. Nothing was signed. Request a fresh ${freshQuoteTool} and execute against that.`,
+  };
+}

@@ -36,7 +36,10 @@ function globalRow(over: Record<string, unknown> = {}): Record<string, unknown> 
     decision: null,
     decisionReason: null,
     executionStatus: null,
+    origin: "agent",
+    projectId: null,
     sessionTitle: "Send ETH to bridge",
+    projectName: null,
     ...over,
   };
 }
@@ -97,6 +100,8 @@ describe("approvals schemas", () => {
       decision: null,
       decisionReason: null,
       executionStatus: null,
+      origin: "studio_mcp",
+      projectId: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
     });
     expect(parsed.success).toBe(true);
   });

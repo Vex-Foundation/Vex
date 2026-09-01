@@ -109,11 +109,23 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
   pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
+// The execute CLAIMS the approved quote instead of fetching a route (the
+// 2026-08-27 quote-binding change). The claim's own behaviour is covered by
+// `quote-bound-execute.test.ts` and the Postgres claim suite; here it hands
+// back a real snapshot of this file's own route so the handler reaches the
+// behaviour under test.
+const mockClaim = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
+  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
 });
 
+import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 import { DependentLegGasEstimateError } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { compliantSwapCalldata, compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
@@ -163,7 +175,7 @@ describe("kyberswap.swap.execute — pre-sign estimate revert (no prior leg)", (
     // No allowance leg — the live shape. `priorLeg` is therefore `undefined`
     // and `estimateGasForPlanLeg` rethrows the node's raw revert.
     mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
-    mockGetRoute.mockResolvedValue({
+    const routeResponse = {
       data: {
         routeSummary: {
           amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
@@ -173,7 +185,15 @@ describe("kyberswap.swap.execute — pre-sign estimate revert (no prior leg)", (
         },
         routerAddress: ROUTER,
       },
-    });
+    };
+    mockGetRoute.mockResolvedValue(routeResponse);
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+        approvedClaim(
+          routeResponse.data.routeSummary,
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        ),
+    );
     mockBuildRoute.mockResolvedValue({
       data: {
         routerAddress: ROUTER,
@@ -306,7 +326,7 @@ describe("kyberswap.swap.execute — a pre-sign refusal of the SWAP leg unlocks 
     }));
     mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
     mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
-    mockGetRoute.mockResolvedValue({
+    const routeResponse = {
       data: {
         routeSummary: {
           amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
@@ -316,7 +336,15 @@ describe("kyberswap.swap.execute — a pre-sign refusal of the SWAP leg unlocks 
         },
         routerAddress: ROUTER,
       },
-    });
+    };
+    mockGetRoute.mockResolvedValue(routeResponse);
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+        approvedClaim(
+          routeResponse.data.routeSummary,
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        ),
+    );
     mockBuildRoute.mockResolvedValue({
       data: {
         routerAddress: ROUTER,
@@ -401,7 +429,7 @@ describe("kyberswap.swap.execute — the genuinely-ambiguous paths are NOT colla
     }));
     mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
     mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
-    mockGetRoute.mockResolvedValue({
+    const routeResponse = {
       data: {
         routeSummary: {
           amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
@@ -411,7 +439,15 @@ describe("kyberswap.swap.execute — the genuinely-ambiguous paths are NOT colla
         },
         routerAddress: ROUTER,
       },
-    });
+    };
+    mockGetRoute.mockResolvedValue(routeResponse);
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+        approvedClaim(
+          routeResponse.data.routeSummary,
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        ),
+    );
     mockBuildRoute.mockResolvedValue({
       data: {
         routerAddress: ROUTER,
@@ -473,7 +509,7 @@ describe("kyberswap.swap.execute — the prior-leg (DependentLegGasEstimateError
     // Allowance leg in front — `priorLeg` is set, so a failing estimate is
     // retried and surfaces as `DependentLegGasEstimateError`.
     mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: true });
-    mockGetRoute.mockResolvedValue({
+    const routeResponse = {
       data: {
         routeSummary: {
           amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
@@ -483,7 +519,15 @@ describe("kyberswap.swap.execute — the prior-leg (DependentLegGasEstimateError
         },
         routerAddress: ROUTER,
       },
-    });
+    };
+    mockGetRoute.mockResolvedValue(routeResponse);
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+        approvedClaim(
+          routeResponse.data.routeSummary,
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        ),
+    );
     mockBuildRoute.mockResolvedValue({
       data: {
         routerAddress: ROUTER,

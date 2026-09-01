@@ -28,6 +28,7 @@
 import type { InternalToolContext } from "../tools/internal/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { ProjectScope } from "./project-scope.js";
+import type { ApprovedQuoteAuthority } from "../tools/protocols/quote-authority/approved-authority.js";
 
 /**
  * Build the wallet resolution for a project.
@@ -64,6 +65,13 @@ export interface ProjectToolContextOptions {
    */
   readonly approvalId?: string;
   /**
+   * WHICH QUOTE that approval bound, read from the stored envelope by the
+   * approval runtime. Same producer and same trust as `approvalId`: it makes the
+   * resumed execute claim the exact snapshot the card named instead of whichever
+   * quote is newest at dispatch time.
+   */
+  readonly approvedQuoteAuthority?: ApprovedQuoteAuthority | null;
+  /**
    * Cancellation for the MCP call that owns this dispatch. ABSENT means "no
    * cancellation", never "cancelled" - same contract as every other producer of
    * `InternalToolContext.abortSignal`.
@@ -81,6 +89,9 @@ export function buildProjectToolContext(
     sessionPermission: scope.permission,
     approved: opts.approved === true,
     ...(opts.approvalId === undefined ? {} : { approvalId: opts.approvalId }),
+    ...(opts.approvedQuoteAuthority === undefined || opts.approvedQuoteAuthority === null
+      ? {}
+      : { approvedQuoteAuthority: opts.approvedQuoteAuthority }),
     missionRunId: null,
     missionId: null,
     planMode: false,

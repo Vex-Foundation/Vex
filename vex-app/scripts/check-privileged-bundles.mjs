@@ -99,8 +99,16 @@ export function evaluateZodLocaleBundles(bundles) {
       violations.push(`${name}: no built files to scan`);
       continue;
     }
-    const hasMarker = sources.some((src) => src.includes(ZOD_LOCALE_MARKER));
-    const hasLocaleText = sources.some((src) => src.includes(ZOD_EN_LOCALE_TEXT));
+    // EXECUTABLE TEXT ONLY. `dist/main` is emitted with `minify: false`, so our
+    // own source comments survive into it - and `src/lib/zod-locale.ts`
+    // legitimately SPELLS the marker out in the doc block that explains why it
+    // exists. Scanning raw text would let that comment satisfy this gate with
+    // the registration tree-shaken away, which is the same vacuity the marker's
+    // ownership move closes. The sibling `__filename` check already reads
+    // chunks this way.
+    const code = sources.map(stripWholeLineComments);
+    const hasMarker = code.some((src) => src.includes(ZOD_LOCALE_MARKER));
+    const hasLocaleText = code.some((src) => src.includes(ZOD_EN_LOCALE_TEXT));
     if (!hasMarker) {
       violations.push(
         `${name}: no \`${ZOD_LOCALE_MARKER}\` marker - registerZodLocale() was tree-shaken out or never called from the entry` +
@@ -131,6 +139,23 @@ export function evaluateZodLocaleBundles(bundles) {
  * a silent miss of a real executable reference.
  */
 const COMMENT_LINE_RE = /^(?:\/\/|\/\*|\*)/;
+
+/**
+ * Drop every whole-line comment, keeping the line count so a caller that
+ * resolves positions is unaffected.
+ *
+ * Shared by the `__filename` scan and the zod-locale scan, because both ask
+ * the same question: does the EXECUTED code contain this token? Same
+ * conservative rule as {@link COMMENT_LINE_RE}: a trailing comment after code
+ * is not recognised, so the worst case is a loud false positive, never a
+ * silent miss.
+ */
+export function stripWholeLineComments(source) {
+  return source
+    .split("\n")
+    .map((line) => (COMMENT_LINE_RE.test(line.trim()) ? "" : line))
+    .join("\n");
+}
 
 function walkFiles(dir, predicate) {
   const found = [];
@@ -415,3 +440,80 @@ export const privilegedBundleChecks = [
     },
   },
 ];
+
+/* ------------------------------------------------------------------ *
+ * Studio highlight worker (stage B3c)
+ * ------------------------------------------------------------------ */
+
+/**
+ * The string that proves the highlighter PORT is in the renderer bundle.
+ *
+ * It is a `console.warn` message in `highlight/highlighter-port.ts`, sitting in
+ * the same module as the `new Worker(new URL(...))` factory, so a minifier
+ * keeps it verbatim (it is a string literal, not an identifier) and it cannot
+ * be present without the factory being present. Same technique as the zod
+ * locale marker above, and for the same reason: a phrase that could ride along
+ * in an unrelated chunk would prove nothing.
+ */
+export const HIGHLIGHT_PORT_MARKER =
+  "studio viewer highlight: could not start the worker";
+
+/**
+ * The worker chunk, as Vite's `worker.rolldownOptions.output.entryFileNames`
+ * (`assets/[name]-[hash].js`) names it. MEASURED on a real build:
+ * `highlight.worker-C-1Hp9s1.js`, 168789 bytes.
+ */
+const HIGHLIGHT_WORKER_CHUNK = /^highlight\.worker-[A-Za-z0-9_-]+\.js$/;
+
+/**
+ * Two facts about the built renderer, as ONE pure verdict.
+ *
+ * 1. `worker-src` is declared and is EXACTLY `'self'`. A `blob:` worker is how
+ *    injected code runs past a strict `script-src`, and inheriting the
+ *    directive from `default-src` would leave nothing for a gate to pin.
+ * 2. If any chunk carries {@link HIGHLIGHT_PORT_MARKER}, a worker chunk exists.
+ *    CONDITIONAL because the Studio surface is not mounted in the shell until
+ *    stage B4: today the marker is absent and the second check is vacuous, and
+ *    the day the shell mounts the viewer it arms itself with nobody having to
+ *    remember. An unconditional demand would fail every build until B4; a
+ *    permanent skip would be a gate that never ran.
+ *
+ * Pure - no fs, no process - so both RED cases are provable on synthetic input.
+ *
+ * @param {{ csp: string, assetFileNames: string[], bundleSources: string[] }} input
+ * @returns {{ ok: boolean, violations: string[] }}
+ */
+export function evaluateHighlightWorkerBundle({ csp, assetFileNames, bundleSources }) {
+  const violations = [];
+
+  const directives = new Map();
+  for (const part of csp.split(";")) {
+    const tokens = part.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) continue;
+    directives.set(tokens[0], tokens.slice(1));
+  }
+  const workerSrc = directives.get("worker-src");
+  if (!workerSrc) {
+    violations.push(
+      "CSP declares no `worker-src`: the Studio highlight worker would inherit " +
+        "default-src and no gate could pin it. Add `worker-src 'self'`.",
+    );
+  } else if (workerSrc.length !== 1 || workerSrc[0] !== "'self'") {
+    violations.push(
+      `CSP worker-src must be exactly 'self' (found: worker-src ${workerSrc.join(" ")})`,
+    );
+  }
+
+  const reachable = bundleSources.some((src) => src.includes(HIGHLIGHT_PORT_MARKER));
+  if (reachable && !assetFileNames.some((name) => HIGHLIGHT_WORKER_CHUNK.test(name))) {
+    violations.push(
+      "the renderer bundle reaches the highlighter port but no " +
+        "`highlight.worker-<hash>.js` chunk was emitted - the worker would fail " +
+        "to construct at runtime and every file would silently render as plain " +
+        "text. Check `worker.format`/`worker.rolldownOptions` in " +
+        "vite.renderer.config.ts.",
+    );
+  }
+
+  return { ok: violations.length === 0, violations };
+}

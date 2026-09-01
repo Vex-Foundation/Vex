@@ -39,6 +39,10 @@ function devCspRelaxer(isDev: boolean): Plugin {
     "img-src 'self' data: https:",
     "font-src 'self'",
     "connect-src 'self' ws://127.0.0.1:5173 http://127.0.0.1:5173",
+    // Kept in step with the prod CSP: the Studio viewer's shiki worker needs
+    // this in dev too, and a dev session that silently lost highlighting would
+    // be debugged as a code bug rather than as a policy one.
+    "worker-src 'self'",
     "object-src 'none'",
     "base-uri 'none'",
     "frame-ancestors 'none'",
@@ -126,6 +130,28 @@ export default defineConfig(({ command }) => ({
     host: "127.0.0.1",
     port: 4173,
     strictPort: true,
+  },
+
+  /**
+   * Worker bundling for the Studio file viewer's shiki tokenizer.
+   *
+   * `format: "es"` because the worker is created with `{ type: "module" }` and
+   * loads its grammars with dynamic `import()`. Vite's own default here is
+   * `iife`, which has no `import()` at all, so the grammar loaders would fail
+   * at runtime and every file would render as plain text with a reason - a
+   * degradation that is honest but entirely avoidable.
+   *
+   * `rolldownOptions`, not `rollupOptions`: this Vite (8.0.11) bundles rolldown
+   * and its own types mark `worker.rollupOptions` as a deprecated alias of
+   * `worker.rolldownOptions` (node_modules/vite/dist/node/index.d.ts). The
+   * hashed name is what `scripts/check-build-artifacts.mjs` looks for in
+   * `dist/renderer/assets/`.
+   */
+  worker: {
+    format: "es",
+    rolldownOptions: {
+      output: { entryFileNames: "assets/[name]-[hash].js" },
+    },
   },
 
   build: {

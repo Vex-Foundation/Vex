@@ -57,7 +57,9 @@ export function registerBoardIconHandlers(): ReadonlyArray<() => void> {
               ? { kind: "image", dataUrl: icon.dataUrl }
               : icon.kind === "absent"
                 ? { kind: "absent", reason: icon.reason }
-                : { kind: "unavailable", reason: icon.reason },
+                : icon.kind === "refused_by_policy"
+                  ? { kind: "refused_by_policy", reason: icon.reason }
+                  : { kind: "unavailable", reason: icon.reason },
         });
       },
     }),

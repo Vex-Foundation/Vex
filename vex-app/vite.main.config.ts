@@ -93,6 +93,13 @@ export default defineConfig({
         ...bareNodeBuiltins,
         /^node:/,
         "electron",
+        // NEVER bundle @parcel/watcher. It is a native module: its JS loader
+        // dlopens `watcher.node` out of a per-platform sibling package resolved
+        // relative to its own file location, and inlining that loader into
+        // dist/main/index.js breaks the lookup. It stays external and ships
+        // unpacked - electron-builder.release.yml already carries the
+        // asarUnpack and files entries for it.
+        "@parcel/watcher",
         "electron-log",
         "electron-log/main",
         "electron-log/main.js",

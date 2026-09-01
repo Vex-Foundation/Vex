@@ -23,14 +23,21 @@ export async function jupiterTokenSearch(params: JupiterTokenSearchParams): Prom
   );
 }
 
-export async function jupiterTokensByMint(mints: string[]): Promise<JupiterMintInformation[]> {
+export async function jupiterTokensByMint(
+  mints: string[],
+  /**
+   * The caller's cancellation, forwarded to the HTTP request. Absent means "no
+   * cancellation", never "cancelled".
+   */
+  signal?: AbortSignal,
+): Promise<JupiterMintInformation[]> {
   requireJupiterTokensApiKey();
 
   const normalizedMints = validateJupiterMintList(mints, 100, "mints");
 
   return fetchJson<JupiterMintInformation[]>(
     `${JUPITER_TOKENS_V2_BASE_URL}/search?${toQueryString({ query: normalizeMintList(normalizedMints) })}`,
-    { headers: getJupiterTokensHeaders() },
+    { headers: getJupiterTokensHeaders(), ...(signal ? { signal } : {}) },
     jupiterMintInformationListSchema,
   );
 }

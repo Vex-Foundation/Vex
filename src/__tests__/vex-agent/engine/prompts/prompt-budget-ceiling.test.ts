@@ -21,8 +21,11 @@ function context(overrides: Partial<EngineContext>): EngineContext {
 }
 
 const MODES = [
-  // REVIEWED BUDGET DIFF, merge of the Indexify integration onto post-D-DS9
-  // main (2026-08-28). Two independent reviewed diffs compose here:
+  // REVIEWED BUDGET DIFF, second upstream merge (2026-09-02): upstream's own
+  // reviewed +523 B/mode composes on the values below exactly, and the six
+  // figures are MEASURED on the merged tree, not summed. Earlier provenance:
+  // merge of the Indexify integration onto post-D-DS9 main (2026-08-28),
+  // where two independent reviewed diffs composed:
   //  - Indexify (2026-08-26): +1,956 bytes in every mode — one static block
   //    rendered once per mode (the `### indexify` declaration with its
   //    custodial characteristics paragraph, Solana coverage line, and the
@@ -34,12 +37,12 @@ const MODES = [
   //    this merge.
   // The six values below are MEASURED on the merged tree, not summed from the
   // two diffs.
-  { name: "agent / restricted", context: context({}), ceiling: 58_729 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 59_430 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_152 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_171 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 63_768 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 63_583 },
+  { name: "agent / restricted", context: context({}), ceiling: 59_252 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 59_953 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_675 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_694 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 64_291 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 64_106 },
 ] as const;
 
 beforeAll(() => {
@@ -69,6 +72,50 @@ describe("static prompt byte ceilings", () => {
       );
       // Lower this ceiling whenever an intentional prompt change makes the
       // measured prefix smaller. Never raise it without a reviewed budget diff.
+      //
+      // REVIEWED BUDGET DIFF, quote-bound execution (2026-08-28). NET +523
+      // bytes in every mode, identical in all six because the growth is three
+      // static strings in the Swap task shape, rendered once per mode:
+      //
+      //   agent / restricted          56,773 -> 57,296
+      //   agent / full                57,474 -> 57,997
+      //   mission setup / restricted  63,196 -> 63,719
+      //   mission setup / full        63,215 -> 63,738
+      //   mission run / restricted    61,812 -> 62,335
+      //   mission run / full          61,627 -> 62,150
+      //
+      //   -300  THE OLD PRICE-PROTECTION LINE, removed. It described slippage
+      //         as a property of the market and named only the negative-impact
+      //         case, which stopped being the whole truth when the execute
+      //         started claiming the approved quote.
+      //   +275  WHAT SLIPPAGE NOW BINDS. The execute is bound to the quote the
+      //         agent was shown: it claims that quote, writes ITS floor into
+      //         the calldata, and a quote authorizes exactly one attempt. Every
+      //         refusal on that path is typed and recoverable by re-quoting.
+      //         The model cannot infer any of this from a tool description it
+      //         reads only once it is already executing, and the failure mode
+      //         it prevents - retrying at a higher slippage after a refusal -
+      //         is the exact behaviour the 2026-08-27 incident produced.
+      //   +355  WHICH QUOTES ARE NOW REFUSED. Two typed refusals did not exist
+      //         when the old line was written: impact at or above 15%, and an
+      //         output the venue cannot price in USD. A model that meets a
+      //         refusal it was never told about re-tries it. The surviving half
+      //         of the old sentence (negative impact, "Return amount is not
+      //         enough") is folded in here rather than kept as a second line.
+      //   +193  THE WRAP PAIR. Both venues now refuse a native <-> wrapped-
+      //         native pair BY NAME, because it is a 1:1 conversion and not a
+      //         trade. Without this the model reads the refusal as "no
+      //         liquidity" and shops the pair around venues that will all
+      //         refuse it. It names the two wrap tools, which is what makes the
+      //         refusal actionable rather than a dead end.
+      //
+      // WHY COMPRESSION WAS INSUFFICIENT. The three lines were already cut
+      // once, from 952 B to 823 B, by dropping restatement (the parenthetical
+      // gloss on negative impact, the "tell the user pricing looks unreliable"
+      // tail, the second wrap sentence). What remains is one rule per clause.
+      // Funding the rest by shrinking another namespace's honesty clauses was
+      // ruled out on the same grounds as every diff below: this budget belongs
+      // to the change that spends it. The coordinator reviews this raise.
       //
       // REVIEWED BUDGET DIFF, D-DS9 REVERTED plus board doctrine (owner order
       // 2026-08-26). NET +617 bytes in every mode, and the figure is identical

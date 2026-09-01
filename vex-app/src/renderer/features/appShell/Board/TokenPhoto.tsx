@@ -4,7 +4,7 @@
  * grid card and the 88px Spotlight hero, so the fetch policy, the fallback
  * and the browser-decode guard cannot drift between surfaces.
  *
- * FOUR STATES, and the last one is the reason there are four:
+ * FIVE STATES, and the last two are the reason there are five:
  *
  *   loading      a handle exists and its read has not answered. A pulsing
  *                skeleton disc, no letters: a letter here would claim the
@@ -12,12 +12,17 @@
  *   image        the bytes are in hand and the browser could draw them.
  *   monogram     settled absent, and ONLY that: `iconId === null` (nothing was
  *                asked, the common case) or the read settled `absent` (the
- *                provider was asked and has no picture, or served bytes main
- *                could not identify as one). ONE leading letter, the same
- *                treatment the market provider's own cards use for a token
- *                with no artwork, and the slot SAYS so: a title and a
+ *                provider was asked and has no picture). ONE leading letter,
+ *                the same treatment the market provider's own cards use for a
+ *                token with no artwork, and the slot SAYS so: a title and a
  *                screen-reader sentence on the card, a visible line on the
  *                hero.
+ *   refused      the provider HAS published artwork and main declined it -
+ *                bytes it could not identify, or past the byte ceiling. The
+ *                static disc with its own copy, never a letter: a monogram
+ *                would claim the token has no picture, which is false, and
+ *                "could not be loaded" would invite a retry that will fetch the
+ *                same refused bytes.
  *   unavailable  the read did not answer about the picture: a transport
  *                failure, a busy queue, an unmounted service, a rejected
  *                `Result`, a thrown query, or bytes the browser could not
@@ -54,12 +59,25 @@ import {
 } from "../../../lib/api/board-icons.js";
 
 export type TokenPhotoSize = "card" | "hero";
-export type TokenPhotoState = "loading" | "image" | "monogram" | "unavailable";
+export type TokenPhotoState =
+  | "loading"
+  | "image"
+  | "monogram"
+  | "refused"
+  | "unavailable";
 
 /** The card's word for a settled absence. Frozen beside the state. */
 export const BOARD_NO_IMAGE_TITLE = "No image published for this token yet";
 /** The card's word for a read that did not answer. Never a claim of absence. */
 export const BOARD_IMAGE_UNAVAILABLE_TITLE = "Image could not be loaded";
+/**
+ * The card's word for artwork this app declined. It says BOTH facts the reader
+ * needs and neither of the two wrong ones: the token does have a picture (so
+ * not "no image published"), and nothing is going to change (so not "could not
+ * be loaded", which invites a reload that will fetch the same refused bytes).
+ */
+export const BOARD_IMAGE_REFUSED_TITLE =
+  "Published image was not accepted by Vex's image checks";
 
 const SIZE_CLASS: Record<TokenPhotoSize, { readonly frame: string; readonly glyph: string }> = {
   card: { frame: "h-16 w-16", glyph: "text-[18px]" },
@@ -95,6 +113,8 @@ export function useTokenPhoto(iconId: string | null): TokenPhotoView {
       return { state: "loading", ...settled };
     case "absent":
       return { state: "monogram", ...settled };
+    case "refused_by_policy":
+      return { state: "refused", ...settled };
     case "unavailable":
       return { state: "unavailable", ...settled };
     default: {
@@ -170,6 +190,25 @@ export function TokenPhotoFrame({
         aria-hidden
         className={`block ${sizing.frame} shrink-0 rounded-full bg-surface-skeleton animate-pulse motion-reduce:animate-none`}
       />
+    );
+  }
+  if (view.state === "refused") {
+    // The static disc again, because there IS artwork and a monogram would say
+    // there is not. Its own copy, and no cadence behind it: the verdict is
+    // settled for these bytes.
+    return (
+      <>
+        <span
+          data-vex-area={area}
+          data-state="refused"
+          aria-hidden
+          title={BOARD_IMAGE_REFUSED_TITLE}
+          className={`block ${sizing.frame} shrink-0 rounded-full bg-surface-skeleton`}
+        />
+        <span data-vex-area={`${area}-refused`} className="sr-only">
+          {BOARD_IMAGE_REFUSED_TITLE}
+        </span>
+      </>
     );
   }
   if (view.state === "unavailable") {

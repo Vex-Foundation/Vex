@@ -31,10 +31,10 @@ guess.
 
 ## Totals
 
-- tools: 178
-- Vex tools: 25
+- tools: 180
+- Vex tools: 27
 - protocol tools: 153 across 12 protocols
-- destructive: 49
+- destructive: 50
 
 ## Vex tools
 
@@ -63,6 +63,8 @@ guess.
 | WalletSolanaTransactionConfirm | Broadcast a prepared Solana transaction | mutating | yes | - |
 | WalletSolanaTransactionPrepare | Prepare a Solana transaction | mutating | no | - |
 | WalletTrackToken | Track a token in the local wallet view | mutating | no | - |
+| WalletWrapConfirm | Broadcast a prepared wrap or unwrap | mutating | yes | - |
+| WalletWrapPrepare | Prepare a native / wrapped-native conversion | mutating | no | - |
 | WebResearch | Search and read the web | read-only | no | TAVILY_API_KEY |
 | vex_ToolSearch | Search the protocol tool catalog | read-only | no | - |
 

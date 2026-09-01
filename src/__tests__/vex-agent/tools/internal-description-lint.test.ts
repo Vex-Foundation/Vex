@@ -29,6 +29,7 @@ import { getAllTools } from "@vex-agent/tools/registry.js";
 import { ACTION_ALIAS_TOOLS } from "@vex-agent/tools/registry/action-aliases.js";
 import { WALLET_TOOLS } from "@vex-agent/tools/registry/wallet.js";
 import { WALLET_TRANSACTION_TOOLS } from "@vex-agent/tools/registry/wallet-transaction.js";
+import { WALLET_WRAP_TOOLS } from "@vex-agent/tools/registry/wallet-wrap.js";
 import { ACTION_KINDS } from "@vex-agent/tools/taxonomy.js";
 import { lintInternalToolDescription } from "@vex-agent/tools/protocols/_manifest-lint/internal-description-rules.js";
 import {
@@ -44,7 +45,7 @@ import type { ManifestLintIssue } from "@vex-agent/tools/protocols/_manifest-lin
  * to assert the split honestly; it does NOT narrow this lane.
  */
 const BASIC_LANE = new Set(
-  [...ACTION_ALIAS_TOOLS, ...WALLET_TOOLS, ...WALLET_TRANSACTION_TOOLS].map((tool) => tool.name),
+  [...ACTION_ALIAS_TOOLS, ...WALLET_TOOLS, ...WALLET_TRANSACTION_TOOLS, ...WALLET_WRAP_TOOLS].map((tool) => tool.name),
 );
 
 /** Every registered internal tool. The ActionKind lane excludes nothing. */
@@ -70,8 +71,11 @@ describe("G2 - internal tool description lint", () => {
     // all four inside the basic (JSON-schema) lane, which is why that count
     // moved from 14 to 18 in the same step.
     // 36 → 37: `BoardCompose` (`registry/board.ts`), outside the basic lane.
-    expect(SUBJECTS).toHaveLength(37);
-    expect(BASIC_LANE.size, "basic-lane coverage changed").toBe(18);
+    // 37 → 39: the native <-> wrapped-native pair (`registry/wallet-wrap.ts`),
+    // both inside the basic lane, which is why that count moved 18 → 20 in the
+    // same step.
+    expect(SUBJECTS).toHaveLength(39);
+    expect(BASIC_LANE.size, "basic-lane coverage changed").toBe(20);
 
     // The 19 the basic rule never saw (18 + `BoardCompose`), and the 14 it
     // sees without an ActionKind, are ALL in this lane.
@@ -94,6 +98,7 @@ describe("G2 - internal tool description lint", () => {
       "WalletSendPrepare", "WalletSendConfirm",
       "WalletEvmTransactionPrepare", "WalletEvmTransactionConfirm",
       "WalletSolanaTransactionPrepare", "WalletSolanaTransactionConfirm",
+      "WalletWrapPrepare", "WalletWrapConfirm",
     ]));
     // Every one of them sits in the basic lane too, which is exactly why the
     // ActionKind lane may not exclude that lane.

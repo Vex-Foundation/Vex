@@ -1,5 +1,5 @@
 {
-  "toolCount": 178,
+  "toolCount": 180,
   "tools": [
     {
       "alwaysLoad": true,
@@ -905,7 +905,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1576,
+      "descriptionBytes": 1990,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -1194,6 +1194,81 @@
     },
     {
       "alwaysLoad": true,
+      "descriptionBytes": 2124,
+      "destructiveHint": true,
+      "inputSchema": {
+        "properties": {
+          "intentId": {
+            "description": "The intent id that `WalletWrapPrepare` returned. It is scoped to this session and to the exact conversion that was approved.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      },
+      "kind": "internal",
+      "publicName": "WalletWrapConfirm",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Broadcast a prepared wrap or unwrap"
+    },
+    {
+      "alwaysLoad": true,
+      "descriptionBytes": 2337,
+      "destructiveHint": false,
+      "inputSchema": {
+        "properties": {
+          "amountRaw": {
+            "description": "How much to convert, in the token's SMALLEST BASE UNITS, as decimal digits only (18 decimals on every verified chain today, so \"1000000000000000000\" is one whole unit). Never a human decimal such as \"1.5\", never a JSON number, never a unit suffix. Must be greater than zero.",
+            "type": "string"
+          },
+          "chain": {
+            "description": "The EVM chain the conversion executes on. Only chains with a verified wrapped-native contract are accepted; today those are ethereum, optimism, bsc, polygon, robinhood, base, arbitrum and avalanche. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "type": "string"
+          },
+          "direction": {
+            "description": "`wrap` turns native currency into its wrapped ERC-20 form and spends native; `unwrap` turns the wrapped ERC-20 back into native and spends the token. Nothing else is accepted, and the value is refused by name rather than guessed.",
+            "enum": [
+              "wrap",
+              "unwrap"
+            ],
+            "type": "string"
+          },
+          "gasLimit": {
+            "description": "Maximum gas UNITS, as a decimal integer string. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint.",
+            "type": "string"
+          },
+          "gasPriceWei": {
+            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint.",
+            "type": "string"
+          },
+          "maxFeePerGasWei": {
+            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint.",
+            "type": "string"
+          },
+          "maxPriorityFeePerGasWei": {
+            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "direction",
+          "amountRaw",
+          "gasLimit"
+        ],
+        "type": "object"
+      },
+      "kind": "internal",
+      "publicName": "WalletWrapPrepare",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Prepare a native / wrapped-native conversion"
+    },
+    {
+      "alwaysLoad": true,
       "descriptionBytes": 2057,
       "destructiveHint": false,
       "inputSchema": {
@@ -1450,7 +1525,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -1465,7 +1539,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -1480,7 +1553,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -1503,7 +1575,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -1530,7 +1601,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -1545,7 +1615,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -1608,7 +1677,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -1725,7 +1793,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -1740,7 +1807,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -1755,7 +1821,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -1778,7 +1843,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -1805,7 +1869,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -1820,7 +1883,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -1883,7 +1945,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2029,7 +2090,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2044,7 +2104,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2059,7 +2118,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2082,7 +2140,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2109,7 +2166,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2124,7 +2180,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2187,7 +2242,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2455,7 +2509,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2478,7 +2531,6 @@
                   ],
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2624,7 +2676,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2659,7 +2710,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2702,7 +2752,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2717,7 +2766,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2732,7 +2780,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2755,7 +2802,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2782,7 +2828,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2797,7 +2842,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2860,7 +2904,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -2989,7 +3032,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3092,7 +3134,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3107,7 +3148,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3122,7 +3162,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3145,7 +3184,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3172,7 +3210,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3187,7 +3224,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3250,7 +3286,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3387,7 +3422,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3402,7 +3436,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3417,7 +3450,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3436,7 +3468,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3463,7 +3494,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3478,7 +3508,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3541,7 +3570,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3658,7 +3686,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3687,7 +3714,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3890,7 +3916,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3905,7 +3930,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3920,7 +3944,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3939,7 +3962,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3966,7 +3988,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -3981,7 +4002,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -4044,7 +4064,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -5165,7 +5184,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -5208,7 +5226,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1109,
+      "descriptionBytes": 1813,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -5222,7 +5240,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -5267,7 +5284,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -5316,7 +5332,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -5361,7 +5376,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -5410,7 +5424,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2534,
+      "descriptionBytes": 3110,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -5438,7 +5452,7 @@
             "type": "boolean"
           },
           "slippageBps": {
-            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. Must match the kyberswap__swap_quote value exactly (or be omitted on both) - a mismatch blocks execution. It is the ONLY price protection on the trade. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails, in one of two ways. USUALLY it fails for FREE: the pre-sign gas estimate is refused before anything is signed, NO gas is spent, this call returns status \"not_attempted\" with retryable true and failureCode slippage, and the message names the price guard. LESS OFTEN the pool moves after that estimate passes: the transaction broadcasts, then REVERTS, this call returns status \"reverted\", the activity row records mined_revert, and the gas IS spent. Read either as \"this pair needs more tolerance\", not as \"this pair is untradeable\": re-quote with a higher slippageBps and pass the same value here. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping. Raise it in steps, starting tight since the usual failure costs nothing - no tolerance is known to fit a given pair in advance, and every increase widens the worst-case price you accept.",
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. Must match the kyberswap__swap_quote value exactly (or be omitted on both) - a mismatch blocks execution. It is how far BELOW THE QUOTED OUTPUT the fill may land: the execute does not re-price the trade, it builds from the exact route the quote returned, so the floor written into the calldata is the quoted amountOut minus this tolerance and nothing about the market between quote and execute can move it. That is what makes the number meaningful, and it is also why a stale quote is refused rather than silently re-priced. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails, in one of two ways. USUALLY it fails for FREE: the pre-sign gas estimate is refused before anything is signed, NO gas is spent, this call returns status \"not_attempted\" with retryable true and failureCode slippage, and the message names the price guard. LESS OFTEN the pool moves after that estimate passes: the transaction broadcasts, then REVERTS, this call returns status \"reverted\", the activity row records mined_revert, and the gas IS spent. Read either as \"the price moved further than this tolerance allows\", not as \"this pair is untradeable\": re-quote and pass the same higher slippageBps here. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping. Raise it in steps, starting tight since the usual failure costs nothing - no tolerance is known to fit a given pair in advance, and every increase widens the worst-case price you accept.",
             "minimum": 0,
             "type": "integer"
           },
@@ -5471,7 +5485,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1675,
+      "descriptionBytes": 2569,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -5499,7 +5513,7 @@
             "type": "boolean"
           },
           "slippageBps": {
-            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. Pass the SAME value on kyberswap__swap_execute, or omit it on both - a mismatch blocks the execute (the prequote match requires identical params). Not sent to the quote route; it only pins the tolerance this quote authorizes. It is the ONLY price protection the resulting trade has. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails at execute time, in one of two ways. USUALLY it fails for FREE: the pre-sign gas estimate is refused before anything is signed, NO gas is spent, and the execute returns status \"not_attempted\" with failureCode slippage. LESS OFTEN the pool moves after that estimate passes: the transaction REVERTS, the activity row records mined_revert, and the gas IS spent. After either, re-quote with a higher slippageBps rather than abandoning the pair - and since the usual failure costs nothing, a tighter tolerance is the cheap thing to try first. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept.",
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. Pass the SAME value on kyberswap__swap_execute, or omit it on both - a mismatch blocks the execute (the prequote match requires identical params). Not sent to the quote route; it pins how far below THIS quote's amountOut the eventual fill may land. The execute builds from the exact route this call returns rather than re-pricing the trade, so the approvedMinOut this call returns is the floor the calldata will carry, and the market moving between this quote and the execute cannot raise or lower it. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails at execute time, in one of two ways. USUALLY it fails for FREE: the pre-sign gas estimate is refused before anything is signed, NO gas is spent, and the execute returns status \"not_attempted\" with failureCode slippage. LESS OFTEN the pool moves after that estimate passes: the transaction REVERTS, the activity row records mined_revert, and the gas IS spent. After either, re-quote with a higher slippageBps rather than abandoning the pair - and since the usual failure costs nothing, a tighter tolerance is the cheap thing to try first. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept.",
             "minimum": 0,
             "type": "integer"
           },
@@ -6080,7 +6094,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6103,7 +6116,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6118,7 +6130,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6172,7 +6183,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6213,7 +6223,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6228,7 +6237,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6251,7 +6259,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6266,7 +6273,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6293,7 +6299,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6312,7 +6317,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6371,7 +6375,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6440,7 +6443,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6552,7 +6554,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6837,7 +6838,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6856,7 +6856,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6879,7 +6878,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -6962,7 +6960,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -7021,7 +7018,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -10776,7 +10772,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -10844,7 +10839,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],
@@ -10908,7 +10902,6 @@
                 "items": {
                   "type": "string"
                 },
-                "minItems": 1,
                 "type": "array"
               }
             ],

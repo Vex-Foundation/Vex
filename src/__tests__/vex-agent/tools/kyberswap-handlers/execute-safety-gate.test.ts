@@ -122,6 +122,16 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
 // no-ops to keep tests hermetic and quiet.
 const mockLoggerWarn = vi.fn();
 
+// The execute CLAIMS the approved quote instead of fetching a route (the
+// 2026-08-27 quote-binding change). The claim's own behaviour is covered by
+// `quote-bound-execute.test.ts` and the Postgres claim suite; here it hands
+// back a real snapshot of this file's own route so the handler reaches the
+// behaviour under test.
+const mockClaim = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
+  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = {
     warn: (...args: unknown[]) => mockLoggerWarn(...args),
@@ -133,6 +143,8 @@ vi.mock("@utils/logger.js", () => {
 });
 
 import { compliantSwapCalldata, compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
+import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 
 describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", () => {
@@ -154,7 +166,7 @@ describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", ()
     mockGetHoneypotFotInfo.mockReset();
     mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
     mockGetRoute.mockReset();
-    mockGetRoute.mockResolvedValue({
+    const routeResponse = {
       data: {
         routeSummary: {
           amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
@@ -166,7 +178,19 @@ describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", ()
         },
         routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
       },
-    });
+    };
+    mockGetRoute.mockResolvedValue(routeResponse);
+    // This file has no global mock reset, so the claim spy is cleared here:
+    // its CALL COUNT is an assertion below (the safety gate must abort before
+    // a quote is consumed), and a cumulative count would make that vacuous.
+    mockClaim.mockReset();
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+        approvedClaim(
+          routeResponse.data.routeSummary,
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        ),
+    );
     mockBuildRoute.mockReset();
     mockBuildRoute.mockResolvedValue({
       data: {
@@ -227,6 +251,9 @@ describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", ()
     expect(result.output).toMatch(/aborting/i);
     // Aborted before the route fetch.
     expect(mockGetRoute).not.toHaveBeenCalled();
+    // Nothing claimed the approved quote either: a refusal here must not
+    // consume the single-use quote the user would re-execute after fixing it.
+    expect(mockClaim).not.toHaveBeenCalled();
   });
 
   it("a CONFIRMED honeypot tokenOut STILL aborts", async () => {
@@ -239,6 +266,9 @@ describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", ()
     expect(result.success).toBe(false);
     expect(result.output).toMatch(/honeypot/i);
     expect(mockGetRoute).not.toHaveBeenCalled();
+    // Nothing claimed the approved quote either: a refusal here must not
+    // consume the single-use quote the user would re-execute after fixing it.
+    expect(mockClaim).not.toHaveBeenCalled();
   });
 
   it("FoT tax > 50 does NOT abort — proceeds past the gate to a real swap + warns", async () => {
@@ -248,9 +278,11 @@ describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", ()
     });
 
     const result = await executeCall();
-    // Reached the route step and completed → the safety gate did NOT abort on FoT.
+    // Claimed the approved quote and completed → the safety gate did NOT abort
+    // on FoT. (The execute no longer fetches a route; the claim is the step
+    // that follows the safety gate.)
     expect(result.success).toBe(true);
-    expect(mockGetRoute).toHaveBeenCalledTimes(1);
+    expect(mockClaim).toHaveBeenCalledTimes(1);
     // A high-tax FoT still emits a (warn-only) structural log.
     const fotWarn = mockLoggerWarn.mock.calls.find((c) => c[0] === "kyberswap.swap.fot_warning");
     expect(fotWarn).toBeDefined();
@@ -268,7 +300,7 @@ describe("kyberswap.swap.execute inline safety gate (FIX 1, broadcast path)", ()
     const result = await executeCall();
     // A transient external-API failure must NOT abort a legit trade.
     expect(result.success).toBe(true);
-    expect(mockGetRoute).toHaveBeenCalledTimes(1);
+    expect(mockClaim).toHaveBeenCalledTimes(1);
 
     // ONE bounded structural warn, now carrying the SANITIZED cause as well as
     // the reason class (owner decree 2026-08-02 — a generic label on a

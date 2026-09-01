@@ -96,6 +96,23 @@ export type PrequoteKind =
   | "lend_repay";
 export type SafetyVerdict = "pass" | "fail" | "unknown";
 
+/**
+ * The closed quote-eligibility union, mirrored from
+ * `tools/protocols/quote-authority/eligibility.ts`. Only `executable` may be
+ * claimed by an execute; the other four are the REASONS a quote authorized
+ * nothing, recorded so a later ineligible quote still supersedes an older
+ * priced one for the same identity.
+ *
+ * Held in lockstep with the SQL CHECK (migration 095) by
+ * `__tests__/vex-agent/db/repos/swap-prequotes-kind-lockstep.test.ts`.
+ */
+export type PrequoteEligibilityKind =
+  | "executable"
+  | "unpriceable_output"
+  | "excessive_impact"
+  | "oversize_snapshot"
+  | "provider_usd_invalid";
+
 export interface SwapPrequote {
   prequoteId: string;
   sessionId: string;
@@ -112,6 +129,11 @@ export interface SwapPrequote {
   safetyVerdict: SafetyVerdict;
   safetyDetail: Record<string, unknown>;
   routeRef: Record<string, unknown> | null;
+  eligibilityKind: PrequoteEligibilityKind;
+  /** Set once by the atomic claim; `null` while the quote is still unclaimed. */
+  claimedAt: string | null;
+  /** The execute correlation that won the claim, paired with `claimedAt`. */
+  claimedBy: string | null;
   createdAt: string;
   expiresAt: string;
 }
@@ -138,6 +160,12 @@ export interface CreatePrequoteInput {
   safetyDetail: Record<string, unknown>;
   /** Structural-only route reference, or null. */
   routeRef?: Record<string, unknown> | null;
+  /**
+   * Whether this quote may authorize an execute. Defaults to `"executable"` for
+   * the providers that record no snapshot, whose executes are gated on safety
+   * alone and never take the claim path.
+   */
+  eligibilityKind?: PrequoteEligibilityKind;
   expiresAt: string;
 }
 
@@ -150,7 +178,8 @@ function toIso(value: string | Date): string {
 const SELECT_COLUMNS =
   "prequote_id, session_id, match_hash, kind, family, provider, " +
   "chain_id, wallet_address, token_in, token_out, amount, slippage_bps, " +
-  "safety_verdict, safety_detail, route_ref, created_at, expires_at";
+  "safety_verdict, safety_detail, route_ref, eligibility_kind, " +
+  "claimed_at, claimed_by, created_at, expires_at";
 
 function mapRow(r: Record<string, unknown>): SwapPrequote {
   return {
@@ -173,6 +202,9 @@ function mapRow(r: Record<string, unknown>): SwapPrequote {
     safetyVerdict: r.safety_verdict as SafetyVerdict,
     safetyDetail: (r.safety_detail as Record<string, unknown>) ?? {},
     routeRef: (r.route_ref as Record<string, unknown> | null) ?? null,
+    eligibilityKind: (r.eligibility_kind as PrequoteEligibilityKind | null) ?? "executable",
+    claimedAt: r.claimed_at === null || r.claimed_at === undefined ? null : toIso(r.claimed_at as string | Date),
+    claimedBy: (r.claimed_by as string | null) ?? null,
     createdAt: toIso(r.created_at as string | Date),
     expiresAt: toIso(r.expires_at as string | Date),
   };
@@ -183,8 +215,8 @@ function mapRow(r: Record<string, unknown>): SwapPrequote {
 const INSERT_SQL = `INSERT INTO swap_prequotes (
   prequote_id, session_id, match_hash, kind, family, provider,
   chain_id, wallet_address, token_in, token_out, amount, slippage_bps,
-  safety_verdict, safety_detail, route_ref, expires_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15::jsonb, $16)`;
+  safety_verdict, safety_detail, route_ref, eligibility_kind, expires_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15::jsonb, $16, $17)`;
 
 export async function create(input: CreatePrequoteInput): Promise<void> {
   await execute(INSERT_SQL, [
@@ -205,6 +237,7 @@ export async function create(input: CreatePrequoteInput): Promise<void> {
     input.routeRef === null || input.routeRef === undefined
       ? null
       : jsonb(input.routeRef),
+    input.eligibilityKind ?? "executable",
     input.expiresAt,
   ]);
 }
@@ -217,6 +250,12 @@ export async function create(input: CreatePrequoteInput): Promise<void> {
  * a different session never matches; and cross-kind: a `bridge` row never
  * authorizes a `swap`). Freshness is `expires_at > NOW()` — an expired row is
  * invisible.
+ *
+ * Ordering is `(created_at, prequote_id)` DESC, the SAME total order the claim's
+ * supersession clause uses. It has to be: this read is what the approval card
+ * describes, and if it named a different row than the claim considers current,
+ * the human would consent to one quote while the execute bound another whenever
+ * two rows share a clock tick.
  *
  * The Stage-7 gate calls this with `kind = "swap"` AFTER `existsFreshFailByMatch`
  * has ruled out any fresh `fail` row, then inspects the returned `safetyVerdict`
@@ -235,7 +274,7 @@ export async function findLatestFreshByMatch(
         AND match_hash = $2
         AND kind = $3
         AND expires_at > NOW()
-      ORDER BY created_at DESC
+      ORDER BY created_at DESC, prequote_id DESC
       LIMIT 1`,
     [sessionId, matchHash, kind],
   );
@@ -268,4 +307,170 @@ export async function existsFreshFailByMatch(
     [sessionId, matchHash, kind],
   );
   return row !== null;
+}
+
+// ── findLatestExecutableByMatch ─────────────────────────────────────────
+
+/**
+ * Newest non-expired, UNCLAIMED, `executable` row for a (session, match_hash,
+ * kind) - the candidate an execute attempts to claim.
+ *
+ * This read deliberately does NOT check supersession: the claim's own predicate
+ * owns that, atomically. Selecting the newest executable row here and letting
+ * the claim refuse it is what makes "a later ineligible Q2 retires an earlier
+ * priced Q1" observable as a typed `superseded` refusal rather than as a
+ * silently missing row.
+ */
+export async function findLatestExecutableByMatch(
+  sessionId: string,
+  matchHash: string,
+  kind: PrequoteKind,
+): Promise<SwapPrequote | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS} FROM swap_prequotes
+      WHERE session_id = $1
+        AND match_hash = $2
+        AND kind = $3
+        AND eligibility_kind = 'executable'
+        AND claimed_at IS NULL
+        AND expires_at > NOW()
+      ORDER BY created_at DESC, prequote_id DESC
+      LIMIT 1`,
+    [sessionId, matchHash, kind],
+  );
+  return row ? mapRow(row) : null;
+}
+
+// ── claimForExecute (atomic, single-use) ────────────────────────────────
+
+/**
+ * The claimable predicate, shared by the claim and by the diagnosis below so
+ * the two can never disagree about what "claimable" means.
+ *
+ * `NOT EXISTS (newer row for this identity)` is the supersession clause: a
+ * later quote for the same (session, match_hash, kind) makes every earlier one
+ * unclaimable the moment it is written, whatever the later quote's own
+ * eligibility says. Ordering is `(created_at, prequote_id)` so two rows in one
+ * clock tick still have exactly one newest.
+ */
+const CLAIMABLE_PREDICATE = `
+    p.claimed_at IS NULL
+    AND p.expires_at > NOW()
+    AND p.eligibility_kind = 'executable'
+    AND NOT EXISTS (
+      SELECT 1 FROM swap_prequotes AS newer
+       WHERE newer.session_id = p.session_id
+         AND newer.match_hash = p.match_hash
+         AND newer.kind = p.kind
+         AND (newer.created_at, newer.prequote_id) > (p.created_at, p.prequote_id)
+    )`;
+
+/**
+ * Consume a prequote for exactly one execute.
+ *
+ * ONE statement, so the read of the claimable predicate and the write of the
+ * claim cannot be separated by another caller: Postgres serializes concurrent
+ * updates of the same row, and the loser re-evaluates the predicate against the
+ * committed claim and matches zero rows. Exactly one caller ever receives a
+ * row.
+ *
+ * Returns `null` when the row was not claimable for ANY reason. The caller asks
+ * `diagnoseUnclaimable` for the reason - deliberately a second, non-atomic read,
+ * because it feeds a refusal message only and must never decide anything.
+ */
+export async function claimForExecute(
+  sessionId: string,
+  prequoteId: string,
+  claimedBy: string,
+): Promise<SwapPrequote | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE swap_prequotes AS p
+        SET claimed_at = NOW(), claimed_by = $3
+      WHERE p.prequote_id = $1
+        AND p.session_id = $2
+        AND ${CLAIMABLE_PREDICATE}
+      RETURNING ${SELECT_COLUMNS}`,
+    [prequoteId, sessionId, claimedBy],
+  );
+  return row ? mapRow(row) : null;
+}
+
+/**
+ * Consume THE ROW AN APPROVAL WAS BOUND TO, for exactly one execute.
+ *
+ * The difference from `claimForExecute` is the identity predicate, and it is the
+ * whole point: an approval names one `prequote_id`, and this claim succeeds only
+ * if that row is still the CURRENT executable row for the trade identity the
+ * caller recomputed. A Q2 recorded while the human was deciding makes the bound
+ * row non-current through the shared `CLAIMABLE_PREDICATE`, so the resumed
+ * execute refuses instead of silently filling against a quote nobody approved.
+ *
+ * `matchHash` and `kind` are asserted rather than assumed: they are what ties the
+ * stored id to the trade the params describe, so a bound id belonging to another
+ * trade matches zero rows and consumes nothing.
+ */
+export async function claimBoundForExecute(
+  sessionId: string,
+  prequoteId: string,
+  matchHash: string,
+  kind: PrequoteKind,
+  claimedBy: string,
+): Promise<SwapPrequote | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE swap_prequotes AS p
+        SET claimed_at = NOW(), claimed_by = $3
+      WHERE p.prequote_id = $1
+        AND p.session_id = $2
+        AND p.match_hash = $4
+        AND p.kind = $5
+        AND ${CLAIMABLE_PREDICATE}
+      RETURNING ${SELECT_COLUMNS}`,
+    [prequoteId, sessionId, claimedBy, matchHash, kind],
+  );
+  return row ? mapRow(row) : null;
+}
+
+/** Why a claim found no row. Ordered most-specific-first by the query below. */
+export type UnclaimableReason =
+  | "missing"
+  | "already_claimed"
+  | "expired"
+  | "not_executable"
+  | "superseded";
+
+/**
+ * Explain a failed claim for the agent-facing refusal. Read-only and
+ * advisory: the claim itself already decided, and a state that changed between
+ * the two statements can only make this message less specific, never let an
+ * unclaimed row through.
+ */
+export async function diagnoseUnclaimable(
+  sessionId: string,
+  prequoteId: string,
+): Promise<UnclaimableReason> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT
+        (p.claimed_at IS NOT NULL)              AS claimed,
+        (p.expires_at <= NOW())                 AS expired,
+        (p.eligibility_kind <> 'executable')    AS ineligible,
+        EXISTS (
+          SELECT 1 FROM swap_prequotes AS newer
+           WHERE newer.session_id = p.session_id
+             AND newer.match_hash = p.match_hash
+             AND newer.kind = p.kind
+             AND (newer.created_at, newer.prequote_id) > (p.created_at, p.prequote_id)
+        )                                       AS superseded
+       FROM swap_prequotes AS p
+      WHERE p.prequote_id = $1 AND p.session_id = $2`,
+    [prequoteId, sessionId],
+  );
+  if (row === null) return "missing";
+  if (row.claimed === true) return "already_claimed";
+  if (row.expired === true) return "expired";
+  if (row.ineligible === true) return "not_executable";
+  if (row.superseded === true) return "superseded";
+  // The claim's own predicate and this read disagree only when the row became
+  // claimable again between the two statements, which nothing does. Report the
+  // conservative reason rather than inventing a sixth state.
+  return "superseded";
 }

@@ -51,9 +51,12 @@ import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
 import { setupVexMarketService } from "./market/vex-market-service.js";
+import { setupStudioHostStatusBridge } from "./studio/host-status-bridge.js";
 import { setupBoardLiveService } from "./market/board-live-owner.js";
 import { isSecretSessionUnlocked, lockSecretSession } from "./secrets/session.js";
 import { shutdownStudioMcpHost, startStudioMcpHost } from "./studio/mcp-host.js";
+import { disposeFilesDomain } from "./studio/files/files-composition.js";
+import { disposeTerminalDomain } from "./studio/terminal-domain.js";
 import { disposeStudioApprovalBroker } from "./studio/approval-broker.js";
 import { refuseAllPendingStudioIntents } from "./studio/approval-refusals.js";
 import { disposeStudioDispatchPoisonRetry } from "./secrets/session.js";
@@ -181,7 +184,10 @@ async function initializeMainRuntime(): Promise<void> {
   installAppProtocolHandler(rendererRoot);
 
   // 7. IPC surface
-  registerAllIpcHandlers();
+  // The agent-bridge disposer is handed back rather than self-registered: it
+  // drains the board read caches and the DexScreener transport, so it belongs
+  // to the ORDERED quit task below, not to a concurrent globalCleanup task.
+  const teardownAgentBridges = registerAllIpcHandlers();
 
   // 6-updater. User-triggered updater (M13): own the electron-updater event
   // stream so the renderer's update card reflects live status. Download +
@@ -273,6 +279,15 @@ async function initializeMainRuntime(): Promise<void> {
     await stopMarketService();
   });
 
+  // 6a-studio. Bridge the Studio MCP host's status transitions onto
+  // EV.studio.hostStatus (B0). The host itself owns the facts and stays free of
+  // Electron - its lock teardown is synchronous and must not enumerate windows
+  // - so this is the one piece that broadcasts. Synchronous, idempotent stop.
+  const stopStudioHostStatusBridge = setupStudioHostStatusBridge();
+  globalCleanup.add(() => {
+    stopStudioHostStatusBridge();
+  });
+
   // 6a-board-live. Own the board's LIVE lease service (T4). It polls nothing
   // until a reader turns a board's toggle on, and at most one lease exists at a
   // time. Its idempotent async stop closes every lease with `shutdown` and
@@ -305,6 +320,22 @@ async function initializeMainRuntime(): Promise<void> {
       // contract's 5 s deadline, so a peer that will not close cannot hold the
       // quit open.
       await shutdownStudioMcpHost();
+      // Vex Studio B2 - the pty host, inside the ordered task and BEFORE the
+      // workers drain. Its `shutdownAll` is what makes the host serialize every
+      // live terminal and commit its revive snapshots, and the request needs a
+      // live channel to arrive on. A fire-and-forget here, or a teardown left
+      // to process exit, would make snapshot durability depend on quit timing;
+      // the wait is bounded by the request timeout, so a wedged host cannot
+      // hold the quit open. Terminal snapshots are files, not database rows,
+      // so this is unaffected by Postgres stopping later in this same task.
+      await disposeTerminalDomain();
+      // File watchers next. They own no durable state - the filesystem is the
+      // source of truth - so unlike the terminal host there is nothing to
+      // commit; what this releases is the recursive OS watches and the
+      // lifecycle-gate leases behind them. It follows the terminal teardown
+      // because a terminal being serialized is still writing into a project
+      // directory, and disposing its watcher first would emit nothing anyway.
+      await disposeFilesDomain();
       await refuseAllPendingStudioIntents("vex_quit");
       disposeStudioApprovalBroker();
       // The Studio fence retry is one of two remaining Studio timers with an
@@ -330,6 +361,12 @@ async function initializeMainRuntime(): Promise<void> {
           log.error("[main] worker stop failed during quit", r.reason);
         }
       }
+      // LAST inside the ordered stop, and still before `cleanupOnQuit`: the
+      // bridges are the buses the workers above publish on, so they outlive
+      // the drain; and the board read caches + DexScreener transport they own
+      // must be closed before compose/Postgres teardown begins. The disposer
+      // is memoized in `setupAgentBridges`, so this is the only execution.
+      await teardownAgentBridges();
     }, cleanupOnQuit),
   );
   void cleanupOnBoot().catch((err) => {

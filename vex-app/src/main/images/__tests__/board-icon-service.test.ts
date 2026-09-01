@@ -240,21 +240,21 @@ describe("createBoardIconService - MIME and magic bytes must agree", () => {
   it("refuses when content-type claims png but the bytes are webp", async () => {
     const { fetcher } = scriptedFetcher([response(200, "image/png", webpLossyFixture(64, 64))]);
     const service = createBoardIconService(fetcher);
-    expect(await service.resolve(ID)).toEqual({ kind: "absent", reason: "unsupported_image" });
+    expect(await service.resolve(ID)).toEqual({ kind: "refused_by_policy", reason: "unsupported_image" });
     await service.dispose();
   });
 
   it("refuses when content-type claims png but the bytes are jpeg", async () => {
     const { fetcher } = scriptedFetcher([response(200, "image/png", jpegFixture(64, 64))]);
     const service = createBoardIconService(fetcher);
-    expect(await service.resolve(ID)).toEqual({ kind: "absent", reason: "unsupported_image" });
+    expect(await service.resolve(ID)).toEqual({ kind: "refused_by_policy", reason: "unsupported_image" });
     await service.dispose();
   });
 
   it("refuses svg - no SVG ever, whatever the declared type", async () => {
     const { fetcher } = scriptedFetcher([response(200, "image/svg+xml", svgishBody())]);
     const service = createBoardIconService(fetcher);
-    expect(await service.resolve(ID)).toEqual({ kind: "absent", reason: "unsupported_image" });
+    expect(await service.resolve(ID)).toEqual({ kind: "refused_by_policy", reason: "unsupported_image" });
     await service.dispose();
   });
 });
@@ -263,7 +263,7 @@ describe("createBoardIconService - the board dimension ceiling", () => {
   it("refuses a png past the ceiling (1024x1024)", async () => {
     const { fetcher } = scriptedFetcher([response(200, "image/png", pngFixture(1024, 1024))]);
     const service = createBoardIconService(fetcher);
-    expect(await service.resolve(ID)).toEqual({ kind: "absent", reason: "unsupported_image" });
+    expect(await service.resolve(ID)).toEqual({ kind: "refused_by_policy", reason: "unsupported_image" });
     await service.dispose();
   });
 
@@ -278,11 +278,11 @@ describe("createBoardIconService - the board dimension ceiling", () => {
 });
 
 describe("createBoardIconService - over-cap", () => {
-  it("maps the real RESPONSE_OVER_CAP transport code to absent/over_cap", async () => {
+  it("maps the real RESPONSE_OVER_CAP transport code to refused_by_policy/over_cap", async () => {
     const overCap = siteError(DexScreenerSiteErrorCodes.RESPONSE_OVER_CAP, "too big");
     const { fetcher } = scriptedFetcher([overCap]);
     const service = createBoardIconService(fetcher);
-    expect(await service.resolve(ID)).toEqual({ kind: "absent", reason: "over_cap" });
+    expect(await service.resolve(ID)).toEqual({ kind: "refused_by_policy", reason: "over_cap" });
     await service.dispose();
   });
 });
@@ -415,6 +415,48 @@ describe("createBoardIconService - dispose()", () => {
     const service = createBoardIconService(fetcher);
     await service.dispose();
     await expect(service.dispose()).resolves.toBeUndefined();
+  });
+
+  /**
+   * THE DELIBERATELY FLIPPED ASSERTION.
+   *
+   * This suite used to assert only that a second `dispose()` resolves, and
+   * that PINNED the defect: `if (closed) return;` resolved the second caller
+   * IMMEDIATELY while the first was still draining. Two concurrent quit paths
+   * then had one of them report "torn down" with a fetch still running on the
+   * bridge's transport, and disposing that bridge - Chromium session, hidden
+   * window and all - underneath a live fetch is exactly what the drain exists
+   * to prevent.
+   *
+   * Dispose is MEMOIZED now, so the contract asserted here is the real one: a
+   * concurrent second caller JOINS the same drain and cannot settle before it.
+   *
+   * The fetcher below deliberately IGNORES abort. `deferredFetcher` rejects on
+   * abort, which would let a broken early-resolving dispose look correct by
+   * accident; here the drain can only end when the test releases the fetch.
+   */
+  it("makes a concurrent second dispose join the first drain rather than resolve early", async () => {
+    let release: (value: TransportResponse) => void = () => undefined;
+    const fetcher: BoardIconFetcher = () =>
+      new Promise<TransportResponse>((resolve) => {
+        release = resolve;
+      });
+    const service = createBoardIconService(fetcher);
+    const pending = service.resolve(ID);
+    await Promise.resolve();
+
+    const settled: string[] = [];
+    const first = service.dispose().then(() => settled.push("first"));
+    const second = service.dispose().then(() => settled.push("second"));
+
+    // Several turns, so an early-resolving second caller would have landed.
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    expect(settled).toEqual([]);
+
+    release(response(200, "image/png", pngFixture(64, 64)));
+    await Promise.all([first, second]);
+    expect(settled).toHaveLength(2);
+    await pending;
   });
 
   it("resolves (drains) rather than hanging, even with in-flight work", async () => {

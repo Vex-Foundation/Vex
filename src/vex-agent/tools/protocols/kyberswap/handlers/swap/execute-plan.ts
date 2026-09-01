@@ -16,12 +16,14 @@ import {
   buildApproveCalldata,
 } from "@tools/kyberswap/evm-utils.js";
 import { META_AGGREGATION_ROUTER_V2 } from "@tools/kyberswap/constants.js";
-import { verifyBuiltKyberSwap } from "@tools/kyberswap/evm/swap-calldata-guard.js";
-import { deriveRouteFirstHops } from "@tools/kyberswap/evm/swap-source-transfer-binding.js";
 import {
-  computeApprovedMinOut,
-  KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
-} from "@tools/kyberswap/swap-price-floor.js";
+  verifyBuiltKyberSwap,
+  type ApprovedKyberSwap,
+  type BuiltKyberSwap,
+} from "@tools/kyberswap/evm/swap-calldata-guard.js";
+import { deriveRouteFirstHops } from "@tools/kyberswap/evm/swap-source-transfer-binding.js";
+import { KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW } from "@tools/kyberswap/swap-price-floor.js";
+import type { RouteSnapshot } from "../../../quote-authority/snapshot.js";
 import { computeKyberVexFeeRaw } from "@tools/kyberswap/swap-vex-fee.js";
 import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
 import type { ResolvedKyberTokenMetadata } from "@tools/kyberswap/helpers.js";
@@ -51,6 +53,13 @@ export interface PreparedSwapExecution {
   readonly events: readonly AgentActivityEvent[];
   readonly plans: readonly SwapEventPlan[];
   readonly buildResp: KyberBuildRouteResponse;
+  /**
+   * The exact inputs the pre-sign calldata guard accepted, kept so the SWAP LEG
+   * can re-run the identical assertion immediately before its signature. Pure
+   * values: re-running the guard performs no IO and reaches no provider, which
+   * is what lets it sit inside the staged broadcast's pre-sign window.
+   */
+  readonly swapGuard: { readonly built: BuiltKyberSwap; readonly approved: ApprovedKyberSwap };
 }
 
 export interface PrepareSwapExecutionInput {
@@ -67,7 +76,14 @@ export interface PrepareSwapExecutionInput {
   readonly amountInRaw: string;
   readonly slippage: number;
   readonly routerAddress: Address;
-  readonly routeSummaryRaw: KyberGetRouteResponse["data"]["routeSummary"];
+  /**
+   * The route summary the AGENT WAS SHOWN, parsed back from the digest-verified
+   * snapshot string. Never a route fetched at execute time - see the handler's
+   * claim block for why that rederivation was the 2026-08-27 incident.
+   */
+  readonly approvedSummary: KyberGetRouteResponse["data"]["routeSummary"];
+  /** The claimed snapshot: the approved output, the approved floor, and the tolerance the build must carry. */
+  readonly approvedSnapshot: RouteSnapshot;
   /**
    * Legs whose honeypot/FoT check could not run (W2b). Persisted onto the
    * activity row's `intent_params` under a Vex-authored `_`-prefixed key —
@@ -81,9 +97,22 @@ export interface PrepareSwapExecutionInput {
 export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Promise<PreparedSwapExecution> {
   const {
     toolId, intentParams: p, sessionId, publicClient, walletAddress, chainId, slug,
-    tokenIn, tokenOut, amountIn, amountInRaw, slippage, routerAddress, routeSummaryRaw,
+    tokenIn, tokenOut, amountIn, amountInRaw, slippage, routerAddress,
+    approvedSummary, approvedSnapshot,
     safetyCheckUnavailable,
   } = input;
+
+  // The tolerance is part of the prequote identity, so the gate has already
+  // refused a mismatch. Re-asserted here because this value goes into the build
+  // body and then into the floor the chain enforces: a drift between the two
+  // owners must stop the execute, never pick one silently.
+  if (approvedSnapshot.effectiveSlippageBps !== slippage) {
+    throw new VexError(
+      ErrorCodes.KYBER_MALFORMED_PARAMS,
+      `Refused before signing: this execute's ${slippage} bps tolerance is not the ${approvedSnapshot.effectiveSlippageBps} bps the approved quote was priced at.`,
+      "Nothing was signed. Request a fresh kyberswap__swap_quote at the tolerance you want.",
+    );
+  }
 
   if (!tokenIn.isNative) {
     await ensureErc20Balance(publicClient, {
@@ -100,11 +129,18 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
     allowancePlan = await planKyberAllowance(publicClient, tokenIn.address, walletAddress, routerAddress, amountIn);
   }
 
+  // MEASURED (live probes 2026-08-27): `/route/build` accepts whatever
+  // routeSummary it is handed - a four-minute-stale one, a tampered one, one
+  // with a 2023 timestamp - and derives the calldata's minReturnAmount as
+  // `passed amountOut x (10000 - slippageTolerance) / 10000`. So the summary we
+  // pass IS the price protection, and `slippageTolerance` MUST be sent
+  // explicitly: omitted it defaults to 0, which builds calldata that reverts on
+  // any movement at all.
   const buildResp = await getKyberAggregatorClient().buildRoute(slug, {
-    routeSummary: routeSummaryRaw,
+    routeSummary: approvedSummary,
     sender: walletAddress,
     recipient: walletAddress,
-    slippageTolerance: slippage,
+    slippageTolerance: approvedSnapshot.effectiveSlippageBps,
   });
   verifyRouterAddress(buildResp.data.routerAddress, META_AGGREGATION_ROUTER_V2);
 
@@ -117,27 +153,34 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
   // signed and nothing broadcast. It bounds what the BUILD may do to the
   // trade; it does not second-guess where the market moved since the
   // quote — `slippageBps` owns that.
-  const verdict = verifyBuiltKyberSwap(
-    {
+  const swapGuard = {
+    built: {
       calldata: buildResp.data.data as Hex,
       routerAddress: buildResp.data.routerAddress,
       transactionValue: buildResp.data.transactionValue,
     },
-    {
+    approved: {
       expectedRouter: META_AGGREGATION_ROUTER_V2,
       recipient: walletAddress,
       srcToken: getAddress(tokenIn.address),
       dstToken: getAddress(tokenOut.address),
       amountIn,
       srcIsNative: tokenIn.isNative,
-      freshMinOutRaw: computeApprovedMinOut(routeSummaryRaw.amountOut, slippage),
+      // The APPROVED floor, derived once at quote time from the output the
+      // agent was shown. `freshMinOutRaw` keeps its name in the guard's own
+      // vocabulary; what changed is where the number comes from - a floor
+      // rederived from a fresh route is a floor that follows the market
+      // instead of bounding it.
+      freshMinOutRaw: BigInt(approvedSnapshot.approvedMinOutRaw),
       floorAllowanceRaw: KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
       // The pools of the very route summary posted to `/route/build`
       // above — never a second, fresher route, which would let the guard
       // bless a build against a route the agent never approved.
-      routeFirstHops: deriveRouteFirstHops(routeSummaryRaw.route),
+      routeFirstHops: deriveRouteFirstHops(approvedSummary.route),
     },
-  );
+  } as const satisfies { built: BuiltKyberSwap; approved: ApprovedKyberSwap };
+
+  const verdict = verifyBuiltKyberSwap(swapGuard.built, swapGuard.approved);
   if (!verdict.ok) {
     throw new VexError(
       verdict.kind === "price_floor"
@@ -171,7 +214,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
   // signed rather than an assumption.
   const swapCosts = estimateKyberSwapCostsUsd({
     gasUsd: buildResp.data.gasUsd,
-    l1FeeUsd: routeSummaryRaw.l1FeeUsd,
+    l1FeeUsd: approvedSummary.l1FeeUsd,
     amountInUsd: buildResp.data.amountInUsd,
   });
   // The same fee as a FACT rather than a USD estimate (migration 050
@@ -245,7 +288,13 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
       },
       usdSource: "kyberswap_quote",
       routeProvenance: {
-        routeID: routeSummaryRaw.routeID, checksum: routeSummaryRaw.checksum,
+        routeID: approvedSummary.routeID, checksum: approvedSummary.checksum,
+        // The approved floor, duplicated here so a post-crash settlement sweep
+        // can assess the executed fill against what was authorized without
+        // re-reading the prequote. NOT an attested field: the AgentScan mapper
+        // does not read it and `amount_out_raw` keeps its meaning (the build
+        // response's own amountOut).
+        approvedMinOutRaw: approvedSnapshot.approvedMinOutRaw,
         // R1 Step 5a — the decode inputs, persisted at INTENT time. The router
         // is the one `verifyRouterAddress` accepted above, not a value echoed
         // back from the build; the declared value is the signed transaction's
@@ -274,5 +323,6 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
     events: created.events,
     plans: builtPlans,
     buildResp,
+    swapGuard,
   };
 }

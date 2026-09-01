@@ -103,7 +103,8 @@ describe("tool contract snapshots", () => {
     // 32 -> 36: stage A4b registered the four generic transaction signing tools.
     // 36 -> 37: `BoardCompose` (`registry/board.ts`), the terminal presentation
     // tool.
-    expect(internal).toHaveLength(37);
+    // 37 -> 39: the native <-> wrapped-native pair (`registry/wallet-wrap.ts`).
+    expect(internal).toHaveLength(39);
 
     // The TOTAL is asserted STRUCTURALLY - every registered tool and every
     // manifest gets exactly one contract, and nothing else does. A literal was
@@ -132,8 +133,11 @@ describe("tool contract snapshots", () => {
     // generic transaction signing tools, all model-visible.
     // 35 -> 36, worst case 75 -> 76: `BoardCompose` declares no visibility
     // gate, so it is offered in every session the baseline can represent.
-    expect(internalVisibleOrder).toHaveLength(36);
-    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(76);
+    // 36 -> 38, worst case 76 -> 78: the native <-> wrapped-native pair
+    // (`registry/wallet-wrap.ts`) declares no visibility gate either, so both
+    // are offered in every session the baseline can represent.
+    expect(internalVisibleOrder).toHaveLength(38);
+    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(78);
   });
 
   it("derives its env gates from the live catalogs", () => {

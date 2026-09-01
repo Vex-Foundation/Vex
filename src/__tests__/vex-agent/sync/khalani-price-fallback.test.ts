@@ -24,15 +24,19 @@ vi.mock("@utils/logger.js", () => ({
 }));
 
 const mockReadTokensPairs = vi.fn();
+const mockReadTokenPools = vi.fn();
 vi.mock("@tools/dexscreener/price-read.js", () => ({
   readTokensPairs: (...args: unknown[]) => mockReadTokensPairs(...args),
-  readTokenPools: vi.fn(),
+  readTokenPools: (...args: unknown[]) => mockReadTokenPools(...args),
 }));
 
 const { fillMissingKhalaniPrices, computeBalanceUsd } = await import(
   "@vex-agent/sync/khalani-price-fallback.js"
 );
 const { validateTokensResponse } = await import("@tools/dexscreener/validation/pairs.js");
+const { UNPRICED_POOL_FALLBACK_MAX_ADDRESSES } = await import(
+  "@tools/dexscreener/unpriced-pool-fallback.js"
+);
 type BalanceRow = import("@vex-agent/db/repos/balances.js").BalanceRow;
 
 function fixture(name: string): unknown {
@@ -64,6 +68,9 @@ function row(fields: Partial<BalanceRow> & { tokenAddress: string }): BalanceRow
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: the pool-list rescue finds nothing extra. Cases that exercise it
+  // override this.
+  mockReadTokenPools.mockResolvedValue([]);
 });
 
 describe("fillMissingKhalaniPrices", () => {
@@ -173,6 +180,148 @@ describe("fillMissingKhalaniPrices", () => {
       [BASE_CHAIN_ID, [row({ tokenAddress: BASE_USDC, decimals: 6, balanceRaw: "400000" })]],
     ]);
 
+    await fillMissingKhalaniPrices(byChain);
+
+    expect(byChain.get(BASE_CHAIN_ID)?.[0]?.priceUsd).toBe(null);
+  });
+});
+
+/**
+ * The two lanes that price a token must not disagree about it.
+ *
+ * This lane and the per-chain wallet readers are two paths to ONE number on a
+ * money display. Both now seed the chain's wrapped native into the request
+ * (the tier-1 anchor is useless if it is one address away in a request that is
+ * issued anyway) and both spend the same bounded pool-list rescue on a token
+ * whose representative pool is tier 2. Neither the seed nor the rescue may
+ * inflate what the census counts.
+ */
+describe("seeding and rescue parity with the wallet readers", () => {
+  const TIER2_TOKEN = "0x00000000000000000000000000000000000000aa";
+  const MYSTERY = "0x00000000000000000000000000000000000000bb";
+
+  function basePair(fields: {
+    base: string;
+    quote: string;
+    priceUsd: string;
+    priceNative?: string;
+    liquidityUsd: number;
+  }): unknown {
+    return {
+      chainId: "base",
+      dexId: "test",
+      url: "https://dexscreener.com/base/test",
+      pairAddress: `0xpair-${fields.base}-${fields.quote}`,
+      baseToken: { address: fields.base, name: "b", symbol: "B" },
+      quoteToken: { address: fields.quote, name: "q", symbol: "Q" },
+      priceUsd: fields.priceUsd,
+      priceNative: fields.priceNative ?? "1",
+      liquidity: { usd: fields.liquidityUsd, base: 0, quote: 0 },
+    };
+  }
+
+  it("seeds the WRAPPED NATIVE even when no row needs a native price", async () => {
+    // A wallet holding one WETH-quoted token and no ETH: without the seed the
+    // anchor is unreachable and a tier-1 token cannot be valued at all.
+    mockReadTokensPairs.mockImplementation((_slug: string, addresses: string) =>
+      Promise.resolve(
+        validateTokensResponse([
+          ...(addresses.toLowerCase().includes(BASE_WETH.toLowerCase()) ? baseWethPairs : []),
+          basePair({ base: TIER2_TOKEN, quote: BASE_WETH, priceUsd: "1", priceNative: "0.002", liquidityUsd: 500_000 }),
+        ]),
+      ),
+    );
+
+    const byChain = new Map<number, BalanceRow[]>([
+      [BASE_CHAIN_ID, [row({ tokenAddress: TIER2_TOKEN, tokenSymbol: "TK1" })]],
+    ]);
+    await fillMissingKhalaniPrices(byChain);
+
+    // priceNative 0.002 x the live WETH anchor 2472.15 = $4.94.
+    expect(byChain.get(BASE_CHAIN_ID)?.[0]?.priceUsd).toBeCloseTo(0.002 * 2472.15, 4);
+    expect(mockReadTokensPairs).toHaveBeenCalledTimes(1);
+    expect(mockReadTokensPairs).toHaveBeenCalledWith("base", expect.stringContaining(BASE_WETH.toLowerCase()));
+  });
+
+  it("the wrapped-native seed consumes no ROW slot and no RESCUE slot", async () => {
+    // Nothing is priced at all, so every row address is a rescue candidate -
+    // and the seeded wrapped native must not be one of them.
+    mockReadTokensPairs.mockResolvedValue([]);
+    const byChain = new Map<number, BalanceRow[]>([
+      [BASE_CHAIN_ID, [row({ tokenAddress: TIER2_TOKEN, tokenSymbol: "TK1" })]],
+    ]);
+    await fillMissingKhalaniPrices(byChain);
+
+    expect(mockReadTokenPools).toHaveBeenCalledTimes(1);
+    expect(mockReadTokenPools).toHaveBeenCalledWith("base", TIER2_TOKEN);
+    // One row in, one row out, still unpriced: the seed is not a row.
+    expect(byChain.get(BASE_CHAIN_ID)).toHaveLength(1);
+    expect(byChain.get(BASE_CHAIN_ID)?.[0]?.priceUsd).toBe(null);
+  });
+
+  it("rescues a tier-2-representative token from its FULL pool list, like the wallet readers", async () => {
+    // The measured $VEX / JUP shape: the provider's representative pool is the
+    // one the quote rule refuses, and the pool list carries a tier-0 one.
+    mockReadTokensPairs.mockResolvedValue(
+      validateTokensResponse([
+        basePair({ base: TIER2_TOKEN, quote: MYSTERY, priceUsd: "0.002713", liquidityUsd: 280_516 }),
+      ]),
+    );
+    mockReadTokenPools.mockResolvedValue(
+      validateTokensResponse([
+        basePair({ base: TIER2_TOKEN, quote: BASE_USDC.toLowerCase(), priceUsd: "0.002747", liquidityUsd: 69_463 }),
+      ]),
+    );
+
+    const byChain = new Map<number, BalanceRow[]>([
+      [BASE_CHAIN_ID, [row({ tokenAddress: TIER2_TOKEN, tokenSymbol: "TK1" })]],
+    ]);
+    await fillMissingKhalaniPrices(byChain);
+
+    // The SAME number the wallet reader reaches from the same bytes, which is
+    // the point of the parity: one token, one price, whichever lane read it.
+    expect(byChain.get(BASE_CHAIN_ID)?.[0]?.priceUsd).toBe(0.002747);
+    expect(mockReadTokenPools).toHaveBeenCalledWith("base", TIER2_TOKEN);
+  });
+
+  it("spends at most the shared cap on rescues and leaves the rest unpriced", async () => {
+    mockReadTokensPairs.mockResolvedValue([]);
+    const many = Array.from(
+      { length: UNPRICED_POOL_FALLBACK_MAX_ADDRESSES + 5 },
+      (_unused, index) => `0x${(index + 1).toString(16).padStart(40, "0")}`,
+    );
+    const byChain = new Map<number, BalanceRow[]>([
+      [BASE_CHAIN_ID, many.map((address) => row({ tokenAddress: address }))],
+    ]);
+    await fillMissingKhalaniPrices(byChain);
+
+    expect(mockReadTokenPools).toHaveBeenCalledTimes(UNPRICED_POOL_FALLBACK_MAX_ADDRESSES);
+    expect(byChain.get(BASE_CHAIN_ID)?.every((balanceRow) => balanceRow.priceUsd === null)).toBe(true);
+  });
+
+  it("stays fail-soft when the rescue read throws", async () => {
+    mockReadTokensPairs.mockResolvedValue([]);
+    mockReadTokenPools.mockRejectedValue(new Error("provider down"));
+    const original = row({ tokenAddress: TIER2_TOKEN });
+    const byChain = new Map<number, BalanceRow[]>([[BASE_CHAIN_ID, [original]]]);
+
+    await fillMissingKhalaniPrices(byChain);
+
+    expect(byChain.get(BASE_CHAIN_ID)).toEqual([original]);
+  });
+
+  it("refuses provider rows carrying another chain's pools", async () => {
+    mockReadTokensPairs.mockResolvedValue(
+      validateTokensResponse([
+        {
+          ...(basePair({ base: TIER2_TOKEN, quote: BASE_USDC.toLowerCase(), priceUsd: "9999", liquidityUsd: 5_000_000 }) as Record<string, unknown>),
+          chainId: "arbitrum",
+        },
+      ]),
+    );
+    const byChain = new Map<number, BalanceRow[]>([
+      [BASE_CHAIN_ID, [row({ tokenAddress: TIER2_TOKEN })]],
+    ]);
     await fillMissingKhalaniPrices(byChain);
 
     expect(byChain.get(BASE_CHAIN_ID)?.[0]?.priceUsd).toBe(null);
