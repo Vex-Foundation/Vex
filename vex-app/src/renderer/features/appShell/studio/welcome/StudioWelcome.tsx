@@ -30,6 +30,11 @@
  *    project settings. Per-agent file state is a PROJECT fact and lives where
  *    the project does - the row's drift badge and the settings/repair
  *    envelope views - never on a screen that has no project.
+ *
+ *    THE BRIDGE READINESS PANEL IS NOT AN EXCEPTION TO THIS. It reports
+ *    whether this INSTALLATION has a `vex-mcp` binary, which is one fact about
+ *    Vex itself and is true or false before any project exists. It says
+ *    nothing about any agent CLI and does not detect one.
  */
 
 import type { JSX } from "react";
@@ -42,6 +47,7 @@ import { useProjects } from "../../../../lib/api/projects.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { RuntimeModeToggle } from "../../RuntimeModeToggle.js";
 import { ProjectRailRow } from "../sidebar/ProjectRailRow.js";
+import { StudioBridgeReadinessPanel } from "./StudioBridgeReadinessPanel.js";
 import {
   STUDIO_WELCOME_CREATE_LABEL,
   STUDIO_WELCOME_RECENT_EMPTY,
@@ -114,6 +120,16 @@ export function StudioWelcome({
         <div className="flex">
           <RuntimeModeToggle runtimeMode={runtimeMode} onChange={setRuntimeMode} />
         </div>
+
+        {/* THE BRIDGE DIAGNOSTIC, above the CTA on purpose (B1.6).
+          *
+          * A project created without a bridge gets no coding-agent config
+          * files at all, so the fact that the bridge is missing has to be
+          * readable BEFORE the button that creates one, not underneath the
+          * project list. The panel renders nothing while the check is in
+          * flight and nothing when the bridge is there, so on a healthy
+          * installation this position costs no space. */}
+        <StudioBridgeReadinessPanel />
 
         {onCreateProject !== undefined ? (
           <div>

@@ -8,8 +8,10 @@
  * Visual grammar (landing rebrand): every section label is a `.vex-eyebrow`
  * mono micro-label with its leading rule, the option grids are numbered
  * trust-zone cards ({@link RadioCard}), and numerals speak mono/tabular.
- * Accessibility contracts are unchanged: the Name <Label htmlFor> pairing,
- * real <fieldset>/<legend> radio groups, and role="alert" on submit errors.
+ * Accessibility contracts are unchanged: the Name <Label htmlFor> pairing and
+ * real <fieldset>/<legend> radio groups. The submit-error line is no longer
+ * here: it is `components/ui/submit-error.tsx`, a shared primitive, because the
+ * Studio project dialogs render it too and were deep-importing this module.
  */
 
 import type { JSX } from "react";
@@ -172,18 +174,5 @@ export function WalletFieldset({
         />
       </div>
     </fieldset>
-  );
-}
-
-interface SubmitErrorProps {
-  readonly submitError: string | null;
-}
-
-export function SubmitError({ submitError }: SubmitErrorProps): JSX.Element | null {
-  if (submitError === null) return null;
-  return (
-    <p className="text-sm text-danger" role="alert">
-      {submitError}
-    </p>
   );
 }

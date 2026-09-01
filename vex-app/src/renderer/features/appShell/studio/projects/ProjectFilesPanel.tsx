@@ -39,24 +39,62 @@ import {
   PROJECT_FILES_EMPTY,
   PROJECT_FILES_LIST_LABEL,
   PROJECT_FILES_NEVER_RENDERED,
+  PROJECT_FILES_REPAIR_ACTION,
   PROJECT_FILES_TITLE,
 } from "./projects-copy.js";
 
 export interface ProjectFilesPanelProps {
   readonly files: StudioFilesStatus;
+  /**
+   * Raise the repair intent for the project these files belong to.
+   *
+   * Optional because the panel is also rendered INSIDE the repair dialog, where
+   * the confirm button is the action and a second one pointing back at the same
+   * dialog would be a loop. A surface that has no repair to offer passes
+   * nothing and the affordance is not rendered.
+   */
+  readonly onRepair?: (() => void) | undefined;
 }
 
-export function ProjectFilesPanel({ files }: ProjectFilesPanelProps): JSX.Element {
+export function ProjectFilesPanel({
+  files,
+  onRepair,
+}: ProjectFilesPanelProps): JSX.Element {
+  const neverRendered = files.lastRenderedScopeVersion === null;
+  // Offered only where it would DO something: a repair rewrites what Vex
+  // maintains, so a panel whose every row is `current` and whose project has
+  // had a full pass has nothing to repair and says nothing about it.
+  const wantsRepair =
+    neverRendered ||
+    files.artifacts.some(
+      (artifact) => ARTIFACT_STATE_WANTS_ATTENTION[artifact.state],
+    );
+  const repairAction =
+    onRepair !== undefined && wantsRepair ? (
+      // Same shape as the terminal surface's inline "Restore terminals" row:
+      // the repair sits beside the sentence that asks for it, not in a menu in
+      // another column behind this dialog.
+      <button
+        type="button"
+        onClick={onRepair}
+        data-vex-project-files-repair=""
+        className="self-start rounded px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        {PROJECT_FILES_REPAIR_ACTION}
+      </button>
+    ) : null;
+
   return (
     <section className="flex flex-col gap-3" data-vex-project-files="">
       <div className="flex flex-col gap-1">
         <h3 className="vex-eyebrow">{PROJECT_FILES_TITLE}</h3>
-        {files.lastRenderedScopeVersion === null ? (
+        {neverRendered ? (
           <p role="status" className="flex items-start gap-1.5 text-xs text-warning">
             <IconWarning size={13} className="mt-0.5 shrink-0" />
             <span>{PROJECT_FILES_NEVER_RENDERED}</span>
           </p>
         ) : null}
+        {repairAction}
       </div>
 
       {files.artifacts.length === 0 ? (

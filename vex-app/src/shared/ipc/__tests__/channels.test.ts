@@ -106,12 +106,17 @@ describe("CH / EV channel constants", () => {
     expect(CH.sessions.exportMarkdown).toBe("vex:sessions:exportMarkdown");
   });
 
-  it("ships the Vex Studio host-status surface with its canonical names (B0)", () => {
+  it("ships the Vex Studio surface with its canonical names (B0, B1.6)", () => {
     expect(CH.studio.hostStatus).toBe("vex:studio:hostStatus");
     expect(EV.studio.hostStatus).toBe("vex:event:studio:hostStatus");
-    // The Studio surface is read-only by design: locking and quitting the host
-    // are lifecycle consequences the renderer observes, never commands.
-    expect(Object.keys(CH.studio)).toEqual(["hostStatus"]);
+    expect(CH.studio.bridgeReadiness).toBe("vex:studio:bridgeReadiness");
+    // The Studio surface is READ-ONLY by design, and that is the invariant
+    // this line defends rather than a channel count: locking and quitting the
+    // host are lifecycle consequences the renderer observes, never commands,
+    // and bridge readiness is a probe that installs nothing and builds
+    // nothing. B1.6 added the second read; a THIRD channel appearing here
+    // without a decision still fails this test.
+    expect(Object.keys(CH.studio)).toEqual(["hostStatus", "bridgeReadiness"]);
   });
 
   it("channels are unique (no duplicate values across namespaces)", () => {

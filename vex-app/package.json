@@ -26,7 +26,7 @@
     "dev:main:watch": "vite build --config vite.main.config.ts --watch",
     "dev:preload:watch": "vite build --config vite.preload.config.ts --watch",
     "dev:pty-host:watch": "vite build --config vite.pty-host.config.ts --watch",
-    "dev:electron": "wait-on --log --timeout 60000 --delay 1500 http-get://127.0.0.1:5173/ dist/main/index.js dist/preload/index.cjs dist/pty-host/index.js && electron dist/main/index.js",
+    "dev:electron": "wait-on --log --timeout 60000 --delay 1500 http-get://127.0.0.1:5173/ dist/main/index.js dist/preload/index.cjs dist/pty-host/index.js && electron .",
     "dev": "pnpm run build:main && pnpm run build:preload && pnpm run build:pty-host && concurrently --kill-others --names \"renderer,main,preload,pty-host,electron\" \"pnpm:dev:renderer\" \"pnpm:dev:main:watch\" \"pnpm:dev:preload:watch\" \"pnpm:dev:pty-host:watch\" \"pnpm:dev:electron\"",
     "build:bridge": "node scripts/build-host-bridges.mjs",
     "build:bridge:dev": "node scripts/build-host-bridges.mjs --current-arch",

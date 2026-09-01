@@ -4,7 +4,8 @@ import type { StudioBridge } from "../../shared/types/bridge/shell/studio.js";
 import { invokeWithSchema, subscribe } from "../_dispatch.js";
 
 /**
- * vex.studio.* - read-only Vex Studio host-status bridge (stage B0).
+ * vex.studio.* - the read-only Vex Studio bridge (host status, stage B0; bridge
+ * readiness, stage B1.6).
  *
  * Business methods only; the renderer never sees a raw channel and never
  * learns the host's endpoint - the payload has no field to carry one, and its
@@ -18,5 +19,8 @@ export const studio = {
   },
   onHostStatus(cb) {
     return subscribe(EV.studio.hostStatus, studioHostStatusSchema, cb);
+  },
+  getBridgeReadiness() {
+    return invokeWithSchema(CH.studio.bridgeReadiness, {});
   },
 } satisfies StudioBridge;

@@ -31,8 +31,16 @@ import {
 } from "../../__tests__/studio-fixtures.js";
 import { ProjectCreator } from "../ProjectCreator.js";
 import {
+  closeProjectDialog,
+  useProjectDialogStore,
+} from "../project-dialog-intent.js";
+import {
+  SELECTABLE_STUDIO_AGENT_IDS,
+  STUDIO_AGENT_PRESENTATIONS,
+} from "../studio-agent-catalogue.js";
+import {
   ARTIFACT_STATE_SENTENCES,
-  PROJECT_AGENT_UNSUPPORTED_TAG,
+  PROJECT_FILES_REPAIR_ACTION,
   PROJECT_REFRESH_FAILURE_SENTENCES,
   RENDER_OUTCOME_EMPTY_COMPLETED,
   RENDER_OUTCOME_EMPTY_INCOMPLETE,
@@ -64,6 +72,29 @@ function makeCreateResult(
   return { project, render: makeRender(render), refreshFailure };
 }
 
+/**
+ * The ids the catalogue marks unsupported, read from the catalogue rather than
+ * spelled here: this suite asserts that the PICKER hides whatever that set is,
+ * not that the set is `["cline", "warp"]` (which is
+ * `studio-agent-catalogue.test.ts`'s assertion, against the engine registry).
+ */
+const UNSUPPORTED_AGENT_IDS: readonly string[] = STUDIO_AGENT_PRESENTATIONS
+  .filter((agent) => !agent.supported)
+  .map((agent) => agent.id);
+
+/** The live regions any dialog under test mounts, as one string. */
+function announcements(): string {
+  return Array.from(document.querySelectorAll("[data-vex-live-region] > *"))
+    .map((node) => node.textContent ?? "")
+    .join(" ");
+}
+
+/** The dialog's PINNED region: outside the body's scroll container. */
+function pinnedSlot(): HTMLElement | null {
+  const node = document.querySelector("[data-vex-dialog-pinned]");
+  return node instanceof HTMLElement ? node : null;
+}
+
 const createMock =
   vi.fn<(input: ProjectCreateInput) => Promise<Result<ProjectCreateResult>>>();
 const walletsMock = vi.fn();
@@ -78,6 +109,9 @@ beforeEach(() => {
     ok: true,
     data: makeCreateResult(makeProject({ name: "atlas" })),
   });
+  // The dialog-intent channel is module state shared by every suite in this
+  // process; a repair raised by one case must not stand into the next.
+  closeProjectDialog();
   walletsMock.mockReset();
   walletsMock.mockResolvedValue({ ok: true, data: { evm: [], solana: [] } });
   Object.defineProperty(window, "vex", {
@@ -163,36 +197,37 @@ describe("the wire input", () => {
 });
 
 describe("the agent picker", () => {
-  it("renders cline and warp as unsupported and never sends them", async () => {
+  it("does not render an agent Vex cannot integrate, and cannot send one", async () => {
+    // The owner decision (2026-09-01): the "Not supported" cards leave the
+    // picker. The id stays in the catalogue because it is PERSISTED - see
+    // `studio-agent-catalogue.test.ts`, which still mirrors the engine roster
+    // including cline and warp - so what must hold here is that this SEAM
+    // renders neither of them and that neither can reach the wire.
     renderCreator();
-    for (const name of [/Cline/, /Warp/]) {
-      const checkbox = screen.getByRole("checkbox", { name });
-      expect((checkbox as HTMLInputElement).disabled).toBe(true);
-      // Clicked anyway. NOTE: `fireEvent.click` dispatches the event directly,
-      // so jsdom flips the DOM property on a disabled input where a real
-      // browser would not dispatch at all. Asserting `checked` here would be
-      // asserting jsdom. What must hold is that no `onChange` reached the form,
-      // which the submitted input below is the honest evidence for.
-      fireEvent.click(checkbox);
-      expect((checkbox as HTMLInputElement).disabled).toBe(true);
+    for (const id of UNSUPPORTED_AGENT_IDS) {
+      expect(document.querySelector(`[data-vex-agent="${id}"]`)).toBeNull();
     }
-    expect(screen.getAllByText(PROJECT_AGENT_UNSUPPORTED_TAG)).toHaveLength(2);
+    expect(screen.queryByRole("checkbox", { name: /Cline/ })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /Warp/ })).toBeNull();
+    // Literal on purpose: the copy constant was deleted with the unsupported
+    // branch (dead code decree); the assertion guards the words themselves.
+    expect(screen.queryByText("Not supported")).toBeNull();
+    // Every remaining card IS selectable: the filter removed exactly the
+    // unsupported ones and disabled none of the rest.
+    const cards = screen.getAllByRole("checkbox");
+    expect(cards).toHaveLength(SELECTABLE_STUDIO_AGENT_IDS.length);
+    for (const card of cards) {
+      expect((card as HTMLInputElement).disabled).toBe(false);
+    }
 
     typeName("atlas");
     fireEvent.click(submitButton());
     await waitFor(() => {
       expect(createMock).toHaveBeenCalled();
     });
+    // The honest evidence, kept from the version of this test that clicked the
+    // disabled cards: nothing unsupported reaches the wire.
     expect(createMock.mock.calls[0]?.[0].agents).toEqual([]);
-  });
-
-  it("states the condition under which an unsupported agent returns", () => {
-    renderCreator();
-    expect(
-      screen.getByText(
-        /Support returns when the `warp` CLI gains a project or launch MCP mechanism\./,
-      ),
-    ).not.toBeNull();
   });
 
   it("shows Kimi's launch command on its card", () => {
@@ -221,12 +256,67 @@ describe("refusals", () => {
     typeName("atlas");
     fireEvent.click(submitButton());
 
-    expect(
-      await screen.findByText('A project folder named "atlas" already exists.'),
-    ).not.toBeNull();
+    const line = await screen.findByText(
+      'A project folder named "atlas" already exists.',
+    );
+    // WHERE it landed, not merely that it exists. The defect this closes is a
+    // refusal painted below the fold of a scrolling body while the Create
+    // button sat still in the sticky footer: present in the DOM, invisible to
+    // the user, and indistinguishable in jsdom from a working dialog. So the
+    // assertion is about the REGION - pinned, and outside the scroll container.
+    expect(line.closest("[data-vex-dialog-pinned]")).not.toBeNull();
+    expect(line.closest("[data-vex-dialog-body]")).toBeNull();
+    expect(pinnedSlot()?.contains(line)).toBe(true);
+    // ANNOUNCED from the submit path, severity-prefixed, rather than left to a
+    // role on a node that may never have been painted.
+    expect(announcements()).toContain(
+      'Error: A project folder named "atlas" already exists.',
+    );
+    // `slug_taken` names THIS field, so the caret goes back to it.
+    expect(document.activeElement).toBe(screen.getByLabelText("Name"));
     // Nothing was created, so nothing is selected and the form is still there.
     expect(onCreated).not.toHaveBeenCalled();
     expect(screen.queryByLabelText("Name")).not.toBeNull();
+  });
+
+  it("announces a refusal again when the same one comes back twice", async () => {
+    // Two identical submits are two facts the user must hear. Writing the same
+    // text into the same live region is not a DOM change, so the announcer
+    // alternates halves (VS Code `aria.ts`); this is the regression guard for
+    // that alternation.
+    createMock.mockResolvedValue({
+      ok: false,
+      error: {
+        code: "projects.slug_taken",
+        domain: "projects",
+        message: 'A project folder named "atlas" already exists.',
+        retryable: false,
+        userActionable: true,
+        redacted: true,
+        correlationId: "00000000-0000-4000-8000-000000000000",
+      },
+    });
+    const { onCreated } = renderCreator();
+    typeName("atlas");
+    fireEvent.click(submitButton());
+    expect(
+      await screen.findByText('A project folder named "atlas" already exists.'),
+    ).not.toBeNull();
+    const firstHalf = document.querySelectorAll(
+      "[data-vex-live-region] > *",
+    )[0]?.textContent;
+    expect(firstHalf).toContain("already exists");
+
+    fireEvent.click(submitButton());
+    await waitFor(() => {
+      expect(
+        document.querySelectorAll("[data-vex-live-region] > *")[1]?.textContent,
+      ).toContain("already exists");
+    });
+    expect(
+      document.querySelectorAll("[data-vex-live-region] > *")[0]?.textContent,
+    ).toBe("");
+    expect(onCreated).not.toHaveBeenCalled();
   });
 });
 
@@ -270,11 +360,22 @@ describe("the result phase", () => {
       // The PROJECT, not the envelope: selection is about the row.
       expect(onCreated).toHaveBeenCalledWith(created);
     });
-    // What the run DID, above what the files ARE. Both, because they answer
-    // different questions and neither is derivable from the other.
+    // What the run DID and what the files ARE. Both, because they answer
+    // different questions and neither is derivable from the other - and the
+    // run's verdict is PINNED, so it cannot be scrolled away from the Close
+    // button, while the per-file inventory scrolls in the body.
+    const trigger = await screen.findByText(RENDER_TRIGGER_SENTENCES.create);
+    expect(trigger.closest("[data-vex-dialog-pinned]")).not.toBeNull();
+    expect(trigger.closest("[data-vex-dialog-body]")).toBeNull();
     expect(
-      await screen.findByText(RENDER_TRIGGER_SENTENCES.create),
+      document
+        .querySelector("[data-vex-project-files]")
+        ?.closest("[data-vex-dialog-body]"),
     ).not.toBeNull();
+    // And the report was ANNOUNCED, in the same words it is printed in.
+    expect(announcements()).toContain(
+      `Info: ${RENDER_TRIGGER_SENTENCES.create}`,
+    );
     // The FORM is gone and the report is here: the dialog did not close. The
     // path appears TWICE, once per panel, which is the point - the run wrote it
     // and the file is now on disk.
@@ -321,20 +422,18 @@ describe("the result phase", () => {
     ).not.toBeNull();
   });
 
-  it("warns when the project has never had a complete render", async () => {
+  it("warns when the project has never had a complete render, and OFFERS the repair", async () => {
+    const project = makeProject({
+      name: "atlas",
+      files: {
+        lastRenderedScopeVersion: null,
+        generatorFingerprint: null,
+        artifacts: [],
+      },
+    });
     createMock.mockResolvedValue({
       ok: true,
-      data: makeCreateResult(
-        makeProject({
-          name: "atlas",
-          files: {
-            lastRenderedScopeVersion: null,
-            generatorFingerprint: null,
-            artifacts: [],
-          },
-        }),
-        { completed: false },
-      ),
+      data: makeCreateResult(project, { completed: false }),
     });
     renderCreator();
     typeName("atlas");
@@ -342,6 +441,16 @@ describe("the result phase", () => {
     expect(
       await screen.findByText(/has not yet completed a full pass/),
     ).not.toBeNull();
+
+    // The banner has always ENDED by telling the user to repair the project and
+    // has never offered a way to do it: the instruction pointed at a row menu
+    // in another column, behind this dialog. The action is the fix.
+    const repair = screen.getByRole("button", { name: PROJECT_FILES_REPAIR_ACTION });
+    fireEvent.click(repair);
+    expect(useProjectDialogStore.getState().request).toEqual({
+      kind: "repair",
+      projectId: project.id,
+    });
   });
 });
 

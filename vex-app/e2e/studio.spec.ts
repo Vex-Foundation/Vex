@@ -50,11 +50,14 @@
  * config dir would create and delete projects in their real database. Both are
  * decisions above this spec's pay grade.
  *
- * So the journey stops at the database gate. The steps below it - create with
- * on-disk proof, terminal echo and reload-reattach, explorer to viewer, typed
- * name delete - are NOT written here as assertions that have never executed;
- * they are deferred behind the skip, and the tripwire after it fails the day
- * the fixture gains a database, which is the day they must be written.
+ * So this journey stops at the database gate, and the DB-backed half now has
+ * its own spec and its own fixture: `e2e/studio-project-journey.spec.ts` runs
+ * create-with-on-disk-proof and open-with-a-terminal against the isolated stack
+ * in `e2e/fixtures/vex-app-with-database.ts`. What stays here is exactly what
+ * needs no database - the shell, the mode switch, the creator's form, and the
+ * degraded rail an unreadable list must produce - which is why the tripwire
+ * that used to guard the gap is discharged at the bottom of this file rather
+ * than still throwing.
  */
 
 import { test, expect, type VexElectronFixture } from "./fixtures/electron-app.js";
@@ -336,25 +339,30 @@ test("Studio journey: the shell switches to Studio and opens the project creator
     description: screenshots.join(", "),
   });
 
-  /* ---- the database gate --------------------------------------------- */
+  /* ---- the database gate, DISCHARGED --------------------------------- */
 
-  test.skip(
-    !projects.ok,
-    "the rest of the Studio journey - create a project with on-disk proof, " +
-      "echo through a terminal and reattach it across a window reload, open a " +
-      "written file in the viewer, and delete through the typed-name dialog - " +
-      "needs a Postgres for `vex.projects.*`, which only " +
-      "`vex.docker.composeUp` publishes (main/ipc/docker.ts -> " +
-      `setDbConnection). This run got "${projects.detail}" from ` +
-      "`vex.projects.list`.",
-  );
-
-  // Reached only when a fixture DOES give the e2e app a database. That is the
-  // moment the deferred arm above stops being unwritable, so it fails here
-  // rather than passing while covering nothing.
-  throw new Error(
-    "`vex.projects.list` is readable in this environment, so the deferred " +
-      "Studio project lifecycle (create, terminal, viewer, delete) is now " +
-      "runnable and must be implemented in this spec. See the file header.",
-  );
+  // This is where the tripwire stood, and this is what happened to it.
+  //
+  // It was a `throw` for one reason: the day a fixture gave the e2e app a
+  // database, the deferred lifecycle stopped being unwritable and had to be
+  // WRITTEN rather than left passing while covering nothing. That day has
+  // arrived - `e2e/fixtures/vex-app-with-database.ts` starts an isolated
+  // Postgres and migrates it through the product's own `vex.database.migrate` -
+  // and the lifecycle now lives in `e2e/studio-project-journey.spec.ts`: create
+  // with on-disk proof read back from `vex.projects.list`, the render report
+  // asserted VISIBLE rather than merely present, the project opened, and its
+  // first terminal.
+  //
+  // THIS spec keeps the scope it actually covers, which is the shell WITHOUT a
+  // database: the mode switch, the creator's form and wallet inventory, and the
+  // degraded rail an unreadable list must produce. Its fixture mints a bare
+  // config dir and never runs compose, so `projects.ok` stays false here; if a
+  // future change gives this fixture a database, the arm above simply stops
+  // running and the annotation below says so.
+  testInfo.annotations.push({
+    type: "database",
+    description: projects.ok
+      ? "readable; the DB-backed lifecycle runs in studio-project-journey.spec.ts"
+      : `unreadable (${projects.detail}); the degraded rail was asserted above`,
+  });
 });

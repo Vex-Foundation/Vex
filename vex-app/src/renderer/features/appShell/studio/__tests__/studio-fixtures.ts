@@ -127,6 +127,16 @@ export function installStudioDomStubs(): void {
     (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
       ResizeObserverStub as unknown as typeof ResizeObserver;
   }
+  // jsdom implements no scrolling, so `Element.prototype.scrollIntoView` is
+  // absent. The project creator calls it when a refusal names a field
+  // (`projects.slug_taken` names the name input) - real behaviour in a browser,
+  // a missing method here.
+  const element = Element.prototype as unknown as {
+    scrollIntoView?: (arg?: unknown) => void;
+  };
+  if (typeof element.scrollIntoView !== "function") {
+    element.scrollIntoView = function scrollIntoViewStub(): void {};
+  }
   const proto = HTMLDialogElement.prototype as unknown as {
     showModal?: () => void;
     close?: () => void;

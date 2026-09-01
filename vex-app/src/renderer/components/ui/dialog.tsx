@@ -343,6 +343,9 @@ export const DialogBody = forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
+    // THE scroll region of a dialog. Named in the DOM so a test can assert
+    // that what must stay visible is NOT inside it.
+    data-vex-dialog-body=""
     className={cn(
       // 24px side padding keeps the 332px content column at max-w 380.
       "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5",
@@ -352,6 +355,50 @@ export const DialogBody = forwardRef<
   />
 ));
 DialogBody.displayName = "DialogBody";
+
+/**
+ * THE PINNED SLOT: what the user must see whatever the body is scrolled to.
+ *
+ * ADDITIVE - no existing consumer changes shape by this existing. It sits
+ * BETWEEN `DialogBody` and `DialogFooter` as a `shrink-0` sibling, so it is
+ * outside the body's `overflow-y-auto` container and cannot be scrolled off.
+ *
+ * ## The defect it closes
+ *
+ * A submit error and a render report were mounted as the LAST children of
+ * `DialogBody`. The dialog is capped at 85vh, the body is the one scroll
+ * region, and the footer holding the submit button is sticky - so on a form
+ * taller than the viewport the answer to "why did nothing happen when I pressed
+ * Create" was painted below the fold, under a button that had not moved.
+ * Nothing scrolled to it and nothing announced it. A toast cannot serve either:
+ * `showModal()` puts the dialog in the top layer, above every painted z-index,
+ * so a toast raised while a modal is open is behind it.
+ *
+ * ## It owns its own bound
+ *
+ * A render report over a project with many artifacts is genuinely long. Letting
+ * it grow would push the footer off the bottom of the dialog, which is the same
+ * defect with the roles swapped, so the slot scrolls INTERNALLY at a fraction
+ * of the viewport and the footer keeps its seat. Nothing is hidden: the content
+ * is complete and reachable by scrolling inside the slot.
+ *
+ * Render it CONDITIONALLY - an empty slot would paint its divider over nothing.
+ */
+export const DialogPinnedSlot = forwardRef<
+  HTMLDivElement,
+  HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    data-vex-dialog-pinned=""
+    className={cn(
+      "flex max-h-[38vh] shrink-0 flex-col gap-4 overflow-y-auto overscroll-contain border-t border-line-2 px-6 pt-4",
+      className,
+    )}
+    {...props}
+  />
+));
+DialogPinnedSlot.displayName = "DialogPinnedSlot";
 
 export const DialogFooter = forwardRef<
   HTMLDivElement,

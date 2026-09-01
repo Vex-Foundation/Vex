@@ -26,7 +26,9 @@
  * `projectCreateResultSchema` is the shared `{ project, render,
  * refreshFailure }` envelope: creating a project RENDERS its files, so the
  * dialog can finally report what that run DID as well as what the files ARE.
- * Both are shown, in that order, and neither is projected into the other - the
+ * Both are shown - the run's verdict in the dialog's PINNED SLOT, where it
+ * cannot be scrolled away from the button that produced it, the per-file
+ * inventory in the scrolling body - and neither is projected into the other: the
  * outcome vocabulary records what a run did, the status vocabulary records what
  * a file is, and deriving one from the other would mean reporting writes and
  * refusals nobody performed. `ProjectFilesPanel`'s module note carries the
@@ -60,13 +62,16 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPinnedSlot,
   DialogTitle,
 } from "../../../../components/ui/dialog.js";
 import { Input } from "../../../../components/ui/input.js";
 import { Label } from "../../../../components/ui/label.js";
+import { useLiveAnnouncer } from "../../../../components/ui/live-region.js";
+import { SubmitError } from "../../../../components/ui/submit-error.js";
 import { useCreateProject } from "../../../../lib/api/projects.js";
 import { useAvailableWallets } from "../../../../lib/api/wallet-inventory.js";
-import { SubmitError } from "../../SessionCreator/FormSections.js";
+import { openProjectRepair } from "./project-dialog-intent.js";
 import {
   ProjectAgentFieldset,
   ProjectPermissionFieldset,
@@ -85,7 +90,19 @@ import {
   PROJECT_NAME_LABEL,
   PROJECT_NAME_PLACEHOLDER,
   projectFolderLine,
+  renderReportAnnouncement,
 } from "./projects-copy.js";
+
+/**
+ * The one refusal that names a FIELD of this form.
+ *
+ * `projects.slug_taken` is about the name the user typed, so the dialog puts
+ * the caret back in it: the message alone leaves a keyboard user to find the
+ * field again, and on a form taller than the dialog it may not even be on
+ * screen. Compared against `error.code` rather than the message, because the
+ * code is where a refusal's identity lives.
+ */
+export const SLUG_TAKEN_CODE = "projects.slug_taken";
 
 export interface ProjectCreatorProps {
   readonly open: boolean;
@@ -115,6 +132,9 @@ export function ProjectCreator({
   /** Set on success. Its presence IS the result phase. */
   const [created, setCreated] = useState<ProjectCreateResult | null>(null);
   const nameRef = useRef<HTMLInputElement | null>(null);
+  // Announced from the SUBMIT PATH, not from a role on a node that may be
+  // scrolled out of view - see `components/ui/live-region.tsx`.
+  const { announce, region: liveRegion } = useLiveAnnouncer();
 
   // Reset on every (re)open so a second create never inherits the first's
   // selection - or, worse, its result pane.
@@ -162,15 +182,26 @@ export function ProjectCreator({
         // main's message is already sanitized and is the only thing the user
         // can act on.
         setSubmitError(result.error.message);
+        announce("error", result.error.message);
+        if (result.error.code === SLUG_TAKEN_CODE) {
+          const field = nameRef.current;
+          field?.focus();
+          field?.scrollIntoView({ block: "nearest" });
+        }
         return;
       }
       // Selected NOW: the row exists whether or not the user has read the file
       // report yet.
       onCreated(result.data.project);
       setCreated(result.data);
+      announce(
+        result.data.render.runFailure !== null ? "error" : "info",
+        renderReportAnnouncement(result.data.render),
+      );
     },
     [
       agents,
+      announce,
       createMutation,
       evmWalletId,
       onCreated,
@@ -248,19 +279,40 @@ export function ProjectCreator({
                   onAgentsChange={setAgents}
                   disabled={pending}
                 />
-
-                <SubmitError submitError={submitError} />
               </>
             ) : (
-              <>
-                <RenderOutcomePanel
-                  render={created.render}
-                  refreshFailure={created.refreshFailure}
-                />
-                <ProjectFilesPanel files={created.project.files} />
-              </>
+              // The per-artifact inventory scrolls; the RUN's verdict does not
+              // (it is pinned below). What each file IS answers a question the
+              // user reads at their own pace; what the run DID is the answer to
+              // the button they just pressed.
+              <ProjectFilesPanel
+                files={created.project.files}
+                onRepair={() => {
+                  openProjectRepair(created.project.id);
+                }}
+              />
             )}
           </DialogBody>
+
+          {liveRegion}
+
+          {/* PINNED: the refusal, or the run report, beside the button that
+            * produced it. Rendered as the body's last child both used to land
+            * below the fold of a form taller than the dialog. */}
+          {created === null ? (
+            submitError !== null ? (
+              <DialogPinnedSlot className="px-8">
+                <SubmitError submitError={submitError} />
+              </DialogPinnedSlot>
+            ) : null
+          ) : (
+            <DialogPinnedSlot className="px-8">
+              <RenderOutcomePanel
+                render={created.render}
+                refreshFailure={created.refreshFailure}
+              />
+            </DialogPinnedSlot>
+          )}
 
           <DialogFooter className="border-line-2 px-8 py-4">
             {created === null ? (

@@ -78,7 +78,6 @@ export const PROJECT_WALLET_SOLANA_LABEL = "Solana wallet";
 export const PROJECT_AGENTS_LEGEND = "Coding agents";
 export const PROJECT_AGENTS_HELP =
   "Vex writes an MCP config for each agent you select, inside this project's folder. You can change the selection later.";
-export const PROJECT_AGENT_UNSUPPORTED_TAG = "Not supported";
 
 /** How the picker introduces an agent Vex cannot integrate today. */
 export function agentSupportReturnsSentence(condition: string): string {
@@ -340,6 +339,21 @@ export function renderTriggerSentence(render: StudioRenderOutcome): string {
 }
 
 /**
+ * WHAT A SCREEN READER IS TOLD when a render report arrives.
+ *
+ * One sentence, taken from the SAME constants the panel headlines with -
+ * `RUN_FAILURE_SENTENCES` when the run never happened, the trigger line
+ * otherwise - so the spoken summary and the printed one cannot drift into
+ * disagreeing about what Vex did. The caller picks the severity: a run that
+ * failed is announced as an error, a run that happened as info.
+ */
+export function renderReportAnnouncement(render: StudioRenderOutcome): string {
+  return render.runFailure !== null
+    ? RUN_FAILURE_SENTENCES[render.runFailure.kind]
+    : renderTriggerSentence(render);
+}
+
+/**
  * What an EMPTY artifact list means, and it is not one thing.
  *
  * "Select a coding agent to get one" is true only when the run finished and
@@ -465,6 +479,16 @@ export const PROJECT_FILES_EMPTY =
   "Vex maintains no files in this project yet. Select a coding agent to get one.";
 export const PROJECT_FILES_NEVER_RENDERED =
   "Vex has not yet completed a full pass over this project's files. Repair it from the project menu to finish.";
+
+/**
+ * The ACTION beside the sentences that ask for a repair.
+ *
+ * The banner above and the per-row sentences for `missing`, `stale`, `drifted`
+ * and `unreadable` all end by telling the user to repair the project, and until
+ * now the panel offered no way to do it: the instruction pointed at a menu in
+ * another column, behind the dialog the sentence was printed in.
+ */
+export const PROJECT_FILES_REPAIR_ACTION = "Repair this project";
 
 /** The per-row verdict word for what a file IS, not what a run did to it. */
 export const ARTIFACT_STATE_LABELS: Readonly<

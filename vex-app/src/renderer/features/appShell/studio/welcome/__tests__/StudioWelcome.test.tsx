@@ -4,14 +4,17 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
 import type { ProjectList } from "@shared/schemas/projects.js";
+import type { StudioBridgeReadiness } from "@shared/schemas/studio-bridge-readiness.js";
 import { makeError, makeProject } from "../../__tests__/studio-fixtures.js";
 
 const projectsListMock = vi.fn<() => Promise<Result<ProjectList>>>();
+const bridgeReadinessMock =
+  vi.fn<() => Promise<Result<StudioBridgeReadiness>>>();
 
 const { StudioWelcome } = await import("../StudioWelcome.js");
 const { useUiStore } = await import("../../../../../stores/uiStore.js");
@@ -39,9 +42,16 @@ beforeEach(() => {
   useUiStore.setState({ runtimeMode: "studio" });
   projectsListMock.mockReset();
   projectsListMock.mockResolvedValue({ ok: true, data: [] });
+  // The healthy default, so every existing case describes a machine whose
+  // bridge is fine and the readiness panel renders nothing.
+  bridgeReadinessMock.mockReset();
+  bridgeReadinessMock.mockResolvedValue({ ok: true, data: { kind: "ready" } });
   Object.defineProperty(window, "vex", {
     configurable: true,
-    value: { projects: { list: projectsListMock } },
+    value: {
+      projects: { list: projectsListMock },
+      studio: { getBridgeReadiness: bridgeReadinessMock },
+    },
   });
 });
 
@@ -152,5 +162,61 @@ describe("a REJECTED projects read", () => {
     const line = await screen.findByRole("status");
     expect(line.textContent).toBe("Vex could not read your projects.");
     expect(screen.queryByText("No projects yet.")).toBeNull();
+  });
+});
+
+describe("the bridge diagnostic", () => {
+  it("is checked on entry, without the user asking for it", async () => {
+    renderWelcome({});
+    await waitFor(() => {
+      expect(bridgeReadinessMock).toHaveBeenCalled();
+    });
+  });
+
+  it("is absent when the bridge is there", async () => {
+    renderWelcome({});
+    await screen.findByText("No projects yet.");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("appears above the create CTA when the bridge is missing", async () => {
+    bridgeReadinessMock.mockResolvedValue({
+      ok: true,
+      data: {
+        kind: "missing_dev",
+        platform: "linux",
+        requiredGoVersion: "go1.27.0",
+        go: { kind: "present" },
+      },
+    });
+    renderWelcome({ onCreateProject: () => undefined });
+
+    const alert = await screen.findByRole("alert");
+    const cta = screen.getByRole("button", { name: "New project" });
+    // A project created without a bridge gets no coding-agent config files at
+    // all, so the diagnostic has to be readable BEFORE the button that makes
+    // one. DOCUMENT_POSITION_FOLLOWING means the CTA comes after the alert.
+    expect(
+      alert.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeGreaterThan(0);
+  });
+
+  it("does not steal the project list's own status line", async () => {
+    projectsListMock.mockResolvedValue({
+      ok: false,
+      error: makeError("db down"),
+    });
+    bridgeReadinessMock.mockResolvedValue({
+      ok: true,
+      data: { kind: "missing_packaged" },
+    });
+    renderWelcome({});
+
+    // Two independent failures, two independent surfaces: the bridge alert and
+    // the project list's status line. Neither replaces the other.
+    const line = await screen.findByRole("status");
+    expect(line.textContent).toBe("Vex could not read your projects.");
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Reinstall Vex");
   });
 });

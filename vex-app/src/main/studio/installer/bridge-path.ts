@@ -41,6 +41,26 @@ export type StudioBridgeLocation =
   | { readonly kind: "found"; readonly command: string }
   | { readonly kind: "unavailable"; readonly detail: string };
 
+/**
+ * The Go target Vex builds a bridge for on this machine, or `null` when it
+ * builds none.
+ *
+ * Exported because "is this platform supported at all" is a DIFFERENT answer
+ * from "is the binary there", and `locateStudioBridge` folds both into
+ * `unavailable` with different prose. `bridge-readiness.ts` has to tell them
+ * apart, and discriminating on a sentence would be parsing a message. The maps
+ * stay here rather than being copied, so there is still one owner.
+ */
+export function bridgeGoTarget(
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): { readonly goos: string; readonly goarch: string } | null {
+  const goos = GOOS[platform];
+  const goarch = GO_ARCH[arch];
+  if (goos === undefined || goarch === undefined) return null;
+  return { goos, goarch };
+}
+
 /** The binary's file name for the running platform. */
 export function bridgeBinaryName(platform: NodeJS.Platform = process.platform): string {
   return platform === "win32" ? "vex-mcp.exe" : "vex-mcp";
@@ -69,9 +89,8 @@ export async function locateStudioBridge(options?: {
     const resources = options?.resourcesPath ?? process.resourcesPath;
     candidate = path.join(resources, "bridge", name);
   } else {
-    const goos = GOOS[platform];
-    const goarch = GO_ARCH[arch];
-    if (goos === undefined || goarch === undefined) {
+    const target = bridgeGoTarget(platform, arch);
+    if (target === null) {
       return {
         kind: "unavailable",
         detail:
@@ -80,7 +99,13 @@ export async function locateStudioBridge(options?: {
       };
     }
     const repoRoot = options?.repoRoot ?? path.resolve(app.getAppPath(), "..");
-    candidate = path.join(repoRoot, "bridge", "dist", `${goos}-${goarch}`, name);
+    candidate = path.join(
+      repoRoot,
+      "bridge",
+      "dist",
+      `${target.goos}-${target.goarch}`,
+      name,
+    );
   }
 
   try {

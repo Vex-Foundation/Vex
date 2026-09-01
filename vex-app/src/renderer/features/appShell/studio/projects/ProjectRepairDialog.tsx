@@ -41,10 +41,12 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPinnedSlot,
   DialogTitle,
 } from "../../../../components/ui/dialog.js";
+import { useLiveAnnouncer } from "../../../../components/ui/live-region.js";
+import { SubmitError } from "../../../../components/ui/submit-error.js";
 import { useRepairProjectFiles } from "../../../../lib/api/projects.js";
-import { SubmitError } from "../../SessionCreator/FormSections.js";
 import { ProjectFilesPanel } from "./ProjectFilesPanel.js";
 import { RenderOutcomePanel } from "./RenderOutcomePanel.js";
 import {
@@ -55,6 +57,7 @@ import {
   PROJECT_REPAIR_SUBMIT,
   PROJECT_REPAIR_TITLE,
   projectFolderLine,
+  renderReportAnnouncement,
 } from "./projects-copy.js";
 
 export interface ProjectRepairDialogProps {
@@ -71,6 +74,8 @@ export function ProjectRepairDialog({
   const repairMutation = useRepairProjectFiles();
   const [render, setRender] = useState<StudioRenderOutcome | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /** Announced from the confirm path; see `components/ui/live-region.tsx`. */
+  const { announce, region: liveRegion } = useLiveAnnouncer();
 
   useEffect(() => {
     if (!open) return;
@@ -86,13 +91,18 @@ export function ProjectRepairDialog({
     const result = await repairMutation.mutateAsync({ projectId: project.id });
     if (!result.ok) {
       setSubmitError(result.error.message);
+      announce("error", result.error.message);
       return;
     }
     // The dialog STAYS OPEN on the report. A repair that refused three of four
     // files succeeded as a call and failed at the thing the user wanted, and
     // closing on the Result alone would show only the first half.
     setRender(result.data.render);
-  }, [pending, project, repairMutation]);
+    announce(
+      result.data.render.runFailure !== null ? "error" : "info",
+      renderReportAnnouncement(result.data.render),
+    );
+  }, [announce, pending, project, repairMutation]);
 
   return (
     <Dialog
@@ -111,21 +121,31 @@ export function ProjectRepairDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <DialogBody className="gap-4">
-          {render === null ? (
-            <>
-              <p className="text-sm text-ink-secondary">{PROJECT_REPAIR_BODY}</p>
-              {/* What is on disk RIGHT NOW, so the user can see which files the
-                * overwrite would actually touch before pressing Repair. */}
-              {project !== null ? (
-                <ProjectFilesPanel files={project.files} />
-              ) : null}
-            </>
-          ) : (
-            <RenderOutcomePanel render={render} />
-          )}
-          <SubmitError submitError={submitError} />
-        </DialogBody>
+        {/* The confirm phase only. Once the repair has run, the file list this
+          * body held describes the disk BEFORE the write, and the report that
+          * replaces it is pinned below rather than scrolled. */}
+        {render === null ? (
+          <DialogBody className="gap-4">
+            <p className="text-sm text-ink-secondary">{PROJECT_REPAIR_BODY}</p>
+            {/* What is on disk RIGHT NOW, so the user can see which files the
+              * overwrite would actually touch before pressing Repair. No
+              * `onRepair`: the confirm button below IS the repair, and a second
+              * one inside this dialog would point back at itself. */}
+            {project !== null ? <ProjectFilesPanel files={project.files} /> : null}
+          </DialogBody>
+        ) : null}
+
+        {liveRegion}
+
+        {/* PINNED: the report of a destructive write, and any refusal of it,
+          * beside the button that ran it rather than under a file list the
+          * user would have to scroll past. */}
+        {render !== null || submitError !== null ? (
+          <DialogPinnedSlot>
+            <SubmitError submitError={submitError} />
+            {render !== null ? <RenderOutcomePanel render={render} /> : null}
+          </DialogPinnedSlot>
+        ) : null}
 
         <DialogFooter className="border-line-2">
           {render === null ? (

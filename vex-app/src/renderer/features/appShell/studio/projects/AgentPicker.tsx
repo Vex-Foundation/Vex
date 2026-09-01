@@ -9,24 +9,29 @@
  * same 3px accent bar, because a project's agent list and a session's mode grid
  * should read as the same product.
  *
- * ## An unsupported agent is RENDERED and never selectable
+ * ## An unsupported agent is NOT RENDERED (owner decision, 2026-09-01)
  *
- * Cline and Warp appear in the list with their mark, their reason and the exact
- * condition under which support returns. Hiding them would leave a user
- * wondering whether Vex has heard of their agent; a "coming soon" label would
- * be a promise this repository does not make in UI (see `projects-copy.ts`).
+ * Cline and Warp used to appear as greyed "Not supported" cards carrying their
+ * reason and the condition under which support returns. The owner decided the
+ * cards leave the picker: two dead cards in a fifteen-card grid cost every user
+ * attention on every create for a fact that concerns almost none of them.
  *
- * They are unselectable TWICE, and the second guard is the one that matters.
- * The input is `disabled` and the label is `aria-disabled`, which is what a
- * pointer and a screen reader see. But a disabled attribute is a statement
- * about DISPATCH, not a rule: it stops a real browser from firing the event and
- * it stops nothing else - a synthetic `click` in a test dispatches through it,
- * and so would any programmatic path. This was not theory; the picker's first
- * version shipped `["cline", "warp"]` on the wire in exactly that case.
+ * WHAT DOES NOT CHANGE is the roster. The ids stay in
+ * `studio-agent-catalogue.ts` and in `STUDIO_AGENT_IDS` because they are
+ * PERSISTED: a project stored while an agent was supported still carries the
+ * id, `ProjectSettingsDialog` still sanitizes a loaded selection against
+ * `SELECTABLE_STUDIO_AGENT_IDS`, and `RenderOutcomePanel` still explains an
+ * `unsupported` refusal that comes back on the wire. Deleting them from the
+ * catalogue would break all three; hiding them from this ONE presentation seam
+ * breaks nothing.
  *
- * So `onChange` REFUSES a toggle for an unsupported agent before it reaches
- * `onToggle`. Rule 09's "a hidden button is not enforcement" applies to a
- * greyed-out one too: the component that owns the rule enforces it.
+ * The filter is therefore also the ENFORCEMENT, and it is stronger than the
+ * `disabled` attribute it replaces. `disabled` is a statement about DISPATCH,
+ * not a rule - a synthetic `click` dispatches straight through it, which is how
+ * the picker's first version shipped `["cline", "warp"]` on the wire. A card
+ * that does not exist has no event to dispatch, and {@link AgentCard} now only
+ * accepts a selectable presentation, so the type system refuses the case the
+ * old runtime guard was watching for.
  *
  * ## Kimi shows its command
  *
@@ -41,7 +46,6 @@
 import type { JSX } from "react";
 import type { StudioAgentId } from "@shared/schemas/studio-agent-ids.js";
 import { IconBrainCircuit } from "../../../../components/icons/index.js";
-import { Pill } from "../../../../components/ui/pill.js";
 import { cn } from "../../../../lib/utils.js";
 import {
   agentBrandMark,
@@ -50,12 +54,26 @@ import {
 } from "./studio-agent-catalogue.js";
 import {
   agentLaunchSentence,
-  agentSupportReturnsSentence,
   PROJECT_AGENT_LIST_LABEL,
-  PROJECT_AGENT_UNSUPPORTED_TAG,
   PROJECT_AGENTS_HELP,
   PROJECT_AGENTS_LEGEND,
 } from "./projects-copy.js";
+
+/**
+ * The presentation of an agent this picker may render: a selectable one, and
+ * only a selectable one. Derived from the catalogue's union rather than
+ * re-declared, so a catalogue change reaches this file as a type error.
+ */
+type SelectableAgentPresentation = Extract<
+  StudioAgentPresentation,
+  { readonly supported: true }
+>;
+
+/** The roster the picker renders: the catalogue, minus what Vex cannot integrate. */
+const SELECTABLE_AGENT_PRESENTATIONS: readonly SelectableAgentPresentation[] =
+  STUDIO_AGENT_PRESENTATIONS.filter(
+    (agent): agent is SelectableAgentPresentation => agent.supported,
+  );
 
 export interface AgentPickerProps {
   readonly selected: readonly StudioAgentId[];
@@ -79,7 +97,7 @@ export function AgentPicker({
         aria-label={PROJECT_AGENT_LIST_LABEL}
         className="grid grid-cols-1 gap-2 sm:grid-cols-2"
       >
-        {STUDIO_AGENT_PRESENTATIONS.map((agent) => (
+        {SELECTABLE_AGENT_PRESENTATIONS.map((agent) => (
           <AgentCard
             key={agent.id}
             agent={agent}
@@ -99,29 +117,22 @@ function AgentCard({
   disabled,
   onToggle,
 }: {
-  readonly agent: StudioAgentPresentation;
+  readonly agent: SelectableAgentPresentation;
   readonly checked: boolean;
   readonly disabled: boolean;
   readonly onToggle: (id: StudioAgentId, next: boolean) => void;
 }): JSX.Element {
   const Mark = agentBrandMark(agent.id);
-  // An unsupported agent is disabled by the CATALOGUE, never merely by the
-  // caller: the form cannot pass a prop that makes Cline selectable.
-  const inputDisabled = disabled || !agent.supported;
 
   return (
     <label
       data-vex-agent={agent.id}
-      data-vex-agent-supported={agent.supported ? "true" : "false"}
-      aria-disabled={!agent.supported ? true : undefined}
       className={cn(
         "relative flex cursor-pointer flex-col gap-1.5 rounded-xl border px-3.5 py-3 transition-colors",
         "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-primary",
-        !agent.supported
-          ? "cursor-not-allowed border-line-2 bg-surface-2"
-          : checked
-            ? "border-line-4 bg-interactive-solid"
-            : "border-line-2 hover:bg-interactive-hover",
+        checked
+          ? "border-line-4 bg-interactive-solid"
+          : "border-line-2 hover:bg-interactive-hover",
       )}
     >
       <input
@@ -129,12 +140,10 @@ function AgentCard({
         name="studio-agents"
         value={agent.id}
         checked={checked}
-        disabled={inputDisabled}
+        // The ONLY reason a card is disabled now: a submit is in flight. An
+        // agent Vex cannot integrate is not rendered at all.
+        disabled={disabled}
         onChange={(event) => {
-          // THE ENFORCEMENT, not the `disabled` attribute above it. See the
-          // module note: `disabled` suppresses dispatch in a browser and
-          // guarantees nothing about any other caller.
-          if (!agent.supported) return;
           onToggle(agent.id, event.target.checked);
         }}
         className="sr-only"
@@ -153,27 +162,12 @@ function AgentCard({
         ) : (
           <IconBrainCircuit size={16} />
         )}
-        <span
-          className={cn(
-            "flex-1 truncate font-display text-[14px] font-medium tracking-[-0.01em]",
-            agent.supported ? "text-ink-primary" : "text-ink-tertiary",
-          )}
-        >
+        <span className="flex-1 truncate font-display text-[14px] font-medium tracking-[-0.01em] text-ink-primary">
           {agent.displayName}
         </span>
-        {!agent.supported ? (
-          <Pill size="sm" variant="caution">
-            {PROJECT_AGENT_UNSUPPORTED_TAG}
-          </Pill>
-        ) : null}
       </span>
 
-      {!agent.supported ? (
-        <span className="flex flex-col gap-1 text-[11px] leading-relaxed text-ink-tertiary">
-          <span>{agent.reason}</span>
-          <span>{agentSupportReturnsSentence(agent.supportReturnsWhen)}</span>
-        </span>
-      ) : agent.launchInstruction !== null ? (
+      {agent.launchInstruction !== null ? (
         <span className="text-[11px] leading-relaxed text-ink-tertiary">
           {agentLaunchSentence(agent.launchInstruction)}
         </span>

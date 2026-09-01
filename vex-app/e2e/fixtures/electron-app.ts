@@ -30,6 +30,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  */
 export const MAIN_BUNDLE = path.resolve(__dirname, "../../dist/main/index.js");
 
+/**
+ * The app PACKAGE directory (`vex-app`), whose `main` field names the same
+ * bundle.
+ *
+ * Handed to `_electron.launch` instead of {@link MAIN_BUNDLE} when a spec needs
+ * `app.getAppPath()` to be the package rather than `dist/main`: Electron sets
+ * the app path from what it is given, and main resolves development-mode
+ * sibling assets (the Studio bridge binary) relative to it.
+ */
+export const APP_DIR = path.resolve(__dirname, "../..");
+
 /** How long the shell window may take to appear before the app counts as wedged. */
 const SHELL_WINDOW_DEADLINE_MS = 30_000;
 

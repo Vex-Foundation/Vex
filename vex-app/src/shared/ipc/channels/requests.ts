@@ -586,6 +586,22 @@ export const CH = {
    */
   studio: {
     hostStatus: "vex:studio:hostStatus",
+    /**
+     * Does this installation HAVE a `vex-mcp` bridge binary, and when it does
+     * not, what is the one thing the user can do about it? Read-only and
+     * idempotent: the handler stats a path, and on a from-source run
+     * additionally reads the Go pin out of `bridge/build.sh` and asks `go` for
+     * its own version.
+     *
+     * Deliberately a PULL with no push twin, unlike `hostStatus`. The answer
+     * changes only when somebody installs a toolchain or runs a build OUTSIDE
+     * Vex, which no event in this process observes. A watcher would be a
+     * second source of truth for a fact the user's own re-check establishes.
+     *
+     * The renderer learns closed state codes plus two pattern-bounded version
+     * tokens. It never learns where the binary is, or is not.
+     */
+    bridgeReadiness: "vex:studio:bridgeReadiness",
   },
 
   /**

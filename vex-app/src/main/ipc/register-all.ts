@@ -29,6 +29,7 @@ import { registerDatabaseHandlers } from "./database.js";
 import { registerLongMemoryHandlers } from "./long-memory.js";
 import { registerMarketHandlers } from "./market.js";
 import { registerStudioHandlers } from "./studio.js";
+import { registerStudioBridgeReadinessHandlers } from "./studio-bridge-readiness.js";
 import { registerStudioFilesHandlers } from "./studio-files.js";
 import { registerStudioTerminalHandlers } from "./studio-terminal.js";
 import { registerMemoryHandlers } from "./memory.js";
@@ -173,6 +174,11 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // cache; the transitions are published by the MCP host itself and broadcast
   // by the host-status bridge, started in index.ts.
   teardowns.push(...registerStudioHandlers());
+  // B1.6: does this installation have a `vex-mcp` bridge binary at all? A
+  // read-only probe (one `access`, plus the Go pin and `go env GOVERSION` only
+  // on a from-source run whose binary is missing) behind the Studio welcome
+  // screen's diagnostic and its re-check button.
+  teardowns.push(...registerStudioBridgeReadinessHandlers());
   // B2: the Vex Studio terminal CONTROL plane. Main mints terminal ids, holds
   // the lifecycle gate's `terminal` lease per live terminal, enforces the
   // per-project and global bounds, and mints the data-plane MessagePort. The

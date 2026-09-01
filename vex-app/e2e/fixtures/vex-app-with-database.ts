@@ -18,15 +18,23 @@
  */
 
 import { test as base, _electron, type ElectronApplication, type Page } from "@playwright/test";
-import { MAIN_BUNDLE, selectShellWindow } from "./electron-app.js";
+import { APP_DIR, selectShellWindow } from "./electron-app.js";
 import { startVexIsolatedStack, type StartedVexIsolatedStack } from "./vex-stack.js";
 
 /** Migration of a fresh database is minutes-scale work in the worst case. */
 const MIGRATE_TIMEOUT_MS = 300_000;
 
-/** The result shape `vex.database.migrate` answers with. */
+/**
+ * The result shape `vex.database.migrate` answers with.
+ *
+ * `data`, not `value`: the IPC envelope is `{ ok: true, data }`
+ * (`shared/ipc/result.ts`; `main/ipc/database.ts` returns
+ * `ok({ kind: "applied" | "noop", ... })`). The first draft of this type said
+ * `value` and nothing ever read the success payload, so the mistake stayed
+ * invisible until a spec asserted on it.
+ */
 type MigrateOutcome =
-  | { ok: true; value: { kind: "applied" | "noop" } }
+  | { ok: true; data: { kind: "applied" | "noop" } }
   | { ok: false; error: { code: string; message: string } };
 
 export interface VexDatabaseFixture {
@@ -67,7 +75,18 @@ export const test = base.extend<{ vexDb: VexDatabaseFixture }>({
     let app: ElectronApplication | undefined;
     try {
       app = await _electron.launch({
-        args: [MAIN_BUNDLE],
+        // THE APP DIRECTORY, not the main bundle inside it, and the difference
+        // is load-bearing. Electron sets `app.getAppPath()` to the directory of
+        // the script it was handed, so `args: [dist/main/index.js]` makes the
+        // app path `vex-app/dist/main` - and `main/studio/installer/
+        // bridge-path.ts` resolves the development bridge as
+        // `resolve(getAppPath(), "..")/bridge/dist/<goos>-<goarch>/vex-mcp`.
+        // From `dist/main` that points at `vex-app/dist/bridge`, which exists
+        // in no layout, so every render in this fixture reported
+        // `bridge_unavailable` and wrote nothing. Handed the package directory,
+        // Electron reads its `main` field (the same bundle) and the app path is
+        // `vex-app`, which is what that resolver is written against.
+        args: [APP_DIR],
         env: {
           ...process.env,
           ...stack.env,
@@ -95,19 +114,28 @@ export const test = base.extend<{ vexDb: VexDatabaseFixture }>({
       }
       await use({ app, shell, stack, migrated });
     } finally {
-      // Both removals are attempted; the stack's own teardown aggregates its
-      // failures, and a wedged Electron must not stop the container from going.
-      const results = await Promise.allSettled([
-        app === undefined ? Promise.resolve() : app.close(),
-        stack.stop(),
-      ]);
-      const failures = results
+      // ORDER, not convenience. These two used to run concurrently and it
+      // leaked: `stack.stop()` removes the config dir while Electron is still
+      // shutting down, and Chromium then flushes its session state
+      // (`.electron-state/`) back into the path that was just deleted,
+      // RECREATING it. Measured, not theorised - seven `/tmp/vex-e2e-*-config`
+      // skeletons survived seven runs of this fixture, each holding nothing but
+      // the profile Chromium wrote after the removal.
+      //
+      // So the app goes first and the directories go after it is gone. Its
+      // failure is still not allowed to strand the container: it is captured
+      // and reported, never thrown before the stack is stopped.
+      const closed = app === undefined
+        ? []
+        : (await Promise.allSettled([app.close()]));
+      const stopped = await Promise.allSettled([stack.stop()]);
+      const failures = [...closed, ...stopped]
         .filter((result): result is PromiseRejectedResult => result.status === "rejected")
         .map((result) => result.reason as unknown);
       // A closing Electron main that has already exited rejects `close()`; that
       // is not a leak, so it is reported rather than thrown only when the
       // stack teardown also failed.
-      if (results[1]?.status === "rejected") {
+      if (stopped[0]?.status === "rejected") {
         throw new AggregateError(failures, "vex-app-with-database: teardown failed");
       }
     }

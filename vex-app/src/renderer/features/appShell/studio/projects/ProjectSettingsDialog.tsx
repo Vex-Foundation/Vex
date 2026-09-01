@@ -75,12 +75,14 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPinnedSlot,
   DialogTitle,
 } from "../../../../components/ui/dialog.js";
+import { useLiveAnnouncer } from "../../../../components/ui/live-region.js";
+import { SubmitError } from "../../../../components/ui/submit-error.js";
 import { useProject, useUpdateProjectScope } from "../../../../lib/api/projects.js";
 import { useAvailableWallets } from "../../../../lib/api/wallet-inventory.js";
 import type { WalletSelectOption } from "../../SessionWalletSelect.js";
-import { SubmitError } from "../../SessionCreator/FormSections.js";
 import {
   orderedAgents,
   ProjectAgentFieldset,
@@ -103,6 +105,7 @@ import {
   PROJECT_SETTINGS_UNCHANGED,
   PROJECT_SETTINGS_UNREADABLE,
   projectFolderLine,
+  renderReportAnnouncement,
 } from "./projects-copy.js";
 
 /**
@@ -179,6 +182,8 @@ export function ProjectSettingsDialog({
    * update must not put two reads in flight against one conflict.
    */
   const reloadingRef = useRef(false);
+  /** Announced from the submit path; see `components/ui/live-region.tsx`. */
+  const { announce, region: liveRegion } = useLiveAnnouncer();
 
   /** The conflict pane is on screen: as a refusal, or mid-reload. */
   const showingConflict = conflictState.kind !== "none";
@@ -328,9 +333,13 @@ export function ProjectSettingsDialog({
         if (result.error.code === SCOPE_CONFLICT_CODE) {
           // ITS OWN PANE, and no resubmit. See the module note.
           setConflictState({ kind: "conflict" });
+          // The pane REPLACES the form, so a screen-reader user whose focus is
+          // still on the Save button that just vanished is told why.
+          announce("error", PROJECT_SCOPE_CONFLICT_BODY);
           return;
         }
         setSubmitError(result.error.message);
+        announce("error", result.error.message);
         return;
       }
       // The write landed. The dialog stays open on the render report: the save
@@ -338,8 +347,13 @@ export function ProjectSettingsDialog({
       setRender(result.data.render);
       setRefreshFailure(result.data.refreshFailure);
       seedFrom(result.data.project);
+      announce(
+        result.data.render.runFailure !== null ? "error" : "info",
+        renderReportAnnouncement(result.data.render),
+      );
     },
     [
+      announce,
       conflictState.kind,
       dirty,
       draft,
@@ -389,11 +403,22 @@ export function ProjectSettingsDialog({
               onDraftChange={setDraft}
             />}
 
-            {!showingConflict ? <SubmitError submitError={submitError} /> : null}
-            {!showingConflict && render !== null ? (
-              <RenderOutcomePanel render={render} refreshFailure={refreshFailure} />
-            ) : null}
           </DialogBody>
+
+          {liveRegion}
+
+          {/* PINNED, outside the body's scroll: the refusal and the render
+            * report answer the Save the user just pressed, and as the body's
+            * last children they were painted below the fold of a form taller
+            * than the dialog. */}
+          {!showingConflict && (submitError !== null || render !== null) ? (
+            <DialogPinnedSlot className="px-8">
+              <SubmitError submitError={submitError} />
+              {render !== null ? (
+                <RenderOutcomePanel render={render} refreshFailure={refreshFailure} />
+              ) : null}
+            </DialogPinnedSlot>
+          ) : null}
 
           <DialogFooter className="border-line-2 px-8 py-4">
             {showingConflict ? (

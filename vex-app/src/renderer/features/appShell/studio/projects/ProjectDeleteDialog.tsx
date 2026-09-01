@@ -135,7 +135,8 @@ import { cn } from "../../../../lib/utils.js";
 import { showToast } from "../../../../lib/toast.js";
 import { useDeleteProject } from "../../../../lib/api/projects.js";
 import { peekProjectTerminals } from "../workspace/project-terminals.js";
-import { SubmitError } from "../../SessionCreator/FormSections.js";
+import { useLiveAnnouncer } from "../../../../components/ui/live-region.js";
+import { SubmitError } from "../../../../components/ui/submit-error.js";
 import { ArtifactOutcomeList } from "./RenderOutcomePanel.js";
 import {
   PROJECT_CANCEL,
@@ -270,6 +271,8 @@ export function ProjectDeleteDialog({
   const [typedName, setTypedName] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<ProjectDeleteResult | null>(null);
+  /** Announced from the confirm path; see `components/ui/live-region.tsx`. */
+  const { announce, region: liveRegion } = useLiveAnnouncer();
   /**
    * The row this dialog SUBMITTED AGAINST, kept once an outcome left the dialog
    * open about a project the list is dropping. Null until that happens, so the
@@ -376,6 +379,10 @@ export function ProjectDeleteDialog({
     });
     if (!result.ok) {
       setSubmitError(result.error.message);
+      // The visible line is no longer a live region (see
+      // `components/ui/submit-error.tsx`), so the refusal is announced from
+      // here, where it is SET.
+      announce("error", result.error.message);
       return;
     }
     setOutcome(result.data);
@@ -409,6 +416,7 @@ export function ProjectDeleteDialog({
       }
     }
   }, [
+    announce,
     deleteMutation,
     nameMatches,
     onClose,
@@ -528,6 +536,8 @@ export function ProjectDeleteDialog({
 
           {outcome !== null ? <DeleteOutcome outcome={outcome} /> : null}
         </DialogBody>
+
+        {liveRegion}
 
         <DialogFooter className="border-line-2">
           <Button

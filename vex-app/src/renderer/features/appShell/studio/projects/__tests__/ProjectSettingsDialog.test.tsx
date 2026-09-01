@@ -198,7 +198,17 @@ describe("the scope conflict", () => {
       await screen.findByRole("button", { name: PROJECT_SCOPE_CONFLICT_RELOAD }),
     ).not.toBeNull();
     expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull();
-    expect(screen.getByText(/wrote nothing/)).not.toBeNull();
+    // The pane's copy is PRINTED once, and the same sentence is also spoken
+    // once through the dialog's live region (the pane replaces the form under
+    // the user's focus, so a screen reader is told why). Filtered rather than
+    // matched loosely, so this stays an assertion about the visible pane.
+    const printed = screen
+      .getAllByText(/wrote nothing/)
+      .filter((node) => node.closest("[data-vex-live-region]") === null);
+    expect(printed).toHaveLength(1);
+    expect(
+      document.querySelector("[data-vex-live-region]")?.textContent,
+    ).toContain("Error: Someone or something else saved a change");
   });
 
   it("never resubmits on a scope conflict", async () => {
