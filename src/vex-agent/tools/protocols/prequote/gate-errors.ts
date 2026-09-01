@@ -24,11 +24,25 @@ export type GateBlockReason =
   | "not_executable"   // the newest matching quote recorded an eligibility other
                        // than `executable` (unusable route, or the wallet could
                        // not pay for it), so that quote authorizes nothing
-  | "card_plan_disagreement"; // the row carries TWO descriptions of the same
+  | "card_plan_disagreement" // the row carries TWO descriptions of the same
                        // transactions - the plan the approval card would state
                        // and the plan its route snapshot sealed - and they are
                        // not the same plan, so consent and enforcement would
                        // describe different things
+  // ── Approval-resume binding. The three below can fire ONLY on a dispatch
+  // that resumes a decided approval card (`context.approvalId` present); a
+  // fresh, non-approved call never reaches them. ──
+  | "approval_row_superseded" // a newer quote for this identity was recorded
+                       // while the card waited, so the row the card named is no
+                       // longer the current one - even when the newer row is
+                       // itself executable
+  | "approved_disclosure_changed" // the bound row is still current, but the
+                       // disclosure it carries now (fee preview, native
+                       // ceiling, spendability plan, quote binding) is not the
+                       // disclosure the card stated
+  | "approval_binding_missing"; // an approval resume whose stored envelope names
+                       // no quote row, so no row can be PROVEN to be the
+                       // approved one - fail closed rather than pick one
 
 /** A thrown identity-build error that already names its block reason. */
 export class GateIdentityError extends Error {

@@ -29,6 +29,7 @@ import type { InternalToolContext } from "../tools/internal/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { ProjectScope } from "./project-scope.js";
 import type { ApprovedQuoteAuthority } from "../tools/protocols/quote-authority/approved-authority.js";
+import type { ApprovedPrequoteAuthority } from "../tools/protocols/prequote/approved-row-authority.js";
 
 /**
  * Build the wallet resolution for a project.
@@ -72,6 +73,13 @@ export interface ProjectToolContextOptions {
    */
   readonly approvedQuoteAuthority?: ApprovedQuoteAuthority | null;
   /**
+   * WHICH PREQUOTE ROW that approval was gated on, and the digest of what the
+   * row disclosed on the card. Same producer and same trust as `approvalId`: it
+   * fences the rerun prequote gate to that exact row, so a quote recorded while
+   * the card waited cannot replace the disclosure a person decided on.
+   */
+  readonly approvedPrequoteAuthority?: ApprovedPrequoteAuthority | null;
+  /**
    * Cancellation for the MCP call that owns this dispatch. ABSENT means "no
    * cancellation", never "cancelled" - same contract as every other producer of
    * `InternalToolContext.abortSignal`.
@@ -92,6 +100,9 @@ export function buildProjectToolContext(
     ...(opts.approvedQuoteAuthority === undefined || opts.approvedQuoteAuthority === null
       ? {}
       : { approvedQuoteAuthority: opts.approvedQuoteAuthority }),
+    ...(opts.approvedPrequoteAuthority === undefined || opts.approvedPrequoteAuthority === null
+      ? {}
+      : { approvedPrequoteAuthority: opts.approvedPrequoteAuthority }),
     missionRunId: null,
     missionId: null,
     planMode: false,

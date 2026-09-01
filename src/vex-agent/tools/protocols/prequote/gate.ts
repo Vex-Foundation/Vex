@@ -34,7 +34,14 @@ import type { GateDecision } from "./gate/decision.js";
 import { block } from "./gate/messages.js";
 import { computeGateMatch } from "./gate/identity.js";
 import { readQuoteBindingPreview } from "../quote-authority/restore.js";
+import type { QuoteBindingPreview } from "../quote-authority/restore.js";
 import type { SpendabilityPreview } from "../quote-authority/spendability-contract.js";
+import {
+  approvedPrequoteAuthorityFrom,
+  type ApprovedPrequoteAuthority,
+} from "./approved-row-authority.js";
+import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
+import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import {
   feePreviewFromSafetyDetail,
   sealedDebitPlanFromRouteRef,
@@ -97,26 +104,10 @@ export async function evaluatePrequoteGate(
         matchHashPrefix: matchHash.slice(0, 8),
       });
     }
-    // Surface a fee-on-transfer tax (if any) so the restricted-mode approval
-    // preview can disclose it — FoT is no longer a verdict `fail` (only a
-    // confirmed honeypot blocks), so without this a high-tax token reads as a
-    // plain "pass". Sourced from the matched row's bounded `safetyDetail`, not
-    // raw args. Bridge/Solana details have no FoT leg → undefined (omitted).
-    const fotTax = maxFotTaxFromSafetyDetail(latest.safetyDetail);
-    // Pendle term-lock (Wave 5) — rides the same TYPED channel as FoT for the
-    // approval preview; sourced from the persisted prequote, never raw args.
-    const termLock = termLockFromSafetyDetail(latest.safetyDetail);
-    // Jupiter fee-bearing disclosure (W5 design §6 R4) — same typed channel.
-    const feePreview = feePreviewFromSafetyDetail(latest.safetyDetail);
-    // The quote this execute would be bound to, for the approval card. Absent
-    // when the row carries no readable executable snapshot - the venues that
-    // record none keep their existing card exactly.
-    const quoteBinding = readQuoteBindingPreview(latest.prequoteId, latest.routeRef, latest.expiresAt);
-    // What the wallet could pay when this quote was taken (WP2). Restored from
-    // the row's own bounded `safetyDetail`, so the card's Required/Current
-    // figures are the store's figures. Quote-time DISCLOSURE only - the
-    // authoritative debit read belongs to the pre-sign window.
-    const spendability = spendabilityFromSafetyDetail(latest.safetyDetail);
+    // Everything this row contributes to the approval card, read ONCE through
+    // the one reader the resumed dispatch also uses - see `readRowDisclosure`.
+    const { fotTax, termLock, feePreview, quoteBinding, spendability } =
+      readRowDisclosure(latest);
     // ONE ROW, TWO DESCRIPTIONS OF THE SAME TRANSACTIONS. The card states the
     // plan carried by the spendability preview; the execute is held to the plan
     // sealed inside the route snapshot. Nothing but this comparison made them
@@ -135,7 +126,33 @@ export async function evaluatePrequoteGate(
       // The helper owns both the message and the reason class; nothing to restate.
       return disagreement;
     }
-    let allow: GateDecision = { kind: "allow", verdict: latest.safetyVerdict, prequoteId: latest.prequoteId };
+    // WHICH ROW, AND WHAT IT SAID. On a fresh call this only records the pair
+    // the enqueue will store; on the resume of a decided approval it is also
+    // the fence - the row the card named must still be the current one and must
+    // still disclose what the card stated, or nothing executes.
+    const prequoteAuthority = approvedPrequoteAuthorityFrom(latest.prequoteId, {
+      verdict: latest.safetyVerdict,
+      fotTax,
+      termLock,
+      feePreview,
+      quoteBinding,
+      spendability,
+    });
+    const bindingFailure = approvedRowBindingFailure(context, prequoteAuthority);
+    if (bindingFailure !== null) {
+      logger.warn("protocol.prequote.gate.approval_binding_refused", {
+        toolId,
+        family,
+        reason: bindingFailure,
+      });
+      return block(bindingFailure, gateKind);
+    }
+    let allow: GateDecision = {
+      kind: "allow",
+      verdict: latest.safetyVerdict,
+      prequoteId: latest.prequoteId,
+      prequoteAuthority,
+    };
     if (fotTax !== undefined) allow = { ...allow, fotTax };
     if (termLock !== undefined) allow = { ...allow, termLock };
     if (feePreview !== undefined) allow = { ...allow, feePreview };
@@ -185,7 +202,21 @@ export type MatchedSwapPrequoteRefusal =
   | "not_gated"
   | "no_quote"
   | "safety_fail"
-  | "not_executable";
+  | "not_executable"
+  | ApprovalBindingRefusal;
+
+/**
+ * The three ways a dispatch that RESUMES a decided approval can fail to prove
+ * that the row in front of it is the row the human approved.
+ *
+ * They are the gate's block reasons under their own name so the two readers -
+ * the gate and the handler's re-read - refuse the same three states with the
+ * same vocabulary rather than inventing a second one.
+ */
+export type ApprovalBindingRefusal =
+  | "approval_row_superseded"
+  | "approved_disclosure_changed"
+  | "approval_binding_missing";
 
 export type MatchedSwapPrequote =
   | {
@@ -226,12 +257,17 @@ export type MatchedSwapPrequote =
  * `eligibility_kind = 'executable'` predicate; Jupiter has no claim lane, so
  * for it this read WAS the only remaining reader and it validated nothing.
  *
- * It deliberately does NOT pin the gate's exact `prequoteId`. A newer row for
- * the same match hash describes the SAME request (the hash binds every request
- * parameter) and, once it passes the same three guardrails, is an equally valid
- * authorization; refusing it would fail an execute whose newest quote is good.
- * What must never survive is a newer row that authorizes nothing, and that is
- * exactly what the guardrails here reject.
+ * WHEN NO APPROVAL IS IN PLAY it deliberately does NOT pin the gate's exact
+ * `prequoteId`. A newer row for the same match hash describes the SAME request
+ * (the hash binds every request parameter) and, once it passes the same three
+ * guardrails, is an equally valid authorization; refusing it would fail an
+ * execute whose newest quote is good. What must never survive is a newer row
+ * that authorizes nothing, and that is exactly what the guardrails here reject.
+ *
+ * WHEN A DECIDED APPROVAL AUTHORIZED THIS DISPATCH the opposite is true, and
+ * `approvedRowBindingFailure` applies: a person consented to ONE row and to the
+ * fee preview and native-cost ceiling that row disclosed, so a newer row - even
+ * an executable one - is `approval_row_superseded` rather than a substitute.
  */
 export async function findFreshMatchedSwapPrequote(
   toolId: string,
@@ -243,13 +279,95 @@ export async function findFreshMatchedSwapPrequote(
   if (!gated || gated.kind !== "swap") return { ok: false, reason: "not_gated" };
   const { matchHash } = await computeGateMatch(gated, sessionId, params, context);
   const selected = await selectAuthorizedRow(sessionId, matchHash, "swap");
-  return selected.ok
-    ? {
-      ok: true,
-      prequote: selected.row,
-      spendability: spendabilityFromSafetyDetail(selected.row.safetyDetail),
-    }
-    : selected;
+  if (!selected.ok) return selected;
+  // THE SECOND READER APPLIES THE SAME FENCE. The gate already refused a
+  // resumed dispatch whose bound row moved, but the gate ran earlier and this
+  // read asks the store again; a quote recorded in between would otherwise
+  // become the row a Jupiter execute derives its fee policy and its approved
+  // native ceiling from. Absent binding on a fresh (non-approval) call leaves
+  // the historical newest-row behaviour untouched.
+  const disclosure = readRowDisclosure(selected.row);
+  const bindingFailure = approvedRowBindingFailure(
+    context,
+    approvedPrequoteAuthorityFrom(selected.row.prequoteId, {
+      verdict: selected.row.safetyVerdict,
+      ...disclosure,
+    }),
+  );
+  if (bindingFailure !== null) return { ok: false, reason: bindingFailure };
+  return { ok: true, prequote: selected.row, spendability: disclosure.spendability };
+}
+
+/**
+ * Everything a matched row contributes to the approval card, read through the
+ * row's OWN persisted evidence.
+ *
+ * One reader, because the digest computed at enqueue and the digest recomputed
+ * at resume must be built from the same projection of the same row: two readers
+ * that drifted would either wave through a changed disclosure or refuse an
+ * unchanged one, and both failures are silent.
+ */
+function readRowDisclosure(row: SwapPrequote): {
+  readonly fotTax: number | undefined;
+  readonly termLock: { readonly maturityIso: string } | undefined;
+  readonly feePreview: JupiterFeePreview | undefined;
+  readonly quoteBinding: QuoteBindingPreview | undefined;
+  readonly spendability: SpendabilityPreview | undefined;
+} {
+  return {
+    // Fee-on-transfer tax, so the restricted-mode approval preview can disclose
+    // it - FoT is no longer a verdict `fail` (only a confirmed honeypot
+    // blocks), so without this a high-tax token reads as a plain "pass".
+    // Sourced from the row's bounded `safetyDetail`, never raw args.
+    // Bridge/Solana details have no FoT leg, so they yield undefined.
+    fotTax: maxFotTaxFromSafetyDetail(row.safetyDetail),
+    // Pendle term-lock (Wave 5), same typed channel, same source.
+    termLock: termLockFromSafetyDetail(row.safetyDetail),
+    // Jupiter fee-bearing disclosure (W5 design section 6 R4), same channel.
+    feePreview: feePreviewFromSafetyDetail(row.safetyDetail),
+    // The quote this execute would be bound to, for the approval card. Absent
+    // when the row carries no readable executable snapshot - the venues that
+    // record none keep their existing card exactly.
+    quoteBinding: readQuoteBindingPreview(row.prequoteId, row.routeRef, row.expiresAt),
+    // What the wallet could pay when this quote was taken (WP2). Quote-time
+    // DISCLOSURE only - the authoritative debit read belongs to the pre-sign
+    // window.
+    spendability: spendabilityFromSafetyDetail(row.safetyDetail),
+  };
+}
+
+/**
+ * Does the row in front of this dispatch prove it is the row a human approved?
+ *
+ * Applies ONLY when `context.approvalId` says a decided approval card is what
+ * authorized this call - the one host-side fact that can never be derived from
+ * model input. A fresh call has no consent to contradict, so it keeps today's
+ * newest-executable-row behaviour untouched.
+ *
+ * Three refusals, three genuinely different states (rule 04):
+ *
+ *   `approval_row_superseded`      - a newer quote for the same identity is now
+ *      the current row. It may be perfectly executable; it is simply not the one
+ *      that was shown, and substituting it is exactly the approve-Q1/execute-Q2
+ *      window this fence exists to close.
+ *   `approved_disclosure_changed`  - the bound row is still current but the
+ *      disclosure it carries (fee preview, native ceiling, spendability plan,
+ *      quote binding) is no longer the disclosure the card stated.
+ *   `approval_binding_missing`     - the approval records no row at all, so no
+ *      row can be PROVEN to be the approved one. Fail closed rather than pick,
+ *      matching the claim lane's `unbound_approval` (`claim.ts`); the way out is
+ *      a fresh quote, which does bind.
+ */
+function approvedRowBindingFailure(
+  context: ProtocolExecutionContext,
+  computed: ApprovedPrequoteAuthority,
+): ApprovalBindingRefusal | null {
+  if (typeof context.approvalId !== "string" || context.approvalId.length === 0) return null;
+  const approved = context.approvedPrequoteAuthority ?? null;
+  if (approved === null) return "approval_binding_missing";
+  if (approved.prequoteId !== computed.prequoteId) return "approval_row_superseded";
+  if (approved.disclosureDigest !== computed.disclosureDigest) return "approved_disclosure_changed";
+  return null;
 }
 
 /**

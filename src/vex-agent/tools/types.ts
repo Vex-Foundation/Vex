@@ -615,6 +615,27 @@ export interface ToolResult {
    */
   riskPreview?: LendBorrowRiskPreview;
   /**
+   * WHICH PREQUOTE ROW the prequote gate allowed on, and a digest of what that
+   * row disclosed to the approval card.
+   *
+   * A SIBLING of `prequote` rather than a member of it, for two reasons. It is
+   * a fact about the APPROVAL - it is stored in the approval envelope and read
+   * back on resume - not a line on the card; and it must be recorded for every
+   * gated execute, including a lane whose card carries no verdict-bearing
+   * `prequote` block.
+   *
+   * Set ONLY by `executeProtocolTool` from the gate's own matched row, never
+   * from raw args, and never rendered to the model. Typed structurally so the
+   * tool vocabulary does not depend on one protocol family's implementation;
+   * the producing module's typed value is assignable, and the compiler checks
+   * that at the assignment.
+   */
+  prequoteAuthority?: {
+    readonly v: string;
+    readonly prequoteId: string;
+    readonly disclosureDigest: string;
+  };
+  /**
    * Trusted one-step handoff from a successful non-mutating prepare tool to
    * its mutating execution tool. The turn loop validates the source→target
    * pair and canonicalizes the args through the registry before dispatch.

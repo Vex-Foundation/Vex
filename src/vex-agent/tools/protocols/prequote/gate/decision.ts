@@ -10,6 +10,7 @@ import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 
 import { canonicalizeDebitPlan, type BoundDebitPlan } from "../../quote-authority/debit-plan.js";
+import type { ApprovedPrequoteAuthority } from "../approved-row-authority.js";
 import { GateIdentityError } from "../gate-errors.js";
 import type { GateBlockReason } from "../gate-errors.js";
 
@@ -62,6 +63,21 @@ export type GateDecision =
        * own authoritative read rather than consulting this.
        */
       readonly spendability?: SpendabilityPreview;
+      /**
+       * WHICH ROW authorized this allow, and WHAT that row disclosed, as one
+       * digested block the enqueue stores in the approval envelope.
+       *
+       * Built from the same matched row every field above came from, so the
+       * approval binds the disclosure a person is about to read rather than an
+       * identifier beside it. On the resumed dispatch the gate recomputes this
+       * block from the row it finds and refuses when either half moved - see
+       * `../approved-row-authority.ts`.
+       *
+       * Always present on an allow: every gated execute matches exactly one
+       * row, and an allow that named none would leave the approval it feeds
+       * unbindable.
+       */
+      readonly prequoteAuthority: ApprovedPrequoteAuthority;
     }
   | { readonly kind: "block"; readonly reason: GateBlockReason; readonly message: string };
 

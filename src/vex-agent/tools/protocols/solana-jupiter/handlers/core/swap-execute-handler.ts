@@ -432,6 +432,17 @@ function unauthorizedQuoteMessage(refused: Extract<MatchedSwapPrequote, { ok: fa
       return `the quote authorizing this execute was superseded by a newer solana__swap_quote for the same request that authorizes nothing (recorded eligibility: ${refused.eligibilityKind ?? "unknown"}). Nothing was built or signed. Call solana__swap_quote again and read its eligibility before retrying.`;
     case "not_gated":
       return "this tool is not registered as a gated swap execute, so no quote can authorize it. This is a build defect, not a user error.";
+    // ── The approval-resume fence. Jupiter seals no route snapshot and has no
+    // atomic claim lane, so this re-read is the only place a RESUMED Solana
+    // swap can be held to the quote a person actually approved - and both its
+    // fee policy and its approved native-cost ceiling are derived from that
+    // row, which is exactly what a substituted row would replace.
+    case "approval_row_superseded":
+      return "a newer solana__swap_quote for these exact params was recorded while the approval waited, so the quote the approval card named is no longer the current one. Nothing was built or signed. Approving a card authorizes the quote it showed - its fee disclosure and its native cost ceiling - never a later one. Call solana__swap_quote again and approve the fresh quote.";
+    case "approved_disclosure_changed":
+      return "the approved quote is still the current one, but the fee preview and native-cost ceiling it discloses now are not the ones the approval card stated, so signing would spend against numbers nobody consented to. Nothing was built or signed. Call solana__swap_quote again and approve the fresh quote.";
+    case "approval_binding_missing":
+      return "this approval does not record WHICH quote it authorized, so no quote can be proven to be the one that was approved. Nothing was built or signed. Call solana__swap_quote again and approve the fresh quote.";
   }
 }
 

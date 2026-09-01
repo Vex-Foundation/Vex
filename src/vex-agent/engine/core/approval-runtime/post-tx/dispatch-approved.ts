@@ -122,6 +122,7 @@ import {
   approvalRequestDigestMatches,
   checkApprovalManifestIdentity,
   readApprovalQuoteAuthority,
+  readApprovalPrequoteAuthority,
 } from "../tool-call-envelope.js";
 import {
   ApprovalDispatchError,
@@ -226,6 +227,12 @@ export async function applyApproveSideEffects(
       // row the human's card named rather than whichever quote is newest by the
       // time they clicked Approve.
       approvedQuoteAuthority: readApprovalQuoteAuthority(row.queue_tool_call),
+      // ...and WHICH PREQUOTE ROW, with the digest of what it disclosed. The
+      // prequote gate reruns on this dispatch while the approval gate is
+      // skipped, so without this the gate would re-decide which quote is
+      // current and a quote recorded during the pause could replace the fee
+      // preview and native ceiling the human read.
+      approvedPrequoteAuthority: readApprovalPrequoteAuthority(row.queue_tool_call),
     });
 
     // ── 3. Operator-Stop gate + dispatch slot, ONE transaction ──────────

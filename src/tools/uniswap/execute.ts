@@ -254,6 +254,60 @@ export interface UniswapLegFeeBounds {
 }
 
 /**
+ * Why the live fee market could not be shown to still fit the approved ceiling.
+ *
+ * Three OUTCOMES, not one, because the remedies differ and an agent that cannot
+ * tell them apart retries the one case a retry can never clear:
+ *
+ *   - `approved_gas_price_exceeded` - the requirement was read, compared, and
+ *     is higher than the ceiling. Re-quote.
+ *   - `live_fee_market_unreadable` - the requirement could not be read at all.
+ *     Retry.
+ *   - `pricing_mode_changed` - it was read but cannot be compared with this
+ *     cap. Re-quote.
+ */
+export type UniswapLiveFeeMarketRefusalKind =
+  | "approved_gas_price_exceeded"
+  | "live_fee_market_unreadable"
+  | "pricing_mode_changed";
+
+/**
+ * The approved per-gas ceiling could NOT be shown to still cover the chain's
+ * current requirement, in the pre-sign window.
+ *
+ * The family exists because all three members are the SAME control failing, and
+ * one `instanceof` at each consumer is what keeps them out of
+ * `classifyUniswapRevertError`, which would flatten every one of them to
+ * `unknown` and replace the only sentence that says what was wrong.
+ *
+ * A READ THAT FAILS IS A REFUSAL, not a pass. metamask-core's pay controller
+ * takes the same position where it re-reads a live balance before committing
+ * (`packages/transaction-pay-controller/src/utils/validation.ts:205-215`): an
+ * unreachable read throws its own typed reason (`balance-unavailable`,
+ * `types.ts:506`) beside `insufficient-source-balance` rather than falling
+ * through to acceptance. A control that could not run did not run, and saying
+ * otherwise is the claim this class exists to stop.
+ */
+export class UniswapLiveFeeMarketRefusal extends Error {
+  constructor(
+    /** Which of the three outcomes above this is, for consumers that branch. */
+    readonly kind: UniswapLiveFeeMarketRefusalKind,
+    /**
+     * Whether repeating the SAME execution can plausibly succeed. Only an
+     * unreadable market is retryable: a risen price and a changed pricing mode
+     * both invalidate the quote's arithmetic, and only a fresh quote clears
+     * them.
+     */
+    readonly retryable: boolean,
+    message: string,
+    options?: { readonly cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "UniswapLiveFeeMarketRefusal";
+  }
+}
+
+/**
  * The chain now REQUIRES more per gas than the approved quote's ceiling.
  *
  * A distinct failure from {@link UniswapFeeCapExceededError}, and it exists
@@ -269,9 +323,11 @@ export interface UniswapLegFeeBounds {
  * Recoverable and named, in the same family as the leg-set refusal: nothing was
  * signed, and a fresh quote prices the swap at the market that exists now.
  */
-export class UniswapApprovedGasPriceExceededError extends Error {
+export class UniswapApprovedGasPriceExceededError extends UniswapLiveFeeMarketRefusal {
   constructor(field: string, liveRaw: string, approvedRaw: string) {
     super(
+      "approved_gas_price_exceeded",
+      false,
       `Refused before signing: the gas price moved past what you approved - the chain now asks `
       + `${liveRaw} for ${field} and this quote was approved at ${approvedRaw}. Signing at the `
       + "approved ceiling would broadcast an underpriced transaction that sits pending instead of "
@@ -279,6 +335,68 @@ export class UniswapApprovedGasPriceExceededError extends Error {
       + "uniswap__swap_quote and execute against that.",
     );
     this.name = "UniswapApprovedGasPriceExceededError";
+  }
+}
+
+/**
+ * The chain's CURRENT per-gas requirement could not be read at all.
+ *
+ * Fail-closed, and this is the whole correction: the previous build caught the
+ * failed read and returned, which signed under a ceiling nobody had compared to
+ * anything. The other-direction assertion does not cover it - it proves the
+ * bytes are not priced ABOVE the cap, which is guaranteed by construction once
+ * the cap is forced into preparation, and says nothing about whether the cap is
+ * still ENOUGH. With the requirement unknown, signing means broadcasting a
+ * transaction that may be underpriced, stuck pending, and ambiguous.
+ *
+ * RETRYABLE, alone in this family: nothing about the quote is invalid: only the
+ * node failed to answer, and the same execution can succeed on the next attempt.
+ * The provider's own text is NOT in the message (it is provider-controlled and
+ * would reach the agent unscrubbed); it is carried on `cause` for logs.
+ */
+export class UniswapLiveFeeRequirementUnreadableError extends UniswapLiveFeeMarketRefusal {
+  constructor(cause: unknown) {
+    super(
+      "live_fee_market_unreadable",
+      true,
+      "Refused before signing: the current gas market could not be read, so this quote's approved "
+      + "gas ceiling could not be shown to still cover what the chain requires. Signing on an "
+      + "unknown requirement risks broadcasting an underpriced transaction that sits pending "
+      + "instead of settling. Nothing was signed and nothing was broadcast. Retry this execute in "
+      + "a moment; if the node stays unreachable, request a fresh uniswap__swap_quote.",
+      { cause },
+    );
+    this.name = "UniswapLiveFeeRequirementUnreadableError";
+  }
+}
+
+/**
+ * The chain answers in a DIFFERENT pricing mode than the approved cap was
+ * priced in, so the two cannot be compared.
+ *
+ * Not a rise and not a read failure: a `gasPrice` and a `maxFeePerGas` are
+ * different quantities, and `checkFeeCap` refuses to compare them for exactly
+ * that reason (`swap-native-debit.ts:320-326`). The old build returned here,
+ * which delegated the case to a "fallback owner" that cannot see it: the cap is
+ * forced into `prepareTransactionRequest`, so the prepared request always comes
+ * back in the APPROVED mode and the prepared-request check can never observe a
+ * live mode change.
+ *
+ * Re-quote, not retry: a mode change is a property of the chain right now, and
+ * repeating the same approved cap reproduces it exactly.
+ */
+export class UniswapApprovedGasPricingModeChangedError extends UniswapLiveFeeMarketRefusal {
+  constructor(liveMode: LegFeeCap["mode"], approvedMode: LegFeeCap["mode"]) {
+    super(
+      "pricing_mode_changed",
+      false,
+      `Refused before signing: the chain changed pricing mode under your approval - it now prices `
+      + `gas as ${liveMode} and this quote was approved under ${approvedMode}. Those are different `
+      + "quantities, so the approved ceiling cannot be shown to still cover what the chain "
+      + "requires. Nothing was signed and nothing was broadcast. Request a fresh "
+      + "uniswap__swap_quote and execute against that.",
+    );
+    this.name = "UniswapApprovedGasPricingModeChangedError";
   }
 }
 
@@ -533,27 +651,43 @@ function assertWithinLegFeeBounds(
  * in the same number the human approved, not a comparison of two different
  * quantities.
  *
- * A READ THAT FAILS DOES NOT REFUSE. The ceiling is still enforced in the other
- * direction by `assertWithinLegFeeBounds`, the wallet's solvency is still proven
- * by the debit gate, and turning an RPC hiccup into a refused swap would trade a
- * real failure for a hypothetical one. What this cannot do is claim a check it
- * did not perform, so it stays silent rather than asserting.
+ * FAIL-CLOSED ON BOTH NON-ANSWERS, which is the correction this function
+ * carries. A requirement that cannot be READ and one that cannot be COMPARED
+ * are each their own named refusal rather than a silent return:
  *
- * A PRICING-MODE CHANGE IS NOT A RISE. If the chain now answers in the other
- * shape than the cap was approved in, nothing here can compare them; the
- * mode-mismatch refusal on the prepared request is the owner of that case.
+ *   - the other-direction assertion is not a fallback for either. It proves the
+ *     bytes are not priced above the cap, which the forced cap guarantees by
+ *     construction, and says nothing about the cap still being ENOUGH;
+ *   - the prepared-request mode check is not a fallback for the mode case
+ *     either, and cannot be: preparation is FORCED into the approved mode, so
+ *     the request always comes back in it and a live mode change is invisible
+ *     there.
+ *
+ * A control that could not run did not run. The alternative - returning - signs
+ * a transaction that may already be underpriced, which is stuck pending and
+ * ambiguous rather than refused, and reports a check it never performed.
  */
 async function assertApprovedCapStillSuffices(
   publicClient: PublicClient<Transport, Chain>,
   bounds: UniswapLegFeeBounds,
 ): Promise<void> {
-  let live: LegFeeCap | null;
+  let reading: LiveFeeRequirement;
   try {
-    live = await readLiveFeeRequirement(publicClient);
-  } catch {
-    return;
+    reading = await readLiveFeeRequirement(publicClient);
+  } catch (cause) {
+    throw new UniswapLiveFeeRequirementUnreadableError(cause);
   }
-  if (live === null || live.mode !== bounds.cap.mode) return;
+  const live = reading.cap;
+  if (live.mode !== bounds.cap.mode) {
+    // A legacy answer that exists ONLY because the 1559 question itself failed
+    // is a degraded read, not evidence the chain repriced: reported as the
+    // unreadable (retryable) case rather than sending the agent for a fresh
+    // quote that would hit the same node.
+    if (!reading.modeIsAuthoritative) {
+      throw new UniswapLiveFeeRequirementUnreadableError(reading.suggestionFailure);
+    }
+    throw new UniswapApprovedGasPricingModeChangedError(live.mode, bounds.cap.mode);
+  }
 
   if (live.mode === "eip1559" && bounds.cap.mode === "eip1559") {
     if (live.maxFeePerGasWei > bounds.cap.maxFeePerGasWei) {
@@ -582,25 +716,55 @@ async function assertApprovedCapStillSuffices(
   }
 }
 
+/** The chain's current requirement, plus how much its MODE can be trusted. */
+interface LiveFeeRequirement {
+  readonly cap: LegFeeCap;
+  /**
+   * Whether the mode of `cap` is the chain's ANSWER or an artifact of the
+   * fallback. False when `estimateFeesPerGas` threw and only `getGasPrice`
+   * replied: that legacy shape says nothing about how the chain prices gas, so
+   * a mismatch against an EIP-1559 cap must be reported as an unreadable
+   * market, never as a repricing.
+   */
+  readonly modeIsAuthoritative: boolean;
+  /** The suggestion call's own failure, for the unreadable refusal's `cause`. */
+  readonly suggestionFailure?: unknown;
+}
+
 /** The chain's CURRENT suggestion, in the same order the quote's cap was read. */
 async function readLiveFeeRequirement(
   publicClient: PublicClient<Transport, Chain>,
-): Promise<LegFeeCap | null> {
+): Promise<LiveFeeRequirement> {
+  let suggestionFailure: unknown;
   try {
     const fees = await publicClient.estimateFeesPerGas();
     if (fees.maxFeePerGas !== undefined) {
       return {
-        mode: "eip1559",
-        maxFeePerGasWei: fees.maxFeePerGas,
-        maxPriorityFeePerGasWei: fees.maxPriorityFeePerGas ?? 0n,
+        cap: {
+          mode: "eip1559",
+          maxFeePerGasWei: fees.maxFeePerGas,
+          maxPriorityFeePerGasWei: fees.maxPriorityFeePerGas ?? 0n,
+        },
+        modeIsAuthoritative: true,
       };
     }
-    if (fees.gasPrice !== undefined) return { mode: "legacy", gasPriceWei: fees.gasPrice };
-  } catch {
+    if (fees.gasPrice !== undefined) {
+      return { cap: { mode: "legacy", gasPriceWei: fees.gasPrice }, modeIsAuthoritative: true };
+    }
+    // Answered, but with neither price: nothing to compare and nothing to
+    // classify as a repricing either.
+    suggestionFailure = new Error("estimateFeesPerGas returned no price");
+  } catch (err) {
     // Same fall-through the quote-time reader uses: a chain that cannot answer
-    // the 1559 question can still state a gas price.
+    // the 1559 question can still state a gas price. What it cannot do is prove
+    // the chain is a legacy chain, which is why the flag travels with it.
+    suggestionFailure = err;
   }
-  return { mode: "legacy", gasPriceWei: await publicClient.getGasPrice() };
+  return {
+    cap: { mode: "legacy", gasPriceWei: await publicClient.getGasPrice() },
+    modeIsAuthoritative: false,
+    suggestionFailure,
+  };
 }
 
 /**

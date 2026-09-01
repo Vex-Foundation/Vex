@@ -90,6 +90,7 @@ import {
   approvalPreviewExactlyMatches,
   checkApprovalManifestIdentity,
   readApprovalQuoteAuthority,
+  readApprovalPrequoteAuthority,
   readStudioApprovalToolCall,
   studioAuthorityDigestMatches,
 } from "../../tool-call-envelope.js";
@@ -320,6 +321,10 @@ export async function applyStudioApproveSideEffects(
     // changed disclosure; binding the claim to the row makes the same
     // substitution fail closed a second time, at the money path itself.
     approvedQuoteAuthority: readApprovalQuoteAuthority(row.queue_tool_call),
+    // ...and WHICH PREQUOTE ROW it was gated on, from the same proven envelope.
+    // The rerun prequote gate is fenced to that row, so a quote recorded while
+    // the card waited cannot become the one this dispatch executes against.
+    approvedPrequoteAuthority: readApprovalPrequoteAuthority(row.queue_tool_call),
   });
   let result: ToolResult;
   try {

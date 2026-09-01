@@ -38,7 +38,11 @@ import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
-import { buildSwapTx, signUniswapTransaction } from "@tools/uniswap/execute.js";
+import {
+  buildSwapTx,
+  signUniswapTransaction,
+  UniswapLiveFeeMarketRefusal,
+} from "@tools/uniswap/execute.js";
 import { getUniswapDeployment, type UniswapDeployment } from "@tools/uniswap/deployments.js";
 import {
   assertFinalUniswapSwapRequest,
@@ -316,7 +320,18 @@ const ALTERED = {
   value: 777n,
 };
 
-function harness() {
+/**
+ * The fee fields preparation returns. Overridable because a leg capped in
+ * LEGACY mode comes back carrying `gasPrice`: `bounds` is forced into
+ * `prepareTransactionRequest`, so the prepared request is always in the
+ * approved mode and a harness that hard-codes EIP-1559 could only ever exercise
+ * one of them.
+ */
+type PreparedFees =
+  | { readonly maxFeePerGas: bigint; readonly maxPriorityFeePerGas: bigint }
+  | { readonly gasPrice: bigint };
+
+function harness(preparedFees: PreparedFees = { maxFeePerGas: 1_000_000n, maxPriorityFeePerGas: 1_000n }) {
   // A real `prepareTransactionRequest` always returns a priced request, and the
   // offline signature this venue takes needs the fee fields to infer the
   // transaction type - the same fields the pre-sign gate prices the leg from.
@@ -325,8 +340,7 @@ function harness() {
     gas: 30_000n,
     nonce: 7,
     chain: CHAIN,
-    maxFeePerGas: 1_000_000n,
-    maxPriorityFeePerGas: 1_000n,
+    ...preparedFees,
   };
   const transport = (): Transport => http("http://127.0.0.1:1");
   const liveFees = liveFeeSuggestion;
@@ -339,7 +353,14 @@ function harness() {
       // same actions the quote's ceiling was established with
       // (`resolveUniswapLegFeeCap`), so a comparison between them is a
       // comparison of one number with itself at two moments.
-      estimateFeesPerGas: vi.fn(async () => ({
+      // Typed as the WIDE viem shape (either pricing mode, either absent) so a
+      // scenario can make the chain answer legacy - the case the pricing-mode
+      // refusal owns - without casting the mock.
+      estimateFeesPerGas: vi.fn(async (): Promise<{
+        maxFeePerGas?: bigint;
+        maxPriorityFeePerGas?: bigint;
+        gasPrice?: bigint;
+      }> => ({
         maxFeePerGas: liveFees.maxFeePerGas,
         maxPriorityFeePerGas: liveFees.maxPriorityFeePerGas,
       })),
@@ -521,19 +542,132 @@ describe("the approved gas-price ceiling is checked against the LIVE requirement
     expect(message).toContain("uniswap__swap_quote");
   });
 
-  it("does NOT refuse when the live read itself fails - an RPC hiccup is not a price rise", async () => {
+  // ── The two NON-ANSWERS, each fail-closed by its own name ──────────────────
+  //
+  // Reversed in this round (Codex final review, turn 2, finding 1). The build
+  // these tests previously pinned caught a failed read and RETURNED, and
+  // returned again on a pricing-mode mismatch, so the "higher gas price at
+  // signing is refused" control did not run on either path while the code
+  // reported that it had. Neither claimed fallback covers them: the
+  // other-direction assertion only proves the bytes are not priced ABOVE a cap
+  // that preparation forced into them, and the prepared-request mode check
+  // cannot see a live mode change for the same reason - preparation is forced
+  // into the APPROVED mode. metamask-core's pay controller takes the same
+  // position on a live read it cannot perform
+  // (`transaction-pay-controller/src/utils/validation.ts:205-215` throws its own
+  // `balance-unavailable` reason rather than falling through to acceptance).
+
+  it("REFUSES BY NAME when the live requirement cannot be read at all - a control that could not run did not run", async () => {
+    const h = harness();
+    h.publicClient.estimateFeesPerGas.mockRejectedValue(new Error("node down"));
+    h.publicClient.getGasPrice.mockRejectedValue(new Error("node down"));
+    const onBeforeSign = vi.fn(async (_r: FinalSignedRequest) => {});
+
+    await expect(signUniswapTransaction(
+      h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce,
+      onBeforeSign, { cap: APPROVED_CAP },
+    )).rejects.toMatchObject({ name: "UniswapLiveFeeRequirementUnreadableError" });
+
+    // Before the fence and before the signature, exactly like the price rise:
+    // this is a provider read, and nothing may reach the network after the
+    // authority fence resolves.
+    expect(onBeforeSign).not.toHaveBeenCalled();
+    expect(h.signTransaction).not.toHaveBeenCalled();
+  });
+
+  it("tells the agent an unreadable market is RETRYABLE, which is what separates it from a price rise", async () => {
+    const h = harness();
+    h.publicClient.estimateFeesPerGas.mockRejectedValue(new Error("node down"));
+    h.publicClient.getGasPrice.mockRejectedValue(new Error("node down"));
+
+    const failure = await signUniswapTransaction(
+      h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce,
+      undefined, { cap: APPROVED_CAP },
+    ).catch((err: unknown) => err);
+
+    expect(failure).toBeInstanceOf(UniswapLiveFeeMarketRefusal);
+    const refusal = failure instanceof UniswapLiveFeeMarketRefusal ? failure : undefined;
+    expect(refusal?.kind).toBe("live_fee_market_unreadable");
+    expect(refusal?.retryable).toBe(true);
+    expect(refusal?.message).toContain("the current gas market could not be read");
+    expect(refusal?.message).toContain("Nothing was signed and nothing was broadcast");
+    expect(refusal?.message).toContain("Retry this execute");
+    // The node's own words never reach the agent-visible sentence - they are
+    // provider-controlled text - but they are kept on `cause` for the log.
+    expect(refusal?.message).not.toContain("node down");
+    expect(refusal?.cause).toBeInstanceOf(Error);
+  });
+
+  it("REFUSES BY NAME when the chain answers in a DIFFERENT pricing mode than the approval was priced in", async () => {
+    const h = harness();
+    // Answered, and answered legacy: this is the chain's own reply, not a
+    // fallback, so it is evidence the pricing mode moved under the approval.
+    h.publicClient.estimateFeesPerGas.mockResolvedValue({ gasPrice: 900_000n });
+    const onBeforeSign = vi.fn(async (_r: FinalSignedRequest) => {});
+
+    const failure = await signUniswapTransaction(
+      h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce,
+      onBeforeSign, { cap: APPROVED_CAP },
+    ).catch((err: unknown) => err);
+
+    expect(failure).toBeInstanceOf(UniswapLiveFeeMarketRefusal);
+    const refusal = failure instanceof UniswapLiveFeeMarketRefusal ? failure : undefined;
+    expect(refusal?.name).toBe("UniswapApprovedGasPricingModeChangedError");
+    // Re-quote, NOT retry: repeating the same approved cap reproduces the
+    // mismatch exactly, and a `gasPrice` was never comparable to a
+    // `maxFeePerGas` in the first place.
+    expect(refusal?.kind).toBe("pricing_mode_changed");
+    expect(refusal?.retryable).toBe(false);
+    expect(refusal?.message).toContain("changed pricing mode under your approval");
+    expect(refusal?.message).toContain("uniswap__swap_quote");
+    expect(onBeforeSign).not.toHaveBeenCalled();
+    expect(h.signTransaction).not.toHaveBeenCalled();
+  });
+
+  it("calls a legacy answer that only exists because the 1559 read FAILED unreadable, not a repricing", async () => {
+    const h = harness();
+    // `getGasPrice` still replies, but a legacy shape reached only through the
+    // fallback says nothing about how the chain prices gas. Sending the agent
+    // for a fresh quote here would point it at the same degraded node.
+    h.publicClient.estimateFeesPerGas.mockRejectedValue(new Error("node down"));
+
+    const failure = await signUniswapTransaction(
+      h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce,
+      undefined, { cap: APPROVED_CAP },
+    ).catch((err: unknown) => err);
+
+    const refusal = failure instanceof UniswapLiveFeeMarketRefusal ? failure : undefined;
+    expect(refusal?.kind).toBe("live_fee_market_unreadable");
+    expect(refusal?.retryable).toBe(true);
+    expect(h.signTransaction).not.toHaveBeenCalled();
+  });
+
+  it("still signs a LEGACY-capped leg the fallback can price - the mode matches, so the comparison is real", async () => {
+    // Preparation returns the approved mode, because `bounds` forced it there:
+    // a legacy cap produces a legacy request, which is the shape the
+    // other-direction assertion then judges.
+    const h = harness({ gasPrice: 1_000_000n });
+    h.publicClient.estimateFeesPerGas.mockRejectedValue(new Error("no 1559 on this chain"));
+    h.publicClient.getGasPrice.mockResolvedValue(900_000n);
+
+    const signed = await signUniswapTransaction(
+      h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce,
+      undefined, { cap: { mode: "legacy", gasPriceWei: 1_000_000n } },
+    );
+
+    expect(signed.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+
+  it("leaves an UNCAPPED leg alone - with no ceiling there is nothing to compare and no read to make", async () => {
     const h = harness();
     h.publicClient.estimateFeesPerGas.mockRejectedValue(new Error("node down"));
     h.publicClient.getGasPrice.mockRejectedValue(new Error("node down"));
 
     const signed = await signUniswapTransaction(
       h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce,
-      undefined, { cap: APPROVED_CAP },
     );
 
-    // The ceiling is still enforced in the other direction and the wallet's
-    // solvency is still proven by the debit gate. Turning an unreadable fee
-    // market into a refused swap would trade a real failure for a guess.
     expect(signed.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(h.publicClient.estimateFeesPerGas).not.toHaveBeenCalled();
   });
 });

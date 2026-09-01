@@ -8,8 +8,10 @@
  * Contract C2.4 makes `pending` the authorization tag because it is the only
  * tag that subtracts the wallet's own unconfirmed spending. WP2-E0 then
  * MEASURED what the tag does on every endpoint a Vex swap venue reaches
- * (`tools/evm-chains/pending-block-capability.ts`): seven of eighteen answer
- * `pending` with the head block or expose no pending block at all. On those
+ * (`tools/evm-chains/pending-block-capability.ts`, re-measured 2026-09-01 with a
+ * block-hash identity test after the first block-number method was shown to
+ * confuse latency with state): fourteen of eighteen answer `pending` with the
+ * head block or expose no pending block at all. On those
  * endpoints the tag is accepted and subtracts nothing, so a read taken at
  * `pending` is a `latest` read wearing the authorization tag's name, and a
  * balance that an unconfirmed transfer has already spent can authorize a swap.

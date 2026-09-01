@@ -14,6 +14,7 @@ import type { ToolResult } from "../types.js";
 import type { Permission, SessionKind, WalletPolicy } from "@vex-agent/engine/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { ApprovedQuoteAuthority } from "../protocols/quote-authority/approved-authority.js";
+import type { ApprovedPrequoteAuthority } from "../protocols/prequote/approved-row-authority.js";
 
 /** Result from an internal tool handler */
 export type InternalToolResult = ToolResult;
@@ -68,6 +69,17 @@ export interface InternalToolContext {
    * field - see `protocols/prequote/claim.ts`.
    */
   approvedQuoteAuthority?: ApprovedQuoteAuthority | null;
+  /**
+   * WHICH PREQUOTE ROW that approval authorized, and the digest of what the row
+   * disclosed on the card. Host-side evidence on the same terms as
+   * `approvedQuoteAuthority`: read from `approval_queue.tool_call`, which the
+   * request digest covers, and never from tool arguments or model output.
+   *
+   * ABSENT on every live turn and on every approval written before the binding
+   * existed. The prequote gate decides what absent means on a resume
+   * (`protocols/prequote/gate.ts`).
+   */
+  approvedPrequoteAuthority?: ApprovedPrequoteAuthority | null;
   /**
    * True ONLY for a call the model emitted in a live turn. Set in exactly one
    * place — `engine/core/turn-loop-tool-batch/execute.ts`'s `buildToolContext`

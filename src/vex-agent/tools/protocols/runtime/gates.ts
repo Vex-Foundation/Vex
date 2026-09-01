@@ -24,6 +24,7 @@ import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import type { QuoteBindingPreview } from "../quote-authority/restore.js";
 import type { SpendabilityPreview } from "../quote-authority/spendability-contract.js";
+import type { ApprovedPrequoteAuthority } from "../prequote/approved-row-authority.js";
 import { evaluateLendBorrowRiskPreview } from "../solana-jupiter/borrow-risk-preview.js";
 import { summarizeProtocolError } from "./errors.js";
 import { isPreviewExecution } from "../capture-validator.js";
@@ -120,6 +121,13 @@ export type PrequoteGateDecision =
       /** Quote-time spendability facts (typed, unspoofable) for the approval card. */
       readonly spendability: SpendabilityPreview | undefined;
       readonly bridgeTokenPreview: BridgeTokenIdentityPreview | undefined;
+      /**
+       * WHICH ROW the gate allowed on and what it disclosed, for the approval
+       * envelope. `undefined` for a call the prequote gate never evaluated (an
+       * ungated tool, or the disjoint risk-preview channel) - there is no quote
+       * row to bind in either case.
+       */
+      readonly prequoteAuthority: ApprovedPrequoteAuthority | undefined;
     }
   | { readonly kind: "block"; readonly message: string };
 
@@ -197,6 +205,7 @@ export async function evaluatePrequoteGateDecision(
       quoteBinding: decision.quoteBinding,
       spendability: decision.spendability,
       bridgeTokenPreview,
+      prequoteAuthority: decision.prequoteAuthority,
     };
   }
 
@@ -215,6 +224,7 @@ export async function evaluatePrequoteGateDecision(
     quoteBinding: undefined,
     spendability: undefined,
     bridgeTokenPreview: undefined,
+    prequoteAuthority: undefined,
   };
 }
 
@@ -301,6 +311,7 @@ export function evaluateApprovalGate(
   prequoteQuoteBinding: QuoteBindingPreview | undefined,
   prequoteSpendability: SpendabilityPreview | undefined,
   prequoteBridgeTokenPreview: BridgeTokenIdentityPreview | undefined,
+  prequoteAuthority: ApprovedPrequoteAuthority | undefined,
 ): ToolResult | undefined {
   if (manifest.mutating && manifest.actionKind !== "local_write" && !context.approved && !isPreviewExecution(request.toolId, params)
     && context.sessionPermission === "restricted"
@@ -342,6 +353,14 @@ export function evaluateApprovalGate(
     }
     if (prequoteRiskPreview !== undefined) {
       pending.riskPreview = prequoteRiskPreview;
+    }
+    // WHICH ROW this card is about, on its own sibling channel: the enqueue
+    // stores it in the approval envelope so the resumed dispatch is fenced to
+    // the row and the disclosure the human decided on, not to whichever quote
+    // is newest by then. Independent of `prequote` above, which a lane without
+    // a verdict legitimately omits.
+    if (prequoteAuthority !== undefined) {
+      pending.prequoteAuthority = { ...prequoteAuthority };
     }
     return pending;
   }

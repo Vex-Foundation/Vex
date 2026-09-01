@@ -16,6 +16,7 @@ import {
   signUniswapTransaction,
   broadcastUniswapTransaction,
   UniswapFeeCapExceededError,
+  UniswapLiveFeeMarketRefusal,
   type BuiltSwapTx,
   type SignedUniswapTransaction,
   type UniswapLegFeeBounds,
@@ -164,6 +165,14 @@ export async function runStagedBroadcast(
     // handler finalizes the never-signed rows and renders the refusal verbatim.
     if (err instanceof UniswapPreSignDebitRefusal) throw err;
     if (err instanceof UniswapFeeCapExceededError) throw err;
+    // A LIVE FEE-MARKET refusal is the same shape: the pre-sign window could
+    // not show the approved ceiling still covers what the chain requires -
+    // because it is higher, because the market could not be read, or because
+    // the chain now prices gas in the other mode. All three are pre-sign facts,
+    // none is a router revert, and `classifyUniswapRevertError` would flatten
+    // every one of them to `unknown` - collapsing an unreadable provider into
+    // an unexpected failure is exactly what rule 90 forbids.
+    if (err instanceof UniswapLiveFeeMarketRefusal) throw err;
     // Sign-time only (prepare/estimate/local signing) — no `sendRawTransaction`
     // call has happened yet, so nothing was ever submitted to the network.
     // Unlike a broadcast failure (C15), a sign-time failure is UNAMBIGUOUSLY

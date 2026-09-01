@@ -212,12 +212,14 @@ again here rather than assumed.
 3. **The built transaction is advisory.** It is never stored and never replaces
    the route snapshot: the execute still builds from the digest-verified summary,
    so pricing the debit changes nothing about what the execute is bound to.
-4. **No `StagedFeeBounds` ceiling is imposed on this venue path.** The substrate
-   states the reason itself (`evm-chains/staged-broadcast.ts`): fee caps are part
-   of what the user approved on the GENERIC signing path, not on a venue path
-   where the user authorized a trade. The solvency question is answered instead
-   from the prices the prepared request really carries, which a ceiling cannot
-   improve on.
+4. **SUPERSEDED 2026-09-01.** This section originally recorded that no
+   quote-time fee ceiling was imposed on the venue path. WP2-B then sealed the
+   per-gas PRICE caps and the leg-role set into the route snapshot's bound
+   debit plan, and the final-review round made the pre-sign gate assert the
+   prepared request's price against the approved ceiling and price every
+   remaining leg and the reserve AT that ceiling. Gas UNITS remain unbound
+   (the 2.07x measured drift stands). The original reasoning is kept above
+   this note as the record of why the first design chose otherwise.
 
 ### Declared limits of these measurements
 
@@ -293,9 +295,11 @@ Facts these measurements settled, and what the code does because of them:
 2. **A native-input swap IS estimable at quote time** - the live estimate
    succeeded above - while an ERC-20 swap whose allowance is missing is not,
    because the estimate reverts inside `transferFrom`. That asymmetry is the
-   whole reason the UNPRICED leg state exists: at the earlier windows the total
-   is an explicit lower bound that says so, and at the swap leg's own pre-sign
-   gate nothing may be unpriced.
+   whole reason the CONSERVATIVE pricing state exists (final-review round,
+   2026-09-01: the earlier UNPRICED lower-bound state was removed): a leg the
+   node cannot yet estimate is priced from the quoter's own figure plus the
+   measured headroom and named as conservative on the card, and a leg with no
+   figure at all makes the debit unstatable, so nothing signs.
 3. **The measured swap gas is 4x the quoter's figure** (293,274 headroomed
    versus 72,926). Pricing the debit from the quoter's number alone would have
    understated the swap leg by roughly 1.5 Gwei-gas worth of headroom on this
@@ -699,9 +703,11 @@ below what the chain wants. Measured, with a deliberately low synthetic cap of
 Both live requirements exceed that cap, which is the condition the new
 `UniswapApprovedGasPriceExceededError` refuses on. The read happens BEFORE the
 pre-sign hook, because it is itself a provider call and the window after the
-hook admits none. A read that FAILS does not refuse: the ceiling is still
-enforced in the other direction and solvency is still proven by the debit gate,
-so an unreadable fee market must not become a refused swap.
+hook admits none. A read that FAILS refuses BY NAME (final-review round, 2026-09-01: the
+original fail-open stance recorded here was reversed by review): an unreadable
+fee market means the promised live-versus-approved comparison cannot run, and a
+pricing-mode change under the approval is incomparable for the same reason -
+both are named, recoverable refusals rather than a signature.
 
 ### 6. QuoterV2's gas figure, and the one route shape that has none
 
