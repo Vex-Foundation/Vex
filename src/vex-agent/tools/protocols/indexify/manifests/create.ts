@@ -21,7 +21,7 @@ export const INDEXIFY_CREATE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     requiresEnv: INDEXIFY_API_KEY_ENV,
     description:
-      `Create a new stack on Indexify under the linked account. Use this only when the user explicitly wants to publish a stack — creation moves no funds and signs nothing, but the stack goes PUBLIC immediately under the linked account's name at its own web link, open for anyone to invest in, and only its creator can close it later. Resolve every allocation's mint address with indexify__tokens_search first: allocations maps mint address to INTEGER percent weight, 1-${INDEXIFY_MAX_STACK_TOKENS} tokens, weights summing to exactly 100. The creator fee is PINNED to the venue's own default (currently 0.5%, adjustable later in the Indexify app) and is never a parameter. The name and description are validated with the venue's own checks before creation, so a taken name or flagged wording is refused by name without side effects. Returns the new stack's id, slug, confirmed allocation, and the shareable web link.`,
+      `Create a new stack on Indexify under the linked account. Use this only when the user explicitly wants to publish a stack — creation moves no funds and signs nothing, but the stack goes PUBLIC immediately under the linked account's name at its own web link, open for anyone to invest in, and only its creator can close it later. Resolve every allocation's mint address with indexify__tokens_search first: allocations maps mint address to INTEGER percent weight, 1-${INDEXIFY_MAX_STACK_TOKENS} tokens, weights summing to exactly 100. The creator fee is PINNED to the venue's own default (currently 0.5%, adjustable later in the Indexify app) and is never a parameter. The name and description are validated with the venue's own checks before creation, and every mint is verified with the venue first — a token Indexify does not list yet is auto-registered into its catalogue when it clears the venue's live $10,000 minimum market cap; any mint below that floor refuses the whole creation BY NAME before anything is created. Returns the new stack's id, slug, confirmed allocation, and the shareable web link.`,
     mutating: true,
     actionKind: "external_post",
     params: [
@@ -52,7 +52,7 @@ export const INDEXIFY_CREATE_TOOLS: readonly ProtocolToolManifest[] = [
         type: "object",
         required: true,
         description:
-          `Map of Solana token MINT ADDRESS to INTEGER percent weight, for example {"JUPy...": 60, "jito...": 40}. 1-${INDEXIFY_MAX_STACK_TOKENS} tokens; weights must sum to exactly 100; every mint must exist in Indexify's catalogue (indexify__tokens_search).`,
+          `Map of Solana token MINT ADDRESS to INTEGER percent weight, for example {"JUPy...": 60, "jito...": 40}. 1-${INDEXIFY_MAX_STACK_TOKENS} tokens; weights must sum to exactly 100; resolve mints with indexify__tokens_search; a mint Indexify does not list yet is auto-registered when it clears the venue's live $10k market-cap floor.`,
       },
     ],
     exampleParams: {

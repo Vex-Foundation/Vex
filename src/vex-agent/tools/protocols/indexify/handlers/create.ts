@@ -86,6 +86,7 @@ export async function indexifyStackCreateHandler(
   // The creator fee is NOT a parameter (fee-params doctrine) — it is pinned
   // to whatever the venue itself declares as the default, read live here.
   let creatorFee: number;
+  const registeredMints: string[] = [];
   try {
     const [nameCheck, descriptionCheck, bounds] = await Promise.all([
       client.checkStackName(name, { signal: context.abortSignal }),
@@ -101,6 +102,43 @@ export async function indexifyStackCreateHandler(
       return fail(`The stack description ${reason} — reword it. Nothing was created.`);
     }
     creatorFee = bounds.default;
+
+    // ── Token preflight ──────────────────────────────────────────
+    // The venue's own `create` auto-registers unknown mints since
+    // 2026-09-02, but NON-ATOMICALLY: it fails the whole create on the
+    // first mint under its live $10k market-cap floor while keeping the
+    // registrations it already made. This preflight does the same work
+    // where a refusal is still clean — every mint is verified (and, when
+    // unknown, offered for registration via `token_info action=new`)
+    // BEFORE the commit, so the create either runs over a fully-known
+    // allocation or is refused here with EVERY offending mint named, not
+    // just the first. The venue stays the sole authority on the floor.
+    const tokenProblems: string[] = [];
+    await Promise.all(Object.keys(allocations.value).map(async (mint) => {
+      let verdict = await client.tradability(mint, { signal: context.abortSignal });
+      if (!verdict.found) {
+        const registration = await client.registerToken(mint, { signal: context.abortSignal });
+        if (registration.outcome === "rejected") {
+          tokenProblems.push(`${mint}: ${registration.reason}`);
+          return;
+        }
+        if (registration.outcome === "registered") registeredMints.push(mint);
+        verdict = await client.tradability(mint, { signal: context.abortSignal });
+        if (!verdict.found) {
+          tokenProblems.push(`${mint}: still unknown to Indexify after registration`);
+          return;
+        }
+      }
+      if (verdict.archived) tokenProblems.push(`${mint}: archived on Indexify — not investable`);
+      else if (!verdict.tradingEnabled) tokenProblems.push(`${mint}: trading is disabled on Indexify`);
+    }));
+    if (tokenProblems.length > 0) {
+      return fail(
+        `Indexify cannot accept ${tokenProblems.length} of the allocation's tokens — nothing was created. `
+        + tokenProblems.sort().join("; ")
+        + ". Drop or replace these mints (the venue lists only tokens with at least $10,000 live market cap).",
+      );
+    }
   } catch (err) {
     return fail(`Indexify create preflight failed — nothing was created (${indexifyFailureDetail("indexify__stack_create", err)})`);
   }
@@ -145,6 +183,9 @@ export async function indexifyStackCreateHandler(
     category,
     creatorFeePercent: creatorFee,
     allocations: allocations.value,
+    ...(registeredMints.length > 0
+      ? { registeredTokens: registeredMints, registrationNote: "These mints were new to Indexify and were registered into its catalogue as part of this creation." }
+      : {}),
     ...(slug !== null
       ? { slug, url: indexifyStackUrl(slug) }
       : { note: "Created, but the slug read-back failed — fetch it with indexify__stack_get using the stackId." }),

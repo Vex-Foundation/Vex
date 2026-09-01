@@ -102,7 +102,7 @@ preconditions appear inside the first 2000 bytes.
 | indexify__order_resolve | Resolve a partial Indexify order | protocol | no | no | no | INDEXIFY_API_KEY | 657 |
 | indexify__orders_list | List or read Indexify orders | protocol | yes | no | no | INDEXIFY_API_KEY | 657 |
 | indexify__portfolio_get | Read the Indexify account balances | protocol | yes | no | no | INDEXIFY_API_KEY | 543 |
-| indexify__stack_create | Create an Indexify stack | protocol | no | no | no | INDEXIFY_API_KEY | 885 |
+| indexify__stack_create | Create an Indexify stack | protocol | no | no | no | INDEXIFY_API_KEY | 1083 |
 | indexify__stack_get | Read one Indexify stack | protocol | yes | no | no | INDEXIFY_API_KEY | 620 |
 | indexify__stack_holdings_get | Read the account's position in one stack | protocol | yes | no | no | INDEXIFY_API_KEY | 551 |
 | indexify__stack_trade_execute | Buy or sell an Indexify stack | protocol | no | no | no | INDEXIFY_API_KEY | 973 |

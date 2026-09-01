@@ -330,6 +330,7 @@ describe("indexify.stack_create", () => {
 
   it("refuses a taken name using the venue's own check, creating nothing", async () => {
     vi.spyOn(client(), "checkStackName").mockResolvedValue("TAKEN");
+    vi.spyOn(client(), "tradability").mockResolvedValue({ found: true, tradingEnabled: true, archived: false, symbol: null });
     vi.spyOn(client(), "checkStackDescription").mockResolvedValue("OK");
     vi.spyOn(client(), "creatorFeeBounds").mockResolvedValue({ min: 0, max: 0.5, default: 0.5 });
     const create = vi.spyOn(client(), "createStack");
@@ -343,6 +344,7 @@ describe("indexify.stack_create", () => {
     vi.spyOn(client(), "checkStackName").mockResolvedValue("OK");
     vi.spyOn(client(), "checkStackDescription").mockResolvedValue("OK");
     vi.spyOn(client(), "creatorFeeBounds").mockResolvedValue({ min: 0, max: 0.5, default: 0.25 });
+    vi.spyOn(client(), "tradability").mockResolvedValue({ found: true, tradingEnabled: true, archived: false, symbol: null });
     const create = vi.spyOn(client(), "createStack").mockResolvedValue({ success: true, stack_id: 1 });
     vi.spyOn(client(), "fetchStack").mockResolvedValue(stack({ id: 1, slug: "x" }));
     await invoke("indexify.stack_create")(VALID, CTX);
@@ -354,6 +356,7 @@ describe("indexify.stack_create", () => {
     vi.spyOn(client(), "checkStackDescription").mockResolvedValue("OK");
     vi.spyOn(client(), "creatorFeeBounds").mockResolvedValue({ min: 0, max: 0.5, default: 0.5 });
     vi.spyOn(client(), "createStack").mockResolvedValue({ success: true, stack_id: 999 });
+    vi.spyOn(client(), "tradability").mockResolvedValue({ found: true, tradingEnabled: true, archived: false, symbol: null });
     vi.spyOn(client(), "fetchStack").mockResolvedValue(stack({ id: 999, slug: "vex-agent-index" }));
     const result = await invoke("indexify.stack_create")(VALID, CTX);
     expect(result.success).toBe(true);
@@ -361,5 +364,58 @@ describe("indexify.stack_create", () => {
     expect(data.stackId).toBe(999);
     expect(data.url).toBe("https://app.indexify.finance/stacks/vex-agent-index");
     expect(data.creatorFeePercent).toBe(0.5);
+  });
+
+  it("token preflight: refuses BEFORE the commit, naming EVERY floor-refused mint, not just the first", async () => {
+    vi.spyOn(client(), "checkStackName").mockResolvedValue("OK");
+    vi.spyOn(client(), "checkStackDescription").mockResolvedValue("OK");
+    vi.spyOn(client(), "creatorFeeBounds").mockResolvedValue({ min: 0, max: 0.5, default: 0.5 });
+    vi.spyOn(client(), "tradability").mockResolvedValue({ found: false });
+    vi.spyOn(client(), "registerToken").mockImplementation(async (mint) => ({
+      outcome: "rejected",
+      reason: `Token market cap is below minimum threshold of $10,000 (${mint.slice(0, 4)})`,
+    }));
+    const create = vi.spyOn(client(), "createStack");
+    const result = await invoke("indexify.stack_create")(VALID, CTX);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("2 of the allocation's tokens");
+    expect(result.output).toContain("JUPy");
+    expect(result.output).toContain("J1to");
+    expect(result.output).toContain("nothing was created");
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("token preflight: unknown mints the venue accepts are registered, re-checked, reported, and the create proceeds", async () => {
+    vi.spyOn(client(), "checkStackName").mockResolvedValue("OK");
+    vi.spyOn(client(), "checkStackDescription").mockResolvedValue("OK");
+    vi.spyOn(client(), "creatorFeeBounds").mockResolvedValue({ min: 0, max: 0.5, default: 0.5 });
+    const known = new Set(["J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn"]);
+    vi.spyOn(client(), "tradability").mockImplementation(async (mint) =>
+      known.has(mint) ? { found: true, tradingEnabled: true, archived: false, symbol: null } : { found: false });
+    vi.spyOn(client(), "registerToken").mockImplementation(async (mint) => {
+      known.add(mint);
+      return { outcome: "registered" };
+    });
+    vi.spyOn(client(), "createStack").mockResolvedValue({ success: true, stack_id: 1001 });
+    vi.spyOn(client(), "fetchStack").mockResolvedValue(stack({ id: 1001, slug: "vex-agent-index" }));
+    const result = await invoke("indexify.stack_create")(VALID, CTX);
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.registeredTokens).toEqual(["JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"]);
+  });
+
+  it("token preflight: a registration outage fails the preflight closed — never a mis-read as refusal, nothing created", async () => {
+    vi.spyOn(client(), "checkStackName").mockResolvedValue("OK");
+    vi.spyOn(client(), "checkStackDescription").mockResolvedValue("OK");
+    vi.spyOn(client(), "creatorFeeBounds").mockResolvedValue({ min: 0, max: 0.5, default: 0.5 });
+    vi.spyOn(client(), "tradability").mockResolvedValue({ found: false });
+    vi.spyOn(client(), "registerToken").mockRejectedValue(
+      new VexError(ErrorCodes.INDEXIFY_RATE_LIMITED, "Indexify is rate limiting or briefly unavailable (HTTP 429)"),
+    );
+    const create = vi.spyOn(client(), "createStack");
+    const result = await invoke("indexify.stack_create")(VALID, CTX);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("preflight failed");
+    expect(create).not.toHaveBeenCalled();
   });
 });

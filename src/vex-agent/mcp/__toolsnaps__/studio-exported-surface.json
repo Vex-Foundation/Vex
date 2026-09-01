@@ -4621,13 +4621,13 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 885,
+      "descriptionBytes": 1083,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "allocations": {
-            "description": "Map of Solana token MINT ADDRESS to INTEGER percent weight, for example {\"JUPy...\": 60, \"jito...\": 40}. 1-12 tokens; weights must sum to exactly 100; every mint must exist in Indexify's catalogue (indexify__tokens_search).",
+            "description": "Map of Solana token MINT ADDRESS to INTEGER percent weight, for example {\"JUPy...\": 60, \"jito...\": 40}. 1-12 tokens; weights must sum to exactly 100; resolve mints with indexify__tokens_search; a mint Indexify does not list yet is auto-registered when it clears the venue's live $10k market-cap floor.",
             "type": "object"
           },
           "category": {
