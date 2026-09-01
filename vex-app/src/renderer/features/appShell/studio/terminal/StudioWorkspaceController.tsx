@@ -32,6 +32,7 @@ import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import type { FileNode } from "@shared/schemas/files.js";
 import type { TerminalErrorCode } from "@shared/schemas/terminal.js";
 import { cn } from "../../../../lib/utils.js";
+import { reportRendererFailure } from "../../../../lib/renderer-error-report.js";
 import {
   createTerminal,
   killTerminal,
@@ -345,7 +346,25 @@ export function StudioWorkspaceController({
         setState(stateRef.current);
       }
       hydratedRef.current = true;
-    })();
+    })().catch((error: unknown) => {
+      // THE RESTORE'S ONLY EXIT FOR A REJECTION, and it had none.
+      //
+      // Everything above assumes `readTerminalWorkspace` resolves a Result and
+      // that `fromSnapshot` returns. A rejection or a throw from either left
+      // this IIFE as an unhandled rejection: the workspace stayed empty, the
+      // hydration latch stayed closed (so persistence never armed), and the
+      // only trace was a console line nobody collects. It reports through the
+      // same renderer evidence path as a boundary catch.
+      //
+      // It deliberately changes NOTHING else: the latch stays closed, because
+      // arming persistence over a restore that failed is how an empty layout
+      // overwrites a good snapshot.
+      reportRendererFailure({
+        surface: "studio.workspace.restore",
+        kind: "caught",
+        error,
+      });
+    });
 
     return () => {
       // Invalidate on the way out as well as on the way in, so an unmount -

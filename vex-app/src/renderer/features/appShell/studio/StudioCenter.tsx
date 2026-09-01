@@ -42,6 +42,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import type { ProjectDto } from "@shared/schemas/projects.js";
 import { cn } from "../../../lib/utils.js";
+import {
+  ErrorBoundary,
+  type ErrorBoundaryAction,
+} from "../../../components/ui/error-boundary.js";
 import { useProjects } from "../../../lib/api/projects.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import {
@@ -467,11 +471,54 @@ function StudioProjectWorkspace({
       data-vex-studio-workspace={projectId}
       className={cn("min-h-0 flex-1", !active && "hidden")}
     >
-      <StudioWorkspaceController
-        projectId={projectId}
-        registry={terminals}
-        onRetryClose={retryClose}
-      />
+      {/* PER-WORKSPACE CONTAINMENT.
+        *
+        * A workspace is the most expensive and most stateful subtree in the
+        * app, and it is also the one that reads persisted layout on mount -
+        * which is exactly the class of input that throws. Without a boundary
+        * HERE, one project's bad snapshot took down the root and with it every
+        * OTHER project's workspace; with it, the failure is a card inside that
+        * one project's column while the rest of Studio keeps running.
+        *
+        * What survives a fallback and a retry is the point: the terminal
+        * instances live in `terminalRegistry` and the ptys live in the pty
+        * host, both OUTSIDE React. Unmounting the controller disposes neither
+        * (only an explicit close does), so retrying re-renders a controller
+        * that reattaches to the same live shells. */}
+      <ErrorBoundary
+        surface="studio.workspace"
+        resetKey={projectId}
+        title="This project's workspace stopped rendering"
+        actions={RETURN_TO_WELCOME}
+      >
+        <StudioWorkspaceController
+          projectId={projectId}
+          registry={terminals}
+          onRetryClose={retryClose}
+        />
+      </ErrorBoundary>
     </div>
   );
 }
+
+/**
+ * The workspace boundary's SECOND way out, and it is deliberately not a reload.
+ *
+ * A reload replays the persisted layout that may be exactly what made the
+ * workspace throw, so the boundary's own "Try again" (re-render the same
+ * subtree) is paired with a route to a screen that is known good instead.
+ * Returning to welcome only moves the SELECTION: the project stays in the
+ * kept-alive set, its terminals stay in the registry and its shells keep
+ * running, which is the whole reason this centre hides workspaces rather than
+ * unmounting them.
+ *
+ * Module-level, so the array identity is stable across renders.
+ */
+const RETURN_TO_WELCOME: readonly ErrorBoundaryAction[] = [
+  {
+    label: "Return to Studio welcome",
+    onSelect: () => {
+      useUiStore.getState().setActiveProjectId(null);
+    },
+  },
+];

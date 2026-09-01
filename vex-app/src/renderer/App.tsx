@@ -44,6 +44,10 @@ import { AppShell } from "./features/appShell/AppShell.js";
 import { UnlockScreen } from "./features/secrets/UnlockScreen.js";
 import { UpdateLayer } from "./features/updates/UpdateLayer.js";
 import { ToastHost } from "./components/ui/toast-host.js";
+import {
+  ErrorBoundary,
+  type ErrorBoundaryAction,
+} from "./components/ui/error-boundary.js";
 import { useUiStore, type View } from "./stores/uiStore.js";
 import type { Capabilities } from "../shared/schemas/capabilities.js";
 import type { HealthReport } from "../shared/schemas/system.js";
@@ -92,11 +96,32 @@ export function App(): JSX.Element {
   };
 
   return (
-    // reducedMotion="user": every Motion transform/layout animation in the
-    // tree obeys the OS setting by construction (opacity still animates),
-    // backstopping the per-surface useReducedMotion branches and matching
-    // the CSS side's global kill-switch in base.css.
-    <MotionConfig reducedMotion="user">
+    // THE ROOT CONTAINMENT BOUNDARY, and its position is the whole point.
+    //
+    // React 19 unmounts the ENTIRE root when a render throws with no boundary
+    // above it, so one bad render anywhere below - the shell, a pre-shell
+    // screen, the gate - left the owner looking at an empty window painted in
+    // the app background colour, with nothing on screen and nothing in a log.
+    // The boundary sits OUTSIDE every view because a boundary mounted inside
+    // `AppShell` cannot catch `AppShell`'s own render throw. Each Studio
+    // workspace carries its own finer boundary beneath this one, so this
+    // fallback is the last resort rather than the usual answer.
+    //
+    // "Reload window" is offered HERE and deliberately not inside a workspace:
+    // at this level there is no smaller known-good thing left to return to,
+    // while a workspace reload would replay whatever persisted state produced
+    // the throw.
+    <ErrorBoundary
+      surface="app"
+      extent="screen"
+      title="Vex could not finish rendering this screen"
+      actions={RELOAD_ACTIONS}
+    >
+      {/* reducedMotion="user": every Motion transform/layout animation in the
+          tree obeys the OS setting by construction (opacity still animates),
+          backstopping the per-surface useReducedMotion branches and matching
+          the CSS side's global kill-switch in base.css. */}
+      <MotionConfig reducedMotion="user">
       {currentView === "appShell" || currentView === "splash"
         ? views[currentView]()
         : null}
@@ -166,9 +191,28 @@ export function App(): JSX.Element {
           is baked into the build (owner request: view every pre-shell
           screen regardless of configured state). */}
       <SetupTour />
-    </MotionConfig>
+      </MotionConfig>
+    </ErrorBoundary>
   );
 }
+
+/**
+ * The root boundary's second route out. Module-level so the array identity is
+ * stable across renders (a fresh array every render would give the boundary a
+ * changing prop for no reason).
+ *
+ * A reload is the honest last resort at THIS level and nowhere else: it
+ * re-runs the launch pipeline from a clean renderer, which is exactly what a
+ * user would otherwise do by quitting and reopening the app.
+ */
+const RELOAD_ACTIONS: readonly ErrorBoundaryAction[] = [
+  {
+    label: "Reload window",
+    onSelect: () => {
+      window.location.reload();
+    },
+  },
+];
 
 /**
  * Dev-only floating panel that surfaces the M0 IPC health probes. Hidden

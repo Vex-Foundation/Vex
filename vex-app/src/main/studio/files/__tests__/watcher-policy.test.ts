@@ -169,24 +169,86 @@ afterEach(() => {
 });
 
 describe("classifying a native watcher failure", () => {
+  // The platform is INJECTED in every row below. Reading `process.platform`
+  // here would make two thirds of this table skip silently on whichever machine
+  // happened to run it, which is precisely how the win32 misclassification
+  // survived a green suite in the first place.
+  const PLATFORMS: readonly NodeJS.Platform[] = ["linux", "darwin", "win32"];
+
   it.each([
     ["an ENOSPC code", { code: "ENOSPC" }, "os_watch_limit"],
     ["an EMFILE code", { code: "EMFILE" }, "os_file_limit"],
     ["an ENFILE code", { code: "ENFILE" }, "os_file_limit"],
     ["an ENOENT code", { code: "ENOENT" }, "root_missing"],
-    ["something else", { code: "EIO" }, "io_error"],
-  ])("classifies %s", (_label, shape, expected) => {
-    expect(classifyWatcherFailure(Object.assign(new Error("x"), shape))).toBe(expected);
+    ["an ENOTDIR code", { code: "ENOTDIR" }, "root_missing"],
+    ["an unrecognised code", { code: "EIO" }, "io_error"],
+  ])("classifies %s the same way on every platform", (_label, shape, expected) => {
+    for (const platform of PLATFORMS) {
+      expect(
+        classifyWatcherFailure(Object.assign(new Error("x"), shape), platform),
+      ).toBe(expected);
+    }
   });
 
-  it("falls back to the MESSAGE when the backend attaches no code", () => {
-    // Probed against @parcel/watcher 2.6.0: its inotify backend rejects with an
-    // Error carrying NO `code` at all. A classifier that trusted `code` alone
-    // would call an exhausted limit an ordinary failure and restart into it.
-    expect(classifyWatcherFailure(new Error("inotify_add_watch: ENOSPC"))).toBe(
-      "os_watch_limit",
+  // Every message below is quoted from the installed @parcel/watcher 2.6.0
+  // sources, not from convention: `src/macos/FSEventsBackend.cc` (strerror
+  // text at :198/:202, the three re-scan errors at :84/:86/:88) and
+  // `src/windows/WindowsBackend.cc` (:30, :108, :158, :177, :193).
+  it.each([
+    // linux / inotify: errno NAMES in the text, no `code` attached.
+    ["linux", "inotify_add_watch: ENOSPC", "os_watch_limit"],
+    ["linux", "inotify_init: EMFILE", "os_file_limit"],
+    ["linux", "inotify_init: ENFILE", "os_file_limit"],
+    ["linux", "ENOENT", "root_missing"],
+    ["linux", "Bad file descriptor", "io_error"],
+
+    // darwin / fs-events: strerror TEXT, never the errno name.
+    ["darwin", "No space left on device", "os_watch_limit"],
+    ["darwin", "Too many open files", "os_file_limit"],
+    ["darwin", "Too many open files in system", "os_file_limit"],
+    ["darwin", "No such file or directory", "root_missing"],
+    ["darwin", "Not a directory", "root_missing"],
+    ["darwin", "Error starting FSEvents stream", "io_error"],
+    // Event loss is RECOVERABLE, and the restart's resync is the remedy.
+    ["darwin", "Events were dropped by the kernel. File system must be re-scanned.", "io_error"],
+    ["darwin", "Events were dropped by the FSEvents client. File system must be re-scanned.", "io_error"],
+    ["darwin", "Too many events. File system must be re-scanned.", "io_error"],
+
+    // win32 / ReadDirectoryChangesW: no errno vocabulary at all.
+    ["win32", "Buffer overflow. Some events may have been lost.", "io_error"],
+    ["win32", "Not a directory", "root_missing"],
+    ["win32", "Error opening directory", "io_error"],
+    ["win32", "Failed to read changes", "io_error"],
+    ["win32", "Could not get file information", "io_error"],
+    ["win32", "Invalid handle", "io_error"],
+    ["win32", "Unknown error", "io_error"],
+  ] as ReadonlyArray<[NodeJS.Platform, string, string]>)(
+    "on %s classifies the backend message %j as %s",
+    (platform, message, expected) => {
+      expect(classifyWatcherFailure(new Error(message), platform)).toBe(expected);
+    },
+  );
+
+  it("does not read a foreign backend's vocabulary", () => {
+    // The defect this whole table exists for: an errno NAME carries no meaning
+    // on a backend that never emits one, and a strerror phrase carries none on
+    // inotify. Matching either across platforms is matching on coincidence.
+    expect(classifyWatcherFailure(new Error("No space left on device"), "linux")).toBe(
+      "io_error",
     );
-    expect(classifyWatcherFailure(new Error("Bad file descriptor"))).toBe("io_error");
+    expect(classifyWatcherFailure(new Error("ENOSPC"), "win32")).toBe("io_error");
+  });
+
+  it("never routes an unrecognised native failure to the terminal path", () => {
+    // `io_error` restarts a bounded number of times and then reports the cap.
+    // The exhausted-limit classes are TERMINAL for the life of the instance, so
+    // a guess there costs the user file watching outright.
+    for (const platform of PLATFORMS) {
+      expect(classifyWatcherFailure(new Error("something nobody has seen"), platform))
+        .toBe("io_error");
+      expect(classifyWatcherFailure(undefined, platform)).toBe("io_error");
+      expect(classifyWatcherFailure("a string, not an Error", platform)).toBe("io_error");
+    }
   });
 });
 

@@ -20,6 +20,7 @@ import { ExplorerRegistry } from "../explorer/index.js";
 import { TerminalRegistry } from "../terminal/index.js";
 import {
   clearProjectTerminals,
+  peekProjectTerminals,
   publishProjectTerminals,
   publishProjectWorkspaceLifecycle,
 } from "../workspace/project-terminals.js";
@@ -37,7 +38,17 @@ const projectsListMock = vi.fn<() => Promise<Result<ProjectList>>>();
  * controller's own close - a retry that succeeds has to leave the kept-alive
  * set, and the set is this component's. A marker with no such button could not
  * tell a wired retry from an unwired one.
+ *
+ * Projects whose controller must THROW on render.
+ *
+ * A workspace render throw is the failure the per-workspace boundary exists
+ * for, and it is not otherwise reachable from this suite: the real one comes
+ * out of a bad persisted layout deep inside the controller. Driving it from
+ * outside React keeps the crash deterministic and lets a subject cross from
+ * failing to healthy without remounting anything.
  */
+const controllerCrash = { projectIds: new Set<string>() };
+
 vi.mock("../terminal/StudioWorkspaceController.js", () => ({
   StudioWorkspaceController: ({
     projectId,
@@ -45,13 +56,18 @@ vi.mock("../terminal/StudioWorkspaceController.js", () => ({
   }: {
     projectId: string;
     onRetryClose?: () => void;
-  }) => (
-    <div data-testid={`workspace-${projectId}`}>
-      <button type="button" onClick={onRetryClose}>
-        {`Try closing ${projectId} again`}
-      </button>
-    </div>
-  ),
+  }) => {
+    if (controllerCrash.projectIds.has(projectId)) {
+      throw new TypeError("workspace layout is not iterable");
+    }
+    return (
+      <div data-testid={`workspace-${projectId}`}>
+        <button type="button" onClick={onRetryClose}>
+          {`Try closing ${projectId} again`}
+        </button>
+      </div>
+    );
+  },
 }));
 
 /**
@@ -146,6 +162,7 @@ beforeEach(() => {
   // The project index is a MODULE SINGLETON. Terminal ids or a close handler
   // left by the previous test would be taken by this one.
   clearProjectTerminals();
+  controllerCrash.projectIds.clear();
   projectsListMock.mockReset();
   projectsListMock.mockResolvedValue({ ok: true, data: [] });
   useUiStore.setState({ activeProjectId: null, runtimeMode: "studio" });
@@ -752,5 +769,100 @@ describe("a DELETED project", () => {
     await waitFor(() => {
       expect(mounted.isConnected).toBe(false);
     });
+  });
+});
+
+/**
+ * PER-WORKSPACE CONTAINMENT.
+ *
+ * Before the boundary this suite's crash took the whole React root with it:
+ * React 19 unmounts the root when a render throws with nothing above it, so one
+ * project's bad layout blanked the window and every OTHER project's workspace
+ * with it. Remove the `ErrorBoundary` from `StudioProjectWorkspace` and the
+ * first test here goes red - nothing renders at all.
+ *
+ * The preservation half is the one that matters for the product: the terminal
+ * instances and the ptys live OUTSIDE React (the registry and the pty host), so
+ * a fallback and a retry must not cost the user a single running shell.
+ */
+describe("a workspace that throws", () => {
+  beforeEach(() => {
+    // React reports every caught error through console.error. The assertions
+    // are about the surface, and the banner buries a real failure in noise.
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  it("is contained: its own recovery surface, other workspaces untouched", async () => {
+    const healthy = makeProject({ name: "healthy" });
+    const broken = makeProject({ name: "broken" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [healthy, broken] });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    select(healthy.id);
+    const healthyNode = await screen.findByTestId(`workspace-${healthy.id}`);
+
+    controllerCrash.projectIds.add(broken.id);
+    select(broken.id);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("TypeError");
+    // Contained, not fatal: the healthy workspace is the SAME node it was.
+    expect(screen.getByTestId(`workspace-${healthy.id}`)).toBe(healthyNode);
+  });
+
+  it("PRESERVES the project's terminals and ptys across fallback and retry", async () => {
+    const project = makeProject({ name: "broken" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    const harness = renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    // The registry entries a live workspace owns. Killing these is what a
+    // careless recovery (unmount, dispose, reload) would cost the user.
+    publishProjectTerminals(project.id, ["term-a", "term-b"]);
+
+    controllerCrash.projectIds.add(project.id);
+    select(project.id);
+    await screen.findByRole("alert");
+
+    // NOTHING was disposed and no pty was killed: the terminal index still
+    // names both shells, and the registry's dispose was never called.
+    expect(peekProjectTerminals(project.id)).toEqual(["term-a", "term-b"]);
+    expect(harness.disposedTerminals).toEqual([]);
+
+    controllerCrash.projectIds.delete(project.id);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    await screen.findByTestId(`workspace-${project.id}`);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(peekProjectTerminals(project.id)).toEqual(["term-a", "term-b"]);
+    expect(harness.disposedTerminals).toEqual([]);
+  });
+
+  it("offers a route back to welcome that keeps the workspace alive", async () => {
+    const project = makeProject({ name: "broken" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    const harness = renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+    publishProjectTerminals(project.id, ["term-a"]);
+
+    controllerCrash.projectIds.add(project.id);
+    select(project.id);
+    await screen.findByRole("alert");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Return to Studio welcome" }),
+    );
+
+    // The selection moved; the project did NOT leave the kept-alive set, so
+    // its shells keep running and reopening it costs nothing.
+    await waitFor(() => {
+      expect(useUiStore.getState().activeProjectId).toBeNull();
+    });
+    expect(
+      document.querySelector(`[data-vex-studio-workspace="${project.id}"]`),
+    ).not.toBeNull();
+    expect(peekProjectTerminals(project.id)).toEqual(["term-a"]);
+    expect(harness.disposedTerminals).toEqual([]);
   });
 });

@@ -172,6 +172,39 @@ app.on("will-quit", () => {
   void lockSecretSession("vex_quit");
 });
 
+/**
+ * PROCESS DEATH, WRITTEN DOWN. Registered on `app` rather than per-window so
+ * one line exists per event no matter how many windows have been created.
+ *
+ * A renderer that is KILLED (out of memory, a GPU fault, a crash in Chromium
+ * itself) never runs a line of renderer code on the way out: no boundary
+ * catches it, no `unhandledrejection` fires, the telemetry IPC is gone with the
+ * process. The window simply goes blank. From the main process the death is
+ * fully observable - `reason` and `exitCode` say which kind it was - and this
+ * is the only place that evidence can be captured.
+ *
+ * `child-process-gone` covers the utility, GPU and pty-host processes on the
+ * same footing: a dead pty host is why terminals stopped answering, and
+ * without this it was invisible too.
+ *
+ * electron-log's eventLogger also notes `render-process-gone`; that line
+ * carries neither the exit code nor the reason, which are the two fields that
+ * separate a crash from an OOM kill from a clean teardown.
+ */
+app.on("render-process-gone", (_event, contents, details) => {
+  log.error(
+    `[process-gone] kind=renderer webContentsId=${String(contents.id)} ` +
+      `reason=${details.reason} exitCode=${String(details.exitCode)}`
+  );
+});
+app.on("child-process-gone", (_event, details) => {
+  log.error(
+    `[process-gone] kind=child type=${details.type} ` +
+      `service=${details.serviceName ?? "none"} name=${details.name ?? "none"} ` +
+      `reason=${details.reason} exitCode=${String(details.exitCode)}`
+  );
+});
+
 async function initializeMainRuntime(): Promise<void> {
 
   // 4. Security: deny-all permission handlers

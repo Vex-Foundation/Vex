@@ -333,3 +333,186 @@ jobs:
           name: playwright-report
           path: vex-app/playwright-report/
           retention-days: 7
+
+  # ==========================================================================
+  # THE SHIPPED OS/ARCH MATRIX, and what CI actually covers of it.
+  #
+  # Verified against vex-app/electron-builder.release.yml (the PRODUCTION
+  # profile; the dev profile electron-builder.yml is wider and is not what
+  # users receive):
+  #
+  #   macOS    dmg  arm64 + x64   and  zip  arm64 + x64   (zip is what
+  #                                     electron-updater consumes)
+  #   Windows  nsis x64           (arm64 deferred past the first release)
+  #   Linux    AppImage x64  and  deb x64
+  #
+  # Before the three jobs below, the vitest suites had NEVER executed on
+  # Windows or macOS and no macOS runner of any kind existed in this workflow:
+  # two of the three shipped platforms were asserted only by a Linux run. The
+  # native payload contract (node-pty prebuilds, @parcel/watcher payloads, the
+  # staged bridge in extraResources) was likewise proven only when a human
+  # packaged locally, because probe:node-pty and check:package appeared in no
+  # job.
+  # ==========================================================================
+
+  # vex-app unit suites on macOS, plus the Go bridge on darwin.
+  #
+  # darwin is the only runner here that executes src/main/studio/__tests__/
+  # mcp-host-bind.test.ts for real: that suite binds a unix endpoint and is
+  # `describe.skip` on win32, so on Windows it proves nothing and on Linux it
+  # exercises a different kernel's unix-socket and uid behaviour than half the
+  # user base runs.
+  #
+  # SCOPE NOTE: this job deliberately does NOT build the bridge binary, so the
+  # darwin side of mcp-bridge-conformance.test.ts still self-skips here. A
+  # darwin conformance lane needs VEX_REQUIRE_BRIDGE_CONFORMANCE plus a staged
+  # darwin binary to be a gate rather than a silent skip, and that is Batch 3
+  # work, not B0.4.
+  vex-app-macos:
+    # SOFT ON PURPOSE, and only until its findings are triaged (Batch 3 of the
+    # production plan). These suites have never run on this platform, so the
+    # first green is not expected and a red here must not block unrelated work
+    # before anyone has read it. Flipping this to a required check (removing
+    # continue-on-error) is a mechanically enforced precondition of Batch 4
+    # acceptance: a reviewer who sees Batch 4 proposed while this line still
+    # exists rejects it.
+    continue-on-error: true
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: vex-app
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: corepack enable
+
+      # Same pinned SHA and same exact toolchain version as bridge-build-and-test
+      # and bridge-windows: a darwin-only compile or test difference must be the
+      # finding, not a toolchain difference.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
+      - name: Install root dependencies (monorepo, same reason as the build-and-test job)
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Install vex-app dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test (vitest, darwin)
+        run: pnpm test
+
+      # The same golden vectors the Linux and Windows bridge jobs run, on the
+      # third shipped kernel. `bridge` is addressed absolutely because this
+      # job's default working-directory is vex-app.
+      - name: Bridge tests (race, darwin)
+        working-directory: ${{ github.workspace }}/bridge
+        run: go test -race ./...
+        env:
+          GOTOOLCHAIN: local
+
+  # vex-app unit suites on Windows.
+  #
+  # bridge-windows already covers the Go side on this platform; nothing has
+  # ever covered the TypeScript side, where path handling, the pty host and the
+  # Studio endpoint code all take different branches.
+  vex-app-windows:
+    # SOFT ON PURPOSE, and only until its findings are triaged (Batch 3 of the
+    # production plan). These suites have never run on this platform, so the
+    # first green is not expected and a red here must not block unrelated work
+    # before anyone has read it. Flipping this to a required check (removing
+    # continue-on-error) is a mechanically enforced precondition of Batch 4
+    # acceptance: a reviewer who sees Batch 4 proposed while this line still
+    # exists rejects it.
+    continue-on-error: true
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: vex-app
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: corepack enable
+
+      - name: Install root dependencies (monorepo, same reason as the build-and-test job)
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Install vex-app dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test (vitest, win32)
+        run: pnpm test
+
+  # THE NATIVE PAYLOAD GATE: what electron-builder actually produced.
+  #
+  # REQUIRED, on the same ubuntu-latest image every other required job already
+  # passes on, running the same command a developer runs locally
+  # (`pnpm --dir vex-app package`). It is not an unmeasured platform; it is a
+  # measured platform whose packaging step had simply never been wired into CI.
+  #
+  # ORDER IS THE POINT. `check:package` fails when it finds no packaged payload
+  # (a gate that silently skips is not a gate), so packaging must run FIRST.
+  # The `package` script already encodes exactly that order:
+  #   build -> build:bridge -> prepackage:bridge -> electron-builder --dir
+  #   -> check:package
+  # so this job calls the script rather than restating the chain and letting the
+  # two drift.
+  #
+  # The probes then drive the result under a real Electron runtime, which is the
+  # only thing that can prove WHICH native artifact loads: node-pty searches
+  # build/Release before prebuilds/, so "node-pty worked" is compatible with the
+  # reviewed, unpacked, signed prebuild never being touched.
+  vex-app-package-payload:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vex-app
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: corepack enable
+
+      # `pnpm run build:bridge` shells out to bridge/build.sh for both
+      # architectures of the host platform, so the Go toolchain is a packaging
+      # prerequisite here, not an optional extra.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
+      - name: Install root dependencies (monorepo, same reason as the build-and-test job)
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Install vex-app dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Package (--dir) and check the packaged payload
+        run: pnpm run package
+
+      # xvfb because Electron initializes its display layer at startup even
+      # when the probe opens no window. The unpackaged probe runs first: if it
+      # fails, the packaged failure below would be about node_modules rather
+      # than about packaging, and the two must stay distinguishable.
+      - name: Probe node-pty in the installed tree
+        run: xvfb-run -a pnpm run probe:node-pty
+
+      - name: Probe node-pty inside the packaged app
+        run: xvfb-run -a pnpm run probe:node-pty:packaged
