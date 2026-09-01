@@ -97,7 +97,7 @@ export async function observeUniswapSwapSpendability(input: {
     symbol: tokenIn.isNative ? nativeSymbol : tokenIn.symbol,
   };
 
-  // DOES `pending` MEAN ANYTHING ON THIS CHAIN. Seven of the eighteen endpoints
+  // DOES `pending` MEAN ANYTHING ON THIS CHAIN. Fourteen of the eighteen endpoints
   // a Vex venue reaches answer the tag with the head block or expose no pending
   // block at all (measured, `evm-chains/pending-block-capability.ts`), so on
   // those the read below cannot see this wallet's own in-flight spending and is

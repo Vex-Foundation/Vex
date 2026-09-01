@@ -28,12 +28,12 @@
  * `routeSummary.extraFee` and pinned by the calldata guard), so it is a
  * component of the source principal and NEVER a fourth transaction.
  *
- * WHAT IS DELIBERATELY NOT DONE HERE: no `StagedFeeBounds` ceiling is imposed on
- * the venue path. `evm-chains/staged-broadcast.ts` states the reason itself -
- * "on a venue path that is tolerable because the user authorized a trade, not a
- * gas price; on the generic signing path the fee caps ARE part of what the user
- * approved". The solvency question is answered instead from the prices the
- * prepared request really carries (`FinalSignedRequest`), which is strictly
+ * CEILINGS (superseding an earlier no-ceiling design, 2026-09-01): the route
+ * snapshot seals per-role per-gas PRICE caps, the pre-sign gate asserts the
+ * prepared request's price against the approved ceiling, and every leg after
+ * the current one plus the reserve is priced AT that ceiling. Gas UNITS stay
+ * unbound (2.07x measured estimate drift). The solvency question is still
+ * answered from the prices the prepared request really carries, which is strictly
  * stronger than a ceiling: a cap can only refuse, while reading the real prices
  * proves what the wallet will be charged.
  */
@@ -365,7 +365,7 @@ async function judgeSpendability(
     blockTag: "pending" as const,
   };
 
-  // DOES `pending` MEAN ANYTHING ON THIS CHAIN. Seven of the eighteen endpoints
+  // DOES `pending` MEAN ANYTHING ON THIS CHAIN. Fourteen of the eighteen endpoints
   // a Vex venue reaches answer the tag with the head block or expose no pending
   // block at all (measured, `evm-chains/pending-block-capability.ts`); on those
   // the reads below cannot see this wallet's own in-flight spending, so Vex's

@@ -506,9 +506,13 @@ does not, and a node returning null exposes none.
 
 Notes the venue adapters must not lose:
 
-- **`pending` is accepted everywhere, but four chains have no pending state to
-  speak of.** Arbitrum, Optimism, Sonic and Monad answer `pending` with the
-  head block; BSC, HyperEVM and MegaETH expose no pending block at all. On
+- **SUPERSEDED 2026-09-01 (counts only; the mechanism note stands).** The
+  block-hash re-measurement found FOURTEEN of eighteen endpoints without a
+  real pending state, not the seven this paragraph first counted: Arbitrum,
+  Optimism, Sonic and Monad answer `pending` with the head block; BSC,
+  HyperEVM and MegaETH expose no pending block; and Mantle, Plasma,
+  Avalanche, Robinhood, Unichain, Ronin and Berachain joined them under the
+  corrected method (`evm-chains/pending-block-capability.ts`). On
   those endpoints a `pending` balance IS a `latest` balance, so the protection
   against a wallet's own in-flight spending comes from Vex's own nonce owner
   and durable allocation, not from the tag. The tag policy does not change:

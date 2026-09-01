@@ -4,8 +4,9 @@
  * WHAT THIS PINS. Contract C2.4 makes `pending` the tag a spend may be
  * authorized from, because it is the only tag that subtracts the wallet's own
  * in-flight transactions. WP2-E0 measured that the tag is ACCEPTED on every
- * endpoint a Vex venue reaches and that seven of them answer it with the head
- * block or expose no pending block at all - so on those the tag subtracts
+ * endpoint a Vex venue reaches; the 2026-09-01 block-hash re-measurement
+ * found FOURTEEN of the eighteen answer it with the head block or expose no
+ * pending block at all - so on those the tag subtracts
  * nothing and satisfies nothing. This suite holds the table to those
  * measurements and holds it to the venue set, because a chain a venue serves
  * with no row here is a chain whose spendability reads have no basis at all.

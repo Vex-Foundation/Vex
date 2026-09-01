@@ -5,7 +5,7 @@
  * for a spendability read, because it is the only tag that subtracts the
  * wallet's own in-flight transactions. That is a statement about the ENDPOINT,
  * not about the JSON-RPC method: every endpoint Vex swaps against ACCEPTS the
- * tag, and TWELVE of the eighteen answer it with a block already mined or
+ * tag, and FOURTEEN of the eighteen answer it with a block already mined or
  * expose no pending block at all. On those, a `pending` balance IS a `latest`
  * balance, so passing the tag satisfies nothing and a reader that believed
  * otherwise would be authorizing a spend against money an unconfirmed
