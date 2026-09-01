@@ -263,7 +263,14 @@ jobs:
     # bundle + reinstalls node_modules from scratch (per-job filesystem
     # isolation in GitHub Actions).
     runs-on: ubuntu-latest
+    # ORDERING ONLY, NOT GATING. `needs:` alone also SKIPS this job when the
+    # unit lane goes red, and the unit lane is currently red on an unrelated
+    # pre-existing real-pty timing failure that also fails on `main`. A required
+    # gate that silently skips proves nothing, so `!cancelled()` keeps the start
+    # ordering and still runs the smoke. Drop this back to a plain `needs:` once
+    # the real-pty flake is fixed.
     needs: vex-app-build-and-test
+    if: ${{ !cancelled() }}
     defaults:
       run:
         working-directory: vex-app
@@ -522,6 +529,15 @@ jobs:
 
       - name: Package (--dir) and check the packaged payload
         run: pnpm run package
+
+      # pnpm does not run the `electron` package's install script, so
+      # `node_modules/electron/dist` does not exist until the CLI is first
+      # invoked and downloads it. `--version` prints and exits before Chromium
+      # initializes, so it materializes the binary WITHOUT tripping the sandbox
+      # check below. This must precede the ownership fix: a download after it
+      # would land a fresh, unprivileged chrome-sandbox.
+      - name: Materialize the Electron binary
+        run: pnpm exec electron --version
 
       # GitHub's ubuntu runners install node_modules as an unprivileged user,
       # so Electron's SUID sandbox helper is not root:4755 and a RAW `electron`
