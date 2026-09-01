@@ -2,8 +2,9 @@
  * Production wiring for the Z500 allocation sync.
  *
  * This object IS the workflow's reachable surface: reads from Ansem and
- * Indexify, the ONE allocation mutation, the run ledger, a key-presence
- * probe, and a clock. `swap`, `retryOrder`, `sellAllPartial`, `createStack`
+ * Indexify, the ONE allocation mutation, venue-side token REGISTRATION
+ * (the Indexify team's prescribed lever for the listings gate), the run
+ * ledger, a key-presence probe, and a clock. `swap`, `retryOrder`, `sellAllPartial`, `createStack`
  * and every other client member are deliberately not bound here, and the
  * non-goals test pins the exact key set so a future edit that widens this
  * surface fails a test before it reaches review.
@@ -45,6 +46,7 @@ export function buildProductionZ500Deps(): Z500SyncDeps {
     },
     readVersionHistory: (stackId) => indexify.versionHistory(stackId),
     checkTradability: (mintAddress) => indexify.tradability(mintAddress),
+    registerToken: (mintAddress) => indexify.registerToken(mintAddress),
     editAllocation: (stackId, allocation, creatorNote) =>
       indexify.editAllocation(stackId, allocation, creatorNote),
     repo: buildProductionRunRepo(),

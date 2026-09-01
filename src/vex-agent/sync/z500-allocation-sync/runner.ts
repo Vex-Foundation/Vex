@@ -33,6 +33,7 @@ import logger from "@utils/logger.js";
 import type { AnsemSnapshot } from "@tools/ansem/types.js";
 import type {
   IndexifyEditAllocationResult,
+  IndexifyTokenRegistration,
   IndexifyTradability,
   IndexifyVersionHistory,
 } from "@tools/indexify/types.js";
@@ -61,6 +62,9 @@ export interface Z500SyncDeps {
   readStack(stackId: number): Promise<CurrentStackState | null>;
   readVersionHistory(stackId: number): Promise<IndexifyVersionHistory>;
   checkTradability(mintAddress: string): Promise<IndexifyTradability>;
+  /** Venue-side catalogue registration (token_info action=new); the venue
+   * enforces its own $10k floor, so refusals are verdicts, not errors. */
+  registerToken(mintAddress: string): Promise<IndexifyTokenRegistration>;
   editAllocation(
     stackId: number,
     allocation: Readonly<Record<string, number>>,
@@ -190,7 +194,10 @@ async function evaluateClaimedWindow(deps: Z500SyncDeps, runId: number): Promise
   // run — the spec refuses to act when tradability cannot be established.
   let selection;
   try {
-    selection = await selectTopEligible(snapshot.coins, deps.checkTradability);
+    selection = await selectTopEligible(snapshot.coins, {
+      checkTradability: deps.checkTradability,
+      registerToken: deps.registerToken,
+    });
   } catch (err) {
     return fail("indexify_unavailable", `eligibility scan failed: ${describeError(err)}`);
   }
@@ -207,6 +214,7 @@ async function evaluateClaimedWindow(deps: Z500SyncDeps, runId: number): Promise
       symbol: coinByMint.get(mintAddress)?.symbol ?? null,
     })),
     selectedMints: selection.selected.map((coin) => coin.mintAddress),
+    registeredMints: selection.registered,
     excluded: selection.excluded,
   });
   if (!selection.complete || selection.desiredAllocation === null) {

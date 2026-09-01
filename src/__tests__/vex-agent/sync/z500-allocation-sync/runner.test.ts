@@ -12,7 +12,7 @@
 import { describe, expect, it } from "vitest";
 import { VexError, ErrorCodes } from "../../../../errors.js";
 import type { AnsemSnapshot } from "@tools/ansem/types.js";
-import type { IndexifyTradability } from "@tools/indexify/types.js";
+import type { IndexifyTokenRegistration, IndexifyTradability } from "@tools/indexify/types.js";
 import {
   runZ500AllocationSyncTick,
   sanitizeForRecord,
@@ -99,6 +99,7 @@ class MemoryRepo implements Z500RunRepo {
 
 interface Script {
   snapshot?: () => Promise<AnsemSnapshot>;
+  register?: (m: string) => Promise<IndexifyTokenRegistration>;
   stack?: CurrentStackState | null | (() => Promise<CurrentStackState | null>);
   tradability?: (m: string) => Promise<IndexifyTradability>;
   edit?: () => Promise<{ success: boolean; stack_id: number; version: number }>;
@@ -119,6 +120,7 @@ function makeDeps(script: Script, repo: MemoryRepo) {
     },
     readVersionHistory: script.history ?? (async () => ({ stack_id: Z500_STACK_ID, current_version: 1, versions: [] })),
     checkTradability: script.tradability ?? (async () => ({ found: true, tradingEnabled: true, archived: false, symbol: null })),
+    registerToken: script.register ?? (async () => ({ outcome: "rejected", reason: "not scripted" })),
     editAllocation: async (_stackId, allocation) => {
       editCalls.push({ ...allocation });
       if (script.edit) return script.edit();
@@ -436,6 +438,7 @@ describe("audit hygiene and non-goals", () => {
       "now",
       "readStack",
       "readVersionHistory",
+      "registerToken",
       "repo",
     ]);
   });

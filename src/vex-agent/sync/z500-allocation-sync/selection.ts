@@ -7,13 +7,23 @@
  * request per candidate), so the LOGIC here is testable without a network
  * and the SCAN stays bounded by Z500_CANDIDATE_SCAN_CAP.
  *
+ * AUTO-REGISTRATION (2026-09-02): when a curated candidate is unknown to
+ * Indexify, the scan now attempts `token_info.php?action=new` — the venue
+ * team's prescribed way to get Z500 coins "into the system". The venue is
+ * the sole authority on acceptance (it enforces a $10k minimum market cap
+ * against LIVE data and resolves the pool itself), so no local pre-judging:
+ * the scan registers, re-checks tradability once, and records the venue's
+ * own refusal reason when rejected. A THROW from either dependency still
+ * aborts the whole selection — the spec fails the run when eligibility
+ * cannot be verified.
+ *
  * Fewer than 10 eligible tokens is not an error THROWN here — it is a
  * result the runner turns into the spec's leave-the-stack-unchanged failure,
  * with every exclusion and its reason preserved for the audit record.
  */
 
 import type { AnsemCoin } from "@tools/ansem/types.js";
-import type { IndexifyTradability } from "@tools/indexify/types.js";
+import type { IndexifyTokenRegistration, IndexifyTradability } from "@tools/indexify/types.js";
 import {
   Z500_CANDIDATE_SCAN_CAP,
   Z500_TARGET_TOKEN_COUNT,
@@ -21,15 +31,23 @@ import {
 } from "./config.js";
 
 export type ExclusionReason =
-  | "not_supported"      // Indexify does not know the mint (404 verdict)
-  | "archived"           // known but archived — not investable
-  | "trading_disabled"   // known but the venue reports trading off
-  | "duplicate_mint";    // the feed listed the same mint twice; first row wins
+  | "not_supported"          // unknown to Indexify even after a registration attempt
+  | "registration_rejected"  // the venue refused to add it (mcap floor, unresolvable mint)
+  | "archived"               // known but archived — not investable
+  | "trading_disabled"       // known but the venue reports trading off
+  | "duplicate_mint";        // the feed listed the same mint twice; first row wins
 
 export interface ExcludedCandidate {
   readonly mintAddress: string;
   readonly symbol: string | null;
   readonly reason: ExclusionReason;
+  /** The venue's own words, when it gave any (registration refusals). */
+  readonly detail?: string;
+}
+
+export interface SelectionDeps {
+  checkTradability(mintAddress: string): Promise<IndexifyTradability>;
+  registerToken(mintAddress: string): Promise<IndexifyTokenRegistration>;
 }
 
 export interface SelectionResult {
@@ -38,6 +56,8 @@ export interface SelectionResult {
   readonly excluded: readonly ExcludedCandidate[];
   /** The ranked candidate mints the scan walked, in rank order. */
   readonly ranked: readonly string[];
+  /** Mints this run newly registered into the venue's catalogue. */
+  readonly registered: readonly string[];
   /** True iff a full 10-token allocation exists. */
   readonly complete: boolean;
   /** The equal-weight allocation, present only when complete. */
@@ -52,21 +72,21 @@ export function rankByMarketCap(coins: readonly AnsemCoin[]): AnsemCoin[] {
 }
 
 /**
- * Walk the ranking, verifying each candidate's eligibility, until the target
- * count is reached or the scan cap runs out. The `checkTradability` verdict
- * comes from the caller (Indexify in production, a table in tests); a THROW
- * from it aborts the whole selection — the spec fails the run when
- * "support or tradability cannot be verified by exact mint".
+ * Walk the ranking, verifying (and where the venue allows, REGISTERING)
+ * each candidate, until the target count is reached or the scan cap runs
+ * out. Verdicts come from the caller (Indexify in production, tables in
+ * tests); a THROW from either dependency aborts the whole selection.
  */
 export async function selectTopEligible(
   coins: readonly AnsemCoin[],
-  checkTradability: (mintAddress: string) => Promise<IndexifyTradability>,
+  deps: SelectionDeps,
 ): Promise<SelectionResult> {
   const rankedCoins = rankByMarketCap(coins);
   const seen = new Set<string>();
   const selected: AnsemCoin[] = [];
   const excluded: ExcludedCandidate[] = [];
   const ranked: string[] = [];
+  const registered: string[] = [];
 
   for (const coin of rankedCoins) {
     if (selected.length >= Z500_TARGET_TOKEN_COUNT) break;
@@ -79,10 +99,25 @@ export async function selectTopEligible(
     seen.add(coin.mintAddress);
     ranked.push(coin.mintAddress);
 
-    const verdict = await checkTradability(coin.mintAddress);
+    let verdict = await deps.checkTradability(coin.mintAddress);
     if (!verdict.found) {
-      excluded.push({ mintAddress: coin.mintAddress, symbol: coin.symbol, reason: "not_supported" });
-      continue;
+      // Unknown mint → ask the venue to add it, then re-check ONCE. An
+      // "already_registered" answer means a race (or an archived row the
+      // trading endpoint cannot see) — the re-check settles it either way.
+      const registration = await deps.registerToken(coin.mintAddress);
+      if (registration.outcome === "rejected") {
+        excluded.push({
+          mintAddress: coin.mintAddress, symbol: coin.symbol,
+          reason: "registration_rejected", detail: registration.reason,
+        });
+        continue;
+      }
+      if (registration.outcome === "registered") registered.push(coin.mintAddress);
+      verdict = await deps.checkTradability(coin.mintAddress);
+      if (!verdict.found) {
+        excluded.push({ mintAddress: coin.mintAddress, symbol: coin.symbol, reason: "not_supported" });
+        continue;
+      }
     }
     if (verdict.archived) {
       excluded.push({ mintAddress: coin.mintAddress, symbol: coin.symbol, reason: "archived" });
@@ -100,6 +135,7 @@ export async function selectTopEligible(
     selected,
     excluded,
     ranked,
+    registered,
     complete,
     desiredAllocation: complete
       ? Object.fromEntries(selected.map((coin) => [coin.mintAddress, Z500_WEIGHT_PER_TOKEN]))

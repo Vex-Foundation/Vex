@@ -41,6 +41,7 @@ import type {
   IndexifyCreateStackParams,
   IndexifyCreateStackResult,
   IndexifyEditAllocationResult,
+  IndexifyTokenRegistration,
   IndexifyTradability,
   IndexifyVersionHistory,
   IndexifyFeeBounds,
@@ -472,6 +473,32 @@ export class IndexifyClient {
     } catch (err) {
       if (err instanceof VexError && err.code === ErrorCodes.INDEXIFY_NOT_FOUND) {
         return { found: false };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Register a token into the venue's catalogue via
+   * `token_info.php?action=new` — the Indexify team's prescribed way to get
+   * Z500 coins "into the system" (2026-09-02). The venue enforces its own
+   * $10k minimum market cap LIVE and resolves the pool itself, so callers
+   * never pre-judge eligibility. Expected refusals come back as verdicts
+   * (see IndexifyTokenRegistration); outages still throw.
+   */
+  async registerToken(tokenAddress: string, options: IndexifyRequestOptions = {}): Promise<IndexifyTokenRegistration> {
+    try {
+      await this.send(INDEXIFY_ENDPOINTS.tokenInfo, "new", {
+        ...options, auth: true, body: { token_address: tokenAddress },
+      });
+      return { outcome: "registered" };
+    } catch (err) {
+      if (err instanceof VexError && err.code === ErrorCodes.INDEXIFY_INVALID_REQUEST) {
+        if (/already exists/i.test(err.message)) return { outcome: "already_registered" };
+        return { outcome: "rejected", reason: err.message };
+      }
+      if (err instanceof VexError && err.code === ErrorCodes.INDEXIFY_NOT_FOUND) {
+        return { outcome: "rejected", reason: "the venue's data sources cannot resolve this mint" };
       }
       throw err;
     }

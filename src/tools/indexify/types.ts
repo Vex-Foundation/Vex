@@ -340,10 +340,26 @@ export type IndexifyTradability =
   | { found: false }
   | { found: true; tradingEnabled: boolean; archived: boolean; symbol: string | null };
 
-/** `stack_info.php?action=edit_allocation` result. */
+/**
+ * `stack_info.php?action=edit_allocation` result.
+ * QUIRK (measured 2026-09-02): `version` is the PREVIOUS version, not the
+ * resulting one — confirm applied state via read-back, never this field.
+ */
 export interface IndexifyEditAllocationResult {
   success: boolean;
   stack_id: number;
   version: number;
   message?: string | null;
 }
+
+/**
+ * `token_info.php?action=new` outcome — a discriminated verdict, because
+ * three of the venue's answers are EXPECTED results, not errors:
+ * 200 → registered; 400 "already exists" → the goal was already met;
+ * 400 (market-cap floor, $10k live-enforced) / 404 (mint unresolvable on
+ * the venue's data sources) → rejected, with the venue's own reason.
+ * Transport/auth/5xx still throw so callers can fail closed on outage.
+ */
+export type IndexifyTokenRegistration =
+  | { outcome: "registered" | "already_registered" }
+  | { outcome: "rejected"; reason: string };

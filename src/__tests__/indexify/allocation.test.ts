@@ -119,6 +119,45 @@ describe("editAllocation", () => {
   });
 });
 
+describe("registerToken (token_info action=new — the listings-gate lever)", () => {
+  it("sends the exact contract and reads a 200 as registered", async () => {
+    process.env[INDEXIFY_API_KEY_ENV] = TEST_KEY;
+    const captured = stubFetch([() => json({ token_address: SOL, name: "Solana", symbol: "SOL", decimals: 9, archived: 0, chain: "solana" })]);
+    const result = await new IndexifyClient(BASE).registerToken(SOL);
+    expect(new URL(captured.urls[0] ?? "").searchParams.get("action")).toBe("new");
+    expect(JSON.parse(captured.bodies[0] ?? "")).toEqual({ token_address: SOL });
+    expect(result).toEqual({ outcome: "registered" });
+  });
+
+  it("reads the 400 'already exists' answer as the benign already_registered verdict", async () => {
+    process.env[INDEXIFY_API_KEY_ENV] = TEST_KEY;
+    stubFetch([() => json({ error: "Token already exists in database" }, 400)]);
+    expect(await new IndexifyClient(BASE).registerToken(SOL)).toEqual({ outcome: "already_registered" });
+  });
+
+  it("reads the market-cap-floor 400 and the CoinGecko 404 as rejections carrying the venue's reason", async () => {
+    process.env[INDEXIFY_API_KEY_ENV] = TEST_KEY;
+    stubFetch([
+      () => json({ error: "Token market cap ($9,441.21) is below minimum threshold of $10,000" }, 400),
+      () => json({ error: "Token not found on CoinGecko" }, 404),
+    ]);
+    const client = new IndexifyClient(BASE);
+    const floor = await client.registerToken(SOL);
+    expect(floor.outcome).toBe("rejected");
+    expect(floor.outcome === "rejected" && floor.reason).toContain("below minimum threshold");
+    const unknown = await client.registerToken(JUP);
+    expect(unknown.outcome).toBe("rejected");
+  });
+
+  it("still THROWS on rate limits and outages — the scan must fail closed, not mis-read a 429 as a refusal", async () => {
+    process.env[INDEXIFY_API_KEY_ENV] = TEST_KEY;
+    stubFetch([() => json({ error: "Too many requests" }, 429)]);
+    await expect(new IndexifyClient(BASE).registerToken(SOL)).rejects.toMatchObject({
+      code: ErrorCodes.INDEXIFY_RATE_LIMITED,
+    });
+  });
+});
+
 describe("structural non-goals (workflow spec)", () => {
   it("the client wraps NO rebalance and NO wallet-rebalance method — nothing to miswire", () => {
     const members = Object.getOwnPropertyNames(IndexifyClient.prototype).map((name) => name.toLowerCase());

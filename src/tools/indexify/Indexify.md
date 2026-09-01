@@ -54,7 +54,35 @@ ledger (`orders.php`, `transaction_history.php`). Consequences:
 | 5 | `fee.php?action=min_buy` docs claim micro-USDC; wire serves human USDC (`5` = $5) |
 | 6 | `stack_info?action=fetch` docs say auth optional; live it 401s keyless — `fetchStack` sends the key `if-present` and `indexify.stack` is requiresEnv-gated |
 | 7 | `user_info?action=public_profile` docs type `created_at` as string; wire serves a unix-seconds number |
-| 8 | `stack_info?action=edit_allocation` answers 401 to the SAME key that created the stack and that `action=update` accepts (probed 2026-08-28) — allocation edits are gated beyond API-key auth on the venue side. The Z500 sync classifies that 401 as a definitive refusal (`mutation_rejected`, stack untouched); the Indexify team enabling the action for API keys is zero-code here |
+| 8 | ~~`stack_info?action=edit_allocation` answers 401 to the API key~~ **RESOLVED 2026-09-02**: the Indexify team enabled API-key reallocation in production; verified live on stack 28440 (same-weights edit, version 1→2). The Z500 sync needed zero changes |
+| 9 | `edit_allocation`'s success response reports `version` as the PREVIOUS version, not the resulting one (measured 2026-09-02: response said 1, read-back showed 2) — confirm applied state via `version_history` read-back, never the response field. The Z500 runner already does |
+
+## Token registration and the dev environment (2026-09-02)
+
+`token_info.php?action=new` with `{token_address}` registers a token into
+the venue's catalogue — the team's prescribed lever for getting Z500 coins
+"into the system". Measured behavior:
+
+- 200 → the registered token row; the venue resolves the pool itself and
+  auto-creates the token's company stack.
+- 400 `"Token already exists in database"` → benign idempotency signal.
+- 400 market-cap floor → the venue enforces a **$10k minimum against LIVE
+  data** ("Token market cap ($9,441.21) is below minimum threshold of
+  $10,000") — never pre-judge locally; the venue is the authority.
+- 404 `"Token not found on CoinGecko"` → mint unresolvable on their sources.
+- OBSERVED: the endpoint accepted a keyless call — registration appears to
+  require no auth server-side (reported to the team; we send the key anyway).
+
+`stack_info?action=create` now AUTO-REGISTERS unknown mints in the
+allocation, failing the whole create with a 400 naming the first offending
+mint — but registrations processed BEFORE the failure persist (non-atomic;
+verified on dev: a failed create left its first token registered).
+
+A **dev environment** exists at `https://api-dev.indexify.finance` with its
+own account and key (dev embedded wallet `6s82…PLnx`); the production key is
+invalid there and vice versa. Dev keys never enter this repo — point
+`IndexifyClient` at the dev base URL and supply the dev key via
+`INDEXIFY_API_KEY` for ad-hoc testing only.
 
 ## Files
 
