@@ -103,10 +103,28 @@ vi.mock("../../../../../lib/api/files.js", () => ({
 let bridge: TerminalBridgeStub;
 let registry: TerminalRegistry;
 
+/**
+ * The terminal a project's OWN AUTO-OPEN creates on mount.
+ *
+ * Opening a project auto-creates its first terminal, so "a mounted controller
+ * with no saved workspace" is a workspace with ONE terminal in it, not zero.
+ * Pinning the answer here rather than leaving the harness default gives that
+ * terminal a name every case below can recognize in a tab title, a kill list or
+ * a detach list, and keeps it distinguishable from the `t0`, `t1`... that
+ * `openTerminals` mints for deliberate gestures.
+ */
+const AUTO_TERMINAL = {
+  terminalId: "t-auto",
+  pid: 1,
+  shellName: "auto-shell",
+  cwd: "/w",
+} as const;
+
 beforeEach(() => {
   installMatchMedia();
   installResizeObserver();
   bridge = installTerminalBridge();
+  bridge.nextCreate = { ok: true, value: AUTO_TERMINAL };
   registry = new TerminalRegistry(noWebgl);
   fileReads.length = 0;
   fileViewerRegistry.disposeAll();
@@ -182,6 +200,31 @@ function renderStrict(projectId = "p1") {
   return render(strictTree(projectId));
 }
 
+/**
+ * Render a project with NO saved workspace and wait for its auto-opened first
+ * terminal to land.
+ *
+ * Every case that wants a settled starting point uses this, because the
+ * alternative - asserting while the bootstrap create is still in flight - is a
+ * race, not a baseline.
+ */
+async function renderOpened(projectId = "p1") {
+  const view = renderController(projectId);
+  await waitFor(() => {
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+  });
+  return view;
+}
+
+/** The same, under StrictMode's double-invoked effects. */
+async function renderStrictOpened(projectId = "p1") {
+  const view = renderStrict(projectId);
+  await waitFor(() => {
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+  });
+  return view;
+}
+
 /** Open `count` terminals through the real "New terminal" affordance. */
 async function openTerminals(count: number): Promise<void> {
   for (let index = 0; index < count; index += 1) {
@@ -223,25 +266,205 @@ describe("StudioWorkspaceController restore", () => {
     expect(separator.getAttribute("aria-valuenow")).toBe("75");
   });
 
-  it("starts empty when the project has no saved workspace", async () => {
-    bridge.savedWorkspace = null;
+  it("does NOT auto-open over a restored layout", async () => {
+    // The other half of the contract below: a project that came back with its
+    // terminals is not empty, and bootstrapping one into it would give the user
+    // a shell they never asked for on every reopen.
+    bridge.savedWorkspace = savedWorkspace();
     renderController();
 
     await waitFor(() => {
-      expect(screen.queryAllByRole("tab")).toHaveLength(0);
+      expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
     });
-    expect(bridge.attaches).toEqual([]);
+    expect(bridge.creates).toEqual([]);
+  });
+});
+
+/**
+ * OPENING A PROJECT OPENS ITS FIRST TERMINAL (owner decision, 2026-09-01).
+ *
+ * This describe replaces the "starts empty when the project has no saved
+ * workspace" characterization, which pinned the OLD contract: a fresh project
+ * used to land on an unlabelled black rectangle with a `+` in the strip above
+ * it and nothing saying what to do. The empty state is now a FALLBACK, reached
+ * only where the auto-open deliberately declines or where the user emptied the
+ * workspace themselves, and each of those routes has its own case below.
+ *
+ * The pattern is VS Code's `TerminalViewPane._initializeTerminal`: bootstrap
+ * once per view, only when nothing was restored, only when no create is already
+ * in flight, and always through the service's own `createTerminal` rather than
+ * a second creation path.
+ */
+describe("the first terminal of an opened project", () => {
+  it("AUTO-OPENS one terminal when the project has no saved workspace", async () => {
+    bridge.savedWorkspace = null;
+    renderController();
+
+    const tab = await screen.findByRole("tab", { name: /auto-shell/ });
+    expect(tab).toBeTruthy();
+    // Through the SAME path the `+` button uses - one create, for this project,
+    // at the same starting geometry - rather than a parallel creation code path
+    // that would answer the keep-alive bound and the publication fence twice.
+    expect(bridge.creates).toEqual([{ projectId: "p1", cols: 80, rows: 24 }]);
+    expect([...bridge.livePtys]).toEqual(["t-auto"]);
+    // And it is a real terminal, attached like any other.
+    await waitFor(() => {
+      expect(bridge.attaches).toEqual(["t-auto"]);
+    });
+  });
+
+  it("AUTO-OPENS when a saved snapshot restores to NO tabs", async () => {
+    // A snapshot is not the same fact as a layout. `fromSnapshot` drops every
+    // group whose terminals have no saved buffer, and a project whose last tab
+    // was closed persists an empty layout - so "there is a snapshot" can still
+    // mean "there is nothing to show". The decision is taken on the RESULTING
+    // state, which is what the user is looking at.
+    bridge.savedWorkspace = {
+      layout: { projectId: "p1", activeGroupIndex: 0, groups: [] },
+      terminals: [],
+      idMap: [],
+    };
+    renderController();
+
+    expect(await screen.findByRole("tab", { name: /auto-shell/ })).toBeTruthy();
+    expect(bridge.creates).toHaveLength(1);
+  });
+
+  it("opens EXACTLY ONE under StrictMode's double-invoked effects", async () => {
+    // THE SINGLE-FLIGHT PROOF. StrictMode runs the restore effect twice -
+    // effect, cleanup, effect - and a bootstrap without the latch spawns a pty
+    // on each pass. Every extra one is a real shell holding a slot against the
+    // host's per-project bound that no second tab even reveals, because the
+    // model would refuse to place it.
+    bridge.savedWorkspace = null;
+    renderStrict("p1");
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("tab")).toHaveLength(1);
+    });
+    // Settle anything a second pass could still have in flight before counting.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(bridge.creates).toHaveLength(1);
+    expect([...bridge.livePtys]).toEqual(["t-auto"]);
+    expect(bridge.kills).toEqual([]);
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+  });
+
+  it("does not open a SECOND terminal beside one the user asked for first", async () => {
+    // The user pressed `+` while the restore was still reading. Their terminal
+    // is the first one; the bootstrap must see the create in flight and stand
+    // down rather than open two for one gesture.
+    bridge.savedWorkspace = null;
+    bridge.deferReadWorkspace = true;
+    renderController();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "t-user", pid: 7, shellName: "user-shell", cwd: "/w" },
+    };
+    bridge.deferCreate = true;
+    await act(async () => {
+      screen.getByRole("button", { name: "New terminal" }).click();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      bridge.deferReadWorkspace = false;
+      bridge.settleReads();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      bridge.deferCreate = false;
+      bridge.settleCreates();
+      await Promise.resolve();
+    });
+
+    expect(bridge.creates).toHaveLength(1);
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0]?.textContent).toContain("user-shell");
+  });
+
+  it("does NOT auto-open when the restore FAILED, and says so", async () => {
+    // THE ONE THAT COSTS DATA IF IT REGRESSES. A read that failed is not an
+    // empty project: the snapshot may be perfectly good and unreachable. A
+    // terminal spawned here would be persisted a moment later as the only group
+    // of a layout that overwrote the one the read could not deliver.
+    bridge.readWorkspaceFailure = "snapshot_unavailable";
+    renderController();
+
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toContain("could not read");
+    expect(bridge.creates).toEqual([]);
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    // And the surface is not a black rectangle: the fallback offers the repair.
+    expect(screen.getByRole("button", { name: "Open a terminal" })).toBeTruthy();
+  });
+
+  it("SURFACES a terminal service that cannot be reached, once", async () => {
+    bridge.savedWorkspace = null;
+    bridge.nextCreate = { ok: false, code: "host_unavailable" };
+    renderController();
+
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toContain("terminal service is not running");
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    // ONE attempt. A latch that re-armed on failure would put a create on every
+    // pass of the restore effect against a host that is already known to be
+    // down.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(bridge.creates).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Open a terminal" })).toBeTruthy();
+  });
+
+  it("shows the empty state, with its own action, after the user closes every tab", async () => {
+    // The fallback's OTHER route, and the one that is not a failure at all. The
+    // bootstrap is spent, so closing the last tab lands here rather than
+    // reopening a shell the user just closed.
+    await renderOpened();
+
+    await act(async () => {
+      screen.getByRole("button", { name: "Close auto-shell" }).click();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    expect(bridge.kills).toEqual(["t-auto"]);
+
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "t-again", pid: 8, shellName: "again-shell", cwd: "/w" },
+    };
+    await act(async () => {
+      screen.getByRole("button", { name: "Open a terminal" }).click();
+      await Promise.resolve();
+    });
+
+    // The empty state's action opens a terminal through the same handler the
+    // strip's `+` uses, and the state gives way to it.
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Open a terminal" })).toBeNull();
   });
 });
 
 describe("StudioWorkspaceController refusals", () => {
   it(`REFUSES past ${String(WORKSPACE_TERMINAL_GROUPS_MAX)} live groups instead of evicting one`, async () => {
-    renderController();
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New terminal" })).toBeTruthy();
-    });
+    // The project's own auto-opened terminal is the FIRST of the bound, so the
+    // user reaches it after one fewer deliberate gesture than before.
+    await renderOpened();
 
-    await openTerminals(WORKSPACE_TERMINAL_GROUPS_MAX);
+    await openTerminals(WORKSPACE_TERMINAL_GROUPS_MAX - 1);
     expect(screen.getAllByRole("tab")).toHaveLength(WORKSPACE_TERMINAL_GROUPS_MAX);
 
     const killsBefore = bridge.kills.length;
@@ -255,7 +478,7 @@ describe("StudioWorkspaceController refusals", () => {
   });
 
   it("names a host refusal by its remedy rather than as a generic failure", async () => {
-    renderController();
+    await renderOpened();
     bridge.nextCreate = { ok: false, code: "limit_project_terminals" };
 
     await act(async () => {
@@ -266,30 +489,32 @@ describe("StudioWorkspaceController refusals", () => {
     const status = screen.getByRole("status");
     expect(status.textContent).toContain("maximum number of terminals");
     expect(status.textContent).toContain("Close one");
-    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    // The refused create added nothing: only the auto-opened first terminal.
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
   });
 });
 
 describe("StudioWorkspaceController selection and cleanup", () => {
   it("selects the LEFT neighbour on close and KILLS only the closed tab's pty", async () => {
-    renderController();
-    await openTerminals(3);
+    await renderOpened();
+    await openTerminals(2);
 
-    // The third tab is selected after creation; closing it must select the
-    // second, not march the selection toward the end of the strip.
+    // The third tab (the second deliberate one) is selected after creation;
+    // closing it must select the second, not march the selection toward the end
+    // of the strip.
     await act(async () => {
-      screen.getByRole("button", { name: "Close shell-2" }).click();
+      screen.getByRole("button", { name: "Close shell-1" }).click();
       await Promise.resolve();
     });
 
-    expect(bridge.kills).toEqual(["t2"]);
+    expect(bridge.kills).toEqual(["t1"]);
     const tabs = screen.getAllByRole("tab");
     expect(tabs).toHaveLength(2);
     expect(tabs[1]?.getAttribute("aria-selected")).toBe("true");
   });
 
   it("DETACHES every terminal on unmount, and kills none", async () => {
-    const view = renderController();
+    const view = await renderOpened();
     await openTerminals(2);
     expect(bridge.detaches).toEqual([]);
 
@@ -297,7 +522,7 @@ describe("StudioWorkspaceController selection and cleanup", () => {
 
     // A project switch or a mode switch is not a decision to end a shell: the
     // ptys survive their grace period and replay on return.
-    expect(bridge.detaches.toSorted()).toEqual(["t0", "t1"]);
+    expect(bridge.detaches.toSorted()).toEqual(["t-auto", "t0", "t1"]);
     expect(bridge.kills).toEqual([]);
     // EXACTLY ONE detach per terminal. Each attachment has a single owner (its
     // own host); a controller that also detached would make that two, and two
@@ -349,7 +574,9 @@ describe("StudioWorkspaceController persistence", () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
     expect(bridge.persisted).toHaveLength(1);
-    expect(bridge.persisted[0]?.groups).toHaveLength(3);
+    // Four: the project's auto-opened first terminal and the three deliberate
+    // ones, coalesced into a single write.
+    expect(bridge.persisted[0]?.groups).toHaveLength(4);
   });
 
   it("FLUSHES the pending write when the window is hidden", async () => {
@@ -358,6 +585,10 @@ describe("StudioWorkspaceController persistence", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "t-flush", pid: 9, shellName: "flush-shell", cwd: "/w" },
+    };
     await act(async () => {
       screen.getByRole("button", { name: "New terminal" }).click();
       await vi.advanceTimersByTimeAsync(10);
@@ -376,7 +607,8 @@ describe("StudioWorkspaceController persistence", () => {
     });
 
     expect(bridge.persisted).toHaveLength(1);
-    expect(bridge.persisted[0]?.groups).toHaveLength(1);
+    // The auto-opened first terminal plus the one this case opened.
+    expect(bridge.persisted[0]?.groups).toHaveLength(2);
   });
 });
 
@@ -393,12 +625,9 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
     // F6a. The controller used to create the pty and only then ask whether it
     // could be placed; the refusal then left a live shell no pane named. The
     // notice alone does not catch that - only the absence of a create does.
-    renderController();
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New terminal" })).toBeTruthy();
-    });
+    await renderOpened();
 
-    await openTerminals(WORKSPACE_TERMINAL_GROUPS_MAX);
+    await openTerminals(WORKSPACE_TERMINAL_GROUPS_MAX - 1);
     expect(screen.getAllByRole("tab")).toHaveLength(WORKSPACE_TERMINAL_GROUPS_MAX);
     const createsBefore = bridge.creates.length;
 
@@ -415,8 +644,10 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
     // F6b. The destination tab is gone by the time the create lands, so the
     // completion is the only holder of that terminal id. Discarding it without
     // killing is precisely how the invisible shell was created.
-    renderStrict();
-    await openTerminals(1);
+    // The group being split is the project's own auto-opened first terminal,
+    // which is what a user actually has in front of them a second after opening
+    // a project.
+    await renderStrictOpened();
 
     bridge.nextCreate = {
       ok: true,
@@ -425,14 +656,14 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
     bridge.deferCreate = true;
 
     await act(async () => {
-      screen.getByRole("button", { name: "Split shell-0 side by side" }).click();
+      screen.getByRole("button", { name: "Split auto-shell side by side" }).click();
       await Promise.resolve();
     });
     expect(bridge.creates).toHaveLength(2);
     expect(bridge.kills).not.toContain("t-split");
 
     await act(async () => {
-      screen.getByRole("button", { name: "Close shell-0" }).click();
+      screen.getByRole("button", { name: "Close auto-shell" }).click();
       await Promise.resolve();
     });
 
@@ -451,10 +682,7 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
     // F6c. A create issued for p1 that publishes into p2 would put one
     // project's terminal under another project's name, and p1 could never
     // reach it again.
-    const view = renderStrict("p1");
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New terminal" })).toBeTruthy();
-    });
+    const view = await renderStrictOpened("p1");
 
     bridge.nextCreate = {
       ok: true,
@@ -465,19 +693,31 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
       screen.getByRole("button", { name: "New terminal" }).click();
       await Promise.resolve();
     });
-    expect(bridge.creates).toHaveLength(1);
+    expect(bridge.creates).toHaveLength(2);
 
+    // p2's OWN bootstrap answers next, so the two projects' creates cannot be
+    // confused for one another in the assertions below.
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "t-p2-auto", pid: 902, shellName: "p2-shell", cwd: "/w" },
+    };
     await act(async () => {
       view.rerender(strictTree("p2"));
       await Promise.resolve();
     });
 
     await act(async () => {
+      bridge.deferCreate = false;
       bridge.settleCreates();
+      await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    // p1's terminal is nowhere in p2's strip, and it is not left running.
+    await waitFor(() => {
+      expect(screen.getAllByRole("tab")).toHaveLength(1);
+    });
+    expect(screen.getAllByRole("tab")[0]?.textContent).toContain("p2-shell");
     expect(bridge.kills).toContain("t-p1");
   });
 
@@ -494,20 +734,20 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
 
     bridge.deferReadWorkspace = false;
     bridge.savedWorkspace = null;
-    await act(async () => {
-      view.rerender(strictTree("p2"));
-      await Promise.resolve();
-    });
-
     bridge.nextCreate = {
       ok: true,
       value: { terminalId: "t-p2", pid: 902, shellName: "p2-shell", cwd: "/w" },
     };
     await act(async () => {
-      screen.getByRole("button", { name: "New terminal" }).click();
+      view.rerender(strictTree("p2"));
       await Promise.resolve();
     });
-    expect(screen.getAllByRole("tab")).toHaveLength(1);
+
+    // p2 has no saved workspace, so it bootstraps its own first terminal - and
+    // that terminal is exactly what p1's late restore must not replace.
+    await waitFor(() => {
+      expect(screen.getAllByRole("tab")).toHaveLength(1);
+    });
 
     await act(async () => {
       bridge.settleReads();
@@ -528,31 +768,29 @@ describe("StudioWorkspaceController terminal disposal", () => {
     // tab's xterm, scrollback, theme observer, DOM wrapper and WebGL context
     // were retained for the life of the window by a registry no surviving
     // component could name.
-    renderStrict();
-    await openTerminals(1);
-    expect(registry.has("t0")).toBe(true);
+    await renderStrictOpened();
+    expect(registry.has("t-auto")).toBe(true);
 
     await act(async () => {
-      screen.getByRole("button", { name: "Close shell-0" }).click();
+      screen.getByRole("button", { name: "Close auto-shell" }).click();
       await Promise.resolve();
     });
 
-    expect(registry.has("t0")).toBe(false);
-    expect(bridge.kills).toEqual(["t0"]);
+    expect(registry.has("t-auto")).toBe(false);
+    expect(bridge.kills).toEqual(["t-auto"]);
   });
 
   it("only RELEASES on a plain unmount, so a StrictMode remount cannot destroy a live shell", async () => {
     // F6e, the negative half. Disposing on release would make a tab switch or
     // StrictMode's cleanup-then-effect throw away a terminal the user is still
     // using.
-    const view = renderStrict();
-    await openTerminals(1);
-    expect(registry.has("t0")).toBe(true);
+    const view = await renderStrictOpened();
+    expect(registry.has("t-auto")).toBe(true);
 
     view.unmount();
 
-    expect(registry.has("t0")).toBe(true);
-    expect(registry.consumerCount("t0")).toBe(0);
+    expect(registry.has("t-auto")).toBe(true);
+    expect(registry.consumerCount("t-auto")).toBe(0);
     expect(bridge.kills).toEqual([]);
   });
 
@@ -560,7 +798,7 @@ describe("StudioWorkspaceController terminal disposal", () => {
     // F6f. `closePane` refuses the last pane of a group; a pane that survives
     // the refusal while its terminal was killed would render a shell that no
     // longer exists.
-    renderController();
+    await renderOpened();
     await openTerminals(1);
 
     bridge.nextCreate = {
@@ -597,8 +835,7 @@ describe("StudioWorkspaceController terminal disposal", () => {
 
 describe("StudioWorkspaceController surface", () => {
   it("layers the brand watermark under every terminal pane", async () => {
-    const { container } = renderController();
-    await openTerminals(1);
+    const { container } = await renderOpened();
 
     const mark = container.querySelector("svg.text-brand-mark");
     expect(mark).not.toBeNull();
@@ -763,10 +1000,7 @@ describe("opening a file", () => {
   }
 
   it("adds a file tab, mounts the VIEWER on it, and closes through closeTab", async () => {
-    renderStrict();
-    await waitFor(() => {
-      expect(screen.getByRole("tablist")).toBeTruthy();
-    });
+    await renderStrictOpened();
 
     await act(async () => {
       publishFileOpen("p1", sourceNode("src/deep/service.ts"));
@@ -786,9 +1020,16 @@ describe("opening a file", () => {
     });
     // And it read the file through the tab's own token.
     expect(fileReads).toEqual(["node-src/deep/service.ts"]);
-    // No terminal was created for a file tab, and it has no split affordance.
-    expect(bridge.livePtys.size).toBe(0);
-    expect(screen.queryByRole("button", { name: /^Split/ })).toBeNull();
+    // No terminal was created FOR THE FILE TAB - the only live pty is the one
+    // the project's own auto-open made - and the file tab has no split
+    // affordance, because a file is not a pane group.
+    expect([...bridge.livePtys]).toEqual(["t-auto"]);
+    expect(
+      screen.queryByRole("button", { name: "Split service.ts side by side" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Split service.ts top and bottom" }),
+    ).toBeNull();
 
     await act(async () => {
       screen.getByRole("button", { name: "Close service.ts" }).click();

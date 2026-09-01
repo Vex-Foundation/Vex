@@ -88,6 +88,7 @@ import {
   KEEP_ALIVE_COPY,
   MUTATION_REFUSAL_COPY,
   REFUSAL_COPY,
+  RESTORE_FAILED_COPY,
 } from "./terminal-copy.js";
 
 /**
@@ -235,7 +236,28 @@ export function StudioWorkspaceController({
    * fence - killed the pty it alone holds. Neither outcome can leave an orphan
    * behind the close.
    */
-  const pendingOpensRef = useRef<Set<Promise<void>>>(new Set());
+  const pendingOpensRef = useRef<Set<PendingOpen>>(new Set());
+
+  /**
+   * How many opens are in flight FOR THE WORKSPACE ON SCREEN.
+   *
+   * The generation is what makes the question answerable at all across a
+   * project switch. The set spans generations by design - the close must join
+   * every create that could still produce a pty, including one issued for the
+   * project the user just left - but the two questions asked of it in the
+   * moment are about THIS workspace: may another group be added to it, and has
+   * the user already asked for its first terminal. A create belonging to the
+   * previous project answers neither. Counting it refused a legitimate fifth
+   * group in the new project and, once the auto-open existed, silently
+   * cancelled the new project's first terminal.
+   */
+  const countPendingOpens = (generation: number): number => {
+    let pending = 0;
+    for (const open of pendingOpensRef.current) {
+      if (open.generation === generation) pending += 1;
+    }
+    return pending;
+  };
 
   /**
    * Ptys that landed DURING a close, with no pane to belong to.
@@ -251,6 +273,44 @@ export function StudioWorkspaceController({
    * can arrive has arrived before the sweep is built.
    */
   const strandedTerminalsRef = useRef<Set<string>>(new Set());
+
+  /**
+   * THE FIRST-TERMINAL LATCH. At most ONE auto-open per opened project.
+   *
+   * Opening a project auto-creates its first terminal (owner decision,
+   * 2026-09-01), and the whole difficulty of that sentence is the word "one".
+   * The restore effect runs twice under StrictMode and again on every remount,
+   * so "the workspace is empty, open a terminal" evaluated without a latch
+   * spawns a shell per pass - and each extra shell is a real pty holding a slot
+   * against the host's per-project bound.
+   *
+   * VS Code's `TerminalViewPane._initializeTerminal` is the same decision under
+   * the same pressure, and it carries the same two flags: `_isInitialized`
+   * (this ref) so the bootstrap happens once per view, and
+   * `_isTerminalBeingCreated` so a create already in flight is not raced by a
+   * second entry. Our in-flight half is `pendingOpensRef`, which already exists
+   * and already counts exactly the opens whose pty does not yet exist - so the
+   * question "is one being created right now" is asked of the same set the
+   * keep-alive bound is asked of, rather than of a second flag that could
+   * disagree with it.
+   *
+   * Re-armed by the restore effect, so a project switch bootstraps the project
+   * the user moved to.
+   */
+  const autoOpenedRef = useRef(false);
+
+  /**
+   * The bootstrap itself, held in a ref because the RESTORE decides when it
+   * runs and the restore effect is declared above the action it calls.
+   *
+   * A direct dependency would work today - `openTerminal` is stable per project
+   * - but it would put the entire restore, the revive and the stale-kill
+   * compensation behind the stability of an unrelated callback: one dependency
+   * added to `openTerminal` later and every mount would re-read and re-revive.
+   * The indirection buys the restore effect a dependency list of exactly
+   * `[projectId]`, which is what it means.
+   */
+  const bootstrapFirstTerminalRef = useRef<() => void>(() => undefined);
 
   /**
    * Apply a model mutation. The ONE place a refusal becomes visible, so no
@@ -287,6 +347,10 @@ export function StudioWorkspaceController({
     generationRef.current += 1;
     const generation = generationRef.current;
     hydratedRef.current = false;
+    // Re-armed with the hydration latch: this is a different project's
+    // workspace, or the same one being opened again, and either way it has not
+    // been bootstrapped yet.
+    autoOpenedRef.current = false;
     // The ref is written alongside every setState so a teardown or a mutation
     // that lands before the next render still sees the current workspace.
     stateRef.current = emptyWorkspace(projectId);
@@ -341,11 +405,34 @@ export function StudioWorkspaceController({
         }
         return;
       }
-      if (result.ok && result.data.ok && result.data.value !== null) {
+      // A READ THAT FAILED IS NOT AN EMPTY PROJECT, and the two must not be
+      // rendered the same way. Vex does not know what this project holds: the
+      // snapshot may be perfectly good and unreachable. So the failure is said
+      // out loud - it was silent before, an empty strip indistinguishable from
+      // a fresh project - and, critically, NO TERMINAL IS OPENED. A shell
+      // spawned here would be persisted a moment later, as the only group in a
+      // layout that overwrote the one the read could not deliver.
+      //
+      // The hydration latch still closes, exactly as before: an unchanged empty
+      // state arms no persist by itself, and a terminal the user opens
+      // deliberately from here is theirs to keep.
+      if (!result.ok || !result.data.ok) {
+        hydratedRef.current = true;
+        setNotice(RESTORE_FAILED_COPY);
+        return;
+      }
+      if (result.data.value !== null) {
         stateRef.current = fromSnapshot(result.data.value);
         setState(stateRef.current);
       }
       hydratedRef.current = true;
+      // THE AUTO-OPEN, and it is deliberately asked of the RESULTING STATE
+      // rather than of `value === null`. A snapshot can restore to nothing -
+      // `fromSnapshot` drops every group whose terminals have no saved buffer,
+      // and a project whose last tab was closed persists an empty layout - and
+      // a workspace that came back with no tabs is one the user is looking at
+      // an empty strip in, whichever of those produced it.
+      bootstrapFirstTerminalRef.current();
     })().catch((error: unknown) => {
       // THE RESTORE'S ONLY EXIT FOR A REJECTION, and it had none.
       //
@@ -358,12 +445,19 @@ export function StudioWorkspaceController({
       //
       // It deliberately changes NOTHING else: the latch stays closed, because
       // arming persistence over a restore that failed is how an empty layout
-      // overwrites a good snapshot.
+      // overwrites a good snapshot - and, for the same reason, the first
+      // terminal is NOT auto-opened here. `bootstrapFirstTerminalRef` is
+      // reached only from the resolved path above.
       reportRendererFailure({
         surface: "studio.workspace.restore",
         kind: "caught",
         error,
       });
+      // The evidence report is for us; this sentence is for the user, who would
+      // otherwise be looking at an empty workspace with no terminal in it and
+      // nothing said about why. Generation-fenced like every other publication
+      // in this effect: a controller that has moved on says nothing.
+      if (generation === generationRef.current) setNotice(RESTORE_FAILED_COPY);
     });
 
     return () => {
@@ -526,7 +620,10 @@ export function StudioWorkspaceController({
       // Snapshotted before the await: a create admitted after `closing` is
       // refused, so the set cannot grow past this point, and iterating the live
       // set while entries remove themselves is a mutation during traversal.
-      await Promise.all([...pendingOpensRef.current]);
+      // EVERY generation's opens, not only the current one: a create issued for
+      // the project the user just left can still be holding a pty this close is
+      // the last owner of.
+      await Promise.all([...pendingOpensRef.current].map((open) => open.settled));
 
       // ---- the stranded sweep, on EVERY path ----
       const stranded = [...strandedTerminalsRef.current];
@@ -793,7 +890,7 @@ export function StudioWorkspaceController({
         return;
       }
       if (into.kind === "tab") {
-        if (!canAddTerminalGroup(stateRef.current, pendingOpensRef.current.size)) {
+        if (!canAddTerminalGroup(stateRef.current, countPendingOpens(generation))) {
           setNotice(KEEP_ALIVE_COPY);
           return;
         }
@@ -810,9 +907,12 @@ export function StudioWorkspaceController({
       // waits for it. The promise resolves on every path, including a rejected
       // bridge call, so a failing create cannot park a close forever.
       let settleOpen = (): void => undefined;
-      const open = new Promise<void>((resolve) => {
-        settleOpen = resolve;
-      });
+      const open: PendingOpen = {
+        generation,
+        settled: new Promise<void>((resolve) => {
+          settleOpen = resolve;
+        }),
+      };
       pendingOpensRef.current.add(open);
       let result;
       try {
@@ -901,6 +1001,49 @@ export function StudioWorkspaceController({
   const handleNewTerminal = useCallback((): void => {
     void openTerminal({ kind: "tab" });
   }, [openTerminal]);
+
+  /**
+   * OPEN THE FIRST TERMINAL of a project that restored to nothing.
+   *
+   * Through `openTerminal`, the same call the `+` button makes, so the
+   * keep-alive bound, the closing refusal, the publication fence and the
+   * stale-kill compensation are the ones that already exist. A parallel create
+   * here would be a second answer to every one of those questions, and the
+   * cheapest way to reintroduce the invisible running shell this component
+   * spends a hundred lines preventing.
+   *
+   * ## Every reason it declines, and why each one is not "just be safe"
+   *
+   *  - ALREADY BOOTSTRAPPED. StrictMode runs the restore effect twice and a
+   *    remount runs it again; without the latch each pass spawns a pty. The
+   *    latch is set BEFORE the call and there is no await between the read and
+   *    the write, so two entries in one tick cannot both pass it.
+   *  - TABS ALREADY EXIST. The restore brought a layout back, so the project
+   *    has its terminals and the user did not ask for another one.
+   *  - AN OPEN IS ALREADY IN FLIGHT. The user pressed `+` while the restore was
+   *    still reading. Their terminal is the first one; adding ours beside it
+   *    would open two for one gesture.
+   *  - THE WORKSPACE IS CLOSING. `openTerminal` would refuse it anyway, but it
+   *    would refuse it with a NOTICE, and telling a user that the terminal they
+   *    never asked for could not be opened is worse than saying nothing.
+   *
+   * A create that fails still counts as the bootstrap: `openTerminal` names the
+   * reason in the notice, the empty state below offers the retry, and a latch
+   * that re-armed on failure would put a create on every restore of an
+   * unreachable host.
+   */
+  const bootstrapFirstTerminal = (): void => {
+    if (autoOpenedRef.current) return;
+    if (stateRef.current.tabs.length > 0) return;
+    if (countPendingOpens(generationRef.current) > 0) return;
+    if (!admitsTerminalCreate(closeStateRef.current)) return;
+    autoOpenedRef.current = true;
+    void openTerminal({ kind: "tab" });
+  };
+  // Written during render, like `stateRef` and `projectIdRef` above it, so the
+  // restore's continuation calls the current closure rather than the one that
+  // existed when the effect was created.
+  bootstrapFirstTerminalRef.current = bootstrapFirstTerminal;
 
   /* ---------------- opening a file ---------------- */
 
@@ -1108,6 +1251,18 @@ export function StudioWorkspaceController({
       />
     </div>
   );
+}
+
+/**
+ * An open that has been ADMITTED and whose pty does not exist yet.
+ *
+ * The promise is what a close joins; the generation is which workspace asked
+ * for it. Both facts are needed and they answer different questions - see
+ * `countPendingOpens`.
+ */
+interface PendingOpen {
+  readonly generation: number;
+  readonly settled: Promise<void>;
 }
 
 /**

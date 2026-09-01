@@ -6,6 +6,7 @@
  *   2. Register custom app://vex/ scheme privileges (must precede app.ready).
  *   3. Install lifecycle hooks (window-all-closed, before-quit, will-quit).
  *   4. await app.whenReady().
+ *   4b. Evaluate the e2e database door (inert unless an e2e run asked for it).
  *   5. Install permission handlers (deny-all default).
  *   6. Install app://vex/ protocol handler.
  *   7. Register IPC handlers (Phase 1 surface).
@@ -32,6 +33,7 @@ import {
   awaitStudioRuntimeReady,
   disposeStudioWriteRepairOwner,
 } from "./agent/studio-settlement-bridge.js";
+import { openE2eConnectionDoor } from "./database/e2e-connection-door.js";
 import { registerAllIpcHandlers } from "./ipc/register-all.js";
 import {
   configureUpdater,
@@ -206,6 +208,17 @@ app.on("child-process-gone", (_event, details) => {
 });
 
 async function initializeMainRuntime(): Promise<void> {
+
+  // 3b. E2E database door. FIRST, because everything below that can touch the
+  // database (the IPC surface, the engine workers, the Studio bridges) reads
+  // the connection state this may publish. Inert in a packaged build and
+  // whenever `VEX_E2E_DB_PORT` + `VEX_E2E_DB_PASSWORD_FILE` are not BOTH set,
+  // so an ordinary boot is unaffected. `database/e2e-connection-door.ts` owns
+  // the guards, and states why compose keeps the production publication.
+  const closeE2eDbDoor = openE2eConnectionDoor();
+  globalCleanup.add(() => {
+    closeE2eDbDoor();
+  });
 
   // 4. Security: deny-all permission handlers
   installPermissionHandlers();

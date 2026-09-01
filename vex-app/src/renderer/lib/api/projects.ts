@@ -30,6 +30,7 @@ import type {
   ProjectDeleteResult,
   ProjectGetResult,
   ProjectList,
+  ProjectRenderEnvelope,
   ProjectRepairFilesInput,
   ProjectRepairFilesResult,
   ProjectUpdateScopeInput,
@@ -87,13 +88,42 @@ export function useCreateProject(): UseMutationResult<
     retry: false,
     onSuccess: (result) => {
       if (!result.ok) return;
-      queryClient.setQueryData(
-        projectKeys.detail(result.data.id),
-        { ok: true, data: result.data } satisfies Result<ProjectGetResult>,
-      );
-      void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
+      cacheProjectFromEnvelope(queryClient, result.data);
     },
   });
+}
+
+/**
+ * Seed the detail cache with the row a handler just persisted, and invalidate
+ * the list.
+ *
+ * `refreshFailure` is the case this function exists for. Main returns the row
+ * as it was COMMITTED when it could not read it back, so that row is real but
+ * may already be behind - seeding it as though it were canonical would leave
+ * every screen rendering a stale project until something else happened to
+ * refetch. So the detail entry is invalidated instead of seeded, and the next
+ * read comes from main.
+ *
+ * The render report itself is never cached, on any path: it describes ONE run,
+ * not the state of anything, and the project's own `files` field already
+ * carries the state a screen renders from.
+ */
+function cacheProjectFromEnvelope(
+  queryClient: ReturnType<typeof useQueryClient>,
+  envelope: ProjectRenderEnvelope,
+): void {
+  if (envelope.refreshFailure !== null) {
+    void queryClient.invalidateQueries({
+      queryKey: projectKeys.detail(envelope.project.id),
+    });
+    void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
+    return;
+  }
+  queryClient.setQueryData(
+    projectKeys.detail(envelope.project.id),
+    { ok: true, data: envelope.project } satisfies Result<ProjectGetResult>,
+  );
+  void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
 }
 
 export function useUpdateProjectScope(): UseMutationResult<
@@ -111,15 +141,8 @@ export function useUpdateProjectScope(): UseMutationResult<
       if (!result.ok) return;
       // The returned row already carries the incremented `scopeVersion`, so
       // seeding the detail cache is what lets the next edit send a fresh
-      // expected version instead of a stale one. `result.data.render` is the
-      // file-reconciliation report and is NOT cached here: it describes one
-      // run, not the project's state, and the project's own `files` field
-      // already carries the state a screen renders from.
-      queryClient.setQueryData(
-        projectKeys.detail(result.data.project.id),
-        { ok: true, data: result.data.project } satisfies Result<ProjectGetResult>,
-      );
-      void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
+      // expected version instead of a stale one.
+      cacheProjectFromEnvelope(queryClient, result.data);
     },
   });
 }
@@ -143,11 +166,7 @@ export function useRepairProjectFiles(): UseMutationResult<
     retry: false,
     onSuccess: (result) => {
       if (!result.ok) return;
-      queryClient.setQueryData(
-        projectKeys.detail(result.data.project.id),
-        { ok: true, data: result.data.project } satisfies Result<ProjectGetResult>,
-      );
-      void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
+      cacheProjectFromEnvelope(queryClient, result.data);
     },
   });
 }

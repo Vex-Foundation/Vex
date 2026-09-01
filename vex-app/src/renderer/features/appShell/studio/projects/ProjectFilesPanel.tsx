@@ -7,13 +7,12 @@
  * them would mean inventing the half whichever call did not return.
  *
  *   - `RenderOutcomePanel` renders a `StudioRenderOutcome`: what ONE run DID
- *     (`written`, `removed`, `refused`, `drift_blocked`). `updateScope` and
- *     `repairFiles` both return one.
+ *     (`written`, `removed`, `refused`, `drift_blocked`). `create`,
+ *     `updateScope` and `repairFiles` all return one.
  *   - This renders a `StudioFilesStatus`: what each artifact IS on disk
- *     (`current`, `drifted`, `missing`, `stale`, `unsupported`, `unreadable`).
- *     `create` returns a `ProjectDto` and NOTHING ELSE - see
- *     `projectCreateResultSchema` - so a status is the only honest thing the
- *     creator has to show.
+ *     (`current`, `drifted`, `missing`, `stale`, `unsupported`, `unreadable`),
+ *     which is the answer for a project nobody has just reconciled, and the
+ *     second half of the answer for one somebody has.
  *
  * An earlier draft of this folder projected the status vocabulary into the
  * outcome vocabulary so one panel could serve both. It was deleted: the
@@ -38,9 +37,9 @@ import {
   ARTIFACT_STATE_SENTENCES,
   ARTIFACT_STATE_WANTS_ATTENTION,
   PROJECT_FILES_EMPTY,
+  PROJECT_FILES_LIST_LABEL,
   PROJECT_FILES_NEVER_RENDERED,
   PROJECT_FILES_TITLE,
-  PROJECT_OUTCOME_LIST_LABEL,
 } from "./projects-copy.js";
 
 export interface ProjectFilesPanelProps {
@@ -64,7 +63,7 @@ export function ProjectFilesPanel({ files }: ProjectFilesPanelProps): JSX.Elemen
         <p className="text-xs text-ink-tertiary">{PROJECT_FILES_EMPTY}</p>
       ) : (
         <ul
-          aria-label={PROJECT_OUTCOME_LIST_LABEL}
+          aria-label={PROJECT_FILES_LIST_LABEL}
           className="flex flex-col gap-1.5"
           data-vex-file-rows={String(files.artifacts.length)}
         >

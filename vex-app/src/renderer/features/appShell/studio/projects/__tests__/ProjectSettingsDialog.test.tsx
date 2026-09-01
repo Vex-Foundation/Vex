@@ -133,7 +133,9 @@ describe("the wire input", () => {
           trigger: "scope_update",
           artifacts: [],
           warnings: [],
+          runFailure: null,
         },
+        refreshFailure: null,
       },
     });
     renderSettings();
@@ -165,7 +167,9 @@ describe("the wire input", () => {
           trigger: "scope_update",
           artifacts: [],
           warnings: [],
+          runFailure: null,
         },
+        refreshFailure: null,
       },
     });
     renderSettings();
@@ -251,7 +255,9 @@ describe("the scope conflict", () => {
           trigger: "scope_update",
           artifacts: [],
           warnings: [],
+          runFailure: null,
         },
+        refreshFailure: null,
       },
     });
     fireEvent.click(screen.getByRole("checkbox", { name: /Cursor/ }));
@@ -360,7 +366,9 @@ describe("the render report", () => {
               detail: "Pass --mcp-config-file when you start Kimi.",
             },
           ],
+          runFailure: null,
         },
+        refreshFailure: null,
       },
     });
     renderSettings();

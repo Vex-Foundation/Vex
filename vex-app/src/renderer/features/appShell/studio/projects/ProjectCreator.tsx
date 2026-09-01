@@ -21,17 +21,20 @@
  * hostage to a dialog the user has not read yet would make the shell lie about
  * what Vex has done.
  *
- * ## Which panel the result phase uses, and why it is not the other one
+ * ## Both panels, because a create now answers both questions
  *
- * `projectCreateResultSchema` is `projectDtoSchema` - a create returns the
- * project and NO render envelope. So the result phase renders
- * `project.files`, the per-artifact STATE on disk, through
- * `ProjectFilesPanel`. It does not render `RenderOutcomePanel`, and it does
- * not project one shape into the other: the outcome vocabulary records what a
- * run DID, the status vocabulary records what a file IS, and deriving the
- * first from the second would mean reporting writes and refusals the create
- * never told us about. `ProjectFilesPanel`'s module note carries the concrete
- * defect that reasoning removed.
+ * `projectCreateResultSchema` is the shared `{ project, render,
+ * refreshFailure }` envelope: creating a project RENDERS its files, so the
+ * dialog can finally report what that run DID as well as what the files ARE.
+ * Both are shown, in that order, and neither is projected into the other - the
+ * outcome vocabulary records what a run did, the status vocabulary records what
+ * a file is, and deriving one from the other would mean reporting writes and
+ * refusals nobody performed. `ProjectFilesPanel`'s module note carries the
+ * concrete defect that reasoning removed.
+ *
+ * When the re-read after the render failed, `refreshFailure` says so above both
+ * panels: the project shown is the row as it was committed, which is real and
+ * may be one field behind.
  *
  * ## Refusals render by NAME
  *
@@ -44,6 +47,7 @@ import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import {
   PROJECT_NAME_MAX_LENGTH,
   type ProjectCreateInput,
+  type ProjectCreateResult,
   type ProjectDto,
 } from "@shared/schemas/projects.js";
 import type { SessionPermission } from "@shared/schemas/sessions.js";
@@ -69,6 +73,7 @@ import {
   ProjectWalletFieldset,
 } from "./ProjectScopeFields.js";
 import { ProjectFilesPanel } from "./ProjectFilesPanel.js";
+import { RenderOutcomePanel } from "./RenderOutcomePanel.js";
 import {
   PROJECT_CANCEL,
   PROJECT_CLOSE,
@@ -108,7 +113,7 @@ export function ProjectCreator({
   const [agents, setAgents] = useState<readonly StudioAgentId[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   /** Set on success. Its presence IS the result phase. */
-  const [created, setCreated] = useState<ProjectDto | null>(null);
+  const [created, setCreated] = useState<ProjectCreateResult | null>(null);
   const nameRef = useRef<HTMLInputElement | null>(null);
 
   // Reset on every (re)open so a second create never inherits the first's
@@ -161,7 +166,7 @@ export function ProjectCreator({
       }
       // Selected NOW: the row exists whether or not the user has read the file
       // report yet.
-      onCreated(result.data);
+      onCreated(result.data.project);
       setCreated(result.data);
     },
     [
@@ -191,7 +196,7 @@ export function ProjectCreator({
             <DialogDescription className="text-xs text-ink-tertiary">
               {created === null
                 ? PROJECT_CREATE_LEAD
-                : projectFolderLine(created.displayPath)}
+                : projectFolderLine(created.project.displayPath)}
             </DialogDescription>
           </DialogHeader>
 
@@ -247,7 +252,13 @@ export function ProjectCreator({
                 <SubmitError submitError={submitError} />
               </>
             ) : (
-              <ProjectFilesPanel files={created.files} />
+              <>
+                <RenderOutcomePanel
+                  render={created.render}
+                  refreshFailure={created.refreshFailure}
+                />
+                <ProjectFilesPanel files={created.project.files} />
+              </>
             )}
           </DialogBody>
 

@@ -63,7 +63,10 @@ import type {
 } from "@shared/schemas/projects.js";
 import type { SessionPermission } from "@shared/schemas/sessions.js";
 import type { StudioAgentId } from "@shared/schemas/studio-agent-ids.js";
-import type { StudioRenderOutcome } from "@shared/schemas/studio-installer.js";
+import type {
+  StudioProjectRefreshFailure,
+  StudioRenderOutcome,
+} from "@shared/schemas/studio-installer.js";
 import { Button } from "../../../../components/ui/button.js";
 import {
   Dialog,
@@ -163,6 +166,14 @@ export function ProjectSettingsDialog({
   });
   const [render, setRender] = useState<StudioRenderOutcome | null>(null);
   /**
+   * The save COMMITTED and main could not read the project back. The row this
+   * dialog reseeds itself from is then the committed one, whose file status may
+   * already be behind, so the report says so rather than presenting it as
+   * current.
+   */
+  const [refreshFailure, setRefreshFailure] =
+    useState<StudioProjectRefreshFailure | null>(null);
+  /**
    * Single-flight for the reload. The disabled button is the affordance; this
    * is the guard, because a keyboard repeat or a re-render racing the state
    * update must not put two reads in flight against one conflict.
@@ -206,6 +217,7 @@ export function ProjectSettingsDialog({
       setSubmitError(null);
       setConflictState({ kind: "none" });
       setRender(null);
+      setRefreshFailure(null);
       reloadingRef.current = false;
       return;
     }
@@ -266,6 +278,7 @@ export function ProjectSettingsDialog({
         setEditingVersion(null);
         setSubmitError(null);
         setRender(null);
+        setRefreshFailure(null);
         setConflictState({ kind: "none" });
         return;
       }
@@ -275,6 +288,7 @@ export function ProjectSettingsDialog({
       seedFrom(result.data);
       setSubmitError(null);
       setRender(null);
+      setRefreshFailure(null);
       setConflictState({ kind: "none" });
     } finally {
       reloadingRef.current = false;
@@ -301,6 +315,7 @@ export function ProjectSettingsDialog({
       }
       setSubmitError(null);
       setRender(null);
+      setRefreshFailure(null);
       const input: ProjectUpdateScopeInput = {
         projectId,
         expectedScopeVersion: editingVersion,
@@ -321,6 +336,7 @@ export function ProjectSettingsDialog({
       // The write landed. The dialog stays open on the render report: the save
       // succeeded AND some file may have been refused, and both are true.
       setRender(result.data.render);
+      setRefreshFailure(result.data.refreshFailure);
       seedFrom(result.data.project);
     },
     [
@@ -375,7 +391,7 @@ export function ProjectSettingsDialog({
 
             {!showingConflict ? <SubmitError submitError={submitError} /> : null}
             {!showingConflict && render !== null ? (
-              <RenderOutcomePanel render={render} />
+              <RenderOutcomePanel render={render} refreshFailure={refreshFailure} />
             ) : null}
           </DialogBody>
 

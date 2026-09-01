@@ -75,6 +75,16 @@ export interface TerminalBridgeStub {
   /** What `readWorkspace` returns. `null` means "nothing to revive". */
   savedWorkspace: TerminalWorkspaceRestore | null;
   /**
+   * Make `readWorkspace` REFUSE, with this code.
+   *
+   * A refused read is a different fact from an empty one - Vex does not know
+   * what the project holds, rather than knowing it holds nothing - and the
+   * controller now acts on that difference: it says so, and it does NOT
+   * auto-open the first terminal over a layout it could not read. A stub that
+   * can only ever succeed cannot reach that branch at all.
+   */
+  readWorkspaceFailure: TerminalErrorCode | null;
+  /**
    * Completion callbacks handed to the data subscriber and not yet called.
    *
    * The bridge now acks on CONSUMER COMPLETION, so a test that wants to model a
@@ -300,6 +310,7 @@ export function installTerminalBridge(): TerminalBridgeStub {
       value: { terminalId: "t1", pid: 4242, shellName: "bash", cwd: "/w" },
     },
     savedWorkspace: null,
+    readWorkspaceFailure: null,
     nextPersist: { ok: true },
     deferPersist: false,
     pendingPersists: [],
@@ -496,6 +507,15 @@ export function installTerminalBridge(): TerminalBridgeStub {
     readWorkspace: vi.fn(async (input: { projectId: string }) => {
       // Same rule as `create`: the snapshot this read answers with is the one
       // that existed when the read was issued.
+      const failure = stub.readWorkspaceFailure;
+      if (failure !== null) {
+        if (stub.deferReadWorkspace) {
+          await new Promise<void>((resolve) => {
+            stub.pendingReads.push(resolve);
+          });
+        }
+        return { ok: true as const, data: { ok: false as const, code: failure } };
+      }
       const template = stub.savedWorkspace;
       if (template === null) {
         if (stub.deferReadWorkspace) {

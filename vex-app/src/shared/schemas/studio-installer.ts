@@ -27,6 +27,7 @@
  */
 
 import { z } from "zod";
+import { VEX_ERROR_CODES } from "../ipc/result.js";
 import { STUDIO_AGENT_IDS } from "./studio-agent-ids.js";
 
 /**
@@ -157,13 +158,21 @@ export const studioArtifactOutcomeSchema = z.discriminatedUnion("status", [
 export type StudioArtifactOutcome = z.infer<typeof studioArtifactOutcomeSchema>;
 
 /**
- * Something true about a written artifact that the write itself cannot fix.
+ * Something true about a WRITTEN ARTIFACT that the write itself cannot fix.
  *
  * A correct config that a client will not load until the user trusts the
  * folder, a launch flag the user must type, a timeout only a user-global file
  * can raise, or a foreign authority statement sitting beside our entry. All of
  * them make "the file was written" an incomplete answer, so they travel with
  * the outcome instead of being discovered by the user when nothing works.
+ *
+ * ARTIFACT LEVEL, ALWAYS. A warning is a footnote on a file that EXISTS. A
+ * failure of the RUN - no bridge binary, a render that could not start - is not
+ * a warning and must never be smuggled in as one: `runFailure` on the outcome
+ * owns that fact. Two producers used to borrow `launch_required` with a null
+ * agent for exactly that, which put "Select a coding agent to get one" and
+ * "Vex reconciled this project's files" above the one true sentence in the
+ * report. The user read a headline that was false and a footnote that was true.
  */
 export const studioInstallerWarningSchema = z
   .object({
@@ -185,6 +194,76 @@ export const studioInstallerWarningSchema = z
   .strict();
 export type StudioInstallerWarning = z.infer<typeof studioInstallerWarningSchema>;
 
+/**
+ * A sanitized, public error code. The SAME closed union every `VexError`
+ * carries, read from its runtime mirror so a code that exists on the wire and a
+ * code this field admits cannot drift apart.
+ */
+const publicErrorCodeSchema = z.enum(VEX_ERROR_CODES);
+
+/** A correlation id, for the operator who has to find the run in the log. */
+const correlationIdSchema = z.string().min(1).max(128);
+
+/**
+ * Why the RUN AS A WHOLE did nothing, when that is the answer.
+ *
+ * Distinct from every per-artifact outcome and from every warning: those
+ * describe files, and this describes the absence of any file work at all. The
+ * two members are the two ways that happens, and they are not the same problem:
+ *
+ *   - `bridge_unavailable` - Vex could not locate its own bridge binary. Every
+ *     config names that binary verbatim, so writing one that points at a file
+ *     which is not there is worse than writing nothing. The run stops before
+ *     touching the repository, and the fix is a reinstall or an update.
+ *   - `render_failed` - the render could not start or could not finish, and it
+ *     said why: `code` is the run's real `VexError` code, carried instead of
+ *     dropped, so "your projects root moved" and "this project is being
+ *     deleted" stay different answers with different fixes.
+ *
+ * `null` means the run RAN. It says nothing about whether every artifact
+ * succeeded - `completed` and the per-artifact outcomes own that.
+ */
+export const studioRunFailureSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("bridge_unavailable"),
+      /** Sanitized, user-facing explanation. Never a path or a raw cause. */
+      detail: z.string().min(1).max(1024),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("render_failed"),
+      /** The run's own public error code, carried rather than discarded. */
+      code: publicErrorCodeSchema,
+      /** Main's already-sanitized message for that error. */
+      detail: z.string().min(1).max(1024),
+      correlationId: correlationIdSchema.optional(),
+    })
+    .strict(),
+]);
+export type StudioRunFailure = z.infer<typeof studioRunFailureSchema>;
+
+/**
+ * The project row could not be RE-READ after a committed change.
+ *
+ * Its own field, never folded into `runFailure`, because it is a different
+ * fact with a different remedy: the write happened and the reader failed. The
+ * envelope still carries the project as it was committed, so the caller shows
+ * real data and says plainly that it may already be behind.
+ */
+export const studioProjectRefreshFailureSchema = z
+  .object({
+    kind: z.literal("project_refresh_failed"),
+    code: publicErrorCodeSchema,
+    detail: z.string().min(1).max(1024),
+    correlationId: correlationIdSchema.optional(),
+  })
+  .strict();
+export type StudioProjectRefreshFailure = z.infer<
+  typeof studioProjectRefreshFailureSchema
+>;
+
 /** The result of ONE reconciliation run over a project. */
 export const studioRenderOutcomeSchema = z
   .object({
@@ -192,21 +271,30 @@ export const studioRenderOutcomeSchema = z
     scopeVersion: z.number().int().min(1),
     /**
      * True only when EVERY artifact of that scope was reconciled without a
-     * hard failure. The durable last-rendered marker advances on this flag
-     * alone, so an interrupted run cannot claim the project is up to date.
+     * hard failure AND the durable marker actually advanced. The marker is
+     * guarded on the scope version, so a scope edit that committed while the
+     * files were being written leaves it where it was - and this flag reports
+     * that refusal rather than the reconciler's own optimism.
      */
     completed: z.boolean(),
     /**
      * Why the run was started. `superseded` means a newer scope version was
      * already queued when this job reached the front, so nothing was rendered
      * and the newer job owns the result.
+     *
+     * `create` is its OWN member rather than a reuse of `scope_update`: the
+     * copy above a create's report would otherwise say Vex reconciled files
+     * "against the scope you saved" for a project the user has never edited.
      */
-    trigger: z.enum(["scope_update", "repair", "superseded"]),
+    trigger: z.enum(["create", "scope_update", "repair", "superseded"]),
     artifacts: z.array(studioArtifactOutcomeSchema).max(64),
     warnings: z.array(studioInstallerWarningSchema).max(64),
+    /** Why the run did no file work at all, or `null` when it ran. */
+    runFailure: studioRunFailureSchema.nullable(),
   })
   .strict();
 export type StudioRenderOutcome = z.infer<typeof studioRenderOutcomeSchema>;
+export type StudioRenderTriggerName = StudioRenderOutcome["trigger"];
 
 /** One artifact's CURRENT state on disk, as reported on the project DTO. */
 export const studioArtifactStatusSchema = z

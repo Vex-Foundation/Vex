@@ -67,6 +67,42 @@ export const CLOSE_FAILURE_COPY: Readonly<Record<WorkspaceCloseFailure, string>>
     "This workspace was saved, but the terminal service reports at least one of its shells as belonging to another Vex window, so this window cannot end it. Your work is safe. Close that window to end the shell.",
 };
 
+/**
+ * The RESTORE could not be read, so Vex does not know what this project holds.
+ *
+ * Said out loud rather than swallowed, because the silence was the defect: a
+ * read that failed left an empty strip over a snapshot that may be perfectly
+ * good, and nothing on screen distinguished that from a project that genuinely
+ * has no terminals. It also names why no terminal was opened for them - the
+ * auto-open deliberately does not fire over a layout Vex could not read, since
+ * a terminal spawned there would be persisted on top of the layout it failed to
+ * restore.
+ */
+export const RESTORE_FAILED_COPY =
+  "Vex could not read this project's saved terminal workspace, so nothing was "
+  + "restored and no terminal was opened. Open one below, or reopen the project "
+  + "to try the restore again.";
+
+/**
+ * The EMPTY WORKSPACE, and why it is still reachable.
+ *
+ * Opening a project auto-creates its first terminal, so this is not the state a
+ * fresh project starts in. It is what remains when the auto-open deliberately
+ * did not fire (a restore Vex could not read) or when the user closed every tab
+ * themselves. Both used to render a black rectangle with no affordance in it,
+ * which reads as a broken surface rather than as an empty one.
+ */
+export const EMPTY_WORKSPACE_COPY = "No terminals or files are open in this project.";
+
+/**
+ * The empty state's own action.
+ *
+ * Deliberately NOT "New terminal", which is the tab strip's `+` button: two
+ * controls sharing one accessible name is ambiguous to anyone navigating by
+ * name, and the strip's `+` is still present above this panel.
+ */
+export const EMPTY_WORKSPACE_ACTION_COPY = "Open a terminal";
+
 /** Refused because this workspace is closing. Not a bound; a phase. */
 export const CLOSING_CREATE_COPY =
   "This workspace is closing, so no new terminal can open in it.";

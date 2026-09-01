@@ -44,6 +44,7 @@ import { Tabs, TabsList, TabsTrigger } from "../../../../components/ui/tabs.js";
 import { cn } from "../../../../lib/utils.js";
 import type { WorkspaceFileTab, WorkspaceState, WorkspaceTab } from "../workspace/types.js";
 import { TerminalPaneGroup } from "./TerminalPaneGroup.js";
+import { EMPTY_WORKSPACE_ACTION_COPY, EMPTY_WORKSPACE_COPY } from "./terminal-copy.js";
 import type { TerminalRegistry } from "./terminal-registry.js";
 
 /** Namespaces the primitive's generated ids so a second strip cannot collide. */
@@ -144,6 +145,7 @@ export function TerminalTabs({
       {notice}
 
       <div className="relative min-h-0 flex-1">
+        {state.tabs.length === 0 ? <EmptyWorkspace onNewTerminal={onNewTerminal} /> : null}
         {state.tabs.map((tab) => {
           const isActive = tab.tabId === state.activeTabId;
           return (
@@ -187,6 +189,52 @@ export function TerminalTabs({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * What the panel area shows when the workspace holds NO tabs.
+ *
+ * ## When this is on screen at all
+ *
+ * Opening a project auto-creates its first terminal, so a fresh project does
+ * not land here. What remains are the two cases the auto-open deliberately does
+ * not cover: a restore Vex could not READ (spawning a shell over a layout that
+ * may exist is how a good snapshot gets overwritten by an empty one), and a user
+ * who closed every tab. Both used to render an unlabelled black rectangle, which
+ * reads as a broken surface rather than an empty one and offers nothing to do
+ * about it.
+ *
+ * ## Why it is not a live region
+ *
+ * The `notice` slot immediately above already announces the failure that can
+ * lead here, as `alert` or `status`. Announcing the same fact twice is noise,
+ * and this panel carries no news of its own: it is a destination, reachable by
+ * keyboard through its one button, which is what rule 08 asks of it. Its action
+ * is named differently from the strip's `+` for the same reason - two controls
+ * with one accessible name cannot be told apart by name.
+ */
+function EmptyWorkspace({
+  onNewTerminal,
+}: {
+  readonly onNewTerminal: () => void;
+}): JSX.Element {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
+      {/* The glyphs are `aria-hidden` at the source, per the icon gate. */}
+      <IconTerminal size={20} className="text-ink-tertiary" />
+      <p className="max-w-xs text-[12px] leading-4 text-ink-tertiary">
+        {EMPTY_WORKSPACE_COPY}
+      </p>
+      <button
+        type="button"
+        onClick={onNewTerminal}
+        className="inline-flex items-center gap-1.5 rounded-md border border-line-3 px-2.5 py-1.5 text-[12px] leading-4 font-medium text-ink-primary hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        <IconPlus size={12} />
+        {EMPTY_WORKSPACE_ACTION_COPY}
+      </button>
     </div>
   );
 }

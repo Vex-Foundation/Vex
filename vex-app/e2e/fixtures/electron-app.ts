@@ -28,7 +28,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * has already produced `dist/main/index.js`; CI orders the e2e job
  * after the build job to enforce this.
  */
-const MAIN_BUNDLE = path.resolve(__dirname, "../../dist/main/index.js");
+export const MAIN_BUNDLE = path.resolve(__dirname, "../../dist/main/index.js");
 
 /** How long the shell window may take to appear before the app counts as wedged. */
 const SHELL_WINDOW_DEADLINE_MS = 30_000;
@@ -46,7 +46,7 @@ function isShellUrl(url: string): boolean {
  * hidden helper window the main process opens at boot; the shell is the one
  * window whose identity is a contract.
  */
-async function selectShellWindow(app: ElectronApplication): Promise<Page> {
+export async function selectShellWindow(app: ElectronApplication): Promise<Page> {
   const deadline = Date.now() + SHELL_WINDOW_DEADLINE_MS;
   for (;;) {
     for (const candidate of app.windows()) {

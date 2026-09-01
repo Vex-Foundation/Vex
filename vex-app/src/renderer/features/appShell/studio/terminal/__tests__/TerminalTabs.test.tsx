@@ -332,3 +332,49 @@ describe("file tabs", () => {
     expect(screen.getByRole("button", { name: "Close service.ts" })).toBeTruthy();
   });
 });
+
+/**
+ * THE EMPTY PANEL AREA, which used to be an unlabelled black rectangle.
+ *
+ * Opening a project auto-creates its first terminal, so this is a FALLBACK: it
+ * is what remains when that bootstrap deliberately declined (a restore Vex could
+ * not read) or when the user closed every tab. Either way the surface must say
+ * what it is and offer something to do, because a dark rectangle with no
+ * affordance reads as broken rather than as empty.
+ */
+describe("TerminalTabs with no tabs", () => {
+  const empty: WorkspaceState = { projectId: "p1", activeTabId: null, tabs: [] };
+
+  it("offers a named, keyboard-reachable action instead of a blank panel", () => {
+    const opens: number[] = [];
+    renderTabs(empty, { onNewTerminal: () => opens.push(1) });
+
+    expect(screen.getByText("No terminals or files are open in this project.")).toBeTruthy();
+
+    const action = screen.getByRole("button", { name: "Open a terminal" });
+    // Reachable without a pointer, and it invokes the same callback the strip's
+    // `+` does.
+    action.focus();
+    expect(document.activeElement).toBe(action);
+    fireEvent.click(action);
+    expect(opens).toHaveLength(1);
+  });
+
+  it("names its action DIFFERENTLY from the strip's `+`, which is still there", () => {
+    renderTabs(empty);
+
+    // Two controls sharing one accessible name cannot be told apart by anyone
+    // navigating by name, and both are on screen at once in this state.
+    expect(screen.getByRole("button", { name: "New terminal" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open a terminal" })).toBeTruthy();
+  });
+
+  it("is GONE the moment a tab exists, so it cannot cover a live terminal", () => {
+    renderTabs(twoTabs("g1"));
+
+    expect(screen.queryByRole("button", { name: "Open a terminal" })).toBeNull();
+    expect(
+      screen.queryByText("No terminals or files are open in this project."),
+    ).toBeNull();
+  });
+});

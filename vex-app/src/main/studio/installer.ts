@@ -92,8 +92,13 @@ import {
 
 export { __resetStudioRenderQueuesForTests } from "./installer/queue.js";
 
-/** Why a render is running. `repair` is the only trigger that overwrites drift. */
-export type StudioRenderTrigger = "scope_update" | "repair";
+/**
+ * Why a render is running. `repair` is the only trigger that overwrites drift.
+ *
+ * `superseded` is deliberately NOT a member: it is an ANSWER a run can give,
+ * never a reason a caller can ask for one.
+ */
+export type StudioRenderTrigger = "create" | "scope_update" | "repair";
 
 /**
  * Render (or repair) one project's files.
@@ -114,12 +119,15 @@ export async function renderProjectFiles(
     whenSuperseded: () =>
       ok({
         // A superseded job never read a scope, so it reports the one fact it
-        // has: it did nothing, and the newer job owns the result.
+        // has: it did nothing, and the newer job owns the result. That is not a
+        // FAILURE - the work is being done by the job that overtook this one -
+        // so `runFailure` stays null and `trigger` carries the answer.
         scopeVersion: 1,
         completed: false,
         trigger: "superseded",
         artifacts: [],
         warnings: [],
+        runFailure: null,
       }),
   });
 }
@@ -157,14 +165,18 @@ async function runRenderAdmitted(
 
   const bridge = await locateStudioBridge();
   if (bridge.kind === "unavailable") {
+    // A RUN FAILURE, not a warning. This used to report itself as a
+    // `launch_required` warning with a null agent, which put "Vex reconciled
+    // this project's files" and "Select a coding agent to get one" above a
+    // footnote saying the opposite. Nothing was written and nothing CAN be
+    // written until the binary is there, so that is the headline.
     return ok({
       scopeVersion: scope.scopeVersion,
       completed: false,
-      trigger: trigger === "repair" ? "repair" : "scope_update",
+      trigger,
       artifacts: [],
-      warnings: [
-        { kind: "launch_required", agentId: null, detail: bridge.detail },
-      ],
+      warnings: [],
+      runFailure: { kind: "bridge_unavailable", detail: bridge.detail },
     });
   }
 
@@ -287,16 +299,31 @@ async function runRenderAdmitted(
     (outcome) => outcome.status === "written" || outcome.status === "removed",
   );
 
+  // THE REPORTED FLAG IS THE MARKER'S, NOT THE RECONCILER'S.
+  //
+  // `recordCompleteRender` is guarded on the scope version: a scope edit that
+  // committed while the files were being written means this run rendered an
+  // older authority, so the UPDATE matches no row and the marker stays where it
+  // was. That refusal is the whole point of the guard, and reporting
+  // `completed: true` over it would tell the user their project is up to date
+  // while the durable record says a reconciliation is still owed - the exact
+  // disagreement the marker exists to prevent.
+  let completed = result.completed;
   if (result.completed) {
-    // Guarded on the scope version: a scope edit that committed while the files
-    // were being written means this run rendered an older authority, and
-    // claiming it would mark the project up to date when it is not.
     const advanced = await recordCompleteRender(
       projectId,
       scope.scopeVersion,
       studioGeneratorFingerprint(appVersion()),
     );
     if (!advanced.ok) return advanced;
+    if (!advanced.data) {
+      completed = false;
+      log.info(
+        `[studio:installer] the render marker was not advanced: the scope moved during the run `
+          + `projectId=${projectId} scopeVersion=${String(scope.scopeVersion)} `
+          + `correlationId=${correlationId}`,
+      );
+    }
   }
 
   if (changed) {
@@ -319,10 +346,11 @@ async function runRenderAdmitted(
 
   return ok({
     scopeVersion: scope.scopeVersion,
-    completed: result.completed,
-    trigger: trigger === "repair" ? "repair" : "scope_update",
+    completed,
+    trigger,
     artifacts: [...result.artifacts],
     warnings: [...result.warnings],
+    runFailure: null,
   });
 }
 
@@ -564,7 +592,11 @@ function summarizeRun(
     .map((outcome) => outcome.path)
     .filter((path): path is string => path !== null);
 
-  const prefix = trigger === "repair" ? "repaired" : "updated";
+  // One word per trigger. `created` is no longer than the `repaired` that
+  // `studio-change-note-bound.test.ts` already measures the worst case against,
+  // so the new trigger cannot push a line past the column's CHECK.
+  const prefix =
+    trigger === "repair" ? "repaired" : trigger === "create" ? "created" : "updated";
   if (touched.length === 0) return `${prefix} this project's Vex files`;
   return `${prefix} ${touched.join(", ")}`;
 }

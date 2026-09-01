@@ -27,8 +27,10 @@ import type {
   StudioArtifactStatus,
   StudioArtifactOutcome,
   StudioInstallerWarning,
+  StudioProjectRefreshFailure,
   StudioRefusalReason,
   StudioRenderOutcome,
+  StudioRunFailure,
 } from "@shared/schemas/studio-installer.js";
 
 /* --------------------------------- creator -------------------------------- */
@@ -266,25 +268,120 @@ export const PROJECT_DELETE_CLEANUP_TITLE = "What the cleanup did";
 /* ---------------------------- render outcomes ----------------------------- */
 
 export const RENDER_OUTCOME_TITLE = "Project files";
-export const RENDER_OUTCOME_EMPTY =
-  "Vex wrote no files for this project. Select a coding agent to get one.";
 export const RENDER_WARNINGS_TITLE = "Worth knowing";
 
+type RenderTrigger = StudioRenderOutcome["trigger"];
+
 /**
- * The `trigger` line, which is the one place a run can honestly report that it
- * did nothing at all.
+ * WHY THE RUN DID NOTHING, as the headline.
+ *
+ * A run failure is the first thing said about a run, above the trigger line and
+ * above the rows, because everything else in the panel is a statement about
+ * file work that did not happen. Both members used to arrive dressed as a
+ * `launch_required` warning at the bottom of the panel, under a heading that
+ * said Vex had reconciled the project's files.
  */
-export const RENDER_TRIGGER_SENTENCES: Readonly<
-  Record<StudioRenderOutcome["trigger"], string>
+export const RUN_FAILURE_SENTENCES: Readonly<
+  Record<StudioRunFailure["kind"], string>
 > = {
+  bridge_unavailable:
+    "Vex could not find the bridge program its configs point at, so it wrote NO files for this project. A config naming a program that is not there is worse than no config. Reinstall or update Vex, then repair this project.",
+  render_failed:
+    "Vex could not write this project's files. Nothing else about this project changed. Repair it from the project menu to try again.",
+};
+
+/** The project could not be re-read after the change that was committed. */
+export const PROJECT_REFRESH_FAILURE_SENTENCES: Readonly<
+  Record<StudioProjectRefreshFailure["kind"], string>
+> = {
+  project_refresh_failed:
+    "Your change is stored, but Vex could not read this project back afterwards, so what is shown below is how it looked when Vex saved it and may already be out of date. Reopen the project to see its current state.",
+};
+
+/**
+ * The `trigger` line for a run that reconciled AT LEAST ONE artifact.
+ *
+ * `create` is not folded into `scope_update`: a project that has just been
+ * created has no scope the user saved, and saying it does is the same class of
+ * lie as the borrowed warning this table's sibling replaced.
+ */
+export const RENDER_TRIGGER_SENTENCES: Readonly<Record<RenderTrigger, string>> = {
+  create: "Vex wrote this project's coding-agent files as part of creating it.",
   scope_update: "Vex reconciled this project's files against the scope you saved.",
   repair: "Vex rewrote the files it maintains in this project.",
   superseded:
     "A newer change to this project was already queued, so this run wrote nothing and the newer one owns the result.",
 };
 
-export const RENDER_INCOMPLETE_NOTICE =
-  "This run did not reach every file, so Vex still owes this project a reconciliation. Repair it from the project menu.";
+/**
+ * The SAME triggers, for a run whose artifact list is EMPTY.
+ *
+ * "Vex rewrote the files it maintains in this project" over a report of zero
+ * files is a claim about writes that did not happen. A run reconciles nothing
+ * when the project selects no agent, and also when it could not start at all -
+ * so these sentences state the absence and leave the reason to the run failure
+ * beside them.
+ */
+export const RENDER_TRIGGER_EMPTY_SENTENCES: Readonly<
+  Record<RenderTrigger, string>
+> = {
+  create: "Vex created this project and reconciled no files for it.",
+  scope_update: "Vex saved your settings and reconciled no files for this project.",
+  repair: "Vex reconciled no files in this project.",
+  superseded:
+    "A newer change to this project was already queued, so this run wrote nothing and the newer one owns the result.",
+};
+
+/** The trigger line, chosen by whether the run touched any artifact at all. */
+export function renderTriggerSentence(render: StudioRenderOutcome): string {
+  return render.artifacts.length === 0
+    ? RENDER_TRIGGER_EMPTY_SENTENCES[render.trigger]
+    : RENDER_TRIGGER_SENTENCES[render.trigger];
+}
+
+/**
+ * What an EMPTY artifact list means, and it is not one thing.
+ *
+ * "Select a coding agent to get one" is true only when the run finished and
+ * found nothing to do. On a run that did NOT complete, the same sentence blames
+ * the user's agent selection for a list that is empty because the run stopped,
+ * which sends them to fix a setting that was never the problem.
+ */
+export const RENDER_OUTCOME_EMPTY_COMPLETED =
+  "Vex maintains no files for this project. Select a coding agent to get one.";
+export const RENDER_OUTCOME_EMPTY_INCOMPLETE =
+  "This run reconciled no files. That is a fact about the run, not about what this project needs, so it says nothing about your agent selection.";
+
+export function renderOutcomeEmptySentence(render: StudioRenderOutcome): string {
+  return render.completed
+    ? RENDER_OUTCOME_EMPTY_COMPLETED
+    : RENDER_OUTCOME_EMPTY_INCOMPLETE;
+}
+
+/**
+ * The incomplete notice, per trigger, and `superseded` deliberately has NONE.
+ *
+ * Two things this table refuses to say. It does not tell someone who just ran
+ * Repair to run Repair - that is the button they pressed, and repeating it
+ * reads as though the dialog did not notice. And it does not describe a
+ * superseded run as unfinished work the user owes: the newer run owns the
+ * result, which the trigger line already says, so a second warning would invent
+ * a chore that does not exist.
+ *
+ * `null` is a member of the value type rather than an absent key, so the record
+ * stays exhaustive over the trigger enum and a new trigger is a compile error.
+ */
+export const RENDER_INCOMPLETE_NOTICES: Readonly<
+  Record<RenderTrigger, string | null>
+> = {
+  create:
+    "This run did not reach every file, so Vex still owes this project a reconciliation. Repair it from the project menu.",
+  scope_update:
+    "This run did not reach every file, so Vex still owes this project a reconciliation. Repair it from the project menu.",
+  repair:
+    "This repair did not reach every file, so Vex still owes this project a reconciliation. The rows below name what stopped it.",
+  superseded: null,
+};
 
 /** Which artifact a row is about, in words rather than a wire enum. */
 export const ARTIFACT_KIND_LABELS: Readonly<Record<StudioArtifactKind, string>> = {
@@ -427,5 +524,12 @@ export function projectCreatedToast(projectName: string): string {
 /* ---------------------------- accessible names ---------------------------- */
 
 export const PROJECT_OUTCOME_LIST_LABEL = "What Vex did to each file";
+/**
+ * The status list's OWN name. The two lists are shown together after a create -
+ * what the run did, then what the files are - and two lists carrying one
+ * accessible name would leave a screen-reader user with no way to tell which
+ * one they had landed in.
+ */
+export const PROJECT_FILES_LIST_LABEL = "What each file is right now";
 export const PROJECT_WARNING_LIST_LABEL = "Things worth knowing about these files";
 export const PROJECT_AGENT_LIST_LABEL = "Coding agents for this project";
