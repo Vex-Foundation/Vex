@@ -124,7 +124,22 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
-import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import {
+  approvedClaim,
+  legsForAllowancePlan,
+} from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+
+/**
+ * The transaction set the claimed quote bound, kept in step with whatever this
+ * suite's allowance mock answers: since WP2-B an execute whose leg set is not
+ * the approved one is refused, so `planAllowance` moves both together (a real
+ * change of allowance would have come with a fresh quote).
+ */
+let approvedLegs = legsForAllowancePlan({ needsReset: false, needsApprove: false });
+function planAllowance(plan: { needsReset: boolean; needsApprove: boolean }): void {
+  mockPlanKyberAllowance.mockResolvedValue(plan);
+  approvedLegs = legsForAllowancePlan(plan);
+}
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 import { DependentLegGasEstimateError } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
@@ -174,7 +189,7 @@ describe("kyberswap.swap.execute — pre-sign estimate revert (no prior leg)", (
     mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
     // No allowance leg — the live shape. `priorLeg` is therefore `undefined`
     // and `estimateGasForPlanLeg` rethrows the node's raw revert.
-    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
+    planAllowance({ needsReset: false, needsApprove: false });
     const routeResponse = {
       data: {
         routeSummary: {
@@ -192,6 +207,7 @@ describe("kyberswap.swap.execute — pre-sign estimate revert (no prior leg)", (
         approvedClaim(
           routeResponse.data.routeSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        { legs: approvedLegs },
         ),
     );
     mockBuildRoute.mockResolvedValue({
@@ -328,7 +344,7 @@ describe("kyberswap.swap.execute — a pre-sign refusal of the SWAP leg unlocks 
       address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
     }));
     mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
-    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
+    planAllowance({ needsReset: false, needsApprove: false });
     const routeResponse = {
       data: {
         routeSummary: {
@@ -346,6 +362,7 @@ describe("kyberswap.swap.execute — a pre-sign refusal of the SWAP leg unlocks 
         approvedClaim(
           routeResponse.data.routeSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        { legs: approvedLegs },
         ),
     );
     mockBuildRoute.mockResolvedValue({
@@ -394,7 +411,7 @@ describe("kyberswap.swap.execute — a pre-sign refusal of the SWAP leg unlocks 
   });
 
   it("an ALLOWANCE-leg refusal does NOT name a second venue — an approve failing is not venue evidence", async () => {
-    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: true });
+    planAllowance({ needsReset: false, needsApprove: true });
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 217, events: [{ id: 10 }, { id: 11 }] });
     // The FIRST leg (the approve) is the one the chain refuses.
     mockSignStageBroadcast.mockRejectedValueOnce(revertedWith("Call failed"));
@@ -434,7 +451,7 @@ describe("kyberswap.swap.execute — the genuinely-ambiguous paths are NOT colla
       address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
     }));
     mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
-    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
+    planAllowance({ needsReset: false, needsApprove: false });
     const routeResponse = {
       data: {
         routeSummary: {
@@ -452,6 +469,7 @@ describe("kyberswap.swap.execute — the genuinely-ambiguous paths are NOT colla
         approvedClaim(
           routeResponse.data.routeSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        { legs: approvedLegs },
         ),
     );
     mockBuildRoute.mockResolvedValue({
@@ -517,7 +535,7 @@ describe("kyberswap.swap.execute — the prior-leg (DependentLegGasEstimateError
     mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
     // Allowance leg in front — `priorLeg` is set, so a failing estimate is
     // retried and surfaces as `DependentLegGasEstimateError`.
-    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: true });
+    planAllowance({ needsReset: false, needsApprove: true });
     const routeResponse = {
       data: {
         routeSummary: {
@@ -535,6 +553,7 @@ describe("kyberswap.swap.execute — the prior-leg (DependentLegGasEstimateError
         approvedClaim(
           routeResponse.data.routeSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        { legs: approvedLegs },
         ),
     );
     mockBuildRoute.mockResolvedValue({

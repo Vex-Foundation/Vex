@@ -68,7 +68,11 @@ vi.mock("@utils/logger.js", () => {
 });
 
 import { KYBERSWAP_HANDLERS } from "@vex-agent/tools/protocols/kyberswap/handlers.js";
-import { digestSnapshotRaw } from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
+import {
+  digestRouteSnapshot,
+  digestSnapshotRaw,
+} from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
+import { boundDebitPlanSchema } from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
 import { computeApprovedMinOut } from "@tools/kyberswap/swap-price-floor.js";
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
@@ -143,7 +147,17 @@ describe("an executable quote", () => {
     const snapshot = required(result.quoteAuthority?.routeSnapshot, "a stored route snapshot");
     const raw = String(snapshot.raw);
     expect(snapshot.provider).toBe("kyberswap");
-    expect(snapshot.digest).toBe(digestSnapshotRaw(raw));
+    // The digest covers the stored bytes AND the transaction set this quote
+    // bound (WP2-B), so it is no longer the bytes' own hash alone.
+    const debitPlan = boundDebitPlanSchema.parse(snapshot.debitPlan);
+    // Recomputed over the FULL bound field set (the seal covers the floor,
+    // the slippage and the expiry too, not only bytes + plan).
+    expect(snapshot.digest).toBe(
+      digestRouteSnapshot({ ...(snapshot as Parameters<typeof digestRouteSnapshot>[0]), raw, debitPlan }),
+    );
+    expect(snapshot.digest).not.toBe(digestSnapshotRaw(raw));
+    // A quote with no allowance to grant sends exactly one transaction.
+    expect(debitPlan.legs.map((leg) => leg.role)).toEqual(["swap"]);
     // The stored string parses back to the provider's own summary, verbatim.
     expect(JSON.parse(raw)).toEqual(priced.data.routeSummary);
     expect(snapshot.approvedAmountOutRaw).toBe(AMOUNT_OUT);

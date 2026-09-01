@@ -31,11 +31,38 @@ export type InventorySourceKind =
   | "khalani_registry_scan"
   /** Direct RPC over the seed ∪ pinned token set of a local chain. Bounded by construction. */
   | "local_chain_seed_and_pins"
+  /**
+   * Direct RPC over seed ∪ pinned ∪ indexer-enumerated identities on a local
+   * chain. Exhaustive only when the indexer answered completely.
+   */
+  | "local_chain_indexer_union"
+  /**
+   * Blockscout's ERC-20 identity enumeration for one address (chain 4663). It
+   * contributes IDENTITIES only; every balance, scale and symbol on the rows it
+   * produced was re-read from RPC.
+   */
+  | "blockscout_erc20_inventory"
   /** Solana RPC token accounts plus the account balance: enumerates every account the wallet owns. */
   | "solana_rpc_accounts";
 
 /** What the source actually did on this call. Never a third "maybe". */
 export type InventorySourceResult = "read" | "failed";
+
+/**
+ * What a FAILED source cost the answer.
+ *
+ * The default, and the meaning every source carried before local-chain identity
+ * enumeration existed, is `chain_holdings`: the chain did not report, so its
+ * holdings are UNKNOWN and it belongs in `failedChainIds`.
+ *
+ * `enumeration_breadth` is the strictly weaker loss: a source whose only job is
+ * to widen the identity set failed, while the chain itself was still read over
+ * the remaining set. Its holdings are not unknown - the promise that the list
+ * is every holding is what was lost - so it degrades the inventory to
+ * `source_not_exhaustive` and must NOT enter `failedChainIds`, where it would
+ * tell the agent that real, freshly read rows are unknowable.
+ */
+export type InventorySourceFailureImpact = "chain_holdings" | "enumeration_breadth";
 
 /**
  * One chain's enumeration outcome, as the agent sees it.
@@ -56,6 +83,16 @@ export interface InventorySource {
   readonly exhaustive: boolean;
   /** ISO-8601 observation time, or null when the read failed. */
   readonly observedAt: string | null;
+  /**
+   * What a `failed` result cost. Absent means `chain_holdings`, which is what
+   * every chain-scanning source means by failing.
+   */
+  readonly failureImpact?: InventorySourceFailureImpact;
+  /**
+   * Provider vocabulary for a source that failed or answered partially, as the
+   * provider spelled it. A label for the agent, never a message to show a user.
+   */
+  readonly failureReason?: string;
 }
 
 /**
@@ -261,14 +298,30 @@ export interface WalletCompletenessInput {
  * chain error is what this function sees.
  */
 export function computeWalletCompleteness(input: WalletCompletenessInput): CompletenessEnvelope {
+  // A source that failed only to WIDEN the identity set is deliberately not
+  // here: its chain was read, and listing it would report freshly read rows as
+  // unknown holdings. It degrades the inventory through `exhaustive` instead.
   const failedChainIds = [
     ...new Set(
-      input.sources.filter((source) => source.result === "failed").map((source) => source.chainId),
+      input.sources
+        .filter(
+          (source) =>
+            source.result === "failed"
+            && (source.failureImpact ?? "chain_holdings") === "chain_holdings",
+        )
+        .map((source) => source.chainId),
     ),
   ].sort((a, b) => a - b);
 
   const reasons = new Set<InventoryIncompleteReason>();
   if (failedChainIds.length > 0) reasons.add("chain_read_failed");
+  if (
+    input.sources.some(
+      (source) => source.result === "failed" && source.failureImpact === "enumeration_breadth",
+    )
+  ) {
+    reasons.add("source_not_exhaustive");
+  }
   if (input.accountErrorCount > 0) reasons.add("account_read_failed");
   if (input.tokenErrorCount > 0) reasons.add("token_read_failed");
   if (input.sources.some((source) => source.result === "read" && !source.exhaustive)) {

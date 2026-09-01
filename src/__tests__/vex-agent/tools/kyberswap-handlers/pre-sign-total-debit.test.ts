@@ -16,6 +16,12 @@
  * their money is already gone and charging for them twice would refuse a swap
  * that can in fact be paid for.
  *
+ * WHAT WP2-B ADDED HERE. The same window also holds the execute to the
+ * TRANSACTION SET and the per-gas CEILING the approved quote bound: a leg set
+ * that is not the approved one refuses before the intent exists, and a prepared
+ * request priced above the approved ceiling refuses before the signature. Gas
+ * UNITS stay unbound - they drift 2.07x block to block inside the quote window.
+ *
  * The debit arithmetic, the L1 data fee and the evaluator are the production
  * modules throughout; only the provider, the wallet, the DB and the signer are
  * doubles. A refusal here is the handler's own decision over the fake chain's
@@ -118,7 +124,20 @@ import { computeApprovedMinOut } from "@tools/kyberswap/swap-price-floor.js";
 import {
   ROUTE_SNAPSHOT_VERSION,
   encodeRouteSnapshotRaw,
+  sealRouteSnapshot,
 } from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
+import { buildBoundDebitPlan } from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
+
+/**
+ * The transaction set this suite's quote bound, matching the allowance plan its
+ * own mocks produce - the execute refuses a set that is not the approved one
+ * (WP2-B). The ceiling is high enough that no prepared request here is above it;
+ * the ceiling itself is the subject of its own suite.
+ */
+const APPROVED_PLAN = buildBoundDebitPlan({
+  legs: [{ role: "allowance" as const, unpriced: false }, { role: "swap" as const, unpriced: false }],
+  feeCap: { mode: "eip1559", maxFeePerGasWei: 10n ** 15n, maxPriorityFeePerGasWei: 10n ** 15n },
+});
 import { resetEvmFake, setEvmFake } from "./evm-client.test-fixtures.js";
 
 const TOKEN_IN = getAddress(capture.request.tokenIn);
@@ -137,7 +156,7 @@ function required<T>(value: T | null | undefined, what: string): T {
   return value;
 }
 
-function claimedSnapshot() {
+function claimedSnapshot(plan: ReturnType<typeof buildBoundDebitPlan> = APPROVED_PLAN) {
   const summary = {
     amountIn: capture.routeSummary.amountIn,
     amountOut: QUOTED_OUT,
@@ -151,11 +170,10 @@ function claimedSnapshot() {
     ok: true as const,
     prequoteId: "prequote-presign",
     routeSummary: summary,
-    snapshot: {
+    snapshot: sealRouteSnapshot({
       v: ROUTE_SNAPSHOT_VERSION,
       provider: "kyberswap" as const,
       raw: encoded.raw,
-      digest: encoded.digest,
       approvedAmountOutRaw: QUOTED_OUT,
       approvedMinOutRaw: computeApprovedMinOut(QUOTED_OUT, SLIPPAGE_BPS).toString(),
       approvedAmountOutHuman: "0.005376",
@@ -164,7 +182,8 @@ function claimedSnapshot() {
       effectiveSlippageBps: SLIPPAGE_BPS,
       expiresAt: "2026-08-28T10:00:00.000Z",
       eligibility: { kind: "executable" as const, priceImpactFraction: 0.001, adverse: false },
-    },
+      debitPlan: plan,
+    }),
   };
 }
 
@@ -370,6 +389,68 @@ describe("the read is fresh, and the quote-time preview is not the authority", (
 
     setEvmFake({ nativeBalanceRaw: 1n });
     await expect(preSignGate(1)(preparedRequest(1))).rejects.toThrow(/reserve/);
+  });
+});
+
+describe("the approved TRANSACTION SET and its ceiling are bound quote-to-execute", () => {
+  it("refuses when this execute would broadcast a leg the approved quote never disclosed", async () => {
+    // A USDT-style reset appears between the quote and the click: three
+    // transactions where the card named two. A wallet that happens to be
+    // solvent for the wider set is not a wallet that authorized it.
+    mockPlanKyberAllowance.mockResolvedValue({ needsReset: true, needsApprove: true });
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("allowance_reset, allowance, swap");
+    expect(result.output).toContain("was not widened");
+    // Nothing was signed AND no intent row was opened: the refusal is
+    // pre-intent, where a clean pre-broadcast failure is the correct record.
+    expect(mockSignStageBroadcast).not.toHaveBeenCalled();
+    expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();
+  });
+
+  it("refuses when a disclosed leg has VANISHED, which is also a different plan", async () => {
+    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("was not widened");
+    expect(mockSignStageBroadcast).not.toHaveBeenCalled();
+  });
+
+  it("refuses a prepared request priced ABOVE the ceiling the quote was priced at", async () => {
+    // The quote was answered at a ceiling one wei below what this request
+    // carries. The wallet is rich; what is wrong is the PRICE, and a solvency
+    // check alone cannot see that.
+    mockClaim.mockResolvedValue(claimedSnapshot(buildBoundDebitPlan({
+      legs: [
+        { role: "allowance" as const, unpriced: false },
+        { role: "swap" as const, unpriced: false },
+      ],
+      feeCap: {
+        mode: "eip1559",
+        maxFeePerGasWei: 11_210_000n - 1n,
+        maxPriorityFeePerGasWei: 1_210_000n,
+      },
+    })));
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("above the 11209999");
+    expect(result.output).toContain("kyberswap__swap_quote");
+  });
+
+  it("does NOT bind gas UNITS - a leg that needs far more gas than the quote priced still signs", async () => {
+    // 2.07x block-to-block drift in the router's own estimate was MEASURED on
+    // Base inside the 15-minute quote window, so a units ceiling would refuse
+    // swaps the wallet can pay for. Only the per-gas PRICE is bound.
+    setEvmFake({ nativeBalanceRaw: 10n ** 24n });
+    await execute();
+
+    await expect(preSignGate(1)(preparedRequest(1, { gas: 3_000_000n }))).resolves.toBeUndefined();
   });
 });
 

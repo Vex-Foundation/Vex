@@ -187,13 +187,30 @@ const context = {
 
 const SWAP_ONLY_PARAMS = { chain: "robinhood", tokenIn: TOKEN_IN, tokenOut: TOKEN_OUT, amountIn: "1" };
 
+
+/**
+ * The router allowance this suite's quote saw, kept in step with what the
+ * execute's own allowance read answers: since WP2-B the execute REFUSES a leg
+ * set that is not the approved one, so `setAllowance` moves both together (a
+ * real allowance change would have come with a fresh quote).
+ */
+let currentAllowance = 10n ** 30n;
+function setAllowance(value: bigint): void {
+  currentAllowance = value;
+  readUniswapAllowance.mockResolvedValue(value);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   claimUniswapExecutionSnapshot.mockImplementation(
-    claimStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
+    claimStandingInForTheParams({
+      chainId: 4663,
+      weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      currentAllowance: () => currentAllowance,
+    }),
   );
   ensureErc20Balance.mockResolvedValue(undefined);
-  readUniswapAllowance.mockResolvedValue(10n ** 30n); // sufficient by default — one (swap) event
+  setAllowance(10n ** 30n); // sufficient by default - one (swap) event
   signUniswapTransaction.mockResolvedValue({ serializedTransaction: "0xsigned", txHash: "0xhash", fromAddress: WALLET, nonce: 1 });
   broadcastUniswapTransaction.mockResolvedValue("0xhash");
   waitForSuccessfulReceipt.mockResolvedValue({ logs: [] });
@@ -364,7 +381,7 @@ describe("C16 — post-broadcast bookkeeping failures never become a generic fai
 describe("C17 — an ambiguous/reverted event aborts every downstream never-signed event", () => {
   beforeEach(() => {
     // Force a 2-event plan: allowance (idx 0) then swap (idx 1).
-    readUniswapAllowance.mockResolvedValue(0n);
+    setAllowance(0n);
     createAgentActivityIntent.mockResolvedValue({
       executionId: 2,
       events: [

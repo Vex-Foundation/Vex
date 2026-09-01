@@ -28,6 +28,7 @@ import { getAddress, parseUnits, type Address } from "viem";
 import {
   evaluateKyberQuoteSpendability,
   walletUnresolvedSpendability,
+  type KyberQuoteSpendabilityOutcome,
 } from "./quote-spendability.js";
 import type { SpendabilityPreview } from "../../../quote-authority/spendability-contract.js";
 import { PREQUOTE_MAX_AGE_MS } from "../../../prequote/registry.js";
@@ -40,6 +41,7 @@ import {
 import {
   ROUTE_SNAPSHOT_VERSION,
   encodeRouteSnapshotRaw,
+  sealRouteSnapshot,
   type RouteSnapshot,
 } from "../../../quote-authority/snapshot.js";
 
@@ -201,12 +203,18 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
   // from the output this answer shows. The execute never recomputes it from a
   // fresher route - that rederivation is the 2026-08-27 incident.
   const approvedMinOutRaw = computeApprovedMinOut(summaryRaw.amountOut, quoteSlippage.bps).toString();
-  const snapshot: RouteSnapshot | null = encoded.ok && eligibility.kind === "executable"
-    ? {
+  // NO PLAN, NO SNAPSHOT. The transactions this swap would send are part of what
+  // an execute is authorized for, so a quote that could not measure them may
+  // show its route and price but must authorize nothing. On this venue every
+  // path that fails to measure the plan already answers `balance_unavailable`,
+  // so the guard is belt to that braces rather than a new refusal.
+  const snapshot: RouteSnapshot | null = encoded.ok
+    && eligibility.kind === "executable"
+    && spendability.debitPlan !== undefined
+    ? sealRouteSnapshot({
         v: ROUTE_SNAPSHOT_VERSION,
         provider: "kyberswap",
         raw: encoded.raw,
-        digest: encoded.digest,
         approvedAmountOutRaw: summaryRaw.amountOut,
         approvedMinOutRaw,
         approvedAmountOutHuman: humanizeAmountOut(summaryRaw.amountOut, tokenOut.decimals),
@@ -218,7 +226,8 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
         // differ by the recorder's own latency and nothing decides on this one.
         expiresAt: new Date(Date.now() + PREQUOTE_MAX_AGE_MS).toISOString(),
         eligibility,
-      }
+        debitPlan: spendability.debitPlan,
+      })
     : null;
 
   // The CANONICAL wrap pair, not merely "one leg is native" - that earlier
@@ -343,9 +352,9 @@ async function evaluateQuoteSpendability(input: {
   readonly amountIn: bigint;
   readonly approvedSummary: KyberGetRouteResponse["data"]["routeSummary"];
   readonly slippageBps: number;
-}): Promise<{ eligibility: QuoteEligibility; preview: SpendabilityPreview | undefined }> {
+}): Promise<KyberQuoteSpendabilityOutcome> {
   if (input.routeEligibility.kind !== "executable") {
-    return { eligibility: input.routeEligibility, preview: undefined };
+    return { eligibility: input.routeEligibility, preview: undefined, debitPlan: undefined };
   }
 
   let wallet: Address;

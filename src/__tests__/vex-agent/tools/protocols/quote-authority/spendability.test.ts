@@ -33,6 +33,7 @@ import {
   type SpendabilityAssetCheck,
 } from "@vex-agent/tools/protocols/quote-authority/spendability.js";
 import type { QuoteEligibility } from "@vex-agent/tools/protocols/quote-authority/eligibility.js";
+import { buildBoundDebitPlan } from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
 import {
   SPENDABILITY_CARD_VERSION,
   type AssetRef,
@@ -284,10 +285,25 @@ describe("shortfall - metadata degradation (contract C1.2)", () => {
 });
 
 describe("the durable preview", () => {
+  /**
+   * The transaction set an ERC-20 swap with no allowance yet plans, with the
+   * swap's units unmeasurable until the approve lands - the ratified
+   * lower-bound case, which the card must state rather than hide.
+   */
+  const PLAN = buildBoundDebitPlan({
+    legs: [
+      { role: "allowance", unpriced: false },
+      { role: "swap", unpriced: true },
+      { role: "swap_fee", unpriced: false },
+    ],
+    feeCap: { mode: "eip1559", maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
+  });
+
   const outcome = evaluateSpendability({
     routeEligibility: EXECUTABLE_ROUTE,
     source: check(USDC, "5000000", "1000000"),
     native: check(NATIVE, "1000000000000000000", "500000000000000", 18, "ETH"),
+    debitPlan: PLAN,
   });
 
   it("is produced only on the executable path and carries both legs", () => {
@@ -297,6 +313,28 @@ describe("the durable preview", () => {
     expect(preview?.source.required.raw).toBe("1000000");
     expect(preview?.source.current.raw).toBe("5000000");
     expect(preview?.native.required.raw).toBe("500000000000000");
+    expect(preview?.debitPlan).toEqual(PLAN);
+  });
+
+  it("carries no plan for a venue that seals none, rather than an empty one", () => {
+    const noPlan = evaluateSpendability({
+      routeEligibility: EXECUTABLE_ROUTE,
+      source: check(USDC, "5000000", "1000000"),
+      native: check(NATIVE, "1000000000000000000", "500000000000000", 18, "ETH"),
+    });
+
+    expect(noPlan.preview?.debitPlan).toBeUndefined();
+    // And it still round-trips: a Solana preview is not a broken EVM one.
+    expect(parseSpendabilityPreview(JSON.parse(JSON.stringify(noPlan.preview)) as unknown))
+      .toEqual(noPlan.preview);
+  });
+
+  it("refuses a payload whose bound plan is not a shape this build can enforce", () => {
+    const preview = outcome.preview;
+    if (preview === undefined) throw new Error("preview missing");
+
+    expect(parseSpendabilityPreview({ ...preview, debitPlan: { legs: [], reserve: PLAN.reserve } }))
+      .toBeUndefined();
   });
 
   it("round-trips through the codec unchanged", () => {
@@ -339,5 +377,12 @@ describe("the durable preview", () => {
     expect(line).toContain("pending");
     expect(line).toContain(OBSERVED_AT);
     expect(line).toContain("re-read before signing");
+    // The PLAN the binding will enforce, in the same line: the transaction set,
+    // the ceiling, and the honest lower-bound caveat for the unpriceable leg.
+    expect(line).toContain("will send allowance -> swap -> swap_fee");
+    expect(line).toContain("at most 11210000 wei/gas");
+    expect(line).toContain("zero_value_self_transfer");
+    expect(line).toContain("swap gas not yet measurable");
+    expect(line).toContain("LOWER BOUND");
   });
 });

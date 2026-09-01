@@ -24,6 +24,7 @@ import { NATIVE_TOKEN_ADDRESS } from "@tools/uniswap/execute.js";
 import type { UniswapToken } from "@tools/uniswap/types.js";
 
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
+import type { BoundDebitPlan } from "../../../quote-authority/debit-plan.js";
 import type { QuoteEligibility } from "../../../quote-authority/eligibility.js";
 import {
   evaluateSpendability,
@@ -139,11 +140,16 @@ export async function observeUniswapSwapSpendability(input: {
 export function judgeUniswapSpendability(
   observation: UniswapSpendabilityObservation,
   routeEligibility: QuoteEligibility,
+  debitPlan?: BoundDebitPlan,
 ): { readonly eligibility: QuoteEligibility; readonly preview: SpendabilityPreview | undefined } {
   return evaluateSpendability({
     routeEligibility,
     source: observation.source,
     native: observation.native,
+    // Carried onto the card so a person sees the transaction set the binding
+    // will enforce, not only the total it costs. Absent at the pre-sign gate,
+    // whose caller renders no card.
+    ...(debitPlan === undefined ? {} : { debitPlan }),
   });
 }
 

@@ -42,7 +42,13 @@ import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../constants/solana-chain.js
 import { getLocalChain, listLocalChains } from "@tools/evm-chains/registry.js";
 import { resolveInclusiveEvmChain } from "@tools/evm-chains/resolver.js";
 import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
-import { buildTokenScanSet } from "@vex-agent/sync/local-chain-balance-sync.js";
+import { localChainInventorySources } from "@vex-agent/wallet-inventory/local-chain.js";
+import {
+  LOCAL_CHAIN_SCAN_CONCURRENCY,
+  readLocalChainSnapshot,
+  type LocalChainSnapshot,
+  type TokenReadError,
+} from "./local-chain-snapshot.js";
 import { responseFormatSchema } from "@vex-agent/response-format.js";
 import {
   type ConciseKhalaniToken,
@@ -113,18 +119,6 @@ const WalletReadArgs = z.object({
   // state-2 note in `@vex-agent/response-format.js`.
   response_format: responseFormatSchema("detailed"),
 }).strict();
-
-/**
- * One token the chain scan could not answer for. Deliberately NOT a
- * `chainError`: the chain itself scanned, and its other tokens and totals are
- * still in the snapshot. Reported so "the read failed" can never be mistaken
- * for "you hold none of it" (the 2026-08-10 incident's core confusion).
- */
-interface TokenReadError {
-  chainId: number;
-  tokenAddress: string;
-  reason: string;
-}
 
 /**
  * One TOKEN ACCOUNT the read could not trust. Deliberately NOT a `tokenError`:
@@ -256,145 +250,6 @@ async function partitionBalanceChainScope(raw: string | undefined): Promise<Bala
     localChainIds,
     rawProvided: true,
   };
-}
-
-// ── Local-chain live snapshot ───────────────────────────────────
-
-type LocalChainSnapshot =
-  | { ok: true; tokens: ConciseKhalaniToken[]; totalUsd: number; tokenErrors: TokenReadError[] }
-  | { ok: false; chainName?: string; message: string };
-
-/**
- * Matches `DEFAULT_BALANCE_SCAN_CONCURRENCY` in the Khalani scan: the two sides
- * of one `WalletBalances` answer must not race each other into a provider's
- * rate limit.
- */
-const LOCAL_CHAIN_SCAN_CONCURRENCY = 4;
-
-/**
- * Build one local-chain row with its human amount already derived.
- *
- * The conversion is the shared owner's (`projectBalanceRow`), not this file's:
- * the human amount an agent reads and the one the sync writes must come from
- * the same place, or a correction lands in only one of them.
- */
-function localChainTokenRow(input: {
-  symbol: string;
-  name: string;
-  address: string;
-  chainId: number;
-  decimals: number;
-  balanceWei: bigint;
-  priceUsd: number | null;
-}): ConciseKhalaniToken {
-  const balanceRaw = input.balanceWei.toString();
-  const priceUsd = input.priceUsd !== null ? String(input.priceUsd) : null;
-  return {
-    symbol: input.symbol,
-    name: input.name,
-    address: input.address,
-    chainId: input.chainId,
-    decimals: input.decimals,
-    balanceRaw,
-    priceUsd,
-    ...projectBalanceRow(balanceRaw, input.decimals, priceUsd),
-  };
-}
-
-/**
- * The numeric contribution one row makes to a snapshot's `totalUsd`.
- *
- * The decimals guard is LOAD-BEARING, not defensive noise: `formatUnits` THROWS
- * on a non-integer scale, and this runs inside the per-chain try, so a single
- * token whose provider reported `Infinity` decimals used to take the whole
- * chain's snapshot down with it and report the wallet as holding nothing there.
- * An unconvertible row contributes 0 to the total and says why in its own
- * `unprojectableReason`; it never removes its neighbours.
- */
-function heldUsd(balanceWei: bigint, decimals: number, priceUsd: number | null): number {
-  if (priceUsd === null || !isTokenDecimals(decimals)) return 0;
-  const human = Number(formatUnits(balanceWei, decimals));
-  return Number.isFinite(human) ? human * priceUsd : 0;
-}
-
-/**
- * Live-read one local chain into the snapshot token shape. Scans the SAME
- * token set as the background sync (seed ∪ tracked). Failures collapse to a
- * bounded per-chain error — SECURITY: raw provider errors can carry the RPC
- * URL / HTML bodies and never reach the model output.
- */
-async function readLocalChainSnapshot(
-  address: string,
-  chainId: number,
-): Promise<LocalChainSnapshot> {
-  const config = getLocalChain(chainId);
-  if (!config) return { ok: false, message: "unknown local chain" };
-  try {
-    const scanSet = await buildTokenScanSet(config, address);
-    const read = await readLocalChainBalances(config, address, scanSet);
-
-    const tokens: ConciseKhalaniToken[] = [];
-    let totalUsd = 0;
-    // Zero native balances are skipped (Khalani parity, same as the sync path).
-    if (read.nativeWei > 0n) {
-      tokens.push(
-        localChainTokenRow({
-          symbol: config.nativeCurrency.symbol,
-          name: config.nativeCurrency.name,
-          address: NATIVE_TOKEN_ADDRESS,
-          chainId: config.id,
-          decimals: config.nativeCurrency.decimals,
-          balanceWei: read.nativeWei,
-          priceUsd: read.nativePriceUsd,
-        }),
-      );
-      totalUsd += heldUsd(read.nativeWei, config.nativeCurrency.decimals, read.nativePriceUsd);
-    }
-    for (const token of read.tokens) {
-      tokens.push(
-        localChainTokenRow({
-          symbol: token.symbol,
-          name: token.symbol,
-          address: token.address,
-          chainId: config.id,
-          decimals: token.decimals,
-          balanceWei: token.balanceWei,
-          priceUsd: token.priceUsd,
-        }),
-      );
-      totalUsd += heldUsd(token.balanceWei, token.decimals, token.priceUsd);
-    }
-    return {
-      ok: true,
-      tokens,
-      totalUsd,
-      tokenErrors: read.tokenFailures.map((failure) => ({
-        chainId: config.id,
-        tokenAddress: failure.address,
-        reason: failure.reason,
-      })),
-    };
-  } catch (err) {
-    // Owner decree (2026-08-02): the REAL cause reaches the agent. This was a
-    // bare `catch {}` — the error object was dropped on the floor, so a dead
-    // RPC, a bad token in the scan set and a chain misconfiguration were all
-    // reported to the model (and logged nowhere) as the same five words. The
-    // provider's text is untrusted, so it is scrubbed + bounded by the
-    // runtime's canonical summarizer, exactly as the sibling Khalani-scope
-    // failure at `partitionBalanceChainScope` surfaces its own cause.
-    const summary = summarizeProtocolError(err);
-    logger.warn("wallet.local_chain_read.failed", {
-      chainId,
-      chainName: config.name,
-      category: summary.category,
-      error: summary.message,
-    });
-    return {
-      ok: false,
-      chainName: config.name,
-      message: `local chain RPC read failed: ${summary.message}`,
-    };
-  }
 }
 
 // ── Solana live snapshot ────────────────────────────────────────
@@ -598,7 +453,7 @@ export async function handleWalletBalances(
       const localResults = new Array<LocalChainSnapshot | undefined>(localChainIds.length);
       await mapWithConcurrency(localChainIds, LOCAL_CHAIN_SCAN_CONCURRENCY, async (localChainId, index) => {
         throwIfAborted(context.abortSignal);
-        localResults[index] = await readLocalChainSnapshot(address, localChainId);
+        localResults[index] = await readLocalChainSnapshot(address, localChainId, context.abortSignal);
       });
 
       localChainIds.forEach((localChainId, index) => {
@@ -606,30 +461,38 @@ export async function handleWalletBalances(
         // Unreachable while `mapWithConcurrency` visits every index; treated as
         // a per-chain failure rather than asserted, because the alternative is
         // losing a whole family snapshot to a bookkeeping slip.
-        // A local chain reads a BOUNDED token set (seed ∪ pinned), so even a
-        // fully successful read cannot claim it saw every holding: a token
-        // outside that set is invisible here, not absent. That is the
-        // `source_not_exhaustive` the inventory axis reports, and it is why
-        // Robinhood Chain (4663) never claims a complete inventory.
-        const exhaustive = false;
         if (local === undefined) {
           chainErrors.push({ chainId: localChainId, message: "local chain scan produced no result" });
           inventorySources.push({
             chainId: localChainId,
             source: "local_chain_seed_and_pins",
             result: "failed",
-            exhaustive,
+            exhaustive: false,
             observedAt: null,
           });
           return;
         }
-        inventorySources.push({
-          chainId: localChainId,
-          source: "local_chain_seed_and_pins",
-          result: local.ok ? "read" : "failed",
-          exhaustive,
-          observedAt: local.ok ? new Date().toISOString() : null,
-        });
+        // The enumeration owner decides what this chain may CLAIM: seeds and
+        // pins alone are never exhaustive (a token outside them is invisible
+        // here, not absent), and only a complete indexer answer lets 4663 say
+        // it saw every holding. A scan set that never got built (the chain
+        // failed before enumeration) reports the bounded source it fell back
+        // to, never a fresh claim.
+        inventorySources.push(
+          ...(local.scan === null
+            ? [{
+                chainId: localChainId,
+                source: "local_chain_seed_and_pins" as const,
+                result: "failed" as const,
+                exhaustive: false,
+                observedAt: null,
+              }]
+            : localChainInventorySources({
+                scan: local.scan,
+                chainRead: local.ok ? "read" : "failed",
+                observedAt: new Date().toISOString(),
+              })),
+        );
         if (local.ok) {
           projected.push(...local.tokens);
           totalUsd += local.totalUsd;

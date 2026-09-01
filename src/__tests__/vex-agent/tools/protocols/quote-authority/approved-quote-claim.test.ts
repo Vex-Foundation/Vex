@@ -21,7 +21,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type { SwapPrequote } from "@vex-agent/db/repos/swap-prequotes.js";
 import { approvedQuoteAuthorityFrom } from "@vex-agent/tools/protocols/quote-authority/approved-authority.js";
-import { encodeRouteSnapshotRaw, ROUTE_SNAPSHOT_VERSION } from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
+import {
+  encodeRouteSnapshotRaw,
+  ROUTE_SNAPSHOT_VERSION,
+  sealRouteSnapshot,
+} from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
+import { buildBoundDebitPlan } from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
 
 const mockClaimBound = vi.fn();
 const mockClaimForExecute = vi.fn();
@@ -62,25 +67,34 @@ const ROUTE_SUMMARY = {
 const ENCODED = encodeRouteSnapshotRaw(ROUTE_SUMMARY);
 if (!ENCODED.ok) throw new Error("fixture route must encode");
 const RAW = ENCODED.raw;
-const DIGEST = ENCODED.digest;
+/** The one-leg transaction set this fixture's quote bound. */
+const PLAN = buildBoundDebitPlan({
+  legs: [{ role: "swap", unpriced: false }],
+  feeCap: { mode: "legacy", gasPriceWei: 1_000n },
+});
 
 function routeRef(overrides: Record<string, unknown> = {}) {
   return {
-    v: ROUTE_SNAPSHOT_VERSION,
-    provider: "kyberswap",
-    raw: RAW,
-    digest: DIGEST,
-    approvedAmountOutRaw: "1000000000000000000",
-    approvedMinOutRaw: APPROVED_MIN_OUT,
-    approvedAmountOutHuman: "1",
-    approvedMinOutHuman: "0.99",
-    tokenOutSymbol: "TKN",
-    effectiveSlippageBps: 100,
-    expiresAt: EXPIRES_AT,
-    eligibility: { kind: "executable" },
+    ...sealRouteSnapshot({
+      v: ROUTE_SNAPSHOT_VERSION,
+      provider: "kyberswap",
+      raw: RAW,
+      approvedAmountOutRaw: "1000000000000000000",
+      approvedMinOutRaw: APPROVED_MIN_OUT,
+      approvedAmountOutHuman: "1",
+      approvedMinOutHuman: "0.99",
+      tokenOutSymbol: "TKN",
+      effectiveSlippageBps: 100,
+      expiresAt: EXPIRES_AT,
+      eligibility: { kind: "executable", priceImpactFraction: 0.001, adverse: false },
+      debitPlan: PLAN,
+    }),
     ...overrides,
   };
 }
+
+/** The digest the card would have named for that row. */
+const DIGEST = routeRef().digest;
 
 /** A claimed row as the repo returns it. Only the fields the claim reads matter. */
 function row(overrides: Partial<SwapPrequote> = {}): SwapPrequote {

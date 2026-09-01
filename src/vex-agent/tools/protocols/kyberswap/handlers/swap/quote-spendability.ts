@@ -52,6 +52,7 @@ import {
 } from "@tools/evm-chains/source-balance-observation.js";
 import type { L1FeeOracleClient } from "@tools/evm-chains/l1-data-fee.js";
 import {
+  checkFeeCap,
   computeSwapNativeDebit,
   estimateLegL1DataFee,
   type FollowUpReserve,
@@ -64,6 +65,11 @@ import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
 import type { Address, Hex } from "viem";
 
 import { ErrorCodes, VexError } from "../../../../../../errors.js";
+import {
+  buildBoundDebitPlan,
+  planFeeCapForRole,
+  type BoundDebitPlan,
+} from "../../../quote-authority/debit-plan.js";
 import type { QuoteEligibility } from "../../../quote-authority/eligibility.js";
 import {
   evaluateSpendability,
@@ -130,6 +136,18 @@ export interface KyberDebitPlan {
   readonly source: KyberSourceAsset;
   /** Exact atomic units of the source asset the swap debits. */
   readonly sourceRequiredRaw: string;
+  /**
+   * The per-gas ceilings the APPROVED quote bound, by role
+   * (`quote-authority/debit-plan.ts`).
+   *
+   * This venue imposes no `StagedFeeBounds` on its own path - the reason is in
+   * the file header - so the prepared request arrives carrying whatever price
+   * the node suggested. That is still answered from the request's real prices;
+   * what this adds is the CEILING half: a request priced above what the human
+   * approved is refused rather than signed, which a solvency check alone cannot
+   * catch (a rich wallet can afford a price nobody agreed to).
+   */
+  readonly approvedPlan: BoundDebitPlan;
 }
 
 export interface KyberSourceAsset {
@@ -153,6 +171,8 @@ const CAUSES = {
   legGasUnavailable: "evm_leg_gas_estimate_failed",
   nonceUnavailable: "evm_nonce_read_failed",
   requestUnpriced: "evm_signed_request_carries_no_fee_price",
+  /** The leg about to be signed is not one this execution planned and priced. */
+  legNotInPlan: "kyber_leg_not_in_debit_plan",
 } as const;
 
 function nativeAssetRef(chainId: number): AssetRef {
@@ -296,6 +316,8 @@ async function judgeSpendability(
     readonly source: KyberSourceAsset;
     readonly sourceRequiredRaw: string;
     readonly nativeRequiredRaw: string;
+    /** Carried onto the approval card when the quote seals one. */
+    readonly debitPlan?: BoundDebitPlan;
   },
 ): Promise<SpendabilityOutcome> {
   const native = getEvmNativeCurrency(input.chainId);
@@ -339,10 +361,22 @@ async function judgeSpendability(
     routeEligibility: input.routeEligibility,
     source: sourceCheck,
     native: nativeCheck,
+    ...(input.debitPlan === undefined ? {} : { debitPlan: input.debitPlan }),
   });
 }
 
 // ── Quote time ──────────────────────────────────────────────────────
+
+/**
+ * The quote-time outcome, plus the executable artifact the snapshot binds.
+ *
+ * `debitPlan` is present only on the arm that produced a card - the same arm
+ * that produced a `preview` - because a quote with no card authorized nothing
+ * and must seal no snapshot.
+ */
+export type KyberQuoteSpendabilityOutcome = SpendabilityOutcome & {
+  readonly debitPlan: BoundDebitPlan | undefined;
+};
 
 export interface KyberQuoteSpendabilityInput {
   /** The verdict the route classifier already reached. A non-executable one is returned unchanged. */
@@ -383,10 +417,10 @@ export interface KyberQuoteSpendabilityInput {
  */
 export async function evaluateKyberQuoteSpendability(
   input: KyberQuoteSpendabilityInput,
-): Promise<SpendabilityOutcome> {
+): Promise<KyberQuoteSpendabilityOutcome> {
   const nativeRef = nativeAssetRef(input.chainId);
-  const refuse = (cause: string): SpendabilityOutcome =>
-    ({ eligibility: unavailable(nativeRef, cause), preview: undefined });
+  const refuse = (cause: string): KyberQuoteSpendabilityOutcome =>
+    ({ eligibility: unavailable(nativeRef, cause), preview: undefined, debitPlan: undefined });
 
   // The ACTUAL transaction shape. Advisory: it is used for value, gas units and
   // L1 bytes only, and the stored snapshot remains the route summary above.
@@ -436,14 +470,27 @@ export async function evaluateKyberQuoteSpendability(
   });
   if (!debit.ok) return refuse(debit.cause);
 
-  return await judgeSpendability(input.client, {
+  // The plan the SNAPSHOT binds: the roles in broadcast order and the one
+  // ceiling they were all costed at. Every leg here is PRICED - the approve legs
+  // estimate live and the swap leg carries the provider's own build figure, and
+  // a leg that could not be measured refused above - so none carries the
+  // unpriced marker. Gas UNITS are deliberately absent: they drift 2.07x
+  // block-to-block inside the quote window (measured on Base 2026-08-31), so
+  // binding them would refuse fundable swaps.
+  const debitPlan = buildBoundDebitPlan({
+    legs: legs.map((leg) => ({ role: leg.role, unpriced: false })),
+    feeCap,
+  });
+  const outcome = await judgeSpendability(input.client, {
     routeEligibility: input.routeEligibility,
     chainId: input.chainId,
     wallet: input.wallet,
     source: sourceAssetOf(input.tokenIn),
     sourceRequiredRaw: input.amountIn.toString(10),
     nativeRequiredRaw: debit.totalRaw,
+    debitPlan,
   });
+  return { ...outcome, debitPlan: outcome.preview === undefined ? undefined : debitPlan };
 }
 
 /** The source asset as this lane spells it. `decimals` is echoed, never repaired. */
@@ -555,10 +602,11 @@ async function measureReserveGas(
 }
 
 /** The verdict for a quote whose wallet could not be resolved at all. Fails closed. */
-export function walletUnresolvedSpendability(chainId: number): SpendabilityOutcome {
+export function walletUnresolvedSpendability(chainId: number): KyberQuoteSpendabilityOutcome {
   return {
     eligibility: unavailable(nativeAssetRef(chainId), CAUSES.walletUnresolved),
     preview: undefined,
+    debitPlan: undefined,
   };
 }
 
@@ -599,6 +647,8 @@ export async function measureKyberDebitPlan(
     readonly swapGasEstimate: bigint;
     readonly source: KyberSourceAsset;
     readonly sourceRequiredRaw: string;
+    /** The plan the claimed snapshot bound. Its ceilings gate every signature. */
+    readonly approvedPlan: BoundDebitPlan;
   },
 ): Promise<KyberDebitPlan> {
   const legs: KyberDebitLeg[] = [];
@@ -621,6 +671,7 @@ export async function measureKyberDebitPlan(
     reserveGasUnits,
     source: input.source,
     sourceRequiredRaw: input.sourceRequiredRaw,
+    approvedPlan: input.approvedPlan,
   };
 }
 
@@ -684,6 +735,34 @@ export async function assertKyberPreSignSpendability(
   const feeCap = feeCapOfRequest(request);
   if (feeCap === null) {
     throw refusal(unavailable(nativeAssetRef(plan.chainId), CAUSES.requestUnpriced));
+  }
+
+  // THE APPROVED CEILING, held against the price these bytes actually carry.
+  // The leg's role comes from the plan, whose order this build proved identical
+  // to the approved one before the intent was created, so the ceiling applied
+  // here is the ceiling that leg was quoted under.
+  const signing = plan.legs[legIndex];
+  if (signing === undefined) {
+    throw refusal(unavailable(nativeAssetRef(plan.chainId), CAUSES.legNotInPlan));
+  }
+  const approvedCap = planFeeCapForRole(plan.approvedPlan, signing.role);
+  if (approvedCap === null) {
+    throw refusal(unavailable(nativeAssetRef(plan.chainId), CAUSES.legNotInPlan));
+  }
+  // Gas UNITS are deliberately NOT compared - both sides pass `0n` - because a
+  // units ceiling taken at quote time refuses fundable swaps (2.07x measured
+  // block-to-block drift on Base, 2026-08-31). Only the PRICE is bound.
+  const capVerdict = checkFeeCap(
+    { gasLimit: 0n, cap: feeCap },
+    { gasLimit: 0n, cap: approvedCap },
+  );
+  if (!capVerdict.withinCap) {
+    throw new VexError(
+      ErrorCodes.KYBER_MALFORMED_PARAMS,
+      `Refused at signing: this ${signing.role} transaction's ${capVerdict.field} is ${capVerdict.requiredRaw},`
+        + ` above the ${capVerdict.approvedRaw} the approved quote was priced at.`,
+      "Nothing was signed. Request a fresh kyberswap__swap_quote at the current gas price.",
+    );
   }
 
   // The leg being signed carries the request's OWN gas and value; the legs after

@@ -46,15 +46,15 @@ preconditions appear inside the first 2000 bytes.
 | BridgeQuoteRelay | Quote a Relay bridge | internal | yes | no | yes | - | 1410 |
 | BridgeStatus | Check a bridge order's status | internal | yes | no | yes | - | 1297 |
 | ChainRead | Read raw EVM chain data | internal | yes | no | yes | - | 1326 |
-| SwapExecute | Execute a token swap | internal | no | yes | yes | - | 2256 |
-| SwapExecuteUniswap | Execute a Uniswap swap | internal | no | yes | yes | - | 1442 |
-| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 1714 |
-| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 1082 |
+| SwapExecute | Execute a token swap | internal | no | yes | yes | - | 3289 |
+| SwapExecuteUniswap | Execute a Uniswap swap | internal | no | yes | yes | - | 2337 |
+| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 3374 |
+| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 2560 |
 | TokenCheck | Check an EVM token for honeypot and tax | internal | yes | no | yes | - | 953 |
 | TokenFind | Find a token's address and decimals | internal | yes | no | yes | - | 2053 |
 | TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 2803 |
 | UnitsConvert | Convert token amounts and units | internal | yes | no | yes | - | 1397 |
-| WalletBalances | Read wallet balances across chains | internal | yes | no | yes | - | 5184 |
+| WalletBalances | Read wallet balances across chains | internal | yes | no | yes | - | 6344 |
 | WalletEvmTransactionConfirm | Broadcast a prepared EVM transaction | internal | no | yes | yes | - | 1804 |
 | WalletEvmTransactionPrepare | Prepare an EVM transaction | internal | no | no | yes | - | 2288 |
 | WalletSendConfirm | Broadcast a prepared wallet transfer | internal | no | yes | yes | - | 1503 |

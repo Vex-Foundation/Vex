@@ -131,7 +131,20 @@ import { snapshotRefusal } from "@vex-agent/tools/protocols/quote-authority/rest
 import {
   ROUTE_SNAPSHOT_VERSION,
   encodeRouteSnapshotRaw,
+  sealRouteSnapshot,
 } from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
+import { buildBoundDebitPlan } from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
+
+/**
+ * The transaction set this suite's quote bound, matching the allowance plan its
+ * own mocks produce - the execute refuses a set that is not the approved one
+ * (WP2-B). The ceiling is high enough that no prepared request here is above it;
+ * the ceiling itself is the subject of its own suite.
+ */
+const APPROVED_PLAN = buildBoundDebitPlan({
+  legs: [{ role: "swap" as const, unpriced: false }],
+  feeCap: { mode: "eip1559", maxFeePerGasWei: 10n ** 15n, maxPriorityFeePerGasWei: 10n ** 15n },
+});
 
 const TOKEN_IN = getAddress(capture.request.tokenIn);
 const TOKEN_OUT = capture.request.tokenOut;
@@ -167,11 +180,10 @@ function claimedSnapshot(amountOut: string = QUOTED_OUT, slippageBps = SLIPPAGE_
     ok: true as const,
     prequoteId: "prequote-incident",
     routeSummary: summary,
-    snapshot: {
+    snapshot: sealRouteSnapshot({
       v: ROUTE_SNAPSHOT_VERSION,
       provider: "kyberswap" as const,
       raw: encoded.raw,
-      digest: encoded.digest,
       approvedAmountOutRaw: amountOut,
       approvedMinOutRaw: computeApprovedMinOut(amountOut, slippageBps).toString(),
       approvedAmountOutHuman: "0.005376",
@@ -180,7 +192,8 @@ function claimedSnapshot(amountOut: string = QUOTED_OUT, slippageBps = SLIPPAGE_
       effectiveSlippageBps: slippageBps,
       expiresAt: "2026-08-28T10:00:00.000Z",
       eligibility: { kind: "executable" as const, priceImpactFraction: 0.001, adverse: false },
-    },
+      debitPlan: APPROVED_PLAN,
+    }),
   };
 }
 

@@ -132,7 +132,20 @@ import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-po
 import {
   ROUTE_SNAPSHOT_VERSION,
   encodeRouteSnapshotRaw,
+  sealRouteSnapshot,
 } from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
+import { buildBoundDebitPlan } from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
+
+/**
+ * The transaction set this suite's quote bound, matching the allowance plan its
+ * own mocks produce - the execute refuses a set that is not the approved one
+ * (WP2-B). The ceiling is high enough that no prepared request here is above it;
+ * the ceiling itself is the subject of its own suite.
+ */
+const APPROVED_PLAN = buildBoundDebitPlan({
+  legs: [{ role: "swap" as const, unpriced: false }],
+  feeCap: { mode: "eip1559", maxFeePerGasWei: 10n ** 15n, maxPriorityFeePerGasWei: 10n ** 15n },
+});
 
 const TOKEN_IN = getAddress(capture.request.tokenIn);
 const TOKEN_OUT = capture.request.tokenOut;
@@ -170,11 +183,10 @@ function claimed(amountOut: string = ROUTE_OUT, slippageBps = VEX_DEFAULT_SLIPPA
     ok: true as const,
     prequoteId: "prequote-1",
     routeSummary: summary,
-    snapshot: {
+    snapshot: sealRouteSnapshot({
       v: ROUTE_SNAPSHOT_VERSION,
       provider: "kyberswap" as const,
       raw: encoded.raw,
-      digest: encoded.digest,
       approvedAmountOutRaw: amountOut,
       approvedMinOutRaw: computeApprovedMinOut(amountOut, slippageBps).toString(),
       approvedAmountOutHuman: "0.005376",
@@ -183,7 +195,8 @@ function claimed(amountOut: string = ROUTE_OUT, slippageBps = VEX_DEFAULT_SLIPPA
       effectiveSlippageBps: slippageBps,
       expiresAt: "2026-08-28T10:00:00.000Z",
       eligibility: { kind: "executable" as const, priceImpactFraction: 0.001, adverse: false },
-    },
+      debitPlan: APPROVED_PLAN,
+    }),
   };
 }
 

@@ -19,6 +19,7 @@
 export type SnapshotRefusalKind =
   | "missing_snapshot"
   | "snapshot_unreadable"
+  | "snapshot_version_unsupported"
   | "not_executable"
   | "already_claimed"
   | "superseded"
@@ -37,6 +38,12 @@ const REFUSAL_CAUSE: Record<SnapshotRefusalKind, string> = {
     "the matched quote carries no stored route snapshot, so there is nothing to execute against",
   snapshot_unreadable:
     "the stored route snapshot is not in a shape this build can read",
+  // NOT folded into `snapshot_unreadable`. A quote recorded before the debit
+  // plan was bound authorized a PRICE and nothing about the transactions the
+  // swap would send, so this build cannot prove which set of transactions the
+  // human agreed to. Self-clearing: the prequote TTL is 15 minutes.
+  snapshot_version_unsupported:
+    "the stored route snapshot is from an older quote format that did not bind the transactions this swap would send",
   not_executable:
     "the matched quote was recorded as not executable, so it never authorized a swap",
   already_claimed:

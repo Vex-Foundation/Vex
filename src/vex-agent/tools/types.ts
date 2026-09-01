@@ -262,7 +262,44 @@ export interface ToolSpendabilityPreview {
   readonly cardVersion: string;
   readonly source: ToolSpendabilityLeg;
   readonly native: ToolSpendabilityLeg;
+  /**
+   * The transactions the quote's binding will ENFORCE, when the venue sealed a
+   * plan (WP2-B). Structural for the same reason as the rest of this shape, and
+   * OPTIONAL because a venue with no EVM leg plan (Solana) seals none.
+   */
+  readonly debitPlan?: ToolDebitPlan;
 }
+
+/**
+ * The bound transaction set of a quote, as the tool vocabulary states it.
+ *
+ * The producing module's `BoundDebitPlan`
+ * (`protocols/quote-authority/debit-plan.ts`) is assignable to this and the
+ * compiler checks that at the assignment. Gas UNITS are absent by design: they
+ * are an execute-time fact (2.07x measured block-to-block drift), so what is
+ * bound is the ROLE set, the per-gas ceilings and the reserve's identity.
+ */
+export interface ToolDebitPlan {
+  readonly legs: readonly {
+    readonly role: "allowance_reset" | "allowance" | "swap" | "swap_fee";
+    readonly feeCap: ToolLegFeeCap;
+    /** True when the leg's gas units could not be measured at quote time. */
+    readonly unpriced: boolean;
+  }[];
+  readonly reserve: {
+    readonly kind: "zero_value_self_transfer";
+    readonly feeCap: ToolLegFeeCap;
+  };
+}
+
+/** A per-gas ceiling in exact base-10 wei strings, never a float (rule 90). */
+export type ToolLegFeeCap =
+  | {
+      readonly mode: "eip1559";
+      readonly maxFeePerGasWei: string;
+      readonly maxPriorityFeePerGasWei: string;
+    }
+  | { readonly mode: "legacy"; readonly gasPriceWei: string };
 
 /** One asset's side of {@link ToolSpendabilityPreview}. */
 export interface ToolSpendabilityLeg {

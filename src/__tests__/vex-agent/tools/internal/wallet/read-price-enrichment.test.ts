@@ -62,7 +62,12 @@ vi.mock("@tools/evm-chains/balances.js", () => ({
 }));
 
 vi.mock("@vex-agent/sync/local-chain-balance-sync.js", () => ({
-  buildTokenScanSet: async () => [],
+  buildLocalChainInventory: async () => buildLocalChainScanSet({
+    chainId: 4663,
+    seedAddresses: [],
+    pinnedAddresses: [],
+    indexer: null,
+  }),
 }));
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
@@ -77,6 +82,8 @@ vi.mock("@tools/dexscreener/price-read.js", () => ({
   readTokensPairs: (...a: unknown[]) => mockReadTokensPairs(...a),
   readTokenPools: (...a: unknown[]) => mockReadTokenPools(...a),
 }));
+
+import { buildLocalChainScanSet } from "@vex-agent/wallet-inventory/local-chain.js";
 
 const { handleWalletBalances } = await import(
   "../../../../../vex-agent/tools/internal/wallet/read.js"

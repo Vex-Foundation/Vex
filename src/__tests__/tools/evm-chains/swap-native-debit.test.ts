@@ -28,10 +28,7 @@ import {
   checkFeeCap,
   computeSwapNativeDebit,
   estimateLegL1DataFee,
-  parseLegFeeCap,
   priceFollowUpReserve,
-  serializeLegFeeCap,
-  stagedFeeBoundsForLeg,
   type LegFeeCap,
   type NativeDebitLeg,
 } from "@tools/evm-chains/swap-native-debit.js";
@@ -262,50 +259,7 @@ describe("the follow-up reserve is measured, never a percentage", () => {
   });
 });
 
-describe("quote-time fee caps survive persistence and are then enforced", () => {
-  it("round-trips an EIP-1559 cap through exact decimal strings", () => {
-    const persisted = serializeLegFeeCap("swap", 210_000n, EIP1559);
-
-    expect(persisted).toEqual({
-      role: "swap",
-      gasLimit: "210000",
-      mode: "eip1559",
-      maxFeePerGasWei: "3000000000",
-      maxPriorityFeePerGasWei: "1000000000",
-    });
-    expect(parseLegFeeCap(persisted)).toEqual({ role: "swap", gasLimit: 210_000n, cap: EIP1559 });
-  });
-
-  it("round-trips a legacy cap", () => {
-    const persisted = serializeLegFeeCap("allowance", 46_000n, LEGACY);
-    expect(parseLegFeeCap(persisted)).toEqual({ role: "allowance", gasLimit: 46_000n, cap: LEGACY });
-  });
-
-  it("rejects a stored cap this build cannot read rather than repairing it", () => {
-    expect(parseLegFeeCap({ role: "swap", gasLimit: "21000", mode: "eip1559" })).toBeUndefined();
-    expect(parseLegFeeCap({
-      role: "swap", gasLimit: "21000", mode: "legacy", gasPriceWei: "1.5",
-    })).toBeUndefined();
-    expect(parseLegFeeCap({
-      role: "teleport", gasLimit: "21000", mode: "legacy", gasPriceWei: "1",
-    })).toBeUndefined();
-    expect(parseLegFeeCap(null)).toBeUndefined();
-  });
-
-  it("becomes the ceiling the staged broadcast enforces on the signed request", () => {
-    expect(stagedFeeBoundsForLeg(210_000n, EIP1559)).toEqual({
-      mode: "eip1559",
-      gasLimit: 210_000n,
-      maxFeePerGasWei: EIP1559.maxFeePerGasWei,
-      maxPriorityFeePerGasWei: EIP1559.maxPriorityFeePerGasWei,
-    });
-    expect(stagedFeeBoundsForLeg(46_000n, LEGACY)).toEqual({
-      mode: "legacy",
-      gasLimit: 46_000n,
-      gasPriceWei: LEGACY.gasPriceWei,
-    });
-  });
-
+describe("the approved ceiling is enforced against the current requirement", () => {
   it("accepts a current requirement at or below the approved ceiling", () => {
     expect(checkFeeCap(
       { gasLimit: 200_000n, cap: EIP1559 },

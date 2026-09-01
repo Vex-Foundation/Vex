@@ -35,6 +35,11 @@ import { z } from "zod";
 
 import { formatRawAmount, isTokenDecimals } from "../amount-display.js";
 
+import {
+  boundDebitPlanSchema,
+  uniformPlanFeeCap,
+  type BoundDebitPlan,
+} from "./debit-plan.js";
 import { isExecutable, type QuoteEligibility } from "./eligibility.js";
 import type {
   AssetRef,
@@ -109,6 +114,12 @@ export interface SpendabilityInput {
    * that is the point of a separate leg (contract C2.5).
    */
   readonly native: SpendabilityAssetCheck;
+  /**
+   * The transactions the quote's binding will enforce, when the venue seals a
+   * plan. Carried onto the preview unchanged - this module judges balances and
+   * owns no opinion about leg sets.
+   */
+  readonly debitPlan?: BoundDebitPlan;
 }
 
 /**
@@ -208,6 +219,7 @@ export function evaluateSpendability(input: SpendabilityInput): SpendabilityOutc
       cardVersion: SPENDABILITY_CARD_VERSION,
       source: legFrom(source.observation, input.source),
       native: legFrom(native.observation, input.native),
+      ...(input.debitPlan === undefined ? {} : { debitPlan: input.debitPlan }),
     },
   };
 }
@@ -259,6 +271,9 @@ export const spendabilityPreviewSchema = z.object({
   cardVersion: z.literal(SPENDABILITY_CARD_VERSION),
   source: legSchema,
   native: legSchema,
+  // Optional because a venue with no EVM leg plan (Solana) seals none, and a
+  // card that stated an empty plan for it would be claiming something false.
+  debitPlan: boundDebitPlanSchema.optional(),
 });
 
 /** Validate a preview on the way INTO durable storage. */
@@ -287,6 +302,30 @@ function renderLeg(label: string, leg: SpendabilityLeg): string {
 }
 
 /**
+ * What the binding will ENFORCE, as a person reads it.
+ *
+ * The leg SET and the per-gas ceiling, because those are what the execute is
+ * held to: a swap that would broadcast a different set, or sign above this
+ * ceiling, is refused before anything is signed. An unpriceable leg is named
+ * rather than omitted - the debit figure beside it is then a LOWER BOUND, and a
+ * card that did not say so would present a partial total as the whole cost.
+ */
+function renderPlan(plan: BoundDebitPlan): string {
+  const cap = uniformPlanFeeCap(plan);
+  const capText = cap === null
+    ? "per-leg ceilings"
+    : cap.mode === "eip1559"
+      ? `at most ${cap.maxFeePerGasWei} wei/gas (tip up to ${cap.maxPriorityFeePerGasWei})`
+      : `at most ${cap.gasPriceWei} wei/gas`;
+  const unpriced = plan.legs.filter((leg) => leg.unpriced).map((leg) => leg.role);
+  const unpricedText = unpriced.length === 0
+    ? ""
+    : ` (${unpriced.join(" and ")} gas not yet measurable, so the debit above is a LOWER BOUND)`;
+  return `will send ${plan.legs.map((leg) => leg.role).join(" -> ")}, ${capText},`
+    + ` plus a reserved ${plan.reserve.kind}${unpricedText}`;
+}
+
+/**
  * The one spendability card line.
  *
  * It states WHEN the numbers were true and that they do not authorize the
@@ -297,5 +336,6 @@ function renderLeg(label: string, leg: SpendabilityLeg): string {
 export function renderSpendability(preview: SpendabilityPreview): string {
   return `${preview.cardVersion} | ${renderLeg("source", preview.source)}`
     + ` | ${renderLeg("native debit incl. fees and reserve", preview.native)}`
+    + (preview.debitPlan === undefined ? "" : ` | ${renderPlan(preview.debitPlan)}`)
     + " | quote-time observation, re-read before signing.";
 }

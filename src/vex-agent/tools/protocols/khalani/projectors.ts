@@ -75,6 +75,13 @@ export interface ConciseKhalaniToken {
   unprojectableReason?: string;
   /** Lifted from `extensions.isRiskToken`. */
   isRiskToken?: boolean;
+  /**
+   * Provider labels for this identity, verbatim. Present only on a row whose
+   * identity came from an indexer that supplied them (Blockscout on chain
+   * 4663). They are LABELS: they are reported to the agent and never used to
+   * hide, reorder, or discount a row.
+   */
+  providerFlags?: { reputation: string | null };
 }
 
 /**

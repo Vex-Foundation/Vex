@@ -273,7 +273,11 @@ describe("uniswap.swap.quote when the wallet CAN pay", () => {
     });
 
     const preview = result.quoteAuthority?.spendability;
-    expect(preview?.cardVersion).toBe("spendability-v1");
+    expect(preview?.cardVersion).toBe("spendability-v2");
+    // WP2-B: the card states the transaction set the binding will enforce.
+    // This wallet has an allowance already, so the plan is the swap and the
+    // Vex fee transfer that follows it.
+    expect(preview?.debitPlan?.legs.map((leg) => leg.role)).toEqual(["swap", "swap_fee"]);
     // Both legs, both read at the tag a spend may be authorized from.
     expect(preview?.source.blockTag).toBe("pending");
     expect(preview?.native.blockTag).toBe("pending");

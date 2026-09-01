@@ -75,12 +75,29 @@ vi.mock("@tools/evm-chains/balances.js", () => ({
 
 const mockScanSet = vi.fn();
 vi.mock("@vex-agent/sync/local-chain-balance-sync.js", () => ({
-  buildTokenScanSet: (...a: unknown[]) => mockScanSet(...a),
+  buildLocalChainInventory: (...a: unknown[]) => mockScanSet(...a),
 }));
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddressForRead: () => "0xWALLET",
 }));
+
+import { buildLocalChainScanSet } from "@vex-agent/wallet-inventory/local-chain.js";
+
+/**
+ * The enumeration the mocked sync lane answers with: a seeds-and-pins scan set,
+ * built by the REAL union owner so the shape under test is never a hand-written
+ * imitation of it. No indexer, which is exactly the state a local chain reports
+ * when Blockscout answered nothing.
+ */
+function scanSetOf(addresses: readonly string[], chainId = 4663) {
+  return buildLocalChainScanSet({
+    chainId,
+    seedAddresses: addresses,
+    pinnedAddresses: [],
+    indexer: null,
+  });
+}
 
 const { handleWalletBalances } = await import(
   "../../../../../vex-agent/tools/internal/wallet/read.js"
@@ -111,7 +128,7 @@ function khalaniScan(family: ChainFamily, overrides: Record<string, unknown> = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockScan.mockImplementation(async ({ family }: { family: ChainFamily }) => khalaniScan(family));
-  mockScanSet.mockResolvedValue([VEX]);
+  mockScanSet.mockResolvedValue(scanSetOf([VEX]));
   // 0.005 ETH priced $2000 + 2 VEX priced $0.5.
   mockReadLocal.mockResolvedValue({
     nativeWei: 5_000000000000000n,

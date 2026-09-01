@@ -23,6 +23,8 @@
  * words.
  */
 
+import type { BoundDebitPlan } from "./debit-plan.js";
+
 /**
  * A money figure that must survive a wallet with no token metadata.
  *
@@ -165,7 +167,20 @@ export interface SpendabilityPreview {
   readonly cardVersion: string;
   readonly source: SpendabilityLeg;
   readonly native: SpendabilityLeg;
+  /**
+   * The transactions the quote's binding will ENFORCE, when the venue seals one.
+   *
+   * The same object the snapshot binds (`./debit-plan.ts`), on the same channel
+   * the two legs already travel - never a second one. The card must state the
+   * leg set, because "held 0.42 ETH covers the native debit" is a statement
+   * about a PLAN, and an execute that later broadcasts a different plan is not
+   * the thing the person consented to.
+   *
+   * Absent for a venue with no EVM leg plan (Solana), whose preview states the
+   * two balance legs and nothing it cannot prove.
+   */
+  readonly debitPlan?: BoundDebitPlan;
 }
 
 /** The version tag rendered at the head of the spendability card line. */
-export const SPENDABILITY_CARD_VERSION = "spendability-v1";
+export const SPENDABILITY_CARD_VERSION = "spendability-v2";

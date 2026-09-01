@@ -60,10 +60,11 @@ import {
   compareUniswapExecutionInputs,
   floorUnreachableRefusal,
 } from "../../../quote-authority/uniswap.js";
+import { compareDebitPlanRoles, uniformPlanFeeCap } from "../../../quote-authority/debit-plan.js";
+import { UNISWAP_FRESH_QUOTE_TOOL } from "../../../quote-authority/refusal.js";
 import { executionInputsFrom } from "./execution-binding.js";
 import {
   planUniswapDebitLegs,
-  resolveUniswapLegFeeCap,
   type UniswapSpendabilityClient,
 } from "./native-debit-plan.js";
 import { createUniswapPreSignDebitGate } from "./quote-spendability.js";
@@ -256,13 +257,13 @@ export async function executeUniswapSwap(
   // C2.5), because leaving it out is how a wallet funds the swap, watches it
   // confirm and then cannot pay the fee it was told about.
   //
-  // ONE per-gas ceiling for the whole execution, read once: every leg's debit is
-  // computed at it and every leg's bytes are signed under it, so the number a
-  // refusal is based on and the number the chain charges cannot be two numbers
-  // (Rabby binds the same price it priced with, `SendToken/index.tsx:1188`).
+  // ONE per-gas ceiling for the whole execution, taken from the CLAIMED
+  // SNAPSHOT below: every leg's debit is computed at it and every leg's bytes
+  // are signed under it, so the number the card disclosed, the number a refusal
+  // is based on and the number the chain may charge are one number (Rabby binds
+  // the same price it priced with, `SendToken/index.tsx:1188`).
   const spendabilityClient: UniswapSpendabilityClient = clients.publicClient;
   let debitLegs: ReturnType<typeof planUniswapDebitLegs>;
-  let legFeeCap: Awaited<ReturnType<typeof resolveUniswapLegFeeCap>>;
   try {
     debitLegs = planUniswapDebitLegs({
       deployment,
@@ -274,12 +275,50 @@ export async function executeUniswapSwap(
       charge: feeCharge,
       currentAllowance,
     });
-    legFeeCap = await resolveUniswapLegFeeCap(spendabilityClient);
   } catch (err) {
     return failPreBroadcast(
       p,
       { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress: signer.address, sessionId, tokenIn, tokenOut },
       err,
+    );
+  }
+
+  // ── THE PLAN THE HUMAN APPROVED, held against the one this execute resolved ──
+  //
+  // The leg SET comes from a fresh allowance read, so it can genuinely differ
+  // from the quote's: an allowance granted or spent between the two turns two
+  // transactions into four, or four into two. A wallet that is merely solvent
+  // for the wider set is not a wallet that authorized it, so a changed set is a
+  // refusal by name and the way out is a fresh quote (rule 90: approval binds to
+  // the exact parameters).
+  const planDrift = compareDebitPlanRoles(
+    approved.debitPlan,
+    debitLegs.map((leg) => leg.role),
+    UNISWAP_FRESH_QUOTE_TOOL,
+  );
+  if (planDrift) {
+    return failPreBroadcast(
+      p,
+      { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress: signer.address, sessionId, tokenIn, tokenOut },
+      new VexError(ErrorCodes.SWAP_FAILED, planDrift.message, planDrift.hint),
+    );
+  }
+  // The ceiling comes FROM THE SNAPSHOT, never from a fresh chain read: it is
+  // what the card disclosed and what every leg's bytes are forced to carry, so
+  // the price the human agreed to is the price the wallet can be charged.
+  // `compareDebitPlanRoles` already refused a plan whose legs disagree on one,
+  // so this cannot be null here; the check is kept because a non-null assertion
+  // on a money path is not evidence.
+  const legFeeCap = uniformPlanFeeCap(approved.debitPlan);
+  if (legFeeCap === null) {
+    return failPreBroadcast(
+      p,
+      { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress: signer.address, sessionId, tokenIn, tokenOut },
+      new VexError(
+        ErrorCodes.SWAP_FAILED,
+        "Refused before signing: the approved quote states no single gas-price ceiling for this swap's transactions.",
+        `Nothing was signed. Request a fresh ${UNISWAP_FRESH_QUOTE_TOOL} and execute against that.`,
+      ),
     );
   }
 

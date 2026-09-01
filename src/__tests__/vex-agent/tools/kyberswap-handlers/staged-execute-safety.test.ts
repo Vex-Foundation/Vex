@@ -133,7 +133,22 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
-import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import {
+  approvedClaim,
+  legsForAllowancePlan,
+} from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+
+/**
+ * The transaction set the claimed quote bound, kept in step with whatever this
+ * suite's allowance mock answers: since WP2-B an execute whose leg set is not
+ * the approved one is refused, so `planAllowance` moves both together (a real
+ * change of allowance would have come with a fresh quote).
+ */
+let approvedLegs = legsForAllowancePlan({ needsReset: false, needsApprove: false });
+function planAllowance(plan: { needsReset: boolean; needsApprove: boolean }): void {
+  mockPlanKyberAllowance.mockResolvedValue(plan);
+  approvedLegs = legsForAllowancePlan(plan);
+}
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
@@ -155,7 +170,7 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
       address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
     }));
     mockGetHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
-    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
+    planAllowance({ needsReset: false, needsApprove: false });
     const routeResponse = {
       data: {
         routeSummary: {
@@ -175,6 +190,7 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
         approvedClaim(
           routeResponse.data.routeSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        { legs: approvedLegs },
         ),
     );
     // REAL router calldata (re-encoded from a captured build): the handler
@@ -247,7 +263,7 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
   });
 
   it("C17: an ambiguous broadcast aborts the DOWNSTREAM never-signed rows, not the ambiguous one itself", async () => {
-    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: true });
+    planAllowance({ needsReset: false, needsApprove: true });
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 7, events: [{ id: 10 }, { id: 11 }] });
     mockMarkActivityBroadcast.mockResolvedValue({ applied: true, row: { id: 10 } });
     mockSignStageBroadcast.mockResolvedValueOnce({ kind: "ambiguous", txHash: "0xallow", stage: "confirm" });
@@ -494,7 +510,7 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
 
   it("C37: allowance-event confirm_failed logs the scrubbed message, never the raw error (raw-log site 2/4)", async () => {
     const RAW = "DB failure: Authorization: Bearer allowance-confirm-log-canary";
-    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: true });
+    planAllowance({ needsReset: false, needsApprove: true });
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 7, events: [{ id: 10 }, { id: 11 }] });
     mockMarkActivityBroadcast.mockResolvedValue({ applied: true, row: { id: 10 } });
     mockSignStageBroadcast

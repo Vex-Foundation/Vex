@@ -31,6 +31,7 @@ import {
   type QuoteEligibility,
 } from "../../../quote-authority/eligibility.js";
 import type { SpendabilityPreview } from "../../../quote-authority/spendability-contract.js";
+import { buildBoundDebitPlan, type BoundDebitPlan } from "../../../quote-authority/debit-plan.js";
 import {
   estimateUniswapPlanGas,
   planUniswapDebitLegs,
@@ -183,12 +184,20 @@ export async function uniswapSwapQuote(
   const eligibility = spendability.eligibility;
   const executable = isExecutable(eligibility);
 
-  const snapshot = buildUniswapQuoteSnapshot({
+  // NO PLAN, NO SNAPSHOT. A quote that could not measure the transactions it
+  // would send can state a route and a price, but it cannot authorize an
+  // execute: the binding the execute is held to would be missing. MetaMask does
+  // the same with `batchTransactions: []` beside a kept quote
+  // (`transaction-pay-controller/src/utils/quotes.ts:762-775`). The only way to
+  // reach this arm with an executable verdict is a session with no selected
+  // wallet, for which the recorder writes no claimable row either.
+  const snapshot = spendability.debitPlan === undefined ? null : buildUniswapQuoteSnapshot({
     chainId: deployment.chainId,
     tokenIn,
     tokenOut,
     charge: feeCharge,
     quoted,
+    debitPlan: spendability.debitPlan,
     // Display/audit copy of the row's own TTL. `swap_prequotes.expires_at`,
     // written by the recorder, is the AUTHORITY the claim reads; these two
     // differ by the recorder's own latency and nothing decides on this one.
@@ -253,7 +262,7 @@ export async function uniswapSwapQuote(
       // comes from the answer's own `data` through the venue extractor - the one
       // owner of what a uniswap quote's identity is.
       eligibilityKind: eligibility.kind,
-      routeSnapshot: executable ? { ...snapshot } : null,
+      routeSnapshot: executable && snapshot !== null ? { ...snapshot } : null,
       // Quote-time facts only, and only for a quote that authorizes something:
       // the recorder validates this and persists it in the row's bounded
       // `safety_detail`, from which the approval card restores it. The card line
@@ -269,6 +278,12 @@ interface SpendabilityOutcome {
   readonly note: string;
   /** Whether a wallet balance was actually read for this answer. */
   readonly checked: boolean;
+  /**
+   * The transactions this quote would send and the ceiling they are priced
+   * under, when a wallet was resolved and the plan could be measured. It is what
+   * the snapshot binds and what the execute is later held to.
+   */
+  readonly debitPlan: BoundDebitPlan | undefined;
 }
 
 /**
@@ -305,6 +320,7 @@ async function measureSpendability(input: {
       eligibility: routeEligibility,
       preview: undefined,
       checked: false,
+      debitPlan: undefined,
       note: "The wallet's balance was not read: this route is not executable for a reason no balance would change.",
     };
   }
@@ -319,6 +335,7 @@ async function measureSpendability(input: {
       eligibility: routeEligibility,
       preview: undefined,
       checked: false,
+      debitPlan: undefined,
       note: "No EVM wallet is selected for this session, so nothing was read about balances and this quote states nothing about them."
         + " Select a wallet and quote again to have the input balance and the whole native debit checked.",
     };
@@ -365,11 +382,22 @@ async function measureSpendability(input: {
       sourceRequiredRaw: input.principalRaw,
       debit,
     });
-    const judged = judgeUniswapSpendability(observation, routeEligibility);
+    // The plan the SNAPSHOT binds, built from the very legs just priced: the
+    // roles in broadcast order, each leg's unpriced marker, and the one ceiling
+    // every leg was costed at. A leg whose gas could not be measured is bound by
+    // role and by price and left unbound in units - that is the ratified
+    // treatment of the first-time ERC-20 allowance case, and gas UNITS are never
+    // bound quote-to-execute (2.07x measured drift, WP2-K).
+    const debitPlan = buildBoundDebitPlan({
+      legs: legs.map((leg) => ({ role: leg.role, unpriced: leg.gasLimit === null })),
+      feeCap,
+    });
+    const judged = judgeUniswapSpendability(observation, routeEligibility, debitPlan);
     return {
       eligibility: judged.eligibility,
       preview: judged.preview,
       checked: true,
+      debitPlan,
       note: uniswapSpendabilityNote(
         judged.eligibility,
         debit.ok ? debit.unpricedRoles : [],
@@ -393,6 +421,7 @@ async function measureSpendability(input: {
       eligibility,
       preview: undefined,
       checked: true,
+      debitPlan: undefined,
       note: uniswapSpendabilityNote(eligibility),
     };
   }

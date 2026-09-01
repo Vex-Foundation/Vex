@@ -354,3 +354,126 @@ describe("wallet tools speak the same param vocabulary as everything else", () =
     }
   });
 });
+
+// ── WP2-D: the swap aliases must state the executability contract ────
+
+/**
+ * The aliases are the ONLY swap surface a fresh agent sees: the venue manifests
+ * live behind ToolSearch. So every fact the venue handlers now enforce - a
+ * route is not an offer, three distinct balance reasons, a quote-time
+ * observation that is not the check, and a pre-sign read that is - has to be
+ * on the alias too, or the model reasons about a guarantee it was never given.
+ *
+ * These assert the LOAD-BEARING phrases, not whole strings: the wording around
+ * them is free to improve, the contract is not. The last block asserts the
+ * alias and the manifest it forwards to agree, in the same spirit as the lane
+ * parity above - one lane learning the contract is a drift, not a fix.
+ */
+describe("swap aliases state that a route is not an authorization", () => {
+  const quoteAliases = ["SwapQuote", "SwapQuoteUniswap"] as const;
+  const executeAliases = ["SwapExecute", "SwapExecuteUniswap"] as const;
+
+  it.each(quoteAliases)("%s says route availability does not imply executability", (toolName) => {
+    const description = toolDefOf(toolName).description;
+    expect(description).toContain("A ROUTE BEING AVAILABLE DOES NOT MEAN THE WALLET CAN PAY FOR IT");
+    expect(description).toContain("only `eligibility.executable` true authorizes an execute");
+    expect(description).toContain("cannot fall back on an older funded quote");
+  });
+
+  it.each(quoteAliases)("%s keeps the three balance reasons as distinct facts", (toolName) => {
+    const description = toolDefOf(toolName).description;
+    expect(description).toContain("DISTINCT facts with distinct remedies");
+    expect(description).toContain("`insufficient_balance` means the wallet holds less of the input token");
+    expect(description).toContain("names required, current and missing");
+    expect(description).toContain("`balance_unavailable` means a balance could not be READ");
+    expect(description).toContain("never the same statement as the wallet being short and always fails closed");
+  });
+
+  it.each(quoteAliases)("%s states the total native debit as every leg plus the reserve", (toolName) => {
+    const description = toolDefOf(toolName).description;
+    expect(description).toContain("TOTAL NATIVE DEBIT");
+    expect(description).toContain("every transaction");
+    expect(description).toContain("L1 data fee where the chain charges one");
+    expect(description).toContain("measured reserve for one more transaction afterwards");
+  });
+
+  it("SwapQuoteUniswap names the SEPARATE fee transfer as one of those legs", () => {
+    // Uniswap's fee is its own transaction after the swap confirms; Kyber's is
+    // embedded in the router calldata. One sentence cannot describe both.
+    expect(toolDefOf("SwapQuoteUniswap").description).toContain("the SEPARATE Vex fee transfer");
+  });
+
+  it("SwapQuoteUniswap says an unread wallet states nothing about funds", () => {
+    expect(toolDefOf("SwapQuoteUniswap").description).toContain(
+      "`balanceChecked` false means no wallet was read and this answer states nothing about funds",
+    );
+  });
+
+  it("SwapQuote says a frozen SPL holding is held and NOT spendable", () => {
+    const description = toolDefOf("SwapQuote").description;
+    expect(description).toContain("only initialized, non-frozen token accounts count as spendable");
+    expect(description).toContain("FROZEN holding is present and NOT spendable");
+  });
+
+  it.each(quoteAliases)("%s marks its balance figures advisory, not the check", (toolName) => {
+    const description = toolDefOf(toolName).description;
+    expect(description).toContain("QUOTE-TIME OBSERVATION");
+    expect(description).toContain("advisory and ageing");
+    expect(description).toContain(
+      "the authoritative read happens again immediately before each signature",
+    );
+    expect(description).toContain("can still refuse for balance after this call said executable");
+  });
+
+  it.each(executeAliases)("%s names the pre-sign read as the authority", (toolName) => {
+    const description = toolDefOf(toolName).description;
+    expect(description).toContain("BALANCE IS RE-READ HERE AND THAT READ IS THE AUTHORITY, not the quote's");
+    expect(description).toContain("every transaction still authorized after it");
+    expect(description).toContain("measured follow-up reserve");
+    expect(description).toContain("NOTHING signed and nothing broadcast");
+    expect(description).toContain("a wallet that is SHORT from a balance that could not be READ");
+    expect(description).toContain("executable minutes ago is not a guarantee here");
+  });
+
+  it.each(executeAliases)("%s calls the card's balance line disclosure, never the check", (toolName) => {
+    const description = toolDefOf(toolName).description;
+    expect(description).toContain("QUOTE-TIME spendability line");
+    expect(description).toContain("total native debit including every fee leg and the reserve");
+    expect(description).toContain("it is disclosure, not the check, and it is not a live balance");
+  });
+
+  it("SwapExecute states the Solana pre-sign read in the terms Solana settles it", () => {
+    const description = toolDefOf("SwapExecute").description;
+    expect(description).toContain("spendable input balance (frozen token accounts do not count)");
+    expect(description).toContain("the node's fee for that exact message");
+    expect(description).toContain("every account rent this wallet pays");
+  });
+});
+
+describe("the alias teaches the same executability contract its target enforces", () => {
+  const BALANCE_KINDS = ["insufficient_balance", "balance_unavailable", "gas_reserve_insufficient"] as const;
+
+  it.each([
+    ["SwapQuote", "kyberswap.swap.quote"],
+    ["SwapQuoteUniswap", "uniswap.swap.quote"],
+  ])("%s and %s both name all three balance verdicts", (alias, toolId) => {
+    const manifest = getProtocolManifest(toolId);
+    if (!manifest) throw new Error(`no protocol manifest for ${toolId}`);
+    for (const kind of BALANCE_KINDS) {
+      expect(toolDefOf(alias).description, `${alias} omits ${kind}`).toContain(kind);
+      expect(manifest.description, `${toolId} omits ${kind}`).toContain(kind);
+    }
+  });
+
+  it.each([
+    ["SwapExecute", "kyberswap.swap.execute"],
+    ["SwapExecuteUniswap", "uniswap.swap.execute"],
+  ])("%s and %s both put the authoritative read at the pending block before signing", (alias, toolId) => {
+    const manifest = getProtocolManifest(toolId);
+    if (!manifest) throw new Error(`no protocol manifest for ${toolId}`);
+    for (const text of [toolDefOf(alias).description, manifest.description]) {
+      expect(text.toLowerCase()).toContain("re-read");
+      expect(text).toContain("pending block");
+    }
+  });
+});

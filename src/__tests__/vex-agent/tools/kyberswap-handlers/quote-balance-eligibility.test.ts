@@ -276,7 +276,16 @@ describe("a wallet that can pay", () => {
     expect(result.quoteAuthority?.routeSnapshot).not.toBeNull();
 
     const preview = required(result.quoteAuthority?.spendability, "a spendability preview");
-    expect(preview.cardVersion).toBe("spendability-v1");
+    expect(preview.cardVersion).toBe("spendability-v2");
+    // WP2-B: the card states the transaction set the binding will enforce, not
+    // only what it costs - a person consents to a plan, not to a total.
+    // This suite's wallet has granted no allowance yet, so the quote binds the
+    // approve AND the swap - both of which the execute must reproduce exactly.
+    expect(preview.debitPlan?.legs.map((leg) => leg.role)).toEqual(["allowance", "swap"]);
+    // Gas UNITS are deliberately not bound (2.07x measured drift); every leg
+    // this venue prices at quote time carries a real estimate, so none is
+    // marked unpriced.
+    expect(preview.debitPlan?.legs.every((leg) => !leg.unpriced)).toBe(true);
     // The tag is the whole point: `pending` is the only state that subtracts the
     // wallet's own in-flight spending (contract C2.4).
     expect(preview.source.blockTag).toBe("pending");
@@ -302,7 +311,8 @@ describe("a wallet that can pay", () => {
   it("keeps the observation out of model context - it rides the private channel", async () => {
     const result = await quote();
 
-    expect(result.output).not.toContain("spendability-v1");
+    expect(result.output).not.toContain("spendability-v2");
+    expect(result.output).not.toContain("debitPlan");
     expect(result.output).not.toContain("blockTag");
   });
 });

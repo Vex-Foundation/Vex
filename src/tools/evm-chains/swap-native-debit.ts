@@ -278,109 +278,15 @@ export async function priceFollowUpReserve(
   return { ok: true, reserve: { gasLimit, feeCap: request.feeCap, l1 } };
 }
 
-// ── Quote-time fee caps, persisted and then enforced ────────────────
-
-/**
- * A fee cap as it survives the trip through the database.
- *
- * Every amount is an exact base-10 integer STRING. A quote-time ceiling that
- * came back as a JavaScript number would be a money value that lost precision
- * on the way to the signature, which rule 90 forbids outright.
- */
-export interface PersistedLegFeeCap {
-  readonly role: NativeDebitLegRole | "follow_up_reserve";
-  readonly gasLimit: string;
-  readonly mode: LegFeeCap["mode"];
-  readonly maxFeePerGasWei?: string;
-  readonly maxPriorityFeePerGasWei?: string;
-  readonly gasPriceWei?: string;
-}
-
-/** Exact atomic units: a base-10 integer, no sign, no separators, no exponent. */
-const ATOMIC_INTEGER = /^\d+$/;
-/** 78 digits is a full uint256 in base 10; the bound leaves room and no more. */
-const MAX_ATOMIC_DIGITS = 80;
-
-const atomicString = z.string().regex(ATOMIC_INTEGER).max(MAX_ATOMIC_DIGITS);
-
-/**
- * The shape a persisted cap must still have when it comes back out of storage.
- *
- * Strict on purpose, and REJECTING rather than repairing: a cap this build
- * cannot read is a cap it cannot enforce, and enforcing a ceiling nobody can
- * parse is worse than requiring a fresh quote.
- */
-export const persistedLegFeeCapSchema = z.discriminatedUnion("mode", [
-  z.object({
-    role: z.enum(["allowance_reset", "allowance", "swap", "swap_fee", "follow_up_reserve"]),
-    gasLimit: atomicString,
-    mode: z.literal("eip1559"),
-    maxFeePerGasWei: atomicString,
-    maxPriorityFeePerGasWei: atomicString,
-  }),
-  z.object({
-    role: z.enum(["allowance_reset", "allowance", "swap", "swap_fee", "follow_up_reserve"]),
-    gasLimit: atomicString,
-    mode: z.literal("legacy"),
-    gasPriceWei: atomicString,
-  }),
-]);
-
-/** One leg's cap, ready to persist. */
-export function serializeLegFeeCap(
-  role: PersistedLegFeeCap["role"],
-  gasLimit: bigint,
-  cap: LegFeeCap,
-): PersistedLegFeeCap {
-  return cap.mode === "eip1559"
-    ? {
-        role,
-        gasLimit: gasLimit.toString(10),
-        mode: "eip1559",
-        maxFeePerGasWei: cap.maxFeePerGasWei.toString(10),
-        maxPriorityFeePerGasWei: cap.maxPriorityFeePerGasWei.toString(10),
-      }
-    : { role, gasLimit: gasLimit.toString(10), mode: "legacy", gasPriceWei: cap.gasPriceWei.toString(10) };
-}
-
-/** Restore a persisted cap, or `undefined` when it is not one this build can read. */
-export function parseLegFeeCap(
-  value: unknown,
-): { readonly role: PersistedLegFeeCap["role"]; readonly gasLimit: bigint; readonly cap: LegFeeCap } | undefined {
-  const parsed = persistedLegFeeCapSchema.safeParse(value);
-  if (!parsed.success) return undefined;
-  const row = parsed.data;
-  return {
-    role: row.role,
-    gasLimit: BigInt(row.gasLimit),
-    cap:
-      row.mode === "eip1559"
-        ? {
-            mode: "eip1559",
-            maxFeePerGasWei: BigInt(row.maxFeePerGasWei),
-            maxPriorityFeePerGasWei: BigInt(row.maxPriorityFeePerGasWei),
-          }
-        : { mode: "legacy", gasPriceWei: BigInt(row.gasPriceWei) },
-  };
-}
-
-/**
- * The quote-time cap, expressed as the ceiling `signStageBroadcast` enforces on
- * the request that is actually serialized.
- *
- * This is the seam that makes a cap MEAN something: without it the cap is a
- * number in a row, and the node's own fee suggestion is what gets signed.
- */
-export function stagedFeeBoundsForLeg(gasLimit: bigint, cap: LegFeeCap): StagedFeeBounds {
-  return cap.mode === "eip1559"
-    ? {
-        mode: "eip1559",
-        gasLimit,
-        maxFeePerGasWei: cap.maxFeePerGasWei,
-        maxPriorityFeePerGasWei: cap.maxPriorityFeePerGasWei,
-      }
-    : { mode: "legacy", gasLimit, gasPriceWei: cap.gasPriceWei };
-}
+// ── Quote-time fee caps, enforced against the approved ceiling ──────
+//
+// The persistence half that once lived here (PersistedLegFeeCap and its
+// codec) was removed 2026-08-31: the binding that ships carries per-gas
+// PRICE caps inside the route snapshot's bound debit plan
+// (`quote-authority/debit-plan.ts`), which deliberately binds no gas-unit
+// ceiling - router gas estimates moved 2.07x across 12 Base blocks, so a
+// unit ceiling sealed at quote time refuses fundable swaps. `checkFeeCap`
+// below is the enforcement seam both designs share.
 
 /**
  * Does the chain's CURRENT requirement still fit inside the ceiling the quote

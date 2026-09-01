@@ -24,6 +24,8 @@ import {
 import { deriveRouteFirstHops } from "@tools/kyberswap/evm/swap-source-transfer-binding.js";
 import { KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW } from "@tools/kyberswap/swap-price-floor.js";
 import type { RouteSnapshot } from "../../../quote-authority/snapshot.js";
+import { compareDebitPlanRoles } from "../../../quote-authority/debit-plan.js";
+import { KYBER_FRESH_QUOTE_TOOL } from "../../../quote-authority/refusal.js";
 import { computeKyberVexFeeRaw } from "@tools/kyberswap/swap-vex-fee.js";
 import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
 import {
@@ -358,15 +360,36 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
   // with the quote-time preview (`quote-spendability.ts`), so the number a human
   // read on the card and the number the signature is gated on cannot come from
   // two different pieces of arithmetic.
+  const plannedLegs = builtPlans.map((plan): KyberPlannedLeg => ({
+    role: debitRole(plan.eventRole),
+    to: plan.txParams.to,
+    data: plan.txParams.data,
+    valueWei: plan.txParams.value ?? 0n,
+  }));
+
+  // ── THE TRANSACTION SET THE HUMAN APPROVED ──
+  //
+  // The allowance legs come from a FRESH allowance read, so this set can
+  // genuinely differ from the quote's: an allowance granted or spent between the
+  // quote and the execute turns one transaction into three, or three into one.
+  // A wallet that happens to be solvent for the wider set is not a wallet that
+  // authorized it, so the difference is refused by name and the way out is a
+  // fresh quote (rule 90: approval binds to the exact parameters and is
+  // revalidated immediately before signing).
+  const planDrift = compareDebitPlanRoles(
+    approvedSnapshot.debitPlan,
+    plannedLegs.map((leg) => leg.role),
+    KYBER_FRESH_QUOTE_TOOL,
+  );
+  if (planDrift) {
+    throw new VexError(ErrorCodes.KYBER_MALFORMED_PARAMS, planDrift.message, planDrift.hint);
+  }
+
   const debitPlan = await measureKyberDebitPlan(publicClient, {
     chainId,
     wallet: walletAddress,
-    legs: builtPlans.map((plan): KyberPlannedLeg => ({
-      role: debitRole(plan.eventRole),
-      to: plan.txParams.to,
-      data: plan.txParams.data,
-      valueWei: plan.txParams.value ?? 0n,
-    })),
+    legs: plannedLegs,
+    approvedPlan: approvedSnapshot.debitPlan,
     swapGasEstimate: BigInt(buildResp.data.gas),
     source: sourceAssetOf(tokenIn),
     sourceRequiredRaw: amountIn.toString(10),
