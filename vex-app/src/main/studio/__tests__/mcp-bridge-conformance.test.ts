@@ -47,6 +47,7 @@ import {
   resetStudioMcpHostForTests,
   shutdownStudioMcpHost,
   startStudioMcpHost,
+  openStudioMcpAdmission,
   studioMcpHostEndpoint,
 } from "../mcp-host.js";
 
@@ -285,6 +286,7 @@ describe.skipIf(unavailable)("the built Go bridge against the real Studio host",
       runCall: (projectId, call, options) => runCallImpl(projectId, call, options),
       projectExists: (projectId) => projectExistsImpl(projectId),
     });
+    openStudioMcpAdmission();
     const started = await startStudioMcpHost();
     expect(started.started).toBe(true);
     expect(studioMcpHostEndpoint()).not.toBeNull();

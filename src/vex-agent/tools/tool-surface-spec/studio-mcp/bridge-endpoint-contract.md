@@ -477,30 +477,41 @@ The proof matrix, all eight on a Windows runner:
    measures the level a server actually receives (an impersonating server can
    identify the client and must not be able to act as it).
 
-REQUIRED BEFORE THE FLIP, AND NOT IMPLEMENTED TODAY: HOST AUTHENTICATION.
+REQUIRED BEFORE THE FLIP: HOST AUTHENTICATION - IMPLEMENTED, CROSS-USER
+UNPROVEN.
 
-Before the bridge forwards the handshake it MUST verify that the connected
-server belongs to the CURRENT USER: `GetNamedPipeServerProcessId` on the
-connected handle, then a comparison of that process's token SID against the
-current user's SID, or an equivalent reviewed authenticated-host mechanism. A
-mismatch fails closed with a local refusal, before the project id leaves the
-process.
+The bridge authenticates the pipe server before the handshake. In
+`bridge/cmd/vex-mcp/hostauth_windows.go`, between `CreateFile` returning a
+handle and that handle becoming a connection, the bridge calls
+`GetNamedPipeServerProcessId` on the connected handle, opens the reported
+process with `PROCESS_QUERY_LIMITED_INFORMATION`, opens its token with
+`TOKEN_QUERY`, reads `GetTokenInformation(TokenUser)`, and compares the
+resulting user SID, in canonical string form, with this process's own
+process-token user SID. Anything other than an exact match - a mismatch, an
+empty SID, or a failure at any step - closes the raw handle and returns the
+local refusal `windows_host_not_current_user`, which exits 2 (local refusal,
+section 3.4), not 3 (dial failed). No byte, and in particular not the project
+id, leaves the process on that path: the handshake is unreachable because no
+connection is ever constructed. The refusal names the pipe path and the server
+pid; it never reports the other user's identity.
 
 The SQOS flag of item 8 is NECESSARY, NOT SUFFICIENT. It bounds what a hostile
 server can do with the client's token; it says nothing about WHO the server is.
 The host-authentication check is the load-bearing anti-squatting control, and
 item 7 is its test.
 
-The check is DELIBERATELY NOT WRITTEN YET. It is Windows-runtime code that
-cannot be exercised on the Linux development and CI hosts, and the transport is
-runtime-disabled, so writing it blind would ship an unmeasured security control
-rather than a measured one. It is named here as a REQUIRED-BEFORE-FLIP item, in
-the same words in `dial_windows.go`, and the reviewer's check is mechanical: no
-host-authentication check and no passing item 7, no flip.
+This does not flip the gate. `endpoint.WindowsTransportProven` stays false.
+The `bridge-windows` CI job proves the SAME-USER path end to end against a
+real in-test named-pipe server, driving the real `GetNamedPipeServerProcessId`
+and token comparison, and proves the refusal branches through an injected
+identity-resolver seam, asserting in each case that the pipe server received
+zero bytes. It cannot prove the cross-user case: the runner has one account.
+The adversarial two-account run remains item 7 of the matrix above, and the
+check accepts any same-user server by design - the boundary this control
+enforces is the other user, not another program running as this one.
 
-Until all eight run in that job AND the host-authentication check exists,
-Windows users get one honest refusal sentence naming the reason, and Vex Studio
-is a Linux and macOS feature.
+Until all eight run in that job, Windows users get one honest refusal sentence
+naming the reason, and Vex Studio is a Linux and macOS feature.
 
 ---
 
@@ -691,12 +702,19 @@ not fit is REPORTED with its exact omitted byte count, never silently dropped.
 | 11 | the relay failed | the client stopped reading, or the socket failed mid-session |
 | 12 | a signal stopped the bridge | SIGINT, SIGTERM or SIGHUP |
 
-NO RETRY, anywhere. A retry would blur the host's locked-listener lifecycle: a
-bridge that reconnected after a lock would be talking to a Vex that
-deliberately stopped accepting, and a retry after an ack refusal would repeat a
-decision the host already made. The only future reconsideration on the record
-is ONE bounded pre-handshake retry for ENOENT/ECONNREFUSED - never after an
-ack, and never for `locked`, `malformed`, `at_capacity` or a version refusal.
+NO RETRY, anywhere. AN ACK IS A DECISION THE HOST ALREADY MADE, AND IT IS
+TERMINAL FOR THIS PROCESS. That is the whole rationale, and it does not depend
+on the listener's lifecycle: since section 4.1 the host keeps its listener bound
+across a relock, so a `locked` refusal is an answer the host chose to send, not
+a door that happened to be shut. Reconnecting would re-ask a question that was
+answered - the host would answer it the same way for as long as the vault stays
+locked - and it would hide the honest exit code (7) from the supervising client
+behind a loop. The user unlocks Vex and starts the bridge again; the client is
+the thing that decides to reconnect, not the bridge.
+
+The only future reconsideration on the record is ONE bounded pre-handshake retry
+for ENOENT/ECONNREFUSED - never after an ack, and never for `locked`,
+`malformed`, `at_capacity` or a version refusal.
 
 ### 3.5 The relay's shutdown state machine, asymmetric on purpose
 
@@ -801,13 +819,44 @@ A transport-produced error carries a CLOSED code and nothing else
 never travel into an `Error` the host logs; the log line carries the code and,
 for an over-long line, the byte count.
 
-### 4.1 Lock order
+### 4.1 Lock order, and what a lock does NOT close
+
+THE LISTENER AND THE DOOR ARE TWO OWNERS. The listener is bound once at
+app-ready, as soon as the host's executor is configured, and it is independent
+of the vault and of the settlement readiness barrier. ADMISSION - may what
+arrives on that socket be served - is what a lock closes. Only application quit
+closes the listener.
+
+The trade this replaces was worse for the bridge and for the user: while a lock
+closed the listener, "Vex is locked" reached a bridge as the same
+`ECONNREFUSED` that also means "Vex is not installed" and "Vex is still
+starting", so the only honest sentence a bridge could print covered three
+unrelated causes.
+
+A LOCKED OR UNREADY HOST ANSWERS BEFORE IT READS. The connection is accepted, a
+typed refusal is written, and the host closes the connection:
+
+- the refusal code is `locked`, which is ALREADY in the closed set of section
+  2.2 ("Vex is locked, still starting, or shutting down"), so this is not a
+  protocol change and a v1 bridge already switches on it (exit code 7);
+- NO project bytes are read. The host does not parse a handshake line, so no
+  project identifier crosses the wire in either direction and the refusal
+  carries none;
+- NO established-connection reservation is taken and no handshake-pending slot
+  is held, so a flood of connects against a locked Vex can consume only the raw
+  listener bound of section 3 and never the bounds a real bridge needs;
+- NO idle connection is retained. The host does not hold an open socket for a
+  peer it has refused.
 
 `lockSecretSession` runs, in this order:
 
 1. the synchronous scrub and signing revocation, unchanged and FIRST;
-2. `lockStudioMcpHost()` - mark locked, close the listener, destroy every
-   registered socket, SYNCHRONOUSLY;
+2. `lockStudioMcpHost()` - close ADMISSION (which advances the lifecycle epoch,
+   so every start and every in-progress connection establish is fenced) and
+   destroy every established and handshaking connection with the trusted cause,
+   SYNCHRONOUSLY. The listener and its endpoint SURVIVE, and their identity does
+   not change: an unlock serves again over the same bound socket, with no
+   rebind and no new address for a bridge to discover;
 3. the existing provider reset, dispatch-generation advance and durable
    refusal pass.
 
@@ -817,8 +866,48 @@ from dispatching, and a fence delayed behind a peer's FIN is a fence that is
 down for as long as that peer is slow. Per-connection EOF refusals are never
 awaited before the advance.
 
+UNLOCK IS NOT THE MIRROR OF LOCK. Admission opens only after the unlock's own
+dispatch-generation advance has committed, its dispatch poison is clear, and
+its pending durable refusal has been written. A vault that is unlocked while
+those are outstanding is `unready`, not `ready`, and it refuses exactly the way
+a locked host does.
+
+READINESS GATES ADMISSION, NOT THE BIND. The settlement readiness barrier
+refuses handshakes and calls; it never decides whether a socket exists. A host
+that binds while the barrier is still closed, and whose barrier then opens
+through the barrier's own retry path, starts serving with no second unlock and
+no listener restart.
+
 Quit runs listener, then connections, then the existing Studio teardown, inside
 the ordered quit task so it happens before Compose stops Postgres.
+
+#### 4.1.1 The Windows front-relayed transport, WHEN it lands (B4.2b)
+
+CONDITIONAL, and it describes nothing that exists today. Wave 1 speaks to the
+host over a DIRECT socket on every platform, and the Windows named-pipe
+transport remains gated by section 1.6. The paragraph exists so the lock
+invariant above is not later weakened silently to fit a transport whose handles
+main does not own.
+
+When the Windows transport is served through a front relay, main can no longer
+destroy the peer's handle itself, and claiming synchronous remote destruction
+would be false. The invariant is therefore LOGICAL-SYNC PLUS BOUNDED-PHYSICAL:
+
+- SYNCHRONOUS AND LOGICAL, in main, in the tick the lock is decided: admission
+  is closed, the epoch is advanced, the trusted cause is latched on every
+  logical connection, every host-side handler is aborted, and every frame that
+  arrives from the front under a stale epoch is discarded. Nothing a peer can
+  do after this tick reaches a tool.
+- A PRIORITY LOCK FRAME to the front, ahead of any queued traffic.
+- A BOUNDED PHYSICAL CLOSE: the front closes the real handles and acknowledges
+  within a stated deadline. If the control frame cannot be admitted immediately,
+  or the acknowledgement does not arrive within the deadline, main KILLS the
+  front process and restarts it LOCKED. A front that cannot be commanded is
+  never left holding live handles.
+- FAIL CLOSED ON CONTROL-CHANNEL LOSS: a lost control channel defaults to
+  closing, never to optimistic admission. B4.2b owes a test for exactly this,
+  and it is a test obligation of that stage rather than something wave 1 can
+  fake with a direct socket.
 
 ---
 

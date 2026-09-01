@@ -58,7 +58,7 @@ import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconc
 import { setupVexMarketService } from "./market/vex-market-service.js";
 import { setupStudioHostStatusBridge } from "./studio/host-status-bridge.js";
 import { setupBoardLiveService } from "./market/board-live-owner.js";
-import { isSecretSessionUnlocked, lockSecretSession } from "./secrets/session.js";
+import { lockSecretSession, reopenStudioHostIfSafe } from "./secrets/session.js";
 import { shutdownStudioMcpHost, startStudioMcpHost } from "./studio/mcp-host.js";
 import { disposeFilesDomain } from "./studio/files/files-composition.js";
 import { disposeTerminalDomain } from "./studio/terminal-domain.js";
@@ -462,12 +462,17 @@ async function initializeMainRuntime(): Promise<void> {
   // engine preflight and `runStudioCall` refuse on that.
   await awaitStudioRuntimeReady();
 
-  // The MCP listener exists only while Vex is unlocked AND ready. An unlock
-  // that happened before the barrier opened (a restored session, a fast
-  // wizard) left the host refused with the barrier's own sentence, so this is
-  // the one place that retries it once the barrier is open. A locked Vex is
-  // left alone: the next unlock starts the listener.
-  if (isSecretSessionUnlocked()) void startStudioMcpHost();
+  // THE ONE BIND, and it is independent of the vault and of the barrier above.
+  // The listener comes up here because the executor is configured by now
+  // (`registerAllIpcHandlers`), and it stays up until quit: a locked or unready
+  // Vex answers a connect with a typed refusal that carries no project bytes,
+  // which is the honest answer a bridge cannot derive from `ECONNREFUSED`.
+  // ADMISSION starts locked regardless of what happens here.
+  void startStudioMcpHost();
+  // A session that was already unlocked before the host existed (a restored
+  // session, a fast wizard) has no other site that would open admission. The
+  // secret-session owner still decides whether opening is safe.
+  reopenStudioHostIfSafe();
 
   // 7. Main window
   await createMainWindow();

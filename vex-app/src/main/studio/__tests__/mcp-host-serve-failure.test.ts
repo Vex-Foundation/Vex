@@ -38,6 +38,7 @@ import {
   configureStudioMcpHost,
   shutdownStudioMcpHost,
   startStudioMcpHost,
+  openStudioMcpAdmission,
   studioMcpConnectionCount,
   studioMcpHostEndpoint,
   studioMcpReservedConnectionCount,
@@ -73,6 +74,7 @@ beforeEach(() => {
       return true;
     },
   });
+  openStudioMcpAdmission();
 });
 
 afterEach(async () => {

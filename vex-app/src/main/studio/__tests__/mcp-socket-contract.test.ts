@@ -11,7 +11,7 @@
  * proves the ASSEMBLY, which is where the failures that reach a user live: a
  * lost coalesced frame, a missed FIN that leaves an approval blocked for ever,
  * a progress storm that grows without bound behind a stalled reader, a lock
- * that closes the listener but not the sockets.
+ * that closes admission but not the sockets.
  *
  * The endpoint is a temp path under the scratchpad, supplied through
  * `VEX_STUDIO_SOCKET`, which also exercises the override's own validation:
@@ -45,6 +45,7 @@ import {
   lockStudioMcpHost,
   shutdownStudioMcpHost,
   startStudioMcpHost,
+  openStudioMcpAdmission,
   studioMcpHostEndpoint,
   resetStudioMcpHostForTests,
   STUDIO_MAX_CONNECTIONS,
@@ -189,6 +190,15 @@ class ReferenceClient {
     this.send({ v: 1, projectId });
     return this.nextMessage();
   }
+
+  /**
+   * Read an ack WITHOUT sending a handshake first. That is the whole point on a
+   * locked host: it must answer before it reads, so nothing this peer knows
+   * about a project ever crosses the wire.
+   */
+  async handshakeAck(timeoutMs = 8_000): Promise<JsonRecord> {
+    return this.nextMessage(timeoutMs);
+  }
 }
 
 // ── The injected executor ───────────────────────────────────────────────────
@@ -273,6 +283,7 @@ beforeEach(async () => {
     runCall: (projectId, call, options) => runCallImpl(projectId, call, options),
     projectExists: (projectId) => projectExistsImpl(projectId),
   });
+  openStudioMcpAdmission();
   const started = await startStudioMcpHost();
   expect(started.started).toBe(true);
 });
@@ -715,7 +726,7 @@ describe("outbound backpressure and drain", () => {
 // ── Case 10 ─────────────────────────────────────────────────────────────────
 
 describe("lock teardown", () => {
-  it("closes the listener and destroys sockets SYNCHRONOUSLY, with cause `lock`", async () => {
+  it("closes ADMISSION and destroys sockets SYNCHRONOUSLY, with cause `lock`", async () => {
     const blocked = blockingCall();
     runCallImpl = blocked.run;
     const client = await ReferenceClient.open(endpoint());
@@ -736,18 +747,26 @@ describe("lock teardown", () => {
     await waitFor(() => blocked.entry() !== undefined);
     const listeningAt = endpoint();
 
-    // SYNCHRONOUS: no await between the call and these two facts, because the
+    // SYNCHRONOUS: no await between the call and these facts, because the
     // dispatch-generation advance that follows it in `lockSecretSession` must
-    // not wait on network teardown.
+    // not wait on network teardown. The LISTENER survives: a relock closes the
+    // door, not the building, and the endpoint identity does not change.
     lockStudioMcpHost();
-    expect(studioMcpHostEndpoint()).toBeNull();
+    expect(studioMcpHostEndpoint()).toBe(listeningAt);
 
     await waitFor(() => (blocked.entry()?.abortCount ?? 0) > 0);
     expect(blocked.entry()?.cause).toBe("lock");
     await waitFor(() => client.isClosed());
 
-    // The listener really is gone: a new connect is refused.
-    await expect(ReferenceClient.open(listeningAt)).rejects.toBeDefined();
+    // The door really is shut: a new connect is answered with the typed
+    // `locked` refusal, having sent nothing, and then closed.
+    const afterLock = await ReferenceClient.open(listeningAt);
+    const ack = await afterLock.handshakeAck();
+    expect(ack["ok"]).toBe(false);
+    expect(ack["code"]).toBe("locked");
+    expect(ack["projectId"]).toBeUndefined();
+    await waitFor(() => afterLock.isClosed());
+    afterLock.destroy();
   });
 });
 

@@ -82,19 +82,25 @@ const (
 // NECESSARY, NOT SUFFICIENT. SQOS bounds what a hostile server can do with
 // our token; it does not tell us WHO the server is. The load-bearing
 // anti-squatting control is HOST AUTHENTICATION - GetNamedPipeServerProcessId
-// followed by a comparison of the server process token's SID against the
-// current user's, or an equivalent reviewed mechanism - and it is NOT
-// IMPLEMENTED HERE. It is Windows-runtime code that cannot be exercised on
-// the Linux development and CI hosts, and the transport is runtime-disabled,
-// so it is named as a REQUIRED-BEFORE-FLIP item in contract section 1.6
-// rather than written blind. Do not flip endpoint.WindowsTransportProven
-// until that check exists and its test runs on the `bridge-windows` job.
+// followed by a comparison of the server process token's user SID against
+// this process's - and it now runs HERE, in dialPipeWith, between CreateFile
+// returning a handle and that handle becoming a Conn the handshake could
+// write to. Its rationale, its citations and its limits live in
+// hostauth_windows.go.
 //
-// NONE OF THIS IS PROVEN ON A RUNNER YET. endpoint.WindowsTransportProven is
-// false, so this function is unreachable at runtime; the `bridge-windows` CI
-// job compiles it, and the contract's section 1.6 matrix is what must run
-// before the flag flips.
+// STILL NOT PROVEN ON A RUNNER. endpoint.WindowsTransportProven is false, so
+// this function is unreachable at runtime; the `bridge-windows` CI job builds
+// it and runs its tests on ONE account, which cannot produce a genuinely
+// foreign pipe server. The cross-user case is item 7 of the contract's 1.6
+// matrix and is not what these tests prove.
 func dialPipe(path string) (handshake.Conn, error) {
+	return dialPipeWith(path, resolveServerUserSID, resolveCurrentUserSID)
+}
+
+// dialPipeWith is dialPipe with its identity sources injected, so the refusal
+// branches can be driven deterministically on a single-account runner. The
+// production call above is the only non-test caller.
+func dialPipeWith(path string, server serverSIDResolver, current userSIDResolver) (handshake.Conn, error) {
 	name, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}
@@ -110,6 +116,13 @@ func dialPipe(path string) (handshake.Conn, error) {
 	)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	// BEFORE os.NewFile, therefore before any caller can hold something
+	// writable: on refusal the raw handle is closed here and nothing this
+	// process knows - the project id above all - has reached the pipe.
+	if refusal := authenticatePipeHost(handle, path, server, current); refusal != nil {
+		_ = syscall.CloseHandle(handle)
+		return nil, refusal
 	}
 	return os.NewFile(uintptr(handle), path), nil
 }

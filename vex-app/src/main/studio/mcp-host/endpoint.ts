@@ -141,9 +141,9 @@ export function studioEndpointFileName(configDirRealPath: string): string {
  * tree contains no security-descriptor handling. The boundary is the
  * documented Windows DEFAULT pipe security descriptor - which does not grant a
  * second user the duplex access a client needs - plus protocol-level
- * validation. Vex keeps its own additional layers on top: the listener exists
- * only while Vex is unlocked and ready, the handshake ack admits a project,
- * and every mutating call is approval-gated.
+ * validation. Vex keeps its own additional layers on top: a locked or unready
+ * Vex refuses every connect with a typed ack before it reads a byte, the
+ * handshake ack admits a project, and every mutating call is approval-gated.
  *
  * DERIVING the name is not permission to OPEN it: see
  * `unprovenWindowsTransport` below and contract section 1.6.

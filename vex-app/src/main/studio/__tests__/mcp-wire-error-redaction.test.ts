@@ -57,6 +57,7 @@ const {
   configureStudioMcpHost,
   shutdownStudioMcpHost,
   startStudioMcpHost,
+  openStudioMcpAdmission,
   studioMcpHostEndpoint,
   resetStudioMcpHostForTests,
 } = await import("../mcp-host.js");
@@ -89,6 +90,7 @@ beforeEach(async () => {
     runCall: async () => ({ kind: "completed", result: { success: true, output: "ok" } }),
     projectExists: async () => true,
   });
+  openStudioMcpAdmission();
   expect((await startStudioMcpHost()).started).toBe(true);
 });
 

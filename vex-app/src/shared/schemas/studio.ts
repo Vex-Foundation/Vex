@@ -87,13 +87,16 @@ export type StudioHostUnavailableCause = z.infer<
 /**
  * The host's lifecycle state.
  *
- *  - `running`    - the listener is bound and published.
- *  - `locked`     - Vex is locked; the listener is deliberately closed, because
- *                   an always-open door on a self-custodial wallet is not a
- *                   trade this app makes for a nicer diagnostic.
- *  - `starting`   - a start attempt is in flight and has not reached its
+ *  - `running`    - the listener is bound and a peer would be served.
+ *  - `locked`     - Vex is locked. The listener stays bound and every connect
+ *                   is answered with a typed `locked` refusal that reads no
+ *                   project bytes, which is the honest answer a bridge cannot
+ *                   derive from a connection error. Nothing is admitted.
+ *  - `starting`   - a bind attempt is in flight and has not reached its
  *                   publication gate.
- *  - `unavailable`- not serving, and `cause` says why.
+ *  - `unavailable`- not serving, and `cause` says why. Covers both a listener
+ *                   that is not up and a bound listener whose readiness barrier
+ *                   has not opened yet.
  */
 export const studioHostStateSchema = z.enum([
   "running",

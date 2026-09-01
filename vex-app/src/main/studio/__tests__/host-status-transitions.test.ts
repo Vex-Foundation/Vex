@@ -48,6 +48,7 @@ import {
   lockStudioMcpHost,
   shutdownStudioMcpHost,
   startStudioMcpHost,
+  openStudioMcpAdmission,
   studioMcpHostEndpoint,
   studioMcpReservedConnectionCount,
   resetStudioMcpHostForTests,
@@ -109,6 +110,7 @@ beforeEach(() => {
     }),
     projectExists: async () => true,
   });
+  openStudioMcpAdmission();
 });
 
 afterEach(async () => {
