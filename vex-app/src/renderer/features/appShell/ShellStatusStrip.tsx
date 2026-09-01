@@ -35,6 +35,15 @@
  * approvals are one app-wide queue and are meant to be visible in whichever
  * mode the user is in. `ShellStatusStrip.test.tsx` asserts all of this rather
  * than trusting it.
+ *
+ * `NotificationCenter` and `NotificationAnnouncer` join them for the same
+ * reason and are mounted for the same reason the strip itself is: exactly one
+ * of each per window, above the mode dispatch. Two centers would fork one
+ * list, and two announcers would speak every message twice. The announcer
+ * renders only screen-reader live regions (no pixels), and it lives at the
+ * strip rather than in `ToastHost` because a permanent `role="alert"` node
+ * inside the toast host would make every `role="alert"` query in the app
+ * ambiguous.
  */
 
 import type { JSX } from "react";
@@ -43,6 +52,8 @@ import { DeskRuleTapeState } from "./DeskRuleTapeState.js";
 import { GlobalApprovals } from "./GlobalApprovals.js";
 import { GlobalErrorBanner } from "./GlobalErrorBanner.js";
 import { MissionRail } from "./MissionRail.js";
+import { NotificationCenter } from "./NotificationCenter.js";
+import { NotificationAnnouncer } from "../../components/ui/notification-announcer.js";
 import { SessionExportControl } from "./SessionExportControl.js";
 import { StudioHostStatusWord } from "./StudioHostStatusWord.js";
 
@@ -76,7 +87,9 @@ export function ShellStatusStrip({
         {/* Session-LESS failures (memory maintenance) surface here: they
          * belong to no conversation. Renders null when idle. */}
         <GlobalErrorBanner />
+        <NotificationCenter />
         <GlobalApprovals />
+        <NotificationAnnouncer />
         <SessionExportControl activeSessionId={sessionScopedId} />
       </div>
     </header>

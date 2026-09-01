@@ -92,6 +92,94 @@ dialog.vex-dialog::backdrop {
   }
 }
 
+/* ── Notification toast stack ──────────────────────────────────────────────
+ * The MODEL's transient surface (lib/notifications). Same dark plate as
+ * .vex-toast in both themes, stacked top-center: at most three, plus the
+ * "+N more" report.
+ *
+ * Timing ownership differs from .vex-toast, and that is the point. The HOLD
+ * belongs to the model (PURGE_MS per severity, paused by hover and focus);
+ * this sheet owns only the enter and the exit. INVARIANT: the exit fade below
+ * must run for exactly TOAST_EXIT_MS (notification-model.ts) - the model
+ * removes the node when that elapses, so a longer fade is cut off and a
+ * shorter one leaves an invisible node holding a slot.
+ *
+ * data-legacy-offset="true" drops the stack below the pre-model .vex-toast
+ * banner while one is on screen; both anchor top-center. Removed with that
+ * slot in B2.2. */
+.vex-notification-stack {
+  position: fixed;
+  top: 120px;
+  left: 50%;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: min(420px, calc(100vw - 48px));
+  transform: translateX(-50%);
+}
+
+.vex-notification-stack[data-legacy-offset="true"] {
+  top: 188px;
+}
+
+.vex-notification-toast {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--vex-alias-toast-bg);
+  color: var(--vex-alias-label-on-chrome);
+  box-shadow: var(--shadow-lv3);
+  animation: vex-toast-sticky-in 160ms ease-out;
+}
+
+.vex-notification-toast[data-phase="exiting"] {
+  animation: vex-toast-fade 200ms ease forwards;
+  pointer-events: none;
+}
+
+.vex-notification-toast-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin-top: 1px;
+}
+
+.vex-notification-toast[data-severity="warning"] .vex-notification-toast-icon {
+  color: var(--vex-alias-state-warn);
+}
+
+.vex-notification-toast[data-severity="error"] .vex-notification-toast-icon {
+  color: var(--vex-alias-state-error);
+}
+
+.vex-notification-stack-overflow {
+  align-self: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--vex-alias-toast-bg);
+  color: var(--vex-alias-label-on-chrome);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* Reduced motion drops the entrance (movement) and keeps the exit fade
+ * (opacity only, and timed to the model's node removal). This block only
+ * takes effect because these elements carry the base.css opt-out attribute -
+ * see the contract there. */
+@media (prefers-reduced-motion: reduce) {
+  .vex-notification-toast {
+    animation: none;
+  }
+
+  .vex-notification-toast[data-phase="exiting"] {
+    animation: vex-toast-fade 200ms ease forwards;
+  }
+}
+
 /* ── Sticky toast ──────────────────────────────────────────────────────────
  * Persistent bottom-right sibling of .vex-toast on the same dark plate in
  * BOTH themes. No timed exit: the owning feature clears the store entry.

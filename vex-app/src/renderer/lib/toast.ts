@@ -6,7 +6,28 @@
  * persistent bottom-right toast: no timer, caller-controlled lifecycle,
  * optional actions/progress - the entry stays generic, and feature vocabulary
  * lives with the feature that sets it.
+ *
+ * ## Status after B2.1: this is the LEGACY layer
+ *
+ * `lib/notifications/` is now the owner of app-wide signals - stacking,
+ * per-severity dismissal timing, retention, announcement. These two slots stay
+ * for one round so that every existing call site keeps working unchanged, and
+ * B2.2 migrates them to `notify` and deletes this module.
+ *
+ *  - `showToast` MIRRORS its message into the model as a center-only entry
+ *    (see the note on the function), so nothing shown here is forgotten.
+ *  - `setStickyToast` is NOT mirrored. Its entry is a presentation contract -
+ *    title, leading glyph, action kinds, a progress bar, a dismiss affordance -
+ *    whose one client is `features/updates/UpdateToastSurface.tsx`. Routing it
+ *    through the model would mean either teaching the model that presentation
+ *    vocabulary or re-rendering the update toast as a generic notification;
+ *    the first corrupts the model, the second changes a shipped surface that
+ *    this round was told to keep working unchanged. B2.2 owns that migration,
+ *    which is where its update-specific semantics belong.
  */
+
+import { notifications } from "./notifications/index.js";
+import type { NotificationSeverity } from "./notifications/types.js";
 
 export type ToastTone = "neutral" | "warning" | "error";
 
@@ -27,14 +48,41 @@ function emit(): void {
   for (const listener of listeners) listener(current);
 }
 
-/** Show a toast, replacing any visible one. Copy arrives resolved from the caller. */
+const TONE_SEVERITY: Readonly<Record<ToastTone, NotificationSeverity>> = {
+  neutral: "info",
+  warning: "warning",
+  error: "error",
+};
+
+/**
+ * Show a toast, replacing any visible one. Copy arrives resolved from the caller.
+ *
+ * ALSO mirrors the message into the notification model, so a toast the user
+ * missed is still readable in the center - the gap this slot could never
+ * close, because it holds one message and forgets it four seconds later.
+ *
+ * The mirror is delivered to the CENTER ONLY: this slot already paints the
+ * banner and the banner already carries `role="alert"`, so letting the model
+ * toast it or announce it would show it twice and speak it twice.
+ *
+ * REMOVAL CONDITION: B2.2 migrates these call sites to `notify`, at which
+ * point the slot, the mirror and `NotificationDelivery` are deleted together.
+ */
 export function showToast(
   text: string,
   options?: { readonly tone?: ToastTone },
 ): void {
   sequence += 1;
-  current = { id: sequence, text, tone: options?.tone ?? "neutral" };
+  const tone = options?.tone ?? "neutral";
+  current = { id: sequence, text, tone };
   emit();
+  notifications.notify({
+    severity: TONE_SEVERITY[tone],
+    scope: { kind: "global" },
+    source: "app",
+    message: text,
+    deliver: { toast: false, announce: false },
+  });
 }
 
 /** Clear the current toast (the host calls this when the fade completes). */

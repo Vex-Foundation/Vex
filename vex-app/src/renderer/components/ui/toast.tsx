@@ -30,7 +30,16 @@ export function Toast({ text, tone = "neutral", onDone }: {
     return () => clearTimeout(timer);
   }, [onDone]);
   return createPortal(
-    <div className="vex-toast" data-tone={tone} role="alert">
+    <div
+      className="vex-toast"
+      data-tone={tone}
+      // Opts out of base.css's reduced-motion catch-all, which was collapsing
+      // this banner's fade (opacity only, no movement) to nothing. The sheet's
+      // own reduced-motion rule drops the slide-in; see the contract in
+      // base.css.
+      data-vex-motion-opacity=""
+      role="alert"
+    >
       {tone !== "neutral" && (
         <span className="vex-toast-icon" aria-hidden>
           <IconWarning size={16} />

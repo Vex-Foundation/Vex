@@ -45,12 +45,28 @@ import { useCallback, useMemo, useState, type JSX } from "react";
  * whether the announcement interrupts (`alert`) or waits for a pause
  * (`status`).
  */
-export type AnnouncementSeverity = "error" | "info";
+export type AnnouncementSeverity = "error" | "warning" | "info";
 
 /** WCAG 4.1.3: the severity is spoken, because a live region carries no colour. */
 const SEVERITY_PREFIX: Readonly<Record<AnnouncementSeverity, string>> = {
   error: "Error: ",
+  warning: "Warning: ",
   info: "Info: ",
+};
+
+/**
+ * Which live region carries a severity. `warning` shares the ASSERTIVE pair
+ * with `error` (VS Code alerts every severity assertively through one
+ * `aria.alert`): a warning is something the user has to act on before it
+ * becomes a failure, and waiting for a pause in speech can be too late. It
+ * still speaks its own prefix, so the two are never confused.
+ */
+const SEVERITY_CHANNEL: Readonly<
+  Record<AnnouncementSeverity, "assertive" | "polite">
+> = {
+  error: "assertive",
+  warning: "assertive",
+  info: "polite",
 };
 
 /** One severity's alternating pair. */
@@ -95,7 +111,7 @@ export function useLiveAnnouncer(): LiveAnnouncer {
   const announce = useCallback(
     (severity: AnnouncementSeverity, message: string): void => {
       const text = `${SEVERITY_PREFIX[severity]}${message}`;
-      if (severity === "error") {
+      if (SEVERITY_CHANNEL[severity] === "assertive") {
         setErrors((pair) => nextPair(pair, text));
         return;
       }
