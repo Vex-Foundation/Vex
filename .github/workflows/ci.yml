@@ -530,14 +530,17 @@ jobs:
       - name: Package (--dir) and check the packaged payload
         run: pnpm run package
 
-      # pnpm does not run the `electron` package's install script, so
-      # `node_modules/electron/dist` does not exist until the CLI is first
-      # invoked and downloads it. `--version` prints and exits before Chromium
-      # initializes, so it materializes the binary WITHOUT tripping the sandbox
-      # check below. This must precede the ownership fix: a download after it
-      # would land a fresh, unprivileged chrome-sandbox.
+      # pnpm does not run the `electron` package's install script on this
+      # runner, so `node_modules/electron/dist` does not exist after install.
+      # Run the package's own installer directly: it downloads and extracts
+      # the dist WITHOUT launching the binary. Run 33535891931 measured that
+      # `electron --version` is NOT launch-free - the CLI downloaded the dist
+      # and then started the binary, which aborted on the fresh unprivileged
+      # chrome-sandbox before printing anything. This must precede the
+      # ownership fix below: a download after it would land a fresh,
+      # unprivileged chrome-sandbox again.
       - name: Materialize the Electron binary
-        run: pnpm exec electron --version
+        run: node node_modules/electron/install.js
 
       # GitHub's ubuntu runners install node_modules as an unprivileged user,
       # so Electron's SUID sandbox helper is not root:4755 and a RAW `electron`
