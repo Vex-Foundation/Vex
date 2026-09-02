@@ -1,6 +1,6 @@
 # Lighter Module Map
 
-**Last updated: 2026-08-19**
+**Last updated: 2026-09-02**
 
 Lighter support now covers Core + Robinhood Chain public market data,
 read-only account visibility, wallet-funded account onboarding, local trading
@@ -150,10 +150,18 @@ type 2 and reports protection active only after both exact child client-order
 identities are visible from authenticated provider evidence. It never emulates
 the sibling cancellation and never retries an uncertain grouped submission.
 
-TWAP, OTO, OTOCO, and entry-with-attached-protection remain unavailable. Local
-and mock verification do not establish live provider behavior: no resting or
-trigger-limit path is claimed live-verified until a separately approved,
-retained real-provider canary completes.
+TWAP, OTO, OTOCO, and entry-with-attached-protection remain unavailable. On
+2026-09-02, one user-authorized Lighter RHC canary live-verified the ordinary
+resting path: a BABA perpetual buy limit for 0.11 BABA at 100 used
+`good-till-time` with a 24-hour expiry. Provider-backed app evidence showed it
+`Open` with zero filled and displayed the same price, remaining size, expiry,
+and `Keep open` label in `Light it up` Open orders. The user later reported
+canceling the canary; no retained terminal-cancel evidence is recorded here.
+This proves one RHC plain GTT create/open/display path only. A matching plain
+resting/open-display proof on Core, IOC and post-only limits, trigger-limit
+activation, fills, expiry, modification, and lifecycle recovery still require
+their own retained real-provider canaries. Local and mock checks remain
+guardrails rather than live-provider proof.
 
 ## Production Deposit Boundary
 
