@@ -6,7 +6,15 @@ import {
 } from "./OrderBook.js";
 
 export type TradeSide = "buy" | "sell";
-export type TradeOrderMode = "market" | "stop-loss" | "take-profit" | "oco";
+export type LimitTimeInForce = "immediate-or-cancel" | "good-till-time" | "post-only";
+export type TradeOrderMode =
+  | "market"
+  | "limit"
+  | "stop-loss"
+  | "stop-loss-limit"
+  | "take-profit"
+  | "take-profit-limit"
+  | "oco";
 
 const POSITIVE_DECIMAL = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
 
@@ -22,9 +30,24 @@ export type TradeDraft =
       readonly reduceOnly: boolean;
     })
   | (TradeDraftBase & {
+      readonly mode: "limit";
+      readonly limitPrice: string;
+      readonly timeInForce: LimitTimeInForce;
+      readonly orderExpiryOffsetMinutes: number;
+      readonly reduceOnly: boolean;
+    })
+  | (TradeDraftBase & {
       readonly mode: "stop-loss" | "take-profit";
       readonly triggerPrice: string;
       readonly worstPrice: string;
+      readonly reduceOnly: true;
+    })
+  | (TradeDraftBase & {
+      readonly mode: "stop-loss-limit" | "take-profit-limit";
+      readonly triggerPrice: string;
+      readonly limitPrice: string;
+      readonly timeInForce: LimitTimeInForce;
+      readonly orderExpiryOffsetMinutes: number;
       readonly reduceOnly: true;
     })
   | (TradeDraftBase & {
@@ -37,10 +60,32 @@ export type TradeDraft =
 
 const MODE_LABELS: Readonly<Record<TradeOrderMode, string>> = {
   market: "Market",
+  limit: "Limit",
   "stop-loss": "Stop loss",
+  "stop-loss-limit": "Stop-loss limit",
   "take-profit": "Take profit",
+  "take-profit-limit": "Take-profit limit",
   oco: "SL + TP",
 };
+
+const LIMIT_TIME_IN_FORCE_LABELS: Readonly<Record<LimitTimeInForce, string>> = {
+  "immediate-or-cancel": "IOC",
+  "good-till-time": "GTT",
+  "post-only": "Post only",
+};
+
+const ORDER_EXPIRY_OPTIONS = [
+  { minutes: 10, label: "10 minutes" },
+  { minutes: 30, label: "30 minutes" },
+  { minutes: 60, label: "1 hour" },
+  { minutes: 240, label: "4 hours" },
+  { minutes: 1_440, label: "1 day" },
+  { minutes: 10_080, label: "7 days" },
+  { minutes: 43_200, label: "30 days" },
+] as const;
+
+const DEFAULT_ORDER_EXPIRY_MINUTES = 1_440;
+const IOC_PREVIEW_EXPIRY_MINUTES = 30;
 
 function exactScope(input: {
   readonly environment: "core" | "rhc";
@@ -76,6 +121,45 @@ export function buildLighterReviewMessage(input: {
       "Nothing may execute without the user's explicit approval on that card.",
     ].join("; ");
   }
+  if (input.draft.mode === "limit") {
+    const tifInstruction = input.draft.timeInForce === "immediate-or-cancel"
+      ? "Any amount that cannot fill immediately at the approved limit price must cancel; do not turn it into a resting order."
+      : input.draft.timeInForce === "post-only"
+        ? "Keep provider-native post-only semantics; do not silently change this to good-till-time or immediate-or-cancel."
+        : "Keep the order active only until its exact approved expiry unless it fills or is canceled first.";
+    return [
+      "Review this exact plain Lighter limit order as a preview only. Do not place or submit it.",
+      ...common,
+      `price=${input.draft.limitPrice}`,
+      "orderType=limit",
+      `timeInForce=${input.draft.timeInForce}`,
+      `reduceOnly=${String(input.draft.reduceOnly)}`,
+      `orderExpiryOffsetMinutes=${input.draft.orderExpiryOffsetMinutes}`,
+      tifInstruction,
+      "Treat price as the exact limit price, not a market-order execution bound.",
+      "After the live preview, display the approval card directly. Nothing may execute without the user's explicit approval on that card.",
+    ].join("; ");
+  }
+  if (input.draft.mode === "stop-loss-limit" || input.draft.mode === "take-profit-limit") {
+    const tifInstruction = input.draft.timeInForce === "immediate-or-cancel"
+      ? "When triggered, fill immediately at the exact limit price and cancel any remainder; keep the positive trigger-order expiry."
+      : input.draft.timeInForce === "post-only"
+        ? "When triggered, keep provider-native post-only semantics; do not judge the dormant order against the current book."
+        : "When triggered, keep the limit active only until its exact approved expiry unless it fills or is canceled first.";
+    return [
+      `Review this exact native Lighter ${input.draft.mode} as a preview only. Do not place or submit it.`,
+      ...common,
+      `price=${input.draft.limitPrice}`,
+      `triggerPrice=${input.draft.triggerPrice}`,
+      `orderType=${input.draft.mode}`,
+      `timeInForce=${input.draft.timeInForce}`,
+      "reduceOnly=true",
+      `orderExpiryOffsetMinutes=${input.draft.orderExpiryOffsetMinutes}`,
+      tifInstruction,
+      "Treat price as the exact limit price that becomes active after the trigger, not a market-style worst execution bound.",
+      "After the live preview, display the approval card directly. Nothing may execute without the user's explicit approval on that card.",
+    ].join("; ");
+  }
   if (input.draft.mode === "stop-loss" || input.draft.mode === "take-profit") {
     return [
       `Review this exact Lighter ${MODE_LABELS[input.draft.mode].toLowerCase()} as a preview only. Do not place or submit it.`,
@@ -89,16 +173,19 @@ export function buildLighterReviewMessage(input: {
       "After the live preview, display the approval card directly. Nothing may execute without the user's explicit approval on that card.",
     ].join("; ");
   }
-  return [
-    "Review this exact Lighter trade as a preview only. Do not place or submit it.",
-    ...common,
-    `price=${input.draft.worstPrice}`,
-    "orderType=market",
-    "timeInForce=immediate-or-cancel",
-    `reduceOnly=${String(input.draft.reduceOnly)}`,
-    "orderExpiryOffsetMinutes=30",
-    "After the live preview, display the approval card directly. Nothing may execute without the user's explicit approval on that card.",
-  ].join("; ");
+  if (input.draft.mode === "market") {
+    return [
+      "Review this exact Lighter trade as a preview only. Do not place or submit it.",
+      ...common,
+      `price=${input.draft.worstPrice}`,
+      "orderType=market",
+      "timeInForce=immediate-or-cancel",
+      `reduceOnly=${String(input.draft.reduceOnly)}`,
+      "orderExpiryOffsetMinutes=30",
+      "After the live preview, display the approval card directly. Nothing may execute without the user's explicit approval on that card.",
+    ].join("; ");
+  }
+  throw new Error("Unsupported Lighter trade draft mode.");
 }
 
 function isPositiveDecimal(value: string): boolean {
@@ -112,10 +199,50 @@ function hardBoundLabel(side: TradeSide): string {
 function submitLabel(mode: TradeOrderMode): string {
   switch (mode) {
     case "market": return "Review market order";
+    case "limit": return "Review limit order";
     case "stop-loss": return "Review stop loss";
+    case "stop-loss-limit": return "Review stop-loss limit";
     case "take-profit": return "Review take profit";
+    case "take-profit-limit": return "Review take-profit limit";
     case "oco": return "Review SL + TP protection";
   }
+}
+
+function isPositionProtectionMode(mode: TradeOrderMode): boolean {
+  return mode === "stop-loss"
+    || mode === "stop-loss-limit"
+    || mode === "take-profit"
+    || mode === "take-profit-limit"
+    || mode === "oco";
+}
+
+function isTriggerLimitMode(
+  mode: TradeOrderMode,
+): mode is "stop-loss-limit" | "take-profit-limit" {
+  return mode === "stop-loss-limit" || mode === "take-profit-limit";
+}
+
+function expiryLabel(minutes: number): string {
+  return ORDER_EXPIRY_OPTIONS.find((option) => option.minutes === minutes)?.label ?? `${minutes} minutes`;
+}
+
+function compareDecimalStrings(left: string, right: string): number | null {
+  const leftParts = decimalParts(left);
+  const rightParts = decimalParts(right);
+  if (leftParts === null || rightParts === null) return null;
+  const scale = Math.max(leftParts.scale, rightParts.scale);
+  const leftInteger = leftParts.integer * (10n ** BigInt(scale - leftParts.scale));
+  const rightInteger = rightParts.integer * (10n ** BigInt(scale - rightParts.scale));
+  return leftInteger === rightInteger ? 0 : leftInteger < rightInteger ? -1 : 1;
+}
+
+function decimalParts(value: string): { readonly integer: bigint; readonly scale: number } | null {
+  if (!POSITIVE_DECIMAL.test(value)) return null;
+  const [whole, fraction = ""] = value.split(".");
+  return {
+    integer: BigInt(`${whole}${fraction}`.replace(/^0+(?=\d)/, "")),
+    scale: fraction.length,
+  };
 }
 
 export function TradeTicket({
@@ -141,6 +268,9 @@ export function TradeTicket({
   const [side, setSide] = useState<TradeSide>("buy");
   const [baseAmount, setBaseAmount] = useState("");
   const [worstPrice, setWorstPrice] = useState("");
+  const [limitPrice, setLimitPrice] = useState("");
+  const [limitTimeInForce, setLimitTimeInForce] = useState<LimitTimeInForce | null>(null);
+  const [orderExpiryOffsetMinutes, setOrderExpiryOffsetMinutes] = useState(DEFAULT_ORDER_EXPIRY_MINUTES);
   const [triggerPrice, setTriggerPrice] = useState("");
   const [stopLossTriggerPrice, setStopLossTriggerPrice] = useState("");
   const [stopLossPrice, setStopLossPrice] = useState("");
@@ -149,7 +279,8 @@ export function TradeTicket({
   const [priceTouched, setPriceTouched] = useState(false);
   const [reduceOnly, setReduceOnly] = useState(false);
 
-  const protective = mode !== "market";
+  const protective = isPositionProtectionMode(mode);
+  const triggerLimit = isTriggerLimitMode(mode);
   const suggestedPrice = side === "buy"
     ? bestBookPrice(book.asks, "ask")
     : bestBookPrice(book.bids, "bid");
@@ -163,6 +294,9 @@ export function TradeTicket({
     setSide("buy");
     setBaseAmount("");
     setWorstPrice("");
+    setLimitPrice("");
+    setLimitTimeInForce(null);
+    setOrderExpiryOffsetMinutes(DEFAULT_ORDER_EXPIRY_MINUTES);
     setTriggerPrice("");
     setStopLossTriggerPrice("");
     setStopLossPrice("");
@@ -173,12 +307,16 @@ export function TradeTicket({
   }, [market.marketId]);
 
   useEffect(() => {
-    if (market.marketType === "spot" && mode !== "market") setMode("market");
-  }, [market.marketType, mode]);
+    if (market.marketType === "spot" && protective) setMode("market");
+  }, [market.marketType, mode, protective]);
 
   useEffect(() => {
     if (mode === "market") setPriceTouched(false);
   }, [mode, side]);
+
+  useEffect(() => {
+    setLimitTimeInForce(null);
+  }, [mode]);
 
   const validation = useMemo(() => {
     if (!dataFresh) return "Live market data is delayed. Wait for a fresh snapshot before review.";
@@ -198,6 +336,23 @@ export function TradeTicket({
       if (!isPositiveDecimal(worstPrice)) return `Enter a valid ${hardBoundLabel(side).toLowerCase()}.`;
       return null;
     }
+    if (triggerLimit) {
+      if (!isPositiveDecimal(triggerPrice)) return "Enter an exact trigger price.";
+      if (!isPositiveDecimal(limitPrice)) return "Enter a valid limit price.";
+      if (limitTimeInForce === null) return "Choose the trigger-limit time in force.";
+      return null;
+    }
+    if (mode === "limit") {
+      if (!isPositiveDecimal(limitPrice)) return "Enter a valid limit price.";
+      if (limitTimeInForce === null) return "Choose how long the limit order should remain active.";
+      if (limitTimeInForce === "post-only") {
+        const comparison = suggestedPrice === null ? null : compareDecimalStrings(limitPrice, suggestedPrice);
+        if (comparison === null) return "A fresh opposite-side price is required for post-only review.";
+        const crosses = side === "buy" ? comparison >= 0 : comparison <= 0;
+        if (crosses) return `Post-only ${side} price must stay ${side === "buy" ? "below the best ask" : "above the best bid"}.`;
+      }
+      return null;
+    }
     if (!isPositiveDecimal(worstPrice)) return `Enter a valid ${hardBoundLabel(side).toLowerCase()}.`;
     return null;
   }, [
@@ -206,13 +361,17 @@ export function TradeTicket({
     market.marketType,
     market.status,
     mode,
+    limitPrice,
+    limitTimeInForce,
     protective,
     side,
+    suggestedPrice,
     stopLossPrice,
     stopLossTriggerPrice,
     takeProfitPrice,
     takeProfitTriggerPrice,
     triggerPrice,
+    triggerLimit,
     worstPrice,
   ]);
 
@@ -235,6 +394,35 @@ export function TradeTicket({
       onReview({ mode, side, baseAmount, triggerPrice, worstPrice, reduceOnly: true });
       return;
     }
+    if (mode === "limit") {
+      if (limitTimeInForce === null) return;
+      onReview({
+        mode,
+        side,
+        baseAmount,
+        limitPrice,
+        timeInForce: limitTimeInForce,
+        orderExpiryOffsetMinutes: limitTimeInForce === "immediate-or-cancel"
+          ? IOC_PREVIEW_EXPIRY_MINUTES
+          : orderExpiryOffsetMinutes,
+        reduceOnly,
+      });
+      return;
+    }
+    if (triggerLimit) {
+      if (limitTimeInForce === null) return;
+      onReview({
+        mode,
+        side,
+        baseAmount,
+        triggerPrice,
+        limitPrice,
+        timeInForce: limitTimeInForce,
+        orderExpiryOffsetMinutes,
+        reduceOnly: true,
+      });
+      return;
+    }
     onReview({ mode, side, baseAmount, worstPrice, reduceOnly });
   };
 
@@ -249,7 +437,7 @@ export function TradeTicket({
       <form onSubmit={onSubmit} className="lit-ticket-form">
         <div className="lit-order-kind-tabs" role="group" aria-label="Order type">
           {(Object.keys(MODE_LABELS) as TradeOrderMode[]).map((item) => {
-            const unavailable = market.marketType !== "perp" && item !== "market";
+            const unavailable = market.marketType !== "perp" && isPositionProtectionMode(item);
             return (
               <button
                 type="button"
@@ -266,7 +454,7 @@ export function TradeTicket({
         </div>
 
         {market.marketType === "spot" ? (
-          <p className="lit-ticket-context">Spot supports Market IOC here. Position protection requires a perpetual market.</p>
+          <p className="lit-ticket-context">Spot supports Market IOC and plain Limit orders here. Position protection requires a perpetual market.</p>
         ) : protective ? (
           <p className="lit-ticket-context">Protection is reduce only and must match a live {market.symbol} position.</p>
         ) : null}
@@ -299,31 +487,51 @@ export function TradeTicket({
               label="Stop loss"
               side={side}
               triggerPrice={stopLossTriggerPrice}
-              worstPrice={stopLossPrice}
+              executionPrice={stopLossPrice}
               onTriggerPriceChange={setStopLossTriggerPrice}
-              onWorstPriceChange={setStopLossPrice}
+              onExecutionPriceChange={setStopLossPrice}
             />
             <ProtectionLeg
               label="Take profit"
               side={side}
               triggerPrice={takeProfitTriggerPrice}
-              worstPrice={takeProfitPrice}
+              executionPrice={takeProfitPrice}
               onTriggerPriceChange={setTakeProfitTriggerPrice}
-              onWorstPriceChange={setTakeProfitPrice}
+              onExecutionPriceChange={setTakeProfitPrice}
             />
           </>
-        ) : mode === "stop-loss" || mode === "take-profit" ? (
+        ) : mode === "stop-loss" || mode === "take-profit" || triggerLimit ? (
           <ProtectionLeg
             label={MODE_LABELS[mode]}
             side={side}
             triggerPrice={triggerPrice}
-            worstPrice={worstPrice}
+            executionPrice={triggerLimit ? limitPrice : worstPrice}
+            priceKind={triggerLimit ? "limit" : "bound"}
             onTriggerPriceChange={setTriggerPrice}
-            onWorstPriceChange={(value) => {
-              setPriceTouched(true);
-              setWorstPrice(value);
+            onExecutionPriceChange={(value) => {
+              if (triggerLimit) setLimitPrice(value);
+              else {
+                setPriceTouched(true);
+                setWorstPrice(value);
+              }
             }}
           />
+        ) : mode === "limit" ? (
+          <label className="lit-field">
+            <span>Limit price</span>
+            <span className="lit-input-shell">
+              <input
+                value={limitPrice}
+                onChange={(event) => setLimitPrice(event.currentTarget.value.trim())}
+                inputMode="decimal"
+                autoComplete="off"
+                aria-label="Limit price"
+                aria-describedby="lit-limit-price-note"
+              />
+              <b>Quote</b>
+            </span>
+            <small id="lit-limit-price-note">Exact price for this limit order; it is not a market execution bound.</small>
+          </label>
         ) : (
           <label className="lit-field">
             <span>{hardBoundLabel(side)}</span>
@@ -344,7 +552,58 @@ export function TradeTicket({
           </label>
         )}
 
-        {mode === "market" ? (
+        {mode === "limit" || triggerLimit ? (
+          <fieldset className="lit-tif-field">
+            <legend>Time in force</legend>
+            <div className="lit-tif-tabs" role="group" aria-label="Limit time in force">
+              {(Object.keys(LIMIT_TIME_IN_FORCE_LABELS) as LimitTimeInForce[]).map((item) => (
+                <button
+                  type="button"
+                  key={item}
+                  aria-pressed={limitTimeInForce === item}
+                  onClick={() => setLimitTimeInForce(item)}
+                >
+                  {LIMIT_TIME_IN_FORCE_LABELS[item]}
+                </button>
+              ))}
+            </div>
+            <small>
+              {limitTimeInForce === null
+                ? "Choose IOC, GTT, or Post only explicitly; Vex will not infer one."
+                : limitTimeInForce === "immediate-or-cancel"
+                ? triggerLimit
+                  ? "When triggered, fill immediately at the limit price and cancel any remainder."
+                  : "Fill immediately at the limit price; cancel any remainder."
+                : limitTimeInForce === "good-till-time"
+                  ? triggerLimit
+                    ? "When triggered, remain active until filled, canceled, or the selected expiry."
+                    : "Remain active until filled, canceled, or the selected expiry."
+                  : triggerLimit
+                    ? "When triggered, add liquidity only; the current dormant price is not a crossing check."
+                    : "Add liquidity only; a price crossing the live book cannot be reviewed."}
+            </small>
+          </fieldset>
+        ) : null}
+
+        {(mode === "limit" && limitTimeInForce !== null && limitTimeInForce !== "immediate-or-cancel") || triggerLimit ? (
+          <label className="lit-field">
+            <span>Order expiry</span>
+            <span className="lit-select-shell">
+              <select
+                value={String(orderExpiryOffsetMinutes)}
+                onChange={(event) => setOrderExpiryOffsetMinutes(Number(event.currentTarget.value))}
+                aria-label="Order expiry"
+              >
+                {ORDER_EXPIRY_OPTIONS.map((option) => (
+                  <option key={option.minutes} value={option.minutes}>{option.label}</option>
+                ))}
+              </select>
+            </span>
+            <small>Measured from the fresh provider-backed preview.</small>
+          </label>
+        ) : null}
+
+        {mode === "market" || mode === "limit" ? (
           <label className="lit-check-row">
             <input
               type="checkbox"
@@ -359,10 +618,31 @@ export function TradeTicket({
         ) : null}
 
         <dl className="lit-ticket-facts">
-          <div><dt>Time in force</dt><dd>Immediate or cancel</dd></div>
-          <div><dt>Preview expiry</dt><dd>{protective ? "24 hours" : "30 minutes"}</dd></div>
+          <div>
+            <dt>Time in force</dt>
+            <dd>{mode === "limit" || triggerLimit ? limitTimeInForce === null ? "Choose" : LIMIT_TIME_IN_FORCE_LABELS[limitTimeInForce] : "Immediate or cancel"}</dd>
+          </div>
+          <div>
+            <dt>{protective || (mode === "limit" && limitTimeInForce !== null && limitTimeInForce !== "immediate-or-cancel") ? "Order expiry" : "Signed order expiry"}</dt>
+            <dd>
+              {mode === "limit"
+                ? limitTimeInForce === null ? "Choose TIF" : limitTimeInForce === "immediate-or-cancel" ? "None (IOC)" : expiryLabel(orderExpiryOffsetMinutes)
+                : triggerLimit ? expiryLabel(orderExpiryOffsetMinutes) : protective ? "24 hours" : "None (IOC)"}
+            </dd>
+          </div>
           <div><dt>Market type</dt><dd>{market.marketType === "perp" ? "Perpetual" : "Spot"}</dd></div>
-          <div><dt>Execution</dt><dd>{mode === "oco" ? "Native OCO" : protective ? "Reduce only" : "Approval gated"}</dd></div>
+          <div>
+            <dt>Execution</dt>
+            <dd>
+              {mode === "oco"
+                ? "Native OCO"
+                : triggerLimit
+                  ? limitTimeInForce === null ? "Choose TIF" : limitTimeInForce === "post-only" ? "Conditional maker only" : limitTimeInForce === "immediate-or-cancel" ? "Conditional fill or cancel" : "Native trigger limit"
+                  : mode === "limit"
+                    ? limitTimeInForce === null ? "Choose TIF" : limitTimeInForce === "post-only" ? "Maker only" : limitTimeInForce === "immediate-or-cancel" ? "Fill or cancel" : "May rest"
+                    : protective ? "Reduce only" : "Approval gated"}
+            </dd>
+          </div>
         </dl>
 
         <div className="lit-review-note" role="note">
@@ -384,16 +664,18 @@ function ProtectionLeg({
   label,
   side,
   triggerPrice,
-  worstPrice,
+  executionPrice,
+  priceKind = "bound",
   onTriggerPriceChange,
-  onWorstPriceChange,
+  onExecutionPriceChange,
 }: {
   readonly label: string;
   readonly side: TradeSide;
   readonly triggerPrice: string;
-  readonly worstPrice: string;
+  readonly executionPrice: string;
+  readonly priceKind?: "bound" | "limit";
   readonly onTriggerPriceChange: (value: string) => void;
-  readonly onWorstPriceChange: (value: string) => void;
+  readonly onExecutionPriceChange: (value: string) => void;
 }): JSX.Element {
   const id = label.toLocaleLowerCase().replaceAll(" ", "-");
   return (
@@ -414,21 +696,25 @@ function ProtectionLeg({
           </span>
         </label>
         <label className="lit-field">
-          <span>{hardBoundLabel(side)}</span>
+          <span>{priceKind === "limit" ? "Limit price" : hardBoundLabel(side)}</span>
           <span className="lit-input-shell">
             <input
-              value={worstPrice}
-              onChange={(event) => onWorstPriceChange(event.currentTarget.value.trim())}
+              value={executionPrice}
+              onChange={(event) => onExecutionPriceChange(event.currentTarget.value.trim())}
               inputMode="decimal"
               autoComplete="off"
-              aria-label={`${label} ${hardBoundLabel(side).toLowerCase()}`}
+              aria-label={`${label} ${priceKind === "limit" ? "limit price" : hardBoundLabel(side).toLowerCase()}`}
               aria-describedby={`${id}-bound-note`}
             />
             <b>Quote</b>
           </span>
         </label>
       </div>
-      <small id={`${id}-bound-note`}>Hard execution bound after the trigger fires.</small>
+      <small id={`${id}-bound-note`}>
+        {priceKind === "limit"
+          ? "Provider-native limit price activated after the trigger fires."
+          : "Hard execution bound after the trigger fires."}
+      </small>
     </fieldset>
   );
 }

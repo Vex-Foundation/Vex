@@ -168,6 +168,66 @@ describe("Light it up deterministic review handoff", () => {
     expect(message).toContain("approval card directly");
   });
 
+  it.each([
+    ["immediate-or-cancel", 30],
+    ["good-till-time", 240],
+    ["post-only", 1_440],
+  ] as const)("binds a plain limit order to exact %s semantics", (timeInForce, orderExpiryOffsetMinutes) => {
+    const message = buildLighterReviewMessage({
+      environment: "rhc",
+      market: MARKET,
+      draft: {
+        mode: "limit",
+        side: "buy",
+        baseAmount: "0.2",
+        limitPrice: "3190.25",
+        timeInForce,
+        orderExpiryOffsetMinutes,
+        reduceOnly: false,
+      },
+    });
+
+    expect(message).toContain("plain Lighter limit order");
+    expect(message).toContain("price=3190.25");
+    expect(message).toContain("orderType=limit");
+    expect(message).toContain(`timeInForce=${timeInForce}`);
+    expect(message).toContain(`orderExpiryOffsetMinutes=${orderExpiryOffsetMinutes}`);
+    expect(message).toContain("exact limit price, not a market-order execution bound");
+    expect(message).toContain("preview only");
+    expect(message).not.toMatch(/order (?:was|is) (?:placed|submitted|filled)/i);
+  });
+
+  it.each([
+    ["stop-loss-limit", "2900", "2875"],
+    ["take-profit-limit", "3300", "3275"],
+  ] as const)("binds native %s to its trigger, limit price, exact TIF, and expiry", (mode, triggerPrice, limitPrice) => {
+    for (const timeInForce of ["immediate-or-cancel", "good-till-time", "post-only"] as const) {
+      const message = buildLighterReviewMessage({
+        environment: "core",
+        market: MARKET,
+        draft: {
+          mode,
+          side: "sell",
+          baseAmount: "0.1",
+          triggerPrice,
+          limitPrice,
+          timeInForce,
+          orderExpiryOffsetMinutes: 240,
+          reduceOnly: true,
+        },
+      });
+
+      expect(message).toContain(`native Lighter ${mode}`);
+      expect(message).toContain(`orderType=${mode}`);
+      expect(message).toContain(`triggerPrice=${triggerPrice}`);
+      expect(message).toContain(`price=${limitPrice}`);
+      expect(message).toContain(`timeInForce=${timeInForce}`);
+      expect(message).toContain("orderExpiryOffsetMinutes=240");
+      expect(message).toContain("limit price that becomes active after the trigger");
+      expect(message).toContain("Nothing may execute without the user's explicit approval");
+    }
+  });
+
   it("binds both protection legs into one native OCO review request", () => {
     const message = buildLighterReviewMessage({
       environment: "rhc",
