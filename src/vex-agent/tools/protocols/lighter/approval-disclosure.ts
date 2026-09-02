@@ -1,4 +1,7 @@
-import { formatLighterIntegerAmount } from "@tools/lighter/order-preview.js";
+import {
+  formatLighterIntegerAmount,
+  isProtectiveOrderType,
+} from "@tools/lighter/order-preview.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
 import { ErrorCodes, VexError } from "../../../../errors.js";
@@ -35,10 +38,19 @@ export function buildLighterOrderApprovalDisclosure(
     intent.previewId !== preview.previewId
     || intent.matchHash !== preview.matchHash
     || intent.environment !== preview.environment
+    || intent.accountIndex !== preview.accountIndex
+    || intent.apiKeyIndex !== preview.apiKeyIndex
     || intent.baseAmountInteger !== preview.baseAmountInteger
     || intent.priceInteger !== preview.priceInteger
     || intent.side !== preview.side
     || intent.marketIndex !== preview.marketIndex
+    || intent.orderType !== preview.orderType
+    || intent.timeInForce !== preview.timeInForce
+    || intent.reduceOnly !== preview.reduceOnly
+    || intent.triggerPriceInteger !== preview.triggerPriceInteger
+    || intent.orderExpiryMs !== preview.orderExpiryMs
+    || intent.clientOrderIndexPolicy !== preview.clientOrderIndexPolicy
+    || intent.providerVersion !== preview.providerVersion
   ) {
     throw disclosureUnavailable(
       "The persisted Lighter preview no longer matches the prepared execution intent.",
@@ -70,21 +82,28 @@ export function buildLighterOrderApprovalDisclosure(
     throw disclosureUnavailable("The prepared Lighter order expiry is invalid.");
   }
 
-  const protective = intent.orderType === "stop-loss" || intent.orderType === "take-profit";
+  const protective = isProtectiveOrderType(intent.orderType);
+  const triggerLimit = intent.orderType === "stop-loss-limit"
+    || intent.orderType === "take-profit-limit";
   const priceLabel = intent.orderType === "market"
     ? "worst acceptable price"
-    : protective
+    : protective && !triggerLimit
       ? "hard execution bound"
       : "limit price";
   const environmentLabel = ENVIRONMENT_LABELS[intent.environment];
   const productLabel = stored.marketType === "spot" ? "spot" : "perpetual";
+  const expiryDisclosure = signedExpiryDisclosure({
+    orderExpiryIso,
+    timeInForce: intent.timeInForce,
+    protective,
+  });
   const orderSummary =
     `${intent.side === "buy" ? "Buy" : "Sell"} ${baseAmountDisplay} ${stored.symbol} `
     + `at ${priceLabel} ${priceDisplay} (est. notional ${notionalDisplay}) `
     + (protective ? `after ${intent.orderType} trigger ${triggerPriceDisplay}; ` : "")
     + `on the ${productLabel} market on ${environmentLabel} (${intent.environment}); ${intent.timeInForce}`
-    + `${intent.reduceOnly ? "; reduce-only" : ""}; expires ${orderExpiryIso}. `
-    + `${intent.timeInForce === "immediate-or-cancel" ? "Any unfilled remainder is canceled immediately. " : ""}`
+    + `${intent.reduceOnly ? "; reduce-only" : ""}; ${expiryDisclosure} `
+    + timeInForceDisclosure(intent.timeInForce, triggerLimit)
     + "API acceptance is not final execution.";
 
   return {
@@ -97,6 +116,35 @@ export function buildLighterOrderApprovalDisclosure(
     orderExpiryIso,
     orderSummary,
   };
+}
+
+function signedExpiryDisclosure(input: {
+  readonly orderExpiryIso: string;
+  readonly timeInForce: LighterOrderExecutionIntentRow["timeInForce"];
+  readonly protective: boolean;
+}): string {
+  if (input.timeInForce === "immediate-or-cancel" && !input.protective) {
+    return `stored, unsent expiry reference ${input.orderExpiryIso}; this timestamp is not the approval deadline and is not signed as an order expiry—Lighter receives a nil (0) OrderExpiry for this IOC order.`;
+  }
+  if (input.protective) {
+    return `signed trigger-order expiry ${input.orderExpiryIso}.`;
+  }
+  return `signed resting-order expiry ${input.orderExpiryIso}.`;
+}
+
+function timeInForceDisclosure(
+  timeInForce: LighterOrderExecutionIntentRow["timeInForce"],
+  triggerLimit: boolean,
+): string {
+  if (timeInForce === "immediate-or-cancel") {
+    return "Any unfilled remainder is canceled immediately. ";
+  }
+  if (timeInForce === "post-only") {
+    return "This maker-only order is not allowed to take liquidity. ";
+  }
+  return triggerLimit
+    ? "After the trigger, the limit order may remain open until filled or expired and may never fill. "
+    : "Any unfilled amount may remain open until filled or expired. ";
 }
 
 function readStoredDisplayContext(previewJson: Record<string, unknown>): {

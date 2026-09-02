@@ -110,6 +110,41 @@ describe("Lighter order approval disclosure", () => {
     expect(disclosure.orderSummary).toContain("hard execution bound 2999.99");
     expect(disclosure.orderSummary).toContain("stop-loss trigger 2900");
     expect(disclosure.orderSummary).toContain("reduce-only");
+    expect(disclosure.orderSummary).toContain("signed trigger-order expiry 2030-01-01T00:00:00.000Z");
+  });
+
+  it("labels a trigger-limit price and warns that the post-trigger order may not fill", () => {
+    const disclosure = buildLighterOrderApprovalDisclosure(
+      intentRow({
+        side: "sell",
+        orderType: "stop-loss-limit",
+        timeInForce: "good-till-time",
+        reduceOnly: true,
+        triggerPriceInteger: "290000",
+      }),
+      previewRow({
+        side: "sell",
+        orderType: "stop-loss-limit",
+        timeInForce: "good-till-time",
+        reduceOnly: true,
+        triggerPriceInteger: "290000",
+      }),
+    );
+
+    expect(disclosure.orderSummary).toContain("limit price 2999.99");
+    expect(disclosure.orderSummary).toContain("stop-loss-limit trigger 2900");
+    expect(disclosure.orderSummary).toContain("may remain open until filled or expired and may never fill");
+  });
+
+  it("makes the user-selected resting behavior explicit", () => {
+    expect(buildLighterOrderApprovalDisclosure(intentRow(), previewRow()).orderSummary)
+      .toContain("Any unfilled amount may remain open until filled or expired.");
+    expect(buildLighterOrderApprovalDisclosure(intentRow(), previewRow()).orderSummary)
+      .toContain("signed resting-order expiry 2030-01-01T00:00:00.000Z");
+    expect(buildLighterOrderApprovalDisclosure(
+      intentRow({ timeInForce: "post-only" }),
+      previewRow({ timeInForce: "post-only" }),
+    ).orderSummary).toContain("maker-only order is not allowed to take liquidity");
   });
 
   it("names Core explicitly and labels a market order's worst acceptable price", () => {
@@ -121,7 +156,13 @@ describe("Lighter order approval disclosure", () => {
         timeInForce: "immediate-or-cancel",
         reduceOnly: true,
       }),
-      previewRow({ environment: "core", side: "sell" }),
+      previewRow({
+        environment: "core",
+        side: "sell",
+        orderType: "market",
+        timeInForce: "immediate-or-cancel",
+        reduceOnly: true,
+      }),
     );
 
     expect(disclosure.orderSummary).toContain("Sell 1.25 ETH at worst acceptable price 2999.99");
@@ -129,6 +170,22 @@ describe("Lighter order approval disclosure", () => {
     expect(disclosure.orderSummary).toContain("immediate-or-cancel");
     expect(disclosure.orderSummary).toContain("reduce-only");
     expect(disclosure.orderSummary).toContain("Any unfilled remainder is canceled immediately.");
+    expect(disclosure.orderSummary).toContain("stored, unsent expiry reference 2030-01-01T00:00:00.000Z");
+    expect(disclosure.orderSummary).toContain("this timestamp is not the approval deadline");
+    expect(disclosure.orderSummary).toContain("is not signed as an order expiry");
+    expect(disclosure.orderSummary).toContain("nil (0) OrderExpiry");
+    expect(disclosure.orderSummary).not.toContain("signed resting-order expiry");
+  });
+
+  it("uses nil-expiry wording for an ordinary limit IOC", () => {
+    const disclosure = buildLighterOrderApprovalDisclosure(
+      intentRow({ timeInForce: "immediate-or-cancel" }),
+      previewRow({ timeInForce: "immediate-or-cancel" }),
+    );
+
+    expect(disclosure.orderSummary).toContain("this timestamp is not the approval deadline");
+    expect(disclosure.orderSummary).toContain("is not signed as an order expiry");
+    expect(disclosure.orderSummary).toContain("nil (0) OrderExpiry");
   });
 
   it("names the spot product explicitly", () => {
@@ -137,6 +194,8 @@ describe("Lighter order approval disclosure", () => {
       previewRow({
         environment: "core",
         marketIndex: 2_048,
+        orderType: "market",
+        timeInForce: "immediate-or-cancel",
         previewJson: {
           ...previewRow().previewJson,
           marketType: "spot",
@@ -158,6 +217,16 @@ describe("Lighter order approval disclosure", () => {
         code: ErrorCodes.LIGHTER_INVALID_REQUEST,
         message: expect.stringContaining("no order was signed or submitted"),
       }));
+  });
+
+  it("refuses semantic drift between the persisted preview and intent", () => {
+    expect(() => buildLighterOrderApprovalDisclosure(
+      intentRow({ timeInForce: "post-only" }),
+      previewRow({ timeInForce: "good-till-time" }),
+    )).toThrowError(expect.objectContaining({
+      code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+      message: expect.stringContaining("no longer matches"),
+    }));
   });
 
   it("refuses when the persisted preview lacks symbol or decimal precision", () => {

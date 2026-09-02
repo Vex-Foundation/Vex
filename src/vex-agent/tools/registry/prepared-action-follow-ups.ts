@@ -14,6 +14,15 @@ import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deplo
 import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/deposit-calldata.js";
 import { LIGHTER_CORE_WITHDRAW_GATEWAY_ABI } from "@tools/lighter/withdrawal/core-preflight.js";
 import { LIGHTER_WITHDRAWAL_CLAIM_CRITICAL_ARG_KEYS } from "../protocols/lighter/withdrawal-claim-approval-binding.js";
+import {
+  LIGHTER_PHASE_ONE_ORDER_TYPES,
+  LIGHTER_PHASE_ONE_TIME_IN_FORCE,
+  lighterPhaseOneOrderPolicyFailure,
+} from "@tools/lighter/order-policy.js";
+import type {
+  LighterOrderTimeInForce,
+  LighterOrderType,
+} from "@tools/lighter/order-preview.js";
 
 /**
  * The ONE prepare → confirm handoff pair, as two exported constants.
@@ -831,25 +840,7 @@ function validateLighterOrderCreateFollowUp(
       || (typeof criticalArgs.triggerPriceDisplay === "string"
         && LIGHTER_DISPLAY_AMOUNT_RE.test(criticalArgs.triggerPriceDisplay))
     ) ||
-    (
-      criticalArgs.orderType !== "limit"
-      && criticalArgs.orderType !== "market"
-      && criticalArgs.orderType !== "stop-loss"
-      && criticalArgs.orderType !== "take-profit"
-    ) ||
-    !(
-      criticalArgs.timeInForce === "good-till-time" ||
-      criticalArgs.timeInForce === "immediate-or-cancel" ||
-      criticalArgs.timeInForce === "post-only"
-    ) ||
-    typeof criticalArgs.reduceOnly !== "boolean" ||
-    ((criticalArgs.orderType === "stop-loss" || criticalArgs.orderType === "take-profit")
-      ? criticalArgs.timeInForce !== "immediate-or-cancel"
-        || criticalArgs.reduceOnly !== true
-        || criticalArgs.marketType !== "perp"
-        || criticalArgs.triggerPriceInteger === null
-        || criticalArgs.triggerPriceDisplay === null
-      : criticalArgs.triggerPriceInteger !== null || criticalArgs.triggerPriceDisplay !== null) ||
+    !validLighterOrderApprovalContract(criticalArgs) ||
     typeof criticalArgs.previewId !== "string" ||
     criticalArgs.previewId.length === 0 ||
     typeof criticalArgs.matchHash !== "string" ||
@@ -874,6 +865,39 @@ function validateLighterOrderCreateFollowUp(
       },
     },
   };
+}
+
+function validLighterOrderApprovalContract(
+  criticalArgs: Record<string, ApprovalPreviewScalar>,
+): boolean {
+  const orderType = criticalArgs.orderType;
+  const timeInForce = criticalArgs.timeInForce;
+  if (
+    typeof orderType !== "string"
+    || !LIGHTER_PHASE_ONE_ORDER_TYPES.some((value) => value === orderType)
+    || typeof timeInForce !== "string"
+    || !LIGHTER_PHASE_ONE_TIME_IN_FORCE.some((value) => value === timeInForce)
+    || lighterPhaseOneOrderPolicyFailure(
+      orderType as LighterOrderType,
+      timeInForce as LighterOrderTimeInForce,
+    ) !== null
+    || typeof criticalArgs.reduceOnly !== "boolean"
+  ) {
+    return false;
+  }
+
+  const protective = orderType === "stop-loss"
+    || orderType === "stop-loss-limit"
+    || orderType === "take-profit"
+    || orderType === "take-profit-limit";
+  if (protective) {
+    return criticalArgs.reduceOnly === true
+      && criticalArgs.marketType === "perp"
+      && criticalArgs.triggerPriceInteger !== null
+      && criticalArgs.triggerPriceDisplay !== null;
+  }
+  return criticalArgs.triggerPriceInteger === null
+    && criticalArgs.triggerPriceDisplay === null;
 }
 
 const LIGHTER_CANCEL_PREVIEW_KEYS = [

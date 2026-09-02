@@ -177,7 +177,9 @@ export const prepareLighterOrderCreateApproval: ProtocolHandler = async (params,
       preview.timeInForce,
     );
     if (policyFailure !== null) {
-      return fail(`${policyFailure} Run a fresh IOC market-order preview.`);
+      return fail(
+        `${policyFailure} Run a fresh preview with the exact supported order type and time in force the user selected.`,
+      );
     }
     if (preview.apiKeyIndex === null) {
       return fail(

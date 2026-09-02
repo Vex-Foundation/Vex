@@ -12,6 +12,7 @@ import {
 } from "@tools/lighter/client.js";
 import {
   buildLighterOrderPreview,
+  isProtectiveOrderType,
   type LighterOrderPreview,
 } from "@tools/lighter/order-preview.js";
 import {
@@ -230,8 +231,11 @@ function previewSummary(
 } {
   const preview = orderPreview.preview;
   const baseSymbol = preview.symbol.split("-")[0] ?? preview.symbol;
-  const protective = preview.orderType === "stop-loss" || preview.orderType === "take-profit";
-  const orderExpiry = preview.orderType !== "market"
+  const protective = isProtectiveOrderType(preview.orderType);
+  const triggerLimit = preview.orderType === "stop-loss-limit"
+    || preview.orderType === "take-profit-limit";
+  const hasSignedOrderExpiry = protective || preview.timeInForce !== "immediate-or-cancel";
+  const orderExpiry = hasSignedOrderExpiry
     ? new Date(Number(orderPreview.identity.expiryMs))
     : null;
   const price = formatUsd(preview.price.display);
@@ -243,8 +247,10 @@ function previewSummary(
     + `${formatUsd(preview.minimumChecks.minQuoteAmountDisplay)} quote minimum`;
   const marketNote = preview.orderType === "market"
     ? "Execution is refused if the live opposite-side price moves beyond this bound after approval."
-    : protective
+    : protective && !triggerLimit
       ? "Hard execution bound after the trigger fires; this is not the trigger price."
+    : triggerLimit
+      ? "Limit price activated after the trigger; it may rest and may never fill."
     : preview.marketData.priceComparison === "crossing_or_taker"
       ? "The limit price is marketable against the current book if submitted."
       : preview.marketData.priceComparison === "resting"
@@ -275,7 +281,7 @@ function previewSummary(
       {
         parameter: preview.orderType === "market"
           ? "Worst price"
-          : protective
+          : protective && !triggerLimit
             ? "Execution bound"
             : "Limit price",
         value: `${price} per ${baseSymbol}`,
@@ -296,7 +302,9 @@ function previewSummary(
       {
         parameter: "Time-in-force",
         value: labelTimeInForce(preview.timeInForce),
-        notes: orderExpiry ? `Expires ${orderExpiry.toISOString()}` : "Provider default expiry",
+        notes: orderExpiry
+          ? `Signed order expiry ${orderExpiry.toISOString()}`
+          : "Signed OrderExpiry is nil (0); this IOC cannot become a resting order.",
       },
       {
         parameter: "Market snapshot",

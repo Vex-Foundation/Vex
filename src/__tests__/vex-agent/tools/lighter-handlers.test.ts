@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => ({
     listUnresolved: vi.fn(),
     findByIntentIdAnySession: vi.fn(),
     markRepairResolved: vi.fn(),
+    markEvidenceConflict: vi.fn(),
     listStreamWatchable: vi.fn(),
     markStreamOutcome: vi.fn(),
   },
@@ -112,6 +113,7 @@ vi.mock("@vex-agent/db/repos/lighter-order-execution-intents.js", () => ({
   listUnresolved: mocks.executionIntentsRepo.listUnresolved,
   findByIntentIdAnySession: mocks.executionIntentsRepo.findByIntentIdAnySession,
   markRepairResolved: mocks.executionIntentsRepo.markRepairResolved,
+  markEvidenceConflict: mocks.executionIntentsRepo.markEvidenceConflict,
   listStreamWatchable: mocks.executionIntentsRepo.listStreamWatchable,
   markStreamOutcome: mocks.executionIntentsRepo.markStreamOutcome,
   LIGHTER_ORDER_UNRESOLVED_EXECUTION_STATES: [
@@ -1253,10 +1255,139 @@ describe("Lighter agent read handlers", () => {
     );
   });
 
-  it("refuses a legacy resting-order preview before creating an approval intent", async () => {
+  it.each([
+    {
+      label: "limit immediate-or-cancel",
+      side: "buy" as const,
+      orderType: "limit" as const,
+      timeInForce: "immediate-or-cancel" as const,
+      reduceOnly: false,
+      triggerPriceInteger: null,
+      summaryText: "Any unfilled remainder is canceled immediately.",
+    },
+    {
+      label: "limit good-till-time",
+      side: "buy" as const,
+      orderType: "limit" as const,
+      timeInForce: "good-till-time" as const,
+      reduceOnly: false,
+      triggerPriceInteger: null,
+      summaryText: "Any unfilled amount may remain open until filled or expired.",
+    },
+    {
+      label: "limit post-only",
+      side: "buy" as const,
+      orderType: "limit" as const,
+      timeInForce: "post-only" as const,
+      reduceOnly: false,
+      triggerPriceInteger: null,
+      summaryText: "This maker-only order is not allowed to take liquidity.",
+    },
+    {
+      label: "stop-loss-limit immediate-or-cancel",
+      side: "sell" as const,
+      orderType: "stop-loss-limit" as const,
+      timeInForce: "immediate-or-cancel" as const,
+      reduceOnly: true,
+      triggerPriceInteger: "290000",
+      summaryText: "after stop-loss-limit trigger 2900",
+    },
+    {
+      label: "stop-loss-limit good-till-time",
+      side: "sell" as const,
+      orderType: "stop-loss-limit" as const,
+      timeInForce: "good-till-time" as const,
+      reduceOnly: true,
+      triggerPriceInteger: "290000",
+      summaryText: "after stop-loss-limit trigger 2900",
+    },
+    {
+      label: "stop-loss-limit post-only",
+      side: "sell" as const,
+      orderType: "stop-loss-limit" as const,
+      timeInForce: "post-only" as const,
+      reduceOnly: true,
+      triggerPriceInteger: "290000",
+      summaryText: "after stop-loss-limit trigger 2900",
+    },
+    {
+      label: "take-profit-limit immediate-or-cancel",
+      side: "sell" as const,
+      orderType: "take-profit-limit" as const,
+      timeInForce: "immediate-or-cancel" as const,
+      reduceOnly: true,
+      triggerPriceInteger: "330000",
+      summaryText: "after take-profit-limit trigger 3300",
+    },
+    {
+      label: "take-profit-limit good-till-time",
+      side: "sell" as const,
+      orderType: "take-profit-limit" as const,
+      timeInForce: "good-till-time" as const,
+      reduceOnly: true,
+      triggerPriceInteger: "330000",
+      summaryText: "after take-profit-limit trigger 3300",
+    },
+    {
+      label: "take-profit-limit post-only",
+      side: "sell" as const,
+      orderType: "take-profit-limit" as const,
+      timeInForce: "post-only" as const,
+      reduceOnly: true,
+      triggerPriceInteger: "330000",
+      summaryText: "after take-profit-limit trigger 3300",
+    },
+  ])("prepares exact approval binding for $label", async (orderPolicy) => {
+    const semanticFields = {
+      side: orderPolicy.side,
+      orderType: orderPolicy.orderType,
+      timeInForce: orderPolicy.timeInForce,
+      reduceOnly: orderPolicy.reduceOnly,
+      triggerPriceInteger: orderPolicy.triggerPriceInteger,
+    };
+    const approvedPreview = {
+      ...previewRow(),
+      ...semanticFields,
+    };
+    const createdIntent = executionIntentRow(semanticFields);
+    mocks.previewsRepo.findLatestFresh.mockResolvedValueOnce(approvedPreview);
+    mocks.executionIntentsRepo.findLiveByPreview.mockResolvedValueOnce(null);
+    mocks.executionIntentsRepo.createApprovalPendingWith.mockResolvedValueOnce(createdIntent);
+
+    const result = await LIGHTER_HANDLERS["lighter.order.create.prepare"]!({
+      environment: "rhc",
+    }, READ_CTX);
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.executionIntentsRepo.createApprovalPendingWith).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        preview: expect.objectContaining(semanticFields),
+      }),
+    );
+    expect(result.preparedActionFollowUp).toBeDefined();
+    expect(validatePreparedActionFollowUp(
+      "lighter.order.create.prepare",
+      result.preparedActionFollowUp!,
+    ).ok).toBe(true);
+    const criticalArgs = (result.preparedActionFollowUp as {
+      approvalPreview: { criticalArgs: Record<string, unknown> };
+    }).approvalPreview.criticalArgs;
+    expect(criticalArgs).toMatchObject({
+      ...semanticFields,
+      triggerPriceDisplay: orderPolicy.triggerPriceInteger === null
+        ? null
+        : orderPolicy.triggerPriceInteger.slice(0, -2),
+    });
+    expect(String(criticalArgs.orderSummary)).toContain(orderPolicy.summaryText);
+    expect(mocks.client.getMarketDetails).not.toHaveBeenCalled();
+    expect(mocks.client.getApiKeys).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unsupported order tuple before creating an approval intent", async () => {
     mocks.previewsRepo.findLatestFresh.mockResolvedValueOnce({
       ...previewRow(),
-      orderType: "limit",
+      orderType: "market",
       timeInForce: "post-only",
     });
 
@@ -1264,8 +1395,7 @@ describe("Lighter agent read handlers", () => {
       environment: "rhc",
     });
 
-    expect(output).toContain("Phase 1 permits market orders with immediate-or-cancel");
-    expect(output).toContain("Run a fresh IOC market-order preview");
+    expect(output).toContain("Unsupported Lighter order type and time-in-force combination");
     expect(mocks.executionIntentsRepo.findLiveByPreview).not.toHaveBeenCalled();
     expect(mocks.executionIntentsRepo.createApprovalPendingWith).not.toHaveBeenCalled();
   });
@@ -2204,6 +2334,120 @@ describe("Lighter agent read handlers", () => {
     expect(((data.preview as Record<string, unknown>).price as Record<string, unknown>).integer).toBe("349999");
   });
 
+  it.each([
+    {
+      label: "limit immediate-or-cancel",
+      side: "buy" as const,
+      price: "3499",
+      orderType: "limit" as const,
+      timeInForce: "immediate-or-cancel" as const,
+      reduceOnly: false,
+      triggerPrice: undefined,
+      triggerPriceInteger: "",
+    },
+    {
+      label: "limit good-till-time",
+      side: "buy" as const,
+      price: "3499",
+      orderType: "limit" as const,
+      timeInForce: "good-till-time" as const,
+      reduceOnly: false,
+      triggerPrice: undefined,
+      triggerPriceInteger: "",
+    },
+    {
+      label: "limit post-only",
+      side: "buy" as const,
+      price: "3499",
+      orderType: "limit" as const,
+      timeInForce: "post-only" as const,
+      reduceOnly: false,
+      triggerPrice: undefined,
+      triggerPriceInteger: "",
+    },
+    {
+      label: "stop-loss-limit good-till-time",
+      side: "sell" as const,
+      price: "3300",
+      orderType: "stop-loss-limit" as const,
+      timeInForce: "good-till-time" as const,
+      reduceOnly: true,
+      triggerPrice: "3400",
+      triggerPriceInteger: "340000",
+    },
+    {
+      label: "take-profit-limit good-till-time",
+      side: "sell" as const,
+      price: "3550",
+      orderType: "take-profit-limit" as const,
+      timeInForce: "good-till-time" as const,
+      reduceOnly: true,
+      triggerPrice: "3600",
+      triggerPriceInteger: "360000",
+    },
+  ])("creates a persisted $label preview from live provider reads", async (orderPolicy) => {
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200,
+      order_book_details: [DETAIL],
+      spot_order_book_details: [],
+    });
+    mocks.client.getOrderBookOrders.mockResolvedValue({
+      code: 200,
+      total_asks: 1,
+      asks: [order(1, "3500.50")],
+      total_bids: 1,
+      bids: [order(2, "3499.50")],
+    });
+    mocks.client.getAccount.mockResolvedValue({ code: 200, accounts: [ACCOUNT] });
+    mocks.client.getApiKeys.mockRejectedValue(new Error("read unavailable"));
+    mocks.previewsRepo.create.mockResolvedValue(undefined);
+
+    const data = await callJson("lighter.order.preview", {
+      environment: "rhc",
+      accountIndex: 42,
+      marketId: 0,
+      marketType: "perp",
+      side: orderPolicy.side,
+      baseAmountIn: "0.25",
+      price: orderPolicy.price,
+      ...(orderPolicy.triggerPrice === undefined
+        ? {}
+        : { triggerPrice: orderPolicy.triggerPrice }),
+      orderType: orderPolicy.orderType,
+      timeInForce: orderPolicy.timeInForce,
+      reduceOnly: orderPolicy.reduceOnly,
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+      readonly preview: {
+        readonly identity: Record<string, unknown>;
+        readonly preview: {
+          readonly price: { readonly role: string };
+          readonly triggerPrice: { readonly integer: string | null };
+        };
+      };
+    };
+    expect(persisted.preview.identity).toMatchObject({
+      side: orderPolicy.side,
+      orderType: orderPolicy.orderType,
+      timeInForce: orderPolicy.timeInForce,
+      reduceOnly: orderPolicy.reduceOnly ? "1" : "0",
+      triggerPriceInteger: orderPolicy.triggerPriceInteger,
+    });
+    expect(persisted.preview.preview.price.role).toBe("limit_price");
+    expect(persisted.preview.preview.triggerPrice.integer).toBe(
+      orderPolicy.triggerPriceInteger === "" ? null : orderPolicy.triggerPriceInteger,
+    );
+    expect(data).toMatchObject({
+      status: "preview_ready",
+      approvalReady: false,
+      nextStep: "connect_trading_api_key_before_approval",
+    });
+    expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(1);
+    expect(mocks.executionIntentsRepo.createApprovalPendingWith).not.toHaveBeenCalled();
+  });
+
   it("creates a standalone reduce-only perpetual stop-loss preview with no silent partial order", async () => {
     mocks.client.getMarketDetails.mockResolvedValue({
       code: 200,
@@ -2338,10 +2582,10 @@ describe("Lighter agent read handlers", () => {
   });
 
   it.each([
-    { orderType: "limit", timeInForce: "good-till-time" },
-    { orderType: "limit", timeInForce: "post-only" },
     { orderType: "market", timeInForce: "good-till-time" },
-  ])("refuses non-IOC Phase 1 preview policy before provider reads", async (orderPolicy) => {
+    { orderType: "stop-loss", timeInForce: "good-till-time" },
+    { orderType: "take-profit", timeInForce: "post-only" },
+  ])("refuses unsupported create-order tuples before provider reads", async (orderPolicy) => {
     const output = await callFail("lighter.order.preview", {
       environment: "rhc",
       accountIndex: 42,
@@ -2353,7 +2597,7 @@ describe("Lighter agent read handlers", () => {
       orderExpiryOffsetMinutes: 30,
     });
 
-    expect(output).toContain("Phase 1 permits market orders with immediate-or-cancel");
+    expect(output).toContain("Unsupported Lighter order type and time-in-force combination");
     expect(mocks.client.getMarketDetails).not.toHaveBeenCalled();
     expect(mocks.previewsRepo.create).not.toHaveBeenCalled();
   });

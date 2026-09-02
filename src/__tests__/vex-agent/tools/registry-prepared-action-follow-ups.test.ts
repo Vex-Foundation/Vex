@@ -453,6 +453,61 @@ describe("prepared-action follow-up registry", () => {
     },
   );
 
+  it.each([
+    ["limit", "immediate-or-cancel", false, null],
+    ["limit", "good-till-time", false, null],
+    ["limit", "post-only", false, null],
+    ["market", "immediate-or-cancel", false, null],
+    ["stop-loss", "immediate-or-cancel", true, "290000"],
+    ["stop-loss-limit", "immediate-or-cancel", true, "290000"],
+    ["stop-loss-limit", "good-till-time", true, "290000"],
+    ["stop-loss-limit", "post-only", true, "290000"],
+    ["take-profit", "immediate-or-cancel", true, "330000"],
+    ["take-profit-limit", "immediate-or-cancel", true, "330000"],
+    ["take-profit-limit", "good-till-time", true, "330000"],
+    ["take-profit-limit", "post-only", true, "330000"],
+  ])("accepts the exact Lighter tuple %s + %s", (orderType, timeInForce, reduceOnly, trigger) => {
+    const input = lighterCandidate();
+    const candidateWithTuple = {
+      ...input,
+      approvalPreview: {
+        ...input.approvalPreview,
+        criticalArgs: {
+          ...input.approvalPreview.criticalArgs,
+          orderType,
+          timeInForce,
+          reduceOnly,
+          triggerPriceInteger: trigger,
+          triggerPriceDisplay: trigger === null ? null : "2900",
+        },
+      },
+    };
+    expect(validatePreparedActionFollowUp("lighter.order.create.prepare", candidateWithTuple))
+      .toEqual({ ok: true, followUp: candidateWithTuple });
+  });
+
+  it.each([
+    ["market", "good-till-time"],
+    ["stop-loss", "post-only"],
+    ["take-profit", "good-till-time"],
+  ])("rejects the unsupported Lighter tuple %s + %s", (orderType, timeInForce) => {
+    const input = lighterCandidate();
+    expect(validatePreparedActionFollowUp("lighter.order.create.prepare", {
+      ...input,
+      approvalPreview: {
+        ...input.approvalPreview,
+        criticalArgs: {
+          ...input.approvalPreview.criticalArgs,
+          orderType,
+          timeInForce,
+          reduceOnly: orderType !== "market",
+          triggerPriceInteger: orderType === "market" ? null : "290000",
+          triggerPriceDisplay: orderType === "market" ? null : "2900",
+        },
+      },
+    })).toEqual({ ok: false, reason: "invalid_contract" });
+  });
+
   it("rejects a public-name projection that was not resolved to immutable identity", () => {
     const input = lighterCandidate();
     const result = validatePreparedActionFollowUp("lighter__order_create_prepare", input);
