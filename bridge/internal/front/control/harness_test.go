@@ -3,12 +3,12 @@ package control
 import (
 	"net"
 	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/Vex-Foundation/vex/bridge/internal/front/frames"
+	"github.com/Vex-Foundation/vex/bridge/internal/front/fronttest"
 	"github.com/Vex-Foundation/vex/bridge/internal/front/lifecycle"
 	"github.com/Vex-Foundation/vex/bridge/internal/front/listener"
 )
@@ -177,7 +177,7 @@ func (h *harness) start() {
 	dataUpR, dataUpW := h.pipe()
 	h.controlDown, h.controlUp, h.dataDown, h.dataUp = controlDownW, controlUpR, dataDownW, dataUpR
 
-	h.sockPath = filepath.Join(h.t.TempDir(), "front.sock")
+	h.sockPath = fronttest.SocketPath(h.t)
 	l, err := net.Listen("unix", h.sockPath)
 	if err != nil {
 		h.t.Fatalf("listening: %v", err)

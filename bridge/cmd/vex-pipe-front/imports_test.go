@@ -46,9 +46,15 @@ func nonStandardDeps(t *testing.T, goos, pkg string) []string {
 	cmd := exec.Command("go", "list", "-deps",
 		"-f", "{{if not .Standard}}{{.ImportPath}}{{end}}", pkg)
 	cmd.Env = append(cmd.Environ(), "GOOS="+goos, "GOTOOLCHAIN=local")
-	out, err := cmd.CombinedOutput()
+	// STDOUT ONLY. `go list` writes progress such as "go: downloading
+	// github.com/Microsoft/go-winio v0.6.2" to STDERR on a cold module cache
+	// (every CI runner), and a combined capture read those lines as import
+	// paths outside the allowed set. Stderr is kept for the failure message.
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("go list -deps for %s on %s: %v\n%s", pkg, goos, err, out)
+		t.Fatalf("go list -deps for %s on %s: %v\n%s", pkg, goos, err, stderr.String())
 	}
 	var deps []string
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {

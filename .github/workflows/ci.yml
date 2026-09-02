@@ -114,6 +114,15 @@ jobs:
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
 
+      # pnpm does not run the `electron` package's install script here (see the
+      # spike job), and electron 42's index.js downloads the binary ON IMPORT
+      # when dist/ is missing: with parallel vitest workers that is a race
+      # between two extractions (run 33641189028 on macOS: EEXIST on the
+      # framework symlink, and a suite that failed to load). Materialize it
+      # ONCE, up front, so no worker ever downloads.
+      - name: Materialize the Electron binary
+        run: node node_modules/electron/install.js
+
       - name: Lint and typecheck
         run: pnpm run lint
 
@@ -535,6 +544,12 @@ jobs:
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
 
+      # Same reason as vex-app-build-and-test: electron 42 downloads on import
+      # when dist/ is missing, and parallel vitest workers raced the extraction
+      # on this runner (run 33641189028). Materialize once, up front.
+      - name: Materialize the Electron binary
+        run: node node_modules/electron/install.js
+
       - name: Test (vitest, darwin)
         run: pnpm test
 
@@ -587,6 +602,34 @@ jobs:
 
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
+
+      # Same reason as vex-app-build-and-test: electron 42 downloads on import
+      # when dist/ is missing, and parallel vitest workers would race the
+      # extraction. Materialize once, up front.
+      - name: Materialize the Electron binary
+        run: node node_modules/electron/install.js
+
+      # The Windows named-pipe front, built here so the main-process relay
+      # suite can spawn the REAL vex-pipe-front.exe on the required lane
+      # (B4.2b-2b): a fake front proves the state machines, only the real
+      # one proves the spawn, the inherited overlapped planes, the descriptor
+      # readback and the pipe end to end. Same pinned SHA and exact toolchain
+      # as bridge-windows; the build script refuses any other patch.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          # Same reasoning as bridge-build-and-test: go.sum verifies every
+          # download, and a restored cache is one more input to a binary
+          # that ships signed.
+          cache: false
+
+      - name: Build the pipe front (windows/amd64)
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: bash bridge/build.sh windows amd64
+        env:
+          GOTOOLCHAIN: local
 
       # Attribution by contrast: a worker that dies at teardown is reported by
       # vitest without a file name, so the pty host (the ConPTY suspect) ALSO
