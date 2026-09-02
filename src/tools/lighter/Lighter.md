@@ -116,14 +116,26 @@ the configured privileged execution path. A `code=200` response
 means API acceptance only; final open/fill/cancel/reject state still requires
 provider evidence.
 
-The order-create product surface exposes ordinary market orders and standalone
-reduce-only perpetual stop-loss or take-profit orders. All three use Lighter's
-`immediate-or-cancel` time in force. Ordinary market orders require a worst
-acceptable execution price. Protective orders require both an explicit trigger
-and a hard execution-price bound; Vex verifies the reducing side, exact live
-position size, trigger direction, and bound direction before preview and again
-after approval before any credential or vault access. A trigger that is already
-crossed at revalidation is refused.
+The order-create product surface exposes Lighter's market and limit families.
+Plain limit orders require the user to choose `immediate-or-cancel`,
+`good-till-time`, or `post-only`; Vex never substitutes one for another. Market,
+stop-loss, and take-profit orders require `immediate-or-cancel`.
+Stop-loss-limit and take-profit-limit orders also require the user to choose
+`immediate-or-cancel`, `good-till-time`, or `post-only`, and Vex preserves that
+choice exactly. A trigger-limit IOC keeps a positive trigger-order expiry on the
+wire even though an ordinary IOC limit uses Lighter's nil expiry. Post-only
+trigger limits are not rejected against the current book while dormant; their
+maker-only behavior applies when the provider activates them.
+Ordinary market orders require a worst acceptable execution price. Every
+protective variant requires an explicit trigger and is limited to reduce-only
+perpetual orders; market-trigger variants use a hard execution-price bound,
+while trigger-limit variants use an explicit limit price. Vex verifies the
+reducing side, exact live position size, trigger direction, price direction,
+and exact order tuple before preview and again after approval before any
+credential or vault access. A trigger already crossed at revalidation is
+refused, and a plain post-only order that would cross the refreshed book is
+refused. Every non-nil wire expiry must still have at least five minutes
+remaining at actual pre-submit revalidation.
 
 Native OCO protection is available for one existing perpetual position. It
 binds exactly one reduce-only stop-loss and one same-size reduce-only take-profit
@@ -132,10 +144,10 @@ type 2 and reports protection active only after both exact child client-order
 identities are visible from authenticated provider evidence. It never emulates
 the sibling cancellation and never retries an uncertain grouped submission.
 
-Resting limit, good-till-time, post-only, trigger-limit, TWAP, OTO, OTOCO, and
-entry-with-attached-protection remain unavailable. No live protective order is
-claimed verified until a separately approved retained real-provider canary
-completes.
+TWAP, OTO, OTOCO, and entry-with-attached-protection remain unavailable. Local
+and mock verification do not establish live provider behavior: no resting or
+trigger-limit path is claimed live-verified until a separately approved,
+retained real-provider canary completes.
 
 ## Production Deposit Boundary
 
