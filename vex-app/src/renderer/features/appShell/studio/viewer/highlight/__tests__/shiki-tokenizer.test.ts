@@ -21,6 +21,7 @@ import {
   CODE_VARIABLE_PREFIX,
   createTokenizer,
   hotLanguagesWithoutLoader,
+  LINE_TIME_BUDGET_MS,
   projectLines,
   type TokenizeOutcome,
 } from "../shiki-tokenizer.js";
@@ -31,6 +32,8 @@ import type { TokenizeResult, TokenLine } from "../highlight-protocol.js";
 const NO_LINE_BOUND = 0;
 /** Zero disables the token bound, the way `NO_LINE_BOUND` disables the other. */
 const NO_TOKEN_BOUND = 0;
+/** Zero disables vscode-textmate's per-line clock, the same way. */
+const NO_TIME_BUDGET = 0;
 
 function flatten(result: TokenizeResult): string {
   return result.lines.map((line) => line.map((token) => token.text).join("")).join("\n");
@@ -71,7 +74,13 @@ describe("the loader table", () => {
 
 describe("tokenize", () => {
   it("gives a TypeScript keyword and string their own theme variables", async () => {
-    const tokenizer = createTokenizer();
+    // NO CLOCK. This asserts what the grammar and the theme produce, and
+    // vscode-textmate's per-line budget would otherwise make that a function of
+    // how loaded the machine is: the first line of the first file pays for the
+    // grammar's lazy pattern compilation, and on a busy runner that crossed
+    // shiki's 500ms default and the string arrived uncoloured. See the
+    // budget-is-visible case below for the mechanism.
+    const tokenizer = createTokenizer({ lineTimeBudgetMs: NO_TIME_BUDGET });
     const source = 'const greeting = "hello";\n';
     const outcome = await tokenizer.tokenize(source, "typescript", NO_LINE_BOUND, NO_TOKEN_BOUND);
     tokenizer.dispose();
@@ -90,6 +99,52 @@ describe("tokenize", () => {
       expect(colour.startsWith("var(--vex-alias-code-")).toBe(true);
     }
   });
+
+  /**
+   * THE PER-LINE CLOCK, made visible and pinned.
+   *
+   * vscode-textmate stops scanning a line once `Date.now()` says the budget is
+   * spent and hands back what it has, so a line can come out byte-exact and
+   * half-coloured with nothing said about it. That is what made the colour
+   * assertion above fail on a loaded runner while passing in isolation, and it
+   * is why the budget is now this module's declared policy rather than shiki's
+   * silent 500ms default.
+   *
+   * The experiment is deterministic by MARGIN, not by hope. MEASURED here:
+   * this 750-character line costs about 1.1 SECONDS of scanning, so a
+   * one-millisecond budget is a thousandfold overrun and the scan cannot
+   * finish; the unbudgeted run is then a function of the grammar alone. The
+   * case goes red if the option stops reaching shiki, which is the regression
+   * that produced the flake.
+   *
+   * The timeout is generous because this is real tokenizing on a shared
+   * runner, and no assertion here is about elapsed time.
+   */
+  it("abandons the rest of a line when the budget runs out, losing colour and no bytes", async () => {
+    const line = 'const a = "x"; '.repeat(50);
+    expect(line.length).toBeGreaterThanOrEqual(750);
+
+    const budgeted = createTokenizer({ lineTimeBudgetMs: 1 });
+    const stopped = await budgeted.tokenize(line, "typescript", NO_LINE_BOUND, NO_TOKEN_BOUND);
+    budgeted.dispose();
+
+    const unbudgeted = createTokenizer({ lineTimeBudgetMs: NO_TIME_BUDGET });
+    const complete = await unbudgeted.tokenize(line, "typescript", NO_LINE_BOUND, NO_TOKEN_BOUND);
+    unbudgeted.dispose();
+
+    expect(stopped.ok).toBe(true);
+    expect(complete.ok).toBe(true);
+    if (!stopped.ok || !complete.ok) return;
+
+    // The budget costs COLOUR and nothing else: both projections are the file.
+    expect(flatten(stopped.result)).toBe(line);
+    expect(flatten(complete.result)).toBe(line);
+    expect(new Set(colours(stopped.result)).size).toBeLessThan(
+      new Set(colours(complete.result)).size,
+    );
+    // And the value the viewer ships with is the one written down.
+    expect(LINE_TIME_BUDGET_MS).toBe(500);
+  }, 60_000);
 
   it("answers plain text with one uncoloured token per line", async () => {
     const tokenizer = createTokenizer();

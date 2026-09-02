@@ -66,6 +66,24 @@
  * precisely VS Code's `editor.maxTokenizationLineLength` behaviour, so there
  * is no hand-rolled line splitting here - only the COUNT, which shiki does not
  * report and the viewer must show.
+ *
+ * ## The per-line WALL-CLOCK budget is stated here, not inherited silently
+ *
+ * vscode-textmate stops scanning a line once `Date.now()` says it has spent
+ * longer than `tokenizeTimeLimit` on it, and returns what it has: the rest of
+ * the line arrives as one token carrying the scope the scanner was in when the
+ * clock ran out. Byte-exact, and quietly under-coloured. MEASURED in the
+ * installed packages rather than assumed:
+ * `@shikijs/primitive/dist/index.mjs:620` defaults the option to 500 and hands
+ * it to `grammar.tokenizeLine2` at :654; `@shikijs/vscode-textmate/dist/
+ * index.js:1813-1819` is the `Date.now()` loop guard that abandons the line.
+ *
+ * That default is inherited by whoever calls `codeToTokensBase` without saying
+ * otherwise, which makes every colour this module produces a function of how
+ * busy the machine was. {@link LINE_TIME_BUDGET_MS} names the value we adopt
+ * and {@link TokenizerOptions.lineTimeBudgetMs} lets a caller who needs a
+ * deterministic tokenization ask for one, so the budget is a policy on the
+ * record instead of a library default nobody wrote down.
  */
 
 import {
@@ -181,6 +199,18 @@ const GRAMMAR_LOADERS: Readonly<Record<HotLanguageId, GrammarLoader>> = {
   solidity: () => import("@shikijs/langs/solidity"),
 };
 
+/**
+ * How long tokenizing ONE line may take before vscode-textmate abandons the
+ * rest of it, in milliseconds. Zero disables the clock entirely.
+ *
+ * 500 is shiki's own default, kept deliberately: it is the guard that stops a
+ * pathological grammar-and-line pair from freezing the highlight worker, and a
+ * viewer that paints a file once per tab can afford half a second a line. The
+ * value is written down here so raising or removing it is a decision someone
+ * makes, and so the only place that spends this budget is visible in one grep.
+ */
+export const LINE_TIME_BUDGET_MS = 500;
+
 /** The tokenizer's outcome. A refusal is an ANSWER, never a thrown error. */
 export type TokenizeOutcome =
   | { readonly ok: true; readonly result: TokenizeResult }
@@ -217,6 +247,17 @@ export interface TokenizerOptions {
    * without breaking a real grammar on disk. Production passes nothing.
    */
   readonly loaders?: Readonly<Partial<Record<string, GrammarLoader>>>;
+  /**
+   * The per-line wall-clock budget, in milliseconds. Defaults to
+   * {@link LINE_TIME_BUDGET_MS}; zero disables the clock.
+   *
+   * Injected because the budget makes a token's COLOUR depend on the machine's
+   * load: a line that runs out of clock keeps its bytes and loses the rest of
+   * its colours, with nothing said about it. A caller that asserts on colours -
+   * the colocated suite does - asks for zero and gets a tokenization that is a
+   * function of the grammar alone.
+   */
+  readonly lineTimeBudgetMs?: number;
 }
 
 /**
@@ -230,6 +271,7 @@ export interface TokenizerOptions {
 export function createTokenizer(options: TokenizerOptions = {}): ShikiTokenizer {
   const loaders: Readonly<Partial<Record<string, GrammarLoader>>> =
     options.loaders ?? GRAMMAR_LOADERS;
+  const lineTimeBudgetMs = options.lineTimeBudgetMs ?? LINE_TIME_BUDGET_MS;
 
   let core: HighlighterCore | null = null;
   /**
@@ -329,6 +371,7 @@ export function createTokenizer(options: TokenizerOptions = {}): ShikiTokenizer 
           lang: language,
           theme: THEME_NAME,
           tokenizeMaxLineLength: maxLineLength,
+          tokenizeTimeLimit: lineTimeBudgetMs,
         });
         return projectLines(lines, text, maxLineLength, maxTokens);
       } catch (cause: unknown) {
