@@ -114,7 +114,11 @@ export class FileViewerRegistry {
   constructor(options: FileViewerRegistryOptions = {}) {
     this.#createHighlighter = options.createHighlighter ?? defaultHighlighterPort;
     this.#explorers = options.explorers;
-    this.#defer = options.defer ?? queueMicrotask;
+    // Wrapped, never stored: invoked as `this.#defer(run)` the platform
+    // `queueMicrotask` would receive this registry as its receiver and
+    // Chromium throws "TypeError: Illegal invocation" (Node ignores the
+    // receiver, so only the built app showed it). See explorer-registry.ts.
+    this.#defer = options.defer ?? ((run) => queueMicrotask(run));
   }
 
   /** Sessions currently held. Measurable, so a bound can be enforced on facts. */
