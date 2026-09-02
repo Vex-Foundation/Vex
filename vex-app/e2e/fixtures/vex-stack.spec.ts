@@ -75,9 +75,14 @@ test.describe("isolated stack layout", () => {
     expect(PG_PASSWORD_RELATIVE_PATH).toBe(path.join("local-infra", "secrets", "pg_password"));
   });
 
-  test("writes only the projects-root override into config.json", () => {
+  test("writes a document the app's config owner accepts, carrying the override", () => {
     const parsed = JSON.parse(isolatedConfigJson("/tmp/run-projects")) as Record<string, unknown>;
-    expect(parsed).toEqual({ projectsRoot: "/tmp/run-projects" });
+    // `version: 1` is not decoration. `loadConfig` (`src/config/store.ts`)
+    // DISCARDS a document whose version is anything else and returns the
+    // shipped defaults, which is how an "isolated" run ended up creating
+    // projects in the developer's `~/Vex/projects`. The override and the
+    // version travel together or the override does not exist.
+    expect(parsed).toEqual({ version: 1, projectsRoot: "/tmp/run-projects" });
   });
 
   test("hands main all three door values together, and nothing else", () => {

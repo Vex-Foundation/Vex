@@ -167,13 +167,29 @@ export function pgPasswordPathFor(configDir: string): string {
 }
 
 /**
- * The `config.json` an isolated run writes: the projects-root override and
- * nothing else, so the run exercises the real resolver
- * (`main/paths/config-dir.ts` -> `resolveProjectsRootPath`) instead of a
- * product code path added for tests.
+ * The config-document version this fixture writes, and the ONLY value the app's
+ * config owner accepts.
+ *
+ * `loadConfig` (`src/config/store.ts`) reads `config.json`, and its FIRST
+ * decision is `if (parsed.version !== 1) return defaults` - a document without
+ * this key is not merged field by field, it is DISCARDED WHOLE. That is why it
+ * is spelled here with this comment rather than left out: the fixture used to
+ * write `{ "projectsRoot": "/tmp/vex-e2e-<id>-projects" }` and no more, so every
+ * "isolated" run fell back to `DEFAULT_PROJECTS_ROOT` and created real project
+ * folders in the developer's `~/Vex/projects`. The run was isolated in its
+ * database, its config dir and its ports, and not in the one directory a user
+ * would notice.
+ */
+const ISOLATED_CONFIG_VERSION = 1;
+
+/**
+ * The `config.json` an isolated run writes: the version the app's config owner
+ * requires plus the projects-root override, and nothing else, so the run
+ * exercises the real resolver (`main/paths/config-dir.ts` ->
+ * `resolveProjectsRootPath`) instead of a product code path added for tests.
  */
 export function isolatedConfigJson(projectsRoot: string): string {
-  return `${JSON.stringify({ projectsRoot }, null, 2)}\n`;
+  return `${JSON.stringify({ version: ISOLATED_CONFIG_VERSION, projectsRoot }, null, 2)}\n`;
 }
 
 /** The three environment values a launched main process needs. */

@@ -35,6 +35,10 @@
  * asserting a report about a missing binary.
  */
 
+import { access, readdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import path from "node:path";
+
 import type { Page, TestInfo } from "@playwright/test";
 import { test, expect, type VexDatabaseFixture } from "./fixtures/vex-app-with-database.js";
 
@@ -76,6 +80,18 @@ interface ProjectFilesReadback {
     readonly state: string;
   }>;
   readonly lastRenderedScopeVersion: number | null;
+  /** The project's directory name under the projects root. */
+  readonly rootPath: string | null;
+}
+
+/** Does this path exist? Asked without creating, removing or opening anything. */
+async function exists(target: string): Promise<boolean> {
+  try {
+    await access(target);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function collectConsoleErrors(page: Page): string[] {
@@ -119,6 +135,7 @@ async function readProjectFiles(
       error?: { code?: string; message?: string };
       data?: ReadonlyArray<{
         name: string;
+        rootPath: string;
         files: {
           lastRenderedScopeVersion: number | null;
           artifacts: ReadonlyArray<{
@@ -135,6 +152,7 @@ async function readProjectFiles(
         detail: `${result.error?.code ?? "unknown"}: ${result.error?.message ?? ""}`,
         artifacts: [],
         lastRenderedScopeVersion: null,
+        rootPath: null,
       };
     }
     const row = result.data?.find((project) => project.name === name);
@@ -144,6 +162,7 @@ async function readProjectFiles(
         detail: `no row named ${name}`,
         artifacts: [],
         lastRenderedScopeVersion: null,
+        rootPath: null,
       };
     }
     return {
@@ -155,6 +174,7 @@ async function readProjectFiles(
         state: artifact.state,
       })),
       lastRenderedScopeVersion: row.files.lastRenderedScopeVersion,
+      rootPath: row.rootPath,
     };
   }, projectName);
 }
@@ -276,6 +296,40 @@ test("Studio journey: create a project, see its report, open it and get a termin
     path: ".mcp.json",
     state: "current",
   });
+  // THE FILE VEX JUST WROTE IS NOT REPORTED AS OUT OF DATE. `AGENTS.md` carries
+  // its own change log inside the hashed managed block, and the drift check
+  // re-renders that block from the stored change notes; when the two disagreed,
+  // every freshly created project wore the warning badge from its first second
+  // and the badge stopped meaning anything.
+  expect(files.artifacts).toContainEqual({
+    kind: "agents-md",
+    path: "AGENTS.md",
+    state: "current",
+  });
+
+  /* ---- 4b. and it is inside THIS RUN's projects root ------------------ */
+
+  // The isolation this fixture promises, asserted on the filesystem instead of
+  // assumed. The stack writes `projectsRoot` into its throwaway `config.json`,
+  // but a document the app's config owner rejects (it requires `version: 1`)
+  // is discarded whole, and every run then created REAL project folders in the
+  // developer's `~/Vex/projects`. Six of them survived before this assertion
+  // existed. The spec now proves both halves: the folder is where the run said
+  // it would be, and it is not in the default root.
+  expect(files.rootPath).not.toBeNull();
+  const rootPath = files.rootPath ?? "";
+  const isolatedProject = path.join(vexDb.stack.projectsRoot, rootPath);
+  expect(
+    await exists(path.join(isolatedProject, "AGENTS.md")),
+    `the project's files are not under this run's projects root ` +
+      `(${vexDb.stack.projectsRoot} holds ${JSON.stringify(
+        await readdir(vexDb.stack.projectsRoot),
+      )})`,
+  ).toBe(true);
+  expect(
+    await exists(path.join(homedir(), "Vex", "projects", rootPath)),
+    "the run created a project folder in the developer's real ~/Vex/projects",
+  ).toBe(false);
 
   await close.click();
   await expect(creator).toBeHidden();

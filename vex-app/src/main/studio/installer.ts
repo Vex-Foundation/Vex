@@ -249,23 +249,63 @@ async function runRenderAdmitted(
     io,
   });
 
-  // The note is composed ONLY when the first pass changed something. Injecting
-  // one unconditionally would change the block on every run, which would write
-  // `AGENTS.md`, which would justify the note: a self-fulfilling loop that
-  // rewrites a user's file forever. `AGENTS.md` is named in the summary because
-  // a note that lands in the block is itself a change to the block.
+  // THE INVARIANT: a file the current scope version rendered is NEVER reported
+  // as predating it.
+  //
+  // The change log lives INSIDE the hashed managed block, and the drift check
+  // (`enrichProjectFiles` -> `inspectArtifact`) re-renders that block from the
+  // DURABLE change notes to decide `current` versus `stale`. So the note this
+  // run bakes into `AGENTS.md` and the note it stores afterwards must be the
+  // same line, byte for byte, or the project reports its own freshly written
+  // file as out of date forever. Two ways that used to fail, both closed here:
+  //
+  //   1. ORDER. The summary in the file listed the first pass's files and then
+  //      `AGENTS.md`; the summary stored afterwards listed the SAME files in
+  //      PLAN order, where `AGENTS.md` precedes `CLAUDE.md` and
+  //      `.vex/protocols.md`. Composing the pending summary through
+  //      `orderByPlan` - the same ordering the stored one goes through - makes
+  //      the two identical whenever `AGENTS.md` is written.
+  //   2. THE NOTE-FREE REWRITE. A scope edit that moves nothing but the block
+  //      (a rename, a wallet change) leaves the first pass unchanged, so no
+  //      note reached the file - and one was stored anyway, because the run
+  //      DID change something. `agentsMdNeedsRewrite` asks the block itself
+  //      whether it is about to be rewritten for reasons other than the note,
+  //      so those runs compose their note too.
+  //
+  // The note is still never injected into an otherwise no-op run: injecting one
+  // unconditionally would change the block on every run, which would write
+  // `AGENTS.md`, which would justify the note - a self-fulfilling loop that
+  // rewrites a user's file forever.
   const firstPassChanged = firstPass.artifacts.some(
     (outcome) => outcome.status === "written" || outcome.status === "removed",
   );
-  const pendingNote = firstPassChanged
+  const noteFreeBrief = buildProjectBrief(scope, notesOutcome.data);
+  const rewritingAgentsMd =
+    firstPassChanged
+    || (await agentsMdNeedsRewrite(
+      directory.data,
+      plan,
+      noteFreeBrief,
+      provenance,
+      trigger === "repair",
+    ));
+  const pendingNote = rewritingAgentsMd
     ? {
       version: appVersion(),
       date: isoDate(new Date()),
       summary: summarizeRun(
-        [
+        orderByPlan(plan, [
           ...firstPass.artifacts,
-          { status: "written", path: STUDIO_AGENTS_MD_RELATIVE_PATH },
-        ],
+          {
+            status: "written",
+            kind: "agents-md",
+            agentId: null,
+            path: STUDIO_AGENTS_MD_RELATIVE_PATH,
+            // The run has not written it yet; `created` versus `updated` does
+            // not reach the summary, which names paths only.
+            change: "updated",
+          },
+        ]),
         trigger,
       ),
     }
@@ -278,10 +318,11 @@ async function runRenderAdmitted(
       unsupported: [],
     },
     facts,
-    brief: buildProjectBrief(
-      scope,
-      pendingNote === null ? notesOutcome.data : [pendingNote, ...notesOutcome.data],
-    ),
+    // The SAME brief the rewrite prediction above asked its question with when
+    // there is no note to inject, so the two cannot answer differently.
+    brief: pendingNote === null
+      ? noteFreeBrief
+      : buildProjectBrief(scope, [pendingNote, ...notesOutcome.data]),
     provenance,
     repair: trigger === "repair",
     io,
@@ -405,6 +446,51 @@ export async function enrichProjectFiles(
     generatorFingerprint: project.files.generatorFingerprint,
     artifacts,
   };
+}
+
+/**
+ * Would `AGENTS.md`'s managed block be rewritten by this run even if no change
+ * note were injected into it?
+ *
+ * Asked with the NOTE-FREE brief, and answered by the same inspection the
+ * sidebar badge reads, so "the run is about to rewrite the block" and "the badge
+ * says the block is behind the scope" can never be two different answers.
+ *
+ * The mapping is the reconciler's own behaviour, not a second policy:
+ * `missing` and `stale` are written, a `drifted` block is left alone unless this
+ * is an explicit Repair, and an `unreadable` (malformed fence) block is refused
+ * rather than rewritten.
+ *
+ * COSTS ONE EXTRA READ of a file the second pass is about to read anyway.
+ * Renders are user-triggered and rare; a wrong drift badge on every project is
+ * the expensive side.
+ */
+async function agentsMdNeedsRewrite(
+  projectDirectory: string,
+  plan: StudioPlan,
+  briefWithoutPendingNote: StudioProjectBrief,
+  provenance: ReadonlyMap<string, { entryHash: string | null; contentHash: string }>,
+  repair: boolean,
+): Promise<boolean> {
+  const artifact = plan.artifacts.find(
+    (candidate) => candidate.kind === "agents-md" && candidate.operation === "install",
+  );
+  if (artifact === undefined) return false;
+  const status = await inspectArtifact(
+    projectDirectory,
+    artifact,
+    briefWithoutPendingNote,
+    provenance,
+  );
+  switch (status.state) {
+    case "missing":
+    case "stale":
+      return true;
+    case "drifted":
+      return repair;
+    default:
+      return false;
+  }
 }
 
 async function inspectArtifact(
