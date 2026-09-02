@@ -17,8 +17,9 @@
  * slots: its `stdio` option covers the first three and its data path is a
  * MessagePort. `spawn` with an explicit seven-entry array is the only way to
  * hand a child four additional inherited pipe handles, which is exactly what
- * the B4.2a spike measured
- * (`vex-app/scripts/spikes/overlapped-stdio/run-spike.mjs`).
+ * the B4.2a spike measured. Its result is recorded in `pipe-front-protocol.md`
+ * section 1; the instrument was deleted at stage B4.3b under its own removal
+ * condition.
  */
 
 import { spawn } from "node:child_process";

@@ -443,9 +443,9 @@ FLIPPING EITHER FLAG REQUIRES EXTENDING THAT JOB with the full proof matrix
 below, and the reviewer's check is mechanical: no matrix in the job, no flip.
 
 THE INSTRUMENT THAT MEASURES FIVE OF THE EIGHT. `bridge/cmd/probe-pipe-acl`
-is a Windows-only probe binary (non-Windows stub, exit 2, the shape of
-`cmd/spike-overlapped-stdio`). It ships in nothing and no packaging path builds
-it. It has two modes:
+is a Windows-only probe binary (non-Windows stub, exit 2, the same build-tag
+split every command in the module uses). It ships in nothing and no packaging
+path builds it. It has two modes:
 
 - `serve --name <pipe> --ready <file> [--descriptor front|winio-default|open]`
   binds through the REAL `listener.Bind` - the front's compiled-in descriptor
@@ -509,19 +509,41 @@ The proof matrix, all eight on a Windows runner:
    ANOTHER MACHINE is NOT measured and cannot be on a hosted runner: it needs a
    second host on the same network and inbound SMB, neither of which a GitHub
    runner has.
-4. NATIVE PIPE ROUND TRIP - UNPROVEN. The real host and the real built bridge
-   exchanging a handshake and MCP frames over the pipe. No test in this
-   repository drives that path end to end on Windows today; the front's Windows
-   suite (`listener/bind_windows_test.go`) covers the bind, the descriptor and
-   the half-close, and the conformance suite runs over a unix socket on Linux.
-5. OVERLAPPED DUPLEX - UNPROVEN. A pending read and a concurrent write on the
-   SAME overlapped handle both completing. The `studio-overlapped-spike` job
-   measured that property for INHERITED STDIO handles under Electron, which is a
-   different handle from a different creator; nothing has measured it on the
-   pipe handle `cmd/vex-mcp/dial_windows.go` opens.
-6. DEADLINE AND CLOSE CANCELLATION - UNPROVEN. The ack and drain deadlines
-   firing on a pipe handle, and close cancelling a blocked operation. The
-   deadline paths are covered on Linux sockets only.
+4. NATIVE PIPE ROUND TRIP - HALF PROVEN. The HOST half is measured by
+   `front-real-binary.test.ts` on `vex-app-windows`, run 33650332655: the real
+   built `vex-pipe-front.exe`, spawned by the real host, reported BOUND with
+   every required flag confirmed, relayed main's refusal line byte for byte to a
+   real pipe client, and answered LOCK inside its deadline. The BRIDGE half -
+   the real built `vex-mcp.exe` exchanging a handshake and MCP frames with that
+   host over the pipe - is still UNPROVEN: the conformance suite
+   (`mcp-bridge-conformance.test.ts`) runs over a unix socket on Linux, and the
+   front's Windows Go suite (`listener/bind_windows_test.go`) covers the bind,
+   the descriptor and the half-close but no client of ours.
+5. OVERLAPPED DUPLEX - MEASURED by `TestPipeDialSupportsConcurrentDuplex`
+   (`bridge/cmd/vex-mcp/dial_windows_test.go`) on `bridge-windows`, run
+   `<measured on run N>`. A read and a write outstanding TOGETHER on the handle
+   `dialPipe` opens, both completing and byte-verified. The concurrency is
+   constructed rather than timed: the client writes 1 MiB against 4096-byte
+   kernel buffers, the server takes a 64-byte prefix and stops - so the write is
+   arithmetically still outstanding - and the client's read of the server's
+   answer completes while the write's completion channel is still empty. A
+   synchronous handle deadlocks on exactly that pattern.
+6. DEADLINE AND CLOSE CANCELLATION - MEASURED by
+   `TestPipeHandleTakesARealDeadline`, `TestPipeAckDeadlineFiresOnASilentHost`,
+   `TestPipeDrainDeadlineFiresOnASilentHost` and
+   `TestClosingThePipeCancelsABlockedRead` (same file) on `bridge-windows`, run
+   `<measured on run N>`. In order: `SetDeadline` returns nil on the overlapped
+   handle and the read it bounds ends in `os.ErrDeadlineExceeded`, which turns
+   `dial_windows.go`'s `setDeadlineImpl` note from a reading of the go1.27.0
+   sources into a measurement; `handshake.Perform` against a pipe server that
+   accepts and never answers ends on that deadline, with the server confirmed to
+   have received the request line, so the bound is on the ack and not on the
+   write; `relay.Run` against the same silent server returns
+   `OutcomeDrainDeadline` with `HalfClosed:false`, which is the pipe's lack of a
+   half-close reported rather than presented as a clean close; and `Close` under
+   a read parked in the kernel returns that read with `os.ErrClosed` or
+   ERROR_OPERATION_ABORTED and no bytes. Every wait is a channel join under a
+   bounded timer; no sleep stands in for a proof.
 7. FOREIGN-USER FIRST-SERVER PIPE SQUATTING - CI-MEASURED on `bridge-windows`,
    run 33646484002 (front: `{"outcome":"bind_failed"}`, exit 3, no ready file;
    bridge: `TestHostAuthRefusesAForeignUsersServer` passed against the

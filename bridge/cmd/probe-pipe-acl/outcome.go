@@ -42,7 +42,8 @@ const (
 	exitMismatch = 1
 	// exitUnsupported is a run on a platform that has no named pipes. It is
 	// distinct from every other code so "wrong platform" can never be read as
-	// "the measurement broke", the same split cmd/spike-overlapped-stdio uses.
+	// "the measurement broke", and it is the same 2 the front's
+	// lifecycle.ExitUnsupported carries for the same meaning.
 	exitUnsupported = 2
 	// exitBroken is the INSTRUMENT failing: bad arguments, a pipe that could
 	// not be created, a ready file that could not be written. It is not a

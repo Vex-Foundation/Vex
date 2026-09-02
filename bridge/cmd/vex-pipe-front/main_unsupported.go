@@ -4,7 +4,7 @@
 // host. This build exists so `go build ./...` and `go vet ./...` stay green on
 // linux and darwin, and so a run on the wrong platform SAYS SO instead of
 // silently serving nothing. The build-tag split follows
-// cmd/spike-overlapped-stdio and cmd/vex-mcp/dial_unix.go.
+// cmd/probe-pipe-acl and cmd/vex-mcp/dial_unix.go.
 package main
 
 import (

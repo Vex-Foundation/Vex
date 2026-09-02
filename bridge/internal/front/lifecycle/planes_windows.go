@@ -34,13 +34,13 @@ import (
 // pointer cast at an odd offset is an unaligned read, and it would break
 // silently if the layout ever gained padding.
 //
-// THE TECHNIQUE IS THE SPIKE'S, MEASURED. cmd/spike-overlapped-stdio is the
-// measurement that established these handles arrive as OVERLAPPED, poller-
-// eligible pipes with working deadlines and cancellation
-// (`dedicated_overlapped_planes_usable: true`). This file is the production
-// reader of the same block; the spike stays what it is, a measurement command,
-// and neither imports the other, because a spike that could be changed by
-// production needs is no longer evidence.
+// THE TECHNIQUE IS MEASURED, NOT ASSUMED. The B4.2a transport spike established
+// that these handles arrive as OVERLAPPED, poller-eligible pipes with working
+// deadlines and cancellation (`dedicated_overlapped_planes_usable: true`); what
+// that measurement decided is recorded in `pipe-front-protocol.md` section 1
+// and its limits table, and the instrument itself was deleted at stage B4.3b
+// under its own removal condition, with git history as the archive. This file
+// is the production reader of the same block.
 
 // invalidHandleValue is INVALID_HANDLE_VALUE, which libuv writes into every CRT
 // slot it was not asked to populate.

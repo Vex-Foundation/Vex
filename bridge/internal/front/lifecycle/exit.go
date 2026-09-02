@@ -16,8 +16,8 @@ package lifecycle
 // can tell "the front refused the packaging it was given" from "the front broke
 // under load" without parsing a sentence.
 //
-// 2 matches cmd/spike-overlapped-stdio's exitUnsupported so "wrong platform"
-// reads the same for every binary in this module.
+// 2 matches cmd/probe-pipe-acl's exitUnsupported so "wrong platform" reads the
+// same for every binary in this module.
 const (
 	// ExitClean is a commanded shutdown: QUIT answered, or plane 3 at EOF.
 	ExitClean = 0

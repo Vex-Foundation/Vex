@@ -114,8 +114,8 @@ jobs:
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
 
-      # pnpm does not run the `electron` package's install script here (see the
-      # spike job), and electron 42's index.js downloads the binary ON IMPORT
+      # pnpm does not run the `electron` package's install script here, and
+      # electron 42's index.js downloads the binary ON IMPORT
       # when dist/ is missing: with parallel vitest workers that is a race
       # between two extractions (run 33641189028 on macOS: EEXIST on the
       # framework symlink, and a suite that failed to load). Materialize it
@@ -491,101 +491,6 @@ jobs:
               Remove-CimInstance -ErrorAction SilentlyContinue
           }
           Remove-Item -Recurse -Force 'C:\vex-probe' -ErrorAction SilentlyContinue
-
-  # THE B4.2a TRANSPORT SPIKE: evidence collection, not a gate.
-  #
-  # Batch 4 adds a Go pipe-front process that Electron main spawns and relays
-  # to over inherited stdio. Its internal transport has two candidate shapes,
-  # and the choice hangs on one fact no document answers: whether a Go child
-  # spawned from Electron main with Node's Windows-specific 'overlapped' stdio
-  # mode can USE additional inherited stdio pipes (slot 3 and up) as duplex
-  # planes - concurrent duplex on one handle, deadlines that fire, close that
-  # cancels a blocked read, throughput in small chunks, and a bound on writes
-  # the parent is not reading.
-  #
-  # WINDOWS ONLY, because the question is a Windows question. No developer box
-  # in this project can run it, so this job IS the measurement.
-  #
-  # WHAT MAKES IT RED. The instrument breaking, and nothing else. A NEGATIVE
-  # measured answer is a valid result: it uploads its artifact and passes, and
-  # the transport contract is then written for the single-multiplex fallback.
-  # `--require-measurement` is what turns a child that crashed or never ran
-  # into a failure instead of a silent green. NO continue-on-error here, on
-  # purpose: this is not a gate, but a broken instrument must be visible.
-  #
-  # REMOVAL CONDITION: this job, the harness and the Go instrument are deleted
-  # when the real transport conformance suite lands at stage B4.3. See
-  # vex-app/scripts/spikes/overlapped-stdio/README.md.
-  studio-overlapped-spike:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      # Same pinned SHA and same exact toolchain version as bridge-windows: a
-      # platform finding must not be a toolchain difference.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: "1.27.0"
-          check-latest: false
-          cache: false
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - run: corepack enable
-
-      - name: Install root dependencies (monorepo, same reason as the build-and-test job)
-        run: pnpm install --frozen-lockfile
-
-      - name: Install vex-app dependencies
-        working-directory: vex-app
-        run: pnpm install --frozen-lockfile
-
-      # pnpm does not run the `electron` package's install script on these
-      # runners, so node_modules/electron/dist does not exist after install.
-      # The package's own installer downloads and extracts the dist WITHOUT
-      # launching the binary; `electron --version` is NOT launch-free. Same
-      # step, same reason, as vex-app-package-payload.
-      - name: Materialize the Electron binary
-        working-directory: vex-app
-        run: node node_modules/electron/install.js
-
-      # Built directly rather than through bridge/build.sh: that script builds
-      # the SHIPPED binary for the six release targets, and this instrument
-      # ships in nothing.
-      - name: Build the spike instrument (windows amd64)
-        working-directory: bridge
-        env:
-          GOTOOLCHAIN: local
-          CGO_ENABLED: "0"
-          GOOS: windows
-          GOARCH: amd64
-        run: go build -o dist/windows-amd64/spike-overlapped-stdio.exe ./cmd/spike-overlapped-stdio
-
-      # The parent's choreography decision (which child event triggers which
-      # action) is a pure module with a table test; it is what lost the first
-      # measurement's parent-to-child direction, so it runs before the
-      # instrument does.
-      - name: Test the harness choreography (node --test)
-        working-directory: vex-app
-        run: node --test scripts/spikes/overlapped-stdio/choreography.test.mjs
-
-      - name: Measure inherited overlapped stdio under Electron main
-        working-directory: vex-app
-        run: pnpm exec electron scripts/spikes/overlapped-stdio/run-spike.mjs --json scripts/spikes/overlapped-stdio/artifacts/overlapped-stdio-windows-amd64.json --require-measurement
-
-      # ALWAYS, because a failed run's partial artifact is the diagnostic. The
-      # step above already decided whether the job is red.
-      - name: Upload the measurement
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: studio-overlapped-spike
-          path: vex-app/scripts/spikes/overlapped-stdio/artifacts/
-          if-no-files-found: error
-          retention-days: 30
-
   vex-app-e2e:
     # Required gate from day 1 — boot smoke against the built Electron
     # bundle. If this flakes we treat that as a real bug, not as a
