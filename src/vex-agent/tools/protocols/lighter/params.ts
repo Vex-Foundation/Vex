@@ -379,17 +379,16 @@ export function readLighterOrderPreviewParams(
     return { ok: false, reason: "reduceOnly must be boolean." };
   }
   const resolvedOrderType = (orderType.value ?? "market") as LighterOrderType;
-  const limitFamily = resolvedOrderType === "limit"
-    || resolvedOrderType === "stop-loss-limit"
+  const triggerLimit = resolvedOrderType === "stop-loss-limit"
     || resolvedOrderType === "take-profit-limit";
-  if (limitFamily && timeInForce.value === undefined) {
+  if (triggerLimit && timeInForce.value === undefined) {
     return {
       ok: false,
       reason: `${resolvedOrderType} requires an explicit timeInForce selection.`,
     };
   }
-  const resolvedTimeInForce =
-    (timeInForce.value ?? "immediate-or-cancel") as LighterOrderTimeInForce;
+  const resolvedTimeInForce: LighterOrderTimeInForce = timeInForce.value
+    ?? (resolvedOrderType === "limit" ? "good-till-time" : "immediate-or-cancel");
   const policyFailure = lighterPhaseOneOrderPolicyFailure(
     resolvedOrderType,
     resolvedTimeInForce,

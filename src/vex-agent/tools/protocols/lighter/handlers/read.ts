@@ -211,9 +211,9 @@ function formatAsset(value: string, symbol: string): string {
 }
 
 function labelTimeInForce(value: string): string {
-  if (value === "good-till-time") return "Good-till-time";
-  if (value === "immediate-or-cancel") return "Immediate-or-cancel";
-  if (value === "post-only") return "Post-only";
+  if (value === "good-till-time") return "Keep open";
+  if (value === "immediate-or-cancel") return "Immediate only";
+  if (value === "post-only") return "Maker only";
   return value;
 }
 
@@ -300,11 +300,11 @@ function previewSummary(
         notes: `${formatAsset(preview.baseAmount.display, baseSymbol)} x ${price}`,
       },
       {
-        parameter: "Time-in-force",
+        parameter: "Order behavior",
         value: labelTimeInForce(preview.timeInForce),
         notes: orderExpiry
           ? `Signed order expiry ${orderExpiry.toISOString()}`
-          : "Signed OrderExpiry is nil (0); this IOC cannot become a resting order.",
+          : "Signed OrderExpiry is nil (0); any unfilled amount cancels immediately.",
       },
       {
         parameter: "Market snapshot",

@@ -83,7 +83,7 @@ describe("Lighter order approval disclosure", () => {
     expect(disclosure.orderSummary).toContain("est. notional 3749.9875");
     expect(disclosure.orderSummary).toContain("Robinhood Chain Lighter (rhc)");
     expect(disclosure.orderSummary).toContain("perpetual market");
-    expect(disclosure.orderSummary).toContain("good-till-time");
+    expect(disclosure.orderSummary).toContain("Keep open");
     expect(disclosure.orderSummary).toContain("API acceptance is not final execution.");
     expect(disclosure.orderSummary).not.toContain("reduce-only");
   });
@@ -140,7 +140,7 @@ describe("Lighter order approval disclosure", () => {
     expect(buildLighterOrderApprovalDisclosure(intentRow(), previewRow()).orderSummary)
       .toContain("Any unfilled amount may remain open until filled or expired.");
     expect(buildLighterOrderApprovalDisclosure(intentRow(), previewRow()).orderSummary)
-      .toContain("signed resting-order expiry 2030-01-01T00:00:00.000Z");
+      .toContain("signed order expiry 2030-01-01T00:00:00.000Z");
     expect(buildLighterOrderApprovalDisclosure(
       intentRow({ timeInForce: "post-only" }),
       previewRow({ timeInForce: "post-only" }),
@@ -167,14 +167,15 @@ describe("Lighter order approval disclosure", () => {
 
     expect(disclosure.orderSummary).toContain("Sell 1.25 ETH at worst acceptable price 2999.99");
     expect(disclosure.orderSummary).toContain("Lighter Core (core)");
-    expect(disclosure.orderSummary).toContain("immediate-or-cancel");
+    expect(disclosure.orderSummary).toContain("Immediate only");
     expect(disclosure.orderSummary).toContain("reduce-only");
     expect(disclosure.orderSummary).toContain("Any unfilled remainder is canceled immediately.");
     expect(disclosure.orderSummary).toContain("stored, unsent expiry reference 2030-01-01T00:00:00.000Z");
     expect(disclosure.orderSummary).toContain("this timestamp is not the approval deadline");
     expect(disclosure.orderSummary).toContain("is not signed as an order expiry");
     expect(disclosure.orderSummary).toContain("nil (0) OrderExpiry");
-    expect(disclosure.orderSummary).not.toContain("signed resting-order expiry");
+    expect(disclosure.orderSummary).toContain("immediate-only order");
+    expect(disclosure.orderSummary).not.toContain("signed order expiry");
   });
 
   it("uses nil-expiry wording for an ordinary limit IOC", () => {

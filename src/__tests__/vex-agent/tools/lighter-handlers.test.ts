@@ -2336,6 +2336,16 @@ describe("Lighter agent read handlers", () => {
 
   it.each([
     {
+      label: "limit default keep-open",
+      side: "buy" as const,
+      price: "3499",
+      orderType: "limit" as const,
+      timeInForce: undefined,
+      reduceOnly: false,
+      triggerPrice: undefined,
+      triggerPriceInteger: "",
+    },
+    {
       label: "limit immediate-or-cancel",
       side: "buy" as const,
       price: "3499",
@@ -2414,7 +2424,9 @@ describe("Lighter agent read handlers", () => {
         ? {}
         : { triggerPrice: orderPolicy.triggerPrice }),
       orderType: orderPolicy.orderType,
-      timeInForce: orderPolicy.timeInForce,
+      ...(orderPolicy.timeInForce === undefined
+        ? {}
+        : { timeInForce: orderPolicy.timeInForce }),
       reduceOnly: orderPolicy.reduceOnly,
       orderExpiryOffsetMinutes: 30,
     });
@@ -2431,7 +2443,7 @@ describe("Lighter agent read handlers", () => {
     expect(persisted.preview.identity).toMatchObject({
       side: orderPolicy.side,
       orderType: orderPolicy.orderType,
-      timeInForce: orderPolicy.timeInForce,
+      timeInForce: orderPolicy.timeInForce ?? "good-till-time",
       reduceOnly: orderPolicy.reduceOnly ? "1" : "0",
       triggerPriceInteger: orderPolicy.triggerPriceInteger,
     });
@@ -2444,6 +2456,14 @@ describe("Lighter agent read handlers", () => {
       approvalReady: false,
       nextStep: "connect_trading_api_key_before_approval",
     });
+    if (orderPolicy.timeInForce === undefined) {
+      expect((data.previewSummary as Record<string, unknown>).rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          parameter: "Order behavior",
+          value: "Keep open",
+        }),
+      ]));
+    }
     expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(1);
     expect(mocks.executionIntentsRepo.createApprovalPendingWith).not.toHaveBeenCalled();
   });
@@ -2580,6 +2600,29 @@ describe("Lighter agent read handlers", () => {
     expect(notReduceOnly).toContain("requires reduceOnly=true");
     expect(mocks.client.getMarketDetails).not.toHaveBeenCalled();
   });
+
+  it.each(["stop-loss-limit", "take-profit-limit"] as const)(
+    "refuses omitted %s order behavior before any provider read",
+    async (orderType) => {
+      const output = await callFail("lighter.order.preview", {
+        environment: "rhc",
+        accountIndex: 42,
+        marketId: 0,
+        marketType: "perp",
+        side: "sell",
+        baseAmountIn: "0.25",
+        price: "3300",
+        triggerPrice: orderType === "stop-loss-limit" ? "3400" : "3600",
+        orderType,
+        reduceOnly: true,
+        orderExpiryOffsetMinutes: 30,
+      });
+
+      expect(output).toContain(`${orderType} requires an explicit timeInForce selection`);
+      expect(mocks.client.getMarketDetails).not.toHaveBeenCalled();
+      expect(mocks.previewsRepo.create).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     { orderType: "market", timeInForce: "good-till-time" },

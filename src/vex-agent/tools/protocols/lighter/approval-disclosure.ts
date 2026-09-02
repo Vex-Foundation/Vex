@@ -101,7 +101,7 @@ export function buildLighterOrderApprovalDisclosure(
     `${intent.side === "buy" ? "Buy" : "Sell"} ${baseAmountDisplay} ${stored.symbol} `
     + `at ${priceLabel} ${priceDisplay} (est. notional ${notionalDisplay}) `
     + (protective ? `after ${intent.orderType} trigger ${triggerPriceDisplay}; ` : "")
-    + `on the ${productLabel} market on ${environmentLabel} (${intent.environment}); ${intent.timeInForce}`
+    + `on the ${productLabel} market on ${environmentLabel} (${intent.environment}); ${timeInForceLabel(intent.timeInForce)}`
     + `${intent.reduceOnly ? "; reduce-only" : ""}; ${expiryDisclosure} `
     + timeInForceDisclosure(intent.timeInForce, triggerLimit)
     + "API acceptance is not final execution.";
@@ -124,12 +124,20 @@ function signedExpiryDisclosure(input: {
   readonly protective: boolean;
 }): string {
   if (input.timeInForce === "immediate-or-cancel" && !input.protective) {
-    return `stored, unsent expiry reference ${input.orderExpiryIso}; this timestamp is not the approval deadline and is not signed as an order expiry—Lighter receives a nil (0) OrderExpiry for this IOC order.`;
+    return `stored, unsent expiry reference ${input.orderExpiryIso}; this timestamp is not the approval deadline and is not signed as an order expiry—Lighter receives a nil (0) OrderExpiry for this immediate-only order.`;
   }
   if (input.protective) {
     return `signed trigger-order expiry ${input.orderExpiryIso}.`;
   }
-  return `signed resting-order expiry ${input.orderExpiryIso}.`;
+  return `signed order expiry ${input.orderExpiryIso}.`;
+}
+
+function timeInForceLabel(
+  timeInForce: LighterOrderExecutionIntentRow["timeInForce"],
+): string {
+  if (timeInForce === "good-till-time") return "Keep open";
+  if (timeInForce === "post-only") return "Maker only";
+  return "Immediate only";
 }
 
 function timeInForceDisclosure(

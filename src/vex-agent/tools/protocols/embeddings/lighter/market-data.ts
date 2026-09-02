@@ -134,11 +134,11 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.order.preview": {
     embeddingText: embeddingText(
       `Create a live Lighter order preview for a native limit-family order: limit, stop-loss-limit, take-profit-limit, market, stop-loss, or take-profit. ` +
-      `Use when the user requests an IOC market order, resting GTT limit, maker-only post-only limit, or perpetual protection. Require explicit time in force: limit, stop-loss-limit, and take-profit-limit support IOC, GTT, or post-only; market, stop-loss, and take-profit require IOC. Protective orders require reduce-only, an exact trigger, price bound, reducing side, and size. ` +
-      `Returns exact preview terms and a separate approval card when ready; it never signs without approval. Example queries: prepare trade approval; GTT ETH limit bid; post-only ETH bid; GTT stop-loss-limit; GTT take-profit-limit.`,
+      `Use when the user requests a market order, ordinary priced limit, maker-only limit, or perpetual protection. An ordinary limit with no stated behavior defaults to keep open (good-till-time) for one day; preserve an explicit immediate-only (IOC), keep-open (GTT), maker-only (post-only), or duration choice. Stop-loss-limit and take-profit-limit require an explicit choice; market, stop-loss, and take-profit require IOC. Protective orders require reduce-only, an exact trigger, price bound, reducing side, and size. ` +
+      `Returns exact preview terms and a separate approval card when ready; it never signs without approval. Example queries: buy 0.1 ETH at 3000 on Lighter; prepare trade approval; keep my ETH limit bid open for seven days; maker-only ETH bid; GTT stop-loss-limit; GTT take-profit-limit.`,
     ),
     aliases: ["lighter order preview", "preview order", "order preflight", "lighter limit order", "lighter post only", "lighter stop loss limit", "lighter take profit limit", "lighter_order"],
-    exampleIntents: ["show me an IOC market buy preview for 0.001 ETH with worst price 3000", "place a good-till-time Lighter limit bid", "make my Lighter limit order post-only", "protect my lighter long with a GTT stop-loss-limit", "take profit on my rhc ETH position with a GTT take-profit-limit"],
+    exampleIntents: ["buy 0.1 ETH at 3000 on Lighter", "show me an immediate-only market buy preview for 0.001 ETH with worst price 3000", "keep my Lighter limit bid open for seven days", "make my Lighter limit order maker only", "protect my lighter long with a GTT stop-loss-limit", "take profit on my rhc ETH position with a GTT take-profit-limit"],
     ecosystems: ["lighter", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",

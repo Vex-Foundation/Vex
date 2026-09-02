@@ -170,7 +170,7 @@ describe("Lighter agent discovery surface", () => {
     }
   });
 
-  it("publishes product, native order-family, and explicit time-in-force selectors for order previews", () => {
+  it("publishes product, native order-family, and plain-language order-behavior defaults", () => {
     const preview = getProtocolManifest("lighter.order.preview");
     expect(preview).toBeDefined();
     const marketType = preview?.params.find((param) => param.key === "marketType");
@@ -189,13 +189,17 @@ describe("Lighter agent discovery surface", () => {
       enum: ["good-till-time", "immediate-or-cancel", "post-only"],
     });
     expect(timeInForce?.required).not.toBe(true);
-    expect(timeInForce?.description).toContain("Required when orderType is limit");
+    expect(timeInForce?.description).toContain("ordinary limit order: when omitted");
+    expect(timeInForce?.description).toContain("uses good-till-time");
+    expect(timeInForce?.description).toContain("Required for stop-loss-limit and take-profit-limit");
     expect(marketType?.required).not.toBe(true);
     expect(preview?.description).toContain("refuses a product mismatch");
-    expect(preview?.description).toContain("never infer or replace");
-    expect(preview?.description).toContain("immediate-or-cancel, good-till-time, or post-only exactly");
+    expect(preview?.description).toContain("ordinary limit omits timeInForce, default it to good-till-time");
+    expect(preview?.description).toContain("orderExpiryOffsetMinutes=1440 (one day)");
+    expect(preview?.description).toContain("explicit immediate-or-cancel, good-till-time, or post-only selection");
+    expect(preview?.description).toContain("duration exactly");
     expect(preview?.discovery?.embeddingText).toContain(
-      "limit, stop-loss-limit, and take-profit-limit support IOC, GTT, or post-only",
+      "ordinary limit with no stated behavior defaults to keep open (good-till-time)",
     );
     expect(preview?.discovery?.embeddingText).not.toContain("trigger-limit variants require GTT only");
     expect(preview?.exampleParams).toMatchObject({
@@ -217,6 +221,7 @@ describe("Lighter agent discovery surface", () => {
 
   it("recalls native Lighter limit previews with user-selected time in force", async () => {
     for (const query of [
+      "buy 0.1 ETH at 3000 on Lighter",
       "place a good-till-time Lighter limit bid for ETH",
       "make my Lighter limit order post-only",
       "protect my Lighter long with a GTT stop-loss-limit",

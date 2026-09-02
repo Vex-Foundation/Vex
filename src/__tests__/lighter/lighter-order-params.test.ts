@@ -39,18 +39,23 @@ describe("Lighter order preview params", () => {
     });
   });
 
-  it("requires an exact time-in-force selection for every limit family", () => {
-    expect(read({ orderType: "limit" })).toEqual({
-      ok: false,
-      reason: "limit requires an explicit timeInForce selection.",
+  it("defaults an ordinary limit to keep-open behavior", () => {
+    expect(read({ orderType: "limit" })).toMatchObject({
+      ok: true,
+      value: {
+        orderType: "limit",
+        timeInForce: "good-till-time",
+      },
     });
-    expect(read({
-      orderType: "stop-loss-limit",
-      triggerPrice: "3000",
-      reduceOnly: true,
-    })).toEqual({
+  });
+
+  it.each([
+    ["stop-loss-limit", "3000"],
+    ["take-profit-limit", "3100"],
+  ] as const)("still requires an exact time-in-force for %s", (orderType, triggerPrice) => {
+    expect(read({ orderType, triggerPrice, reduceOnly: true })).toEqual({
       ok: false,
-      reason: "stop-loss-limit requires an explicit timeInForce selection.",
+      reason: `${orderType} requires an explicit timeInForce selection.`,
     });
   });
 

@@ -117,9 +117,15 @@ means API acceptance only; final open/fill/cancel/reject state still requires
 provider evidence.
 
 The order-create product surface exposes Lighter's market and limit families.
-Plain limit orders require the user to choose `immediate-or-cancel`,
-`good-till-time`, or `post-only`; Vex never substitutes one for another. Market,
-stop-loss, and take-profit orders require `immediate-or-cancel`.
+Plain limit orders default to `good-till-time` when the user does not state an
+order behavior, so an unfilled amount can remain open until it fills, is
+canceled, or reaches its approved expiry. An explicit `immediate-or-cancel`,
+`good-till-time`, or `post-only` choice always wins. A good-till-time limit may
+still fill immediately when its price is marketable; `post-only` is the explicit
+maker-only choice. The normal trade ticket and chat route use a disclosed
+one-day expiry when the user does not state a duration; an explicit duration
+always wins. Market, stop-loss, and take-profit orders require
+`immediate-or-cancel`.
 Stop-loss-limit and take-profit-limit orders also require the user to choose
 `immediate-or-cancel`, `good-till-time`, or `post-only`, and Vex preserves that
 choice exactly. A trigger-limit IOC keeps a positive trigger-order expiry on the
