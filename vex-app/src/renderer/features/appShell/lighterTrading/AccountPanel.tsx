@@ -39,9 +39,9 @@ function orderTypeLabel(value: string | null | undefined): string {
 
 function timeInForceLabel(value: string | null | undefined): string | null {
   const normalized = value?.trim().toLowerCase().replace(/[\s_]+/g, "-") ?? "";
-  if (normalized === "ioc" || normalized === "immediate-or-cancel") return "IOC";
-  if (normalized === "gtt" || normalized === "good-till-time") return "GTT";
-  if (normalized === "post-only" || normalized === "postonly") return "Post only";
+  if (normalized === "ioc" || normalized === "immediate-or-cancel") return "Immediate only";
+  if (normalized === "gtt" || normalized === "good-till-time") return "Keep open";
+  if (normalized === "post-only" || normalized === "postonly") return "Maker only";
   return value === null || value === undefined ? null : providerLabel(value);
 }
 

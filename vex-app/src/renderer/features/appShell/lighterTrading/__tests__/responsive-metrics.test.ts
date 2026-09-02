@@ -12,6 +12,10 @@ describe("Light it up responsive market metrics", () => {
     expect(css).toMatch(/\.lit-bottom-tabs\s*\{[^}]*gap: 8px;/s);
   });
 
+  it("keeps order-behavior choices legible and touch-sized", () => {
+    expect(css).toMatch(/\.lit-tif-tabs button\s*\{[^}]*min-height: 44px;[^}]*font-size: 11px;/s);
+  });
+
   it("uses explicit product and metric identities instead of DOM positions", () => {
     expect(css).toContain(
       '.lit-market-bar[data-market-type="perp"] .lit-market-metric[data-metric="funding"]',

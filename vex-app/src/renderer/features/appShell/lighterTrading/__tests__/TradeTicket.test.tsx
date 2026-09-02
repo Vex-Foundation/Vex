@@ -94,12 +94,12 @@ describe("Light it up trade ticket", () => {
   });
 
   it.each([
-    ["IOC", "immediate-or-cancel", false, 30],
-    ["GTT", "good-till-time", true, 240],
-    ["Post only", "post-only", true, 240],
+    ["Immediate only", "immediate-or-cancel", false, 30, /would cancel instead of resting/i],
+    ["Keep open", "good-till-time", true, 240, /can rest until the market reaches it/i],
+    ["Maker only", "post-only", true, 240, /can rest as a maker order/i],
   ] as const)(
     "emits an exact plain limit draft for %s without reusing the market bound",
-    (tifLabel, timeInForce, hasExpiryControl, expectedExpiry) => {
+    (tifLabel, timeInForce, hasExpiryControl, expectedExpiry, priceGuidance) => {
       const onReview = vi.fn();
       render(
         <TradeTicket
@@ -133,13 +133,14 @@ describe("Light it up trade ticket", () => {
         reduceOnly: false,
       });
       if (timeInForce === "immediate-or-cancel") {
-        expect(screen.getByText("None (IOC)")).toBeTruthy();
+        expect(screen.getByText("None (immediate only)")).toBeTruthy();
       }
-      expect(screen.getByText("Exact price for this limit order; it is not a market execution bound.")).toBeTruthy();
+      expect(screen.getByText(priceGuidance)).toBeTruthy();
     },
   );
 
-  it("requires a plain-limit time in force instead of inferring one", () => {
+  it("defaults a plain limit to keep open for one day", () => {
+    const onReview = vi.fn();
     render(
       <TradeTicket
         market={PERP}
@@ -147,7 +148,7 @@ describe("Light it up trade ticket", () => {
         activeSession
         dataFresh
         submitting={false}
-        onReview={vi.fn()}
+        onReview={onReview}
       />,
     );
 
@@ -155,13 +156,22 @@ describe("Light it up trade ticket", () => {
     fireEvent.change(screen.getByLabelText("Base size"), { target: { value: "0.2" } });
     fireEvent.change(screen.getByLabelText("Limit price"), { target: { value: "3190.25" } });
 
-    expect(screen.getByText("Choose how long the limit order should remain active.")).toBeTruthy();
-    expect(screen.getByText(/Vex will not infer one/i)).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Review limit order" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.queryByLabelText("Order expiry")).toBeNull();
+    expect(screen.getByRole("button", { name: "Keep open" }).getAttribute("aria-pressed")).toBe("true");
+    expect((screen.getByLabelText("Order expiry") as HTMLSelectElement).value).toBe("1440");
+    expect(screen.getByText("Unfilled amount stays open until filled, canceled, or the selected expiry.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Review limit order" }));
+    expect(onReview).toHaveBeenCalledWith({
+      mode: "limit",
+      side: "buy",
+      baseAmount: "0.2",
+      limitPrice: "3190.25",
+      timeInForce: "good-till-time",
+      orderExpiryOffsetMinutes: 1_440,
+      reduceOnly: false,
+    });
   });
 
-  it("resets time in force across limit-family mode switches while keeping trigger expiry explicit", () => {
+  it("defaults only ordinary limits while keeping trigger-limit behavior explicit", () => {
     render(
       <TradeTicket
         market={PERP}
@@ -174,34 +184,32 @@ describe("Light it up trade ticket", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Limit" }));
-    fireEvent.click(screen.getByRole("button", { name: "GTT" }));
     fireEvent.change(screen.getByLabelText("Order expiry"), { target: { value: "240" } });
-    expect(screen.getByRole("button", { name: "GTT" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Keep open" }).getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Stop-loss limit" }));
-    expect(screen.getByRole("button", { name: "IOC" }).getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByRole("button", { name: "GTT" }).getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByRole("button", { name: "Post only" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "Immediate only" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "Keep open" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "Maker only" }).getAttribute("aria-pressed")).toBe("false");
     expect((screen.getByLabelText("Order expiry") as HTMLSelectElement).value).toBe("240");
-    expect(screen.getByText(/Vex will not infer one/i)).toBeTruthy();
+    expect(screen.getByText(/Choose what should happen to the limit order after it is activated/i)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "IOC" }));
+    fireEvent.click(screen.getByRole("button", { name: "Immediate only" }));
     expect(screen.getByText("Conditional fill or cancel")).toBeTruthy();
     expect((screen.getByLabelText("Order expiry") as HTMLSelectElement).value).toBe("240");
 
     fireEvent.click(screen.getByRole("button", { name: "Limit" }));
-    expect(screen.getByRole("button", { name: "IOC" }).getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByText(/Vex will not infer one/i)).toBeTruthy();
-    expect(screen.queryByLabelText("Order expiry")).toBeNull();
+    expect(screen.getByRole("button", { name: "Keep open" }).getAttribute("aria-pressed")).toBe("true");
+    expect((screen.getByLabelText("Order expiry") as HTMLSelectElement).value).toBe("240");
   });
 
   it.each([
-    ["Stop-loss limit", "stop-loss-limit", "IOC", "immediate-or-cancel"],
-    ["Stop-loss limit", "stop-loss-limit", "GTT", "good-till-time"],
-    ["Stop-loss limit", "stop-loss-limit", "Post only", "post-only"],
-    ["Take-profit limit", "take-profit-limit", "IOC", "immediate-or-cancel"],
-    ["Take-profit limit", "take-profit-limit", "GTT", "good-till-time"],
-    ["Take-profit limit", "take-profit-limit", "Post only", "post-only"],
+    ["Stop-loss limit", "stop-loss-limit", "Immediate only", "immediate-or-cancel"],
+    ["Stop-loss limit", "stop-loss-limit", "Keep open", "good-till-time"],
+    ["Stop-loss limit", "stop-loss-limit", "Maker only", "post-only"],
+    ["Take-profit limit", "take-profit-limit", "Immediate only", "immediate-or-cancel"],
+    ["Take-profit limit", "take-profit-limit", "Keep open", "good-till-time"],
+    ["Take-profit limit", "take-profit-limit", "Maker only", "post-only"],
   ] as const)("emits an exact native %s %s draft with explicit expiry", (buttonName, mode, tifLabel, timeInForce) => {
     const onReview = vi.fn();
     render(
@@ -234,7 +242,8 @@ describe("Light it up trade ticket", () => {
       orderExpiryOffsetMinutes: 240,
       reduceOnly: true,
     });
-    expect(screen.getByRole("group", { name: "Limit time in force" })).toBeTruthy();
+    const behavior = screen.getByRole("group", { name: "Order behavior" });
+    expect(behavior.getAttribute("aria-describedby")).toBe("lit-order-behavior-note");
   });
 
   it("requires an explicit trigger-limit time in force and offers a buffered minimum expiry", () => {
@@ -255,7 +264,7 @@ describe("Light it up trade ticket", () => {
     fireEvent.change(screen.getByLabelText("Stop-loss limit trigger price"), { target: { value: "2900" } });
     fireEvent.change(screen.getByLabelText("Stop-loss limit limit price"), { target: { value: "2875" } });
 
-    expect(screen.getByText("Choose the trigger-limit time in force.")).toBeTruthy();
+    expect(screen.getByText("Choose how the triggered limit should behave.")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Review stop-loss limit" }) as HTMLButtonElement).disabled).toBe(true);
     const expiry = screen.getByLabelText("Order expiry") as HTMLSelectElement;
     expect(Array.from(expiry.options).map((option) => option.value)).not.toContain("5");
@@ -278,10 +287,39 @@ describe("Light it up trade ticket", () => {
     fireEvent.click(screen.getByRole("button", { name: "Limit" }));
     fireEvent.change(screen.getByLabelText("Base size"), { target: { value: "0.2" } });
     fireEvent.change(screen.getByLabelText("Limit price"), { target: { value: "3210.50" } });
-    fireEvent.click(screen.getByRole("button", { name: "Post only" }));
+    fireEvent.click(screen.getByRole("button", { name: "Maker only" }));
 
-    expect(screen.getByText("Post-only buy price must stay below the best ask.")).toBeTruthy();
+    expect(screen.getByText("Maker-only buy price must stay below the best ask.")).toBeTruthy();
+    expect(screen.getByText(/this price crosses the live book, so Maker only cannot be reviewed/i)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Review limit order" }) as HTMLButtonElement).disabled).toBe(true);
     expect(onReview).not.toHaveBeenCalled();
+  });
+
+  it("explains side-aware resting and marketable prices from the live book", () => {
+    render(
+      <TradeTicket
+        market={PERP}
+        book={BOOK}
+        activeSession
+        dataFresh
+        submitting={false}
+        onReview={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Limit" }));
+    fireEvent.change(screen.getByLabelText("Limit price"), { target: { value: "3200" } });
+    expect(screen.getByText(/this price can rest until the market reaches it/i)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Limit price"), { target: { value: "3210.50" } });
+    expect(screen.getByText(/this price can fill immediately/i)).toBeTruthy();
+    expect(screen.getByText(/any unfilled amount stays open/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sell" }));
+    fireEvent.change(screen.getByLabelText("Limit price"), { target: { value: "3200" } });
+    expect(screen.getByText(/this price can rest until the market reaches it/i)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Limit price"), { target: { value: "3199.50" } });
+    expect(screen.getByText(/this price can fill immediately/i)).toBeTruthy();
   });
 });

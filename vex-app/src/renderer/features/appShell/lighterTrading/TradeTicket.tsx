@@ -69,9 +69,9 @@ const MODE_LABELS: Readonly<Record<TradeOrderMode, string>> = {
 };
 
 const LIMIT_TIME_IN_FORCE_LABELS: Readonly<Record<LimitTimeInForce, string>> = {
-  "immediate-or-cancel": "IOC",
-  "good-till-time": "GTT",
-  "post-only": "Post only",
+  "immediate-or-cancel": "Immediate only",
+  "good-till-time": "Keep open",
+  "post-only": "Maker only",
 };
 
 const ORDER_EXPIRY_OPTIONS = [
@@ -86,6 +86,7 @@ const ORDER_EXPIRY_OPTIONS = [
 
 const DEFAULT_ORDER_EXPIRY_MINUTES = 1_440;
 const IOC_PREVIEW_EXPIRY_MINUTES = 30;
+const DEFAULT_LIMIT_TIME_IN_FORCE: LimitTimeInForce = "good-till-time";
 
 function exactScope(input: {
   readonly environment: "core" | "rhc";
@@ -123,10 +124,10 @@ export function buildLighterReviewMessage(input: {
   }
   if (input.draft.mode === "limit") {
     const tifInstruction = input.draft.timeInForce === "immediate-or-cancel"
-      ? "Any amount that cannot fill immediately at the approved limit price must cancel; do not turn it into a resting order."
+      ? "Order behavior is Immediate only. Any amount that cannot fill immediately at the approved limit price must cancel; do not turn it into a resting order."
       : input.draft.timeInForce === "post-only"
-        ? "Keep provider-native post-only semantics; do not silently change this to good-till-time or immediate-or-cancel."
-        : "Keep the order active only until its exact approved expiry unless it fills or is canceled first.";
+        ? "Order behavior is Maker only. Keep provider-native post-only semantics; do not silently change this to good-till-time or immediate-or-cancel."
+        : "Order behavior is Keep open. Keep the order active only until its exact approved expiry unless it fills or is canceled first.";
     return [
       "Review this exact plain Lighter limit order as a preview only. Do not place or submit it.",
       ...common,
@@ -142,10 +143,10 @@ export function buildLighterReviewMessage(input: {
   }
   if (input.draft.mode === "stop-loss-limit" || input.draft.mode === "take-profit-limit") {
     const tifInstruction = input.draft.timeInForce === "immediate-or-cancel"
-      ? "When triggered, fill immediately at the exact limit price and cancel any remainder; keep the positive trigger-order expiry."
+      ? "Order behavior is Immediate only. When triggered, fill immediately at the exact limit price and cancel any remainder; keep the positive trigger-order expiry."
       : input.draft.timeInForce === "post-only"
-        ? "When triggered, keep provider-native post-only semantics; do not judge the dormant order against the current book."
-        : "When triggered, keep the limit active only until its exact approved expiry unless it fills or is canceled first.";
+        ? "Order behavior is Maker only. When triggered, keep provider-native post-only semantics; do not judge the dormant order against the current book."
+        : "Order behavior is Keep open. When triggered, keep the limit active only until its exact approved expiry unless it fills or is canceled first.";
     return [
       `Review this exact native Lighter ${input.draft.mode} as a preview only. Do not place or submit it.`,
       ...common,
@@ -284,6 +285,42 @@ export function TradeTicket({
   const suggestedPrice = side === "buy"
     ? bestBookPrice(book.asks, "ask")
     : bestBookPrice(book.bids, "bid");
+  const limitPriceBookStatus = useMemo(() => {
+    if (mode !== "limit" || suggestedPrice === null) return null;
+    const comparison = compareDecimalStrings(limitPrice, suggestedPrice);
+    if (comparison === null) return null;
+    const marketable = side === "buy" ? comparison >= 0 : comparison <= 0;
+    return marketable ? "marketable" : "resting";
+  }, [limitPrice, mode, side, suggestedPrice]);
+  const limitPriceGuidance = useMemo(() => {
+    if (limitPriceBookStatus === null || suggestedPrice === null) {
+      return "Enter the exact price you are willing to buy or sell at.";
+    }
+    const oppositeSide = side === "buy" ? "ask" : "bid";
+    const marketContext = `At the current best ${oppositeSide} (${suggestedPrice})`;
+    if (limitPriceBookStatus === "resting") {
+      if (limitTimeInForce === "immediate-or-cancel") {
+        return `${marketContext}, this price is not marketable. Immediate only would cancel instead of resting.`;
+      }
+      if (limitTimeInForce === "post-only") {
+        return `${marketContext}, this price can rest as a maker order.`;
+      }
+      return `${marketContext}, this price can rest until the market reaches it.`;
+    }
+    if (limitTimeInForce === "post-only") {
+      return `${marketContext}, this price crosses the live book, so Maker only cannot be reviewed.`;
+    }
+    if (limitTimeInForce === "immediate-or-cancel") {
+      return `${marketContext}, this price can fill immediately; any remainder cancels.`;
+    }
+    return `${marketContext}, this price can fill immediately; any unfilled amount stays open.`;
+  }, [limitPriceBookStatus, limitTimeInForce, side, suggestedPrice]);
+
+  const selectMode = (nextMode: TradeOrderMode): void => {
+    if (nextMode === mode) return;
+    setMode(nextMode);
+    setLimitTimeInForce(nextMode === "limit" ? DEFAULT_LIMIT_TIME_IN_FORCE : null);
+  };
 
   useEffect(() => {
     if (!priceTouched && mode === "market") setWorstPrice(suggestedPrice ?? "");
@@ -307,16 +344,15 @@ export function TradeTicket({
   }, [market.marketId]);
 
   useEffect(() => {
-    if (market.marketType === "spot" && protective) setMode("market");
+    if (market.marketType === "spot" && protective) {
+      setMode("market");
+      setLimitTimeInForce(null);
+    }
   }, [market.marketType, mode, protective]);
 
   useEffect(() => {
     if (mode === "market") setPriceTouched(false);
   }, [mode, side]);
-
-  useEffect(() => {
-    setLimitTimeInForce(null);
-  }, [mode]);
 
   const validation = useMemo(() => {
     if (!dataFresh) return "Live market data is delayed. Wait for a fresh snapshot before review.";
@@ -339,17 +375,17 @@ export function TradeTicket({
     if (triggerLimit) {
       if (!isPositiveDecimal(triggerPrice)) return "Enter an exact trigger price.";
       if (!isPositiveDecimal(limitPrice)) return "Enter a valid limit price.";
-      if (limitTimeInForce === null) return "Choose the trigger-limit time in force.";
+      if (limitTimeInForce === null) return "Choose how the triggered limit should behave.";
       return null;
     }
     if (mode === "limit") {
       if (!isPositiveDecimal(limitPrice)) return "Enter a valid limit price.";
-      if (limitTimeInForce === null) return "Choose how long the limit order should remain active.";
+      if (limitTimeInForce === null) return "Choose how the limit order should behave.";
       if (limitTimeInForce === "post-only") {
         const comparison = suggestedPrice === null ? null : compareDecimalStrings(limitPrice, suggestedPrice);
-        if (comparison === null) return "A fresh opposite-side price is required for post-only review.";
+        if (comparison === null) return "A fresh opposite-side price is required for maker-only review.";
         const crosses = side === "buy" ? comparison >= 0 : comparison <= 0;
-        if (crosses) return `Post-only ${side} price must stay ${side === "buy" ? "below the best ask" : "above the best bid"}.`;
+        if (crosses) return `Maker-only ${side} price must stay ${side === "buy" ? "below the best ask" : "above the best bid"}.`;
       }
       return null;
     }
@@ -445,7 +481,7 @@ export function TradeTicket({
                 aria-pressed={mode === item}
                 disabled={unavailable}
                 title={unavailable ? "Perpetual markets only" : undefined}
-                onClick={() => setMode(item)}
+                onClick={() => selectMode(item)}
               >
                 {MODE_LABELS[item]}
               </button>
@@ -454,7 +490,7 @@ export function TradeTicket({
         </div>
 
         {market.marketType === "spot" ? (
-          <p className="lit-ticket-context">Spot supports Market IOC and plain Limit orders here. Position protection requires a perpetual market.</p>
+          <p className="lit-ticket-context">Spot supports Market and plain Limit orders here. Position protection requires a perpetual market.</p>
         ) : protective ? (
           <p className="lit-ticket-context">Protection is reduce only and must match a live {market.symbol} position.</p>
         ) : null}
@@ -530,7 +566,7 @@ export function TradeTicket({
               />
               <b>Quote</b>
             </span>
-            <small id="lit-limit-price-note">Exact price for this limit order; it is not a market execution bound.</small>
+            <small id="lit-limit-price-note">{limitPriceGuidance}</small>
           </label>
         ) : (
           <label className="lit-field">
@@ -553,9 +589,9 @@ export function TradeTicket({
         )}
 
         {mode === "limit" || triggerLimit ? (
-          <fieldset className="lit-tif-field">
-            <legend>Time in force</legend>
-            <div className="lit-tif-tabs" role="group" aria-label="Limit time in force">
+          <fieldset className="lit-tif-field" aria-describedby="lit-order-behavior-note">
+            <legend>Order behavior</legend>
+            <div className="lit-tif-tabs">
               {(Object.keys(LIMIT_TIME_IN_FORCE_LABELS) as LimitTimeInForce[]).map((item) => (
                 <button
                   type="button"
@@ -567,17 +603,17 @@ export function TradeTicket({
                 </button>
               ))}
             </div>
-            <small>
+            <small id="lit-order-behavior-note">
               {limitTimeInForce === null
-                ? "Choose IOC, GTT, or Post only explicitly; Vex will not infer one."
+                ? "Choose what should happen to the limit order after it is activated."
                 : limitTimeInForce === "immediate-or-cancel"
                 ? triggerLimit
                   ? "When triggered, fill immediately at the limit price and cancel any remainder."
                   : "Fill immediately at the limit price; cancel any remainder."
                 : limitTimeInForce === "good-till-time"
                   ? triggerLimit
-                    ? "When triggered, remain active until filled, canceled, or the selected expiry."
-                    : "Remain active until filled, canceled, or the selected expiry."
+                    ? "When triggered, stay open until filled, canceled, or the selected expiry."
+                    : "Unfilled amount stays open until filled, canceled, or the selected expiry."
                   : triggerLimit
                     ? "When triggered, add liquidity only; the current dormant price is not a crossing check."
                     : "Add liquidity only; a price crossing the live book cannot be reviewed."}
@@ -619,15 +655,15 @@ export function TradeTicket({
 
         <dl className="lit-ticket-facts">
           <div>
-            <dt>Time in force</dt>
-            <dd>{mode === "limit" || triggerLimit ? limitTimeInForce === null ? "Choose" : LIMIT_TIME_IN_FORCE_LABELS[limitTimeInForce] : "Immediate or cancel"}</dd>
+            <dt>Order behavior</dt>
+            <dd>{mode === "limit" || triggerLimit ? limitTimeInForce === null ? "Choose" : LIMIT_TIME_IN_FORCE_LABELS[limitTimeInForce] : "Immediate only"}</dd>
           </div>
           <div>
             <dt>{protective || (mode === "limit" && limitTimeInForce !== null && limitTimeInForce !== "immediate-or-cancel") ? "Order expiry" : "Signed order expiry"}</dt>
             <dd>
               {mode === "limit"
-                ? limitTimeInForce === null ? "Choose TIF" : limitTimeInForce === "immediate-or-cancel" ? "None (IOC)" : expiryLabel(orderExpiryOffsetMinutes)
-                : triggerLimit ? expiryLabel(orderExpiryOffsetMinutes) : protective ? "24 hours" : "None (IOC)"}
+                ? limitTimeInForce === null ? "Choose behavior" : limitTimeInForce === "immediate-or-cancel" ? "None (immediate only)" : expiryLabel(orderExpiryOffsetMinutes)
+                : triggerLimit ? expiryLabel(orderExpiryOffsetMinutes) : protective ? "24 hours" : "None (immediate only)"}
             </dd>
           </div>
           <div><dt>Market type</dt><dd>{market.marketType === "perp" ? "Perpetual" : "Spot"}</dd></div>
@@ -637,9 +673,9 @@ export function TradeTicket({
               {mode === "oco"
                 ? "Native OCO"
                 : triggerLimit
-                  ? limitTimeInForce === null ? "Choose TIF" : limitTimeInForce === "post-only" ? "Conditional maker only" : limitTimeInForce === "immediate-or-cancel" ? "Conditional fill or cancel" : "Native trigger limit"
+                  ? limitTimeInForce === null ? "Choose behavior" : limitTimeInForce === "post-only" ? "Conditional maker only" : limitTimeInForce === "immediate-or-cancel" ? "Conditional fill or cancel" : "Native trigger limit"
                   : mode === "limit"
-                    ? limitTimeInForce === null ? "Choose TIF" : limitTimeInForce === "post-only" ? "Maker only" : limitTimeInForce === "immediate-or-cancel" ? "Fill or cancel" : "May rest"
+                    ? limitTimeInForce === null ? "Choose behavior" : limitTimeInForce === "post-only" ? "Maker only" : limitTimeInForce === "immediate-or-cancel" ? limitPriceBookStatus === "resting" ? "Would cancel now" : "Fill or cancel" : limitPriceBookStatus === "marketable" ? "Can fill now" : limitPriceBookStatus === "resting" ? "Can rest" : "May rest"
                     : protective ? "Reduce only" : "Approval gated"}
             </dd>
           </div>

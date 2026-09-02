@@ -169,10 +169,10 @@ describe("Light it up deterministic review handoff", () => {
   });
 
   it.each([
-    ["immediate-or-cancel", 30],
-    ["good-till-time", 240],
-    ["post-only", 1_440],
-  ] as const)("binds a plain limit order to exact %s semantics", (timeInForce, orderExpiryOffsetMinutes) => {
+    ["immediate-or-cancel", 30, "Immediate only"],
+    ["good-till-time", 240, "Keep open"],
+    ["post-only", 1_440, "Maker only"],
+  ] as const)("binds a plain limit order to exact %s semantics", (timeInForce, orderExpiryOffsetMinutes, behaviorLabel) => {
     const message = buildLighterReviewMessage({
       environment: "rhc",
       market: MARKET,
@@ -191,6 +191,7 @@ describe("Light it up deterministic review handoff", () => {
     expect(message).toContain("price=3190.25");
     expect(message).toContain("orderType=limit");
     expect(message).toContain(`timeInForce=${timeInForce}`);
+    expect(message).toContain(`Order behavior is ${behaviorLabel}`);
     expect(message).toContain(`orderExpiryOffsetMinutes=${orderExpiryOffsetMinutes}`);
     expect(message).toContain("exact limit price, not a market-order execution bound");
     expect(message).toContain("preview only");

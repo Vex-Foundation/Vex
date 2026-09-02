@@ -1304,11 +1304,13 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 }
 
 .lit-tif-tabs button {
-  min-height: 34px;
+  min-height: 44px;
+  padding-inline: 4px;
   border-radius: 0;
   color: var(--lit-ink-muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
+  line-height: 1.15;
   transition: background 140ms ease, color 140ms ease;
 }
 

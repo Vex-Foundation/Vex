@@ -157,7 +157,7 @@ describe("TradingBottomPanel", () => {
     fireEvent.click(screen.getByRole("tab", { name: /Open orders 1/ }));
     expect(screen.getByText("0.1")).toBeTruthy();
     expect(screen.getByText("Open")).toBeTruthy();
-    expect(screen.getByText("GTT")).toBeTruthy();
+    expect(screen.getByText("Keep open")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("tab", { name: "Assets" }));
     expect(screen.getByText("USDG")).toBeTruthy();
@@ -228,9 +228,9 @@ describe("TradingBottomPanel", () => {
     expect(screen.getByText("Limit")).toBeTruthy();
     expect(screen.getByText("Stop-loss limit")).toBeTruthy();
     expect(screen.getByText("Take-profit limit")).toBeTruthy();
-    expect(screen.getByText("Post only")).toBeTruthy();
-    expect(screen.getByText("GTT · Reduce only")).toBeTruthy();
-    expect(screen.getByText("IOC")).toBeTruthy();
+    expect(screen.getByText("Maker only")).toBeTruthy();
+    expect(screen.getByText("Keep open · Reduce only")).toBeTruthy();
+    expect(screen.getByText("Immediate only")).toBeTruthy();
     expect(screen.getByText("Trigger 62,500")).toBeTruthy();
     expect(screen.getByText("Trigger 72,000")).toBeTruthy();
     expect(screen.getByText("Pending")).toBeTruthy();
