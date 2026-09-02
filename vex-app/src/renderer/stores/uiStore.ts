@@ -43,8 +43,10 @@ import {
 import {
   clampBookWidth,
   clampSidebarWidth,
+  clampStudioRailExplorerShare,
   DEFAULT_BOOK_WIDTH,
   DEFAULT_SIDEBAR_WIDTH,
+  STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
 } from "./uiStore/layout.js";
 import {
   mergeUiState,
@@ -293,6 +295,17 @@ export interface UiState {
    * tab control and for nothing else.
    */
   readonly bookTab: BookTab;
+  /**
+   * The Studio rail's vertical split: the EXPLORER pane's share of the list
+   * region, the PROJECTS list above it taking the rest.
+   *
+   * A LAYOUT PREFERENCE in the same class as `sidebarWidth`: the user sets it
+   * by dragging the seam (or with the separator's arrow keys) and nothing else
+   * writes it. In particular a temporary constraint - a short window, a
+   * collapsed rail, a project with no files - never rewrites it, so the pane
+   * comes back the size the user chose (rule 08, layout).
+   */
+  readonly studioRailExplorerShare: number;
   /** Set the theme choice: resolves + writes documentElement in one step. */
   readonly setThemePreference: (value: VexThemePreference) => void;
   readonly setSidebarOpen: (value: boolean) => void;
@@ -382,6 +395,8 @@ export interface UiState {
   readonly setStudioBookSectionOrder: (order: readonly string[]) => void;
   /** User-driven only: the tab control calls this and nothing else does. */
   readonly setBookTab: (tab: BookTab) => void;
+  /** Live drag write: clamps into the rail split's contract range. */
+  readonly setStudioRailExplorerShare: (share: number) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
 }
@@ -423,6 +438,7 @@ export const useUiStore = create<UiState>()(
       bookSectionOrder: [],
       studioBookSectionOrder: [],
       bookTab: "portfolio",
+      studioRailExplorerShare: STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setSidebarWidth: (px) => set({ sidebarWidth: clampSidebarWidth(px) }),
       setBookWidth: (px) => set({ bookWidth: clampBookWidth(px) }),
@@ -485,6 +501,8 @@ export const useUiStore = create<UiState>()(
       setStudioBookSectionOrder: (studioBookSectionOrder) =>
         set({ studioBookSectionOrder }),
       setBookTab: (bookTab) => set({ bookTab }),
+      setStudioRailExplorerShare: (share) =>
+        set({ studioRailExplorerShare: clampStudioRailExplorerShare(share) }),
       appendLog: (entry) =>
         set((state) => ({
           logBuffer: [...state.logBuffer, entry].slice(-MAX_RENDER_LOGS),
@@ -493,7 +511,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 15,
+      version: 16,
       // Re-stamp the document root once the coerced, resolved theme is
       // known - theme-boot.js painted the pre-bundle frame from the RAW
       // payload, and a tampered value must not survive on <html>.

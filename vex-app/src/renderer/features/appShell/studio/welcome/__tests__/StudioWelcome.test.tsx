@@ -4,13 +4,28 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
 import type { ProjectList } from "@shared/schemas/projects.js";
 import type { StudioBridgeReadiness } from "@shared/schemas/studio-bridge-readiness.js";
-import { makeError, makeProject } from "../../__tests__/studio-fixtures.js";
+import {
+  makeArtifact,
+  makeError,
+  makeProject,
+} from "../../__tests__/studio-fixtures.js";
+import {
+  STUDIO_WELCOME_AGENT_POINTER,
+  STUDIO_WELCOME_LEAD,
+  STUDIO_WELCOME_NEXT,
+} from "../../studio-copy.js";
 
 const projectsListMock = vi.fn<() => Promise<Result<ProjectList>>>();
 const bridgeReadinessMock =
@@ -56,14 +71,72 @@ beforeEach(() => {
 });
 
 describe("what Studio is", () => {
-  it("states it in two sentences, with no roadmap copy", () => {
+  it("states it in THREE hero lines, with no roadmap copy", () => {
     renderWelcome({});
     expect(screen.getByRole("heading", { name: "Vex Studio" })).not.toBeNull();
-    expect(
-      screen.getByText(/A Studio project is a folder on your disk/),
-    ).not.toBeNull();
-    expect(screen.getByText(/nothing runs until you start it/)).not.toBeNull();
+    // 1. what a project is, 2. what creating one does, 3. the way back.
+    expect(screen.getByText(STUDIO_WELCOME_LEAD)).not.toBeNull();
+    expect(screen.getByText(STUDIO_WELCOME_NEXT)).not.toBeNull();
+    expect(screen.getByText(STUDIO_WELCOME_AGENT_POINTER)).not.toBeNull();
     expect(screen.queryByText(/coming soon/i)).toBeNull();
+  });
+});
+
+describe("the second action", () => {
+  it("opens the project the list returned FIRST", async () => {
+    const first = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({
+      ok: true,
+      data: [first, makeProject({ name: "trading-agent" })],
+    });
+    const onSelectProject = vi.fn();
+    renderWelcome({ onSelectProject });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open vex-core" }));
+    expect(onSelectProject).toHaveBeenCalledWith(first.id);
+  });
+
+  it("is absent when there is nothing to open", async () => {
+    renderWelcome({});
+    await screen.findByText("No projects yet.");
+    expect(screen.queryByRole("button", { name: /^Open / })).toBeNull();
+  });
+});
+
+describe("a row's state", () => {
+  it("hears the drift sentence where the dot is the only signal", async () => {
+    projectsListMock.mockResolvedValue({
+      ok: true,
+      data: [
+        makeProject({
+          name: "vex-core",
+          files: {
+            lastRenderedScopeVersion: 1,
+            generatorFingerprint: "test",
+            artifacts: [makeArtifact("drifted")],
+          },
+        }),
+      ],
+    });
+    renderWelcome({});
+    // The dot is colour-only and aria-hidden, so the words are what assistive
+    // technology gets - and they are the SAME sentence the rail row uses.
+    expect(
+      await screen.findByText("vex-core: Edited since Vex wrote it"),
+    ).not.toBeNull();
+  });
+
+  it("says so when Vex's files are untouched", async () => {
+    projectsListMock.mockResolvedValue({
+      ok: true,
+      data: [makeProject({ name: "vex-core" })],
+    });
+    renderWelcome({});
+    expect(
+      await screen.findByText(
+        "Vex's files in this project are as Vex wrote them",
+      ),
+    ).not.toBeNull();
   });
 });
 
@@ -94,10 +167,11 @@ describe("the project list", () => {
     renderWelcome({});
     await screen.findByText("vex-core");
 
-    const titles = screen
+    // Scoped to the LIST: the hero's second action is also a button naming a
+    // project, and it is not part of the list's order.
+    const titles = within(screen.getByRole("list"))
       .getAllByRole("button")
-      .map((el) => el.textContent ?? "")
-      .filter((text) => text.includes("vex-core") || text.includes("trading-agent") || text.includes("wallet-tools"));
+      .map((el) => el.textContent ?? "");
     expect(titles[0]).toContain("vex-core");
     expect(titles[1]).toContain("trading-agent");
     expect(titles[2]).toContain("wallet-tools");

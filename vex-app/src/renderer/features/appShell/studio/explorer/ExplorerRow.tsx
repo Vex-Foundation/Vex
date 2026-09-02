@@ -25,6 +25,7 @@ import {
   IconLoading,
   IconWarning,
 } from "../../../../components/icons/index.js";
+import { StateDot } from "../../../../components/ui/state-dot.js";
 import { cn } from "../../../../lib/utils.js";
 
 /** Row height in pixels. A file tree is denser than the 32px rail row. */
@@ -58,6 +59,16 @@ export interface ExplorerRowProps {
   readonly describedById: string | null;
   /** The description's text. Rendered inside the row so the id resolves. */
   readonly description: string | null;
+  /**
+   * This file is a Vex-managed artifact that has drifted, said in words
+   * (`"AGENTS.md: Edited since Vex wrote it"`), or `null` for every other row.
+   *
+   * A DECORATION in VS Code's sense (`explorerDecorationsProvider.ts`): the
+   * badge sits on the resource the fact is about, not only on the project row
+   * above it. A string rather than an object so the memo still compares by
+   * value.
+   */
+  readonly driftLabel: string | null;
   readonly onSelect: (rowId: string) => void;
 }
 
@@ -170,6 +181,19 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
       >
         {props.label}
       </span>
+      {props.driftLabel === null ? null : (
+        // The SAME state vocabulary the project row and the outcome rows use,
+        // so one glyph means one thing across Studio. `label` is what makes it
+        // more than a colour: the dot itself is aria-hidden, and this row has
+        // no visible word saying the file drifted.
+        <span
+          className="flex shrink-0 items-center text-warning"
+          title={props.driftLabel}
+          data-vex-file-drift="true"
+        >
+          <StateDot state="warning" size={8} label={props.driftLabel} />
+        </span>
+      )}
       {props.describedById === null || props.description === null ? null : (
         <span id={props.describedById} className="sr-only">
           {props.description}

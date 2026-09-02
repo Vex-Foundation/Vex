@@ -88,6 +88,15 @@ export interface ExplorerTreeProps {
   readonly onOpenFile: (node: FileNode) => void;
   readonly registry?: ExplorerRegistry;
   readonly viewport?: ExplorerViewportObservers;
+  /**
+   * Project-relative path -> the drift sentence for that file.
+   *
+   * The tree does not decide what has drifted: the PROJECT owns that fact (it
+   * arrives on the project DTO, read from disk on every project read), and the
+   * sidebar hands it down. Absent means "no decorations", which is what every
+   * mount outside the Studio sidebar wants.
+   */
+  readonly driftedPaths?: ReadonlyMap<string, string>;
   readonly className?: string;
 }
 
@@ -96,6 +105,7 @@ export function ExplorerTree({
   onOpenFile,
   registry,
   viewport,
+  driftedPaths,
   className,
 }: ExplorerTreeProps): JSX.Element {
   const activeRegistry = registry ?? explorerRegistry;
@@ -425,6 +435,11 @@ export function ExplorerTree({
                 selected={selectedRowId === row.id}
                 describedById={descriptionId}
                 description={presentation.description}
+                driftLabel={
+                  row.kind === "node" && row.node.kind === "file"
+                    ? driftedPaths?.get(row.node.path) ?? null
+                    : null
+                }
                 onSelect={selectRow}
               />
             </div>

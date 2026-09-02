@@ -28,12 +28,23 @@ import { SidebarIconButton } from "../SessionRows.js";
 
 export function BookRailFrame({
   label,
+  headline,
   bookOpen,
   onToggle,
   children,
 }: {
   /** The aside's accessible name - each rail names its own instrument. */
   readonly label: string;
+  /**
+   * What the header says this rail is ABOUT: the open project's name in
+   * Studio, nothing in agent mode.
+   *
+   * The header used to carry the app version and nothing else, so the one line
+   * of text above the user's wallets named the build rather than the thing the
+   * numbers belong to. The version has not been dropped - it moved to the foot,
+   * where a build stamp belongs.
+   */
+  readonly headline?: string;
   readonly bookOpen: boolean;
   readonly onToggle: () => void;
   /** Rendered only while expanded; the header bar persists in both states. */
@@ -55,9 +66,9 @@ export function BookRailFrame({
           bookOpen ? "justify-between" : "justify-center pt-3",
         )}
       >
-        {bookOpen ? (
-          <span className="vex-micro-label uppercase text-ink-secondary">
-            v{__VEX_APP_VERSION__}
+        {bookOpen && headline !== undefined ? (
+          <span className="min-w-0 truncate text-[13px] leading-[20px] font-medium text-ink-primary">
+            {headline}
           </span>
         ) : null}
         {/* One static glyph for both states, like the left rail toggle - the
@@ -70,6 +81,16 @@ export function BookRailFrame({
         </SidebarIconButton>
       </div>
       {bookOpen ? children : null}
+      {/* The build stamp, at the foot. `mt-auto` keeps it on the floor of the
+          rail whatever the sections above it come to. It stays on the micro
+          label's floor TIER (`text-ink-secondary`): moving it out of the header
+          demotes what it is ABOUT, not how legible it has to be, and the shell
+          design guard holds an 11px stamp to that floor. */}
+      {bookOpen ? (
+        <span className="vex-micro-label mt-auto shrink-0 uppercase text-ink-secondary">
+          v{__VEX_APP_VERSION__}
+        </span>
+      ) : null}
     </aside>
   );
 }

@@ -33,6 +33,21 @@ export const SIDEBAR_COLLAPSED = 56;
 /** Viewport width below which the sidebar auto-collapses to the rail; a
  * manual toggle below it re-expands over the squeezed center. */
 export const SIDEBAR_AUTO_COLLAPSE = 1024;
+
+/**
+ * Whether this viewport width forces the rail into its icon spine.
+ *
+ * The threshold comparison itself, given a name and one owner: exactly 1024 is
+ * WIDE (`<`, not `<=`). The shell used to state that inline. Which side of this
+ * line a width falls on decides what the user sees - the collapsed rail renders
+ * no section titles, no chevrons and no placeholder sentences - so it is tested
+ * at the seam and at one pixel on each side rather than inferred from an
+ * operator inside a component.
+ */
+export function shouldAutoCollapseSidebar(viewport: number): boolean {
+  return viewport < SIDEBAR_AUTO_COLLAPSE;
+}
+
 /** BOOK drag clamp floor. */
 export const BOOK_MIN = 300;
 /** BOOK drag clamp ceiling. */

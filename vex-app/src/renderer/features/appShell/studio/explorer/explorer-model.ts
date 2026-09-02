@@ -229,6 +229,34 @@ export class ExplorerModel {
     return this.#byId.size;
   }
 
+  /**
+   * Every node the model currently holds, bounded, WITH whether the bound bit.
+   *
+   * The rail's search reads this: it is the honest extent of what a client-side
+   * file search can answer over, because a folder the user never expanded was
+   * never listed and is not in here. Reads the PATH index rather than the
+   * rendered rows, so a loaded-but-collapsed folder's children stay searchable
+   * and nothing is materialised per row.
+   *
+   * `truncated` is returned rather than left for the caller to infer: a caller
+   * holding only a capped array cannot tell a tree of exactly `limit` nodes from
+   * one of ten thousand, and the difference is whether a matching file may be
+   * missing from the user's answer entirely (rule 05, bounds are reported).
+   *
+   * @param limit hard cap on the returned array; a non-positive limit reads
+   *   nothing and reports truncation iff anything was there to read.
+   * @returns the bounded nodes and whether the walk stopped early.
+   */
+  loadedNodes(limit: number): { readonly nodes: readonly FileNode[]; readonly truncated: boolean } {
+    const nodes: FileNode[] = [];
+    for (const entry of this.#byPath.values()) {
+      if (entry.node === null) continue;
+      if (nodes.length >= limit) return { nodes, truncated: true };
+      nodes.push(entry.node);
+    }
+    return { nodes, truncated: false };
+  }
+
   hasNode(nodeId: string): boolean {
     return this.#byId.has(nodeId);
   }

@@ -16,7 +16,10 @@
 
 import { describe, expect, it } from "vitest";
 import { studioHostUnavailableCauseSchema } from "@shared/schemas/studio.js";
-import { STUDIO_HOST_CAUSE_SENTENCES } from "../studio-copy.js";
+import {
+  STUDIO_HOST_CAUSE_NEXT_STEPS,
+  STUDIO_HOST_CAUSE_SENTENCES,
+} from "../studio-copy.js";
 
 describe("studio host cause sentences", () => {
   it("says something real for EVERY cause the wire can carry", () => {
@@ -53,5 +56,57 @@ describe("studio host cause sentences", () => {
       remedy: sentence.includes("Linux") && sentence.includes("macOS"),
       notAFailure: !sentence.includes("could not open"),
     }).toEqual({ names: true, deliberate: true, remedy: true, notAFailure: true });
+  });
+});
+
+/**
+ * The card's NEXT STEP per cause, reconciled the same way.
+ *
+ * The compile-time half is the total `Record`; this is the runtime half, and it
+ * walks the schema's own options so a cause added on the wire and given an
+ * empty step still fails here. It also holds the honesty line the pill is built
+ * on: a step is a BUTTON only where the renderer really has that authority
+ * (`unlock` and `recheck`), and everything else - restart, reinstall - is an
+ * instruction, because a control that cannot do what its label says is worse
+ * than a sentence.
+ */
+describe("studio host cause next steps", () => {
+  it("declares a step for EVERY cause the wire can carry", () => {
+    for (const cause of studioHostUnavailableCauseSchema.options) {
+      const step = STUDIO_HOST_CAUSE_NEXT_STEPS[cause];
+      expect({ cause, declared: step !== undefined }).toEqual({
+        cause,
+        declared: true,
+      });
+      if (step.instruction !== null) {
+        // An imperative, complete sentence - not a fragment and not a repeat
+        // of the word above it.
+        expect({
+          cause,
+          ok: step.instruction.length > 10 && step.instruction.endsWith("."),
+        }).toEqual({ cause, ok: true });
+      }
+    }
+  });
+
+  it("offers a button ONLY where the renderer holds the authority", () => {
+    for (const cause of studioHostUnavailableCauseSchema.options) {
+      const step = STUDIO_HOST_CAUSE_NEXT_STEPS[cause];
+      expect({ cause, button: step.button }).toEqual({
+        cause,
+        // `unlock` belongs to the locked STATE, never to an unavailable cause:
+        // unlocking cannot clear any of these, and offering it would send the
+        // user through a screen that changes nothing.
+        button: step.button === "recheck" ? "recheck" : null,
+      });
+    }
+    // A restart or a reinstall is never a button, and the instruction is where
+    // it says so.
+    expect(
+      STUDIO_HOST_CAUSE_NEXT_STEPS.admission_permanently_closed,
+    ).toEqual({
+      instruction: "Close Vex and open it again. Unlocking will not reopen it.",
+      button: null,
+    });
   });
 });

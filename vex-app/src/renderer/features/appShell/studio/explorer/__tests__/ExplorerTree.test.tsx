@@ -102,6 +102,7 @@ function standardTree(): void {
 
 async function mountTree(
   onOpenFile: (node: FileNode) => void = () => undefined,
+  driftedPaths?: ReadonlyMap<string, string>,
 ): Promise<void> {
   render(
     <StrictMode>
@@ -110,6 +111,7 @@ async function mountTree(
         onOpenFile={onOpenFile}
         registry={registry}
         viewport={testViewport}
+        driftedPaths={driftedPaths}
       />
     </StrictMode>,
   );
@@ -622,5 +624,71 @@ describe("motion", () => {
     // Selection and hover share one fill, so the row - not the glyph - is what
     // carries the colour transition.
     expect(rowFor("src").getAttribute("class") ?? "").toContain("vex-tint");
+  });
+});
+
+/**
+ * DECORATIONS: a drifted Vex-managed FILE carries the badge too (finding A7).
+ *
+ * VS Code's explorer puts this class of fact on the resource it is ABOUT
+ * (`explorerDecorationsProvider.ts`, exercised in `explorerView.test.ts` by
+ * calling `provideDecorations(stat)` per state), not only on the root above it.
+ * Ours said "something Vex wrote has drifted" on the project row and left the
+ * user to guess which file.
+ *
+ * The tree does not DECIDE any of this: the project owns the drift fact and the
+ * sidebar hands down a path map, which is why these cases drive the prop
+ * directly rather than inventing a second source of truth to assert against.
+ */
+describe("drift decorations", () => {
+  it("badges the named file, in words, and leaves every other row alone", async () => {
+    standardTree();
+    await mountTree(
+      () => undefined,
+      new Map([["readme.md", "readme.md: Edited since Vex wrote it"]]),
+    );
+
+    const badged = rowFor("readme.md");
+    expect(
+      within(badged).getByText("readme.md: Edited since Vex wrote it"),
+    ).not.toBeNull();
+    expect(badged.querySelector("[data-vex-file-drift]")).not.toBeNull();
+    // The dot is colour-only, so the words are what assistive technology gets.
+    expect(
+      rowFor("tsconfig.json").querySelector("[data-vex-file-drift]"),
+    ).toBeNull();
+  });
+
+  it("decorates by PATH, not by name: a same-named file elsewhere is clean", async () => {
+    // Two `alpha.ts` would be one bug: the map is keyed by the project-relative
+    // path precisely because names repeat across folders.
+    standardTree();
+    await mountTree(
+      () => undefined,
+      new Map([["src/alpha.ts", "alpha.ts: Missing from the project folder"]]),
+    );
+    fireEvent.click(rowFor("src"));
+    await flush();
+
+    expect(
+      rowFor("src/alpha.ts".split("/")[1] ?? "alpha.ts").querySelector(
+        "[data-vex-file-drift]",
+      ),
+    ).not.toBeNull();
+    expect(rowFor("beta.ts").querySelector("[data-vex-file-drift]")).toBeNull();
+  });
+
+  it("never badges a DIRECTORY, even when a drifted path names one", async () => {
+    // A folder is not a Vex-managed artifact, and a badge on one would claim a
+    // state no project DTO reports.
+    standardTree();
+    await mountTree(() => undefined, new Map([["src", "src: Edited since Vex wrote it"]]));
+    expect(rowFor("src").querySelector("[data-vex-file-drift]")).toBeNull();
+  });
+
+  it("renders no decoration slot at all with no map (every other mount)", async () => {
+    standardTree();
+    await mountTree();
+    expect(document.querySelector("[data-vex-file-drift]")).toBeNull();
   });
 });

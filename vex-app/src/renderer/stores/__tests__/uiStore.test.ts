@@ -286,6 +286,11 @@ describe("uiStore", () => {
       bookSectionOrder: [],
       studioBookSectionOrder: [],
       bookTab: "portfolio",
+      // The Studio rail's vertical split (v16). A LAYOUT preference in the same
+      // class as `sidebarWidth`: the user sets it by dragging a seam, and it has
+      // to come back the size they chose. Its default rides here so a fresh
+      // install hydrates into a defined share rather than `undefined`.
+      studioRailExplorerShare: 0.55,
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialTurn).toBeUndefined();
@@ -620,6 +625,11 @@ describe("uiStore", () => {
       bookSectionOrder: [],
       studioBookSectionOrder: [],
       bookTab: "portfolio",
+      // The Studio rail's vertical split (v16). A LAYOUT preference in the same
+      // class as `sidebarWidth`: the user sets it by dragging a seam, and it has
+      // to come back the size they chose. Its default rides here so a fresh
+      // install hydrates into a defined share rather than `undefined`.
+      studioRailExplorerShare: 0.55,
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();

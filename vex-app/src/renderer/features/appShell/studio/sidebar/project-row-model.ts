@@ -43,20 +43,39 @@ export function worstDriftState(project: ProjectDto): ProjectDriftState | null {
 }
 
 /**
- * Filter the project list by name.
+ * Which of a project's Vex-managed FILES are drifted, by project-relative path.
  *
- * Case-insensitive substring on the name only: the rail shows names, and
- * matching a hidden field would produce rows whose match the user cannot see.
- * An empty or whitespace-only query returns the list UNCHANGED and in its
- * original order - nothing here ever re-sorts.
+ * The project row already says "something Vex wrote has drifted"; this is what
+ * lets the tree say WHICH file, on the row the user would click to look at it
+ * (VS Code's explorer decorations put the same class of fact on the resource it
+ * is about). Same precedence as {@link worstDriftState}, applied per artifact
+ * rather than per project: one file's state is that file's own.
+ *
+ * An artifact with a null path is skipped - it names no file to decorate. A
+ * `current` or `unsupported` artifact is not drift and is absent, so a caller
+ * cannot decorate a clean file by looking it up.
  */
-export function filterProjectsByName(
-  projects: readonly ProjectDto[],
-  query: string,
-): readonly ProjectDto[] {
-  const needle = query.trim().toLowerCase();
-  if (needle.length === 0) return projects;
-  return projects.filter((project) =>
-    project.name.toLowerCase().includes(needle),
-  );
+export function driftedArtifactPaths(
+  project: ProjectDto,
+): ReadonlyMap<string, ProjectDriftState> {
+  const drifted = new Map<string, ProjectDriftState>();
+  for (const artifact of project.files.artifacts) {
+    const path = artifact.path;
+    if (path === null) continue;
+    const state = PROJECT_DRIFT_PRECEDENCE.find(
+      (candidate) => candidate === artifact.state,
+    );
+    if (state === undefined) continue;
+    const held = drifted.get(path);
+    // Two artifacts can name one path (an agent file the project selects twice
+    // in different roles). The WORST state wins, the same rule the row uses.
+    if (
+      held !== undefined &&
+      PROJECT_DRIFT_PRECEDENCE.indexOf(held) <= PROJECT_DRIFT_PRECEDENCE.indexOf(state)
+    ) {
+      continue;
+    }
+    drifted.set(path, state);
+  }
+  return drifted;
 }

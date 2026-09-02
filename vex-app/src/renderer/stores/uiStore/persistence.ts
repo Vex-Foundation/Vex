@@ -13,7 +13,12 @@ import {
   systemPrefersDark,
   type VexTheme,
 } from "./theme.js";
-import { coerceBookWidth, coerceSidebarWidth } from "./layout.js";
+import {
+  coerceBookWidth,
+  coerceSidebarWidth,
+  coerceStudioRailExplorerShare,
+  STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
+} from "./layout.js";
 
 /** Hard bounds on the persisted BOOK rail order (user-writable localStorage). */
 const MAX_BOOK_SECTION_ENTRIES = 32;
@@ -44,6 +49,7 @@ export const PERSISTED_UI_KEYS = [
   "bookSectionOrder",
   "studioBookSectionOrder",
   "bookTab",
+  "studioRailExplorerShare",
 ] as const satisfies readonly (keyof UiState)[];
 
 export type PersistedUiKey = (typeof PERSISTED_UI_KEYS)[number];
@@ -131,6 +137,10 @@ export function coerceBookTab(value: unknown): BookTab {
 //       ids. Seed [] - the same "no custom order, use the default" a fresh
 //       install gets. Expand-only like every hop above: an older payload
 //       gains the key, nothing is rewritten.
+//   v16: `studioRailExplorerShare` added (the Studio rail's vertical split
+//       between the PROJECTS list and the EXPLORER pane, which used to be a
+//       fixed 256px box). Seed the default so an upgrading install hydrates
+//       into a defined share rather than `undefined`.
 export function migrateUiState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== "object") {
     return persisted;
@@ -169,6 +179,12 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
   }
   if (version < 15 && !("studioBookSectionOrder" in next)) {
     next = { ...next, studioBookSectionOrder: [] };
+  }
+  if (version < 16 && !("studioRailExplorerShare" in next)) {
+    next = {
+      ...next,
+      studioRailExplorerShare: STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
+    };
   }
   return next;
 }
@@ -237,5 +253,8 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     bookTab: coerceBookTab(incoming?.bookTab),
     sidebarWidth: coerceSidebarWidth(incoming?.sidebarWidth),
     bookWidth: coerceBookWidth(incoming?.bookWidth),
+    studioRailExplorerShare: coerceStudioRailExplorerShare(
+      incoming?.studioRailExplorerShare,
+    ),
   };
 }
