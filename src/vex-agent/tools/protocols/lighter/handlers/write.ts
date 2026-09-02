@@ -13,7 +13,6 @@ import type { ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
 import { readEnvironment } from "../params.js";
 import { buildLighterOrderReadyForSignerPlan } from "../execution-plan.js";
-import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-order.js";
 import {
   executeApprovedLighterCreateOrder,
   getConfiguredLighterCreateOrderExecutionDeps,
@@ -325,7 +324,6 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
 
     try {
       const plan = buildLighterOrderReadyForSignerPlan(approved);
-      const unsignedOrder = buildLighterUnsignedCreateOrderRequest(plan);
       const deps = getConfiguredLighterCreateOrderExecutionDeps();
       if (deps === null) {
         return fail(
@@ -334,7 +332,6 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
       }
       const execution = await executeApprovedLighterCreateOrder({
         plan,
-        unsignedOrder,
         deps,
       });
       return ok({
