@@ -52,6 +52,7 @@ import {
   STUDIO_MAX_HANDSHAKE_PENDING,
   STUDIO_MAX_LISTENER_SOCKETS,
 } from "../mcp-host.js";
+import { SKIP_UNIX_ENDPOINT_SUITES } from "./unix-endpoint-gate.js";
 
 const PROJECT_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 const MODERN_VERSION = "2026-07-28";
@@ -302,7 +303,7 @@ function endpoint(): string {
 
 // ── Case 1 + 4 + 11 ─────────────────────────────────────────────────────────
 
-describe("legacy era", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("legacy era", () => {
   it("serves a 2025-era initialize with the exact instruction bytes", async () => {
     const client = await ReferenceClient.open(endpoint());
     expect(await client.handshake()).toEqual({ ok: true });
@@ -362,7 +363,7 @@ describe("legacy era", () => {
 
 // ── Case 2 + 3 + 4 ──────────────────────────────────────────────────────────
 
-describe("modern era and the probe fallback", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("modern era and the probe fallback", () => {
   it("serves server/discover with the same instruction bytes", async () => {
     const client = await ReferenceClient.open(endpoint());
     await client.handshake();
@@ -413,7 +414,7 @@ describe("modern era and the probe fallback", () => {
 
 // ── Case 5 ──────────────────────────────────────────────────────────────────
 
-describe("handshake framing", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("handshake framing", () => {
   it("loses nothing when handshake and initialize arrive in ONE write", async () => {
     const client = await ReferenceClient.open(endpoint());
     client.writeRaw(
@@ -451,7 +452,7 @@ describe("handshake framing", () => {
 
 // ── Case 6 ──────────────────────────────────────────────────────────────────
 
-describe("clean EOF", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("clean EOF", () => {
   it("aborts ONE blocked call exactly once, with the cause `disconnect`", async () => {
     const blocked = blockingCall();
     runCallImpl = blocked.run;
@@ -489,7 +490,7 @@ describe("clean EOF", () => {
 
 // ── The tool-handler boundary: a throw never reaches the wire ───────────────
 
-describe("tool handler failure", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("tool handler failure", () => {
   /**
    * The SDK's own `tools/call` wrapper answers a rejected handler by putting
    * `error.message` verbatim into the result text it writes to the socket
@@ -561,7 +562,7 @@ describe("tool handler failure", () => {
 
 // ── Case 7 ──────────────────────────────────────────────────────────────────
 
-describe("notifications/cancelled", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("notifications/cancelled", () => {
   it("aborts the named request with `cancelled`, never with the client's text", async () => {
     const blocked = blockingCall();
     runCallImpl = blocked.run;
@@ -635,7 +636,7 @@ describe("notifications/cancelled", () => {
 
 // ── Case 8 ──────────────────────────────────────────────────────────────────
 
-describe("malformed and oversized frames", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("malformed and oversized frames", () => {
   it("answers an unparseable frame in band and closes the connection", async () => {
     const client = await ReferenceClient.open(endpoint());
     await client.handshake();
@@ -658,7 +659,7 @@ describe("malformed and oversized frames", () => {
 
 // ── Case 9 ──────────────────────────────────────────────────────────────────
 
-describe("outbound backpressure and drain", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("outbound backpressure and drain", () => {
   it("keeps at most one queued progress per request behind a stalled reader", async () => {
     // The failure this catches: approval progress fires every two seconds, and
     // an unbounded outbound buffer behind a peer that stopped reading would
@@ -721,11 +722,80 @@ describe("outbound backpressure and drain", () => {
     expect(progressFrames.length).toBeLessThanOrEqual(10);
     client.destroy();
   }, 30_000);
+
+  /**
+   * A WRITE THAT WILL NEVER DRAIN MUST NOT OUTLIVE THE CONNECTION.
+   *
+   * The queue parks on `drain` when `write` answers `false`. If that park had
+   * no close edge, a peer that stopped reading and then vanished would strand
+   * the one writer and the teardown behind it: the blocked call's abort - the
+   * edge that releases a human's approval - would never arrive.
+   *
+   * WHAT THIS PROVES, exactly: the assembly still tears down, and the abort
+   * still lands once with the trusted cause, while a megabyte-scale response
+   * sits half-written to a peer that is not reading. The jam is far past any
+   * plausible socket buffer, so `write` really does refuse rather than
+   * hopefully. What it does NOT prove is that every pending enqueue promise
+   * settled - that is the queue's own contract, and it is pinned
+   * deterministically in `outbound-queue-blocked.test.ts`, where the refusal is
+   * COUNTED rather than inferred.
+   */
+  it("tears down and aborts while a huge response is stuck mid-write", async () => {
+    const blocked = blockingCall();
+    // 1 MiB of output for the second call. A socket's write buffer is orders of
+    // magnitude smaller, so this cannot be swallowed whole by the kernel.
+    const jam = "x".repeat(1024 * 1024);
+    runCallImpl = async (projectId, call, options) => {
+      if (call.args["query"] === "jam") {
+        return { kind: "completed", result: { success: true, output: jam } };
+      }
+      return blocked.run(projectId, call, options);
+    };
+
+    const client = await ReferenceClient.open(endpoint());
+    await client.handshake();
+    client.send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "r", version: "1" } },
+    });
+    await client.responseFor(1);
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "vex_ToolSearch", arguments: { query: "swap" } },
+    });
+    await waitFor(() => blocked.entry() !== undefined);
+
+    // The peer stops reading, THEN asks for the 2 MiB answer. The writer takes
+    // it, the kernel refuses it, and the queue parks on a `drain` this peer
+    // will never produce.
+    client.pauseReading();
+    client.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "vex_ToolSearch", arguments: { query: "jam" } },
+    });
+    await sleep(250);
+
+    // And now the peer is simply gone, mid-write.
+    client.destroy();
+
+    await waitFor(() => (blocked.entry()?.abortCount ?? 0) > 0, 12_000);
+    // A moment past the first abort, so a second one would have landed.
+    await sleep(150);
+    expect(blocked.entry()?.abortCount).toBe(1);
+    expect(blocked.entry()?.cause).toBe("disconnect");
+  }, 30_000);
 });
 
 // ── Case 10 ─────────────────────────────────────────────────────────────────
 
-describe("lock teardown", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("lock teardown", () => {
   it("closes ADMISSION and destroys sockets SYNCHRONOUSLY, with cause `lock`", async () => {
     const blocked = blockingCall();
     runCallImpl = blocked.run;
@@ -772,7 +842,7 @@ describe("lock teardown", () => {
 
 // ── Bounds ──────────────────────────────────────────────────────────────────
 
-describe("connection bounds", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("connection bounds", () => {
   it("refuses connection 17 with a typed ack and evicts nobody", async () => {
     const clients: ReferenceClient[] = [];
     try {

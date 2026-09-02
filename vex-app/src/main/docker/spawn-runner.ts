@@ -43,6 +43,20 @@ export interface SpawnRunnerResult {
 const DEFAULT_GRACE_MS = 5_000;
 const MAX_BUFFER_BYTES = 4 * 1024 * 1024; // safety cap for accumulated stdout/stderr
 
+/**
+ * Line framing is `\n`, and a CRLF producer's `\r` belongs to the framing, not
+ * to the line. Windows console builtins (and any CLI whose Go/MSVC runtime
+ * translates on a pipe) terminate with `\r\n`, so a reader that split on `\n`
+ * alone would hand every consumer a line ending in `\r`: a `docker ps -q`
+ * container id, a `docker context show` name, a progress line broadcast to the
+ * renderer. Node's own `readline` strips it for the same reason. The `\r` is
+ * removed once, only when it is the last character of a `\n`-terminated line,
+ * so a lone `\r` inside a line (progress redraws) survives untouched.
+ */
+function stripLineTerminatorCarriageReturn(line: string): string {
+  return line.endsWith("\r") ? line.slice(0, -1) : line;
+}
+
 class StreamLineReader {
   private buffer = "";
   private readonly capBytes: number;
@@ -62,7 +76,7 @@ class StreamLineReader {
     let out = "";
     let idx = this.buffer.indexOf("\n");
     while (idx !== -1) {
-      const line = this.buffer.slice(0, idx);
+      const line = stripLineTerminatorCarriageReturn(this.buffer.slice(0, idx));
       this.buffer = this.buffer.slice(idx + 1);
       onLine(line);
       out += line + "\n";

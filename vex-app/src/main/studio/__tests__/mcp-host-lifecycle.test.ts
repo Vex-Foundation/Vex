@@ -78,6 +78,7 @@ import {
   resetStudioMcpHostForTests,
   STUDIO_MAX_CONNECTIONS,
 } from "../mcp-host.js";
+import { SKIP_UNIX_ENDPOINT_SUITES } from "./unix-endpoint-gate.js";
 
 interface JsonRecord {
   [key: string]: unknown;
@@ -199,7 +200,7 @@ function endpoint(): string {
   return value;
 }
 
-describe("a lock that lands inside a bind", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("a lock that lands inside a bind", () => {
   it("still publishes the listener, and refuses the peer with `locked`", async () => {
     // `runBind` runs as far as its first await, which is the stale-endpoint
     // probe. The host is suspended inside that probe when the lock below runs.
@@ -246,7 +247,7 @@ describe("a lock that lands inside a bind", () => {
   }, 20_000);
 });
 
-describe("concurrent binds", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("concurrent binds", () => {
   it("hands two callers ONE attempt and changes no admission", async () => {
     // LOCKED FIRST, so the property under test is observable: a bind must not
     // reopen the door it found closed.
@@ -271,7 +272,7 @@ describe("concurrent binds", () => {
   }, 20_000);
 });
 
-describe("a quit that lands inside a bind", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("a quit that lands inside a bind", () => {
   it("publishes NO listener and NO endpoint", async () => {
     const held = createGate();
     staleProbe.gate = held.wait;
@@ -293,7 +294,7 @@ describe("a quit that lands inside a bind", () => {
   }, 20_000);
 });
 
-describe("a lock that lands inside connection establish", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("a lock that lands inside connection establish", () => {
   it("never reaches serving, and closes the connection it acquired", async () => {
     // The project check is HELD, which is the widest await in the establish
     // chain and the one a lock is most likely to land inside.
@@ -321,7 +322,7 @@ describe("a lock that lands inside connection establish", () => {
   }, 20_000);
 });
 
-describe("the established-connection reservation", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("the established-connection reservation", () => {
   it("refuses the 17th of two handshakes racing at the cap", async () => {
     expect((await startStudioMcpHost()).started).toBe(true);
     const clients: LineClient[] = [];

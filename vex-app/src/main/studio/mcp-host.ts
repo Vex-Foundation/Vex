@@ -96,6 +96,7 @@ import {
   type StudioHandshakeRefused,
 } from "./mcp-host/handshake.js";
 import { serveOverSocket } from "./mcp-host/serve.js";
+import { NodeSocketTransport } from "./mcp-host/node-socket-transport.js";
 import {
   StudioConnection,
   type CallSlotOutcome,
@@ -293,7 +294,13 @@ function handleConnection(socket: Socket): void {
   // The admission epoch this connection belongs to. A lock or a quit advances
   // it, and every establish continuation refuses to publish once it has.
   const epoch = studioAdmissionEpoch();
-  const connection = new StudioConnection(`c-${randomUUID().slice(0, 8)}`, socket, {
+  // THE ADAPTER BOUNDARY. Past this line nothing in the connection, the
+  // outbound queue or the engine's transport knows what carries the bytes: the
+  // socket is wrapped into the engine's `StudioDuplexTransport` contract here,
+  // where main still owns `node:net`, so the Windows pipe-front can be a second
+  // wrapper rather than a second protocol.
+  const wire = new NodeSocketTransport(socket);
+  const connection = new StudioConnection(`c-${randomUUID().slice(0, 8)}`, wire, {
     runCall: deps.runCall,
     acquireCallSlot,
     // Connection 17 is REFUSED with a typed ack and nobody is evicted: an

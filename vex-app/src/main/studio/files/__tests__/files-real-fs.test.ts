@@ -443,7 +443,14 @@ describe("listing a directory", () => {
   it("PAGINATES in the tree's own order, with every row reachable", async () => {
     await mkdir(path.join(root, "zeta-dir"));
     await mkdir(path.join(root, "alpha-dir"));
-    for (const name of ["file10.ts", "file2.ts", "README", "readme"]) {
+    // NO CASE-ONLY PAIR HERE. `README` and `readme` are ONE file on a default
+    // APFS volume and on NTFS, so a fixture built from them stages five
+    // entries on macOS and Windows and six on ext4 - the suite would be
+    // measuring the runner's volume, not the pagination. The order these two
+    // get when they COLLATE EQUAL is a pure decision over sort keys and is
+    // pinned as such in `node-identity.test.ts` ("gives names that COLLATE
+    // EQUAL a defined order anyway"), which needs no filesystem at all.
+    for (const name of ["file10.ts", "file2.ts", "README", "CHANGELOG"]) {
       await writeFile(path.join(root, name), "x", "utf8");
     }
 
@@ -465,13 +472,12 @@ describe("listing a directory", () => {
       expect(page.value.totalCount).toBe(6);
     } while (cursor !== null && pages < 10);
 
-    // Directories first, then a NUMERIC-aware collation of the leaves, with a
-    // defined order for the two names that collate equal.
+    // Directories first, then a NUMERIC-aware collation of the leaves.
     expect(collected).toHaveLength(6);
     expect(collected.slice(0, 2)).toEqual(["alpha-dir", "zeta-dir"]);
     expect(collected.indexOf("file2.ts")).toBeLessThan(collected.indexOf("file10.ts"));
     expect(collected).toContain("README");
-    expect(collected).toContain("readme");
+    expect(collected).toContain("CHANGELOG");
     // No row appeared twice: the cursor is a position in the order, not an
     // offset into a snapshot.
     expect(new Set(collected).size).toBe(6);
@@ -548,7 +554,20 @@ describe("excludes", () => {
     expect(atRoot.value.children.map((c) => c.name)).not.toContain("top.log");
   });
 
-  it("does NOT apply a SYMLINKED ignore file, and does not follow it", async () => {
+  /**
+   * `O_NOFOLLOW` IS POSIX-ONLY, and that is a recorded product decision, not a
+   * gap this test may paper over: `read.ts` states it explicitly ("It is
+   * POSIX-only; on Windows `fsConstants` does not define it and `?? 0` degrades
+   * to a plain read-only open"). On win32 the open therefore FOLLOWS the link
+   * and the rule set applies, which is the opposite of what this asserts.
+   *
+   * Skipping visibly, rather than asserting the win32 behaviour, because
+   * pinning "the link IS followed" would turn an accepted degradation into a
+   * guaranteed contract - see the STOP item in the round report, where whether
+   * that degradation still holds on a runner with Developer Mode enabled is
+   * raised for an explicit decision.
+   */
+  it.skipIf(process.platform === "win32")("does NOT apply a SYMLINKED ignore file, and does not follow it", async () => {
     // `readFile` followed the link and read whatever it pointed at, which for a
     // link to a huge file or a device is unbounded main-process memory. The
     // handle is opened `O_NOFOLLOW` now, so this is ELOOP - and an ignore file

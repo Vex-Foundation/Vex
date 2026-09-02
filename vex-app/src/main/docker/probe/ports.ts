@@ -12,6 +12,19 @@ const HTTP_PROBE_TIMEOUT_MS = 2_000;
 
 // ── TCP / HTTP probes (used for ports + Model Runner reachability) ───
 
+/**
+ * Whether a TCP connect to `host:port` is refused inside the timeout.
+ *
+ * This is a REACHABILITY answer and never an IDENTITY answer. "Busy"
+ * does not say whose listener it is, and "free" is advisory the instant
+ * it is returned: another process can bind between the probe and our
+ * own bind, and on Windows with WSL2 mirrored networking a loopback
+ * port can be served from the other side of the boundary while the
+ * local Docker daemon reports its own container publishing it. Anything
+ * that must know WHOSE service answers has to authenticate against it -
+ * for the published Postgres that owner is
+ * `main/compose/pg-listener-identity.ts`.
+ */
 export async function isPortFree(
   host: string,
   port: number,

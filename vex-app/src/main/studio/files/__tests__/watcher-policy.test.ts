@@ -15,6 +15,7 @@
  * restart had happened by then.
  */
 
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -31,7 +32,20 @@ import {
   type WatcherEmission,
 } from "../watcher.js";
 
-const ROOT = "/tmp/vex-fake-project";
+/**
+ * The watcher receives `realRoot` from `resolveProjectDirectory`'s realpath and
+ * event paths from the native backend, both absolute in the PLATFORM's own
+ * spelling. `toProjectRelative` compares them with `path.sep`, so a POSIX
+ * literal here would be resolved to a drive-rooted path on win32 while the
+ * event paths stayed POSIX; every event would be dropped as outside the
+ * project and the batching and overflow assertions below would measure an
+ * empty stream. Resolving the root and joining every event path keeps this
+ * suite testing the batching policy on all three lanes.
+ */
+const ROOT = path.resolve("/tmp/vex-fake-project");
+
+/** An absolute native path for a file directly under the watched root. */
+const entry = (name: string): string => path.join(ROOT, name);
 
 interface Harness {
   readonly watcher: ProjectFileWatcher;
@@ -371,7 +385,7 @@ describe("the watcher's restart policy", () => {
     const h = harness();
     await h.watcher.start();
 
-    h.deliver([{ path: `${ROOT}/a.txt`, type: "create" }]);
+    h.deliver([{ path: entry("a.txt"), type: "create" }]);
     await vi.advanceTimersByTimeAsync(1_000);
     const before = batches(h.emissions);
     expect(before).toHaveLength(1);
@@ -380,7 +394,7 @@ describe("the watcher's restart policy", () => {
     h.fail(Object.assign(new Error("transient"), { code: "EIO" }));
     await vi.advanceTimersByTimeAsync(2_000);
 
-    h.deliver([{ path: `${ROOT}/b.txt`, type: "create" }]);
+    h.deliver([{ path: entry("b.txt"), type: "create" }]);
     await vi.advanceTimersByTimeAsync(1_000);
     const after = batches(h.emissions).at(-1);
     expect(after).toMatchObject({ generation: 1, batchSeq: 0, paths: ["b.txt"] });
@@ -395,7 +409,7 @@ describe("the watcher's restart policy", () => {
 
     // The callback the FIRST subscription was given, invoked after its
     // generation was superseded. It describes a tree that no longer exists.
-    h.deliverVia(0, [{ path: `${ROOT}/ghost.txt`, type: "create" }]);
+    h.deliverVia(0, [{ path: entry("ghost.txt"), type: "create" }]);
     await vi.advanceTimersByTimeAsync(1_000);
     expect(batches(h.emissions)).toHaveLength(0);
   });
@@ -413,7 +427,7 @@ describe("a restart and the buffer it inherits", () => {
     await h.watcher.start();
 
     // Buffered, and deliberately NOT yet aggregated: the 75 ms tick has not run.
-    h.deliver([{ path: `${ROOT}/stale.txt`, type: "create" }]);
+    h.deliver([{ path: entry("stale.txt"), type: "create" }]);
 
     // The native layer fails, which restarts the watcher.
     h.fail(Object.assign(new Error("transient"), { code: "EIO" }));
@@ -436,7 +450,7 @@ describe("batching and overflow", () => {
     await h.watcher.start();
 
     for (let index = 0; index < 3; index += 1) {
-      h.deliver([{ path: `${ROOT}/f${String(index)}.txt`, type: "create" }]);
+      h.deliver([{ path: entry(`f${String(index)}.txt`), type: "create" }]);
       await vi.advanceTimersByTimeAsync(1_000);
     }
     expect(batches(h.emissions).map((b) => b.batchSeq)).toEqual([0, 1, 2]);
@@ -448,7 +462,7 @@ describe("batching and overflow", () => {
 
     const flood: NativeEvent[] = Array.from(
       { length: FILES_PENDING_CHANGES_MAX + 25 },
-      (_, index) => ({ path: `${ROOT}/f${String(index)}.txt`, type: "create" }),
+      (_, index) => ({ path: entry(`f${String(index)}.txt`), type: "create" }),
     );
     h.deliver(flood);
     await vi.advanceTimersByTimeAsync(1_000);
@@ -471,7 +485,7 @@ describe("batching and overflow", () => {
 
     h.deliver(
       Array.from({ length: 1_200 }, (_, index) => ({
-        path: `${ROOT}/f${String(index)}.txt`,
+        path: entry(`f${String(index)}.txt`),
         type: "create" as const,
       })),
     );
@@ -496,7 +510,7 @@ describe("batching and overflow", () => {
     // nothing to see. The fold has to have happened inside the callback.
     h.deliver(
       Array.from({ length: FILES_RAW_EVENTS_MAX }, (_, index) => ({
-        path: `${ROOT}/f${String(index)}.txt`,
+        path: entry(`f${String(index)}.txt`),
         type: "create" as const,
       })),
     );
@@ -538,7 +552,7 @@ describe("batching and overflow", () => {
       constructor(private readonly index: number) {}
       get path(): string {
         peak = Math.max(peak, h.watcher.rawEventCount);
-        return `${ROOT}/f${String(this.index)}.txt`;
+        return entry(`f${String(this.index)}.txt`);
       }
     }
 
@@ -620,7 +634,7 @@ describe("a vanished root", () => {
   it("DISCARDS pending changes for a tree that has just vanished", async () => {
     const h = harness();
     await h.watcher.start();
-    h.deliver([{ path: `${ROOT}/a.txt`, type: "create" }]);
+    h.deliver([{ path: entry("a.txt"), type: "create" }]);
     // Vanish BEFORE the aggregation window closes.
     h.setRootExists(false);
     h.deliver([{ path: ROOT, type: "delete" }]);
@@ -643,7 +657,7 @@ describe("teardown", () => {
     await h.watcher.start();
     const before = h.emissions.length;
     await h.watcher.dispose();
-    h.deliver([{ path: `${ROOT}/late.txt`, type: "create" }]);
+    h.deliver([{ path: entry("late.txt"), type: "create" }]);
     await vi.advanceTimersByTimeAsync(5_000);
     expect(h.emissions.length).toBe(before);
   });

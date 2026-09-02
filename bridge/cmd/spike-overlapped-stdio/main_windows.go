@@ -36,6 +36,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"sync/atomic"
 	"time"
 )
 
@@ -244,7 +245,10 @@ func measure(rep *report, planes map[int]*os.File) {
 		} else {
 			rep.Phases = append(rep.Phases,
 				runPhase("read_deadline", func() phaseResult { return measureReadDeadline(duplex) }),
-				runPhase("throughput", func() phaseResult { return measureThroughput(duplex) }))
+				runPhaseExpecting("throughput", map[string]any{
+					"bytes_each_direction": throughputBytes,
+					"chunk_bytes":          throughputChunk,
+				}, func() phaseResult { return measureThroughput(duplex) }))
 		}
 	}
 
@@ -269,7 +273,9 @@ func measure(rep *report, planes map[int]*os.File) {
 		// The stall measurement is not finished when this process stops
 		// writing: the parent still has to drain what the operating system
 		// buffered, and that drain is only meaningful while its writer lives.
-		handshake := runPhase("drain_handshake", func() phaseResult { return awaitParentDrain(unread) })
+		handshake := runPhaseExpecting("drain_handshake", map[string]any{
+			"wait_ms": drainHandshakeWait.Milliseconds(),
+		}, func() phaseResult { return awaitParentDrain(unread) })
 		if handshake.Extra["plane_closed_to_cancel_read"] == true {
 			delete(planes, planeUnread)
 		}
@@ -428,13 +434,15 @@ func measureThroughput(f *os.File) phaseResult {
 		"bytes_each_direction": throughputBytes,
 		"chunk_bytes":          throughputChunk,
 	}}
-	emit("phase_expects", map[string]any{
-		"phase":                "throughput",
-		"bytes_each_direction": throughputBytes,
-		"chunk_bytes":          throughputChunk,
-	})
 
 	start := time.Now()
+
+	// PER-DIRECTION accounting, because "neither direction finished" was
+	// reported in the 2026-09-01 run while the child-to-parent direction had
+	// demonstrably delivered all 4 MiB (the parent counted them). A phase that
+	// cannot say WHICH side stalled sends the next reader to the wrong half of
+	// the system.
+	var readBytes, writeBytes atomic.Int64
 
 	readDone := make(chan error, 1)
 	go func() {
@@ -447,6 +455,7 @@ func measureThroughput(f *os.File) phaseResult {
 			}
 			n, err := io.ReadFull(f, buf[:want])
 			remaining -= n
+			readBytes.Add(int64(n))
 			if err != nil {
 				readDone <- err
 				return
@@ -469,6 +478,7 @@ func measureThroughput(f *os.File) phaseResult {
 			}
 			n, err := f.Write(chunk[:want])
 			remaining -= n
+			writeBytes.Add(int64(n))
 			if err != nil {
 				writeDone <- err
 				return
@@ -478,19 +488,37 @@ func measureThroughput(f *os.File) phaseResult {
 	}()
 
 	var readErr, writeErr error
+	readSettled, writeSettled := false, false
+	timedOut := false
 	timeout := time.After(throughputWait)
-	for done := 0; done < 2; done++ {
+	for !timedOut && (!readSettled || !writeSettled) {
 		select {
 		case readErr = <-readDone:
+			readSettled = true
 		case writeErr = <-writeDone:
+			writeSettled = true
 		case <-timeout:
-			res.Error = fmt.Sprintf("neither direction finished %d bytes within %s", throughputBytes, throughputWait)
-			return res
+			timedOut = true
 		}
 	}
 
 	elapsed := time.Since(start)
 	res.Extra["elapsed_ms"] = elapsed.Milliseconds()
+	res.Extra["read_bytes"] = readBytes.Load()
+	res.Extra["write_bytes"] = writeBytes.Load()
+	res.Extra["read_status"] = directionStatus(readSettled, readErr)
+	res.Extra["write_status"] = directionStatus(writeSettled, writeErr)
+
+	if timedOut {
+		res.Error = fmt.Sprintf(
+			"the throughput phase did not finish %d bytes each way within %s: "+
+				"the read direction %s after %d bytes, the write direction %s after %d bytes",
+			throughputBytes, throughputWait,
+			directionStatus(readSettled, readErr), readBytes.Load(),
+			directionStatus(writeSettled, writeErr), writeBytes.Load())
+		return res
+	}
+
 	if elapsed > 0 {
 		res.Extra["mib_per_second_each_direction"] = float64(throughputBytes) / (1 << 20) / elapsed.Seconds()
 	}
@@ -505,6 +533,19 @@ func measureThroughput(f *os.File) phaseResult {
 	res.OK = true
 	res.Detail = fmt.Sprintf("%d bytes each way in %d byte chunks", throughputBytes, throughputChunk)
 	return res
+}
+
+// directionStatus names what one half of the throughput exchange did, so the
+// artifact reports which side stalled rather than a claim about both.
+func directionStatus(settled bool, err error) string {
+	switch {
+	case !settled:
+		return "stalled"
+	case err != nil:
+		return "failed: " + err.Error()
+	default:
+		return "completed"
+	}
 }
 
 // measureBackpressure answers the head-of-line question the credit design
@@ -589,10 +630,6 @@ func awaitParentDrain(f *os.File) phaseResult {
 	res := phaseResult{Name: "drain_handshake", Extra: map[string]any{
 		"wait_ms": drainHandshakeWait.Milliseconds(),
 	}}
-	emit("phase_expects", map[string]any{
-		"phase":   "drain_handshake",
-		"wait_ms": drainHandshakeWait.Milliseconds(),
-	})
 
 	// Best effort: on a handle the poller refused there is no deadline, and
 	// the select below plus Close is what bounds the read instead.
@@ -786,6 +823,25 @@ type report struct {
 }
 
 func runPhase(name string, fn func() phaseResult) phaseResult {
+	return runPhaseExpecting(name, nil, fn)
+}
+
+// runPhaseExpecting is the ONE owner of a phase's event order. A phase whose
+// parent half needs a parameter (the throughput size, the drain wait) announces
+// it in `phase_expects` BEFORE `phase_begin`, so a reader that consumes the
+// events in order never sees a start it cannot yet act on. The announcement
+// used to be emitted from inside the phase body, which put it AFTER the start
+// and cost the 2026-09-01 Windows run its parent-to-child throughput direction.
+// The parent is order-independent anyway (see choreography.mjs); this makes the
+// instrument's own stream honest rather than relying on that.
+func runPhaseExpecting(name string, expects map[string]any, fn func() phaseResult) phaseResult {
+	if expects != nil {
+		fields := map[string]any{"phase": name}
+		for k, v := range expects {
+			fields[k] = v
+		}
+		emit("phase_expects", fields)
+	}
 	emit("phase_begin", map[string]any{"phase": name})
 	start := time.Now()
 	res := fn()

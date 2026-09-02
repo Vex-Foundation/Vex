@@ -33,10 +33,8 @@
       "../src/vex-agent/sync/prediction-settlement-sync.ts::TS2532": 2,
       "../src/vex-agent/tools/dispatcher/mutating-targets.ts::TS18048": 1,
       "../src/vex-agent/tools/dispatcher/mutating-targets.ts::TS2722": 1,
-      "../src/vex-agent/tools/dispatcher/protocol-route.ts::TS2344": 1,
       "../src/vex-agent/tools/dispatcher/protocol-route.ts::TS2722": 1,
       "../src/vex-agent/tools/internal/chain-read.ts::TS2345": 1,
-      "../src/vex-agent/tools/internal/wallet/send-execute-evm.ts::TS2345": 2,
       "../src/vex-agent/tools/protocols/capture-pipeline.ts::TS2345": 1,
       "src/main/agent/__tests__/compact-worker.test.ts::TS2322": 5,
       "src/main/agent/__tests__/compact-worker.test.ts::TS2349": 1,
@@ -52,19 +50,16 @@
       "src/main/agent/__tests__/wake-worker.test.ts::TS2322": 5,
       "src/main/agent/__tests__/wake-worker.test.ts::TS2349": 1,
       "src/main/agent/transcript-bridge.ts::TS2345": 1,
-      "src/main/compose/__tests__/embeddings-health.test.ts::TS2552": 1,
       "src/main/compose/stale-secret-recovery.ts::TS2367": 2,
       "src/main/database/__tests__/approval-intents-projection.test.ts::TS2339": 14,
       "src/main/database/__tests__/approvals-db.test.ts::TS2339": 7,
-      "src/main/database/__tests__/messages-db.test.ts::TS2339": 15,
       "src/main/database/__tests__/migrate-runner.test.ts::TS2349": 1,
-      "src/main/database/__tests__/mission-runs-db.test.ts::TS2339": 4,
+      "src/main/database/__tests__/mission-runs-db.test.ts::TS2339": 3,
       "src/main/database/__tests__/missions-db.acceptance.test.ts::TS2339": 6,
       "src/main/database/__tests__/missions-db.renewable-source.test.ts::TS2339": 11,
       "src/main/database/__tests__/missions-db.test.ts::TS2339": 9,
       "src/main/database/__tests__/sessions-wallet-scope.test.ts::TS2493": 12,
       "src/main/database/__tests__/sessions-wallet-scope.test.ts::TS2532": 1,
-      "src/main/database/__tests__/usage-db.test.ts::TS2339": 11,
       "src/main/database/approvals-db.ts::TS2345": 2,
       "src/main/database/compaction-db.ts::TS2345": 2,
       "src/main/database/dim-lock.ts::TS2345": 1,
@@ -72,7 +67,6 @@
       "src/main/database/memory-db.ts::TS2345": 2,
       "src/main/database/memory-inspector-db.ts::TS2345": 2,
       "src/main/database/messages/connection.ts::TS2345": 2,
-      "src/main/database/mission-runs-db.ts::TS2345": 3,
       "src/main/database/missions-db.ts::TS2345": 3,
       "src/main/database/portfolio-db.ts::TS2345": 3,
       "src/main/database/sessions/connection.ts::TS2345": 2,
@@ -101,7 +95,6 @@
       "src/main/ipc/onboarding/wallets/restore.ts::TS2345": 5,
       "src/main/ipc/register-handler.ts::TS2322": 1,
       "src/main/ipc/sessions/plan.ts::TS2339": 1,
-      "src/main/ipc/support.ts::TS2589": 1,
       "src/main/onboarding/__tests__/embedding-writer.test.ts::TS2345": 1,
       "src/main/onboarding/__tests__/openrouter-test-client.test.ts::TS4114": 4,
       "src/main/onboarding/__tests__/wallet-password.test.ts::TS2339": 3,
@@ -120,7 +113,6 @@
     "renderer": {
       "src/renderer/components/onboarding/DocsLink.tsx::TS2503": 1,
       "src/renderer/components/ui/__tests__/dialog.test.tsx::TS2769": 4,
-      "src/renderer/components/ui/dialog.tsx::TS2503": 1,
       "src/renderer/features/appShell/TranscriptMessage.tsx::TS2322": 1,
       "src/renderer/features/appShell/TranscriptMessage.tsx::TS2339": 1,
       "src/renderer/features/appShell/__tests__/ApprovalsRegion.test.tsx::TS2322": 1,
@@ -162,13 +154,8 @@
       "src/renderer/features/wizard/steps/__tests__/ProviderStep.test.tsx::TS2741": 1,
       "src/renderer/features/wizard/steps/provider/ModelBrandIcon.tsx::TS2503": 1,
       "src/renderer/lib/api/__tests__/runtime.test.ts::TS2322": 1,
-      "src/renderer/lib/api/__tests__/runtime.test.ts::TS7031": 1,
-      "src/renderer/lib/markdown/MarkdownContent.tsx::TS2345": 1,
-      "src/renderer/lib/markdown/MarkdownContent.tsx::TS7006": 10
+      "src/renderer/lib/api/__tests__/runtime.test.ts::TS7031": 1
     },
-    "preload": {
-      "src/preload/shell/support.ts::TS2345": 1,
-      "src/preload/shell/support.ts::TS2589": 1
-    }
+    "preload": {}
   }
 }

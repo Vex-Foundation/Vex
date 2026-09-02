@@ -20,7 +20,11 @@ function stderrCommand(): { readonly command: string; readonly args: string[] } 
   if (process.platform === "win32") {
     return {
       command: "cmd.exe",
-      args: ["/d", "/s", "/c", "echo boom 1>&2&&exit /b 7"],
+      // No space before the redirection: `echo boom 1>&2` echoes "boom "
+      // (cmd.exe treats everything up to the operator as the echoed text),
+      // which would make this assert on a fixture artefact rather than on
+      // the runner's stderr framing.
+      args: ["/d", "/s", "/c", "echo boom>&2&&exit /b 7"],
     };
   }
   return { command: "sh", args: ["-c", "printf 'boom\\n' >&2; exit 7"] };
@@ -61,6 +65,26 @@ describe("runSpawn", () => {
     );
     expect(result.code).toBe(7);
     expect(errLines).toEqual(["boom"]);
+  });
+
+  /**
+   * The CRLF producer is spawned through `process.execPath` so this runs
+   * identically on all three lanes rather than only where the console
+   * builtins happen to emit `\r\n`. A `\r` left on the line would reach
+   * consumers as part of a container id, a context name or a renderer log
+   * row, so it is stripped as framing - while a bare `\r` INSIDE a line
+   * (progress redraws) must survive.
+   */
+  it("treats the CR of a CRLF terminator as framing, not as line content", async () => {
+    const lines: string[] = [];
+    const result = await runSpawn(
+      process.execPath,
+      ["-e", `process.stdout.write("a\\r\\nb\\rmid\\r\\n")`],
+      { onStdoutLine: (line) => lines.push(line) }
+    );
+    expect(result.code).toBe(0);
+    expect(lines).toEqual(["a", "b\rmid"]);
+    expect(result.stdout).toBe("a\nb\rmid\n");
   });
 
   it("honors AbortSignal and reports aborted=true", async () => {

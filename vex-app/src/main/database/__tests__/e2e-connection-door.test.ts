@@ -287,7 +287,21 @@ describe("openE2eConnectionDoor", () => {
     dispose();
   });
 
-  it("refuses a real group-readable password file on disk", async () => {
+  /**
+   * The premise is a REAL group-readable file, and only a POSIX kernel can
+   * create one: `chmod 0o644` on Windows leaves 0o666 and the door
+   * deliberately skips the mode guard there (`e2e-connection-door.ts`, the
+   * `input.platform !== "win32"` branch), so on win32 this would assert that
+   * a documented no-op refuses - which it must not.
+   *
+   * The win32 row of that policy is proved deterministically by "does not
+   * apply the POSIX mode guard on win32, where those bits mean nothing"
+   * above, which injects the platform instead of reading the runner's.
+   *
+   * `it.skipIf` rather than a bare early return: a skipped test is visible in
+   * the reporter, an early return reports as PASSING.
+   */
+  it.skipIf(process.platform === "win32")("refuses a real group-readable password file on disk", async () => {
     process.env[E2E_DB_PORT_ENV] = String(E2E_PORT);
     process.env[E2E_DB_PASSWORD_FILE_ENV] = writeSecretFile("s3cret-value", 0o644);
 

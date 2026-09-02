@@ -63,6 +63,7 @@ import {
   openStudioMcpAdmission,
   STUDIO_MAX_LISTENER_SOCKETS,
 } from "../mcp-host.js";
+import { SKIP_UNIX_ENDPOINT_SUITES } from "./unix-endpoint-gate.js";
 
 const PROJECT_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 
@@ -199,7 +200,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 8_000): Promise<voi
   }
 }
 
-describe("the app-ready bind", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("the app-ready bind", () => {
   it("binds while the vault is LOCKED and the barrier is still closed", async () => {
     // Neither gate is open: the vault was never unlocked in this case and the
     // readiness barrier is at its boot value. A bind that waited for either
@@ -226,7 +227,7 @@ describe("the app-ready bind", () => {
   });
 });
 
-describe("a locked host", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("a locked host", () => {
   it("answers with `locked` BEFORE it reads a single project byte", async () => {
     expect((await startStudioMcpHost()).started).toBe(true);
     const client = await LineClient.open(endpoint());
@@ -282,7 +283,7 @@ describe("a locked host", () => {
   }, 40_000);
 });
 
-describe("an unready host", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("an unready host", () => {
   it("binds anyway, and refuses the peer with the BARRIER's own sentence", async () => {
     // Unlocked, but the settlement barrier has not opened. The listener is up:
     // readiness gates handshakes and calls, never the bind.
@@ -328,7 +329,7 @@ describe("an unready host", () => {
   }, 20_000);
 });
 
-describe("lock, unlock and quit", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("lock, unlock and quit", () => {
   it("retains the listener across a relock and serves again on the same socket", async () => {
     markStudioRuntimeReady(beginStudioReadinessEpoch());
     openStudioMcpAdmission();

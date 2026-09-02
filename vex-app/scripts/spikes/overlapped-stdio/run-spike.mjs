@@ -52,6 +52,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app } from "electron";
 
+import {
+  ACTION_DRAIN_UNREAD_PLANE,
+  ACTION_END_THROUGHPUT_PHASE,
+  ACTION_RECORD_THROUGHPUT_ERROR,
+  ACTION_RECORD_THROUGHPUT_REQUEST,
+  ACTION_START_THROUGHPUT_WRITE,
+  createChoreography,
+} from "./choreography.mjs";
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VEX_APP_ROOT = path.resolve(HERE, "..", "..", "..");
 const REPO_ROOT = path.resolve(VEX_APP_ROOT, "..");
@@ -554,29 +563,43 @@ function run() {
   // choreography
   // -------------------------------------------------------------------------
 
+  /**
+   * The DECISION lives in choreography.mjs, which is pure and unit-tested
+   * (choreography.test.mjs, `node --test`); this function only performs what it
+   * decided. The split exists because the first Windows run lost a whole
+   * direction to an event-ordering assumption that no Electron-bound harness
+   * could have been tested against.
+   */
+  const choreography = createChoreography();
+
   function onChildEvent(event) {
-    if (event.event === "phase_expects" && event.phase === "throughput") {
-      parent.throughput.requested_bytes = event.bytes_each_direction ?? null;
-      return;
-    }
-    if (event.event === "phase_begin" && event.phase === "throughput") {
-      startThroughputWrite(parent.throughput.requested_bytes);
-      return;
-    }
-    if (event.event === "phase_end" && event.phase === "throughput") {
-      parent.throughput.elapsed_ms = throughputStart === null ? null : Date.now() - throughputStart;
-      return;
-    }
-    if (event.event === "phase_end" && event.phase === "write_backpressure") {
-      drainUnreadPlane();
+    for (const action of choreography.onEvent(event)) {
+      switch (action.type) {
+        case ACTION_RECORD_THROUGHPUT_REQUEST:
+          parent.throughput.requested_bytes = action.totalBytes;
+          break;
+        case ACTION_START_THROUGHPUT_WRITE:
+          startThroughputWrite(action.totalBytes);
+          break;
+        case ACTION_RECORD_THROUGHPUT_ERROR:
+          if (parent.throughput.error === null) parent.throughput.error = action.message;
+          break;
+        case ACTION_END_THROUGHPUT_PHASE:
+          parent.throughput.elapsed_ms = throughputStart === null ? null : Date.now() - throughputStart;
+          break;
+        case ACTION_DRAIN_UNREAD_PLANE:
+          drainUnreadPlane();
+          break;
+        default:
+          // An action this harness does not implement is a defect in the pair,
+          // and it is recorded rather than ignored.
+          parent.throughput.error = `unimplemented choreography action: ${action.type}`;
+          break;
+      }
     }
   }
 
   function startThroughputWrite(totalBytes) {
-    if (typeof totalBytes !== "number" || totalBytes <= 0) {
-      parent.throughput.error = "the child did not announce a throughput size";
-      return;
-    }
     throughputStart = Date.now();
     const chunk = Buffer.alloc(THROUGHPUT_CHUNK, "vex-spike-throughput-");
     let remaining = totalBytes;

@@ -68,6 +68,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The gate's integration tests import vex-app modules
+      # (installer/bridge-path.ts pulls `electron`, pty-host/mirror.ts pulls
+      # `@xterm/headless`), and vex-app is its own pnpm project with its own
+      # node_modules. Without this step the gate died on ERR_MODULE_NOT_FOUND
+      # before touching Postgres (inherited from main, run 33546984710).
+      - name: Install vex-app dependencies
+        working-directory: vex-app
+        run: pnpm install --frozen-lockfile
+
       - name: Run the required Studio PostgreSQL and migration gate
         run: pnpm test:studio-postgres
 
@@ -325,6 +334,14 @@ jobs:
           GOOS: windows
           GOARCH: amd64
         run: go build -o dist/windows-amd64/spike-overlapped-stdio.exe ./cmd/spike-overlapped-stdio
+
+      # The parent's choreography decision (which child event triggers which
+      # action) is a pure module with a table test; it is what lost the first
+      # measurement's parent-to-child direction, so it runs before the
+      # instrument does.
+      - name: Test the harness choreography (node --test)
+        working-directory: vex-app
+        run: node --test scripts/spikes/overlapped-stdio/choreography.test.mjs
 
       - name: Measure inherited overlapped stdio under Electron main
         working-directory: vex-app

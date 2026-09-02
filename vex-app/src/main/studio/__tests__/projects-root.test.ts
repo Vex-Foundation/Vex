@@ -277,10 +277,22 @@ describe("root equality by filesystem identity", () => {
   });
 });
 
+/**
+ * The roots below are RESOLVED, because the only caller (`createProject`)
+ * hands `resolveProjectDirectory` the value `resolveProjectsRoot` returned -
+ * a realpath, already absolute in this platform's own spelling. A bare POSIX
+ * literal is not such a value on win32 (`path.resolve` would add the drive the
+ * literal lacks), so testing with one would exercise a shape production never
+ * produces and would refuse everything on that lane for a reason that has
+ * nothing to do with containment.
+ */
+const ROOT = path.resolve("/roots/projects");
+const UPPER_ROOT = path.resolve("/roots/PROJECTS");
+
 describe("resolveProjectDirectory", () => {
   it("resolves exactly one segment below the root", () => {
-    expect(resolveProjectDirectory("/roots/projects", "my-app")).toBe(
-      path.resolve("/roots/projects", "my-app"),
+    expect(resolveProjectDirectory(ROOT, "my-app")).toBe(
+      path.resolve(ROOT, "my-app"),
     );
   });
 
@@ -289,7 +301,7 @@ describe("resolveProjectDirectory", () => {
     // caller cannot widen the input without tripping it.
     for (const slug of ["..", "../escape", "a/b", "", ".", "/absolute"]) {
       expect(
-        resolveProjectDirectory("/roots/projects", slug),
+        resolveProjectDirectory(ROOT, slug),
         `slug ${JSON.stringify(slug)} was accepted`,
       ).toBeNull();
     }
@@ -311,25 +323,28 @@ describe("resolveProjectDirectory", () => {
    * which is why there is no `process.platform` branch to test either.
    */
   it("compares case-sensitively on every platform (a safe refusal beats a false match)", () => {
-    expect(resolveProjectDirectory("/roots/PROJECTS", "my-app")).toBe(
-      path.resolve("/roots/PROJECTS", "my-app"),
+    expect(resolveProjectDirectory(UPPER_ROOT, "my-app")).toBe(
+      path.resolve(UPPER_ROOT, "my-app"),
     );
     // The slug's own case is not folded either: the slug alphabet is already
     // lowercase, so an upper-case slug reaching here came from somewhere new.
-    expect(resolveProjectDirectory("/roots/projects", "My-App")).toBe(
-      path.resolve("/roots/projects", "My-App"),
+    expect(resolveProjectDirectory(ROOT, "My-App")).toBe(
+      path.resolve(ROOT, "My-App"),
     );
   });
 });
 
+/**
+ * Resolved for the same reason as `ROOT` above: the callers in
+ * `database/projects/{create,read}.ts` pass a realpath-ed root and `homedir()`,
+ * both absolute in this platform's own spelling.
+ */
+const HOME = path.resolve("/home/someone");
+
 describe("formatProjectDisplayPath", () => {
   it("collapses the home directory to ~ so a screenshot carries no identity path", () => {
     expect(
-      formatProjectDisplayPath(
-        path.join("/home/someone", "Vex", "projects"),
-        "my-app",
-        "/home/someone",
-      ),
+      formatProjectDisplayPath(path.join(HOME, "Vex", "projects"), "my-app", HOME),
     ).toBe(path.join("~", "Vex", "projects", "my-app"));
   });
 
@@ -346,7 +361,7 @@ describe("formatProjectDisplayPath", () => {
    */
   it("names an unprovable root abstractly rather than printing an absolute path", () => {
     expect(
-      formatProjectDisplayPath("/srv/workspaces", "my-app", "/home/someone"),
+      formatProjectDisplayPath(path.resolve("/srv/workspaces"), "my-app", HOME),
     ).toBe(path.join("<projects root>", "my-app"));
   });
 
@@ -355,9 +370,9 @@ describe("formatProjectDisplayPath", () => {
     // the root is under the home directory, spelled differently. Vex cannot
     // PROVE the prefix, so it must not print the path.
     const rendered = formatProjectDisplayPath(
-      "/home/Someone/Vex/projects",
+      path.resolve("/home/Someone", "Vex", "projects"),
       "my-app",
-      "/home/someone",
+      HOME,
     );
     expect(rendered).not.toContain("Someone");
     expect(rendered).not.toContain("someone");

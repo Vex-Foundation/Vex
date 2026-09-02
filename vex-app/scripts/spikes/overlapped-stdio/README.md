@@ -75,6 +75,32 @@ The harness reads the child's stderr NDJSON to know which phase to drive. That
 is a HARNESS convenience and not a proposal: a real transport would never put
 control on a log stream.
 
+That choreography is ORDER-INDEPENDENT and it is the one part of the harness
+with its own test. A phase whose parent half needs a parameter announces it in
+`phase_expects` and starts in `phase_begin`; the harness acts when BOTH facts
+are known, whichever event arrives first, starts the throughput pump exactly
+once, and still records an error if the phase ENDS without the pump having
+started. The decision lives in `choreography.mjs` as a pure events-in,
+actions-out state machine, and `choreography.test.mjs` drives it with scripted
+event orders under plain `node --test` (no Electron, no child, no sockets):
+
+```bash
+# from vex-app/
+node --test scripts/spikes/overlapped-stdio/choreography.test.mjs
+```
+
+The instrument emits `phase_expects` BEFORE `phase_begin` (both come from the
+one phase runner, `runPhaseExpecting`), so the stream is honest in order as
+well; the harness does not depend on that. This is the fix for the 2026-09-01
+Windows run, where the announcement was emitted from inside the phase body,
+arrived after the start, and cost the run its whole parent-to-child throughput
+direction.
+
+Only the `phase_end` of `write_backpressure` starts the drain of plane 5. That
+one is not order-sensitive by construction: the release marker is DATA in the
+plane, not an event, so the child reads it whenever it reaches its bounded read,
+whether the marker was written before or after that read began.
+
 The child's ONE JSON report is read from slot 1 only after that stream has
 ENDED. Node's `exit` event says the process died, not that its stdout was
 delivered, so a report parsed at `exit` can be a prefix of the document the
@@ -130,6 +156,14 @@ stall, how many bytes the operating system had buffered behind the plane it
 refused to read, whether the release marker for the child's exit interlock was
 delivered, and whether the report was collected from a CLOSED stdout.
 
+The throughput phase reports PER DIRECTION in
+`child_report.phases[throughput].extra`: `read_bytes`, `write_bytes`,
+`read_status` and `write_status`, each `completed`, `stalled` or
+`failed: <reason>`. A stalled phase therefore names the side that stalled and
+how far it got, instead of claiming something about both. The artifact `schema`
+stays `1`: these are ADDITIVE fields inside an existing free-form `extra` map
+and no reader of schema 1 breaks on them.
+
 Retention is bounded and the overflow is counted, never silently dropped:
 `child_stdout_dropped_bytes` and `child_stderr_dropped_lines` are zero in every
 healthy run, and non-zero means the instrument produced more than a report.
@@ -158,7 +192,8 @@ carries no `continue-on-error`: a broken instrument must be visible.
 
 **This spike is CONSUMED by the B4.2b transport decision.** Once the
 main-to-front transport contract is written from its evidence and the real
-transport conformance suite lands at stage B4.3, this directory and
+transport conformance suite lands at stage B4.3, this directory (including
+`choreography.mjs` and `choreography.test.mjs`) and
 `bridge/cmd/spike-overlapped-stdio/` are DELETED, and the CI job with them.
 Any measurement still worth keeping moves into that conformance suite, where it
 guards the shipped transport instead of a decision already made. The committed

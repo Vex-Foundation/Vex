@@ -1,9 +1,12 @@
 /**
- * The Vex Studio MCP WIRE: an MCP `Transport` over one `net.Socket`.
+ * The Vex Studio MCP WIRE: an MCP `Transport` over one `StudioDuplexTransport`.
  *
  * Newline-delimited JSON in both directions, exactly as
- * `studio-mcp/bridge-endpoint-contract.md` freezes it. This module owns ONE
- * socket's framing, its inbound bound, its backpressure and its close, and
+ * `studio-mcp/bridge-endpoint-contract.md` freezes it. The byte wire underneath
+ * is a `net.Socket` on Unix and will be a pipe-front channel on Windows; this
+ * module is written against the contract in `duplex-transport.ts` and knows
+ * neither. It owns ONE wire's framing, its inbound bound, its backpressure and
+ * its close, and
  * nothing else: it never speaks the handshake (the host parses that BEFORE
  * constructing this transport and hands over the remainder bytes), it never
  * builds a server, and it never decides why a connection is going away.
@@ -59,7 +62,7 @@
  * a typed over-limit error and a closed connection.
  */
 
-import type { Socket } from "node:net";
+import type { StudioDuplexTransport } from "./duplex-transport.js";
 
 import type { InvalidJsonReason } from "./wire-errors.js";
 
@@ -145,7 +148,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
   onerror?: ((error: Error) => void) | undefined;
   onmessage?: ((message: never, extra?: unknown) => void) | undefined;
 
-  private readonly socket: Socket;
+  private readonly wire: StudioDuplexTransport;
   private readonly maxLineBytes: number;
   private readonly maxQueuedMessages: number;
   private readonly shutdownDeadlineMs: number;
@@ -179,8 +182,8 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
    */
   private readonly outstandingRequests = new Set<string>();
 
-  constructor(socket: Socket, options: SocketTransportOptions = {}) {
-    this.socket = socket;
+  constructor(wire: StudioDuplexTransport, options: SocketTransportOptions = {}) {
+    this.wire = wire;
     this.maxLineBytes = options.maxLineBytes ?? STUDIO_MAX_INBOUND_LINE_BYTES;
     this.maxQueuedMessages = options.maxQueuedMessages ?? STUDIO_MAX_QUEUED_INBOUND_MESSAGES;
     this.shutdownDeadlineMs = options.shutdownDeadlineMs ?? STUDIO_SHUTDOWN_DEADLINE_MS;
@@ -202,13 +205,13 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
     if (this.started) return Promise.resolve();
     this.started = true;
 
-    this.socket.on("data", this.handleData);
-    this.socket.on("error", this.handleError);
+    this.wire.on("data", this.handleData);
+    this.wire.on("error", this.handleError);
     // TWO DIFFERENT EDGES, deliberately not the same handler any more. `end` is
     // the peer's read-side FIN and starts the bounded drain; `close` is the
     // socket being gone and announces immediately.
-    this.socket.on("end", this.notifyPeerEnd);
-    this.socket.on("close", this.handleSocketClosed);
+    this.wire.on("end", this.notifyPeerEnd);
+    this.wire.on("close", this.handleSocketClosed);
 
     // The handshake remainder was read before this transport existed. Feeding
     // it here, after the listeners are attached, is what makes a coalesced
@@ -220,7 +223,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
     // window between the handshake ack and this transport being constructed is
     // wide (it spans a dynamic import). Resuming here is what makes that window
     // lossless rather than merely usually-lossless.
-    if (!this.readingPaused && !this.socket.destroyed) this.socket.resume();
+    if (!this.readingPaused && !this.wire.destroyed) this.wire.resume();
     return Promise.resolve();
   }
 
@@ -238,7 +241,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
     // for a response that has already been produced.
     const answered = jsonRpcResponseKey(message);
     if (answered !== null) this.outstandingRequests.delete(answered);
-    if (this.socket.destroyed || this.socket.writableEnded) {
+    if (this.wire.destroyed || this.wire.writableEnded) {
       this.settleIfDrained();
       return Promise.resolve();
     }
@@ -249,7 +252,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
       });
     }
     return new Promise<void>((resolve) => {
-      this.socket.write(line, () => {
+      this.wire.write(line, () => {
         this.settleIfDrained();
         resolve();
       });
@@ -271,20 +274,20 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
       const finish = (): void => {
         this.clearShutdownTimer();
         this.clearDrainTimer();
-        if (!this.socket.destroyed) this.socket.destroy();
+        if (!this.wire.destroyed) this.wire.destroy();
         this.announceClose();
         resolve();
       };
-      if (this.socket.destroyed) {
+      if (this.wire.destroyed) {
         finish();
         return;
       }
-      this.socket.once("close", finish);
+      this.wire.once("close", finish);
       // The deadline is the contract's, and it is armed BEFORE `end()` so a
       // peer that never reads cannot hold this connection open for ever.
       this.shutdownTimer = setTimeout(finish, this.shutdownDeadlineMs);
       this.shutdownTimer.unref?.();
-      this.socket.end();
+      this.wire.end();
     });
   }
 
@@ -337,7 +340,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
    * and the requests already delivered get the contract's shutdown window to
    * finish, under one absolute deadline armed right here.
    *
-   * The Electron host checks `socket.readableEnded` after its dynamic import
+   * The Electron host checks `wire.readableEnded` after its dynamic import
    * gap and replays that persistent fact through this idempotent method.
    */
   readonly notifyPeerEnd = (): void => {
@@ -346,7 +349,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
     // A socket whose writable side is already finished cannot carry an answer,
     // so there is nothing to drain FOR. Happens when the listener was built
     // without `allowHalfOpen`, where Node ends the writable side on FIN.
-    if (this.socket.writableEnded || this.socket.destroyed || this.closing || this.failed) {
+    if (this.wire.writableEnded || this.wire.destroyed || this.closing || this.failed) {
       this.finishAfterDrain();
       return;
     }
@@ -376,8 +379,8 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
     this.clearDrainTimer();
     if (this.closeAnnounced) return;
     this.closing = true;
-    if (!this.socket.destroyed && !this.socket.writableEnded) this.socket.end();
-    if (!this.socket.destroyed) this.socket.destroy();
+    if (!this.wire.destroyed && !this.wire.writableEnded) this.wire.end();
+    if (!this.wire.destroyed) this.wire.destroy();
     this.announceClose();
   }
 
@@ -474,13 +477,13 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
   private pauseReading(): void {
     if (this.readingPaused) return;
     this.readingPaused = true;
-    this.socket.pause();
+    this.wire.pause();
   }
 
   private resumeReading(): void {
     if (!this.readingPaused) return;
     this.readingPaused = false;
-    if (!this.socket.destroyed) this.socket.resume();
+    if (!this.wire.destroyed) this.wire.resume();
   }
 
   /**
@@ -525,7 +528,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
    */
   private async announceFramingError(line: string): Promise<void> {
     try {
-      if (this.socket.destroyed || this.socket.writableEnded) return;
+      if (this.wire.destroyed || this.wire.writableEnded) return;
       await Promise.race([this.writeFramingLine(line), this.writeDeadline()]);
     } catch {
       // The peer not hearing why is not a second failure path. The close is.
@@ -538,7 +541,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
   private writeFramingLine(line: string): Promise<void> {
     if (this.writeLine !== undefined) return this.writeLine(line, null);
     return new Promise<void>((resolve) => {
-      this.socket.write(line, () => {
+      this.wire.write(line, () => {
         resolve();
       });
     });
@@ -564,7 +567,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
     this.closing = true;
     this.clearShutdownTimer();
     this.clearDrainTimer();
-    if (!this.socket.destroyed) this.socket.destroy();
+    if (!this.wire.destroyed) this.wire.destroy();
     this.announceClose();
   }
 

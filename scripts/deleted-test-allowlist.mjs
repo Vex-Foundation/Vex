@@ -22,6 +22,24 @@
 
 export const DELETED_TEST_ALLOWLIST = [
   {
+    path: "vex-app/src/main/studio/__tests__/socket-test-adapter.ts",
+    reason:
+      "Its subject was the `net.Socket` weld itself. The helper monkey-patched "
+      + "a real `Socket` instance with `Object.defineProperties` so an "
+      + "EventEmitter double could be passed where the host demanded a socket. "
+      + "Stage B4.2b replaced that demand with the `StudioDuplexTransport` "
+      + "contract, so there is no socket left to impersonate and nothing for "
+      + "this adapter to do.",
+    coveredBy:
+      "src/vex-agent/mcp/duplex-transport-fake.ts (`FakeDuplexTransport`), the "
+      + "one honest double both test trees now drive: it implements the "
+      + "published contract instead of overriding a real stream. Its consumers "
+      + "are vex-app/src/main/studio/__tests__/outbound-queue-blocked.test.ts, "
+      + "vex-app/src/main/studio/__tests__/mcp-connection-refusal.test.ts and "
+      + "src/__tests__/vex-agent/mcp/socket-transport-framing.test.ts, all of "
+      + "which keep their cases unchanged.",
+  },
+  {
     path: "vex-app/src/renderer/components/ui/__tests__/toast.test.tsx",
     reason:
       "Its subjects (components/ui/toast.tsx and the lib/toast.ts single-slot "

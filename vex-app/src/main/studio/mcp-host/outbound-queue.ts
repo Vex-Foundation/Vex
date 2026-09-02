@@ -1,7 +1,7 @@
 /**
  * The OUTBOUND SEND OWNER for one Vex Studio connection.
  *
- * `socket.write` returning `false` is not backpressure, it is a notification
+ * `wire.write` returning `false` is not backpressure, it is a notification
  * that Node has started buffering for you - without a bound. A blocked reader
  * plus approval progress every two seconds is an hour of notifications in
  * memory, so this module owns a real queue instead: one serialized writer, a
@@ -34,7 +34,7 @@
  * fired by then.
  */
 
-import type { Socket } from "node:net";
+import type { StudioDuplexTransport } from "@vex-agent/mcp/duplex-transport.js";
 
 /** The contract's pending-frame bound for one connection. */
 export const STUDIO_MAX_PENDING_OUTBOUND = 64;
@@ -59,7 +59,7 @@ interface OutboundEntry {
 }
 
 export class StudioOutboundQueue {
-  private readonly socket: Socket;
+  private readonly wire: StudioDuplexTransport;
   private readonly maxPending: number;
   private readonly onOverflow: OutboundQueueOptions["onOverflow"];
 
@@ -70,8 +70,8 @@ export class StudioOutboundQueue {
   private closed = false;
   private overflowed = false;
 
-  constructor(socket: Socket, options: OutboundQueueOptions = {}) {
-    this.socket = socket;
+  constructor(wire: StudioDuplexTransport, options: OutboundQueueOptions = {}) {
+    this.wire = wire;
     this.maxPending = options.maxPending ?? STUDIO_MAX_PENDING_OUTBOUND;
     this.onOverflow = options.onOverflow;
   }
@@ -148,7 +148,7 @@ export class StudioOutboundQueue {
         // Taken from the queue: from here it is immutable, so a concurrent
         // coalesce cannot rewrite a frame that is already on the wire.
         if (entry.key !== null) this.queuedProgress.delete(entry.key);
-        if (this.closed || this.socket.destroyed || this.socket.writableEnded) {
+        if (this.closed || this.wire.destroyed || this.wire.writableEnded) {
           entry.settle();
           continue;
         }
@@ -164,7 +164,7 @@ export class StudioOutboundQueue {
   }
 
   /**
-   * Write, and wait for `drain` when the socket says it is buffering.
+   * Write, and wait for `drain` when the wire says it is buffering.
    *
    * The write callback is handled for BOTH dispatch orders. Node always defers
    * it, but the accepted flag was previously a `const` closed over by that
@@ -181,14 +181,14 @@ export class StudioOutboundQueue {
       const done = (): void => {
         if (settled) return;
         settled = true;
-        this.socket.off("close", done);
-        this.socket.off("error", done);
+        this.wire.off("close", done);
+        this.wire.off("error", done);
         resolve();
       };
-      this.socket.once("close", done);
-      this.socket.once("error", done);
+      this.wire.once("close", done);
+      this.wire.once("error", done);
       let callbackFired = false;
-      accepted = this.socket.write(line, () => {
+      accepted = this.wire.write(line, () => {
         callbackFired = true;
         // Only the accepted path settles here, and only when `accepted` is
         // already known. A callback invoked synchronously runs before the
@@ -200,7 +200,7 @@ export class StudioOutboundQueue {
         return;
       }
       // Refused: `drain` is the edge that says the buffer actually emptied.
-      this.socket.once("drain", done);
+      this.wire.once("drain", done);
     });
   }
 }

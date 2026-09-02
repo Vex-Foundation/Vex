@@ -174,12 +174,14 @@ describe("createProject - directory claim errno mapping", () => {
  *
  * The permission is measured rather than assumed: the test makes the root
  * read-only and PROBES whether this platform actually denies the write (it does
- * not when the process is root, and `chmod` has no such effect on Windows). The
- * probe result decides which assertion runs, so the test is honest on all three
- * lanes instead of failing on the ones where the premise does not hold.
+ * not when the process is root, and `chmod` has no such effect on Windows).
+ * Where the probe shows the premise does not hold, the test SKIPS visibly
+ * rather than asserting something else - the DB client is mocked to return no
+ * rows, so a "successful" create was never a reachable outcome here, and the
+ * EACCES/EPERM rows of the mapping table above are what carry that lane.
  */
 describe("createProject - real EACCES where the platform enforces it", () => {
-  it("reports projects.root_permission_denied for a genuinely unwritable root", async () => {
+  it("reports projects.root_permission_denied for a genuinely unwritable root", async (ctx) => {
     mocks.mkdir.mockImplementation(actualFs.mkdir);
     await chmod(root, 0o500);
 
@@ -192,15 +194,23 @@ describe("createProject - real EACCES where the platform enforces it", () => {
       enforced = true;
     }
 
+    if (!enforced) {
+      // Windows (where `chmod` cannot make a directory unwritable), or a run
+      // as root. The premise does not hold, so there is nothing here to
+      // assert: the EACCES and EPERM rows of the mapping table above are what
+      // prove the refusal on this lane. `ctx.skip` rather than a bare return,
+      // so the reporter shows a skip instead of a pass that measured nothing.
+      // It throws, hence the restore before it and no try/catch around it.
+      await chmod(root, 0o700);
+      ctx.skip(
+        `this platform does not enforce a read-only parent directory `
+          + `(${process.platform}, or the process is root)`,
+      );
+    }
+
     const outcome = await createProject(INPUT, { evm: null, solana: null }, CORR);
     await chmod(root, 0o700);
 
-    if (!enforced) {
-      // Windows, or a run as root. The premise does not hold here and the
-      // mapping table above is what proves the behaviour on this lane.
-      expect(outcome.ok).toBe(true);
-      return;
-    }
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.error.code).toBe("projects.root_permission_denied");

@@ -76,6 +76,36 @@ import { RecordingPort } from "./scripted-pty.js";
 const GRACE_MS = 1_500;
 const SHORT_GRACE_MS = 400;
 
+/**
+ * How far past the high watermark ONE read from the pty may carry the host.
+ *
+ * `TerminalProcess.handlePtyData` counts and decides to pause inside the data
+ * event that crosses the mark, so the overshoot is bounded by a single read -
+ * 64 KiB, node's default for the tty stream node-pty reads through. MEASURED
+ * on Linux over ten runs, idle and under eight spinning cores: 188 to 4 064
+ * characters. The ceiling asserted is the STRUCTURAL bound rather than the
+ * measurement, so it stays true on a platform whose reads are larger while
+ * still failing a pause that was deferred to a later event-loop turn.
+ */
+const PTY_SINGLE_READ_CEILING_CHARS = 65_536;
+
+/**
+ * How long a live pty stream may make NO progress before a test calls it wedged
+ * rather than slow.
+ *
+ * A total-duration budget cannot tell those apart: the only way to make one
+ * survive a loaded box is to raise it until it no longer catches the defect
+ * either, and it has to be raised again every time the volume grows. What the
+ * defect actually looks like - a resume that never happens, an ack path that
+ * stopped - is SILENCE, and silence is load-independent.
+ *
+ * MEASURED with a one-second sampler over the 48 MB flood while eight spinning
+ * cores competed with the suite: the longest interval between two observed
+ * increases of the delivered character count was 50 ms. Thirty seconds is that
+ * with three orders of magnitude of headroom.
+ */
+const FLOW_STALL_MS = 30_000;
+
 const WINDOW = "w1";
 const PROJECT = "p1";
 
@@ -222,6 +252,47 @@ async function until(
     await delay(20);
   }
   throw new Error(`timed out waiting for: ${what}`);
+}
+
+/**
+ * `until`, for a condition on a stream that must keep MOVING.
+ *
+ * The failure this reports is a STALL - `stallMs` with no observed progress -
+ * not an elapsed total, because a real producer on a shared event loop is
+ * throughput-bound and its total is a property of the machine's load, while
+ * silence is a property of the code. `progress` returns any monotonic measure
+ * of the stream (delivered characters here); `describeState` is evaluated only
+ * on failure and puts the flow-control state in the message, so a stall says
+ * which side stopped instead of only that something did.
+ *
+ * `hardCeilingMs` is a backstop against a stream that dribbles forever without
+ * finishing, and against this loop outliving the test that started it.
+ */
+async function untilProgressing(
+  predicate: () => boolean,
+  progress: () => number,
+  what: string,
+  describeState: () => string,
+  stallMs = FLOW_STALL_MS,
+  hardCeilingMs = 240_000,
+): Promise<void> {
+  const deadline = Date.now() + hardCeilingMs;
+  let seen = progress();
+  let movedAt = Date.now();
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    const now = progress();
+    if (now !== seen) {
+      seen = now;
+      movedAt = Date.now();
+    } else if (Date.now() - movedAt > stallMs) {
+      throw new Error(
+        `stalled for ${String(stallMs)} ms waiting for: ${what} (${describeState()})`,
+      );
+    }
+    await delay(20);
+  }
+  throw new Error(`timed out waiting for: ${what} (${describeState()})`);
 }
 
 /** `until`, for a predicate that has to await something (a serialization). */
@@ -444,6 +515,32 @@ describe("flow control against a real pty", () => {
   /**
    * A consumer that acknowledges exactly as preload does, so the pty is driven
    * through pause and resume repeatedly over a large volume.
+   *
+   * ## Why the shell is HELD OPEN after the flood
+   *
+   * The producer used to end with `echo <sentinel>` and let the shell exit, and
+   * that made this an intermittently failing test on a loaded machine - not
+   * because flow control misbehaved, but because a Linux pty does not promise
+   * to deliver its tail once the slave closes.
+   *
+   * MEASURED, with `TerminalProcess.handlePtyData` instrumented to total every
+   * character the HOST was ever handed, eight spinning cores competing with the
+   * suite: on 5 runs out of 12 node-pty reported `exit` with that total already
+   * 11 095 to 12 836 characters SHORT of the 48 500 016 the shell wrote, and no
+   * further data event ever arrived. The last lines, sentinel included, were
+   * gone before any Vex code could see them. The same loss reproduced with the
+   * host's watermark pause disabled outright (2 of 5 runs), which is what rules
+   * our flow control out as the cause: it is the kernel discarding what is
+   * still buffered on the master when the last slave fd closes, surfacing
+   * through node-pty's EIO close path (`unixTerminal.js`, `_socket.on('error')`
+   * -> `close` -> `exit`).
+   *
+   * `read _hold` leaves the shell blocked on the pty after the flood, so the
+   * stream under test never crosses that exit boundary and every assertion
+   * below is about the host again. The exit path keeps its own coverage, where
+   * it can be deterministic: the scripted-pty suites own trailing-output-before
+   * -exit (`flow-control.test.ts`, `launch-and-exit.test.ts`), and `afterEach`
+   * still proves this shell is reaped.
    */
   it(
     "PAUSES a real producer above the high watermark and resumes it on acks, losing nothing",
@@ -467,32 +564,58 @@ describe("flow control against a real pty", () => {
       await createTerminal(service, "t1", {
         args: [
           "-c",
-          `yes '${line}' | head -n ${String(lineCount)}; echo ${sentinel}`,
+          `yes '${line}' | head -n ${String(lineCount)}; echo ${sentinel}; read _hold`,
         ],
       });
       const drain = new PortDrain(port, line, sentinel);
       port.receive({ kind: "attach", terminalId: "t1" });
 
-      // FIRST: do not acknowledge. The host must pause the REAL pty, so the
-      // stream has to STOP rather than growing without bound.
-      await until(
-        () => {
-          drain.pump();
-          return drain.chars > TERMINAL_FLOW_HIGH_WATERMARK_CHARS;
-        },
-        "the first burst to cross the high watermark",
-      );
-      drain.pump();
-      const atPause = drain.chars;
-      await delay(500);
-      drain.pump();
-      const afterWaiting = drain.chars;
+      const terminal = service.terminal("t1");
+      if (terminal === undefined) throw new Error("terminal vanished");
+      const flow = terminal.process;
 
-      // The producer can overrun by at most what was already in flight when
-      // pause was called. What it must NOT do is keep streaming for 500 ms - an
-      // unpaused `yes` delivers tens of megabytes in that window.
-      expect(afterWaiting - atPause).toBeLessThan(TERMINAL_FLOW_HIGH_WATERMARK_CHARS);
-      expect(afterWaiting).toBeLessThan(2_000_000);
+      // THE ATTACH HANDOFF FIRST. Until its last replay chunk has gone out, the
+      // producer is paced by the MIRROR and the handoff ends in
+      // `clearUnacknowledgedChars`, so a pause observed before that point is a
+      // different owner's pause and would be cancelled a moment later.
+      await until(
+        () => port.eventsOfKind("replay").some((event) => event.last),
+        "the attach handoff to finish its replay",
+      );
+
+      // FIRST: do not acknowledge. The host must pause the REAL pty.
+      //
+      // The wait is on the host's OWN decision rather than on a byte count in
+      // the consumer, because the consumer's count lags by a coalescing window
+      // and a lagging observer cannot say when the decision was taken.
+      await until(
+        () => flow.isPaused,
+        "the host to pause the pty above the high watermark",
+      );
+      // Nothing has been acknowledged yet, so this counter IS every character
+      // the host has read from the pty since the handoff.
+      const readAtPause = flow.unacknowledged;
+
+      // THE OVERSHOOT IS BOUNDED BY ONE READ. The pause is decided inside the
+      // data event that crosses the mark, so the host can be past it by at most
+      // the size of a single read - never by a second event's worth. A
+      // regression that deferred the decision to a later turn breaks this.
+      expect(readAtPause).toBeGreaterThan(TERMINAL_FLOW_HIGH_WATERMARK_CHARS);
+      expect(readAtPause).toBeLessThanOrEqual(
+        TERMINAL_FLOW_HIGH_WATERMARK_CHARS + PTY_SINGLE_READ_CEILING_CHARS,
+      );
+
+      // AND THE PRODUCER STAYS STOPPED. Proving that nothing arrives is the one
+      // thing that needs elapsed time: there is no event for "no data". The
+      // window is not the proof of a race, it is the interval over which a
+      // growth of zero is asserted - and an unpaused `yes` puts tens of
+      // megabytes through in it, so a pause that did not reach the OS cannot
+      // survive the check.
+      await delay(500);
+      expect(flow.unacknowledged).toBe(readAtPause);
+      drain.pump();
+      // The consumer sees the same stopped stream, one coalescing window behind.
+      expect(drain.chars).toBeLessThanOrEqual(readAtPause);
 
       // NOW let the consumer acknowledge from its data path, exactly as
       // preload does. If pause had not really stopped the producer the totals
@@ -503,21 +626,16 @@ describe("flow control against a real pty", () => {
       // threshold; every ack after this one comes from the data path itself.
       port.receive({ kind: "ack", terminalId: "t1", charCount: drain.chars });
 
-      await until(
+      await untilProgressing(
         () => {
           drain.pump();
           return drain.sawSentinel;
         },
+        () => drain.chars,
         "the flood to run to completion",
-        // A GENEROUS budget, not a weakened assertion. The volume and the
-        // exact-count check below are unchanged; this only decides how much
-        // CPU starvation the test tolerates before calling it a failure.
-        // Measured on this machine: 4.3 s idle, 7.5 s under six spinning
-        // cores, 132 s while two full `tsc` lint runs (twelve processes at
-        // 4 GB each) were also running. A real producer on a shared event loop
-        // is throughput-bound, so the budget has to clear the pathological
-        // case or the suite reports a scheduler as a flow-control defect.
-        240_000,
+        () =>
+          `delivered ${String(drain.chars)} chars, unacknowledged ${String(flow.unacknowledged)}`
+          + `, paused ${String(flow.isPaused)}, writes in flight ${String(port.outstandingWrites)}`,
       );
       drain.pump();
 

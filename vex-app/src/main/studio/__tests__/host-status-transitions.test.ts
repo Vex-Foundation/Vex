@@ -53,6 +53,7 @@ import {
   studioMcpReservedConnectionCount,
   resetStudioMcpHostForTests,
 } from "../mcp-host.js";
+import { SKIP_UNIX_ENDPOINT_SUITES } from "./unix-endpoint-gate.js";
 
 const PROJECT_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 
@@ -143,7 +144,7 @@ function states(): string[] {
   return published.map((status) => status.state);
 }
 
-describe("starting and publication", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("starting and publication", () => {
   it("passes through `starting` and lands on `running`", async () => {
     const started = await startStudioMcpHost();
 
@@ -172,7 +173,7 @@ describe("starting and publication", () => {
   });
 });
 
-describe("connections", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("connections", () => {
   it("counts an ESTABLISHED connection and releases it on close", async () => {
     await startStudioMcpHost();
     const endpoint = studioMcpHostEndpoint();
@@ -209,7 +210,7 @@ describe("connections", () => {
   60_000);
 });
 
-describe("teardown", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("teardown", () => {
   it("publishes `locked` on a relock", async () => {
     await startStudioMcpHost();
     published = [];
@@ -241,7 +242,7 @@ describe("teardown", () => {
   });
 });
 
-describe("a refused start", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("a refused start", () => {
   it("reports `unavailable` with a bounded cause and no prose", async () => {
     resetStudioMcpHostForTests();
     resetStudioHostStatusForTests();
