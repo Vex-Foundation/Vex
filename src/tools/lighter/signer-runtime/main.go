@@ -363,11 +363,53 @@ func validateCreateOrderRequest(order *createOrderRequest) error {
 	if order.IsAsk > 1 || order.ReduceOnly > 1 {
 		return fmt.Errorf("invalid boolean field")
 	}
-	if _, err := parseNonNegativeUint32(order.TriggerPrice, "trigger price"); err != nil {
+	orderExpiry, err := parseNonNegativeInt64(order.OrderExpiry, "order expiry")
+	if err != nil {
+		return fmt.Errorf("invalid order expiry")
+	}
+	triggerPrice, err := parseNonNegativeUint32(order.TriggerPrice, "trigger price")
+	if err != nil {
 		return fmt.Errorf("invalid trigger price")
 	}
-	if _, err := parseNonNegativeInt64(order.OrderExpiry, "order expiry"); err != nil {
-		return fmt.Errorf("invalid order expiry")
+
+	tupleAllowed := false
+	protective := false
+	switch order.OrderType {
+	case txtypes.LimitOrder:
+		tupleAllowed = order.TimeInForce == txtypes.ImmediateOrCancel ||
+			order.TimeInForce == txtypes.GoodTillTime ||
+			order.TimeInForce == txtypes.PostOnly
+	case txtypes.MarketOrder:
+		tupleAllowed = order.TimeInForce == txtypes.ImmediateOrCancel
+	case txtypes.StopLossOrder, txtypes.TakeProfitOrder:
+		tupleAllowed = order.TimeInForce == txtypes.ImmediateOrCancel
+		protective = true
+	case txtypes.StopLossLimitOrder, txtypes.TakeProfitLimitOrder:
+		tupleAllowed = order.TimeInForce == txtypes.ImmediateOrCancel ||
+			order.TimeInForce == txtypes.GoodTillTime ||
+			order.TimeInForce == txtypes.PostOnly
+		protective = true
+	}
+	if !tupleAllowed {
+		return fmt.Errorf("unsupported order type and time in force")
+	}
+	if protective {
+		if order.MarketIndex < txtypes.MinPerpsMarketIndex || order.MarketIndex > txtypes.MaxPerpsMarketIndex {
+			return fmt.Errorf("protective orders require a perpetual market")
+		}
+		if order.ReduceOnly != 1 || triggerPrice == 0 || orderExpiry == 0 {
+			return fmt.Errorf("protective orders require reduce only, trigger price, and expiry")
+		}
+		return nil
+	}
+	if triggerPrice != 0 {
+		return fmt.Errorf("trigger price is only accepted for protective orders")
+	}
+	if order.TimeInForce == txtypes.ImmediateOrCancel && orderExpiry != 0 {
+		return fmt.Errorf("immediate-or-cancel order expiry must be nil")
+	}
+	if order.TimeInForce != txtypes.ImmediateOrCancel && orderExpiry == 0 {
+		return fmt.Errorf("resting order expiry must be positive")
 	}
 	return nil
 }

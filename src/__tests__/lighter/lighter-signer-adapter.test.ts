@@ -96,6 +96,56 @@ describe("Lighter official signer adapter boundary", () => {
     })).toThrow("positive trigger price");
   });
 
+  it.each([
+    ["stop-loss-limit", "immediate-or-cancel", 3, "290000"],
+    ["stop-loss-limit", "good-till-time", 3, "290000"],
+    ["stop-loss-limit", "post-only", 3, "290000"],
+    ["take-profit-limit", "immediate-or-cancel", 5, "320000"],
+    ["take-profit-limit", "good-till-time", 5, "320000"],
+    ["take-profit-limit", "post-only", 5, "320000"],
+  ] as const)("accepts a canonical %s %s signer tuple", (
+    orderType,
+    timeInForce,
+    orderTypeCode,
+    triggerPriceInteger,
+  ) => {
+    const order = buildLighterUnsignedCreateOrderRequest(plan({
+      side: "sell",
+      orderType,
+      timeInForce,
+      reduceOnly: true,
+      triggerPriceInteger,
+    }));
+
+    expect(order.orderTypeCode).toBe(orderTypeCode);
+    expect(() => assertUnsignedCreateOrderFitsOfficialSigner(order)).not.toThrow();
+    expect(() => assertUnsignedCreateOrderFitsOfficialSigner({
+      ...order,
+      reduceOnly: false,
+    })).toThrow("must be reduce-only");
+    expect(() => assertUnsignedCreateOrderFitsOfficialSigner({
+      ...order,
+      marketIndex: 2048,
+    })).toThrow("perpetual market index");
+    expect(() => assertUnsignedCreateOrderFitsOfficialSigner({
+      ...order,
+      orderExpiryMs: 0,
+    })).toThrow("positive order expiry");
+  });
+
+  it.each([
+    [1, 1],
+    [2, 1],
+    [4, 2],
+  ] as const)("rejects unsupported signer tuple %i:%i", (orderTypeCode, timeInForceCode) => {
+    const order = buildLighterUnsignedCreateOrderRequest(plan());
+    expect(() => assertUnsignedCreateOrderFitsOfficialSigner({
+      ...order,
+      orderTypeCode,
+      timeInForceCode,
+    })).toThrow("Unsupported Lighter order type and time-in-force combination");
+  });
+
   it("creates bounded canonical account auth for the exact credential scope", async () => {
     const order = buildLighterUnsignedCreateOrderRequest(plan());
     const input = buildLighterAccountAuthSigningInput({

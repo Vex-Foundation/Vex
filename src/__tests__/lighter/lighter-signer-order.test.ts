@@ -83,7 +83,7 @@ describe("Lighter unsigned signer order request", () => {
     expect(request.orderExpiryMs).toBe(0);
   });
 
-  it("nils the expiry for IOC limit orders but keeps it for good-till-time", () => {
+  it("maps all supported plain-limit time-in-force values and expiry semantics", () => {
     const iocLimit = buildLighterUnsignedCreateOrderRequest(plan({
       orderType: "limit",
       timeInForce: "immediate-or-cancel",
@@ -99,6 +99,14 @@ describe("Lighter unsigned signer order request", () => {
     }));
     expect(gttLimit.timeInForceCode).toBe(1);
     expect(gttLimit.orderExpiryMs).toBe(1893456000000);
+
+    const postOnlyLimit = buildLighterUnsignedCreateOrderRequest(plan({
+      orderType: "limit",
+      timeInForce: "post-only",
+      orderExpiryMs: 1893456000000,
+    }));
+    expect(postOnlyLimit.timeInForceCode).toBe(2);
+    expect(postOnlyLimit.orderExpiryMs).toBe(1893456000000);
   });
 
   it("maps an approved protective order with a non-nil trigger expiry", () => {
@@ -127,6 +135,34 @@ describe("Lighter unsigned signer order request", () => {
     expect(takeProfit.triggerPriceInteger).toBe("320000");
   });
 
+  it.each([
+    ["stop-loss-limit", "immediate-or-cancel", 3, "290000", 0],
+    ["stop-loss-limit", "good-till-time", 3, "290000", 1],
+    ["stop-loss-limit", "post-only", 3, "290000", 2],
+    ["take-profit-limit", "immediate-or-cancel", 5, "320000", 0],
+    ["take-profit-limit", "good-till-time", 5, "320000", 1],
+    ["take-profit-limit", "post-only", 5, "320000", 2],
+  ] as const)("maps an approved %s %s to its official signer enum", (
+    orderType,
+    timeInForce,
+    orderTypeCode,
+    triggerPriceInteger,
+    timeInForceCode,
+  ) => {
+    const request = buildLighterUnsignedCreateOrderRequest(plan({
+      side: "sell",
+      orderType,
+      timeInForce,
+      reduceOnly: true,
+      triggerPriceInteger,
+    }));
+
+    expect(request.orderTypeCode).toBe(orderTypeCode);
+    expect(request.timeInForceCode).toBe(timeInForceCode);
+    expect(request.triggerPriceInteger).toBe(triggerPriceInteger);
+    expect(request.orderExpiryMs).toBe(1893456000000);
+  });
+
   it("derives a nonzero uint48 client order index from the match hash", () => {
     expect(deriveVexAssignedClientOrderIndex(`${"0".repeat(12)}${"1".repeat(52)}`)).toBe("1");
     expect(deriveVexAssignedClientOrderIndex(`${"f".repeat(12)}${"1".repeat(52)}`))
@@ -139,5 +175,14 @@ describe("Lighter unsigned signer order request", () => {
       .toThrow("Trigger-price");
     expect(() => buildLighterUnsignedCreateOrderRequest(plan({ clientOrderIndexPolicy: "caller_supplied" })))
       .toThrow("Unsupported Lighter client-order-index policy");
+  });
+
+  it("refuses unsupported tuples before producing signer input", () => {
+    expect(() => buildLighterUnsignedCreateOrderRequest(plan({
+      orderType: "stop-loss",
+      timeInForce: "post-only",
+      reduceOnly: true,
+      triggerPriceInteger: "290000",
+    }))).toThrow("Unsupported Lighter order type and time-in-force combination");
   });
 });

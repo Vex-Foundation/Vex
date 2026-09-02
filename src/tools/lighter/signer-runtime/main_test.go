@@ -212,6 +212,110 @@ func TestSignCreateOrderAcceptsReduceOnlyTakeProfitWithTriggerExpiry(t *testing.
 	}
 }
 
+func TestSignCreateOrderAcceptsNativeLimitFamily(t *testing.T) {
+	tests := []struct {
+		name  string
+		order createOrderRequest
+	}{
+		{
+			name:  "limit IOC",
+			order: createOrderRequest{MarketIndex: 0, ClientOrderIndex: "101", BaseAmount: "1000", Price: "300000", OrderType: txtypes.LimitOrder, TimeInForce: txtypes.ImmediateOrCancel, TriggerPrice: "0", OrderExpiry: "0"},
+		},
+		{
+			name:  "limit GTT",
+			order: createOrderRequest{MarketIndex: 0, ClientOrderIndex: "102", BaseAmount: "1000", Price: "300000", OrderType: txtypes.LimitOrder, TimeInForce: txtypes.GoodTillTime, TriggerPrice: "0", OrderExpiry: "1893456000000"},
+		},
+		{
+			name:  "limit post only",
+			order: createOrderRequest{MarketIndex: 0, ClientOrderIndex: "103", BaseAmount: "1000", Price: "300000", OrderType: txtypes.LimitOrder, TimeInForce: txtypes.PostOnly, TriggerPrice: "0", OrderExpiry: "1893456000000"},
+		},
+		{
+			name:  "stop loss limit IOC",
+			order: createOrderRequest{MarketIndex: 0, ClientOrderIndex: "104", BaseAmount: "1000", Price: "280000", IsAsk: 1, OrderType: txtypes.StopLossLimitOrder, TimeInForce: txtypes.ImmediateOrCancel, ReduceOnly: 1, TriggerPrice: "290000", OrderExpiry: "1893456000000"},
+		},
+		{
+			name:  "stop loss limit GTT",
+			order: createOrderRequest{MarketIndex: 0, ClientOrderIndex: "105", BaseAmount: "1000", Price: "280000", IsAsk: 1, OrderType: txtypes.StopLossLimitOrder, TimeInForce: txtypes.GoodTillTime, ReduceOnly: 1, TriggerPrice: "290000", OrderExpiry: "1893456000000"},
+		},
+		{
+			name:  "stop loss limit post only",
+			order: createOrderRequest{MarketIndex: 0, ClientOrderIndex: "106", BaseAmount: "1000", Price: "280000", IsAsk: 1, OrderType: txtypes.StopLossLimitOrder, TimeInForce: txtypes.PostOnly, ReduceOnly: 1, TriggerPrice: "290000", OrderExpiry: "1893456000000"},
+		},
+		{
+			name:  "take profit limit IOC",
+			order: createOrderRequest{MarketIndex: 0, ClientOrderIndex: "107", BaseAmount: "1000", Price: "305000", IsAsk: 1, OrderType: txtypes.TakeProfitLimitOrder, TimeInForce: txtypes.ImmediateOrCancel, ReduceOnly: 1, TriggerPrice: "310000", OrderExpiry: "1893456000000"},
+		},
+		{
+			name:  "take profit limit GTT",
+			order: createOrderRequest{MarketIndex: 0, ClientOrderIndex: "108", BaseAmount: "1000", Price: "305000", IsAsk: 1, OrderType: txtypes.TakeProfitLimitOrder, TimeInForce: txtypes.GoodTillTime, ReduceOnly: 1, TriggerPrice: "310000", OrderExpiry: "1893456000000"},
+		},
+		{
+			name:  "take profit limit post only",
+			order: createOrderRequest{MarketIndex: 0, ClientOrderIndex: "109", BaseAmount: "1000", Price: "305000", IsAsk: 1, OrderType: txtypes.TakeProfitLimitOrder, TimeInForce: txtypes.PostOnly, ReduceOnly: 1, TriggerPrice: "310000", OrderExpiry: "1893456000000"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateCreateOrderRequest(&test.order); err != nil {
+				t.Fatalf("validateCreateOrderRequest() error = %v", err)
+			}
+			response, err := signCreateOrder(signerRequest{
+				Operation: "signCreateOrder", PrivateKey: strings.Repeat("1", 80),
+				ChainID: lighterRHCChainID, AccountIndex: "42", APIKeyIndex: 7, Nonce: "0",
+				Order: &test.order,
+			})
+			if err != nil {
+				t.Fatalf("signCreateOrder() error = %v", err)
+			}
+			if !response.OK || response.TxType != 14 || response.TxInfo == "" || response.TxHash == "" {
+				t.Fatalf("order did not produce a signed create-order transaction")
+			}
+			var txInfo map[string]any
+			if err := json.Unmarshal([]byte(response.TxInfo), &txInfo); err != nil {
+				t.Fatalf("TxInfo is not JSON: %v", err)
+			}
+			if txInfo["Type"] != float64(test.order.OrderType) || txInfo["TimeInForce"] != float64(test.order.TimeInForce) {
+				t.Fatalf("TxInfo lost the approved tuple: %#v", txInfo)
+			}
+		})
+	}
+}
+
+func TestValidateCreateOrderRequestRejectsUnsupportedTuplesAndSemantics(t *testing.T) {
+	base := createOrderRequest{
+		MarketIndex: 0, ClientOrderIndex: "101", BaseAmount: "1000", Price: "280000",
+		IsAsk: 1, OrderType: txtypes.StopLossLimitOrder, TimeInForce: txtypes.GoodTillTime,
+		ReduceOnly: 1, TriggerPrice: "290000", OrderExpiry: "1893456000000",
+	}
+	tests := []struct {
+		name   string
+		mutate func(*createOrderRequest)
+	}{
+		{name: "market GTT", mutate: func(order *createOrderRequest) { order.OrderType = txtypes.MarketOrder }},
+		{name: "missing trigger", mutate: func(order *createOrderRequest) { order.TriggerPrice = "0" }},
+		{name: "not reduce only", mutate: func(order *createOrderRequest) { order.ReduceOnly = 0 }},
+		{name: "protective spot", mutate: func(order *createOrderRequest) { order.MarketIndex = txtypes.MinSpotMarketIndex }},
+		{name: "missing protective expiry", mutate: func(order *createOrderRequest) { order.OrderExpiry = "0" }},
+		{name: "plain limit with trigger", mutate: func(order *createOrderRequest) { order.OrderType = txtypes.LimitOrder; order.TriggerPrice = "1" }},
+		{name: "resting limit without expiry", mutate: func(order *createOrderRequest) {
+			order.OrderType = txtypes.LimitOrder
+			order.TriggerPrice = "0"
+			order.OrderExpiry = "0"
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := base
+			test.mutate(&candidate)
+			if err := validateCreateOrderRequest(&candidate); err == nil {
+				t.Fatalf("expected request to be rejected")
+			}
+		})
+	}
+}
+
 func TestSignCreateGroupedOrdersOCO(t *testing.T) {
 	request := signerRequest{
 		Operation: "signCreateGroupedOrders", PrivateKey: strings.Repeat("1", 80),
@@ -491,7 +595,7 @@ func TestReadRequestRejectsWithdrawOutsideReviewedStablecoinPerpsBoundary(t *tes
 }
 
 func TestSignCreateOrderRejectsMarketOrderWithNonNilExpiry(t *testing.T) {
-	request, err := readRequest(strings.NewReader(`{
+	_, err := readRequest(strings.NewReader(`{
 		"operation": "signCreateOrder",
 		"privateKey": "11111111111111111111111111111111111111111111111111111111111111111111111111111111",
 		"chainId": 466324,
@@ -511,12 +615,8 @@ func TestSignCreateOrderRejectsMarketOrderWithNonNilExpiry(t *testing.T) {
 			"orderExpiry": "1893456000000"
 		}
 	}`))
-	if err != nil {
-		t.Fatalf("readRequest() error = %v", err)
-	}
-
-	if _, err := signCreateOrder(request); err == nil {
-		t.Fatalf("expected market order with a non-nil expiry to be rejected by the official signer")
+	if err == nil {
+		t.Fatalf("expected market order with a non-nil expiry to be rejected before signing")
 	}
 }
 

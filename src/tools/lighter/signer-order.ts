@@ -1,4 +1,5 @@
 import { ErrorCodes, VexError } from "../../errors.js";
+import { assertLighterPhaseOneOrderPolicy } from "./order-policy.js";
 import { LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT } from "./order-preview.js";
 import type { LighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/lighter/execution-plan.js";
 
@@ -6,7 +7,9 @@ export const LIGHTER_SIGNER_ORDER_TYPE_CODES = {
   limit: 0,
   market: 1,
   "stop-loss": 2,
+  "stop-loss-limit": 3,
   "take-profit": 4,
+  "take-profit-limit": 5,
 } as const;
 
 export const LIGHTER_SIGNER_TIME_IN_FORCE_CODES = {
@@ -25,7 +28,7 @@ export interface LighterUnsignedCreateOrderRequest {
   readonly baseAmountInteger: string;
   readonly priceInteger: string;
   readonly isAsk: boolean;
-  readonly orderTypeCode: 0 | 1 | 2 | 4;
+  readonly orderTypeCode: 0 | 1 | 2 | 3 | 4 | 5;
   readonly timeInForceCode: 0 | 1 | 2;
   readonly reduceOnly: boolean;
   readonly triggerPriceInteger: string;
@@ -36,7 +39,11 @@ export interface LighterUnsignedCreateOrderRequest {
 export function buildLighterUnsignedCreateOrderRequest(
   plan: LighterOrderReadyForSignerPlan,
 ): LighterUnsignedCreateOrderRequest {
-  const protective = plan.orderType === "stop-loss" || plan.orderType === "take-profit";
+  assertLighterPhaseOneOrderPolicy(plan.orderType, plan.timeInForce);
+  const protective = plan.orderType === "stop-loss"
+    || plan.orderType === "stop-loss-limit"
+    || plan.orderType === "take-profit"
+    || plan.orderType === "take-profit-limit";
   if (protective !== (plan.triggerPriceInteger !== null)) {
     throw invalidRequest(
       protective

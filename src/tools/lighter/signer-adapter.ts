@@ -18,6 +18,7 @@ export const LIGHTER_SIGNER_CHAIN_IDS: Record<LighterEnvironment, number> = {
 export const LIGHTER_SIGNER_UINT32_MAX = (1n << 32n) - 1n;
 export const LIGHTER_SIGNER_INT64_MAX = (1n << 63n) - 1n;
 export const LIGHTER_SIGNER_UINT48_MAX = (1n << 48n) - 1n;
+const LIGHTER_SIGNER_PERP_MARKET_INDEX_MAX = 254;
 
 export interface LighterCreateOrderSigningInput {
   readonly kind: "lighter_create_order_signing_input";
@@ -209,33 +210,38 @@ export function assertUnsignedCreateOrderFitsOfficialSigner(
   requireDecimalInteger("triggerPriceInteger", order.triggerPriceInteger, LIGHTER_SIGNER_UINT32_MAX, {
     allowZero: true,
   });
-  // Ordinary IOC market/limit orders use nil expiry. Native stop-loss and
-  // stop-loss and take-profit orders are also IOC, but Lighter requires a positive expiry
-  // because they may remain dormant until the trigger fires.
-  const isImmediateOrCancel =
-    order.timeInForceCode === LIGHTER_SIGNER_TIME_IN_FORCE_CODES["immediate-or-cancel"];
-  const isProtective = order.orderTypeCode === 2 || order.orderTypeCode === 4;
   // Bounds only: 0 is Lighter's nil expiry. The expiry-vs-time-in-force invariant
   // below owns whether 0 is actually allowed for this order.
   requireDecimalInteger("orderExpiryMs", String(order.orderExpiryMs), LIGHTER_SIGNER_INT64_MAX, {
     allowZero: true,
   });
-  if (isProtective) {
-    if (!isImmediateOrCancel || order.orderExpiryMs === 0 || order.triggerPriceInteger === "0") {
-      throw invalidRequest(
-        "Protective Lighter orders require IOC, a positive trigger price, and a positive order expiry.",
-      );
-    }
-    return;
+  const tuple = `${order.orderTypeCode}:${order.timeInForceCode}`;
+  const ordinaryIoc = tuple === "0:0" || tuple === "1:0";
+  const ordinaryResting = tuple === "0:1" || tuple === "0:2";
+  const triggerMarket = tuple === "2:0" || tuple === "4:0";
+  const triggerLimit = tuple === "3:0" || tuple === "3:1" || tuple === "3:2"
+    || tuple === "5:0" || tuple === "5:1" || tuple === "5:2";
+  if (!ordinaryIoc && !ordinaryResting && !triggerMarket && !triggerLimit) {
+    throw invalidRequest("Unsupported Lighter order type and time-in-force combination.");
   }
-  if (order.triggerPriceInteger !== "0") {
+  const protective = triggerMarket || triggerLimit;
+  if (protective && order.triggerPriceInteger === "0") {
+    throw invalidRequest("Protective Lighter orders require a positive trigger price.");
+  }
+  if (protective && !order.reduceOnly) {
+    throw invalidRequest("Protective Lighter orders must be reduce-only in Vex.");
+  }
+  if (protective && order.marketIndex > LIGHTER_SIGNER_PERP_MARKET_INDEX_MAX) {
+    throw invalidRequest("Protective Lighter orders require a perpetual market index.");
+  }
+  if (!protective && order.triggerPriceInteger !== "0") {
     throw invalidRequest("Trigger price is accepted only for protective Lighter orders.");
   }
-  if (isImmediateOrCancel && order.orderExpiryMs !== 0) {
-    throw invalidRequest("Immediate-or-cancel Lighter orders must use a zero (nil) order expiry.");
+  if (ordinaryIoc && order.orderExpiryMs !== 0) {
+    throw invalidRequest("Immediate-or-cancel Lighter market and limit orders must use a zero (nil) order expiry.");
   }
-  if (!isImmediateOrCancel && order.orderExpiryMs === 0) {
-    throw invalidRequest("Good-till-time and post-only Lighter orders require a positive order expiry.");
+  if ((ordinaryResting || protective) && order.orderExpiryMs === 0) {
+    throw invalidRequest("Resting and protective Lighter orders require a positive order expiry.");
   }
 }
 
