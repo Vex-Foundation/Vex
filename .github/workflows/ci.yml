@@ -591,9 +591,14 @@ jobs:
       - name: Test (vitest, win32)
         run: pnpm test
 
+      # Verbose on purpose: run 33620108370 attributed the dying worker to
+      # this directory (eight of its nine files completed, real-pty never
+      # reported), and a worker killed by a native crash prints nothing, so
+      # the last test name the verbose reporter printed before the death is
+      # the attribution the next fix needs.
       - name: Test (vitest, win32, pty host alone)
         if: ${{ !cancelled() }}
-        run: pnpm exec vitest run src/pty-host
+        run: pnpm exec vitest run src/pty-host --reporter=verbose
 
   # THE NATIVE PAYLOAD GATE: what electron-builder actually produced.
   #
