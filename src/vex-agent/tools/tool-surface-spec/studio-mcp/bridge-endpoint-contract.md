@@ -521,7 +521,7 @@ The proof matrix, all eight on a Windows runner:
    the descriptor and the half-close but no client of ours.
 5. OVERLAPPED DUPLEX - MEASURED by `TestPipeDialSupportsConcurrentDuplex`
    (`bridge/cmd/vex-mcp/dial_windows_test.go`) on `bridge-windows`, run
-   `<measured on run N>`. A read and a write outstanding TOGETHER on the handle
+   33663385959 (commit bd577f91, 2026-09-02). A read and a write outstanding TOGETHER on the handle
    `dialPipe` opens, both completing and byte-verified. The concurrency is
    constructed rather than timed: the client writes 1 MiB against 4096-byte
    kernel buffers, the server takes a 64-byte prefix and stops - so the write is
@@ -532,7 +532,7 @@ The proof matrix, all eight on a Windows runner:
    `TestPipeHandleTakesARealDeadline`, `TestPipeAckDeadlineFiresOnASilentHost`,
    `TestPipeDrainDeadlineFiresOnASilentHost` and
    `TestClosingThePipeCancelsABlockedRead` (same file) on `bridge-windows`, run
-   `<measured on run N>`. In order: `SetDeadline` returns nil on the overlapped
+   33663385959. In order: `SetDeadline` returns nil on the overlapped
    handle and the read it bounds ends in `os.ErrDeadlineExceeded`, which turns
    `dial_windows.go`'s `setDeadlineImpl` note from a reading of the go1.27.0
    sources into a measurement; `handshake.Perform` against a pipe server that
