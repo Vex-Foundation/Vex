@@ -140,7 +140,10 @@ export function lighterLiveOrderCreateUserGuidance(
       if (execution.executionState === "canceled" || execution.executionState === "rejected") {
         return `Lighter ${execution.executionState} the order after submission, so no position was opened and no funds are committed. Tell the user the order was ${execution.executionState} by the provider. Do not describe this as a preview or a preparation step, and do not tell the user to approve again.`;
       }
-      return `The order is live on Lighter with confirmed state "${execution.executionState}". Tell the user their order was placed and report the resulting position from that state (for example a filled or open position). Do not describe this as a preview or preparation step, and do not say that nothing was placed — the order is on-chain.`;
+      if (execution.executionState === "open") {
+        return "The order is live on Lighter with confirmed state \"open\". Tell the user their order was placed and is an open/resting order that has not filled; do not report a resulting position without fill evidence. Do not describe this as a preview or preparation step, and do not say that nothing was placed — the order is on-chain.";
+      }
+      return `The order is live on Lighter with confirmed state "${execution.executionState}". Tell the user their order was placed and report only the fill evidence and resulting exposure supported by that state. Do not describe this as a preview or preparation step, and do not say that nothing was placed — the order is on-chain.`;
     case "sequencer_pending":
       return "Lighter accepted the signed submission and the final order/fill classification is still settling. Tell the user the order was submitted and accepted, and that its final state is confirming shortly; offer to check it with lighter.order.status. Do not describe this as a preview or say that nothing was placed.";
     case "ambiguous":

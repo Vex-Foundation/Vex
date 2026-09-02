@@ -36,6 +36,14 @@ describe("Lighter live order create user guidance", () => {
     }
   });
 
+  it("describes state=open only as an open order, never an open position", () => {
+    const guidance = lighterLiveOrderCreateUserGuidance(confirmed("open"));
+
+    expect(guidance.toLowerCase()).toContain("open/resting order");
+    expect(guidance.toLowerCase()).not.toContain("open position");
+    expect(guidance.toLowerCase()).toContain("position without fill evidence");
+  });
+
   it("reports canceled/rejected orders as not opening a position", () => {
     for (const state of ["canceled", "rejected"] as const) {
       const guidance = lighterLiveOrderCreateUserGuidance(confirmed(state));
