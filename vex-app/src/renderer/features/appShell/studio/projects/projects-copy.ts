@@ -33,6 +33,120 @@ import type {
   StudioRunFailure,
 } from "@shared/schemas/studio-installer.js";
 
+/* ----------------------------- consent grammar ---------------------------- */
+
+/**
+ * THE THREE FACTS EVERY CONSENT STRIP STATES, and the one home they live in.
+ *
+ * Studio asks for consent in five places - creating a project with Full access,
+ * widening an existing project to it, deleting a project, repairing its files,
+ * and closing a workspace that has shells running in it - and before this table
+ * each of them answered "what am I agreeing to" in its own voice, in a paragraph
+ * inside a scrolling body. The strip (`components/ui/dialog.tsx`,
+ * `DialogConsequence`) states them in the dialog's chrome, and every sentence it
+ * prints is here so the five surfaces cannot drift into describing the same
+ * class of act differently.
+ *
+ * The three facts, in this order, always:
+ *
+ *   1. WHAT will happen, in the active voice, naming the effect and not the
+ *      button;
+ *   2. TO WHAT - the folder, the project, the wallets - because "this" is not a
+ *      resource identity (rule 90: approval binds to the exact resource);
+ *   3. WHETHER IT CAN BE UNDONE, said plainly either way. An action that IS
+ *      reversible says so; hedging both directions teaches the user to read
+ *      neither.
+ *
+ * `StudioKeepAliveDialog` reads its strip from here rather than from
+ * `studio-copy.ts`, where the rest of its words live, for the reason this
+ * module's header gives about vocabulary: the consent grammar is ONE thing
+ * across the five dialogs, and splitting it across two copy modules would put
+ * "what a Vex consent strip says" in two places to be reviewed.
+ */
+
+/* --- the grant: Full access, in the creator and in the settings editor --- */
+
+export const FULL_ACCESS_CONSEQUENCE_WHAT =
+  "Agents in this project will be able to act outside its folder and to use its wallets.";
+
+/**
+ * Which folder the grant is about. The creator has no path yet - the directory
+ * is claimed by the create itself - and says so rather than printing an empty
+ * line or guessing at a path Vex has not derived.
+ */
+export function fullAccessFolderLine(displayPath: string | null): string {
+  return displayPath === null
+    ? "Folder: the one Vex creates for this project."
+    : `Folder: ${displayPath}`;
+}
+
+/**
+ * WHICH WALLETS, by name.
+ *
+ * An empty selection is not silence: the grant covers whatever the project ends
+ * up holding, so the line says the selection is empty AND that anything selected
+ * below joins the grant. Naming only the non-empty case would let a user
+ * acknowledge a wallet grant, then add a wallet under the acknowledgement they
+ * had already given - which is why the acknowledgement is dropped when this line
+ * changes.
+ */
+export function fullAccessWalletsLine(
+  walletLabels: readonly string[],
+): string {
+  return walletLabels.length === 0
+    ? "Wallets: none selected. Any wallet you select below is covered by this grant."
+    : `Wallets: ${walletLabels.join(", ")}.`;
+}
+
+export const FULL_ACCESS_CONSEQUENCE_UNDO =
+  "This can be undone: change the permission back in this project's settings at any time.";
+
+/**
+ * THE ACKNOWLEDGEMENT, and it is required rather than decorative.
+ *
+ * Owner decision, 2026-09-02: Full access is confirmed, not merely picked. The
+ * primary action stays disabled until this is checked, the check is dropped
+ * whenever the proposal it was given for changes (the permission or the wallet
+ * selection), and it is never persisted - a grant acknowledged once for one
+ * project says nothing about the next one.
+ */
+export const FULL_ACCESS_ACKNOWLEDGEMENT =
+  "I understand that agents in this project can act outside its folder and can use its wallets.";
+
+/* --------------------------------- delete -------------------------------- */
+
+export function projectDeleteConsequenceWhat(projectName: string): string {
+  return `Deleting removes "${projectName}" from Vex and ends every terminal running in it.`;
+}
+
+export const PROJECT_DELETE_CONSEQUENCE_FOLDER_KEPT =
+  "Your project folder and its contents stay on disk.";
+export const PROJECT_DELETE_CONSEQUENCE_FOLDER_TRASHED =
+  "Your project folder and everything in it move to your operating system's trash.";
+
+export const PROJECT_DELETE_CONSEQUENCE_UNDO =
+  "This cannot be undone. Vex has no way to bring the project back.";
+export const PROJECT_DELETE_CONSEQUENCE_UNDO_TRASHED =
+  "This cannot be undone. Vex has no way to bring the project back, though the folder can still be recovered from your trash.";
+
+/* --------------------------------- repair -------------------------------- */
+
+export const PROJECT_REPAIR_CONSEQUENCE_WHAT =
+  "Repair rewrites the files Vex maintains in this folder so they match the project's current scope.";
+export const PROJECT_REPAIR_CONSEQUENCE_SCOPE =
+  "A file you edited since Vex wrote it is overwritten. Nothing else in the folder is touched.";
+export const PROJECT_REPAIR_CONSEQUENCE_UNDO =
+  "An edit Vex overwrites here cannot be recovered from Vex.";
+
+/* ------------------------ closing a project workspace --------------------- */
+
+export const PROJECT_CLOSE_CONSEQUENCE_WHAT =
+  "Closing a project ends every shell running in it.";
+export const PROJECT_CLOSE_CONSEQUENCE_SCOPE =
+  "Only the project you close below. Its files on disk are untouched.";
+export const PROJECT_CLOSE_CONSEQUENCE_UNDO =
+  "Reopening it restores its files and tabs. The processes do not come back.";
+
 /* --------------------------------- creator -------------------------------- */
 
 export const PROJECT_CREATE_TITLE = "New project";
@@ -74,6 +188,26 @@ export const PROJECT_WALLETS_HELP =
   "Optional. Pick at most one EVM and one Solana wallet this project may use. Vex sends the wallet identifier only; the keys never leave your machine.";
 export const PROJECT_WALLET_EVM_LABEL = "EVM wallet";
 export const PROJECT_WALLET_SOLANA_LABEL = "Solana wallet";
+
+/**
+ * WHAT AN EMPTY WALLET INVENTORY SAYS, and why it is not two "None" selects.
+ *
+ * With no wallet configured, both pickers rendered a single option reading
+ * "None" and offered nothing else: a control whose entire vocabulary is the
+ * absence of a choice, printed beside a right rail that says "add your first
+ * below" behind the modal the user is looking at. So the fieldset names the
+ * PATH instead.
+ *
+ * It NAMES the path rather than offering a button that walks it. The wallet flow
+ * is a full-app settings screen and this dialog is a modal in the browser's top
+ * layer, so a control that opened it would have to close this dialog first and
+ * discard the name the user has typed and the agents they have picked. Sending
+ * someone back to an empty form is a worse answer than telling them where to go
+ * and that the choice keeps until they get there.
+ */
+export const PROJECT_WALLETS_NONE_TITLE = "No wallets yet.";
+export const PROJECT_WALLETS_NONE_HELP =
+  "Add one in Settings, under Wallets. It appears here the next time you open this dialog, and a project's wallets can be changed at any time after it exists.";
 
 export const PROJECT_AGENTS_LEGEND = "Coding agents";
 export const PROJECT_AGENTS_HELP =
@@ -266,7 +400,16 @@ export const PROJECT_DELETE_CLEANUP_TITLE = "What the cleanup did";
 
 /* ---------------------------- render outcomes ----------------------------- */
 
-export const RENDER_OUTCOME_TITLE = "Project files";
+/**
+ * The run panel's heading, and it is DELIBERATELY not "Project files".
+ *
+ * Both panels are on screen together after a create - what the run DID, then
+ * what the files ARE - and both used to be headed "Project files" over lists
+ * whose rows carry the same artifact names. Two headings with one name over two
+ * different vocabularies is the ambiguity `PROJECT_FILES_LIST_LABEL` already
+ * fixed for the lists' accessible names; this fixes it for the visible ones.
+ */
+export const RENDER_OUTCOME_TITLE = "What Vex did";
 export const RENDER_WARNINGS_TITLE = "Worth knowing";
 
 type RenderTrigger = StudioRenderOutcome["trigger"];

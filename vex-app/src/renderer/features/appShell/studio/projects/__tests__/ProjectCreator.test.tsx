@@ -40,8 +40,15 @@ import {
 } from "../studio-agent-catalogue.js";
 import {
   ARTIFACT_STATE_SENTENCES,
+  FULL_ACCESS_ACKNOWLEDGEMENT,
+  FULL_ACCESS_CONSEQUENCE_UNDO,
+  FULL_ACCESS_CONSEQUENCE_WHAT,
+  fullAccessFolderLine,
+  fullAccessWalletsLine,
   PROJECT_FILES_REPAIR_ACTION,
   PROJECT_REFRESH_FAILURE_SENTENCES,
+  PROJECT_WALLETS_NONE_HELP,
+  PROJECT_WALLETS_NONE_TITLE,
   RENDER_OUTCOME_EMPTY_COMPLETED,
   RENDER_OUTCOME_EMPTY_INCOMPLETE,
   RENDER_TRIGGER_SENTENCES,
@@ -570,5 +577,177 @@ describe("a project that could not be re-read", () => {
         data: project,
       });
     });
+  });
+});
+
+/* ------------------------- the consent grammar (UX-4) ---------------------- */
+
+/** The consent strip's acknowledgement checkbox, or null when no strip is up. */
+function consentCheckbox(): HTMLInputElement | null {
+  const node = document.querySelector("[data-vex-consent-acknowledge]");
+  return node instanceof HTMLInputElement ? node : null;
+}
+
+function pickFullAccess(): void {
+  fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
+}
+
+describe("the Full-access consent gate", () => {
+  it("states what, to what and whether it can be undone, and asks for the grant", () => {
+    renderCreator();
+    typeName("atlas");
+    expect(consentCheckbox()).toBeNull();
+
+    pickFullAccess();
+    const strip = document.querySelector('[data-vex-consent="full-access"]');
+    expect(strip).not.toBeNull();
+    const text = strip?.textContent ?? "";
+    expect(text).toContain(FULL_ACCESS_CONSEQUENCE_WHAT);
+    // TO WHAT. The creator has no path yet - the directory is claimed by the
+    // create itself - so it says that rather than printing nothing.
+    expect(text).toContain(fullAccessFolderLine(null));
+    expect(text).toContain(fullAccessWalletsLine([]));
+    expect(text).toContain(FULL_ACCESS_CONSEQUENCE_UNDO);
+    expect(text).toContain(FULL_ACCESS_ACKNOWLEDGEMENT);
+  });
+
+  it("keeps Create disabled with a valid name until the grant is acknowledged", () => {
+    renderCreator();
+    typeName("atlas");
+    expect(submitButton().disabled).toBe(false);
+
+    pickFullAccess();
+    expect(submitButton().disabled).toBe(true);
+    fireEvent.click(consentCheckbox() as HTMLInputElement);
+    expect(submitButton().disabled).toBe(false);
+  });
+
+  it("refuses an unacknowledged create at the SUBMIT path, not just the button", async () => {
+    renderCreator();
+    typeName("atlas");
+    pickFullAccess();
+    // Past the disabled button: a stray Enter, a queued event or a synthetic
+    // dispatch all submit the form, and the gate has to hold where the wire
+    // input is built. `AgentPicker`'s module note records the same reasoning
+    // about `disabled` for the case that shipped `["cline", "warp"]`.
+    const form = document.querySelector("form");
+    if (form === null) throw new Error("no form");
+    fireEvent.submit(form);
+    await Promise.resolve();
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("drops the acknowledgement when the permission goes back and forth", () => {
+    renderCreator();
+    typeName("atlas");
+    pickFullAccess();
+    fireEvent.click(consentCheckbox() as HTMLInputElement);
+    expect(consentCheckbox()?.checked).toBe(true);
+
+    fireEvent.click(screen.getByRole("radio", { name: /Restricted/ }));
+    expect(consentCheckbox()).toBeNull();
+    pickFullAccess();
+    // A new grant, not the one already given: the round trip must ask again.
+    expect(consentCheckbox()?.checked).toBe(false);
+    expect(submitButton().disabled).toBe(true);
+  });
+
+  it("never carries an acknowledgement into the next create", async () => {
+    renderCreator();
+    typeName("atlas");
+    pickFullAccess();
+    fireEvent.click(consentCheckbox() as HTMLInputElement);
+    fireEvent.click(submitButton());
+    await waitFor(() => {
+      expect(createMock).toHaveBeenCalled();
+    });
+    expect(createMock.mock.calls[0]?.[0].permission).toBe("full");
+
+    // The result phase has no strip: nothing is being granted any more.
+    expect(consentCheckbox()).toBeNull();
+  });
+
+  it("sends Full access only with the acknowledgement in hand", async () => {
+    renderCreator();
+    typeName("atlas");
+    pickFullAccess();
+    fireEvent.click(consentCheckbox() as HTMLInputElement);
+    fireEvent.click(submitButton());
+    await waitFor(() => {
+      expect(createMock).toHaveBeenCalled();
+    });
+    expect(createMock.mock.calls[0]?.[0].permission).toBe("full");
+  });
+});
+
+describe("the wallets fieldset with nothing to pick", () => {
+  it("names the path to a wallet instead of two selects reading None", async () => {
+    renderCreator();
+    await waitFor(() => {
+      expect(
+        document.querySelector('[data-vex-project-wallets="empty"]'),
+      ).not.toBeNull();
+    });
+    expect(screen.getByText(PROJECT_WALLETS_NONE_TITLE)).not.toBeNull();
+    expect(screen.getByText(PROJECT_WALLETS_NONE_HELP)).not.toBeNull();
+    // The selects are GONE, not merely empty: a control whose only option is
+    // the absence of a choice is not a control.
+    expect(screen.queryByLabelText("EVM wallet")).toBeNull();
+    expect(screen.queryByLabelText("Solana wallet")).toBeNull();
+  });
+});
+
+describe("every agent card carries a mark (audit I11)", () => {
+  it("draws an svg in every card, and no empty icon slot", () => {
+    renderCreator();
+    const cards = document.querySelectorAll("[data-vex-agent]");
+    expect(cards.length).toBe(SELECTABLE_STUDIO_AGENT_IDS.length);
+    for (const card of cards) {
+      const id = card.getAttribute("data-vex-agent") ?? "";
+      // Either a brand mark or the shell's generic glyph - never nothing.
+      expect(card.querySelector("svg"), `no mark for ${id}`).not.toBeNull();
+    }
+  });
+
+  it("renders the two Codex variants so one is legible on each theme", () => {
+    renderCreator();
+    const codex = document.querySelector('[data-vex-agent="codex"]');
+    // The one asset in the roster with no currentColor variant: the package
+    // ships `#111` and `#fff`, so both are drawn and CSS hides one. Measured
+    // fills per id are recorded in `studio-agent-catalogue.ts`.
+    expect(codex?.querySelectorAll("svg").length).toBe(2);
+    expect(
+      codex?.querySelector('svg[class*="data-vex-theme=celeris"]'),
+    ).not.toBeNull();
+  });
+});
+
+describe("the dialog's own consent posture", () => {
+  it("puts the caret in the name field, the only text input", async () => {
+    renderCreator();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByLabelText("Name"));
+    });
+  });
+
+  it("routes the native Escape intent through onOpenChange", () => {
+    const onOpenChange = vi.fn();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <ProjectCreator open onOpenChange={onOpenChange} onCreated={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    const dialog = document.querySelector("dialog");
+    if (dialog === null) throw new Error("no dialog");
+    // The `cancel` event IS the browser's Escape intent on a modal `<dialog>`;
+    // the jsdom polyfill in `studio-fixtures.ts` implements `showModal` without
+    // the UA key handling, so the event is dispatched directly. What is under
+    // test is that the component routes that intent through the controlled
+    // path rather than letting the element close itself.
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });

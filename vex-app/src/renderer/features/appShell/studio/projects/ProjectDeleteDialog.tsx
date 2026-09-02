@@ -122,6 +122,7 @@ import { Button } from "../../../../components/ui/button.js";
 import {
   Dialog,
   DialogBody,
+  DialogConsequence,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -138,6 +139,7 @@ import { useDeleteProject } from "../../../../lib/api/projects.js";
 import { peekProjectTerminals } from "../workspace/project-terminals.js";
 import { useLiveAnnouncer } from "../../../../components/ui/live-region.js";
 import { SubmitError } from "../../../../components/ui/submit-error.js";
+import { DIALOG_INITIAL_FOCUS } from "./dialog-initial-focus.js";
 import { ArtifactOutcomeList } from "./RenderOutcomePanel.js";
 import {
   PROJECT_CANCEL,
@@ -145,6 +147,10 @@ import {
   PROJECT_DELETE_CLEANUP_TITLE,
   PROJECT_DELETE_CONFIRM_LABEL,
   PROJECT_DELETE_CONFIRM_MISMATCH,
+  PROJECT_DELETE_CONSEQUENCE_FOLDER_KEPT,
+  PROJECT_DELETE_CONSEQUENCE_FOLDER_TRASHED,
+  PROJECT_DELETE_CONSEQUENCE_UNDO,
+  PROJECT_DELETE_CONSEQUENCE_UNDO_TRASHED,
   PROJECT_DELETE_OUTCOME_SENTENCES,
   PROJECT_DELETE_PENDING,
   PROJECT_DELETE_RETRY,
@@ -159,8 +165,10 @@ import {
   projectDeleteAttemptsLine,
   projectDeleteBody,
   projectDeleteConfirmPrompt,
+  projectDeleteConsequenceWhat,
   projectDeletedToast,
   projectDeleteTerminalsLine,
+  projectFolderLine,
 } from "./projects-copy.js";
 
 /**
@@ -452,6 +460,35 @@ export function ProjectDeleteDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/* THE CONSEQUENCE, above the scroll region and above the typed
+          * confirmation, in the WARNING register that Delete keeps to itself
+          * (audit A10). It tracks the checkbox: the folder line and the undo
+          * line both change the moment the action stops being "Vex forgets this
+          * project" and becomes "your files move to the trash". The terminal
+          * COUNT stays below with its own rule - it is omitted, never guessed,
+          * when this window cannot see the project's shells - while the strip's
+          * sentence is true at any count. */}
+        <DialogConsequence data-vex-consent="delete">
+          <span className="font-medium">
+            {projectDeleteConsequenceWhat(name)}
+          </span>
+          {row !== null ? (
+            <span className="truncate font-mono text-[11px] text-ink-secondary">
+              {projectFolderLine(row.displayPath)}
+            </span>
+          ) : null}
+          <span className="text-ink-secondary">
+            {trashChoice
+              ? PROJECT_DELETE_CONSEQUENCE_FOLDER_TRASHED
+              : PROJECT_DELETE_CONSEQUENCE_FOLDER_KEPT}
+          </span>
+          <span className="text-ink-secondary">
+            {trashChoice
+              ? PROJECT_DELETE_CONSEQUENCE_UNDO_TRASHED
+              : PROJECT_DELETE_CONSEQUENCE_UNDO}
+          </span>
+        </DialogConsequence>
+
         <DialogBody className="gap-4">
           {liveTerminalCount !== null ? (
             <p className="flex items-start gap-1.5 text-xs text-warning">
@@ -558,6 +595,7 @@ export function ProjectDeleteDialog({
             disabled={pending}
             // The safer choice takes focus (rule 08).
             autoFocus
+            {...DIALOG_INITIAL_FOCUS}
             className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
           >
             {PROJECT_CANCEL}

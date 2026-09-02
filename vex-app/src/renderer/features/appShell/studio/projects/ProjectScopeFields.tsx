@@ -47,7 +47,32 @@ import {
   PROJECT_WALLET_SOLANA_LABEL,
   PROJECT_WALLETS_HELP,
   PROJECT_WALLETS_LEGEND,
+  PROJECT_WALLETS_NONE_HELP,
+  PROJECT_WALLETS_NONE_TITLE,
 } from "./projects-copy.js";
+
+/**
+ * The wallet NAMES a consent strip prints, in the order the fieldset shows
+ * them, skipping a family with nothing selected.
+ *
+ * Labels, never addresses: the strip is read by a person deciding what an agent
+ * may spend from, and a truncated hex string is not something anybody
+ * recognises. Lives beside the fieldset because it answers "what does the wallet
+ * control currently say" and the fieldset is what says it.
+ */
+export function selectedWalletLabels(
+  evmWalletId: string | null,
+  solanaWalletId: string | null,
+  evmOptions: readonly WalletSelectOption[],
+  solanaOptions: readonly WalletSelectOption[],
+): readonly string[] {
+  const labels: string[] = [];
+  const evm = evmOptions.find((option) => option.id === evmWalletId);
+  if (evm !== undefined) labels.push(evm.label);
+  const solana = solanaOptions.find((option) => option.id === solanaWalletId);
+  if (solana !== undefined) labels.push(solana.label);
+  return labels;
+}
 
 export interface ProjectPermissionFieldsetProps {
   readonly permission: SessionPermission;
@@ -97,8 +122,21 @@ export function ProjectWalletFieldset({
   onEvmChange,
   onSolanaChange,
 }: ProjectWalletFieldsetProps): JSX.Element {
+  // NOTHING TO PICK FROM is a different state from "picked nothing", and the
+  // selects cannot express it: with an empty inventory both render one option
+  // reading "None". See `PROJECT_WALLETS_NONE_TITLE`.
+  const noWallets = evmOptions.length === 0 && solanaOptions.length === 0;
+  if (noWallets) {
+    return (
+      <fieldset className="flex flex-col gap-2.5" data-vex-project-wallets="empty">
+        <legend className="vex-eyebrow">{PROJECT_WALLETS_LEGEND}</legend>
+        <p className="text-sm text-ink-primary">{PROJECT_WALLETS_NONE_TITLE}</p>
+        <p className="text-xs text-ink-tertiary">{PROJECT_WALLETS_NONE_HELP}</p>
+      </fieldset>
+    );
+  }
   return (
-    <fieldset className="flex flex-col gap-2.5">
+    <fieldset className="flex flex-col gap-2.5" data-vex-project-wallets="picker">
       <legend className="vex-eyebrow">{PROJECT_WALLETS_LEGEND}</legend>
       <p className="text-xs text-ink-tertiary">{PROJECT_WALLETS_HELP}</p>
       <div className="grid grid-cols-2 gap-2">

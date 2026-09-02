@@ -22,12 +22,19 @@ import { Button } from "../../../components/ui/button.js";
 import {
   Dialog,
   DialogBody,
+  DialogConsequence,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "../../../components/ui/dialog.js";
+import { DIALOG_INITIAL_FOCUS } from "./projects/dialog-initial-focus.js";
+import {
+  PROJECT_CLOSE_CONSEQUENCE_SCOPE,
+  PROJECT_CLOSE_CONSEQUENCE_UNDO,
+  PROJECT_CLOSE_CONSEQUENCE_WHAT,
+} from "./projects/projects-copy.js";
 import { STUDIO_WORKSPACE_KEEP_ALIVE_MAX } from "./workspace/keep-alive.js";
 import { peekProjectTerminals } from "./workspace/project-terminals.js";
 import {
@@ -95,6 +102,22 @@ export function StudioKeepAliveDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/* THE CONSEQUENCE. This dialog holds N buttons, each of which ends
+          * running shells, and the fact that any of them do was carried only by
+          * the per-row terminal count - which is omitted, never guessed, for a
+          * project whose workspace this window cannot see. The strip states the
+          * consequence once, above the rows, so it holds for every button in
+          * the list including the ones with no count beside them. */}
+        <DialogConsequence data-vex-consent="close-workspace">
+          <span className="font-medium">{PROJECT_CLOSE_CONSEQUENCE_WHAT}</span>
+          <span className="text-ink-secondary">
+            {PROJECT_CLOSE_CONSEQUENCE_SCOPE}
+          </span>
+          <span className="text-ink-secondary">
+            {PROJECT_CLOSE_CONSEQUENCE_UNDO}
+          </span>
+        </DialogConsequence>
+
         <DialogBody className="gap-2">
           <ul aria-label={STUDIO_KEEP_ALIVE_LIST_LABEL} className="flex flex-col gap-1">
             {openProjects.map((project) => (
@@ -138,7 +161,13 @@ export function StudioKeepAliveDialog({
             type="button"
             variant="ghost"
             onClick={onCancel}
+            // The safer choice takes focus (rule 08). The ATTRIBUTE is what
+            // survives `showModal()`: without it a browser focuses the first
+            // focusable descendant, which here is the first project's `Close`
+            // button - a control that ends every shell running in that project.
+            // See `DIALOG_INITIAL_FOCUS`.
             autoFocus
+            {...DIALOG_INITIAL_FOCUS}
             className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
           >
             {STUDIO_KEEP_ALIVE_CANCEL}

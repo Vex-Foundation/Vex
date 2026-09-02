@@ -50,6 +50,7 @@ import { cn } from "../../../../lib/utils.js";
 import {
   agentBrandMark,
   STUDIO_AGENT_PRESENTATIONS,
+  type AgentBrandMark,
   type StudioAgentPresentation,
 } from "./studio-agent-catalogue.js";
 import {
@@ -111,6 +112,40 @@ export function AgentPicker({
   );
 }
 
+/**
+ * ONE CARD'S MARK, always something (audit I11).
+ *
+ * `null` is the honest answer only for an id the package has no asset for, and
+ * it draws the shell's generic glyph rather than an empty slot. The `per-theme`
+ * branch renders BOTH variants and lets CSS hide one, which is the shell's own
+ * wordmark pattern (`SetupFrame.tsx`, `WizardShell.tsx`, `UnlockScreen.tsx`):
+ * no theme hook to subscribe to, nothing to unsubscribe, and no inline style
+ * for the CSP audit to weigh. Both copies are `aria-hidden`, so the hidden one
+ * costs an accessible name nothing.
+ */
+const MARK_SIZE = 16;
+
+function AgentMark({ mark }: { readonly mark: AgentBrandMark | null }): JSX.Element {
+  if (mark === null) return <IconBrainCircuit size={MARK_SIZE} />;
+  if (mark.kind === "per-theme") {
+    return (
+      <>
+        {mark.dark({
+          width: MARK_SIZE,
+          height: MARK_SIZE,
+          className: "[[data-vex-theme=celeris]_&]:hidden",
+        })}
+        {mark.light({
+          width: MARK_SIZE,
+          height: MARK_SIZE,
+          className: "hidden [[data-vex-theme=celeris]_&]:block",
+        })}
+      </>
+    );
+  }
+  return mark.render({ width: MARK_SIZE, height: MARK_SIZE });
+}
+
 function AgentCard({
   agent,
   checked,
@@ -122,7 +157,7 @@ function AgentCard({
   readonly disabled: boolean;
   readonly onToggle: (id: StudioAgentId, next: boolean) => void;
 }): JSX.Element {
-  const Mark = agentBrandMark(agent.id);
+  const mark = agentBrandMark(agent.id);
 
   return (
     <label
@@ -157,11 +192,7 @@ function AgentCard({
         />
       ) : null}
       <span className="flex items-center gap-2">
-        {Mark !== null ? (
-          <Mark width={16} height={16} aria-hidden focusable={false} />
-        ) : (
-          <IconBrainCircuit size={16} />
-        )}
+        <AgentMark mark={mark} />
         <span className="flex-1 truncate font-display text-[14px] font-medium tracking-[-0.01em] text-ink-primary">
           {agent.displayName}
         </span>

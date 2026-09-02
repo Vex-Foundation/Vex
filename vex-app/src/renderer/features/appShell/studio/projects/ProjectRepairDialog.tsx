@@ -37,6 +37,7 @@ import { Button } from "../../../../components/ui/button.js";
 import {
   Dialog,
   DialogBody,
+  DialogConsequence,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -53,6 +54,9 @@ import {
   PROJECT_CANCEL,
   PROJECT_CLOSE,
   PROJECT_REPAIR_BODY,
+  PROJECT_REPAIR_CONSEQUENCE_SCOPE,
+  PROJECT_REPAIR_CONSEQUENCE_UNDO,
+  PROJECT_REPAIR_CONSEQUENCE_WHAT,
   PROJECT_REPAIR_PENDING,
   PROJECT_REPAIR_SUBMIT,
   PROJECT_REPAIR_TITLE,
@@ -121,12 +125,39 @@ export function ProjectRepairDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/* THE CONSEQUENCE, in the NOTICE register (audit A10). Repair
+          * overwrites a file the user may have edited, so it owes them the
+          * strip; it does not end a project or move a folder to the trash, so
+          * dressing it in Delete's red would leave Studio's two most
+          * consequential buttons speaking one tone for two different outcomes.
+          * Gone once the repair has run: the report below is then the answer,
+          * and a strip still promising a rewrite would be describing the past
+          * in the future tense. */}
+        {render === null ? (
+          <DialogConsequence tone="notice" data-vex-consent="repair">
+            <span className="font-medium">{PROJECT_REPAIR_CONSEQUENCE_WHAT}</span>
+            {project !== null ? (
+              <span className="truncate font-mono text-[11px] text-ink-secondary">
+                {projectFolderLine(project.displayPath)}
+              </span>
+            ) : null}
+            <span className="text-ink-secondary">
+              {PROJECT_REPAIR_CONSEQUENCE_SCOPE}
+            </span>
+            <span className="text-ink-secondary">
+              {PROJECT_REPAIR_CONSEQUENCE_UNDO}
+            </span>
+          </DialogConsequence>
+        ) : null}
+
         {/* The confirm phase only. Once the repair has run, the file list this
           * body held describes the disk BEFORE the write, and the report that
           * replaces it is pinned below rather than scrolled. */}
         {render === null ? (
           <DialogBody className="gap-4">
-            <p className="text-sm text-ink-secondary">{PROJECT_REPAIR_BODY}</p>
+            {/* The body no longer repeats what the strip above states. It said
+              * the same three facts in a paragraph the user had to scroll to,
+              * which is the arrangement the strip exists to replace. */}
             {/* What is on disk RIGHT NOW, so the user can see which files the
               * overwrite would actually touch before pressing Repair. No
               * `onRepair`: the confirm button below IS the repair, and a second
@@ -160,9 +191,12 @@ export function ProjectRepairDialog({
               >
                 {PROJECT_CANCEL}
               </Button>
+              {/* PRIMARY, not danger (audit A10). Repair rewrites files Vex
+                * maintains and can rewrite again; Delete is the one action in
+                * Studio that ends something, and it keeps the destructive
+                * tone alone so the tone still means something. */}
               <Button
                 type="button"
-                variant="danger"
                 onClick={() => void onConfirm()}
                 disabled={pending}
               >

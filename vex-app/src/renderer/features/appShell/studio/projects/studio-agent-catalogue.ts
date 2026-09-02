@@ -38,9 +38,54 @@
  *     instead.
  *   - Factory's `droid` has NO mark in the package at all, so it falls back to
  *     the generic icon, the way `ModelBrandIcon` handles an unknown provider.
+ *
+ * ## A MARK IS NOT A MARK IF IT IS THE COLOUR OF THE SURFACE (audit I11)
+ *
+ * `Grok Build` and `Qwen Code` painted NOTHING in the light theme. Neither asset
+ * is missing: each variant's fills were read out of the installed package's
+ * `dist/*.js` (the generated `_variants` table), and both defaults are FLAT
+ * WHITE - `Grok` fills every path `white`, `Qwen`'s root fill is the four-digit
+ * `#ffff`. On the light theme's paper card that is white on white. The same
+ * measurement found `Codex` inverted: its only fills are `#111`, invisible on
+ * the DARK theme instead.
+ *
+ * So a mark is recorded here with HOW IT SURVIVES BOTH THEMES, not just which
+ * component draws it:
+ *
+ *   - `adaptive` - one asset whose fills are `currentColor`, or its own brand
+ *     hues, and is legible on either surface. Rule 08's default.
+ *   - `per-theme` - a flat silhouette with no `currentColor` variant. The
+ *     package ships one variant per surface and the picker renders both, hiding
+ *     one with the same `[data-vex-theme=celeris]` CSS swap the shell already
+ *     uses for its own wordmark (`SetupFrame`, `WizardShell`, `UnlockScreen`).
+ *     No theme hook, no observer, no inline style.
+ *
+ * Measured fills per id, so the next reader does not have to re-derive them:
+ *
+ * | id | export | fills | verdict |
+ * | --- | --- | --- | --- |
+ * | claude-code | `ClaudeCode` default | currentColor + `#D97757` | adaptive |
+ * | codex | `Codex` light / dark | `#111` / `#fff` | per-theme |
+ * | gemini-cli | `GeminiCli` default | own gradients, full-bleed tile | adaptive |
+ * | opencode | `Opencode` default | currentColor | adaptive |
+ * | grok-build | `GrokXai` default | currentColor | adaptive (was `Grok`, flat white) |
+ * | kimi | `Kimi` default | currentColor + `#027aff` + `#fff` | adaptive |
+ * | qwen-code | `Qwen` `light` | currentColor | adaptive (the DEFAULT is flat white) |
+ * | copilot-cli | `GithubCopilot` `mono` | currentColor | adaptive |
+ * | cursor | `Cursor` default | currentColor | adaptive |
+ * | amp | `Sourcegraph` default | currentColor + brand hues | adaptive |
+ * | kiro | `Kiro` default | currentColor + brand hues | adaptive |
+ * | mistral-vibe | `MistralAi` default | currentColor + brand hues | adaptive |
+ * | cline | `Cline` `mono` | currentColor | adaptive (the DEFAULT is `#18181B`) |
+ * | droid | none | - | generic fallback |
+ * | warp | `Warp` `mono` | currentColor | adaptive |
+ *
+ * The variant NAMES are the package's and are not always descriptive: `Qwen`'s
+ * `light` is the `currentColor` one, not a light-coloured one. That is why the
+ * table records fills rather than variant names alone.
  */
 
-import type { ComponentType, SVGProps } from "react";
+import { createElement, type ReactElement } from "react";
 import {
   ClaudeCode,
   Cline,
@@ -48,7 +93,7 @@ import {
   Cursor,
   GeminiCli,
   GithubCopilot,
-  Grok,
+  GrokXai,
   Kimi,
   Kiro,
   MistralAi,
@@ -62,7 +107,43 @@ import {
   type StudioAgentId,
 } from "@shared/schemas/studio-agent-ids.js";
 
-type BrandMark = ComponentType<SVGProps<SVGSVGElement>>;
+/** The geometry and classes the picker gives a mark. */
+export interface AgentMarkSlot {
+  readonly width: number;
+  readonly height: number;
+  readonly className?: string | undefined;
+}
+
+/**
+ * Draw one mark into the slot.
+ *
+ * A RENDERER rather than a `{ component, variant }` pair, and that is a type
+ * decision, not a style one: every `@thesvg` component declares its OWN literal
+ * union of variant names (`QwenVariant`, `CodexVariant`, ...), so a shared
+ * `variant: string` field would only type-check behind a cast and a typo in a
+ * variant name would survive to runtime as a silent fall back to `default` -
+ * which is exactly the flat-white default this table exists to avoid. Each
+ * entry calls `createElement` against the real component, so the compiler
+ * checks the variant against that component's own union.
+ */
+export type AgentMarkRenderer = (slot: AgentMarkSlot) => ReactElement;
+
+/**
+ * HOW A BRAND MARK IS DRAWN so it is visible on both themes. See the module
+ * note's measured table for why this is not simply a component reference.
+ */
+export type AgentBrandMark =
+  | { readonly kind: "adaptive"; readonly render: AgentMarkRenderer }
+  | {
+      readonly kind: "per-theme";
+      /** For the light theme (`data-vex-theme="celeris"`). */
+      readonly light: AgentMarkRenderer;
+      /** For the dark theme, which is every other value. */
+      readonly dark: AgentMarkRenderer;
+    };
+
+/** Decoration, never an accessible name. Shared by every entry below. */
+const MARK_ATTRS = { "aria-hidden": true, focusable: false } as const;
 
 /**
  * An agent the user may select. `launchInstruction` is set only for an agent
@@ -213,24 +294,78 @@ const PRESENTATION_BY_ID: Readonly<
  * Brand mark per id. `null` where the package has none, so the picker draws its
  * generic fallback rather than a mark that belongs to somebody else.
  */
-const MARK_BY_ID: Readonly<Record<StudioAgentId, BrandMark | null>> = {
-  "claude-code": ClaudeCode,
-  codex: Codex,
-  "gemini-cli": GeminiCli,
-  opencode: Opencode,
-  "grok-build": Grok,
-  kimi: Kimi,
-  "qwen-code": Qwen,
-  "copilot-cli": GithubCopilot,
-  cursor: Cursor,
+const MARK_BY_ID: Readonly<Record<StudioAgentId, AgentBrandMark | null>> = {
+  "claude-code": {
+    kind: "adaptive",
+    render: (slot) => createElement(ClaudeCode, { ...MARK_ATTRS, ...slot }),
+  },
+  // The one silhouette with no currentColor variant anywhere in the package.
+  codex: {
+    kind: "per-theme",
+    light: (slot) =>
+      createElement(Codex, { ...MARK_ATTRS, ...slot, variant: "light" }),
+    dark: (slot) =>
+      createElement(Codex, { ...MARK_ATTRS, ...slot, variant: "dark" }),
+  },
+  "gemini-cli": {
+    kind: "adaptive",
+    render: (slot) => createElement(GeminiCli, { ...MARK_ATTRS, ...slot }),
+  },
+  opencode: {
+    kind: "adaptive",
+    render: (slot) => createElement(Opencode, { ...MARK_ATTRS, ...slot }),
+  },
+  // `GrokXai`, not `Grok`: every `Grok` variant is a flat white or flat
+  // near-black silhouette, so it painted nothing on the light theme.
+  "grok-build": {
+    kind: "adaptive",
+    render: (slot) => createElement(GrokXai, { ...MARK_ATTRS, ...slot }),
+  },
+  kimi: {
+    kind: "adaptive",
+    render: (slot) => createElement(Kimi, { ...MARK_ATTRS, ...slot }),
+  },
+  // The package's `light` variant is the currentColor one; its default is the
+  // flat white that painted nothing on the light theme.
+  "qwen-code": {
+    kind: "adaptive",
+    render: (slot) =>
+      createElement(Qwen, { ...MARK_ATTRS, ...slot, variant: "light" }),
+  },
+  "copilot-cli": {
+    kind: "adaptive",
+    render: (slot) =>
+      createElement(GithubCopilot, { ...MARK_ATTRS, ...slot, variant: "mono" }),
+  },
+  cursor: {
+    kind: "adaptive",
+    render: (slot) => createElement(Cursor, { ...MARK_ATTRS, ...slot }),
+  },
   // Sourcegraph, Amp's vendor: the package's `Amp` export is Google AMP.
-  amp: Sourcegraph,
-  kiro: Kiro,
-  "mistral-vibe": MistralAi,
-  cline: Cline,
+  amp: {
+    kind: "adaptive",
+    render: (slot) => createElement(Sourcegraph, { ...MARK_ATTRS, ...slot }),
+  },
+  kiro: {
+    kind: "adaptive",
+    render: (slot) => createElement(Kiro, { ...MARK_ATTRS, ...slot }),
+  },
+  "mistral-vibe": {
+    kind: "adaptive",
+    render: (slot) => createElement(MistralAi, { ...MARK_ATTRS, ...slot }),
+  },
+  cline: {
+    kind: "adaptive",
+    render: (slot) =>
+      createElement(Cline, { ...MARK_ATTRS, ...slot, variant: "mono" }),
+  },
   // Factory has no mark in @thesvg/react@3.3.1.
   droid: null,
-  warp: Warp,
+  warp: {
+    kind: "adaptive",
+    render: (slot) =>
+      createElement(Warp, { ...MARK_ATTRS, ...slot, variant: "mono" }),
+  },
 };
 
 /** The roster the picker renders, in canonical order. */
@@ -241,7 +376,7 @@ export function agentPresentation(id: StudioAgentId): StudioAgentPresentation {
   return PRESENTATION_BY_ID[id];
 }
 
-export function agentBrandMark(id: StudioAgentId): BrandMark | null {
+export function agentBrandMark(id: StudioAgentId): AgentBrandMark | null {
   return MARK_BY_ID[id];
 }
 

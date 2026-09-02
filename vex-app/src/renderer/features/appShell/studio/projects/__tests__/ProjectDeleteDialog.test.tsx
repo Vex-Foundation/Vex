@@ -56,11 +56,17 @@ import {
 } from "../../workspace/project-terminals.js";
 import { ProjectDeleteDialog } from "../ProjectDeleteDialog.js";
 import {
+  PROJECT_DELETE_CONSEQUENCE_FOLDER_KEPT,
+  PROJECT_DELETE_CONSEQUENCE_FOLDER_TRASHED,
+  PROJECT_DELETE_CONSEQUENCE_UNDO,
+  PROJECT_DELETE_CONSEQUENCE_UNDO_TRASHED,
   PROJECT_DELETE_OUTCOME_SENTENCES,
   PROJECT_DELETE_TRASH_ELSEWHERE_NOTE,
   PROJECT_DELETE_TRASH_LABEL,
   PROJECT_DELETE_TRASH_LOCKED_NOTE,
   PROJECT_TRASH_SENTENCES,
+  projectDeleteConsequenceWhat,
+  projectFolderLine,
 } from "../projects-copy.js";
 
 const deleteMock = vi.fn<(input: ProjectDeleteInput) => Promise<Result<ProjectDeleteResult>>>();
@@ -775,5 +781,100 @@ describe("focus", () => {
         screen.getByRole("button", { name: "Cancel" }),
       );
     });
+  });
+});
+
+/* ------------------------- the consent grammar (UX-4) ---------------------- */
+
+function strip(): HTMLElement {
+  const node = document.querySelector("[data-vex-dialog-consequence]");
+  if (!(node instanceof HTMLElement)) throw new Error("no consequence strip");
+  return node;
+}
+
+describe("the consequence strip", () => {
+  it("states what, to what, and that it cannot be undone", () => {
+    const { project } = renderDialog();
+    const text = strip().textContent ?? "";
+    expect(text).toContain(projectDeleteConsequenceWhat("atlas"));
+    expect(text).toContain(projectFolderLine(project.displayPath));
+    expect(text).toContain(PROJECT_DELETE_CONSEQUENCE_FOLDER_KEPT);
+    expect(text).toContain(PROJECT_DELETE_CONSEQUENCE_UNDO);
+    // Delete keeps the destructive register to itself (audit A10).
+    expect(strip().getAttribute("data-vex-dialog-consequence")).toBe("warning");
+  });
+
+  it("sits outside the body's scroll region, above the typed confirmation", () => {
+    renderDialog();
+    const body = document.querySelector("[data-vex-dialog-body]");
+    expect(body).not.toBeNull();
+    expect(body?.contains(strip())).toBe(false);
+  });
+
+  it("follows the trash checkbox, because the act changes when it is ticked", () => {
+    renderDialog();
+    fireEvent.click(screen.getByLabelText(PROJECT_DELETE_TRASH_LABEL, { exact: false }));
+    const text = strip().textContent ?? "";
+    expect(text).toContain(PROJECT_DELETE_CONSEQUENCE_FOLDER_TRASHED);
+    // The undo line changes with it: the project still cannot come back, and
+    // the folder now can. Saying only the first half would be a half-truth
+    // about the user's files.
+    expect(text).toContain(PROJECT_DELETE_CONSEQUENCE_UNDO_TRASHED);
+    expect(text).not.toContain(PROJECT_DELETE_CONSEQUENCE_FOLDER_KEPT);
+  });
+
+  it("names the project the strip is about, not the one before it", () => {
+    const { setProject } = renderDialog();
+    // A different live row is a different dialog. The strip must follow it or
+    // it would describe a delete of a project nobody is looking at.
+    const other = makeProject({ name: "borealis" });
+    setProject(other);
+    expect(strip().textContent).toContain(
+      projectDeleteConsequenceWhat("borealis"),
+    );
+  });
+});
+
+describe("a proposal that changes under the dialog", () => {
+  it("disarms the confirm when the project is renamed after the name was typed", () => {
+    const { project, setProject } = renderDialog();
+    typeName("atlas");
+    expect(confirmButton().disabled).toBe(false);
+
+    // The row this dialog is aimed at was renamed from another window. The
+    // typed confirmation was given for a project that no longer answers to
+    // that name, so it stops arming the button - the confirm cannot submit
+    // from a proposal that has moved.
+    setProject({ ...project, name: "atlas-2" });
+    expect(confirmButton().disabled).toBe(true);
+    expect(strip().textContent).toContain(
+      projectDeleteConsequenceWhat("atlas-2"),
+    );
+  });
+});
+
+describe("the initial focus a real browser will honour", () => {
+  it("marks Cancel with the autofocus attribute the dialog focusing steps read", () => {
+    renderDialog();
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    // The `focus` suite above asserts `document.activeElement`, and it passed
+    // throughout while a real browser focused the typed confirmation field
+    // instead: the jsdom `showModal` polyfill runs no focusing steps, and React
+    // does not emit `autoFocus` as a content attribute. `showModal()` runs from
+    // the Dialog's own effect - after this child's commit - so the attribute is
+    // the only thing that survives it. See `INITIAL_FOCUS_ATTR`.
+    expect(cancel.hasAttribute("autofocus")).toBe(true);
+  });
+});
+
+describe("the dialog's own posture", () => {
+  it("routes the native Escape intent through the close intent", () => {
+    const { onClose } = renderDialog();
+    const dialog = document.querySelector("dialog");
+    if (dialog === null) throw new Error("no dialog");
+    // The `cancel` event IS the browser's Escape intent on a modal `<dialog>`;
+    // `studio-fixtures.ts` polyfills `showModal` without the UA key handling.
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    expect(onClose).toHaveBeenCalled();
   });
 });

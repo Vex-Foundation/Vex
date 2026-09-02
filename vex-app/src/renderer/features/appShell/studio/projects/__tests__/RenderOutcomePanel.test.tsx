@@ -24,8 +24,10 @@ import type {
 } from "@shared/schemas/studio-installer.js";
 import { RenderOutcomePanel } from "../RenderOutcomePanel.js";
 import {
+  PROJECT_FILES_TITLE,
   PROJECT_REFRESH_FAILURE_SENTENCES,
   RENDER_INCOMPLETE_NOTICES,
+  RENDER_OUTCOME_TITLE,
   RENDER_OUTCOME_EMPTY_COMPLETED,
   RENDER_OUTCOME_EMPTY_INCOMPLETE,
   RENDER_TRIGGER_EMPTY_SENTENCES,
@@ -159,5 +161,90 @@ describe("a refresh failure", () => {
     expect(screen.getByText("the database did not answer")).not.toBeNull();
     // It is NOT a render failure: the run's own report stands unchanged.
     expect(screen.getByText(RENDER_TRIGGER_SENTENCES.repair)).not.toBeNull();
+  });
+});
+
+/* --------------------------- rows with state (I4) -------------------------- */
+
+/** The `data-state` of each row's leading glyph, in row order. */
+function rowStates(): readonly (string | null)[] {
+  return Array.from(document.querySelectorAll("[data-vex-artifact-status]")).map(
+    (row) =>
+      row.querySelector(".vex-state-dot, .vex-state-matrix")?.getAttribute("data-state")
+      ?? null,
+  );
+}
+
+describe("the per-row state glyph", () => {
+  it("gives every status a glyph, in this panel's own two registers", () => {
+    // One row per status, so a member that gained no mapping shows up as a
+    // null here rather than as a silently missing dot in production.
+    render(
+      <RenderOutcomePanel
+        render={outcome({
+          artifacts: [
+            WRITTEN,
+            { status: "unchanged", kind: "agents-md", agentId: null, path: "AGENTS.md" },
+            { status: "removed", kind: "claude-md", agentId: null, path: "CLAUDE.md" },
+            {
+              status: "refused",
+              kind: "agent-config",
+              agentId: "codex",
+              path: ".codex/config.toml",
+              reason: "io_error",
+              detail: "the write itself failed",
+            },
+            {
+              status: "drift_blocked",
+              kind: "agents-md",
+              agentId: null,
+              path: "AGENTS.md",
+              detail: "edited after Vex wrote it",
+            },
+            {
+              status: "unsupported",
+              kind: "agent-config",
+              agentId: "cline",
+              path: null,
+              reason: "no project-scoped config",
+              supportReturnsWhen: "the CLI gains one",
+            },
+          ],
+        })}
+      />,
+    );
+    expect(rowStates()).toEqual([
+      "done",
+      "done",
+      "done",
+      // `refused` is the ONE error: Vex tried and could not. The other two
+      // declines are decisions, and read in the same warning register as the
+      // `caution` pill already beside them.
+      "error",
+      "warning",
+      "warning",
+    ]);
+  });
+
+  it("does not repeat the verdict word for a screen reader", () => {
+    render(<RenderOutcomePanel render={outcome()} />);
+    const row = document.querySelector("[data-vex-artifact-status]");
+    // The Pill on the same line carries "Created"; an sr-only copy inside the
+    // glyph would announce every row's status twice.
+    expect(row?.querySelector(".sr-only")).toBeNull();
+    expect(
+      row?.querySelector(".vex-state-dot")?.getAttribute("aria-hidden"),
+    ).toBe("true");
+  });
+});
+
+describe("its heading (audit I3)", () => {
+  it("does not share a name with the files panel's heading", () => {
+    render(<RenderOutcomePanel render={outcome()} />);
+    // Both panels are on screen together after a create, over lists whose rows
+    // carry the same artifact names. Two headings reading "Project files" left
+    // the reader no way to tell which vocabulary they were in.
+    expect(screen.getByRole("heading", { name: RENDER_OUTCOME_TITLE })).not.toBeNull();
+    expect(RENDER_OUTCOME_TITLE).not.toBe(PROJECT_FILES_TITLE);
   });
 });

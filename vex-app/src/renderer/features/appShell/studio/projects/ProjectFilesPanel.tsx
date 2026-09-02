@@ -30,6 +30,10 @@ import type { JSX } from "react";
 import type { StudioFilesStatus } from "@shared/schemas/studio-installer.js";
 import { IconWarning } from "../../../../components/icons/index.js";
 import { Pill } from "../../../../components/ui/pill.js";
+import {
+  StateDot,
+  type StateDotState,
+} from "../../../../components/ui/state-dot.js";
 import { agentPresentation } from "./studio-agent-catalogue.js";
 import {
   ARTIFACT_KIND_LABELS,
@@ -42,6 +46,31 @@ import {
   PROJECT_FILES_REPAIR_ACTION,
   PROJECT_FILES_TITLE,
 } from "./projects-copy.js";
+
+/**
+ * THE ROW'S STATE GLYPH, one per file state (audit finding I4).
+ *
+ * The same leading slot `RenderOutcomePanel` uses, over THIS panel's vocabulary
+ * - what a file IS, not what a run did to it. `unreadable` is the only ERROR:
+ * Vex tried to inspect the file and could not. `drifted`, `missing` and `stale`
+ * are true statements about a file that a repair fixes, which is the warning
+ * register, and `unsupported` is a design decision that
+ * `ARTIFACT_STATE_WANTS_ATTENTION` deliberately does not badge - so its glyph
+ * must not badge it either.
+ *
+ * `Record` over the closed union, so a new wire state is a compile error rather
+ * than a row with no glyph.
+ */
+const ARTIFACT_STATE_DOTS: Readonly<
+  Record<StudioFilesStatus["artifacts"][number]["state"], StateDotState>
+> = {
+  current: "done",
+  drifted: "warning",
+  missing: "warning",
+  stale: "warning",
+  unsupported: "done",
+  unreadable: "error",
+};
 
 export interface ProjectFilesPanelProps {
   readonly files: StudioFilesStatus;
@@ -119,7 +148,14 @@ export function ProjectFilesPanel({
                 className="flex flex-col gap-1 rounded-lg border border-line-2 px-3 py-2"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="flex min-w-0 flex-col">
+                  {/* The leading state slot. No `label`: the Pill on the same
+                    * line carries the verdict word already. */}
+                  <StateDot
+                    state={ARTIFACT_STATE_DOTS[artifact.state]}
+                    size={8}
+                    className="shrink-0"
+                  />
+                  <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-xs text-ink-primary">
                       {agentName === null
                         ? ARTIFACT_KIND_LABELS[artifact.kind]

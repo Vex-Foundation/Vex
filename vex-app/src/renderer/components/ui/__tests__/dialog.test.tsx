@@ -15,6 +15,7 @@ import { createElement } from "react";
 import {
   Dialog,
   DialogBody,
+  DialogConsequence,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -74,5 +75,69 @@ describe("Dialog scroll chain", () => {
     // Header + footer never compress → footer actions stay reachable.
     expect(header!.classList.contains("shrink-0")).toBe(true);
     expect(footer!.classList.contains("shrink-0")).toBe(true);
+  });
+});
+
+describe("DialogConsequence", () => {
+  /**
+   * JSX rather than this file's older `createElement` idiom: the varargs form
+   * does not satisfy `DialogProps["children"]` under the renderer tsconfig and
+   * every existing use of it is a standing TS2769 in the type baseline. New
+   * cases do not inherit that.
+   */
+  function mount(tone?: "warning" | "notice") {
+    return render(
+      <Dialog open onOpenChange={() => {}}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete project?</DialogTitle>
+          </DialogHeader>
+          {tone === undefined ? (
+            <DialogConsequence>Ends 3 running terminals</DialogConsequence>
+          ) : (
+            <DialogConsequence tone={tone}>Ends 3 running terminals</DialogConsequence>
+          )}
+          <DialogBody>body</DialogBody>
+          <DialogFooter>footer</DialogFooter>
+        </DialogContent>
+      </Dialog>,
+    );
+  }
+
+  it("sits outside the body's scroll region and cannot compress", () => {
+    const { container } = mount();
+    const strip = container.querySelector("[data-vex-dialog-consequence]");
+    const body = container.querySelector("[data-vex-dialog-body]");
+    expect(strip).not.toBeNull();
+    // The property the strip exists for: a consequence inside the one
+    // scrolling region is a consequence the user can scroll away from the
+    // button that performs it.
+    expect(body?.contains(strip as Node)).toBe(false);
+    expect(strip?.classList.contains("shrink-0")).toBe(true);
+  });
+
+  it("defaults to the warning register and takes the notice one on request", () => {
+    const warning = mount();
+    expect(
+      warning.container
+        .querySelector("[data-vex-dialog-consequence]")
+        ?.getAttribute("data-vex-dialog-consequence"),
+    ).toBe("warning");
+    warning.unmount();
+
+    const notice = mount("notice");
+    expect(
+      notice.container
+        .querySelector("[data-vex-dialog-consequence]")
+        ?.getAttribute("data-vex-dialog-consequence"),
+    ).toBe("notice");
+  });
+
+  it("keeps its glyph out of the accessible name", () => {
+    const { container } = mount();
+    const svg = container.querySelector("[data-vex-dialog-consequence] svg");
+    // The strip's text carries the whole meaning; a screen reader that also
+    // announced the glyph would be reading the decoration.
+    expect(svg?.getAttribute("aria-hidden")).toBe("true");
   });
 });

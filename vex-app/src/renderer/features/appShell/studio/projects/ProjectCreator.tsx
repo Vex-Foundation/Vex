@@ -72,10 +72,12 @@ import { SubmitError } from "../../../../components/ui/submit-error.js";
 import { useCreateProject } from "../../../../lib/api/projects.js";
 import { useAvailableWallets } from "../../../../lib/api/wallet-inventory.js";
 import { openProjectRepair } from "./project-dialog-intent.js";
+import { FullAccessConsent } from "./FullAccessConsent.js";
 import {
   ProjectAgentFieldset,
   ProjectPermissionFieldset,
   ProjectWalletFieldset,
+  selectedWalletLabels,
 } from "./ProjectScopeFields.js";
 import { ProjectFilesPanel } from "./ProjectFilesPanel.js";
 import { RenderOutcomePanel } from "./RenderOutcomePanel.js";
@@ -128,6 +130,17 @@ export function ProjectCreator({
   const [evmWalletId, setEvmWalletId] = useState<string | null>(null);
   const [solanaWalletId, setSolanaWalletId] = useState<string | null>(null);
   const [agents, setAgents] = useState<readonly StudioAgentId[]>([]);
+  /**
+   * The Full-access grant has been acknowledged FOR THE PROPOSAL ON SCREEN.
+   *
+   * Dropped by every edit to a field the strip names - the permission and the
+   * two wallet selects - which is what makes it an acknowledgement of a specific
+   * grant rather than a box that stays ticked while the grant changes under it.
+   * Dropping it on the way OUT of Full access is what makes the round trip
+   * restricted -> full ask again, instead of restoring a consent the user gave
+   * to a proposal they have since walked away from.
+   */
+  const [fullAccessAcknowledged, setFullAccessAcknowledged] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   /** Set on success. Its presence IS the result phase. */
   const [created, setCreated] = useState<ProjectCreateResult | null>(null);
@@ -145,6 +158,7 @@ export function ProjectCreator({
     setEvmWalletId(null);
     setSolanaWalletId(null);
     setAgents([]);
+    setFullAccessAcknowledged(false);
     setSubmitError(null);
     setCreated(null);
   }, [open]);
@@ -163,12 +177,36 @@ export function ProjectCreator({
 
   const trimmedName = name.trim();
   const pending = createMutation.isPending;
-  const submitDisabled = trimmedName.length === 0 || pending;
+  const grantingFullAccess = permission === "full";
+  /** The grant is unacknowledged, so there is nothing to create yet. */
+  const consentMissing = grantingFullAccess && !fullAccessAcknowledged;
+  const submitDisabled = trimmedName.length === 0 || consentMissing || pending;
+  const walletLabels = selectedWalletLabels(
+    evmWalletId,
+    solanaWalletId,
+    inventory.evm,
+    inventory.solana,
+  );
+
+  /**
+   * Every edit the consent strip NAMES drops the acknowledgement.
+   *
+   * One helper rather than three call sites so a field added to the strip
+   * cannot be wired to the form without passing through here.
+   */
+  const invalidateConsent = useCallback((): void => {
+    setFullAccessAcknowledged(false);
+  }, []);
 
   const onSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
       event.preventDefault();
       if (trimmedName.length === 0 || createMutation.isPending) return;
+      // THE GATE, at the point the wire input is built rather than only on the
+      // button. A disabled attribute is a statement about dispatch, not a rule:
+      // a synthetic submit, an Enter in a text field or a queued event all
+      // reach here, and this is the last place before a grant leaves for main.
+      if (permission === "full" && !fullAccessAcknowledged) return;
       setSubmitError(null);
       const input: ProjectCreateInput = {
         name: trimmedName,
@@ -204,6 +242,7 @@ export function ProjectCreator({
       announce,
       createMutation,
       evmWalletId,
+      fullAccessAcknowledged,
       onCreated,
       permission,
       solanaWalletId,
@@ -230,6 +269,20 @@ export function ProjectCreator({
                 : projectFolderLine(created.project.displayPath)}
             </DialogDescription>
           </DialogHeader>
+
+          {/* THE CONSEQUENCE, above the scroll region, for the one choice in
+            * this form that grants authority over the user's disk and wallets.
+            * Rendered only while that choice stands: a strip that is always
+            * there is chrome, and chrome is not read. */}
+          {created === null && grantingFullAccess ? (
+            <FullAccessConsent
+              displayPath={null}
+              walletLabels={walletLabels}
+              acknowledged={fullAccessAcknowledged}
+              disabled={pending}
+              onAcknowledgedChange={setFullAccessAcknowledged}
+            />
+          ) : null}
 
           <DialogBody className="gap-6 px-8">
             {created === null ? (
@@ -262,7 +315,10 @@ export function ProjectCreator({
 
                 <ProjectPermissionFieldset
                   permission={permission}
-                  onPermissionChange={setPermission}
+                  onPermissionChange={(next) => {
+                    invalidateConsent();
+                    setPermission(next);
+                  }}
                 />
 
                 <ProjectWalletFieldset
@@ -270,8 +326,14 @@ export function ProjectCreator({
                   solanaWalletId={solanaWalletId}
                   evmOptions={inventory.evm}
                   solanaOptions={inventory.solana}
-                  onEvmChange={setEvmWalletId}
-                  onSolanaChange={setSolanaWalletId}
+                  onEvmChange={(next) => {
+                    invalidateConsent();
+                    setEvmWalletId(next);
+                  }}
+                  onSolanaChange={(next) => {
+                    invalidateConsent();
+                    setSolanaWalletId(next);
+                  }}
                 />
 
                 <ProjectAgentFieldset

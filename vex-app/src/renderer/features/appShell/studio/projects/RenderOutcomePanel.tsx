@@ -43,6 +43,10 @@ import type {
 } from "@shared/schemas/studio-installer.js";
 import { IconWarning } from "../../../../components/icons/index.js";
 import { Pill } from "../../../../components/ui/pill.js";
+import {
+  StateDot,
+  type StateDotState,
+} from "../../../../components/ui/state-dot.js";
 import { agentPresentation } from "./studio-agent-catalogue.js";
 import {
   ARTIFACT_KIND_LABELS,
@@ -85,6 +89,33 @@ function isDeclined(outcome: StudioArtifactOutcome): boolean {
     outcome.status === "unsupported"
   );
 }
+
+/**
+ * THE ROW'S STATE GLYPH, one per outcome status.
+ *
+ * The rows were a wall of sentences: name, path, verdict word and a full
+ * paragraph each, with nothing to scan (audit finding I4). deepseek's `ToolRow`
+ * gives every row a 16px leading state slot and keeps the sentence as secondary
+ * text; this is the same slot over this panel's own vocabulary.
+ *
+ * `refused` is the only ERROR: it is the one status that means Vex tried and
+ * could not. `drift_blocked` and `unsupported` are decisions, not failures, and
+ * read in the warning register the `caution` pill beside them already uses -
+ * splitting the two would give one row two different verdicts.
+ *
+ * `Record` over the closed union rather than a switch with a default, so a new
+ * wire status is a compile error here instead of a row with no glyph.
+ */
+const ARTIFACT_STATUS_DOTS: Readonly<
+  Record<StudioArtifactOutcome["status"], StateDotState>
+> = {
+  written: "done",
+  unchanged: "done",
+  removed: "done",
+  refused: "error",
+  drift_blocked: "warning",
+  unsupported: "warning",
+};
 
 export function RenderOutcomePanel({
   render,
@@ -244,7 +275,15 @@ function ArtifactRow({
       data-vex-artifact-kind={artifact.kind}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 flex-col">
+        {/* The leading state slot. No `label`: the Pill on the same line
+          * carries the verdict WORD, and an sr-only copy of it would announce
+          * every row's status twice. */}
+        <StateDot
+          state={ARTIFACT_STATUS_DOTS[artifact.status]}
+          size={8}
+          className="shrink-0"
+        />
+        <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-xs text-ink-primary">
             {agentName === null
               ? ARTIFACT_KIND_LABELS[artifact.kind]

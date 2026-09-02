@@ -40,6 +40,7 @@ import {
   type ReactEventHandler,
   type ReactNode,
 } from "react";
+import { IconWarning } from "../icons/index.js";
 import { cn } from "../../lib/utils.js";
 
 interface DialogContextValue {
@@ -336,6 +337,78 @@ export function DialogHeadlessHeader({
     </div>
   );
 }
+
+/**
+ * Which register the consequence strip reads in.
+ *
+ * Two, and only two, because there are two kinds of consent this product asks
+ * for. `warning` is for an action that ends something or moves the user's files;
+ * `notice` is for one that changes files Vex itself maintains and can rewrite
+ * again. Repair is the reason `notice` exists: it overwrites a file the user may
+ * have edited, so it needs the strip, but dressing it in the same red as Delete
+ * would leave Studio's two most consequential buttons speaking one tone for two
+ * very different outcomes.
+ */
+export type DialogConsequenceTone = "warning" | "notice";
+
+const CONSEQUENCE_TONE_CLASS: Readonly<Record<DialogConsequenceTone, string>> = {
+  warning: "border-warning/40 bg-warning-wash text-warning-label",
+  notice: "border-accent-primary/30 bg-accent-wash text-ink-primary",
+};
+
+export interface DialogConsequenceProps
+  extends HTMLAttributes<HTMLDivElement> {
+  /** Register. Defaults to `warning`. */
+  readonly tone?: DialogConsequenceTone;
+}
+
+/**
+ * THE CONSEQUENCE STRIP: what this dialog is about to do, above everything else.
+ *
+ * ADDITIVE - no existing consumer changes shape by this existing. It sits
+ * BETWEEN `DialogHeader` and `DialogBody` as a `shrink-0` sibling, so it is
+ * outside the body's `overflow-y-auto` container and is the first thing read
+ * whatever the body is scrolled to.
+ *
+ * ## The defect it closes
+ *
+ * Studio's consent dialogs led with a title and a description and left the
+ * consequence to be inferred from a paragraph in a scrolling form: "Delete
+ * project?" over a body the user had to read to learn that the running
+ * terminals would be closed, and a Full access radio card whose one sentence of
+ * caution sat in the same register as the option beside it. The strip states the
+ * three facts a person needs before consenting - WHAT will happen, TO WHAT
+ * (folder, project, wallets), and WHETHER IT CAN BE UNDONE - in the dialog's own
+ * chrome, where nothing can scroll it away from the button that performs it.
+ *
+ * The strip is a statement, not a control, EXCEPT where the consequence is a
+ * GRANT: an acknowledgement checkbox rendered as its child binds the consent to
+ * the exact proposal on screen (rule 09 - approval binds to the exact action and
+ * parameters). The primitive owns the register and the layout; the words and the
+ * acknowledgement belong to the surface, which is where their copy lives.
+ *
+ * The glyph is `aria-hidden`: the strip's text carries the whole meaning, and a
+ * screen reader that also announced "warning" would be reading the decoration.
+ */
+export const DialogConsequence = forwardRef<
+  HTMLDivElement,
+  DialogConsequenceProps
+>(({ className, tone = "warning", children, ...props }, ref) => (
+  <div
+    ref={ref}
+    data-vex-dialog-consequence={tone}
+    className={cn(
+      "flex shrink-0 items-start gap-2 border-y px-6 py-3 text-xs leading-5",
+      CONSEQUENCE_TONE_CLASS[tone],
+      className,
+    )}
+    {...props}
+  >
+    <IconWarning size={14} className="mt-0.5 shrink-0" />
+    <div className="flex min-w-0 flex-1 flex-col gap-1.5">{children}</div>
+  </div>
+));
+DialogConsequence.displayName = "DialogConsequence";
 
 export const DialogBody = forwardRef<
   HTMLDivElement,

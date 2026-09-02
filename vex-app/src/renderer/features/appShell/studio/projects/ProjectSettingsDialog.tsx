@@ -83,11 +83,13 @@ import { SubmitError } from "../../../../components/ui/submit-error.js";
 import { useProject, useUpdateProjectScope } from "../../../../lib/api/projects.js";
 import { useAvailableWallets } from "../../../../lib/api/wallet-inventory.js";
 import type { WalletSelectOption } from "../../SessionWalletSelect.js";
+import { FullAccessConsent } from "./FullAccessConsent.js";
 import {
   orderedAgents,
   ProjectAgentFieldset,
   ProjectPermissionFieldset,
   ProjectWalletFieldset,
+  selectedWalletLabels,
 } from "./ProjectScopeFields.js";
 import { RenderOutcomePanel } from "./RenderOutcomePanel.js";
 import { SELECTABLE_STUDIO_AGENT_IDS } from "./studio-agent-catalogue.js";
@@ -163,6 +165,17 @@ export function ProjectSettingsDialog({
       : null;
 
   const [draft, setDraft] = useState<ScopeDraft | null>(null);
+  /**
+   * The Full-access grant in the CURRENT draft has been acknowledged.
+   *
+   * Same contract as the creator's: bound to the proposal the strip prints, so
+   * every edit to the permission or the wallets drops it, and it is dropped
+   * again whenever the form is re-seeded (a reload after a conflict, or the
+   * fresh row a save returns). Never persisted - a project that is already Full
+   * access still asks before it is saved as Full access again, because a save is
+   * what re-states the grant to main.
+   */
+  const [fullAccessAcknowledged, setFullAccessAcknowledged] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [conflictState, setConflictState] = useState<ScopeConflictState>({
     kind: "none",
@@ -202,6 +215,9 @@ export function ProjectSettingsDialog({
   /** Seed the form from a loaded project. The one place a draft is born. */
   const seedFrom = useCallback((loaded: ProjectDto): void => {
     const selectable = new Set(SELECTABLE_STUDIO_AGENT_IDS);
+    // A fresh draft is a fresh proposal, so any acknowledgement given for the
+    // previous one goes with it.
+    setFullAccessAcknowledged(false);
     setDraft({
       permission: loaded.permission,
       evmWalletId: loaded.wallets.evm?.id ?? null,
@@ -219,6 +235,7 @@ export function ProjectSettingsDialog({
     if (!open) {
       setDraft(null);
       setEditingVersion(null);
+      setFullAccessAcknowledged(false);
       setSubmitError(null);
       setConflictState({ kind: "none" });
       setRender(null);
@@ -252,6 +269,42 @@ export function ProjectSettingsDialog({
   const dirty =
     draft !== null && stored !== null && !sameScope(draft, stored);
   const pending = updateMutation.isPending;
+  /** The scope this form would SAVE grants Full access. */
+  const grantingFullAccess = draft !== null && draft.permission === "full";
+  const consentMissing = grantingFullAccess && !fullAccessAcknowledged;
+  const walletLabels =
+    draft === null
+      ? []
+      : selectedWalletLabels(
+          draft.evmWalletId,
+          draft.solanaWalletId,
+          inventory.evm,
+          inventory.solana,
+        );
+
+  /**
+   * The one funnel every edit passes through, so an acknowledgement cannot
+   * survive a change to the proposal it was given for.
+   *
+   * Compared field by field rather than dropped unconditionally: toggling an
+   * AGENT is not a change to what the strip states, and re-asking for the grant
+   * because the user checked a coding agent would teach them to tick the box
+   * without reading it.
+   */
+  const applyDraft = useCallback(
+    (next: ScopeDraft): void => {
+      if (
+        draft === null ||
+        draft.permission !== next.permission ||
+        draft.evmWalletId !== next.evmWalletId ||
+        draft.solanaWalletId !== next.solanaWalletId
+      ) {
+        setFullAccessAcknowledged(false);
+      }
+      setDraft(next);
+    },
+    [draft],
+  );
 
   /**
    * Leave the conflict by READING THE PROJECT AGAIN.
@@ -318,6 +371,9 @@ export function ProjectSettingsDialog({
       ) {
         return;
       }
+      // THE GATE, where the wire input is built. Same reasoning as the
+      // creator's: the disabled Save is the affordance, this is the rule.
+      if (draft.permission === "full" && !fullAccessAcknowledged) return;
       setSubmitError(null);
       setRender(null);
       setRefreshFailure(null);
@@ -358,6 +414,7 @@ export function ProjectSettingsDialog({
       dirty,
       draft,
       editingVersion,
+      fullAccessAcknowledged,
       pending,
       projectId,
       seedFrom,
@@ -389,6 +446,20 @@ export function ProjectSettingsDialog({
             </DialogDescription>
           </DialogHeader>
 
+          {/* THE CONSEQUENCE of the scope this form would save, above the
+            * scroll region. Suppressed under the conflict pane: nothing can be
+            * saved there, so a strip about a grant would describe an action the
+            * dialog is refusing to perform. */}
+          {!showingConflict && grantingFullAccess ? (
+            <FullAccessConsent
+              displayPath={project?.displayPath ?? null}
+              walletLabels={walletLabels}
+              acknowledged={fullAccessAcknowledged}
+              disabled={pending}
+              onAcknowledgedChange={setFullAccessAcknowledged}
+            />
+          ) : null}
+
           <DialogBody className="gap-6 px-8">
             {showingConflict ? null : <SettingsBody
               project={project}
@@ -400,7 +471,7 @@ export function ProjectSettingsDialog({
               pending={pending}
               inventory={inventory}
               dirty={dirty}
-              onDraftChange={setDraft}
+              onDraftChange={applyDraft}
             />}
 
           </DialogBody>
@@ -456,7 +527,7 @@ export function ProjectSettingsDialog({
                 </Button>
                 <Button
                   type="submit"
-                  disabled={!dirty || pending}
+                  disabled={!dirty || consentMissing || pending}
                   className="h-10 px-6"
                 >
                   {pending ? PROJECT_SETTINGS_PENDING : PROJECT_SETTINGS_SUBMIT}
