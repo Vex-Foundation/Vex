@@ -25,12 +25,40 @@ import { riskChipClasses } from "./risk.js";
  * Tolerant reader: a key with no entry keeps its raw name, and an absent key
  * renders no row at all — never a placeholder or a zero.
  */
-const CRITICAL_ARG_LABELS: Readonly<Record<string, string>> = { vexFee: "Vex fee" };
+const CRITICAL_ARG_LABELS: Readonly<Record<string, string>> = {
+  vexFee: "Vex fee",
+};
+
+function isLighterCreateOrderBehavior(
+  key: string,
+  value: unknown,
+  criticalArgs: ApprovalPreview["criticalArgs"],
+): boolean {
+  return key === "timeInForce"
+    && criticalArgs.toolId === "lighter.order.create"
+    && (value === "good-till-time"
+      || value === "immediate-or-cancel"
+      || value === "post-only");
+}
+
+function criticalArgValue(
+  key: string,
+  value: unknown,
+  criticalArgs: ApprovalPreview["criticalArgs"],
+): string {
+  if (!isLighterCreateOrderBehavior(key, value, criticalArgs)) return String(value);
+  if (value === "good-till-time") return "Keep open";
+  if (value === "immediate-or-cancel") return "Immediate only";
+  return "Maker only";
+}
 
 function criticalArgLabel(
   key: string,
   criticalArgs: ApprovalPreview["criticalArgs"],
 ): string {
+  if (isLighterCreateOrderBehavior(key, criticalArgs[key], criticalArgs)) {
+    return "Order behavior";
+  }
   if (key !== "orderExpiryIso") return CRITICAL_ARG_LABELS[key] ?? key;
   const orderType = criticalArgs.orderType;
   const timeInForce = criticalArgs.timeInForce;
@@ -138,7 +166,7 @@ export function ApprovalDetails({
                 <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
                   {criticalArgLabel(k, criticalArgs)}
                 </dt>
-                <dd className="break-all text-[var(--vex-text-2)]">{String(v)}</dd>
+                <dd className="break-all text-[var(--vex-text-2)]">{criticalArgValue(k, v, criticalArgs)}</dd>
               </div>
             ))}
           </dl>

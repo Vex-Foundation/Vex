@@ -213,6 +213,53 @@ describe("ApprovalCard", () => {
   );
 
   it.each([
+    ["immediate-or-cancel", "Immediate only"],
+    ["good-till-time", "Keep open"],
+    ["post-only", "Maker only"],
+  ] as const)("shows %s as the plain-language order behavior", (timeInForce, behaviorLabel) => {
+    renderCard(
+      makeSummary({
+        preview: {
+          toolName: "order.create",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.order.create",
+            orderType: "limit",
+            timeInForce,
+          },
+        },
+      }),
+      false,
+    );
+
+    const args = screen.getByTestId("critical-args");
+    expect(args.textContent).toContain("Order behavior");
+    expect(args.textContent).toContain(behaviorLabel);
+    expect(args.textContent).not.toContain(timeInForce);
+  });
+
+  it("does not relabel an unrelated numeric timeInForce field", () => {
+    renderCard(
+      makeSummary({
+        preview: {
+          toolName: "order.cancelAll",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.order.cancelAll",
+            timeInForce: 0,
+          },
+        },
+      }),
+      false,
+    );
+
+    const args = screen.getByTestId("critical-args");
+    expect(args.textContent).toContain("timeInForce");
+    expect(args.textContent).toContain("0");
+    expect(args.textContent).not.toContain("Order behavior");
+  });
+
+  it.each([
     "stop-loss",
     "stop-loss-limit",
     "take-profit",
