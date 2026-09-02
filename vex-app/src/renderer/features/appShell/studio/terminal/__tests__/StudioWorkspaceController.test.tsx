@@ -294,7 +294,7 @@ describe("StudioWorkspaceController restore", () => {
     // one run in seven in isolation. The assertion is unchanged; what changed
     // is which condition the wait is on.
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Terminal 1/ })).toBeTruthy();
       expect(bridge.attaches.toSorted()).toEqual(["t1", "t2"]);
     });
 
@@ -350,7 +350,7 @@ describe("StudioWorkspaceController restore", () => {
     renderController();
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Terminal 1/ })).toBeTruthy();
     });
     expect(bridge.creates).toEqual([]);
   });
@@ -376,7 +376,7 @@ describe("the first terminal of an opened project", () => {
     bridge.savedWorkspace = null;
     renderController();
 
-    const tab = await screen.findByRole("tab", { name: /auto-shell/ });
+    const tab = await screen.findByRole("tab", { name: /Terminal 1/ });
     expect(tab).toBeTruthy();
     // Through the SAME path the `+` button uses - one create, for this project,
     // at the same starting geometry - rather than a parallel creation code path
@@ -407,7 +407,7 @@ describe("the first terminal of an opened project", () => {
     };
     renderController();
 
-    expect(await screen.findByRole("tab", { name: /auto-shell/ })).toBeTruthy();
+    expect(await screen.findByRole("tab", { name: /Terminal 1/ })).toBeTruthy();
     expect(bridge.creates).toHaveLength(1);
   });
 
@@ -471,7 +471,12 @@ describe("the first terminal of an opened project", () => {
     expect(bridge.creates).toHaveLength(1);
     const tabs = screen.getAllByRole("tab");
     expect(tabs).toHaveLength(1);
-    expect(tabs[0]?.textContent).toContain("user-shell");
+    // The tab is named `Terminal 1`; the SHELL it started is a fact about the
+    // terminal, shown in the panel header rather than used as the tab's name.
+    expect(tabs[0]?.textContent).toContain("Terminal 1");
+    expect(document.querySelector("[data-vex-terminal-shell]")?.textContent).toBe(
+      "user-shell",
+    );
   });
 
   it("does NOT auto-open when the restore FAILED, and says so", async () => {
@@ -516,7 +521,7 @@ describe("the first terminal of an opened project", () => {
     await renderOpened();
 
     await act(async () => {
-      screen.getByRole("button", { name: "Close auto-shell" }).click();
+      screen.getByRole("button", { name: "Close Terminal 1" }).click();
       await Promise.resolve();
     });
 
@@ -584,7 +589,7 @@ describe("StudioWorkspaceController selection and cleanup", () => {
     // closing it must select the second, not march the selection toward the end
     // of the strip.
     await act(async () => {
-      screen.getByRole("button", { name: "Close shell-1" }).click();
+      screen.getByRole("button", { name: "Close Terminal 3" }).click();
       await Promise.resolve();
     });
 
@@ -737,14 +742,14 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
     bridge.deferCreate = true;
 
     await act(async () => {
-      screen.getByRole("button", { name: "Split auto-shell side by side" }).click();
+      screen.getByRole("button", { name: "Split Terminal 1 side by side" }).click();
       await Promise.resolve();
     });
     expect(bridge.creates).toHaveLength(2);
     expect(bridge.kills).not.toContain("t-split");
 
     await act(async () => {
-      screen.getByRole("button", { name: "Close auto-shell" }).click();
+      screen.getByRole("button", { name: "Close Terminal 1" }).click();
       await Promise.resolve();
     });
 
@@ -798,7 +803,9 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
     await waitFor(() => {
       expect(screen.getAllByRole("tab")).toHaveLength(1);
     });
-    expect(screen.getAllByRole("tab")[0]?.textContent).toContain("p2-shell");
+    expect(document.querySelector("[data-vex-terminal-shell]")?.textContent).toBe(
+      "p2-shell",
+    );
     expect(bridge.kills).toContain("t-p1");
   });
 
@@ -836,10 +843,14 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
     });
 
     // p1's revived tabs are nowhere, and p2's own tab survived the late answer.
-    expect(screen.queryByRole("tab", { name: /vim/ })).toBeNull();
+    // Every terminal tab is now named `Terminal n`, so the name cannot tell the
+    // two projects' tabs apart: the COUNT and the shell each tab is running are
+    // what distinguish "p2's own terminal survived" from "p1's two came back".
     const tabs = screen.getAllByRole("tab");
     expect(tabs).toHaveLength(1);
-    expect(tabs[0]?.textContent).toContain("p2-shell");
+    expect(document.querySelector("[data-vex-terminal-shell]")?.textContent).toBe(
+      "p2-shell",
+    );
   });
 });
 
@@ -853,7 +864,7 @@ describe("StudioWorkspaceController terminal disposal", () => {
     expect(registry.has("t-auto")).toBe(true);
 
     await act(async () => {
-      screen.getByRole("button", { name: "Close auto-shell" }).click();
+      screen.getByRole("button", { name: "Close Terminal 1" }).click();
       await Promise.resolve();
     });
 
@@ -887,7 +898,7 @@ describe("StudioWorkspaceController terminal disposal", () => {
       value: { terminalId: "t-second", pid: 903, shellName: "bash", displayCwd: "p1" },
     };
     await act(async () => {
-      screen.getByRole("button", { name: "Split shell-0 side by side" }).click();
+      screen.getByRole("button", { name: "Split Terminal 2 side by side" }).click();
       await Promise.resolve();
     });
 
@@ -945,7 +956,7 @@ describe("a restore leaves EXACTLY ONE live set of ptys", () => {
       await Promise.resolve();
     });
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Terminal 1/ })).toBeTruthy();
     });
 
     // StrictMode ran the restore effect twice. ONE revive, and the terminals
@@ -1015,7 +1026,7 @@ describe("a restore leaves EXACTLY ONE live set of ptys", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Terminal 1/ })).toBeTruthy();
     });
     expect(bridge.reviveCount).toBe(1);
     expect([...bridge.livePtys].sort()).toEqual(["t1", "t2"]);
@@ -1036,7 +1047,7 @@ describe("a lost pty host is REPORTED, not hidden", () => {
     bridge.savedWorkspace = savedWorkspace();
     renderStrict("p1");
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Terminal 1/ })).toBeTruthy();
     });
 
     await act(async () => {
@@ -1073,7 +1084,7 @@ describe("a lost pty host is REPORTED, not hidden", () => {
     bridge.savedWorkspace = savedWorkspace();
     renderStrict("p1");
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Terminal 1/ })).toBeTruthy();
     });
 
     await act(async () => {
@@ -1128,7 +1139,7 @@ describe("a lost pty host is REPORTED, not hidden", () => {
     bridge.savedWorkspace = savedWorkspace();
     const view = renderStrict("p1");
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /vim/ })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Terminal 1/ })).toBeTruthy();
     });
     await act(async () => {
       bridge.emitTerminalsLost(["t1"]);

@@ -306,11 +306,30 @@
    * by the design guard.
    *
    * `background` is TRANSPARENT on purpose - the pane paints its own surface
-   * and the watermark sits under the terminal. The ANSI slots are the only
-   * place in this file where raw hex is right: they are a WIRE CONTRACT with
-   * programs that emit SGR 30-37 and 90-97, not brand decisions, and bending
-   * them to the brand ramp would misrender every diff, prompt and ls. */
-  --vex-alias-term-background: transparent;
+   * (`--vex-alias-bg-layer-1`, the card `XtermHost` draws) and the watermark
+   * sits under the terminal.
+   *
+   * IT IS SPELLED `#00000000`, NOT `transparent`, AND THAT IS THE WHOLE POINT.
+   * xterm 6.0.0 parses a theme colour with `css.toColor`, which accepts hex
+   * (3-8 digits) and `rgb()/rgba()` and otherwise falls through to a 1x1
+   * canvas probe that THROWS when the resulting alpha is not 255
+   * (`node_modules/@xterm/xterm/lib/xterm.js`: "css.toColor: Unsupported css
+   * format"). ThemeService swallows that throw and keeps its own default,
+   * which for the background is `#000000`. So the CSS keyword `transparent`
+   * did not paint a transparent canvas - it painted an OPAQUE BLACK one in
+   * both themes, which is why the light theme shipped near-black ink on black.
+   * The 8-digit hex takes the parser's fast path with alpha 0, and
+   * `allowTransparency: true` on the Terminal (see `terminal-registry.ts`) is
+   * what lets that alpha survive to the renderer.
+   *
+   * The ANSI slots are the only place in this file where raw hex is right:
+   * they are a WIRE CONTRACT with programs that emit SGR 30-37 and 90-97, not
+   * brand decisions, and bending them to the brand ramp would misrender every
+   * diff, prompt and ls. Within that contract they are still tuned per theme
+   * to clear the rule-08 contrast floor against the surface the canvas sits
+   * on; `__tests__/terminal-palette-tokens.test.ts` measures every one of them
+   * and names the single documented exception. */
+  --vex-alias-term-background: #00000000;
   --vex-alias-term-foreground: var(--color-gray-200);
   --vex-alias-term-cursor: var(--vex-alias-accent-primary);
   --vex-alias-term-selection: rgba(255, 255, 255, 0.18);
@@ -323,7 +342,10 @@
   --vex-alias-term-magenta: #c69af3;
   --vex-alias-term-cyan: #5cc9d4;
   --vex-alias-term-white: #c8ccd8;
-  --vex-alias-term-bright-black: #5a6178;
+  /* Lifted from #5a6178 (2.69:1 on the card, unreadable). SGR 90 is the
+   * "dim" colour git, ls and every shell prompt reach for, so it carries real
+   * text and owes the floor; 5.05:1 keeps it visibly dimmer than white. */
+  --vex-alias-term-bright-black: #868ea3;
   --vex-alias-term-bright-red: #ff9d9f;
   --vex-alias-term-bright-green: #8fdd9d;
   --vex-alias-term-bright-yellow: #f5cd7a;
@@ -580,30 +602,39 @@
    * by the design guard.
    *
    * `background` is TRANSPARENT on purpose - the pane paints its own surface
-   * and the watermark sits under the terminal. The ANSI slots are the only
-   * place in this file where raw hex is right: they are a WIRE CONTRACT with
-   * programs that emit SGR 30-37 and 90-97, not brand decisions, and bending
-   * them to the brand ramp would misrender every diff, prompt and ls. */
-  --vex-alias-term-background: transparent;
+   * and the watermark sits under the terminal. It is spelled `#00000000`
+   * rather than `transparent` because xterm's own colour parser rejects the
+   * keyword and falls back to opaque black; the chronos block above carries
+   * the measurement and the reference.
+   *
+   * The ANSI slots are the only place in this file where raw hex is right:
+   * they are a WIRE CONTRACT with programs that emit SGR 30-37 and 90-97, not
+   * brand decisions. On a WHITE card the whole ramp has to move down rather
+   * than up, and the normal/bright pair moves TOGETHER: the six chromatic
+   * normals are the darker step and their bright partners are the lighter one,
+   * so `git diff`'s bright red still reads as the lighter red while clearing
+   * 4.5:1. The previous ramp put the brights at 3.5-4.1:1, which is the same
+   * "bright means invisible" defect the light theme had at the background. */
+  --vex-alias-term-background: #00000000;
   --vex-alias-term-foreground: var(--color-gray-800);
   --vex-alias-term-cursor: var(--vex-alias-accent-primary);
   --vex-alias-term-selection: rgba(10, 13, 24, 0.14);
 
   --vex-alias-term-black: #2b3040;
-  --vex-alias-term-red: #c0393f;
-  --vex-alias-term-green: #2f7d43;
-  --vex-alias-term-yellow: #8a6410;
-  --vex-alias-term-blue: #2b52c4;
-  --vex-alias-term-magenta: #7a3fb0;
-  --vex-alias-term-cyan: #1f6f78;
+  --vex-alias-term-red: #9b2b30;
+  --vex-alias-term-green: #1f5c31;
+  --vex-alias-term-yellow: #6b4d0c;
+  --vex-alias-term-blue: #1e3a95;
+  --vex-alias-term-magenta: #5c2f86;
+  --vex-alias-term-cyan: #16535a;
   --vex-alias-term-white: #6b7180;
   --vex-alias-term-bright-black: #4a5064;
-  --vex-alias-term-bright-red: #e05055;
-  --vex-alias-term-bright-green: #3f9a57;
-  --vex-alias-term-bright-yellow: #a87d1c;
-  --vex-alias-term-bright-blue: #3f68dd;
-  --vex-alias-term-bright-magenta: #9455cc;
-  --vex-alias-term-bright-cyan: #2a8a94;
+  --vex-alias-term-bright-red: #c0393f;
+  --vex-alias-term-bright-green: #2f7d43;
+  --vex-alias-term-bright-yellow: #8a6410;
+  --vex-alias-term-bright-blue: #2b52c4;
+  --vex-alias-term-bright-magenta: #7a3fb0;
+  --vex-alias-term-bright-cyan: #1f6f78;
   --vex-alias-term-bright-white: #1c2030;
 
 

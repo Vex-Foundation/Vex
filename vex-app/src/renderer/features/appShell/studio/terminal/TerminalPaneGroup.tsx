@@ -31,7 +31,24 @@ export interface TerminalPaneGroupProps {
   readonly onResizePanes: (relativeSizes: readonly number[]) => void;
   readonly onActivatePane: (paneId: string) => void;
   readonly onClosePane: (paneId: string) => void;
-  readonly onTitleChange: (title: string) => void;
+  /**
+   * The SHELL said what it is running (an OSC title). It no longer names the
+   * tab - a tab is `Terminal n` or whatever the user called it - so this feeds
+   * the shell label the tooltip and the header's second line show.
+   */
+  readonly onShellTitle: (terminalId: string, title: string) => void;
+  /** The header's split action, for the tab this group is. */
+  readonly onSplit: (orientation: "horizontal" | "vertical") => void;
+  /** The header's kill action: end the shell this header describes. */
+  readonly onKill: () => void;
+  /** The header's rename action, committed by the user. */
+  readonly onRename: (title: string) => void;
+  /**
+   * WHAT IS RUNNING in the active pane, as the host reported it, or `null`
+   * before it has said. The tab is named `Terminal n`, so this is the header's
+   * second line rather than its title.
+   */
+  readonly shellLabel: string | null;
   /**
    * One shell reported where it now is. Routed to the WORKSPACE MODEL, which
    * owns the value: this component reads `pane.displayCwd` and holds no copy,
@@ -62,7 +79,11 @@ export function TerminalPaneGroup({
   onResizePanes,
   onActivatePane,
   onClosePane,
-  onTitleChange,
+  onShellTitle,
+  onSplit,
+  onKill,
+  onRename,
+  shellLabel,
   onDisplayCwdChange,
   onPaneExit,
   lostTerminalIds,
@@ -93,9 +114,13 @@ export function TerminalPaneGroup({
       <TerminalPanelHeader
         title={group.title}
         displayCwd={activeLabel}
+        shellLabel={shellLabel}
         shellId={shellId}
         shells={shells}
         onSelectShell={onSelectShell}
+        onSplit={onSplit}
+        onKill={onKill}
+        onRename={onRename}
       />
       <div className="min-h-0 flex-1">
         <SplitPane
@@ -126,7 +151,9 @@ export function TerminalPaneGroup({
                 terminalId={pane.terminalId}
                 visible={visible}
                 {...(registry === undefined ? {} : { registry })}
-                onTitleChange={onTitleChange}
+                onTitleChange={(title) => {
+                  onShellTitle(pane.terminalId, title);
+                }}
                 onDisplayCwdChange={(displayCwd) => {
                   onDisplayCwdChange(pane.terminalId, displayCwd);
                 }}
@@ -145,7 +172,11 @@ export function TerminalPaneGroup({
                   role="status"
                   className="absolute inset-0 flex items-end justify-center bg-surface-base/60 p-3 text-[12px] text-ink-secondary"
                 >
-                  <span className="rounded border border-line-3 bg-surface-raised px-2 py-1">
+                  {/* `bg-surface-2`, not the `bg-surface-raised` that used to
+                      be here: there is no `--color-surface-raised` in the
+                      theme, so that utility emitted NOTHING and this notice
+                      floated over the terminal with no plate under it. */}
+                  <span className="rounded border border-line-3 bg-surface-2 px-2 py-1">
                     This shell ended when the terminal service stopped.
                   </span>
                 </div>

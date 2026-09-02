@@ -4,21 +4,28 @@
  * Three facts and one action: the panel's name, the directory the active shell
  * is in, and the picker that decides which shell the NEXT terminal runs.
  *
- * ## The `+` the mockup draws here is deliberately absent
+ * ## The action cluster, and the one button of it that is still missing
  *
- * The mockup puts a `+` in this header as well as in the tab strip above it,
- * and both would open a terminal in this project - the same action, reached
- * twice. `terminal-copy.ts` already settled what that costs, on the empty
- * state's own button: "two controls sharing one accessible name is ambiguous
- * to anyone navigating by name". Giving one of them a different name does not
- * help, because a different name for the same action is a false name.
+ * The mockup draws `+`, split, trash and `...` here, and the owner settled what
+ * the `+` means (2026-09-02): it opens a NEW TERMINAL as a tab, never a split
+ * pane. That answer is what makes it a duplicate of the strip's own `+`, which
+ * is already on screen a few pixels above and does exactly that, so it is NOT
+ * rendered here: the audit that asked for this cluster also files "two controls
+ * named New terminal in the centre" as a defect, and shipping the second one
+ * deliberately would close a finding by re-opening it. The strip's `+` is the
+ * one owner of "open a terminal".
  *
- * So the strip's `+` remains the one way to open a terminal, and this header
- * carries only what is genuinely new: where the shell is, and which shell the
- * next one will be. Making the header's `+` a DIFFERENT action - a new pane in
- * this group rather than a new tab - would resolve the ambiguity honestly, but
- * it is a product decision about what the mockup's two buttons mean, and it is
- * not one to invent here.
+ * What IS here is everything that names THIS terminal and could not be said in
+ * a list of tabs:
+ *
+ *  - SPLIT, which used to sit beside every tab in the strip (three tabs, nine
+ *    icons, none of them saying which terminal they would change);
+ *  - KILL, which is not the tab's close: on a split tab it ends the one shell
+ *    this header describes and leaves the tab open. The two therefore keep two
+ *    names, so a keyboard user can tell them apart;
+ *  - RENAME, as a direct action rather than the mockup's `...` menu, because
+ *    the other two things a menu would hold - colour and icon - are out of this
+ *    stage's scope, and a menu with one item is a click in front of a button.
  *
  * ## Presentational, and deliberately so
  *
@@ -51,72 +58,235 @@
  * built from the label and the availability rather than from the DOM.
  */
 
-import { useCallback, useEffect, useId, useRef, useState, type JSX } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode,
+} from "react";
 import type {
   TerminalShellId,
   TerminalShellOption,
 } from "@shared/schemas/terminal.js";
-import { IconChevronDown } from "../../../../components/icons/index.js";
+import {
+  IconCheck,
+  IconChevronDown,
+  IconEdit,
+  IconSplitHorizontal,
+  IconSplitVertical,
+  IconTrash,
+} from "../../../../components/icons/index.js";
+import { StateDot } from "../../../../components/ui/state-dot.js";
 import { cn } from "../../../../lib/utils.js";
 import {
+  RENAME_FIELD_LABEL,
+  RENAME_HINT_COPY,
   SHELL_PICKER_LABEL,
   SHELL_UNAVAILABLE_SUFFIX,
+  killTerminalLabel,
+  renameTabLabel,
+  splitTerminalLabel,
+  splitTerminalVerticalLabel,
   terminalLocationLabel,
+  terminalShellLabel,
 } from "./terminal-copy.js";
 
 export interface TerminalPanelHeaderProps {
-  /** The panel's name. The tab's title, which follows the shell's own title. */
+  /** The panel's name: `Terminal n`, or whatever the user renamed it to. */
   readonly title: string;
   /**
    * The active shell's directory AS A LABEL, or `null` before the first
    * property arrives. Never a filesystem path; see the module header.
    */
   readonly displayCwd: string | null;
+  /** What the host says is running here, or `null` before it has said. */
+  readonly shellLabel: string | null;
   /** Which shell the NEXT terminal opens with. */
   readonly shellId: TerminalShellId;
   /** The catalogue rows, in main's order. Empty while the read is in flight. */
   readonly shells: readonly TerminalShellOption[];
   readonly onSelectShell: (shellId: TerminalShellId) => void;
+  readonly onSplit: (orientation: "horizontal" | "vertical") => void;
+  readonly onKill: () => void;
+  readonly onRename: (title: string) => void;
 }
 
 export function TerminalPanelHeader({
   title,
   displayCwd,
+  shellLabel,
   shellId,
   shells,
   onSelectShell,
+  onSplit,
+  onKill,
+  onRename,
 }: TerminalPanelHeaderProps): JSX.Element {
   const selected = shells.find((shell) => shell.id === shellId);
+  const [renaming, setRenaming] = useState(false);
+  const renameButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  const endRename = useCallback(
+    (commit: string | null): void => {
+      setRenaming(false);
+      if (commit !== null && commit.trim() !== "") onRename(commit.trim());
+      // The field is about to be removed; focus goes back to the control that
+      // opened it rather than to the document body.
+      queueMicrotask(() => {
+        renameButtonRef.current?.focus();
+      });
+    },
+    [onRename],
+  );
 
   return (
     <div className="flex shrink-0 items-start gap-3 border-b border-line-3 px-3 py-2">
       <div className="min-w-0 flex-1">
-        <h2 className="truncate text-[12px] font-medium tracking-wide text-ink-primary uppercase">
-          {title}
-        </h2>
         {/*
-          The directory is a SEPARATE line with its own accessible name rather
-          than a suffix on the heading: a screen-reader user moving by heading
-          should hear the panel's name, not the panel's name plus wherever the
-          shell happens to have wandered.
+          SENTENCE CASE, in the display face. The heading used to be
+          `text-transform: uppercase` over the shell's own path, so a terminal
+          announced itself as `/BIN/BASH`. The name is the tab's name now, and a
+          name is not shouted.
         */}
-        <p
-          className="truncate text-[12px] text-accent-primary"
-          aria-label={terminalLocationLabel(displayCwd)}
-        >
-          {displayCwd ?? ""}
+        {renaming ? (
+          <HeaderRenameField initial={title} onEnd={endRename} />
+        ) : (
+          <h2 className="truncate font-display text-[13px] leading-5 font-medium text-ink-primary">
+            {title}
+          </h2>
+        )}
+        {/*
+          The shell and the directory are a SEPARATE line with their own
+          accessible names rather than a suffix on the heading: a screen-reader
+          user moving by heading should hear the panel's name, not the panel's
+          name plus whatever the shell is and wherever it has wandered.
+        */}
+        <p className="flex min-w-0 items-center gap-1.5 text-[12px] leading-4">
+          <span data-vex-terminal-shell="" className="shrink-0 text-ink-tertiary">
+            {terminalShellLabel(shellLabel)}
+          </span>
+          <span aria-hidden="true" className="shrink-0 text-ink-dimmed">
+            /
+          </span>
+          <span
+            className="truncate text-accent-primary"
+            aria-label={terminalLocationLabel(displayCwd)}
+          >
+            {displayCwd ?? ""}
+          </span>
         </p>
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
+        <ClusterButton label={splitTerminalLabel(title)} onClick={() => { onSplit("horizontal"); }}>
+          <IconSplitHorizontal size={14} />
+        </ClusterButton>
+        <ClusterButton
+          label={splitTerminalVerticalLabel(title)}
+          onClick={() => { onSplit("vertical"); }}
+        >
+          <IconSplitVertical size={14} />
+        </ClusterButton>
+        <ClusterButton
+          ref={renameButtonRef}
+          label={renameTabLabel(title)}
+          onClick={() => { setRenaming(true); }}
+        >
+          <IconEdit size={14} />
+        </ClusterButton>
+        <ClusterButton label={killTerminalLabel(title)} onClick={onKill} danger>
+          <IconTrash size={14} />
+        </ClusterButton>
         <ShellPicker
           shells={shells}
           shellId={shellId}
           selectedLabel={selected?.label ?? shellId}
+          available={selected?.available ?? false}
           onSelectShell={onSelectShell}
         />
       </div>
     </div>
+  );
+}
+
+/** One icon action in the header cluster. Named, never a bare glyph. */
+const ClusterButton = forwardRef<
+  HTMLButtonElement,
+  {
+    readonly label: string;
+    readonly onClick: () => void;
+    readonly danger?: boolean;
+    readonly children: ReactNode;
+  }
+>(({ label, onClick, danger = false, children }, ref) => (
+  <button
+    ref={ref}
+    type="button"
+    aria-label={label}
+    title={label}
+    onClick={onClick}
+    className={cn(
+      "rounded-md p-1.5 text-ink-tertiary hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+      danger ? "hover:text-danger" : "hover:text-ink-primary",
+    )}
+  >
+    {children}
+  </button>
+));
+ClusterButton.displayName = "ClusterButton";
+
+/**
+ * Rename in the header's own title slot.
+ *
+ * Enter commits, Escape cancels, blur commits - the same three keys the tab's
+ * inline rename answers to, because two rename affordances that behaved
+ * differently would be two features.
+ */
+function HeaderRenameField({
+  initial,
+  onEnd,
+}: {
+  readonly initial: string;
+  readonly onEnd: (commit: string | null) => void;
+}): JSX.Element {
+  const [value, setValue] = useState(initial);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (input === null) return;
+    input.focus();
+    input.select();
+  }, []);
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      aria-label={RENAME_FIELD_LABEL}
+      title={RENAME_HINT_COPY}
+      value={value}
+      onChange={(event) => {
+        setValue(event.target.value);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          onEnd(value);
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          onEnd(null);
+        }
+      }}
+      onBlur={() => {
+        onEnd(value);
+      }}
+      className="h-5 w-40 rounded border border-line-input bg-surface-2 px-1 text-[13px] leading-5 text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    />
   );
 }
 
@@ -129,11 +299,14 @@ function ShellPicker({
   shells,
   shellId,
   selectedLabel,
+  available,
   onSelectShell,
 }: {
   readonly shells: readonly TerminalShellOption[];
   readonly shellId: TerminalShellId;
   readonly selectedLabel: string;
+  /** Whether the selected shell exists on this machine, for the pill's dot. */
+  readonly available: boolean;
   readonly onSelectShell: (shellId: TerminalShellId) => void;
 }): JSX.Element {
   const listboxId = useId();
@@ -238,10 +411,15 @@ function ShellPicker({
           if (open) close(true);
           else openList();
         }}
-        className="flex items-center gap-1 rounded-md border border-line-3 px-2 py-1 text-[12px] text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        // A PILL, as the mockup draws it: fully rounded, on the raised surface,
+        // with the shell's own state dot on the right.
+        className="flex items-center gap-1.5 rounded-full border border-line-3 bg-surface-2 px-2.5 py-1 text-[12px] text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         <span className="max-w-[10rem] truncate">{selectedLabel}</span>
         <IconChevronDown size={12} />
+        {/* The dot is `aria-hidden`; the availability is already in the
+            picker's option names, so a second spoken copy would be noise. */}
+        <StateDot state={available ? "done" : "warning"} size={8} />
       </button>
 
       {open ? (
@@ -252,7 +430,18 @@ function ShellPicker({
           aria-label={SHELL_PICKER_LABEL}
           tabIndex={-1}
           onKeyDown={onListKeyDown}
-          className="absolute top-full right-0 z-20 mt-1 min-w-[12rem] rounded-md border border-line-3 bg-surface-raised py-1 shadow-lg"
+          /*
+            `bg-surface-2`, NOT the `bg-surface-raised` that used to be here.
+            There is no `--color-surface-raised` in the theme, so Tailwind
+            emitted no rule at all and the popup had NO background: its rows
+            floated over whatever was behind them, which is the terminal. In
+            chronos that read as a dark popup with light rows and looked
+            correct; in celeris the rows are dark ink and the backdrop was the
+            terminal's black canvas, so the AVAILABLE shells were the ones you
+            could not read. The list's readability was inverted by a missing
+            token, not by a colour choice.
+          */
+          className="absolute top-full right-0 z-20 mt-1 min-w-[12rem] rounded-md border border-line-3 bg-surface-2 py-1 shadow-lg"
         >
           {shells.map((shell, index) => (
             <div
@@ -280,7 +469,15 @@ function ShellPicker({
                 shell.id === shellId ? "bg-interactive-hover" : null,
               )}
             >
-              <span className="truncate">{shell.label}</span>
+              <span className="flex min-w-0 items-center gap-1.5">
+                {/* A CHECK, not only a fill. The selected row used to be told
+                    apart by a background tint alone, which is a colour-only
+                    signal and disappears at high contrast. */}
+                <span aria-hidden="true" className="w-3 shrink-0">
+                  {shell.id === shellId ? <IconCheck size={12} /> : null}
+                </span>
+                <span className="truncate">{shell.label}</span>
+              </span>
               {shell.available ? null : (
                 <span aria-hidden="true" className="shrink-0 text-ink-tertiary">
                   {SHELL_UNAVAILABLE_SUFFIX.trim()}

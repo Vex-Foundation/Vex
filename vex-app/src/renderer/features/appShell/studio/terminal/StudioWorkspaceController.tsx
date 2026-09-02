@@ -28,7 +28,7 @@
  * through two independent paths that cannot half-succeed into a broken screen.
  */
 
-import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import type { FileNode } from "@shared/schemas/files.js";
 import type {
   TerminalErrorCode,
@@ -65,6 +65,13 @@ import {
   setTabTitle,
   toPersistedLayout,
 } from "../workspace/workspace-model.js";
+import {
+  nextTerminalTitle,
+  renumberTerminalTabs,
+  shellLabelsOf,
+  type TerminalExit,
+  type TerminalRunFacts,
+} from "./terminal-tab-model.js";
 import { useFileOpenIntentStore } from "../workspace/file-open-intent.js";
 import {
   publishProjectTerminals,
@@ -162,6 +169,23 @@ export function StudioWorkspaceController({
     () => new Set(),
   );
   const [restoring, setRestoring] = useState(false);
+  /**
+   * WHAT EACH TERMINAL'S TAB SHOWS FOR STATE, and what is running in it.
+   *
+   * Two small renderer-owned maps rather than fields on the workspace model,
+   * because neither is workspace state: an exit is a fact about a pty the model
+   * deliberately does not act on (an exited pane keeps its scrollback and its
+   * place in the strip), and the shell's own title is display copy the host
+   * streams. The model stays the owner of the strip; these say how a row draws.
+   *
+   * Both are BOUNDED by what is on screen: the effect below drops every entry
+   * whose terminal has left the workspace, so a long session of opening and
+   * closing terminals cannot grow them.
+   */
+  const [exits, setExits] = useState<ReadonlyMap<string, TerminalExit>>(() => new Map());
+  const [shellLabelById, setShellLabelById] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
   /**
    * WHICH SHELL the next terminal opens with, and the rows the picker shows.
    *
@@ -446,8 +470,11 @@ export function StudioWorkspaceController({
         return;
       }
       if (result.data.value !== null) {
-        stateRef.current = fromSnapshot(result.data.value);
+        // RENUMBERED on adoption: the snapshot names each group after the shell
+        // that was in it, which is exactly the naming this surface replaced.
+        stateRef.current = renumberTerminalTabs(fromSnapshot(result.data.value));
         setState(stateRef.current);
+        setShellLabelById(shellLabelsOf(result.data.value));
       }
       hydratedRef.current = true;
       // THE AUTO-OPEN, and it is deliberately asked of the RESULTING STATE
@@ -852,8 +879,13 @@ export function StudioWorkspaceController({
           setLostTerminalIds(new Set());
           return;
         }
-        stateRef.current = fromSnapshot(result.data.value);
+        stateRef.current = renumberTerminalTabs(fromSnapshot(result.data.value));
         setState(stateRef.current);
+        setShellLabelById(shellLabelsOf(result.data.value));
+        // THE EXITS GO WITH THEM. These terminals are new ptys with new ids;
+        // keeping the old rows would leave a restored tab wearing the state of
+        // the shell it replaced.
+        setExits(new Map());
         setLostTerminalIds(new Set());
         setNotice(null);
       } finally {
@@ -1078,13 +1110,20 @@ export function StudioWorkspaceController({
       }
 
       setNotice(null);
+      // WHAT IS RUNNING, remembered for the tooltip and the panel header. It is
+      // no longer the tab's NAME: a strip of three tabs all called `bash` told
+      // the user nothing about which terminal they were switching to.
+      setShellLabelById((current) => new Map(current).set(terminalId, shellName));
       const paneId = newId("pane");
       if (into.kind === "tab") {
         apply((current) =>
           addTerminalGroup(current, {
             kind: "terminalGroup",
             tabId: newId("group"),
-            title: shellName,
+            // `Terminal n`, numbered against the tabs OPEN RIGHT NOW - inside
+            // the updater, so two creates racing each other cannot both read
+            // the same pre-mutation state and claim the same number.
+            title: nextTerminalTitle(current.tabs),
             orientation: "horizontal",
             panes: [{ paneId, terminalId, relativeSize: 1, displayCwd }],
             activePaneId: paneId,
@@ -1282,6 +1321,40 @@ export function StudioWorkspaceController({
     [apply, endTerminal],
   );
 
+  /**
+   * PRUNE the two display maps to the terminals still on screen.
+   *
+   * Rule 05: every growing store names its bound. The bound here is the
+   * workspace itself - at most `WORKSPACE_TERMINAL_GROUPS_MAX` groups, each
+   * with its panes - and the way it is enforced is to drop what the model no
+   * longer holds, on the render after it stopped holding it. Doing it here
+   * rather than in each close path means no close route can forget: the
+   * strip's close, the header's kill, a project delete and a failed restore
+   * all end in the same state change.
+   */
+  useEffect(() => {
+    const live = new Set<string>();
+    for (const tab of state.tabs) {
+      if (tab.kind !== "terminalGroup") continue;
+      for (const pane of tab.panes) live.add(pane.terminalId);
+    }
+    const prune = <T,>(current: ReadonlyMap<string, T>): ReadonlyMap<string, T> => {
+      const stale = [...current.keys()].filter((id) => !live.has(id));
+      if (stale.length === 0) return current;
+      const next = new Map(current);
+      for (const id of stale) next.delete(id);
+      return next;
+    };
+    setExits(prune);
+    setShellLabelById(prune);
+  }, [state.tabs]);
+
+  /** What the strip needs beyond the model to draw each tab's state. */
+  const runFacts: TerminalRunFacts = useMemo(
+    () => ({ lostTerminalIds, exits, restoring }),
+    [lostTerminalIds, exits, restoring],
+  );
+
   const handleClosePane = useCallback(
     (tabId: string, paneId: string): void => {
       const tab = stateRef.current.tabs.find((candidate) => candidate.tabId === tabId);
@@ -1298,10 +1371,21 @@ export function StudioWorkspaceController({
   );
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col bg-surface-base", className)}>
+    // THE MOCKUP'S CARD. The workspace used to run edge to edge, so the
+    // terminal met the window with no boundary and the watermark had nothing
+    // to sit on. The column paints the shell's own ground, and the strip and
+    // the panel live on a rounded `surface-1` card inset from it - which is
+    // also the surface the transparent xterm canvas is read against, and the
+    // one the palette's contrast is measured on.
+    <div
+      className={cn("flex h-full min-h-0 flex-col bg-surface-base p-3", className)}
+      data-vex-workspace-card=""
+    >
+      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-line-3 bg-surface-1">
       <TerminalTabs
         state={state}
-        lostTerminalIds={lostTerminalIds}
+        runFacts={runFacts}
+        shellLabelById={shellLabelById}
         {...(registry === undefined ? {} : { registry })}
         onSelectTab={(tabId) => {
           apply((current) => selectTab(current, tabId));
@@ -1316,11 +1400,24 @@ export function StudioWorkspaceController({
           apply((current) => setActivePane(current, tabId, paneId));
         }}
         onClosePane={handleClosePane}
-        onTitleChange={(tabId, title) => {
+        // THE USER'S NAME FOR A TAB, which is a different thing from the
+        // shell's title. `setTabTitle` refuses an empty one, so a rename
+        // cannot blank the tab it names.
+        onRenameTab={(tabId, title) => {
           apply((current) => setTabTitle(current, tabId, title));
         }}
         onDisplayCwdChange={(terminalId, displayCwd) => {
           apply((current) => setPaneDisplayCwd(current, terminalId, displayCwd));
+        }}
+        // The shell's own title NO LONGER RENAMES THE TAB. It says what is
+        // running, which is a fact about the terminal rather than a name for
+        // it, so it feeds the tooltip and the panel header's second line and
+        // leaves `Terminal n` (or the user's own name) alone.
+        onShellTitle={(terminalId, title) => {
+          setShellLabelById((current) => {
+            if (current.get(terminalId) === title) return current;
+            return new Map(current).set(terminalId, title);
+          });
         }}
         shellId={shellId}
         shells={shells}
@@ -1331,10 +1428,22 @@ export function StudioWorkspaceController({
           // rather than threading `projectId` into a terminal component.
           <FileViewer projectId={projectId} tab={tab} active={isActive} />
         )}
-        onPaneExit={() => {
+        onPaneExit={(tabId, paneId, info) => {
           // An exited pty leaves its pane and its scrollback in place: the exit
           // code is what the user came back to read, and closing the pane for
-          // them would take it away. `XtermHost` renders the exit line.
+          // them would take it away. `XtermHost` renders the exit line inside
+          // the pane; RECORDED HERE so the tab in the strip can stop claiming
+          // the shell is running, which is the one place a user looking at a
+          // different tab would ever see it.
+          const tab = stateRef.current.tabs.find(
+            (candidate) => candidate.tabId === tabId,
+          );
+          const terminalId =
+            tab?.kind === "terminalGroup"
+              ? tab.panes.find((pane) => pane.paneId === paneId)?.terminalId
+              : undefined;
+          if (terminalId === undefined) return;
+          setExits((current) => new Map(current).set(terminalId, info));
         }}
         notice={
           lostTerminalIds.size > 0 ? (
@@ -1404,6 +1513,7 @@ export function StudioWorkspaceController({
           )
         }
       />
+      </div>
     </div>
   );
 }

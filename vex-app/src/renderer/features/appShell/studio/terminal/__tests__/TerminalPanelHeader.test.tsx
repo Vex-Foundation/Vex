@@ -34,24 +34,49 @@ function renderHeader(
   overrides: Partial<React.ComponentProps<typeof TerminalPanelHeader>> = {},
 ) {
   const onSelectShell = vi.fn();
+  const onSplit = vi.fn();
+  const onKill = vi.fn();
+  const onRename = vi.fn();
   const view = render(
     <TerminalPanelHeader
-      title="bash"
+      title="Terminal 1"
       displayCwd="src/lib"
+      shellLabel="bash"
       shellId="bash"
       shells={SHELLS}
       onSelectShell={onSelectShell}
+      onSplit={onSplit}
+      onKill={onKill}
+      onRename={onRename}
       {...overrides}
     />,
   );
-  return { view, onSelectShell };
+  return { view, onSelectShell, onSplit, onKill, onRename };
 }
 
 describe("what the header shows", () => {
   it("shows the panel title and the directory LABEL", () => {
     renderHeader();
-    expect(screen.getByRole("heading", { name: "bash" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Terminal 1" })).toBeTruthy();
     expect(screen.getByLabelText("Working directory: src/lib")).toBeTruthy();
+  });
+
+  it("names the TAB, in sentence case, and puts the shell on the second line", () => {
+    // The heading used to be the shell's own path with `text-transform:
+    // uppercase` over it, so a terminal introduced itself as `/BIN/BASH`. The
+    // name is the tab's now; the shell is a fact beside the directory.
+    renderHeader();
+    const name = screen.getByRole("heading", { name: "Terminal 1" });
+    expect(name.className).not.toContain("uppercase");
+    expect(name.textContent).toBe("Terminal 1");
+    expect(document.querySelector("[data-vex-terminal-shell]")?.textContent).toBe("bash");
+  });
+
+  it("names the unreported shell rather than leaving the line blank", () => {
+    renderHeader({ shellLabel: null });
+    expect(document.querySelector("[data-vex-terminal-shell]")?.textContent).toBe(
+      "Shell not reported yet",
+    );
   });
 
   it("shows the project's own label when the shell sits at the project root", () => {
@@ -170,16 +195,105 @@ describe("a shell this machine does not have", () => {
 /**
  * The header does NOT duplicate the tab strip's `+`.
  *
- * A regression guard for a decision, not for a bug: the mockup draws a `+`
- * here, and re-adding one that opens a terminal would put two controls with
- * the accessible name "New terminal" on the same screen, which the copy module
- * has already ruled out once. If a future change adds a header action, this
- * test forces it to be a DIFFERENT action with its own honest name.
+ * A regression guard for a decision, not for a bug. The owner settled that the
+ * mockup's header `+` means "new terminal as a tab" (2026-09-02), which is
+ * exactly what the strip's `+` already does a few pixels above - so rendering
+ * it would put two controls with the accessible name "New terminal" on one
+ * screen, which the audit files as its own defect. Everything the cluster DOES
+ * carry acts on this one terminal and says so in its name.
  */
-describe("the header does not duplicate the strip's action", () => {
-  it("offers exactly one control, the shell picker", () => {
+describe("the header's action cluster", () => {
+  it("never adds a second control named New terminal", () => {
     renderHeader();
     expect(screen.queryByRole("button", { name: "New terminal" })).toBeNull();
-    expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+
+  it("names every action for the terminal it acts on, and reaches it by keyboard", () => {
+    const { onSplit, onKill } = renderHeader();
+
+    screen.getByRole("button", { name: "Split Terminal 1 side by side" }).click();
+    expect(onSplit).toHaveBeenLastCalledWith("horizontal");
+    screen.getByRole("button", { name: "Split Terminal 1 top and bottom" }).click();
+    expect(onSplit).toHaveBeenLastCalledWith("vertical");
+    screen.getByRole("button", { name: "Kill the shell in Terminal 1" }).click();
+    expect(onKill).toHaveBeenCalledTimes(1);
+
+    for (const button of screen.getAllByRole("button")) {
+      expect(button.tabIndex).not.toBe(-1);
+      expect(button.getAttribute("type")).toBe("button");
+    }
+  });
+
+  it("KILL and CLOSE keep different names, because they are different actions", () => {
+    // On a split tab, kill ends the one shell this header describes while the
+    // strip's close ends the whole tab. Two controls with one name would be
+    // indistinguishable to anyone navigating by name.
+    renderHeader();
+    expect(screen.queryByRole("button", { name: /^Close / })).toBeNull();
+    expect(screen.getByRole("button", { name: "Kill the shell in Terminal 1" })).toBeTruthy();
+  });
+});
+
+describe("renaming from the header", () => {
+  it("opens a named field on the title, commits on Enter and restores focus", () => {
+    const { onRename } = renderHeader();
+    const button = screen.getByRole("button", { name: "Rename Terminal 1" });
+    fireEvent.click(button);
+
+    const field = screen.getByRole("textbox", { name: "Terminal name" });
+    expect(document.activeElement).toBe(field);
+    fireEvent.change(field, { target: { value: "build watch" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    expect(onRename).toHaveBeenCalledWith("build watch");
+    expect(screen.queryByRole("textbox", { name: "Terminal name" })).toBeNull();
+  });
+
+  it("CANCELS on Escape without renaming anything", () => {
+    const { onRename } = renderHeader();
+    fireEvent.click(screen.getByRole("button", { name: "Rename Terminal 1" }));
+    const field = screen.getByRole("textbox", { name: "Terminal name" });
+    fireEvent.change(field, { target: { value: "discarded" } });
+    fireEvent.keyDown(field, { key: "Escape" });
+
+    expect(onRename).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Terminal 1" })).toBeTruthy();
+  });
+
+  it("refuses to blank a tab's name", () => {
+    const { onRename } = renderHeader();
+    fireEvent.click(screen.getByRole("button", { name: "Rename Terminal 1" }));
+    const field = screen.getByRole("textbox", { name: "Terminal name" });
+    fireEvent.change(field, { target: { value: "   " } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(onRename).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE POPUP PAINTS A SURFACE.
+ *
+ * The light theme shipped a picker in which the AVAILABLE shells were the
+ * unreadable ones. The cause was not a colour choice: the popup asked for
+ * `bg-surface-raised`, there is no `--color-surface-raised` in the theme, so
+ * Tailwind emitted nothing and the rows sat directly on the terminal's canvas.
+ * A class name cannot be contrast-tested, but its ABSENCE can be pinned, and
+ * this is the assertion that would have caught it.
+ */
+describe("the picker's popup has a surface under it", () => {
+  it("uses a surface utility the theme actually defines", () => {
+    renderHeader();
+    fireEvent.click(screen.getByRole("button", { name: "Shell for new terminals" }));
+    const list = screen.getByRole("listbox");
+    expect(list.className).not.toContain("surface-raised");
+    expect(list.className).toContain("bg-surface-2");
+  });
+
+  it("marks the current row with a glyph, not by fill alone", () => {
+    renderHeader({ shellId: "zsh" });
+    fireEvent.click(screen.getByRole("button", { name: "Shell for new terminals" }));
+    const selected = screen.getByRole("option", { name: "zsh" });
+    expect(selected.querySelector("svg")).not.toBeNull();
+    expect(screen.getByRole("option", { name: "bash" }).querySelector("svg")).toBeNull();
   });
 });

@@ -29,6 +29,150 @@ import type { WorkspaceRefusalReason } from "../workspace/types.js";
 /** The shell picker's accessible name, on the button and on the listbox. */
 export const SHELL_PICKER_LABEL = "Shell for new terminals";
 
+/* ------------------------------------------------------------------ *
+ * Tab identity and state
+ * ------------------------------------------------------------------ */
+
+/**
+ * What a terminal tab is CALLED before anyone renames it.
+ *
+ * `Terminal 1`, `Terminal 2`, and never the shell's path. Three terminals used
+ * to read `bash | bash | bash`, which names the program rather than the thing
+ * the user is switching between, and a strip in which no tab can be told from
+ * another is a strip with no navigation in it. VS Code's tab list does the same
+ * (`terminalTabsList.ts`, `getAriaLabel`: "Terminal {id} {title}"), and its
+ * numbers are what people mean when they say "the second terminal".
+ *
+ * The shell is not lost: it moves to the tab's tooltip and to the panel
+ * header's second line, where it is a fact about the tab rather than its name.
+ */
+export function terminalTabTitle(n: number): string {
+  return `Terminal ${String(n)}`;
+}
+
+/**
+ * Does this title look like one Vex generated?
+ *
+ * Used to pick the next free number, so `Terminal 2` is not handed out twice
+ * while the first one is open. A tab the user renamed to something else simply
+ * stops holding a number, which is the correct reading: they named it.
+ */
+export const TERMINAL_TITLE_PATTERN = /^Terminal (\d+)$/;
+
+/** A terminal tab's state, in the words a screen reader gets beside the dot. */
+export const TERMINAL_STATE_COPY = {
+  running: "Running",
+  exited: "Exited",
+  error: "Ended with an error",
+  restoring: "Restoring",
+} as const;
+
+/**
+ * The tab's tooltip: its name, what is running in it, and its state.
+ *
+ * The tooltip is where the shell name went when the tab stopped being named
+ * after it. `shellLabel` is absent until the host has said what it started.
+ */
+export function terminalTabTooltip(
+  title: string,
+  shellLabel: string | null,
+  state: keyof typeof TERMINAL_STATE_COPY,
+): string {
+  const parts = [title];
+  if (shellLabel !== null && shellLabel !== "") parts.push(shellLabel);
+  parts.push(TERMINAL_STATE_COPY[state]);
+  return parts.join(" - ");
+}
+
+/* ------------------------------------------------------------------ *
+ * The tab strip's per-tab controls
+ * ------------------------------------------------------------------ */
+
+/**
+ * CLOSING A TERMINAL ENDS ITS SHELL, and the tooltip says so.
+ *
+ * The product decision (owner, 2026-09-02) is VS Code's: the close control on
+ * a terminal tab kills the shell, with no confirmation dialog in the way. The
+ * dialog is not what makes that safe - saying it before the click is. A tab
+ * whose shell has already exited says only that it is closing the tab, because
+ * there is nothing left to end.
+ */
+export function closeTabLabel(title: string): string {
+  return `Close ${title}`;
+}
+
+export function closeTerminalTooltip(title: string, running: boolean): string {
+  return running
+    ? `Close ${title}. The shell running in it will be ended.`
+    : `Close ${title}.`;
+}
+
+/** Rename, as a per-tab action and as the double-click the tab already accepts. */
+export function renameTabLabel(title: string): string {
+  return `Rename ${title}`;
+}
+
+/** The inline rename field's own name, and what its two keys do. */
+export const RENAME_FIELD_LABEL = "Terminal name";
+export const RENAME_HINT_COPY = "Enter to save, Escape to cancel";
+
+/* ------------------------------------------------------------------ *
+ * The panel header's action cluster
+ * ------------------------------------------------------------------ */
+
+/**
+ * SPLIT and KILL, named for the terminal they act on.
+ *
+ * Both are per-tab actions that used to sit beside every tab in the strip -
+ * three tabs meant nine icons in a row, none of which told the user which
+ * terminal they were about to change. They live in the panel header now, which
+ * describes exactly one terminal, so the name can be specific and the strip can
+ * go back to being a list of names.
+ */
+export function splitTerminalLabel(title: string): string {
+  return `Split ${title} side by side`;
+}
+
+export function splitTerminalVerticalLabel(title: string): string {
+  return `Split ${title} top and bottom`;
+}
+
+/**
+ * KILL is not CLOSE, and the two names must stay apart.
+ *
+ * With one pane they end the same shell, but they are different actions on a
+ * split tab: close ends the whole tab, kill ends the ONE terminal the header
+ * describes. Naming them alike would leave two controls a keyboard user cannot
+ * tell apart while they do different things.
+ */
+export function killTerminalLabel(title: string): string {
+  return `Kill the shell in ${title}`;
+}
+
+/** The header's second line: what is running, and where it is. */
+export function terminalShellLabel(shellLabel: string | null): string {
+  return shellLabel === null || shellLabel === "" ? "Shell not reported yet" : shellLabel;
+}
+
+/* ------------------------------------------------------------------ *
+ * The empty workspace
+ * ------------------------------------------------------------------ */
+
+/**
+ * The watermark's rows: what you can do here, and how.
+ *
+ * VS Code's empty editor group shows its shortcuts rather than a blank field
+ * (`editorGroupWatermark.ts`), which is the pattern. Studio has no accelerators
+ * yet - UX-5 owns that table - so the rows ship with the two actions the mockup
+ * draws in the strip and NO key column until there are keys to show. The
+ * component takes `rows` so the keyboard brief can fill them without touching
+ * this surface again.
+ */
+export const EMPTY_WORKSPACE_WATERMARK_ROWS = [
+  { action: "New terminal" },
+  { action: "Split a terminal" },
+] as const;
+
 /**
  * What a shell Vex knows but this machine does not have says, in a row.
  *
