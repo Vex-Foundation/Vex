@@ -19,13 +19,38 @@ import { riskChipClasses } from "./risk.js";
 
 /**
  * Human labels for the engine-injected, non-argument preview keys. A tool
- * ARGUMENT is shown under its own name on purpose (the user is verifying the
+ * ARGUMENT is normally shown under its own name (the user is verifying the
  * exact field that will be signed), but `vexFee` is not an argument — it is
  * Vex's own cost disclosure, and "VEXFEE" is not what a person calls it.
  * Tolerant reader: a key with no entry keeps its raw name, and an absent key
  * renders no row at all — never a placeholder or a zero.
  */
 const CRITICAL_ARG_LABELS: Readonly<Record<string, string>> = { vexFee: "Vex fee" };
+
+function criticalArgLabel(
+  key: string,
+  criticalArgs: ApprovalPreview["criticalArgs"],
+): string {
+  if (key !== "orderExpiryIso") return CRITICAL_ARG_LABELS[key] ?? key;
+  const orderType = criticalArgs.orderType;
+  const timeInForce = criticalArgs.timeInForce;
+  if (
+    criticalArgs.toolId === "lighter.order.create"
+    && timeInForce === "immediate-or-cancel"
+    && (orderType === "market" || orderType === "limit")
+  ) {
+    return "Unsent expiry reference (signed expiry 0)";
+  }
+  if (
+    orderType === "stop-loss"
+    || orderType === "stop-loss-limit"
+    || orderType === "take-profit"
+    || orderType === "take-profit-limit"
+  ) {
+    return "Signed trigger-order expiry";
+  }
+  return "Signed order expiry";
+}
 
 export interface ApprovalDetailsProps {
   readonly summary: ApprovalSummaryDto;
@@ -111,7 +136,7 @@ export function ApprovalDetails({
               // pair a stable React key.
               <div key={k} className="contents">
                 <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
-                  {CRITICAL_ARG_LABELS[k] ?? k}
+                  {criticalArgLabel(k, criticalArgs)}
                 </dt>
                 <dd className="break-all text-[var(--vex-text-2)]">{String(v)}</dd>
               </div>

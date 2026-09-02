@@ -186,6 +186,59 @@ describe("ApprovalCard", () => {
     );
   });
 
+  it.each(["market", "limit"] as const)(
+    "labels an ordinary Lighter %s IOC timestamp as unsent with signed expiry zero",
+    (orderType) => {
+    renderCard(
+      makeSummary({
+        preview: {
+          toolName: "order.create",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.order.create",
+            orderType,
+            timeInForce: "immediate-or-cancel",
+            orderExpiryIso: "2030-01-01T00:00:00.000Z",
+          },
+        },
+      }),
+      false,
+    );
+
+    const args = screen.getByTestId("critical-args");
+    expect(args.textContent).toContain("Unsent expiry reference (signed expiry 0)");
+    expect(args.textContent).toContain("2030-01-01T00:00:00.000Z");
+    expect(args.textContent).not.toContain("orderExpiryIso");
+    },
+  );
+
+  it.each([
+    "stop-loss",
+    "stop-loss-limit",
+    "take-profit",
+    "take-profit-limit",
+  ] as const)("labels protective Lighter %s IOC expiry as a signed trigger-order expiry", (orderType) => {
+    renderCard(
+      makeSummary({
+        preview: {
+          toolName: "order.create",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.order.create",
+            orderType,
+            timeInForce: "immediate-or-cancel",
+            orderExpiryIso: "2030-01-01T00:00:00.000Z",
+          },
+        },
+      }),
+      false,
+    );
+
+    expect(screen.getByTestId("critical-args").textContent).toContain(
+      "Signed trigger-order expiry",
+    );
+  });
+
   it("keeps the two-click guard on high-risk Lighter create approvals", () => {
     renderCard(
       makeSummary({
