@@ -297,31 +297,52 @@ The front's admission epoch is INITIALISED to this value, and from then on only
 equals the front's current epoch, so the front must start at MAIN's epoch, not
 at zero.
 
-A FRONT IS NOT ALWAYS THE FIRST FRONT. Main's epoch is durable across front
-restarts - it is main's fence, and a restart is exactly when the fence matters -
-so after one lock/unlock cycle it is non-zero. A restarted front that assumed 0
-would have two ways to be wrong and no way to be right: reject every valid
-`ADMIT` main sends (no connection is ever read again, and the failure is a
-silent hang rather than an error), or adopt the epoch of the first `ADMIT` it
-sees, which is a stale order teaching the fence its own value. Handing the epoch
-over in `HELLO` is the only version where the fence survives the restart it
-exists for.
+`initialAdmissionEpoch` IS ALWAYS MAIN'S CURRENT APP-LIFETIME ADMISSION EPOCH:
+the value `studioAdmissionEpoch()` reports at the moment the front is spawned.
+Main's epoch is monotonic and is NEVER reset for the life of the process
+(`vex-app/src/main/studio/mcp-host/admission.ts`), so a RESTARTED front receives
+the SAME current epoch the dead one was last serving, never a fresh count. The
+front never resets, chooses or advances the epoch: its only epoch write is the
+value a `LOCK` carries, and only main's lock path advances it.
+
+A FRONT IS NOT ALWAYS THE FIRST FRONT, AND RESTARTING IT INVALIDATES NOTHING.
+Killing the CHILD does not invalidate the stale continuations still living in
+MAIN, and those continuations are precisely what the fence exists to stop; a
+front restart is a transport event, not an authority event. So after one
+lock/unlock cycle the epoch is non-zero and stays non-zero for as long as main
+lives. A restarted front that assumed 0 would have two ways to be wrong and no
+way to be right: reject every valid `ADMIT` main sends (no connection is ever
+read again, and the failure is a silent hang rather than an error), or adopt the
+epoch of the first `ADMIT` it sees, which is a stale order teaching the fence its
+own value. Handing MAIN's current epoch over in `HELLO` is the only version where
+the fence survives the restart it exists for.
 
 It is DYNAMIC and therefore NOT one of the frozen equality values: the front
 holds no compiled-in expectation to compare it against. It is the one number in
 `HELLO` the front takes rather than checks.
 
-U32 EXHAUSTION. The epoch is a u32 and it only ever rises. `4294967295` is the
-last usable value: main MUST NOT raise the epoch past it, and a main that has
-reached it treats the condition as FRONT-RESTART-REQUIRED - it kills the front,
-starts a new one under a new generation, and resumes at `initialAdmissionEpoch`
-`0` or any value it chooses, because the new front has no memory of the old
-fence. The front reports its own view of the same condition with `ERROR`
-`admission_epoch_exhausted` (section 6.5). It is unreachable in practice: one
-epoch step per lock, and a lock is a human or policy event, so 2^32 of them is
-not a number a session produces. It is defined for the same reason
-`sequence_exhausted` is: a silent wrap would reissue an epoch a queued `ADMIT`
-still names, and a purged order would execute.
+U32 EXHAUSTION CLOSES ADMISSION PERMANENTLY. The epoch is a u32 and it only ever
+rises. `4294967295` is the last usable value: main MUST NOT raise the epoch past
+it, and a main that has reached it CLOSES ADMISSION PERMANENTLY - it refuses any
+further epoch advancement and any further admission for the life of the process,
+and the host reports a typed "admission permanently closed" unavailable state
+whose only remedy is a FULL VEX APPLICATION RESTART. A FRONT RESTART IS NOT THE
+REMEDY and must never be offered as one: the new front would be handed the same
+exhausted epoch, and the only thing that could give it a fresh fence - resetting
+main's epoch - is the exact reuse the fence forbids, because a queued `ADMIT`
+main already purged still names a value the reset would reissue. The host-status
+cause code for that unavailable state is MAIN's concern and stage 2b owes it;
+this protocol does not name one, because it never travels on this wire. The front
+reports its own view of the same condition with `ERROR`
+`admission_epoch_exhausted` (section 6.5).
+
+WIDENING THE WIRE EPOCH TO U64 IS REJECTED. It buys nothing an operator reaches:
+one epoch step per lock, and a lock is a human or policy event, so 2^32 of them
+is not a number a session produces. A wider field would trade the frozen `HELLO`
+and `LOCK` layouts for headroom past a limit no run arrives at. The bound is
+DEFINED rather than widened for the same reason `sequence_exhausted` is: a silent
+wrap would reissue an epoch a queued `ADMIT` still names, and a purged order
+would execute.
 
 ---
 
@@ -483,7 +504,7 @@ failure that ends a connection is a `PEER_CLOSED`.
 | `4` | `listener_bind_failed` | the named pipe could not be created |
 | `5` | `sddl_readback_mismatch` | the descriptor read back from the handle is not the one requested (section 6.2's readback, failing) |
 | `6` | `credit_violation` | a relay-level credit or window rule was broken (section 11) |
-| `7` | `admission_epoch_exhausted` | the u32 admission epoch is spent (section 5.2) |
+| `7` | `admission_epoch_exhausted` | the u32 admission epoch is spent; main has closed admission PERMANENTLY and the remedy is an APPLICATION restart, never a front restart (section 5.2) |
 | `8` | `connection_ids_exhausted` | the connection id space is spent for this generation (section 2.1) |
 | `9` | `internal_invariant` | the front detected a broken invariant of its own |
 
@@ -893,10 +914,20 @@ A stale `ADMIT` - one whose epoch is not current - moves NOTHING. It is purged
 | `closing` | `CLOSE` written, or `LOCK`/`QUIT` latched | expect `PEER_CLOSED`; hold the close edge until plane 6 is drained through its `throughDataSequence` (6.3) |
 | `closed` | `PEER_CLOSED` decoded AND plane 6 drained through its sequence | settle the teardown cause: the latched `lock`/`vex_quit`, else `disconnect` |
 
+STAGE 2b OWES A BOUNDARY TEST FOR THE EPOCH FENCE, and it is normative: no epoch
+wrap or reset while main remains alive across a front restart - the restarted
+front's `HELLO` carries the same current epoch, a stale `ADMIT` captured before
+the restart is purged, and reaching `0xffffffff` closes admission permanently
+(section 5.2). No relay exists yet, so the obligation belongs to 2b and not to
+this stage; 2b is not accepted without it.
+
 ### 12.3 The named structural failures
 
-Each is FATAL by section 10 - the front exits, or main kills the front - and
-each has one name that both sides log and neither side invents:
+Every failure listed here is FATAL by section 10 - the front exits, or main
+kills the front - EXCEPT `stale_admit_purged`, which is intentionally NOT fatal:
+it is the fence working rather than a peer breaking an invariant, and it is
+logged instead of acted on. Each has one name that both sides log and neither
+side invents:
 
 | name | the invariant it breaks |
 | --- | --- |

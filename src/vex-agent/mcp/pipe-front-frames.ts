@@ -124,7 +124,11 @@ export const PIPE_FRONT_ERROR_CODES = {
   sddl_readback_mismatch: 5,
   /** A relay-level credit or window rule was violated. */
   credit_violation: 6,
-  /** The admission epoch reached u32 exhaustion; the front must be restarted. */
+  /**
+   * The u32 admission epoch is spent. Main then closes admission PERMANENTLY
+   * for the life of the process; the remedy is a full application restart,
+   * never a front restart, which would come up at the same exhausted epoch.
+   */
   admission_epoch_exhausted: 7,
   /** The connection id space is exhausted for this generation. */
   connection_ids_exhausted: 8,

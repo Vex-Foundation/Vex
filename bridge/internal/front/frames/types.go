@@ -169,8 +169,10 @@ const (
 	ErrorSDDLReadbackMismatch ErrorCode = 5
 	// ErrorCreditViolation reports a relay-level credit or window violation.
 	ErrorCreditViolation ErrorCode = 6
-	// ErrorAdmissionEpochExhausted reports the u32 admission epoch running out,
-	// which is a front-restart-required condition main decides on.
+	// ErrorAdmissionEpochExhausted reports the u32 admission epoch running out.
+	// Main then closes admission PERMANENTLY for the life of the process; the
+	// remedy is a full application restart, never a front restart, which would
+	// come up at the same exhausted epoch.
 	ErrorAdmissionEpochExhausted ErrorCode = 7
 	// ErrorConnectionIDsExhausted reports the connection id space running out
 	// for this generation.
