@@ -189,9 +189,14 @@ describe("a create renders the project's files", () => {
       ]);
 
       // And the bytes are on disk. The config names the REAL bridge path, which
-      // is the whole reason an unavailable bridge stops the run.
-      const config = await readFile(path.join(projectDirectory, ".mcp.json"), "utf8");
-      expect(config).toContain(bridge.kind === "found" ? bridge.command : "");
+      // is the whole reason an unavailable bridge stops the run. Compared as
+      // the PARSED value: JSON escapes the backslashes of a Windows path, so a
+      // substring match on the raw text could never hold there (this test ran
+      // on win32 for the first time once the lane built the bridge).
+      const config = JSON.parse(
+        await readFile(path.join(projectDirectory, ".mcp.json"), "utf8"),
+      ) as { mcpServers?: { vex?: { command?: string } } };
+      expect(config.mcpServers?.vex?.command).toBe(bridge.kind === "found" ? bridge.command : "");
       const agents = await readFile(path.join(projectDirectory, "AGENTS.md"), "utf8");
       expect(agents).toContain("Atlas");
       const claude = await readFile(path.join(projectDirectory, "CLAUDE.md"), "utf8");

@@ -277,6 +277,220 @@ jobs:
         env:
           GOTOOLCHAIN: local
 
+      # THE TWO-ACCOUNT MEASUREMENT: contract 1.6 rows 1, 2, 3, 7 and 8.
+      #
+      # The runner executes as an administrator, so it can create a second
+      # local account - which is the one thing every previous Windows test in
+      # this repository lacked, and the reason the transport gate has been
+      # closed on an unmeasured claim. The account is unprivileged (Users and
+      # nothing else), its password is generated and never printed, and it is
+      # removed in the always-step below. The instrument is
+      # bridge/cmd/probe-pipe-acl: `serve` binds through the front's real
+      # listener.Bind (or a named test-only descriptor for the control and
+      # squatter arms), `dial` opens with the bridge's exact SQOS flags and
+      # classifies the outcome into a closed set. Structural JSON only: never
+      # the descriptor, a SID, an account name, the password or the pipe path.
+      - name: Build the ACL probe
+        working-directory: bridge
+        env:
+          GOTOOLCHAIN: local
+        run: go build -o dist/probe-pipe-acl.exe ./cmd/probe-pipe-acl
+
+      - name: Measure the pipe ACL across two local accounts
+        working-directory: bridge
+        shell: pwsh
+        env:
+          GOTOOLCHAIN: local
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # A directory BOTH accounts can reach. The runner workspace is not
+          # one: its ACL grants a freshly created local user nothing.
+          $root = 'C:\vex-probe'
+          New-Item -ItemType Directory -Force -Path $root, "$root\out" | Out-Null
+          Copy-Item dist\probe-pipe-acl.exe "$root\probe-pipe-acl.exe" -Force
+          $probe = "$root\probe-pipe-acl.exe"
+
+          $user = 'vexprobe' + (Get-Random -Maximum 99999)
+          "VEX_PROBE_USER=$user" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          # Crypto-random, complexity-satisfying, and NEVER printed.
+          $bytes = New-Object byte[] 32
+          [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+          $plain = [Convert]::ToBase64String($bytes) + '!aA9'
+          $secret = ConvertTo-SecureString $plain -AsPlainText -Force
+          $plain = $null
+
+          New-LocalUser -Name $user -Password $secret -PasswordNeverExpires `
+            -UserMayNotChangePassword -Description 'temporary Vex pipe ACL probe account' | Out-Null
+          # Users, and ONLY Users: membership is what grants the logon right,
+          # and the account must not be an administrator.
+          Add-LocalGroupMember -Group 'Users' -Member $user
+          $cred = New-Object System.Management.Automation.PSCredential($user, $secret)
+
+          icacls $root /grant "${user}:(OI)(CI)RX" | Out-Null
+          icacls "$root\out" /grant "${user}:(OI)(CI)M" | Out-Null
+
+          $suffix = [guid]::NewGuid().ToString('N')
+          $frontName   = "\\.\pipe\vex-acl-front-$suffix"
+          $controlName = "\\.\pipe\vex-acl-control-$suffix"
+          $squatName   = "\\.\pipe\vex-acl-squat-$suffix"
+
+          function Start-Serve($name, $descriptor, $ready) {
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName  = $probe
+            $psi.Arguments = "serve --name `"$name`" --ready `"$ready`" --descriptor $descriptor"
+            $psi.RedirectStandardInput  = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.UseShellExecute = $false
+            return [System.Diagnostics.Process]::Start($psi)
+          }
+          function Wait-Ready($ready) {
+            for ($i = 0; $i -lt 150; $i++) {
+              if (Test-Path $ready) { return (Get-Content -Raw $ready) }
+              Start-Sleep -Milliseconds 100
+            }
+            throw "the serve process never wrote its ready file: $ready"
+          }
+          # Stdin EOF is the shutdown, and the process is joined: no kill, no sleep.
+          function Stop-Serve($p) {
+            $p.StandardInput.Close()
+            $out = $p.StandardOutput.ReadToEnd()
+            $p.WaitForExit()
+            return $out
+          }
+          function Dial-AsRunner($name, $expect, $access, $label) {
+            $argv = @('dial', '--name', $name, '--access', $access)
+            if ($expect) { $argv += @('--expect', $expect) }
+            $line = & $probe @argv
+            $code = $LASTEXITCODE
+            Write-Host "[$label] runner-user: $line"
+            if ($code -ne 0) { throw "[$label] the probe exited $code" }
+            return ($line | ConvertFrom-Json)
+          }
+          function Dial-AsTempUser($name, $expect, $access, $label) {
+            $out = "$root\out\$label.json"
+            Remove-Item $out -ErrorAction SilentlyContinue
+            $argv = @('dial', '--name', $name, '--access', $access)
+            if ($expect) { $argv += @('--expect', $expect) }
+            try {
+              $p = Start-Process -FilePath $probe -ArgumentList $argv -Credential $cred `
+                -WorkingDirectory $root -RedirectStandardOutput $out `
+                -RedirectStandardError "$root\out\$label.err" -PassThru -Wait
+            } catch {
+              # MEASURED, NOT ASSUMED. If the hosted runner refuses a
+              # credential start, this line is the finding and the step is red
+              # (the documented fallback is a scheduled task under the account).
+              Write-Host "credential-start-unavailable: $($_.Exception.Message)"
+              throw
+            }
+            $line = (Get-Content -Raw $out).Trim()
+            Write-Host "[$label] second local account: $line"
+            if (-not $line) { throw "[$label] the probe printed nothing" }
+            $json = $line | ConvertFrom-Json
+            # The JSON is authoritative: Start-Process -Credential does not
+            # always surface an exit code to a caller that cannot open the
+            # process, and `match` says the same thing without that caveat.
+            if ($expect -and -not $json.match) {
+              throw "[$label] expected $expect, measured $($json.outcome) (windowsError $($json.windowsError))"
+            }
+            return $json
+          }
+
+          # ---- rows 1, 2, 3, 8: the front's pipe and the control pipe -------
+          $frontReady   = "$root\out\front-ready.json"
+          $controlReady = "$root\out\control-ready.json"
+          $front   = Start-Serve $frontName   'front'         $frontReady
+          $control = Start-Serve $controlName 'winio-default' $controlReady
+
+          $frontFlags = (Wait-Ready $frontReady).Trim()
+          Wait-Ready $controlReady | Out-Null
+          # ROW 3, first half: the reject-remote bit the front CONFIRMED by
+          # readback becomes a stated number in the job log.
+          Write-Host "MEASURED front BOUND flags: $frontFlags"
+
+          $connected = 0
+          $r = Dial-AsRunner   $frontName   'connected' 'duplex' 'row8-runner-duplex'; $connected++
+          $r = Dial-AsRunner   $frontName   'connected' 'read'   'row8-runner-read';   $connected++
+          # ROW 1: the second account is denied a duplex open.
+          Dial-AsTempUser      $frontName   'denied'    'duplex' 'row1-second-user-duplex' | Out-Null
+          # ROW 2: and denied a READ-ONLY open, so it cannot consume an instance.
+          Dial-AsTempUser      $frontName   'denied'    'read'   'row2-second-user-read'   | Out-Null
+          # ROW 1 CONTROL: the same account CONNECTS to the default descriptor,
+          # so the denial above is the front's DACL and not the account.
+          Dial-AsTempUser      $controlName 'connected' 'read'   'row1-control-read'       | Out-Null
+          # Recorded, not asserted: duplex against the default descriptor.
+          Dial-AsTempUser      $controlName ''          'duplex' 'row1-control-duplex'     | Out-Null
+          # ROW 3, second half: the loopback REDIRECTOR path, recorded only -
+          # nobody has measured what Windows does here.
+          $loopback = Dial-AsRunner "\\localhost\pipe\vex-acl-front-$suffix" '' 'duplex' 'row3-loopback'
+          Write-Host "MEASURED loopback redirector outcome: $($loopback.outcome) (windowsError $($loopback.windowsError))"
+          if ($loopback.outcome -eq 'connected') { $connected++ }
+
+          # ---- row 7: the foreign-user squatter ----------------------------
+          $squatReady = "$root\out\squat-ready.json"
+          $squatOut   = "$root\out\squat.log"
+          $squatter = Start-Process -FilePath $probe -Credential $cred -WorkingDirectory $root `
+            -ArgumentList @('serve', '--name', $squatName, '--ready', $squatReady, '--descriptor', 'open') `
+            -RedirectStandardOutput $squatOut -RedirectStandardError "$root\out\squat.err" -PassThru
+          Wait-Ready $squatReady | Out-Null
+
+          # 7a: the FRONT refuses to serve a name a foreign account already
+          # serves. go-winio's first instance is FILE_CREATE, so it fails closed.
+          $collisionReady = "$root\out\collision-ready.json"
+          Remove-Item $collisionReady -ErrorAction SilentlyContinue
+          $collision = & $probe serve --name $squatName --ready $collisionReady --descriptor front
+          $collisionCode = $LASTEXITCODE
+          Write-Host "[row7a] front binding a squatted name: $collision (exit $collisionCode)"
+          if ($collisionCode -eq 0) { throw "[row7a] the front bound a name another user already serves" }
+          if ($collision -notmatch '"outcome":"bind_failed"') { throw "[row7a] expected bind_failed, got: $collision" }
+          if (Test-Path $collisionReady) { throw "[row7a] the front reported BOUND for a failed bind" }
+
+          # 7b: the BRIDGE refuses a foreign server, through the production
+          # dial and the real SID comparison.
+          $env:VEX_PROBE_FOREIGN_PIPE = $squatName
+          go test -count=1 -run TestHostAuthRefusesAForeignUsersServer ./cmd/vex-mcp
+          if ($LASTEXITCODE -ne 0) { throw "[row7b] host authentication did not refuse the foreign server" }
+          Remove-Item Env:\VEX_PROBE_FOREIGN_PIPE
+
+          Stop-Process -Id $squatter.Id -Force
+          Write-Host "[row7] squatter log:"; Get-Content $squatOut -ErrorAction SilentlyContinue
+
+          # ---- close the serve processes and read what they recorded --------
+          $controlLog = Stop-Serve $control
+          $frontLog   = Stop-Serve $front
+          Write-Host "front serve log:";   Write-Host $frontLog
+          Write-Host "control serve log:"; Write-Host $controlLog
+
+          $accepted = @($frontLog -split "`n" | Where-Object { $_ -match '"event":"accepted"' } |
+            ForEach-Object { $_.Trim() | ConvertFrom-Json })
+          if ($accepted.Count -lt 1) { throw "the front accepted nothing; the measurement did not run" }
+          # ROW 8: the level a server actually receives from the bridge's own
+          # SQOS flags. SecurityIdentification is 1.
+          Write-Host "MEASURED impersonation level: $($accepted[0].impersonationLevel) ($($accepted[0].impersonationLevelName))"
+          if ($accepted[0].impersonationLevel -ne 1) {
+            throw "[row8] the server received impersonation level $($accepted[0].impersonationLevel); the SQOS flags must cap it at 1 (identification)"
+          }
+          # ROW 2 cross-check: only the connects that SUCCEEDED were accepted,
+          # so no cross-user connect consumed an instance.
+          if ($accepted.Count -ne $connected) {
+            throw "[row2] the front accepted $($accepted.Count) connections for $connected successful dials"
+          }
+
+      # ALWAYS: the account and its workspace do not outlive the job.
+      - name: Remove the temporary local account
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:VEX_PROBE_USER) {
+            Get-Process probe-pipe-acl -ErrorAction SilentlyContinue | Stop-Process -Force
+            Remove-LocalUser -Name $env:VEX_PROBE_USER -ErrorAction SilentlyContinue
+            Get-CimInstance Win32_UserProfile -ErrorAction SilentlyContinue |
+              Where-Object { $_.LocalPath -like "*\$($env:VEX_PROBE_USER)" } |
+              Remove-CimInstance -ErrorAction SilentlyContinue
+          }
+          Remove-Item -Recurse -Force 'C:\vex-probe' -ErrorAction SilentlyContinue
+
   # THE B4.2a TRANSPORT SPIKE: evidence collection, not a gate.
   #
   # Batch 4 adds a Go pipe-front process that Electron main spawns and relays

@@ -442,43 +442,109 @@ including the build-tagged overlapped dial, and runs the Go vector tests there.
 FLIPPING EITHER FLAG REQUIRES EXTENDING THAT JOB with the full proof matrix
 below, and the reviewer's check is mechanical: no matrix in the job, no flip.
 
+THE INSTRUMENT THAT MEASURES FIVE OF THE EIGHT. `bridge/cmd/probe-pipe-acl`
+is a Windows-only probe binary (non-Windows stub, exit 2, the shape of
+`cmd/spike-overlapped-stdio`). It ships in nothing and no packaging path builds
+it. It has two modes:
+
+- `serve --name <pipe> --ready <file> [--descriptor front|winio-default|open]`
+  binds through the REAL `listener.Bind` - the front's compiled-in descriptor
+  and the front's readback, nothing re-implemented - writes the CONFIRMED BOUND
+  flags to the ready file as JSON, runs the real `listener.Serve`, records every
+  accepted connection's client pid and the impersonation level a server actually
+  receives, and exits on stdin EOF. The two non-`front` descriptors are TEST
+  ONLY arms of the measurement, and they exist on the probe and never on the
+  front: `winio-default` is go-winio's default named-pipe ACL, the CONTROL that
+  attributes a denial to the front's DACL rather than to the account; `open` is
+  `D:P(A;;FA;;;WD)`, the accurate SQUATTER, because an adversary who takes the
+  pipe name in order to be talked to grants everyone access.
+- `dial --name <pipe> [--expect connected|denied] [--access duplex|read]` opens
+  the pipe with the SAME flags the shipped bridge sends
+  (`FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION`,
+  mirroring `cmd/vex-mcp/dial_windows.go`), classifies the result into the
+  closed set `{connected, access_denied, file_not_found, pipe_busy,
+  other(code)}` and prints ONE JSON line. Omitting `--expect` RECORDS the
+  outcome without asserting one, which is what an unmeasured question gets.
+
+Its output is structural: outcome names, Windows error codes, process ids and
+enum numbers. Never the descriptor, never a SID, never an account name, never
+the password the job generates, never the pipe path - a Windows error string
+carries that path, which is why no error string is ever printed.
+
 The proof matrix, all eight on a Windows runner:
 
-1. SECOND-USER DUPLEX DENIAL. A second local user account's duplex connect to
-   the served pipe is denied by the default security descriptor.
-2. READ-ONLY CROSS-USER CONNECT. What a second user's READ-ONLY connect
-   actually does to the host: whether it consumes a pipe instance and a
-   handshake-pending slot, and what the host does about it. Slot exhaustion by
-   a user who can never complete a handshake must be shown to be impossible or
-   bounded.
-3. REMOTE-CLIENT REJECTION. The posture for a connect arriving over the
-   network, and whether the served pipe sets `PIPE_REJECT_REMOTE_CLIENTS` or
-   the host otherwise refuses it.
-4. NATIVE PIPE ROUND TRIP. The real host and the real built bridge exchanging
-   a handshake and MCP frames over the pipe, the Windows equivalent of the
-   Linux conformance suite.
-5. OVERLAPPED DUPLEX. A pending read and a concurrent write on the SAME
-   overlapped handle both complete - the property section 3.5's dial exists
-   for, and the one a synchronous handle does not have.
-6. DEADLINE AND CLOSE CANCELLATION. The ack deadline and the drain deadline
-   both actually fire on the pipe handle, and closing during a blocked
-   operation cancels it rather than hanging teardown.
-7. FOREIGN-USER FIRST-SERVER PIPE SQUATTING. A SECOND local user account
-   creates `\\.\pipe\vex-studio-<hash>` FIRST, before Vex's host binds it, and
-   answers the connect. The bridge must NOT hand that server the project
-   handshake. The pipe name is derived from a hash of the config directory
-   (1.2) and is therefore predictable, and a named pipe is first-come: the
-   name is not a secret and being the first creator is not an authorisation.
-   This test is the one that proves the anti-squatting control exists, so it
-   must fail if the control is removed.
-8. SERVER IMPERSONATION LEVEL. The client handle the bridge opens must cap the
-   server at IDENTIFICATION. `bridge/cmd/vex-mcp/dial_windows.go` passes
-   `SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION` to `CreateFile`; the test
-   measures the level a server actually receives (an impersonating server can
-   identify the client and must not be able to act as it).
+1. SECOND-USER DUPLEX DENIAL - CI-MEASURED on `bridge-windows`, run
+   `<measured on run N>`. A temporary local account, created by the job and
+   removed in an always-step, dials the pipe the front bound and is refused with
+   ERROR_ACCESS_DENIED, while the same account CONNECTS to the control pipe
+   served with go-winio's default descriptor in the same run. The pairing is
+   what makes it evidence: the denial is the front's DACL, not the account.
+   (Was: "denied by the default security descriptor" - superseded, the front now
+   binds its own PROTECTED two-ACE descriptor and libuv never sees the pipe.)
+2. READ-ONLY CROSS-USER CONNECT - CI-MEASURED on `bridge-windows`, run
+   `<measured on run N>`. The same temporary account dials the front's pipe with
+   GENERIC_READ only and is refused with ERROR_ACCESS_DENIED: the front's DACL
+   has no Everyone ACE, so the read-only open the default descriptor would have
+   allowed is denied too. The serve side's `serve_done` line reports how many
+   connections were accepted in total, so a read-only connect that had consumed
+   an instance would be visible as one. The slot-exhaustion vector this row was
+   written for therefore cannot be reached by another local user; it remains
+   reachable by another process of the SAME user, which is out of scope for this
+   boundary and is bounded instead by `maxRaw` (section 8.1).
+3. REMOTE-CLIENT REJECTION - PARTIALLY CI-MEASURED on `bridge-windows`, run
+   `<measured on run N>`. Two facts are recorded and neither is asserted: the
+   `rejectRemote` bit of the BOUND flags the front CONFIRMED by readback
+   (`<measured on run N>`), and the classified outcome of a dial through the
+   loopback redirector path `\\localhost\pipe\<name>`, which the pipe file system
+   treats as a network client (`<measured on run N>`). A connect arriving from
+   ANOTHER MACHINE is NOT measured and cannot be on a hosted runner: it needs a
+   second host on the same network and inbound SMB, neither of which a GitHub
+   runner has.
+4. NATIVE PIPE ROUND TRIP - UNPROVEN. The real host and the real built bridge
+   exchanging a handshake and MCP frames over the pipe. No test in this
+   repository drives that path end to end on Windows today; the front's Windows
+   suite (`listener/bind_windows_test.go`) covers the bind, the descriptor and
+   the half-close, and the conformance suite runs over a unix socket on Linux.
+5. OVERLAPPED DUPLEX - UNPROVEN. A pending read and a concurrent write on the
+   SAME overlapped handle both completing. The `studio-overlapped-spike` job
+   measured that property for INHERITED STDIO handles under Electron, which is a
+   different handle from a different creator; nothing has measured it on the
+   pipe handle `cmd/vex-mcp/dial_windows.go` opens.
+6. DEADLINE AND CLOSE CANCELLATION - UNPROVEN. The ack and drain deadlines
+   firing on a pipe handle, and close cancelling a blocked operation. The
+   deadline paths are covered on Linux sockets only.
+7. FOREIGN-USER FIRST-SERVER PIPE SQUATTING - CI-MEASURED on `bridge-windows`,
+   run `<measured on run N>`, in two halves.
+   - The FRONT'S half: the temporary account serves the name first, then the
+     front is asked to bind the SAME name through the real `listener.Bind` and
+     FAILS CLOSED - go-winio's first instance uses the FILE_CREATE disposition,
+     so the collision is a bind failure and no BOUND is ever reported. The job
+     asserts the probe's `{"outcome":"bind_failed"}` line and the ABSENCE of a
+     ready file.
+   - The BRIDGE'S half: with the temporary account's server up,
+     `go test -run TestHostAuthRefusesAForeignUsersServer ./cmd/vex-mcp` drives
+     the PRODUCTION `dialPipe` against it - real CreateFile with the shipped SQOS
+     flags, real `GetNamedPipeServerProcessId`, real token query, real SID
+     comparison - and asserts the typed local refusal
+     `windows_host_not_current_user`, that no connection was returned, and that
+     the refusal carries a pid and no SID. Off that job the test SKIPS with its
+     reason rather than passing.
+   This is the test that proves the anti-squatting control exists, so it must
+   fail if the control is removed.
+8. SERVER IMPERSONATION LEVEL - CI-MEASURED on `bridge-windows`, run
+   `<measured on run N>`. Measured FROM THE SERVER'S SIDE, which is the only
+   honest way to ask it: for every accepted connection the probe impersonates
+   the client on a locked operating-system thread
+   (`ImpersonateNamedPipeClient`), reads `TokenImpersonationLevel` off the
+   thread token, reverts, and reports the enum number and its name. Against the
+   bridge's own SQOS flags the level must be SecurityIdentification, which is
+   **1** - the value 2 is SecurityImpersonation, the level those flags exist to
+   prevent, and TokenImpersonation, a different enum in the same header, is also
+   2. The job asserts 1 on the runner-user duplex dial and records the level for
+   every other accepted connection.
 
-REQUIRED BEFORE THE FLIP: HOST AUTHENTICATION - IMPLEMENTED, CROSS-USER
-UNPROVEN.
+REQUIRED BEFORE THE FLIP: HOST AUTHENTICATION - IMPLEMENTED, AND CROSS-USER
+MEASURED SINCE THE TWO-ACCOUNT STEP OF ROW 7 ABOVE.
 
 The bridge authenticates the pipe server before the handshake. In
 `bridge/cmd/vex-mcp/hostauth_windows.go`, between `CreateFile` returning a
@@ -500,15 +566,17 @@ server can do with the client's token; it says nothing about WHO the server is.
 The host-authentication check is the load-bearing anti-squatting control, and
 item 7 is its test.
 
-This does not flip the gate. `endpoint.WindowsTransportProven` stays false.
-The `bridge-windows` CI job proves the SAME-USER path end to end against a
-real in-test named-pipe server, driving the real `GetNamedPipeServerProcessId`
-and token comparison, and proves the refusal branches through an injected
-identity-resolver seam, asserting in each case that the pipe server received
-zero bytes. It cannot prove the cross-user case: the runner has one account.
-The adversarial two-account run remains item 7 of the matrix above, and the
-check accepts any same-user server by design - the boundary this control
-enforces is the other user, not another program running as this one.
+This does not flip the gate. `endpoint.WindowsTransportProven` stays false, and
+rows 4, 5 and 6 are why.
+
+What the `bridge-windows` job now proves about THIS control: the SAME-USER path
+end to end against a real in-test named-pipe server, driving the real
+`GetNamedPipeServerProcessId` and token comparison; the refusal branches through
+an injected identity-resolver seam, asserting in each case that the pipe server
+received zero bytes; and, since row 7's second half, the CROSS-USER refusal
+against a pipe genuinely served by a temporary local account the job creates and
+removes. The check accepts any same-user server by design - the boundary this
+control enforces is the other user, not another program running as this one.
 
 Until all eight run in that job, Windows users get one honest refusal sentence
 naming the reason, and Vex Studio is a Linux and macOS feature.
