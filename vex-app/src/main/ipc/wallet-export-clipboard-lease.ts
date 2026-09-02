@@ -136,7 +136,7 @@ export function acquireLease(secret: string): void {
     clearTimeout(timerId);
     clearIfStillOurs(secretHash);
     activeLease = null;
-  });
+  }, "wallet-export-clipboard-lease");
 
   activeLease = { token, secretHash, timerId, unregister };
 }

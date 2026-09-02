@@ -46,6 +46,15 @@ import { installUpdaterAutoCheck } from "./updates/autoCheck.js";
 import { cleanupOnBoot, cleanupOnQuit } from "./lifecycle/secret-cleanup.js";
 import { globalCleanup } from "./lifecycle/cleanup-registry.js";
 import { makeOrderedQuitCleanup } from "./lifecycle/ordered-quit-cleanup.js";
+import {
+  COMPOSE_QUIT_DEADLINE_MS,
+  ORDERED_QUIT_DEADLINE_MS,
+  QUIT_STAGE_SLACK_MS,
+  QUIT_TASK_DEADLINE_MS,
+  runQuitStage,
+} from "./lifecycle/quit-stage.js";
+import { STUDIO_HOST_SHUTDOWN_DEADLINE_MS } from "./studio/mcp-host/bounds.js";
+import { TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS } from "@shared/schemas/terminal.js";
 import { installEngineLogBridge } from "./agent/engine-log-bridge.js";
 import { exposeAppVersionToEngine } from "./agent/engine-env.js";
 import { setupCompactWorker } from "./agent/compact-worker.js";
@@ -231,7 +240,7 @@ async function initializeMainRuntime(): Promise<void> {
   const closeE2eDbDoor = openE2eConnectionDoor();
   globalCleanup.add(() => {
     closeE2eDbDoor();
-  });
+  }, "e2e-db-door");
 
   // 4. Security: deny-all permission handlers
   installPermissionHandlers();
@@ -255,13 +264,13 @@ async function initializeMainRuntime(): Promise<void> {
   configureUpdater();
   globalCleanup.add(() => {
     removeUpdaterEventListeners();
-  });
+  }, "updater-event-listeners");
   // Ambient auto-CHECK only (start + window focus + 5-minute periodic tick,
   // throttled). Surfaces a new version; never downloads.
   const stopUpdaterAutoCheck = installUpdaterAutoCheck();
   globalCleanup.add(() => {
     stopUpdaterAutoCheck();
-  });
+  }, "updater-auto-check");
 
   // 6a. Agent integration stage 7-1: own the Track-2 compaction worker so
   // enqueued compact_jobs process into session memory. Enabled by default,
@@ -336,7 +345,7 @@ async function initializeMainRuntime(): Promise<void> {
   const stopMarketService = setupVexMarketService();
   globalCleanup.add(async () => {
     await stopMarketService();
-  });
+  }, "vex-market-service");
 
   // 6a-studio. Bridge the Studio MCP host's status transitions onto
   // EV.studio.hostStatus (B0). The host itself owns the facts and stays free of
@@ -345,7 +354,7 @@ async function initializeMainRuntime(): Promise<void> {
   const stopStudioHostStatusBridge = setupStudioHostStatusBridge();
   globalCleanup.add(() => {
     stopStudioHostStatusBridge();
-  });
+  }, "studio-host-status-bridge");
 
   // 6a-board-live. Own the board's LIVE lease service (T4). It polls nothing
   // until a reader turns a board's toggle on, and at most one lease exists at a
@@ -355,7 +364,7 @@ async function initializeMainRuntime(): Promise<void> {
   const stopBoardLiveService = setupBoardLiveService();
   globalCleanup.add(async () => {
     await stopBoardLiveService();
-  });
+  }, "board-live-service");
 
   // 6b. Register lifecycle-driven cleanup. ALL workers must drain in-flight
   // work BEFORE cleanupOnQuit stops Compose/Postgres — and globalCleanup runs
@@ -378,7 +387,11 @@ async function initializeMainRuntime(): Promise<void> {
       // so the two cannot settle one row with two stories. Bounded by the
       // contract's 5 s deadline, so a peer that will not close cannot hold the
       // quit open.
-      await shutdownStudioMcpHost();
+      await runQuitStage(
+        "studio-mcp-host",
+        STUDIO_HOST_SHUTDOWN_DEADLINE_MS + QUIT_STAGE_SLACK_MS,
+        shutdownStudioMcpHost,
+      );
       // Vex Studio B2 - the pty host, inside the ordered task and BEFORE the
       // workers drain. Its `shutdownAll` is what makes the host serialize every
       // live terminal and commit its revive snapshots, and the request needs a
@@ -387,15 +400,21 @@ async function initializeMainRuntime(): Promise<void> {
       // the wait is bounded by the request timeout, so a wedged host cannot
       // hold the quit open. Terminal snapshots are files, not database rows,
       // so this is unaffected by Postgres stopping later in this same task.
-      await disposeTerminalDomain();
+      await runQuitStage(
+        "studio-terminal-domain",
+        TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS + QUIT_STAGE_SLACK_MS,
+        disposeTerminalDomain,
+      );
       // File watchers next. They own no durable state - the filesystem is the
       // source of truth - so unlike the terminal host there is nothing to
       // commit; what this releases is the recursive OS watches and the
       // lifecycle-gate leases behind them. It follows the terminal teardown
       // because a terminal being serialized is still writing into a project
       // directory, and disposing its watcher first would emit nothing anyway.
-      await disposeFilesDomain();
-      await refuseAllPendingStudioIntents("vex_quit");
+      await runQuitStage("studio-files-domain", QUIT_TASK_DEADLINE_MS, disposeFilesDomain);
+      await runQuitStage("studio-pending-refusals", QUIT_TASK_DEADLINE_MS, () =>
+        refuseAllPendingStudioIntents("vex_quit"),
+      );
       disposeStudioApprovalBroker();
       // The Studio fence retry is one of two remaining Studio timers with an
       // owner: it only exists while an advance is outstanding, and nothing it
@@ -405,28 +424,49 @@ async function initializeMainRuntime(): Promise<void> {
       // stopped HERE as well as in the bridge teardown because globalCleanup
       // runs its tasks concurrently: only inside this ordered task is it
       // guaranteed to stop before `cleanupOnQuit` takes Postgres away.
-      await disposeStudioWriteRepairOwner();
-      const results = await Promise.allSettled([
-        stopCompactWorker(),
-        stopCompactionPreparationWorker(),
-        stopWakeWorker(),
-        stopSyncWorker(),
-        stopMemoryManagerWorker(),
-        stopRegimeWorker(),
-        stopToolEmbeddingReconcileWorker(),
+      await runQuitStage(
+        "studio-write-repair-owner",
+        QUIT_TASK_DEADLINE_MS,
+        disposeStudioWriteRepairOwner,
+      );
+      // The seven engine workers drain CONCURRENTLY - they share no handle
+      // with each other - but each one is its own named stage, so a drain
+      // that will not finish says which worker it was instead of stalling
+      // the whole set anonymously.
+      await Promise.all([
+        runQuitStage("engine-compact-worker", QUIT_TASK_DEADLINE_MS, stopCompactWorker),
+        runQuitStage(
+          "engine-compaction-preparation-worker",
+          QUIT_TASK_DEADLINE_MS,
+          stopCompactionPreparationWorker,
+        ),
+        runQuitStage("engine-wake-worker", QUIT_TASK_DEADLINE_MS, stopWakeWorker),
+        runQuitStage("engine-sync-worker", QUIT_TASK_DEADLINE_MS, stopSyncWorker),
+        runQuitStage(
+          "engine-memory-manager-worker",
+          QUIT_TASK_DEADLINE_MS,
+          stopMemoryManagerWorker,
+        ),
+        runQuitStage("engine-regime-worker", QUIT_TASK_DEADLINE_MS, stopRegimeWorker),
+        runQuitStage(
+          "engine-tool-embedding-reconcile-worker",
+          QUIT_TASK_DEADLINE_MS,
+          stopToolEmbeddingReconcileWorker,
+        ),
       ]);
-      for (const r of results) {
-        if (r.status === "rejected") {
-          log.error("[main] worker stop failed during quit", r.reason);
-        }
-      }
       // LAST inside the ordered stop, and still before `cleanupOnQuit`: the
       // bridges are the buses the workers above publish on, so they outlive
       // the drain; and the board read caches + DexScreener transport they own
       // must be closed before compose/Postgres teardown begins. The disposer
       // is memoized in `setupAgentBridges`, so this is the only execution.
-      await teardownAgentBridges();
-    }, cleanupOnQuit),
+      await runQuitStage("agent-bridges", QUIT_TASK_DEADLINE_MS, teardownAgentBridges);
+    }, async () => {
+      // `docker compose stop` on a live Postgres is the one participant that
+      // is legitimately slow, so it gets the quit's largest single budget.
+      await runQuitStage("compose-and-secret-cleanup", COMPOSE_QUIT_DEADLINE_MS, cleanupOnQuit);
+    }),
+    "ordered-quit",
+    { deadlineMs: ORDERED_QUIT_DEADLINE_MS },
   );
   void cleanupOnBoot().catch((err) => {
     log.error("[main] cleanupOnBoot failed", err);
@@ -440,7 +480,7 @@ async function initializeMainRuntime(): Promise<void> {
   });
   globalCleanup.add(async () => {
     await disableSentry();
-  });
+  }, "sentry");
 
   // 6c. Strip the default File/Edit/View/Window menu (or replace with
   // a minimal macOS template that preserves clipboard accelerators).

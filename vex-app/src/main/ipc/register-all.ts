@@ -273,7 +273,7 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // next one may depend on it having finished.
   globalCleanup.add(async () => {
     for (const t of teardowns) await t();
-  });
+  }, "ipc-handler-teardowns");
 
   return teardownAgentBridges;
 }

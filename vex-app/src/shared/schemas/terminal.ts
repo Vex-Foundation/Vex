@@ -484,6 +484,17 @@ export const terminalPropertySchema = z.discriminatedUnion("property", [
   z
     .object({ property: z.literal("displayCwd"), value: z.string().max(4096) })
     .strict(),
+  /**
+   * `pid` IS THE AUTHORITATIVE CHANNEL for the shell's process id, and it is
+   * emitted EXACTLY ONCE per terminal, always with a real pid.
+   *
+   * It is deliberately not carried only by the create reply. On Windows the pid
+   * does not exist yet when a terminal is created: node-pty defers ConPTY's
+   * `connect()` and reports `0` until the connection completes, so the host
+   * waits for the first data event and emits here (`pty-host/terminal-process.ts`,
+   * `announcePid`). `0` is never emitted - a consumer that received one would be
+   * holding a value it cannot signal, probe or display.
+   */
   z.object({ property: z.literal("pid"), value: z.number().int().nonnegative() }).strict(),
 ]);
 export type TerminalProperty = z.infer<typeof terminalPropertySchema>;
@@ -1182,6 +1193,7 @@ export const terminalReviveResultSchema = z
           .object({
             from: terminalIdSchema,
             to: terminalIdSchema,
+            /** Best-effort, on the same contract as `terminalCreateValueSchema`'s. */
             pid: z.number().int().nonnegative(),
             shellName: z.string().max(256),
             /** The LABEL, on the same contract as `terminalPropertySchema`'s. */
@@ -1332,6 +1344,14 @@ export type TerminalCreateInput = z.infer<typeof terminalCreateInputSchema>;
 export const terminalCreateValueSchema = z
   .object({
     terminalId: terminalIdSchema,
+    /**
+     * A BEST-EFFORT echo, not the authority. `0` means the pid was not knowable
+     * when the terminal was created, which is the ordinary case on Windows
+     * (node-pty defers ConPTY's `connect()`). The create reply does not wait for
+     * it, because waiting would make terminal creation depend on the shell
+     * producing output. The `pid` PROPERTY carries the real value; nothing may
+     * signal or probe what arrives here.
+     */
     pid: z.number().int().nonnegative(),
     shellName: z.string().max(256),
     /** The LABEL, on the same contract as `terminalPropertySchema`'s. */

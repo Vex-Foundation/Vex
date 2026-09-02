@@ -215,7 +215,7 @@ export function registerHandler<I, O>(args: HandlerArgs<I, O>): () => void {
     if (unregistered) return;
     unregistered = true;
     ipcMain.removeHandler(args.channel);
-  });
+  }, `ipc:${args.channel}`);
 
   return () => {
     if (unregistered) return;

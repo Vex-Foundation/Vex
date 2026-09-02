@@ -67,6 +67,15 @@ import type {
 /** How long after an Enter keystroke the cwd is re-read. */
 const CWD_TRIGGER_DEBOUNCE_MS = 300;
 
+/**
+ * The exit code for a terminal that FAILED rather than exited.
+ *
+ * node-pty's own value for the same fact - `windowsPtyAgent.js:141` uses `-1`
+ * when a ConPTY connection throws without an error code - so a consumer reading
+ * an exit code sees one vocabulary, not two.
+ */
+const PTY_ERROR_EXIT_CODE = -1;
+
 export interface TerminalProcessSinks {
   /** Live output, already coalesced. Never called with an empty string. */
   readonly onData: (data: string) => void;
@@ -157,6 +166,24 @@ export class TerminalProcess {
    */
   private pendingBytes = 0;
   private readonly pendingChunks: Array<{ chars: number; bytes: number }> = [];
+
+  /**
+   * Whether the `pid` property has been emitted with a real pid.
+   *
+   * The property is emitted EXACTLY ONCE per terminal. A pid does not change
+   * during a session, so a second emit could only ever be the same value, and
+   * the schema promises a property event means the consumer's value is now
+   * wrong.
+   */
+  private pidAnnounced = false;
+  /**
+   * The one-shot data subscription that waits for Windows' deferred pid.
+   *
+   * Held so it can be disposed the moment the pid is known rather than left
+   * running for the life of the terminal, and so `dispose` has one owner for it
+   * like every other handle here.
+   */
+  private pidDeferral: PtyDisposable | null = null;
 
   private exitCode: number | null = null;
   private exitSignal: number | null = null;
@@ -316,11 +343,13 @@ export class TerminalProcess {
       }),
     );
 
+    this.subscriptions.push(pty.onError(() => this.handlePtyError()));
+
     this.markStartupComplete();
-    this.sinks.onProperty({ property: "pid", value: pty.pid });
-    // THE FIRST LABEL, unconditionally, exactly as `pid` above is
-    // unconditional. `refreshCwd` below only emits on a CHANGE, and a shell
-    // that starts in the directory it was launched in has not changed
+    this.announcePid();
+    // THE FIRST LABEL, unconditionally - unlike the pid above, which on Windows
+    // is not knowable yet. `refreshCwd` below only emits on a CHANGE, and a
+    // shell that starts in the directory it was launched in has not changed
     // anything - so without this emit a terminal that is never `cd`-ed out of
     // its project would report its directory to nobody, and the panel header
     // would sit empty for the entire life of the session.
@@ -330,10 +359,93 @@ export class TerminalProcess {
 
     return {
       ok: true,
+      // A SNAPSHOT, and on Windows it is `0` - the pid is not knowable at this
+      // moment (see `announcePid`). The create reply deliberately does not wait
+      // for it: waiting would make terminal creation depend on the shell
+      // producing output, so a shell that prints nothing would never finish
+      // starting. VS Code makes the same call - it answers immediately and
+      // sends the pid on the first data event. The `pid` PROPERTY is the
+      // authoritative channel; this field is a best-effort echo and no consumer
+      // may treat it as a signalable pid.
       pid: pty.pid,
       displayCwd: this.displayCwd,
       shellName: basename(resolved, this.deps.platform ?? process.platform),
     };
+  }
+
+  /**
+   * Emit the `pid` property, ONCE, and only when there is a real pid to emit.
+   *
+   * ## Why this is not a straight read at spawn
+   *
+   * It used to be, and on Windows that published `0` for the life of every
+   * terminal. node-pty >= 1.2.0-beta.11 defers `conptyNative.connect()` until
+   * the conout worker signals ready, so `windowsPtyAgent`'s `_innerPid` is `0`
+   * at construction (`windowsPtyAgent.js:39`) and only becomes real inside
+   * `_completePtyConnection` (`:134`); `windowsTerminal.js:62` copies the zero
+   * into the terminal and refreshes it in the `ready_datapipe` handler
+   * (`:67-69`). A value read synchronously after spawn is therefore the zero,
+   * permanently, because nothing re-reads it.
+   *
+   * VS Code's `TerminalProcess` (`node/terminalProcess.ts`, the
+   * `ptyProcess.pid > 0` branch) solves it by deferring to the first data
+   * event, which cannot fire before the connection completed, and this is that
+   * contract. Adopted as-is. What is NOT adopted is VS Code's dispose of the
+   * deferred listener on its first call: this one stays until the pid is
+   * genuinely positive, because a data event that arrived with the pid still
+   * unset would otherwise silence the property forever - the exact failure mode
+   * being fixed, one turn later.
+   *
+   * `0` never reaches the consumer. The property means "this is the process",
+   * and `0` is not one: it is what `kill(0, ...)` and `/proc/0/cwd` would be
+   * asked about.
+   */
+  private announcePid(): void {
+    if (this.pidAnnounced || this.disposed || this.pty === null) return;
+    const pid = this.pty.pid;
+    if (pid <= 0) {
+      if (this.pidDeferral === null) {
+        this.pidDeferral = this.pty.onData(() => this.announcePid());
+        this.subscriptions.push(this.pidDeferral);
+      }
+      return;
+    }
+    this.pidAnnounced = true;
+    this.pidDeferral?.dispose();
+    this.pidDeferral = null;
+    this.sinks.onProperty({ property: "pid", value: pid });
+  }
+
+  /**
+   * The pty's data socket failed with something node-pty would have THROWN.
+   *
+   * Without the `onError` seam this arrives as an uncaught exception in the pty
+   * host process - node-pty rethrows unless a second `error` listener exists
+   * (`windowsTerminal.js:102`, `unixTerminal.js:125`) and registers none itself
+   * (`terminal.js:90-94` forwards only `data` and `exit`) - which would kill
+   * every terminal in every project because one conout pipe broke.
+   *
+   * The socket is this terminal's only data path, so an error on it means the
+   * terminal is over. It ends on the ORDINARY exit route - flush window, kill,
+   * then the single exit event - deliberately: a consumer that learned about
+   * this any other way would need a second vocabulary for a terminal that is
+   * dead in exactly the way every other dead terminal is. node-pty's own Windows
+   * agent-error path does the same thing (`windowsTerminal.js:57-60`: close,
+   * then emit `exit`).
+   *
+   * The exit code is only filled in if the pty has not reported one, so a real
+   * exit racing this error still wins. `-1` matches node-pty's own code for a
+   * pty that failed rather than exited (`windowsPtyAgent.js:141`).
+   *
+   * The ERROR ITSELF is not a parameter here: the spawner logs its name, code
+   * and message into the host's stream at the moment it arrives, and this class
+   * has no sink that could carry a reason to the consumer. Taking a value it
+   * cannot use would only suggest it does.
+   */
+  private handlePtyError(): void {
+    if (this.disposed || this.exitAnnounced) return;
+    if (this.exitCode === null) this.exitCode = PTY_ERROR_EXIT_CODE;
+    this.queueExit();
   }
 
   /* ---------------------------------------------------------------- *
@@ -698,7 +810,19 @@ export class TerminalProcess {
    */
   async refreshCwd(): Promise<void> {
     if (this.disposed || this.pty === null) return;
-    const next = await this.deps.probe.readCwd(this.pty.pid);
+    const pid = this.pty.pid;
+    // A pid that is not known yet (Windows, until ConPTY connects - see
+    // `announcePid`) is the SAME FACT as a cwd that cannot be read: Vex does not
+    // know where this shell is. `location unknown` is that fact's vocabulary and
+    // the label already carries it, so the answer here is to leave the label
+    // alone, exactly as a `null` read does below.
+    //
+    // What must not happen is the probe call. `readCwd(0)` asks the operating
+    // system about process 0 - on Linux a `readlink` of `/proc/0/cwd`, on macOS
+    // an `lsof -p 0` SUBPROCESS - once per Enter keystroke, per terminal, for a
+    // question that has no answer.
+    if (pid <= 0) return;
+    const next = await this.deps.probe.readCwd(pid);
     if (next === null || next === this.currentCwd) return;
     const previousLabel = this.displayCwd;
     this.currentCwd = next;
@@ -838,6 +962,7 @@ export class TerminalProcess {
     for (const subscription of this.subscriptions.splice(0)) {
       subscription.dispose();
     }
+    this.pidDeferral = null;
     this.bufferer.stop();
     this.mirror.dispose();
     this.pty = null;

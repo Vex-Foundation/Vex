@@ -13,7 +13,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   TERMINAL_DATA_FLUSH_TIMEOUT_MS,
+  TERMINAL_KILL_SETTLE_MS,
   TERMINAL_MAXIMUM_SHUTDOWN_MS,
+  type TerminalProperty,
 } from "@shared/schemas/terminal.js";
 import { TerminalProcess } from "../terminal-process.js";
 import { ScriptedPty, fakeProbe, scriptedSpawner } from "./scripted-pty.js";
@@ -28,6 +30,7 @@ function build(options: {
   cwd?: string;
   sinks?: Partial<{
     onData: (data: string) => void;
+    onProperty: (change: TerminalProperty) => void;
     onExit: (exitCode: number, signal: number | null) => void;
   }>;
 }): { process: TerminalProcess; pty: ScriptedPty } {
@@ -51,7 +54,7 @@ function build(options: {
     },
     {
       onData: options.sinks?.onData ?? (() => {}),
-      onProperty: () => {},
+      onProperty: options.sinks?.onProperty ?? (() => {}),
       onExit: options.sinks?.onExit ?? (() => {}),
     },
   );
@@ -235,6 +238,262 @@ describe("exit sequencing", () => {
       process.shutdown(true);
       await vi.advanceTimersByTimeAsync(TERMINAL_MAXIMUM_SHUTDOWN_MS + 100);
 
+      expect(exits).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * THE WINDOWS DEFERRED PID.
+ *
+ * node-pty >= 1.2.0-beta.11 defers ConPTY's `connect()`, so `pty.pid` is `0`
+ * from the spawn call until the conout worker is ready
+ * (`windowsPtyAgent.js:39` and `:134`, copied into the terminal at
+ * `windowsTerminal.js:62` and refreshed at `:67-69`). Reading it once, at
+ * spawn - which is what this host did - published `0` to main and the renderer
+ * for the entire life of every Windows terminal, and handed `0` to the cwd
+ * probe on every Enter keystroke.
+ *
+ * These run with a `platform: "linux"` process on purpose: the DEFERRAL, not the
+ * operating system, is the contract, and a fake that answers `0` is the only way
+ * to exercise it deterministically anywhere. `real-pty.test.ts` on a Windows
+ * lane is what proves the deferral actually resolves against ConPTY.
+ */
+describe("the pid, when node-pty does not have one yet", () => {
+  const goodProbe = fakeProbe({
+    directories: [CWD],
+    files: [SHELL],
+    executables: { bash: SHELL },
+  });
+
+  it("emits the pid property on the FIRST DATA EVENT, once, and never emits 0", async () => {
+    const pty = new ScriptedPty();
+    pty.deferPid();
+    const properties: TerminalProperty[] = [];
+    const { process } = build({
+      probe: goodProbe,
+      pty,
+      sinks: { onProperty: (change) => properties.push(change) },
+    });
+
+    const started = await process.start();
+
+    // Nothing was published, because there was nothing true to publish.
+    expect(properties.filter((change) => change.property === "pid")).toEqual([]);
+    // The create reply answers immediately and carries the best-effort echo.
+    // Blocking it on the pid would make creating a terminal wait for the shell
+    // to produce output, which a silent shell never does.
+    expect(started.ok).toBe(true);
+    if (started.ok) expect(started.pid).toBe(0);
+
+    // ConPTY connected; the first byte of the shell's prompt follows it.
+    pty.resolvePid(31_337);
+    pty.emit("$ ");
+
+    expect(properties.filter((change) => change.property === "pid")).toEqual([
+      { property: "pid", value: 31_337 },
+    ]);
+
+    // A second chunk does not re-announce a value that cannot have changed.
+    pty.emit("ls\r\n");
+    expect(properties.filter((change) => change.property === "pid")).toHaveLength(1);
+
+    process.dispose();
+  });
+
+  it("keeps waiting when the first data event still has no pid, rather than publishing 0", async () => {
+    const pty = new ScriptedPty();
+    pty.deferPid();
+    const properties: TerminalProperty[] = [];
+    const { process } = build({
+      probe: goodProbe,
+      pty,
+      sinks: { onProperty: (change) => properties.push(change) },
+    });
+    await process.start();
+
+    pty.emit("early\r\n");
+    expect(properties.filter((change) => change.property === "pid")).toEqual([]);
+
+    pty.resolvePid(99);
+    pty.emit("late\r\n");
+    expect(properties.filter((change) => change.property === "pid")).toEqual([
+      { property: "pid", value: 99 },
+    ]);
+
+    process.dispose();
+  });
+
+  it("emits the pid at spawn when node-pty already has one", async () => {
+    const properties: TerminalProperty[] = [];
+    const { process } = build({
+      probe: goodProbe,
+      sinks: { onProperty: (change) => properties.push(change) },
+    });
+
+    await process.start();
+
+    // The Unix path is unchanged: no data event is required for the pid to be
+    // known, and none is waited for.
+    expect(properties.filter((change) => change.property === "pid")).toEqual([
+      { property: "pid", value: 4242 },
+    ]);
+    process.dispose();
+  });
+
+  it("NEVER asks the cwd probe about pid 0", async () => {
+    const askedFor: number[] = [];
+    const probe = {
+      ...goodProbe,
+      readCwd: (pid: number) => {
+        askedFor.push(pid);
+        return goodProbe.readCwd(pid);
+      },
+    };
+    const pty = new ScriptedPty();
+    pty.deferPid();
+    const properties: TerminalProperty[] = [];
+    const { process } = build({
+      probe,
+      pty,
+      sinks: { onProperty: (change) => properties.push(change) },
+    });
+
+    await process.start();
+    // The trigger path, not only the one on ready: a user pressing Enter is
+    // what would have run `lsof -p 0` once per keystroke, per terminal.
+    await process.refreshCwd();
+    expect(askedFor).toEqual([]);
+
+    // "The pid is not known yet" and "the cwd could not be read" are the same
+    // fact, and the answer to both is to leave the label alone - which for a
+    // shell that has not moved is still the directory it was launched in. On
+    // Windows this is the ordinary steady state, not a failure.
+    expect(properties).toContainEqual({ property: "displayCwd", value: "proj" });
+
+    pty.resolvePid(4242);
+    await process.refreshCwd();
+    expect(askedFor).toEqual([4242]);
+
+    process.dispose();
+  });
+});
+
+/**
+ * A DATA-SOCKET ERROR IS A DEAD TERMINAL, NOT A DEAD HOST.
+ *
+ * node-pty's socket error handler rethrows anything it does not classify as
+ * ordinary, unless the socket carries a second `error` listener
+ * (`windowsTerminal.js:90-104`, `unixTerminal.js:101-127`), and it registers
+ * none itself (`terminal.js:90-94` forwards `data` and `exit` only). The
+ * production spawner registers that listener; this is the other half - what the
+ * host does once the error is an event instead of an exception.
+ */
+describe("a pty whose data socket fails", () => {
+  const goodProbe = fakeProbe({
+    directories: [CWD],
+    files: [SHELL],
+    executables: { bash: SHELL },
+  });
+
+  it("ends the terminal on the ordinary exit route instead of propagating", async () => {
+    vi.useFakeTimers();
+    try {
+      const exits: Array<{ exitCode: number; signal: number | null }> = [];
+      const { process, pty } = build({
+        probe: goodProbe,
+        sinks: { onExit: (exitCode, signal) => exits.push({ exitCode, signal }) },
+      });
+      await process.start();
+
+      // Nothing escapes the callback. An exception here is a pty host that
+      // dies, taking every terminal in every project with it.
+      expect(() => {
+        pty.failSocket(Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }));
+      }).not.toThrow();
+
+      // Still the flush window: output already in flight reaches the consumer
+      // before the exit, exactly as for a shell that exited on its own.
+      expect(exits).toEqual([]);
+      await vi.advanceTimersByTimeAsync(TERMINAL_DATA_FLUSH_TIMEOUT_MS + 10);
+
+      // ONE exit, and the terminal is gone. Without this route the terminal
+      // would sit in the workspace forever with a socket nothing can read.
+      expect(exits).toHaveLength(1);
+      expect(pty.killed).toBe(true);
+      expect(process.alive).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports the failure code when the pty never manages to report an exit", async () => {
+    vi.useFakeTimers();
+    try {
+      const exits: Array<{ exitCode: number; signal: number | null }> = [];
+      const { process, pty } = build({
+        probe: goodProbe,
+        sinks: { onExit: (exitCode, signal) => exits.push({ exitCode, signal }) },
+      });
+      await process.start();
+
+      // The process that will not die: the kill lands, the OS never reports the
+      // exit, and the settle bound is what ends the wait. This is the only case
+      // in which the failure code is the code the consumer sees - a pty that
+      // does report an exit reports a real one, and that one wins.
+      pty.ignoresKill = true;
+      pty.failSocket(Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }));
+      await vi.advanceTimersByTimeAsync(
+        TERMINAL_DATA_FLUSH_TIMEOUT_MS + TERMINAL_KILL_SETTLE_MS + 50,
+      );
+
+      // node-pty's own code for a pty that failed rather than exited.
+      expect(exits).toEqual([{ exitCode: -1, signal: null }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a REAL exit code win over the failure code when the pty also reports one", async () => {
+    vi.useFakeTimers();
+    try {
+      const exits: number[] = [];
+      const { process, pty } = build({
+        probe: goodProbe,
+        sinks: { onExit: (exitCode) => exits.push(exitCode) },
+      });
+      await process.start();
+
+      pty.exit(3);
+      pty.failSocket(Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }));
+      await vi.advanceTimersByTimeAsync(TERMINAL_DATA_FLUSH_TIMEOUT_MS + 10);
+
+      // The shell said 3. An error arriving alongside it must not overwrite the
+      // one fact the user's script actually reported.
+      expect(exits).toEqual([3]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("announces exactly one exit when the socket fails after the terminal already exited", async () => {
+    vi.useFakeTimers();
+    try {
+      let exits = 0;
+      const { process, pty } = build({
+        probe: goodProbe,
+        sinks: { onExit: () => (exits += 1) },
+      });
+      await process.start();
+
+      pty.exit(0);
+      await vi.advanceTimersByTimeAsync(TERMINAL_DATA_FLUSH_TIMEOUT_MS + 10);
+      expect(exits).toBe(1);
+
+      pty.failSocket(new Error("read EIO"));
+      await vi.advanceTimersByTimeAsync(TERMINAL_DATA_FLUSH_TIMEOUT_MS + 10);
       expect(exits).toBe(1);
     } finally {
       vi.useRealTimers();

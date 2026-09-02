@@ -143,6 +143,11 @@ afterEach(() => {
   // session left alive here keeps a path subscription and a read in flight into
   // the next test in this file.
   fileViewerRegistry.disposeAll();
+  // The flush case below redefines `document.visibilityState` as an own
+  // property, and `document` is per-FILE, not per-case: left in place it would
+  // hand every later case in this file a permanently hidden window. Deleting
+  // the override restores jsdom's own accessor rather than pinning a value.
+  Reflect.deleteProperty(document, "visibilityState");
   vi.useRealTimers();
 });
 
@@ -211,6 +216,33 @@ function renderStrict(projectId = "p1") {
 }
 
 /**
+ * WAIT FOR THE ATTACH, NOT ONLY FOR THE TAB.
+ *
+ * The tab is rendered by the CONTROLLER. The registry entry, the five bridge
+ * subscriptions and the attach are established by each `XtermHost`'s OWN mount
+ * effect - a second, independent path over the same commit. React schedules
+ * that passive effect on a later scheduler turn than the commit that produced
+ * the tab, and RTL's `waitFor` runs with the act environment DISABLED (its
+ * `asyncWrapper` turns it off and drains with a `setTimeout(0)` that races
+ * React's `MessageChannel` flush), so a wait on the tab alone can resolve while
+ * the effect is still pending. Measured, not theorised: a probe placed at the
+ * `emitProperty` in the restore describe read `subs=0 attaches=[]` on the red
+ * run of a 1-in-15 reproduction under load, with two tabs already on screen.
+ *
+ * A case that then reads `registry.has(...)` sees `false`, and a case that
+ * emits a bridge event sees it dropped by a channel with no subscriber and
+ * never re-delivered. `attachTerminal` is the LAST statement of that effect
+ * body, so `bridge.attaches` covering a terminal proves the whole body - the
+ * acquire and all five subscriptions included - has run for it.
+ */
+async function waitForOpenedTerminal(): Promise<void> {
+  await waitFor(() => {
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+    expect(bridge.attaches).toContain(AUTO_TERMINAL.terminalId);
+  });
+}
+
+/**
  * Render a project with NO saved workspace and wait for its auto-opened first
  * terminal to land.
  *
@@ -220,18 +252,14 @@ function renderStrict(projectId = "p1") {
  */
 async function renderOpened(projectId = "p1") {
   const view = renderController(projectId);
-  await waitFor(() => {
-    expect(screen.getAllByRole("tab")).toHaveLength(1);
-  });
+  await waitForOpenedTerminal();
   return view;
 }
 
 /** The same, under StrictMode's double-invoked effects. */
 async function renderStrictOpened(projectId = "p1") {
   const view = renderStrict(projectId);
-  await waitFor(() => {
-    expect(screen.getAllByRole("tab")).toHaveLength(1);
-  });
+  await waitForOpenedTerminal();
   return view;
 }
 
@@ -285,9 +313,13 @@ describe("StudioWorkspaceController restore", () => {
     bridge.savedWorkspace = savedWorkspace();
     renderController();
 
-    // The restore's active pane is `t2`, seeded with `vex-app/src/lib`.
+    // The restore's active pane is `t2`, seeded with `vex-app/src/lib`. The
+    // SUBSCRIPTION is waited for alongside the label for the reason
+    // `waitForOpenedTerminal` states: the emit below is dropped on the floor by
+    // a bridge that has no subscriber yet, and nothing ever re-delivers it.
     await waitFor(() => {
       expect(screen.getByLabelText("Working directory: vex-app/src/lib")).toBeTruthy();
+      expect(bridge.attaches.toSorted()).toEqual(["t1", "t2"]);
     });
     expect(screen.queryByLabelText("Working directory not known yet")).toBeNull();
 
