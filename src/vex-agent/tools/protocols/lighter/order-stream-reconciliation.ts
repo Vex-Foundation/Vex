@@ -10,7 +10,9 @@ import type {
   LighterProviderOutcomeExecutionState,
 } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import {
+  buildLighterOrderEvidenceScope,
   lighterDecimalGreaterThanZero,
+  lighterOrderMatchesEvidenceScope,
   lighterOrderEvidenceJson,
 } from "./order-evidence.js";
 
@@ -27,7 +29,7 @@ export interface LighterOrderStreamReconciliationDeps {
   readonly client: Pick<LighterClient, "getNextNonce">;
   readonly intents: Pick<
     typeof lighterOrderExecutionIntentsRepo,
-    "listStreamWatchable" | "markStreamOutcome"
+    "listStreamWatchable" | "markStreamOutcome" | "markEvidenceConflict"
   >;
   readonly nonceState: Pick<
     typeof lighterNonceStateRepo,
@@ -43,6 +45,7 @@ export interface LighterOrderStreamReconciliationReport {
   readonly deduplicated: number;
   readonly unknownStatus: number;
   readonly raced: number;
+  readonly evidenceConflicts: number;
   readonly nonceScopesRefreshed: number;
   readonly nonceRefreshFailures: number;
 }
@@ -70,15 +73,38 @@ export async function reconcileLighterOrderStreamMessage(
   let deduplicated = 0;
   let unknownStatus = 0;
   let raced = 0;
+  let evidenceConflicts = 0;
 
   for (const intent of intents) {
     if (intent.clientOrderIndex === null) continue;
     const order = ordersByClientId.get(intent.clientOrderIndex);
     if (order === undefined) continue;
+    if (order === null) {
+      evidenceConflicts += 1;
+      const persisted = await deps.intents.markEvidenceConflict({
+        intentId: intent.intentId,
+        environment,
+        reason: "provider_order_duplicate_identity_conflict",
+      });
+      if (persisted === null) raced += 1;
+      continue;
+    }
+    const evidenceScope = exactEvidenceScopeFromIntent(intent);
+    if (evidenceScope === null) {
+      continue;
+    }
     if (
       order.owner_account_index !== intent.accountIndex
       || order.market_index !== intent.marketIndex
+      || !lighterOrderMatchesEvidenceScope(order, evidenceScope)
     ) {
+      evidenceConflicts += 1;
+      const persisted = await deps.intents.markEvidenceConflict({
+        intentId: intent.intentId,
+        environment,
+        reason: "provider_order_semantic_conflict",
+      });
+      if (persisted === null) raced += 1;
       continue;
     }
     matched += 1;
@@ -153,9 +179,29 @@ export async function reconcileLighterOrderStreamMessage(
     deduplicated,
     unknownStatus,
     raced,
+    evidenceConflicts,
     nonceScopesRefreshed,
     nonceRefreshFailures,
   };
+}
+
+function exactEvidenceScopeFromIntent(
+  intent: LighterOrderExecutionIntentRow,
+): ReturnType<typeof buildLighterOrderEvidenceScope> | null {
+  const baseDecimals = intent.preSubmitRevalidationJson?.baseDecimals;
+  const priceDecimals = intent.preSubmitRevalidationJson?.priceDecimals;
+  if (!Number.isInteger(baseDecimals) || !Number.isInteger(priceDecimals)) return null;
+  const ordinaryIoc = intent.timeInForce === "immediate-or-cancel"
+    && intent.orderType !== "stop-loss"
+    && intent.orderType !== "stop-loss-limit"
+    && intent.orderType !== "take-profit"
+    && intent.orderType !== "take-profit-limit";
+  return buildLighterOrderEvidenceScope({
+    approved: intent,
+    baseDecimals: baseDecimals as number,
+    priceDecimals: priceDecimals as number,
+    signedOrderExpiryMs: ordinaryIoc ? 0 : intent.orderExpiryMs,
+  });
 }
 
 export function classifyLighterStreamOrderState(
@@ -179,10 +225,15 @@ export function classifyLighterStreamOrderState(
 
 function flattenOrders(
   message: LighterAccountAllOrdersStreamMessage,
-): ReadonlyMap<string, LighterAccountOrder> {
-  const orders = new Map<string, LighterAccountOrder>();
+): ReadonlyMap<string, LighterAccountOrder | null> {
+  const orders = new Map<string, LighterAccountOrder | null>();
   for (const marketOrders of Object.values(message.orders)) {
-    for (const order of marketOrders) orders.set(order.client_order_id, order);
+    for (const order of marketOrders) {
+      orders.set(
+        order.client_order_id,
+        orders.has(order.client_order_id) ? null : order,
+      );
+    }
   }
   return orders;
 }

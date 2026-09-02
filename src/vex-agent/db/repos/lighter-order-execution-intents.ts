@@ -193,6 +193,12 @@ export interface MarkLighterOrderStreamOutcomeInput {
   readonly providerOutcomeJson: Record<string, unknown>;
 }
 
+export interface MarkLighterOrderEvidenceConflictInput {
+  readonly intentId: string;
+  readonly environment: LighterEnvironment;
+  readonly reason: string;
+}
+
 const SELECT_COLUMNS =
   "intent_id, session_id, preview_id, protocol_execution_id, approval_id, match_hash, environment, " +
   "account_index, api_key_index, market_index, side, base_amount_integer, price_integer, " +
@@ -366,6 +372,20 @@ const MARK_STREAM_OUTCOME_SQL = `UPDATE lighter_order_execution_intents
    )
  RETURNING ${SELECT_COLUMNS}`;
 
+const MARK_EVIDENCE_CONFLICT_SQL = `UPDATE lighter_order_execution_intents
+   SET execution_state = 'ambiguous',
+       ambiguous_reason = $3,
+       ambiguous_at = COALESCE(ambiguous_at, NOW()),
+       updated_at = NOW()
+ WHERE intent_id = $1
+   AND environment = $2
+   AND approval_status = 'approved'
+   AND client_order_index IS NOT NULL
+   AND execution_state IN (
+     'signed','submitted','api_accepted','sequencer_pending','ambiguous','open','partially_filled'
+   )
+ RETURNING ${SELECT_COLUMNS}`;
+
 const MARK_AMBIGUOUS_SQL = `UPDATE lighter_order_execution_intents
    SET execution_state = 'ambiguous',
        ambiguous_reason = $4,
@@ -524,6 +544,23 @@ export async function markStreamOutcome(
     requiredSafeId(input.providerOrderId, "providerOrderId"),
     requiredSafeText(input.providerOrderStatus, "providerOrderStatus"),
     jsonb(assertProviderOutcomeJson(input.providerOutcomeJson)),
+  ]);
+  return row ? mapRow(row) : null;
+}
+
+/**
+ * A provider row with the exact signed client-order identity but different
+ * approved semantics is an integrity conflict, never ordinary absence. Keep
+ * the row repairable while preventing stale open/partial state from remaining
+ * authoritative.
+ */
+export async function markEvidenceConflict(
+  input: MarkLighterOrderEvidenceConflictInput,
+): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(MARK_EVIDENCE_CONFLICT_SQL, [
+    input.intentId,
+    input.environment,
+    requiredSafeText(input.reason, "reason"),
   ]);
   return row ? mapRow(row) : null;
 }

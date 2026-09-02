@@ -73,8 +73,12 @@ function intent(): LighterOrderExecutionIntentRow {
     providerOutcomeSource: "active_order",
     providerOutcomeJson: null,
     providerOutcomeCheckedAt: null,
-    preSubmitRevalidationJson: null,
-    preSubmitRevalidatedAt: null,
+    preSubmitRevalidationJson: {
+      kind: "lighter_order_pre_submit_revalidation",
+      baseDecimals: 2,
+      priceDecimals: 2,
+    },
+    preSubmitRevalidatedAt: "2026-08-18T00:00:01.000Z",
     createdAt: "2026-08-18T00:00:00.000Z",
     updatedAt: "2026-08-18T00:00:00.000Z",
     expiresAt: "2026-08-18T00:05:00.000Z",
@@ -105,6 +109,7 @@ describe("Lighter order stream reconnect resnapshot", () => {
           orderIntents: {
             listStreamWatchable: vi.fn(async () => [row]),
             markStreamOutcome,
+            markEvidenceConflict: vi.fn(async () => null),
           },
           lifecycleIntents: {
             listStreamWatchable: vi.fn(async () => []),

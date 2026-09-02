@@ -75,7 +75,10 @@ export interface LighterOrderLifecycleRepairDeps {
     typeof lifecycleIntentsRepo,
     "findByIntentIdAnySession" | "listStatusCandidates" | "listStreamWatchable" | "markStreamEvidence"
   >;
-  readonly orderIntents: Pick<typeof orderIntentsRepo, "listStreamWatchable" | "markStreamOutcome">;
+  readonly orderIntents: Pick<
+    typeof orderIntentsRepo,
+    "listStreamWatchable" | "markStreamOutcome" | "markEvidenceConflict"
+  >;
   readonly nonceState: Pick<
     typeof nonceStateRepo,
     "find" | "recordExecutionObserved" | "releaseReservation"

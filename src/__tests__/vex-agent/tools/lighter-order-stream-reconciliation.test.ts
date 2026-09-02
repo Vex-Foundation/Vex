@@ -64,7 +64,11 @@ function intent(
     providerOutcomeSource: null,
     providerOutcomeJson: null,
     providerOutcomeCheckedAt: null,
-    preSubmitRevalidationJson: null,
+    preSubmitRevalidationJson: {
+      kind: "lighter_order_pre_submit_revalidation",
+      baseDecimals: 4,
+      priceDecimals: 2,
+    },
     preSubmitRevalidatedAt: null,
     createdAt: "2026-08-18T00:00:00.000Z",
     updatedAt: "2026-08-18T00:00:02.000Z",
@@ -82,7 +86,8 @@ function order(overrides: Partial<LighterAccountOrder> = {}): LighterAccountOrde
     market_index: 0,
     owner_account_index: 42,
     initial_base_amount: "1.0",
-    price: "2000.00",
+    price: "3000.00",
+    order_expiry: 1_800_000_000_000,
     status: "open",
     filled_base_amount: "0",
     remaining_base_amount: "1.0",
@@ -107,6 +112,10 @@ function deps(rows: readonly LighterOrderExecutionIntentRow[] = [intent()]) {
       listStreamWatchable: vi.fn(async () => [...rows]),
       markStreamOutcome: vi.fn(async (input: { state: LighterOrderExecutionIntentRow["executionState"] }) =>
         intent({ executionState: input.state })),
+      markEvidenceConflict: vi.fn(async () => intent({
+        executionState: "ambiguous",
+        ambiguousReason: "provider_order_semantic_conflict",
+      })),
     },
     nonceState: {
       find: vi.fn(async () => ({
@@ -135,7 +144,13 @@ describe("Lighter order stream reconciliation", () => {
     const report = await reconcileLighterOrderStreamMessage(
       "rhc",
       42,
-      frame([order({ status: "filled", filled_base_amount: "1.0", remaining_base_amount: "0" })]),
+      frame([order({
+        side: "",
+        is_ask: false,
+        status: "filled",
+        filled_base_amount: "1.0",
+        remaining_base_amount: "0",
+      })]),
       d,
     );
 
@@ -198,6 +213,52 @@ describe("Lighter order stream reconciliation", () => {
     expect(report).toMatchObject({ examined: 1, matched: 0, advanced: 0 });
     expect(d.intents.markStreamOutcome).not.toHaveBeenCalled();
     expect(d.client.getNextNonce).not.toHaveBeenCalled();
+  });
+
+  it("durably marks ambiguous when provider price contradicts the approved canonical terms", async () => {
+    const d = deps();
+    const report = await reconcileLighterOrderStreamMessage(
+      "rhc",
+      42,
+      frame([order({ price: "3000.01", status: "filled" })]),
+      d,
+    );
+
+    expect(report).toMatchObject({ matched: 0, advanced: 0, evidenceConflicts: 1 });
+    expect(d.intents.markStreamOutcome).not.toHaveBeenCalled();
+    expect(d.intents.markEvidenceConflict).toHaveBeenCalledWith({
+      intentId: INTENT_ID,
+      environment: "rhc",
+      reason: "provider_order_semantic_conflict",
+    });
+    expect(d.client.getNextNonce).not.toHaveBeenCalled();
+  });
+
+  it("durably marks ambiguous when one stream frame repeats the exact client-order identity", async () => {
+    const d = deps();
+    const report = await reconcileLighterOrderStreamMessage(
+      "rhc",
+      42,
+      frame([order(), order({ order_id: "988", status: "filled" })]),
+      d,
+    );
+
+    expect(report).toMatchObject({ matched: 0, advanced: 0, evidenceConflicts: 1 });
+    expect(d.intents.markStreamOutcome).not.toHaveBeenCalled();
+    expect(d.intents.markEvidenceConflict).toHaveBeenCalledWith({
+      intentId: INTENT_ID,
+      environment: "rhc",
+      reason: "provider_order_duplicate_identity_conflict",
+    });
+    expect(d.client.getNextNonce).not.toHaveBeenCalled();
+  });
+
+  it("does not confirm old rows missing persisted decimal precision", async () => {
+    const d = deps([intent({ preSubmitRevalidationJson: null })]);
+    const report = await reconcileLighterOrderStreamMessage("rhc", 42, frame([order()]), d);
+
+    expect(report).toMatchObject({ matched: 0, advanced: 0 });
+    expect(d.intents.markStreamOutcome).not.toHaveBeenCalled();
   });
 
   it("ignores undocumented statuses rather than guessing", async () => {

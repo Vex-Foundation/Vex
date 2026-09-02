@@ -68,7 +68,11 @@ function intentRow(
     providerOutcomeSource: null,
     providerOutcomeJson: null,
     providerOutcomeCheckedAt: null,
-    preSubmitRevalidationJson: null,
+    preSubmitRevalidationJson: {
+      kind: "lighter_order_pre_submit_revalidation",
+      baseDecimals: 4,
+      priceDecimals: 2,
+    },
     preSubmitRevalidatedAt: null,
     createdAt: "2026-08-14T10:59:00.000Z",
     updatedAt: "2026-08-14T11:00:01.000Z",
@@ -118,6 +122,11 @@ function makeDeps(overrides: {
       findByIntentIdAnySession: vi.fn(async () => null),
       markRepairResolved: vi.fn(async (input: { state: string }) =>
         intentRow({ executionState: input.state as LighterOrderExecutionIntentRow["executionState"] })),
+      markEvidenceConflict: vi.fn(async () => intentRow({
+        executionState: "ambiguous",
+        ambiguousReason: "provider_order_semantic_conflict",
+        ambiguousAt: "2026-08-14T12:00:01.000Z",
+      })),
     },
     nonceState: {
       find: vi.fn(async () => (overrides.nonceRow === undefined ? nonceRow() : overrides.nonceRow)),
@@ -142,6 +151,9 @@ describe("Lighter order repair", () => {
           client_order_id: "123456",
           market_index: 0,
           owner_account_index: 42,
+          initial_base_amount: "1.0",
+          price: "3000.00",
+          order_expiry: ORDER_EXPIRY_MS,
           status: "filled",
           filled_base_amount: "1.0",
           remaining_base_amount: "0",
@@ -179,6 +191,9 @@ describe("Lighter order repair", () => {
           client_order_id: "123456",
           market_index: 0,
           owner_account_index: 42,
+          initial_base_amount: "1.0",
+          price: "3000.00",
+          order_expiry: ORDER_EXPIRY_MS,
           status: "filled",
           filled_base_amount: "1.0",
           remaining_base_amount: "0",
@@ -194,6 +209,45 @@ describe("Lighter order repair", () => {
     expect(deps.intents.markRepairResolved).not.toHaveBeenCalled();
     // Falls back to nonce facts: reserved 1200 vs live 1201 => consumed.
     expect(report.resolution).toBe("nonce_reset_consumed");
+  });
+
+  it("marks contradictory provider size evidence ambiguous without nonce inference", async () => {
+    const deps = {
+      ...makeDeps({
+        nextNonce: 1200,
+        inactiveOrders: [{
+          order_index: 987,
+          client_order_index: 123456,
+          order_id: "987",
+          client_order_id: "123456",
+          market_index: 0,
+          owner_account_index: 42,
+          initial_base_amount: "1.0001",
+          price: "3000.00",
+          order_expiry: ORDER_EXPIRY_MS,
+          status: "filled",
+          filled_base_amount: "1.0",
+          remaining_base_amount: "0",
+        }],
+      }),
+      resolvePrivilegedAccountAuth: vi.fn(async () => ({
+        token: "derived-account-auth-token",
+        accountIndex: 42,
+      })),
+    };
+
+    const report = await repairLighterOrderIntent(intentRow(), deps);
+
+    expect(report.resolution).toBe("degraded");
+    expect(report.stateAfter).toBe("ambiguous");
+    expect(report.guidance).toContain("terms that conflict");
+    expect(deps.intents.markEvidenceConflict).toHaveBeenCalledWith({
+      intentId: INTENT_ID,
+      environment: "rhc",
+      reason: "provider_order_semantic_conflict",
+    });
+    expect(deps.intents.markRepairResolved).not.toHaveBeenCalled();
+    expect(deps.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
   });
 
   it("resets the nonce without guessing the order outcome when the reserved nonce was consumed", async () => {

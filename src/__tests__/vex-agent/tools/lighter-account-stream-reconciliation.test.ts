@@ -169,6 +169,7 @@ function deps(rows: readonly LighterOrderLifecycleIntentRow[]) {
         LighterAccountStreamReconciliationDeps["orderIntents"]["listStreamWatchable"]
       >(async () => []),
       markStreamOutcome: vi.fn(async () => null),
+      markEvidenceConflict: vi.fn(async () => null),
     },
     lifecycleIntents: {
       listStreamWatchable: vi.fn(async () => [...rows]),

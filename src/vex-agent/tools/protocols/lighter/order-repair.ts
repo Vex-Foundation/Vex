@@ -10,8 +10,10 @@ import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-o
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import { lighterOrderNonceReservationId } from "./nonce-reservation.js";
 import {
+  buildLighterOrderEvidenceScope,
   findMatchingLighterOrder,
   findMatchingLighterTrade,
+  LighterOrderEvidenceConflictError,
   lighterOrderEvidenceJson,
   lighterOrderIdFromTrade,
   lighterTradeEvidenceJson,
@@ -40,8 +42,9 @@ import {
  * Anything else stays reserved with wait guidance instead of a blind retry.
  *
  * Create-order repair must not use the locally approved order expiry as proof
- * that a signed transaction is dead. Market IOC orders are signed with a nil
- * wire OrderExpiry, so that local timestamp does not constrain the sequencer.
+ * that a signed transaction is dead. Ordinary market and limit IOC orders are
+ * signed with a nil wire OrderExpiry, so that local timestamp does not
+ * constrain the sequencer.
  */
 
 /**
@@ -125,7 +128,7 @@ export interface LighterOrderRepairDeps {
   >;
   readonly intents: Pick<
     typeof lighterOrderExecutionIntentsRepo,
-    "listUnresolved" | "findByIntentIdAnySession" | "markRepairResolved"
+    "listUnresolved" | "findByIntentIdAnySession" | "markRepairResolved" | "markEvidenceConflict"
   >;
   readonly nonceState: Pick<
     typeof lighterNonceStateRepo,
@@ -268,12 +271,9 @@ async function resolveFromProviderEvidence(
   if (derived === null) return null;
   const privilegedAuth: LighterPrivilegedAccountAuth = derived;
 
-  const scope: LighterOrderEvidenceScope = {
-    accountIndex: intent.accountIndex,
-    marketIndex: intent.marketIndex,
-    side: intent.side,
-  };
   try {
+    const scope = exactEvidenceScopeFromIntent(intent);
+    if (scope === null) return null;
     const [activeOrders, inactiveOrders, trades] = await Promise.all([
       deps.client.getAccountActiveOrders(intent.environment, {
         accountIndex: intent.accountIndex,
@@ -331,10 +331,50 @@ async function resolveFromProviderEvidence(
       }, liveNextNonce);
     }
     return null;
-  } catch {
+  } catch (error) {
+    if (error instanceof LighterOrderEvidenceConflictError) {
+      let conflicted: LighterOrderExecutionIntentRow | null = null;
+      try {
+        conflicted = await deps.intents.markEvidenceConflict({
+          intentId: intent.intentId,
+          environment: intent.environment,
+          reason: "provider_order_semantic_conflict",
+        });
+      } catch {
+        // The conflict remains explicit in this report even if its durable
+        // transition raced or storage is temporarily unavailable.
+      }
+      return {
+        ...base,
+        stateAfter: conflicted?.executionState ?? intent.executionState,
+        resolution: "degraded",
+        guidance:
+          "Lighter returned the exact client order id with terms that conflict with the approved order. "
+          + "Treat the outcome as ambiguous, do not resubmit, and investigate the provider evidence before trading on this key.",
+      };
+    }
     // Authenticated evidence is optional for repair; fall back to nonce facts.
     return null;
   }
+}
+
+function exactEvidenceScopeFromIntent(
+  intent: LighterOrderExecutionIntentRow,
+): LighterOrderEvidenceScope | null {
+  const baseDecimals = intent.preSubmitRevalidationJson?.baseDecimals;
+  const priceDecimals = intent.preSubmitRevalidationJson?.priceDecimals;
+  if (!Number.isInteger(baseDecimals) || !Number.isInteger(priceDecimals)) return null;
+  const ordinaryIoc = intent.timeInForce === "immediate-or-cancel"
+    && intent.orderType !== "stop-loss"
+    && intent.orderType !== "stop-loss-limit"
+    && intent.orderType !== "take-profit"
+    && intent.orderType !== "take-profit-limit";
+  return buildLighterOrderEvidenceScope({
+    approved: intent,
+    baseDecimals: baseDecimals as number,
+    priceDecimals: priceDecimals as number,
+    signedOrderExpiryMs: ordinaryIoc ? 0 : intent.orderExpiryMs,
+  });
 }
 
 async function persistEvidence(
@@ -460,7 +500,7 @@ async function resolveFromNonceFacts(
       resolution: "awaiting_provider",
       guidance:
         "The submission may still reach the sequencer, so the nonce stays reserved. The approved preview expiry "
-        + "is not a signed sequencer expiry for market IOC orders. Wait for provider evidence or proof that the "
+        + "is not a signed sequencer expiry for ordinary IOC create orders. Wait for provider evidence or proof that the "
         + "transaction never left Vex. Do not resubmit the order in the meantime.",
     };
   }

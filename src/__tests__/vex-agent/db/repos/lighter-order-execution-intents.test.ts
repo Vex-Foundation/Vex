@@ -752,6 +752,36 @@ describe("lighter order execution intents repo", () => {
     expect(outcome).toMatchObject({ executionState: "filled" });
   });
 
+  it("marks exact-client provider semantic conflicts ambiguous from every watchable state", async () => {
+    mockQueryOne.mockResolvedValueOnce(dbRow({
+      approval_status: "approved",
+      execution_state: "ambiguous",
+      client_order_index: "187649984473770",
+      ambiguous_reason: "provider_order_semantic_conflict",
+      ambiguous_at: new Date("2026-08-12T00:03:00.000Z"),
+    }));
+
+    const outcome = await repo.markEvidenceConflict({
+      intentId: "lighter-exec-1",
+      environment: "rhc",
+      reason: "provider_order_semantic_conflict",
+    });
+
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    expect(sql).toContain("SET execution_state = 'ambiguous'");
+    expect(sql).toContain("'ambiguous','open','partially_filled'");
+    expect(sql).not.toContain("'filled','canceled','rejected'");
+    expect(params).toEqual([
+      "lighter-exec-1",
+      "rhc",
+      "provider_order_semantic_conflict",
+    ]);
+    expect(outcome).toMatchObject({
+      executionState: "ambiguous",
+      ambiguousReason: "provider_order_semantic_conflict",
+    });
+  });
+
   it("marks in-flight submit outcomes ambiguous with bounded structural reasons", async () => {
     mockQueryOne.mockResolvedValueOnce(dbRow({
       approval_status: "approved",

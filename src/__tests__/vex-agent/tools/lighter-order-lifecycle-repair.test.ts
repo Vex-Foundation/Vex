@@ -115,6 +115,7 @@ function deps(initial: LighterOrderLifecycleIntentRow, provider: {
     orderIntents: {
       listStreamWatchable: vi.fn(async () => []),
       markStreamOutcome: vi.fn(async () => null),
+      markEvidenceConflict: vi.fn(async () => null),
     },
     nonceState: {
       find: vi.fn(async () => nonce()),

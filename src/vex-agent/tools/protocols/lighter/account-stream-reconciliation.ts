@@ -27,7 +27,10 @@ import {
 
 export interface LighterAccountStreamReconciliationDeps {
   readonly client: Pick<LighterClient, "getNextNonce">;
-  readonly orderIntents: Pick<typeof orderIntentsRepo, "listStreamWatchable" | "markStreamOutcome">;
+  readonly orderIntents: Pick<
+    typeof orderIntentsRepo,
+    "listStreamWatchable" | "markStreamOutcome" | "markEvidenceConflict"
+  >;
   readonly lifecycleIntents: Pick<typeof lifecycleIntentsRepo, "listStreamWatchable" | "markStreamEvidence">;
   readonly nonceState: Pick<typeof nonceStateRepo, "find" | "recordExecutionObserved">;
   readonly orderTransport?: "account_all_orders_stream" | "account_orders_resnapshot";
