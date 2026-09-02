@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { ErrorCodes, VexError } from "../../errors.js";
+import { assertLighterPhaseOneOrderPolicy } from "./order-policy.js";
 import type {
   LighterAccount,
   LighterAccountAsset,
@@ -18,7 +19,9 @@ export const LIGHTER_ORDER_TYPES = [
   "limit",
   "market",
   "stop-loss",
+  "stop-loss-limit",
   "take-profit",
+  "take-profit-limit",
 ] as const;
 export const LIGHTER_ORDER_SIDES = ["buy", "sell"] as const;
 export const LIGHTER_ORDER_TIME_IN_FORCE = [
@@ -266,6 +269,15 @@ export function buildLighterOrderPreview(
   const bestAsk = bestPrice(context.orderBook.asks, "ask");
   assertProtectiveTriggerDirection(input, triggerPriceInteger, bestBid, bestAsk);
   const priceComparison = classifyPriceComparison(input.side, input.orderType, input.price, bestBid, bestAsk);
+  if (
+    input.timeInForce === "post-only"
+    && !isTriggerLimitOrderType(input.orderType)
+    && priceComparison !== "resting"
+  ) {
+    throw invalidRequest(
+      "Post-only Lighter preview refused: the approved limit price must be strictly resting against the live opposite-side best price.",
+    );
+  }
 
   const identity: LighterOrderPreviewIdentity = {
     kind: "lighter_order",
@@ -315,9 +327,11 @@ export function buildLighterOrderPreview(
         decimals: context.market.supported_price_decimals,
         role: input.orderType === "market"
           ? "worst_acceptable_price"
-          : isProtectiveOrderType(input.orderType)
-            ? "trigger_execution_bound"
-            : "limit_price",
+          : isTriggerLimitOrderType(input.orderType)
+            ? "limit_price"
+            : isProtectiveOrderType(input.orderType)
+              ? "trigger_execution_bound"
+              : "limit_price",
       },
       triggerPrice: {
         display: triggerPriceInteger === null
@@ -356,11 +370,15 @@ export function buildLighterOrderPreview(
       riskNotes: [
         "Preview only. No order was signed, submitted, placed, cancelled, deposited, withdrawn, or transferred.",
         "A later API acceptance is not final execution; order outcome must be proven by Lighter order or transaction evidence.",
-        ...(isProtectiveOrderType(input.orderType)
+        ...(isTriggerLimitOrderType(input.orderType)
           ? [
-              "This reduce-only protective order can execute only after Lighter observes the approved trigger price; its price is a hard execution bound, not the trigger itself.",
+              "This reduce-only protective limit order activates only after Lighter observes the approved trigger price; it may rest on the book and may never fill at the approved limit price.",
             ]
-          : []),
+          : isProtectiveOrderType(input.orderType)
+            ? [
+                "This reduce-only protective order can execute only after Lighter observes the approved trigger price; its price is a hard execution bound, not the trigger itself.",
+              ]
+            : []),
         ...(spotInventoryContext === null
           ? []
           : [
@@ -479,32 +497,21 @@ function assertOrderCombination(
   input: LighterOrderPreviewInput,
   market: LighterMarketDetail,
 ): void {
-  if (input.orderType === "market" && input.timeInForce !== "immediate-or-cancel") {
-    throw invalidRequest("Market order previews require immediate-or-cancel time in force.");
-  }
-  if (input.orderType === "limit" && input.timeInForce === "immediate-or-cancel") {
-    throw invalidRequest("Limit IOC behavior must be requested as a market-style worst-price preview in this wave.");
-  }
-  if (input.timeInForce === "post-only" && input.orderType !== "limit") {
-    throw invalidRequest("Post-only previews are supported only for limit orders.");
-  }
+  assertLighterPhaseOneOrderPolicy(input.orderType, input.timeInForce);
   if (isProtectiveOrderType(input.orderType)) {
     if (market.market_type !== "perp") {
-      throw invalidRequest("Stop-loss and take-profit orders are supported only for Lighter perpetual markets.");
-    }
-    if (input.timeInForce !== "immediate-or-cancel") {
-      throw invalidRequest("Stop-loss and take-profit orders require immediate-or-cancel time in force.");
+      throw invalidRequest("Protective orders are supported only for Lighter perpetual markets.");
     }
     if (!input.reduceOnly) {
-      throw invalidRequest("Stop-loss and take-profit orders must be reduce-only in Vex.");
+      throw invalidRequest("Protective orders must be reduce-only in Vex.");
     }
     if (input.triggerPrice === undefined || input.triggerPrice === null) {
-      throw invalidRequest("Stop-loss and take-profit orders require an explicit triggerPrice.");
+      throw invalidRequest("Protective orders require an explicit triggerPrice.");
     }
     return;
   }
   if (input.triggerPrice !== undefined && input.triggerPrice !== null) {
-    throw invalidRequest("Trigger price is accepted only for stop-loss or take-profit orders.");
+    throw invalidRequest("Trigger price is accepted only for protective orders.");
   }
 }
 
@@ -527,12 +534,12 @@ function assertProtectiveTriggerDirection(
     throw invalidRequest("Protective order preview requires a live opposite-side reference price.");
   }
   const comparison = compareDecimalStrings(triggerPrice, reference);
-  const valid = input.orderType === "stop-loss"
+  const valid = isStopLossOrderType(input.orderType)
     ? input.side === "sell" ? comparison < 0 : comparison > 0
     : input.side === "sell" ? comparison > 0 : comparison < 0;
   if (!valid) {
     const position = input.side === "sell" ? "long" : "short";
-    const direction = input.orderType === "stop-loss"
+    const direction = isStopLossOrderType(input.orderType)
       ? input.side === "sell" ? "below" : "above"
       : input.side === "sell" ? "above" : "below";
     throw invalidRequest(
@@ -552,8 +559,23 @@ function assertProtectiveTriggerDirection(
 
 export function isProtectiveOrderType(
   orderType: LighterOrderType,
-): orderType is "stop-loss" | "take-profit" {
-  return orderType === "stop-loss" || orderType === "take-profit";
+): orderType is "stop-loss" | "stop-loss-limit" | "take-profit" | "take-profit-limit" {
+  return orderType === "stop-loss"
+    || orderType === "stop-loss-limit"
+    || orderType === "take-profit"
+    || orderType === "take-profit-limit";
+}
+
+export function isTriggerLimitOrderType(
+  orderType: LighterOrderType,
+): orderType is "stop-loss-limit" | "take-profit-limit" {
+  return orderType === "stop-loss-limit" || orderType === "take-profit-limit";
+}
+
+function isStopLossOrderType(
+  orderType: LighterOrderType,
+): orderType is "stop-loss" | "stop-loss-limit" {
+  return orderType === "stop-loss" || orderType === "stop-loss-limit";
 }
 
 function assertSpotOrderInventory(

@@ -5,23 +5,35 @@ import {
   lighterPhaseOneOrderPolicyFailure,
 } from "@tools/lighter/order-policy.js";
 
-describe("Lighter Phase 1 order policy", () => {
-  it("permits IOC market and protective orders", () => {
-    expect(lighterPhaseOneOrderPolicyFailure("market", "immediate-or-cancel")).toBeNull();
-    expect(lighterPhaseOneOrderPolicyFailure("stop-loss", "immediate-or-cancel")).toBeNull();
-    expect(lighterPhaseOneOrderPolicyFailure("take-profit", "immediate-or-cancel")).toBeNull();
-    expect(() => assertLighterPhaseOneOrderPolicy("market", "immediate-or-cancel")).not.toThrow();
+describe("Lighter create-order policy", () => {
+  it.each([
+    ["limit", "immediate-or-cancel"],
+    ["limit", "good-till-time"],
+    ["limit", "post-only"],
+    ["market", "immediate-or-cancel"],
+    ["stop-loss", "immediate-or-cancel"],
+    ["stop-loss-limit", "immediate-or-cancel"],
+    ["stop-loss-limit", "good-till-time"],
+    ["stop-loss-limit", "post-only"],
+    ["take-profit", "immediate-or-cancel"],
+    ["take-profit-limit", "immediate-or-cancel"],
+    ["take-profit-limit", "good-till-time"],
+    ["take-profit-limit", "post-only"],
+  ] as const)("permits %s with %s", (orderType, timeInForce) => {
+    expect(lighterPhaseOneOrderPolicyFailure(orderType, timeInForce)).toBeNull();
+    expect(() => assertLighterPhaseOneOrderPolicy(orderType, timeInForce)).not.toThrow();
   });
 
   it.each([
-    ["limit", "good-till-time"],
-    ["limit", "post-only"],
-    ["limit", "immediate-or-cancel"],
     ["market", "good-till-time"],
     ["market", "post-only"],
+    ["stop-loss", "good-till-time"],
+    ["stop-loss", "post-only"],
+    ["take-profit", "good-till-time"],
+    ["take-profit", "post-only"],
   ] as const)("refuses %s with %s", (orderType, timeInForce) => {
     expect(lighterPhaseOneOrderPolicyFailure(orderType, timeInForce)).toContain(
-      "Resting limit, good-till-time, and post-only orders remain unavailable",
+      "Unsupported Lighter order type and time-in-force combination",
     );
     expect(() => assertLighterPhaseOneOrderPolicy(orderType, timeInForce)).toThrow(
       "No order was signed or submitted",

@@ -170,20 +170,40 @@ describe("Lighter agent discovery surface", () => {
     }
   });
 
-  it("publishes an exact perp-or-spot selector for order previews", () => {
+  it("publishes product, native order-family, and explicit time-in-force selectors for order previews", () => {
     const preview = getProtocolManifest("lighter.order.preview");
     expect(preview).toBeDefined();
     const marketType = preview?.params.find((param) => param.key === "marketType");
+    const orderType = preview?.params.find((param) => param.key === "orderType");
+    const timeInForce = preview?.params.find((param) => param.key === "timeInForce");
     expect(marketType).toMatchObject({
       type: "string",
       enum: ["perp", "spot"],
     });
+    expect(orderType).toMatchObject({
+      type: "string",
+      enum: ["limit", "market", "stop-loss", "stop-loss-limit", "take-profit", "take-profit-limit"],
+    });
+    expect(timeInForce).toMatchObject({
+      type: "string",
+      enum: ["good-till-time", "immediate-or-cancel", "post-only"],
+    });
+    expect(timeInForce?.required).not.toBe(true);
+    expect(timeInForce?.description).toContain("Required when orderType is limit");
     expect(marketType?.required).not.toBe(true);
     expect(preview?.description).toContain("refuses a product mismatch");
+    expect(preview?.description).toContain("never infer or replace");
+    expect(preview?.description).toContain("immediate-or-cancel, good-till-time, or post-only exactly");
+    expect(preview?.discovery?.embeddingText).toContain(
+      "limit, stop-loss-limit, and take-profit-limit support IOC, GTT, or post-only",
+    );
+    expect(preview?.discovery?.embeddingText).not.toContain("trigger-limit variants require GTT only");
     expect(preview?.exampleParams).toMatchObject({
-      environment: "core",
-      marketSymbol: "ETH/USDC",
-      marketType: "spot",
+      environment: "rhc",
+      marketSymbol: "ETH",
+      marketType: "perp",
+      orderType: "limit",
+      timeInForce: "good-till-time",
     });
 
     const accepted = validateProtocolParams(preview!, preview!.exampleParams);
@@ -193,6 +213,19 @@ describe("Lighter agent discovery surface", () => {
       marketType: "all",
     });
     expect(rejected.ok).toBe(false);
+  });
+
+  it("recalls native Lighter limit previews with user-selected time in force", async () => {
+    for (const query of [
+      "place a good-till-time Lighter limit bid for ETH",
+      "make my Lighter limit order post-only",
+      "protect my Lighter long with a GTT stop-loss-limit",
+      "use a GTT take-profit-limit on my RHC ETH position",
+    ]) {
+      const result = await discoverProtocolCapabilities({ namespace: "lighter", query, limit: 3 });
+      expect(result.success).toBe(true);
+      expect(result.tools.map((tool) => tool.toolId), query).toContain("lighter.order.preview");
+    }
   });
 
   it("lists the complete lighter namespace as lean discovery rows", async () => {

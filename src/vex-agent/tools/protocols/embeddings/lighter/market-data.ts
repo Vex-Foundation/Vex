@@ -133,13 +133,12 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.order.preview": {
     embeddingText: embeddingText(
-      `Create a live-data-backed Lighter preview for an IOC market order or one standalone reduce-only perpetual stop-loss or take-profit order. ` +
-      `Use when: the user asks to preview a market order, protect an existing perpetual position with a stop loss, or take profit at a trigger. Market orders require a worst acceptable price. Protective orders require an explicit trigger, hard execution-price bound, reduceOnly=true, and a side and size that reduce the exact live position. Resting limit, post-only, paired TP/SL, entry-plus-protection, and grouped orders are unavailable and must not be partially previewed. Pass named assets as market symbols. Unspecified requests default to RHC; preserve Core or RHC after selection. ` +
-      `Returns exact amounts, minimum checks, best bid/ask, position context, trigger disclosure, and risk notes. When managed trading is ready, it prepares the exact durable intent and displays the separate approval card directly; it never signs or submits without that explicit approval. ` +
-      `Example queries: preview an IOC market buy of 0.001 ETH with worst price 3000, protect my 0.1 ETH long with a stop loss at 2900 and execution bound 2850, take profit on my ETH long at 3300 with bound 3250.`,
+      `Create a live Lighter order preview for a native limit-family order: limit, stop-loss-limit, take-profit-limit, market, stop-loss, or take-profit. ` +
+      `Use when the user requests an IOC market order, resting GTT limit, maker-only post-only limit, or perpetual protection. Require explicit time in force: limit, stop-loss-limit, and take-profit-limit support IOC, GTT, or post-only; market, stop-loss, and take-profit require IOC. Protective orders require reduce-only, an exact trigger, price bound, reducing side, and size. ` +
+      `Returns exact preview terms and a separate approval card when ready; it never signs without approval. Example queries: prepare trade approval; GTT ETH limit bid; post-only ETH bid; GTT stop-loss-limit; GTT take-profit-limit.`,
     ),
-    aliases: ["lighter order preview", "preview order", "order preflight", "lighter stop loss", "lighter take profit", "lighter_order"],
-    exampleIntents: ["show me an IOC market buy preview for 0.001 ETH with worst price 3000", "protect my lighter long with a stop loss", "take profit on my rhc ETH position", "preview lighter market order", "check core reduce-only market sell"],
+    aliases: ["lighter order preview", "preview order", "order preflight", "lighter limit order", "lighter post only", "lighter stop loss limit", "lighter take profit limit", "lighter_order"],
+    exampleIntents: ["show me an IOC market buy preview for 0.001 ETH with worst price 3000", "place a good-till-time Lighter limit bid", "make my Lighter limit order post-only", "protect my lighter long with a GTT stop-loss-limit", "take profit on my rhc ETH position with a GTT take-profit-limit"],
     ecosystems: ["lighter", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",

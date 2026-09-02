@@ -5,12 +5,10 @@ import {
   LIGHTER_MARKET_FILTERS,
 } from "@tools/lighter/constants.js";
 import {
+  LIGHTER_ORDER_TYPES,
+  LIGHTER_ORDER_TIME_IN_FORCE,
   LIGHTER_ORDER_SIDES,
 } from "@tools/lighter/order-preview.js";
-import {
-  LIGHTER_PHASE_ONE_ORDER_TYPES,
-  LIGHTER_PHASE_ONE_TIME_IN_FORCE,
-} from "@tools/lighter/order-policy.js";
 import type { ProtocolParamDef, ProtocolToolManifest } from "../../types.js";
 import { LIGHTER_MARKET_DATA_DISCOVERY } from "../../embeddings/lighter/market-data.js";
 import {
@@ -186,30 +184,30 @@ const ORDER_PRICE_PARAM: ProtocolParamDef = {
   type: "string",
   required: true,
   description:
-    "Hard execution-price bound as a human decimal string. For a market order this is the immediate worst acceptable price. For stop-loss or take-profit it is the worst price Lighter may execute after the trigger fires; it is not the trigger price.",
+    "Exact human-decimal order price. For market it is the immediate worst acceptable price. For plain limit it is the limit price. For stop-loss or take-profit it is the hard execution bound after the trigger. For stop-loss-limit or take-profit-limit it is the limit price activated after the trigger, which may rest and may never fill. It is never the trigger price itself.",
 };
 
 const TRIGGER_PRICE_PARAM: ProtocolParamDef = {
   key: "triggerPrice",
   type: "string",
   description:
-    "Required for stop-loss and take-profit orders and forbidden for ordinary market orders. Human decimal trigger price. Vex verifies it is on the protective side of the live market for the current perpetual position.",
+    "Required for stop-loss, stop-loss-limit, take-profit, and take-profit-limit orders and forbidden for ordinary market and limit orders. Human decimal trigger price. Vex verifies it is on the protective side of the live market for the current perpetual position.",
 };
 
 const ORDER_TYPE_PARAM: ProtocolParamDef = {
   key: "orderType",
   type: "string",
-  enum: LIGHTER_PHASE_ONE_ORDER_TYPES,
+  enum: LIGHTER_ORDER_TYPES,
   description:
-    "Optional order type. Enabled values are market, stop-loss, and take-profit. Stop-loss and take-profit are perpetual-only, reduce-only protective orders and require triggerPrice. Resting limit, trigger-limit, TWAP, and grouped creation remain release-gated.",
+    "Optional native Lighter order type. Use market for an immediate market order; limit for a priced order; stop-loss or take-profit for a market-trigger protective order; and stop-loss-limit or take-profit-limit for a trigger that places a priced limit order. Every stop-loss and take-profit variant is perpetual-only, reduce-only, and requires triggerPrice. Limit, stop-loss-limit, and take-profit-limit support immediate-or-cancel, good-till-time, and post-only. TWAP and entry-with-attached-protection remain unavailable.",
 };
 
 const TIME_IN_FORCE_PARAM: ProtocolParamDef = {
   key: "timeInForce",
   type: "string",
-  enum: LIGHTER_PHASE_ONE_TIME_IN_FORCE,
+  enum: LIGHTER_ORDER_TIME_IN_FORCE,
   description:
-    "Optional time-in-force. The only enabled value is immediate-or-cancel, which is also the default. Good-till-time and post-only creation remain release-gated.",
+    "Required when orderType is limit, stop-loss-limit, or take-profit-limit: preserve the user's explicit immediate-or-cancel, good-till-time, or post-only selection and never infer or substitute it. May be omitted for backward-compatible market, stop-loss, and take-profit previews, which resolve only to immediate-or-cancel. Post-only trigger limits are conditional maker instructions and are not rejected against the current book before activation.",
 };
 
 const REDUCE_ONLY_PARAM: ProtocolParamDef = {
@@ -223,7 +221,7 @@ const ORDER_EXPIRY_PARAM: ProtocolParamDef = {
   key: "orderExpiry",
   type: "number",
   description:
-    "Exact order expiry as a JavaScript epoch-milliseconds integer. Use orderExpiryOffsetMinutes instead when the user says a relative expiry such as '30 minutes from now'. Vex requires the final expiry to be between 5 minutes and 30 days from preview time.",
+    "Exact order expiry as a JavaScript epoch-milliseconds integer. Use orderExpiryOffsetMinutes instead when the user says a relative expiry such as '30 minutes from now'. Vex requires the final expiry to be between 5 minutes and 30 days from preview time and requires at least 5 minutes to remain at actual submission for every order whose signed wire expiry is non-nil.",
 };
 
 const ORDER_EXPIRY_OFFSET_MINUTES_PARAM: ProtocolParamDef = {
@@ -403,7 +401,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Create a live-data-backed Lighter order preview for an ordinary IOC market order or one standalone reduce-only perpetual stop-loss/take-profit order. Prefer marketSymbol over marketId when the user names an asset and include marketType whenever stated; Vex refuses a product mismatch instead of silently switching markets. Protective orders require an explicit triggerPrice, hard execution-price bound, reduceOnly=true, and a side that reduces the live position; if any required value is missing, ask instead of guessing. For paired stop-loss plus take-profit protection use lighter__position_protect. Combined entry-plus-protection, OTO, and OTOCO remain unavailable, so never silently preview only part of such a request. Returns the exact persisted preview and, when managed trading is ready, one approval card. Previewing never signs or submits anything.",
+      "Create a live-data-backed Lighter order preview for a market order, plain limit order, or one standalone reduce-only perpetual stop-loss, stop-loss-limit, take-profit, or take-profit-limit order. Use when the user wants to review exact order terms before approval. Require the user's explicit timeInForce for every limit-family order and preserve immediate-or-cancel, good-till-time, or post-only exactly; never infer or replace it. Existing market, stop-loss, and take-profit requests may omit timeInForce and remain immediate-or-cancel. Prefer marketSymbol over marketId when the user names an asset and include marketType whenever stated; Vex refuses a product mismatch instead of silently switching markets. Triggered protective orders require an explicit triggerPrice, hard execution-price bound or limit price, reduceOnly=true, and a side that reduces the live position; if any required value is missing, ask instead of guessing. A dormant post-only trigger-limit is checked when Lighter activates it, not rejected against the current book. For paired stop-loss plus take-profit protection use lighter__position_protect. Combined entry-plus-protection, OTO, and OTOCO remain unavailable, so never silently preview only part of such a request. Returns the exact persisted preview and, when managed trading is ready, one approval card. Previewing never signs or submits anything.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -426,14 +424,14 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     atMostOne: [["marketId", "marketSymbol"], ["orderExpiry", "orderExpiryOffsetMinutes"]],
     atLeastOneOf: [["marketId", "marketSymbol"], ["orderExpiry", "orderExpiryOffsetMinutes"]],
     exampleParams: {
-      environment: "core",
-      marketSymbol: "ETH/USDC",
-      marketType: "spot",
+      environment: "rhc",
+      marketSymbol: "ETH",
+      marketType: "perp",
       side: "buy",
       baseAmountIn: "0.005",
-      price: "3000",
-      orderType: "market",
-      timeInForce: "immediate-or-cancel",
+      price: "2500",
+      orderType: "limit",
+      timeInForce: "good-till-time",
       orderExpiryOffsetMinutes: 30,
     },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.preview"],

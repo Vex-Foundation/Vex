@@ -379,6 +379,15 @@ export function readLighterOrderPreviewParams(
     return { ok: false, reason: "reduceOnly must be boolean." };
   }
   const resolvedOrderType = (orderType.value ?? "market") as LighterOrderType;
+  const limitFamily = resolvedOrderType === "limit"
+    || resolvedOrderType === "stop-loss-limit"
+    || resolvedOrderType === "take-profit-limit";
+  if (limitFamily && timeInForce.value === undefined) {
+    return {
+      ok: false,
+      reason: `${resolvedOrderType} requires an explicit timeInForce selection.`,
+    };
+  }
   const resolvedTimeInForce =
     (timeInForce.value ?? "immediate-or-cancel") as LighterOrderTimeInForce;
   const policyFailure = lighterPhaseOneOrderPolicyFailure(
@@ -386,7 +395,10 @@ export function readLighterOrderPreviewParams(
     resolvedTimeInForce,
   );
   if (policyFailure !== null) return { ok: false, reason: policyFailure };
-  const protective = resolvedOrderType === "stop-loss" || resolvedOrderType === "take-profit";
+  const protective = resolvedOrderType === "stop-loss"
+    || resolvedOrderType === "stop-loss-limit"
+    || resolvedOrderType === "take-profit"
+    || resolvedOrderType === "take-profit-limit";
   if (protective) {
     if (triggerPrice === undefined) {
       return { ok: false, reason: `${resolvedOrderType} requires an explicit triggerPrice.` };
@@ -398,7 +410,7 @@ export function readLighterOrderPreviewParams(
       return { ok: false, reason: `${resolvedOrderType} is supported only for Lighter perpetual markets.` };
     }
   } else if (triggerPrice !== undefined) {
-    return { ok: false, reason: "triggerPrice requires orderType=stop-loss or orderType=take-profit." };
+    return { ok: false, reason: "triggerPrice requires a protective stop-loss or take-profit order type." };
   }
   const clientOrderIndexPolicy =
     readString(params, "clientOrderIndexPolicy") ?? LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT;

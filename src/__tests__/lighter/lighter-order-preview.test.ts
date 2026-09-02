@@ -4,6 +4,7 @@ import { ErrorCodes } from "../../errors.js";
 import {
   buildLighterOrderPreview,
   computeLighterOrderPreviewHash,
+  LIGHTER_ORDER_TIME_IN_FORCE,
   type LighterOrderPreviewInput,
 } from "@tools/lighter/order-preview.js";
 import { validateLighterAccount } from "@tools/lighter/validation.js";
@@ -279,6 +280,39 @@ describe("Lighter order preview", () => {
     expect(result.preview.marketData.priceComparison).toBe("crossing_or_taker");
   });
 
+  it.each([
+    "immediate-or-cancel",
+    "good-till-time",
+    "post-only",
+  ] as const)("previews a plain limit order with %s", (timeInForce) => {
+    const result = preview({ orderType: "limit", timeInForce });
+
+    expect(result.identity.orderType).toBe("limit");
+    expect(result.identity.timeInForce).toBe(timeInForce);
+    expect(result.preview.price.role).toBe("limit_price");
+  });
+
+  it("fails closed when a post-only limit would cross or lacks an opposite-side reference", () => {
+    expect(() => preview({
+      orderType: "limit",
+      timeInForce: "post-only",
+      side: "buy",
+      price: "3000.50",
+    })).toThrow("must be strictly resting");
+
+    expect(() => preview({
+      orderType: "limit",
+      timeInForce: "post-only",
+      side: "sell",
+      price: "2999.50",
+    })).toThrow("must be strictly resting");
+
+    expect(() => buildLighterOrderPreview(
+      { ...INPUT, orderType: "limit", timeInForce: "post-only" },
+      { market: MARKET, account: ACCOUNT, orderBook: { ...ORDER_BOOK, asks: [] } },
+    )).toThrow("must be strictly resting");
+  });
+
   it("previews a reduce-only perpetual stop-loss with distinct trigger and execution bound", () => {
     const result = preview({
       side: "sell",
@@ -311,6 +345,63 @@ describe("Lighter order preview", () => {
     expect(result.preview.triggerPrice.display).toBe("3100");
     expect(result.preview.price.display).toBe("3050");
     expect(result.preview.positionContext.positionSide).toBe("long");
+  });
+
+  it.each([
+    ["stop-loss-limit", "2800", "2900"],
+    ["take-profit-limit", "3050", "3100"],
+  ] as const)("previews a reduce-only %s with every provider time in force", (
+    orderType,
+    price,
+    triggerPrice,
+  ) => {
+    for (const timeInForce of LIGHTER_ORDER_TIME_IN_FORCE) {
+      const result = preview({
+        side: "sell",
+        baseAmount: "1.25",
+        price,
+        triggerPrice,
+        orderType,
+        timeInForce,
+        reduceOnly: true,
+      });
+
+      expect(result.identity.orderType).toBe(orderType);
+      expect(result.identity.timeInForce).toBe(timeInForce);
+      expect(result.preview.triggerPrice.display).toBe(triggerPrice);
+      expect(result.preview.price.role).toBe("limit_price");
+      expect(result.preview.marketData.priceComparison).toBe("unknown");
+      expect(result.preview.riskNotes.join(" ")).toContain("may rest on the book and may never fill");
+      expect(result.preview.riskNotes.join(" ")).not.toContain("hard execution bound");
+    }
+  });
+
+  it("does not reject a dormant post-only trigger limit against the current book", () => {
+    expect(() => preview({
+      side: "sell",
+      baseAmount: "1.25",
+      price: "2800",
+      triggerPrice: "2900",
+      orderType: "stop-loss-limit",
+      timeInForce: "post-only",
+      reduceOnly: true,
+    })).not.toThrow();
+  });
+
+  it.each([
+    ["market", "good-till-time"],
+    ["stop-loss", "good-till-time"],
+    ["stop-loss", "post-only"],
+    ["take-profit", "good-till-time"],
+  ] as const)("refuses unsupported %s with %s", (orderType, timeInForce) => {
+    expect(() => preview({
+      side: "sell",
+      price: "2800",
+      triggerPrice: orderType === "market" ? undefined : "2900",
+      orderType,
+      timeInForce,
+      reduceOnly: orderType !== "market",
+    })).toThrow("Unsupported Lighter order type and time-in-force combination");
   });
 
   it("fails closed for malformed or non-reducing protective orders", () => {

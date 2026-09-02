@@ -4,20 +4,44 @@ import type {
   LighterOrderType,
 } from "./order-preview.js";
 
-export const LIGHTER_PHASE_ONE_ORDER_TYPES = ["market", "stop-loss", "take-profit"] as const;
-export const LIGHTER_PHASE_ONE_TIME_IN_FORCE = ["immediate-or-cancel"] as const;
+export const LIGHTER_PHASE_ONE_ORDER_TYPES = [
+  "limit",
+  "market",
+  "stop-loss",
+  "stop-loss-limit",
+  "take-profit",
+  "take-profit-limit",
+] as const;
+export const LIGHTER_PHASE_ONE_TIME_IN_FORCE = [
+  "good-till-time",
+  "immediate-or-cancel",
+  "post-only",
+] as const;
 
 const PHASE_ONE_ORDER_POLICY_REASON =
-  "Lighter Phase 1 permits market orders with immediate-or-cancel; Vex additionally permits reduce-only stop-loss and reduce-only take-profit orders with the same time in force. "
-  + "Resting limit, good-till-time, and post-only orders remain unavailable; trigger-limit, TWAP, and grouped order creation also remain gated until their retained real-provider canaries complete.";
+  "Unsupported Lighter order type and time-in-force combination. Vex permits limit, stop-loss-limit, and take-profit-limit orders with immediate-or-cancel, good-till-time, or post-only; and market, stop-loss, and take-profit orders with immediate-or-cancel. "
+  + "TWAP and other order families remain unavailable.";
+
+const LIGHTER_ALLOWED_CREATE_ORDER_TUPLES = new Set<string>([
+  "limit:immediate-or-cancel",
+  "limit:good-till-time",
+  "limit:post-only",
+  "market:immediate-or-cancel",
+  "stop-loss:immediate-or-cancel",
+  "stop-loss-limit:immediate-or-cancel",
+  "stop-loss-limit:good-till-time",
+  "stop-loss-limit:post-only",
+  "take-profit:immediate-or-cancel",
+  "take-profit-limit:immediate-or-cancel",
+  "take-profit-limit:good-till-time",
+  "take-profit-limit:post-only",
+]);
 
 export function lighterPhaseOneOrderPolicyFailure(
   orderType: LighterOrderType,
   timeInForce: LighterOrderTimeInForce,
 ): string | null {
-  return LIGHTER_PHASE_ONE_ORDER_TYPES.includes(
-    orderType as (typeof LIGHTER_PHASE_ONE_ORDER_TYPES)[number],
-  ) && timeInForce === "immediate-or-cancel"
+  return LIGHTER_ALLOWED_CREATE_ORDER_TUPLES.has(`${orderType}:${timeInForce}`)
     ? null
     : PHASE_ONE_ORDER_POLICY_REASON;
 }
@@ -31,6 +55,6 @@ export function assertLighterPhaseOneOrderPolicy(
   throw new VexError(
     ErrorCodes.LIGHTER_INVALID_REQUEST,
     `${reason} No order was signed or submitted.`,
-    "Create a fresh IOC market-order preview with an explicit worst acceptable price.",
+    "Create a fresh Lighter order preview with an explicitly supported order type and time in force.",
   );
 }
