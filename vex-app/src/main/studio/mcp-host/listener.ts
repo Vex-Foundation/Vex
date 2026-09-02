@@ -28,32 +28,33 @@
  * it created, and publishes nothing. A LOCK does not advance it - a lock has no
  * business invalidating a bind any more.
  *
- * ## Windows
+ * ## Windows: MAIN DOES NOT BIND, AND HOLDS NO HANDLE
  *
- * The endpoint is a NAMED PIPE, served exactly the way VS Code serves its main
- * IPC: a hash-derived predictable name (`\\.\pipe\vex-studio-<hash>`, same
- * discriminator as the unix socket) bound with a plain `server.listen`, with NO
- * custom security descriptor. Verified in the reference checkout:
- * `createStaticIPCHandle` does exactly this, and `src/vs/base` plus
- * `src/vs/platform` contain zero security-descriptor handling; the boundary is
- * the documented Windows default pipe SD plus protocol-level validation.
+ * The endpoint is a NAMED PIPE with a hash-derived predictable name
+ * (`\\.\pipe\vex-studio-<hash>`, the same discriminator as the unix socket),
+ * and this process never calls `server.listen` on it. libuv creates a pipe with
+ * a NULL security descriptor and without `PIPE_REJECT_REMOTE_CLIENTS`, whose
+ * default grants Everyone and the anonymous logon READ, so the packaged
+ * `vex-pipe-front` child owns the pipe instead: it applies the descriptor,
+ * READS IT BACK from the created handle, and relays frames to main over
+ * inherited stdio (`front-endpoint.ts`, and the wire in
+ * `studio-mcp/pipe-front-protocol.md`).
  *
- * Two lifecycle differences follow from the transport, and only two:
+ * Three lifecycle differences follow from that, and only three:
  *
- *   - THERE IS NO UNLINK. A pipe exists only while its server does, so there
- *     is no stale file to remove and no directory whose ownership and mode
- *     have to be proven first. The pipe's namespace is the operating system's.
- *   - THE STALE CHECK IS A CONNECT PROBE ONLY. A pipe that answers means
- *     another Vex owns it, and startup refuses rather than racing it.
+ *   - THERE IS NO UNLINK and no parent directory. A pipe exists only while its
+ *     server does; its namespace is the operating system's.
+ *   - THE STALE CHECK IS A RUNTIME READBACK, not a connect probe. `BOUND`
+ *     reports `firstInstance`, which is the OS saying whether the front created
+ *     the pipe or joined one another process owns.
+ *   - QUIT TAKES DOWN A CHILD PROCESS rather than closing a handle, under the
+ *     same absolute deadline as every other stage.
  *
- * AND IT IS RUNTIME-DISABLED. `WINDOWS_TRANSPORT_PROVEN` in `endpoint.ts` is
- * false, so a pipe plan is refused with `windows_pending_platform_proof` before
- * it reaches `server.listen`: libuv creates the pipe with a NULL security
- * descriptor and without `PIPE_REJECT_REMOTE_CLIENTS`, whose default grants
- * Everyone and the anonymous logon READ, and a cross-user read-only connect
- * against a wallet's handshake-pending slots has never been measured. The
- * pattern above stays and stays vector-tested; only opening the transport is
- * refused. The flag flips by EXTENDING the required `bridge-windows` CI job
+ * AND IT IS STILL RUNTIME-DISABLED. `WINDOWS_TRANSPORT_PROVEN` in
+ * `endpoint.ts` is false, so a pipe plan is refused with
+ * `windows_pending_platform_proof` before the front is ever spawned. The whole
+ * path above is built, wired and tested behind that constant; only reaching it
+ * is refused. The flag flips by EXTENDING the required `bridge-windows` CI job
  * with the contract's section 1.6 proof matrix, not by editing this comment.
  */
 
@@ -61,18 +62,30 @@ import { createServer, type Server, type Socket } from "node:net";
 import { chmodSync, realpathSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 
+import type { StudioDuplexTransport } from "@vex-agent/mcp/duplex-transport.js";
+
 import type { StudioHostUnavailableCause } from "@shared/schemas/studio.js";
 
 import { CONFIG_DIR } from "../../paths/config-dir.js";
 import { log } from "../../logger/index.js";
 import { STUDIO_MAX_LISTENER_SOCKETS } from "./bounds.js";
-import { planStudioEndpoint, unprovenWindowsTransport } from "./endpoint.js";
+import {
+  planStudioEndpoint,
+  unprovenWindowsTransport,
+  WINDOWS_TRANSPORT_PROVEN,
+} from "./endpoint.js";
+import {
+  quitStudioFrontEndpoint,
+  resetStudioFrontEndpointForTests,
+  startStudioFrontEndpoint,
+  type StudioFrontEndpointInput,
+} from "./front-endpoint.js";
+import { NodeSocketTransport } from "./node-socket-transport.js";
 import {
   captureEndpointDirectoryChain,
   clearStaleEndpoint,
   nodeDirectoryProbe,
   prepareEndpointDirectory,
-  refuseLiveEndpoint,
   verifyEndpointDirectoryChain,
 } from "./bind.js";
 
@@ -96,8 +109,17 @@ export type StudioListenerPhase =
   | "shutting_down";
 
 export interface StudioListenerDeps {
-  /** Called for every accepted socket. The registry decides what happens next. */
-  readonly onConnection: (socket: Socket) => void;
+  /**
+   * Called for every accepted connection, as the BYTE WIRE and never as a
+   * socket.
+   *
+   * The adapter boundary sits HERE, where the socket is born, because socket
+   * mechanics belong to the socket's owner. Past this call nothing in the
+   * registry, the connection, the outbound queue or the engine knows what
+   * carries the bytes - which is what lets the Windows pipe front be a second
+   * WRAPPER rather than a second protocol.
+   */
+  readonly onConnection: (wire: StudioDuplexTransport) => void;
   /** Called after every phase change, so the status owner can republish. */
   readonly onTransition: () => void;
   /**
@@ -113,6 +135,28 @@ export interface StudioListenerDeps {
     readonly reason: string;
     readonly cause: StudioHostUnavailableCause;
   } | null;
+  /**
+   * THE WINDOWS TRANSPORT GATE, as an injected seam.
+   *
+   * It defaults to the ONE constant that owns it (`endpoint.ts`), and the tests
+   * drive the branch by passing `true` here rather than by editing that
+   * constant - which stays false, keeps its anti-flip test, and is flipped by
+   * B4.3 alone. What this seam proves is that the Windows branch is WIRED: the
+   * same code path, with the gate faked true, drives a front end to end.
+   */
+  readonly windowsTransportProven?: boolean;
+  /**
+   * The platform this attempt plans and binds for. Defaults to the real one.
+   *
+   * `planStudioEndpoint` already takes the platform as an INPUT rather than
+   * reading it, for the same reason: the derivation and the branch it selects
+   * are decisions worth proving on any machine. Without the seam the entire
+   * Windows publication path would be provable only on Windows, and "the branch
+   * is wired" would rest on a CI job rather than on a test.
+   */
+  readonly platform?: NodeJS.Platform;
+  /** Test seams handed to the front branch. Production passes nothing. */
+  readonly front?: Pick<StudioFrontEndpointInput, "locate" | "spawnFront">;
 }
 
 interface ListenerState {
@@ -238,8 +282,9 @@ async function bindOnce(
   const blocked = deps.precondition();
   if (blocked !== null) return refuse(blocked.reason, blocked.cause);
 
+  const platform = deps.platform ?? process.platform;
   const plan = planStudioEndpoint({
-    platform: process.platform,
+    platform,
     configDirRealPath: studioConfigDirHashInput(),
     env: process.env,
     tmpdir: tmpdir(),
@@ -253,13 +298,16 @@ async function bindOnce(
   // THE WINDOWS RUNTIME GATE (contract 1.6). The pipe was PLANNED - derivation
   // and syntax are unchanged and still vector-tested - and the transport is
   // refused until a Windows runner has measured its security descriptor.
-  const gated = unprovenWindowsTransport(plan);
-  if (gated !== null && gated.kind === "refused") {
-    // Its OWN cause, not `endpoint_unavailable`: nothing failed here. The pipe
-    // was planned correctly and Vex declined to open it, so the renderer must
-    // be able to say that instead of sending a Windows user to debug an
-    // endpoint that is working exactly as designed.
-    return refuse(gated.message, "windows_transport_disabled");
+  const proven = deps.windowsTransportProven ?? WINDOWS_TRANSPORT_PROVEN;
+  if (!proven) {
+    const gated = unprovenWindowsTransport(plan);
+    if (gated !== null && gated.kind === "refused") {
+      // Its OWN cause, not `endpoint_unavailable`: nothing failed here. The pipe
+      // was planned correctly and Vex declined to open it, so the renderer must
+      // be able to say that instead of sending a Windows user to debug an
+      // endpoint that is working exactly as designed.
+      return refuse(gated.message, "windows_transport_disabled");
+    }
   }
 
   let verifyDirectoryIdentity = (): string | null => null;
@@ -270,20 +318,25 @@ async function bindOnce(
     // to the process's working directory, which is a privileged listener in an
     // unverified location - the exact P4 failure this module exists to
     // prevent.
-    if (process.platform !== "win32") {
+    if (platform !== "win32") {
       return refuse(
         `The Vex Studio MCP host will not bind the named pipe ${plan.path} on `
-          + `${process.platform}: named pipes exist on Windows only, and binding `
+          + `${platform}: named pipes exist on Windows only, and binding `
           + "that name here would create an ordinary file, not an endpoint.",
         "endpoint_unavailable",
       );
     }
-    // A pipe has no parent directory and no stale file: the ONLY question is
-    // whether another Vex is already serving this name.
-    const liveFailure = await refuseLiveEndpoint(plan.path);
-    if (liveFailure !== null) {
-      return refuse(liveFailure, "endpoint_unavailable");
-    }
+    // THE FRONT SERVES THE PIPE, AND MAIN NEVER TOUCHES IT. There is no
+    // `server.listen` on this path and no handle in this process: the packaged
+    // child creates the pipe, applies the descriptor, reads it back, and only
+    // then does anything get published.
+    //
+    // The stale-endpoint question the unix path answers with a connect probe is
+    // answered here by `firstInstance` in `BOUND` - a runtime readback of
+    // whether this process created the pipe or joined one somebody else owns,
+    // which is a stronger answer than a probe and comes from the OS rather than
+    // from a round trip that can race.
+    return await bindThroughFront(captured, plan.path, deps);
   } else {
     // Two steps, in this order: the parent must be proven private BEFORE any
     // decision about an entry inside it, because "is this stale socket safe to
@@ -319,7 +372,12 @@ async function bindOnce(
   // absolute deadline, then ends the writable side itself.
   const server = createServer({ allowHalfOpen: true });
   server.maxConnections = STUDIO_MAX_LISTENER_SOCKETS;
-  server.on("connection", deps.onConnection);
+  // THE ADAPTER BOUNDARY, at the socket's birthplace. `setNoDelay` and every
+  // other socket mechanic lives inside the wrapper, and the registry receives
+  // the same contract the front's relay hands it.
+  server.on("connection", (socket: Socket) => {
+    deps.onConnection(new NodeSocketTransport(socket));
+  });
   server.on("error", (error: Error) => {
     log.error("[studio:mcp] listener error", error);
   });
@@ -386,6 +444,47 @@ async function bindOnce(
 }
 
 /**
+ * The Windows publication path: the front binds, and the listener publishes
+ * only what the front CONFIRMED.
+ *
+ * The generation is re-checked after the bring-up for the same reason the unix
+ * path re-checks it after `listen`: bringing a child process up is a chain of
+ * awaits and a quit can land in any gap. A stale attempt tears the front down
+ * and publishes nothing, so no quit is ever overtaken into a serving endpoint.
+ */
+async function bindThroughFront(
+  captured: number,
+  pipeName: string,
+  deps: StudioListenerDeps,
+): Promise<StudioHostStart> {
+  const outcome = await startStudioFrontEndpoint({
+    pipeName,
+    onConnection: deps.onConnection,
+    onTransition: deps.onTransition,
+    locate: deps.front?.locate,
+    spawnFront: deps.front?.spawnFront,
+  });
+  if (!outcome.started) return refuse(outcome.reason, outcome.cause);
+
+  // THE PUBLICATION GATE. The front is serving now, so a stale generation here
+  // means a quit ran during the bring-up: take the child down and publish
+  // nothing. Anything less leaves a live pipe that no teardown owns.
+  if (captured !== generation) {
+    await quitStudioFrontEndpoint(0, Promise.resolve());
+    return refuse(quitSentence(), "shutting_down");
+  }
+
+  // No `state.server`: main holds no handle on this transport. The endpoint is
+  // still recorded, because it is what `studioListenerEndpoint()` reports and
+  // what quit closes.
+  state.server = null;
+  state.endpoint = pipeName;
+  state.phase = "listening";
+  log.info("[studio:mcp] listening through the Windows pipe front");
+  return { started: true, endpoint: pipeName };
+}
+
+/**
  * Record a refusal: the CODE the renderer will see beside the sentence the
  * caller will read.
  *
@@ -425,11 +524,17 @@ export function markStudioListenerShuttingDown(deps: StudioListenerDeps): void {
 export async function closeStudioListener(
   deadline: Promise<void>,
   deps: StudioListenerDeps,
+  remainingMs = 0,
 ): Promise<void> {
   markStudioListenerShuttingDown(deps);
   const server = state.server;
   state.server = null;
   state.endpoint = null;
+  // The Windows front is closed on EVERY quit, including one where no server
+  // handle exists, because on that transport there never is one: the child is
+  // the thing holding the pipe. It races the caller's SAME deadline, so the two
+  // stages share one clock rather than arming a budget each.
+  await quitStudioFrontEndpoint(remainingMs, deadline);
   if (server === null) return;
   await Promise.race([
     new Promise<void>((resolve) => {
@@ -443,6 +548,7 @@ export async function closeStudioListener(
 
 /** Test seam: forget the bound handle and start from `stopped`. */
 export function resetStudioListenerForTests(): void {
+  resetStudioFrontEndpointForTests();
   generation += 1;
   state.server = null;
   state.endpoint = null;

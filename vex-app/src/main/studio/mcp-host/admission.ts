@@ -56,6 +56,27 @@ export type StudioAdmission =
       readonly cause: string;
     };
 
+/**
+ * THE EPOCH'S CEILING, and why reaching it is terminal.
+ *
+ * The epoch travels to the Windows pipe-front as a u32 in `HELLO` and in every
+ * `LOCK` (`pipe-front-protocol.md` section 5.2), so `4294967295` is the last
+ * usable value. Main MUST NOT raise it past that, and a main that has reached
+ * it CLOSES ADMISSION PERMANENTLY for the life of the process.
+ *
+ * A FRONT RESTART IS NOT THE REMEDY and must never be offered as one: the new
+ * front would be handed the same exhausted epoch, and the only thing that could
+ * give it a fresh fence - resetting main's epoch - is the exact reuse the fence
+ * forbids, because a queued `ADMIT` main already purged still names a value the
+ * reset would reissue. The only remedy is a full application restart.
+ *
+ * It is unreachable in practice: one step per lock, and a lock is a human or
+ * policy event. The bound is DEFINED rather than widened for the same reason
+ * `sequence_exhausted` is - a silent wrap would reissue an epoch a purged order
+ * still names, and that order would execute.
+ */
+export const STUDIO_ADMISSION_EPOCH_MAX = 0xffffffff;
+
 /** LOCKED until the secret-session owner says otherwise. Fail closed at boot. */
 let locked = true;
 
@@ -63,6 +84,9 @@ let locked = true;
  * distinguishable from every token handed out after it, for the life of the
  * process. */
 let epoch = 0;
+
+/** Latched when the epoch reaches its ceiling. Never cleared while main lives. */
+let permanentlyClosed = false;
 
 /** May a peer handshake or call right now, and if not, why not? */
 export function studioAdmission(): StudioAdmission {
@@ -87,21 +111,59 @@ export function studioAdmissionEpoch(): number {
  * teardown it fences starts.
  */
 export function closeStudioAdmission(): void {
-  epoch += 1;
   locked = true;
+  if (epoch >= STUDIO_ADMISSION_EPOCH_MAX) {
+    // The fence cannot advance again, so it cannot fence again. Closing is the
+    // only safe resting state and it is now permanent: opening would admit
+    // peers behind a fence that no longer moves.
+    permanentlyClosed = true;
+    return;
+  }
+  epoch += 1;
 }
 
 /**
  * Open the door. The CALLER owns the proof that opening is safe - for the
  * secret session that is a committed generation advance, no dispatch poison and
  * no unwritten refusal. The epoch is NOT advanced: opening invalidates nothing.
+ *
+ * A PERMANENTLY CLOSED admission is never reopened. The remedy is an
+ * application restart, and pretending otherwise would serve calls behind a
+ * fence that can no longer be raised.
  */
 export function openStudioAdmission(): void {
+  if (permanentlyClosed) return;
   locked = false;
+}
+
+/**
+ * Has the epoch been spent for the life of this process?
+ *
+ * Read by the host status, which reports it as its own unavailable cause: the
+ * user's remedy - restart Vex - is different from every other locked state, and
+ * telling them "Vex is locked" would invite an unlock that cannot work.
+ */
+export function studioAdmissionPermanentlyClosed(): boolean {
+  return permanentlyClosed;
 }
 
 /** Test seam: back to the boot state, on a fresh epoch. */
 export function resetStudioAdmissionForTests(): void {
   epoch += 1;
   locked = true;
+  permanentlyClosed = false;
+}
+
+/**
+ * Test seam: place the epoch at a chosen value so the u32 boundary is reachable
+ * without four billion locks.
+ *
+ * It exists because the boundary is normative (protocol 12.2 makes stage 2b owe
+ * a test for it) and otherwise unreachable: an epoch that only ever rises by
+ * one cannot be driven to its ceiling by any number of real lock events a test
+ * can afford.
+ */
+export function setStudioAdmissionEpochForTests(value: number): void {
+  epoch = value;
+  permanentlyClosed = false;
 }

@@ -68,6 +68,22 @@ export const STUDIO_HOST_CAUSE_SENTENCES: Readonly<
     "Vex Studio is not available on Windows yet: its Windows connection has "
     + "been kept switched off until its security has been verified. Use Vex "
     + "Studio on Linux or macOS.",
+  // Four sentences for four different remedies. Each says what could not be
+  // completed, whether retrying helps, and the ONE next action - repair the
+  // installation, or restart Vex. None of them names a file, a pipe or a
+  // descriptor (rule 07), and none blames the user.
+  front_unavailable:
+    "Vex Studio could not start the helper it needs for its Windows connection. "
+    + "Reinstall Vex, or rebuild it if you are running from source.",
+  pipe_security_unconfirmed:
+    "Windows did not confirm that Vex Studio's connection is protected, so Vex "
+    + "did not open it. Restart Vex, and reinstall it if this keeps happening.",
+  front_restart_budget_exhausted:
+    "Vex Studio's Windows connection helper stopped too many times, so Vex "
+    + "stopped restarting it. Restart Vex to try again.",
+  admission_permanently_closed:
+    "Vex Studio can no longer confirm that locking is safe, so it has stopped "
+    + "serving calls for this session. Restart Vex; unlocking will not reopen it.",
 };
 
 /** Accessible name for the word itself, so the state is never colour-only. */

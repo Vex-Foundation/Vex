@@ -54,7 +54,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { Socket } from "node:net";
+
+import type { StudioDuplexTransport } from "@vex-agent/mcp/duplex-transport.js";
 
 import type {
   StudioHostStatus,
@@ -69,6 +70,7 @@ import {
   resetStudioAdmissionForTests,
   studioAdmission,
   studioAdmissionEpoch,
+  studioAdmissionPermanentlyClosed,
 } from "./mcp-host/admission.js";
 import {
   closeStudioListener,
@@ -96,7 +98,10 @@ import {
   type StudioHandshakeRefused,
 } from "./mcp-host/handshake.js";
 import { serveOverSocket } from "./mcp-host/serve.js";
-import { NodeSocketTransport } from "./mcp-host/node-socket-transport.js";
+import {
+  lockStudioFrontEndpoint,
+  studioFrontCause,
+} from "./mcp-host/front-endpoint.js";
 import {
   StudioConnection,
   type CallSlotOutcome,
@@ -156,6 +161,19 @@ function currentHostStatus(): StudioHostStatus {
   if (phase === "starting") return { ...base, state: "starting", cause: null };
   if (phase === "stopped") {
     return { ...base, state: "unavailable", cause: studioListenerCause() };
+  }
+  // THE FRONT'S OWN REFUSAL comes before admission, and after the transport,
+  // for the same reason the transport does: a Windows user whose pipe front is
+  // missing, whose pipe security Windows would not confirm, or whose front
+  // crash-looped is looking at something they may be able to repair, and
+  // "locked" over the top of it would hide a real failure behind a state that
+  // resolves itself on the next unlock.
+  const front = studioFrontCause();
+  if (front !== null) return { ...base, state: "unavailable", cause: front };
+  // ADMISSION PERMANENTLY CLOSED is the one locked state an unlock cannot
+  // clear, so it is never reported as `locked` (protocol 5.2).
+  if (studioAdmissionPermanentlyClosed()) {
+    return { ...base, state: "unavailable", cause: "admission_permanently_closed" };
   }
   const admission = studioAdmission();
   if (admission.state === "locked") return { ...base, state: "locked", cause: null };
@@ -281,25 +299,24 @@ export function openStudioMcpAdmission(): void {
   emitHostStatus();
 }
 
-function handleConnection(socket: Socket): void {
+function handleConnection(wire: StudioDuplexTransport): void {
   const deps = hostDeps;
   if (deps === null) {
     // Unreachable while listening (the bind precondition refuses without an
     // executor) and still fail-closed: there is nothing to serve and nothing
     // honest to say about a host that was torn down under its own listener.
-    socket.destroy();
+    wire.destroy();
     return;
   }
 
   // The admission epoch this connection belongs to. A lock or a quit advances
   // it, and every establish continuation refuses to publish once it has.
   const epoch = studioAdmissionEpoch();
-  // THE ADAPTER BOUNDARY. Past this line nothing in the connection, the
-  // outbound queue or the engine's transport knows what carries the bytes: the
-  // socket is wrapped into the engine's `StudioDuplexTransport` contract here,
-  // where main still owns `node:net`, so the Windows pipe-front can be a second
-  // wrapper rather than a second protocol.
-  const wire = new NodeSocketTransport(socket);
+  // THE ADAPTER BOUNDARY IS BEHIND US. Whatever carries the bytes - a
+  // `net.Socket` wrapped by the listener, or one logical connection multiplexed
+  // through the Windows pipe front - everything from here down speaks the one
+  // `StudioDuplexTransport` contract. That is the "second wrapper, not a second
+  // protocol" promise, kept at the type level.
   const connection = new StudioConnection(`c-${randomUUID().slice(0, 8)}`, wire, {
     runCall: deps.runCall,
     acquireCallSlot,
@@ -421,6 +438,11 @@ export function lockStudioMcpHost(cause: "lock" | "vex_quit" = "lock"): void {
   for (const connection of [...connections]) {
     connection.destroyNow(cause);
   }
+  // THE PRIORITY LOCK FRAME, in the same tick, and AFTER the epoch advance
+  // above so it carries the new epoch: every `ADMIT` still queued at the front
+  // names the old one and is PURGED rather than executed (endpoint contract
+  // 4.1.1). On every other transport main owns the handles and this is a no-op.
+  lockStudioFrontEndpoint();
   emitHostStatus();
 }
 
@@ -439,6 +461,7 @@ export function lockStudioMcpHost(cause: "lock" | "vex_quit" = "lock"): void {
 export async function shutdownStudioMcpHost(): Promise<void> {
   closeStudioAdmission();
 
+  const startedAt = Date.now();
   let releaseDeadline = (): void => undefined;
   const deadlineTimer = setTimeout(() => {
     releaseDeadline();
@@ -453,7 +476,14 @@ export async function shutdownStudioMcpHost(): Promise<void> {
     // quit that takes its full 5 s budget should show as shutting down for
     // those 5 s, not report nothing until the window it would have been
     // rendered in is already gone.
-    await closeStudioListener(deadline, listenerDeps);
+    // The front's `QUIT` carries what REMAINS of the one absolute budget, never
+    // a fresh five seconds: two independent deadlines is a ten-second quit, and
+    // the endpoint contract promises one (protocol 8).
+    await closeStudioListener(
+      deadline,
+      listenerDeps,
+      Math.max(0, STUDIO_HOST_SHUTDOWN_DEADLINE_MS - (Date.now() - startedAt)),
+    );
     const open = [...connections];
     for (const connection of open) connection.destroyNow("vex_quit");
     await Promise.race([

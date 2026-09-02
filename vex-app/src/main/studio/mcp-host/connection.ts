@@ -52,6 +52,7 @@ import type { StudioWireErrorCode } from "@vex-agent/mcp/wire-errors.js";
 import { log } from "../../logger/index.js";
 import {
   encodeStudioHandshakeAck,
+  handshakeTimeoutRefusal,
   parseStudioHandshake,
   STUDIO_HANDSHAKE_DEADLINE_MS,
   type StudioHandshakeRefused,
@@ -195,13 +196,10 @@ export class StudioConnection {
       this.handshakeTimer = null;
       if (this.phase !== "handshaking") return;
       log.warn(`[studio:mcp] handshake deadline id=${this.id}`);
-      void this.refuse({
-        kind: "refused",
-        code: "malformed",
-        message:
-          `No Vex Studio handshake arrived within ${String(STUDIO_HANDSHAKE_DEADLINE_MS)} ms. `
-          + "Send the handshake line first and wait for the ack.",
-      });
+      // The line itself is authored ONCE, in `handshake.ts`, because the
+      // Windows front relays the same bytes from `HELLO` when it owns this
+      // timer. Two copies would be two authors of a refusal a bridge parses.
+      void this.refuse(handshakeTimeoutRefusal());
     }, STUDIO_HANDSHAKE_DEADLINE_MS);
     this.handshakeTimer.unref?.();
   }
