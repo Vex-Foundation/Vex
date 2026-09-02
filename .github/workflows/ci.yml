@@ -495,14 +495,13 @@ jobs:
   # darwin binary to be a gate rather than a silent skip, and that is Batch 3
   # work, not B0.4.
   vex-app-macos:
-    # SOFT ON PURPOSE, and only until its findings are triaged (Batch 3 of the
-    # production plan). These suites have never run on this platform, so the
-    # first green is not expected and a red here must not block unrelated work
-    # before anyone has read it. Flipping this to a required check (removing
-    # continue-on-error) is a mechanically enforced precondition of Batch 4
-    # acceptance: a reviewer who sees Batch 4 proposed while this line still
-    # exists rejects it.
-    continue-on-error: true
+    # REQUIRED since 2026-09-02. It started soft (Batch 0) while its findings
+    # were triaged in Batch 3 rounds 1-3; run 33616868569 was the first green
+    # end to end (vitest 9712 passed / 17 skipped, plus the darwin Go step).
+    # Its required status is a precondition of the Batch 4 stages that touch
+    # the Windows transport (B4.2b-2 onward) and of the B4.3 gate flip; the
+    # skips it still carries are visible `skipIf` guards with a stated
+    # platform reason, never a silent early return.
     runs-on: macos-latest
     defaults:
       run:
@@ -550,13 +549,18 @@ jobs:
   # ever covered the TypeScript side, where path handling, the pty host and the
   # Studio endpoint code all take different branches.
   vex-app-windows:
-    # SOFT ON PURPOSE, and only until its findings are triaged (Batch 3 of the
-    # production plan). These suites have never run on this platform, so the
-    # first green is not expected and a red here must not block unrelated work
-    # before anyone has read it. Flipping this to a required check (removing
-    # continue-on-error) is a mechanically enforced precondition of Batch 4
-    # acceptance: a reviewer who sees Batch 4 proposed while this line still
-    # exists rejects it.
+    # SOFT ON PURPOSE, and only until its last finding is closed. Batch 3
+    # rounds 1-3 took this lane from about 22 failing suites to ZERO failing
+    # tests (run 33616868569: 9642 passed / 79 skipped), and what remains is
+    # one worker fork that exits unexpectedly at teardown after every test has
+    # passed - vitest reports it as an unhandled error with no file
+    # attribution. The vitest run below is therefore split into two steps so
+    # the dying worker names itself: the suite minus the pty host, then the
+    # pty host alone (node-pty on ConPTY is the prime suspect). Flipping this
+    # lane to a required check (removing continue-on-error) is a mechanically
+    # enforced precondition of the Batch 4 stages that touch the Windows
+    # transport (B4.2b-2 onward) and of the B4.3 gate flip: a reviewer who
+    # sees B4.2b-2 proposed while this line still exists rejects it.
     continue-on-error: true
     runs-on: windows-latest
     defaults:
@@ -578,8 +582,18 @@ jobs:
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
 
+      # Attribution by contrast: a worker that dies at teardown is reported by
+      # vitest without a file name, so the pty host (the ConPTY suspect) ALSO
+      # runs on its own. Full run red + isolated run red = the pty host; full
+      # run red + isolated run green = somewhere else, or an interaction.
+      # (`vitest --exclude` was measured NOT to drop these files under this
+      # workspace config, so the full run stays whole.)
       - name: Test (vitest, win32)
         run: pnpm test
+
+      - name: Test (vitest, win32, pty host alone)
+        if: ${{ !cancelled() }}
+        run: pnpm exec vitest run src/pty-host
 
   # THE NATIVE PAYLOAD GATE: what electron-builder actually produced.
   #
