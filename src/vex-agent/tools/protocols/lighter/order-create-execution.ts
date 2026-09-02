@@ -7,7 +7,10 @@ import {
   signLighterCreateOrderWithAdapter,
   type LighterSignerAdapter,
 } from "@tools/lighter/signer-adapter.js";
-import type { LighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-order.js";
+import {
+  buildLighterUnsignedCreateOrderRequest,
+  type LighterUnsignedCreateOrderRequest,
+} from "@tools/lighter/signer-order.js";
 import {
   loadLighterTradingSecretMaterial,
   type LighterTradingSecretReader,
@@ -22,6 +25,7 @@ import {
 } from "./nonce-reservation.js";
 import type { LighterOrderReadyForSignerPlan } from "./execution-plan.js";
 import {
+  buildLighterOrderEvidenceScope,
   findMatchingLighterOrder,
   findMatchingLighterTrade,
   lighterOrderEvidenceJson,
@@ -29,8 +33,12 @@ import {
   lighterTradeEvidenceJson,
   stateFromActiveLighterOrder,
   stateFromInactiveLighterOrder,
+  type LighterOrderEvidenceScope,
 } from "./order-evidence.js";
-import { revalidateApprovedLighterOrder } from "./pre-submit-revalidation.js";
+import {
+  revalidateApprovedLighterOrder,
+  type LighterOrderPreSubmitRevalidationEvidence,
+} from "./pre-submit-revalidation.js";
 import { assertLighterPhaseOneOrderPolicy } from "@tools/lighter/order-policy.js";
 import { assertLighterTradingApiKeyIndexAllowed } from "@tools/lighter/trading-credentials.js";
 
@@ -49,6 +57,7 @@ const PROVIDER_OUTCOME_ACTIVE_ATTEMPTS = 3;
 const PROVIDER_OUTCOME_MIN_DELAY_MS = 100;
 const PROVIDER_OUTCOME_MAX_DELAY_MS = 2_000;
 const FRESH_PUBLIC_READ = { fresh: true } as const;
+const MIN_WIRE_ORDER_EXPIRY_REMAINING_MS = 5 * 60 * 1_000;
 
 export type ExecuteApprovedLighterCreateOrderResult =
   | {
@@ -139,13 +148,23 @@ export function getConfiguredLighterCreateOrderExecutionDeps(): ExecuteApprovedL
 
 export async function executeApprovedLighterCreateOrder(input: {
   readonly plan: LighterOrderReadyForSignerPlan;
-  readonly unsignedOrder: LighterUnsignedCreateOrderRequest;
+  readonly unsignedOrder?: LighterUnsignedCreateOrderRequest;
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
 }): Promise<ExecuteApprovedLighterCreateOrderResult> {
-  const { plan, unsignedOrder, deps } = input;
+  const { plan, deps } = input;
+  const unsignedOrder = buildLighterUnsignedCreateOrderRequest(plan);
+  if (input.unsignedOrder !== undefined) {
+    assertUnsignedOrderMatchesApprovedPlan(input.unsignedOrder, unsignedOrder);
+  }
   assertLighterTradingApiKeyIndexAllowed(plan.environment, plan.apiKeyIndex);
   assertLighterPhaseOneOrderPolicy(plan.orderType, plan.timeInForce);
-  await revalidateLiveOrderState(plan, deps);
+  const revalidationEvidence = await revalidateLiveOrderState(plan, deps);
+  const evidenceScope = buildLighterOrderEvidenceScope({
+    approved: plan,
+    baseDecimals: revalidationEvidence.baseDecimals,
+    priceDecimals: revalidationEvidence.priceDecimals,
+    signedOrderExpiryMs: unsignedOrder.orderExpiryMs,
+  });
   // Prove the exact registered provider key and current nonce before asking
   // the encrypted vault for private key material. Besides minimizing secret
   // exposure time, this keeps every provider-read refusal truthful: no private
@@ -165,7 +184,7 @@ export async function executeApprovedLighterCreateOrder(input: {
   );
   assertProviderPublicKeyMatches(providerCredential.publicKey, auth.publicKey);
   const [, observedNonce] = await Promise.all([
-    assertProviderOutcomeRepairReady(plan, unsignedOrder, auth.authToken, deps),
+    assertProviderOutcomeRepairReady(plan, evidenceScope, unsignedOrder, auth.authToken, deps),
     deps.nonceState.recordExecutionObserved({
       environment: plan.environment,
       accountIndex: plan.accountIndex,
@@ -181,6 +200,7 @@ export async function executeApprovedLighterCreateOrder(input: {
       + "Run lighter.order.status to reconcile the stuck reservation from provider evidence before preparing another order.",
     );
   }
+  assertWireOrderExpiryBeforeSigning(unsignedOrder, deps.now());
   const nonce = await deps.reserveNonce(plan);
   let signerTxHash: string | null = null;
 
@@ -208,6 +228,12 @@ export async function executeApprovedLighterCreateOrder(input: {
         `Lighter order execution intent ${plan.intentId} could not persist signed state.`,
       );
     }
+
+    // Signing and durable state writes can take time after the last public
+    // revalidation. Recheck the provider's five-minute minimum immediately
+    // before the durable pre-send transition; an expired signed transaction is
+    // left in `signed` for evidence-based nonce repair and is never submitted.
+    assertWireOrderExpiryBeforeSubmission(unsignedOrder, deps.now());
 
     const submitted = await deps.intents.markSubmitted({
       intentId: plan.intentId,
@@ -279,6 +305,7 @@ export async function executeApprovedLighterCreateOrder(input: {
 
     return reconcileProviderOutcome({
       plan,
+      evidenceScope,
       unsignedOrder,
       deps,
       signerTxHash: signed.txHash,
@@ -293,6 +320,68 @@ export async function executeApprovedLighterCreateOrder(input: {
       await markAmbiguous(deps, plan, SIGNING_AMBIGUOUS_REASON);
     }
     throw error;
+  }
+}
+
+function wireOrderExpiryHasRequiredRemainingTime(
+  order: LighterUnsignedCreateOrderRequest,
+  nowMs: number,
+): boolean {
+  return order.orderExpiryMs === 0
+    || order.orderExpiryMs >= nowMs + MIN_WIRE_ORDER_EXPIRY_REMAINING_MS;
+}
+
+function assertWireOrderExpiryBeforeSigning(
+  order: LighterUnsignedCreateOrderRequest,
+  nowMs: number,
+): void {
+  if (wireOrderExpiryHasRequiredRemainingTime(order, nowMs)) return;
+  throw blockedBeforeSubmit(
+    "The approved Lighter wire order expiry fell below the provider's five-minute minimum while live checks were running. No nonce was reserved and no order was signed or submitted.",
+  );
+}
+
+function assertWireOrderExpiryBeforeSubmission(
+  order: LighterUnsignedCreateOrderRequest,
+  nowMs: number,
+): void {
+  if (wireOrderExpiryHasRequiredRemainingTime(order, nowMs)) return;
+  throw new VexError(
+    ErrorCodes.LIGHTER_INVALID_REQUEST,
+    "The signed Lighter order fell below the provider's five-minute expiry minimum before submission, so Vex did not send it.",
+    "Run lighter.order.status to release the provably unsubmitted nonce reservation, then restart from a fresh preview and approval.",
+  );
+}
+
+const LIGHTER_UNSIGNED_ORDER_FIELDS = [
+  "kind",
+  "environment",
+  "accountIndex",
+  "apiKeyIndex",
+  "marketIndex",
+  "clientOrderIndex",
+  "baseAmountInteger",
+  "priceInteger",
+  "isAsk",
+  "orderTypeCode",
+  "timeInForceCode",
+  "reduceOnly",
+  "triggerPriceInteger",
+  "orderExpiryMs",
+  "matchHash",
+] as const satisfies readonly (keyof LighterUnsignedCreateOrderRequest)[];
+
+function assertUnsignedOrderMatchesApprovedPlan(
+  supplied: LighterUnsignedCreateOrderRequest,
+  canonical: LighterUnsignedCreateOrderRequest,
+): void {
+  const mismatch = LIGHTER_UNSIGNED_ORDER_FIELDS.find(
+    (field) => supplied[field] !== canonical[field],
+  );
+  if (mismatch !== undefined) {
+    throw blockedBeforeSubmit(
+      `Caller-supplied Lighter unsigned order field ${mismatch} does not match the canonical order derived from the approved plan. No provider state was read, no trading key was loaded, and no nonce was reserved.`,
+    );
   }
 }
 
@@ -328,7 +417,7 @@ export function defaultLighterCreateOrderExecutionDeps(
 async function revalidateLiveOrderState(
   plan: LighterOrderReadyForSignerPlan,
   deps: ExecuteApprovedLighterCreateOrderDeps,
-): Promise<void> {
+): Promise<LighterOrderPreSubmitRevalidationEvidence> {
   const approvedPreview = await deps.previews.findFreshById(
     plan.sessionId,
     plan.environment,
@@ -390,6 +479,7 @@ async function revalidateLiveOrderState(
       "Lighter pre-submit revalidation evidence could not be persisted. No trading key was loaded and no order was signed or submitted.",
     );
   }
+  return evidence;
 }
 
 async function readLiveProviderCredential(
@@ -444,6 +534,7 @@ function assertProviderPublicKeyMatches(providerPublicKey: string, signerPublicK
 
 async function assertProviderOutcomeRepairReady(
   plan: LighterOrderReadyForSignerPlan,
+  evidenceScope: LighterOrderEvidenceScope,
   unsignedOrder: LighterUnsignedCreateOrderRequest,
   accountAuthToken: string,
   deps: ExecuteApprovedLighterCreateOrderDeps,
@@ -479,12 +570,12 @@ async function assertProviderOutcomeRepairReady(
 
   const existingOrder = findMatchingLighterOrder(
     [...activeOrders.orders, ...inactiveOrders.orders],
-    plan,
+    evidenceScope,
     unsignedOrder.clientOrderIndex,
   );
   const existingTrade = findMatchingLighterTrade(
     trades.trades,
-    plan,
+    evidenceScope,
     unsignedOrder.clientOrderIndex,
     "__vex_preflight_no_tx_hash__",
   );
@@ -497,6 +588,7 @@ async function assertProviderOutcomeRepairReady(
 
 async function reconcileProviderOutcome(input: {
   readonly plan: LighterOrderReadyForSignerPlan;
+  readonly evidenceScope: LighterOrderEvidenceScope;
   readonly unsignedOrder: LighterUnsignedCreateOrderRequest;
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
   readonly signerTxHash: string;
@@ -508,6 +600,7 @@ async function reconcileProviderOutcome(input: {
 }): Promise<ExecuteApprovedLighterCreateOrderResult> {
   const {
     plan,
+    evidenceScope,
     unsignedOrder,
     deps,
     signerTxHash,
@@ -530,7 +623,11 @@ async function reconcileProviderOutcome(input: {
         },
         { token: accountAuthToken, accountIndex: plan.accountIndex },
       );
-      const active = findMatchingLighterOrder(activeOrders.orders, plan, unsignedOrder.clientOrderIndex);
+      const active = findMatchingLighterOrder(
+        activeOrders.orders,
+        evidenceScope,
+        unsignedOrder.clientOrderIndex,
+      );
       if (active !== null) {
         return persistProviderOutcomeSafely({
           plan,
@@ -563,7 +660,11 @@ async function reconcileProviderOutcome(input: {
       },
       { token: accountAuthToken, accountIndex: plan.accountIndex },
     );
-    const inactive = findMatchingLighterOrder(inactiveOrders.orders, plan, unsignedOrder.clientOrderIndex);
+    const inactive = findMatchingLighterOrder(
+      inactiveOrders.orders,
+      evidenceScope,
+      unsignedOrder.clientOrderIndex,
+    );
     if (inactive !== null) {
       return persistProviderOutcomeSafely({
         plan,
@@ -593,7 +694,7 @@ async function reconcileProviderOutcome(input: {
     );
     const trade = findMatchingLighterTrade(
       trades.trades,
-      plan,
+      evidenceScope,
       unsignedOrder.clientOrderIndex,
       submittedTxHash,
     );

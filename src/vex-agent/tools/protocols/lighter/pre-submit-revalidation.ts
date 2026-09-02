@@ -1,5 +1,6 @@
 import {
   buildLighterOrderPreview,
+  isProtectiveOrderType,
   LIGHTER_ORDER_PREVIEW_FRESHNESS_MS,
   type LighterOrderPreview,
   type LighterOrderPreviewContext,
@@ -7,6 +8,8 @@ import {
 import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
 import { ErrorCodes, VexError } from "../../../../errors.js";
 import type { LighterOrderReadyForSignerPlan } from "./execution-plan.js";
+
+const MIN_WIRE_ORDER_EXPIRY_REMAINING_MS = 5 * 60 * 1000;
 
 export interface LighterOrderPreSubmitRevalidationEvidence {
   readonly kind: "lighter_order_pre_submit_revalidation";
@@ -16,6 +19,8 @@ export interface LighterOrderPreSubmitRevalidationEvidence {
   readonly marketIndex: number;
   readonly marketStatus: string;
   readonly symbol: string;
+  readonly baseDecimals: number;
+  readonly priceDecimals: number;
   readonly bestBid: string | null;
   readonly bestAsk: string | null;
   readonly priceComparison: "resting" | "crossing_or_taker" | "unknown";
@@ -38,6 +43,7 @@ export function revalidateApprovedLighterOrder(input: {
 }): LighterOrderPreSubmitRevalidationEvidence {
   const { plan, approvedPreview, context, nowMs } = input;
   assertPersistedPreviewMatchesPlan(plan, approvedPreview);
+  assertWireOrderExpiryRemainsSafe(plan, nowMs);
   const stored = readStoredPreview(approvedPreview.previewJson);
   const previewNowMs = Date.parse(approvedPreview.expiresAt) - LIGHTER_ORDER_PREVIEW_FRESHNESS_MS;
   if (!Number.isFinite(previewNowMs)) {
@@ -63,7 +69,15 @@ export function revalidateApprovedLighterOrder(input: {
       clientOrderIndexPolicy: plan.clientOrderIndexPolicy,
       nowMs: previewNowMs,
     }, context);
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof VexError
+      && error.message.startsWith("Post-only Lighter preview refused:")
+    ) {
+      throw blocked(
+        "The approved post-only Lighter order is no longer strictly resting against a usable live opposite-side price.",
+      );
+    }
     throw blocked(
       "Live Lighter market or account state no longer satisfies the approved preview.",
     );
@@ -87,7 +101,7 @@ export function revalidateApprovedLighterOrder(input: {
   }
 
   const currentBehavior = fresh.preview.marketData.priceComparison;
-  const protective = plan.orderType === "stop-loss" || plan.orderType === "take-profit";
+  const protective = isProtectiveOrderType(plan.orderType);
   if (currentBehavior === "unknown" && !protective) {
     throw blocked("The live Lighter order book has no usable best-price evidence.");
   }
@@ -101,6 +115,8 @@ export function revalidateApprovedLighterOrder(input: {
     marketIndex: plan.marketIndex,
     marketStatus: context.market.status,
     symbol: context.market.symbol,
+    baseDecimals: stored.baseAmountDecimals,
+    priceDecimals: stored.priceDecimals,
     bestBid: fresh.preview.marketData.bestBid,
     bestAsk: fresh.preview.marketData.bestAsk,
     priceComparison: currentBehavior,
@@ -114,6 +130,22 @@ export function revalidateApprovedLighterOrder(input: {
       "approved_price_behavior",
     ],
   };
+}
+
+function assertWireOrderExpiryRemainsSafe(
+  plan: LighterOrderReadyForSignerPlan,
+  nowMs: number,
+): void {
+  const hasWireOrderExpiry = isProtectiveOrderType(plan.orderType)
+    || plan.timeInForce !== "immediate-or-cancel";
+  if (
+    hasWireOrderExpiry
+    && plan.orderExpiryMs < nowMs + MIN_WIRE_ORDER_EXPIRY_REMAINING_MS
+  ) {
+    throw blocked(
+      "The approved Lighter order expiry has less than five minutes remaining at submission time.",
+    );
+  }
 }
 
 function assertPersistedPreviewMatchesPlan(
@@ -149,7 +181,7 @@ function assertApprovedPriceBehavior(
   fresh: LighterOrderPreview["preview"],
 ): void {
   const currentBehavior = fresh.marketData.priceComparison;
-  if (plan.orderType === "stop-loss" || plan.orderType === "take-profit") {
+  if (isProtectiveOrderType(plan.orderType)) {
     // buildLighterOrderPreview already re-proved the live position, reducing
     // side, trigger direction, market type, precision, and exact bound. A
     // conditional order is intentionally not classified as resting/taking

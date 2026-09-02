@@ -136,14 +136,14 @@ describe("Lighter order execution plan", () => {
     ).toThrow("credential reference does not match");
   });
 
-  it("refuses legacy resting-order intents before signer preparation", () => {
+  it("refuses unsupported order tuples before signer preparation", () => {
     expect(() => buildLighterOrderReadyForSignerPlan(intent({
-      orderType: "limit",
+      orderType: "market",
       timeInForce: "good-till-time",
-    }))).toThrow("Phase 1 permits market orders with immediate-or-cancel");
+    }))).toThrow("Unsupported Lighter order type and time-in-force combination");
     expect(() => buildLighterOrderReadyForSignerPlan(intent({
-      orderType: "limit",
+      orderType: "stop-loss",
       timeInForce: "post-only",
-    }))).toThrow("retained real-provider canaries");
+    }))).toThrow("Unsupported Lighter order type and time-in-force combination");
   });
 });

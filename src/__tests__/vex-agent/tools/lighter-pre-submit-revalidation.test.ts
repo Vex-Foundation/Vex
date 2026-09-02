@@ -306,6 +306,66 @@ describe("Lighter post-approval pre-submit revalidation", () => {
     });
   });
 
+  it("revalidates every unchanged trigger-limit time in force through the protective path", () => {
+    for (const timeInForce of ["immediate-or-cancel", "good-till-time", "post-only"] as const) {
+      const { row, plan } = approvedFixture({
+        side: "sell",
+        price: "2850",
+        orderType: "stop-loss-limit",
+        timeInForce,
+        reduceOnly: true,
+        triggerPrice: "2900",
+      });
+
+      expect(revalidateApprovedLighterOrder({
+        plan,
+        approvedPreview: row,
+        context: { market: MARKET, orderBook: ORDER_BOOK, account: ACCOUNT },
+        nowMs: NOW + 60_000,
+      })).toMatchObject({
+        priceComparison: "unknown",
+        positionVerified: true,
+        positionSide: "long",
+      });
+    }
+  });
+
+  it("requires five minutes to remain for every non-nil wire order expiry", () => {
+    for (const overrides of [
+      { orderType: "limit", timeInForce: "good-till-time" },
+      {
+        side: "sell",
+        price: "2850",
+        orderType: "stop-loss-limit",
+        timeInForce: "immediate-or-cancel",
+        reduceOnly: true,
+        triggerPrice: "2900",
+      },
+    ] as const) {
+      const { row, plan } = approvedFixture(overrides);
+      expect(() => revalidateApprovedLighterOrder({
+        plan,
+        approvedPreview: row,
+        context: { market: MARKET, orderBook: ORDER_BOOK, account: ACCOUNT },
+        nowMs: NOW + 5 * 60_000 + 1,
+      })).toThrow("less than five minutes remaining");
+    }
+  });
+
+  it("does not apply the wire-expiry gate to an ordinary IOC with nil signed expiry", () => {
+    const { row, plan } = approvedFixture({
+      orderType: "limit",
+      timeInForce: "immediate-or-cancel",
+    });
+
+    expect(() => revalidateApprovedLighterOrder({
+      plan,
+      approvedPreview: row,
+      context: { market: MARKET, orderBook: ORDER_BOOK, account: ACCOUNT },
+      nowMs: NOW + 9 * 60_000,
+    })).not.toThrow();
+  });
+
   it("refuses a protective order whose trigger was crossed while approval was pending", () => {
     const { row, plan } = approvedFixture({
       side: "sell",
@@ -346,6 +406,6 @@ describe("Lighter post-approval pre-submit revalidation", () => {
         account: ACCOUNT,
       },
       nowMs: NOW + 60_000,
-    })).toThrow("would now cross the live book");
+    })).toThrow("no longer strictly resting");
   });
 });

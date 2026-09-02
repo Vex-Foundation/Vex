@@ -8,6 +8,7 @@ import {
 } from "@vex-agent/tools/protocols/lighter/order-create-execution.js";
 import type { LighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/lighter/execution-plan.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
+import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
 import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-order.js";
 import { buildLighterOrderPreview } from "@tools/lighter/order-preview.js";
 import type { LighterAccountResponse, LighterMarketDetail } from "@tools/lighter/types.js";
@@ -218,6 +219,83 @@ function createGate(): { readonly promise: Promise<void>; readonly release: () =
 
 const UNSIGNED_ORDER = buildLighterUnsignedCreateOrderRequest(PLAN);
 
+const FORGED_UNSIGNED_ORDER_CASES: readonly {
+  readonly label: string;
+  readonly field: keyof typeof UNSIGNED_ORDER;
+  readonly forge: (order: typeof UNSIGNED_ORDER) => typeof UNSIGNED_ORDER;
+}[] = [
+  {
+    label: "environment scope",
+    field: "environment",
+    forge: (order) => ({ ...order, environment: "core" }),
+  },
+  {
+    label: "account scope",
+    field: "accountIndex",
+    forge: (order) => ({ ...order, accountIndex: order.accountIndex + 1 }),
+  },
+  {
+    label: "API-key scope",
+    field: "apiKeyIndex",
+    forge: (order) => ({ ...order, apiKeyIndex: order.apiKeyIndex + 1 }),
+  },
+  {
+    label: "market scope",
+    field: "marketIndex",
+    forge: (order) => ({ ...order, marketIndex: order.marketIndex + 1 }),
+  },
+  {
+    label: "amount",
+    field: "baseAmountInteger",
+    forge: (order) => ({ ...order, baseAmountInteger: "20000" }),
+  },
+  {
+    label: "price",
+    field: "priceInteger",
+    forge: (order) => ({ ...order, priceInteger: "300300" }),
+  },
+  {
+    label: "side",
+    field: "isAsk",
+    forge: (order) => ({ ...order, isAsk: !order.isAsk }),
+  },
+  {
+    label: "order type",
+    field: "orderTypeCode",
+    forge: (order) => ({ ...order, orderTypeCode: 0 }),
+  },
+  {
+    label: "time in force",
+    field: "timeInForceCode",
+    forge: (order) => ({ ...order, timeInForceCode: 1 }),
+  },
+  {
+    label: "reduce-only flag",
+    field: "reduceOnly",
+    forge: (order) => ({ ...order, reduceOnly: !order.reduceOnly }),
+  },
+  {
+    label: "trigger",
+    field: "triggerPriceInteger",
+    forge: (order) => ({ ...order, triggerPriceInteger: "290000" }),
+  },
+  {
+    label: "wire expiry",
+    field: "orderExpiryMs",
+    forge: (order) => ({ ...order, orderExpiryMs: ORDER_EXPIRY }),
+  },
+  {
+    label: "approval hash",
+    field: "matchHash",
+    forge: (order) => ({ ...order, matchHash: "f".repeat(64) }),
+  },
+  {
+    label: "client order id",
+    field: "clientOrderIndex",
+    forge: (order) => ({ ...order, clientOrderIndex: "999" }),
+  },
+];
+
 function accountOrder(overrides: Record<string, unknown> = {}) {
   return {
     order_index: 123,
@@ -226,11 +304,11 @@ function accountOrder(overrides: Record<string, unknown> = {}) {
     client_order_id: UNSIGNED_ORDER.clientOrderIndex,
     market_index: PLAN.marketIndex,
     owner_account_index: PLAN.accountIndex,
-    initial_base_amount: PLAN.baseAmountInteger,
-    remaining_base_amount: PLAN.baseAmountInteger,
+    initial_base_amount: APPROVED_PREVIEW.preview.baseAmount.display,
+    remaining_base_amount: APPROVED_PREVIEW.preview.baseAmount.display,
     filled_base_amount: "0",
     filled_quote_amount: "0",
-    price: PLAN.priceInteger,
+    price: APPROVED_PREVIEW.preview.price.display,
     status: "open",
     ...overrides,
   };
@@ -343,6 +421,48 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
   };
 }
 
+function restingLimitFixture(): {
+  readonly plan: LighterOrderReadyForSignerPlan;
+  readonly previewRow: LighterOrderPreviewRow;
+} {
+  const preview = buildLighterOrderPreview({
+    sessionId: PLAN.sessionId,
+    environment: PLAN.environment,
+    accountIndex: PLAN.accountIndex,
+    apiKeyIndex: PLAN.apiKeyIndex,
+    marketId: PLAN.marketIndex,
+    side: "buy",
+    baseAmount: "1",
+    price: "2998",
+    orderType: "limit",
+    timeInForce: "good-till-time",
+    reduceOnly: false,
+    orderExpiry: ORDER_EXPIRY,
+    clientOrderIndexPolicy: PLAN.clientOrderIndexPolicy,
+    nowMs: NOW,
+  }, { market: MARKET, orderBook: ORDER_BOOK, account: ACCOUNT });
+  return {
+    plan: {
+      ...PLAN,
+      previewId: preview.previewId,
+      matchHash: preview.matchHash,
+      priceInteger: preview.identity.priceInteger,
+      orderType: "limit",
+      timeInForce: "good-till-time",
+    },
+    previewRow: {
+      ...APPROVED_PREVIEW_ROW,
+      previewId: preview.previewId,
+      matchHash: preview.matchHash,
+      priceInteger: preview.identity.priceInteger,
+      orderType: "limit",
+      timeInForce: "good-till-time",
+      previewJson: { ...preview.preview },
+      expiresAt: preview.expiresAt,
+    },
+  };
+}
+
 describe("Lighter approved create execution pipeline", () => {
   it("configures and clears the privileged dependency registry", () => {
     const d = deps();
@@ -352,6 +472,90 @@ describe("Lighter approved create execution pipeline", () => {
 
     teardown();
     expect(getConfiguredLighterCreateOrderExecutionDeps()).toBeNull();
+  });
+
+  it.each(FORGED_UNSIGNED_ORDER_CASES)(
+    "rejects forged caller-supplied $label before provider, secret, or nonce access",
+    async ({ field, forge }) => {
+      const d = deps();
+
+      await expect(executeApprovedLighterCreateOrder({
+        plan: PLAN,
+        unsignedOrder: forge(UNSIGNED_ORDER),
+        deps: d,
+      })).rejects.toThrow(`field ${field} does not match the canonical order`);
+
+      expect(d.previews.findFreshById).not.toHaveBeenCalled();
+      expect(d.client.getMarketDetails).not.toHaveBeenCalled();
+      expect(d.client.getOrderBookOrders).not.toHaveBeenCalled();
+      expect(d.client.getAccount).not.toHaveBeenCalled();
+      expect(d.client.getApiKeys).not.toHaveBeenCalled();
+      expect(d.client.getNextNonce).not.toHaveBeenCalled();
+      expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+      expect(d.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
+      expect(d.reserveNonce).not.toHaveBeenCalled();
+      expect(d.signer.createAccountAuth).not.toHaveBeenCalled();
+      expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
+      expect(d.client.sendTx).not.toHaveBeenCalled();
+    },
+  );
+
+  it("derives and signs the canonical wire order when production omits a caller order", async () => {
+    const d = deps();
+
+    await executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      deps: d,
+    });
+
+    expect(d.signer.signCreateOrder).toHaveBeenCalledWith(expect.objectContaining({
+      order: UNSIGNED_ORDER,
+    }));
+  });
+
+  it("rechecks a non-nil expiry after provider/auth work and refuses before nonce reservation", async () => {
+    const fixture = restingLimitFixture();
+    const now = vi.fn()
+      .mockReturnValueOnce(NOW)
+      .mockReturnValueOnce(NOW)
+      .mockReturnValueOnce(NOW + 5 * 60 * 1_000 + 1);
+    const d = deps({
+      previews: { findFreshById: vi.fn(async () => fixture.previewRow) },
+      now,
+    });
+
+    await expect(executeApprovedLighterCreateOrder({
+      plan: fixture.plan,
+      deps: d,
+    })).rejects.toThrow("fell below the provider's five-minute minimum");
+
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("never submits when a non-nil expiry crosses the minimum during signing", async () => {
+    const fixture = restingLimitFixture();
+    const now = vi.fn()
+      .mockReturnValueOnce(NOW)
+      .mockReturnValueOnce(NOW)
+      .mockReturnValueOnce(NOW)
+      .mockReturnValueOnce(NOW + 5 * 60 * 1_000 + 1);
+    const d = deps({
+      previews: { findFreshById: vi.fn(async () => fixture.previewRow) },
+      now,
+    });
+
+    await expect(executeApprovedLighterCreateOrder({
+      plan: fixture.plan,
+      deps: d,
+    })).rejects.toThrow("fell below the provider's five-minute expiry minimum before submission");
+
+    expect(d.reserveNonce).toHaveBeenCalledOnce();
+    expect(d.signer.signCreateOrder).toHaveBeenCalledOnce();
+    expect(d.intents.markSigned).toHaveBeenCalledOnce();
+    expect(d.intents.markSubmitted).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
   it("blocks an unavailable approved preview before provider credential or vault access", async () => {
@@ -371,18 +575,18 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
-  it("blocks legacy resting-order plans at the privileged boundary", async () => {
+  it("blocks unsupported order tuples at the privileged boundary", async () => {
     const d = deps();
 
     await expect(executeApprovedLighterCreateOrder({
       plan: {
         ...PLAN,
-        orderType: "limit",
+        orderType: "market",
         timeInForce: "post-only",
       },
       unsignedOrder: UNSIGNED_ORDER,
       deps: d,
-    })).rejects.toThrow("Phase 1 permits market orders with immediate-or-cancel");
+    })).rejects.toThrow("Unsupported Lighter order type and time-in-force combination");
 
     expect(d.previews.findFreshById).not.toHaveBeenCalled();
     expect(d.client.getApiKeys).not.toHaveBeenCalled();
@@ -899,6 +1103,270 @@ describe("Lighter approved create execution pipeline", () => {
       submittedTxHash: TX_HASH,
       clientOrderIndex: UNSIGNED_ORDER.clientOrderIndex,
       evidenceSource: "not_found",
+    });
+    expect(JSON.stringify(result)).not.toContain(TX_INFO);
+    expect(JSON.stringify(result)).not.toContain(PRIVATE_KEY);
+    expect(JSON.stringify(result)).not.toContain(AUTH_TOKEN);
+  });
+
+  it.each([
+    {
+      label: "resting good-till-time limit",
+      side: "buy" as const,
+      price: "2998",
+      orderType: "limit" as const,
+      timeInForce: "good-till-time" as const,
+      reduceOnly: false,
+      triggerPrice: undefined,
+      expectedOrderTypeCode: 0,
+      expectedPriceComparison: "resting" as const,
+    },
+    {
+      label: "reduce-only stop-loss-limit immediate-or-cancel",
+      side: "sell" as const,
+      price: "2800",
+      orderType: "stop-loss-limit" as const,
+      timeInForce: "immediate-or-cancel" as const,
+      reduceOnly: true,
+      triggerPrice: "2900",
+      expectedOrderTypeCode: 3,
+      expectedTimeInForceCode: 0,
+      expectedPriceComparison: "unknown" as const,
+    },
+    {
+      label: "reduce-only stop-loss-limit good-till-time",
+      side: "sell" as const,
+      price: "2800",
+      orderType: "stop-loss-limit" as const,
+      timeInForce: "good-till-time" as const,
+      reduceOnly: true,
+      triggerPrice: "2900",
+      expectedOrderTypeCode: 3,
+      expectedTimeInForceCode: 1,
+      expectedPriceComparison: "unknown" as const,
+    },
+    {
+      label: "reduce-only stop-loss-limit post-only",
+      side: "sell" as const,
+      price: "2800",
+      orderType: "stop-loss-limit" as const,
+      timeInForce: "post-only" as const,
+      reduceOnly: true,
+      triggerPrice: "2900",
+      expectedOrderTypeCode: 3,
+      expectedTimeInForceCode: 2,
+      expectedPriceComparison: "unknown" as const,
+    },
+    {
+      label: "reduce-only take-profit-limit immediate-or-cancel",
+      side: "sell" as const,
+      price: "3050",
+      orderType: "take-profit-limit" as const,
+      timeInForce: "immediate-or-cancel" as const,
+      reduceOnly: true,
+      triggerPrice: "3100",
+      expectedOrderTypeCode: 5,
+      expectedTimeInForceCode: 0,
+      expectedPriceComparison: "unknown" as const,
+    },
+    {
+      label: "reduce-only take-profit-limit good-till-time",
+      side: "sell" as const,
+      price: "3050",
+      orderType: "take-profit-limit" as const,
+      timeInForce: "good-till-time" as const,
+      reduceOnly: true,
+      triggerPrice: "3100",
+      expectedOrderTypeCode: 5,
+      expectedTimeInForceCode: 1,
+      expectedPriceComparison: "unknown" as const,
+    },
+    {
+      label: "reduce-only take-profit-limit post-only",
+      side: "sell" as const,
+      price: "3050",
+      orderType: "take-profit-limit" as const,
+      timeInForce: "post-only" as const,
+      reduceOnly: true,
+      triggerPrice: "3100",
+      expectedOrderTypeCode: 5,
+      expectedTimeInForceCode: 2,
+      expectedPriceComparison: "unknown" as const,
+    },
+  ])("executes an exact approved $label through provider evidence", async (orderPolicy) => {
+    const liveAccount: LighterAccountResponse = orderPolicy.reduceOnly
+      ? {
+          ...ACCOUNT,
+          accounts: [{
+            ...first(ACCOUNT.accounts),
+            positions: [{
+              market_id: 0,
+              symbol: "ETH",
+              initial_margin_fraction: "5.00",
+              open_order_count: 0,
+              pending_order_count: 0,
+              position_tied_order_count: 0,
+              sign: 1,
+              position: "1.5",
+              avg_entry_price: "3000",
+              position_value: "4500",
+              unrealized_pnl: "0",
+              realized_pnl: "0",
+              liquidation_price: "2000",
+              margin_mode: 0,
+              allocated_margin: "0",
+            }],
+          }],
+        }
+      : ACCOUNT;
+    const approvedPreview = buildLighterOrderPreview({
+      sessionId: PLAN.sessionId,
+      environment: PLAN.environment,
+      accountIndex: PLAN.accountIndex,
+      apiKeyIndex: PLAN.apiKeyIndex,
+      marketId: PLAN.marketIndex,
+      side: orderPolicy.side,
+      baseAmount: "1",
+      price: orderPolicy.price,
+      orderType: orderPolicy.orderType,
+      timeInForce: orderPolicy.timeInForce,
+      reduceOnly: orderPolicy.reduceOnly,
+      ...(orderPolicy.triggerPrice === undefined
+        ? {}
+        : { triggerPrice: orderPolicy.triggerPrice }),
+      orderExpiry: PLAN.orderExpiryMs,
+      clientOrderIndexPolicy: PLAN.clientOrderIndexPolicy,
+      nowMs: NOW,
+    }, { market: MARKET, orderBook: ORDER_BOOK, account: liveAccount });
+    const approvedPlan: LighterOrderReadyForSignerPlan = {
+      ...PLAN,
+      previewId: approvedPreview.previewId,
+      matchHash: approvedPreview.matchHash,
+      side: orderPolicy.side,
+      baseAmountInteger: approvedPreview.identity.baseAmountInteger,
+      priceInteger: approvedPreview.identity.priceInteger,
+      orderType: orderPolicy.orderType,
+      timeInForce: orderPolicy.timeInForce,
+      reduceOnly: orderPolicy.reduceOnly,
+      triggerPriceInteger: approvedPreview.preview.triggerPrice.integer,
+    };
+    const approvedRow = {
+      ...APPROVED_PREVIEW_ROW,
+      previewId: approvedPlan.previewId,
+      matchHash: approvedPlan.matchHash,
+      side: approvedPlan.side,
+      baseAmountInteger: approvedPlan.baseAmountInteger,
+      priceInteger: approvedPlan.priceInteger,
+      orderType: approvedPlan.orderType,
+      timeInForce: approvedPlan.timeInForce,
+      reduceOnly: approvedPlan.reduceOnly,
+      triggerPriceInteger: approvedPlan.triggerPriceInteger,
+      previewJson: { ...approvedPreview.preview },
+    };
+    const unsigned = buildLighterUnsignedCreateOrderRequest(approvedPlan);
+    const providerOrder = {
+      ...accountOrder(),
+      client_order_index: Number(unsigned.clientOrderIndex),
+      client_order_id: unsigned.clientOrderIndex,
+      initial_base_amount: approvedPreview.preview.baseAmount.display,
+      remaining_base_amount: approvedPreview.preview.baseAmount.display,
+      price: approvedPreview.preview.price.display,
+      side: approvedPlan.side,
+      type: approvedPlan.orderType,
+      time_in_force: approvedPlan.timeInForce,
+      reduce_only: approvedPlan.reduceOnly,
+      trigger_price: approvedPreview.preview.triggerPrice.display ?? "0",
+    };
+    const base = deps();
+    const d = deps({
+      client: {
+        ...base.client,
+        getAccount: vi.fn(async () => liveAccount),
+        getAccountActiveOrders: vi
+          .fn()
+          .mockResolvedValueOnce({ code: 200, orders: [] })
+          .mockResolvedValueOnce({ code: 200, orders: [providerOrder] }),
+      },
+      previews: { findFreshById: vi.fn(async () => approvedRow) },
+      reserveNonce: vi.fn(async () => ({
+        kind: "lighter_order_nonce_reservation" as const,
+        intentId: approvedPlan.intentId,
+        sessionId: approvedPlan.sessionId,
+        reservationId: `lighter-order:${approvedPlan.intentId}`,
+        nonceValue: "0",
+        environment: approvedPlan.environment,
+        accountIndex: approvedPlan.accountIndex,
+        apiKeyIndex: approvedPlan.apiKeyIndex,
+      })),
+      intents: {
+        ...base.intents,
+        markPreSubmitRevalidated: vi.fn(async () => ({
+          ...APPROVED_INTENT_ROW,
+          previewId: approvedPlan.previewId,
+          matchHash: approvedPlan.matchHash,
+          side: approvedPlan.side,
+          baseAmountInteger: approvedPlan.baseAmountInteger,
+          priceInteger: approvedPlan.priceInteger,
+          orderType: approvedPlan.orderType,
+          timeInForce: approvedPlan.timeInForce,
+          reduceOnly: approvedPlan.reduceOnly,
+          triggerPriceInteger: approvedPlan.triggerPriceInteger,
+        })),
+      },
+    });
+
+    const result = await executeApprovedLighterCreateOrder({
+      plan: approvedPlan,
+      unsignedOrder: unsigned,
+      deps: d,
+    });
+
+    expect(d.intents.markPreSubmitRevalidated).toHaveBeenCalledWith({
+      intentId: approvedPlan.intentId,
+      sessionId: approvedPlan.sessionId,
+      environment: approvedPlan.environment,
+      evidence: expect.objectContaining({
+        kind: "lighter_order_pre_submit_revalidation",
+        previewId: approvedPlan.previewId,
+        matchHash: approvedPlan.matchHash,
+        priceComparison: orderPolicy.expectedPriceComparison,
+        positionVerified: orderPolicy.reduceOnly,
+      }),
+    });
+    expect(d.signer.signCreateOrder).toHaveBeenCalledWith(expect.objectContaining({
+      order: expect.objectContaining({
+        matchHash: approvedPlan.matchHash,
+        orderTypeCode: orderPolicy.expectedOrderTypeCode,
+        timeInForceCode: orderPolicy.expectedTimeInForceCode ?? 1,
+        reduceOnly: orderPolicy.reduceOnly,
+        triggerPriceInteger: approvedPlan.triggerPriceInteger ?? "0",
+        priceInteger: approvedPlan.priceInteger,
+      }),
+    }));
+    expect(d.intents.markSigned).toHaveBeenCalledTimes(1);
+    expect(d.client.sendTx).toHaveBeenCalledWith("rhc", {
+      txType: 14,
+      txInfo: TX_INFO,
+    });
+    expect(d.intents.markProviderOutcome).toHaveBeenCalledWith(expect.objectContaining({
+      intentId: approvedPlan.intentId,
+      state: "open",
+      source: "active_order",
+      providerOrderId: "123",
+      providerOutcomeJson: expect.objectContaining({
+        clientOrderIndex: unsigned.clientOrderIndex,
+        side: approvedPlan.side,
+        orderType: approvedPlan.orderType,
+        timeInForce: approvedPlan.timeInForce,
+        reduceOnly: approvedPlan.reduceOnly,
+        triggerPrice: approvedPreview.preview.triggerPrice.display ?? "0",
+      }),
+    }));
+    expect(result).toMatchObject({
+      status: "provider_confirmed",
+      executionState: "open",
+      evidenceSource: "active_order",
+      clientOrderIndex: unsigned.clientOrderIndex,
     });
     expect(JSON.stringify(result)).not.toContain(TX_INFO);
     expect(JSON.stringify(result)).not.toContain(PRIVATE_KEY);

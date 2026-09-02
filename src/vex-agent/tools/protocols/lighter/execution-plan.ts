@@ -1,5 +1,6 @@
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterTradingCredentialVaultReference } from "@tools/lighter/trading-credentials.js";
+import { LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT } from "@tools/lighter/order-preview.js";
 import { ErrorCodes, VexError } from "../../../../errors.js";
 import { assertLighterPhaseOneOrderPolicy } from "@tools/lighter/order-policy.js";
 
@@ -55,6 +56,9 @@ export function buildLighterOrderReadyForSignerPlan(
     );
   }
   assertLighterPhaseOneOrderPolicy(intent.orderType, intent.timeInForce);
+  if (intent.clientOrderIndexPolicy !== LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT) {
+    throw invalidRequest("Unsupported Lighter client-order-index policy for signer preparation.");
+  }
   assertCredentialReferenceMatchesIntent(intent);
 
   return {
