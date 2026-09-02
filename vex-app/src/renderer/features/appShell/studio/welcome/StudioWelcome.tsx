@@ -17,11 +17,10 @@
  * I1 was that the old screen said a lot and told a first-time user nothing they
  * could act on.
  *
- * It also carries the `RuntimeModeToggle` - the same Agent | Studio capsule the
- * agent welcome hero renders, not a second affordance in different words.
- * Without it Studio would be a one-way door: the sidebar has no mode control,
- * so a user who switched into Studio from the hero would have no rendered path
- * back to the agent shell.
+ * The way back to the agent shell is one plain button under the pointer line.
+ * The Agent | Studio capsule itself lives in the rail header (the one home the
+ * audit gave it, visible on every Studio screen), so this screen must not mount
+ * a second radiogroup with the same accessible name beside it.
  *
  * ## Two things this screen deliberately does NOT have
  *
@@ -52,10 +51,10 @@ import { RailGroup } from "../../../../components/ui/rail-list.js";
 import { IconFolderOpen, IconPlus } from "../../../../components/icons/index.js";
 import { useProjects } from "../../../../lib/api/projects.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
-import { RuntimeModeToggle } from "../../RuntimeModeToggle.js";
 import { StudioBridgeReadinessPanel } from "./StudioBridgeReadinessPanel.js";
 import { WelcomeProjectRow } from "./WelcomeProjectRow.js";
 import {
+  STUDIO_WELCOME_AGENT_ACTION,
   STUDIO_WELCOME_AGENT_POINTER,
   STUDIO_WELCOME_CREATE_LABEL,
   STUDIO_WELCOME_LEAD,
@@ -81,7 +80,6 @@ export function StudioWelcome({
   onCreateProject,
   onSelectProject,
 }: StudioWelcomeProps): JSX.Element {
-  const runtimeMode = useUiStore((state) => state.runtimeMode);
   const setRuntimeMode = useUiStore((state) => state.setRuntimeMode);
   const query = useProjects();
   const projects: readonly ProjectDto[] =
@@ -196,14 +194,18 @@ export function StudioWelcome({
           )}
         </RailGroup>
 
-        {/* The way back to the agent shell. THE SAME control the agent welcome
-          * hero renders, mounted here so Studio is not a one-way door, with the
-          * one line that says what it is for. */}
+        {/* The way back to the agent shell: one plain action, NOT a second
+          * mode capsule. The Agent | Studio capsule has exactly one home, the
+          * rail header, and it is on screen at the same time as this welcome;
+          * a second radiogroup with the same accessible name doubled the
+          * control (e2e/studio.spec.ts pins the count at one). */}
         <div className="flex flex-col items-center gap-2 border-t border-line-1 pt-6">
           <p className="text-center text-[12px] leading-[18px] text-ink-tertiary">
             {STUDIO_WELCOME_AGENT_POINTER}
           </p>
-          <RuntimeModeToggle runtimeMode={runtimeMode} onChange={setRuntimeMode} />
+          <Button variant="outline" onClick={() => setRuntimeMode("agent")}>
+            {STUDIO_WELCOME_AGENT_ACTION}
+          </Button>
         </div>
       </div>
     </section>

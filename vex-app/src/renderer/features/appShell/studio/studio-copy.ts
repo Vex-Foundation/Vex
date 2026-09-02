@@ -265,6 +265,8 @@ export const STUDIO_WELCOME_NEXT =
   "Creating one writes each selected agent's config into that folder, then opens it with its terminal, its files and your portfolio side by side.";
 export const STUDIO_WELCOME_AGENT_POINTER =
   "Vex's agent shell is one switch away, and Studio is where you left it when you come back.";
+/** The action under the pointer: a plain button, distinct from the rail's mode capsule. */
+export const STUDIO_WELCOME_AGENT_ACTION = "Back to Agent mode";
 
 export const STUDIO_WELCOME_CREATE_LABEL = "New project";
 

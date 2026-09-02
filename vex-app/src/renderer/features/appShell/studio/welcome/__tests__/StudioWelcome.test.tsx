@@ -207,21 +207,18 @@ describe("the project list", () => {
 });
 
 describe("the way back to the agent shell", () => {
-  it("renders the SAME runtime-mode capsule the agent hero renders", () => {
+  it("offers one plain action and NOT a second mode capsule", () => {
     renderWelcome({});
-    const group = screen.getByRole("radiogroup", { name: "Runtime mode" });
-    const segments = screen.getAllByRole("radio");
-    expect(group.contains(segments[0] ?? null)).toBe(true);
-    expect(segments.map((el) => el.textContent)).toEqual(["Agent", "Studio"]);
-    // Studio is the mode we are in, so Studio is the checked segment.
-    expect(
-      screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked"),
-    ).toBe("true");
+    // The Agent | Studio capsule has one home, the rail header, and it is on
+    // screen together with this welcome; a second radiogroup named "Runtime
+    // mode" doubled the control (e2e/studio.spec.ts pins the count at one).
+    expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Back to Agent mode" })).toBeTruthy();
   });
 
-  it("choosing Agent leaves Studio - without it the screen is a one-way door", () => {
+  it("the action leaves Studio - without it the screen is a one-way door", () => {
     renderWelcome({});
-    fireEvent.click(screen.getByRole("radio", { name: "Agent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Agent mode" }));
     expect(useUiStore.getState().runtimeMode).toBe("agent");
   });
 });
