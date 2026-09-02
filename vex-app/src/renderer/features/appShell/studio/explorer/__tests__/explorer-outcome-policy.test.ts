@@ -153,6 +153,11 @@ describe("decideListingFailure", () => {
     not_found: "staleRow",
     not_a_directory: "staleRow",
     symlinked_path: "staleRow",
+    // A READ-only code: only `readFile` can prove an identity change, so a
+    // listing never answers with it. It still has a row and a sentence, because
+    // the wire type is one set and a code without copy is a code that would one
+    // day arrive with none.
+    path_changed: "folderError",
     project_closed: "projectClosed",
     invalid_cursor: "folderError",
     outside_project: "folderError",

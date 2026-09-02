@@ -150,7 +150,9 @@ dialog.vex-dialog::backdrop {
   white-space: pre-line;
   overflow-wrap: break-word;
   pointer-events: none;
-  animation: vex-tooltip-in 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* Was `150ms cubic-bezier(0.4, 0, 0.2, 1)`: the base step and the standard
+   * curve, spelled by hand. Tokens now, so the family stays closed. */
+  animation: vex-tooltip-in var(--vex-duration-base) var(--vex-ease-standard);
 }
 
 .vex-tooltip[data-side="right"],

@@ -1827,10 +1827,15 @@ describe("deleteProject: step 6, closing what the project owns", () => {
     // its leases, its counts, its close hook - is the production code.
     const domain = new TerminalDomain(
       {
-        resolveProjectCwd: () => Promise.resolve(doomed.directory),
+        resolveProjectLocation: () =>
+          Promise.resolve({ directory: doomed.directory, label: doomed.slug }),
         readProjectActivation: realProjectActivation,
         // A shell that will not leave voluntarily, so the delete is what ends it.
-        resolveShell: () => ({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
+        // A shell that will not leave voluntarily, so the delete is what ends
+        // it. The catalogue id is irrelevant here: this double answers the same
+        // launch for every id, which is what keeps the suite about DELETE.
+        resolveShellLaunch: () =>
+          Promise.resolve({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
         postPort: () => undefined,
         publishAvailability: () => undefined,
         publishTerminalsLost: () => undefined,
@@ -1840,7 +1845,7 @@ describe("deleteProject: step 6, closing what the project owns", () => {
 
     let pid = -1;
     try {
-      const created = await domain.create("w1", doomed.projectId, 80, 24);
+      const created = await domain.create("w1", doomed.projectId, "system_default", 80, 24);
       if (!created.ok) throw new Error(`create refused: ${created.code}`);
       pid = (created.value as { pid: number }).pid;
 
@@ -1922,9 +1927,14 @@ describe("deleteProject: step 6, closing what the project owns", () => {
 
     const domain = new TerminalDomain(
       {
-        resolveProjectCwd: () => Promise.resolve(doomed.directory),
+        resolveProjectLocation: () =>
+          Promise.resolve({ directory: doomed.directory, label: doomed.slug }),
         readProjectActivation: realProjectActivation,
-        resolveShell: () => ({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
+        // A shell that will not leave voluntarily, so the delete is what ends
+        // it. The catalogue id is irrelevant here: this double answers the same
+        // launch for every id, which is what keeps the suite about DELETE.
+        resolveShellLaunch: () =>
+          Promise.resolve({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
         postPort: () => undefined,
         publishAvailability: () => undefined,
         publishTerminalsLost: () => undefined,
@@ -1934,7 +1944,7 @@ describe("deleteProject: step 6, closing what the project owns", () => {
 
     let pid = -1;
     try {
-      const created = await domain.create("w1", doomed.projectId, 80, 24);
+      const created = await domain.create("w1", doomed.projectId, "system_default", 80, 24);
       if (!created.ok) throw new Error(`create refused: ${created.code}`);
       // PARSED, not cast: `create` answers with the host's own value and this
       // suite must not assert against a shape it merely assumed.
@@ -2064,9 +2074,11 @@ describe("deleteProject: step 6, closing what the project owns", () => {
     });
 
     const depsFor = (): import("../terminals.js").TerminalDomainDeps => ({
-      resolveProjectCwd: () => Promise.resolve(doomed.directory),
+      resolveProjectLocation: () =>
+        Promise.resolve({ directory: doomed.directory, label: doomed.slug }),
       readProjectActivation: realProjectActivation,
-      resolveShell: () => ({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
+      resolveShellLaunch: () =>
+        Promise.resolve({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
       postPort: () => undefined,
       publishAvailability: () => undefined,
       publishTerminalsLost: () => undefined,
@@ -2082,7 +2094,7 @@ describe("deleteProject: step 6, closing what the project owns", () => {
     let pid = -1;
 
     try {
-      const created = await beforeRestart.create("w1", doomed.projectId, 80, 24);
+      const created = await beforeRestart.create("w1", doomed.projectId, "system_default", 80, 24);
       if (!created.ok) throw new Error(`create refused: ${created.code}`);
       const value = terminalCreateValueSchema.parse(created.value);
       pid = value.pid;
@@ -2220,10 +2232,18 @@ describe("deleteProject: step 6, closing what the project owns", () => {
     ]);
     const domain = new TerminalDomain(
       {
-        resolveProjectCwd: (projectId) =>
-          Promise.resolve(directories.get(projectId) ?? null),
+        resolveProjectLocation: (projectId) => {
+          const directory = directories.get(projectId);
+          return Promise.resolve(
+            directory === undefined ? null : { directory, label: projectId },
+          );
+        },
         readProjectActivation: realProjectActivation,
-        resolveShell: () => ({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
+        // A shell that will not leave voluntarily, so the delete is what ends
+        // it. The catalogue id is irrelevant here: this double answers the same
+        // launch for every id, which is what keeps the suite about DELETE.
+        resolveShellLaunch: () =>
+          Promise.resolve({ executable: "/bin/sh", args: ["-c", "sleep 600"] }),
         postPort: () => undefined,
         publishAvailability: () => undefined,
         publishTerminalsLost: () => undefined,
@@ -2251,7 +2271,7 @@ describe("deleteProject: step 6, closing what the project owns", () => {
       });
 
       for (const project of [doomed, kept]) {
-        const created = await domain.create("w1", project.projectId, 80, 24);
+        const created = await domain.create("w1", project.projectId, "system_default", 80, 24);
         if (!created.ok) throw new Error(`create refused: ${created.code}`);
         const value = terminalCreateValueSchema.parse(created.value);
         pids.push(value.pid);

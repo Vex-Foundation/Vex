@@ -58,7 +58,7 @@ import { ComposerPermissionSeat } from "./SessionComposer/ComposerPermissionSeat
 import { ComposerQueueDock } from "./SessionComposer/ComposerQueueDock.js";
 import { ComposerMissionStrip } from "./SessionComposer/ComposerMissionStrip.js";
 import { SessionExportDialog } from "./SessionExportDialog.js";
-import { EASE_STANDARD } from "../../lib/motion.js";
+import { EASE_STANDARD } from "../../lib/motion/index.js";
 
 /**
  * The placeholder shown while a turn is running. It states what the Send key

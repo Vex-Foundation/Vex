@@ -26,7 +26,9 @@
 
 import type { TerminalErrorCode, TerminalProperty } from "@shared/schemas/terminal.js";
 import type {
+  TerminalCreateValue,
   TerminalHostAvailability,
+  TerminalShellCatalogue,
   TerminalWorkspaceLayout,
   TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
@@ -35,12 +37,15 @@ import { vi } from "vitest";
 type Unsubscribe = () => void;
 type EventKind = "data" | "resync" | "property" | "exit" | "refused";
 
-export interface CreateAnswer {
-  readonly terminalId: string;
-  readonly pid: number;
-  readonly shellName: string;
-  readonly cwd: string;
-}
+/**
+ * What a `create` answers, ALIASED to the shared contract rather than restated.
+ *
+ * It used to be a hand-written interface carrying `cwd: string`, a field the
+ * wire schema does not have and has not had since the directory became a label.
+ * A double describing a shape the boundary would refuse proves only that the
+ * caller works against a message main can never send.
+ */
+export type CreateAnswer = TerminalCreateValue;
 
 export interface TerminalBridgeStub {
   readonly writes: { terminalId: string; data: string }[];
@@ -239,6 +244,22 @@ const AVAILABILITY: TerminalHostAvailability = {
   responsive: true,
 };
 
+/**
+ * The catalogue the double answers with.
+ *
+ * `system_default` plus one shell that is NOT installed, so a component under
+ * test meets both rows without a test having to build a catalogue by hand.
+ * `defaultShellId` is `system_default`, which is what the real main returns.
+ */
+const SHELL_CATALOGUE: TerminalShellCatalogue = {
+  shells: [
+    { id: "system_default", label: "Default shell", available: true },
+    { id: "bash", label: "bash", available: true },
+    { id: "fish", label: "fish", available: false },
+  ],
+  defaultShellId: "system_default",
+};
+
 /** Install a recording `window.vex.terminal`. Returns the control surface. */
 export function installTerminalBridge(): TerminalBridgeStub {
   // ONE MAP PER EVENT KIND, each typed with its real payload. A single
@@ -307,7 +328,10 @@ export function installTerminalBridge(): TerminalBridgeStub {
     pendingDataCompletions: [],
     nextCreate: {
       ok: true,
-      value: { terminalId: "t1", pid: 4242, shellName: "bash", cwd: "/w" },
+      // `displayCwd` is the LABEL the host reports at spawn - here, the project
+      // the test controller opens - and it is what seeds the panel header
+      // before any property event exists.
+      value: { terminalId: "t1", pid: 4242, shellName: "bash", displayCwd: "p1" },
     },
     savedWorkspace: null,
     readWorkspaceFailure: null,
@@ -550,6 +574,7 @@ export function installTerminalBridge(): TerminalBridgeStub {
       opens.set(input.projectId, promise);
       return { ok: true as const, data: { ok: true as const, value: await promise } };
     }),
+    getShellCatalogue: vi.fn(async () => ({ ok: true as const, data: SHELL_CATALOGUE })),
     getAvailability: vi.fn(async () => ({ ok: true as const, data: AVAILABILITY })),
     onAvailability: () => () => undefined,
     onTerminalsLost: (cb: (terminalIds: readonly string[]) => void) => {

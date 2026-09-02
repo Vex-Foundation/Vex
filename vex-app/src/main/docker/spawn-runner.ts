@@ -44,6 +44,26 @@ const DEFAULT_GRACE_MS = 5_000;
 const MAX_BUFFER_BYTES = 4 * 1024 * 1024; // safety cap for accumulated stdout/stderr
 
 /**
+ * How long the runner waits for stdout/stderr to close AFTER the child itself
+ * has exited, before settling on the exit facts alone.
+ *
+ * WHY IT EXISTS. `close` fires only once the process has exited AND every
+ * stdio pipe has ended. A descendant that inherited those pipes keeps them
+ * open after the direct child is gone, so `close` may never arrive: killing a
+ * process does not kill its tree, and on Windows it cannot - `child.kill()`
+ * reaches TerminateProcess on the direct child only, which is why VS Code
+ * shells out to `taskkill /T` in `src/vs/base/node/processes.ts` (`killTree`).
+ * Without this bound a cancelled `runSpawn` never reached a terminal state and
+ * its caller waited for ever; the Windows CI lane surfaced it as a 15 s test
+ * timeout on the abort case.
+ *
+ * The child's own exit is the authoritative outcome, so the runner reports it
+ * and says out loud, on stderr, that the remaining output was abandoned rather
+ * than pretending the streams completed.
+ */
+const STDIO_DRAIN_AFTER_EXIT_MS = 2_000;
+
+/**
  * Line framing is `\n`, and a CRLF producer's `\r` belongs to the framing, not
  * to the line. Windows console builtins (and any CLI whose Go/MSVC runtime
  * translates on a pipe) terminate with `\r\n`, so a reader that split on `\n`
@@ -127,10 +147,19 @@ export async function runSpawn(
       : command;
 
   return new Promise((resolve) => {
+    // `aborted` and `timedOut` are the RUNNER'S OWN facts: this code decided to
+    // terminate the child. They are never inferred from what the OS reports,
+    // because Windows has no POSIX signals - a killed child comes back as
+    // `signal: null` plus an exit code there - and the four outcomes
+    // (completed, aborted by the caller, timed out, spawn-failed) must stay
+    // distinguishable on every platform.
     let aborted = false;
     let timedOut = false;
+    let exited = false;
+    let settled = false;
     let killTimer: ReturnType<typeof setTimeout> | null = null;
     let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+    let drainTimer: ReturnType<typeof setTimeout> | null = null;
     const stdoutReader = new StreamLineReader();
     const stderrReader = new StreamLineReader();
     let stdoutAccum = "";
@@ -224,23 +253,34 @@ export async function runSpawn(
     const stdoutDone = waitForStreamClose(child.stdout);
     const stderrDone = waitForStreamClose(child.stderr);
 
+    /**
+     * SIGTERM now, SIGKILL after the grace period if the child is still alive.
+     *
+     * The liveness guard is our own `exited` flag, NOT `child.killed`:
+     * `killed` records that a signal was successfully DELIVERED, not that the
+     * process died. Guarding the escalation on `!child.killed` made the SIGKILL
+     * branch unreachable - the SIGTERM immediately before it set `killed` -
+     * so a child that ignores SIGTERM was never force-killed and the run never
+     * terminated. On win32 both names map to TerminateProcess and the first
+     * send is already forceful, so only the POSIX path uses the second step.
+     */
     const escalateKill = (): void => {
-      if (child.pid && !child.killed) {
+      if (child.pid === undefined || exited) return;
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // ignore
+      }
+      if (killTimer !== null) return;
+      killTimer = setTimeout(() => {
+        killTimer = null;
+        if (child.pid === undefined || exited) return;
         try {
-          child.kill("SIGTERM");
+          child.kill("SIGKILL");
         } catch {
           // ignore
         }
-        killTimer = setTimeout(() => {
-          if (child.pid && !child.killed) {
-            try {
-              child.kill("SIGKILL");
-            } catch {
-              // ignore
-            }
-          }
-        }, gracePeriodMs);
-      }
+      }, gracePeriodMs);
     };
 
     const onAbort = (): void => {
@@ -260,16 +300,36 @@ export async function runSpawn(
       timeoutTimer = setTimeout(onTimeout, options.timeoutMs);
     }
 
-    child.on("close", (code, sig) => {
-      void (async (): Promise<void> => {
-        await Promise.all([stdoutDone, stderrDone]);
+    /**
+     * The single terminal state of the run. `stdioComplete` is false only when
+     * the child exited but its pipes stayed open past the drain bound, i.e.
+     * output was abandoned; that is reported on stderr rather than hidden, in
+     * the same shape as the `[spawn error: ...]` line, so a caller can never
+     * mistake an abandoned stream for a complete one.
+     */
+    const finish = (
+      code: number | null,
+      sig: NodeJS.Signals | null,
+      stdioComplete: boolean
+    ): void => {
+      if (settled) return;
+      settled = true;
+      if (killTimer) clearTimeout(killTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (drainTimer) clearTimeout(drainTimer);
+      if (signal) signal.removeEventListener("abort", onAbort);
       stderrAccum += stderrReader.flush(emitStderrLine);
       stdoutAccum += stdoutReader.flush(emitStdoutLine);
       replayLinesIfNeeded("stderr", stderrAccum);
       replayLinesIfNeeded("stdout", stdoutAccum);
-      if (killTimer) clearTimeout(killTimer);
-      if (timeoutTimer) clearTimeout(timeoutTimer);
-      if (signal) signal.removeEventListener("abort", onAbort);
+      if (!stdioComplete) {
+        const abandonedLine =
+          "[stdio abandoned: the process exited but a descendant still holds its stdout/stderr]";
+        stderrAccum += `${abandonedLine}\n`;
+        emitStderrLine(abandonedLine);
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+      }
       resolve({
         code,
         signal: sig,
@@ -278,6 +338,29 @@ export async function runSpawn(
         aborted,
         timedOut,
       });
+    };
+
+    // The child's own exit is the authoritative outcome. `close` is still the
+    // preferred settle point because it also means the output is complete, but
+    // it is not guaranteed to arrive (see `STDIO_DRAIN_AFTER_EXIT_MS`), so the
+    // exit starts a bounded wait for it.
+    child.on("exit", (code, sig) => {
+      exited = true;
+      if (killTimer) {
+        clearTimeout(killTimer);
+        killTimer = null;
+      }
+      if (settled || drainTimer !== null) return;
+      drainTimer = setTimeout(() => {
+        drainTimer = null;
+        finish(code, sig, false);
+      }, STDIO_DRAIN_AFTER_EXIT_MS);
+    });
+
+    child.on("close", (code, sig) => {
+      void (async (): Promise<void> => {
+        await Promise.all([stdoutDone, stderrDone]);
+        finish(code, sig, true);
       })();
     });
   });

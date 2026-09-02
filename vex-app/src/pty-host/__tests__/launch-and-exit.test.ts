@@ -37,6 +37,7 @@ function build(options: {
       executable: options.executable ?? "bash",
       args: [],
       cwd: options.cwd ?? CWD,
+      projectLabel: "proj",
       cols: 80,
       rows: 24,
       env: {},
@@ -98,7 +99,7 @@ describe("spawn validation", () => {
 
   it("refuses a native spawn failure as launch_spawn_failed rather than throwing", async () => {
     const process = new TerminalProcess(
-      { executable: "bash", args: [], cwd: CWD, cols: 80, rows: 24, env: {} },
+      { executable: "bash", args: [], cwd: CWD, projectLabel: "proj", cols: 80, rows: 24, env: {} },
       {
         spawn: () => {
           throw new Error("A native exception occurred during launch");
@@ -126,7 +127,7 @@ describe("spawn validation", () => {
     const pty = new ScriptedPty();
     const spawner = scriptedSpawner(pty);
     const process = new TerminalProcess(
-      { executable: "bash", args: ["-i"], cwd: CWD, cols: 80, rows: 24, env: {} },
+      { executable: "bash", args: ["-i"], cwd: CWD, projectLabel: "proj", cols: 80, rows: 24, env: {} },
       {
         spawn: spawner.spawn,
         probe: fakeProbe({

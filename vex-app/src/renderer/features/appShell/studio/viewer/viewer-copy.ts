@@ -72,6 +72,8 @@ export function refusalText(code: FilesErrorCode, size: number | undefined): str
       return "This file is no longer on disk.";
     case "symlinked_path":
       return "Part of this path is a symbolic link. Vex does not follow links out of a project, so it will not open this file.";
+    case "path_changed":
+      return "This file was replaced while Vex was opening it, so Vex stopped rather than show bytes from something else. Open it again to read the file that is there now.";
     case "not_a_file":
       return "This path is not a regular file, so there is nothing to read.";
     case "project_closed":

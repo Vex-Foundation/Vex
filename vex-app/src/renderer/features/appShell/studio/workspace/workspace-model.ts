@@ -374,6 +374,45 @@ export function setActivePane(
 }
 
 /**
+ * Record where one terminal's shell now is, from its `displayCwd` property.
+ *
+ * ADDRESSED BY TERMINAL ID, not by tab and pane, because the property event
+ * names a terminal and nothing else: a terminal is in exactly one pane of one
+ * group, and making the caller re-derive that pair would give the wiring a
+ * chance to attribute one shell's directory to another after a split reordered
+ * the panes.
+ *
+ * An unknown terminal is NOT a refusal. Property events race a close: a pane
+ * removed between the host emitting and the renderer applying is a normal
+ * ordering, not a user-visible failure, and reporting it would put a notice on
+ * screen for a directory nobody is looking at. Identity is preserved when the
+ * value has not changed, so a shell re-reporting the same directory re-renders
+ * nothing.
+ */
+export function setPaneDisplayCwd(
+  state: WorkspaceState,
+  terminalId: string,
+  displayCwd: string,
+): WorkspaceMutation {
+  for (const tab of state.tabs) {
+    if (!isGroup(tab)) continue;
+    const pane = tab.panes.find((candidate) => candidate.terminalId === terminalId);
+    if (pane === undefined) continue;
+    if (pane.displayCwd === displayCwd) return { ok: true, state };
+    return {
+      ok: true,
+      state: replaceTab(state, {
+        ...tab,
+        panes: tab.panes.map((candidate) =>
+          candidate.terminalId === terminalId ? { ...candidate, displayCwd } : candidate,
+        ),
+      }),
+    };
+  }
+  return { ok: true, state };
+}
+
+/**
  * Set the axis a group's panes are laid out along.
  *
  * Shares are RELATIVE and therefore axis-agnostic, so flipping the orientation
@@ -530,6 +569,14 @@ export function fromSnapshot(snapshot: TerminalWorkspaceRestore): WorkspaceState
   const titles = new Map(
     snapshot.terminals.map((entry) => [entry.terminalId, entry.title || entry.shellName]),
   );
+  // THE REATTACH SEED for the header's directory. Main asked the host for it at
+  // the moment it built this answer, so it is where the shell actually is - not
+  // where it was spawned. A row whose value is `null` (the host could not
+  // describe that terminal) seeds nothing and the header says the directory is
+  // not known yet, until the terminal's first property event arrives.
+  const directories = new Map(
+    snapshot.terminals.map((entry) => [entry.terminalId, entry.displayCwd]),
+  );
   const tabs: WorkspaceTab[] = [];
   for (const group of snapshot.layout.groups) {
     const panes = group.panes
@@ -538,6 +585,7 @@ export function fromSnapshot(snapshot: TerminalWorkspaceRestore): WorkspaceState
         paneId: `${group.groupId}:${String(index)}`,
         terminalId: pane.terminalId,
         relativeSize: pane.relativeSize,
+        displayCwd: directories.get(pane.terminalId) ?? null,
       }));
     if (panes.length === 0) continue;
     const activeIndex = Math.min(group.activePaneIndex, panes.length - 1);

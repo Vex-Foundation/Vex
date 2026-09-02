@@ -7,6 +7,8 @@ import type {
   TerminalPortEvent,
   TerminalProperty,
   TerminalResyncReason,
+  TerminalShellCatalogue,
+  TerminalShellId,
   TerminalWorkspaceLayout,
   TerminalWorkspaceRestore,
 } from "../../../schemas/terminal.js";
@@ -32,9 +34,17 @@ import type {
  * answer the UI turns into "close one first", not an error.
  */
 export interface TerminalBridge {
-  /** Open a terminal in a project. Refused by code when a bound is reached. */
+  /**
+   * Open a terminal in a project. Refused by code when a bound is reached.
+   *
+   * `shellId` names a shell from the CLOSED catalogue, never a binary. Main
+   * re-resolves it against the filesystem before spawning and refuses
+   * `launch_shell_unavailable` when that shell is not installed - it never
+   * silently substitutes another one.
+   */
   readonly create: (input: {
     projectId: string;
+    shellId: TerminalShellId;
     cols: number;
     rows: number;
   }) => Promise<Result<TerminalCreateResult>>;
@@ -146,6 +156,15 @@ export interface TerminalBridge {
   readonly readWorkspace: (input: {
     projectId: string;
   }) => Promise<Result<TerminalOutcome<TerminalWorkspaceRestore | null>>>;
+
+  /**
+   * The shells this machine can offer, and the one to preselect.
+   *
+   * ADVISORY. `available` fills the picker; it authorizes nothing. Main
+   * re-resolves the chosen id on every `create`, so a catalogue this renderer
+   * cached or rewrote cannot widen what may be launched.
+   */
+  readonly getShellCatalogue: () => Promise<Result<TerminalShellCatalogue>>;
 
   /** The terminal subsystem's own honest state, including a spent restart cap. */
   readonly getAvailability: () => Promise<Result<TerminalHostAvailability>>;

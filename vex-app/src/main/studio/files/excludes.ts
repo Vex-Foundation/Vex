@@ -167,14 +167,19 @@ function defaultsLevel(): IgnoreLevel {
  * link.
  *
  * A `.gitignore` sits in a directory anything can write to, so it gets the same
- * two defences a viewer read gets, and for the same reasons. `O_NOFOLLOW` means
- * a SYMLINKED ignore file is `ELOOP` and is treated as ABSENT, which is the
- * safe answer and also the honest one: a rule set this process may not follow
- * is a rule set that does not apply. And the bound is enforced on bytes read
+ * two defences a viewer read gets, and for the same reasons. A SYMLINKED ignore
+ * file is refused - before the open while the link is standing, after it when
+ * one was swapped in - and is treated as ABSENT, which is the safe answer and
+ * also the honest one: a rule set this process may not follow is a rule set
+ * that does not apply. And the bound is enforced on bytes read
  * from the handle rather than on the length of a buffer already in memory - the
  * old `readFile` pulled the WHOLE file in before comparing it to the limit,
  * which made a link to a huge file or to a device unbounded main-process
  * memory.
+ *
+ * A rule set that was REPLACED while it was being opened is neither of those
+ * and says so in the log: nothing is applied, and the reason is not "there was
+ * no file".
  */
 async function readIgnoreFile(
   absoluteDirectory: string,
@@ -184,6 +189,12 @@ async function readIgnoreFile(
   const read = await readTextFileBounded(target, IGNORE_FILE_MAX_BYTES);
   if (read.kind === "text") return { text: read.text, oversize: false };
   if (read.kind === "oversize") return { text: null, oversize: true };
+  if (read.kind === "changed") {
+    log.warn(
+      `[studio:files] an ignore file was replaced while it was being opened `
+        + `and was not applied`,
+    );
+  }
   if (read.kind === "error") {
     log.warn(
       `[studio:files] an ignore file could not be read `

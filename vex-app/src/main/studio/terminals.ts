@@ -46,12 +46,14 @@ import {
   utf8ByteLength,
   TERMINAL_WRITE_MAX_BYTES,
   terminalCreateValueSchema,
+  terminalDescribeResultSchema,
   terminalReviveResultSchema,
   terminalWorkspaceSnapshotSchema,
   type TerminalErrorCode,
   type TerminalHostAvailability,
   type TerminalGroupLayout,
   type TerminalOutcome,
+  type TerminalShellId,
   type TerminalWorkspaceLayout,
   type TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
@@ -97,7 +99,19 @@ export type ProjectActivation = "active" | "absent" | "unreadable";
 /** Everything this domain does not own and must be given. */
 export interface TerminalDomainDeps {
   /** Absolute working directory for a project, or `null` when unknown. */
-  readonly resolveProjectCwd: (projectId: string) => Promise<string | null>;
+  /**
+   * WHERE a project's shells start, and WHAT the project is called.
+   *
+   * ONE read answers both, deliberately. The directory is what the pty spawns
+   * in; the label is what the host renders when the shell sits at that
+   * directory (`pty-host/display-cwd.ts`). Two separate lookups would be two
+   * chances for the launch and the label to describe different projects, and
+   * the label is what a person reads to know which project they are typing
+   * into. `null` means the project is not an active row and no terminal opens.
+   */
+  readonly resolveProjectLocation: (
+    projectId: string,
+  ) => Promise<{ directory: string; label: string } | null>;
   /**
    * Is this project still an ACTIVE row - present, with `deleted_at IS NULL`?
    *
@@ -106,8 +120,19 @@ export interface TerminalDomainDeps {
    * not in it. The tombstone is the authority, and the authority is in Postgres.
    */
   readonly readProjectActivation: (projectId: string) => Promise<ProjectActivation>;
-  /** The shell to launch for a project. Main decides; the renderer never names one. */
-  readonly resolveShell: () => { executable: string; args: string[] };
+  /**
+   * What a catalogue SHELL ID resolves to, re-checked at the moment of the
+   * spawn. `null` means the shell is not installed on this machine.
+   *
+   * The renderer never names a binary: it sends an id from the closed enum and
+   * this is the only thing that turns one into an executable. Asking again per
+   * create rather than trusting a catalogue the renderer is holding is the
+   * whole point - that catalogue can be stale or tampered with, and a shell can
+   * be uninstalled while the picker is open.
+   */
+  readonly resolveShellLaunch: (
+    shellId: TerminalShellId,
+  ) => Promise<{ executable: string; args: string[] } | null>;
   /** Post a transferable port to a window. */
   readonly postPort: (
     target: TerminalPortTarget,
@@ -220,13 +245,25 @@ interface WorkspaceOpen {
   readonly promise: Promise<TerminalOutcome<TerminalWorkspaceRestore | null>>;
 }
 
-/** The restore shape one live terminal contributes to an open. */
+/**
+ * The restore shape one live terminal contributes to an open.
+ *
+ * `displayCwd` IS NOT ON THE DESCRIPTOR and is passed in instead. The
+ * descriptor is written once, at admission, and a shell's directory changes
+ * every time the user types `cd` - so a copy recorded here would be a
+ * remembered SPAWN directory presented as the current one. The live path reads
+ * the value from the host (`describeTerminals`) and the revive path takes it
+ * from the revive result; both are true at the instant the answer is built.
+ * `null` is the honest unknown - see the schema.
+ */
 function restoreEntryOf(
   descriptor: TerminalDescriptor,
+  displayCwd: string | null,
 ): Omit<TerminalWorkspaceRestore["terminals"][number], "terminalId"> {
   return {
     title: descriptor.title,
     shellName: descriptor.shellName,
+    displayCwd,
     droppedRows: descriptor.droppedRows,
     reducedRows: descriptor.reducedRows,
   };
@@ -392,6 +429,7 @@ export class TerminalDomain {
   async create(
     windowId: string,
     projectId: string,
+    shellId: TerminalShellId,
     cols: number,
     rows: number,
   ): Promise<TerminalOutcome<unknown>> {
@@ -405,10 +443,15 @@ export class TerminalDomain {
     }
 
     try {
-      const cwd = await this.deps.resolveProjectCwd(projectId);
-      if (cwd === null) return refuse("launch_cwd_missing");
+      const location = await this.deps.resolveProjectLocation(projectId);
+      if (location === null) return refuse("launch_cwd_missing");
 
-      const shell = this.deps.resolveShell();
+      // THE AUTHORITY CHECK on the renderer's choice. The id already passed the
+      // schema at two boundaries, which proves it names a shell Vex knows; this
+      // proves that shell is actually on this machine, now.
+      const shell = await this.deps.resolveShellLaunch(shellId);
+      if (shell === null) return refuse("launch_shell_unavailable");
+
       const terminalId = randomUUID();
       const outcome = await this.starter.send({
         kind: "create",
@@ -418,7 +461,8 @@ export class TerminalDomain {
         launch: {
           executable: shell.executable,
           args: shell.args,
-          cwd,
+          cwd: location.directory,
+          projectLabel: location.label,
           cols,
           rows,
           // No overlay in B2: the base environment plus Vex's own assertions is
@@ -589,7 +633,7 @@ export class TerminalDomain {
     //    terminals and the renderer may have persisted a new topology, and a
     //    remembered result describes none of it.
     const derived = this.deriveOpen(windowId, projectId);
-    if (derived !== null) return { ok: true, value: derived };
+    if (derived !== null) return { ok: true, value: await this.seedDisplayCwd(derived) };
 
     // 3. Nothing is live. Only now is a revive the right answer.
     const generation = this.hostGeneration;
@@ -601,7 +645,9 @@ export class TerminalDomain {
       // Answer from live state here too, so one code path decides what an open
       // looks like - and so a terminal created while the revive was in flight
       // is in the answer rather than stranded outside it.
-      return { ok: true, value: this.deriveOpen(windowId, projectId) ?? outcome.value };
+      const live = this.deriveOpen(windowId, projectId);
+      if (live === null) return { ok: true, value: outcome.value };
+      return { ok: true, value: await this.seedDisplayCwd(live) };
     } finally {
       // The entry exists only to be joined. Holding it past settlement is what
       // made a stale topology reusable in the first place.
@@ -649,7 +695,10 @@ export class TerminalDomain {
         placed.add(pane.terminalId);
         const entry = byId.get(pane.terminalId);
         if (entry !== undefined) {
-          terminals.push({ terminalId: entry.terminalId, ...restoreEntryOf(entry.descriptor) });
+          terminals.push({
+            terminalId: entry.terminalId,
+            ...restoreEntryOf(entry.descriptor, null),
+          });
         }
       }
       groups.push({
@@ -662,7 +711,10 @@ export class TerminalDomain {
     for (const entry of live) {
       if (placed.has(entry.terminalId)) continue;
       placed.add(entry.terminalId);
-      terminals.push({ terminalId: entry.terminalId, ...restoreEntryOf(entry.descriptor) });
+      terminals.push({
+        terminalId: entry.terminalId,
+        ...restoreEntryOf(entry.descriptor, null),
+      });
       groups.push({
         groupId: `live-${entry.terminalId}`,
         orientation: "horizontal",
@@ -685,6 +737,57 @@ export class TerminalDomain {
       },
       terminals,
       idMap,
+    };
+  }
+
+  /**
+   * Fill a derived restore's `displayCwd` from the HOST, which is the only
+   * process that knows one.
+   *
+   * ## Why this is a round trip and not a recorded field
+   *
+   * A terminal's directory is a moving value: every `cd` the user types changes
+   * it, and the host derives a fresh label each time and emits it as a property
+   * on the DATA plane - host -> port -> preload -> renderer. Main is not on that
+   * path and observes none of it. So the only field main could record is the one
+   * it learned at admission, and a reattach seeded from it would put a shell's
+   * SPAWN directory on the header as though it were where the shell is now.
+   * That is worse than saying nothing: it is a confident wrong answer about the
+   * directory a user is about to run a command in.
+   *
+   * Asking the host at answer time is what makes the seed true when it is sent.
+   * The renderer then supersedes it with the first property event, exactly as
+   * `TerminalPropertyType.Cwd` supersedes VS Code's reconnect seed.
+   *
+   * ## Failure is the honest unknown, never a refusal
+   *
+   * An unreachable or refusing host leaves every row `null` and the open still
+   * succeeds. The directory label is DISPLAY TEXT with a named unknown state;
+   * failing a whole workspace restore - live shells, scrollback and layout -
+   * because a header could not be captioned would trade the user's session for
+   * a subtitle.
+   */
+  private async seedDisplayCwd(
+    restore: TerminalWorkspaceRestore,
+  ): Promise<TerminalWorkspaceRestore> {
+    if (restore.terminals.length === 0) return restore;
+    const outcome = await this.starter.send({
+      kind: "describeTerminals",
+      terminalIds: restore.terminals.map((entry) => entry.terminalId),
+    });
+    if (!outcome.ok) return restore;
+    const described = terminalDescribeResultSchema.safeParse(outcome.value);
+    if (!described.success) return restore;
+
+    const labels = new Map(
+      described.data.terminals.map((entry) => [entry.terminalId, entry.displayCwd]),
+    );
+    return {
+      ...restore,
+      terminals: restore.terminals.map((entry) => ({
+        ...entry,
+        displayCwd: labels.get(entry.terminalId) ?? entry.displayCwd,
+      })),
     };
   }
 
@@ -722,6 +825,16 @@ export class TerminalDomain {
     }
     if (assignments.length === 0) return { ok: true, value: null };
 
+    // The label the host renders for a shell sitting at the project root. Read
+    // HERE rather than restored from the snapshot: a project can be renamed
+    // between sessions, and a snapshot that carried the old name would restore
+    // a header naming a project that no longer exists under that name.
+    const location = await this.deps.resolveProjectLocation(projectId);
+    if (location === null) {
+      for (const reservation of reservations) reservation.release();
+      return refuse("launch_cwd_missing");
+    }
+
     const creating = acquireProjectLease(projectId, "terminalCreate");
     if (!creating.ok) {
       for (const reservation of reservations) reservation.release();
@@ -733,6 +846,7 @@ export class TerminalDomain {
         kind: "revive",
         projectId,
         windowId,
+        projectLabel: location.label,
         assignments,
       });
       if (!outcome.ok) return outcome;
@@ -769,7 +883,13 @@ export class TerminalDomain {
           });
           return refuse("project_deleting");
         }
-        terminals.push({ terminalId: entry.to, ...restoreEntryOf(descriptor) });
+        // The revive result's own label: the host spawned this pty moments ago
+        // and reported where it landed, so no `describeTerminals` round trip
+        // could tell us anything newer.
+        terminals.push({
+          terminalId: entry.to,
+          ...restoreEntryOf(descriptor, entry.displayCwd),
+        });
         idMap.push({ from: entry.from, to: entry.to });
       }
 

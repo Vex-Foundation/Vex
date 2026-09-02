@@ -1,5 +1,125 @@
 # Motion / animation / runtime-styling policy (Phase 1)
 
+This file has two halves. The **motion vocabulary** below says what may move,
+for how long, and on what curve. Everything from "CSP precise semantics"
+onwards says how a moving thing is allowed to be implemented under the
+renderer's strict CSP. Both are binding.
+
+## Motion vocabulary
+
+Owner: `src/renderer/styles/global-css/tokens.css` (the CSS custom properties)
+and `src/renderer/lib/motion/` (their JS mirror). The two are asserted against
+each other by `styles/global-css/__tests__/motion-tokens.test.ts`; neither may
+move alone.
+
+### The duration scale
+
+| Token | JS mirror | Value | For |
+|---|---|---|---|
+| `--vex-duration-instant` | `DURATION_INSTANT_MS` | 0ms | the reduced-motion resting value |
+| `--vex-duration-fast` | `DURATION_FAST_MS` | 100ms | micro-feedback under the pointer: hover tints, the resize seam |
+| `--vex-duration-base` | `DURATION_BASE_MS` | 150ms | the default: one component changing state |
+| `--vex-duration-slow` | `DURATION_SLOW_MS` | 240ms | a modal or overlay taking the screen |
+| `--vex-duration-reveal` | `DURATION_REVEAL_MS` | 300ms | a full-surface reveal: the shell column tracks, the BOOK panel |
+
+New motion picks a step; it does not invent a number. The values are the ones
+the app already shipped, so applying a token is a substitution and never a
+retune.
+
+Named exceptions, each with a reason, and the list is closed - anything not
+here is a defect:
+
+- `.vex-expand` (220ms) - the open/close primitive's own budget, one value for
+  both directions, stated at its declaration.
+- `TOAST_EXIT_MS` (200ms) and the notification enter (160ms) - the exit is a
+  JS-owned pair (`lib/notifications/notification-model.ts` removes the node
+  when it elapses), so its duration is a behaviour of the notification model
+  rather than a style choice; retuning it is a notification change, not a
+  motion change.
+- The transcript keyframes (180ms / 260ms / 280ms) and the landing motifs -
+  authored against the landing's own timing and out of scope for the desktop
+  scale.
+
+### The easing family
+
+One family, three curves, no fourth. All three are declared in `tokens.css`
+and mirrored in `lib/motion/index.ts`:
+
+| Token | JS mirror | For |
+|---|---|---|
+| `--vex-ease-standard` | `EASE_STANDARD` | movement BETWEEN two resting states: crossfades, staggers, tints |
+| `--vex-ease-out` | `EASE_OUT` | ENTRANCES: a surface arriving from nothing |
+| `--vex-ease-inout` | `EASE_INOUT` | full-surface reveals |
+
+A hardcoded `cubic-bezier(...)` anywhere else is a defect. It has happened:
+`dialog[open]` carried `cubic-bezier(0.42, 0, 0.58, 1)` under a comment
+claiming it rode `EASE_STANDARD`, which is `[0.4, 0, 0.2, 1]`.
+
+### What motion is for
+
+Three jobs, and nothing else:
+
+1. **State change** - a selection settling, a tree expanding, a panel arriving,
+   a subtree replaced by an error card.
+2. **Spatial continuity** - a surface that moved should be seen to move, so the
+   user does not have to re-find it.
+3. **Attention on an approval, a failure or a diagnostic** - once, on arrival.
+
+What motion is NOT for: decoration, idle loops, and anything that runs while
+the user is not acting. A looping animation needs a live pending state that
+ends it (`vex-badge--shimmer` is the one holder: it stops the moment the
+action is accepted). Motion never delays a committed result, an approval, a
+final error or a security decision.
+
+Prefer `transform` and `opacity`. Animating a size is reserved for the owner
+of that layout (`.vex-expand`, the shell's column tracks); nothing inside a
+panel may animate its own width or height.
+
+### Reduced motion
+
+`styles/global-css/base.css` carries a catch-all that collapses every
+animation and transition to 0.01ms under `prefers-reduced-motion: reduce`, so
+a class-based effect degrades to an instant state change on its own. Two
+obligations remain:
+
+- **State your own collapse.** A motion primitive also writes its own
+  `@media (prefers-reduced-motion: reduce)` rule, so it is complete and
+  provable in isolation rather than only as a consequence of another file.
+- **Take the instant path in JS.** When a JS timer is paired with a CSS
+  duration, the CSS collapsing while the timer still waits means the user who
+  asked for less motion waits for an animation that is not playing. The owner
+  reads `prefersReducedMotion()` / `useReducedMotion()` from `lib/motion/` and
+  settles in the same commit instead (`useCollapseChoreography.ts` is the
+  worked example).
+
+The single documented opt-out from the catch-all is `data-vex-motion-opacity`,
+whose contract is stated at the catch-all in `base.css`: an element may carry
+it only if it defines a reduced-motion rule that removes every transform and
+every movement and leaves at most an opacity change.
+
+### The CSP rule for motion
+
+Motion is expressed as **classes and CSS custom properties**, emitted at build
+time. Not as a `style` attribute parsed from a string, and not as a runtime
+stylesheet. The precise semantics - what CSP does and does not govern, and why
+React's `style={{...}}` prop is on the allowed side - are in the sections
+below; they are the authority, and this line is the summary.
+
+### Cross-file timing invariants
+
+When a JS timer must agree with a CSS duration, exactly one of them is the
+source: a named constant that the CSS mirrors through its token, with a comment
+on BOTH sides naming the pair. A number repeated in two files is a pair waiting
+to drift.
+
+Live pairs:
+
+| JS constant | CSS site | Consequence of drift |
+|---|---|---|
+| `COLLAPSE_SETTLE_MS` (= `DURATION_BASE_MS`) | `.vex-sidebar-fading > *`, shell.css | the rail layout snaps in over a half-faded column |
+| `TOAST_EXIT_MS` | `.vex-notification-toast[data-phase="exiting"]`, overlays.css | a cut-off fade, or an invisible node holding a stack slot |
+
+
 CSP for the renderer is strict: `style-src 'self'` — no `'unsafe-inline'`, no
 inline `<style>` blocks, no inline HTML `style="..."` attributes parsed from
 markup. This is a non-negotiable Phase 1 gate (skill §7, plan §"Phase 1

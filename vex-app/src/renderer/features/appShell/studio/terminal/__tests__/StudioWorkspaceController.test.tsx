@@ -118,7 +118,9 @@ const AUTO_TERMINAL = {
   terminalId: "t-auto",
   pid: 1,
   shellName: "auto-shell",
-  cwd: "/w",
+  // The LABEL the host reports at spawn. Recognizable in a header assertion for
+  // the same reason `shellName` is recognizable in a tab title.
+  displayCwd: "auto-dir",
 } as const;
 
 beforeEach(() => {
@@ -172,6 +174,10 @@ function savedWorkspace(): TerminalWorkspaceRestore {
       terminalId,
       title: terminalId === "t1" ? "vim" : "bash",
       shellName: "bash",
+      // The REATTACH SEED main obtained from the host for each live terminal.
+      // The active pane is `t2`, so its value is the one the header must show
+      // without any property event ever being emitted.
+      displayCwd: terminalId === "t1" ? "vex-app" : "vex-app/src/lib",
       droppedRows: 0,
       reducedRows: 0,
     })),
@@ -238,7 +244,7 @@ async function openTerminals(count: number): Promise<void> {
         terminalId: `t${String(index)}`,
         pid: 100 + index,
         shellName: `shell-${String(index)}`,
-        cwd: "/w",
+        displayCwd: "p1",
       },
     };
     await act(async () => {
@@ -268,6 +274,40 @@ describe("StudioWorkspaceController restore", () => {
     // 75/25, not 50/50. An equalizing restore would silently undo the split the
     // user sized, which is the whole reason the shares are persisted.
     expect(separator.getAttribute("aria-valuenow")).toBe("75");
+  });
+
+  it("shows the reattached terminal's directory WITHOUT waiting for a property event", async () => {
+    // THE DEFECT THIS CLOSES. The panel used to keep its own map of directories
+    // fed only by the property stream, so a workspace that came back from a
+    // reload or a project switch had a header reading "not known yet" until the
+    // user pressed Enter somewhere - for shells that had been running all along
+    // in a directory main could have named. Nothing below emits a property.
+    bridge.savedWorkspace = savedWorkspace();
+    renderController();
+
+    // The restore's active pane is `t2`, seeded with `vex-app/src/lib`.
+    await waitFor(() => {
+      expect(screen.getByLabelText("Working directory: vex-app/src/lib")).toBeTruthy();
+    });
+    expect(screen.queryByLabelText("Working directory not known yet")).toBeNull();
+
+    // And the property stream still supersedes the seed, on the same field.
+    bridge.emitProperty("t2", { property: "displayCwd", value: "vex-app/docs" });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Working directory: vex-app/docs")).toBeTruthy();
+    });
+  });
+
+  it("seeds a NEWLY CREATED terminal's header from the create result", async () => {
+    bridge.savedWorkspace = null;
+    renderController();
+
+    // The auto-opened first terminal. The bridge answers a create the way main
+    // does, with the label the host reported at spawn, and the header shows it
+    // without waiting for the property stream to say the same thing again.
+    await waitFor(() => {
+      expect(screen.getByLabelText("Working directory: auto-dir")).toBeTruthy();
+    });
   });
 
   it("does NOT auto-open over a restored layout", async () => {
@@ -309,7 +349,12 @@ describe("the first terminal of an opened project", () => {
     // Through the SAME path the `+` button uses - one create, for this project,
     // at the same starting geometry - rather than a parallel creation code path
     // that would answer the keep-alive bound and the publication fence twice.
-    expect(bridge.creates).toEqual([{ projectId: "p1", cols: 80, rows: 24 }]);
+    // `shellId` is part of the create contract now: the renderer names the shell
+    // it wants by id, and main re-resolves it. `system_default` is what the
+    // harness catalogue reports as the default.
+    expect(bridge.creates).toEqual([
+      { projectId: "p1", shellId: "system_default", cols: 80, rows: 24 },
+    ]);
     expect([...bridge.livePtys]).toEqual(["t-auto"]);
     // And it is a real terminal, attached like any other.
     await waitFor(() => {
@@ -371,7 +416,7 @@ describe("the first terminal of an opened project", () => {
 
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "t-user", pid: 7, shellName: "user-shell", cwd: "/w" },
+      value: { terminalId: "t-user", pid: 7, shellName: "user-shell", displayCwd: "p1" },
     };
     bridge.deferCreate = true;
     await act(async () => {
@@ -448,7 +493,7 @@ describe("the first terminal of an opened project", () => {
 
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "t-again", pid: 8, shellName: "again-shell", cwd: "/w" },
+      value: { terminalId: "t-again", pid: 8, shellName: "again-shell", displayCwd: "p1" },
     };
     await act(async () => {
       screen.getByRole("button", { name: "Open a terminal" }).click();
@@ -562,7 +607,7 @@ describe("StudioWorkspaceController persistence", () => {
           terminalId: `t${String(index)}`,
           pid: index,
           shellName: `shell-${String(index)}`,
-          cwd: "/w",
+          displayCwd: "p1",
         },
       };
       await act(async () => {
@@ -591,7 +636,7 @@ describe("StudioWorkspaceController persistence", () => {
     });
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "t-flush", pid: 9, shellName: "flush-shell", cwd: "/w" },
+      value: { terminalId: "t-flush", pid: 9, shellName: "flush-shell", displayCwd: "p1" },
     };
     await act(async () => {
       screen.getByRole("button", { name: "New terminal" }).click();
@@ -655,7 +700,7 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
 
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "t-split", pid: 900, shellName: "bash", cwd: "/w" },
+      value: { terminalId: "t-split", pid: 900, shellName: "bash", displayCwd: "p1" },
     };
     bridge.deferCreate = true;
 
@@ -690,7 +735,7 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
 
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "t-p1", pid: 901, shellName: "bash", cwd: "/w" },
+      value: { terminalId: "t-p1", pid: 901, shellName: "bash", displayCwd: "p1" },
     };
     bridge.deferCreate = true;
     await act(async () => {
@@ -703,7 +748,7 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
     // confused for one another in the assertions below.
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "t-p2-auto", pid: 902, shellName: "p2-shell", cwd: "/w" },
+      value: { terminalId: "t-p2-auto", pid: 902, shellName: "p2-shell", displayCwd: "p1" },
     };
     await act(async () => {
       view.rerender(strictTree("p2"));
@@ -740,7 +785,7 @@ describe("StudioWorkspaceController admissibility and the publication fence", ()
     bridge.savedWorkspace = null;
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "t-p2", pid: 902, shellName: "p2-shell", cwd: "/w" },
+      value: { terminalId: "t-p2", pid: 902, shellName: "p2-shell", displayCwd: "p1" },
     };
     await act(async () => {
       view.rerender(strictTree("p2"));
@@ -807,7 +852,7 @@ describe("StudioWorkspaceController terminal disposal", () => {
 
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "t-second", pid: 903, shellName: "bash", cwd: "/w" },
+      value: { terminalId: "t-second", pid: 903, shellName: "bash", displayCwd: "p1" },
     };
     await act(async () => {
       screen.getByRole("button", { name: "Split shell-0 side by side" }).click();

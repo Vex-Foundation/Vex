@@ -22,6 +22,41 @@ import { STUDIO_FILE_TABS_MAX } from "../workspace/types.js";
 import type { WorkspaceCloseFailure } from "../workspace/close-lifecycle.js";
 import type { WorkspaceRefusalReason } from "../workspace/types.js";
 
+/* ------------------------------------------------------------------ *
+ * The panel header
+ * ------------------------------------------------------------------ */
+
+/** The shell picker's accessible name, on the button and on the listbox. */
+export const SHELL_PICKER_LABEL = "Shell for new terminals";
+
+/**
+ * What a shell Vex knows but this machine does not have says, in a row.
+ *
+ * A leading space, because it is APPENDED to the shell's own label to build the
+ * accessible name. The row is still listed and still reachable by keyboard: a
+ * user who cannot find zsh in the picker learns nothing, and a user who finds
+ * it marked as not installed learns exactly what to do.
+ */
+export const SHELL_UNAVAILABLE_SUFFIX = " (not installed)";
+
+/**
+ * The accessible name of the directory line in the panel header.
+ *
+ * The visible text is the bare label (`src/lib`, `vex-core`, `outside
+ * project`), which is what a person reading the header wants; on its own it is
+ * an unexplained fragment to anyone hearing it, so the accessible name says
+ * what the fragment IS. `null` is the state before the shell's first directory
+ * property arrives, which is a real state and not an error.
+ *
+ * The value passed here is always a label. There is no branch that could
+ * receive a filesystem path: the wire does not carry one.
+ */
+export function terminalLocationLabel(displayCwd: string | null): string {
+  return displayCwd === null
+    ? "Working directory not known yet"
+    : `Working directory: ${displayCwd}`;
+}
+
 /** Why nothing happened, in words the person reading it can act on. */
 export const REFUSAL_COPY: Partial<Record<TerminalErrorCode, string>> = {
   limit_project_terminals:
@@ -32,6 +67,8 @@ export const REFUSAL_COPY: Partial<Record<TerminalErrorCode, string>> = {
     "The terminal service is not running and could not be restarted. Restart Vex to try again.",
   project_deleting: "This project is being deleted, so no new terminal can open.",
   create_timeout: "The terminal service did not answer in time. Try again.",
+  launch_shell_unavailable:
+    "That shell is not installed on this machine. Pick another one from the shell menu.",
   snapshot_unavailable: "Vex could not read this project's saved terminal layout.",
 };
 

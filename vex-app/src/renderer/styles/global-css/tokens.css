@@ -373,6 +373,30 @@
   --vex-alias-scrollbar-l1-hover: rgba(255, 255, 255, 0.24);
   --vex-alias-scrollbar-l2: rgba(255, 255, 255, 0.2);
   --vex-alias-scrollbar-l2-hover: rgba(255, 255, 255, 0.3);
+
+  /* MOTION VOCABULARY - the one CSS home for every duration and curve.
+   *
+   * Theme-independent, so it is declared here and NOT repeated in the celeris
+   * block: a theme changes what a surface looks like, never how long it takes
+   * to get there. `lib/motion/index.ts` mirrors every value below as a JS
+   * constant for the call sites that need the number (a timer paired with a
+   * CSS duration, or a Motion transition); the pairing is asserted by
+   * `__tests__/motion-tokens.test.ts`, which fails if either side moves alone.
+   * The binding rules live in `vex-app/MOTION-POLICY.md`.
+   *
+   * The easing family used to be split - `--vex-ease-standard` in
+   * motion-primitives.css, the other two in shell.css - which is how
+   * `dialog[open]` came to hardcode a FOURTH curve under a comment claiming it
+   * rode the family one. Three declarations, one file, no fourth curve. */
+  --vex-duration-instant: 0ms;
+  --vex-duration-fast: 100ms;
+  --vex-duration-base: 150ms;
+  --vex-duration-slow: 240ms;
+  --vex-duration-reveal: 300ms;
+
+  --vex-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --vex-ease-out: cubic-bezier(0.25, 1, 0.5, 1);
+  --vex-ease-inout: cubic-bezier(0.76, 0, 0.24, 1);
 }
 
 /* Alias tier - CELERIS (light). Surfaces stay WHITE: separation comes from

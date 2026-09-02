@@ -395,6 +395,20 @@ export const terminalErrorCodeSchema = z.enum([
   "launch_executable_not_file",
   /** node-pty threw during spawn. */
   "launch_spawn_failed",
+  /**
+   * The requested shell is in the catalogue but is NOT INSTALLED on this
+   * machine, as main re-checked at the moment of the spawn.
+   *
+   * Distinct from `launch_executable_missing`, which is the host reporting that
+   * a binary main told it to run could not be resolved. This one is main's own
+   * answer, and the difference matters to the person reading it: this says
+   * "install fish, or pick another shell", the other says "the shell Vex chose
+   * for you is broken". A shell uninstalled between the moment the picker was
+   * filled and the moment the user pressed the button lands here, which is why
+   * availability is re-checked at spawn and not trusted from the catalogue the
+   * renderer is holding.
+   */
+  "launch_shell_unavailable",
   /** The host did not answer `create` inside `TERMINAL_CREATE_TIMEOUT_MS`. */
   "create_timeout",
   /** The pty host is not running and cannot be started (restart cap reached). */
@@ -451,14 +465,25 @@ export type TerminalOutcome<T> =
  * A property CHANGE. Emitted only when the value actually changed, so a 200 ms
  * title poll that observes the same title emits nothing.
  *
- * `cwd` is TRIGGER-BASED, never polled: polling `/proc/<pid>/cwd` or `lsof`
- * every 200 ms would spawn a subprocess per terminal per tick on macOS. It is
- * read after a probable directory change (an Enter keystroke, debounced), on
- * ready, and on exit.
+ * `displayCwd` is TRIGGER-BASED, never polled: polling `/proc/<pid>/cwd` or
+ * `lsof` every 200 ms would spawn a subprocess per terminal per tick on macOS.
+ * It is read after a probable directory change (an Enter keystroke, debounced),
+ * on ready, and on exit.
+ *
+ * IT IS A LABEL, NOT A PATH, and the name says so on purpose. The host reads a
+ * real absolute path and derives this value before it is emitted
+ * (`pty-host/display-cwd.ts`), so the raw path never reaches the port and never
+ * reaches the renderer: inside the project it is the project-relative path, at
+ * the root it is the project's own label, and anywhere else it is an abstract
+ * phrase that names no directory. Nothing accepts this value BACK - there is no
+ * handler anywhere that takes a `displayCwd` - which is what keeps it text
+ * rather than a filesystem capability leaking out of a privileged process.
  */
 export const terminalPropertySchema = z.discriminatedUnion("property", [
   z.object({ property: z.literal("title"), value: z.string().max(512) }).strict(),
-  z.object({ property: z.literal("cwd"), value: z.string().max(4096) }).strict(),
+  z
+    .object({ property: z.literal("displayCwd"), value: z.string().max(4096) })
+    .strict(),
   z.object({ property: z.literal("pid"), value: z.number().int().nonnegative() }).strict(),
 ]);
 export type TerminalProperty = z.infer<typeof terminalPropertySchema>;
@@ -561,6 +586,85 @@ export const terminalPortEventSchema = z.discriminatedUnion("kind", [
 export type TerminalPortEvent = z.infer<typeof terminalPortEventSchema>;
 
 /* ------------------------------------------------------------------ *
+ * Shell catalogue (main -> renderer, and the renderer's choice back)
+ * ------------------------------------------------------------------ */
+
+/**
+ * THE SHELLS VEX CAN LAUNCH, as a CLOSED SET OF IDENTIFIERS.
+ *
+ * ## Why an enum and not a path
+ *
+ * The renderer must be able to say "open a zsh". It must NOT be able to say
+ * "open `/tmp/x`". Those are the same sentence if the wire carries a string
+ * that main turns into an executable, so the wire carries neither a path nor a
+ * free-form name: it carries a member of this enum, and main holds the mapping
+ * from a member to a binary. A renderer that has been taken over can therefore
+ * ask for a different SHELL and nothing else, which is a capability the threat
+ * model is willing to grant. This is VS Code's own split - the renderer picks a
+ * profile by name, `platform/terminal/node/terminalProfiles.ts` decides what
+ * that name resolves to and whether it exists - reduced to a closed set,
+ * because Vex has no extension API that could contribute a profile and so has
+ * no reason to accept an open one.
+ *
+ * The set is deliberately SMALL and cross-platform-shaped. It is not a promise
+ * that every member exists on the current machine: `available` on
+ * `terminalShellOptionSchema` says that, per machine, and main re-checks it at
+ * spawn rather than trusting a catalogue the renderer has been holding.
+ *
+ * `system_default` is the user's OWN shell (`$SHELL`, or `ComSpec` on Windows)
+ * and is the only member that is always present. It is what a terminal opens
+ * with unless the user picks otherwise, and it is a distinct member rather than
+ * an absent value so that "whatever you normally use" stays sayable after the
+ * user has picked something else once.
+ */
+export const terminalShellIdSchema = z.enum([
+  "system_default",
+  "bash",
+  "zsh",
+  "fish",
+  "sh",
+  "pwsh",
+  "powershell",
+  "cmd",
+]);
+export type TerminalShellId = z.infer<typeof terminalShellIdSchema>;
+
+/**
+ * One row of the picker.
+ *
+ * `available` is main's answer for THIS machine, and it is advisory: the picker
+ * uses it to show a shell as not installed rather than to enforce anything. The
+ * enforcement is main re-resolving the id at spawn time, because a shell can be
+ * uninstalled while the picker is open, and a renderer can send any member of
+ * the enum whether its row said available or not.
+ *
+ * NO PATH. The resolved binary stays in main. The label is text main chose.
+ */
+export const terminalShellOptionSchema = z
+  .object({
+    id: terminalShellIdSchema,
+    label: z.string().min(1).max(64),
+    available: z.boolean(),
+  })
+  .strict();
+export type TerminalShellOption = z.infer<typeof terminalShellOptionSchema>;
+
+/**
+ * What the picker renders, and which row is preselected.
+ *
+ * ONE OWNER decides the default, in main: `defaultShellId` is part of this
+ * answer rather than something the renderer works out from the rows, so there
+ * is no second place where "which shell do we open by default" is decided.
+ */
+export const terminalShellCatalogueSchema = z
+  .object({
+    shells: z.array(terminalShellOptionSchema).min(1).max(16),
+    defaultShellId: terminalShellIdSchema,
+  })
+  .strict();
+export type TerminalShellCatalogue = z.infer<typeof terminalShellCatalogueSchema>;
+
+/* ------------------------------------------------------------------ *
  * Control plane: main <-> host, over the utility process parent port
  * ------------------------------------------------------------------ */
 
@@ -569,7 +673,26 @@ export const terminalLaunchSchema = z
   .object({
     executable: z.string().min(1).max(4096),
     args: z.array(z.string().max(4096)).max(64),
+    /**
+     * Where the shell starts, and BY CONTRACT the project's directory: main's
+     * `resolveProjectLocation` is the only producer, and it returns
+     * `resolveProjectDirectory`'s answer or nothing. The host relies on that
+     * equality to derive `displayCwd` relative to this value, which is why it
+     * is stated here rather than duplicated as a second `projectRoot` field two
+     * writers could let drift apart.
+     */
     cwd: z.string().min(1).max(4096),
+    /**
+     * What this project is CALLED on screen, decided by main.
+     *
+     * The host renders it when the shell sits at the project root, so the
+     * header reads `vex-core` rather than `.`. The host is not allowed to
+     * invent it from the directory's basename: the name a project is displayed
+     * under is main's authority (it comes from the projects table), and a host
+     * that derived it from the path would be a second, disagreeing source for
+     * the same fact.
+     */
+    projectLabel: z.string().min(1).max(128),
     cols: z.number().int().min(1).max(1000),
     rows: z.number().int().min(1).max(1000),
     /**
@@ -704,10 +827,46 @@ export const terminalHostRequestSchema = z.discriminatedUnion("kind", [
       kind: z.literal("revive"),
       projectId: z.string().min(1).max(64),
       windowId: terminalWindowIdSchema,
+      /**
+       * The project's on-screen name, for the same reason `terminalLaunchSchema`
+       * carries one: a revived terminal's `displayCwd` is derived against the
+       * project it belongs to, and the SNAPSHOT deliberately does not hold the
+       * label. A snapshot that carried it would be a stale copy of a name main
+       * can rename between sessions, and the host would render the old one.
+       */
+      projectLabel: z.string().min(1).max(128),
       assignments: z
         .array(terminalReviveAssignmentSchema)
         .min(1)
         .max(TERMINALS_PER_PROJECT_MAX),
+    })
+    .strict(),
+  /**
+   * ASK THE HOST WHERE THESE SHELLS ARE NOW.
+   *
+   * THE HOST IS THE ONLY AUTHORITY for a live terminal's `displayCwd`. It
+   * watches the pty and derives the label on every directory change; main never
+   * observes the property stream at all, because properties travel host -> port
+   * -> preload -> renderer and main is not on that path.
+   *
+   * That is why a reattach has to ask. A renderer reload or a project
+   * switch-back is answered from main's LIVE records, and those records are
+   * written when a terminal is admitted - so a field frozen there would show a
+   * `cd`-ed shell's SPAWN directory as though it were current. Reading the
+   * value from the host at answer time is the only way the restore's seed can
+   * be true at the moment it is sent. (The revive path needs no request: the
+   * host has just spawned those ptys and reports their labels in the revive
+   * result itself.)
+   *
+   * READ-ONLY and IDEMPOTENT. It changes nothing, holds nothing and takes no
+   * lease. Ids the host does not hold are OMITTED from the answer rather than
+   * refused: a terminal that exited between main's record and this question is
+   * an unknown directory, not a failed open.
+   */
+  z
+    .object({
+      kind: z.literal("describeTerminals"),
+      terminalIds: z.array(terminalIdSchema).max(TERMINALS_PER_PROJECT_MAX),
     })
     .strict(),
   /**
@@ -819,6 +978,13 @@ export const terminalSnapshotEntrySchema = z
      * have been spawnable through the ordinary path either. The environment is
      * NEVER persisted (see below) and is recomputed from the host's scrubbed
      * base every time.
+     *
+     * `cwdAtSpawn` is a RAW ABSOLUTE PATH and stays one. This is a DURABLE
+     * format read and written only by the pty host, in the user's own config
+     * directory, to respawn a shell where it was - a use that needs the real
+     * path and cannot be served by a label. It is not a wire field: no schema
+     * that reaches the renderer carries it, and the renderer-facing value is
+     * `displayCwd`, derived at the moment the property is emitted.
      */
     executable: z.string().min(1).max(4096),
     args: z.array(z.string().max(4096)).max(64),
@@ -1018,7 +1184,8 @@ export const terminalReviveResultSchema = z
             to: terminalIdSchema,
             pid: z.number().int().nonnegative(),
             shellName: z.string().max(256),
-            cwd: z.string().max(4096),
+            /** The LABEL, on the same contract as `terminalPropertySchema`'s. */
+            displayCwd: z.string().max(4096),
             title: z.string().max(512),
             droppedRows: z.number().int().nonnegative(),
             reducedRows: z.number().int().nonnegative(),
@@ -1054,6 +1221,32 @@ export const terminalReviveResultSchema = z
 export type TerminalReviveResult = z.infer<typeof terminalReviveResultSchema>;
 
 /**
+ * What `describeTerminals` answered: the CURRENT label of every requested
+ * terminal the host still holds.
+ *
+ * PARTIAL BY CONSTRUCTION. A requested id the host does not hold is simply
+ * absent, which is how "this terminal is gone, or was never here" is said
+ * without inventing a directory for it. Main turns an absence into the restore
+ * row's `null`.
+ */
+export const terminalDescribeResultSchema = z
+  .object({
+    terminals: z
+      .array(
+        z
+          .object({
+            terminalId: terminalIdSchema,
+            /** The LABEL, on the same contract as `terminalPropertySchema`'s. */
+            displayCwd: z.string().max(4096),
+          })
+          .strict(),
+      )
+      .max(TERMINALS_PER_PROJECT_MAX),
+  })
+  .strict();
+export type TerminalDescribeResult = z.infer<typeof terminalDescribeResultSchema>;
+
+/**
  * What main hands the renderer when a workspace is opened.
  *
  * The SERIALIZED BUFFERS ARE NOT HERE. They stay in the pty host, which wrote
@@ -1073,6 +1266,24 @@ export const terminalWorkspaceRestoreSchema = z
             terminalId: terminalIdSchema,
             title: z.string().max(512),
             shellName: z.string().max(256),
+            /**
+             * WHERE THIS SHELL IS NOW, on the same contract and the same bound
+             * as `terminalPropertySchema`'s `displayCwd`.
+             *
+             * `null` is the HONEST UNKNOWN and is a real state, not an error:
+             * the host is the only process that knows a live shell's directory
+             * (it watches the pty, main does not), so a terminal the host could
+             * not describe at this instant - one whose record main holds while
+             * the host has already lost it, or a whole answer that failed -
+             * arrives with no value and the panel keeps saying the directory is
+             * not known yet. Seeding a remembered spawn directory instead would
+             * put a `cd`-ed shell's ORIGINAL path on screen as if it were
+             * current, which is confidently wrong rather than honestly silent.
+             *
+             * Seeded ONCE, at restore, and superseded by the first `displayCwd`
+             * property event the reattached terminal emits.
+             */
+            displayCwd: z.string().max(4096).nullable(),
             droppedRows: z.number().int().nonnegative(),
             reducedRows: z.number().int().nonnegative(),
           })
@@ -1092,6 +1303,17 @@ export type TerminalWorkspaceRestore = z.infer<typeof terminalWorkspaceRestoreSc
 export const terminalCreateInputSchema = z
   .object({
     projectId: z.string().min(1).max(64),
+    /**
+     * WHICH SHELL, as an id from the closed catalogue.
+     *
+     * REQUIRED, and `system_default` is how a caller says "the user's own
+     * shell". An optional field would put the default in this schema and again
+     * in whatever handler filled it in, which is two owners for one decision;
+     * main's catalogue names the default and the renderer sends what it was
+     * given. Anything outside the enum is refused by this schema at the preload
+     * and main boundaries before a handler ever sees it.
+     */
+    shellId: terminalShellIdSchema,
     cols: z.number().int().min(1).max(1000),
     rows: z.number().int().min(1).max(1000),
   })
@@ -1112,7 +1334,8 @@ export const terminalCreateValueSchema = z
     terminalId: terminalIdSchema,
     pid: z.number().int().nonnegative(),
     shellName: z.string().max(256),
-    cwd: z.string().max(4096),
+    /** The LABEL, on the same contract as `terminalPropertySchema`'s. */
+    displayCwd: z.string().max(4096),
   })
   .strict();
 export type TerminalCreateValue = z.infer<typeof terminalCreateValueSchema>;

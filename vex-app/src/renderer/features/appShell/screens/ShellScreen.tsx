@@ -32,7 +32,7 @@ import { motion, type TargetAndTransition } from "motion/react";
 import { IconClose } from "../../../components/icons/index.js";
 import { Tooltip } from "../../../components/ui/tooltip.js";
 import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
-import { EASE_STANDARD, SPRING_PANEL } from "../../../lib/motion.js";
+import { EASE_STANDARD, SPRING_PANEL } from "../../../lib/motion/index.js";
 
 /** cult-ui ExpandableScreen triggerRadius — the collapsed pill shape. */
 const TRIGGER_RADIUS_PX = 100;

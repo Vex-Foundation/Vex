@@ -47,7 +47,7 @@ function twoTabs(activeTabId: string): WorkspaceState {
         tabId: "g1",
         title: "bash",
         orientation: "horizontal",
-        panes: [{ paneId: "g1:0", terminalId: "t1", relativeSize: 1 }],
+        panes: [{ paneId: "g1:0", terminalId: "t1", relativeSize: 1, displayCwd: null }],
         activePaneId: "g1:0",
       },
       {
@@ -55,7 +55,7 @@ function twoTabs(activeTabId: string): WorkspaceState {
         tabId: "g2",
         title: "zsh",
         orientation: "horizontal",
-        panes: [{ paneId: "g2:0", terminalId: "t2", relativeSize: 1 }],
+        panes: [{ paneId: "g2:0", terminalId: "t2", relativeSize: 1, displayCwd: null }],
         activePaneId: "g2:0",
       },
     ],
@@ -73,6 +73,12 @@ const noop = (): void => undefined;
  * with whether the panel is the visible one. The viewer's own behaviour is
  * `viewer/__tests__/FileViewer.test.tsx`.
  */
+/** A minimal catalogue: the shell that always exists, plus one that does not. */
+const SHELLS = [
+  { id: "system_default", label: "Default shell", available: true },
+  { id: "fish", label: "fish", available: false },
+] as const;
+
 const renderFileTabCalls: { tabId: string; isActive: boolean }[] = [];
 
 function renderFileTabStub(tab: WorkspaceFileTab, isActive: boolean): JSX.Element {
@@ -108,7 +114,11 @@ function renderTabs(state: WorkspaceState, overrides: Record<string, unknown> = 
       onActivatePane={noop}
       onClosePane={noop}
       onTitleChange={noop}
+      onDisplayCwdChange={noop}
       onPaneExit={noop}
+      shellId="system_default"
+      shells={SHELLS}
+      onSelectShell={noop}
       renderFileTab={renderFileTabStub}
       {...overrides}
     />,
@@ -147,8 +157,12 @@ describe("TerminalTabs keep-alive", () => {
         onActivatePane={noop}
         onClosePane={noop}
         onTitleChange={noop}
+        onDisplayCwdChange={noop}
         onPaneExit={noop}
-        renderFileTab={renderFileTabStub}
+        shellId="system_default"
+      shells={SHELLS}
+      onSelectShell={noop}
+      renderFileTab={renderFileTabStub}
       />,
     );
 
@@ -177,8 +191,12 @@ describe("TerminalTabs keep-alive", () => {
         onActivatePane={noop}
         onClosePane={noop}
         onTitleChange={noop}
+        onDisplayCwdChange={noop}
         onPaneExit={noop}
-        renderFileTab={renderFileTabStub}
+        shellId="system_default"
+      shells={SHELLS}
+      onSelectShell={noop}
+      renderFileTab={renderFileTabStub}
       />,
     );
 
@@ -252,8 +270,8 @@ describe("TerminalTabs keyboard and controls", () => {
           title: "bash",
           orientation: "vertical",
           panes: [
-            { paneId: "g1:0", terminalId: "t1", relativeSize: 0.6 },
-            { paneId: "g1:1", terminalId: "t3", relativeSize: 0.4 },
+            { paneId: "g1:0", terminalId: "t1", relativeSize: 0.6, displayCwd: null },
+            { paneId: "g1:1", terminalId: "t3", relativeSize: 0.4, displayCwd: null },
           ],
           activePaneId: "g1:0",
         },
@@ -376,5 +394,68 @@ describe("TerminalTabs with no tabs", () => {
     expect(
       screen.queryByText("No terminals or files are open in this project."),
     ).toBeNull();
+  });
+});
+
+/**
+ * ONE OWNER for a terminal's directory.
+ *
+ * `TerminalPaneGroup` used to hold a second store of this fact - a
+ * `useState<Map<terminalId, displayCwd>>` fed only by `onDisplayCwdChange` -
+ * beside the workspace model that holds the rest of a pane. It was not a
+ * duplicate of the model, which is exactly why it was a defect: the model knew
+ * nothing, so a reattached terminal had no entry in the map either, and its
+ * header read "not known yet" for a shell that had been sitting in a known
+ * directory the whole time.
+ *
+ * The behavioural half of this is asserted end to end in the controller suite
+ * ("shows the reattached terminal's directory WITHOUT waiting for a property
+ * event"). This half is STRUCTURAL, because a behavioural test cannot see a
+ * second store being reintroduced beside a working one - it would keep passing
+ * while the two copies drifted.
+ */
+describe("the panel header reads ONE directory field", () => {
+  it("keeps no local state in TerminalPaneGroup", () => {
+    // Read the way `shell-design-guard` reads sources: Vite inlines the file at
+    // build time, so the assertion needs no filesystem access in jsdom.
+    const sources = import.meta.glob<string>("../TerminalPaneGroup.tsx", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    });
+    const source = Object.values(sources)[0];
+    if (source === undefined) throw new Error("TerminalPaneGroup.tsx was not found");
+    // The component is a pure projection of `group` plus its callbacks. Any
+    // hook that remembers something across renders is a second source of truth
+    // for a pane's own fields.
+    expect(source).not.toMatch(/\buseState\b/);
+    expect(source).not.toMatch(/\buseReducer\b/);
+    expect(source).not.toMatch(/\buseRef\b/);
+  });
+
+  it("renders the directory the PANE carries, with no property event", () => {
+    const state = twoTabs("g1");
+    const first = state.tabs[0];
+    if (first?.kind !== "terminalGroup") throw new Error("expected a group");
+    renderTabs({
+      ...state,
+      tabs: [
+        {
+          ...first,
+          panes: first.panes.map((pane) => ({ ...pane, displayCwd: "vex-app/src/lib" })),
+        },
+        ...state.tabs.slice(1),
+      ],
+    });
+
+    expect(screen.getByLabelText("Working directory: vex-app/src/lib")).toBeTruthy();
+  });
+
+  it("names the unknown when the pane carries none", () => {
+    renderTabs(twoTabs("g1"));
+    // BOTH panels are mounted - the inactive one is hidden, never unmounted -
+    // so both headers answer, and both must name the unknown rather than
+    // rendering an empty control.
+    expect(screen.getAllByLabelText("Working directory not known yet")).toHaveLength(2);
   });
 });

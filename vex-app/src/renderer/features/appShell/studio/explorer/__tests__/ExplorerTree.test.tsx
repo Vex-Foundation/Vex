@@ -598,14 +598,29 @@ describe("notices", () => {
 });
 
 describe("motion", () => {
-  it("guards the twistie transition behind motion-reduce", async () => {
+  it("rotates the twistie through the shared motion primitive", async () => {
     standardTree();
     await mountTree();
 
     const twistie = rowFor("src").querySelector("svg");
     expect(twistie).not.toBeNull();
-    // The one animated property in this feature. A user who asked the OS for
-    // less motion must not get a rotation on every expand.
-    expect(twistie?.getAttribute("class") ?? "").toContain("motion-reduce:transition-none");
+    // CONTRACT CHANGE (B5.2 motion pass). The guard used to be a per-call-site
+    // `motion-reduce:transition-none` utility next to a hardcoded
+    // `duration-150`. Both moved into `.vex-twistie`, which states the duration
+    // as `--vex-duration-base` and its own reduced-motion collapse ONCE; the
+    // promise to the user is unchanged - a user who asked the OS for less
+    // motion gets no rotation on expand - and the CSS half of it is asserted by
+    // styles/global-css/__tests__/motion-tokens.test.ts.
+    expect(twistie?.getAttribute("class") ?? "").toContain("vex-twistie");
+    expect(twistie?.getAttribute("class") ?? "").not.toContain("duration-150");
+  });
+
+  it("settles the row fill through the shared tint primitive", async () => {
+    standardTree();
+    await mountTree();
+
+    // Selection and hover share one fill, so the row - not the glyph - is what
+    // carries the colour transition.
+    expect(rowFor("src").getAttribute("class") ?? "").toContain("vex-tint");
   });
 });

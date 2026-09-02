@@ -4,30 +4,29 @@
  * Two callers in this feature read a file whose path was derived from a
  * directory a user, their editor and every tool they run can write to:
  * `read.ts` reads a file for the viewer, and `excludes.ts` reads a
- * `.gitignore`. Both face the same two hazards, and this module owns the
- * answer to both so there is one copy of it rather than two that drift.
+ * `.gitignore`. Both face the same hazards. The SYMLINK half of the answer
+ * lives in `no-follow-open.ts`, which is the single owner of "this handle is
+ * the regular file that path named"; what this module owns is the BOUND.
  *
- *  - A SYMLINK. The file may be a link pointing anywhere - `~/.ssh/id_rsa`, a
- *    device node, a FIFO. `O_NOFOLLOW` on the open makes that `ELOOP` instead
- *    of a read outside the project, on the one component a containment walk
- *    cannot hold still between its last `lstat` and this open.
- *  - A FILE THAT NEVER ANSWERS. `O_NOFOLLOW` refuses a link to a FIFO, but a
- *    `.gitignore` that IS a FIFO is not a link and passes it. Opening a FIFO
- *    with no writer BLOCKS in `open(2)` forever, and because `fs.promises.open`
- *    runs on the libuv threadpool that is one of four default pool threads
- *    parked for the life of the process; four such files starve every other
- *    filesystem operation Vex makes. Measured on Linux 6.18 with node's own
- *    `open`: the flags below without `O_NONBLOCK` never returned (killed at
- *    10 s), with it the open returned in 1 ms. So the open is NON-BLOCKING and
- *    the handle is `fstat`ed BEFORE a byte is read: anything that is not a
- *    REGULAR FILE is refused without reading it. `O_NONBLOCK` is inert on a
- *    regular file, which is the only kind this reader will go on to read.
- *  - AN UNBOUNDED LENGTH. `readFile` reads the whole file into memory and THEN
- *    lets the caller compare its length to a limit, which is a limit that has
- *    already been exceeded by the time it is checked. A link to a huge file or
- *    to `/dev/zero` is unbounded main-process memory. So the bound is enforced
- *    on bytes actually read from the handle: at most `maxBytes + 1` are read,
- *    and the arrival of that one extra byte is the PROOF the file is over the
+ *  - A SYMLINK, or a file swapped for another between the walk and the open.
+ *    `openWithoutFollowing` refuses a standing link before opening and refuses
+ *    a link or an identity change after opening, before a byte is read. This
+ *    module never sees a handle that failed either check.
+ *  - A FILE THAT NEVER ANSWERS. A `.gitignore` that IS a FIFO is not a link.
+ *    Opening a FIFO with no writer BLOCKS in `open(2)` forever, and because
+ *    `fs.promises.open` runs on the libuv threadpool that is one of four
+ *    default pool threads parked for the life of the process; four such files
+ *    starve every other filesystem operation Vex makes. Measured on Linux 6.18
+ *    with node's own `open`: the flags without `O_NONBLOCK` never returned
+ *    (killed at 10 s), with it the open returned in 1 ms. `openWithoutFollowing`
+ *    keeps that flag and refuses everything that is not a regular file.
+ *  - AN UNBOUNDED LENGTH, which is this module's own responsibility.
+ *    `readFile` reads the whole file into memory and THEN lets the caller
+ *    compare its length to a limit, which is a limit that has already been
+ *    exceeded by the time it is checked. A link to a huge file or to
+ *    `/dev/zero` is unbounded main-process memory. So the bound is enforced on
+ *    bytes actually read from the handle: at most `maxBytes + 1` are read, and
+ *    the arrival of that one extra byte is the PROOF the file is over the
  *    bound, established without ever holding the rest of it.
  *
  * `read.ts` keeps its own body: the viewer's read interleaves a binary sniff
@@ -38,18 +37,7 @@
  * not exist twice.
  */
 
-import { constants as fsConstants } from "node:fs";
-import { open } from "node:fs/promises";
-
-/**
- * Read-only, never through a link on the final component, and never blocking.
- *
- * `O_NONBLOCK` is what makes a FIFO with no writer an instant open instead of a
- * parked threadpool thread; `?? 0` degrades on a platform that does not define
- * a flag, exactly as the `O_NOFOLLOW` note in `read.ts` describes.
- */
-const BOUNDED_READ_FLAGS =
-  fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0);
+import { type NoFollowFs, nodeNoFollowFs, openWithoutFollowing } from "./no-follow-open.js";
 
 /**
  * What a bounded read turned out to be.
@@ -59,10 +47,16 @@ const BOUNDED_READ_FLAGS =
  * same answer twice: a rule set you may not read is a rule set that does not
  * apply, and inventing a third outcome would ask every caller to decide a
  * question with one safe answer.
+ *
+ * `changed` is NOT folded into `absent`, because it is not the same fact: the
+ * file was there and was replaced while it was being opened. It gets its own
+ * member so the caller can say so once rather than silently dropping a rule set
+ * that does exist.
  */
 export type BoundedTextRead =
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "absent" }
+  | { readonly kind: "changed" }
   | { readonly kind: "oversize" }
   | { readonly kind: "error"; readonly cause: unknown };
 
@@ -72,33 +66,32 @@ export type BoundedTextRead =
  * Decoding is LENIENT: this is used for advisory rule files, nothing is written
  * back, and a replaced byte can only change which rows a tree hides. A caller
  * that needs the bytes to be honest UTF-8 owns that decision itself.
+ *
+ * `fs` is the injectable filesystem seam owned by `no-follow-open.ts`; only
+ * tests pass one, and only to make a race deterministic.
  */
 export async function readTextFileBounded(
   absolutePath: string,
   maxBytes: number,
+  fs: NoFollowFs = nodeNoFollowFs,
 ): Promise<BoundedTextRead> {
-  let handle;
-  try {
-    handle = await open(absolutePath, BOUNDED_READ_FLAGS);
-  } catch (cause) {
-    const code = typeof cause === "object" && cause !== null
-      ? (cause as { code?: unknown }).code
-      : undefined;
-    // ENOENT: not there. ELOOP: there, and a link `O_NOFOLLOW` refused.
-    if (code === "ENOENT" || code === "ELOOP") return { kind: "absent" };
-    return { kind: "error", cause };
+  const opened = await openWithoutFollowing(absolutePath, fs);
+  if (!opened.ok) {
+    // A link, a FIFO and an absent file are the same answer for a rule set:
+    // one this process will not read is one that does not apply.
+    if (
+      opened.reason === "not_found"
+      || opened.reason === "symlinked_path"
+      || opened.reason === "not_a_file"
+    ) {
+      return { kind: "absent" };
+    }
+    if (opened.reason === "path_changed") return { kind: "changed" };
+    return { kind: "error", cause: opened.cause };
   }
 
+  const handle = opened.handle;
   try {
-    // WHAT DID THE OPEN ACTUALLY GET? The flags proved it is not a link and
-    // that the open would not park, but they do not prove it is a file. A FIFO,
-    // a device or a socket named `.gitignore` is not a rule set, and reading
-    // one is either meaningless or unbounded. `absent` is the same answer this
-    // module already gives a link, for the same reason: a rule set this process
-    // will not read is a rule set that does not apply.
-    const stats = await handle.stat();
-    if (!stats.isFile()) return { kind: "absent" };
-
     // ONE BYTE PAST THE BOUND, deliberately: its arrival is what proves the
     // file is over the limit, measured on the handle rather than inferred from
     // a size somebody else reported.

@@ -47,7 +47,7 @@ let registry: TerminalRegistry;
  * `a0` so it sorts ahead of the `a1`, `a2`... these cases open deliberately,
  * which keeps the ordered `ops` and `kills` assertions readable.
  */
-const AUTO_TERMINAL = { terminalId: "a0", pid: 0, shellName: "a0", cwd: "/w" } as const;
+const AUTO_TERMINAL = { terminalId: "a0", pid: 0, shellName: "a0", displayCwd: "p1" } as const;
 
 beforeEach(() => {
   installMatchMedia();
@@ -101,7 +101,7 @@ async function openTerminals(
   for (const [index, terminalId] of terminalIds.entries()) {
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId, pid: 100 + index, shellName: terminalId, cwd: "/w" },
+      value: { terminalId, pid: 100 + index, shellName: terminalId, displayCwd: "p1" },
     };
     await act(async () => {
       within(view.container)
@@ -142,7 +142,7 @@ describe("closing a workspace ENDS its shells", () => {
     await settleRestore();
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "b0", pid: 10, shellName: "b0", cwd: "/w" },
+      value: { terminalId: "b0", pid: 10, shellName: "b0", displayCwd: "p1" },
     };
     const second = renderController("p2");
     await settleRestore();
@@ -187,7 +187,7 @@ describe("closing a workspace ENDS its shells", () => {
 
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "a1", pid: 1, shellName: "a1", cwd: "/w" },
+      value: { terminalId: "a1", pid: 1, shellName: "a1", displayCwd: "p1" },
     };
     await act(async () => {
       document
@@ -227,7 +227,7 @@ describe("the close ORDERING: commit the buffers, THEN kill", () => {
     for (const [index, terminalId] of ["a1", "a2"].entries()) {
       bridge.nextCreate = {
         ok: true,
-        value: { terminalId, pid: index, shellName: terminalId, cwd: "/w" },
+        value: { terminalId, pid: index, shellName: terminalId, displayCwd: "p1" },
       };
       await act(async () => {
         within(view.container)
@@ -311,6 +311,7 @@ function savedWorkspace(): TerminalWorkspaceRestore {
       terminalId,
       title: terminalId,
       shellName: "bash",
+      displayCwd: null,
       droppedRows: 0,
       reducedRows: 0,
     })),
@@ -455,7 +456,7 @@ describe("the close's commit is the LAST one for its workspace", () => {
     });
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "a1", pid: 1, shellName: "a1", cwd: "/w" },
+      value: { terminalId: "a1", pid: 1, shellName: "a1", displayCwd: "p1" },
     };
     await act(async () => {
       within(view.container).getByRole("button", { name: "New terminal" }).click();
@@ -546,7 +547,7 @@ describe("a close that failed AFTER the commit never persists again", () => {
     for (const [index, terminalId] of ["a1", "a2"].entries()) {
       bridge.nextCreate = {
         ok: true,
-        value: { terminalId, pid: index, shellName: terminalId, cwd: "/w" },
+        value: { terminalId, pid: index, shellName: terminalId, displayCwd: "p1" },
       };
       await act(async () => {
         within(view.container).getByRole("button", { name: "New terminal" }).click();
@@ -717,7 +718,7 @@ describe("the LATE-CREATE fence: nothing escapes the kill set", () => {
     bridge.deferCreate = true;
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "late", pid: 9, shellName: "late", cwd: "/w" },
+      value: { terminalId: "late", pid: 9, shellName: "late", displayCwd: "p1" },
     };
     await act(async () => {
       within(view.container).getByRole("button", { name: "New terminal" }).click();
@@ -771,7 +772,7 @@ describe("the LATE-CREATE fence: nothing escapes the kill set", () => {
     bridge.deferCreate = true;
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "late", pid: 9, shellName: "late", cwd: "/w" },
+      value: { terminalId: "late", pid: 9, shellName: "late", displayCwd: "p1" },
     };
     await act(async () => {
       within(view.container).getByRole("button", { name: "New terminal" }).click();
@@ -804,7 +805,7 @@ describe("the LATE-CREATE fence: nothing escapes the kill set", () => {
     bridge.deferCreate = true;
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "late", pid: 9, shellName: "late", cwd: "/w" },
+      value: { terminalId: "late", pid: 9, shellName: "late", displayCwd: "p1" },
     };
     await act(async () => {
       within(view.container).getByRole("button", { name: "New terminal" }).click();
@@ -930,7 +931,7 @@ describe("the DELETION latch", () => {
     });
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "a1", pid: 1, shellName: "a1", cwd: "/w" },
+      value: { terminalId: "a1", pid: 1, shellName: "a1", displayCwd: "p1" },
     };
     await act(async () => {
       within(view.container).getByRole("button", { name: "New terminal" }).click();

@@ -353,6 +353,17 @@ export const filesErrorCodeSchema = z.enum([
   "outside_project",
   /** A component of the path is a symbolic link. Vex does not follow it. */
   "symlinked_path",
+  /**
+   * The path stopped naming the file that was opened, and the read was
+   * abandoned before a byte was taken from it.
+   *
+   * Distinct from `symlinked_path` on purpose: main proves a handle's identity
+   * against the path's after opening it, and a mismatch says the file was
+   * REPLACED, not that a link was followed. Labelling every mismatch a symlink
+   * would report evidence that was never collected. A second attempt can
+   * legitimately answer differently.
+   */
+  "path_changed",
   /** A listing was asked of something that is not a directory. */
   "not_a_directory",
   /** A read was asked of something that is not a regular file. */

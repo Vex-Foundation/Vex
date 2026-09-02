@@ -497,10 +497,22 @@ function StudioProjectWorkspace({
     // `hidden`, never unmounted, for as long as this project is kept alive.
     // `min-h-0` on the shown branch so the controller's own flex column can
     // scroll rather than push the frame.
+    //
+    // THE WORKSPACE SWITCH IS AN UN-HIDE, not a mount, so the entrance is a
+    // CSS animation rather than anything React drives: a keyframe restarts
+    // when its element leaves `display: none`, which means `vex-surface-enter`
+    // plays on every switch TO this project and stays inert across the renders
+    // in between. Nothing here may animate a size - the controller below owns
+    // terminal geometry and reads it on resize - so the primitive is opacity
+    // plus three pixels of rise and nothing else. For the 150ms it runs, the
+    // transform makes this element the containing block of any `position:
+    // fixed` descendant; the app's fixed chrome (dialogs on the native top
+    // layer, the notification stack) is mounted outside this subtree, so
+    // nothing inside a workspace depends on that.
     <div
       hidden={!active}
       data-vex-studio-workspace={projectId}
-      className={cn("min-h-0 flex-1", !active && "hidden")}
+      className={cn("min-h-0 flex-1", active ? "vex-surface-enter" : "hidden")}
     >
       {/* PER-WORKSPACE CONTAINMENT.
         *

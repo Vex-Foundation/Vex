@@ -99,12 +99,31 @@ const PTY_SINGLE_READ_CEILING_CHARS = 65_536;
  * defect actually looks like - a resume that never happens, an ack path that
  * stopped - is SILENCE, and silence is load-independent.
  *
- * MEASURED with a one-second sampler over the 48 MB flood while eight spinning
- * cores competed with the suite: the longest interval between two observed
- * increases of the delivered character count was 50 ms. Thirty seconds is that
- * with three orders of magnitude of headroom.
+ * MEASURED with a one-second sampler over the flood - 48 MB at the time, at the
+ * 95-character marker this suite used before ConPTY's row width narrowed it to
+ * 36 MB - while eight spinning cores competed with the suite: the longest
+ * interval between two observed increases of the delivered character count was
+ * 50 ms. Thirty seconds is that with three orders of magnitude of headroom.
  */
 const FLOW_STALL_MS = 30_000;
+
+/**
+ * The geometry of the flood producer: the pty's width, and a marker that fits
+ * inside one row of it.
+ *
+ * The relationship is the point, which is why they are one pair. A pty on Unix
+ * hands the host the producer's bytes; ConPTY hands it conhost's RENDERING of a
+ * console screen buffer this many columns wide, and a marker wider than the row
+ * arrives there split across two rows. Keeping the marker under the width makes
+ * "every line arrived" a claim about the host on both platforms rather than a
+ * claim about the emulator's line wrapping. See the flood test for the Windows
+ * measurement that forced this.
+ *
+ * The volume is unchanged in kind: 500 000 lines is 36 MB through the pause and
+ * resume cycle, hundreds of times the high watermark.
+ */
+const FLOOD_COLS = 80;
+const FLOOD_MARKER_CHARS = 70;
 
 const WINDOW = "w1";
 const PROJECT = "p1";
@@ -167,6 +186,7 @@ async function createTerminal(
       executable: "sh",
       args: [...(options.args ?? [])],
       cwd: workDir,
+      projectLabel: "proj",
       cols: options.cols ?? 80,
       rows: options.rows ?? 24,
       // No overlay: the scrubbed base environment is what production gives a
@@ -505,7 +525,16 @@ afterEach(async () => {
   await fs.rm(snapshotDir, { recursive: true, force: true });
   await fs.rm(workDir, { recursive: true, force: true });
   expect(survivors).toEqual([]);
-});
+  // THE HOOK OUTLIVES ITS OWN DETECTOR, deliberately. `detectSurvivors` spends
+  // up to 10 s waiting for the shells to go, which is exactly vitest's default
+  // hook budget, so a leak used to be reported as "Hook timed out in 10000ms"
+  // with no pid in it - the shape the Windows lane reported (run 33602264566).
+  // The shutdown above spends real time of its own there too: killing a pty
+  // while conhost is still flushing is a documented Windows hang risk
+  // (microsoft/vscode#71966, mitigated in VS Code by delaying the kill after
+  // the last data event). The budget below leaves both room to finish so the
+  // failure that surfaces is the assertion above, naming the pids that leaked.
+}, 60_000);
 
 /* ------------------------------------------------------------------ *
  * (a) Flow control against a real producer
@@ -526,14 +555,14 @@ describe("flow control against a real pty", () => {
    * MEASURED, with `TerminalProcess.handlePtyData` instrumented to total every
    * character the HOST was ever handed, eight spinning cores competing with the
    * suite: on 5 runs out of 12 node-pty reported `exit` with that total already
-   * 11 095 to 12 836 characters SHORT of the 48 500 016 the shell wrote, and no
-   * further data event ever arrived. The last lines, sentinel included, were
-   * gone before any Vex code could see them. The same loss reproduced with the
-   * host's watermark pause disabled outright (2 of 5 runs), which is what rules
-   * our flow control out as the cause: it is the kernel discarding what is
-   * still buffered on the master when the last slave fd closes, surfacing
-   * through node-pty's EIO close path (`unixTerminal.js`, `_socket.on('error')`
-   * -> `close` -> `exit`).
+   * 11 095 to 12 836 characters SHORT of the 48 500 016 the shell wrote at the
+   * 95-character marker of the time, and no further data event ever arrived.
+   * The last lines, sentinel included, were gone before any Vex code could see
+   * them. The same loss reproduced with the host's watermark pause disabled
+   * outright (2 of 5 runs), which is what rules our flow control out as the
+   * cause: it is the kernel discarding what is still buffered on the master
+   * when the last slave fd closes, surfacing through node-pty's EIO close path
+   * (`unixTerminal.js`, `_socket.on('error')` -> `close` -> `exit`).
    *
    * `read _hold` leaves the shell blocked on the pty after the flood, so the
    * stream under test never crosses that exit boundary and every assertion
@@ -558,10 +587,34 @@ describe("flow control against a real pty", () => {
       // enough to overrun an unpaused consumer immediately. A shell `while`
       // loop is neither - measured at over 120 s for this volume, against
       // 459 ms for `yes`.
+      //
+      // ## Why the marker FITS INSIDE ONE ROW
+      //
+      // The marker used to be 95 characters against an 80-column pty, and that
+      // is what made this test red on the Windows lane - for a reason that is
+      // not loss. A Unix pty is a byte pipe: what the producer writes is what
+      // the host reads, so a marker wider than the row survives the trip
+      // intact. ConPTY is not a pipe. It is conhost RENDERING a console screen
+      // buffer of exactly `FLOOD_COLS` columns back out as VT, so a
+      // 95-character line occupies two rows there and reaches the host as runs
+      // of 80 and 15 characters - the marker never appears whole, and counting
+      // it as missing accuses the host of losing what the emulator only
+      // reflowed. MEASURED on the Windows lane (run 33602264566, job
+      // 100158395057): `markerCount` came back 12 of 500 000 while every other
+      // claim in this test held - the host paused above the watermark within
+      // one read, the producer stayed stopped across the 500 ms window, acks
+      // resumed it, the sentinel arrived and no resync was demanded.
+      //
+      // A marker NARROWER than the row cannot be split by any emulator in the
+      // middle, so the exact count below stays a claim about the host on every
+      // platform instead of a claim about line wrapping. The columns are passed
+      // explicitly rather than inherited from the helper's default, because the
+      // marker's width is only meaningful against the width of the row.
       const lineCount = 500_000;
-      const line = "x".repeat(95);
+      const line = "x".repeat(FLOOD_MARKER_CHARS);
       const sentinel = "VEX_FLOOD_DONE";
       await createTerminal(service, "t1", {
+        cols: FLOOD_COLS,
         args: [
           "-c",
           `yes '${line}' | head -n ${String(lineCount)}; echo ${sentinel}; read _hold`,
@@ -641,9 +694,22 @@ describe("flow control against a real pty", () => {
 
       // NO MID-STREAM LOSS. Every line the shell wrote is in the ordered live
       // stream: the mirror's row bound governs REPLAY, never the live stream.
-      expect(drain.markerCount).toBe(lineCount);
-      // ~48 MB of payload plus the CR the pty adds to every newline.
-      expect(drain.chars).toBeGreaterThan(48_000_000);
+      //
+      // Both numbers travel in the message. A count that comes back wrong says
+      // nothing on its own about WHICH half moved - a stream that arrived whole
+      // with unmatched markers is an emulator artifact, a stream that is short
+      // in characters too is real loss - and a lane on another operating system
+      // is the only place either can be observed.
+      const delivered = () =>
+        `delivered ${String(drain.chars)} chars, ${String(drain.markerCount)}`
+        + ` markers of ${String(lineCount)}`;
+      expect(drain.markerCount, delivered()).toBe(lineCount);
+      // The payload plus the CR the pty adds to every newline: 36 MB on a Unix
+      // pty, and at least that on ConPTY, whose own cursor and erase sequences
+      // only add to the count.
+      expect(drain.chars, delivered()).toBeGreaterThan(
+        lineCount * FLOOD_MARKER_CHARS,
+      );
 
       // MEMORY STAYED BOUNDED. The emergency ceiling is what protects the host
       // when flow control is not enough; a well-behaved consumer never reaches

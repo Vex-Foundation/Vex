@@ -258,7 +258,11 @@
   }
 }
 .vex-rise {
-  animation: vex-rise 600ms cubic-bezier(0.25, 1, 0.5, 1) both;
+  /* The curve was `cubic-bezier(0.25, 1, 0.5, 1)` written out - the entrance
+   * curve of the family, by hand. The 600ms stays a landing-motif duration
+   * (named exception in MOTION-POLICY.md): these are the landing's staggered
+   * hero risings, not desktop state changes. */
+  animation: vex-rise 600ms var(--vex-ease-out) both;
 }
 .vex-rise-d1 {
   animation-delay: 90ms;
@@ -273,15 +277,24 @@
   animation-delay: 420ms;
 }
 
-/* Dialog reveal — rise + settle on the native <dialog> top layer, retuned to
- * the shared EASE_STANDARD curve [0.42, 0, 0.58, 1] (lib/motion.ts — the
- * macOS-grade motion pass; keep the two in sync). Element-level so every
- * modal inherits it; one-shot, rests still; the global reduced-motion rule
- * collapses it. */
+/* Dialog reveal - rise + settle on the native <dialog> top layer. Element-level
+ * so every modal inherits it; one-shot, rests still; the global reduced-motion
+ * catch-all in base.css collapses it.
+ *
+ * TWO CORRECTIONS, 2026-09-02 (B5.2 motion pass). The rule hardcoded
+ * `cubic-bezier(0.42, 0, 0.58, 1)` under a comment claiming it was "the shared
+ * EASE_STANDARD curve"; EASE_STANDARD is [0.4, 0, 0.2, 1] and 0.42/0.58 is
+ * plain `ease-in-out`, so the modal was riding a FOURTH curve the family
+ * forbids, and the split declaration sites were what let the drift hide. A
+ * dialog is a surface arriving from nothing, which the family assigns to
+ * `--vex-ease-out`, so that is what it now rides. The `scale(0.985)` is gone
+ * with it: the reference vocabulary moves a surface in with opacity plus a
+ * small translate and nothing else, and a scaling modal reads as a pop rather
+ * than a rise. */
 @keyframes vex-dialog-enter {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.985);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -289,7 +302,7 @@
   }
 }
 dialog[open] {
-  animation: vex-dialog-enter 240ms cubic-bezier(0.42, 0, 0.58, 1) both;
+  animation: vex-dialog-enter var(--vex-duration-slow) var(--vex-ease-out) both;
 }
 @keyframes vex-backdrop-enter {
   from {

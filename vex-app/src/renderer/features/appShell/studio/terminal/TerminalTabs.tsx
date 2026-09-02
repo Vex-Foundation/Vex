@@ -33,6 +33,7 @@
  */
 
 import type { JSX, ReactNode } from "react";
+import type { TerminalShellId, TerminalShellOption } from "@shared/schemas/terminal.js";
 import {
   IconClose,
   IconPlus,
@@ -64,6 +65,12 @@ export interface TerminalTabsProps {
   readonly onActivatePane: (tabId: string, paneId: string) => void;
   readonly onClosePane: (tabId: string, paneId: string) => void;
   readonly onTitleChange: (tabId: string, title: string) => void;
+  /**
+   * One terminal reported its directory. NO `tabId` is passed on: a terminal id
+   * identifies a pane on its own, and the workspace model resolves it - a
+   * second identifier here would only be another chance to name the wrong pane.
+   */
+  readonly onDisplayCwdChange: (terminalId: string, displayCwd: string) => void;
   readonly onPaneExit: (
     tabId: string,
     paneId: string,
@@ -89,6 +96,15 @@ export interface TerminalTabsProps {
    * disappearing, because the snapshot still holds their output.
    */
   readonly lostTerminalIds?: ReadonlySet<string>;
+  /**
+   * Which shell the next terminal opens with, and the catalogue behind the
+   * picker. Passed THROUGH to each terminal panel's header rather than
+   * rendered here: the strip is one control for the whole workspace, and the
+   * header belongs to the panel it describes.
+   */
+  readonly shellId: TerminalShellId;
+  readonly shells: readonly TerminalShellOption[];
+  readonly onSelectShell: (shellId: TerminalShellId) => void;
 }
 
 export function TerminalTabs({
@@ -102,10 +118,14 @@ export function TerminalTabs({
   onActivatePane,
   onClosePane,
   onTitleChange,
+  onDisplayCwdChange,
   onPaneExit,
   renderFileTab,
   notice,
   lostTerminalIds,
+  shellId,
+  shells,
+  onSelectShell,
 }: TerminalTabsProps): JSX.Element {
   const activeTabId = state.activeTabId ?? "";
   const lost = lostTerminalIds ?? EMPTY_LOST;
@@ -165,6 +185,9 @@ export function TerminalTabs({
                   group={tab}
                   visible={isActive}
                   lostTerminalIds={lost}
+                  shellId={shellId}
+                  shells={shells}
+                  onSelectShell={onSelectShell}
                   {...(registry === undefined ? {} : { registry })}
                   onResizePanes={(sizes) => {
                     onResizePanes(tab.tabId, sizes);
@@ -178,6 +201,7 @@ export function TerminalTabs({
                   onTitleChange={(title) => {
                     onTitleChange(tab.tabId, title);
                   }}
+                  onDisplayCwdChange={onDisplayCwdChange}
                   onPaneExit={(paneId, info) => {
                     onPaneExit(tab.tabId, paneId, info);
                   }}

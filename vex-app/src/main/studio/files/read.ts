@@ -35,15 +35,17 @@
  * megabytes of a video file through the IPC channel to display mojibake, and a
  * sniff that ran after the read would avoid nothing.
  *
- * ## `O_NOFOLLOW` on the final component
+ * ## No link on the final component
  *
  * `resolveNodePath` already refused every intermediate symlink and reported a
- * final one as a link the tree may show but not open. This flag closes the
- * race between that walk and this open on the one component the walk cannot
- * hold still. It is POSIX-only; on Windows `fsConstants` does not define it and
- * `?? 0` degrades to a plain read-only open, where creating the symlink the
- * flag defends against requires a privilege the attacker would not need to
- * have.
+ * final one as a link the tree may show but not open. The open here is
+ * `openWithoutFollowing`, which owns the one component that walk cannot hold
+ * still: a standing link is refused before any handle exists, and after the
+ * open the handle's identity is proved against the path's before a byte is
+ * read. On POSIX `O_NOFOLLOW` still makes the swap-in race atomic; on Windows,
+ * where Node defines no such flag, those two checks are what enforce no-follow.
+ * They are fail-closed verification, not an atomic equivalent - see the
+ * limitation stated in `no-follow-open.ts`.
  *
  * ## `fatal` UTF-8
  *
@@ -54,8 +56,6 @@
  */
 
 import { createHash } from "node:crypto";
-import { constants as fsConstants } from "node:fs";
-import { open } from "node:fs/promises";
 
 import {
   FILE_BINARY_SNIFF_BYTES,
@@ -65,22 +65,8 @@ import {
 } from "@shared/schemas/files.js";
 
 import { log } from "../../logger/index.js";
-import { describeFileFailure, isEnoentLike } from "./node-path.js";
-
-/**
- * Read-only, never through a link on the final component, and never blocking.
- *
- * `O_NONBLOCK` for the reason `bounded-read.ts` measures: `resolveNodePath`
- * reports a FIFO as kind `other`, which `readFile` does not refuse, so the open
- * below is reachable for one - and a FIFO with no writer blocks in `open(2)`
- * forever, parking a libuv threadpool thread. That was a starved pool before
- * this feature took a DRAINED lifecycle lease across the read; it is now also a
- * project delete that can never drain. The `stat` inside the body refuses every
- * non-regular file, and this flag is what lets the open reach that refusal.
- * Inert on a regular file.
- */
-const READ_FLAGS =
-  fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0);
+import { describeFileFailure } from "./node-path.js";
+import { type NoFollowFs, nodeNoFollowFs, openWithoutFollowing } from "./no-follow-open.js";
 
 /**
  * Read a file for the viewer.
@@ -88,41 +74,46 @@ const READ_FLAGS =
  * `absolutePath` has already been resolved and containment-checked. Every
  * refusal below is a typed outcome the UI renders as a statement about the
  * file, never as a failure of Vex.
+ *
+ * `fs` is the injectable filesystem seam owned by `no-follow-open.ts`; only
+ * tests pass one, and only to make a race deterministic.
  */
-export async function readFileForViewer(options: {
-  readonly nodeId: string;
-  readonly relativePath: string;
-  readonly absolutePath: string;
-}): Promise<FilesOutcome<FileContent>> {
-  let handle;
-  try {
-    handle = await open(options.absolutePath, READ_FLAGS);
-  } catch (cause) {
-    if (isEnoentLike(cause)) return { ok: false, code: "not_found" };
-    const code = typeof cause === "object" && cause !== null
-      ? (cause as { code?: unknown }).code
-      : undefined;
-    // `ELOOP` is what `O_NOFOLLOW` produces when the final component became a
-    // symlink between the walk and this open. It is the race the flag exists
-    // to catch, and it is reported as what it is rather than as an I/O error.
-    if (code === "ELOOP") return { ok: false, code: "symlinked_path" };
-    if (code === "EISDIR") return { ok: false, code: "not_a_file" };
-    log.warn(
-      `[studio:files] a file could not be opened ${describeFileFailure(cause)}`,
-    );
-    return { ok: false, code: "io_error" };
+export async function readFileForViewer(
+  options: {
+    readonly nodeId: string;
+    readonly relativePath: string;
+    readonly absolutePath: string;
+  },
+  fs: NoFollowFs = nodeNoFollowFs,
+): Promise<FilesOutcome<FileContent>> {
+  const opened = await openWithoutFollowing(options.absolutePath, fs);
+  if (!opened.ok) {
+    if (opened.reason === "io_error") {
+      log.warn(
+        `[studio:files] a file could not be opened ${describeFileFailure(opened.cause)}`,
+      );
+    }
+    // Every other refusal is already a statement about the file, and the codes
+    // line up one to one with the wire's: a definite link is `symlinked_path`,
+    // an identity that changed under the open is `path_changed`.
+    return { ok: false, code: opened.reason };
   }
 
-  try {
-    const stats = await handle.stat();
-    if (!stats.isFile()) return { ok: false, code: "not_a_file" };
+  const handle = opened.handle;
+  // The size and the timestamp come from the `fstat` that PROVED this handle,
+  // as `bigint`s; the wire carries numbers. A size that exceeds `Number` cannot
+  // survive the viewer's bound anyway, and the comparison below is on bytes
+  // actually read rather than on this value.
+  const statSize = Number(opened.stats.size);
+  const statModifiedMs = Number(opened.stats.mtimeMs);
 
+  try {
     // THE SNIFF, before the body. A NUL in the first bytes ends the read here.
     const sniffLength = Math.min(FILE_BINARY_SNIFF_BYTES, FILE_READ_MAX_BYTES + 1);
     const sniff = Buffer.allocUnsafe(sniffLength);
     const sniffRead = await handle.read(sniff, 0, sniffLength, 0);
     if (sniff.subarray(0, sniffRead.bytesRead).includes(0)) {
-      return { ok: false, code: "binary", size: stats.size };
+      return { ok: false, code: "binary", size: statSize };
     }
 
     // THE BODY. One byte past the limit is read deliberately: its arrival is
@@ -145,7 +136,7 @@ export async function readFileForViewer(options: {
       // actually read. Reporting that would tell the user their 3 MB file is
       // 1 MB and still refused. The count of bytes this handle produced can
       // never be stale, so it is the one that wins when the two disagree.
-      return { ok: false, code: "too_large", size: Math.max(stats.size, total) };
+      return { ok: false, code: "too_large", size: Math.max(statSize, total) };
     }
 
     const bytes = body.subarray(0, total);
@@ -163,7 +154,7 @@ export async function readFileForViewer(options: {
         path: options.relativePath,
         text,
         size: total,
-        modifiedMs: Math.trunc(stats.mtimeMs),
+        modifiedMs: statModifiedMs,
         hash: createHash("sha256").update(bytes).digest("hex"),
       },
     };

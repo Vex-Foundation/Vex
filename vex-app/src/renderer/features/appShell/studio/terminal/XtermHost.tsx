@@ -100,7 +100,14 @@ export interface XtermHostProps {
   readonly visible: boolean;
   readonly registry?: TerminalRegistry;
   readonly onTitleChange?: (title: string) => void;
-  readonly onCwdChange?: (cwd: string) => void;
+  /**
+   * The shell's directory changed, AS A LABEL.
+   *
+   * Never a filesystem path: main and the pty host derive this before it
+   * crosses the port (`pty-host/display-cwd.ts`), so the renderer has neither
+   * the value nor the authority to open anything with it. It is header text.
+   */
+  readonly onDisplayCwdChange?: (displayCwd: string) => void;
   readonly onExit?: (info: { exitCode: number; signal: number | null }) => void;
   /** Raised when the user interacts, so the group can mark this pane active. */
   readonly onActivate?: () => void;
@@ -112,7 +119,7 @@ export function XtermHost({
   visible,
   registry = terminalRegistry,
   onTitleChange,
-  onCwdChange,
+  onDisplayCwdChange,
   onExit,
   onActivate,
   className,
@@ -128,8 +135,8 @@ export function XtermHost({
   // fresh closure does not tear down and re-establish the SUBSCRIPTIONS - which
   // would detach and reattach the pty, and replay the whole buffer, on every
   // parent render.
-  const handlersRef = useRef({ onTitleChange, onCwdChange, onExit });
-  handlersRef.current = { onTitleChange, onCwdChange, onExit };
+  const handlersRef = useRef({ onTitleChange, onDisplayCwdChange, onExit });
+  handlersRef.current = { onTitleChange, onDisplayCwdChange, onExit };
 
   const pushSize = useCallback(
     (size: { cols: number; rows: number } | null): void => {
@@ -180,7 +187,9 @@ export function XtermHost({
     });
     const offProperty = onTerminalProperty(terminalId, (change) => {
       if (change.property === "title") handlersRef.current.onTitleChange?.(change.value);
-      if (change.property === "cwd") handlersRef.current.onCwdChange?.(change.value);
+      if (change.property === "displayCwd") {
+        handlersRef.current.onDisplayCwdChange?.(change.value);
+      }
     });
     const offExit = onTerminalExit(terminalId, (info) => {
       setExit(info);

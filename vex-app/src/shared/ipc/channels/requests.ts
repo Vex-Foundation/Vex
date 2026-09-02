@@ -640,6 +640,7 @@ export const CH = {
     persistWorkspace: "vex:terminal:persistWorkspace",
     readWorkspace: "vex:terminal:readWorkspace",
     availability: "vex:terminal:availability",
+    shellCatalogue: "vex:terminal:shellCatalogue",
   },
 
   /**

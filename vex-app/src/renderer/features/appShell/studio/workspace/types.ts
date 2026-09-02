@@ -71,6 +71,24 @@ export interface WorkspacePane {
   readonly terminalId: string;
   /** Share of the group's split axis, 0..1. Relative so a restore fits any size. */
   readonly relativeSize: number;
+  /**
+   * WHERE THIS SHELL IS, as the panel header says it. `null` means not known
+   * yet, which `terminalLocationLabel` renders by name.
+   *
+   * THE ONE OWNER of that fact in the renderer, and it lives on the PANE
+   * because the fact is per terminal: a group of four split shells is four
+   * directories, and a field on the tab could only hold one of them. Seeded at
+   * restore from `TerminalWorkspaceRestore` (main asked the host for it) and
+   * when a terminal is created, then superseded by every `displayCwd` property
+   * event through `setPaneDisplayCwd`. VS Code's `TerminalInstance` holds the
+   * same single `_cwd` per instance, seeded from `attachPersistentProcess.cwd`
+   * on reconnect and overwritten by `ProcessPropertyType.Cwd`.
+   *
+   * It is NOT persisted: `toPersistedLayout` writes topology, and a directory
+   * saved from a previous session would be restored onto a shell that has since
+   * been spawned somewhere else.
+   */
+  readonly displayCwd: string | null;
 }
 
 /** A terminal tab: an ordered set of panes split along one axis. */

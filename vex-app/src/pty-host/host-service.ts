@@ -347,6 +347,8 @@ export class PtyHostService {
         return await this.forgetWorkspace(request.projectId);
       case "revive":
         return await this.reviveProject(request);
+      case "describeTerminals":
+        return this.describeTerminals(request.terminalIds);
       case "abandonRequest":
         // Handled before dispatch, in `handleMainMessage`. Present so the union
         // stays exhaustively checked rather than falling through a default.
@@ -376,6 +378,28 @@ export class PtyHostService {
     return accept(null);
   }
 
+  /**
+   * WHERE THESE SHELLS ARE NOW. Read from the live `TerminalProcess`, which is
+   * the same value its `displayCwd` property events carry.
+   *
+   * SYNCHRONOUS and side-effect free: it takes no hold, does not touch the
+   * mirror and does not disturb a terminal that is mid-attach. An id this host
+   * does not hold, or one whose pty has already exited, is OMITTED - the answer
+   * describes what is true now, and main renders an absence as "not known yet"
+   * rather than as a stale directory.
+   */
+  private describeTerminals(
+    terminalIds: readonly TerminalId[],
+  ): TerminalOutcome<unknown> {
+    const terminals: { terminalId: TerminalId; displayCwd: string }[] = [];
+    for (const terminalId of terminalIds) {
+      const found = this.terminals.get(terminalId);
+      if (found === undefined || found.hasExited) continue;
+      terminals.push({ terminalId, displayCwd: found.process.displayCwd });
+    }
+    return accept({ terminals });
+  }
+
   private async createTerminal(
     request: Extract<TerminalHostRequest, { kind: "create" }>,
   ): Promise<TerminalOutcome<unknown>> {
@@ -391,7 +415,7 @@ export class PtyHostService {
       terminalId: request.terminalId,
       pid: started.value.pid,
       shellName: started.value.shellName,
-      cwd: started.value.cwd,
+      displayCwd: started.value.displayCwd,
     });
   }
 
@@ -427,7 +451,7 @@ export class PtyHostService {
     TerminalOutcome<{
       pid: number;
       shellName: string;
-      cwd: string;
+      displayCwd: string;
       terminal: PersistentTerminal;
     }>
   > {
@@ -500,7 +524,7 @@ export class PtyHostService {
     return accept({
       pid: started.pid,
       shellName: started.shellName,
-      cwd: started.cwd,
+      displayCwd: started.displayCwd,
       terminal: persistent,
     });
   }
@@ -845,6 +869,7 @@ export class PtyHostService {
           executable: entry.executable,
           args: [...entry.args],
           cwd: entry.cwdAtSpawn,
+          projectLabel: request.projectLabel,
           cols: entry.cols,
           rows: entry.rows,
           // RECOMPUTED, never restored. The environment is not in the snapshot
@@ -872,7 +897,7 @@ export class PtyHostService {
         to: assignment.to,
         pid: started.value.pid,
         shellName: started.value.shellName,
-        cwd: started.value.cwd,
+        displayCwd: started.value.displayCwd,
         title: entry.title,
         droppedRows: entry.droppedRows,
         reducedRows: entry.reducedRows,

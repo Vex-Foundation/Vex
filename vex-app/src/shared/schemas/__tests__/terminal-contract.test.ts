@@ -38,6 +38,15 @@ import {
   terminalHostEnvelopeSchema,
   terminalPortEventSchema,
   terminalPortRequestSchema,
+  terminalCreateInputSchema,
+  terminalCreateValueSchema,
+  terminalDescribeResultSchema,
+  terminalLaunchSchema,
+  terminalPropertySchema,
+  terminalWorkspaceRestoreSchema,
+  terminalShellCatalogueSchema,
+  terminalShellIdSchema,
+  terminalShellOptionSchema,
   terminalSnapshotEntrySchema,
   terminalSnapshotFileName,
   terminalWorkspaceLayoutSchema,
@@ -667,5 +676,200 @@ describe("a snapshot's two halves describe the SAME terminals", () => {
       terminals: [entry("t1"), entry("orphan")],
     });
     expect(parsed.success).toBe(false);
+  });
+});
+
+/**
+ * THE DISPLAY-ONLY CONTRACT.
+ *
+ * The property under test is a NEGATIVE one and it is the point of the whole
+ * change: no schema that reaches the renderer has a field for a filesystem
+ * path. These assertions go red the moment someone re-adds one, which is the
+ * only way a raw path can get back onto the wire.
+ */
+describe("no renderer-facing terminal schema carries a raw path", () => {
+  it("the property union has displayCwd and no longer has cwd", () => {
+    expect(
+      terminalPropertySchema.safeParse({ property: "displayCwd", value: "src/lib" })
+        .success,
+    ).toBe(true);
+    expect(
+      terminalPropertySchema.safeParse({ property: "cwd", value: "/home/ada/p" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("a create value is refused when it carries cwd instead of displayCwd", () => {
+    const base = { terminalId: "t1", pid: 4, shellName: "bash" };
+    expect(
+      terminalCreateValueSchema.safeParse({ ...base, displayCwd: "vex-core" }).success,
+    ).toBe(true);
+    // `.strict()` is what makes this a refusal rather than a silently dropped
+    // field, which is the difference between a contract and a convention.
+    expect(
+      terminalCreateValueSchema.safeParse({ ...base, cwd: "/home/ada/p" }).success,
+    ).toBe(false);
+  });
+
+  it("a restore row carries the reattach seed, and NULL is a legal answer", () => {
+    const row = {
+      terminalId: "t1",
+      title: "vim",
+      shellName: "bash",
+      droppedRows: 0,
+      reducedRows: 0,
+    };
+    const restore = (displayCwd: unknown): unknown => ({
+      layout: { projectId: "p1", groups: [], activeGroupIndex: 0 },
+      terminals: [{ ...row, displayCwd }],
+      idMap: [],
+    });
+
+    expect(terminalWorkspaceRestoreSchema.safeParse(restore("vex-app/src")).success).toBe(
+      true,
+    );
+    // THE HONEST UNKNOWN. A reattach main could not seed says so, rather than
+    // omitting the field and leaving each reader to invent a default.
+    expect(terminalWorkspaceRestoreSchema.safeParse(restore(null)).success).toBe(true);
+    // REQUIRED, so a producer cannot forget it.
+    expect(
+      terminalWorkspaceRestoreSchema.safeParse({
+        layout: { projectId: "p1", groups: [], activeGroupIndex: 0 },
+        terminals: [row],
+        idMap: [],
+      }).success,
+    ).toBe(false);
+    // The same 4096 bound as the property that supersedes it: one contract for
+    // one value, so a seed can never carry more than a later change can.
+    expect(terminalWorkspaceRestoreSchema.safeParse(restore("a".repeat(4096))).success)
+      .toBe(true);
+    expect(terminalWorkspaceRestoreSchema.safeParse(restore("a".repeat(4097))).success)
+      .toBe(false);
+    // And still no raw path field, which is what this whole block is about.
+    expect(
+      terminalWorkspaceRestoreSchema.safeParse({
+        layout: { projectId: "p1", groups: [], activeGroupIndex: 0 },
+        terminals: [{ ...row, displayCwd: null, cwd: "/home/ada/p" }],
+        idMap: [],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("a describe answer is a LABEL per terminal, bounded and never nullable", () => {
+    expect(
+      terminalDescribeResultSchema.safeParse({
+        terminals: [{ terminalId: "t1", displayCwd: "vex-app/src" }],
+      }).success,
+    ).toBe(true);
+    // An id the host does not hold is OMITTED from the array. It is never
+    // reported as a null label, because "the host has no such terminal" and
+    // "the host cannot name this terminal's directory" are different facts and
+    // only main is entitled to collapse them into the restore row's `null`.
+    expect(
+      terminalDescribeResultSchema.safeParse({
+        terminals: [{ terminalId: "t1", displayCwd: null }],
+      }).success,
+    ).toBe(false);
+    expect(
+      terminalDescribeResultSchema.safeParse({
+        terminals: [{ terminalId: "t1", displayCwd: "a".repeat(4097) }],
+      }).success,
+    ).toBe(false);
+    // The request side is bounded by the same per-project ceiling the answer is,
+    // so no single describe can ask about more terminals than can exist.
+    expect(
+      terminalHostEnvelopeSchema.safeParse({
+        requestId: "r1",
+        request: {
+          kind: "describeTerminals",
+          terminalIds: Array.from(
+            { length: TERMINALS_PER_PROJECT_MAX + 1 },
+            (_unused, index) => `t${String(index)}`,
+          ),
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("a launch REQUIRES the project label main derives the display value from", () => {
+    const launch = {
+      executable: "/bin/bash",
+      args: [],
+      cwd: "/home/ada/Vex/projects/vex-core",
+      cols: 80,
+      rows: 24,
+      env: {},
+    };
+    expect(terminalLaunchSchema.safeParse(launch).success).toBe(false);
+    expect(
+      terminalLaunchSchema.safeParse({ ...launch, projectLabel: "vex-core" }).success,
+    ).toBe(true);
+  });
+});
+
+/**
+ * THE SHELL CATALOGUE IS A CLOSED SET, and the wire says so.
+ *
+ * A table over the enum rather than three hand-picked cases: the security
+ * property is that NOTHING outside the enum parses, and only enumerating it
+ * proves that as the set grows.
+ */
+describe("the shell catalogue is an enumerated contract", () => {
+  it("accepts every member of the enum as a create input", () => {
+    for (const shellId of terminalShellIdSchema.options) {
+      const parsed = terminalCreateInputSchema.safeParse({
+        projectId: "p1",
+        shellId,
+        cols: 80,
+        rows: 24,
+      });
+      expect(parsed.success, shellId).toBe(true);
+    }
+  });
+
+  it("REFUSES anything that is not a member, including a path", () => {
+    for (const shellId of [
+      "/bin/bash",
+      "../../bin/sh",
+      "bash;rm -rf /",
+      "BASH",
+      "",
+      null,
+      42,
+    ]) {
+      const parsed = terminalCreateInputSchema.safeParse({
+        projectId: "p1",
+        shellId,
+        cols: 80,
+        rows: 24,
+      });
+      expect(parsed.success, String(shellId)).toBe(false);
+    }
+  });
+
+  it("REFUSES a create input with no shell at all, so the default has one owner", () => {
+    expect(
+      terminalCreateInputSchema.safeParse({ projectId: "p1", cols: 80, rows: 24 })
+        .success,
+    ).toBe(false);
+  });
+
+  it("a catalogue row carries no path, and one that smuggles a path is refused", () => {
+    const row = { id: "bash", label: "bash", available: true };
+    expect(terminalShellOptionSchema.safeParse(row).success).toBe(true);
+    expect(
+      terminalShellOptionSchema.safeParse({ ...row, path: "/bin/bash" }).success,
+    ).toBe(false);
+  });
+
+  it("a catalogue names its default, and the default must be a known shell", () => {
+    const shells = [{ id: "bash", label: "bash", available: true }];
+    expect(
+      terminalShellCatalogueSchema.safeParse({ shells, defaultShellId: "bash" }).success,
+    ).toBe(true);
+    expect(
+      terminalShellCatalogueSchema.safeParse({ shells, defaultShellId: "nu" }).success,
+    ).toBe(false);
+    expect(terminalShellCatalogueSchema.safeParse({ shells }).success).toBe(false);
   });
 });

@@ -24,6 +24,7 @@ import {
   TERMINAL_ORDERLY_SHUTDOWN_TIMEOUT_MS,
   TERMINAL_PENDING_CEILING_BYTES,
   WORKSPACE_SNAPSHOT_FILE_MAX_BYTES,
+  terminalDescribeResultSchema,
   terminalReviveResultSchema,
   terminalWorkspaceSnapshotSchema,
   type TerminalHostMessage,
@@ -48,7 +49,9 @@ let directory: string;
 let toMain: TerminalHostMessage[];
 let pty: ScriptedPty;
 
-async function build(): Promise<PtyHostService> {
+async function build(
+  cwdByPid: Readonly<Record<number, string>> = {},
+): Promise<PtyHostService> {
   pty = new ScriptedPty();
   return new PtyHostService({
     spawn: scriptedSpawner(pty).spawn,
@@ -56,6 +59,7 @@ async function build(): Promise<PtyHostService> {
       directories: [CWD],
       files: [SHELL],
       executables: { bash: SHELL },
+      cwdByPid,
     }),
     baseEnv: { PATH: "/usr/bin" },
     snapshotStore: new TerminalSnapshotStore(directory),
@@ -86,6 +90,12 @@ async function send(
   return reply.outcome;
 }
 
+/** Unwrap a host reply, failing the test by NAME when the host refused. */
+function assertOk(outcome: TerminalOutcome<unknown>): unknown {
+  if (!outcome.ok) throw new Error(`host refused: ${outcome.code}`);
+  return outcome.value;
+}
+
 function createRequest(
   terminalId: string,
   windowId: string,
@@ -99,6 +109,7 @@ function createRequest(
       executable: "bash",
       args: [],
       cwd: CWD,
+      projectLabel: "proj",
       cols: 80,
       rows: 24,
       env: {},
@@ -602,6 +613,7 @@ describe("F1 - revive", () => {
     const second = buildPooled();
     const revived = await send(second.service, {
       kind: "revive",
+      projectLabel: "proj",
       projectId: "p1",
       windowId: "w9",
       assignments: [{ from: "t1", to: "t9" }],
@@ -682,6 +694,7 @@ describe("F1 - revive", () => {
     const second = buildPooled();
     const revived = await send(second.service, {
       kind: "revive",
+      projectLabel: "proj",
       projectId: "p1",
       windowId: "w9",
       // `t2` is deliberately not requested, and `ghost` was never persisted.
@@ -720,6 +733,7 @@ describe("F1 - revive", () => {
     const second = buildPooled();
     await send(second.service, {
       kind: "revive",
+      projectLabel: "proj",
       projectId: "p1",
       windowId: "w9",
       assignments: [{ from: "t1", to: "t9" }],
@@ -858,7 +872,7 @@ describe("F7 - the WHOLE FILE is brought under its bound", () => {
         terminalId,
         windowId: "w1",
         projectId: "p1",
-        launch: { executable: "bash", args: [], cwd: CWD, cols: 1000, rows: 24, env: {} },
+        launch: { executable: "bash", args: [], cwd: CWD, projectLabel: "proj", cols: 1000, rows: 24, env: {} },
       });
       if (!created.ok) throw new Error(`create refused: ${created.code}`);
       const terminal = service.terminal(terminalId);
@@ -960,7 +974,7 @@ describe("F7 - the WHOLE FILE is brought under its bound", () => {
         terminalId,
         windowId: "w1",
         projectId: "p1",
-        launch: { executable: "bash", args: [], cwd: CWD, cols: 1000, rows: 24, env: {} },
+        launch: { executable: "bash", args: [], cwd: CWD, projectLabel: "proj", cols: 1000, rows: 24, env: {} },
       });
       if (!created.ok) throw new Error(`create refused: ${created.code}`);
       const terminal = service.terminal(terminalId);
@@ -1281,6 +1295,7 @@ describe("a revive restores the OLD SCREEN before the new shell speaks", () => {
 
     const revived = await send(service, {
       kind: "revive",
+      projectLabel: "proj",
       projectId: "p1",
       windowId: "w1",
       assignments: [{ from: "old", to: "fresh" }],
@@ -1492,7 +1507,7 @@ describe("the orderly shutdown drains CONCURRENTLY", () => {
           terminalId,
           windowId: "w1",
           projectId,
-          launch: { executable: "bash", args: [], cwd: CWD, cols: 80, rows: 24, env: {} },
+          launch: { executable: "bash", args: [], cwd: CWD, projectLabel: "proj", cols: 80, rows: 24, env: {} },
         });
         if (!created.ok) throw new Error(`create refused: ${created.code}`);
       }
@@ -1631,7 +1646,7 @@ function createIn(
     terminalId,
     windowId,
     projectId,
-    launch: { executable: "bash", args: [], cwd: CWD, cols: 80, rows: 24, env: {} },
+    launch: { executable: "bash", args: [], cwd: CWD, projectLabel: "proj", cols: 80, rows: 24, env: {} },
   };
 }
 
@@ -2046,6 +2061,85 @@ describe("a forget that main stopped waiting for still removes the file", () => 
     const read = await store.read("recycled");
     if (read.kind !== "ok") throw new Error(`snapshot not readable: ${read.kind}`);
     expect(read.snapshot.layout.groups[0]?.groupId).toBe("gB");
+
+    await service.shutdownAll();
+  });
+});
+
+/**
+ * `describeTerminals` - the reattach seed, answered by the ONLY process that
+ * knows where a shell is.
+ *
+ * A renderer reload or a project switch-back is answered from main's live
+ * records, and those are written at admission. The directory is not: it moves
+ * every time the user types `cd`, and only the host observes that. These tests
+ * are the reason main is allowed to have no field of its own - if the host
+ * answered the SPAWN directory here, main would have nothing better than a
+ * stale copy and the header would confidently name the wrong place.
+ */
+describe("describeTerminals", () => {
+  it("answers where each shell is NOW, not where it was spawned", async () => {
+    // MUTATED between the two describes, which is what makes this test about
+    // freshness rather than about the spawn value: the probe answers the shell
+    // it is asked about at the moment it is asked.
+    const cwdByPid: Record<number, string> = { 4242: CWD };
+    const service = await build(cwdByPid);
+    await send(service, { kind: "attachWindow", windowId: "w1", nonce: "n".repeat(32) });
+    await send(service, createRequest("t1", "w1"));
+
+    const describe1 = terminalDescribeResultSchema.parse(
+      assertOk(await send(service, { kind: "describeTerminals", terminalIds: ["t1"] })),
+    );
+    expect(describe1.terminals).toEqual([{ terminalId: "t1", displayCwd: "proj" }]);
+
+    // The shell moves. `refreshCwd` is the same read an Enter keystroke
+    // debounces into, driven directly so the assertion owns no timer.
+    cwdByPid[4242] = `${CWD}/src/lib`;
+    await service.terminal("t1")?.process.refreshCwd();
+
+    const describe2 = terminalDescribeResultSchema.parse(
+      assertOk(await send(service, { kind: "describeTerminals", terminalIds: ["t1"] })),
+    );
+    expect(describe2.terminals).toEqual([{ terminalId: "t1", displayCwd: "src/lib" }]);
+
+    await service.shutdownAll();
+  });
+
+  it("OMITS an id it does not hold rather than inventing a directory for it", async () => {
+    const service = await build();
+    await send(service, { kind: "attachWindow", windowId: "w1", nonce: "n".repeat(32) });
+    await send(service, createRequest("t1", "w1"));
+
+    const described = terminalDescribeResultSchema.parse(
+      assertOk(
+        await send(service, {
+          kind: "describeTerminals",
+          // `t1` is live, `gone` never existed. A request that refused the
+          // whole answer over one dead id would cost the live terminal's
+          // header its seed as well.
+          terminalIds: ["t1", "gone"],
+        }),
+      ),
+    );
+    expect(described.terminals.map((entry) => entry.terminalId)).toEqual(["t1"]);
+
+    await service.shutdownAll();
+  });
+
+  it("changes nothing: a describe neither kills, detaches nor replays", async () => {
+    const service = await build();
+    const port = new RecordingPort();
+    await send(service, { kind: "attachWindow", windowId: "w1", nonce: "n".repeat(32) }, [port]);
+    await send(service, createRequest("t1", "w1"));
+    port.receive({ kind: "attach", terminalId: "t1" });
+    await vi.waitFor(() => expect(port.eventsOfKind("replay").length).toBeGreaterThan(0));
+
+    const replaysBefore = port.eventsOfKind("replay").length;
+    await send(service, { kind: "describeTerminals", terminalIds: ["t1"] });
+
+    expect(service.terminal("t1")?.hasExited).toBe(false);
+    expect(service.terminal("t1")?.attached).toBe(true);
+    expect(port.eventsOfKind("replay").length).toBe(replaysBefore);
 
     await service.shutdownAll();
   });

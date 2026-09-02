@@ -202,16 +202,16 @@ describe("XtermHost data path", () => {
     expect(bufferText("t1")).toContain("output the user came back to read");
   });
 
-  it("raises title and cwd changes without re-subscribing on every parent render", async () => {
+  it("raises title and directory changes without re-subscribing on every parent render", async () => {
     const onTitleChange = vi.fn();
-    const onCwdChange = vi.fn();
+    const onDisplayCwdChange = vi.fn();
     const view = render(
       <XtermHost
         terminalId="t1"
         visible
         registry={registry}
         onTitleChange={onTitleChange}
-        onCwdChange={onCwdChange}
+        onDisplayCwdChange={onDisplayCwdChange}
       />,
     );
 
@@ -224,7 +224,7 @@ describe("XtermHost data path", () => {
         visible
         registry={registry}
         onTitleChange={onTitleChange}
-        onCwdChange={(value) => onCwdChange(value)}
+        onDisplayCwdChange={(value: string) => onDisplayCwdChange(value)}
       />,
     );
     expect(bridge.attaches).toEqual(["t1"]);
@@ -232,12 +232,16 @@ describe("XtermHost data path", () => {
 
     await act(async () => {
       bridge.emitProperty("t1", { property: "title", value: "vim README.md" });
-      bridge.emitProperty("t1", { property: "cwd", value: "/repo/src" });
+      // The LABEL the host derived, which is what this property now carries.
+      // A raw path can no longer reach this callback: the union has no `cwd`
+      // member, so the old spelling is a type error rather than a test that
+      // quietly kept asserting on a value the wire stopped sending.
+      bridge.emitProperty("t1", { property: "displayCwd", value: "src" });
       await settle();
     });
 
     expect(onTitleChange).toHaveBeenCalledWith("vim README.md");
-    expect(onCwdChange).toHaveBeenCalledWith("/repo/src");
+    expect(onDisplayCwdChange).toHaveBeenCalledWith("src");
   });
 });
 

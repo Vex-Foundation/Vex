@@ -119,6 +119,14 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
       className={cn(
         "flex w-full cursor-pointer select-none items-center gap-1 pr-2 text-[13px] leading-[24px]",
         // Hover fill and selected fill are the same tint, as the rail rows are.
+        // `vex-tint` settles that fill over the fast step instead of snapping
+        // it. COLOUR ONLY, and that is a constraint rather than a preference:
+        // the row sits inside a virtualizer wrapper positioned by `transform`,
+        // so anything here that moved a box would fight the list's own
+        // translation. Safe against row reuse because the virtualizer keys by
+        // ROW ID (`getItemKey` in ExplorerTree), so scrolling remounts rows
+        // rather than repainting one element as a different file.
+        "vex-tint",
         props.selected ? "bg-interactive-hover" : "hover:bg-interactive-hover",
         props.focused ? "ring-1 ring-inset ring-ring" : null,
         props.rowKind === "notice" ? "text-ink-tertiary" : "text-ink-primary",
@@ -133,10 +141,12 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
         ) : isDirectory ? (
           <IconChevronRight
             size={12}
-            className={cn(
-              "transition-transform duration-150 motion-reduce:transition-none",
-              props.expanded === true ? "rotate-90" : null,
-            )}
+            // `vex-twistie` replaced a hand-written
+            // `transition-transform duration-150 motion-reduce:transition-none`:
+            // same behaviour, but the 150 is now the `--vex-duration-base`
+            // token and the reduced-motion collapse is stated once in the
+            // primitive instead of per call site.
+            className={cn("vex-twistie", props.expanded === true ? "rotate-90" : null)}
           />
         ) : null}
       </span>

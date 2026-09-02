@@ -218,7 +218,13 @@ function ReadinessShell({
     <section
       aria-label={STUDIO_BRIDGE_PANEL_LABEL}
       data-vex-area="studio-bridge-readiness"
-      className="flex flex-col gap-4"
+      // The panel renders NOTHING while the first check is in flight and
+      // nothing when the bridge is healthy, so its mount is the state change
+      // itself: a diagnostic appearing in a column the user was already
+      // reading. The entrance is what makes that arrival legible instead of a
+      // silent reflow. One pass; the recheck line below is a `role="status"`
+      // text change and gets no motion of its own.
+      className="vex-surface-enter flex flex-col gap-4"
     >
       <SetupStatusCard tone={tone} word={word} title={title} detail={detail} />
       {children}

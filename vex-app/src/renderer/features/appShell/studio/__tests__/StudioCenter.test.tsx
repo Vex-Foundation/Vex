@@ -941,3 +941,39 @@ describe("a workspace that throws", () => {
     expect(harness.disposedTerminals).toEqual([]);
   });
 });
+
+describe("the workspace switch is animated as an un-hide", () => {
+  /**
+   * A workspace is never unmounted, so React drives no entrance here: the
+   * class is on the wrapper permanently while the project is active, and the
+   * browser replays the keyframe because the element left `display: none`.
+   * What the test can prove is the half that is ours - exactly one wrapper
+   * carries the entrance at a time, and the hidden ones carry none of it.
+   */
+  const wrapperFor = (projectId: string): Element => {
+    const el = document.querySelector(`[data-vex-studio-workspace="${projectId}"]`);
+    if (el === null) throw new Error(`no wrapper for ${projectId}`);
+    return el;
+  };
+
+  it("puts the entrance on the shown workspace and never on a hidden one", async () => {
+    const first = makeProject({ name: "first" });
+    const second = makeProject({ name: "second" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [first, second] });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    select(first.id);
+    await screen.findByTestId(`workspace-${first.id}`);
+    expect(wrapperFor(first.id).className).toContain("vex-surface-enter");
+
+    select(second.id);
+    await screen.findByTestId(`workspace-${second.id}`);
+    expect(wrapperFor(second.id).className).toContain("vex-surface-enter");
+    // The kept-alive one is hidden and inert: an entrance left on it would
+    // replay the moment it is shown again for no state change of its own.
+    expect(wrapperFor(first.id).className).toContain("hidden");
+    expect(wrapperFor(first.id).className).not.toContain("vex-surface-enter");
+    expect(wrapperFor(first.id).hasAttribute("hidden")).toBe(true);
+  });
+});

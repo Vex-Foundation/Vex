@@ -130,6 +130,16 @@ class FakeStarter implements PtyHost {
     };
   }
 
+  /**
+   * WHERE THIS FAKE HOST SAYS EACH SHELL IS, answered to `describeTerminals`.
+   *
+   * A terminal absent from this map is one the host no longer holds, which is
+   * the case main must render as the honest unknown rather than as a directory.
+   */
+  readonly directories = new Map<string, string>();
+  /** Make the whole describe fail, for the "a refusal is not a failed open" case. */
+  failDescribe = false;
+
   /** Freeze every `revive` inside the host call, for the slow-restore race. */
   private reviveHold: Promise<void> | null = null;
 
@@ -154,8 +164,30 @@ class FakeStarter implements PtyHost {
     if (request.kind === "readWorkspace") {
       return { ok: true, value: this.snapshot };
     }
+    if (request.kind === "describeTerminals") {
+      if (this.failDescribe) return { ok: false, code: "host_unavailable" };
+      return {
+        ok: true,
+        value: {
+          // Ids this fake host does not hold a directory for are OMITTED, the
+          // way the real host omits a terminal that has gone.
+          terminals: request.terminalIds
+            .filter((terminalId) => this.directories.has(terminalId))
+            .map((terminalId) => ({
+              terminalId,
+              displayCwd: this.directories.get(terminalId) ?? "",
+            })),
+        },
+      };
+    }
     if (request.kind === "revive") {
       if (this.reviveHold !== null) await this.reviveHold;
+      // A revived pty is REGISTERED in the host, so it becomes describable at
+      // the same instant. Modelling that here is what makes the revive path's
+      // later `describeTerminals` behave as it does in production.
+      for (const assignment of request.assignments) {
+        this.directories.set(assignment.to, request.projectLabel);
+      }
       return {
         ok: true,
         value: {
@@ -164,7 +196,7 @@ class FakeStarter implements PtyHost {
             to: assignment.to,
             pid: 1,
             shellName: "bash",
-            cwd: `/projects/${request.projectId}`,
+            displayCwd: request.projectLabel,
             title: "bash",
             droppedRows: 0,
             reducedRows: 0,
@@ -199,13 +231,20 @@ class FakeStarter implements PtyHost {
     if (request.kind === "create") {
       for (const resolve of this.createSeen.splice(0)) resolve();
       if (this.createHold !== null) await this.createHold;
+      // Registered, and therefore describable. See the `revive` branch.
+      this.directories.set(request.terminalId, request.launch.projectLabel);
       return {
         ok: true,
         value: {
           terminalId: request.terminalId,
           pid: 1,
           shellName: "bash",
-          cwd: request.launch.cwd,
+          // The LABEL, which is what the host answers a create with.
+          // `terminalCreateValueSchema` is STRICT and has no `cwd`: this fake
+          // said `cwd` and carried a raw path, so main's parse of it failed and
+          // every create in this suite recorded an empty `shellName` while
+          // appearing to pass.
+          displayCwd: request.launch.projectLabel,
         },
       };
     }
@@ -281,6 +320,15 @@ let cwdHold: Promise<void> | null = null;
  */
 const activations = new Map<string, import("../terminals.js").ProjectActivation>();
 
+/**
+ * Shells the fake machine does NOT have installed.
+ *
+ * Empty by default, so every test that is not about shell availability reads
+ * as it did before the catalogue existed. A test adds an id to prove the
+ * spawn-time refusal, and `beforeEach` clears it.
+ */
+const unavailableShells = new Set<string>();
+
 function holdCwd(): () => void {
   let release: () => void = () => {};
   cwdHold = new Promise<void>((resolve) => {
@@ -295,13 +343,20 @@ function holdCwd(): () => void {
 function build(): InstanceType<typeof TerminalDomain> {
   return new TerminalDomain(
     {
-      resolveProjectCwd: async (projectId) => {
+      resolveProjectLocation: async (projectId) => {
         if (cwdHold !== null) await cwdHold;
-        return projectId === "missing" ? null : `/projects/${projectId}`;
+        return projectId === "missing"
+          ? null
+          : { directory: `/projects/${projectId}`, label: projectId };
       },
       readProjectActivation: (projectId) =>
         Promise.resolve(activations.get(projectId) ?? "active"),
-      resolveShell: () => ({ executable: "/bin/bash", args: [] }),
+      resolveShellLaunch: (shellId) =>
+        Promise.resolve(
+          unavailableShells.has(shellId)
+            ? null
+            : { executable: `/bin/${shellId}`, args: [] },
+        ),
       postPort: (_target, channel, payload, transfer) => {
         posted.push({ channel, payload, transfer });
       },
@@ -334,17 +389,79 @@ beforeEach(() => {
   posted.length = 0;
   cwdHold = null;
   activations.clear();
+  unavailableShells.clear();
   lostSpy = vi.fn((_terminalIds: readonly string[]) => {});
+});
+
+/**
+ * THE RENDERER'S SHELL CHOICE IS NOT AUTHORITY.
+ *
+ * The id already cleared the schema at preload and at main, which proves it
+ * names a shell Vex knows about. These prove the second half: main asks the
+ * machine, per create, and refuses BY NAME rather than launching something
+ * else. A silent substitution is the defect worth a test - a user who asked
+ * for fish and got bash would run the wrong startup files with no signal.
+ */
+describe("the shell id is re-resolved in main on every create", () => {
+  it("passes the CHOSEN shell to the host, not a fixed one", async () => {
+    const domain = build();
+    expect((await domain.create("w1", "p1", "zsh", 80, 24)).ok).toBe(true);
+    const created = starter.requests.find((request) => request.kind === "create");
+    if (created === undefined || created.kind !== "create") {
+      throw new Error("no create reached the host");
+    }
+    expect(created.launch.executable).toBe("/bin/zsh");
+    await domain.dispose();
+  });
+
+  it("REFUSES by name when the shell is not installed, and spawns NOTHING", async () => {
+    const domain = build();
+    unavailableShells.add("fish");
+
+    const outcome = await domain.create("w1", "p1", "fish", 80, 24);
+
+    expect(outcome).toEqual({ ok: false, code: "launch_shell_unavailable" });
+    // The refusal is not a spawn that failed: no create reached the host at
+    // all, so there is no pty to reconcile and no capacity to reclaim later.
+    expect(starter.requests.some((request) => request.kind === "create")).toBe(false);
+    expect(domain.liveCount).toBe(0);
+    await domain.dispose();
+  });
+
+  it("does not fall back to another shell that IS installed", async () => {
+    const domain = build();
+    unavailableShells.add("fish");
+
+    const outcome = await domain.create("w1", "p1", "fish", 80, 24);
+
+    expect(outcome.ok).toBe(false);
+    // bash and system_default are both resolvable here; a fallback would have
+    // reached for one of them and reported success.
+    expect(starter.requests.some((request) => request.kind === "create")).toBe(false);
+    await domain.dispose();
+  });
+
+  it("frees the capacity a refused create reserved", async () => {
+    const domain = build();
+    unavailableShells.add("fish");
+    expect((await domain.create("w1", "p1", "fish", 80, 24)).ok).toBe(false);
+    unavailableShells.clear();
+    // The slot the refusal reserved must be back, or a user who mistyped their
+    // shell once would lose a terminal slot for the session.
+    expect((await domain.create("w1", "p1", "bash", 80, 24)).ok).toBe(true);
+    expect(domain.liveCount).toBe(1);
+    await domain.dispose();
+  });
 });
 
 describe("bounds", () => {
   it("REFUSES the thirteenth terminal in a project by name, and evicts nothing", async () => {
     const domain = build();
     for (let index = 0; index < TERMINALS_PER_PROJECT_MAX; index += 1) {
-      expect((await domain.create("w1", "p1", 80, 24)).ok).toBe(true);
+      expect((await domain.create("w1", "p1", "system_default", 80, 24)).ok).toBe(true);
     }
 
-    const refused = await domain.create("w1", "p1", 80, 24);
+    const refused = await domain.create("w1", "p1", "system_default", 80, 24);
 
     expect(refused).toEqual({ ok: false, code: "limit_project_terminals" });
     // Nothing was closed to make room. The UI asks the user instead.
@@ -358,7 +475,7 @@ describe("bounds", () => {
     let created = 0;
     for (let project = 0; project < 4; project += 1) {
       for (let index = 0; index < TERMINALS_PER_PROJECT_MAX; index += 1) {
-        const outcome = await domain.create("w1", `p${String(project)}`, 80, 24);
+        const outcome = await domain.create("w1", `p${String(project)}`, "system_default", 80, 24);
         if (outcome.ok) created += 1;
         else {
           expect(outcome.code).toBe("limit_global_terminals");
@@ -371,7 +488,7 @@ describe("bounds", () => {
 
   it("refuses a write past the per-packet bound BY NAME rather than truncating it", async () => {
     const domain = build();
-    const created = await domain.create("w1", "p1", 80, 24);
+    const created = await domain.create("w1", "p1", "system_default", 80, 24);
     if (!created.ok) throw new Error("unreachable");
     const terminalId = (created.value as { terminalId: string }).terminalId;
 
@@ -390,7 +507,7 @@ describe("bounds", () => {
 describe("ownership and leases", () => {
   it("holds a `terminal` lease for every live terminal and releases it on exit", async () => {
     const domain = build();
-    const created = await domain.create("w1", "p1", 80, 24);
+    const created = await domain.create("w1", "p1", "system_default", 80, 24);
     if (!created.ok) throw new Error("unreachable");
     const terminalId = (created.value as { terminalId: string }).terminalId;
 
@@ -410,7 +527,7 @@ describe("ownership and leases", () => {
     const domain = build();
     gate.closeProjectAdmission("p1");
 
-    expect(await domain.create("w1", "p1", 80, 24)).toEqual({
+    expect(await domain.create("w1", "p1", "system_default", 80, 24)).toEqual({
       ok: false,
       code: "project_deleting",
     });
@@ -419,7 +536,7 @@ describe("ownership and leases", () => {
 
   it("refuses another window's terminal id", async () => {
     const domain = build();
-    const created = await domain.create("w1", "p1", 80, 24);
+    const created = await domain.create("w1", "p1", "system_default", 80, 24);
     if (!created.ok) throw new Error("unreachable");
     const terminalId = (created.value as { terminalId: string }).terminalId;
 
@@ -436,7 +553,7 @@ describe("ownership and leases", () => {
     // An unresolvable project directory: the lease was already taken, and a
     // refusal that forgot to release it would leak a `terminal` lease that a
     // later delete would wait on forever.
-    expect(await domain.create("w1", "missing", 80, 24)).toEqual({
+    expect(await domain.create("w1", "missing", "system_default", 80, 24)).toEqual({
       ok: false,
       code: "launch_cwd_missing",
     });
@@ -531,8 +648,8 @@ describe("port nonce", () => {
 describe("project delete integration", () => {
   it("registers a close hook that kills the project's terminals and drops their leases", async () => {
     const domain = build();
-    const first = await domain.create("w1", "p1", 80, 24);
-    const other = await domain.create("w1", "p2", 80, 24);
+    const first = await domain.create("w1", "p1", "system_default", 80, 24);
+    const other = await domain.create("w1", "p2", "system_default", 80, 24);
     if (!first.ok || !other.ok) throw new Error("unreachable");
     expect(gate.heldProjectLeases("p1", "terminal")).toBe(1);
 
@@ -552,7 +669,7 @@ describe("project delete integration", () => {
 
   it("unregisters its hook on dispose so a later delete does not call a dead domain", async () => {
     const domain = build();
-    await domain.create("w1", "p1", 80, 24);
+    await domain.create("w1", "p1", "system_default", 80, 24);
     await domain.dispose();
 
     starter.requests.length = 0;
@@ -574,7 +691,7 @@ describe("concurrent admission", () => {
 
     const release = starter.holdCreates();
     const inFlight = Array.from({ length: attempts }, () =>
-      domain.create("w1", "p-race", 80, 24),
+      domain.create("w1", "p-race", "system_default", 80, 24),
     );
     release();
     const outcomes = await Promise.all(inFlight);
@@ -604,7 +721,7 @@ describe("concurrent admission", () => {
     const inFlight: Array<ReturnType<typeof domain.create>> = [];
     for (let project = 0; project < projects; project += 1) {
       for (let index = 0; index < TERMINALS_PER_PROJECT_MAX; index += 1) {
-        inFlight.push(domain.create("w1", `p-global-${String(project)}`, 80, 24));
+        inFlight.push(domain.create("w1", `p-global-${String(project)}`, "system_default", 80, 24));
       }
     }
     release();
@@ -628,7 +745,7 @@ describe("concurrent admission", () => {
     // is supposed to end it could never reach it.
     const domain = build();
     const release = starter.holdCreates();
-    const pending = domain.create("w1", "p-closing", 80, 24);
+    const pending = domain.create("w1", "p-closing", "system_default", 80, 24);
     await starter.whenCreateSent();
 
     gate.closeProjectAdmission("p-closing");
@@ -653,7 +770,7 @@ describe("concurrent admission", () => {
 
     const domain = build();
     const release = starter.holdCreates();
-    const pending = domain.create("w1", "p-visible", 80, 24);
+    const pending = domain.create("w1", "p-visible", "system_default", 80, 24);
     await starter.whenCreateSent();
 
     expect(gate.heldProjectLeases("p-visible", "terminalCreate")).toBe(1);
@@ -669,7 +786,7 @@ describe("concurrent admission", () => {
     // block the project's delete drain forever on work that already ended.
     const domain = build();
     const releaseCwd = holdCwd();
-    const pending = domain.create("w1", "missing", 80, 24);
+    const pending = domain.create("w1", "missing", "system_default", 80, 24);
 
     expect(gate.heldProjectLeases("missing", "terminalCreate")).toBe(1);
 
@@ -686,7 +803,7 @@ describe("kill settlement", () => {
     // capacity of a pty that is still shutting down, and would drop the project
     // lease while a live process still belonged to it.
     const domain = build();
-    expect((await domain.create("w1", "p-kill", 80, 24)).ok).toBe(true);
+    expect((await domain.create("w1", "p-kill", "system_default", 80, 24)).ok).toBe(true);
     const [terminalId] = starter.createdIds();
     if (terminalId === undefined) throw new Error("unreachable");
 
@@ -709,7 +826,7 @@ describe("kill settlement", () => {
     vi.useFakeTimers();
     try {
       const domain = build();
-      expect((await domain.create("w1", "p-backstop", 80, 24)).ok).toBe(true);
+      expect((await domain.create("w1", "p-backstop", "system_default", 80, 24)).ok).toBe(true);
       const [terminalId] = starter.createdIds();
       if (terminalId === undefined) throw new Error("unreachable");
 
@@ -735,9 +852,9 @@ describe("host termination", () => {
     // creates against capacity nothing occupied, and left the renderer drawing
     // live tabs over dead shells.
     const domain = build();
-    expect((await domain.create("w1", "p-host-a", 80, 24)).ok).toBe(true);
-    expect((await domain.create("w1", "p-host-a", 80, 24)).ok).toBe(true);
-    expect((await domain.create("w1", "p-host-b", 80, 24)).ok).toBe(true);
+    expect((await domain.create("w1", "p-host-a", "system_default", 80, 24)).ok).toBe(true);
+    expect((await domain.create("w1", "p-host-a", "system_default", 80, 24)).ok).toBe(true);
+    expect((await domain.create("w1", "p-host-b", "system_default", 80, 24)).ok).toBe(true);
     const live = starter.createdIds();
     expect(live).toHaveLength(3);
 
@@ -936,8 +1053,8 @@ describe("a completed open answers from LIVE state", () => {
     const first = await domain.openWorkspace("w1", "p1");
     expect(first).toEqual({ ok: true, value: null });
 
-    await domain.create("w1", "p1", 80, 24);
-    await domain.create("w1", "p1", 80, 24);
+    await domain.create("w1", "p1", "system_default", 80, 24);
+    await domain.create("w1", "p1", "system_default", 80, 24);
     const [a, b] = starter.createdIds();
     if (a === undefined || b === undefined) throw new Error("unreachable");
     await domain.persistWorkspace("p1", layout([[a], [b]]));
@@ -968,7 +1085,7 @@ describe("a completed open answers from LIVE state", () => {
     if (a === undefined || b === undefined) throw new Error("unreachable");
 
     // The user splits, and the renderer persists the new topology.
-    await domain.create("w1", "p1", 80, 24);
+    await domain.create("w1", "p1", "system_default", 80, 24);
     const c = starter.createdIds()[0];
     if (c === undefined) throw new Error("unreachable");
     await domain.persistWorkspace("p1", layout([[a, b], [c]]));
@@ -988,17 +1105,98 @@ describe("a completed open answers from LIVE state", () => {
     await domain.dispose();
   });
 
+  /**
+   * THE REATTACH SEED. These are the tests that say main holds no `displayCwd`
+   * of its own.
+   *
+   * A descriptor is written once, at admission. A shell's directory moves with
+   * every `cd`, and only the host sees that - properties travel host -> port ->
+   * renderer and main is not on that path. So a field recorded here would be a
+   * remembered SPAWN directory, and a reattach seeded from it would put the
+   * wrong place on the header with full confidence. Main asks instead.
+   */
+  it("seeds a LIVE reattach with what the host says NOW, not with the spawn directory", async () => {
+    const domain = build();
+    starter.snapshot = null;
+    await domain.create("w1", "p1", "system_default", 80, 24);
+    const [a] = starter.createdIds();
+    if (a === undefined) throw new Error("unreachable");
+    // The shell moved after it was admitted. Main recorded nothing about this.
+    starter.directories.set(a, "p1/src/lib");
+
+    // A renderer reload: main still holds the record, so this is the LIVE path
+    // and no revive happens.
+    const opened = await domain.openWorkspace("w1", "p1");
+
+    if (!opened.ok || opened.value === null) throw new Error("unreachable");
+    expect(opened.value.terminals).toEqual([
+      expect.objectContaining({ terminalId: a, displayCwd: "p1/src/lib" }),
+    ]);
+    expect(starter.reviveCount()).toBe(0);
+    await domain.dispose();
+  });
+
+  it("carries the HONEST UNKNOWN for a terminal the host could not describe", async () => {
+    const domain = build();
+    starter.snapshot = null;
+    await domain.create("w1", "p1", "system_default", 80, 24);
+    const [a] = starter.createdIds();
+    if (a === undefined) throw new Error("unreachable");
+    // The host holds no directory for it. `null` is the answer, not a guess -
+    // and specifically not the project root, which is where it was spawned.
+    starter.directories.clear();
+
+    const opened = await domain.openWorkspace("w1", "p1");
+
+    if (!opened.ok || opened.value === null) throw new Error("unreachable");
+    expect(opened.value.terminals[0]?.displayCwd).toBeNull();
+    await domain.dispose();
+  });
+
+  it("still opens the workspace when the DESCRIBE itself fails", async () => {
+    // The directory is display text with a named unknown state. Failing a whole
+    // restore - live shells, scrollback, layout - because a header could not be
+    // captioned would trade the session for a subtitle.
+    const domain = build();
+    starter.snapshot = null;
+    await domain.create("w1", "p1", "system_default", 80, 24);
+    const [a] = starter.createdIds();
+    if (a === undefined) throw new Error("unreachable");
+    starter.failDescribe = true;
+
+    const opened = await domain.openWorkspace("w1", "p1");
+
+    if (!opened.ok || opened.value === null) throw new Error("unreachable");
+    expect(opened.value.terminals.map((entry) => entry.terminalId)).toEqual([a]);
+    expect(opened.value.terminals[0]?.displayCwd).toBeNull();
+    await domain.dispose();
+  });
+
+  it("seeds a REVIVED workspace from the revive result, which is newer than any record", async () => {
+    const domain = build();
+    starter.snapshot = snapshotFor(1);
+
+    const restored = await domain.openWorkspace("w1", "p1");
+
+    if (!restored.ok || restored.value === null) throw new Error("unreachable");
+    // The fake host answers a revive with the project label, the way the real
+    // one labels a shell that has just been spawned at the project root.
+    expect(restored.value.terminals[0]?.displayCwd).toBe("p1");
+    expect(starter.reviveCount()).toBe(1);
+    await domain.dispose();
+  });
+
   it("gives a live terminal the persisted layout does not name a pane of its own", async () => {
     // Persistence is debounced in the renderer, so a terminal opened in the
     // last frame before a remount is live and absent from the recorded
     // topology. Dropping it is how a running shell ends up with no pane.
     const domain = build();
     starter.snapshot = null;
-    await domain.create("w1", "p1", 80, 24);
+    await domain.create("w1", "p1", "system_default", 80, 24);
     const [a] = starter.createdIds();
     if (a === undefined) throw new Error("unreachable");
     await domain.persistWorkspace("p1", layout([[a]]));
-    await domain.create("w1", "p1", 80, 24);
+    await domain.create("w1", "p1", "system_default", 80, 24);
     const unpersisted = starter.createdIds()[1];
     if (unpersisted === undefined) throw new Error("unreachable");
 
@@ -1079,7 +1277,7 @@ describe("persistWorkspace under the lifecycle gate", () => {
 
   it("REFUSES a commit for a project whose admission has closed", async () => {
     const domain = build();
-    await domain.create("w1", "p1", 80, 24);
+    await domain.create("w1", "p1", "system_default", 80, 24);
     const [id] = starter.createdIds();
     if (id === undefined) throw new Error("unreachable");
     const before = starter.requests.filter(
@@ -1113,7 +1311,7 @@ describe("persistWorkspace under the lifecycle gate", () => {
    */
   it("FORWARDS the close's `final` flag, and never past a refusal", async () => {
     const domain = build();
-    await domain.create("w1", "p1", 80, 24);
+    await domain.create("w1", "p1", "system_default", 80, 24);
     const [id] = starter.createdIds();
     if (id === undefined) throw new Error("unreachable");
 
@@ -1149,7 +1347,7 @@ describe("persistWorkspace under the lifecycle gate", () => {
     expect(gate.DRAINED_LEASE_CLASSES).toContain("terminalPersist");
 
     const domain = build();
-    await domain.create("w1", "p1", 80, 24);
+    await domain.create("w1", "p1", "system_default", 80, 24);
     const [id] = starter.createdIds();
     if (id === undefined) throw new Error("unreachable");
 
@@ -1285,12 +1483,14 @@ describe("persistWorkspace under the lifecycle gate", () => {
       let reads = 0;
       const counting = new TerminalDomain(
         {
-          resolveProjectCwd: (projectId) => Promise.resolve(`/projects/${projectId}`),
+          resolveProjectLocation: (projectId) =>
+            Promise.resolve({ directory: `/projects/${projectId}`, label: projectId }),
           readProjectActivation: (projectId) => {
             reads += 1;
             return Promise.resolve(activations.get(projectId) ?? "active");
           },
-          resolveShell: () => ({ executable: "/bin/bash", args: [] }),
+          resolveShellLaunch: () =>
+            Promise.resolve({ executable: "/bin/bash", args: [] }),
           postPort: () => {},
           publishAvailability: () => {},
           publishTerminalsLost: () => {},

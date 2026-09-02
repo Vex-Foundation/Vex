@@ -27,6 +27,7 @@ import {
   selectTab,
   setActivePane,
   setGroupOrientation,
+  setPaneDisplayCwd,
   setTabTitle,
   terminalGroupCount,
   toPersistedLayout,
@@ -47,6 +48,7 @@ function group(id: string, terminalIds: string[] = [`${id}-t`]): WorkspaceTermin
       paneId: `${id}:${String(index)}`,
       terminalId,
       relativeSize: 1 / terminalIds.length,
+      displayCwd: null,
     })),
     activePaneId: `${id}:0`,
   };
@@ -225,6 +227,7 @@ describe("panes", () => {
           paneId: `a:${String(index)}`,
           terminalId: `a-t${String(index + 1)}`,
           relativeSize: 0,
+          displayCwd: null,
         }),
       );
     }
@@ -247,7 +250,7 @@ describe("panes", () => {
     const group0 = state.tabs[0] as WorkspaceTerminalGroup;
     state = { ...state, tabs: [{ ...group0, activePaneId: "a:0" }] };
     state = mutate(
-      addPane(state, "a", { paneId: "a:new", terminalId: "a-t3", relativeSize: 0 }),
+      addPane(state, "a", { paneId: "a:new", terminalId: "a-t3", relativeSize: 0, displayCwd: null }),
     );
     expect(
       (state.tabs[0] as WorkspaceTerminalGroup).panes.map((pane) => pane.paneId),
@@ -282,7 +285,7 @@ describe("panes", () => {
   it("moves the active pane left when the active one is removed", () => {
     let state = withGroups(["a"]);
     state = mutate(
-      addPane(state, "a", { paneId: "a:1", terminalId: "a-t2", relativeSize: 0.5 }),
+      addPane(state, "a", { paneId: "a:1", terminalId: "a-t2", relativeSize: 0.5, displayCwd: null }),
     );
     const closed = mutate(closePane(state, "a", "a:1"));
     expect((closed.tabs[0] as WorkspaceTerminalGroup).activePaneId).toBe("a:0");
@@ -407,7 +410,7 @@ describe("persistence mapping", () => {
   it("PRESERVES the persisted pane sizes through a save and a restore", () => {
     let state = withGroups(["a"]);
     state = mutate(
-      addPane(state, "a", { paneId: "a:1", terminalId: "a-t2", relativeSize: 0 }),
+      addPane(state, "a", { paneId: "a:1", terminalId: "a-t2", relativeSize: 0, displayCwd: null }),
     );
     state = mutate(resizePane(state, "a", "a:0", 0.8));
 
@@ -424,10 +427,10 @@ describe("persistence mapping", () => {
   it("rescales to sum 1 when a restore DROPS a pane, keeping the survivors' proportions", () => {
     let state = withGroups(["a"]);
     state = mutate(
-      addPane(state, "a", { paneId: "a:1", terminalId: "a-t2", relativeSize: 0 }),
+      addPane(state, "a", { paneId: "a:1", terminalId: "a-t2", relativeSize: 0, displayCwd: null }),
     );
     state = mutate(
-      addPane(state, "a", { paneId: "a:2", terminalId: "a-t3", relativeSize: 0 }),
+      addPane(state, "a", { paneId: "a:2", terminalId: "a-t3", relativeSize: 0, displayCwd: null }),
     );
     state = mutate(resizePanes(state, "a", [0.6, 0.3, 0.1]));
     const layout = toPersistedLayout(state);
@@ -512,6 +515,7 @@ function snapshotWith(
       terminalId,
       title: "bash",
       shellName: "bash",
+      displayCwd: null,
       droppedRows: 0,
       reducedRows: 0,
     })),
@@ -534,7 +538,7 @@ function snapshotWith(
 describe("controller-facing mutations", () => {
   it("makes a pane active, and refuses a pane or tab that does not exist", () => {
     const state = withGroups(["a"]);
-    const split = addPane(state, "a", { paneId: "a:1", terminalId: "t2", relativeSize: 0 });
+    const split = addPane(state, "a", { paneId: "a:1", terminalId: "t2", relativeSize: 0, displayCwd: null });
     if (!split.ok) throw new Error("split refused");
 
     const selected = setActivePane(split.state, "a", "a:0");
@@ -557,7 +561,7 @@ describe("controller-facing mutations", () => {
     // The reason `setActivePane` belongs to the model rather than to a
     // component: `addPane` reads `activePaneId` to decide whose share to halve.
     let state = withGroups(["a"]);
-    const first = addPane(state, "a", { paneId: "a:1", terminalId: "t2", relativeSize: 0 });
+    const first = addPane(state, "a", { paneId: "a:1", terminalId: "t2", relativeSize: 0, displayCwd: null });
     if (!first.ok) throw new Error("split refused");
     state = first.state;
 
@@ -568,6 +572,7 @@ describe("controller-facing mutations", () => {
       paneId: "a:2",
       terminalId: "t3",
       relativeSize: 0,
+      displayCwd: null,
     });
     if (!second.ok) throw new Error("split refused");
     const tab = second.state.tabs[0];
@@ -578,7 +583,7 @@ describe("controller-facing mutations", () => {
 
   it("flips the orientation and PRESERVES the shares, which are axis-agnostic", () => {
     let state = withGroups(["a"]);
-    const split = addPane(state, "a", { paneId: "a:1", terminalId: "t2", relativeSize: 0 });
+    const split = addPane(state, "a", { paneId: "a:1", terminalId: "t2", relativeSize: 0, displayCwd: null });
     if (!split.ok) throw new Error("split refused");
     const sized = resizePanes(split.state, "a", [0.8, 0.2]);
     if (!sized.ok) throw new Error("resize refused");
@@ -614,5 +619,109 @@ describe("controller-facing mutations", () => {
       ok: false,
       reason: "unknown_tab",
     });
+  });
+});
+
+/**
+ * WHERE EACH SHELL IS - one field, on the pane, with two writers.
+ *
+ * The defect this replaced: the panel component kept its own
+ * `Map<terminalId, displayCwd>` fed ONLY by the property stream, so a terminal
+ * that was reattached rather than freshly created had no entry and the header
+ * read "Working directory not known yet" until the user typed `cd`. The seed
+ * and the update now write the same field, which is what makes the header
+ * right on the first frame after a restore.
+ */
+describe("the pane's directory", () => {
+  it("SEEDS from the restore row main built from the host's answer", () => {
+    const layout = toPersistedLayout(withGroups(["a"]));
+    const snapshot = snapshotWith(layout, ["a-t"]);
+    const seeded: TerminalWorkspaceRestore = {
+      ...snapshot,
+      terminals: snapshot.terminals.map((entry) => ({
+        ...entry,
+        displayCwd: "vex-app/src/lib",
+      })),
+    };
+
+    const state = fromSnapshot(seeded);
+
+    expect((state.tabs[0] as WorkspaceTerminalGroup).panes[0]?.displayCwd).toBe(
+      "vex-app/src/lib",
+    );
+  });
+
+  it("keeps the UNKNOWN unknown when the host could not describe the terminal", () => {
+    // `snapshotWith` builds rows with `displayCwd: null`, which is exactly the
+    // row main sends for a terminal the host did not answer for.
+    const state = fromSnapshot(snapshotWith(toPersistedLayout(withGroups(["a"])), ["a-t"]));
+
+    expect((state.tabs[0] as WorkspaceTerminalGroup).panes[0]?.displayCwd).toBeNull();
+  });
+
+  it("is OVERWRITTEN by a property event, addressed by terminal id", () => {
+    const seeded = fromSnapshot({
+      ...snapshotWith(toPersistedLayout(withGroups(["a"])), ["a-t"]),
+      terminals: [
+        {
+          terminalId: "a-t",
+          title: "bash",
+          shellName: "bash",
+          displayCwd: "vex-app",
+          droppedRows: 0,
+          reducedRows: 0,
+        },
+      ],
+    });
+
+    const moved = setPaneDisplayCwd(seeded, "a-t", "vex-app/src");
+    if (!moved.ok) throw new Error("unexpected refusal");
+    expect((moved.state.tabs[0] as WorkspaceTerminalGroup).panes[0]?.displayCwd).toBe(
+      "vex-app/src",
+    );
+
+    // Identity is preserved when the shell re-reports the same directory, so a
+    // repeat costs no render.
+    const again = setPaneDisplayCwd(moved.state, "a-t", "vex-app/src");
+    if (!again.ok) throw new Error("unexpected refusal");
+    expect(again.state).toBe(moved.state);
+  });
+
+  it("moves ONLY the reporting terminal's pane, across groups", () => {
+    let state = withGroups(["a", "b"]);
+    state = mutate(
+      addPane(state, "a", {
+        paneId: "a:1",
+        terminalId: "a-t2",
+        relativeSize: 0,
+        displayCwd: null,
+      }),
+    );
+
+    const moved = setPaneDisplayCwd(state, "a-t2", "vex-app/docs");
+    if (!moved.ok) throw new Error("unexpected refusal");
+    const groupA = moved.state.tabs[0] as WorkspaceTerminalGroup;
+    const groupB = moved.state.tabs[1] as WorkspaceTerminalGroup;
+    expect(
+      groupA.panes.map((pane) => [pane.terminalId, pane.displayCwd]),
+    ).toEqual([
+      ["a-t", null],
+      ["a-t2", "vex-app/docs"],
+    ]);
+    expect(groupB.panes[0]?.displayCwd).toBeNull();
+  });
+
+  it("IGNORES a terminal no pane holds instead of refusing", () => {
+    // Property events race a close. A pane removed between the host emitting
+    // and the renderer applying is an ordering, not a user-visible failure.
+    const state = withGroups(["a"]);
+    const stray = setPaneDisplayCwd(state, "not-a-terminal", "vex-app");
+    expect(stray).toEqual({ ok: true, state });
+  });
+
+  it("is NOT persisted: the layout carries topology, never a directory", () => {
+    const seeded = mutate(setPaneDisplayCwd(withGroups(["a"]), "a-t", "vex-app/src"));
+    const layout = toPersistedLayout(seeded);
+    expect(layout.groups[0]?.panes[0]).toEqual({ terminalId: "a-t", relativeSize: 1 });
   });
 });

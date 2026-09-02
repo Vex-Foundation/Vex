@@ -1,11 +1,11 @@
 /**
  * THE WIN32 GATE for the suites that drive a REAL unix endpoint.
  *
- * Five suites assemble the whole host on an `AF_UNIX` socket under a 0700 temp
+ * Six suites assemble the whole host on an `AF_UNIX` socket under a 0700 temp
  * directory: `mcp-socket-contract`, `mcp-host-admission`, `mcp-host-lifecycle`,
- * `host-status-transitions` and `mcp-wire-error-redaction` - each of them binds
- * a real endpoint through `startStudioMcpHost` and asserts on the result of
- * that bind. On Windows the host refuses to bind that transport at all (the
+ * `host-status-transitions`, `mcp-wire-error-redaction` and
+ * `mcp-host-serve-failure` - each of them binds a real endpoint through
+ * `startStudioMcpHost` and asserts on the result of that bind. On Windows the host refuses to bind that transport at all (the
  * section 1.6 gate of `studio-mcp/bridge-endpoint-contract.md`; the Windows
  * transport is stage B4.2b-2's named-pipe front), so those suites cannot pass
  * there and never could.

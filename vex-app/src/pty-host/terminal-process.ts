@@ -19,6 +19,10 @@
  *    it, the last line of a build is routinely lost.
  *  - KILL WAITS FOR STARTUP. Killing before the ready event would fire an exit
  *    for a process whose start the consumer never saw.
+ *  - THE RAW CWD NEVER LEAVES THIS PROCESS. The real path is held here (it is
+ *    what a change is detected against) and is converted to a LABEL by
+ *    `display-cwd.ts` at every point where a value is handed out - the property
+ *    emit and the start result. There is no accessor for the raw one.
  *  - CWD IS TRIGGER-BASED, TITLE IS POLLED. Reading cwd costs a `readlink` on
  *    Linux and a SUBPROCESS on macOS, so it happens on ready, on exit and after
  *    a probable `cd` (a debounced Enter keystroke). The title is a field on the
@@ -49,6 +53,7 @@ import {
   type TerminalProperty,
 } from "@shared/schemas/terminal.js";
 import { TerminalDataBufferer } from "./data-bufferer.js";
+import { deriveDisplayCwd } from "./display-cwd.js";
 import { TerminalMirror } from "./mirror.js";
 import { buildTerminalEnvironment } from "./process-env.js";
 import type {
@@ -80,7 +85,16 @@ export interface TerminalProcessDeps {
 }
 
 export type TerminalStartResult =
-  | { readonly ok: true; readonly pid: number; readonly cwd: string; readonly shellName: string }
+  | {
+    readonly ok: true;
+    readonly pid: number;
+    /**
+     * The LABEL for the shell's directory, never the path. `display-cwd.ts`
+     * says why the raw value stops inside this process.
+     */
+    readonly displayCwd: string;
+    readonly shellName: string;
+  }
   | { readonly ok: false; readonly code: TerminalErrorCode; readonly detail: string };
 
 export class TerminalProcess {
@@ -304,13 +318,20 @@ export class TerminalProcess {
 
     this.markStartupComplete();
     this.sinks.onProperty({ property: "pid", value: pty.pid });
+    // THE FIRST LABEL, unconditionally, exactly as `pid` above is
+    // unconditional. `refreshCwd` below only emits on a CHANGE, and a shell
+    // that starts in the directory it was launched in has not changed
+    // anything - so without this emit a terminal that is never `cd`-ed out of
+    // its project would report its directory to nobody, and the panel header
+    // would sit empty for the entire life of the session.
+    this.sinks.onProperty({ property: "displayCwd", value: this.displayCwd });
     this.startTitlePolling();
     void this.refreshCwd();
 
     return {
       ok: true,
       pid: pty.pid,
-      cwd: this.currentCwd,
+      displayCwd: this.displayCwd,
       shellName: basename(resolved, this.deps.platform ?? process.platform),
     };
   }
@@ -616,8 +637,18 @@ export class TerminalProcess {
     return { cols: this.cols, rows: this.rows };
   }
 
-  get cwd(): string {
-    return this.currentCwd;
+  /**
+   * The shell's directory AS A LABEL.
+   *
+   * There is deliberately no accessor for `currentCwd`. The raw path is an
+   * implementation detail of change detection, and an accessor for it is how it
+   * would eventually find its way into a message.
+   */
+  get displayCwd(): string {
+    return deriveDisplayCwd(
+      { projectRoot: this.launch.cwd, projectLabel: this.launch.projectLabel },
+      this.currentCwd,
+    );
   }
 
   get title(): string {
@@ -652,13 +683,28 @@ export class TerminalProcess {
     this.cwdTimer.unref?.();
   }
 
-  /** Read the cwd and emit ONLY on change. */
+  /**
+   * Read the cwd and emit ONLY when the LABEL changed.
+   *
+   * The comparison moved from the path to the label deliberately. The schema
+   * promises that a property event means the value the consumer holds is now
+   * wrong, and two different directories outside the project have the SAME
+   * label - so comparing paths would emit a change event carrying the identical
+   * string every time the user moved around outside their project, which is
+   * both a lie about the contract and a wakeup for every attached renderer.
+   *
+   * `currentCwd` is still updated from the raw path, because the label alone
+   * cannot tell the next read whether anything moved.
+   */
   async refreshCwd(): Promise<void> {
     if (this.disposed || this.pty === null) return;
     const next = await this.deps.probe.readCwd(this.pty.pid);
     if (next === null || next === this.currentCwd) return;
+    const previousLabel = this.displayCwd;
     this.currentCwd = next;
-    this.sinks.onProperty({ property: "cwd", value: next });
+    const label = this.displayCwd;
+    if (label === previousLabel) return;
+    this.sinks.onProperty({ property: "displayCwd", value: label });
   }
 
   /* ---------------------------------------------------------------- *

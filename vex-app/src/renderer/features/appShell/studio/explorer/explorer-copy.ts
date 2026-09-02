@@ -123,6 +123,7 @@ const LISTING_ERROR_COPY: Readonly<Record<FilesErrorCode, string>> = {
   not_found: "This folder is no longer on disk.",
   outside_project: "This folder resolves outside the project, so Vex will not open it.",
   symlinked_path: "This is a symbolic link. Vex does not follow links out of a project.",
+  path_changed: "This changed on disk while Vex was opening it. Refreshing will read it again.",
   not_a_directory: "This is not a folder any more.",
   not_a_file: "This is not a file.",
   too_large: "This file is larger than Vex will open.",

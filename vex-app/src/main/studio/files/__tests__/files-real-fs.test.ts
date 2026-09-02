@@ -555,23 +555,21 @@ describe("excludes", () => {
   });
 
   /**
-   * `O_NOFOLLOW` IS POSIX-ONLY, and that is a recorded product decision, not a
-   * gap this test may paper over: `read.ts` states it explicitly ("It is
-   * POSIX-only; on Windows `fsConstants` does not define it and `?? 0` degrades
-   * to a plain read-only open"). On win32 the open therefore FOLLOWS the link
-   * and the rule set applies, which is the opposite of what this asserts.
+   * ON ALL THREE PLATFORMS, and that is the point of this test.
    *
-   * Skipping visibly, rather than asserting the win32 behaviour, because
-   * pinning "the link IS followed" would turn an accepted degradation into a
-   * guaranteed contract - see the STOP item in the round report, where whether
-   * that degradation still holds on a runner with Developer Mode enabled is
-   * raised for an explicit decision.
+   * It used to skip on win32, because `O_NOFOLLOW` is POSIX-only and the
+   * Windows open therefore FOLLOWED the link. A Windows CI run proved that
+   * degradation was a live hole rather than a theoretical one: `symlinkSync`
+   * succeeded unprivileged and the linked rule set was read and applied.
+   * `no-follow-open.ts` refuses the standing link with an `lstat` BEFORE the
+   * open, which needs no platform flag, so the assertion below is now the
+   * contract everywhere.
    */
-  it.skipIf(process.platform === "win32")("does NOT apply a SYMLINKED ignore file, and does not follow it", async () => {
+  it("does NOT apply a SYMLINKED ignore file, and does not follow it", async () => {
     // `readFile` followed the link and read whatever it pointed at, which for a
     // link to a huge file or a device is unbounded main-process memory. The
-    // handle is opened `O_NOFOLLOW` now, so this is ELOOP - and an ignore file
-    // this process may not follow is an ignore file that does not apply.
+    // link is refused before the open now - and an ignore file this process may
+    // not follow is an ignore file that does not apply.
     const outside = await realpath(await mkdtemp(path.join(tmpdir(), "vex-ign-")));
     await writeFile(path.join(outside, "rules"), "hidden.ts\n", "utf8");
     await symlink(path.join(outside, "rules"), path.join(root, ".gitignore"));
@@ -828,10 +826,57 @@ describe("watching a real project", () => {
     await rename(temp, target);
 
     await waitFor("the save", () => changeFor("config.json") !== undefined);
-    // The temp file, if it was reported at all, was created and removed within
-    // the window, so the coalescer annihilated it.
+
+    // A SETTLE SIGNAL, not a sleep. A sentinel written AFTER the rename travels
+    // the same pipeline - the same 75 ms aggregation window and the same
+    // throttle - so its arrival proves every event the save produced has
+    // already been folded and emitted, or annihilated. Asserting on the temp
+    // path the instant the target's change lands would pass on Linux for the
+    // wrong reason: the temp's own events might simply not have arrived yet.
+    await writeFile(path.join(root, "sentinel.txt"), "x", "utf8");
+    await waitFor(
+      "the sentinel that follows the save",
+      () => changeFor("sentinel.txt") !== undefined,
+    );
+
+    // THE CONTRACT, and it is the same on every platform: the file the user is
+    // editing is reported ONCE, and never as a delete. A delete-then-create
+    // would collapse the row and rebuild it, losing selection and scroll on the
+    // file being saved, which is the defect the coalescer's DELETED+ADDED rule
+    // exists to prevent.
+    const targetChanges = changes().filter((c) => c.path === "config.json");
+    expect(targetChanges).toHaveLength(1);
+    expect(targetChanges[0]?.kind).not.toBe("deleted");
+
+    // AND THE TEMP NAME IS NOT LEFT IN THE TREE. This is the assertion the
+    // OPERATING SYSTEM can honour on all three platforms, and it is deliberately
+    // weaker than "the temp was never mentioned", because that stronger claim is
+    // simply not true of every backend or of every schedule:
+    //
+    //  - INOTIFY / READDIRECTORYCHANGESW deliver both halves, and when they land
+    //    in ONE 75 ms aggregation window the coalescer annihilates the pair and
+    //    nothing is reported at all. Measured on a LOADED Linux machine, they can
+    //    also land in two consecutive windows, and then the consumer sees an
+    //    `added` followed by a `deleted` - the scratch file flickers into the
+    //    tree for one batch. VS Code's parcel watcher coalesces per native
+    //    callback and has exactly the same property.
+    //  - FSEVENTS coalesces per path inside its own latency window and reports
+    //    the path's FINAL state, so the temp name arrives ONCE, as a `delete`,
+    //    and its `create` half never crosses the boundary at all. A coalescer
+    //    cannot annihilate a create it was never given, and suppressing a lone
+    //    delete would mean keeping a private record of what each consumer has
+    //    been shown - a second source of truth that would also swallow real
+    //    deletes. VS Code skips its atomic-write test on macOS outright ("this
+    //    test seems not possible with fsevents backend", `parcelWatcher.test.ts`);
+    //    this asserts the honest contract instead.
+    //
+    // What holds everywhere, and is what a tree actually needs: the LAST WORD
+    // about the temp name is that it is gone. The fold itself - both halves in
+    // one window annihilate, and the target is never reported as deleted - is
+    // proven deterministically, on every lane, by `atomic-save-shapes.test.ts`,
+    // which drives each backend's shape through this same coalescer.
     const tempChanges = changes().filter((c) => c.path === ".config.json.tmp");
-    expect(tempChanges).toEqual([]);
+    expect(tempChanges.at(-1)?.kind ?? "deleted").toBe("deleted");
   });
 
   it("reports BOTH HALVES of a case-only rename", async () => {

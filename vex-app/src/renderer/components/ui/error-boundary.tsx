@@ -201,7 +201,14 @@ export function ErrorBoundaryFallback({
         extent === "screen" ? "h-screen" : "h-full min-h-0",
       )}
     >
-      <div className="flex w-full max-w-lg flex-col gap-3">
+      {/* The CARD carries the entrance, not the alert container: the container
+        * is what `role="alert"` announces and what the focus effect above
+        * reaches into, and neither may wait on an animation. The card fading in
+        * marks the substitution - a subtree the user was reading has been
+        * replaced - which is one of the three jobs MOTION-POLICY gives motion.
+        * A single opacity-plus-rise pass, no loop: an error surface that keeps
+        * moving is decoration on top of a failure. */}
+      <div className="vex-surface-enter flex w-full max-w-lg flex-col gap-3">
         <h2 className="text-[16px] font-medium leading-[24px] text-ink-primary">
           {title}
         </h2>

@@ -30,7 +30,11 @@
 
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import type { FileNode } from "@shared/schemas/files.js";
-import type { TerminalErrorCode } from "@shared/schemas/terminal.js";
+import type {
+  TerminalErrorCode,
+  TerminalShellId,
+  TerminalShellOption,
+} from "@shared/schemas/terminal.js";
 import { cn } from "../../../../lib/utils.js";
 import { reportRendererFailure } from "../../../../lib/renderer-error-report.js";
 import { notify } from "../../../../lib/notifications/index.js";
@@ -40,6 +44,7 @@ import {
   killTerminal,
   onTerminalsLost,
   persistTerminalWorkspace,
+  readShellCatalogue,
   readTerminalWorkspace,
 } from "../../../../lib/api/terminal.js";
 import {
@@ -56,6 +61,7 @@ import {
   selectTab,
   setActivePane,
   setGroupOrientation,
+  setPaneDisplayCwd,
   setTabTitle,
   toPersistedLayout,
 } from "../workspace/workspace-model.js";
@@ -156,6 +162,22 @@ export function StudioWorkspaceController({
     () => new Set(),
   );
   const [restoring, setRestoring] = useState(false);
+  /**
+   * WHICH SHELL the next terminal opens with, and the rows the picker shows.
+   *
+   * SESSION STATE, held here because this is the component that calls
+   * `createTerminal` and therefore the one place the choice is acted on. It is
+   * deliberately not persisted: there is no UI-preference store in this
+   * feature to persist it into, and inventing one for a single field would put
+   * a new durable format under a component. Main's `defaultShellId` is the
+   * starting value, so the default has exactly one owner and it is not here.
+   *
+   * The catalogue starts EMPTY rather than with a guessed row: an empty picker
+   * for the width of one IPC round trip is honest, and a guess would show a
+   * shell that may not be installed.
+   */
+  const [shells, setShells] = useState<readonly TerminalShellOption[]>([]);
+  const [shellId, setShellId] = useState<TerminalShellId>("system_default");
   // The registry a closed tab's terminals are DISPOSED through. The prop exists
   // so a test can supply its own; the shared one is the window's.
   const activeRegistry = registry ?? terminalRegistry;
@@ -996,6 +1018,10 @@ export function StudioWorkspaceController({
       try {
         result = await createTerminal({
           projectId,
+          // The renderer names a shell by ID and never by path. Main re-resolves
+          // it against the filesystem and refuses `launch_shell_unavailable`
+          // rather than substituting another shell.
+          shellId,
           cols: CREATE_COLS,
           rows: CREATE_ROWS,
         });
@@ -1019,7 +1045,11 @@ export function StudioWorkspaceController({
         }
         return;
       }
-      const { terminalId, shellName } = result.data.value;
+      // `displayCwd` is the host's label for where the shell was STARTED, taken
+      // from the create result rather than waited for as a property event: the
+      // pane is mounted in this same tick, and a header that said "not known
+      // yet" until the first property arrived would blink on every new terminal.
+      const { terminalId, shellName, displayCwd } = result.data.value;
 
       // ---- the fence ----
       const stale =
@@ -1056,7 +1086,7 @@ export function StudioWorkspaceController({
             tabId: newId("group"),
             title: shellName,
             orientation: "horizontal",
-            panes: [{ paneId, terminalId, relativeSize: 1 }],
+            panes: [{ paneId, terminalId, relativeSize: 1, displayCwd }],
             activePaneId: paneId,
           }),
         );
@@ -1070,15 +1100,56 @@ export function StudioWorkspaceController({
           // IGNORED by the model, which decides the share itself: the caller
           // cannot know the group's current proportions.
           relativeSize: 0,
+          displayCwd,
         }),
       );
     },
-    [apply, projectId],
+    [apply, projectId, shellId],
   );
 
   const handleNewTerminal = useCallback((): void => {
     void openTerminal({ kind: "tab" });
   }, [openTerminal]);
+
+  /**
+   * READ THE SHELL CATALOGUE ONCE, when the workspace mounts.
+   *
+   * Not a query with an invalidation policy and not a poll: the answer changes
+   * only when the user installs or removes a shell, which no event in this
+   * process observes, and a stale row costs nothing because it authorizes
+   * nothing - main re-resolves the chosen id on every create and refuses by
+   * name if it is gone.
+   *
+   * FENCED with a cancellation flag so a workspace unmounted mid-read does not
+   * set state on a dead component, and `defaultShellId` is applied only on the
+   * FIRST successful read: overwriting a choice the user made while the read
+   * was in flight would silently undo it.
+   *
+   * A FAILED read leaves the picker empty and is not surfaced as a notice. The
+   * terminal still opens - `system_default` is the initial value and is the
+   * one shell that always resolves - so there is nothing the user would do
+   * with the message.
+   */
+  const shellsLoadedRef = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    void readShellCatalogue().then(
+      (result) => {
+        if (cancelled || !result.ok) return;
+        setShells(result.data.shells);
+        if (!shellsLoadedRef.current) {
+          shellsLoadedRef.current = true;
+          setShellId(result.data.defaultShellId);
+        }
+      },
+      () => {
+        // The bridge rejected. See above: an empty picker is the whole cost.
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /**
    * OPEN THE FIRST TERMINAL of a project that restored to nothing.
@@ -1248,6 +1319,12 @@ export function StudioWorkspaceController({
         onTitleChange={(tabId, title) => {
           apply((current) => setTabTitle(current, tabId, title));
         }}
+        onDisplayCwdChange={(terminalId, displayCwd) => {
+          apply((current) => setPaneDisplayCwd(current, terminalId, displayCwd));
+        }}
+        shellId={shellId}
+        shells={shells}
+        onSelectShell={setShellId}
         renderFileTab={(tab, isActive) => (
           // The viewer needs the project, and `TerminalTabs` does not have one.
           // A render prop keeps the tab strip ignorant of the files domain

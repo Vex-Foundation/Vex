@@ -188,6 +188,20 @@ const BANNED: readonly BannedPattern[] = [
     regex:
       /vex-micro-label[^"'`]*(?<![:-])text-ink-(?:tertiary|caption)|(?<![:-])text-ink-(?:tertiary|caption)[^"'`]*vex-micro-label/,
   },
+  // MOTION-POLICY, the CSP half (B5.2 motion pass). The renderer serves
+  // `style-src 'self'`, and CSP treats PARSING A STRING into style
+  // declarations as an inline style: `setAttribute("style", ...)` and
+  // `element.style.cssText = ...` are refused at runtime, with no build error
+  // and no type error to catch them first. Single CSSOM property writes
+  // (`el.style.width = ...`, `setProperty("--x", ...)`) and React's
+  // `style={{...}}` prop are NOT refused - React commits those property by
+  // property - which is why the JSX form stays legal and is used freely in
+  // this tree. That distinction is the whole rule, so the ban names the two
+  // string-parsing forms and nothing else.
+  {
+    name: "CSP-refused inline style string (MOTION-POLICY)",
+    regex: /setAttribute\(\s*["'`]style["'`]|\.style\.cssText\s*=/,
+  },
 ];
 
 /**
