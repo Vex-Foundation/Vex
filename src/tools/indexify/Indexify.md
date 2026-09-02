@@ -55,7 +55,7 @@ ledger (`orders.php`, `transaction_history.php`). Consequences:
 | 6 | `stack_info?action=fetch` docs say auth optional; live it 401s keyless — `fetchStack` sends the key `if-present` and `indexify.stack` is requiresEnv-gated |
 | 7 | `user_info?action=public_profile` docs type `created_at` as string; wire serves a unix-seconds number |
 | 8 | ~~`stack_info?action=edit_allocation` answers 401 to the API key~~ **RESOLVED 2026-09-02**: the Indexify team enabled API-key reallocation in production; verified live on stack 28440 (same-weights edit, version 1→2). The Z500 sync needed zero changes |
-| 9 | `edit_allocation`'s success response reports `version` as the PREVIOUS version, not the resulting one (measured 2026-09-02: response said 1, read-back showed 2) — confirm applied state via `version_history` read-back, never the response field. The Z500 runner already does |
+| 9 | ~~`edit_allocation`'s response reported `version` as the PREVIOUS version~~ **RESOLVED 2026-09-03**: verified on dev AND prod that the response now reports the RESULTING version. Read-back via `version_history` remains the authoritative confirmation in the Z500 runner regardless |
 
 ## Token registration and the dev environment (2026-09-02)
 
@@ -71,12 +71,17 @@ the venue's catalogue — the team's prescribed lever for getting Z500 coins
   $10,000") — never pre-judge locally; the venue is the authority.
 - 404 `"Token not found on CoinGecko"` → mint unresolvable on their sources.
 - OBSERVED: the endpoint accepted a keyless call — registration appears to
-  require no auth server-side (reported to the team; we send the key anyway).
+  require no auth server-side (reported to the team; retested 2026-09-03 on
+  dev AND prod after their fix announcement: still keyless; we send the key
+  anyway).
 
 `stack_info?action=create` now AUTO-REGISTERS unknown mints in the
 allocation, failing the whole create with a 400 naming the first offending
 mint — but registrations processed BEFORE the failure persist (non-atomic;
-verified on dev: a failed create left its first token registered).
+verified on dev: a failed create left its first token registered; RETESTED
+2026-09-03 after the team's fix announcement with a fresh pair — still
+non-atomic). The stack_create handler's token preflight makes this moot for
+Vex callers.
 
 A **dev environment** exists at `https://api-dev.indexify.finance` with its
 own account and key (dev embedded wallet `6s82…PLnx`); the production key is

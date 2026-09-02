@@ -342,8 +342,9 @@ export type IndexifyTradability =
 
 /**
  * `stack_info.php?action=edit_allocation` result.
- * QUIRK (measured 2026-09-02): `version` is the PREVIOUS version, not the
- * resulting one — confirm applied state via read-back, never this field.
+ * `version` semantics changed venue-side once already (previous → resulting,
+ * fixed 2026-09-03), so applied state is STILL confirmed via read-back,
+ * never this field.
  */
 export interface IndexifyEditAllocationResult {
   success: boolean;
