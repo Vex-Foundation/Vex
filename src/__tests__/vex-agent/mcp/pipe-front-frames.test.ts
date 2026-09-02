@@ -29,6 +29,7 @@ import {
   PIPE_FRONT_CONTROL_PAYLOAD_MAX_BYTES,
   PIPE_FRONT_DATA_PAYLOAD_MAX_BYTES,
   PIPE_FRONT_DATA_TYPES,
+  PIPE_FRONT_ERROR_CODES,
   PIPE_FRONT_FRONT_TO_MAIN_CONTROL_TYPES,
   PIPE_FRONT_HEADER_BYTES,
   PIPE_FRONT_MAGIC,
@@ -57,6 +58,15 @@ interface ExpectedMalformed {
   readonly reason: string;
 }
 
+/**
+ * A multi-fault row: bytes that violate BOTH named steps of the frozen
+ * validation order, whose single expected reason is the EARLIER one.
+ */
+interface PrecedenceClaim {
+  readonly earlier: string;
+  readonly later: string;
+}
+
 interface FrameVector {
   readonly name: string;
   readonly plane: PipeFrontPlane;
@@ -64,6 +74,7 @@ interface FrameVector {
   readonly expectedSequence: string;
   readonly hex: string;
   readonly expect: ExpectedFrame | ExpectedMalformed;
+  readonly precedence?: PrecedenceClaim;
   readonly note?: string;
 }
 
@@ -101,7 +112,17 @@ interface Vectors {
   };
   readonly peerClosedReasons: Record<string, number>;
   readonly boundFlags: Record<string, number>;
+  readonly errorCodes: Record<string, number>;
   readonly malformedReasons: readonly string[];
+  readonly validationOrder: readonly string[];
+  readonly validationOrderReasons: Record<string, readonly string[]>;
+  readonly validationOrderUnsatisfiablePairs: readonly {
+    readonly earlier: string;
+    readonly later: string;
+    /** The step the earlier one is proven against instead, or `null`. */
+    readonly provenAgainst: string | null;
+    readonly why: string;
+  }[];
   readonly frames: readonly FrameVector[];
   readonly streams: readonly StreamVector[];
 }
@@ -149,6 +170,7 @@ function frameFromVector(vector: FrameVector, expected: ExpectedFrame): PipeFron
         creditBytes: p["creditBytes"] as number,
         chunkBytes: p["chunkBytes"] as number,
         handshakeDeadlineMs: p["handshakeDeadlineMs"] as number,
+        initialAdmissionEpoch: p["initialAdmissionEpoch"] as number,
         pipeName: p["pipeName"] as string,
         timeoutRefusalBytes: p["timeoutRefusalBytes"] as string };
     case "ADMIT":
@@ -184,7 +206,7 @@ function frameFromVector(vector: FrameVector, expected: ExpectedFrame): PipeFron
       return { ...envelope, type: "OPEN" };
     case "WRITE_DONE":
       return { ...envelope, type: "WRITE_DONE",
-        throughSequence: BigInt(p["throughSequence"] as string) };
+        ackThroughSequence: BigInt(p["ackThroughSequence"] as string) };
     case "PEER_CLOSED":
       return { ...envelope, type: "PEER_CLOSED",
         reason: reasonName(p["reason"] as number),
@@ -282,6 +304,9 @@ describe("pipe-front frames: the fixture is this codec's contract", () => {
     expect(vectors.types.data).toEqual(PIPE_FRONT_DATA_TYPES);
     expect(vectors.peerClosedReasons).toEqual(PIPE_FRONT_PEER_CLOSED_REASONS);
     expect(vectors.boundFlags).toEqual(PIPE_FRONT_BOUND_FLAGS);
+    // The front's structural codes are a CLOSED set: main resolves every code
+    // it logs, and an undefined one is a malformed frame.
+    expect(vectors.errorCodes).toEqual(PIPE_FRONT_ERROR_CODES);
   });
 
   it("pins the bounds", () => {
@@ -323,6 +348,66 @@ describe("pipe-front frames: the fixture is this codec's contract", () => {
         .map((vector) => (vector.expect as ExpectedMalformed).reason),
     );
     expect(vectors.malformedReasons.filter((reason) => !covered.has(reason))).toEqual([]);
+  });
+
+  it("proves every adjacent pair of the frozen validation order", () => {
+    // Protocol section 10.1: two codecs that checked the same rules in
+    // different orders would report DIFFERENT reasons for the same bytes, and
+    // the reason is what an operator reads. Every adjacent pair therefore has a
+    // frame that violates both, expecting the earlier one - so moving a check
+    // turns this red rather than drifting the two implementations apart.
+    const order = vectors.validationOrder;
+    expect(order.length).toBeGreaterThan(1);
+    const rank = new Map(order.map((step, index) => [step, index] as const));
+
+    const covered = new Set<string>();
+    for (const vector of vectors.frames) {
+      const claim = vector.precedence;
+      if (claim === undefined) {
+        continue;
+      }
+      const earlier = present(rank.get(claim.earlier), `order step ${claim.earlier}`);
+      const later = present(rank.get(claim.later), `order step ${claim.later}`);
+      expect(earlier).toBeLessThan(later);
+      expect(vector.expect.kind).toBe("malformed");
+      if (vector.expect.kind !== "malformed") {
+        continue;
+      }
+      // The row expects a reason the EARLIER step is able to produce.
+      expect(
+        present(
+          vectors.validationOrderReasons[claim.earlier],
+          `the reasons of order step ${claim.earlier}`,
+        ),
+      ).toContain(vector.expect.reason);
+      covered.add(`${claim.earlier}>${claim.later}`);
+    }
+
+    const unsatisfiable = new Set(
+      vectors.validationOrderUnsatisfiablePairs.map(
+        (pair) => `${pair.earlier}>${pair.later}`,
+      ),
+    );
+    const missing = order
+      .slice(0, -1)
+      .map((step, index) => `${step}>${present(order[index + 1], "the next step")}`)
+      .filter((pair) => !covered.has(pair) && !unsatisfiable.has(pair));
+    expect(missing).toEqual([]);
+
+    // A pair declared unsatisfiable still has to say how its earlier step is
+    // pinned - against another later step, or as the later half of its own
+    // predecessor's pair - so the declaration cannot become a way to drop a
+    // step from the order entirely.
+    for (const pair of vectors.validationOrderUnsatisfiablePairs) {
+      expect(rank.get(pair.earlier)).toBeLessThan(
+        present(rank.get(pair.later), `order step ${pair.later}`),
+      );
+      const discharged =
+        pair.provenAgainst === null
+          ? [...covered].some((claim) => claim.endsWith(`>${pair.earlier}`))
+          : covered.has(`${pair.earlier}>${pair.provenAgainst}`);
+      expect(discharged).toBe(true);
+    }
   });
 
   it("agrees with the codec about which types name a connection", () => {
@@ -442,6 +527,72 @@ describe("pipe-front frames: encode", () => {
     ).toThrowError(/connection_zero/);
   });
 
+  it("refuses a u64 field outside u64, which setBigUint64 would silently wrap", () => {
+    // `DataView.setBigUint64` accepts -1n and 2^64 alike and writes eight
+    // perfectly well-formed bytes for each, so a relay bug would reach the peer
+    // as a plausible nonce or sequence rather than as a fault in this process.
+    const base = {
+      plane: PIPE_FRONT_PLANE.controlDown,
+      generation: 0x2a7f1c04,
+      connection: 0,
+      sequence: 1n,
+    } as const;
+    expect(() =>
+      encodePipeFrontFrame({ ...base, type: "PING", nonce: -1n }),
+    ).toThrowError(/field_range.*nonce/);
+    expect(() =>
+      encodePipeFrontFrame({ ...base, type: "PING", nonce: 2n ** 64n }),
+    ).toThrowError(/field_range.*nonce/);
+
+    const upstream = {
+      plane: PIPE_FRONT_PLANE.controlUp,
+      generation: 0x2a7f1c04,
+      connection: 7,
+      sequence: 1n,
+    } as const;
+    expect(() =>
+      encodePipeFrontFrame({
+        ...upstream, type: "WRITE_DONE", ackThroughSequence: -1n,
+      }),
+    ).toThrowError(/field_range.*ackThroughSequence/);
+    expect(() =>
+      encodePipeFrontFrame({
+        ...upstream, type: "WRITE_DONE", ackThroughSequence: 2n ** 64n,
+      }),
+    ).toThrowError(/field_range.*ackThroughSequence/);
+    expect(() =>
+      encodePipeFrontFrame({
+        ...upstream, type: "PEER_CLOSED",
+        reason: "peer_eof", throughDataSequence: -1n,
+      }),
+    ).toThrowError(/field_range.*throughDataSequence/);
+
+    // The boundary itself still encodes: 2^64-1 is a legal payload value even
+    // though it is an illegal HEADER sequence.
+    expect(() =>
+      encodePipeFrontFrame({
+        ...upstream, type: "WRITE_DONE", ackThroughSequence: 2n ** 64n - 1n,
+      }),
+    ).not.toThrow();
+  });
+
+  it("refuses an ERROR code outside the frozen closed set", () => {
+    const errorFrame = (code: number): PipeFrontFrame => ({
+      plane: PIPE_FRONT_PLANE.controlUp,
+      generation: 0x2a7f1c04,
+      connection: 0,
+      sequence: 1n,
+      type: "ERROR",
+      code,
+      count: 1,
+    });
+    expect(() => encodePipeFrontFrame(errorFrame(0))).toThrowError(/error_code/);
+    expect(() => encodePipeFrontFrame(errorFrame(0x1007))).toThrowError(/error_code/);
+    expect(() =>
+      encodePipeFrontFrame(errorFrame(PIPE_FRONT_ERROR_CODES.plane_read_failed)),
+    ).not.toThrow();
+  });
+
   it("refuses a non-bootstrap frame with generation zero", () => {
     expect(() =>
       encodePipeFrontFrame({
@@ -556,17 +707,107 @@ describe("pipe-front frames: streams and split boundaries", () => {
     );
   });
 
+  it("never exceeds the retention bound DURING a push, not merely after one", () => {
+    // The guarantee this measures is the PEAK, which the previous "retained
+    // bytes after the call" assertions could not see: a decoder that merged
+    // the caller's chunk first would hold all three frames at once here and
+    // still report 0 retained on the way out.
+    const generation = 0x2a7f1c04;
+    const bound = pipeFrontRetentionBound(PIPE_FRONT_PLANE.dataUp);
+    const chunk = Buffer.concat(
+      [1n, 2n, 3n].map((sequence) =>
+        Buffer.from(
+          encodePipeFrontFrame({
+            plane: PIPE_FRONT_PLANE.dataUp,
+            generation,
+            connection: 7,
+            sequence,
+            type: "DATA",
+            payload: new Uint8Array(PIPE_FRONT_DATA_PAYLOAD_MAX_BYTES).fill(0x41),
+          }),
+        ),
+      ),
+    );
+    expect(chunk.length).toBe(3 * bound);
+
+    const decoder = new PipeFrontFrameDecoder({
+      plane: PIPE_FRONT_PLANE.dataUp,
+      generation,
+      sequence: 1n,
+    });
+    const events = decoder.push(Uint8Array.from(chunk));
+    expect(events).toHaveLength(3);
+    expect(decoder.retainedBytes).toBe(0);
+    expect(decoder.peakRetainedBytes).toBe(bound);
+  });
+
+  it("allocates nothing for a body a malformed header declares", () => {
+    // A hostile push: 28 bytes claiming 4 GiB, followed by a real megabyte of
+    // body in the SAME chunk. The header phase completes first, so the decoder
+    // never sizes a buffer from the sender's number.
+    const vector = present(
+      vectors.frames.find((candidate) => candidate.name === "data length over bound"),
+      "the fixture row 'data length over bound'",
+    );
+    const decoder = decoderFor(vector, vector.expectedSequence);
+    const hostile = Buffer.concat([
+      Buffer.from(bytesOf(vector.hex)),
+      Buffer.alloc(1024 * 1024, 0x42),
+    ]);
+    const events = decoder.push(Uint8Array.from(hostile));
+    expect(events).toHaveLength(1);
+    expect(present(events[0], "the hostile-push event").kind).toBe("malformed");
+    expect(decoder.retainedBytes).toBe(0);
+    expect(decoder.peakRetainedBytes).toBe(PIPE_FRONT_HEADER_BYTES);
+  });
+
+  it("adopts a generation ONCE, and never the bootstrap zero", () => {
+    const decoder = new PipeFrontFrameDecoder({
+      plane: PIPE_FRONT_PLANE.dataUp,
+      generation: 0,
+    });
+    expect(() => decoder.adoptGeneration(0)).toThrowError(/adopt_generation_zero/);
+    decoder.adoptGeneration(0x2a7f1c04);
+    // A second adoption is the very re-pointing protocol section 4 forbids.
+    expect(() => decoder.adoptGeneration(0x2a7f1c05)).toThrowError(
+      /adopt_generation_twice/,
+    );
+
+    // A decoder constructed with a generation has already spent its adoption.
+    const live = new PipeFrontFrameDecoder({
+      plane: PIPE_FRONT_PLANE.dataDown,
+      generation: 0x2a7f1c04,
+    });
+    expect(() => live.adoptGeneration(0x2a7f1c05)).toThrowError(
+      /adopt_generation_twice/,
+    );
+
+    // And so has one that learned it from HELLO_ACK.
+    const helloAck = present(
+      vectors.frames.find((candidate) => candidate.name === "hello_ack"),
+      "the fixture row 'hello_ack'",
+    );
+    const learned = decoderFor(helloAck, helloAck.expectedSequence);
+    expect(learned.push(bytesOf(helloAck.hex))).toHaveLength(1);
+    expect(() => learned.adoptGeneration(0x2a7f1c05)).toThrowError(
+      /adopt_generation_twice/,
+    );
+  });
+
   it("adopts the generation HELLO_ACK announced, then refuses every other one", () => {
     // The plane 4 stream is the bootstrap in miniature: HELLO_ACK under
     // generation 0, then four frames under the announced one. A decoder that
     // did not adopt would call frame 2 bad_generation.
+    // The BOOTSTRAP stream: plane 4 read from generation 0. Other plane 4
+    // streams start after the generation is already negotiated.
     const stream = present(
       vectors.streams.find(
-        (candidate) => candidate.plane === PIPE_FRONT_PLANE.controlUp,
+        (candidate) =>
+          candidate.plane === PIPE_FRONT_PLANE.controlUp &&
+          candidate.expectedGeneration === 0,
       ),
-      "the plane 4 stream vector",
+      "the bootstrap plane 4 stream vector",
     );
-    expect(stream.expectedGeneration).toBe(0);
     const decoder = decoderFor(stream, stream.startSequence);
     const events = decoder.push(bytesOf(stream.hex));
     expect(events).toHaveLength(stream.frames.length);

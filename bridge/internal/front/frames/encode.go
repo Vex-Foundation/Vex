@@ -116,6 +116,7 @@ func encodeBody(payload Payload) ([]byte, *EncodeError) {
 		w.u32(p.CreditBytes)
 		w.u32(p.ChunkBytes)
 		w.u32(p.HandshakeDeadlineMs)
+		w.u32(p.InitialAdmissionEpoch)
 		w.str(p.PipeName, "pipeName")
 		w.str(p.TimeoutRefusalBytes, "timeoutRefusalBytes")
 	case Admit:
@@ -147,7 +148,7 @@ func encodeBody(payload Payload) ([]byte, *EncodeError) {
 		w.u8(p.FlagsApplied)
 		w.str(p.PipeName, "pipeName")
 	case WriteDone:
-		w.u64(p.ThroughSequence)
+		w.u64(p.AckThroughSequence)
 	case PeerClosed:
 		if p.Reason < PeerClosedPeerEOF || p.Reason > peerClosedHighestDefined {
 			w.fail("peer_closed_reason", fmt.Sprintf("reason = %d", p.Reason))
@@ -160,7 +161,11 @@ func encodeBody(payload Payload) ([]byte, *EncodeError) {
 	case Pong:
 		w.u64(p.Nonce)
 	case ErrorReport:
-		w.u16(p.Code)
+		if !p.Code.defined() {
+			w.fail("error_code", fmt.Sprintf(
+				"%d is not one of the front's frozen structural codes", p.Code))
+		}
+		w.u16(uint16(p.Code))
 		w.u32(p.Count)
 	case Data:
 		if len(p.Payload) == 0 {

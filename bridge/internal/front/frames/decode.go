@@ -31,7 +31,20 @@ const (
 	ReasonSDDLKind              Reason = "sddl_kind"
 	ReasonPeerClosedReason      Reason = "peer_closed_reason"
 	ReasonBoundFlagsReserved    Reason = "bound_flags_reserved"
+	ReasonErrorCode             Reason = "error_code"
 )
+
+// StateError is a decoder used outside its contract - adopting a generation
+// twice, or adopting the bootstrap 0. It is always a bug in this process, never
+// a wire condition, which is why it is separate from MalformedError.
+type StateError struct {
+	Reason string
+	Detail string
+}
+
+func (e *StateError) Error() string {
+	return fmt.Sprintf("frames: decoder refused (%s): %s", e.Reason, e.Detail)
+}
 
 // MalformedError is what the structural log records. The PAYLOAD is
 // deliberately absent: it is peer content, and protocol section 10 permits the
@@ -75,25 +88,36 @@ func parseHeader(b []byte) header {
 	}
 }
 
-// Decoder decodes ONE plane incrementally.
+// Decoder decodes ONE plane incrementally, in STAGES.
 //
-// Bytes may arrive in any chunking, including one byte at a time, and the
-// decoder retains at most Plane.RetentionBound() bytes because the header - the
-// plane's payload bound included - is validated in full before a payload byte
-// is kept.
+// Bytes may arrive in any chunking, including one byte at a time. The caller's
+// chunk is consumed BY OFFSET and never appended to a buffer of the decoder's
+// own: at most the 28 header bytes are staged, the header is validated in full
+// - the plane's payload bound included - and only then is a payload buffer of
+// exactly the DECLARED length allocated. So Plane.RetentionBound() bounds this
+// decoder's own buffers at every moment DURING a Push, not merely after one
+// returns, which PeakRetainedBytes reports.
 //
 // A malformed frame is TERMINAL, matching protocol section 10: the position in
 // the stream is unknown after a framing fault, so the decoder latches the
-// failure, drops its buffer, and returns no frames and that same error from
+// failure, drops its buffers, and returns no frames and that same error from
 // every later Push. The caller kills the front (main's side) or exits (the
 // front's side); there is no resynchronisation to offer.
 type Decoder struct {
 	plane      Plane
 	bound      int
 	generation uint32
+	adopted    bool
 	expected   uint64
-	pending    []byte
-	latched    *MalformedError
+	// headerStage is the staging area for one header, allocated once, never grown.
+	headerStage  [HeaderBytes]byte
+	headerFilled int
+	// staged is the validated header whose payload is still arriving.
+	staged        *header
+	payload       []byte
+	payloadFilled int
+	peak          int
+	latched       *MalformedError
 }
 
 // NewDecoder starts a decoder on one plane. Pass generation 0 while the
@@ -106,7 +130,11 @@ func NewDecoder(plane Plane, generation uint32, sequence uint64) *Decoder {
 		plane:      plane,
 		bound:      plane.PayloadBound(),
 		generation: generation,
-		expected:   sequence,
+		// A decoder handed a non-zero generation is already past the bootstrap,
+		// so it has spent its one adoption.
+		adopted:  generation != 0,
+		expected: sequence,
+		peak:     HeaderBytes,
 	}
 }
 
@@ -114,7 +142,19 @@ func NewDecoder(plane Plane, generation uint32, sequence uint64) *Decoder {
 func (d *Decoder) Failure() *MalformedError { return d.latched }
 
 // RetainedBytes is the incomplete frame currently held, never above the bound.
-func (d *Decoder) RetainedBytes() int { return len(d.pending) }
+func (d *Decoder) RetainedBytes() int {
+	if d.staged == nil {
+		return d.headerFilled
+	}
+	return HeaderBytes + d.payloadFilled
+}
+
+// PeakRetainedBytes is the greatest total capacity this decoder's own buffers
+// have ever had: the 28-byte header stage plus the largest payload buffer it
+// allocated. It is the number the retention guarantee is measured against,
+// because it records the PEAK during a Push rather than what happens to be left
+// after one.
+func (d *Decoder) PeakRetainedBytes() int { return d.peak }
 
 // ExpectedSequence is the sequence the next frame must carry.
 func (d *Decoder) ExpectedSequence() uint64 { return d.expected }
@@ -122,7 +162,29 @@ func (d *Decoder) ExpectedSequence() uint64 { return d.expected }
 // AdoptGeneration takes the generation HELLO_ACK announced. A plane 4 reader
 // does not need it - Push adopts from HELLO_ACK itself - but the readers of
 // planes 3, 5 and 6 are told by their owner.
-func (d *Decoder) AdoptGeneration(generation uint32) { d.generation = generation }
+//
+// ONE-SHOT and NON-ZERO. A second adoption would be the very re-pointing that
+// protocol section 4 forbids, and adopting 0 would put a live reader back into
+// the bootstrap where a stale front's frames parse again. Both are programming
+// errors in the relay, not wire conditions, so both return a *StateError and
+// leave the decoder untouched.
+func (d *Decoder) AdoptGeneration(generation uint32) error {
+	if generation == 0 {
+		return &StateError{
+			Reason: "adopt_generation_zero",
+			Detail: "0 is the bootstrap generation and can never be adopted",
+		}
+	}
+	if d.adopted {
+		return &StateError{
+			Reason: "adopt_generation_twice",
+			Detail: fmt.Sprintf("this decoder already reads generation %d", d.generation),
+		}
+	}
+	d.adopted = true
+	d.generation = generation
+	return nil
+}
 
 // Push feeds bytes and returns every frame that completed. On a malformed frame
 // it returns the frames decoded BEFORE the fault plus a *MalformedError, and
@@ -131,36 +193,72 @@ func (d *Decoder) Push(chunk []byte) ([]Frame, error) {
 	if d.latched != nil || len(chunk) == 0 {
 		return nil, d.latched
 	}
-	d.pending = append(d.pending, chunk...)
 
 	var out []Frame
+	offset := 0
 	for {
-		if len(d.pending) < HeaderBytes {
-			return out, nil
+		if d.staged == nil {
+			if offset >= len(chunk) {
+				return out, nil
+			}
+			take := HeaderBytes - d.headerFilled
+			if available := len(chunk) - offset; take > available {
+				take = available
+			}
+			copy(d.headerStage[d.headerFilled:], chunk[offset:offset+take])
+			d.headerFilled += take
+			offset += take
+			if d.headerFilled < HeaderBytes {
+				return out, nil
+			}
+			head := parseHeader(d.headerStage[:])
+			if reason, bad := d.validateHeader(head); bad {
+				return out, d.fail(reason, head)
+			}
+			// The bound is enforced above, so this allocation is bounded by the
+			// plane, never by what the sender claimed.
+			d.headerFilled = 0
+			d.staged = &head
+			d.payload = make([]byte, head.length)
+			d.payloadFilled = 0
+			if grown := HeaderBytes + int(head.length); grown > d.peak {
+				d.peak = grown
+			}
+			continue
 		}
-		head := parseHeader(d.pending[:HeaderBytes])
-		if reason, bad := d.validateHeader(head); bad {
-			return out, d.fail(reason, head)
+
+		head := *d.staged
+		if d.payloadFilled < int(head.length) {
+			if offset >= len(chunk) {
+				return out, nil
+			}
+			take := int(head.length) - d.payloadFilled
+			if available := len(chunk) - offset; take > available {
+				take = available
+			}
+			copy(d.payload[d.payloadFilled:], chunk[offset:offset+take])
+			d.payloadFilled += take
+			offset += take
+			if d.payloadFilled < int(head.length) {
+				return out, nil
+			}
 		}
-		total := HeaderBytes + int(head.length)
-		if len(d.pending) < total {
-			return out, nil
-		}
-		payload, reason := decodeBody(Type(head.frameType), d.pending[HeaderBytes:total])
+
+		payload, reason := decodeBody(Type(head.frameType), d.payload)
 		if payload == nil {
 			return out, d.fail(reason, head)
 		}
-		if len(d.pending) == total {
-			// Release the backing array rather than carrying an empty slice
-			// with a 32 KiB capacity into the next frame.
-			d.pending = nil
-		} else {
-			d.pending = d.pending[total:]
-		}
+		// The payload buffer is handed to the frame; the decoder keeps no
+		// reference, so a DATA frame costs one allocation rather than two.
+		d.staged = nil
+		d.payload = nil
+		d.payloadFilled = 0
 		d.expected = head.sequence + 1
 		if ack, ok := payload.(HelloAck); ok {
 			// A plane 4 reader LEARNS the generation here (protocol section 4).
+			// Either way the one adoption is spent.
 			d.generation = ack.AnnouncedGeneration
+			d.adopted = true
 		}
 		out = append(out, Frame{
 			Plane:      d.plane,
@@ -229,7 +327,10 @@ func (d *Decoder) fail(reason Reason, head header) error {
 		Sequence:   head.sequence,
 		Length:     head.length,
 	}
-	d.pending = nil
+	d.headerFilled = 0
+	d.staged = nil
+	d.payload = nil
+	d.payloadFilled = 0
 	return d.latched
 }
 
@@ -291,7 +392,7 @@ func (r *payloadReader) str() string {
 
 // fixedBytes is the payload prefix every type needs before its variable tail.
 var fixedBytes = map[Type]int{
-	TypeHello: 17, TypeAdmit: 4, TypeRefuse: 2, TypeCredit: 4,
+	TypeHello: 21, TypeAdmit: 4, TypeRefuse: 2, TypeCredit: 4,
 	TypePause: 0, TypeResume: 0, TypeClose: 0, TypeLock: 4, TypeQuit: 4,
 	TypePing:     8,
 	TypeHelloAck: 10, TypeBound: 3, TypeOpen: 0, TypeWriteDone: 8,
@@ -307,9 +408,9 @@ func decodeBody(frameType Type, payload []byte) (Payload, Reason) {
 		if len(payload) == 0 {
 			return nil, ReasonEmptyData
 		}
-		out := make([]byte, len(payload))
-		copy(out, payload)
-		return Data{Payload: out}, ""
+		// The buffer is the decoder's exactly-sized staging area, handed over
+		// whole: the decoder drops its reference at the same moment.
+		return Data{Payload: payload}, ""
 	}
 	if len(payload) < fixedBytes[frameType] {
 		return nil, ReasonPayloadLengthMismatch
@@ -327,6 +428,7 @@ func decodeBody(frameType Type, payload []byte) (Payload, Reason) {
 			ChunkBytes:          r.u32(),
 			HandshakeDeadlineMs: r.u32(),
 		}
+		value.InitialAdmissionEpoch = r.u32()
 		value.PipeName = r.str()
 		value.TimeoutRefusalBytes = r.str()
 		if r.reason != "" {
@@ -395,7 +497,7 @@ func decodeBody(frameType Type, payload []byte) (Payload, Reason) {
 	case TypeOpen:
 		decoded = Open{}
 	case TypeWriteDone:
-		decoded = WriteDone{ThroughSequence: r.u64()}
+		decoded = WriteDone{AckThroughSequence: r.u64()}
 	case TypePeerClosed:
 		value := PeerClosed{
 			Reason:              PeerClosedReason(r.u8()),
@@ -415,7 +517,14 @@ func decodeBody(frameType Type, payload []byte) (Payload, Reason) {
 	case TypePong:
 		decoded = Pong{Nonce: r.u64()}
 	case TypeError:
-		decoded = ErrorReport{Code: r.u16(), Count: r.u32()}
+		value := ErrorReport{Code: ErrorCode(r.u16()), Count: r.u32()}
+		if r.remaining() != 0 {
+			return nil, ReasonPayloadLengthMismatch
+		}
+		if !value.Code.defined() {
+			return nil, ReasonErrorCode
+		}
+		return value, ""
 	case TypeEnd:
 		decoded = End{}
 	default:

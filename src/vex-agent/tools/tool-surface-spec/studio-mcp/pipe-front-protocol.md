@@ -131,6 +131,18 @@ control plane, 32796 bytes on a data plane. A decoder that buffered first and
 checked the bound afterwards would let a hostile or broken sender pin memory
 with one 4 GiB length field, which is exactly the shape this ordering forbids.
 
+THE BOUND HOLDS AT EVERY MOMENT DURING A PUSH, NOT MERELY AFTER ONE. Both
+decoders are STAGED: they consume the caller's chunk BY OFFSET and never
+concatenate it into a buffer of their own. At most 28 bytes are staged as a
+header; the header is validated in full, the plane's bound included; only then
+is a payload buffer of exactly the DECLARED length allocated. A decoder that
+merged the chunk first would satisfy the bound on the way out and violate it in
+the middle - one OS read of a shared plane carries many frames, and a malformed
+header followed by a large body is precisely the case an attacker picks. Each
+decoder therefore reports the PEAK capacity of its own buffers
+(`peakRetainedBytes` / `PeakRetainedBytes()`), and both suites assert it against
+this table.
+
 The control bound of 4096 is not arbitrary: it is the frozen
 `handshakeMaxBytes` of the endpoint contract's section 3 limits table, so ANY
 ack or refusal line the host is allowed to author on the external wire fits in
@@ -208,7 +220,7 @@ malformed by construction, and section 10 makes malformed fatal.
 
 | id | name | connection | payload bytes | payload |
 | --- | --- | --- | --- | --- |
-| `0x01` | `HELLO` | 0 | 17 + strings | section 5.1 |
+| `0x01` | `HELLO` | 0 | 21 + strings | section 5.1 |
 | `0x02` | `ADMIT` | non-zero | 4 | `admissionEpoch` u32 |
 | `0x03` | `REFUSE` | non-zero | 2 + n | `bytes` str |
 | `0x04` | `CREDIT` | non-zero | 4 | `bytes` u32 |
@@ -244,14 +256,17 @@ trailing field, which is the same fail-closed decision as `flags`.
 | 5 | 4 | `creditBytes` | u32 | `65536` |
 | 9 | 4 | `chunkBytes` | u32 | `32768` |
 | 13 | 4 | `handshakeDeadlineMs` | u32 | `5000` |
-| 17 | var | `pipeName` | str | the pipe the front must serve |
+| 17 | 4 | `initialAdmissionEpoch` | u32 | DYNAMIC, section 5.2 |
+| 21 | var | `pipeName` | str | the pipe the front must serve |
 | var | var | `timeoutRefusalBytes` | str | section 9 |
 
-THE SIX NUMBERS ARE FROZEN EQUALITY CHECKS, not negotiation. The front compares
-each against its own compiled-in constant and, on ANY difference, refuses to
-serve: it writes one structural stderr line naming the field, the value it
-received and the value it holds, and exits. It does not adapt, and it does not
-serve with the main-supplied value.
+THE SIX NUMBERS ARE FROZEN EQUALITY CHECKS, not negotiation - `protocolVersion`,
+`sddlKind`, `maxRaw`, `creditBytes`, `chunkBytes` and `handshakeDeadlineMs`, and
+NOT `initialAdmissionEpoch`, which is the one dynamic field and is defined apart
+in 5.2. The front compares each of the six against its own compiled-in constant
+and, on ANY difference, refuses to serve: it writes one structural stderr line
+naming the field, the value it received and the value it holds, and exits. It
+does not adapt, and it does not serve with the main-supplied value.
 
 That is the opposite of a version handshake and it is deliberate. Main and the
 front ship in the SAME package, built together, signed together and updated
@@ -260,7 +275,7 @@ the external contract negotiates a version at all. Two internal peers that
 disagree about `chunkBytes` are a packaging fault, and a front that quietly
 adapted would turn a build error into a bounds mismatch discovered under load.
 `protocolVersion` is included in the same equality check for the same reason:
-there is no v1-front-with-v2-main case to support, and section 12 says what a
+there is no v1-front-with-v2-main case to support, and section 14 says what a
 change costs.
 
 `sddlKind` is an ENUM and not a descriptor string. The actual SDDL is compiled
@@ -275,6 +290,39 @@ refusal in the same class as a number mismatch.
 front SERVES it and never derives it: two derivations are two sources of truth,
 and the front does not have main's config directory.
 
+### 5.2 `initialAdmissionEpoch`, and why it cannot be frozen
+
+The front's admission epoch is INITIALISED to this value, and from then on only
+`LOCK` raises it (section 8). `ADMIT(conn, epoch)` is executed only when `epoch`
+equals the front's current epoch, so the front must start at MAIN's epoch, not
+at zero.
+
+A FRONT IS NOT ALWAYS THE FIRST FRONT. Main's epoch is durable across front
+restarts - it is main's fence, and a restart is exactly when the fence matters -
+so after one lock/unlock cycle it is non-zero. A restarted front that assumed 0
+would have two ways to be wrong and no way to be right: reject every valid
+`ADMIT` main sends (no connection is ever read again, and the failure is a
+silent hang rather than an error), or adopt the epoch of the first `ADMIT` it
+sees, which is a stale order teaching the fence its own value. Handing the epoch
+over in `HELLO` is the only version where the fence survives the restart it
+exists for.
+
+It is DYNAMIC and therefore NOT one of the frozen equality values: the front
+holds no compiled-in expectation to compare it against. It is the one number in
+`HELLO` the front takes rather than checks.
+
+U32 EXHAUSTION. The epoch is a u32 and it only ever rises. `4294967295` is the
+last usable value: main MUST NOT raise the epoch past it, and a main that has
+reached it treats the condition as FRONT-RESTART-REQUIRED - it kills the front,
+starts a new one under a new generation, and resumes at `initialAdmissionEpoch`
+`0` or any value it chooses, because the new front has no memory of the old
+fence. The front reports its own view of the same condition with `ERROR`
+`admission_epoch_exhausted` (section 6.5). It is unreachable in practice: one
+epoch step per lock, and a lock is a human or policy event, so 2^32 of them is
+not a number a session produces. It is defined for the same reason
+`sequence_exhausted` is: a silent wrap would reissue an epoch a queued `ADMIT`
+still names, and a purged order would execute.
+
 ---
 
 ## 6. Control frames, front -> main (plane 4)
@@ -284,7 +332,7 @@ and the front does not have main's config directory.
 | `0x41` | `HELLO_ACK` | 0 | 10 + strings | section 6.1 |
 | `0x42` | `BOUND` | 0 | 1 + 2 + n | `flagsApplied` u8, `pipeName` str |
 | `0x43` | `OPEN` | non-zero | 0 | none |
-| `0x44` | `WRITE_DONE` | non-zero | 8 | `throughSequence` u64 |
+| `0x44` | `WRITE_DONE` | non-zero | 8 | `ackThroughSequence` u64 |
 | `0x45` | `PEER_CLOSED` | non-zero | 9 | `reason` u8, `throughDataSequence` u64 |
 | `0x46` | `LOCK_ACK` | 0 | 8 | `admissionEpoch` u32, `closedCount` u32 |
 | `0x47` | `QUIT_ACK` | 0 | 0 | none |
@@ -306,6 +354,20 @@ the field is to leave the bootstrap generation behind. It is named apart from
 the header's `generation` on purpose - the two carry DIFFERENT values in this
 one frame, the header still `0` and the payload the new one, and a decoded
 frame that used one name for both would silently lose the header's.
+
+THE SUPERVISOR PROCESSES A DECODED BATCH IN ORDER, AND DISCARDS THE TAIL WHEN
+`HELLO_ACK` FAILS. One `push` of plane 4 can return `HELLO_ACK` and several
+later frames at once, and the codec ADOPTS the announced generation while
+decoding - it must, or every frame after `HELLO_ACK` in the same batch would be
+`bad_generation`. Adoption is a FRAMING decision and proves nothing semantic.
+Main's supervisor therefore walks the returned batch in order and validates
+`HELLO_ACK` - `protocolVersion`, `pid` against the spawned child's, the
+generation against the ones it has already seen - BEFORE acting on any later
+frame in the same batch. On failure it kills the front and DISCARDS every
+remaining event of that batch, acted on or not. Without that rule a front could
+attach a `BOUND` and an `OPEN` behind a `HELLO_ACK` main is about to reject, and
+main would announce a listener for a process it has already decided is not its
+child.
 
 `pid` is a CONSISTENCY CHECK, not authentication. Main compares it with the
 `child.pid` it already holds from `spawn`, and a mismatch means main is talking
@@ -367,29 +429,73 @@ pipes with no ordering between them. The dedicated-plane shape is what removes
 head-of-line blocking; this field is the price, and it is paid once per
 connection.
 
-### 6.4 `WRITE_DONE`
+### 6.4 `WRITE_DONE` is a CUMULATIVE acknowledgement
 
-`throughSequence` is the plane 5 sequence of the LAST chunk of ONE logical
-write. Exactly ONE `WRITE_DONE` per logical write, whatever the chunk count.
+`ackThroughSequence` is the GREATEST plane 5 sequence for this connection whose
+pipe write has RETURNED. It is cumulative, in the shape VS Code's `Protocol`
+uses on its own socket (`_incomingAckId`: one number that acknowledges
+everything up to itself, and a peer free to send it as often or as rarely as it
+likes):
 
-This is the frame the seam's write callback settles on
+| rule | statement |
+| --- | --- |
+| when | after each completed chunk, or after several - the front MAY coalesce |
+| what it names | the greatest completed plane 5 sequence for that connection, never a per-write identifier |
+| monotonic | it never decreases for a connection. A decrease is `ack_regression` (section 12) and is fatal |
+| what main does | releases the outstanding window bytes of every chunk through that sequence |
+| what the seam sees | the write callback for a logical write runs when, and only when, an acknowledgement covers that write's FINAL sequence |
+| `END` | costs no window, so it is never acknowledged |
+
+ONE ACK PER LOGICAL WRITE WAS THE DEFECT, and it is worth naming because the
+frame looked correct. If a 4 MiB response can only be acknowledged after its
+last chunk, then its 128 chunks are all outstanding at once and the 65536-byte
+window of section 11.2 bounds nothing INSIDE a write: one connection could
+occupy the whole shared 131072-byte plane 5 buffer and head-of-line block the
+other twenty. Cumulative acknowledgement makes the window a real bound at every
+instant, including within one logical write, at no cost in frames - the front
+may still send exactly one ack per write when a write fits in the window.
+
+The callback rule is unchanged and is what the frame exists for
 (`src/vex-agent/mcp/duplex-transport.ts`): "`callback` means THE PEER-SIDE WRITE
 COMPLETED ... An implementation that relays through another process (the Windows
 pipe-front) may only run it once that process has reported the pipe write
 complete; running it on hand-off to the relay would make the outbound queue
 believe a frame is delivered while it sits in somebody else's buffer, and the
-queue's bound would stop bounding anything real." The front therefore emits
-`WRITE_DONE` after the Go pipe write for the last chunk RETURNS, not when it
-accepts the chunk from plane 5.
+queue's bound would stop bounding anything real." The front emits an
+acknowledgement only after the Go pipe write RETURNS, never when it accepts a
+chunk from plane 5, and main runs the callback only on the ack that covers the
+write's last sequence.
 
-### 6.5 `ERROR`
+### 6.5 `ERROR`, and the frozen code set
 
-`code` is a front-authored structural code from the front's own closed set, and
-`count` is how many times it has occurred since the last `ERROR` for that code.
-It is a counter frame for main's structural log. It carries NO string: peer
-bytes, provider payloads and paths never travel in it, and a code plus a count
-is what a log line needs (rules 05 and 07). It never carries a connection and
-never ends one; a failure that ends a connection is a `PEER_CLOSED`.
+`code` is a front-authored STRUCTURAL code from a CLOSED set, and `count` is how
+many times it has occurred since the last `ERROR` for that code. It is a counter
+frame for main's structural log. It carries NO string: peer bytes, provider
+payloads and paths never travel in it, and a code plus a count is what a log line
+needs (rules 05 and 07). It never carries a connection and never ends one; a
+failure that ends a connection is a `PEER_CLOSED`.
+
+| code | name | the front reports it when |
+| --- | --- | --- |
+| `1` | `malformed_main_frame` | a frame from main did not parse; the front exits (section 10) |
+| `2` | `plane_read_failed` | a read on one of the four planes failed |
+| `3` | `plane_write_failed` | a write on one of the four planes failed |
+| `4` | `listener_bind_failed` | the named pipe could not be created |
+| `5` | `sddl_readback_mismatch` | the descriptor read back from the handle is not the one requested (section 6.2's readback, failing) |
+| `6` | `credit_violation` | a relay-level credit or window rule was broken (section 11) |
+| `7` | `admission_epoch_exhausted` | the u32 admission epoch is spent (section 5.2) |
+| `8` | `connection_ids_exhausted` | the connection id space is spent for this generation (section 2.1) |
+| `9` | `internal_invariant` | the front detected a broken invariant of its own |
+
+`0` and every value above `9` are UNDEFINED, and main treats an undefined code as
+a malformed frame (`error_code`), which by section 10 kills the front. The set
+being closed is the point: an open set would make `ERROR` the one frame whose
+meaning the front invents, and main's structural log would carry numbers no
+reader can resolve. A v2 adds codes the way it adds anything else - on both
+sides, in one commit (section 14).
+
+The codes are a LOG vocabulary, never a teardown cause: main maps a connection's
+end from `PEER_CLOSED` (section 6.3), and no `ERROR` code changes that.
 
 ---
 
@@ -432,7 +538,8 @@ peer FIN breaks every `claude -p` style session, silently."
 direction. A `DATA` after an `END` on the same connection and plane is a sender
 fault; it is NOT caught by the framing codec (which is stateless about
 connections by design, section 11) and is a relay-level invariant the front and
-main each enforce on their own side.
+main each enforce on their own side, under the name `data_after_end`
+(section 12.3).
 
 ### 7.2 Chunking and logical writes
 
@@ -441,9 +548,16 @@ One logical write may span several `DATA` frames of at most `chunkBytes`
 plane with respect to that connection; frames for DIFFERENT connections may
 interleave between them, which is what makes the plane a multiplex.
 
-`WRITE_DONE` names the last chunk's sequence (section 6.4). That is why the
+`WRITE_DONE` acknowledges THROUGH a sequence (section 6.4). That is why the
 frame carries a sequence and not a count: sequences are already the plane's
-identity, and a per-connection counter would be a second one.
+identity, they are what a cumulative acknowledgement needs to be ordered on, and
+a per-connection counter would be a second identity for the same thing.
+
+A logical write's own boundary is MAIN's bookkeeping, not the wire's: main knows
+which sequence is the last chunk of the write it started, so it can settle that
+write's callback on the first acknowledgement that reaches it. The front does
+not need to know where one logical write ends and the next begins, and after
+this change it does not track that at all - it acknowledges completed chunks.
 
 ---
 
@@ -451,7 +565,7 @@ identity, and a per-connection counter would be a second one.
 
 | stage | rule |
 | --- | --- |
-| start | the front starts LOCKED. It creates the pipe, verifies the flags, emits `BOUND`, and then ACCEPTS connections, sends `OPEN`, and READS NOTHING from any of them |
+| start | the front starts LOCKED at `HELLO`'s `initialAdmissionEpoch` (section 5.2). It creates the pipe, verifies the flags, emits `BOUND`, and then ACCEPTS connections, sends `OPEN`, and READS NOTHING from any of them |
 | admit | `ADMIT(conn, epoch)` begins reading that connection ONLY IF `epoch` equals the front's current admission epoch |
 | refuse | `REFUSE(conn, bytes)` writes main's exact bytes to the peer and closes, WITHOUT EVER READING |
 | lock | `LOCK(epoch)` is processed BEFORE any queued frame. It sets the admission epoch, stops all reads, closes all handles, and answers `LOCK_ACK` |
@@ -478,6 +592,37 @@ holding live handles."
 `closedCount` in `LOCK_ACK` is how many handles the front actually closed. Main
 logs it against the number of logical connections it believed were open; a
 divergence is a structural defect worth seeing, not a reason to hold the lock.
+
+### 8.1 The 21 raw handles, and the 22nd connection
+
+The front owns the RAW HANDLE COUNT, and it is a count of HANDLES, not of
+logical connections main knows about:
+
+| rule | statement |
+| --- | --- |
+| increment | on `Accept` RETURNING a handle, BEFORE `OPEN` is queued. Not when main answers |
+| decrement | only after the handle is PHYSICALLY CLOSED, not when the front decides to close it, not when `PEER_CLOSED` is queued |
+| the 21st | is accepted and gets an `OPEN`. Main may answer `REFUSE` with its own `at_capacity` line, which is main's policy, not the front's |
+| the 22nd | is accepted and IMMEDIATELY CLOSED: no `OPEN`, no read, no write, not one byte in either direction. It is not queued and it is not remembered |
+| the accept loop | STAYS ARMED. The front never stops accepting |
+
+THE COUNTER BRACKETS THE HANDLE, NOT THE CONVERSATION. Counting from `OPEN`
+would leave the window between `Accept` and `OPEN` uncounted, and a burst of
+connections would push the real handle count past 21 while the front believed
+it was at 20. Decrementing when the front DECIDES to close would do the same at
+the other end: the handle is still open, the OS still holds it, and the front
+would admit a replacement against a slot that does not exist yet. Both errors
+are invisible in a test and only appear under the burst that fills the bound.
+
+NEVER STOP ACCEPTING. Leaving the 22nd connection pending in the OS backlog
+would block its bridge inside `CreateFile` with no answer and no error, which is
+strictly worse than a closed pipe: `vex-mcp` handles a connection that closes -
+it is an ordinary "server is busy" - and cannot handle one that never answers,
+because there is nothing to report and nothing to retry. An immediate close is a
+fast, legible refusal. It carries no refusal LINE because main authors every
+line the peer sees (section 9) and main has not been told about this connection
+at all; a front-authored line here would be the second author the whole design
+exists to prevent.
 
 QUIT RUNS UNDER MAIN'S ONE ABSOLUTE 5000 MS BUDGET, never 5000 ms per layer.
 `deadlineMs` in `QUIT` is what REMAINS of that budget at the moment main sends
@@ -556,6 +701,7 @@ The reason vocabulary, identical in both codecs and in the fixture:
 | `sddl_kind` | `HELLO`'s `sddlKind` is not `1` |
 | `peer_closed_reason` | `PEER_CLOSED`'s `reason` is not `1`, `2` or `3` |
 | `bound_flags_reserved` | `BOUND`'s `flagsApplied` sets a reserved bit |
+| `error_code` | `ERROR`'s `code` is outside the frozen closed set of section 6.5 |
 
 ### 10.1 Validation order is FROZEN
 
@@ -589,7 +735,25 @@ PAYLOAD PHASE, in this order:
     `invalid_utf8` when the bytes are not valid UTF-8
 14. `payload_length_mismatch` if bytes remain after the last declared field
 15. the type-specific enums: `generation_zero`, `sddl_kind`,
-    `peer_closed_reason`, `bound_flags_reserved`
+    `peer_closed_reason`, `bound_flags_reserved`, `error_code`
+
+THE ORDER IS PINNED MECHANICALLY, NOT BY PROSE. The fixture carries the order as
+data (`validationOrder`, with `validationOrderReasons` mapping each step to the
+reasons it can produce) and a MULTI-FAULT PRECEDENCE VECTOR for every adjacent
+pair in it: bytes that violate BOTH steps, whose single expected reason is the
+EARLIER one. Both suites run those rows and both assert the coverage, so moving
+a check turns tests red on both sides in the same commit instead of producing
+two codecs that disagree about one operator-visible word.
+
+Two adjacent pairs cannot be violated at once. They are declared in
+`validationOrderUnsatisfiablePairs`, and each declaration must say HOW its
+earlier step is pinned instead, so the declaration cannot become a way to drop a
+step from the order:
+
+| pair | why no frame can violate both | how the earlier step is pinned |
+| --- | --- | --- |
+| `unknown_type` then `type_not_on_plane` | a byte that is no type at all is on no plane; the second rule needs a DEFINED type | against the next satisfiable step, `bad_generation` |
+| `empty_data` then `payload_too_short` | `empty_data` is only reachable for `DATA`, which has no fixed part to be short of | it leads no pair at all - `DATA` has no strings and no enums either - so it is pinned as the LATER half of `connection_rule` then `empty_data`, the boundary between the two phases |
 
 ---
 
@@ -600,7 +764,8 @@ PAYLOAD PHASE, in this order:
 | control payload | 4096 bytes | both |
 | data payload / `chunkBytes` | 32768 bytes | both |
 | per-connection credit, front -> main | 65536 bytes | main grants, the front spends |
-| per-connection outstanding bytes, main -> front | 65536 bytes | main |
+| per-connection UNACKNOWLEDGED bytes, main -> front | 65536 bytes | main |
+| fairness, either data plane | one 32768-byte chunk per connection per turn | the sender of that plane |
 | raw accepted connections | 21 | the front |
 | `LOCK_ACK` deadline | 1000 ms | main |
 | handshake deadline | 5000 ms | the front, from `Accept` |
@@ -632,8 +797,9 @@ FAIRNESS: at most ONE 32 KiB chunk per connection per turn on plane 6,
 round-robin. One busy connection cannot starve twenty others on a shared plane.
 
 CREDIT OVERRUN IS MALFORMED AND FATAL. A `DATA` frame that would take a
-connection past its outstanding credit, and a `CREDIT` that would exceed the
-64 KiB window, are both framing-level faults handled by section 10. They are not
+connection past its outstanding credit (`credit_overrun`), and a `CREDIT` that
+would exceed the 64 KiB window (`duplicate_credit`), are both framing-level
+faults handled by section 10, and both are named in section 12.3. They are not
 codec-level: the codec is stateless about connections (section 11.3), so the
 relay on each side enforces them.
 
@@ -649,17 +815,39 @@ up to 64 KiB would still arrive after main decided to pause; sending `PAUSE`
 alone would leave a stale grant that a `RESUME` cannot reason about. `RESUME`
 resumes reading and replenishment together.
 
-### 11.2 The main -> front window
+### 11.2 The main -> front window is a HARD per-connection bound
 
-Main starts NO new logical write for a connection while 65536 or more of its
-bytes are outstanding - sent on plane 5 and not yet covered by a `WRITE_DONE`. A
-single logical write LARGER than the window is still sent in full, chunked; the
-window governs when the NEXT one starts.
+MAIN NEVER HAS MORE THAN 65536 UNACKNOWLEDGED PAYLOAD BYTES OUTSTANDING FOR ONE
+CONNECTION, INCLUDING WITHIN ONE LOGICAL WRITE. Outstanding means: written on
+plane 5 and not yet covered by a `WRITE_DONE` acknowledgement for that
+connection (section 6.4). When the next chunk would cross the window, main stops
+writing that connection's chunks and waits for an acknowledgement; every other
+connection keeps flowing, because the window is per connection.
+
+A logical write larger than the window is therefore sent in PIECES, paced by the
+front's cumulative acknowledgements, and completes when the acknowledgement
+covering its final sequence arrives. This is the correction to the earlier rule,
+which let one larger write be sent in full before waiting and so let a 4 MiB
+response put 4 MiB into a 131072-byte shared plane; section 6.4 states why the
+frame changed with it.
 
 65536 is deliberately half the measured 131072-byte OS pipe buffer, so one
 connection's outstanding bytes can never fill the shared plane 5 and block a
 second connection's chunk behind it. Head-of-line is bounded by the window, not
 by the operating system.
+
+FAIRNESS, IDENTICAL TO PLANE 6: at most ONE 32768-byte chunk per connection per
+turn, round-robin. The window alone does not give fairness - twenty connections
+each inside their own window still queue in whatever order main happened to
+iterate - and a plane 5 without round-robin would let one busy connection write
+its whole window before a second connection's first chunk. Both directions now
+carry the same two mechanisms, a hard per-connection window and round-robin
+scheduling, which is what keeps the aggregate of `21 * 65536` a real number in
+both directions and is why no plane-level fraction cap is needed on top.
+
+There is NO credit frame in this direction. Main is the only sender on plane 5
+and it owns the window itself; a `CREDIT` from the front would be the front
+granting main permission to write, which is authority in the wrong process.
 
 ### 11.3 The codec is stateless about connections
 
@@ -671,7 +859,62 @@ the relay, and the two later stages would have nothing to implement against.
 
 ---
 
-## 12. Trust
+## 12. The per-connection state machines
+
+The codec is stateless about connections (11.3) and the two relays are not. This
+section is the ONE machine both of them implement, so 2a (the front) and 2b
+(main's relay) are two implementations of a written contract rather than two
+guesses that agree until they do not. The state names below are the names each
+side uses in its structural log.
+
+### 12.1 The FRONT, per accepted handle
+
+| state | entered by | may do |
+| --- | --- | --- |
+| `accepted` | `Accept` returns a handle; the raw count rises (8.1) | nothing but queue `OPEN`, or close immediately as the 22nd |
+| `open-sent` | `OPEN` written on plane 4 | wait. It READS NOTHING |
+| `admitted` | `ADMIT` whose epoch is current | read the peer, spend credit, write main's chunks, acknowledge them |
+| `refused` | `REFUSE`, or the handshake deadline expiring | write main's exact bytes once, then close. It never reads |
+| `reading` | the first read issued while `admitted` | the steady state: read to the credit bound, stop reading at it, resume on `RESUME` |
+| `ended` | peer FIN observed, or `END` from main written | the half-close of 7.1. The other direction still flows |
+| `closed` | the handle is PHYSICALLY closed; the raw count falls (8.1) | nothing. `PEER_CLOSED` has been queued with its `throughDataSequence` |
+
+A stale `ADMIT` - one whose epoch is not current - moves NOTHING. It is purged
+(`stale_admit_purged`), and the connection stays where it was.
+
+### 12.2 MAIN's relay, per logical connection
+
+| state | entered by | may do |
+| --- | --- | --- |
+| `opened` | `OPEN` decoded | decide: `ADMIT`, or `REFUSE` with main's own line |
+| `admitted` | `ADMIT` written | grant the first `CREDIT` |
+| `live` | the first `DATA` decoded, or the first chunk written | relay both directions under the window (11.2) and the credit (11.1) |
+| `peer-ended` | `END` decoded on plane 6 | raise the seam's `end`, KEEP the writable side (7.1), keep writing answers |
+| `closing` | `CLOSE` written, or `LOCK`/`QUIT` latched | expect `PEER_CLOSED`; hold the close edge until plane 6 is drained through its `throughDataSequence` (6.3) |
+| `closed` | `PEER_CLOSED` decoded AND plane 6 drained through its sequence | settle the teardown cause: the latched `lock`/`vex_quit`, else `disconnect` |
+
+### 12.3 The named structural failures
+
+Each is FATAL by section 10 - the front exits, or main kills the front - and
+each has one name that both sides log and neither side invents:
+
+| name | the invariant it breaks |
+| --- | --- |
+| `credit_overrun` | a `DATA` frame takes a connection past the credit main granted it |
+| `duplicate_credit` | a `CREDIT` would take a connection's window past 65536 outstanding bytes |
+| `data_after_end` | a `DATA` or `END` arrives for a connection already `ended` in that direction |
+| `stale_admit_purged` | an `ADMIT` names an epoch that is not the front's current one. NOT fatal: it is the fence working, and it is logged |
+| `write_window_exceeded` | main wrote a chunk that takes a connection past 65536 unacknowledged bytes |
+| `ack_regression` | a `WRITE_DONE` names a sequence lower than one already acknowledged for that connection, or one main never sent |
+
+`stale_admit_purged` is the one entry that is not a failure of the peer, and it
+is in the table precisely so it is not implemented as one: purging is the
+designed outcome of section 8's fence, and a relay that treated it as fatal
+would kill the front every time a lock raced an admit.
+
+---
+
+## 13. Trust
 
 VERBATIM, and it is the paragraph any later change to this file must keep true:
 
@@ -696,7 +939,7 @@ FRONT's pid, and the same-user SID comparison is the anti-squatting control.
 
 ---
 
-## 13. Changing this protocol
+## 14. Changing this protocol
 
 The version in `HELLO` is a MAJOR, and it is a FROZEN EQUALITY CHECK (section
 5.1), so there is no compatible change: main and the front ship in one package,

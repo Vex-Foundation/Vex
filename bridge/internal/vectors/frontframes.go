@@ -37,10 +37,30 @@ type FrontExpect struct {
 	Payload    map[string]json.RawMessage `json:"payload"`
 }
 
+// FrontPrecedence is a multi-fault row's claim: the bytes violate BOTH named
+// steps of the frozen validation order, and the expected reason is the EARLIER
+// one. Reordering a check turns those rows red on both sides.
+type FrontPrecedence struct {
+	Earlier string `json:"earlier"`
+	Later   string `json:"later"`
+}
+
+// FrontUnsatisfiablePair declares an adjacent pair of the validation order no
+// frame can violate at once, and how the earlier step is pinned instead. A nil
+// ProvenAgainst means the step leads no pair and is pinned as the LATER half of
+// its own predecessor's pair.
+type FrontUnsatisfiablePair struct {
+	Earlier       string  `json:"earlier"`
+	Later         string  `json:"later"`
+	ProvenAgainst *string `json:"provenAgainst"`
+	Why           string  `json:"why"`
+}
+
 // FrontFrameCase is one single-frame vector.
 type FrontFrameCase struct {
-	Name string `json:"name"`
-	Note string `json:"note"`
+	Name       string           `json:"name"`
+	Note       string           `json:"note"`
+	Precedence *FrontPrecedence `json:"precedence"`
 	// Plane is 3, 4, 5 or 6.
 	Plane uint8 `json:"plane"`
 	// ExpectedGeneration is the decoder's generation, 0 while the bootstrap
@@ -94,11 +114,19 @@ type FrontFramesFile struct {
 		MustBeZero    []string `json:"mustBeZero"`
 		MustBeNonZero []string `json:"mustBeNonZero"`
 	} `json:"connectionRule"`
-	PeerClosedReasons map[string]uint8  `json:"peerClosedReasons"`
-	BoundFlags        map[string]uint8  `json:"boundFlags"`
-	MalformedReasons  []string          `json:"malformedReasons"`
-	Frames            []FrontFrameCase  `json:"frames"`
-	Streams           []FrontStreamCase `json:"streams"`
+	PeerClosedReasons map[string]uint8 `json:"peerClosedReasons"`
+	BoundFlags        map[string]uint8 `json:"boundFlags"`
+	// ErrorCodes is the front's CLOSED set of structural failure codes. Main
+	// treats a code outside it as a malformed frame.
+	ErrorCodes       map[string]uint16 `json:"errorCodes"`
+	MalformedReasons []string          `json:"malformedReasons"`
+	// ValidationOrder is protocol section 10.1's frozen order, as data. Each
+	// step maps to the reasons it can produce through ValidationOrderReasons.
+	ValidationOrder                   []string                 `json:"validationOrder"`
+	ValidationOrderReasons            map[string][]string      `json:"validationOrderReasons"`
+	ValidationOrderUnsatisfiablePairs []FrontUnsatisfiablePair `json:"validationOrderUnsatisfiablePairs"`
+	Frames                            []FrontFrameCase         `json:"frames"`
+	Streams                           []FrontStreamCase        `json:"streams"`
 }
 
 // LoadFrontFrames reads and decodes the pipe-front fixture. Unknown fields are

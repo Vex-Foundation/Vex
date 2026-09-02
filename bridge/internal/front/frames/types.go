@@ -149,6 +149,54 @@ const (
 	peerClosedHighestDefined                  = PeerClosedCommandedClose
 )
 
+// ErrorCode is a front-authored STRUCTURAL failure code from a CLOSED set
+// (protocol section 6.5). Main treats a code outside the set as a malformed
+// frame rather than logging a number nobody can read: an open set would make
+// ERROR the one frame whose meaning the front could invent.
+type ErrorCode uint16
+
+const (
+	// ErrorMalformedMainFrame reports a frame from main that did not parse.
+	ErrorMalformedMainFrame ErrorCode = 1
+	// ErrorPlaneReadFailed reports a failed read on one of the four planes.
+	ErrorPlaneReadFailed ErrorCode = 2
+	// ErrorPlaneWriteFailed reports a failed write on one of the four planes.
+	ErrorPlaneWriteFailed ErrorCode = 3
+	// ErrorListenerBindFailed reports a named pipe that could not be created.
+	ErrorListenerBindFailed ErrorCode = 4
+	// ErrorSDDLReadbackMismatch reports a security descriptor read back from
+	// the handle that is not the one that was asked for.
+	ErrorSDDLReadbackMismatch ErrorCode = 5
+	// ErrorCreditViolation reports a relay-level credit or window violation.
+	ErrorCreditViolation ErrorCode = 6
+	// ErrorAdmissionEpochExhausted reports the u32 admission epoch running out,
+	// which is a front-restart-required condition main decides on.
+	ErrorAdmissionEpochExhausted ErrorCode = 7
+	// ErrorConnectionIDsExhausted reports the connection id space running out
+	// for this generation.
+	ErrorConnectionIDsExhausted ErrorCode = 8
+	// ErrorInternalInvariant reports an invariant the front broke itself.
+	ErrorInternalInvariant ErrorCode = 9
+)
+
+var errorCodeNames = map[ErrorCode]string{
+	ErrorMalformedMainFrame:      "malformed_main_frame",
+	ErrorPlaneReadFailed:         "plane_read_failed",
+	ErrorPlaneWriteFailed:        "plane_write_failed",
+	ErrorListenerBindFailed:      "listener_bind_failed",
+	ErrorSDDLReadbackMismatch:    "sddl_readback_mismatch",
+	ErrorCreditViolation:         "credit_violation",
+	ErrorAdmissionEpochExhausted: "admission_epoch_exhausted",
+	ErrorConnectionIDsExhausted:  "connection_ids_exhausted",
+	ErrorInternalInvariant:       "internal_invariant",
+}
+
+// Name is the wire name of an error code, or "" when the value is undefined.
+func (c ErrorCode) Name() string { return errorCodeNames[c] }
+
+// defined reports whether the code belongs to the frozen closed set.
+func (c ErrorCode) defined() bool { return errorCodeNames[c] != "" }
+
 // BoundFlags is the bitfield of pipe properties the front VERIFIED by runtime
 // readback. A flag the front requested and could not confirm is reported 0.
 const (
@@ -175,7 +223,12 @@ type Hello struct {
 	CreditBytes         uint32
 	ChunkBytes          uint32
 	HandshakeDeadlineMs uint32
-	PipeName            string
+	// InitialAdmissionEpoch is the epoch the front must START at. It is the one
+	// number in HELLO that is DYNAMIC rather than a frozen equality check:
+	// after a lock/unlock cycle main's epoch is non-zero, and a front that
+	// assumed 0 would reject every valid ADMIT of its first life.
+	InitialAdmissionEpoch uint32
+	PipeName              string
 	// TimeoutRefusalBytes is main's exact refusal line, newline included, for a
 	// handshake that misses the deadline. The front writes it verbatim.
 	TimeoutRefusalBytes string
@@ -232,9 +285,14 @@ type Bound struct {
 // Open announces an accepted connection the front has read nothing from.
 type Open struct{}
 
-// WriteDone settles ONE logical write, naming the plane 5 sequence of its last
-// chunk. It is emitted after the Go pipe write returns, never on hand-off.
-type WriteDone struct{ ThroughSequence uint64 }
+// WriteDone is a CUMULATIVE completion acknowledgement for one connection:
+// AckThroughSequence is the greatest plane 5 sequence whose pipe write has
+// RETURNED. It releases every window byte up to and including that sequence,
+// the front may coalesce several completed chunks into one, and the seam's
+// write callback settles only when the acknowledgement covers a logical write's
+// FINAL sequence. It is emitted after the Go pipe write returns, never on
+// hand-off.
+type WriteDone struct{ AckThroughSequence uint64 }
 
 // PeerClosed ends a connection. ThroughDataSequence is the last upstream data
 // sequence delivered for it, and main delays the close edge until it has
@@ -259,7 +317,7 @@ type Pong struct{ Nonce uint64 }
 // ErrorReport is a structural counter for main's log. It carries no string:
 // peer bytes, provider payloads and paths never travel in it.
 type ErrorReport struct {
-	Code  uint16
+	Code  ErrorCode
 	Count uint32
 }
 

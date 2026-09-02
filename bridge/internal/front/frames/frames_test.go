@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/Vex-Foundation/vex/bridge/internal/front/frames"
@@ -112,8 +113,11 @@ func payloadFor(t *testing.T, expect vectors.FrontExpect) frames.Payload {
 			CreditBytes:         uint32(number(t, expect, "creditBytes")),
 			ChunkBytes:          uint32(number(t, expect, "chunkBytes")),
 			HandshakeDeadlineMs: uint32(number(t, expect, "handshakeDeadlineMs")),
-			PipeName:            text(t, expect, "pipeName"),
-			TimeoutRefusalBytes: text(t, expect, "timeoutRefusalBytes"),
+			// DYNAMIC, not a frozen equality value: it initialises a restarted
+			// front's admission epoch to main's own.
+			InitialAdmissionEpoch: uint32(number(t, expect, "initialAdmissionEpoch")),
+			PipeName:              text(t, expect, "pipeName"),
+			TimeoutRefusalBytes:   text(t, expect, "timeoutRefusalBytes"),
 		}
 	case "ADMIT":
 		return frames.Admit{AdmissionEpoch: uint32(number(t, expect, "admissionEpoch"))}
@@ -149,7 +153,9 @@ func payloadFor(t *testing.T, expect vectors.FrontExpect) frames.Payload {
 	case "OPEN":
 		return frames.Open{}
 	case "WRITE_DONE":
-		return frames.WriteDone{ThroughSequence: u64String(t, expect, "throughSequence")}
+		return frames.WriteDone{
+			AckThroughSequence: u64String(t, expect, "ackThroughSequence"),
+		}
 	case "PEER_CLOSED":
 		return frames.PeerClosed{
 			Reason:              frames.PeerClosedReason(number(t, expect, "reason")),
@@ -166,7 +172,7 @@ func payloadFor(t *testing.T, expect vectors.FrontExpect) frames.Payload {
 		return frames.Pong{Nonce: u64String(t, expect, "nonce")}
 	case "ERROR":
 		return frames.ErrorReport{
-			Code:  uint16(number(t, expect, "code")),
+			Code:  frames.ErrorCode(number(t, expect, "code")),
 			Count: uint32(number(t, expect, "count")),
 		}
 	case "DATA":
@@ -290,6 +296,97 @@ func TestFixturePinsThisCodec(t *testing.T) {
 	} {
 		if file.BoundFlags[name] != want {
 			t.Errorf("BOUND flag %s: fixture %d, codec %d", name, file.BoundFlags[name], want)
+		}
+	}
+
+	// The front's structural codes are a CLOSED set: main resolves every code
+	// it logs, and an undefined one is a malformed frame.
+	if len(file.ErrorCodes) == 0 {
+		t.Fatal("the fixture declares no ERROR codes")
+	}
+	for name, id := range file.ErrorCodes {
+		if got := frames.ErrorCode(id).Name(); got != name {
+			t.Errorf("error code %d: fixture calls it %s, codec calls it %q", id, name, got)
+		}
+	}
+}
+
+// TestFixturePinsTheValidationOrder holds this codec to protocol section 10.1
+// mechanically. A frame can violate two rules at once, and two codecs that
+// checked them in different orders would report DIFFERENT reasons for the same
+// bytes - and the reason is what an operator reads. Every adjacent pair of the
+// order has a row that violates both and expects the earlier one.
+func TestFixturePinsTheValidationOrder(t *testing.T) {
+	file := load(t)
+	if len(file.ValidationOrder) < 2 {
+		t.Fatal("the fixture declares no validation order")
+	}
+	rank := map[string]int{}
+	for i, step := range file.ValidationOrder {
+		rank[step] = i
+	}
+
+	covered := map[string]bool{}
+	for _, testCase := range file.Frames {
+		claim := testCase.Precedence
+		if claim == nil {
+			continue
+		}
+		earlier, ok := rank[claim.Earlier]
+		if !ok {
+			t.Fatalf("%s: the order names no step %q", testCase.Name, claim.Earlier)
+		}
+		later, ok := rank[claim.Later]
+		if !ok {
+			t.Fatalf("%s: the order names no step %q", testCase.Name, claim.Later)
+		}
+		if earlier >= later {
+			t.Errorf("%s: %s does not precede %s", testCase.Name, claim.Earlier, claim.Later)
+		}
+		if testCase.Expect.Kind != "malformed" {
+			t.Errorf("%s: a precedence row must be malformed", testCase.Name)
+			continue
+		}
+		produced := false
+		for _, reason := range file.ValidationOrderReasons[claim.Earlier] {
+			if reason == testCase.Expect.Reason {
+				produced = true
+			}
+		}
+		if !produced {
+			t.Errorf("%s: step %s cannot produce reason %s",
+				testCase.Name, claim.Earlier, testCase.Expect.Reason)
+		}
+		covered[claim.Earlier+">"+claim.Later] = true
+	}
+
+	unsatisfiable := map[string]bool{}
+	for _, pair := range file.ValidationOrderUnsatisfiablePairs {
+		unsatisfiable[pair.Earlier+">"+pair.Later] = true
+	}
+	for i := 0; i+1 < len(file.ValidationOrder); i++ {
+		pair := file.ValidationOrder[i] + ">" + file.ValidationOrder[i+1]
+		if !covered[pair] && !unsatisfiable[pair] {
+			t.Errorf("no multi-fault vector proves the adjacent pair %s", pair)
+		}
+	}
+
+	// A pair declared unsatisfiable still has to say how its earlier step is
+	// pinned, so the declaration cannot become a way to drop a step.
+	for _, pair := range file.ValidationOrderUnsatisfiablePairs {
+		discharged := false
+		if pair.ProvenAgainst == nil {
+			for claim := range covered {
+				if strings.HasSuffix(claim, ">"+pair.Earlier) {
+					discharged = true
+				}
+			}
+		} else {
+			discharged = covered[pair.Earlier+">"+*pair.ProvenAgainst]
+		}
+		if !discharged {
+			t.Errorf("the unsatisfiable pair %s>%s leaves its earlier step unproven",
+				pair.Earlier, pair.Later)
 		}
 	}
 }
@@ -498,6 +595,24 @@ func TestEncodeRefusesWhatTheProtocolForbids(t *testing.T) {
 			reason: "empty_data",
 		},
 		{
+			name: "an ERROR code outside the frozen closed set",
+			frame: frames.Frame{
+				Plane: frames.PlaneControlUp, Generation: generation,
+				Connection: 0, Sequence: 1,
+				Payload: frames.ErrorReport{Code: 0, Count: 1},
+			},
+			reason: "error_code",
+		},
+		{
+			name: "an ERROR code above the frozen closed set",
+			frame: frames.Frame{
+				Plane: frames.PlaneControlUp, Generation: generation,
+				Connection: 0, Sequence: 1,
+				Payload: frames.ErrorReport{Code: 0x1007, Count: 1},
+			},
+			reason: "error_code",
+		},
+		{
 			name: "HELLO_ACK that never leaves the bootstrap generation",
 			frame: frames.Frame{
 				Plane: frames.PlaneControlUp, Generation: 0,
@@ -666,21 +781,141 @@ func TestOverBoundLengthIsRejectedFromTheHeaderAlone(t *testing.T) {
 	}
 }
 
+// The retention guarantee measured as a PEAK during one Push, which is what
+// the previous "retained bytes after the call returned" assertions could not
+// see: a decoder that appended the caller's chunk first would hold all three
+// frames at once here and still report 0 retained on the way out.
+func TestRetentionBoundHoldsDuringAPush(t *testing.T) {
+	const generation = 0x2a7f1c04
+	plane := frames.PlaneDataUp
+	bound := plane.RetentionBound()
+
+	var chunk []byte
+	for sequence := uint64(1); sequence <= 3; sequence++ {
+		encoded, err := frames.Encode(frames.Frame{
+			Plane: plane, Generation: generation, Connection: 7, Sequence: sequence,
+			Payload: frames.Data{Payload: bytes.Repeat([]byte("A"), frames.DataPayloadMaxBytes)},
+		})
+		if err != nil {
+			t.Fatalf("encoding chunk %d: %v", sequence, err)
+		}
+		chunk = append(chunk, encoded...)
+	}
+	if len(chunk) != 3*bound {
+		t.Fatalf("the push is %d bytes, expected %d", len(chunk), 3*bound)
+	}
+
+	decoder := frames.NewDecoder(plane, generation, 1)
+	decoded, err := decoder.Push(chunk)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(decoded) != 3 {
+		t.Fatalf("decoded %d frames, expected 3", len(decoded))
+	}
+	if decoder.RetainedBytes() != 0 {
+		t.Errorf("the decoder retains %d bytes after three whole frames", decoder.RetainedBytes())
+	}
+	if got := decoder.PeakRetainedBytes(); got != bound {
+		t.Fatalf("peak retention %d bytes, the plane's bound is %d", got, bound)
+	}
+}
+
+// A hostile push: the 28 header bytes claiming a length far past the plane's
+// bound, followed by a real megabyte of body in the SAME chunk. The header
+// phase completes first, so no buffer is ever sized from the sender's number.
+func TestAMalformedHeaderAllocatesNoBody(t *testing.T) {
+	file := load(t)
+	var overBound *vectors.FrontFrameCase
+	for i := range file.Frames {
+		if file.Frames[i].Name == "data length over bound" {
+			overBound = &file.Frames[i]
+		}
+	}
+	if overBound == nil {
+		t.Fatal("the fixture no longer carries the data length over bound vector")
+	}
+
+	raw := mustHex(t, overBound.Hex)
+	hostile := append(append([]byte{}, raw...), bytes.Repeat([]byte("B"), 1<<20)...)
+	decoder := frames.NewDecoder(
+		frames.Plane(overBound.Plane), overBound.ExpectedGeneration,
+		mustU64(t, overBound.ExpectedSequence))
+	if _, err := decoder.Push(hostile); err == nil {
+		t.Fatal("an over-bound length was accepted")
+	}
+	if decoder.RetainedBytes() != 0 {
+		t.Errorf("a rejected header left %d bytes retained", decoder.RetainedBytes())
+	}
+	if got := decoder.PeakRetainedBytes(); got != frames.HeaderBytes {
+		t.Fatalf("peak retention %d bytes; only the %d header bytes may ever be staged",
+			got, frames.HeaderBytes)
+	}
+}
+
+// Adoption is ONE-SHOT and NON-ZERO. A second adoption is the very re-pointing
+// protocol section 4 forbids, and adopting 0 would put a live reader back into
+// the bootstrap where a stale front's frames parse again.
+func TestAdoptGenerationIsOneShotAndNonZero(t *testing.T) {
+	decoder := frames.NewDecoder(frames.PlaneDataUp, 0, 1)
+	if err := decoder.AdoptGeneration(0); err == nil {
+		t.Fatal("the bootstrap generation 0 was adopted")
+	} else if state, ok := err.(*frames.StateError); !ok {
+		t.Fatalf("expected a *StateError, got %T", err)
+	} else if state.Reason != "adopt_generation_zero" {
+		t.Fatalf("reason: got %s", state.Reason)
+	}
+	if err := decoder.AdoptGeneration(0x2a7f1c04); err != nil {
+		t.Fatalf("the first adoption failed: %v", err)
+	}
+	if err := decoder.AdoptGeneration(0x2a7f1c05); err == nil {
+		t.Fatal("a second generation was adopted")
+	} else if state, ok := err.(*frames.StateError); !ok {
+		t.Fatalf("expected a *StateError, got %T", err)
+	} else if state.Reason != "adopt_generation_twice" {
+		t.Fatalf("reason: got %s", state.Reason)
+	}
+
+	// A decoder constructed with a generation has already spent its adoption.
+	live := frames.NewDecoder(frames.PlaneDataDown, 0x2a7f1c04, 1)
+	if err := live.AdoptGeneration(0x2a7f1c05); err == nil {
+		t.Fatal("a decoder past the bootstrap adopted a generation")
+	}
+
+	// And so has one that learned it from HELLO_ACK.
+	file := load(t)
+	var helloAck *vectors.FrontFrameCase
+	for i := range file.Frames {
+		if file.Frames[i].Name == "hello_ack" {
+			helloAck = &file.Frames[i]
+		}
+	}
+	if helloAck == nil {
+		t.Fatal("the fixture no longer carries the hello_ack vector")
+	}
+	learned := frames.NewDecoder(frames.PlaneControlUp, 0, 1)
+	if _, err := learned.Push(mustHex(t, helloAck.Hex)); err != nil {
+		t.Fatalf("decoding HELLO_ACK: %v", err)
+	}
+	if err := learned.AdoptGeneration(0x2a7f1c05); err == nil {
+		t.Fatal("a decoder that learned its generation adopted a second one")
+	}
+}
+
 // The generation bootstrap, end to end on the plane the front answers on.
 func TestGenerationIsAdoptedFromHelloAck(t *testing.T) {
 	file := load(t)
 	var stream *vectors.FrontStreamCase
 	for i := range file.Streams {
-		if file.Streams[i].Plane == uint8(frames.PlaneControlUp) {
+		// The BOOTSTRAP stream: plane 4 read from generation 0. Other plane 4
+		// streams start after the generation is already negotiated.
+		if file.Streams[i].Plane == uint8(frames.PlaneControlUp) &&
+			file.Streams[i].ExpectedGeneration == 0 {
 			stream = &file.Streams[i]
 		}
 	}
 	if stream == nil {
-		t.Fatal("the fixture carries no plane 4 stream")
-	}
-	if stream.ExpectedGeneration != 0 {
-		t.Fatalf("the plane 4 stream starts at generation %d, not the bootstrap 0",
-			stream.ExpectedGeneration)
+		t.Fatal("the fixture carries no bootstrap plane 4 stream")
 	}
 
 	decoder := frames.NewDecoder(frames.PlaneControlUp, 0, mustU64(t, stream.StartSequence))

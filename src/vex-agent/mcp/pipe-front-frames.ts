@@ -13,10 +13,17 @@
  * relay state with a different lifetime, a different owner and a different test
  * surface (protocol section 11.3). A codec that owned them would be the relay.
  *
- * The decoder's retention is bounded BY CONSTRUCTION: the header is validated
- * in full, including the plane's payload bound, before one payload byte is
- * retained, so the pending buffer never exceeds `28 + the plane's bound` -
- * 4124 bytes on a control plane, 32796 on a data plane.
+ * The decoder's retention is bounded BY CONSTRUCTION, and the construction is
+ * the STAGING: a caller's chunk is consumed BY OFFSET and never merged into a
+ * buffer of its own. At most 28 header bytes are staged, the header is
+ * validated in full - the plane's payload bound included - and only then is a
+ * payload buffer of exactly the DECLARED length allocated. The decoder's own
+ * buffers therefore never exceed `28 + the plane's bound` (4124 bytes on a
+ * control plane, 32796 on a data plane) at any moment DURING a push, not merely
+ * after it returns, which `peakRetainedBytes` reports and both suites assert.
+ * A decoder that concatenated the chunk first would transiently hold a whole
+ * OS-sized read, or a 4 GiB length field's worth of hostile body, before it
+ * ever looked at the header.
  */
 
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
@@ -98,6 +105,51 @@ export const PIPE_FRONT_PEER_CLOSED_REASONS = {
 export type PipeFrontPeerClosedReason =
   keyof typeof PIPE_FRONT_PEER_CLOSED_REASONS;
 
+/**
+ * The front's structural failure codes, a CLOSED set (protocol section 6.5).
+ * Main treats a code outside it as a malformed frame rather than logging a
+ * number nobody can read: an open set would make `ERROR` the one frame whose
+ * meaning the front could invent.
+ */
+export const PIPE_FRONT_ERROR_CODES = {
+  /** A frame from main did not parse. The front exits after reporting it. */
+  malformed_main_frame: 1,
+  /** A read on one of the four planes failed. */
+  plane_read_failed: 2,
+  /** A write on one of the four planes failed. */
+  plane_write_failed: 3,
+  /** The named pipe listener could not be created. */
+  listener_bind_failed: 4,
+  /** The security descriptor read back from the handle is not the one asked for. */
+  sddl_readback_mismatch: 5,
+  /** A relay-level credit or window rule was violated. */
+  credit_violation: 6,
+  /** The admission epoch reached u32 exhaustion; the front must be restarted. */
+  admission_epoch_exhausted: 7,
+  /** The connection id space is exhausted for this generation. */
+  connection_ids_exhausted: 8,
+  /** The front detected a broken invariant of its own. */
+  internal_invariant: 9,
+} as const;
+
+export type PipeFrontErrorCodeName = keyof typeof PIPE_FRONT_ERROR_CODES;
+
+const ERROR_CODE_VALUES: ReadonlySet<number> = new Set(
+  Object.values(PIPE_FRONT_ERROR_CODES),
+);
+
+/** The name of a front error code, or `null` when the value is undefined. */
+export function pipeFrontErrorCodeName(
+  value: number,
+): PipeFrontErrorCodeName | null {
+  for (const [name, id] of Object.entries(PIPE_FRONT_ERROR_CODES)) {
+    if (id === value) {
+      return name as PipeFrontErrorCodeName;
+    }
+  }
+  return null;
+}
+
 export const PIPE_FRONT_BOUND_FLAGS = {
   rejectRemote: 0x01,
   firstInstance: 0x02,
@@ -164,6 +216,13 @@ export type PipeFrontBody =
       readonly creditBytes: number;
       readonly chunkBytes: number;
       readonly handshakeDeadlineMs: number;
+      /**
+       * The admission epoch the front must START at. DYNAMIC, and the one
+       * number in `HELLO` that is not a frozen equality check: after a
+       * lock/unlock cycle main's epoch is non-zero, and a front that assumed 0
+       * would reject every valid `ADMIT` of its first life.
+       */
+      readonly initialAdmissionEpoch: number;
       readonly pipeName: string;
       readonly timeoutRefusalBytes: string;
     }
@@ -192,7 +251,18 @@ export type PipeFrontBody =
     }
   | { readonly type: "BOUND"; readonly flagsApplied: number; readonly pipeName: string }
   | { readonly type: "OPEN" }
-  | { readonly type: "WRITE_DONE"; readonly throughSequence: bigint }
+  | {
+      readonly type: "WRITE_DONE";
+      /**
+       * The greatest plane 5 sequence this connection's writes are
+       * acknowledged THROUGH. CUMULATIVE (protocol section 6.4): it releases
+       * every window byte up to and including that sequence, the front may
+       * coalesce several completed chunks into one, and the seam's write
+       * callback settles only when the acknowledgement covers a logical
+       * write's FINAL sequence.
+       */
+      readonly ackThroughSequence: bigint;
+    }
   | {
       readonly type: "PEER_CLOSED";
       readonly reason: PipeFrontPeerClosedReason;
@@ -230,7 +300,8 @@ export type PipeFrontMalformedReason =
   | "generation_zero"
   | "sddl_kind"
   | "peer_closed_reason"
-  | "bound_flags_reserved";
+  | "bound_flags_reserved"
+  | "error_code";
 
 /**
  * What the structural log records. The PAYLOAD is deliberately absent: it is
@@ -330,6 +401,21 @@ function requireU32(value: number, field: string): number {
   return value;
 }
 
+/**
+ * `DataView.setBigUint64` does NOT refuse a negative or over-u64 `bigint`: it
+ * wraps it modulo 2^64 and writes eight perfectly well-formed bytes. Every u64
+ * this encoder writes from a caller-supplied value - a `PING`/`PONG` nonce and
+ * the two sequence references - passes through here first, so a relay bug
+ * becomes a loud refusal in this process instead of a plausible sequence
+ * number on the wire that the peer would accept.
+ */
+function requireU64(value: bigint, field: string): bigint {
+  if (value < 0n || value > 0xffffffffffffffffn) {
+    throw new PipeFrontEncodeError("field_range", `${field} = ${value}`);
+  }
+  return value;
+}
+
 function requireU16(value: number, field: string): number {
   if (!Number.isInteger(value) || value < 0 || value > 0xffff) {
     throw new PipeFrontEncodeError("field_range", `${field} = ${value}`);
@@ -354,6 +440,9 @@ function encodeBody(frame: PipeFrontFrame): Uint8Array {
       writer.u32(requireU32(frame.creditBytes, "creditBytes"));
       writer.u32(requireU32(frame.chunkBytes, "chunkBytes"));
       writer.u32(requireU32(frame.handshakeDeadlineMs, "handshakeDeadlineMs"));
+      writer.u32(
+        requireU32(frame.initialAdmissionEpoch, "initialAdmissionEpoch"),
+      );
       writer.str(frame.pipeName, "pipeName");
       writer.str(frame.timeoutRefusalBytes, "timeoutRefusalBytes");
       break;
@@ -379,7 +468,7 @@ function encodeBody(frame: PipeFrontFrame): Uint8Array {
       break;
     case "PING":
     case "PONG":
-      writer.u64(frame.nonce);
+      writer.u64(requireU64(frame.nonce, "nonce"));
       break;
     case "HELLO_ACK":
       writer.u16(requireU16(frame.protocolVersion, "protocolVersion"));
@@ -405,18 +494,24 @@ function encodeBody(frame: PipeFrontFrame): Uint8Array {
       writer.str(frame.pipeName, "pipeName");
       break;
     case "WRITE_DONE":
-      writer.u64(frame.throughSequence);
+      writer.u64(requireU64(frame.ackThroughSequence, "ackThroughSequence"));
       break;
     case "PEER_CLOSED":
       writer.u8(PIPE_FRONT_PEER_CLOSED_REASONS[frame.reason]);
-      writer.u64(frame.throughDataSequence);
+      writer.u64(requireU64(frame.throughDataSequence, "throughDataSequence"));
       break;
     case "LOCK_ACK":
       writer.u32(requireU32(frame.admissionEpoch, "admissionEpoch"));
       writer.u32(requireU32(frame.closedCount, "closedCount"));
       break;
     case "ERROR":
-      writer.u16(requireU16(frame.code, "code"));
+      if (!ERROR_CODE_VALUES.has(requireU16(frame.code, "code"))) {
+        throw new PipeFrontEncodeError(
+          "error_code",
+          `${frame.code} is not one of the front's frozen structural codes`,
+        );
+      }
+      writer.u16(frame.code);
       writer.u32(requireU32(frame.count, "count"));
       break;
     case "DATA":
@@ -592,16 +687,30 @@ export interface PipeFrontDecoderOptions {
 }
 
 /**
- * An incremental decoder for ONE plane.
+ * A decoder used outside its contract. It is always a bug in this process -
+ * adopting a generation twice, or adopting the bootstrap `0` - so it throws
+ * rather than returning a result, exactly as the encoder does.
+ */
+export class PipeFrontDecoderStateError extends Error {
+  public constructor(public readonly reason: string, detail: string) {
+    super(`pipe-front decoder refused (${reason}): ${detail}`);
+    this.name = "PipeFrontDecoderStateError";
+  }
+}
+
+/**
+ * An incremental, STAGED decoder for ONE plane.
  *
- * Bytes may arrive in any chunking, including one byte at a time, and the
- * decoder retains at most `pipeFrontRetentionBound(plane)` bytes because the
- * header - the plane's payload bound included - is validated in full before a
- * payload byte is kept.
+ * Bytes may arrive in any chunking, including one byte at a time. The caller's
+ * chunk is consumed BY OFFSET and never concatenated: at most the 28 header
+ * bytes are staged, the header is validated in full - the plane's payload bound
+ * included - and only then is a payload buffer of exactly the declared length
+ * allocated. So `pipeFrontRetentionBound(plane)` bounds this decoder's own
+ * buffers at every moment DURING a push, which `peakRetainedBytes` reports.
  *
  * A malformed frame is TERMINAL, matching protocol section 10: the position in
  * the stream is unknown after a framing fault, so the decoder latches the
- * failure, drops its buffer, and returns nothing from every later `push`. The
+ * failure, drops its buffers, and returns nothing from every later `push`. The
  * caller kills the front (main's side) or exits (the front's side); there is no
  * resynchronisation to offer.
  */
@@ -609,14 +718,26 @@ export class PipeFrontFrameDecoder {
   private readonly plane: PipeFrontPlane;
   private readonly bound: number;
   private generation: number;
+  private adopted: boolean;
   private expected: bigint;
-  private pending = new Uint8Array(0);
+  /** The staging area for one header. Allocated once, never grown. */
+  private readonly header = new Uint8Array(PIPE_FRONT_HEADER_BYTES);
+  private headerFilled = 0;
+  /** The validated header whose payload is still arriving, or `null`. */
+  private staged: ParsedHeader | null = null;
+  /** Exactly `staged.length` bytes, allocated only after validation. */
+  private payload: Uint8Array | null = null;
+  private payloadFilled = 0;
+  private peak = PIPE_FRONT_HEADER_BYTES;
   private latched: PipeFrontMalformed | null = null;
 
   public constructor(options: PipeFrontDecoderOptions) {
     this.plane = options.plane;
     this.bound = pipeFrontPayloadBound(options.plane);
     this.generation = options.generation;
+    // A decoder handed a non-zero generation is already past the bootstrap, so
+    // it has spent its one adoption.
+    this.adopted = options.generation !== 0;
     this.expected = options.sequence ?? 1n;
   }
 
@@ -627,7 +748,19 @@ export class PipeFrontFrameDecoder {
 
   /** Bytes of an incomplete frame currently held. Never above the retention bound. */
   public get retainedBytes(): number {
-    return this.pending.length;
+    return this.staged === null
+      ? this.headerFilled
+      : PIPE_FRONT_HEADER_BYTES + this.payloadFilled;
+  }
+
+  /**
+   * The greatest total capacity this decoder's own buffers have ever had: the
+   * 28-byte header stage plus the largest payload buffer it allocated. It is
+   * the number the retention guarantee is measured against, because it records
+   * the PEAK during a push rather than what happens to be left after one.
+   */
+  public get peakRetainedBytes(): number {
+    return this.peak;
   }
 
   /** The sequence the next frame must carry. */
@@ -638,8 +771,26 @@ export class PipeFrontFrameDecoder {
   /**
    * Adopt the generation `HELLO_ACK` announced. Every later frame on this plane
    * must carry it, and the bootstrap generation `0` becomes invalid.
+   *
+   * ONE-SHOT and NON-ZERO. A second adoption would be the very re-pointing that
+   * protocol section 4 forbids, and adopting `0` would put a live reader back
+   * into the bootstrap where a stale front's frames parse again. Both are
+   * programming errors in the relay, not wire conditions, so both throw.
    */
   public adoptGeneration(generation: number): void {
+    if (generation === 0) {
+      throw new PipeFrontDecoderStateError(
+        "adopt_generation_zero",
+        "0 is the bootstrap generation and can never be adopted",
+      );
+    }
+    if (this.adopted) {
+      throw new PipeFrontDecoderStateError(
+        "adopt_generation_twice",
+        `this decoder already reads generation ${this.generation}`,
+      );
+    }
+    this.adopted = true;
     this.generation = generation;
   }
 
@@ -647,44 +798,81 @@ export class PipeFrontFrameDecoder {
     if (this.latched !== null || chunk.length === 0) {
       return [];
     }
-    const merged = new Uint8Array(this.pending.length + chunk.length);
-    merged.set(this.pending, 0);
-    merged.set(chunk, this.pending.length);
-    this.pending = merged;
 
     const events: PipeFrontDecodeEvent[] = [];
+    let offset = 0;
     for (;;) {
-      if (this.pending.length < PIPE_FRONT_HEADER_BYTES) {
-        return events;
+      if (this.staged === null) {
+        if (offset >= chunk.length) {
+          return events;
+        }
+        const take = Math.min(
+          PIPE_FRONT_HEADER_BYTES - this.headerFilled,
+          chunk.length - offset,
+        );
+        this.header.set(
+          chunk.subarray(offset, offset + take),
+          this.headerFilled,
+        );
+        this.headerFilled += take;
+        offset += take;
+        if (this.headerFilled < PIPE_FRONT_HEADER_BYTES) {
+          return events;
+        }
+        const header = parseHeader(this.header);
+        const headerFault = this.validateHeader(magicOf(this.header), header);
+        if (headerFault !== null) {
+          events.push(this.fail(headerFault, header));
+          return events;
+        }
+        // The bound is enforced above, so this allocation is bounded by the
+        // plane, never by what the sender claimed.
+        this.headerFilled = 0;
+        this.staged = header;
+        this.payload = new Uint8Array(header.length);
+        this.payloadFilled = 0;
+        this.peak = Math.max(
+          this.peak,
+          PIPE_FRONT_HEADER_BYTES + header.length,
+        );
+        continue;
       }
-      const header = parseHeader(
-        this.pending.subarray(0, PIPE_FRONT_HEADER_BYTES),
-      );
-      const headerFault = this.validateHeader(
-        magicOf(this.pending.subarray(0, PIPE_FRONT_HEADER_BYTES)),
-        header,
-      );
-      if (headerFault !== null) {
-        events.push(this.fail(headerFault, header));
-        return events;
+
+      const header = this.staged;
+      const payload = this.payload ?? new Uint8Array(0);
+      if (this.payloadFilled < header.length) {
+        if (offset >= chunk.length) {
+          return events;
+        }
+        const take = Math.min(
+          header.length - this.payloadFilled,
+          chunk.length - offset,
+        );
+        payload.set(chunk.subarray(offset, offset + take), this.payloadFilled);
+        this.payloadFilled += take;
+        offset += take;
+        if (this.payloadFilled < header.length) {
+          return events;
+        }
       }
-      const total = PIPE_FRONT_HEADER_BYTES + header.length;
-      if (this.pending.length < total) {
-        return events;
-      }
-      const payload = this.pending.subarray(PIPE_FRONT_HEADER_BYTES, total);
+
       const decoded = decodeBody(header, payload);
       if (typeof decoded === "string") {
         events.push(this.fail(decoded, header));
         return events;
       }
-      this.pending = this.pending.slice(total);
+      // The payload buffer is handed to the frame; the decoder keeps no
+      // reference, so a DATA frame costs one allocation rather than two.
+      this.staged = null;
+      this.payload = null;
+      this.payloadFilled = 0;
       this.expected = header.sequence + 1n;
       if (decoded.type === "HELLO_ACK") {
         // A plane 4 reader LEARNS the generation here (protocol section 4);
         // planes 3, 5 and 6 are told it by their owner through
-        // `adoptGeneration`.
+        // `adoptGeneration`. Either way the one adoption is spent.
         this.generation = decoded.announcedGeneration;
+        this.adopted = true;
       }
       events.push({
         kind: "frame",
@@ -758,7 +946,10 @@ export class PipeFrontFrameDecoder {
       sequence: header.sequence,
       length: header.length,
     };
-    this.pending = new Uint8Array(0);
+    this.headerFilled = 0;
+    this.staged = null;
+    this.payload = null;
+    this.payloadFilled = 0;
     return { kind: "malformed", malformed: this.latched };
   }
 }
@@ -784,13 +975,13 @@ function decodeBody(
 ): PipeFrontBody | PipeFrontMalformedReason {
   const type = TYPE_NAME_BY_ID.get(header.type)!;
   if (type === "DATA") {
-    return payload.length === 0
-      ? "empty_data"
-      : { type, payload: payload.slice() };
+    // The buffer is the decoder's exactly-sized staging area, handed over
+    // whole: the decoder drops its reference at the same moment.
+    return payload.length === 0 ? "empty_data" : { type, payload };
   }
 
   const fixed: Record<string, number> = {
-    HELLO: 17, ADMIT: 4, REFUSE: 2, CREDIT: 4, PAUSE: 0, RESUME: 0, CLOSE: 0,
+    HELLO: 21, ADMIT: 4, REFUSE: 2, CREDIT: 4, PAUSE: 0, RESUME: 0, CLOSE: 0,
     LOCK: 4, QUIT: 4, PING: 8,
     HELLO_ACK: 10, BOUND: 3, OPEN: 0, WRITE_DONE: 8, PEER_CLOSED: 9,
     LOCK_ACK: 8, QUIT_ACK: 0, PONG: 8, ERROR: 6,
@@ -810,6 +1001,7 @@ function decodeBody(
       const creditBytes = reader.u32();
       const chunkBytes = reader.u32();
       const handshakeDeadlineMs = reader.u32();
+      const initialAdmissionEpoch = reader.u32();
       const pipeName = decodeString(reader);
       if (typeof pipeName === "string") {
         return pipeName;
@@ -826,7 +1018,7 @@ function decodeBody(
       }
       return {
         type, protocolVersion, sddlKind, maxRaw, creditBytes, chunkBytes,
-        handshakeDeadlineMs,
+        handshakeDeadlineMs, initialAdmissionEpoch,
         pipeName: pipeName.value,
         timeoutRefusalBytes: timeoutRefusalBytes.value,
       };
@@ -892,7 +1084,7 @@ function decodeBody(
       return { type, flagsApplied, pipeName: pipeName.value };
     }
     case "WRITE_DONE":
-      body = { type, throughSequence: reader.u64() };
+      body = { type, ackThroughSequence: reader.u64() };
       break;
     case "PEER_CLOSED": {
       const raw = reader.u8();
@@ -913,9 +1105,17 @@ function decodeBody(
         closedCount: reader.u32(),
       };
       break;
-    case "ERROR":
-      body = { type, code: reader.u16(), count: reader.u32() };
-      break;
+    case "ERROR": {
+      const code = reader.u16();
+      const count = reader.u32();
+      if (reader.remaining !== 0) {
+        return "payload_length_mismatch";
+      }
+      if (!ERROR_CODE_VALUES.has(code)) {
+        return "error_code";
+      }
+      return { type, code, count };
+    }
     case "PAUSE":
     case "RESUME":
     case "CLOSE":
