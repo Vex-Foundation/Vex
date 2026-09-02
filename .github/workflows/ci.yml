@@ -549,19 +549,21 @@ jobs:
   # ever covered the TypeScript side, where path handling, the pty host and the
   # Studio endpoint code all take different branches.
   vex-app-windows:
-    # SOFT ON PURPOSE, and only until its last finding is closed. Batch 3
-    # rounds 1-3 took this lane from about 22 failing suites to ZERO failing
-    # tests (run 33616868569: 9642 passed / 79 skipped), and what remains is
-    # one worker fork that exits unexpectedly at teardown after every test has
-    # passed - vitest reports it as an unhandled error with no file
-    # attribution. The vitest run below is therefore split into two steps so
-    # the dying worker names itself: the suite minus the pty host, then the
-    # pty host alone (node-pty on ConPTY is the prime suspect). Flipping this
-    # lane to a required check (removing continue-on-error) is a mechanically
-    # enforced precondition of the Batch 4 stages that touch the Windows
-    # transport (B4.2b-2 onward) and of the B4.3 gate flip: a reviewer who
-    # sees B4.2b-2 proposed while this line still exists rejects it.
-    continue-on-error: true
+    # REQUIRED since 2026-09-02. It started soft (Batch 0); Batch 3 rounds 1-3
+    # took it from about 22 failing suites to zero failing tests, and round 4
+    # closed the last finding, a vitest worker that died at teardown: node-pty
+    # defers ConPTY's connect, so the pty pid is 0 until the first data event,
+    # and the real-pty survivor detector's SIGKILL of pid 0 was TerminateProcess
+    # on the worker itself. Run 33631699970 was the first green end to end
+    # (full run 9674 passed / 79 skipped; pty host alone 145 passed, every
+    # real-pty phase traced to completion with zero survivors). Its required
+    # status is a precondition of the Batch 4 stages that touch the Windows
+    # transport (B4.2b-2 onward) and of the B4.3 gate flip; the skips it still
+    # carries are visible `skipIf` guards with a stated platform reason (the
+    # MCP socket suites wait on the transport gate), never a silent early
+    # return. The two vitest steps stay: a worker killed by a native crash
+    # prints nothing, so the isolated verbose pty-host run remains the
+    # attribution a future regression would need.
     runs-on: windows-latest
     defaults:
       run:
