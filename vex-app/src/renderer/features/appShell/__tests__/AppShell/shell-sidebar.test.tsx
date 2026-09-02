@@ -37,6 +37,10 @@ vi.mock("../../screens/AgentScanScreen.js", () => ({
   AgentScanScreen: () => null,
 }));
 
+vi.mock("../../lighterTrading/LighterTradingDialog.js", () => ({
+  LighterTradingDialog: () => null,
+}));
+
 vi.mock("@thesvg/react", () => ({
   Docker: () => null,
   Ethereum: () => null,

@@ -33,6 +33,10 @@ vi.mock("../../screens/SettingsScreen.js", () => ({
   SettingsScreen: () => null,
 }));
 
+vi.mock("../../lighterTrading/LighterTradingDialog.js", () => ({
+  LighterTradingDialog: () => null,
+}));
+
 vi.mock("@thesvg/react", () => ({
   Docker: () => null,
   Ethereum: () => null,
