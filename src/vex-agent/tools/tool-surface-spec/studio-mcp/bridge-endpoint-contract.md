@@ -639,11 +639,30 @@ So the host owns one serialized send owner per connection:
 
 ### 3.2 Close
 
-A peer FIN propagates as the transport's `onclose`, exactly once. That is what
-aborts every in-flight MCP request handler's `AbortSignal`, which is what
-withdraws a blocked Studio approval. Missing that edge leaves an approval
-waiting for a peer that is gone; firing it twice is a second teardown of an
-already-closed instance. The transport latches it.
+CORRECTED to the landed seam. An earlier revision of this section said a peer
+FIN propagates as the transport's `onclose`. IT DOES NOT, and the difference is
+a whole class of session:
+
+- A PEER FIN raises the wire's `end` - readable EOF - and the WRITABLE SIDE IS
+  PRESERVED. `src/vex-agent/mcp/duplex-transport.ts` states it as an obligation
+  on every implementation: "A peer that half-closes is saying 'no more
+  requests', not 'no more answers': `end` must fire without the writable side
+  being torn down, so the last response of a one-shot session can still be
+  written. An implementation that ends the writable side on peer FIN breaks
+  every `claude -p` style session, silently." On that edge
+  `StudioSocketTransport` starts its BOUNDED POST-EOF DRAIN under one absolute
+  deadline, so answers to already-sent requests are still written. The edge is
+  queryable after the fact as `readableEnded`, because Node does not replay
+  `end` to a late listener.
+- THE WIRE BEING GONE - the `close` edge - is what announces `onclose`, exactly
+  once. THAT is what aborts every in-flight MCP request handler's `AbortSignal`,
+  which is what withdraws a blocked Studio approval. Missing that edge leaves an
+  approval waiting for a peer that is gone; firing it twice is a second teardown
+  of an already-closed instance. The transport latches it.
+
+Announcing `onclose` on the FIN edge is the exact defect the drain exists to
+undo: it aborted every in-flight handler at the moment a one-shot bridge stopped
+asking, so the answers it was waiting for were never written.
 
 Shutdown gives the writable side 5000 ms to flush, then destroys.
 

@@ -49,6 +49,44 @@ function hangCommand(): { readonly command: string; readonly args: string[] } {
   };
 }
 
+function isAlive(pid: number): boolean {
+  try {
+    // Signal 0 delivers nothing and only asks whether the pid exists; libuv
+    // implements it on Windows too (`uv__kill` answers with a liveness check
+    // instead of TerminateProcess for signum 0).
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Kill a process this test deliberately made outlive its parent, then WAIT for
+ * the world to agree it is gone. Returns the pids still alive at the deadline,
+ * so the caller fails the run over a leak rather than the run leaking quietly.
+ */
+async function reap(
+  pid: number | undefined,
+  timeoutMs = 10_000
+): Promise<number[]> {
+  if (pid === undefined) return [];
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Already gone, or never started. Both are the goal state.
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (isAlive(pid) && Date.now() < deadline) {
+    await delay(25);
+  }
+  return isAlive(pid) ? [pid] : [];
+}
+
 describe("runSpawn", () => {
   it("captures stdout via line callback and final stdout buffer", async () => {
     const lines: string[] = [];
@@ -111,14 +149,18 @@ describe("runSpawn", () => {
     // The four outcomes stay distinct: this run was cancelled by its caller,
     // it did not hit a deadline.
     expect(result.timedOut).toBe(false);
-    if (process.platform === "win32") {
-      // Windows has no POSIX signals: `kill()` is TerminateProcess, so Node
-      // reports a plain exit code and `signal: null`. Asserting a name here
-      // would be asserting a POSIX detail the platform cannot produce.
-      expect(result.signal).toBeNull();
-    } else {
-      expect(result.signal).toBe("SIGTERM");
-    }
+    // THE REPORTED SIGNAL IS THE NAME WE SENT, ON EVERY PLATFORM - including
+    // win32, where the MECHANISM is TerminateProcess but the REPORTING is not
+    // lossy. libuv's `uv_process_kill` (src/win/process.c) maps SIGTERM to
+    // `TerminateProcess(handle, 1)` and then records `process->exit_signal =
+    // signum`; `uv__process_proc_exit` hands that same value back as the
+    // exit callback's `term_signal`, Node's `process_wrap.cc` OnExit turns it
+    // into a name via `signo_string(term_signal)`, and `internal/child_process`
+    // emits it as the `'exit'` event's `signal`. So there is no platform
+    // branch to make here: a branch asserting `null` on win32 would be
+    // asserting a POSIX intuition the runtime contradicts, which is what the
+    // Windows lane measured.
+    expect(result.signal).toBe("SIGTERM");
   });
 
   /**
@@ -161,30 +203,70 @@ describe("runSpawn", () => {
    * A KILLED CHILD IS NOT A KILLED TREE. `close` waits for the stdio pipes as
    * well as the exit, and a descendant that inherited those pipes keeps them
    * open, so the runner has to settle on the exit facts alone or its caller
-   * waits for ever. This is the Linux-reproducible form of the win32 lane's
-   * 15 s abort timeout. The abandoned output is REPORTED, never silently
-   * presented as a complete stream.
+   * waits for ever. This is the reproducer for the win32 lane's 15 s abort
+   * timeout. The abandoned output is REPORTED, never silently presented as a
+   * complete stream.
+   *
+   * WHY THE DESCENDANT IS `detached`, AND WHY THAT IS NOT A TEST TRICK.
+   * libuv creates ONE global job object per process on the first spawn, with
+   * `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, and assigns both the current process
+   * and every NON-detached child to it (`uv__init_global_job_handle` and the
+   * `AssignProcessToJobObject` at the end of `uv_spawn`, src/win/process.c).
+   * When our direct child dies, its handle to that job closes, the job closes
+   * with it and Windows terminates everything inside - so an ordinary Node
+   * grandchild dies WITH the child, its inherited pipe handles close, and the
+   * abandoned-stdio path is unreachable by construction. That is what the
+   * Windows lane measured: `close` fired normally and `stderr` was empty.
+   * A process spawned with `detached` is deliberately NOT assigned to the job
+   * (`if (!(options->flags & UV_PROCESS_DETACHED))`, same file), while
+   * `CreateProcessW` still passes `bInheritHandles`, so it keeps the child's
+   * stdout/stderr open after the child is gone. That is the real shape of the
+   * production hazard on Windows - a `docker`/daemon helper that daemonises
+   * itself - and it reproduces the same condition POSIX reaches with a plain
+   * fork, so ONE test covers all three lanes.
+   *
+   * The descendant is reaped by pid afterwards: it OUTLIVES the run by design,
+   * so unlike the pty suite's leak detector (`real-pty.test.ts`) a survivor
+   * here is the subject, not a defect. What must not happen is it outliving
+   * the TEST - a process still holding the vitest worker's inherited pipes is
+   * how the Windows lane's worker died.
    */
   it("settles when a surviving descendant still holds the child's pipes", async () => {
     const ac = new AbortController();
-    const result = await runSpawn(
-      process.execPath,
-      [
-        "-e",
-        "require('child_process').spawn(process.execPath, "
-          + "['-e', 'setTimeout(() => {}, 6000)'], "
-          + "{ stdio: ['ignore', 'inherit', 'inherit'] }); "
-          + "setInterval(() => {}, 1000); process.stdout.write('ready\\n')",
-      ],
-      {
-        signal: ac.signal,
-        gracePeriodMs: 200,
-        onStdoutLine: (line) => {
-          if (line === "ready") ac.abort();
-        },
-      }
-    );
-    expect(result.aborted).toBe(true);
-    expect(result.stderr).toContain("[stdio abandoned:");
+    let descendantPid: number | undefined;
+    let leaked: number[] = [];
+    try {
+      const result = await runSpawn(
+        process.execPath,
+        [
+          "-e",
+          "const gc = require('node:child_process').spawn(process.execPath, "
+            + "['-e', 'setTimeout(() => {}, 6000)'], "
+            + "{ stdio: ['ignore', 'inherit', 'inherit'], detached: true, "
+            + "windowsHide: true }); "
+            + "gc.unref(); "
+            + "setInterval(() => {}, 1000); "
+            + "process.stdout.write('ready ' + gc.pid + '\\n')",
+        ],
+        {
+          signal: ac.signal,
+          gracePeriodMs: 200,
+          onStdoutLine: (line) => {
+            const match = /^ready (\d+)$/.exec(line);
+            if (match === null) return;
+            descendantPid = Number(match[1]);
+            ac.abort();
+          },
+        }
+      );
+      expect(result.aborted).toBe(true);
+      expect(result.stderr).toContain("[stdio abandoned:");
+      // The pid is what proves the fixture built the condition rather than
+      // stumbling into an early exit that happened to look the same.
+      expect(descendantPid).toBeDefined();
+    } finally {
+      leaked = await reap(descendantPid);
+    }
+    expect(leaked).toEqual([]);
   }, 20_000);
 });

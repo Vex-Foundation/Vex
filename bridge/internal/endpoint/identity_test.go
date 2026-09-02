@@ -10,6 +10,26 @@ import (
 	"github.com/Vex-Foundation/vex/bridge/internal/endpoint"
 )
 
+// resolvedTempDir is t.TempDir with the symlinks already taken out of it, for
+// the cases that compare a PATH the product reports back.
+//
+// CaptureDirectoryChain pins the realpath chain as well as the lexical one -
+// that is the whole point of the check - so the ancestor it names in a refusal
+// is resolved. On macOS t.TempDir sits under `/var/folders/...`, and `/var` is
+// a symlink to `/private/var`, so an expectation built from the raw temporary
+// root disagrees with the product on darwin and nowhere else. Anchoring on the
+// resolved root removes that platform artefact without touching the symlinks
+// these cases deliberately create, which are their actual subject. Same
+// anchoring as the host's studio/__tests__/mcp-host-bind.test.ts.
+func resolvedTempDir(t *testing.T) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolving the temporary root: %v", err)
+	}
+	return resolved
+}
+
 func TestDirectoryChainIdentityRefusesAncestorSwap(t *testing.T) {
 	root := t.TempDir()
 	ancestor := filepath.Join(root, "operator-root")
@@ -35,7 +55,7 @@ func TestDirectoryChainIdentityRefusesAncestorSwap(t *testing.T) {
 }
 
 func TestDirectoryChainIdentityPinsIntermediateSymlinkTargetChain(t *testing.T) {
-	root := t.TempDir()
+	root := resolvedTempDir(t)
 	targetRoot := filepath.Join(root, "target-root")
 	heldTarget := filepath.Join(root, "held-target")
 	realParent := filepath.Join(targetRoot, "private")

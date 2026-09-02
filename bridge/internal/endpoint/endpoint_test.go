@@ -10,6 +10,37 @@ import (
 	"github.com/Vex-Foundation/vex/bridge/internal/vectors"
 )
 
+// shortTempDir is t.TempDir for the cases whose subject is a path the planner
+// must accept, not refuse for its length.
+//
+// t.TempDir is unusable for those on macOS: it builds on TMPDIR, which is
+// per-user and per-boot (`/var/folders/df/djsxfhc17x95674wsm_g8s980000gn/T`),
+// then appends the TEST'S OWN NAME plus a random suffix. A socket path under it
+// is comfortably over the 103-byte sun_path bound before the fixture adds a
+// single directory, so the plan refuses `path_too_long` ahead of whatever check
+// the case is actually about. `/tmp` is the short root on every unix Vex
+// supports (on macOS it is the symlink to `/private/tmp`, which is short too),
+// and it is named literally because os.TempDir would hand back the long TMPDIR
+// again.
+//
+// Not realpathed on purpose: these cases assert refusal CODES, never a path
+// echoed back, and lstat resolves an intermediate `/tmp` link on its own - so
+// resolving here would only make the path longer for no assertion's benefit.
+// A case that compares a PATH must resolve its root instead (see identity_test).
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	root, err := os.MkdirTemp("/tmp", "vex-endpoint-")
+	if err != nil {
+		t.Fatalf("creating a short temporary root: %v", err)
+	}
+	t.Cleanup(func() {
+		if removeErr := os.RemoveAll(root); removeErr != nil {
+			t.Errorf("removing the temporary root %s: %v", root, removeErr)
+		}
+	})
+	return root
+}
+
 func load(t *testing.T) *vectors.File {
 	t.Helper()
 	file, err := vectors.Load()
@@ -370,7 +401,7 @@ func TestSymlinkedOverrideParentIsRefusedByName(t *testing.T) {
 		// proven on every platform by TestProbeFilesystemDoesNotFollowASymlink.
 		t.Skip("unix socket override arm cannot address a Windows filesystem")
 	}
-	root := t.TempDir()
+	root := shortTempDir(t)
 	target := filepath.Join(root, "real")
 	if err := os.Mkdir(target, 0o700); err != nil {
 		t.Fatalf("creating the target directory: %v", err)
@@ -380,10 +411,21 @@ func TestSymlinkedOverrideParentIsRefusedByName(t *testing.T) {
 		t.Skipf("this filesystem does not support symlinks: %v", err)
 	}
 
+	override := filepath.Join(link, "s.sock")
+	// The subject is the parent-not-directory refusal, which planOverride only
+	// reaches AFTER the sun_path bound. A fixture over the bound would refuse
+	// path_too_long and quietly stop testing the lstat rule, so the precondition
+	// is asserted rather than assumed.
+	if len(override) > endpoint.SunPathMaxBytes {
+		t.Fatalf("the fixture override path is %d bytes, over the %d-byte sun_path bound: "+
+			"this case would refuse path_too_long before the parent check it exists to prove",
+			len(override), endpoint.SunPathMaxBytes)
+	}
+
 	plan := endpoint.Derive(endpoint.Input{
 		GOOS:               "linux",
 		ConfigDirHashInput: "/home/alice/.config/vex",
-		Env:                map[string]string{endpoint.OverrideEnv: filepath.Join(link, "s.sock")},
+		Env:                map[string]string{endpoint.OverrideEnv: override},
 		Tmpdir:             "/tmp",
 		UID:                os.Getuid(),
 		ProbeDirectory:     endpoint.ProbeFilesystem,

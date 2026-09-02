@@ -19,6 +19,15 @@
  * the shape where every symlink case is a real-disk case, because the
  * post-open replacement window has no real-disk equivalent that is
  * deterministic.
+ *
+ * The doubles follow VS Code's `Ether`/`EtherStream` shape from
+ * `src/vs/base/parts/ipc/test/node/ipc.net.test.ts`: a real object that plays
+ * the contract, scripted through typed fields, rather than a bag of stubs.
+ * Rejected from it: the `<any>` cast its `Ether.a`/`Ether.b` getters use to
+ * present an `EtherStream` as a `Socket`. `Socket` is a large class with
+ * private state, so there they had no choice; `BigIntStats` and the seam's
+ * `NoFollowHandle`/`NoFollowFs` are plain interfaces, so the doubles here
+ * implement them outright and the compiler checks the shape.
  */
 
 import type { BigIntStats } from "node:fs";
@@ -54,16 +63,83 @@ interface FakeStat {
   readonly size?: bigint;
 }
 
-function stats(fake: FakeStat): BigIntStats {
-  return {
-    dev: fake.dev,
-    ino: fake.ino,
-    size: fake.size ?? 0n,
-    mtimeMs: 1_700_000_000_000n,
-    isFile: () => fake.kind === "file",
-    isSymbolicLink: () => fake.kind === "symlink",
-    isDirectory: () => false,
-  } as unknown as BigIntStats;
+/** One fixed instant for every time field, so nothing in here is a clock. */
+const FIXED_MS = 1_700_000_000_000n;
+const FIXED_DATE = new Date(Number(FIXED_MS));
+
+/**
+ * A stat that IMPLEMENTS `BigIntStats` instead of being cast into one.
+ *
+ * The seam takes the real `BigIntStats`, so the double cast this class replaces
+ * was the test asserting a shape the compiler had not checked: a field renamed
+ * or retyped in `@types/node` would have stayed green here and failed against
+ * the real filesystem. Declaring the whole interface makes that a compile
+ * error instead, which is the whole point of injecting a TYPED seam.
+ *
+ * Only `dev`, `ino`, `size`, `mtimeMs` and the three predicates the module and
+ * its readers actually consult carry meaning; the rest are filled with inert,
+ * fixed values so the class is complete and deterministic.
+ */
+class ScriptedStats implements BigIntStats {
+  readonly dev: bigint;
+  readonly ino: bigint;
+  readonly size: bigint;
+  readonly mode: bigint = 0o100_644n;
+  readonly nlink: bigint = 1n;
+  readonly uid: bigint = 0n;
+  readonly gid: bigint = 0n;
+  readonly rdev: bigint = 0n;
+  readonly blksize: bigint = 4096n;
+  readonly blocks: bigint = 0n;
+  readonly atimeMs: bigint = FIXED_MS;
+  readonly mtimeMs: bigint = FIXED_MS;
+  readonly ctimeMs: bigint = FIXED_MS;
+  readonly birthtimeMs: bigint = FIXED_MS;
+  readonly atimeNs: bigint = FIXED_MS * 1_000_000n;
+  readonly mtimeNs: bigint = FIXED_MS * 1_000_000n;
+  readonly ctimeNs: bigint = FIXED_MS * 1_000_000n;
+  readonly birthtimeNs: bigint = FIXED_MS * 1_000_000n;
+  readonly atime: Date = FIXED_DATE;
+  readonly mtime: Date = FIXED_DATE;
+  readonly ctime: Date = FIXED_DATE;
+  readonly birthtime: Date = FIXED_DATE;
+
+  private readonly kind: FakeStat["kind"];
+
+  constructor(fake: FakeStat) {
+    this.kind = fake.kind;
+    this.dev = fake.dev;
+    this.ino = fake.ino;
+    this.size = fake.size ?? 0n;
+  }
+
+  isFile(): boolean {
+    return this.kind === "file";
+  }
+
+  isSymbolicLink(): boolean {
+    return this.kind === "symlink";
+  }
+
+  isFIFO(): boolean {
+    return this.kind === "fifo";
+  }
+
+  isDirectory(): boolean {
+    return false;
+  }
+
+  isBlockDevice(): boolean {
+    return false;
+  }
+
+  isCharacterDevice(): boolean {
+    return false;
+  }
+
+  isSocket(): boolean {
+    return false;
+  }
 }
 
 /**
@@ -101,7 +177,7 @@ function scriptedFs(script: {
     stat: async () => {
       calls.push("fstat");
       if (script.fstat instanceof Error) throw script.fstat;
-      return stats(script.fstat);
+      return new ScriptedStats(script.fstat);
     },
     read: async (buffer, offset, length, position) => {
       calls.push("read");
@@ -130,7 +206,7 @@ function scriptedFs(script: {
         lstatIndex += 1;
         if (answer === undefined) throw new Error("the script ran out of lstats");
         if (answer instanceof Error) throw answer;
-        return stats(answer);
+        return new ScriptedStats(answer);
       },
       open: async () => {
         calls.push("open");
