@@ -401,12 +401,23 @@ const lighterTradingPositionSchema = z
 const lighterTradingOpenOrderSchema = z
   .object({
     orderId: z.string().min(1).max(128),
+    // Lighter also exposes a numeric client_order_index, but the string form is
+    // the only renderer-safe identity because provider IDs can exceed JS
+    // integer precision. Main emits null when the exact string is unavailable.
+    clientOrderId: z.string().min(1).max(128).nullable(),
     marketId: marketIdSchema,
     symbol: z.string().min(1).max(48),
     side: z.enum(["buy", "sell"]),
     type: z.string().min(1).max(32).nullable(),
+    timeInForce: z.string().min(1).max(32).nullable(),
+    reduceOnly: z.boolean().nullable(),
+    triggerPrice: unsignedDecimalStringSchema.nullable(),
+    triggerStatus: z.string().min(1).max(32).nullable(),
+    triggeredAt: z.number().int().nonnegative().nullable(),
+    orderExpiry: z.number().int().nonnegative().nullable(),
     price: unsignedDecimalStringSchema.nullable(),
     size: unsignedDecimalStringSchema.nullable(),
+    filled: unsignedDecimalStringSchema.nullable(),
     remaining: unsignedDecimalStringSchema.nullable(),
     status: z.string().min(1).max(32).nullable(),
     createdAt: z.number().int().nonnegative().nullable(),
@@ -438,6 +449,8 @@ export const lighterTradingAccountSchema = z
     status: lighterTradingAccountStatusSchema,
     accountIndex: z.number().int().nonnegative().nullable(),
     openOrdersAvailable: z.boolean(),
+    // Required so a bounded snapshot can never be mistaken for a complete one.
+    openOrdersTruncated: z.boolean(),
     summary: lighterTradingAccountSummarySchema.nullable(),
     assets: z.array(lighterTradingAssetSchema).max(200),
     positions: z.array(lighterTradingPositionSchema).max(200),

@@ -91,6 +91,7 @@ vi.mock("../../../../lib/api/lighter-trading.js", () => ({
         status: "unavailable",
         accountIndex: null,
         openOrdersAvailable: false,
+        openOrdersTruncated: false,
         summary: null,
         assets: [],
         positions: [],

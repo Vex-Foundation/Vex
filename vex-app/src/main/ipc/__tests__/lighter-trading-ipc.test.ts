@@ -100,6 +100,7 @@ const account = {
   status: "ready",
   accountIndex: 42,
   openOrdersAvailable: true,
+  openOrdersTruncated: false,
   summary: {
     collateral: "100",
     availableBalance: "80",

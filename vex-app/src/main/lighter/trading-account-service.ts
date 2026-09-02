@@ -47,7 +47,13 @@ function cleanMagnitude(value: unknown): string | null {
 }
 
 function nonNegativeInt(value: unknown): number | null {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function cleanBoundedText(value: unknown, maxLength: number): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= maxLength ? trimmed : null;
 }
 
 interface DecimalParts {
@@ -126,10 +132,15 @@ function projectPosition(
 
 function projectOrder(
   raw: LighterAccountOrder,
+  accountIndex: number,
   symbolFor: (marketId: number) => string,
 ): LighterTradingOpenOrder | null {
-  const orderId = typeof raw.order_id === "string" ? raw.order_id.trim() : "";
-  if (orderId.length === 0) return null;
+  // The authenticated endpoint is account-scoped, but every returned row must
+  // still bind to that exact account before crossing the main/renderer trust
+  // boundary. Drop mismatches instead of displaying another account's order.
+  if (raw.owner_account_index !== accountIndex) return null;
+  const orderId = cleanBoundedText(raw.order_id, 128);
+  if (orderId === null) return null;
   const marketId = raw.market_index;
   const side = raw.is_ask === undefined
     ? raw.side === "sell" || raw.side === "ask"
@@ -139,16 +150,26 @@ function projectOrder(
         : null
     : raw.is_ask ? "sell" : "buy";
   if (side === null) return null;
-  const type = typeof raw.type === "string" && raw.type.trim().length > 0 ? raw.type : null;
-  const status = typeof raw.status === "string" && raw.status.trim().length > 0 ? raw.status : null;
+  const type = cleanBoundedText(raw.type, 32);
+  const status = cleanBoundedText(raw.status, 32);
   return {
     orderId,
+    // Never fall back to client_order_index: it is a JS number and may already
+    // have lost precision before this projection runs.
+    clientOrderId: cleanBoundedText(raw.client_order_id, 128),
     marketId,
     symbol: symbolFor(marketId),
     side,
     type,
+    timeInForce: cleanBoundedText(raw.time_in_force, 32),
+    reduceOnly: typeof raw.reduce_only === "boolean" ? raw.reduce_only : null,
+    triggerPrice: cleanUnsigned(raw.trigger_price),
+    triggerStatus: cleanBoundedText(raw.trigger_status, 32),
+    triggeredAt: nonNegativeInt(raw.trigger_time),
+    orderExpiry: nonNegativeInt(raw.order_expiry),
     price: cleanUnsigned(raw.price),
     size: cleanUnsigned(raw.initial_base_amount),
+    filled: cleanUnsigned(raw.filled_base_amount),
     remaining: cleanUnsigned(raw.remaining_base_amount),
     status,
     createdAt: nonNegativeInt(raw.created_at) ?? nonNegativeInt(raw.timestamp),
@@ -224,6 +245,7 @@ function unavailable(
     status: "unavailable",
     accountIndex: null,
     openOrdersAvailable: false,
+    openOrdersTruncated: false,
     summary: null,
     assets: [],
     positions: [],
@@ -245,6 +267,7 @@ export interface LighterTradingAccountProjectionInput {
   readonly accountIndex: number;
   readonly account: LighterAccount | null;
   readonly orders: readonly LighterAccountOrder[];
+  readonly ordersNextCursor?: string;
   readonly openOrdersAvailable: boolean;
   readonly symbolFor: (marketId: number) => string;
   readonly now: () => number;
@@ -268,10 +291,18 @@ export function projectLighterTradingAccount(
     .slice(0, MAX_ROWS);
   const openOrders = input.openOrdersAvailable
     ? input.orders
-        .map((row) => projectOrder(row, input.symbolFor))
+        .map((row) => projectOrder(row, input.accountIndex, input.symbolFor))
         .filter((row): row is LighterTradingOpenOrder => row !== null)
         .slice(0, MAX_ROWS)
     : [];
+  const openOrdersTruncated = input.openOrdersAvailable
+    && (
+      input.orders.length > MAX_ROWS
+      || (
+        typeof input.ordersNextCursor === "string"
+        && input.ordersNextCursor.trim().length > 0
+      )
+    );
 
   const unrealizedPnl = positions.reduce<DecimalParts | null>((sum, position) => {
     if (position.unrealizedPnl === null) return sum;
@@ -285,6 +316,7 @@ export function projectLighterTradingAccount(
     status: "ready",
     accountIndex: input.accountIndex,
     openOrdersAvailable: input.openOrdersAvailable,
+    openOrdersTruncated,
     summary: {
       collateral: cleanDecimal(input.account?.collateral),
       availableBalance: cleanDecimal(input.account?.available_balance),
@@ -320,6 +352,7 @@ export async function readLighterTradingAccount(
   }
 
   let orders: readonly LighterAccountOrder[] = [];
+  let ordersNextCursor: string | undefined;
   let openOrdersAvailable = false;
   const auth = await resolveLighterReadOnlyAccountAuth(environment, accountIndex);
   if (auth !== null) {
@@ -330,6 +363,7 @@ export async function readLighterTradingAccount(
         auth,
       );
       orders = ordersResponse.orders;
+      ordersNextCursor = ordersResponse.next_cursor;
       openOrdersAvailable = true;
     } catch {
       // Provider errors may echo request context. Keep this secret-adjacent
@@ -343,6 +377,7 @@ export async function readLighterTradingAccount(
     accountIndex,
     account,
     orders,
+    ordersNextCursor,
     openOrdersAvailable,
     symbolFor,
     now,
