@@ -3,15 +3,27 @@ import type { BridgeGoarch, BridgeGoos } from "./bridge-artifact.mjs";
 export const BRIDGE_BUILD_SCRIPT: string;
 export const BRIDGE_MANIFEST_NAME: "build-manifest.json";
 
+export interface BridgeArtifactDigest {
+  readonly sha256: string;
+  readonly bytes: number;
+}
+
 export interface BridgeBuildManifest {
   readonly manifestVersion: number;
   readonly goos: BridgeGoos;
   readonly goarch: BridgeGoarch;
   readonly goVersion: string;
   readonly sourcesDigest: string;
-  readonly artifactDigest: string;
+  /** One entry per artifact the table lists for this triple, keyed by name. */
+  readonly artifacts: Readonly<Record<string, BridgeArtifactDigest>>;
   readonly stamp: string;
   readonly builtAt: string;
+}
+
+/** One built binary this triple is expected to carry. */
+export interface BridgeArtifactLocation {
+  readonly name: string;
+  readonly file: string;
 }
 
 export type GoToolchainDetection =
@@ -27,14 +39,14 @@ export type BridgeFreshness =
   | {
       readonly kind: "fresh";
       readonly stamp: string;
-      readonly artifact: string;
+      readonly artifacts: readonly BridgeArtifactLocation[];
       readonly manifest: BridgeBuildManifest;
     }
   | {
       readonly kind: "stale";
       readonly reason: string;
       readonly stamp: string;
-      readonly artifact: string;
+      readonly artifacts: readonly BridgeArtifactLocation[];
     };
 
 export function requiredGoVersion(repoRoot: string): string;

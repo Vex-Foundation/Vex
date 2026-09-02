@@ -76,8 +76,11 @@ const (
 // = 0x100000, SECURITY_IDENTIFICATION = SecurityIdentification << 16 with
 // SecurityIdentification = 1, i.e. 0x10000), verified in the vendored copy
 // inside the installed go1.27.0 tree. They are DEFINED LOCALLY below because
-// stdlib `syscall` does not export them and this module deliberately has no
-// dependencies.
+// stdlib `syscall` does not export them and THIS BINARY deliberately links no
+// third-party package. The claim is now binary-level rather than module-level:
+// the module requires go-winio and golang.org/x/sys for the packaged
+// `vex-pipe-front`, and `bridge/cmd/vex-pipe-front/imports_test.go` holds
+// `vex-mcp` to the standard library plus this module on every release target.
 //
 // NECESSARY, NOT SUFFICIENT. SQOS bounds what a hostile server can do with
 // our token; it does not tell us WHO the server is. The load-bearing

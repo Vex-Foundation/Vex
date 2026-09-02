@@ -51,8 +51,11 @@ import (
 // Everything else on this path is stdlib `syscall`, which already exports
 // OpenProcess, OpenProcessToken, TOKEN_QUERY, GetTokenInformation (through
 // Token.GetTokenUser, which asks for the TokenUser class) and SID.String().
-// This module deliberately has no external dependencies, so the two names
-// above are the only ones declared locally.
+// THIS BINARY deliberately links no third-party package (the module requires
+// go-winio and golang.org/x/sys for the packaged `vex-pipe-front` only, and
+// `bridge/cmd/vex-pipe-front/imports_test.go` holds `vex-mcp` to the standard
+// library plus this module on every release target), so the two names above
+// are the only ones declared locally.
 
 // processQueryLimitedInformation is PROCESS_QUERY_LIMITED_INFORMATION, the
 // least authority that permits OpenProcessToken on another process: it is

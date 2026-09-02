@@ -22,9 +22,18 @@
  *                   never vouch for another.
  *   toolchain       the EXACT `go env GOVERSION`. `bridge/build.sh` pins one
  *                   patch on purpose, so a toolchain change is a source change.
- *   artifact digest the sha256 of the binary itself, re-read on every check.
- *                   Without it a hand-replaced or half-written `vex-mcp` would
- *                   keep passing because the manifest beside it still matched.
+ *   artifact digests the sha256 and byte length of EVERY binary the artifact
+ *                   table lists for this triple, re-read on every check.
+ *                   Without them a hand-replaced or half-written binary would
+ *                   keep passing because the manifest beside it still matched -
+ *                   and, once `bridge/` emitted a second artifact, a manifest
+ *                   that vouched only for `vex-mcp` would have let a missing,
+ *                   replaced or foreign `vex-pipe-front.exe` beside it read as
+ *                   fresh forever.
+ *
+ * Every consumer addresses these artifacts BY NAME from the table; nothing
+ * reads the output directory whole, so a file that is not a table artifact is
+ * not this check's question (see the end of `evaluateBridgeFreshness`).
  *
  * The manifest lives in the build output directory (`bridge/dist/` is
  * git-ignored), so it is discarded exactly when the artifact it describes is.
@@ -37,15 +46,16 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
 import {
   GO_ARCH_BY_ELECTRON_ARCH,
   GOOS_BY_ELECTRON_PLATFORM,
+  artifactsFor,
   assertBridgeArtifact,
-  builtBridgePath,
+  builtArtifactPath,
 } from "./bridge-artifact.mjs";
 
 /** The build wrapper every packaging and dev path calls. Repo-root relative. */
@@ -54,8 +64,19 @@ export const BRIDGE_BUILD_SCRIPT = path.join("bridge", "build.sh");
 /** File name of the freshness record, inside the target's output directory. */
 export const BRIDGE_MANIFEST_NAME = "build-manifest.json";
 
-/** Bumped when the stamp's inputs or encoding change, so old records go stale. */
-const MANIFEST_VERSION = 1;
+/**
+ * Bumped when the stamp's inputs or encoding change, so old records go stale.
+ *
+ * v2 (2026-09-02) replaced the single `artifactDigest` string with an
+ * `artifacts` map (name -> sha256 + byte length), because `bridge/` now emits
+ * more than one binary per triple. COMPATIBILITY IS ONE-WAY BY CONSTRUCTION:
+ * the version is an input to `freshnessStamp`, so a v1 record's stamp can never
+ * equal a v2 stamp and every pre-existing manifest reads as STALE - never as
+ * fresh, and never as a crash on a missing field. The remedy is the rebuild
+ * that staleness already triggers, which rewrites the record in the new shape.
+ * `bridge/dist/` is git-ignored, so no committed artifact carries the old form.
+ */
+const MANIFEST_VERSION = 2;
 
 /**
  * The Go version `bridge/build.sh` pins, read FROM the script.
@@ -172,13 +193,24 @@ export function readManifest(repoRoot, goos, goarch) {
   }
 }
 
-/** Write the record for a target that was just built. */
+/**
+ * Write the record for a target that was just built.
+ *
+ * EVERY artifact the table lists for this triple is digested, and a missing one
+ * throws rather than being recorded as absent: a manifest that omits an
+ * artifact is a manifest that would later vouch for its absence.
+ */
 export function writeManifest(repoRoot, { goos, goarch, goVersion, sourcesDigest }) {
-  const artifact = builtBridgePath(repoRoot, goos, goarch);
-  const artifactDigest = hashFile(artifact);
-  if (artifactDigest === null) {
-    throw new Error(`${artifact} is missing after the build reported success`);
+  const artifacts = {};
+  for (const artifact of artifactsFor(goos, goarch)) {
+    const file = builtArtifactPath(repoRoot, artifact, goos, goarch);
+    const sha256 = hashFile(file);
+    if (sha256 === null) {
+      throw new Error(`${file} is missing after the build reported success`);
+    }
+    artifacts[artifact.name] = { sha256, bytes: statSync(file).size };
   }
+
   const file = manifestPath(repoRoot, goos, goarch);
   mkdirSync(path.dirname(file), { recursive: true });
   const record = {
@@ -187,7 +219,7 @@ export function writeManifest(repoRoot, { goos, goarch, goVersion, sourcesDigest
     goarch,
     goVersion,
     sourcesDigest,
-    artifactDigest,
+    artifacts,
     stamp: freshnessStamp({ sourcesDigest, goos, goarch, goVersion }),
     builtAt: new Date().toISOString(),
   };
@@ -275,18 +307,24 @@ export function resolveGoToolchain(repoRoot, detected = detectGoToolchain()) {
  * Is `bridge/dist/<goos>-<goarch>/` the build these sources and this toolchain
  * produce?
  *
- * Returns `{ kind: "fresh", ... }` or `{ kind: "stale", reason }` where the
- * reason names the specific thing that did not match, so a caller can print it
- * rather than "rebuilding, because reasons".
+ * Returns `{ kind: "fresh", artifacts, ... }` or `{ kind: "stale", reason }`
+ * where the reason names the specific thing that did not match, so a caller can
+ * print it rather than "rebuilding, because reasons". `artifacts` is one entry
+ * per binary the table lists for this triple, in table order, so a caller can
+ * report each by name.
  */
 export function evaluateBridgeFreshness({ repoRoot, goos, goarch, goVersion, sourcesDigest }) {
   const digest = sourcesDigest ?? hashBridgeSources(repoRoot);
   const stamp = freshnessStamp({ sourcesDigest: digest, goos, goarch, goVersion });
-  const artifact = builtBridgePath(repoRoot, goos, goarch);
+  const expected = artifactsFor(goos, goarch);
+  const artifacts = expected.map((artifact) => ({
+    name: artifact.name,
+    file: builtArtifactPath(repoRoot, artifact, goos, goarch),
+  }));
 
   const manifest = readManifest(repoRoot, goos, goarch);
   if (manifest === null) {
-    return { kind: "stale", reason: "no build manifest beside the binary", stamp, artifact };
+    return { kind: "stale", reason: "no build manifest beside the binaries", stamp, artifacts };
   }
   if (manifest.stamp !== stamp) {
     const changed =
@@ -295,30 +333,59 @@ export function evaluateBridgeFreshness({ repoRoot, goos, goarch, goVersion, sou
         : manifest.sourcesDigest !== digest
           ? "the bridge sources changed"
           : "the recorded build inputs no longer match";
-    return { kind: "stale", reason: changed, stamp, artifact };
+    return { kind: "stale", reason: changed, stamp, artifacts };
   }
 
-  const artifactDigest = hashFile(artifact);
-  if (artifactDigest === null) {
-    return { kind: "stale", reason: "the binary is missing", stamp, artifact };
-  }
-  if (artifactDigest !== manifest.artifactDigest) {
+  const recorded = manifest.artifacts;
+  if (recorded === null || typeof recorded !== "object") {
     return {
       kind: "stale",
-      reason: "the binary on disk is not the one the manifest recorded",
+      reason: "the build manifest records no per-artifact digests",
       stamp,
-      artifact,
+      artifacts,
     };
   }
 
-  // The manifest can only vouch for bytes. Whether those bytes are an
-  // executable of the right format and machine is `bridge-artifact.mjs`'s
-  // question, and it is asked on every check rather than trusted from a record.
-  try {
-    assertBridgeArtifact(artifact, goos, goarch);
-  } catch (error) {
-    return { kind: "stale", reason: error.message, stamp, artifact };
+  for (const entry of artifacts) {
+    const expectedDigest = recorded[entry.name];
+    if (expectedDigest === undefined || typeof expectedDigest.sha256 !== "string") {
+      return {
+        kind: "stale",
+        reason: `the build manifest records no digest for ${entry.name}`,
+        stamp,
+        artifacts,
+      };
+    }
+    const onDisk = hashFile(entry.file);
+    if (onDisk === null) {
+      return { kind: "stale", reason: `${entry.name} is missing`, stamp, artifacts };
+    }
+    if (onDisk !== expectedDigest.sha256) {
+      return {
+        kind: "stale",
+        reason: `${entry.name} on disk is not the one the manifest recorded`,
+        stamp,
+        artifacts,
+      };
+    }
+
+    // The manifest can only vouch for bytes. Whether those bytes are an
+    // executable of the right format and machine is `bridge-artifact.mjs`'s
+    // question, and it is asked on every check rather than trusted from a
+    // record.
+    try {
+      assertBridgeArtifact(entry.file, goos, goarch);
+    } catch (error) {
+      return { kind: "stale", reason: error.message, stamp, artifacts };
+    }
   }
 
-  return { kind: "fresh", stamp, artifact, manifest };
+  // A file in the output directory that is NOT a table artifact is deliberately
+  // not a freshness question. Nothing reads that directory whole: every
+  // consumer (this check, staging, doctor, the dev-mode resolver) addresses the
+  // artifacts BY NAME from the table, and the staging directory that
+  // `extraResources` copies is cleared and written from the same table. A
+  // refusal here would guard no package path, and it would loop on macOS,
+  // where Finder recreates `.DS_Store` in any folder a developer has open.
+  return { kind: "fresh", stamp, artifacts, manifest };
 }

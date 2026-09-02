@@ -34,8 +34,9 @@ import { fileURLToPath } from "node:url";
 
 import {
   GOOS_BY_ELECTRON_PLATFORM,
+  artifactsFor,
   assertBridgeArtifact,
-  builtBridgePath,
+  builtArtifactPath,
 } from "./bridge-artifact.mjs";
 import {
   BRIDGE_BUILD_SCRIPT,
@@ -118,11 +119,14 @@ function main() {
       );
     }
 
-    // What the build wrote is checked BEFORE it is recorded as good. A binary
-    // for the wrong machine would otherwise be stamped fresh by the manifest
-    // and then rejected by the freshness check on every later run, turning a
-    // loud failure here into a silent rebuild loop later.
-    assertBridgeArtifact(builtBridgePath(REPO_ROOT, goos, goarch), goos, goarch);
+    // What the build wrote is checked BEFORE it is recorded as good, for EVERY
+    // artifact the table lists for this triple. A binary for the wrong machine
+    // would otherwise be stamped fresh by the manifest and then rejected by the
+    // freshness check on every later run, turning a loud failure here into a
+    // silent rebuild loop later.
+    for (const artifact of artifactsFor(goos, goarch)) {
+      assertBridgeArtifact(builtArtifactPath(REPO_ROOT, artifact, goos, goarch), goos, goarch);
+    }
 
     const record = writeManifest(REPO_ROOT, {
       goos,
@@ -130,7 +134,9 @@ function main() {
       goVersion: toolchain.version,
       sourcesDigest,
     });
-    console.log(`bridge: recorded ${goos}-${goarch} build ${record.artifactDigest.slice(0, 12)}`);
+    for (const [name, digest] of Object.entries(record.artifacts)) {
+      console.log(`bridge: recorded ${goos}-${goarch} ${name} ${digest.sha256.slice(0, 12)}`);
+    }
   }
 }
 

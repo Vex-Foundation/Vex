@@ -75,8 +75,10 @@ const invalidHandleValue = ^uintptr(0)
 //
 // It is DECLARED HERE rather than reused from `syscall`, because
 // syscall.StartupInfo leaves cbReserved2 and lpReserved2 as unexported blank
-// fields - the two fields this decoder needs - and this module deliberately
-// carries no golang.org/x/sys dependency (see bridge/go.mod).
+// fields - the two fields this decoder needs - and this spike is a measurement
+// artifact that deliberately links no third-party package (the module's
+// golang.org/x/sys requirement exists for the packaged `vex-pipe-front`, whose
+// own copy of this decoder lives in bridge/internal/front/lifecycle).
 type startupInfoW struct {
 	Cb              uint32
 	LpReserved      *uint16

@@ -16,8 +16,17 @@
  *
  * Owner of the packaging identity, frozen with the endpoint contract:
  * Electron `x64` -> Go `amd64`, `arm64` -> `arm64`, `mac`/`win`/`linux` ->
- * `darwin`/`windows`/`linux`. Packaged path: `resources/bridge/vex-mcp`
- * (`.exe` on Windows).
+ * `darwin`/`windows`/`linux`. Packaged directory: `resources/bridge/`.
+ *
+ * Owner of the ARTIFACT TABLE too. `bridge/` emits more than one binary and
+ * they do not share a target list: `vex-mcp` ships on all six triples, and
+ * `vex-pipe-front` is a Windows-only front for the named pipe. Every other
+ * owner in the chain - the build wrapper's caller, the freshness manifest, the
+ * staging preflight, the afterPack re-inspection and doctor - READS
+ * `BRIDGE_ARTIFACTS` rather than restating a name, a package path or a target
+ * list. A second copy is how a build ships one binary and a gate checks the
+ * other. The one place the table cannot be imported is `bridge/build.sh`, which
+ * is bash; that mirror is guarded by a drift test that reads both.
  */
 
 import { readFileSync, existsSync, statSync } from "node:fs";
@@ -41,14 +50,78 @@ export const GOOS_BY_ELECTRON_PLATFORM = Object.freeze({
 /** The packaged location, relative to the app's resources directory. */
 export const PACKAGED_BRIDGE_SUBPATH = "bridge";
 
-/** The binary's file name for a Go platform. */
-export function bridgeBinaryName(goos) {
-  return goos === "windows" ? "vex-mcp.exe" : "vex-mcp";
+/** Every triple `bridge/build.sh` knows, the union of both profiles' needs. */
+export const BRIDGE_TARGETS = Object.freeze([
+  "darwin-arm64",
+  "darwin-amd64",
+  "windows-amd64",
+  "windows-arm64",
+  "linux-amd64",
+  "linux-arm64",
+]);
+
+/**
+ * WHAT `bridge/` BUILDS, AND FOR WHICH TRIPLES. The single owner.
+ *
+ * `name`    the binary's base name; `.exe` is appended for `windows` and
+ *           nowhere else (`artifactBinaryName`).
+ * `cmd`     the Go package path, relative to `bridge/`, exactly as
+ *           `bridge/build.sh` passes it to `go build`.
+ * `targets` the `<goos>-<goarch>` triples this artifact is built for. NOT
+ *           every artifact covers every triple: `vex-pipe-front` exists only
+ *           because Windows named pipes need a front process, so building it
+ *           for darwin or linux would ship a binary nothing can use.
+ *
+ * MIRRORED in `bridge/build.sh`'s own `ARTIFACTS=(...)` block, which cannot
+ * import this module. The mirror is a tested invariant, not a convention.
+ */
+export const BRIDGE_ARTIFACTS = Object.freeze([
+  Object.freeze({
+    name: "vex-mcp",
+    cmd: "./cmd/vex-mcp",
+    targets: BRIDGE_TARGETS,
+  }),
+  Object.freeze({
+    name: "vex-pipe-front",
+    cmd: "./cmd/vex-pipe-front",
+    targets: Object.freeze(["windows-amd64", "windows-arm64"]),
+  }),
+]);
+
+/** One artifact's file name for a Go platform. */
+export function artifactBinaryName(artifact, goos) {
+  return goos === "windows" ? `${artifact.name}.exe` : artifact.name;
 }
 
-/** The build wrapper's output path for one target. */
-export function builtBridgePath(repoRoot, goos, goarch) {
-  return path.join(repoRoot, "bridge", "dist", `${goos}-${goarch}`, bridgeBinaryName(goos));
+/** The build wrapper's output path for one artifact on one target. */
+export function builtArtifactPath(repoRoot, artifact, goos, goarch) {
+  return path.join(
+    repoRoot,
+    "bridge",
+    "dist",
+    `${goos}-${goarch}`,
+    artifactBinaryName(artifact, goos)
+  );
+}
+
+/**
+ * Every artifact `bridge/build.sh` emits for one target, in table order.
+ *
+ * Refuses a triple the table builds NOTHING for by name, rather than returning
+ * an empty list: an empty list is what every caller in this chain would read as
+ * "all zero artifacts verified", which is the shape of a gate that passes
+ * vacuously.
+ */
+export function artifactsFor(goos, goarch) {
+  const triple = `${goos}-${goarch}`;
+  const artifacts = BRIDGE_ARTIFACTS.filter((artifact) => artifact.targets.includes(triple));
+  if (artifacts.length === 0) {
+    throw new Error(
+      `the Vex Studio bridge builds nothing for ${triple}; known targets are `
+        + `${BRIDGE_TARGETS.join(", ")}`
+    );
+  }
+  return artifacts;
 }
 
 /**

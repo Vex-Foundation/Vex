@@ -11,6 +11,47 @@
   machine: official tarball under `~/.local/go` (add `~/.local/go/bin` to
   PATH in build scripts only).
 
+### `bridge/` builds TWO binaries, and not for the same targets
+
+The artifact table has one owner, `vex-app/scripts/bridge-artifact.mjs`
+(`BRIDGE_ARTIFACTS`); `bridge/build.sh` mirrors it in bash because bash cannot
+import it, and a drift test parses both and fails when they disagree. Everything
+else in the chain - the build wrapper's caller, the freshness manifest, the
+staging preflight, the afterPack re-inspection, doctor - reads the table.
+
+| artifact | Go package | targets | packaged as |
+| --- | --- | --- | --- |
+| `vex-mcp` | `./cmd/vex-mcp` | all six triples | `resources/bridge/vex-mcp[.exe]` |
+| `vex-pipe-front` | `./cmd/vex-pipe-front` | `windows-amd64`, `windows-arm64` | `resources/bridge/vex-pipe-front.exe` |
+
+Consequences a developer will actually meet:
+
+- `bridge/build.sh <goos> <goarch>` CLEARS `bridge/dist/<goos>-<goarch>/`
+  before it writes, so an artifact that stops being built for a triple, or one
+  left behind by an older checkout, does not linger beside the current outputs.
+  Every consumer (freshness, staging, doctor, the dev-mode resolver) addresses
+  the artifacts by name from the table; nothing reads that directory whole.
+- On Linux and macOS, `pnpm build:bridge:dev` still produces exactly one
+  binary. `vex-pipe-front` is Windows-only by design, and
+  `locateStudioPipeFront()` answers `unsupported_platform` (not an error) on
+  every other platform.
+- `bridge/dist/<triple>/build-manifest.json` is format v2: it carries a
+  per-artifact digest map (`artifacts: { name -> { sha256, bytes } }`) instead
+  of the old single `artifactDigest`. Any manifest written before this change
+  reads as STALE and is rewritten by the next build - the manifest version is an
+  input to the freshness stamp, so an old record can never read as fresh.
+
+**NAMED OMISSION: the `windows-arm64` pipe front is built, stamped and
+verified, but NOT SHIPPED.** `electron-builder.release.yml` sets
+`win.target.arch: [x64]` ("x64 only for the first Windows release; arm64
+later"), so the release job packages only `windows-amd64` and the arm64 front
+never leaves the build machine. It is still built by `bridge/build.sh` with no
+arguments, staged by the CI matrix and held to the same gates, so that adding
+`arm64` to the release profile later is a one-line change against artifacts
+that have been green all along rather than a first attempt on release day. The
+internal `electron-builder.yml` profile does package `win arm64`, so the arm64
+front IS exercised end to end by `pnpm --dir vex-app make`.
+
 Two build-time Vite flags for design/QA work on the renderer. Both are baked in
 at build time (`import.meta.env`), so release builds — made without them — do
 not contain the code paths at all. Neither flag touches the main process, IPC,

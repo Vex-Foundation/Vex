@@ -150,7 +150,11 @@ jobs:
         with:
           go-version: "1.27.0"
           check-latest: false
-          # Pure stdlib: no go.sum, nothing to cache.
+          # Cache deliberately OFF even though bridge/go.sum exists: the module
+          # graph is go-winio (the Windows pipe front) plus x/sys, downloaded in
+          # seconds and verified against the committed go.sum; a restored cache
+          # is one more input to a binary that ships signed. vex-mcp itself
+          # links no third-party package (the import-graph test pins that).
           cache: false
 
       - name: gofmt

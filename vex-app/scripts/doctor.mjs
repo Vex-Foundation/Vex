@@ -190,17 +190,22 @@ function checkStudioBridge() {
     goVersion: toolchain.version,
   });
   if (freshness.kind === "fresh") {
-    ok(
-      `Studio bridge: ${path.relative(REPO_ROOT, freshness.artifact)} built with `
-        + `${toolchain.version} and current with the sources`
-    );
+    // One sentence per artifact, by name: on Windows the triple carries the
+    // MCP bridge AND the named-pipe front, and "the bridge is fine" would be a
+    // sentence that no longer says which binaries were actually checked.
+    for (const entry of freshness.artifacts) {
+      ok(
+        `Studio bridge: ${entry.name} at ${path.relative(REPO_ROOT, entry.file)} built with `
+          + `${toolchain.version} and current with the sources`
+      );
+    }
     return;
   }
   fail(
     `Studio bridge (${goos}-${goarch}) is not usable: ${freshness.reason}`,
     [
-      `Expected ${path.relative(REPO_ROOT, freshness.artifact)}, built by ${BRIDGE_BUILD_SCRIPT} `
-        + `with Go ${toolchain.version}.`,
+      `Expected ${freshness.artifacts.map((entry) => path.relative(REPO_ROOT, entry.file)).join(", ")}, `
+        + `built by ${BRIDGE_BUILD_SCRIPT} with Go ${toolchain.version}.`,
       REBUILD_HINT,
       "Without it, Vex Studio writes no coding-agent config files at all.",
     ].join("\n  ")

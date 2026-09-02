@@ -15,6 +15,7 @@
  * (`bridge/build.sh`) and must not be copied into a second file.
  */
 
+import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, utimesSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -56,6 +57,19 @@ function fakeLinuxAmd64Binary(payload: string): Buffer {
   return Buffer.concat([head, Buffer.from(payload, "utf8")]);
 }
 
+/**
+ * A minimal but genuine PE header for x86-64, for the Windows triples - the
+ * only ones that carry a SECOND artifact.
+ */
+function fakeWindowsAmd64Binary(payload: string): Buffer {
+  const head = Buffer.alloc(128, 0);
+  head.write("MZ", 0, "ascii");
+  head.writeUInt32LE(0x40, 0x3c); // e_lfanew
+  head.write("PE\0\0", 0x40, "ascii");
+  head.writeUInt16LE(0x8664, 0x44); // IMAGE_FILE_MACHINE_AMD64
+  return Buffer.concat([head, Buffer.from(payload, "utf8")]);
+}
+
 const temporaryRoots: string[] = [];
 
 function makeFakeRepo(): string {
@@ -93,6 +107,42 @@ function build(root: string, payload = "compiled bytes"): void {
 
 function freshness(root: string, goVersion = GO_VERSION) {
   return evaluateBridgeFreshness({ repoRoot: root, goos: "linux", goarch: "amd64", goVersion });
+}
+
+// ── The Windows triple, the only one that carries a second artifact ─────────
+
+const WINDOWS_DIST = ["bridge", "dist", "windows-amd64"] as const;
+
+function windowsFile(root: string, name: string): string {
+  return path.join(root, ...WINDOWS_DIST, name);
+}
+
+/** Write one Windows artifact by name, without touching the other. */
+function writeWindowsArtifact(root: string, name: string, payload: string): string {
+  const file = windowsFile(root, name);
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, fakeWindowsAmd64Binary(payload));
+  return file;
+}
+
+function buildWindows(root: string, mcp = "mcp bytes", front = "front bytes"): void {
+  writeWindowsArtifact(root, "vex-mcp.exe", mcp);
+  writeWindowsArtifact(root, "vex-pipe-front.exe", front);
+  writeManifest(root, {
+    goos: "windows",
+    goarch: "amd64",
+    goVersion: GO_VERSION,
+    sourcesDigest: hashBridgeSources(root),
+  });
+}
+
+function windowsFreshness(root: string) {
+  return evaluateBridgeFreshness({
+    repoRoot: root,
+    goos: "windows",
+    goarch: "amd64",
+    goVersion: GO_VERSION,
+  });
 }
 
 afterEach(() => {
@@ -186,13 +236,17 @@ describe("evaluating what is on disk", () => {
     expect(freshness(root).kind).toBe("fresh");
   });
 
-  it("records the artifact digest and the toolchain that produced it", () => {
+  it("records a digest PER ARTIFACT, and the toolchain that produced them", () => {
     const root = makeFakeRepo();
     build(root);
     const manifest = readManifest(root, "linux", "amd64");
     expect(manifest?.goVersion).toBe(GO_VERSION);
-    expect(manifest?.artifactDigest).toMatch(/^[0-9a-f]{64}$/);
     expect(manifest?.sourcesDigest).toBe(hashBridgeSources(root));
+    // linux carries one artifact; the map is keyed by name either way, so the
+    // record's shape does not depend on how many the triple happens to have.
+    expect(Object.keys(manifest?.artifacts ?? {})).toEqual(["vex-mcp"]);
+    expect(manifest?.artifacts?.["vex-mcp"]?.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(manifest?.artifacts?.["vex-mcp"]?.bytes).toBeGreaterThan(0);
   });
 
   it("is stale after a source change", () => {
@@ -255,6 +309,140 @@ describe("evaluating what is on disk", () => {
       "{ truncated"
     );
     expect(freshness(root).kind).toBe("stale");
+  });
+});
+
+/**
+ * The regression this block exists for, stated plainly: before the artifact
+ * table, the manifest carried ONE digest. On a Windows triple that meant a
+ * missing, replaced or foreign `vex-pipe-front.exe` sitting beside a correct
+ * `vex-mcp.exe` read as FRESH forever - the build was skipped, the staging
+ * preflight copied whatever was there, and nothing in the chain ever hashed it.
+ */
+describe("a triple that carries a SECOND artifact", () => {
+  it("is fresh only when BOTH binaries are the ones the manifest recorded", () => {
+    const root = makeFakeRepo();
+    buildWindows(root);
+    const verdict = windowsFreshness(root);
+    expect(verdict.kind).toBe("fresh");
+    expect(verdict.artifacts.map((entry) => entry.name)).toEqual(["vex-mcp", "vex-pipe-front"]);
+  });
+
+  it("records a digest for each artifact under its own name", () => {
+    const root = makeFakeRepo();
+    buildWindows(root);
+    const manifest = readManifest(root, "windows", "amd64");
+    expect(Object.keys(manifest?.artifacts ?? {}).sort()).toEqual(["vex-mcp", "vex-pipe-front"]);
+    expect(manifest?.artifacts?.["vex-mcp"]?.sha256).not.toBe(
+      manifest?.artifacts?.["vex-pipe-front"]?.sha256,
+    );
+  });
+
+  it("is stale, by name, when the second artifact is MISSING", () => {
+    const root = makeFakeRepo();
+    buildWindows(root);
+    rmSync(windowsFile(root, "vex-pipe-front.exe"));
+    const verdict = windowsFreshness(root);
+    expect(verdict.kind).toBe("stale");
+    expect(verdict.kind === "stale" && verdict.reason).toBe("vex-pipe-front is missing");
+  });
+
+  it("is stale, by name, when the second artifact is REPLACED behind the manifest", () => {
+    const root = makeFakeRepo();
+    buildWindows(root);
+    writeWindowsArtifact(root, "vex-pipe-front.exe", "someone else's bytes");
+    const verdict = windowsFreshness(root);
+    expect(verdict.kind).toBe("stale");
+    expect(verdict.kind === "stale" && verdict.reason).toContain("vex-pipe-front on disk is not");
+  });
+
+  it("is stale when the second artifact is not an executable for this target", () => {
+    const root = makeFakeRepo();
+    writeWindowsArtifact(root, "vex-mcp.exe", "mcp bytes");
+    const file = windowsFile(root, "vex-pipe-front.exe");
+    writeFileSync(file, Buffer.alloc(128, 0x41));
+    writeManifest(root, {
+      goos: "windows",
+      goarch: "amd64",
+      goVersion: GO_VERSION,
+      sourcesDigest: hashBridgeSources(root),
+    });
+    const verdict = windowsFreshness(root);
+    expect(verdict.kind).toBe("stale");
+    expect(verdict.kind === "stale" && verdict.reason).toContain("not an ELF, Mach-O or PE");
+  });
+
+  it("refuses to record a manifest at all when an artifact is missing after a build", () => {
+    // The alternative is a manifest that vouches for an absence, which is
+    // exactly how a missing binary becomes permanently "fresh".
+    const root = makeFakeRepo();
+    writeWindowsArtifact(root, "vex-mcp.exe", "mcp bytes");
+    expect(() =>
+      writeManifest(root, {
+        goos: "windows",
+        goarch: "amd64",
+        goVersion: GO_VERSION,
+        sourcesDigest: hashBridgeSources(root),
+      }),
+    ).toThrow(/vex-pipe-front\.exe is missing after the build reported success/);
+  });
+
+  it("ignores a file in the output directory that is not a table artifact", () => {
+    // Nothing reads that directory whole: every consumer addresses the
+    // artifacts by name from the table, and the staging directory that ships
+    // is cleared and written from the same table. Refusing here would guard no
+    // package path and would loop on macOS, where Finder recreates `.DS_Store`
+    // in any folder a developer has open.
+    const root = makeFakeRepo();
+    build(root);
+    writeFileSync(path.join(root, "bridge", "dist", "linux-amd64", ".DS_Store"), "finder");
+    expect(freshness(root).kind).toBe("fresh");
+  });
+});
+
+describe("the manifest format", () => {
+  it("reads a pre-v2 record as STALE rather than as fresh or as a crash", () => {
+    // The v1 shape carried a single `artifactDigest` and no `artifacts` map.
+    // Compatibility is one-way by construction: the manifest version is an
+    // input to the stamp, so an old record cannot match a new one.
+    const root = makeFakeRepo();
+    build(root);
+    const file = path.join(root, "bridge", "dist", "linux-amd64", "build-manifest.json");
+    const current = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    const legacy: Record<string, unknown> = {
+      ...current,
+      manifestVersion: 1,
+      artifactDigest: (current["artifacts"] as Record<string, { sha256: string }>)["vex-mcp"]
+        ?.sha256,
+      // The v1 stamp, in the v1 encoding: `v1` where a current record says
+      // `v2`. This is what makes the incompatibility structural rather than a
+      // missing field the reader might have tolerated.
+      stamp: createHash("sha256")
+        .update(
+          `v1\n${String(current["sourcesDigest"])}\nlinux-amd64\n${GO_VERSION}\n`,
+          "utf8",
+        )
+        .digest("hex"),
+    };
+    delete legacy["artifacts"];
+    writeFileSync(file, JSON.stringify(legacy, null, 2));
+
+    const verdict = freshness(root);
+    expect(verdict.kind).toBe("stale");
+    expect(verdict.kind === "stale" && verdict.reason).toContain("build inputs no longer match");
+  });
+
+  it("is stale when a same-stamp record somehow carries no per-artifact digests", () => {
+    const root = makeFakeRepo();
+    build(root);
+    const file = path.join(root, "bridge", "dist", "linux-amd64", "build-manifest.json");
+    const record = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    delete record["artifacts"];
+    writeFileSync(file, JSON.stringify(record, null, 2));
+
+    const verdict = freshness(root);
+    expect(verdict.kind).toBe("stale");
+    expect(verdict.kind === "stale" && verdict.reason).toContain("no per-artifact digests");
   });
 });
 
