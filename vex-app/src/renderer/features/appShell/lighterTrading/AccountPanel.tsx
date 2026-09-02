@@ -29,6 +29,48 @@ function signedTone(value: string | null): "positive" | "negative" | undefined {
   return parsed > 0 ? "positive" : "negative";
 }
 
+function orderTypeLabel(value: string | null | undefined): string {
+  const normalized = value?.trim().toLowerCase().replace(/[\s_]+/g, "-") ?? "";
+  if (normalized === "limit") return "Limit";
+  if (normalized === "stop-loss-limit" || normalized === "stop-limit") return "Stop-loss limit";
+  if (normalized === "take-profit-limit") return "Take-profit limit";
+  return providerLabel(value);
+}
+
+function timeInForceLabel(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase().replace(/[\s_]+/g, "-") ?? "";
+  if (normalized === "ioc" || normalized === "immediate-or-cancel") return "IOC";
+  if (normalized === "gtt" || normalized === "good-till-time") return "GTT";
+  if (normalized === "post-only" || normalized === "postonly") return "Post only";
+  return value === null || value === undefined ? null : providerLabel(value);
+}
+
+function providerLabel(value: string | null | undefined): string {
+  if (value === null || value === undefined || value.trim().length === 0) return "—";
+  const words = value.trim().replace(/[_-]+/g, " ").toLowerCase();
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+}
+
+function shortOrderId(value: string): string {
+  return value.length <= 12 ? value : `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+function orderTimestampDetails(value: number | null): { readonly label: string; readonly iso: string } | null {
+  if (value === null || !Number.isSafeInteger(value) || value <= 0) return null;
+  const timestamp = value >= 1_000_000_000_000 ? value : value * 1_000;
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return null;
+  return {
+    label: new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date),
+    iso: date.toISOString(),
+  };
+}
+
 export function TradingBottomPanel({
   trades,
   symbol,
@@ -57,7 +99,9 @@ export function TradingBottomPanel({
     ? tradesReceivedAt === null || tradesReceivedAt === undefined
       ? "REST snapshot"
       : `${tradesStatus === "live" ? "Live provider tape" : "Tape delayed"} · ${formatRetrievedAt(tradesReceivedAt)}`
-    : account === null
+    : tab === "orders" && accountQuery.isFetching && !accountQuery.isLoading
+      ? "Refreshing open orders…"
+      : account === null
       ? "Account"
       : account.status === "unavailable"
         ? "No account"
@@ -76,18 +120,35 @@ export function TradingBottomPanel({
               aria-controls={`lit-bottom-panel-${item}`}
               aria-selected={item === tab}
               tabIndex={item === tab ? 0 : -1}
-              onClick={() => setTab(item)}
+              onClick={() => {
+                setTab(item);
+                if (item === "orders") void accountQuery.refetch();
+              }}
             >
               {TAB_LABEL[item]}
               {item === "positions" && account !== null && account.positions.length > 0
                 ? ` ${account.positions.length}`
                 : item === "orders" && account !== null && account.openOrders.length > 0
-                  ? ` ${account.openOrders.length}`
+                  ? ` ${account.openOrders.length}${account.openOrdersTruncated ? "+" : ""}`
                   : ""}
             </button>
           ))}
         </div>
-        <span>{status}</span>
+        <div className="lit-account-refresh">
+          <span role="status" aria-live="polite">{status}</span>
+          {tab === "orders" ? (
+            <button
+              type="button"
+              className="lit-account-refresh-button"
+              aria-label="Refresh open orders"
+              aria-busy={accountQuery.isFetching}
+              disabled={accountQuery.isFetching}
+              onClick={() => void accountQuery.refetch()}
+            >
+              Refresh
+            </button>
+          ) : null}
+        </div>
       </header>
       <div
         className="lit-bottom-tabpanel"
@@ -198,26 +259,69 @@ function OpenOrdersTab({ account }: { readonly account: LighterTradingAccount })
     return <p className="lit-book-empty">No open orders.</p>;
   }
   return (
-    <div className="lit-account-table lit-open-orders">
-      <div className="lit-account-columns" aria-hidden="true">
-        <span>Market</span><span>Side</span><span>Type</span><span>Price</span>
-        <span>Remaining</span><span>Status</span>
+    <>
+      {account.openOrdersTruncated ? (
+        <p className="lit-open-orders-note" role="status">
+          Showing a partial active-order list (up to 200).
+        </p>
+      ) : null}
+      <div className="lit-account-table lit-open-orders" role="table" aria-label="Open Lighter orders">
+        <div className="lit-account-columns" role="row">
+          <span role="columnheader">Market</span><span role="columnheader">Side</span>
+          <span role="columnheader">Order</span><span role="columnheader">Price</span>
+          <span role="columnheader">Remaining</span><span role="columnheader">Status</span>
+        </div>
+        <div className="lit-account-rows" role="rowgroup">
+          {account.openOrders.map((order) => {
+            const tif = timeInForceLabel(order.timeInForce);
+            const expiry = orderTimestampDetails(order.orderExpiry);
+            const triggeredAt = orderTimestampDetails(order.triggeredAt);
+            const identityTitle = order.clientOrderId === null
+              ? `Order ${order.orderId}`
+              : `Order ${order.orderId} · Client ${order.clientOrderId}`;
+            return (
+              <div
+                className="lit-account-row"
+                role="row"
+                key={`${account.environment}:${account.accountIndex}:${order.marketId}:${order.orderId}`}
+              >
+                <span className="lit-order-cell" role="cell">
+                  <b>{order.symbol}</b>
+                  <small title={identityTitle}>Order {shortOrderId(order.orderId)}</small>
+                </span>
+                <span role="cell" data-tone={order.side === "buy" ? "positive" : "negative"}>
+                  {order.side === "buy" ? "Buy" : "Sell"}
+                </span>
+                <span className="lit-order-cell" role="cell">
+                  <b>{orderTypeLabel(order.type)}</b>
+                  {tif !== null || order.reduceOnly === true ? (
+                    <small>{[tif, order.reduceOnly === true ? "Reduce only" : null].filter(Boolean).join(" · ")}</small>
+                  ) : null}
+                </span>
+                <span className="lit-order-cell" role="cell">
+                  <b>{num(order.price)}</b>
+                  {order.triggerPrice === null ? null : <small>Trigger {num(order.triggerPrice)}</small>}
+                </span>
+                <span className="lit-order-cell" role="cell">
+                  <b>{num(order.remaining)}</b>
+                  <small>{order.filled === null ? `Size ${num(order.size)}` : `Filled ${num(order.filled)} / ${num(order.size)}`}</small>
+                </span>
+                <span className="lit-order-cell" role="cell">
+                  <b>{providerLabel(order.status)}</b>
+                  {order.triggerStatus === null ? null : (
+                    <small>
+                      {providerLabel(order.triggerStatus)}
+                      {triggeredAt === null ? null : <> · <time dateTime={triggeredAt.iso}>{triggeredAt.label}</time></>}
+                    </small>
+                  )}
+                  {expiry === null ? null : <time dateTime={expiry.iso}>Expires {expiry.label}</time>}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
-      <div className="lit-account-rows">
-        {account.openOrders.map((order) => (
-          <div className="lit-account-row" key={order.orderId}>
-            <b>{order.symbol}</b>
-            <span data-tone={order.side === "buy" ? "positive" : "negative"}>
-              {order.side === "buy" ? "Buy" : "Sell"}
-            </span>
-            <span>{order.type ?? "—"}</span>
-            <span>{num(order.price)}</span>
-            <span>{num(order.remaining)}</span>
-            <span>{order.status ?? "—"}</span>
-          </div>
-        ))}
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -252,7 +356,12 @@ function AssetsTab({ account }: { readonly account: LighterTradingAccount }): JS
         tone={signedTone(summary?.unrealizedPnl ?? null)}
       />
       <AssetRow label="Open positions" value={String(account.positions.length)} />
-      <AssetRow label="Open orders" value={account.openOrdersAvailable ? String(account.openOrders.length) : "—"} />
+      <AssetRow
+        label="Open orders"
+        value={account.openOrdersAvailable
+          ? `${account.openOrders.length}${account.openOrdersTruncated ? "+" : ""}`
+          : "—"}
+      />
     </div>
   );
 }

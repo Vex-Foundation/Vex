@@ -596,6 +596,7 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 .lit-order-kind-tabs button:focus-visible,
 .lit-tif-tabs button:focus-visible,
 .lit-side-switch button:focus-visible,
+.lit-account-refresh-button:focus-visible,
 .lit-review-button:focus-visible {
   outline: 2px solid var(--lit-focus);
   outline-offset: 2px;
@@ -1873,6 +1874,41 @@ button.lit-market-select > .lit-market-symbol[data-symbol-length="long"] { min-w
 /* Tabbed bottom panel — live tape plus authenticated account views. */
 .lit-bottom-header { gap: 12px; }
 
+.lit-account-refresh {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.lit-account-refresh > span {
+  overflow: hidden;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-account-refresh-button {
+  min-height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid var(--lit-line);
+  border-radius: 7px;
+  padding: 0 9px;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lit-account-refresh-button:hover:not(:disabled) {
+  border-color: var(--lit-line-strong);
+  background: var(--lit-hover);
+  color: var(--lit-ink);
+}
+
+.lit-account-refresh-button:disabled { cursor: wait; opacity: 0.5; }
+
 .lit-bottom-tabs {
   display: inline-flex;
   min-width: 0;
@@ -1965,6 +2001,39 @@ button.lit-market-select > .lit-market-symbol[data-symbol-length="long"] { min-w
 .lit-open-orders .lit-account-columns,
 .lit-open-orders .lit-account-row {
   grid-template-columns: minmax(70px, 1.1fr) 72px repeat(4, minmax(0, 1fr));
+}
+
+.lit-open-orders .lit-account-row { min-height: 48px; }
+
+.lit-order-cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lit-order-cell > b,
+.lit-order-cell > small,
+.lit-order-cell > time {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-order-cell > small,
+.lit-order-cell > time {
+  color: var(--lit-ink-muted);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.lit-open-orders-note {
+  margin: 0;
+  border-bottom: 1px solid var(--lit-line);
+  padding: 6px 14px;
+  color: var(--lit-ink-muted);
+  font-size: 10px;
 }
 
 .lit-positions .lit-account-columns span:nth-child(n+3),
