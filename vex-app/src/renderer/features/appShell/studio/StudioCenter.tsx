@@ -60,6 +60,7 @@ import {
 import { StudioWelcome } from "./welcome/StudioWelcome.js";
 import { StudioBridgeReadinessPanel } from "./welcome/StudioBridgeReadinessPanel.js";
 import { StudioKeepAliveDialog } from "./StudioKeepAliveDialog.js";
+import { useStudioKeybindings } from "./useStudioKeybindings.js";
 import { openProjectCreator, StudioProjectDialogs } from "./projects/index.js";
 import {
   peekProjectWorkspaceLifecycle,
@@ -99,6 +100,12 @@ export function StudioCenter({
 
   const explorers = explorerRegistry ?? windowExplorerRegistry;
   const terminals = terminalRegistry ?? windowTerminalRegistry;
+
+  // THE STUDIO KEYBOARD TABLE, mounted exactly once. This component is the only
+  // one that exists for the whole of Studio and for none of agent mode, which
+  // is the lifetime the shortcuts have. The hook owns the listener and every
+  // dispatch; see `useStudioKeybindings.ts`.
+  useStudioKeybindings();
 
   const [keepAlive, setKeepAlive] = useState<KeepAliveState>(emptyKeepAlive);
   /** The project a refusal parked for the close prompt. */

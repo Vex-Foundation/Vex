@@ -25,6 +25,7 @@
  */
 
 import { FILE_READ_MAX_BYTES, type FilesErrorCode } from "@shared/schemas/files.js";
+import { languageLabel, type ViewerLanguageId } from "./highlight/language-of-path.js";
 
 /** Header labels and actions. */
 export const COPY_FILE_LABEL = "Copy file contents";
@@ -94,6 +95,28 @@ export function refusalText(code: FilesErrorCode, size: number | undefined): str
   }
 }
 
+/**
+ * WHAT THE HEADER CALLS THIS FILE.
+ *
+ * Normally the language the path implies. On a REFUSED read it is the kind MAIN
+ * DETECTED, when the refusal names one: a file main declined because its first
+ * bytes hold a NUL is a binary, and labelling it `Plain text` - which is what
+ * the path-derived language says for an extension no grammar claims - is the
+ * header contradicting the body of the same panel (audit A13). Only `binary`
+ * carries a detected kind; every other refusal is about the path, the size or
+ * the filesystem and says nothing about what the file IS, so those keep the
+ * path-derived label.
+ */
+export const BINARY_KIND_LABEL = "Binary";
+
+export function viewerKindLabel(
+  language: ViewerLanguageId,
+  refusalCode: FilesErrorCode | null,
+): string {
+  if (refusalCode === "binary") return BINARY_KIND_LABEL;
+  return languageLabel(language);
+}
+
 /** A read that never got an answer. Distinct from a refusal: retry is real. */
 export const TRANSPORT_FAILED =
   "Vex could not reach the file service to read this file.";
@@ -118,6 +141,21 @@ export type PlainReason =
   | "worker_unavailable"
   | "malformed_result"
   | "too_many_tokens";
+
+/**
+ * Whether this reason is the ORDINARY state of the file rather than a bound
+ * Vex hit or a failure it had.
+ *
+ * Only `plain_language`, and the difference decides how loudly it is said. A
+ * `.txt`, a `.env` or a Makefile has no grammar BY NATURE - there is nothing
+ * that could have gone better - so announcing it as a status chip on every
+ * plain file trains the user to ignore the row that also carries "the
+ * highlighter stopped" (audit A11). The expected case becomes quiet secondary
+ * copy under the header; everything else keeps the chip and its announcement.
+ */
+export function plainReasonIsExpected(reason: PlainReason): boolean {
+  return reason === "plain_language";
+}
 
 export function plainReasonText(reason: PlainReason, size: number, bound: number): string {
   switch (reason) {
@@ -146,10 +184,21 @@ export function plainReasonText(reason: PlainReason, size: number, bound: number
  * Shown WHENEVER the count is above zero, including on an otherwise fully
  * highlighted file, because those lines look plain and the user is owed the
  * reason. This is the reporting half of the long-line bound.
+ *
+ * The bound is printed with thousands separators. It is a five-digit number
+ * (20000) sitting in a sentence, and `20,000 characters` is read at a glance
+ * where `20000 characters` has to be counted (audit A12). `toLocaleString` is
+ * not used: the separator would then depend on the machine's locale while every
+ * other number in this module is written in one voice.
  */
 export function longLinesText(count: number, maxLineLength: number): string {
   const lines = count === 1 ? "1 line is" : `${String(count)} lines are`;
-  return `${lines} over ${String(maxLineLength)} characters and not highlighted.`;
+  return `${lines} over ${groupDigits(maxLineLength)} characters and not highlighted.`;
+}
+
+/** `20000` as `20,000`. Whole non-negative numbers only, which is all we pass. */
+function groupDigits(value: number): string {
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 /** The accessible name of the code area, so a screen reader can find it. */

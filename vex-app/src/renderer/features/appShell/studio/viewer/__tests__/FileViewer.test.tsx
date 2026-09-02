@@ -150,6 +150,38 @@ describe("the header strip", () => {
     expect(screen.getByText("Copied")).toBeTruthy();
   });
 
+  /**
+   * AUDIT A13. `data/blob.bin` has no extension any grammar claims, so the
+   * path-derived language is `text` and the header used to read `Plain text`
+   * directly above a body saying the file is binary. The header now states the
+   * kind MAIN DETECTED, which is the only one of the two that was measured.
+   */
+  it("labels a refused binary by its detected kind, never Plain text", async () => {
+    files.responder = () => refused("binary");
+    await mount({ tab: { ...TAB, relativePath: "data/blob.bin", title: "blob.bin" } });
+    expect(screen.getByText("Binary")).toBeTruthy();
+    expect(screen.queryByText("Plain text")).toBeNull();
+  });
+
+  /**
+   * A refusal that says nothing about WHAT the file is keeps the path-derived
+   * label: `too_large` is a fact about the size, and calling a 3 MiB
+   * TypeScript file anything but TypeScript would be inventing a detection.
+   */
+  it("keeps the path-derived language on a refusal with no detected kind", async () => {
+    files.responder = () => refused("too_large", 3_145_728);
+    await mount();
+    expect(screen.getByText("TypeScript")).toBeTruthy();
+  });
+
+  it("marks the viewer as a keyboard surface the Studio table can resolve", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    expect(
+      screen.getByTestId("file-viewer").getAttribute("data-vex-key-surface"),
+    ).toBe("viewer");
+  });
+
   it("disables Copy when there is nothing to copy", async () => {
     files.responder = () => refused("binary");
     await mount();
@@ -211,10 +243,23 @@ describe("refusals are answers about the file", () => {
  * ------------------------------------------------------------------ */
 
 describe("the chip names every bound", () => {
-  it("says why a file with no grammar has no colour", async () => {
+  /**
+   * CONTRACT CHANGE (audit A11): a file whose language has no grammar BY
+   * NATURE is the ordinary state of that file, not a bound Vex hit, so it says
+   * so quietly under the header instead of raising an announced status chip on
+   * every `.txt`, `.env` and Makefile. The sentence is unchanged; the register
+   * is. The chip keeps its meaning for the rows that are real - a dead
+   * highlighter, the size limit, long lines - which is what it was losing.
+   */
+  it("says why a file with no grammar has no colour, as quiet secondary copy", async () => {
     files.responder = () => ok(contentOf("plain words\n"));
     await mount({ tab: { ...TAB, relativePath: "notes.txt" } });
-    expect(screen.getByTestId("file-viewer-chip").textContent).toContain("no grammar");
+    expect(screen.getByTestId("file-viewer-secondary-note").textContent).toContain(
+      "no grammar",
+    );
+    expect(screen.queryByTestId("file-viewer-chip")).toBeNull();
+    // Quiet means unannounced: nothing here claims a live region.
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("names the size AND the limit when the file is too large to highlight", async () => {
@@ -250,7 +295,9 @@ describe("the chip names every bound", () => {
       await Promise.resolve();
     });
     const chip = screen.getByTestId("file-viewer-chip").textContent ?? "";
-    expect(chip).toContain("3 lines are over 20000 characters");
+    // The bound is grouped (audit A12): a five-digit number in a sentence is
+    // read at a glance as `20,000` and counted digit by digit as `20000`.
+    expect(chip).toContain("3 lines are over 20,000 characters");
   });
 
   it("shows NO chip when the whole file is highlighted with nothing to report", async () => {

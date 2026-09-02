@@ -50,7 +50,6 @@ import {
   VIEWER_MAX_TOKENIZE_LINE_LENGTH,
   type FileViewerSession,
 } from "./file-viewer-session.js";
-import { languageLabel } from "./highlight/language-of-path.js";
 import {
   COPY_FILE_DONE,
   COPY_FILE_LABEL,
@@ -60,8 +59,10 @@ import {
   VIEWER_LOADING,
   formatBytes,
   longLinesText,
+  plainReasonIsExpected,
   plainReasonText,
   refusalText,
+  viewerKindLabel,
 } from "./viewer-copy.js";
 
 /** How long the Copy button says "Copied" before returning to its label. */
@@ -184,13 +185,20 @@ export function FileViewer({
   return (
     <div
       data-testid="file-viewer"
+      // The marker the Studio keyboard table resolves its `when` context
+      // against (`useStudioKeybindings.ts`): a shortcut scoped to the viewer
+      // has to be able to tell that focus is inside one, and a `data-testid`
+      // is not a contract a feature may build on.
+      data-vex-key-surface="viewer"
       className={cn("flex h-full min-h-0 flex-col bg-surface-base", className)}
     >
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line-3 px-3 text-[12px] leading-4">
         <span className="truncate font-mono text-ink-secondary" title={tab.relativePath}>
           {tab.relativePath}
         </span>
-        <span className="shrink-0 text-ink-tertiary">{languageLabel(language)}</span>
+        <span className="shrink-0 text-ink-tertiary">
+          {viewerKindLabel(language, state.kind === "refused" ? state.code : null)}
+        </span>
         {size === null ? null : (
           <span className="shrink-0 text-ink-tertiary">{formatBytes(size)}</span>
         )}
@@ -277,6 +285,17 @@ function Body({
  * Shown ONLY when there is content, because a refusal already explains itself
  * and stacking "not highlighted" under "this file is binary" would say the same
  * thing twice in a weaker way.
+ *
+ * TWO REGISTERS, one decision. A file whose language simply has no grammar - a
+ * `.txt`, a `.env`, a Makefile - is not a bound Vex hit and not a failure it
+ * had; it is what that file IS. Announcing it as a `role="status"` chip on
+ * every plain file is the noise audit A11 measured, and it costs the chip its
+ * meaning for the rows that matter (`the highlighter stopped`, `over the
+ * highlighting limit`). So the expected reason renders as quiet secondary copy
+ * under the header, unannounced, and every other note keeps the chip.
+ *
+ * The sentence itself does not change in either register: the bound still
+ * reports itself, which is the rule the module header states.
  */
 function Chip({
   highlight,
@@ -289,14 +308,29 @@ function Chip({
 }): JSX.Element | null {
   if (!visible || highlight === null) return null;
 
+  const isPlain =
+    highlight.kind === "plain" || highlight.kind === "plain-after-failure";
+  const expected = isPlain && plainReasonIsExpected(highlight.reason);
+
   const notes: string[] = [];
-  if (highlight.kind === "plain" || highlight.kind === "plain-after-failure") {
+  if (isPlain) {
     notes.push(plainReasonText(highlight.reason, size ?? 0, VIEWER_HIGHLIGHT_MAX_BYTES));
   }
   if (highlight.kind === "highlighted" && highlight.longLines > 0) {
     notes.push(longLinesText(highlight.longLines, VIEWER_MAX_TOKENIZE_LINE_LENGTH));
   }
   if (notes.length === 0) return null;
+
+  if (expected) {
+    return (
+      <div
+        data-testid="file-viewer-secondary-note"
+        className="shrink-0 px-3 py-1 text-[11px] leading-4 text-ink-dimmed"
+      >
+        {notes.join(" ")}
+      </div>
+    );
+  }
 
   return (
     <div
