@@ -859,10 +859,12 @@ describe("the initial focus a real browser will honour", () => {
     const cancel = screen.getByRole("button", { name: "Cancel" });
     // The `focus` suite above asserts `document.activeElement`, and it passed
     // throughout while a real browser focused the typed confirmation field
-    // instead: the jsdom `showModal` polyfill runs no focusing steps, and React
-    // does not emit `autoFocus` as a content attribute. `showModal()` runs from
-    // the Dialog's own effect - after this child's commit - so the attribute is
-    // the only thing that survives it. See `INITIAL_FOCUS_ATTR`.
+    // instead: React does not emit `autoFocus` as a content attribute, and the
+    // jsdom stub of the day ran no focusing steps. Both halves are fixed -
+    // `DialogContent` moves focus itself after `showModal()`, and the polyfill
+    // in `test/dialog-modal-polyfill.ts` runs the real steps - and this stays
+    // an assertion on the ATTRIBUTE, which is what a browser reads. See
+    // `DIALOG_INITIAL_FOCUS`.
     expect(cancel.hasAttribute("autofocus")).toBe(true);
   });
 });
@@ -873,7 +875,7 @@ describe("the dialog's own posture", () => {
     const dialog = document.querySelector("dialog");
     if (dialog === null) throw new Error("no dialog");
     // The `cancel` event IS the browser's Escape intent on a modal `<dialog>`;
-    // `studio-fixtures.ts` polyfills `showModal` without the UA key handling.
+    // the jsdom polyfill implements `showModal` without the UA key handling.
     fireEvent(dialog, new Event("cancel", { cancelable: true }));
     expect(onClose).toHaveBeenCalled();
   });

@@ -55,6 +55,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DIALOG_INITIAL_FOCUS,
 } from "../../components/ui/dialog.js";
 import { OpenLogsLink } from "../../components/common/OpenLogsLink.js";
 
@@ -371,7 +372,10 @@ export function UnlockScreen(): JSX.Element {
               <Button
                 type="button"
                 variant="outline"
-                autoFocus
+                // The safer choice takes focus (rule 08): the sibling
+                // action destroys the vault. `DialogContent` moves focus
+                // here after `showModal()`.
+                {...DIALOG_INITIAL_FOCUS}
                 disabled={resetPending}
                 onClick={() => setResetDialogOpen(false)}
               >

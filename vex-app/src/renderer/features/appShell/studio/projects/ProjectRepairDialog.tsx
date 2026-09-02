@@ -44,6 +44,7 @@ import {
   DialogHeader,
   DialogPinnedSlot,
   DialogTitle,
+  DIALOG_INITIAL_FOCUS,
 } from "../../../../components/ui/dialog.js";
 import { useLiveAnnouncer } from "../../../../components/ui/live-region.js";
 import { SubmitError } from "../../../../components/ui/submit-error.js";
@@ -186,7 +187,9 @@ export function ProjectRepairDialog({
                 variant="ghost"
                 onClick={onClose}
                 disabled={pending}
-                autoFocus
+                // The safer choice takes focus (rule 08); `DialogContent`
+                // moves focus here after `showModal()`.
+                {...DIALOG_INITIAL_FOCUS}
                 className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
               >
                 {PROJECT_CANCEL}

@@ -21,6 +21,7 @@ import {
   type SessionMode,
   type SessionPermission,
 } from "@shared/schemas/sessions.js";
+import { DIALOG_INITIAL_FOCUS } from "../../../components/ui/dialog.js";
 import { Input } from "../../../components/ui/input.js";
 import { Label } from "../../../components/ui/label.js";
 import { WalletSelect, type WalletSelectOption } from "../SessionWalletSelect.js";
@@ -49,6 +50,9 @@ export function NameField({
         ref={nameRef}
         id="vex-session-name"
         type="text"
+        // Where the New-session dialog opens (`DialogContent` reads this
+        // after `showModal()`): the field the user came here to fill in.
+        {...DIALOG_INITIAL_FOCUS}
         required
         maxLength={SESSION_TITLE_MAX_LENGTH}
         value={name}

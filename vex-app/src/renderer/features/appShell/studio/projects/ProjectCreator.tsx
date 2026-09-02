@@ -64,6 +64,7 @@ import {
   DialogHeader,
   DialogPinnedSlot,
   DialogTitle,
+  DIALOG_INITIAL_FOCUS,
 } from "../../../../components/ui/dialog.js";
 import { Input } from "../../../../components/ui/input.js";
 import { Label } from "../../../../components/ui/label.js";
@@ -295,6 +296,9 @@ export function ProjectCreator({
                     ref={nameRef}
                     id="vex-project-name"
                     type="text"
+                    // Where this dialog opens: a form the user came here to
+                    // type into, and a field that arms nothing.
+                    {...DIALOG_INITIAL_FOCUS}
                     required
                     maxLength={PROJECT_NAME_MAX_LENGTH}
                     value={name}

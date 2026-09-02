@@ -129,6 +129,7 @@ import {
   DialogPinnedSlot,
   DialogHeader,
   DialogTitle,
+  DIALOG_INITIAL_FOCUS,
 } from "../../../../components/ui/dialog.js";
 import { Input } from "../../../../components/ui/input.js";
 import { Label } from "../../../../components/ui/label.js";
@@ -139,7 +140,6 @@ import { useDeleteProject } from "../../../../lib/api/projects.js";
 import { peekProjectTerminals } from "../workspace/project-terminals.js";
 import { useLiveAnnouncer } from "../../../../components/ui/live-region.js";
 import { SubmitError } from "../../../../components/ui/submit-error.js";
-import { DIALOG_INITIAL_FOCUS } from "./dialog-initial-focus.js";
 import { ArtifactOutcomeList } from "./RenderOutcomePanel.js";
 import {
   PROJECT_CANCEL,
@@ -593,8 +593,10 @@ export function ProjectDeleteDialog({
             variant="ghost"
             onClick={onClose}
             disabled={pending}
-            // The safer choice takes focus (rule 08).
-            autoFocus
+            // The safer choice takes focus (rule 08). `DialogContent` moves
+            // focus here after `showModal()`; React's `autoFocus` prop cannot,
+            // because React never renders it as the attribute the focusing
+            // steps read.
             {...DIALOG_INITIAL_FOCUS}
             className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
           >

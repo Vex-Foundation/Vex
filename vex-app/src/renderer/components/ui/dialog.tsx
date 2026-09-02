@@ -101,6 +101,65 @@ const DIALOG_WIDTH_CLASS: Readonly<Record<DialogSize, string>> = {
   board: "w-[90vw] max-w-[1280px]",
 };
 
+/**
+ * NAME THE ELEMENT THAT TAKES FOCUS WHEN THIS DIALOG OPENS.
+ *
+ * Spread onto the ONE element the dialog wants focused:
+ *
+ * ```tsx
+ * <Button variant="ghost" onClick={onClose} {...DIALOG_INITIAL_FOCUS}>Cancel</Button>
+ * ```
+ *
+ * ## Why an attribute and not React's `autoFocus`
+ *
+ * Measured in a real browser, not assumed: React does NOT render the
+ * `autoFocus` prop as the `autofocus` CONTENT attribute - it strips the prop
+ * and calls `.focus()` imperatively during the commit. `DialogContent` then
+ * calls `showModal()` from its own effect, and a parent's effect runs AFTER
+ * its children's, so the native dialog focusing steps ran LAST and moved focus
+ * to the first focusable descendant. That is how `ProjectDeleteDialog` opened
+ * on the typed confirmation field that ARMS the delete, and the keep-alive
+ * dialog on a project's `Close` button, while both files said `autoFocus` on
+ * Cancel and every `document.activeElement` assertion passed.
+ *
+ * `autofocus` is the attribute the platform's own focusing steps read, so it
+ * means the same thing to the browser, to the jsdom polyfill, and to
+ * `DialogContent` below. It is a content attribute, so a test can assert it
+ * without a live focus manager.
+ */
+export const DIALOG_INITIAL_FOCUS: { readonly autofocus?: string } = {
+  autofocus: "",
+};
+
+/**
+ * Which element `DialogContent` focuses after `showModal()`.
+ *
+ * The element the dialog NAMED, and otherwise the dialog itself - never the
+ * first focusable descendant, which is what the platform default does and what
+ * put focus on a delete-arming field.
+ *
+ * Focusing the dialog element arms nothing, lets the accessible name and
+ * description be announced, and leaves the first control one Tab away. The
+ * alternative default considered and REJECTED was "the first control in the
+ * footer" (the cancel seat in most of this app's dialogs): `PlanDisplayModal`
+ * renders `Accept plan` first in its footer, so that rule would hand default
+ * focus to a state-changing action in exactly the kind of dialog rule 08 is
+ * about.
+ *
+ * A named element that is disabled cannot take focus, so the dialog does.
+ */
+function resolveDialogInitialFocus(dialog: HTMLDialogElement): HTMLElement {
+  const named = dialog.querySelector<HTMLElement>("[autofocus]");
+  if (
+    named !== null &&
+    !named.hasAttribute("disabled") &&
+    named.getAttribute("aria-disabled") !== "true"
+  ) {
+    return named;
+  }
+  return dialog;
+}
+
 export interface DialogContentProps extends HTMLAttributes<HTMLDialogElement> {
   /** Width family; omitted means the 380px prompt column. */
   readonly size?: DialogSize;
@@ -124,6 +183,10 @@ export interface DialogContentProps extends HTMLAttributes<HTMLDialogElement> {
  *  - ESC handling (the browser fires `cancel` → we route to onOpenChange)
  *  - Backdrop click handling — `mousedown` on the dialog itself (not
  *    children, courtesy of e.target === e.currentTarget check)
+ *  - INITIAL FOCUS after `showModal()` (see `DIALOG_INITIAL_FOCUS` and
+ *    `resolveDialogInitialFocus`): the dialog decides where focus lands, so
+ *    the decision is made once here rather than by whichever control the
+ *    markup happens to render first.
  *  - Focus restoration on close
  *
  * Focus trap: the native `<dialog>` element + `showModal()` already
@@ -177,6 +240,11 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
           // dialog is detached. Both are programmer errors; swallow so a
           // misuse during fast unmount doesn't crash the renderer.
         }
+        // AFTER showModal, always: this effect runs after the children's, and
+        // the native focusing steps ran inside showModal, so this is the last
+        // word on where the dialog opens. Unconditional - a re-run would only
+        // happen on a fresh open, which is exactly when initial focus applies.
+        resolveDialogInitialFocus(node).focus();
       } else if (!open && node.open) {
         node.close();
       }
@@ -228,6 +296,11 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
     return (
       <dialog
         ref={assignRef}
+        // Programmatically focusable, never in the Tab order: the dialog is
+        // where focus rests when the surface names no element of its own
+        // (`resolveDialogInitialFocus`), and a `<dialog>` without a tabindex
+        // ignores `.focus()`.
+        tabIndex={-1}
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
         onCancel={handleCancel}

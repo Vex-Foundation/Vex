@@ -28,8 +28,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DIALOG_INITIAL_FOCUS,
 } from "../../../components/ui/dialog.js";
-import { DIALOG_INITIAL_FOCUS } from "./projects/dialog-initial-focus.js";
 import {
   PROJECT_CLOSE_CONSEQUENCE_SCOPE,
   PROJECT_CLOSE_CONSEQUENCE_UNDO,
@@ -161,12 +161,9 @@ export function StudioKeepAliveDialog({
             type="button"
             variant="ghost"
             onClick={onCancel}
-            // The safer choice takes focus (rule 08). The ATTRIBUTE is what
-            // survives `showModal()`: without it a browser focuses the first
-            // focusable descendant, which here is the first project's `Close`
-            // button - a control that ends every shell running in that project.
-            // See `DIALOG_INITIAL_FOCUS`.
-            autoFocus
+            // The safer choice takes focus (rule 08). Without this the dialog
+            // opens on the first project's `Close` button - a control that ends
+            // every shell running in that project. See `DIALOG_INITIAL_FOCUS`.
             {...DIALOG_INITIAL_FOCUS}
             className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
           >

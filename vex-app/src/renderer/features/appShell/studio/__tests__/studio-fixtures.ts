@@ -137,25 +137,10 @@ export function installStudioDomStubs(): void {
   if (typeof element.scrollIntoView !== "function") {
     element.scrollIntoView = function scrollIntoViewStub(): void {};
   }
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-    show?: () => void;
-  };
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function closePolyfill(this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-      this.dispatchEvent(new Event("close"));
-    };
-  }
-  if (typeof proto.show !== "function") {
-    proto.show = function showPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
+  // The `<dialog>` modal methods are NOT stubbed here any more. This file's
+  // stub set the `open` attribute and ran no focusing steps, so every
+  // `document.activeElement` assertion in the Studio suites passed for dialogs
+  // a browser opened somewhere else. `test/dialog-modal-polyfill.ts`, installed
+  // for every renderer suite from `test/setup.ts`, runs the real focusing
+  // steps and owns that gap now.
 }

@@ -115,8 +115,8 @@ describe("the repair dialog's consent strip", () => {
     const dialog = document.querySelector("dialog");
     if (dialog === null) throw new Error("no dialog");
     // The `cancel` event IS the browser's Escape intent on a modal `<dialog>`.
-    // The jsdom polyfill in `studio-fixtures.ts` implements `showModal` without
-    // the UA key handling, so it is dispatched directly; what is under test is
+    // The jsdom polyfill implements `showModal` without the UA key handling,
+    // so it is dispatched directly; what is under test is
     // that the component routes that intent through the controlled path.
     fireEvent(dialog, new Event("cancel", { cancelable: true }));
     expect(onClose).toHaveBeenCalled();
@@ -170,12 +170,12 @@ describe("the keep-alive dialog's consent strip", () => {
 
   it("marks Cancel with the autofocus attribute a browser will honour", () => {
     renderKeepAlive();
-    // `document.activeElement` is NOT sufficient evidence here and passed while
-    // a browser did the opposite: the jsdom `showModal` polyfill runs no
-    // focusing steps, and React does not emit `autoFocus` as a content
-    // attribute. Every row above this footer holds a `Close` button that ends
-    // running shells, so the first focusable descendant - what `showModal()`
-    // falls back to - is the most dangerous control in the dialog.
+    // `document.activeElement` alone was NOT sufficient evidence here and
+    // passed while a browser did the opposite: React does not emit `autoFocus`
+    // as a content attribute, and the jsdom stub of the day ran no focusing
+    // steps. Every row above this footer holds a `Close` button that ends
+    // running shells, so the platform's own fallback - the first focusable
+    // descendant - is the most dangerous control in the dialog.
     expect(
       screen.getByRole("button", { name: "Cancel" }).hasAttribute("autofocus"),
     ).toBe(true);
