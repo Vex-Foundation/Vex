@@ -32,6 +32,22 @@ import {
   type ProjectScope,
 } from "@vex-agent/mcp/project-scope.js";
 
+/**
+ * A DELETED project, distinguishable from every other hydration failure.
+ *
+ * Everything else this module rejects is genuinely "the scope could not be
+ * read": a missing row, a mismatched backing session, an unparseable scope.
+ * A tombstone is not that - it is a decision the user made, and reporting it as
+ * unreadable would tell them Vex had a problem when Vex was obeying them.
+ * The caller branches on this class to settle `project_deleted` instead.
+ */
+export class ProjectDeletedError extends Error {
+  constructor(projectId: string) {
+    super(`project ${projectId} is deleted`);
+    this.name = "ProjectDeletedError";
+  }
+}
+
 export async function loadProjectScope(
   projectId: string | null,
   backingSessionId: string,
@@ -43,12 +59,18 @@ export async function loadProjectScope(
     scope_version: number;
     permission: string;
     backing_session_id: string;
+    deleted_at: Date | string | null;
   }>(
-    "SELECT id, scope_version, permission, backing_session_id FROM projects WHERE id = $1",
+    "SELECT id, scope_version, permission, backing_session_id, deleted_at "
+      + "FROM projects WHERE id = $1",
     [projectId],
   );
   const project = projectRows[0];
   if (project === undefined) throw new Error("project missing");
+  // Read WITHOUT the predicate and rejected here, rather than filtered in SQL,
+  // so a tombstone stays distinguishable from an absent row. Both refuse; they
+  // refuse with different causes, and the user is owed the true one.
+  if (project.deleted_at !== null) throw new ProjectDeletedError(projectId);
   if (project.backing_session_id !== backingSessionId) {
     throw new Error("project backing session mismatch");
   }

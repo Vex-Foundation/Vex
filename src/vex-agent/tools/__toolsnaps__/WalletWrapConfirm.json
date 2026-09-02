@@ -1,0 +1,39 @@
+{
+  "definition": {
+    "function": {
+      "description": "Broadcast the native <-> wrapped-native conversion that `WalletWrapPrepare` already prepared. This is the call that SPENDS REAL FUNDS: it signs with the user's wallet and sends an IRREVERSIBLE on-chain transaction. Call it after the user has agreed to the prepared conversion, and only with an intentId that prepare returned. APPROVAL: in a restricted session it signs nothing, decrypts nothing and consumes nothing - it comes back asking for approval, the intent stays pending, and that approval is bound to the exact conversion the user read and to this intent's own expiry. BEFORE IT SIGNS it re-reads the session's selected wallet, re-resolves the chain and requires it to still be the chain id that was approved, re-reads the verified wrapped-native contract for that chain and requires it to still be the one bound into the intent, RE-DERIVES the whole `{to, data, value}` triple from the approved direction, contract and amount and compares all three byte for byte, then re-simulates. REAL FAILURE MODES, every one of them leaving NOTHING SIGNED and no funds moved: a proposal digest that does not match the row, an approval bound to a different proposal, an EXPIRED intent, an ALREADY-CONSUMED or cancelled intent (an approval is never reusable), and a re-derived transaction that differs in any of its three fields. The approved gas caps are enforced on the request that is actually signed: a limit or price above them refuses before signing. THE CONVERSION IS EXACTLY 1:1 with no slippage, no route and no price, the recipient is always the signer, and VEX CHARGES NO FEE on this path - the only cost is network gas inside the caps that were approved. RETURNS the outcome, txHash, chain, chainId, direction, amountRaw, amountHuman, wrappedNativeContract and the echoed approvedFeeBounds, with a DISTINCT outcome for confirmed, reverted on-chain, broadcast with confirmation UNKNOWN, and failed before broadcast. Only the last is safe to prepare again: a reverted transaction is real and paid a network fee, and an unknown one may be settling right now - Vex tracks it and NEVER re-sends it, and neither should you.",
+      "name": "WalletWrapConfirm",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "The intent id that `WalletWrapPrepare` returned. It is scoped to this session and to the exact conversion that was approved.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": true,
+    "pressureSafety": "mutating",
+    "withheld": false
+  }
+}

@@ -37,10 +37,40 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "off",
   },
+  // The board layout harness is a Vite dev server, not the Electron app, and
+  // only the `board-layout` project uses it. Playwright starts it on demand
+  // and reuses an already-running one locally.
+  webServer: {
+    command: "pnpm exec vite --config vite.board-layout.config.ts",
+    url: "http://127.0.0.1:5273/",
+    reuseExistingServer: !isCI,
+    timeout: 120_000,
+    stdout: "ignore",
+    stderr: "pipe",
+  },
   projects: [
     {
       name: "electron-smoke",
       testMatch: /.*\.spec\.ts$/,
+      testIgnore: /board-layout\.spec\.ts$/,
+    },
+    /**
+     * BOARD GEOMETRY, in a real engine at real widths.
+     *
+     * Chromium rather than Electron because the board modal is unreachable
+     * from the Electron fixture (see `e2e/smoke.spec.ts`: everything past
+     * SystemCheck needs a live Docker daemon and an unlocked vault), and
+     * because geometry is decided entirely by the renderer's own container
+     * queries over the real production stylesheet - which is exactly what
+     * `vite.board-layout.config.ts` serves.
+     */
+    {
+      name: "board-layout",
+      testMatch: /board-layout\.spec\.ts$/,
+      use: {
+        browserName: "chromium",
+        baseURL: "http://127.0.0.1:5273/",
+      },
     },
   ],
 });

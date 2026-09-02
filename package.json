@@ -26,6 +26,7 @@
     "verify:toolchain": "node scripts/verify-runtime-toolchain.mjs",
     "audit:deps": "node scripts/audit-production-dependencies.mjs",
     "check:em-dash": "node scripts/check-no-em-dash.mjs",
+    "check:no-binary-sources": "node scripts/check-no-binary-sources.mjs",
     "generate:studio-tools-doc": "tsx src/vex-agent/scripts/studio-exported-tools-doc.ts",
     "generate:studio-protocols-doc": "tsx src/vex-agent/scripts/studio-protocols-doc.ts",
     "test:integration": "vitest run --config vitest/integration.config.ts",

@@ -29,6 +29,9 @@ import { registerDatabaseHandlers } from "./database.js";
 import { registerLongMemoryHandlers } from "./long-memory.js";
 import { registerMarketHandlers } from "./market.js";
 import { registerLighterTradingHandlers } from "./lighter-trading.js";
+import { registerStudioHandlers } from "./studio.js";
+import { registerStudioFilesHandlers } from "./studio-files.js";
+import { registerStudioTerminalHandlers } from "./studio-terminal.js";
 import { registerMemoryHandlers } from "./memory.js";
 import { registerMemoryInspectorHandlers } from "./memory-inspector.js";
 import { registerDockerHandlers } from "./docker.js";
@@ -76,8 +79,20 @@ import { registerUsageHandlers } from "./usage.js";
 import { registerWalletExportHandler } from "./wallet-export.js";
 import { registerWalletsSessionHandlers } from "./wallets-session.js";
 
-export function registerAllIpcHandlers(): void {
-  const teardowns: Array<() => void> = [];
+/**
+ * Install every IPC handler and mount the agent bridges.
+ *
+ * Returns the agent-bridge teardown. It is deliberately NOT pushed into the
+ * `teardowns` array below: that array is drained by an independent
+ * `globalCleanup` task, and `CleanupRegistry.runAll()` runs its tasks
+ * CONCURRENTLY, so the bridge drain - which owns the board read caches and the
+ * DexScreener transport - would race `cleanupOnQuit()`. Ownership is
+ * TRANSFERRED to the caller, which composes it into the ordered quit task
+ * (`makeOrderedQuitCleanup`) so it completes BEFORE compose/Postgres teardown.
+ * One owner, one execution path.
+ */
+export function registerAllIpcHandlers(): () => Promise<void> {
+  const teardowns: Array<() => void | Promise<void>> = [];
 
   teardowns.push(registerCancelHandler());
   teardowns.push(registerCapabilitiesHandler());
@@ -155,6 +170,21 @@ export function registerAllIpcHandlers(): void {
   // broadcast are owned by the market service, started in index.ts.
   teardowns.push(...registerMarketHandlers());
   teardowns.push(...registerLighterTradingHandlers());
+
+  // B0: read-only Vex Studio host status. The handler serves main's in-memory
+  // cache; the transitions are published by the MCP host itself and broadcast
+  // by the host-status bridge, started in index.ts.
+  teardowns.push(...registerStudioHandlers());
+  // B2: the Vex Studio terminal CONTROL plane. Main mints terminal ids, holds
+  // the lifecycle gate's `terminal` lease per live terminal, enforces the
+  // per-project and global bounds, and mints the data-plane MessagePort. The
+  // pty host itself is a utilityProcess started lazily on the first create.
+  teardowns.push(...registerStudioTerminalHandlers());
+  // B3a: the Vex Studio project-file surface. Main mints opaque node tokens,
+  // holds the lifecycle gate's `watcher` lease per WATCHED PROJECT (one native
+  // watcher however many subscriptions ride it), and enforces the read bound on
+  // the open handle. Read-only: there is no write channel on this surface.
+  teardowns.push(...registerStudioFilesHandlers());
   // Agent integration stage 7-1: read-only Track-2 compaction status for the
   // runtime bar. The Track-2 executor itself is owned by main and started in
   // `index.ts` (see `setupCompactWorker`), not here. Stage 7-2a extends this
@@ -177,7 +207,9 @@ export function registerAllIpcHandlers(): void {
   // Agent integration puzzle 2: engine -> renderer transcript event spine.
   // Subscribes the in-process transcript bus to the IPC broadcaster so
   // committed `messages` INSERTs surface as `EV.engine.transcriptAppend`.
-  teardowns.push(setupAgentBridges());
+  // Ownership transfer, not a teardown entry: the returned disposer travels to
+  // the ordered quit owner (see this function's doc comment).
+  const teardownAgentBridges = setupAgentBridges();
   // Vex Studio A3 - install the approval broker's collaborators before any MCP
   // call can block on one. The broker owns no policy: the refusal owner and the
   // engine's expiry entry point are injected here, which is also what keeps the
@@ -233,9 +265,13 @@ export function registerAllIpcHandlers(): void {
   // `configureUpdater()` in index.ts.
   teardowns.push(...registerUpdaterHandlers());
 
-  globalCleanup.add(() => {
-    for (const t of teardowns) t();
+  // Sequential await: a teardown that returns a promise is a drain, and the
+  // next one may depend on it having finished.
+  globalCleanup.add(async () => {
+    for (const t of teardowns) await t();
   });
+
+  return teardownAgentBridges;
 }
 
 /**

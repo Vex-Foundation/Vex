@@ -48,6 +48,13 @@ export interface KyberErrorBody {
   /** The provider's own words — a JSON `message`, or the raw body when it is not JSON. */
   readonly message: string;
   readonly requestId?: string;
+  /**
+   * True when the body is the aggregator's UNCODED envelope
+   * (`{message, path, request_id, request_ip, status}`), which it answers for a
+   * chain slug it does not serve. Measured 2026-08-28; it carries no `code`, so
+   * without this flag it is indistinguishable from any other coded-less 404.
+   */
+  readonly uncodedEnvelope?: true;
 }
 
 /**
@@ -75,6 +82,13 @@ export async function readKyberErrorBody(response: Response): Promise<KyberError
         ? parsed.message
         : `HTTP ${response.status}`,
       ...(typeof parsed.requestId === "string" ? { requestId: parsed.requestId } : {}),
+      ...(typeof parsed.request_id === "string" ? { requestId: parsed.request_id } : {}),
+      // The aggregator's non-2xx answer for an unserved chain slug carries no
+      // `code` and a `path`/`status` pair instead. Flagged here so the client
+      // can raise it as its own typed outcome rather than a generic HTTP 404.
+      ...(parsed.code === undefined && typeof parsed.path === "string" && typeof parsed.status === "number"
+        ? { uncodedEnvelope: true as const }
+        : {}),
     };
   }
   return {

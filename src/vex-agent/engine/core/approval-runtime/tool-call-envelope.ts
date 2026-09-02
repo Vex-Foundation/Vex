@@ -48,6 +48,10 @@ import type { ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
 import { getProtocolManifest } from "@vex-agent/tools/protocols/catalog.js";
 import { resolveInjectedProtocolTool } from "@vex-agent/tools/registry/injected-protocol-tools.js";
 import { resolveToolName } from "@vex-agent/tools/registry/name-resolution.js";
+import {
+  readApprovedQuoteAuthority,
+  type ApprovedQuoteAuthority,
+} from "@vex-agent/tools/protocols/quote-authority/approved-authority.js";
 import type { IntentPreview } from "../approval-intent-preview.js";
 
 /**
@@ -99,6 +103,7 @@ export function buildApprovalToolCall(
   toolName: string,
   toolArgs: Record<string, unknown>,
   binding?: ApprovalProposalBinding,
+  quoteAuthority?: ApprovedQuoteAuthority,
 ): Record<string, unknown> {
   const canonicalName = resolveToolName(toolName);
   const manifest = resolveInjectedProtocolTool(canonicalName);
@@ -109,7 +114,15 @@ export function buildApprovalToolCall(
   // folding it into that block would make every bound approval look like a
   // manifest envelope to `checkApprovalManifestIdentity`.
   const boundBlock = binding === undefined ? {} : { proposalBinding: proposalBindingBlock(binding) };
-  if (!manifest) return { command: canonicalName, args: toolArgs, ...boundBlock };
+  // WHICH QUOTE this approval authorizes, a second sibling for the same reason
+  // as the first: it is a fact about the approval, not about the tool contract,
+  // and it must ride into `computeRequestDigest` so neither lane can dispatch a
+  // call whose bound quote was edited after the human approved it.
+  const quoteBlock =
+    quoteAuthority === undefined ? {} : { quoteAuthority: { ...quoteAuthority } };
+  if (!manifest) {
+    return { command: canonicalName, args: toolArgs, ...boundBlock, ...quoteBlock };
+  }
 
   return {
     command: "execute_tool",
@@ -120,7 +133,23 @@ export function buildApprovalToolCall(
       manifestFingerprint: computeManifestFingerprint(manifest),
     },
     ...boundBlock,
+    ...quoteBlock,
   };
+}
+
+/**
+ * The quote authority recorded on a stored approval, or `null` when the row
+ * carries none (every lane but a bound swap execute, and every historical row).
+ *
+ * `null` is NOT "anything goes" at the claim: the claim's own contract decides,
+ * and a venue that produced a card binding at enqueue will produce one again, so
+ * an absent block on a claim lane means only that this approval predates the
+ * binding or belongs to a lane that never had a quote.
+ */
+export function readApprovalQuoteAuthority(
+  rawToolCall: Record<string, unknown>,
+): ApprovedQuoteAuthority | null {
+  return readApprovedQuoteAuthority(rawToolCall.quoteAuthority);
 }
 
 /**

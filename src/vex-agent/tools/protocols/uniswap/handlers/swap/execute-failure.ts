@@ -12,6 +12,7 @@ import {
   dependentLegPoolStateRefusalGuidance,
   preSignRefusalGuidance,
 } from "@tools/evm-chains/pre-sign-revert-refusal.js";
+import { UniswapFinalRequestRefusal } from "@tools/uniswap/final-request-guard.js";
 import { effectiveMaxSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 import logger from "@utils/logger.js";
@@ -132,6 +133,21 @@ export async function postIntentFailureResult(input: {
       success: false,
       output: `${TOOL_ID}: the ${input.refusedRole} step could not be gas-estimated, so it was refused before signing. ${dependentLegEstimateGuidance(err)} Recorded as execution ${executionId}; the node reported: ${uniswapFailureMessage(err)}`,
       data: { _executionId: executionId, status: "not_attempted", retryable: true },
+    };
+  }
+  // The pre-sign authority fence refused the exact request that was about to be
+  // serialized. Nothing was signed, so this is a `not_attempted` refusal like
+  // the estimate one above - and the refusal's own sentence is the only place
+  // the real cause exists, so it is rendered verbatim instead of being mapped
+  // to canned guidance for a revert that never happened.
+  if (err instanceof UniswapFinalRequestRefusal) {
+    return {
+      success: false,
+      output: `${TOOL_ID}: the ${input.refusedRole} step was refused before signing. ${uniswapFailureMessage(err)} Recorded as execution ${executionId}.`,
+      data: {
+        _executionId: executionId, status: "not_attempted", retryable: true,
+        failureCode: err.kind,
+      },
     };
   }
   return {

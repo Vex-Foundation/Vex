@@ -36,24 +36,13 @@ vi.mock("../../lighterTrading/LighterTradingDialog.js", () => ({
   LighterTradingDialog: () => null,
 }));
 
-vi.mock("@thesvg/react", () => ({
-  Docker: () => null,
-  Ethereum: () => null,
-  Solana: () => null,
-  Base: () => null,
-  Robinhood: () => null,
-  Polygon: () => null,
-  Optimism: () => null,
-  BnbChain: () => null,
-  Tether: () => null,
-  Circle: () => null,
-  Chainlink: () => null,
-  Postgresql: () => null,
-  Bitcoin: () => null,
-  Bnb: () => null,
-  DaiStablecoin: () => null,
-  Usdc: () => null,
-}));
+// Every brand mark stubs to null, whatever its name: the marks are
+// presentation-only here, and a hand-listed mock breaks the whole suite
+// file each time a component references a new mark.
+vi.mock("@thesvg/react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@thesvg/react")>();
+  return Object.fromEntries(Object.keys(actual).map((name) => [name, () => null]));
+});
 
 // Stage 4: the always-mounted BookPanel renders SessionRuntimeBar (in the
 // RUNTIME & COST block) → ModelBrandIcon, which statically imports ~20 brand
@@ -362,7 +351,7 @@ describe("AppShell", () => {
     // mount-effect replay unsubscribes the observer mid-flight (detaching it
     // from the in-flight mutation with no reattach). Without the reset() guard
     // in useSubmitChat, the observer misses the settle and `isPending` freezes
-    // at true → the composer is stuck as a dead "Stop generating" button and
+    // at true → the composer is stuck as a dead "Stop agent" button and
     // the next message can never be sent. Use the no-provider error so the
     // submit settles immediately (the engine cannot be the slow part).
     sessionsListMock.mockResolvedValueOnce({ ok: true, data: [] });
@@ -396,6 +385,6 @@ describe("AppShell", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Send message" })).toBeTruthy(),
     );
-    expect(screen.queryByRole("button", { name: "Stop generating" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop agent" })).toBeNull();
   });
 });

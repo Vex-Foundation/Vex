@@ -1156,10 +1156,15 @@ no mark (local asset or monogram fallback).
 - IPC: `CH.files.listChildren`, `CH.files.readFile` (byte cap, binary
   verdict), `EV.files.changed` batches with `batchSeq` and `overflow`, a
   per-open-file subscription.
-- Renderer: `@headless-tree/core` + `@headless-tree/react` rendered with
-  `@tanstack/react-virtual`; Shiki 4 (JavaScript regex engine) in a
-  Worker, `codeToHast` to React elements, CSP untouched, size cap with
-  plain-text fallback.
+- Renderer: an OWNED flat-index tree model
+  (`renderer/features/appShell/studio/explorer/explorer-model.ts`)
+  rendered with `@tanstack/react-virtual`. The B3 spike measured it
+  against `@headless-tree/core` + `@headless-tree/react` and the owned
+  model won - 10-13x faster per splice at 10k visible rows, and
+  @headless-tree offers no splice API at all - so those packages were
+  removed and are not a dependency of this product. Shiki 4 (JavaScript
+  regex engine) in a Worker, `codeToHast` to React elements, CSP
+  untouched, size cap with plain-text fallback.
 
 ## 3. Stages, files, verification
 
@@ -2501,8 +2506,9 @@ scrubbing, path escaping, no port object on `window.vex`.
 
 Files: `main/studio/files/*`, `shared/schemas/files.ts`, `preload/studio/
 files.ts`, `renderer/features/studio/explorer/*`, `renderer/features/
-studio/viewer/*`. Dependencies: `@parcel/watcher`, `@headless-tree/core`,
-`@headless-tree/react`, `shiki`, `ignore`.
+studio/viewer/*`. Dependencies: `@parcel/watcher`, `shiki`, `ignore`.
+The tree itself is owned code, not a dependency: the B3 spike measured
+`@headless-tree/*` and removed it (see the renderer note in section 2).
 Verification: containment and symlink escape, burst of hundreds of writes
 ending consistent, overflow resync, zero CSP violations on a highlighted
 file, 50k-row tree under StrictMode.
@@ -2543,8 +2549,8 @@ stage B start.
   (size recorded, never cut).
 - No AI attribution; no em dashes.
 - Dependency changes land separately from feature work (`node-pty`,
-  `@parcel/watcher`, `@xterm/*`, `@headless-tree/*`, `shiki`,
-  `jsonc-parser`, `@modelcontextprotocol/server`).
+  `@parcel/watcher`, `@xterm/*`, `shiki`, `jsonc-parser`,
+  `@modelcontextprotocol/server`).
 
 ## 5. Open items for the owner
 

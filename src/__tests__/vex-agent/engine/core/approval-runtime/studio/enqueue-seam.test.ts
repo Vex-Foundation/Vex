@@ -92,7 +92,9 @@ function baseInput(overrides: Record<string, unknown> = {}) {
 
 /** Script the gate's three statements: advisory lock, project row, generation. */
 function scriptGate(
-  project: { scope_version: number; permission: string } | undefined,
+  project:
+    | { scope_version: number; permission: string; deleted_at?: Date | null }
+    | undefined,
   generation: string | null,
 ): void {
   clientQuery.mockReset();
@@ -101,7 +103,13 @@ function scriptGate(
     if (text.includes("pg_advisory_xact_lock")) return { rows: [], rowCount: 1 };
     if (text.includes("FROM projects")) {
       return {
-        rows: project === undefined ? [] : [project],
+        // `deleted_at` defaults to null - an ACTIVE project - so every existing
+        // case keeps its meaning. The gate reads the column, and a row without
+        // it would be treated as deleted (fail closed).
+        rows:
+          project === undefined
+            ? []
+            : [{ deleted_at: null, ...project }],
         rowCount: project === undefined ? 0 : 1,
       };
     }
@@ -117,6 +125,32 @@ function scriptGate(
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("Studio enqueue - a tombstoned project (B0)", () => {
+  it("REFUSES and writes nothing", async () => {
+    // A soft delete reads exactly like an absent project to this gate: the one
+    // question it asks is whether an external agent may still obtain authority
+    // under the project, and for a tombstone the answer is no.
+    scriptGate(
+      {
+        scope_version: 4,
+        permission: "restricted",
+        deleted_at: new Date("2026-08-29T10:00:00.000Z"),
+      },
+      "7",
+    );
+
+    const outcome = await enqueueStudioApprovalIntent(baseInput());
+
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") return;
+    expect(outcome.reason).toContain("no longer exists");
+    expect(outcome.reason).toContain("no funds moved");
+    // NOTHING was written: no intent row, no queue row.
+    expect(createWith).not.toHaveBeenCalled();
+    expect(enqueueWith).not.toHaveBeenCalled();
+  });
 });
 
 describe("Studio enqueue - the clear path", () => {

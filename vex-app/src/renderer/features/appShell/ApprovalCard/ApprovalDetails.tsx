@@ -16,6 +16,11 @@ import type {
   ApprovalSummaryDto,
 } from "@shared/schemas/approvals.js";
 import { riskChipClasses } from "./risk.js";
+import {
+  APPROVAL_PROJECT_FIELD_LABEL,
+  approvalProjectDetail,
+  approvalProjectDisplay,
+} from "../approvals/approvals-copy.js";
 
 /**
  * Human labels for the engine-injected, non-argument preview keys. A tool
@@ -89,6 +94,14 @@ export interface ApprovalDetailsProps {
   readonly criticalArgs: ApprovalPreview["criticalArgs"] | null;
   readonly inlineError: string | null;
   /**
+   * The joined Vex Studio project NAME, when the caller's read carried one
+   * (`ApprovalPendingGlobalDto`). The inline session card reads
+   * `ApprovalSummaryDto`, which has no join, and passes nothing - the field
+   * then shows `summary.projectId`, which is the identity anyway. Display
+   * only: user-authored text, never anything this card binds on.
+   */
+  readonly projectName?: string | null;
+  /**
    * S5 — one-shot signed glint in the stamp area after a successful approve.
    * The ONLY light in the approvals flow; reject never sets it.
    */
@@ -102,6 +115,7 @@ export function ApprovalDetails({
   toolName,
   criticalArgs,
   inlineError,
+  projectName = null,
   signedGlint = false,
 }: ApprovalDetailsProps): JSX.Element {
   return (
@@ -148,6 +162,29 @@ export function ApprovalDetails({
         ) : null}
       </header>
       <div className="space-y-3 px-4 py-3">
+        {/* PROVENANCE (B0/B4c). Rendered only when the approval actually
+            carries a project - an agent-mode approval has none, and an empty
+            "Project: -" row would invent a fact. The NAME is what the user
+            reads; the ID rides in the title and the accessible name, because
+            a name can be edited or belong to a tombstoned project and the id
+            cannot. */}
+        {summary.projectId !== null ? (
+          <dl
+            data-testid="approval-project"
+            className="grid grid-cols-[max-content_1fr] gap-x-3 font-mono text-[11px]"
+          >
+            <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+              {APPROVAL_PROJECT_FIELD_LABEL}
+            </dt>
+            <dd
+              className="break-all text-[var(--vex-text-2)]"
+              title={approvalProjectDetail(summary.projectId, projectName)}
+              aria-label={approvalProjectDetail(summary.projectId, projectName)}
+            >
+              {approvalProjectDisplay(summary.projectId, projectName)}
+            </dd>
+          </dl>
+        ) : null}
         {summary.reasoningPreview.trim().length > 0 ? (
           <p className="italic text-[var(--vex-text-2)]">
             {summary.reasoningPreview}

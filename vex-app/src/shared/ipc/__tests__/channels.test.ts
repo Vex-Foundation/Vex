@@ -106,6 +106,14 @@ describe("CH / EV channel constants", () => {
     expect(CH.sessions.exportMarkdown).toBe("vex:sessions:exportMarkdown");
   });
 
+  it("ships the Vex Studio host-status surface with its canonical names (B0)", () => {
+    expect(CH.studio.hostStatus).toBe("vex:studio:hostStatus");
+    expect(EV.studio.hostStatus).toBe("vex:event:studio:hostStatus");
+    // The Studio surface is read-only by design: locking and quitting the host
+    // are lifecycle consequences the renderer observes, never commands.
+    expect(Object.keys(CH.studio)).toEqual(["hostStatus"]);
+  });
+
   it("channels are unique (no duplicate values across namespaces)", () => {
     const all = [CH.cancel, ...collectStrings(CH).filter((c) => c !== CH.cancel), ...collectStrings(EV)];
     const seen = new Set<string>();

@@ -11,7 +11,7 @@
 import { formatUnits, getAddress, type Hex } from "viem";
 
 import { getLocalChain } from "@tools/evm-chains/registry.js";
-import { verifyPostBuyDelivery } from "@tools/evm-chains/post-buy-delivery.js";
+import { assessApprovedFloor, verifyPostBuyDelivery } from "@tools/evm-chains/post-buy-delivery.js";
 import type { Erc20ReadClient } from "@tools/evm-chains/erc20-reads.js";
 import { decodeUniswapExecutedLegs, type UniswapDecodableReceipt } from "@tools/uniswap/receipt-decoder.js";
 import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
@@ -35,6 +35,8 @@ export interface FinalizeConfirmedSwapInput {
   readonly tokenIn: UniswapToken;
   readonly tokenOut: UniswapToken;
   readonly quoted: QuotedRoute;
+  /** The floor the approved quote authorized, for the post-settlement assessment. */
+  readonly approvedMinOutRaw: string;
   readonly receipt: UniswapDecodableReceipt;
   readonly txHash: Hex;
   /** Read-only client for the post-buy delivery check. */
@@ -144,12 +146,32 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
 
   logger.info("uniswap.swap.executed", { chain: deployment.key, version: x.quoted.route.version });
 
+  // DETECTION, after the fact. The execute already refused to sign calldata
+  // carrying any floor but the approved one, so a shortfall here means the fill
+  // itself missed it - a taxing output token, or a router that under-delivered.
+  // It never changes the settlement status; it changes what the agent is told.
+  const floorAssessment = assessApprovedFloor({
+    executedAmountOutRaw: decoded.executedAmountOutRaw,
+    approvedMinOutRaw: x.approvedMinOutRaw,
+    tokenOutSymbol: tokenOut.symbol,
+  });
+  if (floorAssessment.kind === "materially_short") {
+    logger.warn("uniswap.swap.execute.fill_below_approved_floor", {
+      id: x.eventId,
+      txHash,
+      shortfallRaw: floorAssessment.shortfallRaw.toString(),
+    });
+  }
+
   const outputPayload = {
     txHash, chain: deployment.key,
     tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol,
     amountIn: amountInHuman, amountOut: amountOutHuman,
     route: { version: x.quoted.route.version, path: x.quoted.route.path },
     ...(deliveryVerdict ? { deliveryCheck: deliveryVerdict } : {}),
+    ...(floorAssessment.kind === "materially_short"
+      ? { approvedFloorCheck: floorAssessment.verdict }
+      : {}),
   };
 
   return {

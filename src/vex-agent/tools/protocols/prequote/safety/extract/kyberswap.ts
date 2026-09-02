@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { aggregateVerdict } from "./verdict.js";
 import type { LegVerdictDetail } from "./verdict.js";
+import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { ExtractedQuote } from "./extracted-quote.js";
 
 // EVM safety legs — structural re-validation of the kyberswap quote safety
@@ -76,6 +77,33 @@ const EvmQuoteResultSchema = z.object({
   safety: EvmSafetySchema,
 });
 
+/**
+ * The safety verdict for an EVM quote's two legs, computed from the handler's
+ * own `safety` block.
+ *
+ * Exported because the VERDICT is not a property of a PRICED quote: a confirmed
+ * honeypot is just as true of a route that turned out unpriceable, excessively
+ * impactful, or too large to store verbatim. The quote handler asks this
+ * function for the same answer this file gives the recorder, so an ineligible
+ * quote persists the real verdict instead of a hardcoded `unknown` - which is
+ * what let a confirmed honeypot be recorded as unaudited and then re-quoted.
+ *
+ * `null` when the block does not structurally validate: the caller then has no
+ * verdict to state and must not invent one.
+ */
+export function evmQuoteSafetyVerdict(
+  safety: unknown,
+): { readonly verdict: SafetyVerdict; readonly safetyDetail: Record<string, unknown> } | null {
+  const parsed = EvmSafetySchema.safeParse(safety);
+  if (!parsed.success) return null;
+  const inLeg = evmLegVerdict(parsed.data.tokenIn);
+  const outLeg = evmLegVerdict(parsed.data.tokenOut);
+  return {
+    verdict: aggregateVerdict([inLeg.verdict, outLeg.verdict]),
+    safetyDetail: { tokenIn: inLeg.detail, tokenOut: outLeg.detail },
+  };
+}
+
 export function extractEvm(
   params: Record<string, unknown>,
   data: Record<string, unknown>,
@@ -86,8 +114,10 @@ export function extractEvm(
   if (typeof amountRaw !== "string" || amountRaw.trim() === "") return null;
   const slippage = typeof params.slippageBps === "number" ? params.slippageBps : null;
 
-  const inLeg = evmLegVerdict(parsed.data.safety.tokenIn);
-  const outLeg = evmLegVerdict(parsed.data.safety.tokenOut);
+  // Non-null by construction: the result schema above validated the same block
+  // through the same leg schema. Fail-closed anyway rather than assert.
+  const safety = evmQuoteSafetyVerdict(parsed.data.safety);
+  if (safety === null) return null;
 
   // No route facts are persisted here. A quote-time price floor used to ride
   // the `route_ref` column so `kyberswap.swap.execute` could hold the build to
@@ -101,7 +131,7 @@ export function extractEvm(
     chainId: parsed.data.chainId,
     amount: amountRaw,
     slippageBps: slippage,
-    verdict: aggregateVerdict([inLeg.verdict, outLeg.verdict]),
-    safetyDetail: { tokenIn: inLeg.detail, tokenOut: outLeg.detail },
+    verdict: safety.verdict,
+    safetyDetail: safety.safetyDetail,
   };
 }

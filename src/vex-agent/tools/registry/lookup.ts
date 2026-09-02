@@ -25,6 +25,7 @@ import { AUTONOMY_TOOLS } from "./autonomy.js";
 import { EVM_TOOLS } from "./evm.js";
 import { WALLET_TOOLS } from "./wallet.js";
 import { WALLET_TRANSACTION_TOOLS } from "./wallet-transaction.js";
+import { WALLET_WRAP_TOOLS } from "./wallet-wrap.js";
 import { UNITS_TOOLS } from "./units.js";
 import { COMPACT_TOOLS } from "./compact.js";
 import { SESSION_MEMORY_TOOLS } from "./session-memory.js";
@@ -48,6 +49,7 @@ export const TOOLS: readonly ToolDef[] = [
   ...EVM_TOOLS,
   ...WALLET_TOOLS,
   ...WALLET_TRANSACTION_TOOLS,
+  ...WALLET_WRAP_TOOLS,
   ...UNITS_TOOLS,
   ...COMPACT_TOOLS,
   ...SESSION_MEMORY_TOOLS,

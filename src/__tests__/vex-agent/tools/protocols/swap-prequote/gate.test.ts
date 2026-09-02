@@ -96,6 +96,12 @@ function prequoteRow(verdict: SafetyVerdict, overrides: Partial<SwapPrequote> = 
     safetyVerdict: verdict,
     safetyDetail: {},
     routeRef: null,
+    // Migration 095: a row that predates the claim lane reads as an
+    // executable, unclaimed quote. It authorizes nothing on its own - the
+    // claim additionally requires a stored route snapshot.
+    eligibilityKind: "executable",
+    claimedAt: null,
+    claimedBy: null,
     createdAt: "2026-06-04T10:00:00.000Z",
     expiresAt: "2099-01-01T00:00:00.000Z",
     ...overrides,

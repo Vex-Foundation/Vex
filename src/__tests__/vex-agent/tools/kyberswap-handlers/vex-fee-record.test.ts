@@ -105,11 +105,23 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
   pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
+// The execute CLAIMS the approved quote instead of fetching a route (the
+// 2026-08-27 quote-binding change). The claim's own behaviour is covered by
+// `quote-bound-execute.test.ts` and the Postgres claim suite; here it hands
+// back a real snapshot of this file's own route so the handler reaches the
+// behaviour under test.
+const mockClaim = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
+  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
 });
 
+import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { KYBERSWAP_HANDLERS } from "@vex-agent/tools/protocols/kyberswap/handlers.js";
 import { KYBERSWAP_FEE_BPS } from "@tools/kyberswap/constants.js";
 
@@ -198,7 +210,7 @@ describe("kyberswap.swap.execute — the Vex fee recorded as a token amount", ()
       address, symbol: "USDC", name: "USD Coin", decimals: 6, isNative: false as const,
     }));
     mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
-    mockGetRoute.mockResolvedValue({
+    const routeResponse = {
       data: {
         routeSummary: {
           amountIn: capture.routeSummary.amountIn,
@@ -208,7 +220,15 @@ describe("kyberswap.swap.execute — the Vex fee recorded as a token amount", ()
         },
         routerAddress: capture.routerAddress,
       },
-    });
+    };
+    mockGetRoute.mockResolvedValue(routeResponse);
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+        approvedClaim(
+          routeResponse.data.routeSummary,
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        ),
+    );
     mockBuildRoute.mockResolvedValue(buildResponse());
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 100 }, { id: 101 }] });
     mockSignStageBroadcast.mockResolvedValue({ kind: "confirmed", txHash: "0xswap", receipt: { logs: [] } });

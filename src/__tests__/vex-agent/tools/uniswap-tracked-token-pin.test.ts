@@ -21,6 +21,7 @@
  * fail-soft) is unchanged from the W0 original.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { claimStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 const TOKEN_IN = "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b";
@@ -119,6 +120,16 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSigningWallet: vi.fn(() => ({ family: "eip155", address: WALLET, privateKey: `0x${"ab".repeat(32)}` })),
   walletScopeErrorToResult: vi.fn((err: unknown) => ({ success: false, output: String(err) })),
 }));
+// The execute is bound to an APPROVED quote (2026-08-27 incident): it claims one
+// before it prices anything. This suite's subject is elsewhere, so the claim
+// stands in with the quote this very call would have produced - see
+// `_uniswap-approved-snapshot.ts`.
+const claimUniswapExecutionSnapshot = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
+  claimSwapExecutionSnapshot: vi.fn(),
+  claimUniswapExecutionSnapshot: (...args: unknown[]) => claimUniswapExecutionSnapshot(...args),
+}));
+
 vi.mock("@utils/logger.js", () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } }));
 
 const { UNISWAP_SWAP_HANDLERS } = await import("@vex-agent/tools/protocols/uniswap/handlers/swap.js");
@@ -133,6 +144,9 @@ const context = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  claimUniswapExecutionSnapshot.mockImplementation(
+    claimStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
+  );
   ensureErc20Balance.mockResolvedValue(undefined);
   readUniswapAllowance.mockResolvedValue(10n ** 30n); // sufficient — no allowance events planned
   signUniswapTransaction.mockResolvedValue({ serializedTransaction: "0xsigned", txHash: "0xhash", fromAddress: WALLET, nonce: 1 });

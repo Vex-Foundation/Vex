@@ -1,7 +1,8 @@
 /**
  * Atomic repair settlement for one signed transaction's linked intent,
- * agent_activity (AA), and protocol_executions (PE) rows. The intent is either
- * wallet_transaction_intents (WTI) or the transfer-specific wallet_intents.
+ * agent_activity (AA), and protocol_executions (PE) rows. The intent is one of
+ * wallet_transaction_intents (WTI), the transfer-specific wallet_intents (WI),
+ * or wallet_wrap_intents (WWI, migration 096).
  *
  * The pool-level activity terminalizers call this coordinator. It takes the
  * session control lock once, runs their ordinary client-bound AA CAS, advances
@@ -20,7 +21,15 @@ import * as intentsRepo from "../wallet-transaction-intents.js";
 import type { WalletTransactionIntent } from "../wallet-transaction-intents.js";
 import * as transferIntentsRepo from "../wallet-intents.js";
 import type { WalletIntent } from "../wallet-intents.js";
+import {
+  assertWrapIntentCanSettle,
+  readLinkedWrapIntent,
+  recoverWrapIntentUnconfirmed,
+  settleWrapIntent,
+  validateWrapLinkedRows,
+} from "./linked-wrap-intent.js";
 import { withActivitySessionLock } from "./session-lock.js";
+import { LinkedTransactionSettlementConflictError } from "./linked-settlement-conflict.js";
 import type { AgentActivityEvent, AgentActivityFailureCode, CasResult } from "./types.js";
 import { getActivityEventByIdWith } from "./swap-lifecycle/reads.js";
 
@@ -62,15 +71,13 @@ export interface LinkedActivitySettlementInput<T extends LinkedActivityWriteResu
   readonly activityWrite: (client: PoolClient) => Promise<T>;
 }
 
-export class LinkedTransactionSettlementConflictError extends Error {
-  readonly row: "wti" | "wi" | "aa" | "pe";
-
-  constructor(row: "wti" | "wi" | "aa" | "pe", detail: string) {
-    super(`linked transaction repair settlement conflict on ${row}: ${detail}`);
-    this.name = "LinkedTransactionSettlementConflictError";
-    this.row = row;
-  }
-}
+// The conflict error lives in `./linked-settlement-conflict.js` so a
+// per-state-machine arm can throw it without importing this coordinator. This
+// module stays its public gate, so `instanceof` is unchanged for every caller.
+export {
+  LinkedTransactionSettlementConflictError,
+  type LinkedSettlementRow,
+} from "./linked-settlement-conflict.js";
 
 /**
  * Terminalize AA, WTI, and PE in one transaction. A missing linked WTI keeps
@@ -97,11 +104,18 @@ export async function settleLinkedActivityRowsWith<T extends LinkedActivityWrite
   const activity = await requireActivity(client, input.activityId, input.sessionId);
   const transactionIntent = await intentsRepo.getByActivityIdWith(client, input.activityId);
   const transferIntent = await transferIntentsRepo.getByActivityIdWith(client, input.activityId);
-  if (transactionIntent !== null && transferIntent !== null) {
+  const wrapIntent = await readLinkedWrapIntent(client, input.activityId);
+  const linkedCount = [transactionIntent, transferIntent, wrapIntent]
+    .filter((intent) => intent !== null).length;
+  if (linkedCount > 1) {
     throw new LinkedTransactionSettlementConflictError(
       "aa",
       "the activity row is linked by two wallet intent state machines",
     );
+  }
+  if (wrapIntent !== null) {
+    validateWrapLinkedRows(activity, wrapIntent, input.activityId, input.sessionId);
+    assertWrapIntentCanSettle(wrapIntent, activity, input.intentOutcome);
   }
   if (transactionIntent !== null) {
     await validateLinkedRows(
@@ -138,8 +152,16 @@ export async function settleLinkedActivityRowsWith<T extends LinkedActivityWrite
   ) {
     return result;
   }
-  if (transactionIntent === null && transferIntent === null) return result;
+  if (transactionIntent === null && transferIntent === null && wrapIntent === null) return result;
 
+  // The wrap arm. The INTENT settles in the SAME transaction as the activity
+  // write above, which is the whole point: a repair lane that confirms a wrap
+  // activity row from a receipt must not leave its intent `broadcast_unconfirmed`
+  // for the money-state gate to block on forever.
+  if (wrapIntent !== null) {
+    await settleWrapIntent(client, wrapIntent, activity, input.intentOutcome, hooks);
+    await settleExecution(client, activity.protocolExecutionId, input.intentOutcome, hooks);
+  }
   if (transactionIntent !== null) {
     await settleIntent(client, transactionIntent, activity, input.intentOutcome, hooks);
     await settleExecution(client, activity.protocolExecutionId, input.intentOutcome, hooks);
@@ -184,6 +206,24 @@ export async function recoverLinkedBroadcastUnconfirmed(
   return withActivitySessionLock(sessionId, async (client) => {
     const activity = await requireActivity(client, activityId, sessionId);
     if (activity.txHash === null) return false;
+
+    // The wrap lane has its own intent table. It is checked FIRST because a
+    // wrap activity row never carries a WTI row, and falling through to the
+    // WTI branch would throw "the linked intent is missing" on a perfectly
+    // healthy wrap row instead of recovering it.
+    const wrapIntent = await readLinkedWrapIntent(client, activityId);
+    if (wrapIntent !== null) {
+      validateWrapLinkedRows(activity, wrapIntent, activityId, sessionId);
+      await recoverWrapIntentUnconfirmed(client, wrapIntent, activity.txHash, hooks);
+      await settleExecutionAs(
+        client,
+        activity.protocolExecutionId,
+        "broadcast_unconfirmed",
+        false,
+        hooks,
+      );
+      return true;
+    }
 
     const intent = await intentsRepo.getByActivityIdWith(client, activityId);
     if (intent === null) {
@@ -240,6 +280,16 @@ export async function settleFromPersistedTerminalActivity(
   return withActivitySessionLock(sessionId, async (client) => {
     const activity = await requireActivity(client, activityId, sessionId);
     if (!activityMatchesOutcome(activity, outcome)) return false;
+
+    // Same precedence as the recovery above, and for the same reason.
+    const wrapIntent = await readLinkedWrapIntent(client, activityId);
+    if (wrapIntent !== null) {
+      validateWrapLinkedRows(activity, wrapIntent, activityId, sessionId);
+      assertWrapIntentCanSettle(wrapIntent, activity, outcome);
+      await settleWrapIntent(client, wrapIntent, activity, outcome, hooks);
+      await settleExecution(client, activity.protocolExecutionId, outcome, hooks);
+      return true;
+    }
 
     const intent = await intentsRepo.getByActivityIdWith(client, activityId);
     if (intent === null) return false;

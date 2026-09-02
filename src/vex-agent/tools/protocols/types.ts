@@ -14,6 +14,7 @@ import type { ToolResult } from "../types.js";
 import type { ActionKind } from "../taxonomy.js";
 import type { Permission, WalletPolicy } from "@vex-agent/engine/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
+import type { ApprovedQuoteAuthority } from "./quote-authority/approved-authority.js";
 
 // ── Protocol namespaces ──────────────────────────────────────────
 
@@ -375,6 +376,13 @@ export interface ProtocolExecutionContext {
   missionId?: string | null;
   missionRunId?: string | null;
   approvalId?: string | null;
+  /**
+   * WHICH QUOTE that approval authorized, threaded from the same host-side
+   * envelope as `approvalId`. The claim binds to this exact snapshot instead of
+   * selecting the newest executable row, so a quote recorded after the human
+   * approved can never be the one that executes. Absent on every live turn.
+   */
+  approvedQuoteAuthority?: ApprovedQuoteAuthority | null;
   /**
    * The provider's id for THIS tool call, threaded by the dispatcher from
    * `ToolCallRequest.toolCallId`. Host-side evidence like the provenance above:

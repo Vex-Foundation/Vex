@@ -17,6 +17,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+import { CH } from "../../shared/ipc/channels.js";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PRELOAD_ROOT = path.resolve(__dirname, "..");
 const PRELOAD_INDEX = path.join(PRELOAD_ROOT, "index.ts");
@@ -105,97 +107,74 @@ describe("preload bridge surface", () => {
     expect(src).toMatch(/from\s+["']\.\/agent\/index\.js["']/);
   });
 
-  it("every bridge CH.* channel is referenced somewhere in the preload tree", () => {
-    const expected = [
-      "CH.messages.list",
-      "CH.messages.getTail",
-      "CH.messages.getAround",
-      "CH.runtime.getState",
-      "CH.runtime.requestPause",
-      "CH.runtime.requestStop",
-      "CH.runtime.requestResume",
-      "CH.runtime.cancelWake",
-      "CH.mission.getDraft",
-      "CH.mission.updateDraft",
-      "CH.mission.getDiff",
-      "CH.mission.acceptContract",
-      "CH.mission.start",
-      "CH.mission.continue",
-      "CH.mission.recover",
-      "CH.mission.renew",
-      "CH.mission.retry",
-      "CH.mission.edit",
-      "CH.mission.stop",
-      // Phase 7 — read-only resolver for /mission-renew lineage.
-      "CH.mission.getRenewableSource",
-      "CH.approvals.listPending",
-      "CH.approvals.listPendingAll",
-      "CH.approvals.get",
-      "CH.approvals.approve",
-      "CH.approvals.reject",
-      "CH.approvals.getHistory",
-      "CH.wallets.listSessionWallets",
-      "CH.wallets.setSessionWalletScope",
-      "CH.wallets.getPreparedIntent",
-      "CH.wallets.cancelPreparedIntent",
-      "CH.models.listAvailable",
-      "CH.onboarding.providerListModels",
-      "CH.usage.getSessionTotals",
-      "CH.usage.getLastTurn",
-      "CH.usage.getContextWindow",
-      "CH.compaction.getStatus",
-      "CH.compaction.listHistory",
-      "CH.compaction.retry",
-      "CH.longMemory.list",
-      // Memory-system S10 — read-only memory-manager inspector.
-      "CH.memoryInspector.listCandidates",
-      "CH.memoryInspector.listDecisions",
-      "CH.memoryInspector.jobsSummary",
-      "CH.memory.listSession",
-      "CH.memory.getStats",
-      // Stage 3 — read-only dual-scope POSITION portfolio.
-      "CH.portfolio.read",
-      // Chronos-shell — read-only, global-scope per-token TX history.
-      "CH.portfolio.listTokenHistory",
-      // Agent Scan — read-only executed-activity feed (the surviving feed
-      // after the `listMoves` pipeline was retired). It was missing from this
-      // curated list, which is exactly the gap a manually maintained surface
-      // list develops: a live bridge method nobody was pinning.
-      "CH.portfolio.listAgentScan",
-      // Vex Studio projects (stage P) - folder plus backing session. No
-      // filesystem capability crosses the bridge: the renderer sends a name.
-      "CH.projects.create",
-      "CH.projects.get",
-      "CH.projects.list",
-      "CH.projects.updateScope",
-      "CH.sessions.getModel",
-      "CH.sessions.exportMarkdown",
-      // Error-diagnostics phase (D-FOLDER) — "Open logs folder".
-      "CH.support.openLogsFolder",
-      // Updater (M13) — user-triggered in-app update bridge.
-      "CH.updater.check",
-      "CH.updater.getStatus",
-      "CH.updater.startUpdateNow",
-      "CH.updater.cancelDownload",
-      "CH.updater.restartAndInstallNow",
-      "CH.updater.openReleaseNotes",
-      // T1 — read-only live VEX market snapshot bridge.
-      "CH.market.getVexSnapshot",
-      // Light it up — read-only Lighter market list + analysis snapshot.
-      "CH.lighterTrading.listMarkets",
-      "CH.lighterTrading.getSnapshot",
-      "CH.lighterTrading.getAccount",
-      "CH.lighterTrading.startCandleSubscription",
-      "CH.lighterTrading.stopCandleSubscription",
-      "CH.lighterTrading.startPublicMarketSubscription",
-      "CH.lighterTrading.stopPublicMarketSubscription",
-      // "Vex setup" user profile (DB-backed, replaces persona.md).
-      "CH.settings.getUserProfile",
-      "CH.settings.setUserProfile",
-    ];
+  /**
+   * Request channels that deliberately have NO bridge method.
+   *
+   * Both are DEAD CONSTANTS: neither has a main handler and neither is reached
+   * from anywhere. They are named here rather than deleted because removing a
+   * channel constant is a contract change that does not belong in this change,
+   * and naming them is what keeps the check below total. The assertion under
+   * this list makes the exclusion self-expiring: an entry that stops being a
+   * real channel, or that acquires a bridge method, fails.
+   */
+  const NOT_ON_THE_BRIDGE: readonly string[] = [
+    "CH.database.status",
+    "CH.onboarding.providerTest",
+  ];
+
+  /**
+   * EVERY request channel, DERIVED FROM `CH` ITSELF.
+   *
+   * This replaced a hand-curated `expected` array, and the array's own comments
+   * had already diagnosed why: "a live bridge method nobody was pinning", said
+   * next to `CH.portfolio.listAgentScan`, which had been missing from it. The
+   * list was then kept manual, and it went on to miss `CH.projects.repairFiles`
+   * and `CH.projects.delete` - so B0 could add a channel, a main handler and a
+   * strict input schema, ship no preload method at all, and watch this suite
+   * stay green. A curated list of what must exist can only ever catch omissions
+   * somebody remembered to curate.
+   *
+   * Reading `CH` at runtime inverts that. The registry is the source of truth
+   * for what channels exist, so a new one is IN the expectation the moment it is
+   * declared, and the only way past this test is an explicit, named entry in
+   * `NOT_ON_THE_BRIDGE` above.
+   */
+  it("every request channel in CH is referenced somewhere in the preload tree", () => {
     const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
-    for (const channel of expected) {
-      expect(corpus, `missing reference: ${channel}`).toContain(channel);
+    const excluded = new Set(NOT_ON_THE_BRIDGE);
+    const everyChannel: string[] = [];
+    for (const [domain, actions] of Object.entries(CH)) {
+      // `CH.cancel` is a bare string, not a domain group.
+      if (typeof actions !== "object" || actions === null) continue;
+      for (const action of Object.keys(actions)) {
+        everyChannel.push(`CH.${domain}.${action}`);
+      }
+    }
+    // A guard against an empty or mis-parsed registry silently making this
+    // assertion vacuous.
+    expect(everyChannel.length).toBeGreaterThan(100);
+
+    const missing = everyChannel.filter(
+      (reference) => !excluded.has(reference) && !corpus.includes(reference),
+    );
+    expect(missing, "request channels with no preload reference").toEqual([]);
+  });
+
+  it("the NOT_ON_THE_BRIDGE exclusions are still real, still unbridged channels", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    for (const reference of NOT_ON_THE_BRIDGE) {
+      const [, domain, action] = reference.split(".");
+      const group = (CH as Record<string, unknown>)[domain ?? ""];
+      expect(
+        typeof group === "object" && group !== null
+          ? Object.keys(group as Record<string, unknown>)
+          : [],
+        `${reference} is excluded but is not a channel in CH`,
+      ).toContain(action);
+      expect(
+        corpus.includes(reference),
+        `${reference} IS on the bridge now; remove it from NOT_ON_THE_BRIDGE`,
+      ).toBe(false);
     }
   });
 
@@ -301,6 +280,18 @@ describe("preload bridge surface", () => {
     ]) {
       expect(corpus).toContain(reference);
     }
+  });
+
+  it("exposes EV.studio.hostStatus and the host-status bridge method (B0)", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    expect(
+      corpus,
+      "EV.studio.hostStatus not referenced in preload",
+    ).toContain("EV.studio.hostStatus");
+    expect(
+      corpus,
+      "onHostStatus not exposed by the preload composer",
+    ).toContain("onHostStatus");
   });
 
 });

@@ -43,6 +43,10 @@ export function toProtocolExecutionContext(
     missionId: context.missionId,
     missionRunId: context.missionRunId,
     approvalId: context.approvalId,
+    // ...and WHICH QUOTE that approval bound. Threaded here, with the rest of
+    // the provenance, so no lane can carry the approval id while dropping the
+    // snapshot it authorized.
+    approvedQuoteAuthority: context.approvedQuoteAuthority ?? null,
     // The call this dispatch answers.
     toolCallId: call.toolCallId,
     // Which consent surface exists for this dispatch. See `runtime/gates.ts`.

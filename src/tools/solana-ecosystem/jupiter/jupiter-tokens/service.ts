@@ -48,8 +48,12 @@ export async function searchJupiterTokens(query: string): Promise<JupiterMintInf
   return jupiterTokenSearch({ query });
 }
 
-export async function getJupiterTokensByMint(mints: string[]): Promise<JupiterMintInformation[]> {
-  return jupiterTokensByMint(mints);
+export async function getJupiterTokensByMint(
+  mints: string[],
+  /** The caller's cancellation, forwarded to the provider request. */
+  signal?: AbortSignal,
+): Promise<JupiterMintInformation[]> {
+  return jupiterTokensByMint(mints, signal);
 }
 
 export async function getJupiterTokensByTag(tag: JupiterTokenTag): Promise<JupiterMintInformation[]> {

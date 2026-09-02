@@ -165,6 +165,20 @@ export async function syncTick(): Promise<void> {
     });
   }
 
+  // The wrap lane's own stranded recovery. It is a SEPARATE intent table with
+  // its own scan, so the sweep above cannot see it - and without this call a
+  // crash after the wrap claim leaves a `consuming` row forever, blocking the
+  // compaction money-state gate on a session nothing is executing. Guarded
+  // independently so a wrap-side outage never stops the rest of the tick.
+  try {
+    const { recoverStrandedWrapIntents } = await import("./wallet-wrap-intent-settlement.js");
+    await recoverStrandedWrapIntents();
+  } catch (err) {
+    logger.warn("sync.tick.stranded_wrap_recovery_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // 1. Drain post-mutation runs
   const drain = await drainPendingRuns();
 

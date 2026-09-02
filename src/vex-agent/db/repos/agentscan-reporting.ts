@@ -71,8 +71,15 @@ export interface ClaimedOutboxEvent {
  * `allowance` and `allowance_reset` are absent because the server's role enum
  * does not contain them, so every such event would be rejected item by item.
  * Approvals are still recorded locally; they simply have nowhere to go.
- * `wrap`/`unwrap` are in the server's vocabulary but have no producer in this
- * install, so they are left out until one exists.
+ * `wrap`/`unwrap` are in the server's vocabulary and DO have a producer in this
+ * install now (the `WalletWrapPrepare`/`WalletWrapConfirm` pair). They are still
+ * left out, and the gate is named rather than assumed: adding `'wrap'` to the
+ * kind list and the `wrap`/`unwrap` roles to the role list is blocked on a LIVE
+ * confirmation that the AgentScan server's ingest accepts kind `wrap` for both
+ * directions INCLUDING the pending states. A kind the server rejects costs batch
+ * items, and an amount it cannot verify costs strikes, so the vocabulary is
+ * proven against the running server before rows are sent, not inferred from the
+ * enum it publishes.
  */
 const ELIGIBILITY_SQL = `
       a.kind IN ('swap','bridge','lend','prediction','yield','launch')

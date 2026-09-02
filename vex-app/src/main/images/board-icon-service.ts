@@ -28,8 +28,8 @@
  *    {@link BOARD_ICON_MAX_BYTES}. A bound applied after a buffered read is not
  *    a bound;
  *  - the declared MIME and the magic bytes must AGREE, and the header
- *    dimensions must fit {@link BOARD_ICON_MAX_DIMENSION}. Disagreement is an
- *    absence, never a "probably fine";
+ *    dimensions must fit {@link BOARD_ICON_MAX_DIMENSION}. Disagreement is a
+ *    policy refusal, never a "probably fine";
  *  - `nsfw` never gets this far. The compose-time stamp writes null for a
  *    flagged profile, so a flagged id is not in the durable document and cannot
  *    be asked for. That gate is in `src/vex-agent/tools/internal/board/
@@ -39,8 +39,9 @@
  * profile at all, so "this token has no icon" is the ORDINARY outcome and the
  * board draws a designed monogram for it. Nothing here retries a signing-shaped
  * action, nothing here throws at the caller, and the three failure families
- * stay distinct: a 404 is settled, a malformed image is settled for these
- * bytes, and a transport failure is unknown and may be asked again.
+ * stay distinct: a 404 is a settled ABSENCE, a malformed or over-cap image is a
+ * settled POLICY REFUSAL of published artwork, and a transport failure is
+ * unknown and may be asked again.
  *
  * LIFECYCLE. One owner, mounted beside the DexScreener bridge whose fetcher it
  * borrows, disposed on the same teardown. `dispose()` closes admission first,
@@ -127,7 +128,7 @@ const POSITIVE_CACHE_MAX = 64;
  */
 export const BOARD_ICON_NOT_FOUND_TTL_MS = 600_000;
 
-/** What the caller gets back. Three families, deliberately not collapsed. */
+/** What the caller gets back. Four families, deliberately not collapsed. */
 export type BoardIconResolution =
   | {
       readonly kind: "image";
@@ -135,9 +136,18 @@ export type BoardIconResolution =
       readonly dataUrl: string;
     }
   | {
-      /** Settled: asking again with the same id would answer the same way. */
+      /** Settled: the provider has no icon under this handle. */
       readonly kind: "absent";
-      readonly reason: "not_found" | "unsupported_image" | "over_cap";
+      readonly reason: "not_found";
+    }
+  | {
+      /**
+       * Settled: the provider HAS artwork here and this app declined it. Not
+       * `absent` (the token does have a picture) and not `unavailable` (the
+       * verdict is deterministic for these bytes, so re-asking is pointless).
+       */
+      readonly kind: "refused_by_policy";
+      readonly reason: "unsupported_image" | "over_cap";
     }
   | {
       /** Unknown: nothing was learned about the icon. May be asked again. */
@@ -186,6 +196,8 @@ export function createBoardIconService(fetcher: BoardIconFetcher): BoardIconServ
   const queue: QueueEntry[] = [];
   let active = 0;
   let closed = false;
+  /** The one drain. Every `dispose()` caller joins it (see `dispose`). */
+  let pendingDispose: Promise<void> | undefined;
 
   function rememberPositive(iconId: string, dataUrl: string): void {
     // Insertion-ordered Map as an LRU: re-inserting moves an entry to the end,
@@ -261,7 +273,7 @@ export function createBoardIconService(fetcher: BoardIconFetcher): BoardIconServ
       const code = errorCode(cause);
       if (code === DexScreenerSiteErrorCodes.RESPONSE_OVER_CAP) {
         log.info(`[board-icons] refused id-bytes over ${BOARD_ICON_MAX_BYTES} bytes`);
-        return { kind: "absent", reason: "over_cap" };
+        return { kind: "refused_by_policy", reason: "over_cap" };
       }
       // Timeout, cancellation, host refusal, disposal mid-flight. Nothing is
       // known about the icon, so nothing is cached and the card shows its
@@ -290,7 +302,7 @@ export function createBoardIconService(fetcher: BoardIconFetcher): BoardIconServ
     const validation = validateLockerImageBytes(response.body);
     if (!validation.ok) {
       log.info(`[board-icons] icon bytes refused kind=${validation.rejection.kind}`);
-      return { kind: "absent", reason: "unsupported_image" };
+      return { kind: "refused_by_policy", reason: "unsupported_image" };
     }
     // MIME AND MAGIC BYTES MUST AGREE. Either alone is weaker than it looks: a
     // header is a claim by the host, and magic bytes alone would accept a
@@ -299,7 +311,7 @@ export function createBoardIconService(fetcher: BoardIconFetcher): BoardIconServ
       log.info(
         `[board-icons] icon refused: declared type disagrees with the bytes sniffed=${validation.mime}`,
       );
-      return { kind: "absent", reason: "unsupported_image" };
+      return { kind: "refused_by_policy", reason: "unsupported_image" };
     }
     if (
       validation.width > BOARD_ICON_MAX_DIMENSION ||
@@ -308,7 +320,7 @@ export function createBoardIconService(fetcher: BoardIconFetcher): BoardIconServ
       log.info(
         `[board-icons] icon refused: ${validation.width}x${validation.height} is past the ${BOARD_ICON_MAX_DIMENSION} px board ceiling`,
       );
-      return { kind: "absent", reason: "unsupported_image" };
+      return { kind: "refused_by_policy", reason: "unsupported_image" };
     }
 
     const dataUrl = `data:${validation.mime};base64,${Buffer.from(response.body).toString("base64")}`;
@@ -345,22 +357,28 @@ export function createBoardIconService(fetcher: BoardIconFetcher): BoardIconServ
       return attempt;
     },
 
-    async dispose(): Promise<void> {
-      if (closed) return;
-      // Order matters: close admission BEFORE aborting, so nothing queued
-      // starts a fetch into a service that is tearing down.
-      closed = true;
-      // Refused, not admitted: a queued request never held a slot, so waking
-      // it with `true` would let it release one it never took.
-      for (const waiting of queue.splice(0)) waiting.admit(false);
-      for (const controller of controllers) controller.abort();
-      // Drain: every in-flight attempt settles (as `unavailable`) rather than
-      // being abandoned, so no fetch outlives the owner that started it.
-      await Promise.allSettled([...inFlight.values()]);
-      inFlight.clear();
-      controllers.clear();
-      positive.clear();
-      negativeUntil.clear();
+    dispose(): Promise<void> {
+      // MEMOIZED, not early-returned. `if (closed) return;` resolved a second
+      // caller IMMEDIATELY while the first was still draining, so the quit path
+      // could dispose the bridge - Chromium session, hidden window and all -
+      // under a fetch that was still running. Every caller joins the SAME drain.
+      pendingDispose ??= (async () => {
+        // Order matters: close admission BEFORE aborting, so nothing queued
+        // starts a fetch into a service that is tearing down.
+        closed = true;
+        // Refused, not admitted: a queued request never held a slot, so waking
+        // it with `true` would let it release one it never took.
+        for (const waiting of queue.splice(0)) waiting.admit(false);
+        for (const controller of controllers) controller.abort();
+        // Drain: every in-flight attempt settles (as `unavailable`) rather than
+        // being abandoned, so no fetch outlives the owner that started it.
+        await Promise.allSettled([...inFlight.values()]);
+        inFlight.clear();
+        controllers.clear();
+        positive.clear();
+        negativeUntil.clear();
+      })();
+      return pendingDispose;
     },
   };
 }

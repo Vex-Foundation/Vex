@@ -85,10 +85,59 @@ vi.mock("@tools/khalani/evm-client.js", () => ({
   createDynamicPublicClient: () => ({ getBalance: mockGetBalance }),
 }));
 
-const { handleWalletBalances } = await import(
+// The Solana family is read DIRECT FROM RPC, not through Khalani (the mocked
+// Khalani client above answers a SOL row that this tool deliberately no longer
+// consults for balances). The provider boundaries under that reader are
+// scripted so this suite can never reach a real endpoint.
+vi.mock("@tools/dexscreener/price-read.js", () => ({
+  readTokensPairs: async () => [
+    {
+      chainId: "solana",
+      baseToken: { address: "So11111111111111111111111111111111111111112", symbol: "SOL", name: "Solana" },
+      quoteToken: { address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", symbol: "USDC" },
+      priceUsd: "150",
+      liquidity: { usd: 5_000_000 },
+    },
+  ],
+}));
+vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
+  getJupiterTokensByMint: async () => [],
+}));
+vi.mock("@tools/solana-ecosystem/shared/solana-token-cache.js", () => ({
+  getCachedSolanaToken: () => undefined,
+  cacheSolanaTokens: () => undefined,
+}));
+
+const { handleWalletBalances: handleWalletBalancesRaw } = await import(
   "../../../vex-agent/tools/internal/wallet.js"
 );
+const { readSolanaWalletSnapshot } = await import(
+  "@tools/solana-ecosystem/balances/wallet-snapshot.js"
+);
 import { makeTestContext } from "./_test-context.js";
+
+/**
+ * A wallet holding 3 SOL and nothing else, served through the reader's own RPC
+ * seam. The REAL snapshot service and the REAL projector run over it.
+ */
+const SOLANA_DEPENDENCIES = {
+  readSolanaSnapshot: (address: string, options?: { signal?: AbortSignal }) =>
+    readSolanaWalletSnapshot(address, {
+      signal: options?.signal,
+      rpc: {
+        getBalance: async () => 3_000_000_000,
+        getParsedTokenAccountsByOwner: async () => ({ value: [] }),
+      },
+    }),
+};
+
+/** Every call in this suite goes through the same scripted Solana seam. */
+function handleWalletBalances(
+  params: Record<string, unknown>,
+  context: ReturnType<typeof makeTestContext>,
+) {
+  return handleWalletBalancesRaw(params, context, SOLANA_DEPENDENCIES);
+}
 
 const baseContext = makeTestContext();
 
@@ -138,13 +187,27 @@ describe("WalletBalances", () => {
     expect(data.wallets[0].tokens.length).toBeGreaterThan(0);
   });
 
-  it("returns Solana snapshot when wallet=solana", async () => {
+  // CONTRACT CHANGE (2026-08-28): this arm used to assert only that a snapshot
+  // came back with an address, which is exactly why it stayed green while the
+  // tool answered `tokenCount: 0, totalUsd: 0` for a funded wallet. It now
+  // asserts tokens and totals like its EVM siblings above.
+  it("returns Solana snapshot with tokens and totals when wallet=solana", async () => {
     const result = await handleWalletBalances({ walletFamily: "solana" }, baseContext);
     expect(result.success).toBe(true);
     const data = JSON.parse(result.output);
     expect(data.wallets).toHaveLength(1);
     expect(data.wallets[0].wallet).toBe("solana");
     expect(data.wallets[0].address).toBeTruthy();
+    expect(data.wallets[0].tokenCount).toBe(1);
+    // 3 SOL at $150, read direct from RPC and priced by our own DexScreener read.
+    expect(data.wallets[0].totalUsd).toBeCloseTo(450, 6);
+    expect(data.wallets[0].tokens[0]).toMatchObject({
+      symbol: "SOL",
+      address: "So11111111111111111111111111111111111111112",
+      decimals: 9,
+      balance: "3000000000",
+    });
+    expect(data.wallets[0].scannedChainIds).toEqual([20011000000]);
   });
 
   it("snapshot includes token data with prices", async () => {

@@ -85,6 +85,8 @@ function callGate(sessionPermission: "restricted" | "full") {
     undefined,
     undefined,
     undefined,
+    // quoteBinding: this gate test supplies no matched quote.
+    undefined,
   );
 }
 
@@ -150,6 +152,8 @@ describe("A9 autonomy guarantee — protocol approval gate", () => {
       undefined,
       undefined,
       undefined,
+      undefined,
+      // quoteBinding: this gate test supplies no matched quote.
       undefined,
     );
 

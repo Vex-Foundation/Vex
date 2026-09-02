@@ -33,6 +33,8 @@
  *     regression guard (EXPECTED GREEN today).
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { approvedClaim } from "../../kyberswap/fixtures/route-build/approved-quote.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
@@ -81,7 +83,14 @@ const mockReadErc20Metadata = vi.fn(async (_slug: string, address: string) => ({
 const sendRawTransaction = vi.fn();
 const waitForTransactionReceipt = vi.fn();
 const estimateGas = vi.fn();
-const prepareTransactionRequest = vi.fn().mockResolvedValue({ nonce: 1 });
+// Echoes the request it was asked to prepare, plus the nonce a node fills in.
+// The echo is not decoration: the pre-sign gate validates the PREPARED request,
+// so a stub returning only `{ nonce }` hands the swap leg a transaction with no
+// target and no calldata - which the gate correctly refuses, and which no real
+// node ever returns.
+const prepareTransactionRequest = vi.fn(
+  async (...args: unknown[]) => ({ ...(args[0] as Record<string, unknown>), nonce: 1 }),
+);
 const signTransaction = vi.fn().mockResolvedValue("0x1234");
 const fakeWalletClient = {
   account: { address: SESSION_EVM.address },
@@ -158,6 +167,16 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
   pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
+// The execute CLAIMS the approved quote instead of fetching a route (the
+// 2026-08-27 quote-binding change). The claim itself is covered by
+// `quote-bound-execute.test.ts` and the Postgres claim suite; here it hands
+// back a real snapshot of this file's own route so the adversarial
+// broadcast-path behaviour under test is reached.
+const mockClaim = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
+  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
@@ -184,19 +203,26 @@ describe("kyberswap.swap.execute — adversarial (FIX2-W0)", () => {
 
   beforeEach(() => {
     mockGetHoneypotFotInfo.mockReset().mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
+    const approvedSummary = {
+      amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
+      tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountInUsd: "1", amountOutUsd: "0.99",
+      // A route summary ALWAYS carries its paths, and the pre-sign guard
+      // reads them to decide which pools the build may fund.
+      route: compliantRoutePaths({
+        srcToken: TOKEN_A, dstToken: TOKEN_B, amountIn: 10n ** 18n, quotedNetOutRaw: "999000",
+      }),
+    };
     mockGetRoute.mockReset().mockResolvedValue({
-      data: {
-        routeSummary: {
-          amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
-          // A route summary ALWAYS carries its paths, and the pre-sign guard
-          // reads them to decide which pools the build may fund.
-          route: compliantRoutePaths({
-            srcToken: TOKEN_A, dstToken: TOKEN_B, amountIn: 10n ** 18n, quotedNetOutRaw: "999000",
-          }),
-        },
-        routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
-      },
+      data: { routeSummary: approvedSummary, routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5" },
     });
+    mockClaim.mockReset();
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+        approvedClaim(
+          approvedSummary,
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        ),
+    );
     // REAL router calldata (re-encoded from a captured build) — the handler
     // decodes and asserts it before signing, so a placeholder string would be
     // refused at the pre-sign gate and never reach the behaviour under test.
@@ -225,7 +251,11 @@ describe("kyberswap.swap.execute — adversarial (FIX2-W0)", () => {
     mockConfirmActivityEvent.mockReset().mockResolvedValue({ applied: true, row: {} });
     mockFailActivityEvent.mockReset().mockResolvedValue({ applied: true, row: {} });
 
-    prepareTransactionRequest.mockReset().mockResolvedValue({ nonce: 1 });
+    prepareTransactionRequest
+      .mockReset()
+      .mockImplementation(async (...args: unknown[]) => ({
+        ...(args[0] as Record<string, unknown>), nonce: 1,
+      }));
     signTransaction.mockReset().mockResolvedValue("0x1234");
     sendRawTransaction.mockReset().mockResolvedValue(undefined);
     waitForTransactionReceipt.mockReset().mockResolvedValue({ status: "success", logs: [] });

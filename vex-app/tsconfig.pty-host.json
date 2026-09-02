@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    // Matches tsconfig.main.json: the pty host is a Node-runtime process in
+    // the same privileged family, so it inherits the same lib/module/types
+    // posture. exactOptionalPropertyTypes stays OFF for parity with main;
+    // src/shared keeps it strict through tsconfig.shared.json.
+    "exactOptionalPropertyTypes": false,
+    "lib": ["ES2024"],
+    "types": ["node"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "paths": {
+      "@shared/*": ["./src/shared/*"],
+      "@vex-lib/*": ["../src/lib/*"]
+    }
+  },
+  "include": ["src/pty-host", "src/shared", "../src/lib"]
+}

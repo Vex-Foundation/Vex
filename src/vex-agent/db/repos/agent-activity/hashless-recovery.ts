@@ -171,6 +171,20 @@ const LOCALLY_SIGNABLE_ACTIVITY_ROLES: readonly AgentActivityEventRole[] = [
   // `markActivityBroadcast` needs, so a staged fee leg is invisible to this
   // sweep and a reaped one can no longer be broadcast.
   "tx_vex_fee",
+  // Migration 051 (native <-> wrapped-native wrap/unwrap). That migration
+  // enumerated this allowlist as a required companion change and named the exact
+  // consequence of skipping it: "Without the new roles, a crash before staging
+  // leaves a wrap row pending forever with nothing able to reap it." Both roles
+  // are signed LOCALLY on either chain family, and no wrap-side sweep owns a
+  // hashless row: the EVM repair sweep's candidate query requires
+  // `submit_attempted_at IS NOT NULL`, which only `markActivityBroadcast` sets.
+  //
+  // Safe for the reason every other role here is: the CAS predicate
+  // (`status='pending' AND tx_hash IS NULL`) is the SAME one the staging CAS
+  // needs, so a staged wrap is invisible to this sweep and a reaped one can no
+  // longer be broadcast.
+  "wrap",
+  "unwrap",
 ];
 
 /**

@@ -13,10 +13,11 @@ import { describe, expect, it } from "vitest";
 import {
   BOOK_SECTION_LABEL,
   DEFAULT_BOOK_SECTIONS,
-  moveSection,
-  moveSectionRelative,
   resolveBookSectionOrder,
 } from "../section-order.js";
+// The move algebra is the SHARED mechanism both rails use
+// (`section-registry.ts`); exercised here over this rail's own ids.
+import { moveSection, moveSectionRelative } from "../section-registry.js";
 
 describe("resolveBookSectionOrder", () => {
   it("an empty stored order is the default order", () => {

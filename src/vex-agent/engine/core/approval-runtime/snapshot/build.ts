@@ -232,12 +232,21 @@ async function readProjectDrift(
       livePermission: row.session_permission_live,
     };
   }
-  const res = await client.query<{ scope_version: number; permission: Permission }>(
-    "SELECT scope_version, permission FROM projects WHERE id = $1 FOR UPDATE",
+  const res = await client.query<{
+    scope_version: number;
+    permission: Permission;
+    deleted_at: Date | string | null;
+  }>(
+    "SELECT scope_version, permission, deleted_at FROM projects WHERE id = $1 FOR UPDATE",
     [row.project_id],
   );
   const project = res.rows[0];
-  if (project === undefined) {
+  // CHECKED BEFORE scope drift and before the permission comparison. A deleted
+  // project whose version ALSO drifted is `project_deleted`, not
+  // `scope_changed`: the more final cause is the true one, and telling a user
+  // their action was refused because the scope changed would imply re-running
+  // it under the new scope is possible.
+  if (project === undefined || project.deleted_at !== null) {
     return {
       driftKind: "project_deleted",
       refusalReason: "project_deleted",

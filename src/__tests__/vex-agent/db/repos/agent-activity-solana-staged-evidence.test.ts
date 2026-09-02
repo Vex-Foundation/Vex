@@ -434,6 +434,16 @@ describe("recoverStaleHashlessIntents", () => {
         // Solana pair on that lane charges nothing. Locally signed, owned by no
         // sweep, and definitively not-attempted when it is never signed.
         "tx_vex_fee",
+        // Migration 051 (native <-> wrapped-native), whose producer is the
+        // wrap lane added with migration 096. That migration enumerated this
+        // allowlist as a required companion change and named the exact
+        // consequence of skipping it: a crash before staging leaves a wrap row
+        // pending forever with nothing able to reap it. Both roles are locally
+        // signed, no wrap-side sweep owns a hashless row, and the wrap writer
+        // stages its hash before it submits - so a hashless wrap row is
+        // positive proof nothing was ever sent.
+        "wrap",
+        "unwrap",
       ].sort(),
     );
   });
@@ -466,6 +476,13 @@ describe("recoverStaleHashlessIntents", () => {
       // (`agent_activity_tx_vex_fee_eip155`, migration 088), not merely by
       // where the venue happens to be deployed.
       "tx_vex_fee",
+      // Wrap and unwrap are EVM-only as SHIPPED, which is the fact this pin
+      // records. Migration 051's vocabulary also anticipates a Solana wSOL
+      // arm, but no Solana producer exists: `wallet_wrap_intents` (096) has no
+      // family column and the wrapped-native capability registry is eip155.
+      // If a Solana arm is ever built, these two move to `sharedRoles` in the
+      // same change.
+      "wrap", "unwrap",
     ];
     const solanaOnlyRoles = ["lend_deposit", "lend_withdraw", "lend_borrow_operate", "predict_buy", "predict_sell", "predict_claim", "predict_close"];
     // `bridge_fee` (migration 050) is SHARED, not bridge-EVM-only: the Vex fee

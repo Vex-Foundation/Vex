@@ -57,17 +57,40 @@
   --color-blue-900: #000080;
   --color-blue-950: #131a4d;
 
-  /* Static tier - statuses (primaries theme-invariant; washes flip). */
+  /* Static tier - statuses. Every family now carries a READABLE-ON-WHITE step
+   * next to its bright one: the bright primaries are dark-room ink and
+   * light-room decoration, the -700/-800 steps are the light room's text. */
   --color-green-100: #e6f8ec;
   --color-green-500: #1fb954;
+  /* The READABLE-ON-WHITE success step. green-500 measures 2.58:1 on white
+   * and 2.34:1 on green-100, so celeris had no success ink it was allowed to
+   * put a sentence in. Same hue as the family (140.6 deg, identical to
+   * green-500) at the same saturation (83.0 against 83.2), value darkened
+   * 72.5 -> 43.9: 6.19:1 on white, 5.60:1 on the wash. Theme-neutral like
+   * every static step - chronos declares no consumer for it. */
+  --color-green-700: #137033;
   --color-green-900: #12301d;
   --color-amber-100: #fdf3dd;
   --color-amber-500: #febc2e;
   --color-amber-700: #b97e08;
+  /* The READABLE-ON-WHITE step. amber-700 is the darkest the ramp had and it
+   * still measures 3.47:1 on white, under the 4.5:1 body-text floor, so the
+   * light theme had no warning ink it was allowed to use. Same hue as the
+   * family (39.6 deg, against amber-500's 41.0 and amber-700's 40.0) one
+   * value darker. Theme-neutral, like every static step: chronos declares no
+   * consumer for it. */
+  --color-amber-800: #8f6108;
   --color-amber-900: #2e2618;
   --color-red-100: #fdeaea;
   --color-red-400: #f26d6d;
   --color-red-500: #ef4444;
+  /* The READABLE-ON-WHITE error step. red-500 measures 3.76:1 on white and
+   * 3.25:1 on red-100 - it reads as a colour but not as body text, and it was
+   * also the plate under the white label of the danger button and the
+   * connection banner. Same hue as the family (0.0 deg) at red-500's exact
+   * saturation (71.5), value darkened 93.7 -> 70.2: 6.11:1 on white, 5.27:1
+   * on the wash, 6.11:1 for white ON it. Theme-neutral static step. */
+  --color-red-700: #b33333;
   --color-red-900: #3a1518;
 
   --radius-sm: 0.375rem;
@@ -182,8 +205,12 @@
   --vex-alias-interactive-solid: var(--color-gray-800);
   --vex-alias-interactive-danger: rgba(242, 109, 109, 0.15);
 
-  /* Statuses: primaries theme-invariant except error (pure red is harsh on
-   * ink, so chronos lightens it); washes flip per theme. */
+  /* Statuses: these are the DARK-ROOM values. All three text roles - success,
+   * warn and error - are repointed by celeris to the readable-on-white steps
+   * (chronos lightens red because pure red is harsh on ink; celeris deepens
+   * all three because a bright status colour is invisible on a white room -
+   * see the celeris status block). Washes flip per theme.
+   * `status-contrast.test.ts` measures every family in both themes. */
   --vex-alias-state-success: var(--color-green-500);
   --vex-alias-state-success-wash: var(--color-green-900);
   --vex-alias-state-warn: var(--color-amber-500);
@@ -268,6 +295,80 @@
   --vex-alias-board-card-hover: var(--color-gray-875);
   --vex-alias-board-vignette: rgba(43, 62, 255, 0.07);
 
+
+  /* TERMINAL (Vex Studio, stage B2). The 16 ANSI slots plus the four chrome
+   * colours xterm needs, aliased here because xterm paints to a canvas: it
+   * cannot consume `var(--vex-alias-*)` and it cannot be restyled by a
+   * stylesheet, so a bridge resolves these with getComputedStyle and hands
+   * xterm concrete strings (the same shape boardChartTheme.ts uses for
+   * lightweight-charts). ONE source of truth for terminal colour: a hex
+   * written into a component would be invisible to the theme flip and banned
+   * by the design guard.
+   *
+   * `background` is TRANSPARENT on purpose - the pane paints its own surface
+   * and the watermark sits under the terminal. The ANSI slots are the only
+   * place in this file where raw hex is right: they are a WIRE CONTRACT with
+   * programs that emit SGR 30-37 and 90-97, not brand decisions, and bending
+   * them to the brand ramp would misrender every diff, prompt and ls. */
+  --vex-alias-term-background: transparent;
+  --vex-alias-term-foreground: var(--color-gray-200);
+  --vex-alias-term-cursor: var(--vex-alias-accent-primary);
+  --vex-alias-term-selection: rgba(255, 255, 255, 0.18);
+
+  --vex-alias-term-black: #1c2030;
+  --vex-alias-term-red: #f2777a;
+  --vex-alias-term-green: #6cc57c;
+  --vex-alias-term-yellow: #e0b155;
+  --vex-alias-term-blue: #6c9ef8;
+  --vex-alias-term-magenta: #c69af3;
+  --vex-alias-term-cyan: #5cc9d4;
+  --vex-alias-term-white: #c8ccd8;
+  --vex-alias-term-bright-black: #5a6178;
+  --vex-alias-term-bright-red: #ff9d9f;
+  --vex-alias-term-bright-green: #8fdd9d;
+  --vex-alias-term-bright-yellow: #f5cd7a;
+  --vex-alias-term-bright-blue: #93b8ff;
+  --vex-alias-term-bright-magenta: #dcbcff;
+  --vex-alias-term-bright-cyan: #86e2ec;
+  --vex-alias-term-bright-white: #f2f4f8;
+
+
+  /* CODE TOKENS (Vex Studio file viewer, stage B3c). The slots
+   * `createCssVariablesTheme` emits under the `--vex-alias-code-` prefix, read
+   * out of the installed @shikijs/core rather than remembered. Shiki writes
+   * `var(--vex-alias-code-token-keyword)` straight into a token's colour, so a
+   * name missing from this sheet renders as NO COLOUR - no error, no warning,
+   * just grey code. `theme-matrix.test.ts` pins every slot in both themes.
+   *
+   * The palette DIRECTION is the chat transcript's (chat-transcript.css
+   * `.vex-code-*`): keywords carry the accent, strings the success tone,
+   * comments recede into the caption tone. A file in the viewer and a snippet
+   * in chat then read as one product rather than two highlighters.
+   *
+   * These are NOT projected into `@theme` and must not be: nothing consumes
+   * them as a Tailwind utility. They are read by name, from an inline style
+   * string the tokenizer produced.
+   *
+   * `background` is TRANSPARENT: the panel paints its own surface, and a second
+   * fill behind the code would show as a seam against the header strip.
+   * The diff slots (inserted/deleted/changed) are declared because markdown and
+   * diff scopes reach them; the sixteen ANSI slots are not, because only the
+   * `ansi` language id produces those and the viewer never asks for it. */
+  --vex-alias-code-background: transparent;
+  --vex-alias-code-foreground: var(--vex-alias-label-primary);
+  --vex-alias-code-token-keyword: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-string: var(--vex-alias-state-success);
+  --vex-alias-code-token-string-expression: var(--vex-alias-state-success);
+  --vex-alias-code-token-comment: var(--vex-alias-label-caption);
+  --vex-alias-code-token-constant: var(--vex-alias-accent-hover);
+  --vex-alias-code-token-function: var(--vex-alias-label-primary);
+  --vex-alias-code-token-parameter: var(--vex-alias-label-secondary);
+  --vex-alias-code-token-punctuation: var(--vex-alias-label-caption);
+  --vex-alias-code-token-link: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-inserted: var(--vex-alias-state-success);
+  --vex-alias-code-token-deleted: var(--vex-alias-state-error);
+  --vex-alias-code-token-changed: var(--vex-alias-state-warn-label);
+
   --vex-alias-scrollbar-l1: rgba(255, 255, 255, 0.14);
   --vex-alias-scrollbar-l1-hover: rgba(255, 255, 255, 0.24);
   --vex-alias-scrollbar-l2: rgba(255, 255, 255, 0.2);
@@ -331,10 +432,88 @@
   --vex-alias-interactive-solid: var(--color-gray-50);
   --vex-alias-interactive-danger: rgba(239, 68, 68, 0.06);
 
+  /* STATUS INK ON A WHITE ROOM. The three families share one defect and one
+   * fix, so they are documented together; the warn block below carries the
+   * full reference study that established the rule for all of them.
+   *
+   * SUCCESS was the pure form of the same missing declaration the warn family
+   * had: this block repointed `-success-wash` and never `-success`, so celeris
+   * inherited the chronos green-500 #1fb954 and painted it at 2.58:1 on white
+   * across 36 `text-success` call sites (2.34:1 inside its own wash, which is
+   * what `pill` variant="positive" pairs). green-700 #137033 measures 6.19:1
+   * on white and 5.60:1 on the wash. Every surface consumer of the family is a
+   * dot, a pulse mark, a strength/ratio meter bar, or an alpha wash carrying
+   * `text-success` on top - all 13 read, none puts text on a solid success
+   * plate, so one value serves the ink and the fill roles alike.
+   * VS Code light agrees on the character: its file-tree "added" green
+   * #587c0c is 4.88:1 on white (agents-colab/vscode, extensions/git/
+   * package.json L4154), its chart green #388A34 only 4.33:1 and therefore
+   * decoration, and its high-contrast-light passed icon #007100 (6.25:1,
+   * workbench/contrib/testing/browser/theme.ts L16-21) sits where we landed. */
+  --vex-alias-state-success: var(--color-green-700);
   --vex-alias-state-success-wash: var(--color-green-100);
-  --vex-alias-state-warn-label: var(--color-amber-700);
+
+  /* WARNING INK ON A WHITE ROOM (owner-reported defect, 2026-08-30: "yellow
+   * warnings are unreadable in celeris", app-wide including Studio).
+   *
+   * The defect was a MISSING declaration, not a wrong one. This block
+   * repointed `-warn-label` and `-warn-wash` but never `-warn` itself, so
+   * celeris inherited the chronos amber-500 #febc2e. That token is what
+   * `text-warning` projects, and `text-warning` is the dominant warning
+   * class in the renderer (57 call sites against 28 for `text-warning-label`),
+   * so most warnings in the light theme painted at 1.69:1 on white. The
+   * `--vex-pin` family in shell.css derives from the same token, which also
+   * made the approval REVIEW key white-on-#febc2e at 1.69:1.
+   *
+   * REFERENCES. deepseek-harness (agents-colab, packages/client/ui-theme/
+   * src/styles/design-platform.css L229-232 light, L321-324 dark) supplies
+   * the STRUCTURE we already use: one theme-neutral static amber ramp, and
+   * per-theme semantic aliases where only the wash flips between the light
+   * and dark blocks. Its own values do not clear AA (its light warn-label
+   * amber-600 rgb(221,134,41) measures 2.79:1 on white), so the VALUES come
+   * from VS Code's default light theme instead, which splits the two roles
+   * by contrast need: `list.warningForeground` #855F00 for warning TEXT
+   * (5.78:1 on white) against `editorWarning.foreground` #BF8803 for
+   * squigglies and icons (3.12:1, a graphics-only ratio). Both live in
+   * agents-colab/vscode, src/vs/platform/theme/common/colors/listColors.ts
+   * L96 and editorColors.ts L83. The lesson both agree on is the one this
+   * ramp was missing: on a white room warning ink is a DARK amber, and raw
+   * amber is a decoration colour only.
+   *
+   * We cannot take VS Code's two-value split as-is, because our `-warn`
+   * carries both roles: it is text at those 57 call sites AND the dot, mark,
+   * meter and border fill (12 `bg-warning`, 7 `border-warning`, none of which
+   * puts dark text on a solid warn plate). A token used as body text must
+   * clear the body-text floor, so both text aliases take the same readable
+   * step, exactly as chronos already pairs them.
+   *
+   * MEASURED (WCAG 2.x relative luminance, sRGB), amber-800 #8f6108:
+   *   on --color-surface-base #ffffff ............ 5.41:1
+   *   on --color-warning-wash  #fdf3dd ........... 4.91:1
+   *   on --color-surface-deep  #f7f8fb ........... 5.10:1
+   *   on the --vex-pin-fill tint (10% on white) .. 4.72:1
+   *   white on it (the pin REVIEW key) ........... 5.41:1
+   * The wash, not white, is the binding surface: #9a6700 clears white at
+   * 4.87:1 and fails the wash at 4.41:1. `status-contrast.test.ts` measures
+   * both surfaces in both themes, for all three families, and goes red under
+   * 4.5:1. */
+  --vex-alias-state-warn: var(--color-amber-800);
+  --vex-alias-state-warn-label: var(--color-amber-800);
   --vex-alias-state-warn-wash: var(--color-amber-100);
-  --vex-alias-state-error: var(--color-red-500);
+
+  /* ERROR was repointed but not far enough: red-500 #ef4444 is 3.76:1 on
+   * white and 3.25:1 on its own wash, under the body-text floor at all 74
+   * `text-danger` and 16 `text-destructive` call sites. Unlike success and
+   * warn, this family DOES have solid plates carrying text - the danger
+   * button (`bg-danger text-ink-on-accent`, components/ui/button.tsx) and the
+   * `.vex-connection-banner` (ui-primitives/overlays.css), both white-on-red
+   * in celeris - and they failed at the same 3.76:1. Darkening fixes the ink
+   * and the plate together: red-700 #b33333 is 6.11:1 on white, 5.27:1 on the
+   * wash, and 6.11:1 for the white label on top. VS Code light puts its list
+   * error foreground at #B01011 (7.17:1, listColors.ts L93-94) and its
+   * deleted-file red at #ad0707 (7.47:1); ours is the same decision one step
+   * softer, holding red-500's exact saturation so the family stays one hue. */
+  --vex-alias-state-error: var(--color-red-700);
   --vex-alias-state-error-wash: var(--color-red-100);
 
   /* PRE-SHELL under celeris: the setup stack becomes a LIGHT room (design
@@ -347,8 +526,10 @@
   --vex-alias-gate-well: rgba(10, 13, 24, 0.04);
   --vex-alias-gate-rail: rgba(10, 13, 24, 0.1);
   --vex-alias-gate-code: rgba(10, 13, 24, 0.04);
-  /* Deepen, never lighten: red-500/amber-500 mixed toward white would vanish
-   * on the white plate. */
+  /* Deepen, never lighten: a status primary mixed toward white would vanish
+   * on the white plate. The danger mix compounds on top of an alias that is
+   * now already the readable red-700 step, so it lands darker than it needs
+   * to (9.35:1 where 6.11:1 would do) - correct, not optimal. */
   --vex-alias-gate-danger-text: color-mix(
     in oklab,
     var(--color-danger) 80%,
@@ -363,6 +544,80 @@
   --vex-alias-board-card: var(--color-gray-0);
   --vex-alias-board-card-hover: var(--color-gray-50);
   --vex-alias-board-vignette: rgba(43, 62, 255, 0.04);
+
+
+  /* TERMINAL (Vex Studio, stage B2). The 16 ANSI slots plus the four chrome
+   * colours xterm needs, aliased here because xterm paints to a canvas: it
+   * cannot consume `var(--vex-alias-*)` and it cannot be restyled by a
+   * stylesheet, so a bridge resolves these with getComputedStyle and hands
+   * xterm concrete strings (the same shape boardChartTheme.ts uses for
+   * lightweight-charts). ONE source of truth for terminal colour: a hex
+   * written into a component would be invisible to the theme flip and banned
+   * by the design guard.
+   *
+   * `background` is TRANSPARENT on purpose - the pane paints its own surface
+   * and the watermark sits under the terminal. The ANSI slots are the only
+   * place in this file where raw hex is right: they are a WIRE CONTRACT with
+   * programs that emit SGR 30-37 and 90-97, not brand decisions, and bending
+   * them to the brand ramp would misrender every diff, prompt and ls. */
+  --vex-alias-term-background: transparent;
+  --vex-alias-term-foreground: var(--color-gray-800);
+  --vex-alias-term-cursor: var(--vex-alias-accent-primary);
+  --vex-alias-term-selection: rgba(10, 13, 24, 0.14);
+
+  --vex-alias-term-black: #2b3040;
+  --vex-alias-term-red: #c0393f;
+  --vex-alias-term-green: #2f7d43;
+  --vex-alias-term-yellow: #8a6410;
+  --vex-alias-term-blue: #2b52c4;
+  --vex-alias-term-magenta: #7a3fb0;
+  --vex-alias-term-cyan: #1f6f78;
+  --vex-alias-term-white: #6b7180;
+  --vex-alias-term-bright-black: #4a5064;
+  --vex-alias-term-bright-red: #e05055;
+  --vex-alias-term-bright-green: #3f9a57;
+  --vex-alias-term-bright-yellow: #a87d1c;
+  --vex-alias-term-bright-blue: #3f68dd;
+  --vex-alias-term-bright-magenta: #9455cc;
+  --vex-alias-term-bright-cyan: #2a8a94;
+  --vex-alias-term-bright-white: #1c2030;
+
+
+  /* CODE TOKENS (Vex Studio file viewer, stage B3c). The slots
+   * `createCssVariablesTheme` emits under the `--vex-alias-code-` prefix, read
+   * out of the installed @shikijs/core rather than remembered. Shiki writes
+   * `var(--vex-alias-code-token-keyword)` straight into a token's colour, so a
+   * name missing from this sheet renders as NO COLOUR - no error, no warning,
+   * just grey code. `theme-matrix.test.ts` pins every slot in both themes.
+   *
+   * The palette DIRECTION is the chat transcript's (chat-transcript.css
+   * `.vex-code-*`): keywords carry the accent, strings the success tone,
+   * comments recede into the caption tone. A file in the viewer and a snippet
+   * in chat then read as one product rather than two highlighters.
+   *
+   * These are NOT projected into `@theme` and must not be: nothing consumes
+   * them as a Tailwind utility. They are read by name, from an inline style
+   * string the tokenizer produced.
+   *
+   * `background` is TRANSPARENT: the panel paints its own surface, and a second
+   * fill behind the code would show as a seam against the header strip.
+   * The diff slots (inserted/deleted/changed) are declared because markdown and
+   * diff scopes reach them; the sixteen ANSI slots are not, because only the
+   * `ansi` language id produces those and the viewer never asks for it. */
+  --vex-alias-code-background: transparent;
+  --vex-alias-code-foreground: var(--vex-alias-label-primary);
+  --vex-alias-code-token-keyword: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-string: var(--vex-alias-state-success);
+  --vex-alias-code-token-string-expression: var(--vex-alias-state-success);
+  --vex-alias-code-token-comment: var(--vex-alias-label-caption);
+  --vex-alias-code-token-constant: var(--vex-alias-accent-hover);
+  --vex-alias-code-token-function: var(--vex-alias-label-primary);
+  --vex-alias-code-token-parameter: var(--vex-alias-label-secondary);
+  --vex-alias-code-token-punctuation: var(--vex-alias-label-caption);
+  --vex-alias-code-token-link: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-inserted: var(--vex-alias-state-success);
+  --vex-alias-code-token-deleted: var(--vex-alias-state-error);
+  --vex-alias-code-token-changed: var(--vex-alias-state-warn-label);
 
   --vex-alias-scrollbar-l1: rgba(10, 13, 24, 0.18);
   --vex-alias-scrollbar-l1-hover: rgba(10, 13, 24, 0.3);

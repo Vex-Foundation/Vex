@@ -1,0 +1,88 @@
+{
+  "verifiedAt": "2026-08-28T08:53:48Z",
+  "chainId": 8453,
+  "label": "base",
+  "rpcUrl": "https://mainnet.base.org",
+  "address": "0x4200000000000000000000000000000000000006",
+  "from": "0x000000000000000000000000000000000000dEaD",
+  "probes": [
+    {
+      "name": "eth_chainId",
+      "data": null,
+      "response": {
+        "jsonrpc": "2.0",
+        "result": "0x2105",
+        "id": 0
+      }
+    },
+    {
+      "name": "symbol()",
+      "data": "0x95d89b41",
+      "response": {
+        "jsonrpc": "2.0",
+        "result": "0x000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000045745544800000000000000000000000000000000000000000000000000000000",
+        "id": 1
+      }
+    },
+    {
+      "name": "decimals()",
+      "data": "0x313ce567",
+      "response": {
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012",
+        "id": 2
+      }
+    },
+    {
+      "name": "deposit()",
+      "data": "0xd0e30db0",
+      "response": {
+        "jsonrpc": "2.0",
+        "result": "0x",
+        "id": 3
+      }
+    },
+    {
+      "name": "withdraw(0)",
+      "data": "0x2e1a7d4d..00",
+      "response": {
+        "jsonrpc": "2.0",
+        "result": "0x",
+        "id": 4
+      }
+    },
+    {
+      "name": "withdraw(2^255) zero-balance",
+      "data": "0x2e1a7d4d..80",
+      "response": {
+        "jsonrpc": "2.0",
+        "error": {
+          "code": 3,
+          "message": "execution reverted"
+        },
+        "id": 5
+      }
+    },
+    {
+      "name": "control unknown selector",
+      "data": "0xdeadbeef",
+      "response": {
+        "jsonrpc": "2.0",
+        "result": "0x",
+        "id": 6
+      }
+    },
+    {
+      "name": "balanceOf(from)",
+      "data": "0x70a08231",
+      "response": {
+        "jsonrpc": "2.0",
+        "error": {
+          "code": -32016,
+          "message": "over rate limit"
+        },
+        "id": 7
+      }
+    }
+  ]
+}

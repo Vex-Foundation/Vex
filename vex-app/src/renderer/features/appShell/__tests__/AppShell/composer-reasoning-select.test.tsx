@@ -30,44 +30,13 @@ import { useUiStore } from "../../../../stores/uiStore.js";
 
 // Brand-icon lib mocked per sibling suites — keeps this suite immune to
 // transitive TokenIcon/ModelBrandIcon imports reaching "@thesvg/react".
-vi.mock("@thesvg/react", () => ({
-  Docker: () => null,
-  Ethereum: () => null,
-  Solana: () => null,
-  Base: () => null,
-  Robinhood: () => null,
-  Polygon: () => null,
-  Optimism: () => null,
-  BnbChain: () => null,
-  Tether: () => null,
-  Circle: () => null,
-  Chainlink: () => null,
-  Postgresql: () => null,
-  Bitcoin: () => null,
-  Bnb: () => null,
-  DaiStablecoin: () => null,
-  Usdc: () => null,
-  Anthropic: () => null,
-  Claude: () => null,
-  Cohere: () => null,
-  Deepseek: () => null,
-  Fireworks: () => null,
-  Gemini: () => null,
-  Google: () => null,
-  Grok: () => null,
-  Groq: () => null,
-  HuggingFace: () => null,
-  Meta: () => null,
-  Mistral: () => null,
-  Ollama: () => null,
-  Openai: () => null,
-  Openrouter: () => null,
-  Perplexity: () => null,
-  Qwen: () => null,
-  Replicate: () => null,
-  TogetherAi: () => null,
-  Xai: () => null,
-}));
+// Every brand mark stubs to null, whatever its name: the marks are
+// presentation-only here, and a hand-listed mock breaks the whole suite
+// file each time a component references a new mark.
+vi.mock("@thesvg/react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@thesvg/react")>();
+  return Object.fromEntries(Object.keys(actual).map((name) => [name, () => null]));
+});
 
 const mockSubmitChat = {
   isPending: false,

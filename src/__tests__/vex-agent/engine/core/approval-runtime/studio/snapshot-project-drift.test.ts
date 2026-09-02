@@ -79,7 +79,9 @@ function studioRow(
 
 function scriptClient(
   row: IntentSnapshotRow,
-  project: { scope_version: number; permission: Permission } | undefined,
+  project:
+    | { scope_version: number; permission: Permission; deleted_at?: Date | null }
+    | undefined,
 ) {
   const client = new Client();
   const query = vi.fn<PromiseQuery>();
@@ -103,7 +105,11 @@ function scriptClient(
     row.origin === "studio_mcp"
     && row.session_permission_live === row.queue_permission_at_enqueue
   ) {
-    const projectRows = project === undefined ? [] : [project];
+    // `deleted_at` defaults to null - an ACTIVE project - so every existing
+    // case keeps its meaning. A row WITHOUT the column would be read as
+    // deleted, which is the fail-closed direction.
+    const projectRows =
+      project === undefined ? [] : [{ deleted_at: null, ...project }];
     query.mockResolvedValueOnce({
       command: "SELECT",
       rowCount: projectRows.length,
@@ -182,6 +188,44 @@ describe("Studio approve - commit-time project drift", () => {
     // The project row was never even read: the mirror check short-circuits.
     const statements = query.mock.calls.map((c) => String(c[0]));
     expect(statements.some((s) => s.includes("FROM projects"))).toBe(false);
+  });
+
+  it("refuses a TOMBSTONED project as project_deleted (B0)", async () => {
+    const { client } = scriptClient(studioRow(), {
+      scope_version: 4,
+      permission: "full",
+      deleted_at: new Date("2026-08-29T10:00:00.000Z"),
+    });
+
+    const snapshot = await buildApproveSnapshot(client, APPROVAL_ID);
+
+    expect(snapshot.type).toBe("policy_drift_blocked");
+    if (snapshot.type !== "policy_drift_blocked") return;
+    expect(snapshot.driftKind).toBe("project_deleted");
+    expect(snapshot.refusalReason).toBe("project_deleted");
+    // The approval never reached the approve path.
+    expect(approveWith).not.toHaveBeenCalled();
+  });
+
+  it("prefers project_deleted over scope_changed when BOTH drifted (B0)", async () => {
+    // The more final cause wins. Reporting `scope_changed` for a deleted
+    // project would imply the action could be retried under the new scope,
+    // when in truth there is no project to retry it against.
+    const { client } = scriptClient(
+      studioRow({ scope_version_at_enqueue: 4 }),
+      {
+        scope_version: 99,
+        permission: "full",
+        deleted_at: new Date("2026-08-29T10:00:00.000Z"),
+      },
+    );
+
+    const snapshot = await buildApproveSnapshot(client, APPROVAL_ID);
+
+    expect(snapshot.type).toBe("policy_drift_blocked");
+    if (snapshot.type !== "policy_drift_blocked") return;
+    expect(snapshot.driftKind).toBe("project_deleted");
+    expect(snapshot.refusalReason).toBe("project_deleted");
   });
 
   it("approves when the project still matches, locking it LAST and FOR UPDATE", async () => {

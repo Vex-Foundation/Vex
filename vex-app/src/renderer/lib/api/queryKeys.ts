@@ -6,6 +6,7 @@
  */
 
 import type { AgentScanFilters } from "@shared/schemas/agent-scan-feed.js";
+import type { PortfolioReadInput } from "@shared/schemas/portfolio.js";
 
 export const systemKeys = {
   all: ["system"] as const,
@@ -196,15 +197,42 @@ export const sessionModelKeys = {
 };
 
 /**
- * Portfolio (stage 3) — dual-scope POSITION portfolio. `scope` lives at
- * index 1 and `activeSessionId` at index 2 so a global read and a
- * per-session read stay distinct cache entries. The session key carries
- * the session id; the global key uses `null`.
+ * Portfolio (stage 3) - multi-scope POSITION portfolio.
  */
 export const portfolioKeys = {
   all: ["portfolio"] as const,
-  read: (scope: "global" | "session", activeSessionId: string | null) =>
-    ["portfolio", scope, activeSessionId] as const,
+  /**
+   * Keyed by the COMPLETE read input, because every field of it changes which
+   * wallets the answer covers.
+   *
+   * It used to be `(scope, activeSessionId)`, which was exactly right for the
+   * two scopes that existed: `null` meant global, a uuid meant that session.
+   * The B0 `project` arm broke it. A project has no session id, so every
+   * project keyed as `["portfolio", "project", null]` - one cache row shared by
+   * every project in Vex, handing whichever project rendered second the first
+   * one's balances. `{ scope: "project", walletId }` collided with the same
+   * project's aggregate for the same reason.
+   *
+   * The switch has no default: a new arm in `portfolioReadInputSchema` fails to
+   * compile here rather than silently keying as something else. The `global`
+   * and `session` keys are byte-identical to the ones this replaced, so no
+   * existing cache entry moves.
+   */
+  read: (input: PortfolioReadInput) => {
+    switch (input.scope) {
+      case "global":
+        return ["portfolio", "global", input.walletAddress ?? null] as const;
+      case "session":
+        return ["portfolio", "session", input.sessionId] as const;
+      case "project":
+        return [
+          "portfolio",
+          "project",
+          input.projectId,
+          input.walletId ?? null,
+        ] as const;
+    }
+  },
   /**
    * WP-L2 — the welcome-screen per-wallet switcher: the GLOBAL scope
    * narrowed to one inventory wallet. Keyed separately from `read` (distinct
@@ -250,6 +278,16 @@ export const updaterKeys = {
 export const marketKeys = {
   all: ["market"] as const,
   snapshot: () => ["market", "vex", "snapshot"] as const,
+};
+
+/**
+ * Vex Studio host status (B0) - one global entry. Kept live by
+ * `useStudioHostStatus`'s effect (main-pushed `EV.studio.hostStatus` events ->
+ * cache); the query itself is only the first read.
+ */
+export const studioKeys = {
+  all: ["studio"] as const,
+  hostStatus: () => ["studio", "hostStatus"] as const,
 };
 
 /**

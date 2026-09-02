@@ -34,6 +34,7 @@ import { useRuntimeState } from "../../lib/api/runtime.js";
 import { useStreamPreview } from "../../stores/streamStore.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { cn } from "../../lib/utils.js";
+import { readSessionActivityReadout } from "./session-activity-readout.js";
 
 export function DeskRuleTapeState(): JSX.Element | null {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
@@ -53,6 +54,15 @@ export function DeskRuleTapeState(): JSX.Element | null {
   const hasActiveRun = run?.hasActiveRun === true;
   const paused = hasActiveRun && (run?.status?.startsWith("paused") ?? false);
 
+  // M5: the tail of the precedence chain is no longer "no run row ⇒ Idle".
+  // A full-autonomy AGENT session has no run row at all, so wake-driven work
+  // reported Idle while the agent was mid-slice. The activity projection is
+  // the authoritative answer for that case, read through the SAME selector the
+  // composer strip reads so the two words cannot disagree. Mission precedence
+  // above is untouched: a mission session's activity is `none` (the projection
+  // is session-scoped), so it never reaches this arm.
+  const activityReadout =
+    run === null ? null : readSessionActivityReadout(run.activity);
   const state = hasPending
     ? "awaiting"
     : live
@@ -61,7 +71,7 @@ export function DeskRuleTapeState(): JSX.Element | null {
         ? "paused"
         : hasActiveRun
           ? "running"
-          : "idle";
+          : (activityReadout?.state ?? "idle");
   const label =
     state === "awaiting"
       ? "Awaiting"
@@ -71,7 +81,9 @@ export function DeskRuleTapeState(): JSX.Element | null {
           ? "Paused"
           : state === "running"
             ? "Running"
-            : "Idle";
+            : state === "sleeping"
+              ? "Sleeping"
+              : "Idle";
   const lit = state !== "idle";
 
   // `.vex-micro` is the register's small-caps stamp; the

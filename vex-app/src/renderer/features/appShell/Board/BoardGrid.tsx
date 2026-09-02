@@ -133,7 +133,13 @@ export function BoardGrid({ board }: BoardGridSlotProps): JSX.Element {
         data-vex-area="board-grid-plate"
         data-count={total}
         data-visible={visible.length}
-        className="vex-board-surface flex flex-col gap-4 rounded-2xl border border-line-1 p-4"
+        // THE PLATE IS THE CONTAINER. `vex-board-plate` declares
+        // `container-type: inline-size`, so every column and mode threshold in
+        // `global-css/board-layout.css` is a question about the width the
+        // cards actually get. The Ask VEX drawer takes 360px out of this
+        // element without moving the window by a pixel, which is exactly the
+        // measurement a viewport media query could not see.
+        className="vex-board-surface vex-board-plate flex flex-col gap-4 rounded-2xl border border-line-1 p-4"
       >
         {/* THE FILTER IS THE PLATE'S FIRST ROW, labelled, and only when it
           * can change something. It used to float unlabelled at the top
@@ -153,35 +159,56 @@ export function BoardGrid({ board }: BoardGridSlotProps): JSX.Element {
             No pool on this board matches the current filter.
           </p>
         ) : (
-          <ul
-            data-vex-area="board-grid"
-            data-count={total}
-            aria-label={boardGridLabel(total, visible.length)}
-            className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3"
+          /* THE SCROLLER, not the plate. Below the compact floor the track
+           * refuses to shrink and this element side-scrolls, so a reader
+           * reaches a figure by scrolling instead of being shown a truncated
+           * one. It is a wrapper rather than a property on the plate because
+           * `overflow-x: auto` would compute the plate's `overflow-y` to
+           * `auto` too and put a second vertical scroll region inside the
+           * modal body that already owns the board's scrolling. */
+          <div
+            data-vex-area="board-grid-scroller"
+            className="vex-board-grid-scroller"
           >
-            {visible.map(({ card, index }) => (
-              <li key={card.key} className={cn("flex min-w-0")}>
-                <TokenCardV3
-                  card={card}
-                  verdict={verdicts[index] ?? boardSafetyVerdict("pending")}
-                  sparkline={sparklines[index] ?? BOARD_SPARKLINE_PENDING}
-                  selected={view === "spotlight" && selectedPoolIndex === index}
-                  live={isBoardLiveHeld(readout.mode)}
-                  onSpotlight={() => {
-                    openBoardSpotlight(index);
-                  }}
-                  onAsk={() => {
-                    // Selection first, then the panel: the Ask surface reads
-                    // the SELECTED pool, so opening it before pointing it at
-                    // this card would show the panel about another token for
-                    // one commit.
-                    selectBoardPool(index);
-                    setBoardAskOpen(true);
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
+            <ul
+              data-vex-area="board-grid"
+              data-count={total}
+              aria-label={boardGridLabel(total, visible.length)}
+              // Columns come from `board-layout.css` alone. No Tailwind
+              // viewport ladder here: it was the defect.
+              className="vex-board-grid"
+            >
+              {visible.map(({ card, index }) => (
+                // `min-w-0` so a track may be narrower than its content wants,
+                // and the card itself carries `w-full`, which is what makes
+                // every card in the grid the same box. Without it each
+                // `<article>` shrank to its own content inside an equal track:
+                // 382 / 369 / 406 / 345 / 407 / 342 across one 388px grid.
+                <li key={card.key} className={cn("flex min-w-0")}>
+                  <TokenCardV3
+                    card={card}
+                    verdict={verdicts[index] ?? boardSafetyVerdict("pending")}
+                    sparkline={sparklines[index] ?? BOARD_SPARKLINE_PENDING}
+                    selected={
+                      view === "spotlight" && selectedPoolIndex === index
+                    }
+                    live={isBoardLiveHeld(readout.mode)}
+                    onSpotlight={() => {
+                      openBoardSpotlight(index);
+                    }}
+                    onAsk={() => {
+                      // Selection first, then the panel: the Ask surface reads
+                      // the SELECTED pool, so opening it before pointing it at
+                      // this card would show the panel about another token for
+                      // one commit.
+                      selectBoardPool(index);
+                      setBoardAskOpen(true);
+                    }}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
       <BoardDataNotes content={authored} verdicts={verdicts} />

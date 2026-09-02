@@ -31,7 +31,11 @@ describe("icon glyphs", () => {
     // toggles speak the same drawing language.
     // 77 -> 79 (2026-08-26): IconShield and IconShieldCheck joined for the
     // board's safety section and its clean-checks chip.
-    expect(entries.length).toBeGreaterThanOrEqual(79);
+    // 79 -> 81 (B2 round 2c, 2026-08-30): IconSplitHorizontal and
+    // IconSplitVertical joined for the Studio terminal's split affordances.
+    // 81 -> 82 (B4a, 2026-08-31): IconHome joined for the Studio sidebar's
+    // WELCOME row, which the owner's mockup marks with a house.
+    expect(entries.length).toBeGreaterThanOrEqual(82);
   });
 
   /**

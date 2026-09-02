@@ -114,7 +114,7 @@ function prequoteRow(
     prequoteId: "prequote-1", sessionId: SESSION_ID, matchHash: "h".repeat(64),
     kind: "swap", family: "eip155", provider: "kyberswap", chainId: 8453,
     walletAddress: "0xWALLET", tokenIn: TOKEN_IN, tokenOut: TOKEN_OUT, amount: "1",
-    slippageBps: 50, safetyVerdict: verdict, safetyDetail, routeRef: null,
+    slippageBps: 50, safetyVerdict: verdict, safetyDetail, routeRef: null, eligibilityKind: "executable", claimedAt: null, claimedBy: null,
     createdAt: "2026-06-04T10:00:00.000Z", expiresAt: "2099-01-01T00:00:00.000Z",
   };
 }

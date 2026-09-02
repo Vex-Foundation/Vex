@@ -1,0 +1,86 @@
+{
+  "verifiedAt": "2026-08-28T08:53:58Z",
+  "chainId": 1,
+  "label": "ethereum",
+  "rpcUrl": "https://ethereum-rpc.publicnode.com",
+  "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+  "from": "0x000000000000000000000000000000000000dEaD",
+  "probes": [
+    {
+      "name": "eth_chainId",
+      "data": null,
+      "response": {
+        "jsonrpc": "2.0",
+        "result": "0x1",
+        "id": 0
+      }
+    },
+    {
+      "name": "symbol()",
+      "data": "0x95d89b41",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": "0x000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000045745544800000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "decimals()",
+      "data": "0x313ce567",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      }
+    },
+    {
+      "name": "deposit()",
+      "data": "0xd0e30db0",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": "0x"
+      }
+    },
+    {
+      "name": "withdraw(0)",
+      "data": "0x2e1a7d4d..00",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "result": "0x"
+      }
+    },
+    {
+      "name": "withdraw(2^255) zero-balance",
+      "data": "0x2e1a7d4d..80",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "error": {
+          "code": 3,
+          "message": "execution reverted",
+          "data": "0x"
+        }
+      }
+    },
+    {
+      "name": "control unknown selector",
+      "data": "0xdeadbeef",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "result": "0x"
+      }
+    },
+    {
+      "name": "balanceOf(from)",
+      "data": "0x70a08231",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "result": "0x00000000000000000000000000000000000000000000000f341c66c7981de932"
+      }
+    }
+  ]
+}

@@ -283,6 +283,9 @@ jobs:
       # + APPLE_API_KEY_ID + APPLE_API_ISSUER flow in from the previous step via
       # $GITHUB_ENV — do NOT re-declare them here (an empty ${{ env.* }} override
       # would blank the decoded key path).
+      # The native-payload contract runs inside afterPack (build/afterPack.mjs)
+      # for every packaged arch, BEFORE signing and publish - the release path
+      # deliberately relies on that hook instead of a separate check:package step.
       - name: Package, sign, notarize & publish
         working-directory: vex-app
         run: pnpm exec electron-builder --mac --arm64 --x64 --publish always --config electron-builder.release.yml

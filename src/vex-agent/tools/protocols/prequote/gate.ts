@@ -31,6 +31,7 @@ import { classifyGateBlockReason } from "./gate/decision.js";
 import type { GateDecision } from "./gate/decision.js";
 import { block } from "./gate/messages.js";
 import { computeGateMatch } from "./gate/identity.js";
+import { readQuoteBindingPreview } from "../quote-authority/restore.js";
 import {
   feePreviewFromSafetyDetail,
   maxFotTaxFromSafetyDetail,
@@ -100,10 +101,15 @@ export async function evaluatePrequoteGate(
     const termLock = termLockFromSafetyDetail(latest.safetyDetail);
     // Jupiter fee-bearing disclosure (W5 design §6 R4) — same typed channel.
     const feePreview = feePreviewFromSafetyDetail(latest.safetyDetail);
+    // The quote this execute would be bound to, for the approval card. Absent
+    // when the row carries no readable executable snapshot - the venues that
+    // record none keep their existing card exactly.
+    const quoteBinding = readQuoteBindingPreview(latest.prequoteId, latest.routeRef, latest.expiresAt);
     let allow: GateDecision = { kind: "allow", verdict: latest.safetyVerdict, prequoteId: latest.prequoteId };
     if (fotTax !== undefined) allow = { ...allow, fotTax };
     if (termLock !== undefined) allow = { ...allow, termLock };
     if (feePreview !== undefined) allow = { ...allow, feePreview };
+    if (quoteBinding !== undefined) allow = { ...allow, quoteBinding };
     return allow;
   } catch (err) {
     const reason = classifyGateBlockReason(err, context.walletPolicy);

@@ -15,6 +15,8 @@
 
 import type { SwapRouteSummary } from "@tools/kyberswap/aggregator/types.js";
 
+import { classifyQuoteEligibility } from "../quote-authority/eligibility.js";
+
 /** One path through the route matrix: the venues it crosses, in order. */
 export interface FormattedRoutePath {
   /** Exchange/venue labels for each hop in this path, in execution order. */
@@ -82,28 +84,23 @@ export function sanitizeProviderNote(value: string | undefined): string | null {
 }
 
 /**
- * Parse a USD string into a finite number, or `null` when it is missing,
- * empty, or not a finite number. Defensive: the provider value is untrusted
- * text and must never throw here.
- */
-function parseUsd(value: string | undefined): number | null {
-  if (typeof value !== "string" || value.trim() === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-/**
- * Safely derive fractional price impact from the USD legs.
+ * Fractional price impact for DISPLAY, delegated to the quote-authority seam so
+ * one module owns what the USD legs mean.
  *
- * Returns `null` when either leg is unparseable OR the input-USD denominator
- * is 0 (division-by-zero guard) — callers surface `null` rather than NaN/Inf.
+ * `null` now covers every case the seam classifies as non-executable pricing:
+ * an unparseable, negative or zero-value leg, and an output the provider could
+ * not price at all. Before the seam this function returned `1` for an
+ * unpriceable output (`amountOutUsd: "0"` with a real input value), which is
+ * how a route KyberSwap cannot price - every native<->wrapped-native pair on
+ * robinhood, measured 2026-08-27 - rendered as a precise "100.00% price
+ * impact" instead of "not priced". `null` renders as no impact line at all,
+ * and the eligibility union carries the real reason to the agent.
  */
 export function derivePriceImpact(amountInUsd: string, amountOutUsd: string): number | null {
-  const inUsd = parseUsd(amountInUsd);
-  const outUsd = parseUsd(amountOutUsd);
-  if (inUsd === null || outUsd === null) return null;
-  if (inUsd === 0) return null; // guard division-by-zero
-  return (inUsd - outUsd) / inUsd;
+  const eligibility = classifyQuoteEligibility({ amountInUsd, amountOutUsd });
+  return eligibility.kind === "executable" || eligibility.kind === "excessive_impact"
+    ? eligibility.priceImpactFraction
+    : null;
 }
 
 /**

@@ -14,7 +14,13 @@ import {
 } from "@tools/kyberswap/evm-utils.js";
 import { priorLegAnchorFrom, type ConfirmedPriorLeg } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
-import { verifyPostBuyDelivery } from "@tools/evm-chains/post-buy-delivery.js";
+import { assessApprovedFloor, verifyPostBuyDelivery } from "@tools/evm-chains/post-buy-delivery.js";
+import {
+  verifyBuiltKyberSwap,
+  type ApprovedKyberSwap,
+  type KyberBuildVerdict,
+} from "@tools/kyberswap/evm/swap-calldata-guard.js";
+import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
 import type { ResolvedKyberTokenMetadata } from "@tools/kyberswap/helpers.js";
 import type { KyberChainSlug } from "@tools/kyberswap/types.js";
 import logger from "@utils/logger.js";
@@ -32,6 +38,7 @@ import {
   minedRevertApprovalLegReason,
 } from "@vex-agent/tools/protocols/runtime/mined-revert-reason.js";
 import { formatUnits, type Address } from "viem";
+import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import { derivePriceImpact, sanitizeProviderNote } from "../../helpers.js";
 import type { ToolResult } from "../../../../types.js";
 import { abortRemainingPlans } from "./activity-recording.js";
@@ -60,6 +67,41 @@ export interface SwapBroadcastInput {
   readonly safetyCheckUnavailable: readonly SafetyCheckUnavailable[];
 }
 
+/**
+ * The pre-sign verdict on the transaction that is actually about to be signed.
+ *
+ * It reads the FINAL request as a `BuiltKyberSwap` - target, calldata, attached
+ * native value - and hands it to the same pure guard the plan stage used, so
+ * every property that guard owns (strict router, our recipient, our pair and
+ * amount, the fee line, the source transfers, and the approved floor embedded in
+ * `minReturnAmount`) is proven of the bytes rather than of the build response.
+ *
+ * A request with no target or no calldata is refused rather than described: the
+ * signer is about to be handed a transaction Vex cannot decode as its own swap.
+ */
+function verifyFinalSwapRequest(
+  request: FinalSignedRequest,
+  approved: ApprovedKyberSwap,
+): KyberBuildVerdict {
+  if (!request.to || !request.data) {
+    return {
+      ok: false,
+      kind: "build_integrity",
+      reason: "the prepared transaction carries no router target or no calldata",
+    };
+  }
+  return verifyBuiltKyberSwap(
+    {
+      calldata: request.data,
+      routerAddress: request.to,
+      // The guard's own contract is the provider's decimal string; the value
+      // here is the wei the request will attach, spelled the same way.
+      transactionValue: request.value.toString(),
+    },
+    approved,
+  );
+}
+
 export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise<ToolResult> {
   const {
     toolId, prepared, publicClient, walletClient, walletAddress, sessionId,
@@ -67,7 +109,7 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
     safetyCheckUnavailable,
   } = input;
   const safetyDisclosure = safetyDisclosureSentence(safetyCheckUnavailable);
-  const { executionId, events, plans, buildResp } = prepared;
+  const { executionId, events, plans, buildResp, swapGuard } = prepared;
 
   let currentIndex = 0;
   // Read-after-write anchor for the NEXT leg: an allowance this loop just
@@ -108,6 +150,38 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
             const res = await markBroadcastAccepted(eventRow.id);
             if (!res.applied) logger.warn("kyberswap.swap.execute.broadcast_accept_miss", { id: eventRow.id });
           },
+          // The approved floor, re-asserted on the SWAP LEG against the exact
+          // transaction about to be signed. Phase A already ran this guard, but
+          // the allowance legs sit between that check and this signature: an
+          // allowance leg can take a minute of block time, and the pre-sign
+          // safety of the swap must be proven at the moment the key is used,
+          // not at plan time.
+          //
+          // THE SUBJECT IS THE FINAL REQUEST, not the build response this
+          // closure captured. Re-running the guard over `swapGuard.built` proved
+          // only that the object in memory had not changed; the bytes that get
+          // signed come out of `prepareTransactionRequest`, and a target, a
+          // calldata blob or a native value altered on that path would have been
+          // signed under a verdict that never looked at it. So the router, the
+          // embedded floor and the attached value are asserted against the
+          // request itself, through the same pure verdict - no IO, so the
+          // staged-broadcast pre-sign window stays provider-free.
+          ...(plan.eventRole === "swap"
+            ? {
+                onBeforeSign: async (request) => {
+                  const verdict = verifyFinalSwapRequest(request, swapGuard.approved);
+                  if (!verdict.ok) {
+                    throw new VexError(
+                      verdict.kind === "price_floor"
+                        ? ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED
+                        : ErrorCodes.KYBER_UNSAFE_BUILD,
+                      `Refused at signing: ${verdict.reason}.`,
+                      "Nothing was signed. Request a fresh kyberswap__swap_quote.",
+                    );
+                  }
+                },
+              }
+            : {}),
         },
         priorLeg,
       );
@@ -306,6 +380,30 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
       // request would contradict the persisted truth.
       const amountInHuman = formatUnits(BigInt(decoded.amountInRaw), tokenIn.decimals);
       const amountOutHuman = formatUnits(BigInt(decoded.amountOutRaw), tokenOut.decimals);
+
+      // DETECTION, after the fact, against the floor the human approved. The
+      // execute already refused to sign calldata carrying any other floor, so a
+      // shortfall here means the FILL missed it - a taxing output token, or a
+      // router that under-delivered - not a build Vex accepted wrongly.
+      //
+      // Read from this leg's own `route_provenance`, the non-attested duplicate
+      // written at intent time, so the number assessed is the one persisted
+      // beside the row rather than a second in-memory copy. Never changes the
+      // settlement status and never fails the swap; it changes what the agent is
+      // told, because a confirmed row that quietly under-delivered otherwise
+      // reads as a good fill.
+      const floorAssessment = assessApprovedFloor({
+        executedAmountOutRaw: decoded.amountOutRaw,
+        approvedMinOutRaw: plan.event.routeProvenance?.approvedMinOutRaw,
+        tokenOutSymbol: tokenOutLabel,
+      });
+      if (floorAssessment.kind === "materially_short") {
+        logger.warn("kyberswap.swap.execute.fill_below_approved_floor", {
+          id: eventRow.id,
+          txHash: outcome.txHash,
+          shortfallRaw: floorAssessment.shortfallRaw.toString(),
+        });
+      }
       // Output-polish (plan §4.2): compact human summary FIRST, machine
       // fields after — one JSON key ordering (see the quote handler's same
       // convention note).
@@ -316,7 +414,9 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
         // FIRST line the agent reads, not only in a machine field.
         + (safetyDisclosure ? ` ${safetyDisclosure}` : "")
         // A1: and so does a buy the token did not actually deliver.
-        + (deliveryVerdict ? ` ${deliveryVerdict}` : "");
+        + (deliveryVerdict ? ` ${deliveryVerdict}` : "")
+        // ...and so does a fill that landed under the approved floor.
+        + (floorAssessment.kind === "materially_short" ? ` ${floorAssessment.verdict}` : "");
 
       // The build response's own cost disclosure was validated and then
       // dropped: `additionalCostUsd` is a real charge on this settlement
@@ -341,6 +441,9 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
         // (real, on-chain) settlement did not persist — never claim
         // ordinary "confirmed".
         ...(deliveryVerdict ? { deliveryCheck: deliveryVerdict } : {}),
+        ...(floorAssessment.kind === "materially_short"
+          ? { approvedFloorCheck: floorAssessment.verdict }
+          : {}),
         status: confirmWriteFailed ? "confirmed_unrecorded" : "confirmed",
         ...(safetyCheckUnavailable.length > 0 ? { safetyCheckUnavailable } : {}),
         _executionId: executionId,

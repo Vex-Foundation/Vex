@@ -1,0 +1,46 @@
+/* Vendor first: an `@import` is only valid at the TOP of the sheet it appears
+ * in, so this line stays the first thing in this file.
+ *
+ * xterm's own stylesheet is NOT optional decoration. xterm positions its
+ * screen, its helper textarea and its character-measure element from these
+ * rules, and without them `Terminal.open()` builds a stack of unpositioned divs
+ * that renders as a blank pane. Nothing imported it before stage B2 round 2c,
+ * because nothing had opened a terminal yet; `check-build-artifacts.mjs` now
+ * asserts the vendor rules actually reach the bundle, so the sheet cannot go
+ * missing again without a red build. */
+@import "@xterm/xterm/css/xterm.css";
+
+/* THE TERMINAL SURFACE.
+ *
+ * The WRAPPER `terminal-registry.ts` creates is built in JavaScript, outside
+ * React and outside Tailwind's content scan, so its class cannot be a utility
+ * string - Tailwind would never see it and would emit nothing. A named class in
+ * this sheet is the honest home for it.
+ *
+ * COLOURS ARE NOT SET HERE. xterm paints its text and background from
+ * `options.theme`, which `terminal-palette.ts` resolves from the
+ * --vex-alias-term-* tokens; a colour in this file would be a second palette,
+ * silently overriding the one a theme flip repoints. */
+
+.vex-terminal-surface {
+  position: absolute;
+  inset: 0;
+  /* xterm measures its container to decide rows and columns, so the wrapper has
+   * to HAVE a size before the first fit. `inset: 0` gives it the pane's box. */
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Hidden until the registry has made this pane visible: until then its geometry
+ * is whatever it was when the pane was last on screen, and painting it would
+ * show a terminal sized for a box it no longer occupies. `setVisible` toggles
+ * the modifier, and refits in the same step. */
+.vex-terminal-surface:not(.vex-terminal-surface--active) {
+  visibility: hidden;
+}
+
+/* The terminal's own background stays transparent (both theme blocks say so) so
+ * the brand watermark the pane layers underneath shows through. */
+.vex-terminal-surface .xterm-viewport {
+  background-color: transparent !important;
+}

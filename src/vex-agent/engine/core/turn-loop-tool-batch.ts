@@ -62,6 +62,8 @@ import {
   USER_FORM_ABANDONED_RUN_TERMINAL_OUTPUT,
   APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT,
   BATCH_ABORTED_BY_COMPACT_OUTPUT,
+  BATCH_ABORTED_BY_LOOP_CORRECTION_OUTPUT,
+  BATCH_ABORTED_BY_TOOL_CALL_LOOP_OUTPUT,
   BATCH_ABORTED_BY_DEADLINE_OUTPUT,
   BATCH_ABORTED_BY_TIMEOUT_OUTPUT,
   BATCH_ABORTED_BY_USER_STOP_OUTPUT,
@@ -80,6 +82,11 @@ import {
   dispatchPreparedActionFollowUp,
   resolvePreparedActionFollowUp,
 } from "./turn-loop-tool-batch/prepared-follow-up.js";
+import { emitToolCallLoopCorrection } from "./turn-loop-tool-batch/loop-correction-emit.js";
+import type {
+  ToolCallLoopDetector,
+  ToolCallLoopFacts,
+} from "./runner/tool-call-loop-detector.js";
 
 export type { StopPayload, ToolBatchOutcome } from "./turn-loop-tool-batch/outcome.js";
 
@@ -112,6 +119,15 @@ export async function processTurnToolBatch(args: {
    * by an unbounded margin. See `./turn-loop-tool-batch/deadline.ts`.
    */
   readonly deadlines?: BatchDeadlines;
+  /**
+   * The TURN's tool-call repetition detector (`runner/tool-call-loop-detector.ts`),
+   * owned by `runTurnLoop` and threaded through every batch that turn runs.
+   *
+   * Optional so the many existing call sites and tests that do not care about
+   * repetition compile unchanged; absent means the detector is simply not
+   * consulted, which is the pre-existing behaviour and never a stop.
+   */
+  readonly loopDetector?: ToolCallLoopDetector;
 }): Promise<ToolBatchOutcome> {
   const { context, turnResult, liveMessages } = args;
   const executedCalls: ParsedToolCall[] = [];
@@ -132,6 +148,8 @@ export async function processTurnToolBatch(args: {
   let compactCommittedThisBatch = false;
   let approvalId: string | null = null;
   let userFormIntentId: string | null = null;
+  /** Set by a first-strike detection; emitted after the transcript persists. */
+  let loopCorrectionFacts: ToolCallLoopFacts | null = null;
 
   const dispatchBand = computeBand(args.currentTokenCount, args.contextLimit);
 
@@ -451,6 +469,83 @@ export async function processTurnToolBatch(args: {
         drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_COMPACT_OUTPUT);
         break;
       }
+      // Any OTHER engine signal falls through to the next iteration. It is
+      // still an engine-signal outcome, so it is not a detector input either:
+      // the `continue` below skips the observation deliberately.
+      continue;
+    }
+
+    // ── Tool-call repetition detection, LAST in the per-call ordering ──
+    //
+    // Placed here, after everything above, because every branch above carries
+    // stronger semantics that must win outright and must never be fed to the
+    // detector:
+    //   - operator Stop (checked twice) outranks a bound that merely fired;
+    //   - an approval break and a user-form park are parked HUMAN decisions,
+    //     and their call has no ordinary result at all;
+    //   - a prepared-action follow-up already returned above;
+    //   - an engine signal is the model asking the engine to do something,
+    //     not the model repeating itself.
+    // What reaches this line is exactly the plan's "ordinary completed
+    // result": dispatched, answered, persisted, with nothing else claiming it.
+    //
+    // The result is only available HERE, post-dispatch, which is the whole
+    // reason the detector cannot sit before the call: its signature includes
+    // what the call returned, and that is the field that separates a model
+    // polling a changing value from a model in a circle.
+    const verdict = args.loopDetector?.observe({
+      toolCallId: toolCall.id,
+      toolName: toolCall.name,
+      args: toolCall.arguments,
+      output: resultForTranscript.output,
+      success: resultForTranscript.success,
+    }) ?? { kind: "clear" as const };
+
+    if (verdict.kind === "correct") {
+      // STRIKE 1. The turn does NOT end. Drain what the model emitted after
+      // this call so no further real call runs on a repeating trajectory,
+      // then let the batch fall through to persistence; the cue is written
+      // immediately after it, so the model's very next round reads the
+      // correction before it chooses anything.
+      loopCorrectionFacts = verdict.facts;
+      logger.warn("engine.turn.tool_call_loop_corrected", {
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId ?? null,
+        toolName: verdict.facts.toolName,
+        cycleLength: verdict.facts.cycleLength,
+        repeatCount: verdict.facts.repeatCount,
+        callsDrained: turnResult.toolCalls.length - (i + 1),
+      });
+      drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_LOOP_CORRECTION_OUTPUT);
+      break;
+    }
+
+    if (verdict.kind === "stop") {
+      // STRIKE 2. The correction was already delivered and the model repeated
+      // itself anyway, so the cheapest intervention is spent and the turn ends.
+      logger.warn("engine.turn.tool_call_loop_stop", {
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId ?? null,
+        toolName: verdict.facts.toolName,
+        cycleLength: verdict.facts.cycleLength,
+        repeatCount: verdict.facts.repeatCount,
+        callsDrained: turnResult.toolCalls.length - (i + 1),
+      });
+      drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_TOOL_CALL_LOOP_OUTPUT);
+      batchStopReason = "tool_call_loop";
+      batchStopPayload = {
+        summary:
+          "The model repeated the same completed tool call after being corrected once.",
+        // Shape of the repetition only - `ToolCallLoopFacts` carries no raw
+        // arguments by construction, and this evidence is durable.
+        evidence: {
+          toolName: verdict.facts.toolName,
+          cycleLength: verdict.facts.cycleLength,
+          repeatCount: verdict.facts.repeatCount,
+          toolCallIds: verdict.facts.toolCallIds,
+        },
+      };
+      break;
     }
   }
 
@@ -462,6 +557,20 @@ export async function processTurnToolBatch(args: {
     liveMessages,
     reasoning: turnResult.reasoning,
   });
+
+  // ── First-strike correction, strictly AFTER the transcript ──
+  // The tape must read assistant message → every tool result (including the
+  // drained remainder) → correction. Emitting before persistence would put an
+  // instruction about those calls ahead of their own results and break the
+  // tool_call/tool_result adjacency the provider expects on reload.
+  if (loopCorrectionFacts !== null) {
+    await emitToolCallLoopCorrection({
+      sessionId: context.sessionId,
+      missionRunId: context.missionRunId ?? null,
+      facts: loopCorrectionFacts,
+      liveMessages,
+    });
+  }
 
   // Update lastText from current turn (assistant may have content alongside toolCalls)
   const lastText = turnResult.content ?? args.lastTextSoFar;

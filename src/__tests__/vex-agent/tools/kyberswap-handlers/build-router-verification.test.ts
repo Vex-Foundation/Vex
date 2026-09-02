@@ -19,6 +19,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import { META_AGGREGATION_ROUTER_V2 } from "@tools/kyberswap/constants.js";
 
@@ -99,6 +101,16 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
   pinTrackedToken: vi.fn().mockResolvedValue({ inserted: true }),
 }));
 
+// The execute CLAIMS the approved quote instead of fetching a route (the
+// 2026-08-27 quote-binding change). The claim's own behaviour is covered by
+// `quote-bound-execute.test.ts` and the Postgres claim suite; here it hands
+// back a real snapshot of this file's own route so the handler reaches the
+// behaviour under test.
+const mockClaim = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
+  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
@@ -144,21 +156,25 @@ describe("FIX 1 — swap build-response router verification", () => {
     h.planKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
     h.createAgentActivityIntent.mockResolvedValue({ executionId: 1, events: [{ id: 1 }] });
     h.getHoneypotFotInfo.mockResolvedValue({ isHoneypot: false, isFOT: false, tax: 0 });
-    // Route response's router matches — guards approval — but the build
-    // response's router is attacker-controlled.
-    h.getRoute.mockResolvedValue({
-      data: {
-        routeSummary: {
-          amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
-          // A route summary ALWAYS carries its paths, and the pre-sign guard
-          // reads them to decide which pools the build may fund.
-          route: compliantRoutePaths({
-            srcToken: TOKEN_A, dstToken: TOKEN_B, amountIn: 10n ** 18n, quotedNetOutRaw: "999000",
-          }),
-        },
-        routerAddress: META_AGGREGATION_ROUTER_V2,
-      },
-    });
+    // The APPROVED quote the execute claims - the build response's router is
+    // the attacker-controlled value under test, and it is verified against the
+    // known aggregator router regardless of what the approved route said.
+    const approvedSummary = {
+      amountIn: "1000000", amountOut: "999000", gasUsd: "0.5", routeID: "r1", checksum: "c1",
+      tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountInUsd: "1", amountOutUsd: "1",
+      // A route summary ALWAYS carries its paths, and the pre-sign guard
+      // reads them to decide which pools the build may fund.
+      route: compliantRoutePaths({
+        srcToken: TOKEN_A, dstToken: TOKEN_B, amountIn: 10n ** 18n, quotedNetOutRaw: "999000",
+      }),
+    };
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+        approvedClaim(
+          approvedSummary,
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        ),
+    );
   });
 
   it("fails closed BEFORE broadcast when the build router differs from the allowlist", async () => {

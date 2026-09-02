@@ -537,6 +537,59 @@ describe("dexscreener.pairs.batch", () => {
     expect(accounting["provider_omitted"]).toEqual([]);
   });
 
+  // A Uniswap v4 pool is identified by a 32-byte PoolId, not a contract
+  // address, so DexScreener publishes those pairs as 0x + 64 hex. The batch
+  // grammar read every pair id with the TOKEN address grammar and bucketed
+  // each one into chain_shape_mismatch, so a v4 pair was refused here without
+  // the provider ever being asked. Committed evidence that the provider serves
+  // them: three ethereum rows with labels ["v4"] in the live capture
+  // `fixtures/live-captures/token-pairs-v1-ethereum-weth.json`, and a captured
+  // live v8 subscribe command carrying a 64-hex id under the EVM slug
+  // `robinhood` (`v8-batch-known-three.command.provenance.json`, HTTP 101).
+  const V4_PAIR =
+    "ethereum:0xe500210c7ea6bfd9f69dce044b09ef384ec2b34832f132baec3b418208e3a657";
+
+  it("admits a 64-hex v4 pool id to the wire instead of bucketing it as a shape mismatch", async () => {
+    mount({ ws: [BATCH_FRAME] });
+    const out = await call("dexscreener.pairs.batch", { pairs: [V4_PAIR] });
+    const accounting = out["inputAccounting"] as Record<string, unknown>;
+    expect(accounting["chain_shape_mismatch"]).toEqual([]);
+    // It reached the provider: the only remaining explanation for its absence
+    // from this fixture frame is the provider's own silence, which is a
+    // different (and honest) answer from "your id has the wrong shape".
+    expect(accounting["provider_omitted"]).toEqual([V4_PAIR]);
+    expect(accounting["requested"]).toBe(1);
+  });
+
+  it("keeps a mixed v4/v2 batch accounted for exactly", async () => {
+    mount({ ws: [BATCH_FRAME] });
+    const out = await call("dexscreener.pairs.batch", { pairs: [KNOWN, V4_PAIR] });
+    const accounting = out["inputAccounting"] as Record<string, unknown>;
+    const total =
+      (accounting["resolved"] as number) +
+      (accounting["invalid_format"] as string[]).length +
+      (accounting["duplicates"] as string[]).length +
+      (accounting["unknown_chain"] as string[]).length +
+      (accounting["chain_shape_mismatch"] as string[]).length +
+      (accounting["provider_omitted"] as string[]).length;
+    expect(total).toBe(accounting["requested"]);
+    expect(accounting["requested"]).toBe(2);
+    expect(accounting["chain_shape_mismatch"]).toEqual([]);
+    expect(accounting["provider_omitted"]).toEqual([V4_PAIR]);
+    expect(accounting["resolved"]).toBe(1);
+    expect(out["returned"]).toBe(1);
+  });
+
+  it("still refuses a 64-hex id in the TOKEN lane, where a pool id does not belong", async () => {
+    mount({ ws: [BATCH_FRAME] });
+    // Nothing usable is left, so the handler refuses by name rather than
+    // returning an envelope - and the refusal states which bucket took it.
+    const result = await handlerFor("dexscreener.pairs.batch")({ tokens: [V4_PAIR] }, CTX);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("shape contradicts the chain's architecture");
+    expect(result.output).toContain(V4_PAIR);
+  });
+
   it("echoes malformed and duplicated inputs rather than dropping them", async () => {
     mount({ ws: [BATCH_FRAME] });
     const out = await call("dexscreener.pairs.batch", {

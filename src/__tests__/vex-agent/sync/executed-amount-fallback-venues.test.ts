@@ -756,3 +756,77 @@ describe("the decoder-set version is what lets a declined row back in", () => {
     expect(SETTLEMENT_DECODER_SET_VERSION).not.toBe("2026-08-12.bridge-deposit-and-trench");
   });
 });
+
+/**
+ * THE VERSION STAMP IS AN ELIGIBILITY BURN, AND THE AMOUNT ANOMALY MUST NOT PAY IT.
+ *
+ * `noteSettlementDecodeVersion` is what stops a declined row being selected
+ * again until somebody bumps `SETTLEMENT_DECODER_SET_VERSION`. That is correct
+ * when the decline means "this decoder set cannot read this receipt", and wrong
+ * when it means "the receipt CONTRADICTS the approved amount": the second is a
+ * fact about the money, and burning eligibility there is how an unresolved
+ * anomaly went quiet.
+ *
+ * These cases are on the CALLER, not on the decode result, because the caller
+ * owns the stamp - a suite that only asserted the decoder's own flag stayed
+ * green with the caller's guard deleted.
+ */
+describe("a wrap whose receipt contradicts the approved amount keeps its eligibility", () => {
+  const WRAP_TX = "0xw12ab";
+  const WETH = "0x4200000000000000000000000000000000000006";
+  const DEPOSIT_TOPIC = "0xe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c";
+  const APPROVED = 2_000_000_000_000_000_000n;
+  const SHORT = APPROVED - 1n;
+
+  function wrapRow(): AgentActivityEvent {
+    return depositRow({
+      id: 77,
+      protocol: "wallet_wrap",
+      eventRole: "wrap",
+      kind: "wrap",
+      txHash: WRAP_TX,
+      tokenInAddress: NATIVE,
+      tokenOutAddress: WETH,
+      amountInRaw: APPROVED.toString(),
+      amountOutRaw: APPROVED.toString(),
+    } as Partial<AgentActivityEvent>);
+  }
+
+  function depositLog(amount: bigint) {
+    return { address: WETH, topics: [DEPOSIT_TOPIC, padded(WALLET)], data: word(amount) };
+  }
+
+  it("records the decline WITHOUT stamping the decoder version", async () => {
+    mockListCandidates.mockResolvedValue([wrapRow()]);
+
+    await repairMissingExecutedAmounts(deps({
+      logs: [depositLog(SHORT)],
+      transactions: {
+        [WRAP_TX]: { from: WALLET, to: WETH, input: "0xd0e30db0", valueRaw: SHORT.toString() },
+      },
+    }));
+
+    // The decline IS recorded - we learned something and say so.
+    expect(mockDeclined).toHaveBeenCalledWith(77, "amounts_undecodable");
+    // THE POINT: the row is NOT retired, so the next sweep selects it again.
+    expect(mockNoteVersion).not.toHaveBeenCalled();
+    expect(mockFill).not.toHaveBeenCalled();
+  });
+
+  it("an ORDINARY undecodable wrap DOES stamp the version", async () => {
+    // The contrast that makes the case above attributable to the anomaly and
+    // not to wrap rows in general: with no wrapper event at all, nothing was
+    // learned about the money and the decoder set is genuinely done here.
+    mockListCandidates.mockResolvedValue([wrapRow()]);
+
+    await repairMissingExecutedAmounts(deps({
+      logs: [],
+      transactions: {
+        [WRAP_TX]: { from: WALLET, to: WETH, input: "0xd0e30db0", valueRaw: APPROVED.toString() },
+      },
+    }));
+
+    expect(mockDeclined).toHaveBeenCalledWith(77, "amounts_undecodable");
+    expect(mockNoteVersion).toHaveBeenCalledWith(77, SETTLEMENT_DECODER_SET_VERSION);
+  });
+});

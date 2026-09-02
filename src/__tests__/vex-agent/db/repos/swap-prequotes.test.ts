@@ -98,6 +98,12 @@ function buildCreateInput(
     safetyVerdict: "pass",
     safetyDetail: { tokenIn: { native: true }, tokenOut: { isHoneypot: false, isFOT: false, tax: 0 } },
     routeRef: null,
+    // Migration 095: a row that predates the claim lane reads as an
+    // executable, unclaimed quote. It authorizes nothing on its own - the
+    // claim additionally requires a stored route snapshot.
+    eligibilityKind: "executable",
+    claimedAt: null,
+    claimedBy: null,
     expiresAt: EXPIRES_AT,
     ...overrides,
   };
@@ -106,13 +112,13 @@ function buildCreateInput(
 // ── create ──────────────────────────────────────────────────────────────
 
 describe("create", () => {
-  it("INSERTs 16 columns in declared order matching migration 029", async () => {
+  it("INSERTs 17 columns in declared order matching migrations 029 + 095", async () => {
     await repo.create(buildCreateInput());
     expect(mockExecute).toHaveBeenCalledTimes(1);
     const [sql, params] = mockExecute.mock.calls[0]!;
     expect(sql).toContain("INSERT INTO swap_prequotes");
     expect(sql).toContain(
-      "prequote_id, session_id, match_hash, kind, family, provider,\n  chain_id, wallet_address, token_in, token_out, amount, slippage_bps,\n  safety_verdict, safety_detail, route_ref, expires_at",
+      "prequote_id, session_id, match_hash, kind, family, provider,\n  chain_id, wallet_address, token_in, token_out, amount, slippage_bps,\n  safety_verdict, safety_detail, route_ref, eligibility_kind, expires_at",
     );
     expect(sql).toContain("$14::jsonb, $15::jsonb");
     expect(params).toEqual([
@@ -131,6 +137,10 @@ describe("create", () => {
       "pass",
       expect.stringContaining("native"), // JSON-serialised safety_detail
       null, // route_ref null
+      // Migration 095. Defaulted by the repo when the caller states none, so a
+      // provider that records no execution snapshot writes exactly what it
+      // wrote before, and only `executable` rows are ever claimable.
+      "executable",
       EXPIRES_AT,
     ]);
   });
@@ -197,6 +207,12 @@ describe("findLatestFreshByMatch", () => {
       safetyVerdict: "pass",
       safetyDetail: { tokenIn: { native: true }, tokenOut: { isHoneypot: false, isFOT: false, tax: 0 } },
       routeRef: null,
+    // Migration 095: a row that predates the claim lane reads as an
+    // executable, unclaimed quote. It authorizes nothing on its own - the
+    // claim additionally requires a stored route snapshot.
+    eligibilityKind: "executable",
+    claimedAt: null,
+    claimedBy: null,
       createdAt: CREATED_AT,
       expiresAt: EXPIRES_AT,
     });

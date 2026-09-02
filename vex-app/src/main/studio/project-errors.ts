@@ -98,6 +98,37 @@ export function projectNameUnusableError(correlationId: string): VexError {
   };
 }
 
+/**
+ * The project is being deleted, so this operation was declined (B0).
+ *
+ * Deliberately NOT `projects.not_found`: the project still exists, the user's
+ * own delete is what refused this, and saying "no such project" would be both
+ * untrue and confusing next to a list that still shows it.
+ */
+export function projectDeletingError(correlationId: string): VexError {
+  return projectsError(
+    "projects.deleting",
+    "This project is being deleted, so Vex did not run that. Nothing was changed.",
+    { correlationId, retryable: false, userActionable: true },
+  );
+}
+
+/**
+ * The slug belongs to a tombstone whose cleanup has not finished (B0).
+ *
+ * RETRYABLE, and that is the point: the remover still owns that folder, and
+ * claiming it now would mean the cleanup deleting the NEW project's files.
+ * Cleanup is a durable obligation with two recovery owners, so waiting works.
+ */
+export function projectSlugCleanupPendingError(correlationId: string): VexError {
+  return projectsError(
+    "projects.slug_cleanup_pending",
+    "A project with this name was just deleted and Vex is still removing its "
+      + "files. Nothing was created. Try again in a moment.",
+    { correlationId, retryable: true, userActionable: true },
+  );
+}
+
 export function projectNotFoundError(correlationId: string): VexError {
   return projectsError(
     "projects.not_found",

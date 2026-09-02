@@ -151,6 +151,42 @@ async function insertLighterOnboardingIntent(
   return intentId;
 }
 
+/**
+ * A `wallet_wrap_intents` row (migration 096). Written as raw SQL like every
+ * other fixture here so the reader is exercised against the TABLE's own CHECKs
+ * rather than through a repo that could share a mistake with it.
+ */
+async function insertWrapIntent(
+  sessionId: string,
+  fields: { status: string; expiresInMs?: number; txHash?: string | null; failureStage?: string },
+): Promise<string> {
+  const intentId = randomUUID();
+  await execute(
+    `INSERT INTO wallet_wrap_intents
+       (intent_id, session_id, wallet_address, chain_alias, chain_id, direction,
+        wrapped_native_address, wrapped_native_symbol, wrapped_native_decimals,
+        amount_raw, payload_json, preview_json, fee_bounds_json,
+        proposal_digest, proposal_digest_version, status, failure_stage,
+        expires_at, tx_hash)
+     VALUES ($1, $2, '0xwallet', 'base', 8453, 'wrap',
+             '0x4200000000000000000000000000000000000006', 'WETH', 18,
+             '1', '{"to":"0x4200000000000000000000000000000000000006",
+                    "data":"0xd0e30db0","valueWei":"1"}'::jsonb,
+             '{"label":"wrap","criticalArgs":{}}'::jsonb, '{}'::jsonb,
+             repeat('a', 64), 'v1', $3, $4,
+             NOW() + ($5::text || ' milliseconds')::interval, $6)`,
+    [
+      intentId,
+      sessionId,
+      fields.status,
+      fields.failureStage ?? null,
+      String(fields.expiresInMs ?? 600_000),
+      fields.txHash ?? null,
+    ],
+  );
+  return intentId;
+}
+
 describe("getUnresolvedMoneyStateForSession", () => {
   let sessionId: string;
 
@@ -393,6 +429,51 @@ describe("getUnresolvedMoneyStateForSession", () => {
     ]);
   });
 
+  // ── wallet_wrap_intents (migration 096) ────────────────────────────
+  //
+  // A THIRD money state machine with its own table. It was invisible to this
+  // gate until fix round C, which meant a compaction cutover could rewrite the
+  // transcript out from under a wrap that was mid-flight.
+
+  it("blocks on an in-flight wrap: consuming, unexpired pending, or unconfirmed", async () => {
+    await insertWrapIntent(sessionId, { status: "consuming" });
+    expect(await kindsFor(sessionId)).toEqual(["wallet_wrap_intent_live"]);
+
+    await resetDb();
+    sessionId = await makeSession();
+    await insertWrapIntent(sessionId, { status: "pending" });
+    expect(await kindsFor(sessionId)).toEqual(["wallet_wrap_intent_live"]);
+
+    await resetDb();
+    sessionId = await makeSession();
+    await insertWrapIntent(sessionId, { status: "broadcast_unconfirmed", txHash: "0xabc" });
+    // `broadcast_unconfirmed` is the DISTINCT durable status for "the bytes are
+    // on the network and we cannot yet prove the outcome", so it blocks until a
+    // repair lane settles it.
+    expect(await kindsFor(sessionId)).toEqual(["wallet_wrap_intent_live"]);
+  });
+
+  it("an EXPIRED pending wrap is dead and does NOT block", async () => {
+    // `claimIfPendingWith` filters on `expires_at > NOW()`, so this row can
+    // never be claimed by anything. Blocking on it would wedge the gate.
+    await insertWrapIntent(sessionId, { status: "pending", expiresInMs: -1_000 });
+    await expect(readMoneyState(sessionId)).resolves.toEqual({ clear: true });
+  });
+
+  it("proven and honestly-terminal wrap rows RELEASE the gate", async () => {
+    await insertWrapIntent(sessionId, { status: "executed", txHash: "0xabc" });
+    await insertWrapIntent(sessionId, {
+      status: "failed",
+      failureStage: "chain_reverted",
+      txHash: "0xdef",
+    });
+    await insertWrapIntent(sessionId, { status: "superseded_unproven", txHash: "0x123" });
+    // The staged-evidence write failed BEFORE broadcast, so nothing was signed.
+    await insertWrapIntent(sessionId, { status: "audit_failed" });
+    await insertWrapIntent(sessionId, { status: "cancelled" });
+    await expect(readMoneyState(sessionId)).resolves.toEqual({ clear: true });
+  });
+
   it("is scoped to ONE session — another session's in-flight work never blocks", async () => {
     const otherSession = await makeSession();
     await insertQueueRow(otherSession, "pending");
@@ -402,10 +483,11 @@ describe("getUnresolvedMoneyStateForSession", () => {
       approvalStatus: "approved",
       executionState: "deposit_submitted",
     });
+    await insertWrapIntent(otherSession, { status: "consuming" });
     await insertAgentActivity(otherSession, "pending");
 
     await expect(readMoneyState(sessionId)).resolves.toEqual({ clear: true });
-    expect((await kindsFor(otherSession)).length).toBe(5);
+    expect((await kindsFor(otherSession)).length).toBe(6);
   });
 
   it("bounds the reason list without changing the verdict", async () => {

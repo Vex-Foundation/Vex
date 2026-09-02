@@ -1,6 +1,8 @@
 import type { Result } from "../../../ipc/result.js";
 import type {
   ProjectCreateInput,
+  ProjectDeleteInput,
+  ProjectDeleteResult,
   ProjectCreateResult,
   ProjectGetInput,
   ProjectGetResult,
@@ -55,4 +57,26 @@ export interface ProjectsBridge {
   readonly repairFiles: (
     input: ProjectRepairFilesInput
   ) => Promise<Result<ProjectRepairFilesResult>>;
+  /**
+   * Delete a project (B0). A SOFT delete: the project row is tombstoned, its
+   * backing session is tombstoned, every still-decidable approval it authorized
+   * is refused inside the same transaction, and the artifacts Vex recorded
+   * writing are then taken back out of the folder.
+   *
+   * NOT IDEMPOTENT IN THE ORDINARY SENSE, and never auto-retried. `expectedName`
+   * is revalidated against the stored row, so a stale renderer cannot delete a
+   * project the user was not looking at, and `alsoTrashFolder` is the user's
+   * decision about their own files - honoured through the OS trash, never an
+   * unlink. Repeating the call on an unfinished tombstone RESUMES the cleanup
+   * rather than deleting again, and it honours the tombstone's recorded trash
+   * intent instead of this call's checkbox.
+   *
+   * Every non-`removed` member of the result is an ANSWER, not an error:
+   * `blocked_active_calls` and `blocked_pending_dispatch` wrote nothing,
+   * `cleanup_pending` means the authority commit stands and the file work is
+   * still owed, and `already_removed` means there was nothing left to do.
+   */
+  readonly delete: (
+    input: ProjectDeleteInput
+  ) => Promise<Result<ProjectDeleteResult>>;
 }

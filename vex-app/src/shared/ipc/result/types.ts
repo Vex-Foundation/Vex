@@ -78,6 +78,15 @@ export type VexDomain =
    */
   | "market"
   /**
+   * B0 - read-only Vex Studio MCP host status (`studio.hostStatus`). Main's
+   * host owns the listener and publishes every lifecycle transition on
+   * `EV.studio.hostStatus`; the handler only reads the in-memory cache, so
+   * failures map to `internal.unexpected`. The domain carries no mutating
+   * operation: locking, starting and quitting the host are lifecycle events
+   * the renderer observes, never ones it commands.
+   */
+  | "studio"
+  /**
    * Trench image locker (C2) — the GLOBAL, persistent library of pre-staged
    * token-launch images. Owns the byte store under `userData` (keyed by an
    * opaque `imageId` that never decodes to a path) plus the metadata rows the
@@ -388,6 +397,22 @@ export type VexErrorCode =
   | "projects.scope_conflict"
   | "projects.wallet_drift"
   | "projects.backing_session_integrity"
+  /**
+   * B0 - the project is being DELETED, so the operation was declined. Not a
+   * failure and not `not_found`: the project still exists as the user last saw
+   * it, and their own delete is what refused this. Retryable only in the sense
+   * that the answer will soon become `projects.not_found`.
+   * `retryable: false, userActionable: true`.
+   */
+  | "projects.deleting"
+  /**
+   * B0 - the requested slug belongs to a DELETED project whose cleanup has not
+   * finished. The remover still owns that folder, so a new project cannot claim
+   * it without racing for the same directory. RETRYABLE: cleanup is a durable
+   * obligation with recovery owners, so this resolves on its own.
+   * `retryable: true, userActionable: true`.
+   */
+  | "projects.slug_cleanup_pending"
   | "internal.contract_violation"
   | "internal.cancelled"
   | "internal.unexpected";
