@@ -474,7 +474,8 @@ carries that path, which is why no error string is ever printed.
 The proof matrix, all eight on a Windows runner:
 
 1. SECOND-USER DUPLEX DENIAL - CI-MEASURED on `bridge-windows`, run
-   `<measured on run N>`. A temporary local account, created by the job and
+   33646484002 (commit 937e8598, 2026-09-02: `access_denied`, ERROR_ACCESS_DENIED
+   5, zero busy retries). A temporary local account, created by the job and
    removed in an always-step, dials the pipe the front bound and is refused with
    ERROR_ACCESS_DENIED, while the same account CONNECTS to the control pipe
    served with go-winio's default descriptor in the same run. The pairing is
@@ -482,7 +483,10 @@ The proof matrix, all eight on a Windows runner:
    (Was: "denied by the default security descriptor" - superseded, the front now
    binds its own PROTECTED two-ACE descriptor and libuv never sees the pipe.)
 2. READ-ONLY CROSS-USER CONNECT - CI-MEASURED on `bridge-windows`, run
-   `<measured on run N>`. The same temporary account dials the front's pipe with
+   33646484002 (`access_denied`, ERROR_ACCESS_DENIED 5; the front's serve log
+   accepted exactly the two runner-user dials and nothing else, so no
+   cross-user connect consumed an instance). The same temporary account dials
+   the front's pipe with
    GENERIC_READ only and is refused with ERROR_ACCESS_DENIED: the front's DACL
    has no Everyone ACE, so the read-only open the default descriptor would have
    allowed is denied too. The serve side's `serve_done` line reports how many
@@ -492,11 +496,16 @@ The proof matrix, all eight on a Windows runner:
    reachable by another process of the SAME user, which is out of scope for this
    boundary and is bounded instead by `maxRaw` (section 8.1).
 3. REMOTE-CLIENT REJECTION - PARTIALLY CI-MEASURED on `bridge-windows`, run
-   `<measured on run N>`. Two facts are recorded and neither is asserted: the
+   33646484002. Two facts are recorded and neither is asserted: the
    `rejectRemote` bit of the BOUND flags the front CONFIRMED by readback
-   (`<measured on run N>`), and the classified outcome of a dial through the
-   loopback redirector path `\\localhost\pipe\<name>`, which the pipe file system
-   treats as a network client (`<measured on run N>`). A connect arriving from
+   (measured TRUE: `flagsApplied` 7 = rejectRemote | firstInstance |
+   messageMode, so `FILE_PIPE_REJECT_REMOTE_CLIENTS` does read back from
+   `FilePipeLocalInformation.NamedPipeType`, a fact MS-FSCC leaves undocumented),
+   and the classified outcome of a dial through the loopback redirector path
+   `\\localhost\pipe\<name>`, which the pipe file system treats as a network
+   client (measured `access_denied`, ERROR_ACCESS_DENIED 5, for the OWNER of the
+   pipe: the redirector path is refused even to the account the DACL admits,
+   which is the posture the reject-remote bit promises). A connect arriving from
    ANOTHER MACHINE is NOT measured and cannot be on a hosted runner: it needs a
    second host on the same network and inbound SMB, neither of which a GitHub
    runner has.
@@ -514,7 +523,9 @@ The proof matrix, all eight on a Windows runner:
    firing on a pipe handle, and close cancelling a blocked operation. The
    deadline paths are covered on Linux sockets only.
 7. FOREIGN-USER FIRST-SERVER PIPE SQUATTING - CI-MEASURED on `bridge-windows`,
-   run `<measured on run N>`, in two halves.
+   run 33646484002 (front: `{"outcome":"bind_failed"}`, exit 3, no ready file;
+   bridge: `TestHostAuthRefusesAForeignUsersServer` passed against the
+   temporary account's server), in two halves.
    - The FRONT'S half: the temporary account serves the name first, then the
      front is asked to bind the SAME name through the real `listener.Bind` and
      FAILS CLOSED - go-winio's first instance uses the FILE_CREATE disposition,
@@ -532,7 +543,9 @@ The proof matrix, all eight on a Windows runner:
    This is the test that proves the anti-squatting control exists, so it must
    fail if the control is removed.
 8. SERVER IMPERSONATION LEVEL - CI-MEASURED on `bridge-windows`, run
-   `<measured on run N>`. Measured FROM THE SERVER'S SIDE, which is the only
+   33646484002 (every accepted connection, duplex and read-only alike:
+   `impersonationLevel` 1, `identification`). Measured FROM THE SERVER'S SIDE,
+   which is the only
    honest way to ask it: for every accepted connection the probe impersonates
    the client on a locked operating-system thread
    (`ImpersonateNamedPipeClient`), reads `TokenImpersonationLevel` off the

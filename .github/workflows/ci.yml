@@ -449,7 +449,8 @@ jobs:
           # 7b: the BRIDGE refuses a foreign server, through the production
           # dial and the real SID comparison.
           $env:VEX_PROBE_FOREIGN_PIPE = $squatName
-          go test -count=1 -run TestHostAuthRefusesAForeignUsersServer ./cmd/vex-mcp
+          # -v so the log shows PASS, never a silent skip on a missing env.
+          go test -count=1 -v -run TestHostAuthRefusesAForeignUsersServer ./cmd/vex-mcp
           if ($LASTEXITCODE -ne 0) { throw "[row7b] host authentication did not refuse the foreign server" }
           Remove-Item Env:\VEX_PROBE_FOREIGN_PIPE
 
