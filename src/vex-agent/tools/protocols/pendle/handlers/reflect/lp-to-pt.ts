@@ -1,5 +1,5 @@
 /**
- * `pendle.lp.toPt` — LP → the same market's PT.
+ * `pendle.lp.toPt` - LP → the same market's PT.
  *
  * `convert-lp-to-pt` came back as a PLAIN single-leg `removeLiquiditySinglePt`
  * despite sharing the term-mobility family (measured 2026-07-28), so it goes
@@ -91,7 +91,7 @@ export async function executePendleLpToPt(
     // ACTIVE-ONLY, end to end. This action ACQUIRES the market's PT, so it is
     // destination-shaped even though both legs belong to one market: buying into
     // a matured market is the thing the R5b matrix refuses. The holder of a
-    // matured LP is not stranded — `pendle.lp.remove` works after expiry, and the
+    // matured LP is not stranded - `pendle.lp.remove` works after expiry, and the
     // refusal says so by name.
     const market = await resolveMarketByAddress(chainId, marketParam);
     if (!market || !market.address) {
@@ -110,7 +110,7 @@ export async function executePendleLpToPt(
     // The optional `pt` param is a CHECK on Vex's own resolution, never a
     // destination: this route is a single-leg `removeLiquiditySinglePt` on ONE
     // market, so the PT it can deliver is that market's own. A mismatch is
-    // refused BY NAME, and a PT from a DIFFERENT UNDERLYING is named as such —
+    // refused BY NAME, and a PT from a DIFFERENT UNDERLYING is named as such -
     // the two mistakes need different corrections.
     if (expectedPtRaw) {
       const expectedPt = requireTokenAddress(expectedPtRaw);
@@ -124,7 +124,7 @@ export async function executePendleLpToPt(
           "route_not_found",
           sameUnderlying
             ? `${toolId}: ${expectedPt} is a PT of a DIFFERENT ${chainSlug} market with the same underlying asset - this tool only converts an LP into its OWN market's PT (${ptOut}). To reach another maturity, convert here first and then roll with pendle__pt_rollover.`
-            : `${toolId}: ${expectedPt} is not this market's PT — refusing a CROSS-UNDERLYING conversion. This market's PT is ${ptOut}; the two represent different underlying assets, so Vex will not substitute one for the other.`,
+            : `${toolId}: ${expectedPt} is not this market's PT - refusing a CROSS-UNDERLYING conversion. This market's PT is ${ptOut}; the two represent different underlying assets, so Vex will not substitute one for the other.`,
         );
       }
     }
@@ -174,7 +174,7 @@ export async function executePendleLpToPt(
       action: "lp-to-pt",
       wallet,
       slippageBps: slippage.bps,
-      // The "input" being spent is the LP (market) token — approvals bind to it.
+      // The "input" being spent is the LP (market) token - approvals bind to it.
       inputToken: marketAddr,
       inputAmountWei: amountWei,
       isNative: false,
@@ -182,7 +182,7 @@ export async function executePendleLpToPt(
       // NO `expectedOutputToken`: `removeLiquiditySinglePt` pays out PT and
       // carries no TokenOutput tuple to bind (see calldata/decode.ts). Because
       // the calldata names no output token, the route's DECLARED outputs are
-      // pinned instead — otherwise `minPtOut` would be floored against whatever
+      // pinned instead - otherwise `minPtOut` would be floored against whatever
       // token the response declared.
       expectedRouteOutputs: [ptOut],
     };

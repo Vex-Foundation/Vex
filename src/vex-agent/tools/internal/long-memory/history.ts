@@ -1,11 +1,11 @@
 /**
- * MemoryHistory handler (S3) — the supersession/lineage chain for a
+ * MemoryHistory handler (S3) - the supersession/lineage chain for a
  * long-term memory entry COMBINED with its reinforcement timeline.
  *
  * R1-#7: the lineage repo (`getLineageChain`) returns compact lineage only, so
  * the handler ALSO fetches the entry (`getById`) and merges its reinforcement
  * fields (`firstPromotedAt` / `lastReinforcedAt` / `outcomeVersion`) into the
- * S3 history DTO — NO repo change. One round-trip each; both are indexed lookups.
+ * S3 history DTO - NO repo change. One round-trip each; both are indexed lookups.
  *
  * Read-only. Does NOT inject into loadedDocuments (metadata navigation, not a
  * content load). Does NOT require the embeddings service.

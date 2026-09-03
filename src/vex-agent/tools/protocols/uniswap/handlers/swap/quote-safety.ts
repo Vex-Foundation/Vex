@@ -1,5 +1,5 @@
 /**
- * The structural SAFETY block embedded in the Uniswap quote result — factory
+ * The structural SAFETY block embedded in the Uniswap quote result - factory
  * allowlist + DexScreener min-liquidity + FoT signal.
  *
  * It NEVER gates here (LOCKED #5): the prequote extractor re-validates it into

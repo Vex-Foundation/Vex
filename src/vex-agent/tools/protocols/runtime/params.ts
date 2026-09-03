@@ -30,7 +30,7 @@ import { checkBpsParam } from "./bps-param.js";
 // the generated schemas are flat. `primitiveSchema` is deliberately written
 // with an exhaustiveness guard so a future manifest declaring a nested
 // `object`/`array` param must map to a recursive Zod schema HERE rather than
-// fall through — the boundary stays at runtime.ts and never silently passes
+// fall through - the boundary stays at runtime.ts and never silently passes
 // nested/extra keys.
 
 /** Runtime-owned control keys recognised regardless of manifest declaration. */
@@ -54,7 +54,7 @@ export function primitiveSchema(type: ProtocolParamDef["type"]): z.ZodTypeAny {
     case "object":
       return z.record(z.string(), z.unknown());
     default:
-      // Exhaustiveness guard — a new param `type` must extend this mapping
+      // Exhaustiveness guard - a new param `type` must extend this mapping
       // (e.g. nested object/array → recursive schema) rather than fall through.
       return assertNeverParamType(type);
   }
@@ -79,7 +79,7 @@ function modelFacingName(manifest: Pick<ProtocolToolManifest, "publicName">): st
 }
 
 /**
- * The `acceptsStringArray` branch of the type gate — VALIDATION ONLY.
+ * The `acceptsStringArray` branch of the type gate - VALIDATION ONLY.
  *
  * Returns a rejection reason, or `null` when the value is an acceptable array.
  * It deliberately does NOT transform: the handler keeps receiving the params
@@ -117,7 +117,7 @@ function checkStringArrayParam(
 }
 
 /**
- * Outcome of strict param validation. `ok` carries no payload — the runtime
+ * Outcome of strict param validation. `ok` carries no payload - the runtime
  * keeps operating on the already-validated `params` object; this is a boundary
  * gate, not a transform.
  */
@@ -131,7 +131,7 @@ export type ParamValidation =
  *
  * `Missing required parameter "query" for dexscreener.search` was true and
  * unusable: a model that had just sent `query` at the TOP level of the
- * envelope, not inside `params`, reads it as false and repeats the same call —
+ * envelope, not inside `params`, reads it as false and repeats the same call -
  * observed six times in a row. Naming the required keys, the optional keys, the
  * keys WE actually received, and a corrected minimal call ends the loop by
  * SHOWING the envelope instead of describing it.
@@ -174,7 +174,7 @@ function describeMissingRequired(
 }
 
 /**
- * The one sentence a mutually exclusive param group is stated in — authored
+ * The one sentence a mutually exclusive param group is stated in - authored
  * HERE so the rule the model reads on the injected tool schema and the
  * rule it is rejected by are word-for-word the same rule.
  */
@@ -182,19 +182,19 @@ export function describeExclusiveParamGroup(group: readonly string[]): string {
   return `Provide exactly one of: ${group.join(", ")}.`;
 }
 
-/** The `atMostOne` sentence — zero members is legal, two is not. */
+/** The `atMostOne` sentence - zero members is legal, two is not. */
 export function describeAtMostOneGroup(group: readonly string[]): string {
   return `Provide at most one of: ${group.join(", ")}.`;
 }
 
-/** The `atLeastOneOf` sentence — two members are legal, none is not. */
+/** The `atLeastOneOf` sentence - two members are legal, none is not. */
 export function describeAtLeastOneOfGroup(group: readonly string[]): string {
   return `Provide at least one of: ${group.join(", ")}.`;
 }
 
 /**
  * Every cross-param group rule of `manifest`, rendered, in enforcement order.
- * Empty when none are declared — a tool without groups pays nothing on the
+ * Empty when none are declared - a tool without groups pays nothing on the
  * discovery row or in its injected description.
  */
 export function describeParamGroupConstraints(manifest: ProtocolToolManifest): string[] {
@@ -206,8 +206,8 @@ export function describeParamGroupConstraints(manifest: ProtocolToolManifest): s
 }
 
 /**
- * Closed-value-set check. Names the ALLOWED values — a rejection that withholds
- * them costs the agent another call — and never echoes what was sent, which is
+ * Closed-value-set check. Names the ALLOWED values - a rejection that withholds
+ * them costs the agent another call - and never echoes what was sent, which is
  * untrusted string content (rule 06). Arrays are checked member-wise, by
  * position, for the same reason `checkStringArrayParam` names the index.
  */
@@ -261,7 +261,7 @@ function nameGroup(group: readonly string[]): string {
  * told only that `tokenAddress` is unexpected cannot tell that `pairAddress`
  * was the alternative it should have kept.
  *
- * KEYS ONLY on the "you sent" lane (rule 06) — and the same is true of the two
+ * KEYS ONLY on the "you sent" lane (rule 06) - and the same is true of the two
  * weaker group gates below.
  */
 function checkExclusiveParamGroups(
@@ -285,7 +285,7 @@ function checkExclusiveParamGroups(
 
 /**
  * `atMostOne`: zero members is a legal call, two is not. Same "name the GROUP,
- * not the offending key" contract as the exactly-one gate — the alternative the
+ * not the offending key" contract as the exactly-one gate - the alternative the
  * agent should have kept is only visible when the whole group is named.
  */
 function checkAtMostOneGroups(
@@ -319,7 +319,7 @@ function checkAtLeastOneOfGroups(
 }
 
 /**
- * W6f — a chain param that arrived as a JSON NUMBER becomes its decimal string.
+ * W6f - a chain param that arrived as a JSON NUMBER becomes its decimal string.
  *
  * The ONLY normalization this gate performs, and deliberately the narrowest one
  * that closes a real failure: every chain-valued param advertises
@@ -331,7 +331,7 @@ function checkAtLeastOneOfGroups(
  * Bounded by the {@link CHAIN_VALUE_PARAM_KEYS} allowlist AND by the manifest's
  * own `type: "string"` declaration: every other param keeps strict typing, so a
  * number for a non-chain string param is still rejected. Amounts can never be
- * reached — they are not chain keys.
+ * reached - they are not chain keys.
  *
  * It MUTATES the caller's params object on purpose: the handler, the capture
  * row, and this gate must all see one identical value.
@@ -339,7 +339,7 @@ function checkAtLeastOneOfGroups(
  * The SECOND normalization on the same allowlist, in the same mutating pattern
  * and for the same reason: a chain param that declares an `enum` matches its
  * value CASE-INSENSITIVELY and is rewritten to the declared spelling. Only
- * chain keys fold — case is not a distinction a chain value carries, while on
+ * chain keys fold - case is not a distinction a chain value carries, while on
  * an ordinary enum (a market name, a stats window) it can be, so every other
  * param keeps exact matching. `virtuals.list.chain` is the live case: an
  * UPPERCASE list every other manifest in the tree spells lowercase.
@@ -380,29 +380,29 @@ function matchEnumIgnoringCase(param: ProtocolParamDef, value: string): string |
  * Validate `params` against `manifest.params` at the trust boundary.
  *
  * Order (each fails closed BEFORE the handler runs):
- *  0. CHAIN normalization — the only transforms in this gate (number→string and
+ *  0. CHAIN normalization - the only transforms in this gate (number→string and
  *     enum case-folding, chain keys only); see `normalizeChainValueParams`.
- *  1. UNKNOWN keys — any key with a DEFINED value that is neither declared nor
+ *  1. UNKNOWN keys - any key with a DEFINED value that is neither declared nor
  *     runtime-reserved is rejected, NAMING the replacement when the key is a
  *     retired spelling (`BANNED_PARAM_KEYS`). A key whose value is `undefined`
  *     is treated as absent (JSON/storage semantics) and skipped, not rejected.
- *  2. REQUIRED presence — `undefined | null | ""` for a required param is
+ *  2. REQUIRED presence - `undefined | null | ""` for a required param is
  *     "missing" (preserves the pre-B-002 empty-string-as-absent semantics so
  *     an empty optional is allowed and an empty required is rejected).
- *  3. TYPE — a PRESENT param whose value fails its declared primitive schema is
+ *  3. TYPE - a PRESENT param whose value fails its declared primitive schema is
  *     rejected. Missing optionals are not type-checked, and an EMPTY array on
  *     an optional `acceptsStringArray` param IS absent (`./empty-array-params.ts`
  *     drops the key upstream; this gate agrees so a direct caller cannot see a
  *     stricter rule than the runtime enforces). A REQUIRED list param still
  *     refuses an empty array.
- *  4. ENUM — a param declaring a closed value set rejects anything off it,
+ *  4. ENUM - a param declaring a closed value set rejects anything off it,
  *     naming the allowed values.
- *  5. UNIT — a param declaring a domain unit (`unit: "bps"`) must additionally
+ *  5. UNIT - a param declaring a domain unit (`unit: "bps"`) must additionally
  *     satisfy that unit's contract. `z.number()` accepts `0.5`, but a
  *     fractional basis-point value is meaningless at every venue and is
  *     actively dangerous at Jupiter (see `./bps-param.ts`). Runs after the type
  *     gate so the value is already proven to be a number.
- *  6. GROUPS — each declared `exclusiveParamGroups` group must have exactly one
+ *  6. GROUPS - each declared `exclusiveParamGroups` group must have exactly one
  *     member present, each `atMostOne` group at most one, each `atLeastOneOf`
  *     group at least one. Runs LAST, and only when steps 1-5 collected nothing:
  *     a group is about the CALL, not a value.
@@ -415,7 +415,7 @@ function matchEnumIgnoringCase(param: ProtocolParamDef, value: string): string |
  * Every refusal addresses the tool by its `publicName` (see `modelFacingName`).
  *
  * Messages are agent-actionable and contain only the offending KEY + declared
- * type — never a string value (which could carry untrusted/secret-adjacent
+ * type - never a string value (which could carry untrusted/secret-adjacent
  * content). The `unit` rejection additionally echoes the offending NUMBER,
  * which is inert by construction; see `checkBpsParam`.
  */
@@ -425,7 +425,7 @@ function matchEnumIgnoringCase(param: ProtocolParamDef, value: string): string |
  * `Object.hasOwn`, never a bare index. The key comes from the MODEL (it is the
  * unknown parameter it just sent) and the table is an ordinary object literal,
  * so `rejectedParams["constructor"]` resolves up the prototype chain to
- * `function Object() { [native code] }` — which the caller then splices into
+ * `function Object() { [native code] }` - which the caller then splices into
  * the sentence it hands the agent. Reproduced through the real boundary with
  * `constructor` and `toString`.
  *

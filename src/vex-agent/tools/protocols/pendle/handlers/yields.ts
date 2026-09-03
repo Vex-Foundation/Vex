@@ -1,10 +1,10 @@
 /**
- * `pendle.yields` — market discovery across every Pendle chain.
+ * `pendle.yields` - market discovery across every Pendle chain.
  *
  * Backed by the READ shelf's DOCUMENTED cross-chain catalogue, in ONE call. The
  * per-chain fan-out this replaces cost 11 sequential requests and ~1,940 ms to
  * build a view a single 2-CU request returns, and applied its limit AFTER
- * merging — so an "all chains" call could return 50 rows from one chain and
+ * merging - so an "all chains" call could return 50 rows from one chain and
  * present them as the best markets.
  *
  * Every narrowing is agent-controlled and echoed back in `filtersApplied`; there
@@ -139,7 +139,7 @@ export async function pendleYields(p: Record<string, unknown>): Promise<ReturnTy
   // ONE cross-chain catalogue read. `chainId` is deliberately not sent even when
   // the caller scoped `chains`: the endpoint takes a SINGLE id (a comma-separated
   // list is a documented 400), so a subset is one cross-chain walk filtered
-  // locally — cheaper than a fan-out and free of the rank-per-chain-then-
+  // locally - cheaper than a fan-out and free of the rank-per-chain-then-
   // concatenate bug that made the old merged view dishonest.
   let markets: readonly PendleReadMarket[];
   let catalogComplete: boolean;
@@ -199,7 +199,7 @@ export async function pendleYields(p: Record<string, unknown>): Promise<ReturnTy
       `${matched.length} Pendle market${matched.length === 1 ? "" : "s"} matched ` +
       `(${q.includeMatured ? "active and matured" : "active only"}), showing ${page.length} from offset ${q.offset}, ` +
       `sorted by ${q.sort} ${q.order}.` +
-      (partial ? " PARTIAL — see failedChains / catalogComplete." : ""),
+      (partial ? " PARTIAL - see failedChains / catalogComplete." : ""),
     asOf: new Date(nowMs).toISOString(),
     filtersApplied: describeYieldFilters(q),
     matched: matched.length,

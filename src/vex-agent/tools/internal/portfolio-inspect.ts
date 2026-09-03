@@ -1,12 +1,12 @@
 /**
- * Agent Scan — DB-backed read-only self-inspection tool (renamed from
- * `portfolio`, Agent Scan plan v3 §1.9/§4.7 — the profit-computation system
+ * Agent Scan - DB-backed read-only self-inspection tool (renamed from
+ * `portfolio`, Agent Scan plan v3 §1.9/§4.7 - the profit-computation system
  * is deleted; views shrink to plain recorded session-wallet history).
  *
  * Views: transactions (primary), activity, balances, snapshots, summary,
  * executions, mission_baseline (mission runs only).
  *
- * View implementations in inspect-views/*.ts — this file is the router only.
+ * View implementations in inspect-views/*.ts - this file is the router only.
  */
 
 import type { ToolResult } from "../types.js";
@@ -81,7 +81,7 @@ export async function handleAgentScan(
     }
   }
 
-  // `executions` is a global protocol audit log (no wallet_address) — unscoped.
+  // `executions` is a global protocol audit log (no wallet_address) - unscoped.
   switch (view) {
     case "executions": return inspectExecutions(namespace, limit);
     default: return fail(`Unknown view: ${view}`);

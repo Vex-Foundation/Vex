@@ -1,5 +1,5 @@
 /**
- * Pendle Router calldata DECODING — the lowest layer of the broadcast
+ * Pendle Router calldata DECODING - the lowest layer of the broadcast
  * fund-safety extractor.
  *
  * Extracted from `../calldata.ts` (R5a) so that decoding, route binding, claim
@@ -9,8 +9,8 @@
  * This module answers exactly one question: "what does this calldata actually
  * say?" It performs a FULL `decodeFunctionData` against the complete Router ABI
  * and returns normalized, intent-relevant params. It does NOT know what the
- * caller intended — that is `./bind-route.ts` — and it does NOT know what a fair
- * price is — that is `./price-floor.ts`.
+ * caller intended - that is `./bind-route.ts` - and it does NOT know what a fair
+ * price is - that is `./price-floor.ts`.
  *
  * Two invariants ARE asserted here, because they are properties of the calldata
  * itself rather than of any intent:
@@ -34,7 +34,7 @@ import {
 // ── Refusal vocabulary (shared by every binding module) ──────────────
 
 /**
- * Refuse to sign. The message is OUR fixed text — an upstream body never
+ * Refuse to sign. The message is OUR fixed text - an upstream body never
  * reaches the model through this path.
  */
 export function unsafe(reason: string): never {
@@ -67,7 +67,7 @@ export interface DecodedRouterCall {
   receiver: Address;
   /**
    * Arg 1 on every allowed method: the MARKET (swaps, LP add/remove), the YT
-   * (PY mint/redeem) or — since R5d — the SY CONTRACT (`mintSyFromToken` /
+   * (PY mint/redeem) or - since R5d - the SY CONTRACT (`mintSyFromToken` /
    * `redeemSyToToken`, which have no market and no maturity). The caller knows
    * which of the three its action expects and binds accordingly; this layer only
    * reports what arg 1 says.
@@ -86,8 +86,8 @@ export interface DecodedRouterCall {
    * The DECODED argument list, exactly as the ABI produced it.
    *
    * Deliberately `unknown[]`: this is an external-boundary value, and the one
-   * consumer that reads positionally — the per-selector min-out binding table in
-   * `./price-floor.ts` — narrows each field with an explicit runtime check and
+   * consumer that reads positionally - the per-selector min-out binding table in
+   * `./price-floor.ts` - narrows each field with an explicit runtime check and
    * refuses anything unexpected. Handing out a pre-cast shape here would move
    * that check somewhere it can be forgotten.
    */
@@ -96,13 +96,13 @@ export interface DecodedRouterCall {
 
 /**
  * The convert body always sends `useLimitOrder: false`, so a route's decoded
- * `limit` tuple must carry ZERO fills — injected maker-order fills would change
+ * `limit` tuple must carry ZERO fills - injected maker-order fills would change
  * the tx/approval semantics behind the quote.
  */
 function assertNoLimitFills(args: readonly unknown[], index: number): void {
   const limit = args[index] as { normalFills: readonly unknown[]; flashFills: readonly unknown[] };
   if (limit.normalFills.length !== 0 || limit.flashFills.length !== 0) {
-    unsafe("route carries limit-order fills — useLimitOrder is disabled");
+    unsafe("route carries limit-order fills - useLimitOrder is disabled");
   }
 }
 
@@ -113,8 +113,8 @@ function assertNoLimitFills(args: readonly unknown[], index: number): void {
  * `pendleSwap` since the original binding; the swap path pinned nothing, so a
  * route could name an arbitrary helper. LIVE-MEASURED 2026-07-27 across seven
  * aggregator-engaged chain-1 routes (three KyberSwap, four OKX): `pendleSwap`
- * was `0xd4F480965D2347d421F1bEC7F545682E5Ec2151D` — {@link PENDLE_SWAP_HELPER},
- * the exact constant the claim path already pins — on EVERY one, while
+ * was `0xd4F480965D2347d421F1bEC7F545682E5Ec2151D` - {@link PENDLE_SWAP_HELPER},
+ * the exact constant the claim path already pins - on EVERY one, while
  * `swapData.extRouter` varied by aggregator (KyberSwap
  * `0x6131B5fae19EA4f9D964eAc0408E4408b66337b5`, OKX
  * `0x28b1Dc1a5E3699A428BC51d234DFab7C9CB2a183`). Pure-Pendle routes carry the
@@ -159,7 +159,7 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
   switch (decoded.functionName) {
     case "swapExactTokenForPt":
     case "swapExactTokenForYt": {
-      // Both carry the TokenInput at arg 4 with the same layout — bind the
+      // Both carry the TokenInput at arg 4 with the same layout - bind the
       // actual netTokenIn spend + the input token.
       assertNoLimitFills(args, 5);
       const input = args[4] as { tokenIn: string; netTokenIn: bigint; pendleSwap: string };
@@ -189,7 +189,7 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
       };
     }
     case "mintPyFromToken": {
-      // mintPyFromToken(receiver, YT, minPyOut, TokenInput) — the TokenInput is at
+      // mintPyFromToken(receiver, YT, minPyOut, TokenInput) - the TokenInput is at
       // arg 3 (no ApproxParams/guess tuple), and arg 1 is the YT. Bind the actual
       // netTokenIn spend + the input token, like the token→PT/YT buys.
       const input = args[3] as { tokenIn: string; netTokenIn: bigint; pendleSwap: string };
@@ -227,7 +227,7 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
       };
     case "addLiquiditySingleToken": {
       // addLiquiditySingleToken(receiver, market, minLpOut, guessPtReceivedFromSy,
-      // input(TokenInput), limit) — the TokenInput is at arg 4 (after the
+      // input(TokenInput), limit) - the TokenInput is at arg 4 (after the
       // ApproxParams guess tuple). arg1 is the MARKET (== the LP token).
       assertNoLimitFills(args, 5);
       const input = args[4] as { tokenIn: string; netTokenIn: bigint; pendleSwap: string };
@@ -243,7 +243,7 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
     }
     case "removeLiquiditySingleToken": {
       // removeLiquiditySingleToken(receiver, market, netLpToRemove, output(TokenOutput),
-      // limit) — arg2 is the ACTUAL LP burned and the TokenOutput at arg 3 carries
+      // limit) - arg2 is the ACTUAL LP burned and the TokenOutput at arg 3 carries
       // the quoted output token; arg1 is the MARKET (the LP being redeemed).
       assertNoLimitFills(args, 4);
       const output = args[3] as { tokenOut: string; pendleSwap: string };
@@ -259,7 +259,7 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
     }
     // ── R5d: SY wrap / unwrap ──────────────────────────────────────
     case "mintSyFromToken": {
-      // mintSyFromToken(receiver, SY, minSyOut, TokenInput) — arg1 is the SY
+      // mintSyFromToken(receiver, SY, minSyOut, TokenInput) - arg1 is the SY
       // CONTRACT, not a market or a YT. There is no `limit` tuple to check.
       const input = args[3] as { tokenIn: string; netTokenIn: bigint; pendleSwap: string };
       assertKnownPendleSwap(input.pendleSwap, "the SY mint's input leg");
@@ -273,7 +273,7 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
       };
     }
     case "redeemSyToToken": {
-      // redeemSyToToken(receiver, SY, netSyIn, TokenOutput) — arg1 is the SY,
+      // redeemSyToToken(receiver, SY, netSyIn, TokenOutput) - arg1 is the SY,
       // arg2 the ACTUAL SY burned. No `limit` tuple.
       const output = args[3] as { tokenOut: string; pendleSwap: string };
       assertKnownPendleSwap(output.pendleSwap, "the SY redeem's output leg");
@@ -289,7 +289,7 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
     // ── R5d: dual / keep-YT liquidity ──────────────────────────────
     case "removeLiquidityDualTokenAndPt": {
       // removeLiquidityDualTokenAndPt(receiver, market, netLpToRemove,
-      // output(TokenOutput), minPtOut) — arg2 is the ACTUAL LP burned. The PT leg
+      // output(TokenOutput), minPtOut) - arg2 is the ACTUAL LP burned. The PT leg
       // has NO token field in the calldata; the floor binding resolves it as the
       // route output that is not the TokenOutput's token. No `limit` tuple.
       const output = args[3] as { tokenOut: string; pendleSwap: string };
@@ -305,7 +305,7 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
     }
     case "addLiquiditySingleTokenKeepYt": {
       // addLiquiditySingleTokenKeepYt(receiver, market, minLpOut, minYtOut,
-      // input(TokenInput)) — the TokenInput is at arg 4 (two bare minimums
+      // input(TokenInput)) - the TokenInput is at arg 4 (two bare minimums
       // precede it, where the plain single-token add has one min + a guess
       // tuple). No `limit` tuple.
       const input = args[4] as { tokenIn: string; netTokenIn: bigint; pendleSwap: string };
@@ -321,7 +321,7 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
     }
     case "removeLiquiditySinglePt": {
       // removeLiquiditySinglePt(receiver, market, netLpToRemove, minPtOut,
-      // guessPtReceivedFromSy, limit) — the proceeds are PT, so there is no
+      // guessPtReceivedFromSy, limit) - the proceeds are PT, so there is no
       // TokenOutput tuple and no pendleSwap to pin. `limit` is at arg 5.
       assertNoLimitFills(args, 5);
       return {
@@ -336,7 +336,7 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
     // Each is reached ONLY through `decodeReflectCall`'s recursion, but it is
     // decoded here, by the same allowlist, so an inner leg can never be read by a
     // weaker decoder than an outer call. None carries a TokenInput/TokenOutput:
-    // every one moves PT/SY/LP, which are protocol tokens, not swap legs — so
+    // every one moves PT/SY/LP, which are protocol tokens, not swap legs - so
     // there is no pendleSwap to pin on any of them.
     case "swapExactPtForSy": {
       assertNoLimitFills(args, 4);
@@ -366,7 +366,7 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
 // bytes selfCall1, bytes selfCall2, bytes reflectCall)` wraps a MULTI-LEG
 // action whose legs are themselves Router calls. Leg 1's decoded receiver was
 // the REFLECTOR (`0x30544e00cf296b34a9ee59e5540ae2f9cccd55dd`), NOT the wallet
-// — the documented exception `./bind-route.ts` enforces — while the final leg's
+// - the documented exception `./bind-route.ts` enforces - while the final leg's
 // receiver was the wallet and its min-out equalled our computed floor EXACTLY.
 //
 // R5d (2026-07-28) PINNED THE INNER LAYOUTS R5a deferred. Re-probed live and
@@ -382,7 +382,7 @@ export function decodeRouterCall(data: string): DecodedRouterCall {
 // wrapper. `convert-lp-to-pt` does NOT: it live-probed as a plain single-leg
 // `removeLiquiditySinglePt`.
 //
-// The reflector itself is NOT universal — see `PENDLE_REFLECTORS` — so a caller
+// The reflector itself is NOT universal - see `PENDLE_REFLECTORS` - so a caller
 // must pin the per-chain address before granting the leg-1 receiver exception.
 
 export interface DecodedReflectCall {
@@ -391,7 +391,7 @@ export interface DecodedReflectCall {
   /**
    * Every non-empty inner leg, in execution order. Each is decoded through
    * {@link decodeRouterCall}, so an inner selector outside the allowlist is
-   * refused by the same code path that refuses an outer one — there is no
+   * refused by the same code path that refuses an outer one - there is no
    * second, weaker decoder.
    */
   legs: readonly DecodedRouterCall[];
@@ -400,7 +400,7 @@ export interface DecodedReflectCall {
 /**
  * FULL-decode a `callAndReflect` body and, recursively, each of its inner legs.
  *
- * An empty leg (`0x`) is skipped — the live capture leaves `selfCall2` empty.
+ * An empty leg (`0x`) is skipped - the live capture leaves `selfCall2` empty.
  * A body with no decodable leg at all is refused: a reflect call that does
  * nothing we can read is not something to sign.
  */

@@ -1,5 +1,5 @@
 /**
- * Jupiter Lend Borrow position HEALTH — current LTV, distance to liquidation,
+ * Jupiter Lend Borrow position HEALTH - current LTV, distance to liquidation,
  * and the provider's liquidation flag (Agent Scan Phase 3, W4).
  *
  * WHY THIS EXISTS, AND WHY IT IS ATTACHED TO A READ. Until this module, the
@@ -8,7 +8,7 @@
  * (`../runtime/gates.ts`). An approval preview does not exist in a `full`
  * autonomous session: the agent opened and adjusted leveraged positions with
  * no LTV and no health number anywhere in reach. The owner's ruling
- * (2026-07-25) was DISCLOSE, DO NOT BLOCK — no gate may refuse a leveraged
+ * (2026-07-25) was DISCLOSE, DO NOT BLOCK - no gate may refuse a leveraged
  * operation for want of a health number. The consequence is the reason this
  * file is written the way it is: **with no gate, this output IS the safety
  * control**, so an uncomputable number must surface as an explicitly NAMED
@@ -18,13 +18,13 @@
  * UNITS. Every input here is provider-scaled and none of the scales agree:
  *   - `collateralRaw`/`debtRaw` are raw ATOMIC units of their OWN leg's token
  *     (`JupiterLendBorrowVault.supplyToken.decimals` /
- *     `.borrowToken.decimals`). The two legs routinely differ — a 6-decimal
- *     stable against a 9-decimal WSOL — and reading one with the other's
+ *     `.borrowToken.decimals`). The two legs routinely differ - a 6-decimal
+ *     stable against a 9-decimal WSOL - and reading one with the other's
  *     decimals is a thousandfold error, which is why this module never takes
  *     a single "decimals" argument.
  *   - `liquidationThresholdRaw` is the provider's raw/10 percent scale
  *     ("850" = 85.0%), documented for `collateralFactor` and INFERRED for
- *     `liquidationThreshold` — see `./borrow-projector.ts`'s scale caveat.
+ *     `liquidationThreshold` - see `./borrow-projector.ts`'s scale caveat.
  *     That inference is disclosed in the read's own guidance text; it is not
  *     silently treated as fact.
  *   - `*PriceUsd` are the provider's own decimal-string quotes carried on the
@@ -39,7 +39,7 @@
  * has more digits than a `Number` can carry without drift.
  */
 
-/** Amounts with more digits than this are not converted to `Number` — the estimate degrades to a named unknown rather than risk float drift. Mirrors `./borrow-risk-preview.ts`'s identical guard. */
+/** Amounts with more digits than this are not converted to `Number` - the estimate degrades to a named unknown rather than risk float drift. Mirrors `./borrow-risk-preview.ts`'s identical guard. */
 const MAX_SAFE_ESTIMATE_DIGITS = 15;
 
 /** `collateralFactor`/`liquidationThreshold`: raw/10 = percent (one implied decimal digit). */
@@ -53,7 +53,7 @@ const NOT_SAFE = "This is NOT a statement that this position is safe.";
 /**
  * Three-state on purpose. The provider's `isLiquidated` is documented on the
  * position row but was never captured in a non-empty recorded fixture (the
- * only live recording is `[]` — see
+ * only live recording is `[]` - see
  * `src/__tests__/solana/fixtures/lend-borrow/README.md`), so its presence on a
  * real row is not proven. A missing flag collapsed to `false` would tell an
  * autonomous agent a liquidated position is healthy.
@@ -70,7 +70,7 @@ export function readLiquidationStatus(
 
 // ── Provider scale parsing (string math only) ────────────────────
 
-/** An unsigned base-10 integer string — the wire convention for every raw amount and threshold on this shelf. */
+/** An unsigned base-10 integer string - the wire convention for every raw amount and threshold on this shelf. */
 const UNSIGNED_DIGITS = /^\d+$/;
 
 /** An unsigned decimal (optionally exponential) price string, as the provider writes it. */
@@ -82,7 +82,7 @@ function stripLeadingZeros(digits: string): string {
 
 /**
  * Format a raw/10-scaled digit string as an exact percent string by pure
- * decimal-point shifting — no `parseFloat`, no division, so no precision can
+ * decimal-point shifting - no `parseFloat`, no division, so no precision can
  * be invented or lost. `null` for a malformed value: read endpoints are
  * validated permissively, so a bad value degrades to "unknown", never a
  * fabricated percent.
@@ -116,7 +116,7 @@ export function parseTenthsAsPercentNumber(raw: string): number | null {
  * `@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/types.js`), so a
  * reader that shows only `borrow` understates what is owed. Bigint math: a
  * u64 amount exceeds `Number.MAX_SAFE_INTEGER`. `null` for a malformed input
- * — a bad row degrades the one position, it never throws out of the read.
+ * - a bad row degrades the one position, it never throws out of the read.
  */
 export function sumRawDebt(borrowRaw: string, dustBorrowRaw: string): string | null {
   if (!UNSIGNED_DIGITS.test(borrowRaw) || !UNSIGNED_DIGITS.test(dustBorrowRaw)) return null;
@@ -133,7 +133,7 @@ export function sumRawDebt(borrowRaw: string, dustBorrowRaw: string): string | n
 export type JupiterLendBorrowPositionRisk =
   | {
       readonly status: "computed";
-      /** Collateral valued at the vault's own point-in-time provider price. `"<0.01"` when a real amount is smaller than a cent — never rounded to a bare `"0.00"`. */
+      /** Collateral valued at the vault's own point-in-time provider price. `"<0.01"` when a real amount is smaller than a cent - never rounded to a bare `"0.00"`. */
       readonly collateralUsd: string;
       /** Total debt (principal + dust) at the vault's own provider price, same convention. */
       readonly debtUsd: string;
@@ -156,14 +156,14 @@ export type JupiterLendBorrowPositionRisk =
     };
 
 export interface BorrowPositionRiskInput {
-  /** For the reason text only — never used in arithmetic. */
+  /** For the reason text only - never used in arithmetic. */
   readonly vaultId: string;
   /** Raw atomic units of the COLLATERAL token. */
   readonly collateralRaw: string;
   readonly collateralDecimals: number;
   /** Provider decimal-string USD quote for the collateral token. */
   readonly collateralPriceUsd: string;
-  /** Raw atomic units of the DEBT token — principal plus dust (see `sumRawDebt`). */
+  /** Raw atomic units of the DEBT token - principal plus dust (see `sumRawDebt`). */
   readonly debtRaw: string;
   readonly debtDecimals: number;
   readonly debtPriceUsd: string;
@@ -197,8 +197,8 @@ function parseRawAmount(raw: string): bigint | null {
 }
 
 /**
- * `10 ** decimals` — the divisor that turns a raw atomic amount into token
- * units — or `null` when the provider's `decimals` cannot produce a usable one.
+ * `10 ** decimals` - the divisor that turns a raw atomic amount into token
+ * units - or `null` when the provider's `decimals` cannot produce a usable one.
  *
  * `decimals` reaches here as a plain JSON number off a provider row whose only
  * contract is a compile-time `interface`
@@ -206,7 +206,7 @@ function parseRawAmount(raw: string): bigint | null {
  * beside it. Checking the DIVISOR rather than the decimals value keeps one rule
  * instead of a decimals-range policy, and catches the case a result-only check
  * cannot: `10 ** 400` is `Infinity`, so every amount divided by it becomes a
- * FINITE `0` — a real position reported as empty at 0.00% LTV, which is a
+ * FINITE `0` - a real position reported as empty at 0.00% LTV, which is a
  * fabrication an agent would read as "borrow more". The other direction,
  * `10 ** -400 === 0`, divides by zero into `Infinity`.
  */
@@ -289,7 +289,7 @@ export function computeBorrowPositionRisk(input: BorrowPositionRiskInput): Jupit
   const collateralUsd = (Number(collateralRaw) / collateralDivisor) * collateralPrice;
   const debtUsd = (Number(debtRaw) / debtDivisor) * debtPrice;
   // THE RESULT, not just the inputs. Every input above is individually finite
-  // and still the product can overflow — a 15-digit amount against a divisor of
+  // and still the product can overflow - a 15-digit amount against a divisor of
   // `1e-323` is `Infinity`. Reaching `"computed"` with a non-finite value emits
   // `"NaN"`/`"Infinity"` through `toFixed`, under the exact discriminant that
   // tells an autonomous agent the number is usable.
@@ -307,7 +307,7 @@ export function computeBorrowPositionRisk(input: BorrowPositionRiskInput): Jupit
       collateralUsd: formatUsdEstimate(collateralUsd),
       debtUsd: formatUsdEstimate(debtUsd),
       note:
-        "Debt is owed against zero recorded collateral, so LTV is undefined and unbounded — it cannot be compared "
+        "Debt is owed against zero recorded collateral, so LTV is undefined and unbounded - it cannot be compared "
         + "against maxLtvPercent or liquidationThresholdPercent. Treat this position as already past liquidation: "
         + "repay it (repayAll) or inspect it on-chain before any operation that increases debt.",
     };
@@ -321,14 +321,14 @@ export function computeBorrowPositionRisk(input: BorrowPositionRiskInput): Jupit
   // a liquidation risk presented as a usable measurement.
   if (!Number.isFinite(ltvPercent)) {
     return unknown(
-      `Vault ${input.vaultId}'s debt-to-collateral ratio overflowed to a number this reader cannot represent — the `
-      + `collateral valuation is too small relative to the debt to express as a percentage — so no LTV was `
+      `Vault ${input.vaultId}'s debt-to-collateral ratio overflowed to a number this reader cannot represent - the `
+      + `collateral valuation is too small relative to the debt to express as a percentage - so no LTV was `
       + `computed. Treat this position as at least severely overleveraged: repay it or add collateral before any `
       + `operation that increases debt or reduces collateral.`,
     );
   }
   // `liquidationThreshold` and `ltvPercent` are both finite and non-negative
-  // here, so their difference cannot overflow — no further guard is reachable.
+  // here, so their difference cannot overflow - no further guard is reachable.
   return {
     status: "computed",
     collateralUsd: formatUsdEstimate(collateralUsd),

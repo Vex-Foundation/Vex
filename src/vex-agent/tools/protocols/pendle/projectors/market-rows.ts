@@ -4,7 +4,7 @@
  * Every structural field is re-narrowed: names are bounded and sanitized,
  * addresses are shape-checked, expiry is re-serialized to canonical ISO, numbers
  * are finite and bounded. Rates leave as PERCENT STRINGS with the unit in the
- * field name — a bare 0.0228 in agent-facing output is a unit trap, and the
+ * field name - a bare 0.0228 in agent-facing output is a unit trap, and the
  * repo's own money-format rule says the unit travels with the number.
  */
 
@@ -60,7 +60,7 @@ export interface ProjectedMarketRow {
  *
  * Ordering happens here, on the merged multichain set, and not server-side:
  * `/v2/markets/all` is per-chain, so a cross-chain `order_by` would rank each
- * chain independently and then concatenate — which is how the old handler could
+ * chain independently and then concatenate - which is how the old handler could
  * return fifty rows from one chain and call it "the deepest markets".
  */
 export function compareMarketRows(sort: string, order: "asc" | "desc") {
@@ -105,7 +105,7 @@ function compareBySort(sort: string, a: ProjectedMarketRow, b: ProjectedMarketRo
 /**
  * Project one catalogue market into a yields row.
  *
- * `assetByAddress` is the chain's FROZEN asset catalogue (`buildAssetMap`) — the
+ * `assetByAddress` is the chain's FROZEN asset catalogue (`buildAssetMap`) - the
  * only source of per-leg decimals. Without it every amount an agent later builds
  * against these legs would be a guess.
  */
@@ -152,7 +152,7 @@ export function projectMarketRow(
     const headline = trustedNumber(market.details.impliedApy, 100);
     if (headline === null || headline < PENDLE_LOW_APY_THRESHOLD) {
       row.pointsWarning =
-        "This market awards POINTS, not a fixed yield. The headline implied APY is low — points are speculative and are NOT a guaranteed return.";
+        "This market awards POINTS, not a fixed yield. The headline implied APY is low - points are speculative and are NOT a guaranteed return.";
     }
   }
   return row;

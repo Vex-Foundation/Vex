@@ -1,10 +1,10 @@
 /**
- * Swap family + venue classifier — shared between the READ-ONLY `SwapQuote`
+ * Swap family + venue classifier - shared between the READ-ONLY `SwapQuote`
  * alias and the MUTATING `swap` alias router.
  *
  * One classifier, one source of truth: both aliases route by `chain` to the same
  * family AND the same venue, so the read-only quote and the execute can never
- * disagree — if they did, the prequote gate's venue-bound match-hash would never
+ * disagree - if they did, the prequote gate's venue-bound match-hash would never
  * collide between the quote and the execute. The venue policy itself lives in the
  * VENUE ROUTER (`@tools/uniswap/venue-router`); this classifier just projects it
  * into the shape the aliases dispatch with.
@@ -34,8 +34,8 @@ export type SwapFamily =
 
 /**
  * Decide the swap family + venue from a `chain` arg. Solana is matched FIRST;
- * EVM is resolved through the VENUE ROUTER (KyberSwap primary where supported —
- * incl. Robinhood Chain — with Uniswap as the all-EVM fallback). Anything neither
+ * EVM is resolved through the VENUE ROUTER (KyberSwap primary where supported -
+ * incl. Robinhood Chain - with Uniswap as the all-EVM fallback). Anything neither
  * Solana nor a routable EVM chain is `unknown` → callers fail clearly.
  */
 export function classifySwapFamily(chain: string): SwapFamily {

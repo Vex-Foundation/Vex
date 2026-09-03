@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Time series for ONE Pendle market — implied APY, underlying APY, TVL, PT/YT/LP price, traded volume and pool composition, at hourly, daily or weekly resolution. This is how you tell whether today's fixed rate is high or low for this market before locking it until expiry; the current rate alone cannot answer that. Returns one row per point with the unit in every field name (APYs as percent values, USD as exact decimal strings), plus min, max, first, last and the relative change per requested field. The window is bounded: a request covering more than 1440 points is rejected by name so nothing is truncated silently. Historical rates describe the past and do not predict the rate you will get — quote the trade for that. Read-only.",
+      "description": "Time series for ONE Pendle market - implied APY, underlying APY, TVL, PT/YT/LP price, traded volume and pool composition, at hourly, daily or weekly resolution. This is how you tell whether today's fixed rate is high or low for this market before locking it until expiry; the current rate alone cannot answer that. Returns one row per point with the unit in every field name (APYs as percent values, USD as exact decimal strings), plus min, max, first, last and the relative change per requested field. The window is bounded: a request covering more than 1440 points is rejected by name so nothing is truncated silently. Historical rates describe the past and do not predict the rate you will get - quote the trade for that. Read-only.",
       "name": "pendle__market_history_get",
       "parameters": {
         "additionalProperties": false,
@@ -11,7 +11,7 @@
             "type": "string"
           },
           "fields": {
-            "description": "Comma-separated series fields. Default: impliedApy,underlyingApy,tvl. Selectable: impliedApy, underlyingApy, maxApy, baseApy, tvl, ptPrice, ytPrice, lpPrice, tradingVolume, pendleApy, aggregatedApy, swapFeeApy, ytFloatingApy, totalPt, totalSy, totalSupply, totalActiveSupply. An unknown field is rejected by name — Pendle serves only these. Ask for fewer fields to spend fewer compute units.",
+            "description": "Comma-separated series fields. Default: impliedApy,underlyingApy,tvl. Selectable: impliedApy, underlyingApy, maxApy, baseApy, tvl, ptPrice, ytPrice, lpPrice, tradingVolume, pendleApy, aggregatedApy, swapFeeApy, ytFloatingApy, totalPt, totalSy, totalSupply, totalActiveSupply. An unknown field is rejected by name - Pendle serves only these. Ask for fewer fields to spend fewer compute units.",
             "type": "string"
           },
           "from": {

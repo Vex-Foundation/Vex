@@ -1,13 +1,13 @@
 {
   "definition": {
     "function": {
-      "description": "Preview a cross-chain bridge WITHOUT executing - routes, pricing, fees, and ETA. Use this when the user asks what moving an amount between two chains would cost or how long it would take, and before every BridgeExecute: the execute is authorized only by a fresh matching quote on the SAME provider, within 15 minutes and with identical params. Venue comes from Khalani's live chain registry: Khalani when it serves both sides, Relay otherwise, which is how Robinhood Chain routes. Resolve fromToken/toToken addresses via TokenFind first. `amountRaw` is in RAW base units (wei/lamports), matching the underlying bridge quote. Read-only, and the quoted output is already net of Vex's 25 bps input-token fee. RETURNS, on the Khalani route, quoteId, routeCount, routes (each routeId, type, amountIn, amountOut, etaSeconds and its expiry fields), vexFee and expiryNote. On the Relay route it returns a summary, serviceable, fromChain/toChain, fromToken/toToken, amounts (in and out, each with token, amountRaw, human amount and a nullable usd estimate), vexFee, estimatedTimeSeconds, minimumAmountOutRaw, totalImpactPercent, appliedSlippagePercent, steps and requestId. `vexFee` is a union: the fee amount and receiver fields exist only when it is actually charged.",
+      "description": "Preview a cross-chain bridge WITHOUT executing - routes, pricing, fees, and ETA. Use this when the user asks what moving an amount between two chains would cost or how long it would take, and before every BridgeExecute: the execute is authorized only by a fresh matching quote on the SAME provider, within 15 minutes and with identical params. THIS quote authorizes BridgeExecute whichever venue it routed to; it does not authorize BridgeExecuteRelay, which takes a BridgeQuoteRelay of its own. Venue comes from Khalani's live chain registry: Khalani when it serves both sides, Relay otherwise, which is how Robinhood Chain routes. Resolve fromToken/toToken addresses via TokenFind first. `amountRaw` is in RAW base units (wei/lamports), matching the underlying bridge quote. Read-only, and the quoted output is already net of Vex's 25 bps input-token fee. RETURNS, on the Khalani route, quoteId, routeCount, routes (each routeId, type, amountIn, amountOut, etaSeconds and its expiry fields), vexFee and expiryNote. On the Relay route it returns a summary, serviceable, fromChain/toChain, fromToken/toToken, amounts (in and out, each with token, amountRaw, human amount and a nullable usd estimate), vexFee, estimatedTimeSeconds, minimumAmountOutRaw, totalImpactPercent, appliedSlippagePercent, steps and requestId. `vexFee` is a union: the fee amount and receiver fields exist only when it is actually charged.",
       "name": "BridgeQuote",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "amountRaw": {
-            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from TokenFind / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
+            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from TokenFind / khalani.tokens.search, which returns decimals per chain - a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
             "type": "string"
           },
           "filler": {
@@ -24,10 +24,6 @@
           },
           "fromToken": {
             "description": "Source token address.",
-            "type": "string"
-          },
-          "recipient": {
-            "description": "Destination recipient override.",
             "type": "string"
           },
           "toChain": {

@@ -1,5 +1,5 @@
 /**
- * Pendle PT handlers — quote (read) + buy / sell / redeem (mutating).
+ * Pendle PT handlers - quote (read) + buy / sell / redeem (mutating).
  *
  * This file is the PT family's PUBLIC ENTRY POINT; each tool's implementation
  * lives in `./pt/`.
@@ -13,7 +13,7 @@
  * API-independent `redeemPyToSy` fallback for a matured position when Convert is
  * unavailable.
  *
- * Upstream error text NEVER reaches the model — only bounded, code-keyed detail.
+ * Upstream error text NEVER reaches the model - only bounded, code-keyed detail.
  */
 
 import type { ProtocolHandler } from "../../types.js";

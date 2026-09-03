@@ -1,6 +1,6 @@
 /**
  * The tolerance resolution both `kyberswap.swap.quote` and
- * `kyberswap.swap.execute` apply — deliberately ONE owner, because a quote
+ * `kyberswap.swap.execute` apply - deliberately ONE owner, because a quote
  * that resolved slippage differently from the execute would authorize a
  * tolerance the execute refuses.
  */
@@ -14,7 +14,7 @@ import { num } from "../../../handler-helpers.js";
  *
  * `slippageBps` is BOTH the number handed to `/route/build` and the number the
  * build's embedded floor is re-derived from, so it is resolved identically at
- * quote time and execute time — an omitted value takes the SAME venue default
+ * quote time and execute time - an omitted value takes the SAME venue default
  * on both sides, which is what lets a quote-without-slippage authorize an
  * execute-without-slippage. That default is Vex-wide
  * ({@link VEX_DEFAULT_SLIPPAGE_BPS}), not a KyberSwap fact. It is also the ONLY price protection on this

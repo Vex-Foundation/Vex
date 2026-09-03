@@ -7,7 +7,7 @@
         "additionalProperties": false,
         "properties": {
           "chain": {
-            "description": "REQUIRED. The one chain to list — Virtuals indexes exactly four: base, solana, robinhood, ethereum. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "description": "REQUIRED. The one chain to list - Virtuals indexes exactly four: base, solana, robinhood, ethereum. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
             "enum": [
               "base",
               "solana",

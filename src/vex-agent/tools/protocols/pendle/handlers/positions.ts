@@ -1,10 +1,10 @@
 /**
- * `pendle.position.value` — every Pendle leg the session wallet holds.
+ * `pendle.position.value` - every Pendle leg the session wallet holds.
  *
  * PT, YT, LP, SY and cross-chain PT, on every chain, valued and stated. The
  * handler this replaces projected PT and LP only: a YT position the agent can
  * open through `pendle.yt.buy` was one it could never see or exit, and a MATURED
- * PT — the exact position the redeem product exists for — projected as
+ * PT - the exact position the redeem product exists for - projected as
  * `pt: null, expiry: null, redeemable: false` because the resolver behind it was
  * active-only (G-16, G-18).
  *
@@ -49,7 +49,7 @@ function chainFreshness(slug: string, updatedAt: string | null, nowMs: number): 
       dataAsOf: null,
       ageHours: null,
       stalenessWarning:
-        "Pendle did not report when this chain's positions were last recomputed — treat these balances as of unknown age.",
+        "Pendle did not report when this chain's positions were last recomputed - treat these balances as of unknown age.",
     };
   }
   const ageMs = nowMs - updatedMs;
@@ -197,7 +197,7 @@ export async function pendlePositionValue(
           spokePt: entry.spokePt,
           spokeChainId: entry.chainId,
           balanceRaw: entry.balanceRaw,
-          note: "Cross-chain PT leg on a spoke chain. Vex has no tool that can act on it — reported so the holding is not invisible. Decimals are NOT available for spoke assets, so no human amount is shown.",
+          note: "Cross-chain PT leg on a spoke chain. Vex has no tool that can act on it - reported so the holding is not invisible. Decimals are NOT available for spoke assets, so no human amount is shown.",
         });
       }
 
@@ -209,7 +209,7 @@ export async function pendlePositionValue(
         continue;
       }
       const market = lookup.status === "found" ? lookup.market : null;
-      // `null` — not `false` — when maturity is unproven: an indeterminate
+      // `null` - not `false` - when maturity is unproven: an indeterminate
       // catalogue walk must never be reported as "still earning".
       const matured = lookup.status === "found" ? lookup.matured : null;
 
@@ -265,7 +265,7 @@ export async function pendlePositionValue(
       (totals.unvaluedLegs > 0
         ? ` (${totals.unvaluedLegs} leg(s) could not be valued and are EXCLUDED from that total)`
         : "") +
-      (stale.length > 0 ? `. STALE DATA on ${stale.length} chain(s) — see chainFreshness.` : "."),
+      (stale.length > 0 ? `. STALE DATA on ${stale.length} chain(s) - see chainFreshness.` : "."),
     wallet,
     asOf: new Date(nowMs).toISOString(),
     filtersApplied: describePositionFilters(q),
@@ -284,6 +284,6 @@ export async function pendlePositionValue(
     nextStep:
       "`state` is the single status field: earning | matured_redeemable | matured_removable | expired_worthless. " +
       "Redeem a matured PT with pendle__pt_redeem, remove a matured LP with pendle__lp_remove, sweep accrued income with pendle__rewards_claim. " +
-      "Amounts are {raw, decimals, exact} — use `exact` to talk to the user and `raw` to build a transaction.",
+      "Amounts are {raw, decimals, exact} - use `exact` to talk to the user and `raw` to build a transaction.",
   });
 }

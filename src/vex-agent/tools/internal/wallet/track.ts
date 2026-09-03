@@ -1,11 +1,11 @@
 /**
- * WalletTrackToken — explicit token pinning for LOCAL (non-Khalani) chains.
+ * WalletTrackToken - explicit token pinning for LOCAL (non-Khalani) chains.
  *
  * Khalani-covered chains discover holdings automatically; LOCAL chains (e.g.
  * Robinhood 4663) scan a fixed set: the chain's seed tokens ∪ the pins in
  * `tracked_tokens`. This tool manages those pins so tokens received by
  * transfer/airdrop become visible to `WalletBalances` and the portfolio.
- * Swap (uniswap) and bridge (relay) executes auto-pin their tokens — manual
+ * Swap (uniswap) and bridge (relay) executes auto-pin their tokens - manual
  * pinning covers everything else. DB-only: no on-chain transaction, no
  * approval needed (`actionKind: local_write`, mirrors session-memory writes).
  */
@@ -42,7 +42,7 @@ export async function handleWalletTrackToken(
   const config = chainId !== undefined ? getLocalChain(chainId) : undefined;
   if (chainId === undefined || !config) {
     return fail(
-      `WalletTrackToken: '${chain}' is not a local chain. Pinning only applies to local chains (e.g. robinhood / 4663) — Khalani-covered chains discover tokens automatically.`,
+      `WalletTrackToken: '${chain}' is not a local chain. Pinning only applies to local chains (e.g. robinhood / 4663) - Khalani-covered chains discover tokens automatically.`,
     );
   }
 
@@ -76,7 +76,7 @@ export async function handleWalletTrackToken(
       (t) => t.address.toLowerCase() === checksummed.toLowerCase(),
     );
     if (isSeed) {
-      return ok({ chain: config.name, chainId, token: checksummed, pinned: false, note: "Already in the chain's seed set — always scanned; no pin needed." });
+      return ok({ chain: config.name, chainId, token: checksummed, pinned: false, note: "Already in the chain's seed set - always scanned; no pin needed." });
     }
     const { inserted } = await trackedTokensRepo.pinTrackedToken({
       walletAddress,
@@ -89,7 +89,7 @@ export async function handleWalletTrackToken(
       chainId,
       token: checksummed,
       pinned: true,
-      note: inserted ? "Pinned — balance reads and portfolio now track it." : "Was already pinned.",
+      note: inserted ? "Pinned - balance reads and portfolio now track it." : "Was already pinned.",
     });
   }
 

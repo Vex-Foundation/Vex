@@ -1,5 +1,5 @@
 /**
- * Wallet internal tool handlers — aggregator.
+ * Wallet internal tool handlers - aggregator.
  * Split into modules: wallet-read, wallet-send.
  */
 

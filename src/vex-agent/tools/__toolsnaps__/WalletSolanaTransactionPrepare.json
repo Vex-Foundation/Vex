@@ -1,17 +1,17 @@
 {
   "definition": {
     "function": {
-      "description": "Prepare an ARBITRARY Solana transaction for approval. It SPENDS NOTHING and signs nothing, and it never touches a private key: it verifies the fee payer and sole-signer shape against the wallet selected for this session, INSTALLS A FRESH BLOCKHASH before anything is simulated or shown, decodes every instruction, simulates the canonical message and records one durable intent. The fresh blockhash matters: it means the message the user approves is byte-for-byte the message that will be signed. Use this when the user wants to send a Solana transaction Vex has no dedicated tool for, and before any call to `WalletSolanaTransactionConfirm`. DECODE IS FAIL CLOSED and allowlists exact instruction VARIANTS, not program names: System transfer, classic SPL Token transfer/transferChecked/approve/revoke, ComputeBudget compute-unit limit and price, and Memo. TOKEN-2022 IS REFUSED BY NAME because its extensions can add a transfer fee or invoke an external hook program on every transfer. Versioned messages resolve their address lookup tables first, and an unresolvable table refuses. A caller-supplied fee payer or redirect field is refused by name. RETURNS intentId, walletAddress, feePayer, status 'prepared', recentBlockhash, lastValidBlockHeight, canonicalMessageBase64, the decoded instructions, the approval preview, approvedFeeBounds and expiresAt. That displayed expiry is a 60 second readability cap; lastValidBlockHeight is the real bound and confirm rechecks the current block height against it.",
+      "description": "Prepare an ARBITRARY Solana transaction for approval. It SPENDS NOTHING and signs nothing, and it never touches a private key: it verifies the fee payer and sole-signer shape against the wallet selected for this session, INSTALLS A FRESH BLOCKHASH before anything is simulated or shown, decodes every instruction, simulates the canonical message and records one durable intent. The fresh blockhash matters: it means the message the user approves is byte-for-byte the message that will be signed. Use this when the user wants to send a Solana transaction Vex has no dedicated tool for, and before any call to `WalletSolanaTransactionConfirm`. TWO CALLS: `computeUnitLimit` and `computeUnitPriceMicroLamports` are required in effect and optional in the schema, so a first call without them is refused by name and carries the current network estimate as a labelled hint you choose from. DECODE IS FAIL CLOSED and allowlists exact instruction VARIANTS, not program names: System transfer, classic SPL Token transfer/transferChecked/approve/revoke, ComputeBudget compute-unit limit and price, and Memo. TOKEN-2022 IS REFUSED BY NAME because its extensions can add a transfer fee or invoke an external hook program on every transfer. Versioned messages resolve their address lookup tables first, and an unresolvable table refuses. A caller-supplied fee payer or redirect field is refused by name. RETURNS intentId, walletAddress, feePayer, status 'prepared', recentBlockhash, lastValidBlockHeight, canonicalMessageBase64, the decoded instructions, the approval preview, approvedFeeBounds and expiresAt. That displayed expiry is a 60 second readability cap; lastValidBlockHeight is the real bound and confirm rechecks the current block height against it.",
       "name": "WalletSolanaTransactionPrepare",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "computeUnitLimit": {
-            "description": "REQUIRED cap on the requested COMPUTE UNITS, as a decimal integer string. The priority fee is charged on the requested limit rather than on units actually used, so this is part of what you authorize. Calling without the caps refuses by name and returns the current network estimate as a labelled hint.",
+            "description": "Cap on the requested COMPUTE UNITS, as a decimal integer string. REQUIRED IN EFFECT, optional in the schema, and required TOGETHER with computeUnitPriceMicroLamports: a call without the caps is refused by name and returns the current network estimate as a labelled hint, which is the first call of the two-call workflow. The priority fee is charged on the requested limit rather than on units actually used, so this is part of what you authorize.",
             "type": "string"
           },
           "computeUnitPriceMicroLamports": {
-            "description": "REQUIRED cap on the priority price per compute unit, in RAW micro-lamports as a decimal integer string. Together with computeUnitLimit it fixes the maximum priority fee in lamports, which is echoed back in approvedFeeBounds.",
+            "description": "Cap on the priority price per compute unit, in RAW micro-lamports as a decimal integer string. REQUIRED IN EFFECT, optional in the schema, and required TOGETHER with computeUnitLimit; the two fix the maximum priority fee in lamports, which is echoed back in approvedFeeBounds.",
             "type": "string"
           },
           "transactionBase64": {
@@ -20,9 +20,7 @@
           }
         },
         "required": [
-          "transactionBase64",
-          "computeUnitLimit",
-          "computeUnitPriceMicroLamports"
+          "transactionBase64"
         ],
         "type": "object"
       }

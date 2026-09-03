@@ -11,7 +11,7 @@
             "type": "boolean"
           },
           "limit": {
-            "description": "Max results, 1-20 (default 20). The provider ignores this param upstream — Vex enforces the requested count locally.",
+            "description": "Max results, 1-20 (default 20). The provider ignores this param upstream - Vex enforces the requested count locally.",
             "type": "number"
           },
           "provider": {

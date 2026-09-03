@@ -80,7 +80,7 @@ export async function resolveLaunchAuthorizationVariant(
         ok: false,
         reason:
           `${tools.toolId} refused: this session is in restricted permission. The launch form is this `
-          + `tool's consent surface — open it for the user by calling ${tools.formToolId}, and `
+          + `tool's consent surface - open it for the user by calling ${tools.formToolId}, and `
           + "their Deploy click authorizes the launch. Nothing was signed.",
       };
     }
@@ -101,7 +101,7 @@ export async function resolveLaunchAuthorizationVariant(
 
   // THE EXACT RUN, never "whichever run is active". The provenance already names
   // the run the host bound to this dispatch; reading by mission alone let run A's
-  // launch be gated by run B's frozen snapshot — a different, possibly larger,
+  // launch be gated by run B's frozen snapshot - a different, possibly larger,
   // ceiling than the one that authorized this call. The engine refuses by name
   // when the run is missing, terminal, or not this mission's, and those reasons
   // are surfaced verbatim rather than flattened into a generic error.

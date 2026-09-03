@@ -11,7 +11,7 @@
             "type": "string"
           },
           "chain": {
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc'). Both legs are on ONE chain; none of these tools bridges.",
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc'). Both legs are on ONE chain; none of these tools bridges.",
             "type": "string"
           },
           "dryRun": {

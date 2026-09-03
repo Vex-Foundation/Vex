@@ -1,11 +1,11 @@
 /**
- * Running the Vex fee leg — AFTER the swap confirmed, and never before.
+ * Running the Vex fee leg - AFTER the swap confirmed, and never before.
  *
  * THE INVARIANT (copied from `src/tools/bridge-fee/index.ts`, which says it
  * about bridges and means it identically here):
  *
  *   "a bridge that fails at any point NEVER charges a fee for a bridge that did
- *    not happen. The worst case is that Vex misses revenue — never that the user
+ *    not happen. The worst case is that Vex misses revenue - never that the user
  *    pays for nothing. Do not reorder to fee-first."
  *
  * Concretely, and every one of these is pinned by a test:
@@ -103,7 +103,7 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
         onHashStaged: async (handles) => {
           const res = await markActivityBroadcast(feeRowId, handles);
           if (!res.applied) {
-            throw new Error(`agent_activity: markActivityBroadcast CAS miss for fee event ${feeRowId} — refusing to broadcast untracked`);
+            throw new Error(`agent_activity: markActivityBroadcast CAS miss for fee event ${feeRowId} - refusing to broadcast untracked`);
           }
         },
         onAccepted: async () => {
@@ -118,11 +118,11 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
       // BEST-EFFORT, deliberately: the revert is a RECEIPT FACT with a known
       // hash. Letting a repository failure fall through to the catch below
       // would downgrade a proven on-chain revert to "not attempted" and erase
-      // the hash — bookkeeping rewriting chain truth. Log it, keep the truth.
+      // the hash - bookkeeping rewriting chain truth. Log it, keep the truth.
       await recordFeeRevert(feeRowId, outcome.txHash);
       return {
         collection: "reverted",
-        collectionNote: "The Vex fee transfer reverted, so no fee was collected — your swap is unaffected.",
+        collectionNote: "The Vex fee transfer reverted, so no fee was collected - your swap is unaffected.",
         txHash: outcome.txHash,
       };
     }
@@ -132,8 +132,8 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
       // here: a blind retry of an unconfirmed transfer could charge twice.
       logger.info("uniswap.fee.ambiguous", { id: feeRowId, stage: outcome.stage });
       // Migration 067: the fee row has its OWN pending reason. It is not the
-      // swap's — a fee that did not confirm says nothing about whether the swap
-      // did — and before this the row was pending with nothing stated at all.
+      // swap's - a fee that did not confirm says nothing about whether the swap
+      // did - and before this the row was pending with nothing stated at all.
       await noteHandlerPendingReason("uniswap.fee", feeRowId, "fee_broadcast_ambiguous");
       return {
         collection: "unconfirmed",
@@ -153,7 +153,7 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
     logger.warn("uniswap.fee.leg_failed", { id: feeRowId, error: err instanceof Error ? err.name : "unknown" });
     return {
       collection: "not_attempted",
-      collectionNote: "The Vex fee transfer was refused before signing, so no fee was collected — your swap is unaffected.",
+      collectionNote: "The Vex fee transfer was refused before signing, so no fee was collected - your swap is unaffected.",
       txHash: null,
     };
   }
@@ -178,7 +178,7 @@ async function recordFeeRevert(feeRowId: number, txHash: string): Promise<void> 
 }
 
 /**
- * A NATIVE fee transfer's ENTIRE value is the Vex platform fee — Vex built it
+ * A NATIVE fee transfer's ENTIRE value is the Vex platform fee - Vex built it
  * from its own arithmetic on the user's own input amount, and there is no other
  * party's number in it. Without this classification
  * `checkNativeValueAuthorizedForCall` refuses the transfer as unattributed
@@ -209,7 +209,7 @@ function assertFeeValueAuthorized(chainId: number, plan: UniswapFeeLegPlan): voi
 
 /**
  * A non-applied CAS confirm (the reconciler already finalized this row) must not
- * read as a clean confirm — mirrors the swap path's own confirm.
+ * read as a clean confirm - mirrors the swap path's own confirm.
  */
 async function confirmFeeRow(
   feeRowId: number,
@@ -241,7 +241,7 @@ export function uniswapFeeNotAttempted(reason: string): UniswapFeeCollection {
   };
 }
 
-/** There was no fee to take at all — dust, or a token Vex declines to skim. */
+/** There was no fee to take at all - dust, or a token Vex declines to skim. */
 export function uniswapFeeNotCharged(reason: string): UniswapFeeCollection {
   return {
     collection: "not_charged",

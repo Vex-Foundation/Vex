@@ -1,7 +1,7 @@
 /**
  * `MemorySearch` inline cap and output formatting (steps 6 and 8 of the
  * handler, split out in 0R.15, refactor-only): the inline-only cap with
- * truncate-with-steering (no silent drop — R1-#3) and the concise/detailed
+ * truncate-with-steering (no silent drop - R1-#3) and the concise/detailed
  * projections, including the `via_graph(<entity>)` marker that keeps
  * expansion results distinguishable from direct hits.
  */
@@ -18,12 +18,12 @@ export interface InlineSplit {
 }
 
 /**
- * Cap the ranked set to LONG_MEMORY_INLINE_CAP entries (ALWAYS) and — ONLY when
- * the response actually carries `contentMd` (detailed format) — to
+ * Cap the ranked set to LONG_MEMORY_INLINE_CAP entries (ALWAYS) and - ONLY when
+ * the response actually carries `contentMd` (detailed format) - to
  * LONG_MEMORY_INLINE_CHARS_CAP total chars. concise responses do NOT return
  * `contentMd`, so the chars cap must never truncate them (final-gate fix). The
  * first result is always kept even if it alone busts the chars cap (otherwise the
- * top hit would be lost). NO overflow cache (R1-#3) — the dropped count drives the
+ * top hit would be lost). NO overflow cache (R1-#3) - the dropped count drives the
  * steering hint + `search.truncated`.
  */
 export function capInline(ranked: readonly LongMemoryResult[], applyCharsCap: boolean): InlineSplit {
@@ -57,7 +57,7 @@ interface ConciseItem {
   similarity: number;
   score: number;
   notConsolidated?: true;
-  /** S8 — `via_graph(<entity>)` marker on graph-expansion results (concise AND detailed). */
+  /** S8 - `via_graph(<entity>)` marker on graph-expansion results (concise AND detailed). */
   via?: string;
 }
 

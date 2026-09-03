@@ -1,5 +1,5 @@
 /**
- * `solana.swap.execute` — the staged sign→persist→broadcast swap.
+ * `solana.swap.execute` - the staged sign→persist→broadcast swap.
  *
  * Extracted verbatim from `../core.ts` as part of a façade-preserving
  * structural split. Execute writes durable truth DIRECTLY to `agent_activity`
@@ -100,7 +100,7 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
   // The gate's hash match already proves every REQUEST param (mints,
   // amount, fee/tip/CU-strategy/DEX-filter/maxAccounts/wrap knobs) is
   // identical to the quote; what it CANNOT prove is that this fresh fee
-  // derivation still lands on the same treasury ATA — that check runs
+  // derivation still lands on the same treasury ATA - that check runs
   // explicitly below, against the persisted preview read here.
   const matched = await findFreshMatchedSwapPrequote(toolId, sessionId, p, ctx);
   const persistedFeePreview = matched
@@ -131,13 +131,13 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
   };
 
   // Phase A (pre-intent): fresh /build + R4 shape revalidation. ANY failure
-  // here is pre-broadcast — nothing has been signed or recorded yet. Per
+  // here is pre-broadcast - nothing has been signed or recorded yet. Per
   // K1's stage/error mapping table (validation.ts) every rejection at this
   // stage is `route_not_found`, the generic build-rejection bucket: what
   // remains are trade-SHAPE divergences (swap mode, fee destination), and
   // none of them is a slippage event the agent could answer by widening its
   // tolerance. The quote-to-quote price floor that used to file `slippage`
-  // here was removed by owner decision — see `fee-swap-revalidate.ts`.
+  // here was removed by owner decision - see `fee-swap-revalidate.ts`.
   const preBroadcastFail = async (failureCode: AgentActivityFailureCode, err: unknown): Promise<ToolResult> => {
     const reason = swapFailureMessage(err);
     const { executionId } = await createAgentActivityPreBroadcastFailure({
@@ -148,7 +148,7 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
         eventIndex: 0,
         failureCode,
         failureReason: reason,
-        // No output amount exists yet on a pre-broadcast failure — only the
+        // No output amount exists yet on a pre-broadcast failure - only the
         // token identity is known, so the leg carries no human amount.
         tokenOut: buildActivityTokenLeg({
           tokenAddress: outputToken.address, tokenSymbol: outputToken.symbol,
@@ -181,8 +181,8 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
 
   // Record the intent BEFORE signing. The settlement profile
   // (`jupiter-swaps/settlement-profile.ts`) is the row's OWN evidence of the
-  // economics Vex approved — the tip the build-response guard certified, the
-  // exact-in amount, the wrap knob — and is what later lets the K3 sweep
+  // economics Vex approved - the tip the build-response guard certified, the
+  // exact-in amount, the wrap knob - and is what later lets the K3 sweep
   // decode a native-SOL swap instead of leaving it pending forever. It is
   // omitted (never faked) when those facts cannot be stated honestly; the
   // sweep then falls back to the generic decoder.
@@ -208,9 +208,9 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
       // Part 2). This path fetches NO USD price, so `usd_vex_fee_est` is
       // NULL on every Jupiter swap row and would read as "Vex charged
       // nothing" if the amount were not here. Both figures come from
-      // `fee-swap.ts`'s single exact bigint derivation — the same numbers
+      // `fee-swap.ts`'s single exact bigint derivation - the same numbers
       // `assertFeePolicyUnchanged` re-checked and the approval preview
-      // disclosed — so the fee shown, the fee charged and the fee recorded
+      // disclosed - so the fee shown, the fee charged and the fee recorded
       // are one value. `feeMint` IS the input mint by construction (the fee
       // is charged on the input side), which is why the input token's
       // symbol/decimals describe it.
@@ -226,7 +226,7 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
   });
   const eventRow = events[0]!;
 
-  // Sign-only, VERIFY mode — the fresh `/build` response's OWN
+  // Sign-only, VERIFY mode - the fresh `/build` response's OWN
   // `blockhashWithMetadata` is evidence tied to these exact bytes. A throw
   // here is a POST-INTENT failure: finalize the EXISTING row, never a
   // second intent (design R2).
@@ -242,7 +242,7 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
     await failActivityEvent(eventRow.id, { failureCode: "unknown", failureReason: reason });
     return {
       success: false,
-      output: `${toolId} failed: ${reason} — recorded (execution ${executionId}); nothing was broadcast.`,
+      output: `${toolId} failed: ${reason} - recorded (execution ${executionId}); nothing was broadcast.`,
       data: { _executionId: executionId },
     };
   }
@@ -258,7 +258,7 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
     logger.warn(`${toolId}.staging_cas_miss`, { executionId, eventId: eventRow.id });
     return {
       success: false,
-      output: `${toolId}: an internal error left this swap unrecorded before broadcast — refusing to submit untracked. Check execution ${executionId}; do not retry blindly.`,
+      output: `${toolId}: an internal error left this swap unrecorded before broadcast - refusing to submit untracked. Check execution ${executionId}; do not retry blindly.`,
       data: { _executionId: executionId },
     };
   }
@@ -266,7 +266,7 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
   // Broadcast. The fee-bearing `/build` response is the ONE Solana path that
   // can carry a qualifying Jupiter tip, and `assertBuildResponseSafeToSign`
   // has already PROVEN it (recipient on the published allowlist, exact
-  // approved amount) — that proof is what unlocks `/tx/v1/submit`. An
+  // approved amount) - that proof is what unlocks `/tx/v1/submit`. An
   // agent-approved zero tip yields no proof and lands over RPC instead of
   // being silently dropped. A signature mismatch or an ambiguous transport
   // failure NEVER terminalizes the row; the canonical local signature stays
@@ -282,13 +282,13 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
   if (broadcast.kind === "rejected_before_broadcast") {
     // The landing service ANSWERED and refused: nothing went on-chain.
     // Reporting this as "pending confirmation" would be a lie. The row still
-    // stays pending — the sweep owns terminality (design D4).
+    // stays pending - the sweep owns terminality (design D4).
     //
     // When the node named a program error we can PLACE (`pre-broadcast-
     // rejection-refusal.ts`), the agent gets the remedy instead of a stop
     // order: a refusal an autonomous agent cannot act on strands the mission
     // (plan rule 8). Anything we cannot identify keeps the conservative
-    // wording below — an invented remedy is the failure being fixed here.
+    // wording below - an invented remedy is the failure being fixed here.
     const rejection = classifyJupiterPreBroadcastRejection(
       broadcast.cause,
       prepared.raw.swapInstruction.programId,
@@ -310,7 +310,7 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
             observedPriceImpactFraction: observedPriceImpactFraction(prepared.raw.priceImpactPct),
           },
         })} Recorded (execution ${executionId}).`
-        : `${toolId}: this swap was rejected before broadcast — nothing went on-chain: ${broadcast.reason}. Recorded (execution ${executionId}); do not retry until the cause is fixed.`,
+        : `${toolId}: this swap was rejected before broadcast - nothing went on-chain: ${broadcast.reason}. Recorded (execution ${executionId}); do not retry until the cause is fixed.`,
       data: {
         _executionId: executionId,
         status: "rejected_before_broadcast",
@@ -322,7 +322,7 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
   const feePreview = buildJupiterFeePreview(prepared);
   return {
     success: false,
-    output: `Swap broadcast (signature ${signedTx.signature}) — confirmation pending, tracked automatically. Do not retry.`,
+    output: `Swap broadcast (signature ${signedTx.signature}) - confirmation pending, tracked automatically. Do not retry.`,
     data: {
       _executionId: executionId,
       status: "pending",
@@ -334,7 +334,7 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
       // its SOL twin (rule 90). The twins are added HERE and not inside
       // `buildJupiterFeePreview`, because that builder lives under `src/tools`
       // and the twin owner (`protocols/amount-display.ts`) is under
-      // `src/vex-agent` — `src/tools` must never import it (`check:boundaries`).
+      // `src/vex-agent` - `src/tools` must never import it (`check:boundaries`).
       // Raw lamports stay verbatim; SOL travels alongside, never instead.
       feePreview: {
         ...feePreview,

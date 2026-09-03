@@ -1,13 +1,13 @@
 {
   "definition": {
     "function": {
-      "description": "Prepare a wallet-to-wallet transfer for approval. It SPENDS NOTHING and signs nothing: it writes one durable transfer intent and hands back its id. THE INTENT IS WHAT GETS APPROVED - Vex passes it straight to `WalletSendConfirm` as a trusted follow-up, and the chain, recipient, amount and token recorded here are exactly what the user is shown and confirms, so a mistake at this step is a mistake the approval carries. Use this when the user asks to send native coin, an ERC-20, an NFT or SPL tokens to an address, and before any call to `WalletSendConfirm` - confirm has no other way to obtain an intentId. Covers native coin and ERC-20 on any EVM chain, and ERC-721 through token 'nft:{contract}:{tokenId}'; on Solana, SOL and SPL tokens only, with no pNFT or cNFT. `amountIn` is a HUMAN decimal STRING (\"1.5\", never the number 1.5, never wei or lamports), and `chain` is required for eip155 and ignored for solana; each is refused BY NAME rather than guessed. RETURNS intentId, network, chain, to, amount, token, status 'prepared' and expiresAt. The intent expires 10 minutes after this call, is scoped to this session, and binds the wallet selected right now - if the selection changes, confirm refuses instead of sending from a different address.",
+      "description": "Prepare a wallet-to-wallet transfer for approval. It SPENDS NOTHING and signs nothing: it writes one durable transfer intent and hands back its id. THE INTENT IS WHAT GETS APPROVED - Vex passes it straight to `WalletSendConfirm` as a trusted follow-up, and the chain, recipient, amount and token recorded here are exactly what the user is shown and confirms, so a mistake at this step is a mistake the approval carries. Use this when the user asks to send native coin, an ERC-20, an NFT or SPL tokens to an address, and before any call to `WalletSendConfirm` - confirm has no other way to obtain an intentId. Covers native coin and ERC-20 on any EVM chain, and ERC-721 through token 'nft:{contract}:{tokenId}'; on Solana, SOL and SPL tokens only, with no pNFT or cNFT. `amountIn` is a HUMAN decimal STRING (\"1.5\", never the number 1.5, never wei or lamports), and `chain` is required for eip155 and ignored for solana; each is refused BY NAME rather than guessed. VEX CHARGES NO FEE on this path: the only cost is the network fee of the transfer itself. RETURNS intentId, network, chain, to, amount, token, status 'prepared' and expiresAt. The intent expires 10 minutes after this call, is scoped to this session, and binds the wallet selected right now - if the selection changes, confirm refuses instead of sending from a different address.",
       "name": "WalletSendPrepare",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "amountIn": {
-            "description": "Amount of the token to send (for native/ERC-20), or \"1\" for an ERC-721. In HUMAN decimal units (e.g. \"1.5\") — not wei, lamports, or any other base unit.",
+            "description": "Amount of the token to send (for native/ERC-20), or \"1\" for an ERC-721. In HUMAN decimal units (e.g. \"1.5\") - not wei, lamports, or any other base unit.",
             "type": "string"
           },
           "chain": {
@@ -23,7 +23,7 @@
             "type": "string"
           },
           "walletFamily": {
-            "description": "Which wallet FAMILY to act on — 'eip155' for your EVM wallet or 'solana' for your Solana wallet. This is a wallet family, not a chain: the EVM chain goes in `chain`.",
+            "description": "Which wallet FAMILY to act on - 'eip155' for your EVM wallet or 'solana' for your Solana wallet. This is a wallet family, not a chain: the EVM chain goes in `chain`.",
             "enum": [
               "eip155",
               "solana"

@@ -1,5 +1,5 @@
 /**
- * Pendle DUAL-LP manifests (R5d card E3) — `pendle.lp.removeDual` (LP → token +
+ * Pendle DUAL-LP manifests (R5d card E3) - `pendle.lp.removeDual` (LP → token +
  * PT) and `pendle.lp.addKeepYt` (token → LP + kept YT).
  *
  * WHAT MAKES THIS PAIR A PAIR is that each produces TWO instruments where the
@@ -9,7 +9,7 @@
  * second minimum-output the price floor has to bind independently.
  *
  * WHAT THE DESCRIPTIONS MUST NOT IMPLY. There is no "add liquidity dual" on
- * Pendle's Convert API — a keep-YT add is still a SINGLE-token deposit that
+ * Pendle's Convert API - a keep-YT add is still a SINGLE-token deposit that
  * happens to hand you the YT instead of selling it into the pool. Both
  * descriptions say the deposit takes one token, so an agent reading them cannot
  * conclude a two-token deposit exists somewhere it has not looked.
@@ -26,7 +26,7 @@ const CHAIN_PARAM = {
   key: "chain",
   type: "string" as const,
   required: true,
-  description: "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
+  description: "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
 };
 
 const MARKET_PARAM = {

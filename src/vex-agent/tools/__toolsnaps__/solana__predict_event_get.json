@@ -11,7 +11,7 @@
             "type": "string"
           },
           "includeMarkets": {
-            "description": "Include the event's nested markets array (default false — lean).",
+            "description": "Include the event's nested markets array (default false - lean).",
             "type": "boolean"
           }
         },

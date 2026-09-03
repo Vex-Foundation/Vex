@@ -1,5 +1,5 @@
 /**
- * Solana/Jupiter protocol manifest — retained tools only.
+ * Solana/Jupiter protocol manifest - retained tools only.
  *
  * Source-of-truth: src/tools/solana-ecosystem/jupiter/
  * Deferred features (perps, orders, stake, send, studio, account, history)

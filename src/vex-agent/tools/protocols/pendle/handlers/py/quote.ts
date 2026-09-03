@@ -1,9 +1,9 @@
 /**
- * `pendle.py.quote` — the read half of the PY surface: what a mint (token →
+ * `pendle.py.quote` - the read half of the PY surface: what a mint (token →
  * PT+YT) or a PRE-EXPIRY redeem (PT+YT → token) would deliver.
  *
  * INSTRUMENT GUARD, fail-closed BEFORE any Convert call: the `pt` must be an
- * ACTIVE PT on the resolved chain (R5b matrix — both PY legs are pre-expiry
+ * ACTIVE PT on the resolved chain (R5b matrix - both PY legs are pre-expiry
  * actions), so a quote can never record a PY identity that would authorize an
  * execute on the wrong instrument. Upstream error text NEVER reaches the model.
  */
@@ -59,8 +59,8 @@ export async function pendlePyQuote(p: Record<string, unknown>, context: Protoco
     return fail("direction must be 'mint' (token → PT+YT) or 'redeem' (pre-expiry PT+YT → token).");
   }
   // Direction-conditional token params: refused BY NAME rather than ignored
-  // (W9d). `tokenOut` stays optional on a redeem — it defaults to the market's
-  // underlying — so only the mint leg's `tokenIn` is required here.
+  // (W9d). `tokenOut` stays optional on a redeem - it defaults to the market's
+  // underlying - so only the mint leg's `tokenIn` is required here.
   const directionTokens = PY_DIRECTION_TOKENS[direction];
   const inapplicable = inapplicableTokenParamRefusal(p, directionTokens);
   if (inapplicable !== null) return fail(inapplicable);
@@ -139,7 +139,7 @@ export async function pendlePyQuote(p: Record<string, unknown>, context: Protoco
       : market.underlyingAsset
         ? getAddress(market.underlyingAsset)
         : null;
-    if (!outputToken) return fail("No output token — pass tokenOut (the market has no underlying to default to).");
+    if (!outputToken) return fail("No output token - pass tokenOut (the market has no underlying to default to).");
     const amountWei = parseUnits(amountInRaw, ptToken.decimals);
     const response = await client.convertMulti(chainId, {
       receiver,

@@ -11,7 +11,7 @@
             "type": "string"
           },
           "fields": {
-            "description": "Comma-separated leg field groups to keep: identity, balance, value, expiry, accrued — or 'all' (default).",
+            "description": "Comma-separated leg field groups to keep: identity, balance, value, expiry, accrued - or 'all' (default).",
             "type": "string"
           },
           "includeAccrued": {
@@ -27,7 +27,7 @@
             "type": "number"
           },
           "redeemableOnly": {
-            "description": "Only legs in state matured_redeemable — the matured PTs ready to redeem (default false).",
+            "description": "Only legs in state matured_redeemable - the matured PTs ready to redeem (default false).",
             "type": "boolean"
           },
           "sort": {

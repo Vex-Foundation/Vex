@@ -49,7 +49,7 @@ export type ManifestLintRule =
   | "param-alias";
 
 export interface ManifestLintIssue {
-  /** Tool id, tool name, or source path — whatever owns the violation. */
+  /** Tool id, tool name, or source path - whatever owns the violation. */
   readonly subject: string;
   readonly rule: ManifestLintRule;
   /** The deletable unit inside the subject: a param key, a literal, a symbol. */
@@ -110,7 +110,7 @@ export function lintParamKey(subject: string, param: LintParam): ManifestLintIss
   if (banned) {
     return [{
       subject, rule: "param-key", detail: param.key,
-      message: `banned param key \`${param.key}\` — ${banned}`,
+      message: `banned param key \`${param.key}\` - ${banned}`,
     }];
   }
   if (!CANONICAL_PARAM_KEYS.has(param.key)) {
@@ -133,7 +133,7 @@ export function lintAmountBpsShape(subject: string, param: LintParam): ManifestL
       issues.push({
         subject, rule: "amount-bps-shape", detail: param.key,
         message:
-          `amount param \`${param.key}\` is type "${param.type}" — every amount travels as a STRING `
+          `amount param \`${param.key}\` is type "${param.type}" - every amount travels as a STRING `
           + "(an 18-decimal amount through IEEE-754 is a silent loss).",
       });
     }
@@ -142,7 +142,7 @@ export function lintAmountBpsShape(subject: string, param: LintParam): ManifestL
         subject, rule: "amount-bps-shape", detail: param.key,
         message:
           `amount param \`${param.key}\` must end in \`In\`/\`Out\` (human decimals) or \`Raw\` `
-          + "(base units) — the key is the only unit signal a model sees when composing from a sibling call.",
+          + "(base units) - the key is the only unit signal a model sees when composing from a sibling call.",
       });
     }
   }
@@ -151,14 +151,14 @@ export function lintAmountBpsShape(subject: string, param: LintParam): ManifestL
       issues.push({
         subject, rule: "amount-bps-shape", detail: param.key,
         message:
-          `bps param \`${param.key}\` is type "${param.type}" — declare \`type: "number"\` so the `
+          `bps param \`${param.key}\` is type "${param.type}" - declare \`type: "number"\` so the `
           + "manifest bps gate (runtime/bps-param.ts) actually runs on it.",
       });
     }
     if (param.unit !== "bps") {
       issues.push({
         subject, rule: "amount-bps-shape", detail: param.key,
-        message: `bps param \`${param.key}\` must declare \`unit: "bps"\` — without it a fractional value is accepted.`,
+        message: `bps param \`${param.key}\` must declare \`unit: "bps"\` - without it a fractional value is accepted.`,
       });
     }
   }
@@ -180,7 +180,7 @@ export function lintParamDescription(subject: string, param: LintParam): Manifes
   if (AMOUNT_KEY.test(param.key) && !AMOUNT_UNIT_ANCHOR.test(text)) {
     issues.push({
       subject, rule: "param-description", detail: param.key,
-      message: `param \`${param.key}\` description names no unit — say HUMAN decimals or RAW base units.`,
+      message: `param \`${param.key}\` description names no unit - say HUMAN decimals or RAW base units.`,
     });
   }
   if (RAW_AMOUNT_SUFFIX.test(param.key) && AMOUNT_KEY.test(param.key) && !DECIMALS_SOURCE_ANCHOR.test(text)) {
@@ -229,7 +229,7 @@ export function lintToolDescription(
   if (!RETURNS_ANCHOR.test(text)) {
     issues.push({
       subject, rule: "tool-description", detail: "returns",
-      message: "tool description states no RETURNS shape — the agent must not guess the result keys.",
+      message: "tool description states no RETURNS shape - the agent must not guess the result keys.",
     });
   }
   if (mutating && !SPENDS_ANCHOR.test(text)) {
@@ -252,7 +252,7 @@ export function lintExampleParamsRequired(
     .filter((param) => param.required && !(param.key in exampleParams))
     .map((param) => ({
       subject, rule: "example-params-required" as const, detail: param.key,
-      message: `required param \`${param.key}\` is missing from exampleParams — the worked call must be callable.`,
+      message: `required param \`${param.key}\` is missing from exampleParams - the worked call must be callable.`,
     }));
 }
 
@@ -266,7 +266,7 @@ export function lintChainDocParity(subject: string, param: LintParam): ManifestL
   return [{
     subject, rule: "chain-doc-parity", detail: param.key,
     message:
-      `chain param \`${param.key}\` does not carry CANONICAL_CHAIN_SENTENCE — the protocol lane and the `
+      `chain param \`${param.key}\` does not carry CANONICAL_CHAIN_SENTENCE - the protocol lane and the `
       + "alias lane must document identical accepted formats.",
   }];
 }
@@ -283,7 +283,7 @@ export function lintExclusiveParamGroups(
     const text = param.description;
     // An exactly-one prose claim is satisfied by ANY declared group carrying the
     // key: "mutually exclusive" is true of an at-most-one group too, and the
-    // manifest — not the sentence — decides which of the two it is.
+    // manifest - not the sentence - decides which of the two it is.
     if (XOR_PROSE.test(text) && !isInAnyGroup(param.key, declared)) {
       issues.push(groupIssue(subject, param.key, "a mutual exclusion", "exclusiveParamGroups"));
     }
@@ -306,7 +306,7 @@ function groupIssue(
   return {
     subject, rule: "exclusive-param-groups", detail: key,
     message:
-      `param \`${key}\` states ${claim} in prose only — declare it in \`${field}\` so discovery `
+      `param \`${key}\` states ${claim} in prose only - declare it in \`${field}\` so discovery `
       + "can show it and the runtime can enforce it.",
   };
 }
@@ -330,7 +330,7 @@ export function lintEnumDeclaration(subject: string, param: LintParam): Manifest
   return [{
     subject, rule: "enum-declaration", detail: param.key,
     message:
-      `param \`${param.key}\` lists its accepted values in prose ("one of …") with no declared \`enum\` — `
+      `param \`${param.key}\` lists its accepted values in prose ("one of …") with no declared \`enum\` - `
       + "an unenforced, uncompiled value list is a burnt call waiting to happen.",
   }];
 }
@@ -362,7 +362,7 @@ export function lintEnumCaseUniqueness(subject: string, param: LintParam): Manif
     return [{
       subject, rule: "enum-case-uniqueness", detail: param.key,
       message:
-        `param \`${param.key}\` declares \`${first}\` and \`${member}\`, which differ only by case — `
+        `param \`${param.key}\` declares \`${first}\` and \`${member}\`, which differ only by case - `
         + "case-insensitive normalization resolves to the FIRST match, so the later spelling is "
         + "unreachable and the handler-visible value depends on declaration order.",
     }];

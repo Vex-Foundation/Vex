@@ -99,6 +99,11 @@ export const PENDLE_NAVIGATION: ProtocolNamespaceNavigation = {
     },
     {
       label: "Dual-leg liquidity",
+      // D9-FROZEN retrieval text (owner decision, `tool-surface-spec/
+      // owner-decisions.md`), pinned byte-for-byte by
+      // `__promptsnaps__/navigation-retrieval-fields.json`. It keeps its U+2014
+      // punctuation: rewording it moves an embedding input, which needs an owner
+      // ruling and a fixture unfreeze, not a punctuation sweep.
       summary:
         "Liquidity actions that produce TWO instruments instead of one: remove into a plain token AND the market's PT, or add with one token and KEEP the YT the deposit produces. Both deposits are still SINGLE-token — Pendle has no two-token add.",
       toolPrefixes: ["pendle.lp.removeDual", "pendle.lp.addKeepYt"],
@@ -131,6 +136,11 @@ export const PENDLE_NAVIGATION: ProtocolNamespaceNavigation = {
     },
     {
       label: "Market detail and history",
+      // D9-FROZEN retrieval text (owner decision, `tool-surface-spec/
+      // owner-decisions.md`), pinned byte-for-byte by
+      // `__promptsnaps__/navigation-retrieval-fields.json`. It keeps its U+2014
+      // punctuation: rewording it moves an embedding input, which needs an owner
+      // ruling and a fixture unfreeze, not a punctuation sweep.
       summary:
         "Inspect ONE market — its legs, expiry, accepted tokens and current rates — plus its APY/TVL history and price candles. Resolves MATURED markets, which the trading tools cannot see.",
       toolPrefixes: ["pendle.market"],

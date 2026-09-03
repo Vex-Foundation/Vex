@@ -243,7 +243,7 @@ union on that one property (`protocols/types.ts:105-108`), and it earns its
 place with a measurement:
 
 > `protocols/types.ts:96-99`: "`dexscreener.profiles {chainIds: ["solana"]}`
-> was rejected in 78 bytes while `chainIds: "solana"` answered in 5,215 — a
+> was rejected in 78 bytes while `chainIds: "solana"` answered in 5,215 - a
 > whole call spent on a spelling a JSON tool call makes natural."
 
 Cross-parameter rules (mutual exclusion, at-most-one, at-least-one) do **not**
@@ -264,7 +264,7 @@ fact and means the snapshot artifact shows what the author declared.
 rationale is a silent-failure class, not tidiness:
 
 > `protocols/types.ts:80-84`: "`z.number()` happily accepts `0.5`, and a
-> fractional bps is not a smaller tolerance — Jupiter answers a non-integer
+> fractional bps is not a smaller tolerance - Jupiter answers a non-integer
 > `slippageBps` with `otherAmountThreshold = 0`, i.e. a swap that accepts ANY
 > output including near-zero. The failure is silent: the quote looks normal."
 

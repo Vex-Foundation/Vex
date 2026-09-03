@@ -1,5 +1,5 @@
 /**
- * Wallet send — `WalletSendPrepare`. Creates a DB-backed `wallet_intents`
+ * Wallet send - `WalletSendPrepare`. Creates a DB-backed `wallet_intents`
  * row only; no key decrypt and no broadcast. The selected wallet ADDRESS is
  * resolved address-only (puzzle 5 phase 5B) and recorded on the intent so the
  * confirm path can assert signer-match before consuming.
@@ -34,7 +34,7 @@ export async function handleWalletSendPrepare(
   }
   const { network, to, amount, token, chain } = validated.values;
 
-  // Per-session selected wallet (puzzle 5 phase 5B) — address only, no decrypt.
+  // Per-session selected wallet (puzzle 5 phase 5B) - address only, no decrypt.
   let walletAddress: string;
   try {
     walletAddress = resolveSelectedAddress(context.walletResolution, context.walletPolicy, network);
@@ -55,7 +55,7 @@ export async function handleWalletSendPrepare(
   // Under the session control lock: creating the intent is the moment the
   // session gains live money state, and the compaction safe-moment gate must
   // never read `clear` a microsecond before this row appears. DB-only and
-  // committed here — no key decrypt, no broadcast on this path at all.
+  // committed here - no key decrypt, no broadcast on this path at all.
   await withSessionControlLock(context.sessionId, (client) =>
     walletIntentsRepo.createWith(client, {
       intentId,
@@ -82,7 +82,7 @@ export async function handleWalletSendPrepare(
     status: "prepared",
     expiresAt,
     // Confirm is now auto-dispatched by the turn loop's trusted follow-up
-    // handoff (see `preparedActionFollowUp` below) — this line is
+    // handoff (see `preparedActionFollowUp` below) - this line is
     // transcript/model-facing copy only and no longer prescribes a
     // follow-up action the agent itself must take.
     message: "Transfer prepared; Vex will confirm it automatically.",

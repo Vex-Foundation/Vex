@@ -102,7 +102,7 @@ function mergeMetadata(
   }
 
   // `chains` is `readonly string[]`; merge by deduped concatenation when both
-  // sides supply values (rare — chains are typically declared per-manifest).
+  // sides supply values (rare - chains are typically declared per-manifest).
   if (override.chains !== undefined && base.chains !== undefined) {
     result.chains = dedupeStrings([...base.chains, ...override.chains]);
   } else if (override.chains !== undefined) {

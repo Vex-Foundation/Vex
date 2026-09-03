@@ -1,5 +1,5 @@
 /**
- * `pendle.py.redeem` — burn an EQUAL PT+YT pair back to a token BEFORE expiry
+ * `pendle.py.redeem` - burn an EQUAL PT+YT pair back to a token BEFORE expiry
  * (Convert action `redeem-py`, `redeemPyToToken`). Distinct from
  * `pendle.pt.redeem`, which redeems a MATURED PT (PT only, no YT).
  *
@@ -8,7 +8,7 @@
  * Approval- and prequote-gated (kind `redeem_py`).
  *
  * OPTION C (migration 053): a pre-expiry redeem is 2 → 1, so BOTH burned legs
- * are staged on the one `agent_activity` row — the mirror of the mint.
+ * are staged on the one `agent_activity` row - the mirror of the mint.
  */
 
 import { getAddress, parseUnits, type Hex } from "viem";
@@ -76,7 +76,7 @@ export async function executePendleRedeemPy(p: Record<string, unknown>, context:
     // ACTIVE-ONLY (R5b matrix, Codex round-3 correction): the PT+YT pair
     // redemption is a PRE-EXPIRY action; after maturity the PT redeems alone
     // via pendle.pt.redeem, so the financial resolver never sees a matured
-    // market here — the refusal is named from the read-only lane.
+    // market here - the refusal is named from the read-only lane.
     const market = await resolveMarketByPt(chainId, ptAddress);
     if (!market || !market.yt || !market.address) {
       return refuse("route_not_found", await explainUnresolvedPendleMarket(chainId, chainSlug, ptAddress, { action: "py.redeem", leg: "PT" }));
@@ -88,7 +88,7 @@ export async function executePendleRedeemPy(p: Record<string, unknown>, context:
       : market.underlyingAsset
         ? getAddress(market.underlyingAsset)
         : null;
-    if (!outputToken) return refuse("route_not_found", "No output token — pass tokenOut (the market has no underlying to default to).");
+    if (!outputToken) return refuse("route_not_found", "No output token - pass tokenOut (the market has no underlying to default to).");
     // PT decimals read ON-CHAIN (a PT is a plain ERC-20). PT and YT are minted 1:1
     // and share decimals, so the equal-leg burn amount uses the same wei.
     const ptToken = await resolveInputToken(chainEntry, ptRaw);
@@ -125,7 +125,7 @@ export async function executePendleRedeemPy(p: Record<string, unknown>, context:
     const intent: PendleTxIntent = {
       action: "py-redeem",
       wallet,
-      // The tolerance this route is held to — see calldata/price-floor.ts.
+      // The tolerance this route is held to - see calldata/price-floor.ts.
       slippageBps: slippage.bps,
       inputToken: ptAddress,
       inputAmountWei: amountWei,
@@ -148,7 +148,7 @@ export async function executePendleRedeemPy(p: Record<string, unknown>, context:
     const ytDec = assetMap.get(ytAddress.toLowerCase())?.decimals ?? ptToken.decimals;
 
     // OPTION C (migration 053): a pre-expiry redeem is 2 → 1, so BOTH burned
-    // legs are staged on the one row — the mirror image of the mint above.
+    // legs are staged on the one row - the mirror image of the mint above.
     const broadcast = await sendPendleRouterTx(
       publicClient,
       walletClient,
@@ -165,7 +165,7 @@ export async function executePendleRedeemPy(p: Record<string, unknown>, context:
     txHash = broadcast.txHash;
     if (broadcast.kind !== "confirmed") return unsettledResult(toolId, broadcast);
 
-    // The DECODED redeem — both burns and the credit proven from the receipt.
+    // The DECODED redeem - both burns and the credit proven from the receipt.
     const outAmount = broadcast.executed.amountOutRaw ?? quotedOutRaw;
 
     logger.info("pendle.py.redeem.executed", { market: market.address, aggregator: route.data.aggregatorType });

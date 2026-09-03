@@ -1,5 +1,5 @@
 /**
- * `trench.search` handler — name/symbol lookup over `/api/search` (READ-ONLY).
+ * `trench.search` handler - name/symbol lookup over `/api/search` (READ-ONLY).
  */
 
 import { getTrenchExpressClient } from "@tools/trench-express/client.js";

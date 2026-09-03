@@ -1,5 +1,5 @@
 /**
- * Pendle YT handlers — quote (read) + buy / sell (mutating) + claim (mutating).
+ * Pendle YT handlers - quote (read) + buy / sell (mutating) + claim (mutating).
  *
  * This file is the YT family's PUBLIC ENTRY POINT; each tool's implementation
  * lives in `./yt/`.
@@ -13,14 +13,14 @@
  *
  * Claim is an INCOME SWEEP (`redeemDueInterestAndRewardsV2`): it collects accrued
  * YT interest + rewards and LP rewards for the wallet's positions on ONE chain in
- * a single tx. Which markets it sweeps — and which eligible ones the
- * per-transaction cap leaves out, always reported, never silent — is owned by
+ * a single tx. Which markets it sweeps - and which eligible ones the
+ * per-transaction cap leaves out, always reported, never silent - is owned by
  * `../claim-targets.ts`. There is nothing to quote (no prequote), but it is approval-gated,
- * Router-pinned, and FULL-decoded via `assertClaimSafe` before signing — funds
+ * Router-pinned, and FULL-decoded via `assertClaimSafe` before signing - funds
  * land on the wallet by protocol (no receiver arg exists), the only external-call
  * surface (`swaps`) is bound empty, and the ONLY allowance a claim may grant is
  * the market's own SY, exact-amount, to the pinned Router (source-verified: the
- * Router pulls the freshly-redeemed SY interest — ActionMiscV3.sol:117-126).
+ * Router pulls the freshly-redeemed SY interest - ActionMiscV3.sol:117-126).
  * Upstream error text NEVER reaches the model.
  */
 

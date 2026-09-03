@@ -1,5 +1,5 @@
 /**
- * Web research handler — search + page reads in one tool, Tavily-backed, cached.
+ * Web research handler - search + page reads in one tool, Tavily-backed, cached.
  *
  * Branches by params:
  *   - `query`                  → search + read the top `fetchTop` results (DEFAULT)
@@ -14,7 +14,7 @@
  * The parameter contract lives in `web-research/search-options.ts`, the output
  * contract in `web-research/result-shape.ts`, publisher-timestamp handling in
  * `web-research/published-date.ts`, and failure wording in
- * `web-research/provider-error.ts` — four different reasons to change, kept out
+ * `web-research/provider-error.ts` - four different reasons to change, kept out
  * of this file so the handler reads as orchestration.
  *
  * PROVIDER DATA IS UNTRUSTED. The exactly-once accounting below is keyed by
@@ -84,7 +84,7 @@ export async function handleWebResearch(
 
 /**
  * Cache writes are BEST-EFFORT: a failed local write must never discard a
- * usable provider result or masquerade as a Tavily failure — the content is
+ * usable provider result or masquerade as a Tavily failure - the content is
  * already in hand; only future cache hits are lost.
  */
 async function cacheFetchBestEffort(url: string, markdown: string, title: string | null): Promise<void> {
@@ -118,7 +118,7 @@ async function fetchUrl(url: string): Promise<ToolResult> {
     // (requiresEnv), so this branch is unreachable via visible tools.
     logger.warn("web.fetch.no_api_key", { hint: "Set TAVILY_API_KEY for web fetch" });
     return fail(
-      "Web fetch unavailable — TAVILY_API_KEY not configured. The key is free (tavily.com); add it in Settings to enable web research.",
+      "Web fetch unavailable - TAVILY_API_KEY not configured. The key is free (tavily.com); add it in Settings to enable web research.",
     );
   }
 
@@ -127,10 +127,10 @@ async function fetchUrl(url: string): Promise<ToolResult> {
     // We pin 25s so basic depth still has runway before the SDK fires.
     const response = await client.extract([url], { timeout: EXTRACT_TIMEOUT_S });
     // Provider data is untrusted: accept ONLY a result for the URL we
-    // requested — a planted result for a different URL must never be served
+    // requested - a planted result for a different URL must never be served
     // (nor cached under the requested key). Tavily's server-side URL echo is
     // undocumented (SDK verified as byte-verbatim passthrough, 2026-07-19), so
-    // a mismatch here is at least as likely benign normalization as an attack —
+    // a mismatch here is at least as likely benign normalization as an attack -
     // the fail-safe response is an honest fetch failure, never acceptance.
     const extracted = (response.results ?? []).find((r) => r.url === url);
     const mismatched = !extracted && (response.results?.length ?? 0) > 0;
@@ -150,10 +150,10 @@ async function fetchUrl(url: string): Promise<ToolResult> {
       );
     }
     // Tavily returned no usable content. Classify the explicit failure when
-    // present — the provider's own reason is untrusted text, so it selects a
+    // present - the provider's own reason is untrusted text, so it selects a
     // code and is then discarded. There is deliberately NO raw-HTTP fallback:
     // owner decision (2026-07-19) removed direct fetching from the privileged
-    // process entirely — Tavily's infrastructure does the fetching, which also
+    // process entirely - Tavily's infrastructure does the fetching, which also
     // removes the local SSRF surface.
     const failedResult = response.failedResults?.find((f) => f.url === url);
     // No failure report and no content is a SHAPE failure Vex determined itself
@@ -181,7 +181,7 @@ async function fetchUrl(url: string): Promise<ToolResult> {
  * The internal seam. Takes an EXPLICIT frozen options object because it has two
  * callers with different needs: the tool handler (agent defaults, 6 rows + 3
  * page reads) and the regime worker (10 rows, no page reads). Neither may
- * inherit the other's defaults — see `search-options.ts`.
+ * inherit the other's defaults - see `search-options.ts`.
  *
  * Exported as an internal function, NOT a ToolDef/registry surface.
  */
@@ -207,7 +207,7 @@ export async function searchAndOptionallyFetch(options: WebSearchOptions): Promi
     const client = getTavilyClient();
     if (!client) {
       logger.warn("web.search.no_api_key", { hint: "Set TAVILY_API_KEY for web search" });
-      return fail("Web search unavailable — TAVILY_API_KEY not configured");
+      return fail("Web search unavailable - TAVILY_API_KEY not configured");
     }
     try {
       const response = await client.search(options.query, {
@@ -230,7 +230,7 @@ export async function searchAndOptionallyFetch(options: WebSearchOptions): Promi
         await searchRepo.cacheResult(cacheKey, rows);
       } catch (cacheErr) {
         // Best-effort: a failed cache write must not turn a successful search
-        // into web.search.failed — the results are already in hand.
+        // into web.search.failed - the results are already in hand.
         logger.warn("web.search.cache_write_failed", {
           error: cacheErr instanceof Error ? cacheErr.message : String(cacheErr),
         });
@@ -269,7 +269,7 @@ export async function searchAndOptionallyFetch(options: WebSearchOptions): Promi
 
 /**
  * Read the top `fetchTop` URLs through ONE Tavily batch extract. Returns one
- * outcome per DISTINCT requested URL — a search result set can repeat a URL,
+ * outcome per DISTINCT requested URL - a search result set can repeat a URL,
  * and every consumer below must see each URL exactly once.
  */
 async function readTopPages(
@@ -288,7 +288,7 @@ async function readTopPages(
     if (!isHttpUrl(target.url)) {
       outcomes.set(target.url, {
         state: "failed",
-        pageError: "Invalid URL — must use http:// or https://",
+        pageError: "Invalid URL - must use http:// or https://",
       });
       continue;
     }
@@ -308,7 +308,7 @@ async function readTopPages(
 
   const client = getTavilyClient();
   if (!client) {
-    // No API key — reading is unavailable (free key: tavily.com).
+    // No API key - reading is unavailable (free key: tavily.com).
     for (const url of uncachedUrls) {
       outcomes.set(url, { state: "failed", pageError: "TAVILY_API_KEY not configured" });
     }
@@ -327,11 +327,11 @@ async function readTopPages(
     for (const r of response.results ?? []) {
       if (!requested.has(r.url)) {
         logger.warn("web.fetch.unrequested_result", { url: r.url.slice(0, 60) });
-        continue; // never accept — and never cache — what we did not ask for
+        continue; // never accept - and never cache - what we did not ask for
       }
       if (fetched.get(r.url)?.state === "ok") continue; // first success wins
       if (!r.rawContent) {
-        // Still "accounted for" by Tavily — must not vanish, unless a duplicate
+        // Still "accounted for" by Tavily - must not vanish, unless a duplicate
         // already produced a real outcome.
         if (!fetched.has(r.url)) {
           fetched.set(r.url, { state: "failed", pageError: "empty content from Tavily extract" });
@@ -358,7 +358,7 @@ async function readTopPages(
       fetched.set(f.url, { state: "failed", pageError: providerFailureReason(failure) });
     }
     // One outcome per requested URL: anything Tavily left unmentioned is an
-    // honest failure (no raw-HTTP fallback exists — owner decision).
+    // honest failure (no raw-HTTP fallback exists - owner decision).
     for (const url of requested) {
       outcomes.set(
         url,
@@ -366,7 +366,7 @@ async function readTopPages(
       );
     }
   } catch (err) {
-    // Whole batch failed (timeout, auth) — every URL reported as failed. This
+    // Whole batch failed (timeout, auth) - every URL reported as failed. This
     // catch also spans the response loop above, so a provider-shaped crash
     // (a non-string `url`, say) is reported here rather than escaping into the
     // dispatcher's generic catch, which would serialize the raw message.

@@ -1,10 +1,10 @@
 /**
- * `execute_tool` ENVELOPE resolution — turn the model's raw tool-call arguments
+ * `execute_tool` ENVELOPE resolution - turn the model's raw tool-call arguments
  * into the params bag the protocol runtime validates.
  *
  * WHY THIS EXISTS. `execute_tool` takes a two-level envelope
  * (`{toolId, params:{…}}`). A live session (2026-07-30) showed a weaker model
- * sending the params FLAT — `{toolId, query, limit, chainIds}` — six times in a
+ * sending the params FLAT - `{toolId, query, limit, chainIds}` - six times in a
  * row, because the answer it got each time was
  * `Missing required parameter "query" for dexscreener.search`, which reads as
  * false to a model that can see `query` in the call it just made. The envelope
@@ -14,7 +14,7 @@
  * lifted only when the resolved manifest DECLARES it (or it is a runtime
  * control key). Nothing is invented, no undeclared key is smuggled past the
  * strict unknown-key gate, and every lifted value still faces the unchanged
- * `validateProtocolParams` boundary — required-missing, wrong type, and unit
+ * `validateProtocolParams` boundary - required-missing, wrong type, and unit
  * contracts all still reject. This widens what the boundary UNDERSTANDS, never
  * what it permits.
  *
@@ -26,7 +26,7 @@ import { RESERVED_RUNTIME_PARAM_KEYS } from "./params.js";
 import logger from "@utils/logger.js";
 
 /**
- * Keys the `execute_tool` envelope owns. They are never lifted into params —
+ * Keys the `execute_tool` envelope owns. They are never lifted into params -
  * a manifest that happened to declare a `params` key would otherwise receive
  * the envelope's own field.
  */
@@ -101,7 +101,7 @@ export function resolveExecuteToolParams(
 /**
  * The message that replaces `Missing required parameter "…"` when the model
  * sent no envelope AND nothing it sent is a parameter of this tool. It names
- * the actual mistake, echoes the KEYS it received (never their values — those
+ * the actual mistake, echoes the KEYS it received (never their values - those
  * are untrusted and may carry sensitive text), and shows the shape to send.
  */
 function envelopeRejection(

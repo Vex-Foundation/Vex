@@ -1,17 +1,17 @@
 /**
  * Pendle CLAIM (income sweep) fund-safety binding.
  *
- * Extracted from `../calldata.ts` (R5a) — a claim has a different response
+ * Extracted from `../calldata.ts` (R5a) - a claim has a different response
  * shape, a different ABI, and different invariants from a Convert route, so it
  * has its own reason to change.
  *
  * `pendle.claim` calls `redeemDueInterestAndRewardsV2` (IPActionMiscV3), whose
- * response is FLAT (no routes[]) and whose calldata has NO `receiver` arg —
+ * response is FLAT (no routes[]) and whose calldata has NO `receiver` arg -
  * every output lands on msg.sender by protocol (SOURCE-verified 2026-07-06:
  * pendle-core-v2-public ActionMiscV3.sol:92-130). Execution facts the binding
  * rests on:
  *   - `swaps == []` → the NoSwap path; `pendleSwap` is NEVER used there
- *     (ActionMiscV3.sol:99-103) — still pinned as defense-in-depth.
+ *     (ActionMiscV3.sol:99-103) - still pinned as defense-in-depth.
  *   - Per YT tuple: `yt.redeemDueInterestAndRewards(msg.sender, doRedeemInterest,
  *     doRedeemRewards)`; when interest accrued, the Router `_transferFrom`s the
  *     freshly-redeemed SY from the wallet and calls `SY.redeem(msg.sender, …,
@@ -25,7 +25,7 @@
  *   NOT a no-op (at least one redeem flag), tokenRedeemSy == the market's
  *   underlyingAsset from OUR chain-scoped lookup (never the response);
  *   `minTokenRedeemOut` is the SDK's slippage PROTECTION on an output that goes
- *   to msg.sender — decoded but not value-bound (forcing 0 would REMOVE the
+ *   to msg.sender - decoded but not value-bound (forcing 0 would REMOVE the
  *   protection, and unlike a Convert route there is no quoted output amount to
  *   re-derive a floor from); markets ⊆ intended; every approval token must be
  *   the SY of a decoded tuple with doRedeemInterest, amount a positive integer,
@@ -41,14 +41,14 @@ import { requireAddress, unsafe } from "./decode.js";
 
 /** Per-YT bind material resolved from OUR market lookup (lowercase addresses). */
 export interface PendleClaimYtBind {
-  /** The market's underlyingAsset — the ONLY allowed tokenRedeemSy. */
+  /** The market's underlyingAsset - the ONLY allowed tokenRedeemSy. */
   readonly tokenRedeemSy: string;
-  /** The market's SY — the ONLY token an interest claim may approve. */
+  /** The market's SY - the ONLY token an interest claim may approve. */
   readonly sy: string;
 }
 
 export interface PendleClaimIntent {
-  /** Session wallet — the only allowed sender (funds land here by protocol). */
+  /** Session wallet - the only allowed sender (funds land here by protocol). */
   wallet: Address;
   /** Lowercase YT address → its bind material (the wallet's held YT markets). */
   intendedYts: ReadonlyMap<string, PendleClaimYtBind>;
@@ -106,10 +106,10 @@ export function decodeClaimCall(data: string): DecodedClaimCall {
   const pendleSwap = getAddress(decoded.args[3] as string);
   const swaps = decoded.args[4] as readonly unknown[];
   // The ONLY external-call/fund-routing surface is `swaps`; a pure claim has none.
-  if (swaps.length !== 0) return unsafe("claim carries an external swap — not a pure income sweep");
+  if (swaps.length !== 0) return unsafe("claim carries an external swap - not a pure income sweep");
   // The tool scopes to YT + LP income; a claim must never sweep SY interest.
   if (sys.length !== 0) return unsafe("claim carries an unexpected SY leg");
-  // pendleSwap is source-proven inert when swaps == [] — pin it anyway.
+  // pendleSwap is source-proven inert when swaps == [] - pin it anyway.
   if (pendleSwap !== PENDLE_NATIVE_TOKEN && pendleSwap !== PENDLE_SWAP_HELPER) {
     return unsafe("claim uses an unverified pendleSwap helper");
   }
@@ -145,15 +145,15 @@ export function assertClaimSafe(
       return unsafe("claim sender is not the session wallet");
     }
   }
-  // 3. Value bind — a claim never sends native value. Missing/empty → zero.
+  // 3. Value bind - a claim never sends native value. Missing/empty → zero.
   const rawValue = response.tx.value;
   const value = typeof rawValue === "string" && rawValue !== "" ? BigInt(rawValue) : 0n;
   if (value !== 0n) return unsafe("a claim must not send native value");
 
-  // 4. Calldata bind — decode + pure-sweep invariants (SYs/swaps/pendleSwap).
+  // 4. Calldata bind - decode + pure-sweep invariants (SYs/swaps/pendleSwap).
   const call = decodeClaimCall(response.tx.data);
 
-  // 5. Per-tuple bind — yt ⊆ intended, no no-op tuples, tokenRedeemSy == OUR
+  // 5. Per-tuple bind - yt ⊆ intended, no no-op tuples, tokenRedeemSy == OUR
   //    resolved underlyingAsset (a divergent redemption token → BLOCK).
   for (const tuple of call.yts) {
     const bind = intent.intendedYts.get(tuple.yt.toLowerCase());
@@ -170,8 +170,8 @@ export function assertClaimSafe(
     if (!intent.intendedMarkets.has(market.toLowerCase())) return unsafe("claim includes a market outside the intended positions");
   }
 
-  // 7. Approvals bind — a real interest claim legitimately approves the market's
-  //    own SY (the Router pulls the freshly-redeemed SY interest — source), so
+  // 7. Approvals bind - a real interest claim legitimately approves the market's
+  //    own SY (the Router pulls the freshly-redeemed SY interest - source), so
   //    the allowed set is EXACTLY the SYs of decoded tuples with doRedeemInterest.
   //    Anything else, a duplicate, or a non-positive amount → BLOCK. The handler
   //    grants each exactly (spender hard-pinned to the Router downstream).

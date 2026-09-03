@@ -1,9 +1,9 @@
 /**
- * W2b (SPEC §2.1 item 8) — the honeypot/FoT check that could NOT run.
+ * W2b (SPEC §2.1 item 8) - the honeypot/FoT check that could NOT run.
  *
  * `kyberswap.swap.execute` fails SOFT when the token-api safety check throws:
  * the swap proceeds. That is defensible. What was not defensible is that it
- * proceeded SILENTLY — a `logger.warn` the user never sees. Because token-api
+ * proceeded SILENTLY - a `logger.warn` the user never sees. Because token-api
  * sits behind the same Cloudflare gate as the aggregator, a header regression
  * meant a user swapped with ZERO honeypot protection and was never told.
  *
@@ -19,7 +19,7 @@ import { classifySafetyCheckFailure } from "./quote-safety.js";
 export interface SafetyCheckUnavailable {
   readonly tokenAddress: string;
   readonly tokenSymbol: string;
-  /** The bounded class the quote path already uses — stable enough to key on. */
+  /** The bounded class the quote path already uses - stable enough to key on. */
   readonly reason: SafetyCheckFailureReason;
   /**
    * The provider's REAL words, sanitized (owner decree 2026-08-02). The bounded
@@ -49,6 +49,6 @@ export function safetyDisclosureSentence(
   const legs = unavailable
     .map((leg) => `${leg.tokenSymbol} (${leg.reason}: ${leg.cause})`)
     .join("; ");
-  return `WARNING — the honeypot/fee-on-transfer check could not run for ${legs}. `
+  return `WARNING - the honeypot/fee-on-transfer check could not run for ${legs}. `
     + "This swap proceeded WITHOUT that protection; treat the token as unverified.";
 }

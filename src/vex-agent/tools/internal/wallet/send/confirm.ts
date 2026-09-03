@@ -1,5 +1,5 @@
 /**
- * Wallet send — `WalletSendConfirm`. Gates a prepared intent on
+ * Wallet send - `WalletSendConfirm`. Gates a prepared intent on
  * session-ownership / status / expiry / approval, resolves AND decrypts the
  * session's signing wallet only AFTER the approval gate, asserts it matches
  * the intent's recorded wallet BEFORE consuming, CAS-consumes atomically, and
@@ -35,7 +35,7 @@ export async function handleWalletSendConfirm(
   }
   const { network, intentId } = validated.values;
 
-  // Session-scoped lookup — cross-session intentId yields null (Codex
+  // Session-scoped lookup - cross-session intentId yields null (Codex
   // puzzle-5 phase-4 review point 3).
   const intent = await walletIntentsRepo.getById(intentId, context.sessionId);
   if (!intent) {
@@ -49,14 +49,14 @@ export async function handleWalletSendConfirm(
   }
 
   if (intent.status !== "pending") {
-    return fail(`Intent ${intentId} is ${intent.status} — cannot consume.`);
+    return fail(`Intent ${intentId} is ${intent.status} - cannot consume.`);
   }
 
   if (new Date(intent.expiresAt) <= new Date()) {
     return fail(`Intent expired at ${intent.expiresAt}.`);
   }
 
-  // Approval gate — UNCHANGED from pre-phase-4. Intent stays `pending`
+  // Approval gate - UNCHANGED from pre-phase-4. Intent stays `pending`
   // for the approval-then-retry cycle; the same row is consumed on the
   // second dispatch after the operator approves.
   if (!context.approved && context.sessionPermission === "restricted") {
@@ -70,7 +70,7 @@ export async function handleWalletSendConfirm(
 
   // Resolve the session's signing wallet AFTER the approval gate, and assert it
   // matches the intent's recorded wallet BEFORE consuming. A mismatch (selection
-  // drift / bug) fails closed WITHOUT mutating the intent — it stays `pending`
+  // drift / bug) fails closed WITHOUT mutating the intent - it stays `pending`
   // and expires; no markFailed (which requires `consuming`). Codex 5B review.
   let signer: ChainWallet;
   try {
@@ -90,7 +90,7 @@ export async function handleWalletSendConfirm(
   // the compaction safe-moment gate: either the gate saw this row as
   // `consuming` and deferred the cutover, or this claim landed strictly after
   // the cutover committed. Holding the lock across `executeEvmTransfer` /
-  // `executeSolanaTransfer` would block the operator's Stop — the exact
+  // `executeSolanaTransfer` would block the operator's Stop - the exact
   // inversion the lock exists to prevent (session-control-lock.ts, hold
   // duration).
   const claimed = await withSessionControlLock(context.sessionId, (client) =>

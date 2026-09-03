@@ -1,5 +1,5 @@
 /**
- * Virtuals Protocol handlers — direct TS client calls, all READ-ONLY.
+ * Virtuals Protocol handlers - direct TS client calls, all READ-ONLY.
  *
  * No wallet, no signing, no mutations: these tools surface agent-token
  * intelligence (list / detail / recent graduations / genesis calendar) that the
@@ -10,7 +10,7 @@
  * The Virtuals API is undocumented, so every handler degrades cleanly on error
  * (returns a readable failure) rather than throwing through the namespace.
  * `filters[status]` is ignored server-side, so status filtering is applied
- * CLIENT-SIDE here after the fetch — over a BOUNDED, DISCLOSED window of pages
+ * CLIENT-SIDE here after the fetch - over a BOUNDED, DISCLOSED window of pages
  * (`./list-window.ts`), never over one silent page.
  *
  * Param reading and every refusal live in `./list-params.ts`; the window scan
@@ -46,7 +46,7 @@ function matchesStatus(status: string | null, filter: StatusFilter): boolean {
   return status === "AVAILABLE"; // graduated
 }
 
-/** A graduated agent with a real LP creation time — the graduations feed's row. */
+/** A graduated agent with a real LP creation time - the graduations feed's row. */
 function isGraduation(agent: VirtualsAgent): boolean {
   return agent.status === "AVAILABLE" && agent.lpCreatedAt !== null;
 }
@@ -123,13 +123,13 @@ function genesisTruncationNote(input: {
 }
 
 /**
- * Model-facing failure detail — the REAL cause, scrubbed and BOUNDED.
+ * Model-facing failure detail - the REAL cause, scrubbed and BOUNDED.
  *
  * Owner decree (2026-08-02, rules/04): a tool error surfaced to the agent
  * carries the ACTUAL cause, never a bare "unexpected error". The canonical
  * summarizer removes secrets, HTML and JSON bodies, URLs, auth headers and long
  * hex blobs, and hard-caps the result. It does NOT neutralise instruction-shaped
- * prose — a pseudo-role tag or an imperative sentence survives scrubbing
+ * prose - a pseudo-role tag or an imperative sentence survives scrubbing
  * unchanged, and the mitigation for THAT is the Safety Contract, which teaches
  * the model that tool output is data, never instruction.
  *
@@ -168,7 +168,7 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
       const projected = projectVirtualsList(matched).slice(0, limit);
       return ok({
         // Echoed as the canonical slug the manifest advertises, not the
-        // provider's UPPERCASE value — the reply must spell the chain the way
+        // provider's UPPERCASE value - the reply must spell the chain the way
         // the next call has to spell it.
         chain: chainSlug,
         status: statusFilter,

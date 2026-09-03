@@ -1,18 +1,18 @@
 /**
- * Failure detail for the Trench Express handlers — REAL cause, agent-friendly.
+ * Failure detail for the Trench Express handlers - REAL cause, agent-friendly.
  *
  * Owner decree (2026-08-02): a tool error surfaced to the agent/UI carries the
  * ACTUAL cause, never a bare "unexpected error". The live test that forced
  * this: `launch_preview` failed four times in a row with "unexpected error"
  * while the log knew the truth the whole time ("total cost … exceeds the
- * balance of the account") — the agent retried blind instead of saying
+ * balance of the account") - the agent retried blind instead of saying
  * "top up the wallet". A generic label on a diagnosable failure wastes the
  * agent's turns and the user's money.
  *
  * The old posture (static vocabulary only) existed because the launchpad REST
  * API leaks upstream-influenced text. That risk is split, not hidden: SECRETS
  * and provider internals are removed by scrubbing (mandatory), while
- * instruction-shaped prose — pseudo-role tags, imperative sentences — is NOT
+ * instruction-shaped prose - pseudo-role tags, imperative sentences - is NOT
  * something scrubbing removes, and never was; the Safety Contract, which
  * teaches the model that tool output is data and never instruction, is what
  * answers that half. Silence answered neither.
@@ -22,7 +22,7 @@
  * (see `runtime/errors.ts`): this file previously carried its own four-regex
  * clone, which knew nothing about JSON/HTML bodies, `redact()`'s secret
  * shapes, or the Bearer-ordering fixes that module has accumulated. Its one
- * guarantee the canonical path lacked — the long-hex-blob strip — was moved
+ * guarantee the canonical path lacked - the long-hex-blob strip - was moved
  * INTO that module rather than kept here, so the consolidation adds coverage
  * and removes none.
  */
@@ -54,7 +54,7 @@ function preferredRawMessage(err: unknown): string {
 /**
  * The canonical category of a Trench provider failure.
  *
- * Exists so a caller can BRANCH on the cause before rendering — the launch
+ * Exists so a caller can BRANCH on the cause before rendering - the launch
  * pipeline uses it to tell "the node will not estimate this call" apart from
  * "the account cannot pay for it", which viem reports through the same
  * `estimateGas` rejection and which the 2026-08-02 incident proved must never
@@ -75,14 +75,14 @@ export function trenchFailureDetail(toolId: string, err: unknown): string {
   });
   if (err instanceof VexError) {
     // Code + authored hint LEADS, then the wrapped real cause when the throw
-    // site buried one in `message`/`cause` — a code alone is not diagnosable.
+    // site buried one in `message`/`cause` - a code alone is not diagnosable.
     return describeFailureForAgent(err);
   }
 
   // viem puts the readable one-line cause in `shortMessage` and a multi-hundred-
   // character docs dump in `message`; the canonical summarizer reads `.message`,
   // so the preferred text is chosen HERE and handed over as the error to
-  // summarize. The original is preserved as `cause` — nothing is swallowed.
+  // summarize. The original is preserved as `cause` - nothing is swallowed.
   const summary = summarizeProtocolError(new Error(preferredRawMessage(err), { cause: err }));
 
   // The one failure class worth naming ahead of the provider text, because its

@@ -6,7 +6,7 @@
  * tools the model emits anyway at barrier/critical bands.
  *
  * This is the EXACT MIRROR of `registry/visibility.ts`'s `passesPressureSafety`,
- * including the preparation bypass. The two must always be changed together —
+ * including the preparation bypass. The two must always be changed together -
  * a catalog that offers what the dispatcher denies wastes the model's turns,
  * and a dispatcher that allows what the catalog hid makes the barrier hollow.
  */
@@ -22,7 +22,7 @@ import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
  * === "mutating"`.
  *
  * `preparationBypassesBarrier` suppresses the `mutating` block at `barrier`
- * ONLY (contract C8 — a background compaction is already relieving the
+ * ONLY (contract C8 - a background compaction is already relieving the
  * pressure). `critical` still blocks. It DEFAULTS TO FALSE so every existing
  * call site keeps today's
  * behaviour: only the live tool-batch path, which computes the flag from the
@@ -34,7 +34,7 @@ export function checkPressureDeny(
   preparationBypassesBarrier = false,
 ): ToolResult | null {
   const safety = getPressureSafety(toolName);
-  if (safety === undefined) return null; // unknown tool — let routing handle it
+  if (safety === undefined) return null; // unknown tool - let routing handle it
 
   const atBarrier = band === "barrier" || band === "critical";
   const mutatingDropSuppressed = preparationBypassesBarrier && band === "barrier";
@@ -44,7 +44,7 @@ export function checkPressureDeny(
       success: false,
       output:
         `Tool ${toolName} is blocked at context pressure ${band}. ` +
-        `The runtime compacts this conversation automatically — no tool call is required from you. ` +
+        `The runtime compacts this conversation automatically - no tool call is required from you. ` +
         `Continue with read-only work; the full tool set returns after the compaction lands.`,
     };
   }
