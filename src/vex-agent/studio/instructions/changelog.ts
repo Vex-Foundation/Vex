@@ -77,13 +77,14 @@ export const STUDIO_CHANGELOG: readonly StudioChangelogEntry[] = [
   },
   {
     version: "0.2.7",
-    kind: "removed",
+    kind: "changed",
     target: "tool",
     subject: "BridgeExecute",
     text:
-      "BridgeExecute no longer accepts a `recipient` override. The destination "
-      + "is derived from the source wallet, which is what the description "
-      + "already claimed; the parameter that contradicted it is gone.",
+      "BridgeExecute is unchanged except for one parameter: the `recipient` "
+      + "override is gone. The destination is derived from the source wallet, "
+      + "which is what the description already claimed; the parameter that "
+      + "contradicted it was removed.",
   },
   {
     version: "0.2.7",
@@ -104,8 +105,11 @@ export const STUDIO_CHANGELOG: readonly StudioChangelogEntry[] = [
     text:
       "The APPROVAL rule now says what actually happens over MCP: a destructive "
       + "call BLOCKS until the user answers the card in Vex and the result you "
-      + "receive is the settled outcome. It never returns a pending status to "
-      + "poll, so a second call is always wrong.",
+      + "receive is the settled outcome. The approval itself never returns a "
+      + "pending status to poll, so calling again while one is unanswered is "
+      + "always wrong; the operation it approved can still settle later, and a "
+      + "`pending` bridge or Solana swap is resolved by reading, never by "
+      + "calling again.",
   },
   {
     version: "0.2.7",
@@ -113,9 +117,10 @@ export const STUDIO_CHANGELOG: readonly StudioChangelogEntry[] = [
     target: "rule",
     subject: "This project",
     text:
-      "The permission level is now stated in full, including that a full-access "
-      + "project executes a destructive call directly with no approval card and "
-      + "that you must not add a confirmation step of your own.",
+      "The permission level in force is now stated in full, and each level says "
+      + "what NOT to do: this project renders the paragraph for its own level "
+      + "only, so the full-access wording (a destructive call executes directly "
+      + "with no approval card) appears only in a full-access project.",
   },
   {
     version: "0.2.7",

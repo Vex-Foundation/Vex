@@ -102,8 +102,9 @@ describe("the Vex fee note in the managed block", () => {
     // exists, and Morpho's only `feeBps` mention is in its forbidden-params
     // list. A note that listed either as charging would be a statement about
     // the user's money with no code behind it.
-    expect(STUDIO_FEE_NOTE).toContain("every Pendle");
-    expect(STUDIO_FEE_NOTE).toContain("Morpho action, which carry no Vex fee");
+    expect(STUDIO_FEE_NOTE).toContain("every Pendle and");
+    expect(STUDIO_FEE_NOTE).toContain("Morpho action");
+    expect(STUDIO_FEE_NOTE).toContain("carry no Vex fee either");
     const protocols = resolve(REPO_ROOT, "src/vex-agent/tools/protocols");
     expect(
       importsAFeeModule(resolve(protocols, "pendle")),
@@ -138,9 +139,36 @@ describe("the Vex fee note in the managed block", () => {
   });
 
   it("says a failed attempt is never charged, and does not conflate gas with the fee", () => {
-    expect(STUDIO_FEE_NOTE).toContain("only after the operation");
-    expect(STUDIO_FEE_NOTE).toContain("never charged");
+    expect(STUDIO_FEE_NOTE).toContain("at the moment the operation");
+    expect(STUDIO_FEE_NOTE).toContain("never on a failed, reverted or never-broadcast");
     expect(STUDIO_FEE_NOTE).toContain("Network gas");
     expect(STUDIO_FEE_NOTE).toContain("NOT Vex's fee");
+  });
+
+  it("does not say AFTER for a fee the route takes DURING (I-6d)", () => {
+    // Live test pass 2, p1.txt lines 39-41: the lead said "only after the
+    // operation succeeds" while the same section said the swap fee is EMBEDDED
+    // IN THE QUOTE and `SwapExecute` says it is "taken inside the route itself".
+    // One of the two had to go, and the truthful statement is the moment, not
+    // the ordering.
+    expect(STUDIO_FEE_NOTE).not.toContain("and only after the operation");
+    expect(STUDIO_FEE_NOTE).toContain("inside the route for a swap");
+  });
+
+  it("makes the Uniswap sentence add up (I-6d)", () => {
+    // p1.txt lines 35-37 and the interactive session's point 2: "takes the same
+    // 25 bps from the input as Vex's own transfer leg after the swap confirms;
+    // the user is still debited exactly amountIn" reads as a full-input swap
+    // PLUS a transfer, which is more than the input. `src/tools/uniswap/fee/
+    // constants.ts` states the real arithmetic: the swap executes on
+    // `amountIn - fee` and the user is debited exactly `amountIn`.
+    expect(STUDIO_FEE_NOTE).toContain("`amountIn` minus 25 bps");
+    expect(STUDIO_FEE_NOTE).toContain("together are exactly `amountIn`");
+    const constants = readFileSync(
+      resolve(REPO_ROOT, "src/tools/uniswap/fee/constants.ts"),
+      "utf8",
+    );
+    expect(constants).toContain("the swap executes on `amountIn");
+    expect(constants).toContain("debited exactly `amountIn`");
   });
 });

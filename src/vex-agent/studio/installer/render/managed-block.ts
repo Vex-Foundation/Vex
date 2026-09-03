@@ -132,15 +132,18 @@ export function renderStudioManagedBody(
  * than merely observed: the block sits inside a file every agent loads on every
  * turn, so its size is a cost the user pays on every request, and Codex's own
  * AGENTS.md loader bounds the same kind of text by bytes for the same reason
- * (`codex-rs/core/src/agents_md.rs`, `project_doc_max_bytes`). The number is the
- * measured size of the eight sections for a two-wallet project plus room for the
- * longest realistic project half (many wallets, a full change log, every
- * protocol configured), and `managed-block.test.ts` fails when a render exceeds
- * it. NOTHING IS EVER CUT TO FIT: exceeding the bound fails a test, and the
- * shortening decision is the protocol blocks first - never the permission
- * paragraph and never the outcome table.
+ * (`codex-rs/core/src/agents_md.rs`, `project_doc_max_bytes`). The number is
+ * 40 KiB: `managed-block.test.ts` renders the LONGEST project half the store
+ * can hand this renderer (eight selected wallets, `STUDIO_CHANGE_NOTE_LIMIT`
+ * notes each at the 400-character `project_change_notes.summary` bound) over
+ * every protocol block, measured 40,254 bytes on 2026-09-03 after the I-6
+ * clarifications, and fails when a render exceeds the bound. The 36 KiB the
+ * bound started at fit only the two-wallet fixture, which is not the project
+ * the bound exists for. NOTHING IS EVER CUT TO FIT: exceeding the bound fails a
+ * test, and the shortening decision is the protocol blocks first - never the
+ * permission paragraph and never the outcome table.
  */
-export const STUDIO_MANAGED_BLOCK_MAX_BYTES = 36_864;
+export const STUDIO_MANAGED_BLOCK_MAX_BYTES = 40_960;
 
 /** The digest recorded in the opening marker. */
 export function studioManagedBodyHash(body: string): string {

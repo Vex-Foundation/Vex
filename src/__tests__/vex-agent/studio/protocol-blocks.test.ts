@@ -16,10 +16,16 @@
  * Pure, no DB, no network.
  */
 
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, it, expect } from "vitest";
 
 import { buildStudioInventory } from "@vex-agent/mcp/inventory/index.js";
-import { renderStudioProtocolBlocks } from "@vex-agent/studio/instructions/protocol-blocks.js";
+import {
+  STUDIO_NAMESPACE_FEES,
+  renderStudioProtocolBlocks,
+} from "@vex-agent/studio/instructions/protocol-blocks.js";
 import {
   resolveStudioInstallationEnvironment,
   studioDeclaredEnvironmentKeys,
@@ -27,6 +33,19 @@ import {
 import { getAdvertisedProtocolNavigation } from "@vex-agent/tools/protocols/descriptions.js";
 
 import { STUDIO_TEST_ENVIRONMENT } from "./render-fixtures.js";
+
+const REPO_ROOT = resolve(__dirname, "..", "..", "..", "..");
+
+/** Every `.ts` file under one directory, recursively. */
+function sourcesUnder(directory: string): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(directory)) {
+    const path = resolve(directory, entry);
+    if (statSync(path).isDirectory()) found.push(...sourcesUnder(path));
+    else if (entry.endsWith(".ts")) found.push(path);
+  }
+  return found;
+}
 
 describe("the protocol blocks", () => {
   const rendered = renderStudioProtocolBlocks(STUDIO_TEST_ENVIRONMENT);
@@ -114,5 +133,79 @@ describe("the protocol blocks", () => {
     expect(rendered).toContain("authorizes only the execute in its OWN pair");
     expect(rendered).toContain("15 minutes");
     expect(rendered).toContain("same quote gate");
+  });
+
+  it("says a namespaced quote does NOT unlock the front door", () => {
+    // I-6k: "same executor ... same quote gate" read as if a namespaced quote
+    // could authorize the always-loaded execute, which `SwapExecute`'s own
+    // description denies (live test pass 2, p1.txt lines 75-77).
+    expect(rendered).toContain("SAME code path");
+    expect(rendered).toContain("A namespaced quote never unlocks the front door");
+  });
+
+  it("gives EVERY namespace a Vex fee line", () => {
+    // I-6: the fee note named swaps, bridges, Trench, the generic EVM pair and
+    // launches, leaving the Solana generic pair, Solana lend/predict and the
+    // pools trades in neither list (p1.txt lines 134-136).
+    for (const navigation of getAdvertisedProtocolNavigation()) {
+      expect(
+        STUDIO_NAMESPACE_FEES[navigation.namespace],
+        `${navigation.namespace} needs a fee entry`,
+      ).toBeDefined();
+    }
+    const feeLines = rendered.split("\n").filter((line) => line.startsWith("- Vex fee: "));
+    expect(feeLines).toHaveLength(getAdvertisedProtocolNavigation().length);
+    expect(rendered).not.toContain("not stated for this namespace yet");
+  });
+
+  it("backs every fee line with the code that charges it, or with the absence of it", () => {
+    // A fee line is a claim about the user's money, so it is not allowed to
+    // drift from the lane: a charged namespace names the constant its lane
+    // references, and a free one names lanes that must import no fee module and
+    // reference no fee constant at all. Same technique, and same reason, as
+    // `instructions-fee-note.test.ts`.
+    for (const [namespace, fee] of Object.entries(STUDIO_NAMESPACE_FEES)) {
+      const charged = fee.charged;
+      if (charged !== undefined) {
+        const lane = resolve(REPO_ROOT, charged.lane);
+        expect(
+          sourcesUnder(lane).some((path) => readFileSync(path, "utf8").includes(charged.symbol)),
+          `${namespace}: ${charged.lane} no longer references ${charged.symbol}`,
+        ).toBe(true);
+      }
+      for (const laneName of fee.freeLanes) {
+        const lane = resolve(REPO_ROOT, laneName);
+        for (const path of sourcesUnder(lane)) {
+          const source = readFileSync(path, "utf8");
+          expect(
+            /FEE_BPS/.test(source),
+            `${namespace}: ${laneName} charges something; the block says it is free`,
+          ).toBe(false);
+          expect(
+            [...source.matchAll(/from\s*["']([^"']+)["']/g)]
+              .some((match) => /vex-fee\/|bridge-fee|\/fee\//.test(match[1] ?? "")),
+            `${namespace}: ${laneName} imports a fee module; the block says it is free`,
+          ).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("gives the ALWAYS-LOADED tools their own key lines", () => {
+    // A17 was fixed per namespace; the hot set has no block, so TwitterAccount's
+    // provider secret was readable nowhere (p1.txt lines 131-132).
+    const gated = buildStudioInventory()
+      .filter((tool) => tool.kind === "internal" && tool.requiresEnv !== undefined);
+    expect(gated.length).toBeGreaterThan(0);
+    for (const tool of gated) {
+      expect(rendered, `${tool.publicName} must carry its key line`)
+        .toContain(`\`${tool.publicName}\`: key \`${String(tool.requiresEnv)}\``);
+    }
+    // Both ways, and never a value.
+    const declared = studioDeclaredEnvironmentKeys();
+    const all = renderStudioProtocolBlocks({ configuredKeys: declared, missingKeys: [] });
+    for (const tool of gated) {
+      expect(all).toContain(`\`${tool.publicName}\`: key \`${String(tool.requiresEnv)}\`, and it IS configured here.`);
+    }
   });
 });

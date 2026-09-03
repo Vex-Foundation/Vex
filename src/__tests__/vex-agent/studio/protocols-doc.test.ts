@@ -60,7 +60,12 @@ describe("the generated protocols document", () => {
   it("carries the approval and units facts an agent needs before it calls anything", () => {
     const doc = renderStudioProtocolsDoc();
     expect(doc).toContain("approval");
-    expect(doc).toContain("unknown");
+    // I-6b: the retry contract, in the words the doc actually uses. It used to
+    // assert the bare token "unknown", which the rewritten paragraph spells
+    // UNKNOWN, so the old assertion would have passed on a doc that dropped the
+    // rule entirely and failed on one that kept it.
+    expect(doc).toContain("never retry an UNKNOWN");
+    expect(doc).toContain("may be called again once its named");
     expect(doc).toContain("PER FIELD");
   });
 

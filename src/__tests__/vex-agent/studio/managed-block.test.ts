@@ -9,6 +9,9 @@
  * ordinary merge untouched, and only an explicit Repair replaces it.
  */
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, it, expect } from "vitest";
 
 import { STUDIO_SAFETY_PREFIX } from "@vex-agent/mcp/instructions.js";
@@ -42,6 +45,8 @@ import {
 } from "@vex-agent/studio/instructions/shared-usage.js";
 import { STUDIO_MANAGED_BLOCK_MAX_BYTES } from "@vex-agent/studio/installer/render/managed-block.js";
 import { STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT } from "./render-fixtures.js";
+
+const REPO_ROOT = resolve(__dirname, "..", "..", "..", "..");
 
 const USER_TEXT_BEFORE = "# Contributing\n\nRun the tests before you push.\n";
 const USER_TEXT_AFTER = "\n## House style\n\nNo em dashes.\n";
@@ -77,6 +82,41 @@ describe("the managed block's content", () => {
     // decision is the protocol blocks first.
     const bytes = Buffer.byteLength(
       renderStudioManagedBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT),
+      "utf8",
+    );
+    expect(bytes).toBeLessThanOrEqual(STUDIO_MANAGED_BLOCK_MAX_BYTES);
+  });
+
+  it("stays inside its byte bound for the LONGEST project half the store can hand it", () => {
+    // The fixture is a two-wallet project with two short notes, so a green run
+    // on it says nothing about the project a real user can build. The project
+    // half is bounded by its own contracts, and this brief sits on every one of
+    // them: eight selected wallets (four per family), and STUDIO_CHANGE_NOTE_LIMIT
+    // notes each at the 400-character summary bound the durable row enforces
+    // (`project_change_notes.summary` CHECK, migration 089). Nothing enforces
+    // the bound at runtime, so a render that only fits the fixture would ship
+    // an oversized block to exactly the user with the most in the project.
+    const summary = "s".repeat(400);
+    const longest = {
+      ...STUDIO_TEST_BRIEF,
+      wallets: [
+        ...Array.from({ length: 4 }, (_, index) => ({
+          family: "evm" as const,
+          address: `0x${String(index + 1).repeat(40)}`,
+        })),
+        ...Array.from({ length: 4 }, (_, index) => ({
+          family: "solana" as const,
+          address: `So${String(index + 1).repeat(40)}`,
+        })),
+      ],
+      changeNotes: Array.from({ length: STUDIO_CHANGE_NOTE_LIMIT }, (_, index) => ({
+        version: `0.9.${String(9 - index)}`,
+        date: `2026-08-${String(28 - index).padStart(2, "0")}`,
+        summary,
+      })),
+    };
+    const bytes = Buffer.byteLength(
+      renderStudioManagedBody(longest, STUDIO_TEST_ENVIRONMENT),
       "utf8",
     );
     expect(bytes).toBeLessThanOrEqual(STUDIO_MANAGED_BLOCK_MAX_BYTES);
@@ -144,7 +184,13 @@ describe("drift", () => {
   );
 
   it("reports an untouched block as intact and up to date", () => {
-    const state = inspectStudioManagedBlock(installed, STUDIO_TEST_BRIEF);
+    // The ENVIRONMENT is stated here for the same reason the render tests state
+    // it: `installed` was rendered with the fixture environment, and
+    // `inspectStudioManagedBlock` compares against a fresh render. Letting the
+    // comparison resolve the live `process.env` would make "is this block
+    // current?" depend on which provider keys the machine running the suite
+    // happens to have set.
+    const state = inspectStudioManagedBlock(installed, STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT);
     expect(state).toEqual({ kind: "intact", upToDate: true });
   });
 
@@ -162,7 +208,7 @@ describe("drift", () => {
 
   it("does NOT detect an edit OUTSIDE the fence: that text is the user's", () => {
     const outsideEdited = `${installed}\n${USER_TEXT_AFTER}`;
-    expect(inspectStudioManagedBlock(outsideEdited, STUDIO_TEST_BRIEF)).toEqual({ kind: "intact", upToDate: true });
+    expect(inspectStudioManagedBlock(outsideEdited, STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT)).toEqual({ kind: "intact", upToDate: true });
   });
 
   it("never silently overwrites a drifted block", () => {
@@ -172,7 +218,7 @@ describe("drift", () => {
   it("overwrites a drifted block ONLY on an explicit repair", () => {
     const repaired = textOf(mergeStudioManagedBlock(edited, STUDIO_TEST_BRIEF, { overwriteDrift: true, environment: STUDIO_TEST_ENVIRONMENT }));
     expect(repaired).not.toContain("TOTALLY");
-    expect(inspectStudioManagedBlock(repaired, STUDIO_TEST_BRIEF)).toEqual({ kind: "intact", upToDate: true });
+    expect(inspectStudioManagedBlock(repaired, STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT)).toEqual({ kind: "intact", upToDate: true });
     expect(repaired.startsWith(USER_TEXT_BEFORE)).toBe(true);
   });
 
@@ -354,12 +400,15 @@ describe("the project-dependent half of the block", () => {
     ]) {
       expect(body, `${tool} must be named`).toContain(tool);
     }
-    expect(body).toContain("signs nothing and holds no key");
+    expect(body).toContain("signs nothing, holds no key");
     expect(body).toContain("durable intent");
     // A19/I: the decode-set paragraph and the Prepare/Confirm sentence are no
     // longer COPIED out of the tool descriptions into this file. They have one
     // home - the tool's own description - and the block points at it.
-    expect(body).toContain("decode set is CLOSED");
+    // Asserted on a phrase that sits inside ONE rendered line: the block is
+    // hard-wrapped, so "The decode / set is CLOSED" spans a newline and a
+    // substring match across it proves nothing about the text an agent reads.
+    expect(body).toContain("set is CLOSED, and router or aggregator calldata");
     expect(body).not.toContain("THE DECODE SET IS CLOSED, AND IT IS NOT");
     expect(body).toContain("digest");
     expect(body).toContain("fee caps");
@@ -378,9 +427,91 @@ describe("the project-dependent half of the block", () => {
   it("tells the agent there is NO generic execute tool to invent", () => {
     // A7: the old pair of sentences ("There is NO generic execute tool" and
     // "Two generic pairs exist for exactly this") read as a contradiction.
-    expect(body).toContain("No tool signs arbitrary calldata");
-    expect(body).toContain("no generic execute tool to");
+    // I-6e (live test pass 2, p1.txt lines 47-49): so did the word "arbitrary",
+    // which the block used to forbid ("No tool signs arbitrary calldata") while
+    // `WalletEvmTransactionPrepare` opens by offering it. The block now says
+    // what is actually true - Vex signs nothing it has not decoded - and its
+    // own section heading no longer uses the word either.
+    expect(body).toContain("No tool signs calldata Vex has not decoded");
+    expect(body).toContain("no generic execute");
+    expect(body).toContain("### A transaction Vex has no dedicated tool for");
+    expect(body).not.toContain("signs arbitrary calldata");
     expect(body).not.toContain("Two generic pairs exist for exactly this");
+  });
+
+  it("carries the I-6 contradictions' fixed wording, each against its finding", () => {
+    // Every assertion here is one sentence a measured agent could not act on,
+    // with the transcript line it came from. The DESCRIPTION side of the same
+    // contradictions is DESC-3's; this is the BLOCK side.
+
+    // I-6a, p1.txt lines 7-9. The block forbade what SwapQuote/SwapExecute
+    // instruct ("re-quote with a higher slippageBps", "raise it in steps").
+    expect(body).toContain("RE-QUOTE AT THE SAME SLIPPAGE FIRST");
+    expect(body).toContain("Raise `slippageBps` only when the");
+    expect(body).not.toContain("never raise slippage to force a trade through");
+    // p1.txt lines 43-45: a literal reading refused every Solana quote.
+    expect(body).toContain("on Solana there are no USD figures at all");
+
+    // I-6f, p1.txt lines 51-53. ChainRead has three actions and no raw call.
+    expect(body).toContain("an ERC-721 mint recovered from a receipt");
+    expect(body).toContain("There is no raw call");
+    expect(body).not.toContain("a receipt, a token balance, a raw call");
+
+    // I-6h, p1.txt lines 92-94. The card's wait was stated nowhere.
+    expect(body).toContain("for up to 60 minutes");
+
+    // I-6l, p1.txt lines 124-126. protocols.md is not in the agent's context.
+    expect(body).toContain("READ ON DEMAND, not loaded into your");
+    expect(body).toContain("every Execute,");
+    expect(body).toContain("Confirm, deposit, withdraw, borrow, repay, claim and launch tool");
+
+    // I-6n, p1.txt lines 81-82. "refuses BY NAME" appeared about ten times and
+    // was never defined.
+    expect(body).toContain("REFUSES BY NAME, here and");
+    expect(body).toContain("names the precondition that");
+
+    // I-6j, p1.txt lines 71-73. The privacy sentence forbade what every quote
+    // necessarily does.
+    expect(body).toContain("Calling a Vex tool is not publishing");
+    expect(body).not.toContain("leaves this machine without");
+
+    // A-8, live test pass 2 section 2. The interactive session hesitated
+    // because its own harness demands a confirmation the card already is.
+    expect(body).toContain(
+      "card satisfies any confirm-before-irreversible-action rule your client",
+    );
+
+    // I-1's block half: over MCP nothing dispatches WalletSendConfirm for you.
+    expect(body).toContain("OVER MCP NOTHING FOLLOWS IT BY");
+    expect(body).toContain("`WalletSendConfirm` yourself with that `intentId`");
+
+    // I-6c's block half: what actually counts as a delivered bridge. ONE home
+    // for it - the outcome table, whose rows are checked against the modules
+    // that emit them (`outcome-vocabulary.test.ts`) - and the Bridge job points
+    // at that table instead of restating its words a second time.
+    expect(body).toContain("A BRIDGE NEVER REPORTS SUCCESS: a deposit that");
+    expect(body).toContain("broadcast is not a delivered bridge.");
+    expect(body).toContain("the ONE state that means DELIVERED");
+    expect(body).toContain("the ONLY state that means DELIVERED");
+    expect(body).toContain("`BridgeStatus` for a");
+    expect(body).not.toContain("executed, declined, expired, refused or unknown");
+  });
+
+  it("states the card's wait from the constant that enforces it", () => {
+    // The minutes are written out in `project-brief.ts` rather than imported,
+    // because `APPROVAL_TTL_MS` lives with the durable approval rows and pulls
+    // the database graph in with it. The number is still not free-floating:
+    // this reads the constant's own source line, the same technique the outcome
+    // table uses for its emitters.
+    const source = readFileSync(
+      resolve(REPO_ROOT, "src/vex-agent/engine/core/approval-runtime/enqueue.ts"),
+      "utf8",
+    );
+    const match = /export const APPROVAL_TTL_MS = ([^;]+);/.exec(source);
+    expect(match, "APPROVAL_TTL_MS moved; the block states its value").not.toBeNull();
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
+    const minutes = Math.round(Number(new Function(`return ${String(match?.[1])}`)()) / 60_000);
+    expect(body).toContain(`for up to ${String(minutes)} minutes`);
   });
 
   it("states the permission AND the wallets AND the dates", () => {
@@ -388,8 +519,8 @@ describe("the project-dependent half of the block", () => {
     // card", which is false - the gate fires at risk >= high only, and a local
     // write such as WalletTrackToken was measured running with no card.
     expect(body).toContain("Permission: RESTRICTED");
-    expect(body).toContain("Every call marked destructive in");
-    expect(body).toContain("blocks until the user answers the approval card");
+    expect(body).toContain("Every call marked destructive blocks until the");
+    expect(body).toContain("user answers the approval card in Vex");
     expect(body).toContain("Reads, quotes, Prepare tools and local writes raise no card");
     expect(body).not.toContain("Every mutation waits");
     expect(body).toContain("0x1111111111111111111111111111111111111111");
@@ -428,7 +559,7 @@ describe("the project-dependent half of the block", () => {
     expect(full).toContain("with no approval card");
     // What is true under BOTH levels, and the reason the owner insisted on it.
     expect(full).toContain("Not asking is not the same as not telling");
-    expect(full).toContain("you cannot widen it");
+    expect(full).toContain("no tool widens it");
   });
 
   it("says so when no wallet is selected instead of listing nothing", () => {

@@ -31,8 +31,11 @@ transaction or otherwise cause an irreversible effect. THOSE are the calls
 the approval card gates - a mutating tool that is not destructive, such as a
 local database write, raises no card. In a restricted project a destructive
 call BLOCKS until the user answers the card in Vex, and the result you
-receive is the settled outcome: executed, declined, expired, refused or
-unknown. Never call it twice, and never retry an unknown outcome.
+receive is the SETTLED outcome: the tool's own result, or one of the words
+AGENTS.md's outcome table lists with its bucket and its retry verdict.
+Never call again while one is unanswered, and never retry an UNKNOWN
+outcome; an outcome that moved nothing may be called again once its named
+cause is fixed.
 
 `requires env` names an environment variable the tool needs. It is metadata
 only: an unmet variable is answered at call time with a typed

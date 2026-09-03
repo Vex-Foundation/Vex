@@ -35,6 +35,22 @@
  *       - I9: ERRORS now names the three buckets instead of four words, and
  *         points at the full table in AGENTS.md, which the 2,000-byte budget
  *         cannot hold.
+ *
+ *  3. INSTR-2 (live test pass 2, 2026-09-03, I-6b and I-6c) removed a wrong
+ *     word list and a rule the tools contradict:
+ *       - I-6c: APPROVAL no longer says the outcome is "executed, declined,
+ *         expired, refused or unknown". Neither `executed` nor `unknown` is a
+ *         word anything emits (`mcp/server-result.ts` has seven outcome kinds
+ *         and the tools return confirmed / confirmed_unrecorded /
+ *         indeterminate), and the measured agent counted three vocabularies for
+ *         one event (p1.txt lines 23-25).
+ *       - I-6b: "Never call it twice or retry an unknown one" became "never
+ *         call again while one is unanswered, and never retry an UNKNOWN
+ *         outcome", because the absolute contradicted the tool text that tells
+ *         an agent to unlock Vex and call again (p1.txt lines 11-13). ERRORS
+ *         forbids only the resend that is always wrong; the per-word verdicts
+ *         are the block's table, which the 2,000-byte budget cannot hold and
+ *         SAME SOURCE points at.
  *       - I10: QUOTE FIRST now says to RESTATE the quote rather than to "show
  *         the user what it returned", which was ambiguous when the approval card
  *         is the confirmation.
@@ -63,8 +79,8 @@ const PINNED_INSTRUCTIONS =
   "Vex moves REAL funds. Nothing here is a sandbox or testnet.\n"
   + "1. APPROVAL: in a restricted project a destructive call BLOCKS "
   + "until the user answers the card in Vex; the result IS the settled "
-  + "outcome: executed, declined, expired, refused or unknown. Never "
-  + "call it twice or retry an unknown one.\n"
+  + "outcome. Never call again while one is unanswered, and never retry "
+  + "an UNKNOWN outcome.\n"
   + "2. QUOTE FIRST: quote before any swap, bridge, trade or lend, then"
   + " restate amounts, fees, impact and ETA.\n"
   + "3. AMOUNTS: units are PER FIELD - human decimals or raw smallest "
@@ -92,9 +108,8 @@ const PINNED_INSTRUCTIONS =
   + "configuration_unavailable result naming the variable; "
   + "vex_ToolSearch shows available: false. It has NOT run. Report both"
   + " names; do not work around it.\n"
-  + "ERRORS: every refusal says what did not happen. Bucket its word: "
-  + "nothing happened, it happened, or unknown; never resend an "
-  + "unknown.\n"
+  + "ERRORS: every result says what happened. Bucket its word: nothing "
+  + "happened, it happened, or unknown. Never resend an unknown one.\n"
   + "SAME SOURCE: AGENTS.md renders these rules from the same text, "
   + "plus the outcome table, the fee line and the task shapes.";
 
@@ -121,8 +136,33 @@ describe("the MCP handshake instructions", () => {
     // wording ("pauses for the user's decision") is what invited a second call.
     expect(STUDIO_SAFETY_PREFIX).toContain("BLOCKS until the user answers");
     expect(STUDIO_SAFETY_PREFIX).toContain("the result IS the settled outcome");
-    expect(STUDIO_SAFETY_PREFIX).toContain("Never call it twice");
+    expect(STUDIO_SAFETY_PREFIX).toContain("Never call again while one is unanswered");
     expect(STUDIO_MCP_INSTRUCTIONS).not.toContain("pauses for the user's decision");
+  });
+
+  it("names no outcome word the wire does not carry (I-6c)", () => {
+    // Live test 2026-09-03, p1.txt lines 23-25: the rule listed "executed" and
+    // "unknown", which no tool and no broker emits, against the tools' own
+    // "confirmed / confirmed_unrecorded / indeterminate". Three vocabularies
+    // for one event; the rule now names none of them and points at the table
+    // that is checked against its emitters.
+    expect(STUDIO_MCP_INSTRUCTIONS)
+      .not.toContain("executed, declined, expired, refused or unknown");
+  });
+
+  it("does not forbid the retry the tools themselves ask for (I-6b)", () => {
+    // p1.txt lines 11-13: "Never call it twice or retry an unknown one" read as
+    // an absolute against "ask the user to unlock Vex and call again". The
+    // handshake now forbids exactly the two calls that are always wrong - a
+    // second call while a card is unanswered, and a resend of an UNKNOWN
+    // outcome - and forbids nothing else. The per-word verdicts do not fit the
+    // 2,000-byte budget and are not restated here in weaker words: the block's
+    // table owns them, and SAME SOURCE points at it.
+    expect(STUDIO_SAFETY_PREFIX).not.toContain("Never call it twice");
+    expect(STUDIO_MCP_INSTRUCTIONS).not.toMatch(/never call it twice/i);
+    expect(STUDIO_MCP_INSTRUCTIONS).toContain("Never resend an unknown one.");
+    expect(STUDIO_MCP_INSTRUCTIONS).not.toMatch(/never (resend|retry) any/i);
+    expect(STUDIO_MCP_INSTRUCTIONS).toContain("SAME SOURCE: AGENTS.md");
   });
 
   it("scope the no-activation claim to the SERVER and map the client's name", () => {

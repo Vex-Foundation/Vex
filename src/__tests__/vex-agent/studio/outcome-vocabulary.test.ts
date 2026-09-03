@@ -73,5 +73,54 @@ describe("the outcome vocabulary", () => {
     expect(rendered).toContain("`ChainRead` action `tx_receipt`");
     expect(rendered).toContain("`BridgeStatus`");
     expect(rendered).toContain("`AgentScan`");
+    // I-6: BridgeStatus follows KHALANI order ids only, so a Relay requestId
+    // and a Solana signature need their own named read or the sentence names
+    // nothing for them (live test pass 2, p1.txt lines 55-57).
+    expect(rendered).toContain("KHALANI orderId");
+    expect(rendered).toContain("Relay requestId");
+  });
+
+  it("gives EVERY word its own retry verdict, not one rule per bucket", () => {
+    // I-6b (p1.txt lines 11-17): the measured agent could not reconcile a flat
+    // "never call it twice" with "ask the user to unlock Vex and call again",
+    // and asked why `failed before broadcast` was the only repeatable one when
+    // declined, expired, refused and dispatch_failed moved nothing either. The
+    // verdict is per word because the words inside one bucket do not share one.
+    const rendered = renderStudioOutcomeVocabulary();
+    for (const row of STUDIO_OUTCOME_WORDS) {
+      expect(row.retry.trim().length, `${row.word} needs a retry verdict`)
+        .toBeGreaterThan(0);
+      expect(rendered, `${row.word}'s verdict must be rendered`)
+        .toContain(`CALL AGAIN? ${row.retry}.`);
+    }
+    // Every UNKNOWN says never, which is the one verdict that is uniform.
+    for (const row of STUDIO_OUTCOME_WORDS.filter((r) => r.bucket === "unknown")) {
+      expect(row.retry, `${row.word} may never be retried`).toContain("never");
+    }
+  });
+
+  it("carries the bridge states the tools emit, and the ONE state that means delivered", () => {
+    // I-6c: `failed`, `refunded` and `refund_pending` reach the agent from the
+    // bridge lanes and were absent from the table, and nothing said what DOES
+    // count as delivered - so an agent could never tell a user a bridge was
+    // done (p1.txt lines 103-108).
+    const words = STUDIO_OUTCOME_WORDS.map((row) => row.word);
+    expect(words).toContain("failed (bridge)");
+    expect(words).toContain("refunded (bridge)");
+    expect(words).toContain("refund_pending (bridge)");
+    const delivered = STUDIO_OUTCOME_WORDS.find(
+      (row) => row.word === "vexStatus: confirmed (bridge)",
+    );
+    expect(delivered?.bucket).toBe("happened");
+    expect(delivered?.meaning).toContain("DELIVERED");
+  });
+
+  it("says on its face that `executed` and `unknown` are not wire words", () => {
+    // Three vocabularies for one event was the finding (p1.txt lines 23-25).
+    const rendered = renderStudioOutcomeVocabulary();
+    expect(rendered).toContain("there is no");
+    expect(rendered).toContain("`executed`");
+    expect(STUDIO_OUTCOME_WORDS.map((row) => row.word)).not.toContain("executed");
+    expect(STUDIO_OUTCOME_WORDS.map((row) => row.word)).not.toContain("unknown");
   });
 });

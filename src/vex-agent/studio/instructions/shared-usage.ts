@@ -44,9 +44,8 @@ export const STUDIO_SAFETY_LEAD =
 
 export const STUDIO_RULE_APPROVAL =
   "1. APPROVAL: in a restricted project a destructive call BLOCKS until the "
-  + "user answers the card in Vex; the result IS the settled outcome: executed, "
-  + "declined, expired, refused or unknown. Never call it twice or retry an "
-  + "unknown one.";
+  + "user answers the card in Vex; the result IS the settled outcome. Never "
+  + "call again while one is unanswered, and never retry an UNKNOWN outcome.";
 
 export const STUDIO_RULE_QUOTE_FIRST =
   "2. QUOTE FIRST: quote before any swap, bridge, trade or lend, then restate "
@@ -119,9 +118,23 @@ export const STUDIO_USAGE_UNAVAILABLE_TOOLS =
   + "configuration_unavailable result naming the variable; vex_ToolSearch shows "
   + "available: false. It has NOT run. Report both names; do not work around it.";
 
+/**
+ * ERRORS, at the HANDSHAKE's budget.
+ *
+ * The lead is I-6c's fix: "every refusal says what did not happen" was false of
+ * a result that says the transaction confirmed. What this note deliberately
+ * does NOT carry is the per-word retry verdict, because the 2,000-byte budget
+ * (owner decision O23) cannot hold the table AND the rules an agent needs
+ * before its first call. That is placement, not truncation: the whole table,
+ * with a verdict on every word, is in the managed block, and the sentence right
+ * after this one (`STUDIO_ONE_SOURCE_IN_HANDSHAKE`) points at it. What this
+ * note must still not do is FORBID the retry the tool descriptions themselves
+ * ask for (live test 2026-09-03, p1.txt lines 11-13), so it forbids exactly the
+ * resend that is always wrong and no other.
+ */
 export const STUDIO_USAGE_ERRORS =
-  "ERRORS: every refusal says what did not happen. Bucket its word: nothing "
-  + "happened, it happened, or unknown; never resend an unknown.";
+  "ERRORS: every result says what happened. Bucket its word: nothing "
+  + "happened, it happened, or unknown. Never resend an unknown one.";
 
 /**
  * The one sentence each consumer says about the other.
@@ -165,6 +178,17 @@ export interface StudioOutcomeWord {
   readonly word: string;
   readonly bucket: StudioOutcomeBucket;
   readonly meaning: string;
+  /**
+   * MAY THIS CALL BE MADE AGAIN, and under what condition.
+   *
+   * Per WORD, not per bucket, because the buckets are not uniform: a locked
+   * vault and an expired card are both NOTHING HAPPENED and their verdicts
+   * differ (fix the cause and call again; stop and report). The live test
+   * (2026-09-03, p1.txt lines 11-17) measured an agent unable to reconcile the
+   * flat "never call it twice" with the tool text that tells it to unlock Vex
+   * and call again, so the verdict now travels with the word it belongs to.
+   */
+  readonly retry: string;
   /** Repo-relative path of a module that emits it. */
   readonly emitter: string;
   /** The exact text that must be present in `emitter`. */
@@ -175,28 +199,34 @@ export const STUDIO_OUTCOME_WORDS: readonly StudioOutcomeWord[] = [
   {
     word: "declined",
     bucket: "nothing",
-    meaning: "a person said no in Vex; ask again only if the user asks",
+    meaning: "a person said no in Vex",
+    retry: "call the tool again only if the user asks for it again",
     emitter: "src/vex-agent/mcp/server-result.ts",
     literal: "A person DECLINED this action in Vex.",
   },
   {
     word: "expired",
     bucket: "nothing",
-    meaning: "nobody decided the card in time; quote again if it is still wanted",
+    meaning: "nobody decided the card in time",
+    retry: "stop and report; quote and call again only when the user asks",
     emitter: "src/vex-agent/mcp/server-result.ts",
     literal: "This action EXPIRED before anyone decided it in Vex.",
   },
   {
     word: "refused",
     bucket: "nothing",
-    meaning: "Vex cancelled it before it ran: vault locked, scope edited, Vex quit",
+    meaning: "VEX refused it before it ran, and the sentence names why",
+    retry: "call again once the named cause is fixed",
     emitter: "src/vex-agent/mcp/server-result.ts",
     literal: "This action was REFUSED by Vex before it ran.",
   },
   {
     word: "cancelled",
     bucket: "nothing",
-    meaning: "the call was cancelled before Vex ran it",
+    meaning:
+      "the call was abandoned before Vex ran it - YOUR client aborted it, or "
+      + "Vex locked, quit or lost the connection; the sentence names which",
+    retry: "call again once the named cause is fixed",
     emitter: "vex-app/src/main/studio/approval-service.ts",
     literal: "This call was cancelled before Vex ran it",
   },
@@ -204,6 +234,7 @@ export const STUDIO_OUTCOME_WORDS: readonly StudioOutcomeWord[] = [
     word: "dispatch_failed",
     bucket: "nothing",
     meaning: "approved, but Vex could not carry it out, and it was NOT retried",
+    retry: "call again once the named cause is fixed",
     emitter: "src/vex-agent/mcp/server-result.ts",
     literal: "This action was approved but Vex could not carry it out",
   },
@@ -211,20 +242,33 @@ export const STUDIO_OUTCOME_WORDS: readonly StudioOutcomeWord[] = [
     word: "refused by name",
     bucket: "nothing",
     meaning: "a precondition failed before anything was signed; the message names which",
+    retry: "fix the named precondition, then call again",
     emitter: "src/vex-agent/tools/registry/wallet.ts",
     literal: "refused BY NAME",
   },
   {
     word: "failed before broadcast",
     bucket: "nothing",
-    meaning: "nothing was sent; the only failure that is safe to prepare again",
+    meaning: "nothing was sent, so no transaction exists",
+    retry: "prepare again and call again",
     emitter: "src/vex-agent/tools/internal/wallet/send/finalize.ts",
     literal: "failed before broadcast",
+  },
+  {
+    word: "in_flight",
+    bucket: "nothing",
+    meaning:
+      "a bridge on this route is ALREADY running; this attempt recorded and "
+      + "signed nothing",
+    retry: "no; follow the earlier bridge instead of starting another",
+    emitter: "src/vex-agent/tools/protocols/relay/handlers/bridge/results.ts",
+    literal: "status: \"in_flight\"",
   },
   {
     word: "configuration_unavailable",
     bucket: "nothing",
     meaning: "a provider key is missing; the result names the variable",
+    retry: "not until the user sets the named variable in Vex",
     emitter: "src/vex-agent/mcp/availability.ts",
     literal: "configuration_unavailable",
   },
@@ -232,6 +276,7 @@ export const STUDIO_OUTCOME_WORDS: readonly StudioOutcomeWord[] = [
     word: "available: false",
     bucket: "nothing",
     meaning: "the same state on a vex_ToolSearch row, with the variable named",
+    retry: "not until the user sets the named variable in Vex",
     emitter: "src/vex-agent/mcp/tool-search-export.ts",
     literal: "available: false",
   },
@@ -239,13 +284,15 @@ export const STUDIO_OUTCOME_WORDS: readonly StudioOutcomeWord[] = [
     word: "confirmed",
     bucket: "happened",
     meaning: "the transaction is on chain and Vex recorded it",
+    retry: "never",
     emitter: "src/vex-agent/tools/protocols/uniswap/handlers/swap/finalize-confirmed.ts",
     literal: "\"confirmed\"",
   },
   {
     word: "confirmed_unrecorded",
     bucket: "happened",
-    meaning: "on chain, but Vex could not match its own record; do not repeat it",
+    meaning: "on chain, but Vex could not match its own record",
+    retry: "never",
     emitter: "src/vex-agent/tools/protocols/uniswap/handlers/swap/finalize-confirmed.ts",
     literal: "confirmed_unrecorded",
   },
@@ -253,20 +300,61 @@ export const STUDIO_OUTCOME_WORDS: readonly StudioOutcomeWord[] = [
     word: "reverted on-chain",
     bucket: "happened",
     meaning: "a real transaction that paid gas and moved nothing",
+    retry: "only on the user's word: a new attempt is a new transaction that costs gas again",
     emitter: "src/vex-agent/tools/registry/wallet-wrap.ts",
     literal: "reverted on-chain",
   },
   {
+    word: "failed (bridge)",
+    bucket: "happened",
+    meaning:
+      "the deposit is on chain and Khalani reports that the destination "
+      + "amount did NOT arrive",
+    retry: "never; read `BridgeStatus` on the orderId and tell the user",
+    emitter: "src/vex-agent/tools/protocols/khalani/handlers/bridge-poll.ts",
+    literal: "Khalani reports this bridge as failed",
+  },
+  {
+    word: "refunded (bridge)",
+    bucket: "happened",
+    meaning:
+      "the deposit is on chain, nothing was delivered, and the funds are on "
+      + "their way back to the refund address",
+    retry: "never; money back is not a delivered bridge",
+    emitter: "src/vex-agent/tools/protocols/khalani/handlers/bridge-poll.ts",
+    literal: "Khalani reports this bridge as refunded",
+  },
+  {
+    word: "refund_pending (bridge)",
+    bucket: "happened",
+    meaning: "the deposit is on chain and a refund is in flight; nothing was delivered",
+    retry: "never; Vex tracks it, so read `BridgeStatus` instead",
+    emitter: "src/vex-agent/tools/protocols/khalani/handlers/bridge-poll.ts",
+    literal: "refund_pending",
+  },
+  {
+    word: "vexStatus: confirmed (bridge)",
+    bucket: "happened",
+    meaning:
+      "the ONLY state that means DELIVERED: Vex verified the destination fill "
+      + "itself, and `BridgeStatus` and the `AgentScan` row say so",
+    retry: "never",
+    emitter: "src/vex-agent/db/repos/agent-activity/bridge-lifecycle.ts",
+    literal: "SET status = 'confirmed', confirmed_at = NOW()",
+  },
+  {
     word: "indeterminate",
     bucket: "unknown",
-    meaning: "Vex dispatched it and cannot prove what happened; open Vex, never retry",
+    meaning: "Vex dispatched it and cannot prove what happened",
+    retry: "never; open Vex and read the approval first",
     emitter: "src/vex-agent/mcp/server-result.ts",
     literal: "DO NOT RETRY THIS CALL.",
   },
   {
     word: "broadcast with confirmation UNKNOWN",
     bucket: "unknown",
-    meaning: "the transaction exists and may still settle; read it with ChainRead tx_receipt",
+    meaning: "the transaction exists and may still settle",
+    retry: "never; read it with `ChainRead` action `tx_receipt`",
     emitter: "src/vex-agent/tools/registry/wallet-wrap.ts",
     literal: "broadcast with confirmation UNKNOWN",
   },
@@ -274,22 +362,17 @@ export const STUDIO_OUTCOME_WORDS: readonly StudioOutcomeWord[] = [
     word: "pending",
     bucket: "unknown",
     meaning: "money is in motion and the outcome is not yet known",
+    retry: "never; read the outcome rather than calling again",
     emitter: "src/vex-agent/engine/core/tool-display-status.ts",
     literal: "PENDING_STATUS = \"pending\"",
   },
   {
     word: "filled_unverified",
     bucket: "unknown",
-    meaning: "the bridge provider reports a fill Vex has not verified; do NOT re-bridge",
-    emitter: "src/vex-agent/engine/core/tool-display-status.ts",
+    meaning: "the bridge provider reports a fill Vex has NOT verified",
+    retry: "never; do NOT re-bridge, follow it with `BridgeStatus`",
+    emitter: "src/vex-agent/tools/protocols/khalani/handlers/bridge-poll.ts",
     literal: "filled_unverified",
-  },
-  {
-    word: "in_flight",
-    bucket: "unknown",
-    meaning: "the deposit is broadcast and the relay leg is still running",
-    emitter: "src/vex-agent/engine/core/tool-display-status.ts",
-    literal: "in_flight",
   },
 ];
 
@@ -301,20 +384,33 @@ const BUCKET_HEADINGS: Readonly<Record<StudioOutcomeBucket, string>> = {
 
 const BUCKET_ORDER: readonly StudioOutcomeBucket[] = ["nothing", "happened", "unknown"];
 
-/** The outcome table: every wire word once, under its bucket. */
+/**
+ * The outcome table: every wire word once, under its bucket, WITH its retry
+ * verdict.
+ *
+ * The verdict is per word rather than per bucket because the words inside one
+ * bucket do not share one: `refused` (a locked vault) is fixed and called
+ * again, `expired` is reported and dropped. A single rule over the bucket was
+ * what the measured agent could not reconcile with the tool descriptions.
+ */
 export function renderStudioOutcomeVocabulary(): string {
   const lines: string[] = [];
   for (const bucket of BUCKET_ORDER) {
     lines.push(`${BUCKET_HEADINGS[bucket]}:`, "");
     for (const entry of STUDIO_OUTCOME_WORDS.filter((row) => row.bucket === bucket)) {
-      lines.push(`- \`${entry.word}\` - ${entry.meaning}`);
+      lines.push(`- \`${entry.word}\` - ${entry.meaning}. CALL AGAIN? ${entry.retry}.`);
     }
     lines.push("");
   }
   lines.push(
+    "Every word above is one this server or a tool actually emits; there is no",
+    "`executed` and no `unknown` on the wire, and a word that stops being",
+    "emitted is removed from this table rather than left here to be looked for.",
+    "",
     "An unknown outcome is resolved by READING, never by calling again:",
-    "`ChainRead` action `tx_receipt` for an EVM hash, `BridgeStatus` for a bridge",
-    "order, `AgentScan` for anything Vex recorded.",
+    "`ChainRead` action `tx_receipt` for an EVM hash, `BridgeStatus` for a",
+    "KHALANI orderId, `AgentScan` view `transactions` for a Relay requestId, a",
+    "Solana signature, or anything else Vex recorded.",
   );
   return lines.join("\n");
 }
@@ -332,15 +428,18 @@ export function renderStudioOutcomeVocabulary(): string {
  * in the instructions, so an agent guessed at it in every measured session.
  */
 export const STUDIO_FEE_NOTE = [
-  "Vex charges 25 bps (0.25%) of the INPUT asset, and only after the operation",
-  "succeeds. A failed, reverted or never-broadcast attempt is never charged.",
+  "Vex charges 25 bps (0.25%) of the INPUT asset at the moment the operation",
+  "succeeds - inside the route for a swap, or as a separate transfer once the",
+  "operation confirms - and never on a failed, reverted or never-broadcast",
+  "attempt.",
   "",
   "- Swaps (`SwapQuote`/`SwapExecute` on KyberSwap and Solana):",
   "  EMBEDDED IN THE QUOTE, so the quoted output is already net of it and you",
   "  never add it on top when reporting what was spent. The Uniswap pair takes",
-  "  the same 25 bps from the input as Vex's own transfer leg after the swap",
-  "  confirms; the user is still debited exactly `amountIn`, so report that and",
-  "  nothing more.",
+  "  the same 25 bps from the input, but Uniswap's routers carry no fee field,",
+  "  so it is Vex's own transfer leg after the swap confirms: the swap spends",
+  "  `amountIn` minus 25 bps and that 25 bps is transferred to Vex, and the two",
+  "  together are exactly `amountIn`, which is what the user is debited.",
   "- Bridges (`BridgeQuote`/`BridgeExecute` and the Relay pair): a SEPARATE",
   "  transfer that runs only after the deposit lands, so a bridge that does not",
   "  happen is never charged.",
@@ -353,8 +452,10 @@ export const STUDIO_FEE_NOTE = [
   "- Trench and pools.fun launches: 25 bps of the native value the launch sends.",
   "",
   "FREE: every read, quote, preview and research call; `WalletSendPrepare` and",
-  "`WalletSendConfirm`; the wrap pair, which is exactly 1:1; and every Pendle",
-  "and Morpho action, which carry no Vex fee. Network gas,",
+  "`WalletSendConfirm`; the wrap pair, which is exactly 1:1; every Pendle and",
+  "Morpho action; and the Solana lend, borrow and prediction actions, which",
+  "carry no Vex fee either. Each protocol block below repeats its own fee in",
+  "one line, so a namespace is never left to be guessed at. Network gas,",
   "the venue's own protocol fee and bridge relayer costs are NOT Vex's fee -",
   "never conflate them when the user asks what something cost.",
 ].join("\n");
