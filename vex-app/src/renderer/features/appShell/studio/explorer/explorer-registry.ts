@@ -49,7 +49,7 @@ export class ExplorerRegistry {
    * remount. The default is `queueMicrotask`; a test injects a manual pump when
    * it wants to observe the window in between.
    */
-  constructor(defer: (run: () => void) => void = queueMicrotask) {
+  constructor(defer: (run: () => void) => void = (run) => queueMicrotask(run)) {
     this.#defer = defer;
   }
 
