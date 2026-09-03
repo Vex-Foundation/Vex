@@ -1,21 +1,24 @@
 /**
  * Welcome stage crown - the rebrand hero (accepted mockup, 2026-08-20): the
- * vx script mark over a micro-label date eyebrow, the time-of-day greeting
- * headline, and the Agent | Studio runtime-mode toggle. The toggle itself lives
- * in `RuntimeModeToggle.tsx`: the Studio welcome screen mounts the same
- * control, so this hero is one of its two callers, not its owner. The parent
- * (`SessionPanel`) seats this directly above the composer and centers the
- * column; the "BACKED BY" footer band is retired. Load-in rides the one-shot
- * `.vex-rise` choreography; the composer and chips stagger on sibling
- * elements.
+ * vx script mark over a micro-label date eyebrow and the time-of-day greeting
+ * headline. The parent (`SessionPanel`) seats this directly above the composer
+ * and centers the column; the "BACKED BY" footer band is retired. Load-in
+ * rides the one-shot `.vex-rise` choreography; the composer and chips stagger
+ * on sibling elements.
+ *
+ * THE MODE CAPSULE IS NOT HERE ANY MORE. `RuntimeModeToggle` has exactly ONE
+ * home per page - the rail header (`AgentSidebarHeader` in agent mode, the
+ * Studio rail header in Studio mode) - so the `Runtime mode` radiogroup is
+ * unique and the door into Studio exists in every agent state rather than only
+ * on this screen. Mounting a second copy here would double the control and
+ * break that count (e2e/studio.spec.ts). The Studio welcome screen gave up its
+ * own copy for the same reason.
  */
 
 import { useState, type JSX } from "react";
 import { VexMark } from "../../components/common/VexMark.js";
 import { pickGreeting } from "../../lib/greeting.js";
 import { useUserProfile } from "../../lib/api/user-profile.js";
-import { useUiStore } from "../../stores/uiStore.js";
-import { RuntimeModeToggle } from "./RuntimeModeToggle.js";
 
 /** Honest build-stage disclosure (carried from the retired PREVIEW badge). */
 const PREVIEW_TITLE =
@@ -32,9 +35,6 @@ function eyebrowDate(): string {
 }
 
 export function SessionWelcomeHero(): JSX.Element {
-  const runtimeMode = useUiStore((s) => s.runtimeMode);
-  const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
-
   // Headline greeting (owner decision 2026-08-20, rotating pools): the
   // Vex-setup displayName through the SAME profile read SidebarProfile uses,
   // failing closed to the nameless draw for every non-success state. The
@@ -69,10 +69,6 @@ export function SessionWelcomeHero(): JSX.Element {
         <h1 className="font-display text-[30px] font-medium leading-[38px] tracking-[-0.01em] text-ink-primary">
           {headline}
         </h1>
-        <RuntimeModeToggle
-          runtimeMode={runtimeMode}
-          onChange={setRuntimeMode}
-        />
       </div>
     </div>
   );

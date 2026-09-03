@@ -1,20 +1,19 @@
 /**
  * SessionWelcomeHero — the rebrand hero contract (accepted mockup,
  * 2026-08-20): vx mark pair themed by CSS, micro-label date eyebrow carrying the
- * honest build-stage disclosure, the display headline, the LIVE Agent | Studio
- * runtime-mode radiogroup, and the retirement of the BACKED BY footer.
+ * honest build-stage disclosure, the display headline, and the retirement of
+ * the BACKED BY footer band.
  *
- * CONTRACT CHANGE, stage B4a: the two tests below used to pin the OPPOSITE
- * contract - a disabled Studio button wearing a lock and an "coming soon"
- * title, and an inert `<span aria-current>` for Agent. Vex Studio now ships, so
- * both segments are radios that write `runtimeMode`. The tests are rewritten to
- * the new contract rather than relaxed: they still assert exactly one current
- * segment, they still assert the mark, and they now assert the store write that
- * the old pair asserted must NOT happen.
+ * CONTRACT CHANGE (UX after-audit N1): the runtime-mode capsule is NOT part of
+ * this hero any more. It used to render here and in the Studio rail only, which
+ * left an open agent session with no control into Studio anywhere on screen.
+ * Its home is now the agent rail header (`AgentSidebarHeader`), whose own suite
+ * pins the door; this file pins the other half - that the hero mounts no second
+ * copy, because the page carries exactly ONE `Runtime mode` radiogroup.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { greetingPoolForHour } from "../../../lib/greeting.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 
@@ -114,40 +113,17 @@ describe("SessionWelcomeHero", () => {
     expect(randSpy.mock.calls.length).toBeLessThanOrEqual(1);
   });
 
-  it("switches the shell to Studio, with no lock and no roadmap copy", () => {
+  it("mounts NO runtime-mode control - the capsule has one home, the rail header", () => {
+    // CONTRACT CHANGE (UX after-audit N1). The capsule used to live here, and
+    // only here plus the Studio rail, so opening a session left the shell with
+    // no door into Studio at all. It moved to the agent rail header, which is
+    // on screen in every agent state; the hero gave up its copy because the
+    // page-wide invariant is exactly ONE `Runtime mode` radiogroup (pinned by
+    // e2e/studio.spec.ts). A second one here would double the control.
     render(<SessionWelcomeHero />);
-    const studio = screen.getByRole("radio", { name: "Studio" });
-    expect(studio).toHaveProperty("disabled", false);
-    expect(studio.getAttribute("aria-checked")).toBe("false");
-    // The lock glyph and the "coming soon" title are GONE, not merely hidden.
-    expect(studio.querySelector("svg")).toBeNull();
-    expect(studio.getAttribute("title")).toBeNull();
-
-    fireEvent.click(studio);
-    expect(useUiStore.getState().runtimeMode).toBe("studio");
-  });
-
-  it("marks exactly one segment as the current runtime mode, both ways", () => {
-    render(<SessionWelcomeHero />);
-    const group = screen.getByRole("radiogroup", { name: "Runtime mode" });
-    expect(group).not.toBeNull();
-
-    const agent = screen.getByRole("radio", { name: "Agent" });
-    expect(agent.getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked")).toBe(
-      "false",
-    );
-
-    fireEvent.click(screen.getByRole("radio", { name: "Studio" }));
-    expect(screen.getByRole("radio", { name: "Agent" }).getAttribute("aria-checked")).toBe(
-      "false",
-    );
-    expect(screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
-
-    // And back: the segment is a switch in both directions.
-    fireEvent.click(screen.getByRole("radio", { name: "Agent" }));
+    expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Studio" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Agent" })).toBeNull();
     expect(useUiStore.getState().runtimeMode).toBe("agent");
   });
 

@@ -616,6 +616,43 @@ describe("AppShell", () => {
       `342px minmax(0, 1fr) ${WELCOME_PORTFOLIO_WIDTH}px`,
     );
   });
+
+  it("keeps exactly ONE way into Studio on screen across the welcome<->session edge", () => {
+    // THE DEFECT, at the seat where it was measured (UX after-audit N1). The
+    // `Agent | Studio` capsule used to render on the welcome HERO, so selecting
+    // a session unmounted the hero and took the only control out of agent mode
+    // off the screen entirely: Studio was reachable only by going back to
+    // welcome. Close-range suites cannot see this, because each of them mounts
+    // one component; only the assembled shell can show that the control
+    // survives a stage change. Put the capsule back on the hero and the session
+    // half below goes red with a count of zero.
+    //
+    // The other half of the invariant is the COUNT: the capsule has exactly one
+    // home per page (this rail header in agent mode, the Studio rail header in
+    // Studio mode), which is what `e2e/studio.spec.ts` pins page-wide. A second
+    // copy anywhere in agent mode would make this 2.
+    const view = renderShell();
+    const rail = (): HTMLElement | null =>
+      view.container.querySelector("[data-vex-area='sessions-sidebar']");
+
+    const welcomeGroups = screen.getAllByRole("radiogroup", {
+      name: "Runtime mode",
+    });
+    expect(welcomeGroups).toHaveLength(1);
+    // And it is the RAIL's, not the hero's: the hero gave its copy up.
+    expect(rail()?.contains(welcomeGroups[0] ?? null)).toBe(true);
+
+    act(() => useUiStore.getState().setActiveSessionId("s-1"));
+
+    const sessionGroups = screen.getAllByRole("radiogroup", {
+      name: "Runtime mode",
+    });
+    expect(sessionGroups).toHaveLength(1);
+    expect(rail()?.contains(sessionGroups[0] ?? null)).toBe(true);
+    expect(
+      screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked"),
+    ).toBe("false");
+  });
 });
 
 function makeAgentRow(title: string): SessionListItem {
