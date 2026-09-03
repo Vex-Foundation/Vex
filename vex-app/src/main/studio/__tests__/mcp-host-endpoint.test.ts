@@ -23,7 +23,6 @@ import {
   ENDPOINT_ANCESTOR_CHANGED_CODE,
   isWindowsPipePath,
   planStudioEndpoint,
-  unprovenWindowsTransport,
   WINDOWS_TRANSPORT_PROVEN,
   studioEndpointFileName,
   studioEndpointHash,
@@ -358,20 +357,33 @@ describe("studio endpoint golden vectors", () => {
   });
 
   /**
-   * THE TRANSPORT GATE (contract 1.6), asserted with the pattern it gates.
+   * THE TRANSPORT GATE (contract 1.6), OPEN - and the same test still pins the
+   * pattern it used to gate.
    *
-   * Both halves in one test on purpose: the derivation, the pipe name and the
-   * override syntax above must keep working exactly as the vectors pin them,
-   * AND opening the transport must be refused by name. A change that
-   * "disabled Windows" by breaking the plan would satisfy one half and fail
-   * this one.
+   * It was the anti-flip test ("refuses to OPEN the derived pipe while the
+   * transport is unproven", with a companion that checked the refusal left unix
+   * plans alone). Both halves are gone with `unprovenWindowsTransport`: the
+   * refusal has no producer any more, and a test of a branch that cannot fire
+   * proves nothing. What replaces them is the same assertion pointed the other
+   * way, because the flag's danger reversed direction: while it was false, an
+   * unmeasured transport could be opened by a one-word edit; now that it is
+   * true, the failure mode is the two owners DISAGREEING.
+   *
+   * THE MATRIX BEHIND THE `true`, all measured, never argued (contract 1.6):
+   * rows 1, 2, 3, 7 and 8 on `bridge-windows` run 33646484002; row 4's host
+   * half on `vex-app-windows` run 33650332655; rows 5 and 6 on `bridge-windows`
+   * run 33663385959. Row 4's bridge half is the win32 arm of
+   * `mcp-bridge-conformance.test.ts`, and `endpoint_test.go`'s
+   * `TestWindowsTransportIsProvenAndTheDerivedPipeIsDialled` is this test's
+   * other half: a reviewer who sees either flag false while the other is true
+   * rejects the change.
    */
-  it("refuses to OPEN the derived pipe while the transport is unproven", () => {
+  it("has the transport OPEN, and serves the pipe the derivation names", () => {
     expect(
       WINDOWS_TRANSPORT_PROVEN,
-      "this flag may only be flipped by extending the required bridge-windows "
-        + "CI job with the contract 1.6 proof matrix",
-    ).toBe(false);
+      "the two owners are one decision: this flag and endpoint.WindowsTransportProven "
+        + "change together or not at all (contract 1.6)",
+    ).toBe(true);
 
     const plan = planStudioEndpoint({
       platform: "win32",
@@ -381,32 +393,14 @@ describe("studio endpoint golden vectors", () => {
       uid: -1,
       probeDirectory: () => null,
     });
-    // The PATTERN survives the gate.
-    expect(plan.kind).toBe("pipe");
-
-    const gated = unprovenWindowsTransport(plan);
-    expect(gated).not.toBeNull();
-    expect(gated).toMatchObject({
-      kind: "refused",
-      code: "windows_pending_platform_proof",
+    // The PATTERN is what it always was, and it is now what gets SERVED: the
+    // plan the listener hands the front is the derived pipe, unchanged by the
+    // flip, so a diff that opened the transport by altering the derivation
+    // fails here rather than shipping a pipe nobody's vectors describe.
+    expect(plan).toMatchObject({
+      kind: "pipe",
+      path: studioEndpointPipeName("C:\\Users\\alice\\AppData\\Roaming\\vex"),
     });
-    if (gated?.kind === "refused") {
-      expect(gated.message).toMatch(/did not start/);
-      expect(gated.message.length).toBeGreaterThan(40);
-    }
-  });
-
-  it("leaves a unix plan alone: the gate refuses one transport, not every plan", () => {
-    const plan = planStudioEndpoint({
-      platform: "linux",
-      configDirRealPath: "/home/alice/.config/vex",
-      env: {},
-      tmpdir: "/tmp",
-      uid: 1000,
-      probeDirectory: () => null,
-    });
-    expect(plan.kind).toBe("unix");
-    expect(unprovenWindowsTransport(plan)).toBeNull();
   });
 
   /**

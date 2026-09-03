@@ -3,14 +3,12 @@
  *
  * Two claims that are easy to confuse and must be proved apart:
  *
- *   1. WITH THE GATE FALSE - which is production today - a pipe plan is refused
- *      with the exact `windows_transport_disabled` cause and no front is
- *      spawned at all. `WINDOWS_TRANSPORT_PROVEN` and its anti-flip test are
- *      untouched by this stage; the gate is driven here through an injected
- *      seam, never by editing the constant.
- *   2. WITH THE GATE TRUE, the SAME code path brings a front up, publishes the
- *      endpoint only after `BOUND`, hands every admitted connection to the
- *      registry as the wire contract, and takes the child down on quit.
+ *   1. THE GATE IS OPEN (`WINDOWS_TRANSPORT_PROVEN`), so nothing below runs
+ *      behind an injected seam: the branch these cases drive is the one a
+ *      Windows user gets.
+ *   2. THAT PATH brings a front up, publishes the endpoint only after `BOUND`,
+ *      hands every admitted connection to the registry as the wire contract,
+ *      and takes the child down on quit.
  *
  * The platform is injected for the same reason `planStudioEndpoint` already
  * takes it: a publication path provable only on Windows is a publication path
@@ -103,26 +101,22 @@ afterEach(() => {
 });
 
 describe("the gate", () => {
-  it("is still FALSE, and this stage did not touch it", () => {
-    // The one constant that owns the decision. B4.3 flips it; nothing here may.
-    expect(WINDOWS_TRANSPORT_PROVEN).toBe(false);
-  });
-
-  it("refuses a pipe plan with its own cause and spawns nothing", async () => {
-    const started = startStudioListener(deps({ windowsTransportProven: false }));
-    const outcome = await started;
-
-    expect(outcome.started).toBe(false);
-    // Its OWN cause, not `endpoint_unavailable`: nothing failed, the endpoint
-    // was planned correctly and Vex declined to open it.
-    expect(studioListenerCause()).toBe("windows_transport_disabled");
-    expect(fronts).toHaveLength(0);
+  it("is OPEN, so every case below runs on the SHIPPED default", () => {
+    // This describe held two cases: that the constant was still false, and that
+    // a false gate refused the plan with `windows_transport_disabled` while
+    // spawning nothing. Both went with the flip - that cause has no producer
+    // any more, and the injected `windowsTransportProven` seam that drove them
+    // is gone from `StudioListenerDeps`. What is left is the claim that matters
+    // now: the front cases below reach a front through production's own default
+    // rather than through a seam that faked the gate open (contract 1.6,
+    // measured on runs 33646484002, 33650332655 and 33663385959).
+    expect(WINDOWS_TRANSPORT_PROVEN).toBe(true);
   });
 });
 
-describe("with the gate true, the branch runs end to end", () => {
+describe("the win32 branch runs end to end", () => {
   it("publishes only after BOUND, and then reports the pipe as the endpoint", async () => {
-    const started = startStudioListener(deps({ windowsTransportProven: true }));
+    const started = startStudioListener(deps());
     await completeBringUp();
     const outcome = await started;
 
@@ -136,14 +130,14 @@ describe("with the gate true, the branch runs end to end", () => {
   });
 
   it("hands the front the name MAIN derived, and the front never derives one", async () => {
-    const started = startStudioListener(deps({ windowsTransportProven: true }));
+    const started = startStudioListener(deps());
     await completeBringUp();
     await started;
     expect(fronts[0]?.hello()?.pipeName).toBe(studioListenerEndpoint());
   });
 
   it("delivers an admitted connection to the registry as the WIRE contract", async () => {
-    const started = startStudioListener(deps({ windowsTransportProven: true }));
+    const started = startStudioListener(deps());
     await completeBringUp();
     await started;
 
@@ -160,7 +154,7 @@ describe("with the gate true, the branch runs end to end", () => {
   });
 
   it("REFUSES before a byte is read while the settlement barrier is still closed", async () => {
-    const started = startStudioListener(deps({ windowsTransportProven: true }));
+    const started = startStudioListener(deps());
     await completeBringUp();
     await started;
 
@@ -179,7 +173,6 @@ describe("with the gate true, the branch runs end to end", () => {
   it("refuses with the resolver's own cause when the binary is not installed", async () => {
     const outcome = await startStudioListener(
       deps({
-        windowsTransportProven: true,
         front: {
           locate: () =>
             Promise.resolve({
@@ -194,7 +187,7 @@ describe("with the gate true, the branch runs end to end", () => {
   });
 
   it("FAILS CLOSED when Windows will not confirm the pipe's protection", async () => {
-    const started = startStudioListener(deps({ windowsTransportProven: true }));
+    const started = startStudioListener(deps());
     for (let attempt = 0; attempt < 20 && fronts.length === 0; attempt += 1) {
       await Promise.resolve();
     }
@@ -210,7 +203,7 @@ describe("with the gate true, the branch runs end to end", () => {
   });
 
   it("takes the child down on quit", async () => {
-    const listenerDeps = deps({ windowsTransportProven: true });
+    const listenerDeps = deps();
     const started = startStudioListener(listenerDeps);
     await completeBringUp();
     await started;
@@ -228,7 +221,7 @@ describe("with the gate true, the branch runs end to end", () => {
 
 describe("the admission epoch boundary", () => {
   it("does not wrap or reset, and a restarted front is handed the SAME epoch", async () => {
-    const started = startStudioListener(deps({ windowsTransportProven: true }));
+    const started = startStudioListener(deps());
     await completeBringUp();
     await started;
     const first = studioAdmissionEpoch();

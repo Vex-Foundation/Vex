@@ -63,29 +63,20 @@ export const studioHostUnavailableCauseSchema = z.enum([
    * failures. The specific sentence stays in main's log.
    */
   "endpoint_unavailable",
-  /**
-   * The Windows named-pipe transport is DISABLED, pending the measurement of
-   * its pipe security descriptor on a Windows runner
-   * (`WINDOWS_TRANSPORT_PROVEN` in `main/studio/mcp-host/endpoint.ts`).
-   *
-   * ADDITIVE, and its own member rather than another `endpoint_unavailable`,
-   * because it is the only unavailable cause that is not a failure at all: the
-   * endpoint was planned correctly and Vex refused to open it. Telling a
-   * Windows user "Vex Studio could not open its local endpoint on this
-   * machine" invites them to go looking for a broken installation, when the
-   * honest sentence is that this platform's transport is switched off until
-   * its cross-user access has been proven and there is nothing for them to
-   * fix. Renderer and main ship in one artifact, so the reader and the writer
-   * change together and no rollout ordering applies.
+  /*
+   * `windows_transport_disabled` stood here while the section 1.6 Windows
+   * transport gate was closed. The gate opened on the CI runs recorded in
+   * `mcp-host/endpoint.ts`, no path can produce the cause any longer, and
+   * renderer and main ship in one artifact, so the reader and the writer went
+   * together and no rollout ordering applied.
    */
-  "windows_transport_disabled",
   /**
    * The Windows pipe-front CHILD PROCESS is not usable: its binary is missing
    * from the installation, it could not be spawned, or it refused the frozen
    * `HELLO` numbers main and it are built to share.
    *
-   * A PACKAGING FAULT, and its own member for the same reason
-   * `windows_transport_disabled` is: the remedy is to repair the installation
+   * A PACKAGING FAULT, and its own member rather than another
+   * `endpoint_unavailable`: the remedy is to repair the installation
    * (reinstall Vex, or rebuild the bridge when running from source), which is
    * not the remedy for any other endpoint refusal. Following the same rule as
    * every other member, the DETAIL - which binary, which path, which field -

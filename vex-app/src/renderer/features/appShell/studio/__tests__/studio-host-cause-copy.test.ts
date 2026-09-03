@@ -45,18 +45,12 @@ describe("studio host cause sentences", () => {
     }
   });
 
-  it("tells a Windows user the transport is switched off, not broken", () => {
-    const sentence = STUDIO_HOST_CAUSE_SENTENCES.windows_transport_disabled;
-    // Names the platform, says it is deliberate, and gives the only remedy
-    // that exists. It must NOT reuse the "could not open its local endpoint"
-    // failure sentence, which invites them to repair something that is fine.
-    expect({
-      names: sentence.includes("Windows"),
-      deliberate: /switched off|not available/.test(sentence),
-      remedy: sentence.includes("Linux") && sentence.includes("macOS"),
-      notAFailure: !sentence.includes("could not open"),
-    }).toEqual({ names: true, deliberate: true, remedy: true, notAFailure: true });
-  });
+  // The case that asserted the `windows_transport_disabled` sentence ("tells a
+  // Windows user the transport is switched off, not broken") went with its
+  // cause when the section 1.6 gate opened. Nothing replaces it, because
+  // nothing replaces the cause: the surface a Windows user can still reach is
+  // covered by the `front_unavailable` and `pipe_security_unconfirmed` rows the
+  // exhaustive walks above already assert.
 });
 
 /**

@@ -72,51 +72,52 @@ const (
 	RefusePathTooLong             RefusalCode = "path_too_long"
 	RefuseEndpointAncestorChanged RefusalCode = "endpoint_ancestor_changed"
 
-	// RefuseWindowsPendingPlatformProof is the RUNTIME gate of section 1.6,
-	// not a planning outcome: Derive still plans the pipe, and the vectors
-	// still pin its name and syntax. See WindowsTransportProven.
-	RefuseWindowsPendingPlatformProof RefusalCode = "windows_pending_platform_proof"
+	// `windows_pending_platform_proof` was the section 1.6 runtime gate's
+	// code and left this set when the gate opened: no path can produce it,
+	// and it never crossed the wire - it was this process refusing its own
+	// plan, printed to stderr as exit 2. An older bridge binary still emits
+	// its own copy against a newer host, which changes nothing here, because
+	// nothing on either side ever PARSED the code out of that line.
 )
 
-// WindowsTransportProven is the one flag that admits the Windows named-pipe
-// transport at RUNTIME, on this side of the wire. It is false, and it is a
-// constant rather than configuration because no environment variable may open
-// a transport whose security descriptor has never been measured.
+// WindowsTransportProven records that the Windows named-pipe transport is
+// ADMITTED at runtime, on this side of the wire. It stays a constant rather
+// than configuration for the reason it always was: no environment variable
+// decides whether a wallet opens a transport.
 //
-// WHY FALSE. libuv - which is what Node's `server.listen` reaches on win32 -
-// creates the pipe with a NULL security descriptor and WITHOUT
-// PIPE_REJECT_REMOTE_CLIENTS. The resulting default SD grants Everyone, and
-// the anonymous logon, READ access. Duplex is denied to a second user, so the
-// handshake still cannot be driven; a READ-ONLY connect is not, and on a
-// self-custodial wallet that is a cross-user handshake-slot exhaustion vector
-// plus an unmeasured remote-client posture. Rule 90 fails closed until a
-// Windows runner measures it.
+// WHY TRUE. The eight-row proof matrix of contract section 1.6 was MEASURED on
+// the required Windows CI jobs, not argued: rows 1, 2, 3, 7 and 8 on
+// `bridge-windows` run 33646484002 (second-user duplex denial paired against a
+// control pipe, a read-only cross-user connect denied with no instance
+// consumed, rejectRemote confirmed by readback and the loopback redirector
+// refused, a foreign user's first-server squat failing the front's bind closed
+// and refused by TestHostAuthRefusesAForeignUsersServer, and impersonation
+// level 1 - identification); row 4's host half on `vex-app-windows` run
+// 33650332655; rows 5 and 6 on `bridge-windows` run 33663385959, which is where
+// THIS side's overlapped duplex, deadlines and close cancellation were measured
+// on a real pipe handle (cmd/vex-mcp/dial_windows_test.go).
 //
-// FLIPPING IT IS MECHANICAL, NOT EDITORIAL: the proof matrix in contract
-// section 1.6 runs on the REQUIRED `bridge-windows` CI job. Extending that job
-// with the matrix is the only way this constant may become true, on either
-// side of the wire.
-const WindowsTransportProven = false
+// The libuv reasoning this gate was closed for describes a pipe Vex no longer
+// creates: the host's vex-pipe-front child binds it under its own PROTECTED
+// two-ACE descriptor and reports back only what Windows CONFIRMED on readback.
+//
+// IT STAYS OPEN MECHANICALLY, NOT EDITORIALLY. The host carries the identical
+// flag (WINDOWS_TRANSPORT_PROVEN in vex-app/src/main/studio/mcp-host/
+// endpoint.ts) and the two are ONE decision: a reviewer who sees either flag
+// false while the other is true rejects the change, in that direction as much
+// as in the other. Closing the transport again is a contract change (section 5)
+// carrying both owners, never an edit to one constant.
+const WindowsTransportProven = true
 
-// UnprovenWindowsTransport is the gate both the dial site and the host's
-// listen site apply to a planned pipe. It returns the refusal, or nil when the
-// plan may proceed.
+// UnprovenWindowsTransport stood here: the plan-time gate that refused a pipe
+// plan while WindowsTransportProven was false. It went with the flip, because a
+// branch that cannot fire is not a control - with the constant true its only
+// statement was `return nil`, and its refusal code had no producer left.
 //
-// It is deliberately separate from Derive: the derivation, the pipe name and
-// the override syntax stay vector-tested exactly as they were, and only the
-// act of touching the transport is refused.
-func UnprovenWindowsTransport(plan Plan) *Plan {
-	if plan.Kind != KindPipe || WindowsTransportProven {
-		return nil
-	}
-	refusal := refuse(RefuseWindowsPendingPlatformProof,
-		"The Vex Studio Windows named-pipe transport is not enabled: its pipe "+
-			"security descriptor has not been measured on a Windows runner, and "+
-			"Vex will not open a wallet transport whose cross-user access is "+
-			"unproven. Use Vex Studio on Linux or macOS. The Vex Studio bridge "+
-			"did not start.")
-	return &refusal
-}
+// What guards the dial now is measured rather than assumed, and it runs on
+// EVERY pipe dial rather than once at plan time: the SQOS client flags and the
+// server-SID host authentication in dial_windows.go and hostauth_windows.go,
+// with the front's readback-confirmed descriptor on the host's side.
 
 // DirFacts is one directory as the planner sees it. Mode carries permission
 // bits only (stat.Mode().Perm()).
@@ -189,8 +190,8 @@ func FileName(configDir string) string {
 // data directory; the security boundary is the pipe's default security
 // descriptor plus this wire's handshake, not a secret name.
 //
-// DERIVING the name is not permission to OPEN it: see UnprovenWindowsTransport
-// and contract section 1.6.
+// DERIVING the name is not permission to TRUST what answers on it: see
+// cmd/vex-mcp/hostauth_windows.go and contract section 1.6.
 func PipeName(configDir string) string {
 	return fmt.Sprintf(`\\.\pipe\vex-studio-%s`, Hash(configDir))
 }

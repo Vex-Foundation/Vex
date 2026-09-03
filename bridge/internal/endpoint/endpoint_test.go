@@ -438,61 +438,53 @@ func TestSymlinkedOverrideParentIsRefusedByName(t *testing.T) {
 	}
 }
 
-// THE WINDOWS TRANSPORT IS PLANNED BUT NOT OPENED (contract 1.6).
+// THE WINDOWS TRANSPORT IS OPEN, AND WHAT GETS DIALLED IS THE DERIVED NAME
+// (contract 1.6).
 //
-// The two halves are asserted together on purpose: the derivation, the pipe
-// name and the override syntax must keep working exactly as the vectors pin
-// them, AND the transport must be refused by name. A change that disabled
-// Windows by breaking the plan would pass one half and fail this test.
-func TestWindowsTransportIsGatedUntilProven(t *testing.T) {
-	if endpoint.WindowsTransportProven {
-		t.Fatal("WindowsTransportProven is true; it may only be flipped by extending " +
-			"the required bridge-windows CI job with the contract 1.6 proof matrix")
+// This was TestWindowsTransportIsGatedUntilProven, the anti-flip test: it
+// asserted the flag false and the plan-time refusal by code. Both went with the
+// flip - UnprovenWindowsTransport has no caller left and its code has no
+// producer - and the same assertion now points the other way, because the
+// flag's danger reversed direction. While it was false, an unmeasured transport
+// could be opened by a one-word edit; now that it is true, the failure mode is
+// the two owners DISAGREEING. This test and the host's "has the transport OPEN,
+// and serves the pipe the derivation names"
+// (vex-app/src/main/studio/__tests__/mcp-host-endpoint.test.ts) are halves of
+// one check: either flag false while the other is true is a rejected change.
+//
+// THE MATRIX BEHIND THE true, all measured (contract 1.6): rows 1, 2, 3, 7 and
+// 8 on bridge-windows run 33646484002; row 4's host half on vex-app-windows run
+// 33650332655; rows 5 and 6 on bridge-windows run 33663385959.
+func TestWindowsTransportIsProvenAndTheDerivedPipeIsDialled(t *testing.T) {
+	if !endpoint.WindowsTransportProven {
+		t.Fatal("WindowsTransportProven is false while the host's " +
+			"WINDOWS_TRANSPORT_PROVEN is true: the two owners are one decision " +
+			"and they change together (contract 1.6)")
 	}
 
+	const windowsConfigDir = `C:\Users\alice\AppData\Roaming\vex`
 	plan := endpoint.Derive(endpoint.Input{
 		GOOS:               "windows",
-		ConfigDirHashInput: `C:\Users\alice\AppData\Roaming\vex`,
+		ConfigDirHashInput: windowsConfigDir,
 		Env:                map[string]string{},
 		Tmpdir:             `C:\Temp`,
 		UID:                -1,
 		ProbeDirectory:     func(string) *endpoint.DirFacts { return nil },
 	})
-	// The PATTERN survives the gate: still a pipe, still the derived name.
 	if plan.Kind != endpoint.KindPipe {
-		t.Fatalf("the windows plan is %+v; derivation must be unchanged", plan)
+		t.Fatalf("the windows plan is %+v; it must be the pipe the bridge dials", plan)
 	}
 
-	gated := endpoint.UnprovenWindowsTransport(plan)
-	if gated == nil {
-		t.Fatal("a pipe plan must be refused while the transport is unproven")
-	}
-	if gated.Kind != endpoint.KindRefused {
-		t.Fatalf("the gate returned kind %q", gated.Kind)
-	}
-	if gated.Code != endpoint.RefuseWindowsPendingPlatformProof {
-		t.Fatalf("the gate refused with %q, want %q",
-			gated.Code, endpoint.RefuseWindowsPendingPlatformProof)
-	}
-	if len(gated.Message) < 40 {
-		t.Fatalf("the refusal must carry a sentence naming the remedy; got %q", gated.Message)
-	}
-
-	// A UNIX plan is untouched by the gate: this refuses one transport, not
-	// every plan that reaches it.
-	unix := endpoint.Derive(endpoint.Input{
-		GOOS:               "linux",
-		ConfigDirHashInput: "/home/alice/.config/vex",
-		Env:                map[string]string{},
-		Tmpdir:             "/tmp",
-		UID:                1000,
-		ProbeDirectory:     func(string) *endpoint.DirFacts { return nil },
-	})
-	if unix.Kind != endpoint.KindUnix {
-		t.Fatalf("the linux plan is %+v", unix)
-	}
-	if endpoint.UnprovenWindowsTransport(unix) != nil {
-		t.Fatal("the windows gate refused a unix plan")
+	// A diff that opened the transport by ALTERING the derivation would ship a
+	// pipe name no vector describes, and fails here rather than on a user's
+	// machine. The dial of a REAL pipe is measured where a pipe can exist:
+	// TestPipeDialSupportsConcurrentDuplex, TestPipeHandleTakesARealDeadline,
+	// TestPipeAckDeadlineFiresOnASilentHost,
+	// TestPipeDrainDeadlineFiresOnASilentHost and
+	// TestClosingThePipeCancelsABlockedRead in cmd/vex-mcp/dial_windows_test.go,
+	// which are rows 5 and 6 of the matrix (bridge-windows run 33663385959).
+	if want := endpoint.PipeName(windowsConfigDir); plan.Path != want {
+		t.Fatalf("the plan dials %q, want the derived %q", plan.Path, want)
 	}
 }
 

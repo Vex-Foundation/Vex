@@ -90,13 +90,14 @@ func run() int {
 	if plan.Kind == endpoint.KindRefused {
 		return fail(exitEndpointRefused, fmt.Sprintf("%s: %s", plan.Code, plan.Message))
 	}
-	// THE WINDOWS RUNTIME GATE (contract 1.6). Derivation, the pipe name and
-	// the override syntax are planned and vector-tested exactly as before; the
-	// TRANSPORT is refused until a Windows runner measures its pipe security
-	// descriptor. One flag, one code, both sides of the wire.
-	if gated := endpoint.UnprovenWindowsTransport(plan); gated != nil {
-		return fail(exitEndpointRefused, fmt.Sprintf("%s: %s", gated.Code, gated.Message))
-	}
+	// WHERE THE WINDOWS CHECK MOVED (contract 1.6). The plan-time transport
+	// gate stood here while the pipe's security descriptor was unmeasured. It
+	// is measured now (the matrix on endpoint.WindowsTransportProven), and the
+	// control that replaces it is stronger rather than weaker: dialEndpoint
+	// opens the pipe with SECURITY_IDENTIFICATION SQOS and then authenticates
+	// the SERVER - GetNamedPipeServerProcessId, its token's user SID against
+	// ours - refusing locally before the handshake writes a byte. A constant
+	// could only ever say "not yet"; that check looks at who is actually there.
 	var directoryIdentity *endpoint.DirectoryChainIdentity
 	if plan.Kind == endpoint.KindUnix {
 		directoryIdentity, err = endpoint.CaptureDirectoryChain(plan.ParentDir)
@@ -196,10 +197,11 @@ func resolveProjectID() (string, error) {
 // UNIX: an ordinary dial with the contract's connect bound.
 //
 // WINDOWS: `dialPipe`, in the build-tagged `dial_windows.go` - CreateFile with
-// FILE_FLAG_OVERLAPPED, handed to `os.NewFile`. It is UNREACHABLE at runtime
-// while endpoint.WindowsTransportProven is false; run() refuses the plan
-// before this function is called, and the guard below is the second, local
-// copy of that decision.
+// FILE_FLAG_OVERLAPPED and SECURITY_IDENTIFICATION SQOS, the server's user SID
+// authenticated against ours, the handle handed to `os.NewFile`. It is REACHED
+// at runtime since the section 1.6 transport gate opened; the second, local
+// copy of that gate stood here and went with it, because with
+// endpoint.WindowsTransportProven true it could refuse nothing.
 //
 // The connect bound does NOT apply on Windows. CreateFile has no timeout
 // parameter and stdlib exposes no WaitNamedPipe, so a pipe that exists but is
@@ -215,9 +217,6 @@ func dialEndpoint(plan endpoint.Plan) (handshake.Conn, error) {
 		if runtime.GOOS != "windows" {
 			return nil, fmt.Errorf("refusing to open the named pipe %s on %s: "+
 				"named pipes exist on Windows only", plan.Path, runtime.GOOS)
-		}
-		if !endpoint.WindowsTransportProven {
-			return nil, errors.New("the Vex Studio Windows named-pipe transport is not enabled")
 		}
 		return dialPipe(plan.Path)
 	}

@@ -107,7 +107,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: bash bridge/build.sh linux amd64
 
-      - name: Install root dependencies (monorepo — @vex-lib/@vex-agent aliases bundle root agent/shared code into vex-app's main process, so root node_modules must exist at build time)
+      - name: Install root dependencies (monorepo - @vex-lib/@vex-agent aliases bundle root agent/shared code into vex-app's main process, so root node_modules must exist at build time)
         working-directory: ${{ github.workspace }}
         run: pnpm install --frozen-lockfile
 
@@ -209,40 +209,26 @@ jobs:
           path: bridge/dist/linux-amd64/vex-mcp
           retention-days: 7
 
-  # THE WINDOWS TRANSPORT GATE (bridge endpoint contract section 1.6).
+  # THE WINDOWS TRANSPORT GATE (bridge endpoint contract section 1.6), OPEN.
   #
-  # REQUIRED, and a STUB on purpose. The Windows named-pipe transport is
-  # runtime-disabled on both sides of the wire behind one flag each
+  # REQUIRED, and no longer a stub. Both owners' flags are TRUE
   # (`WINDOWS_TRANSPORT_PROVEN` in vex-app/src/main/studio/mcp-host/
   # endpoint.ts, `endpoint.WindowsTransportProven` in bridge/internal/
-  # endpoint/endpoint.go), because libuv creates the pipe with a NULL security
-  # descriptor and without PIPE_REJECT_REMOTE_CLIENTS, and nobody has measured
-  # what that grants a second user or a remote client on a wallet app.
+  # endpoint/endpoint.go) because THIS job measured the matrix rather than
+  # arguing it: rows 1, 2, 3, 7 and 8 on run 33646484002 (second-user duplex
+  # denial against a control pipe, read-only cross-user connect denied with no
+  # instance consumed, rejectRemote confirmed by readback and the loopback
+  # redirector refused, a foreign account's first-server squat failing the
+  # front's bind closed and refused by host authentication, impersonation level
+  # 1), and rows 5 and 6 on run 33663385959 (overlapped duplex, deadlines and
+  # close cancellation on a real pipe handle). Row 4 is measured on
+  # vex-app-windows: its host half on run 33650332655, its bridge half by the
+  # win32 arm of mcp-bridge-conformance.test.ts.
   #
-  # Today this job only proves the Windows CODE COMPILES and the golden vectors
-  # pass on windows-latest - including the build-tagged overlapped dial
-  # (cmd/vex-mcp/dial_windows.go), which no Linux job executes.
-  #
-  # FLIPPING EITHER FLAG REQUIRES EXTENDING THIS JOB with the full proof matrix
-  # in contract section 1.6: (1) second-user duplex denial, (2) read-only
-  # cross-user connect and handshake-slot exhaustion, (3) remote-client
-  # rejection posture, (4) a native pipe round trip against the real host,
-  # (5) overlapped duplex - a pending read and a concurrent write on the same
-  # handle both complete, (6) deadline and close cancellation, (7) a
-  # foreign-user first-server pipe-squatting test - a second local user creates
-  # the predictable pipe name FIRST and the bridge must not hand it the project
-  # handshake, and (8) a server impersonation-level test for the
-  # SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION client handle.
-  #
-  # PLUS a REQUIRED host-authentication check that does not exist yet:
-  # GetNamedPipeServerProcessId on the connected handle and a comparison of the
-  # server process token's SID against the current user's, or an equivalent
-  # reviewed mechanism, before the handshake is forwarded. SQOS bounds what a
-  # hostile server can do with our token; it does not say who the server is.
-  #
-  # The gate is mechanical: no matrix in this job, no host-authentication
-  # check, no flip. A reviewer who sees either flag change to true in a diff
-  # that does not add these steps here rejects it.
+  # The gate stays mechanical in the other direction now. A diff that sets
+  # either flag false while the other is true is rejected, and re-closing the
+  # transport is a contract change (section 5) carrying both owners plus this
+  # job's steps - never an edit to one constant.
   bridge-windows:
     runs-on: windows-latest
     steps:
@@ -492,7 +478,7 @@ jobs:
           }
           Remove-Item -Recurse -Force 'C:\vex-probe' -ErrorAction SilentlyContinue
   vex-app-e2e:
-    # Required gate from day 1 — boot smoke against the built Electron
+    # Required gate from day 1 - boot smoke against the built Electron
     # bundle. If this flakes we treat that as a real bug, not as a
     # soft check (no continue-on-error). `needs:` here gates START
     # ordering only; this job runs in a fresh runner and rebuilds the
@@ -519,7 +505,7 @@ jobs:
 
       - run: corepack enable
 
-      - name: Install root dependencies (monorepo — same reason as the build-and-test job)
+      - name: Install root dependencies (monorepo - same reason as the build-and-test job)
         working-directory: ${{ github.workspace }}
         run: pnpm install --frozen-lockfile
 
@@ -744,7 +730,10 @@ jobs:
           # that ships signed.
           cache: false
 
-      - name: Build the pipe front (windows/amd64)
+      # Both Windows artifacts: the front the host spawns AND vex-mcp.exe, which
+      # the conformance suite's win32 arm dials over the pipe the front binds
+      # (contract 1.6 row 4). build.sh builds both for this target.
+      - name: Build the bridge and the pipe front (windows/amd64)
         working-directory: ${{ github.workspace }}
         shell: bash
         run: bash bridge/build.sh windows amd64
@@ -759,6 +748,12 @@ jobs:
       # workspace config, so the full run stays whole.)
       - name: Test (vitest, win32)
         run: pnpm test
+        env:
+          # REQUIRED, not advisory: this makes the win32 conformance arm FAIL
+          # rather than skip when the built vex-mcp.exe is missing. A silent
+          # skip on a required lane is indistinguishable from a green run, and
+          # this arm is the only proof of row 4's bridge half.
+          VEX_REQUIRE_BRIDGE_CONFORMANCE: "1"
 
       # Verbose on purpose: run 33620108370 attributed the dying worker to
       # this directory (eight of its nine files completed, real-pty never

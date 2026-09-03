@@ -50,12 +50,14 @@
  *   - QUIT TAKES DOWN A CHILD PROCESS rather than closing a handle, under the
  *     same absolute deadline as every other stage.
  *
- * AND IT IS STILL RUNTIME-DISABLED. `WINDOWS_TRANSPORT_PROVEN` in
- * `endpoint.ts` is false, so a pipe plan is refused with
- * `windows_pending_platform_proof` before the front is ever spawned. The whole
- * path above is built, wired and tested behind that constant; only reaching it
- * is refused. The flag flips by EXTENDING the required `bridge-windows` CI job
- * with the contract's section 1.6 proof matrix, not by editing this comment.
+ * AND IT IS LIVE. The section 1.6 transport gate opened once its proof matrix
+ * was measured on the required Windows CI jobs (runs 33646484002, 33650332655
+ * and 33663385959); `WINDOWS_TRANSPORT_PROVEN` in `endpoint.ts` and
+ * `endpoint.WindowsTransportProven` in the bridge record that one agreement. A
+ * pipe plan is therefore bound here like any other, and the refusals left on
+ * this path are the ones Windows itself can produce: a missing or unusable
+ * front (`front_unavailable`) and a pipe whose protection Windows did not
+ * confirm on readback (`pipe_security_unconfirmed`).
  */
 
 import { createServer, type Server, type Socket } from "node:net";
@@ -69,11 +71,7 @@ import type { StudioHostUnavailableCause } from "@shared/schemas/studio.js";
 import { CONFIG_DIR } from "../../paths/config-dir.js";
 import { log } from "../../logger/index.js";
 import { STUDIO_MAX_LISTENER_SOCKETS } from "./bounds.js";
-import {
-  planStudioEndpoint,
-  unprovenWindowsTransport,
-  WINDOWS_TRANSPORT_PROVEN,
-} from "./endpoint.js";
+import { planStudioEndpoint } from "./endpoint.js";
 import {
   quitStudioFrontEndpoint,
   resetStudioFrontEndpointForTests,
@@ -135,16 +133,6 @@ export interface StudioListenerDeps {
     readonly reason: string;
     readonly cause: StudioHostUnavailableCause;
   } | null;
-  /**
-   * THE WINDOWS TRANSPORT GATE, as an injected seam.
-   *
-   * It defaults to the ONE constant that owns it (`endpoint.ts`), and the tests
-   * drive the branch by passing `true` here rather than by editing that
-   * constant - which stays false, keeps its anti-flip test, and is flipped by
-   * B4.3 alone. What this seam proves is that the Windows branch is WIRED: the
-   * same code path, with the gate faked true, drives a front end to end.
-   */
-  readonly windowsTransportProven?: boolean;
   /**
    * The platform this attempt plans and binds for. Defaults to the real one.
    *
@@ -295,20 +283,15 @@ async function bindOnce(
     return refuse(plan.message, "endpoint_unavailable");
   }
 
-  // THE WINDOWS RUNTIME GATE (contract 1.6). The pipe was PLANNED - derivation
-  // and syntax are unchanged and still vector-tested - and the transport is
-  // refused until a Windows runner has measured its security descriptor.
-  const proven = deps.windowsTransportProven ?? WINDOWS_TRANSPORT_PROVEN;
-  if (!proven) {
-    const gated = unprovenWindowsTransport(plan);
-    if (gated !== null && gated.kind === "refused") {
-      // Its OWN cause, not `endpoint_unavailable`: nothing failed here. The pipe
-      // was planned correctly and Vex declined to open it, so the renderer must
-      // be able to say that instead of sending a Windows user to debug an
-      // endpoint that is working exactly as designed.
-      return refuse(gated.message, "windows_transport_disabled");
-    }
-  }
+  // WHERE THE WINDOWS TRANSPORT CHECK LIVES NOW (contract 1.6). The section 1.6
+  // gate stood here while the pipe's security descriptor was unmeasured, and
+  // the check it performed has MOVED DOWN the same path rather than
+  // disappeared: the front binds the pipe under its own protected two-ACE
+  // descriptor, reads the flags back off the created handle, and this listener
+  // publishes an endpoint only for a BOUND that CONFIRMED rejectRemote,
+  // firstInstance and messageMode - anything less is `pipe_security_unconfirmed`
+  // and nothing is served. That is a runtime measurement of the real handle,
+  // where the gate was a constant standing in for one nobody had taken.
 
   let verifyDirectoryIdentity = (): string | null => null;
   if (plan.kind === "pipe") {

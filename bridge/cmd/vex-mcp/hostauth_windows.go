@@ -32,11 +32,16 @@ import (
 // WHAT IT DOES NOT PROVE. Same-user is the boundary Windows can enforce on a
 // shared machine; it does not distinguish Vex from another program running as
 // the same user, which is out of scope for a boundary whose whole subject is
-// the OTHER user. And this code has never been exercised against a REAL
-// second local user: the `bridge-windows` CI job runs one account, so the
-// cross-user refusal is proven here only through the injected resolver seam.
-// The real two-account run is item 7 of the contract's 1.6 matrix and has not
-// happened; that gap is why endpoint.WindowsTransportProven stays false.
+// the OTHER user.
+//
+// IT HAS NOW BEEN EXERCISED AGAINST A REAL SECOND LOCAL USER, which is item 7
+// of the contract's 1.6 matrix: the `bridge-windows` job creates a temporary
+// local account, has it serve the pipe name FIRST, and runs
+// `go test -run TestHostAuthRefusesAForeignUsersServer ./cmd/vex-mcp` against
+// that server - real CreateFile, real GetNamedPipeServerProcessId, real token
+// query, real SID comparison - green on run 33646484002. That measurement is
+// part of why endpoint.WindowsTransportProven is true. The injected resolver
+// seam remains, for the failure branches one account cannot produce.
 //
 // WIRE NAMES AND VALUES, verified against the INSTALLED go1.27.0 tree rather
 // than remembered:

@@ -75,7 +75,6 @@ export type StudioEndpointRefusalCode =
   | "override_not_absolute"
   | "override_invalid_pipe"
   | "override_pipe_on_unix"
-  | "windows_pending_platform_proof"
   | "endpoint_ancestor_changed"
   | "override_parent_missing"
   | "override_parent_not_directory"
@@ -145,8 +144,9 @@ export function studioEndpointFileName(configDirRealPath: string): string {
  * Vex refuses every connect with a typed ack before it reads a byte, the
  * handshake ack admits a project, and every mutating call is approval-gated.
  *
- * DERIVING the name is not permission to OPEN it: see
- * `unprovenWindowsTransport` below and contract section 1.6.
+ * DERIVING the name is not permission to OPEN it: the front binds that name
+ * under its own protected descriptor and main publishes only what Windows
+ * CONFIRMED back to it (contract section 1.6, `mcp-host/front-endpoint.ts`).
  */
 export function studioEndpointPipeName(configDirRealPath: string): string {
   return `\\\\.\\pipe\\vex-studio-${studioEndpointHash(configDirRealPath)}`;
@@ -188,45 +188,34 @@ export function isWindowsPipePath(value: string): boolean {
 }
 
 /**
- * THE WINDOWS TRANSPORT GATE. One flag, one owner, one code (contract 1.6).
+ * THE WINDOWS TRANSPORT GATE, OPENED. One flag, one owner, and the identical
+ * flag on the other side of the wire (contract 1.6).
  *
- * WHY FALSE. libuv - what Node's `server.listen` reaches on win32 - creates
- * the pipe with a NULL security descriptor and WITHOUT
- * `PIPE_REJECT_REMOTE_CLIENTS`. The resulting DEFAULT SD grants Everyone, and
- * the anonymous logon, READ access. Duplex is denied to a second user, so the
- * handshake itself still cannot be driven; a READ-ONLY connect is not denied,
- * and on a self-custodial wallet that is a cross-user handshake-slot
- * exhaustion vector plus an unmeasured remote-client posture. Rule 90 fails
- * closed until a Windows runner measures it.
+ * WHY TRUE. The eight-row proof matrix of contract section 1.6 was MEASURED on
+ * the required Windows CI jobs, not argued: rows 1, 2, 3, 7 and 8 on
+ * `bridge-windows` run 33646484002 (second-user duplex denial paired with a
+ * control pipe, a read-only cross-user connect denied with no instance
+ * consumed, `rejectRemote` confirmed by readback and the loopback redirector
+ * refused, a foreign user's first-server squat failing the front's bind closed
+ * and refused by host authentication, and impersonation level 1); row 4's host
+ * half on `vex-app-windows` run 33650332655; rows 5 and 6 on `bridge-windows`
+ * run 33663385959. The libuv reasoning this gate was closed for describes a
+ * pipe Vex no longer creates: the `vex-pipe-front` child binds it under its
+ * own PROTECTED two-ACE descriptor and reports back what Windows CONFIRMED,
+ * and libuv never sees the handle.
  *
- * WHAT STAYS. Everything that can be proven from Linux: the derivation, the
- * pipe name, the override syntax, the plan shape and the handshake path all
- * remain and remain vector-tested. Only TOUCHING the transport is refused.
+ * WHAT DID NOT CHANGE. The derivation, the pipe name, the override syntax and
+ * the plan shape are exactly what they were and stay vector-tested. Opening
+ * the gate changed no plan.
  *
- * FLIPPING IT IS MECHANICAL, NOT EDITORIAL. The proof matrix in contract
- * section 1.6 runs on the REQUIRED `bridge-windows` CI job; extending that job
- * with the matrix is the only way this constant becomes true, and the Go
- * bridge carries the identical flag (`endpoint.WindowsTransportProven`).
+ * IT STAYS OPEN MECHANICALLY, NOT EDITORIALLY. The Go bridge carries
+ * `endpoint.WindowsTransportProven`, and the two are ONE decision: a reviewer
+ * who sees either flag false while the other is true rejects the change, in
+ * that direction as much as in the other. Closing the transport again is a
+ * contract change (section 5) with both owners in the same diff, never an edit
+ * to one constant.
  */
-export const WINDOWS_TRANSPORT_PROVEN = false;
-
-/**
- * The gate applied at the LISTEN site, and the only producer of
- * `windows_pending_platform_proof`. Returns the refusal, or `null` when the
- * plan may proceed.
- */
-export function unprovenWindowsTransport(
-  plan: StudioEndpointPlan,
-): StudioEndpointPlan | null {
-  if (plan.kind !== "pipe" || WINDOWS_TRANSPORT_PROVEN) return null;
-  return refuse(
-    "windows_pending_platform_proof",
-    "The Vex Studio Windows named-pipe transport is not enabled: its pipe "
-      + "security descriptor has not been measured on a Windows runner, and Vex "
-      + "will not open a wallet transport whose cross-user access is unproven. "
-      + "Use Vex Studio on Linux or macOS. The Vex Studio host did not start.",
-  );
-}
+export const WINDOWS_TRANSPORT_PROVEN = true;
 
 export function planStudioEndpoint(input: EndpointPlanInput): StudioEndpointPlan {
   const override = input.env[STUDIO_SOCKET_OVERRIDE_ENV];

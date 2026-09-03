@@ -91,11 +91,14 @@ const (
 // write to. Its rationale, its citations and its limits live in
 // hostauth_windows.go.
 //
-// STILL NOT PROVEN ON A RUNNER. endpoint.WindowsTransportProven is false, so
-// this function is unreachable at runtime; the `bridge-windows` CI job builds
-// it and runs its tests on ONE account, which cannot produce a genuinely
-// foreign pipe server. The cross-user case is item 7 of the contract's 1.6
-// matrix and is not what these tests prove.
+// MEASURED ON A RUNNER, AND REACHED AT RUNTIME. endpoint.WindowsTransportProven
+// is true, so this is the production dial. The `bridge-windows` job proves it
+// on a real pipe rather than by construction: rows 5 and 6 of the contract's
+// 1.6 matrix (run 33663385959) drive this handle's overlapped duplex, its
+// deadlines and its close cancellation from dial_windows_test.go, and row 7
+// (run 33646484002) drives this exact path against a pipe served by a temporary
+// SECOND local account the job creates, where the host authentication below
+// refuses with `windows_host_not_current_user` and no byte is written.
 func dialPipe(path string) (handshake.Conn, error) {
 	return dialPipeWith(path, resolveServerUserSID, resolveCurrentUserSID)
 }
