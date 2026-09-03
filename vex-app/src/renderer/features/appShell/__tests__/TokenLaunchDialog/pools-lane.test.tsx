@@ -8,37 +8,10 @@
  * leaving a stale fingerprint under it.
  */
 
-import { describe, expect, it, vi, beforeAll, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { createElement } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { PoolsPreparedLaunch } from "@shared/schemas/pools-launch.js";
-
-// JSDOM does not implement `HTMLDialogElement.showModal()`, so without this the
-// dialog never gets its `open` attribute and Testing Library hides every
-// descendant from `getByRole`. Same block as TokenLaunchDialog.test.tsx.
-beforeAll(() => {
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-    show?: () => void;
-  };
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function closePolyfill(this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-      this.dispatchEvent(new Event("close"));
-    };
-  }
-  if (typeof proto.show !== "function") {
-    proto.show = function showPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-});
 
 const prepare = vi.fn();
 const deploy = vi.fn();

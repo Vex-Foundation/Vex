@@ -7,7 +7,7 @@
  * rendered before the size prop existed.
  */
 
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import {
   Dialog,
@@ -15,22 +15,6 @@ import {
   DialogContent,
   DialogHeadlessHeader,
 } from "../dialog.js";
-
-beforeAll(() => {
-  // jsdom ships HTMLDialogElement without showModal/close; lib.dom already
-  // types both, so the polyfill assigns real methods with no cast.
-  const proto = HTMLDialogElement.prototype;
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function closePolyfill(this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-    };
-  }
-});
 
 function renderDialog(size?: "default" | "board"): HTMLDialogElement {
   const { container } = render(

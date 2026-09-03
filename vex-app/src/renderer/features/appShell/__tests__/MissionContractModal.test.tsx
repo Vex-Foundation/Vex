@@ -9,10 +9,12 @@
  *   - The Accept action lives in the (always-pinned) dialog footer.
  *
  * Setup mirrors `MissionContractCard.test.tsx`: real QueryClient + a window.vex
- * bridge. The native <dialog> is polyfilled (jsdom has no showModal/close).
+ * bridge. The native <dialog> modal methods jsdom lacks come from the shared
+ * renderer setup (`test/dialog-modal-polyfill.ts`), which also runs the real
+ * dialog focusing steps, so no suite installs its own.
  */
 
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -83,24 +85,6 @@ const ENABLED_UNACCEPTED_PLAN = {
   acceptedAt: null,
   updatedAt: PLAN_UPDATED_AT,
 };
-
-beforeAll(() => {
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-  };
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function (this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function (this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-      this.dispatchEvent(new Event("close"));
-    };
-  }
-});
 
 beforeEach(() => {
   vi.clearAllMocks();

@@ -20,7 +20,7 @@
  * own behavior is pinned separately in `GlobalWalletAddresses.test.tsx`.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type {
   PortfolioDto,
@@ -51,25 +51,6 @@ vi.mock("../../../lib/api/wallet-inventory.js", () => ({
 }));
 
 const { PositionBlock } = await import("../book/PositionBlock.js");
-
-// jsdom has no <dialog> methods — the "see more" networks dialog needs them.
-beforeAll(() => {
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-  };
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function closePolyfill(this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-      this.dispatchEvent(new Event("close"));
-    };
-  }
-});
 
 function token(
   symbol: string,
