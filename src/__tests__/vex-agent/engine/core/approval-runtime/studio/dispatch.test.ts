@@ -312,6 +312,25 @@ describe("a project deleted between approval and dispatch (B0)", () => {
 });
 
 describe("the happy dispatch", () => {
+  it.each([false, true])("revalidates the complete prepared Lighter card before dispatch (changed=%s)", async (changed) => {
+    const args = { intentId: "lighter-exec-00000000-0000-4000-8000-000000000001" };
+    const envelope = buildApprovalToolCall("lighter__order_create", args);
+    const preview = { toolName: "order.create", namespace: "lighter", criticalArgs: { intentId: args.intentId, baseAmountDisplay: "0.0984" } };
+    const preparedApproval = { approvalPreview: { ...preview, criticalArgs: { ...preview.criticalArgs, baseAmountDisplay: changed ? "1" : "0.0984" } }, expiresAt: EXPIRES_AT };
+    admitStudioCall.mockImplementation(async (_call, context) => context.approved === true
+      ? { dispatched: true, result: { success: true, output: "executed" } }
+      : { ...pendingAdmission(), preparedApproval });
+    const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot({
+      queue_tool_call: envelope, preview_json: preview,
+      request_digest: computeStudioAuthorityDigest({ envelope, preview, expiresAt: EXPIRES_AT, sessionId: SESSION_ID, projectId: PROJECT_ID, scopeVersion: 4, permission: "full" }),
+    }));
+    expect(outcome.kind).toBe("dispatched");
+    if (outcome.kind !== "dispatched") return;
+    expect(outcome.toolResult?.success).toBe(!changed);
+    expect(admitStudioCall).toHaveBeenCalledTimes(changed ? 1 : 2);
+    expect(admitStudioCall.mock.calls[0]?.[0]).toMatchObject({ name: "lighter__order_create", args });
+  });
+
   it("claims the slot under the stop gate, then dispatches with the project wallets", async () => {
     const outcome = await applyStudioApproveSideEffects(APPROVAL_ID, snapshot());
     expect(outcome.kind).toBe("dispatched");

@@ -78,6 +78,7 @@ export type StudioRuntimeAvailability =
   | { readonly available: false; readonly reason: string };
 
 export interface StudioEnqueueInput {
+  readonly preparedApproval?: import("../tools/registry/prepared-action-follow-ups.js").ValidatedPreparedActionFollowUp;
   readonly scope: ProjectScope;
   readonly call: StudioToolCall;
   /** The `pendingApproval` result A2's executor produced. Carried whole. */
@@ -133,6 +134,10 @@ export async function enqueueStudioApprovalIntent(
       toolArgs: input.call.args,
       toolCallId: input.call.toolCallId,
       result: input.result,
+      ...(input.preparedApproval === undefined ? {} : {
+        trustedPreview: input.preparedApproval.approvalPreview,
+        trustedExpiresAt: input.preparedApproval.expiresAt,
+      }),
       toolContext: input.toolContext,
       intentActionKind: actionKind,
       // THE BINDING SEAM. A generic signing confirm rebuilds what its approval

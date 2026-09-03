@@ -332,7 +332,7 @@ async function dispatchApprovedStudioAction(
   // rebuild their current prequote/risk disclosures. The complete rebuilt card
   // must equal the JSON the user approved, including every top-level field and
   // every critical-argument key.
-  const card = await revalidateStudioApprovalCard(scope, toolCall, row.preview_json);
+  const card = await revalidateStudioApprovalCard(scope, toolCall, row.preview_json, expiresAt);
   if (!card.ok) {
     logger.warn("engine.studio.approval_card_revalidation_refused", {
       approvalId,
@@ -429,6 +429,7 @@ async function revalidateStudioApprovalCard(
   scope: ProjectScope,
   toolCall: NonNullable<ReturnType<typeof readStudioApprovalToolCall>>,
   storedPreview: unknown,
+  expiresAt: string,
 ): Promise<StudioCardRevalidation> {
   let admission: Awaited<ReturnType<typeof admitStudioCall>>;
   try {
@@ -460,10 +461,14 @@ async function revalidateStudioApprovalCard(
         "the call no longer produced the approval card that was previously shown",
     };
   }
+  if (admission.preparedApproval !== undefined && admission.preparedApproval.expiresAt !== expiresAt) {
+    return { ok: false, reason: "expiry_mismatch", refusal: "the prepared order expiry no longer matches the approval" };
+  }
   const rebuilt = buildApprovalIntentPreview({
     toolName: toolCall.toolName,
     toolArgs: toolCall.toolArgs,
     result: admission.result,
+    ...(admission.preparedApproval === undefined ? {} : { trustedPreview: admission.preparedApproval.approvalPreview }),
     ...(admission.result.preparedApprovalBinding === undefined
       ? {}
       : { preparedApprovalBinding: admission.result.preparedApprovalBinding }),
