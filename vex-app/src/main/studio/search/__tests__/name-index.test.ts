@@ -14,7 +14,7 @@
  * keeps an index off a symlinked project.
  */
 
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -41,7 +41,13 @@ async function makeProject(
   slug: string,
   files: readonly string[],
 ): Promise<{ root: string; directory: string }> {
-  const root = await mkdtemp(path.join(tmpdir(), "vex-index-root-"));
+  // Resolved to its real path on purpose: macOS puts the temp root under a
+  // symlink (/var -> /private/var), and `locate` proves the project directory
+  // through `realProjectDirectory`, which resolves symlinks before comparing
+  // against the anchored root. An unresolved root refuses every query there
+  // (CI run 33751109754, darwin: 10 of 13 cases red), exactly as
+  // `files-real-fs.test.ts` learned before this file existed.
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "vex-index-root-")));
   roots.push(root);
   const directory = path.join(root, slug);
   await mkdir(directory, { recursive: true });
