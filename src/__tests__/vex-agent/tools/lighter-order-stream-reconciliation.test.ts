@@ -302,7 +302,7 @@ describe("Lighter order stream reconciliation", () => {
     const report = await reconcileLighterOrderStreamMessage(
       "rhc",
       42,
-      frame([order({ status: "filled" })]),
+      frame([order({ status: "filled", filled_base_amount: "1.0", remaining_base_amount: "0", base_size: 0 })]),
       d,
     );
 

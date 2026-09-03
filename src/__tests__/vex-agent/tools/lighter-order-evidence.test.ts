@@ -102,7 +102,7 @@ describe("Lighter inactive order evidence", () => {
     { initial_base_amount: "1.0001" },
     { price: "2000.01" },
     { order_expiry: 1_800_000_000_001 },
-    { base_size: Number.MAX_SAFE_INTEGER + 1 },
+    { base_price: Number.MAX_SAFE_INTEGER + 1 },
     { base_price: 200001 },
   ])("fails closed when provider semantics conflict with the approved order: %o", (override) => {
     const order = inactiveOrder({
@@ -199,6 +199,38 @@ describe("Lighter inactive order evidence", () => {
 
     expect(lighterOrderMatchesEvidenceScope(inactiveOrder({ order_expiry: 0 }), scope)).toBe(true);
     expect(lighterOrderMatchesEvidenceScope(inactiveOrder({ order_expiry: 1_800_000_000_000 }), scope)).toBe(false);
+  });
+
+  it.each([
+    { baseDecimals: 4, priceDecimals: 2, amount: "0.0983", price: "114.09", amountInteger: "983", priceInteger: "11409", quote: "10.992889", average: "111.83" },
+    { baseDecimals: 5, priceDecimals: 1, amount: "0.00015", price: "100000.0", amountInteger: "15", priceInteger: "1000000", quote: "14.25", average: "95000" },
+  ])("confirms a full fill using the original decimal amount at $baseDecimals size decimals", (example) => {
+    const scope = buildLighterOrderEvidenceScope({
+      approved: { accountIndex: 42, marketIndex: 0, side: "buy", orderType: "market",
+        timeInForce: "immediate-or-cancel", reduceOnly: false, baseAmountInteger: example.amountInteger,
+        priceInteger: example.priceInteger, triggerPriceInteger: null },
+      baseDecimals: example.baseDecimals, priceDecimals: example.priceDecimals, signedOrderExpiryMs: 0,
+    });
+    const order = inactiveOrder({
+      side: "", is_ask: false, type: "market", time_in_force: "immediate-or-cancel",
+      initial_base_amount: example.amount, filled_base_amount: example.amount, remaining_base_amount: "0.0000",
+      price: example.price, base_price: Number(example.priceInteger), base_size: 0,
+      filled_quote_amount: example.quote, status: "filled", order_expiry: 0,
+    });
+    expect(findMatchingLighterOrder([order], scope, "123456")).toBe(order);
+    expect(stateFromInactiveLighterOrder(order)).toBe("filled");
+    expect(lighterOrderEvidenceJson("inactive_order", order, "123456")).toMatchObject({
+      filledBaseAmount: example.amount, filledQuoteAmount: example.quote, averageExecutionPrice: example.average,
+    });
+    expect(findMatchingLighterOrder([{ ...order, client_order_id: "another-order" }], scope, "123456")).toBeNull();
+    expect(findMatchingLighterOrder([{ ...order, owner_account_index: 99 }], scope, "123456")).toBeNull();
+    expect(() => findMatchingLighterOrder([{ ...order, is_ask: true }], scope, "123456")).toThrow("is_ask");
+    for (const amounts of [
+      { filled_base_amount: "0" }, { filled_base_amount: "2" },
+      { remaining_base_amount: "0.0001" }, { filled_base_amount: undefined },
+    ]) {
+      expect(() => findMatchingLighterOrder([{ ...order, ...amounts }], scope, "123456")).toThrow("filled_amounts");
+    }
   });
 
   it("fails closed on duplicate provider identities", () => {

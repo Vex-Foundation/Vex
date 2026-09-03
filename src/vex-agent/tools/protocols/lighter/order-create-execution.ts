@@ -28,6 +28,7 @@ import {
   buildLighterOrderEvidenceScope,
   findMatchingLighterOrder,
   findMatchingLighterTrade,
+  LighterOrderEvidenceConflictError,
   lighterOrderEvidenceJson,
   lighterOrderIdFromTrade,
   lighterTradeEvidenceJson,
@@ -78,6 +79,7 @@ export type ExecuteApprovedLighterCreateOrderResult =
     }
   | {
       readonly status: "provider_confirmed";
+      readonly providerEvidence?: Record<string, unknown>;
       readonly intentId: string;
       readonly environment: LighterOrderReadyForSignerPlan["environment"];
       readonly executionState: "open" | "partially_filled" | "filled" | "canceled" | "rejected";
@@ -127,6 +129,7 @@ export interface ExecuteApprovedLighterCreateOrderDeps {
     | "markApiAccepted"
     | "markSequencerPending"
     | "markProviderOutcome"
+    | "findByIntentIdAnySession"
     | "markAmbiguous"
   >;
 }
@@ -715,9 +718,12 @@ async function reconcileProviderOutcome(input: {
         volumeQuotaRemaining,
       });
     }
-  } catch {
-    await markAmbiguous(deps, plan, PROVIDER_OUTCOME_READ_AMBIGUOUS_REASON);
-    return ambiguous(plan, PROVIDER_OUTCOME_READ_AMBIGUOUS_REASON, signerTxHash);
+  } catch (error) {
+    const reason = error instanceof LighterOrderEvidenceConflictError
+      ? error.message
+      : PROVIDER_OUTCOME_READ_AMBIGUOUS_REASON;
+    await markAmbiguous(deps, plan, reason);
+    return ambiguous(plan, reason, signerTxHash);
   }
 
   let persisted: Awaited<ReturnType<ExecuteApprovedLighterCreateOrderDeps["intents"]["markProviderOutcome"]>>;
@@ -798,6 +804,31 @@ async function persistProviderOutcome(input: {
     providerOutcomeJson: input.providerOutcomeJson,
   });
   if (persisted === null) {
+    // A stream update can confirm the order while the REST lookup is in flight.
+    const current = await input.deps.intents.findByIntentIdAnySession(input.plan.intentId);
+    if (current !== null
+      && current.sessionId === input.plan.sessionId
+      && current.environment === input.plan.environment
+      && current.approvalStatus === "approved"
+      && current.clientOrderIndex === input.unsignedOrder.clientOrderIndex
+      && current.providerOrderId === input.providerOrderId
+      && current.executionState === "filled"
+      && current.providerOutcomeSource === "inactive_order") {
+      return {
+        status: "provider_confirmed",
+        intentId: input.plan.intentId,
+        environment: input.plan.environment,
+        executionState: "filled",
+        signerTxHash: input.signerTxHash,
+        submittedTxHash: input.submittedTxHash,
+        evidenceSource: "inactive_order",
+        clientOrderIndex: input.unsignedOrder.clientOrderIndex,
+        providerOrderId: current.providerOrderId,
+        providerOrderStatus: current.providerOrderStatus,
+        providerEvidence: current.providerOutcomeJson ?? undefined,
+        message: "Lighter provider evidence confirmed order state filled.",
+      };
+    }
     await markAmbiguous(input.deps, input.plan, PROVIDER_OUTCOME_PERSIST_AMBIGUOUS_REASON);
     return ambiguous(input.plan, PROVIDER_OUTCOME_PERSIST_AMBIGUOUS_REASON, input.signerTxHash);
   }
@@ -822,6 +853,7 @@ async function persistProviderOutcome(input: {
   }
   return {
     status: "provider_confirmed",
+    providerEvidence: input.providerOutcomeJson,
     intentId: input.plan.intentId,
     environment: input.plan.environment,
     executionState: input.state,

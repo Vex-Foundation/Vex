@@ -335,7 +335,11 @@ const MARK_PROVIDER_OUTCOME_SQL = `UPDATE lighter_order_execution_intents
    AND session_id = $2
    AND environment = $3
    AND approval_status = 'approved'
-   AND execution_state IN ('api_accepted','sequencer_pending')
+   AND (
+     execution_state IN ('api_accepted','sequencer_pending','ambiguous')
+     OR (execution_state = 'open' AND $4 IN ('open','partially_filled','filled','canceled','rejected'))
+     OR (execution_state = 'partially_filled' AND $4 IN ('partially_filled','filled','canceled','rejected'))
+   )
    AND client_order_index IS NOT NULL
  RETURNING ${SELECT_COLUMNS}`;
 
@@ -684,14 +688,20 @@ const MARK_REPAIR_RESOLVED_SQL = `UPDATE lighter_order_execution_intents
        updated_at = NOW()
  WHERE intent_id = $1
    AND environment = $2
-   AND execution_state IN ('signed','submitted','api_accepted','sequencer_pending','ambiguous')
+   AND approval_status = 'approved'
+   AND (
+     execution_state IN ('signed','submitted','api_accepted','sequencer_pending','ambiguous')
+     OR (execution_state = 'open' AND $3 IN ('open','partially_filled','filled','canceled','rejected'))
+     OR (execution_state = 'partially_filled' AND $3 IN ('partially_filled','filled','canceled','rejected'))
+   )
  RETURNING ${SELECT_COLUMNS}`;
 
 /**
  * Repair-only transition from an unresolved state to an evidence-backed one.
  * Unlike markProviderOutcome it may start from signed/submitted/ambiguous —
  * exactly the states a crash or lost response strands an intent in — and it
- * never touches a terminal or pre-signing row.
+ * also refreshes open/partial evidence without downgrading progress. It never
+ * touches a terminal or pre-signing row.
  */
 export async function markRepairResolved(
   input: MarkLighterOrderRepairResolvedInput,

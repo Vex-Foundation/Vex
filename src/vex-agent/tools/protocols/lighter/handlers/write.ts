@@ -137,6 +137,12 @@ export function lighterLiveOrderCreateUserGuidance(
 ): string {
   switch (execution.status) {
     case "provider_confirmed":
+      if (execution.evidenceSource === "account_trade") {
+        return "The approved order was submitted and a matching trade confirms a fill occurred. Report the observed trade size and price from providerEvidence, but check lighter.order.status for the final order status and total filled amount. A trade alone does not prove a partial or full fill. Do not describe this as a preview, request another approval, or resubmit.";
+      }
+      if (execution.executionState === "filled") {
+        return "The approved order fully filled on Lighter. Report filledBaseAmount, filledQuoteAmount, remainingBaseAmount and averageExecutionPrice from providerEvidence. The order price is a limit or execution bound, not the average fill price. Do not describe this as a preview, ask for approval again, or resubmit.";
+      }
       if (execution.executionState === "canceled" || execution.executionState === "rejected") {
         return `Lighter ${execution.executionState} the order after submission, so no position was opened and no funds are committed. Tell the user the order was ${execution.executionState} by the provider. Do not describe this as a preview or a preparation step, and do not tell the user to approve again.`;
       }

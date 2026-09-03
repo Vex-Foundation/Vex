@@ -240,7 +240,7 @@ describe("Lighter order repair", () => {
 
     expect(report.resolution).toBe("degraded");
     expect(report.stateAfter).toBe("ambiguous");
-    expect(report.guidance).toContain("terms that conflict");
+    expect(report.guidance).toContain("initial_base_amount");
     expect(deps.intents.markEvidenceConflict).toHaveBeenCalledWith({
       intentId: INTENT_ID,
       environment: "rhc",
@@ -348,6 +348,23 @@ describe("Lighter order repair", () => {
     expect(report.resolution).toBe("degraded");
     expect(report.guidance).toContain("behind the locally reserved nonce");
     expect(deps.nonceState.releaseReservation).not.toHaveBeenCalled();
+  });
+
+  it.each(["ambiguous", "partially_filled", "open"] as const)("refreshes %s from the exact completed order and returns its fill amounts", async (state) => {
+    const deps = {
+      ...makeDeps({ nextNonce: 1201, inactiveOrders: [{
+        order_index: 987, order_id: "987", client_order_id: "123456", client_order_index: 123456,
+        market_index: 0, owner_account_index: 42, initial_base_amount: "1.0", base_size: 0,
+        price: "3000.00", status: "filled", filled_base_amount: "1.0", remaining_base_amount: "0",
+        filled_quote_amount: "2990.00", is_ask: false,
+      }] }),
+      resolvePrivilegedAccountAuth: vi.fn(async () => ({ token: "read-only-test-token", accountIndex: 42 })),
+    };
+    const report = await repairLighterOrderIntent(intentRow({ executionState: state }), deps);
+    expect(report).toMatchObject({ stateAfter: "filled", evidenceSource: "inactive_order",
+      providerEvidence: { filledBaseAmount: "1.0", remainingBaseAmount: "0", filledQuoteAmount: "2990.00", averageExecutionPrice: "2990" },
+    });
+    expect(deps.intents.markRepairResolved).toHaveBeenCalledWith(expect.objectContaining({ state: "filled" }));
   });
 
   it("skips terminal intents untouched", async () => {
