@@ -22,9 +22,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
+import type { FileNode } from "@shared/schemas/files.js";
 import { publishFileOpen, useFileOpenIntentStore } from "../../workspace/file-open-intent.js";
+import {
+  publishFileRename,
+  useFileRenameSignalStore,
+} from "../../workspace/file-rename-signal.js";
 import { WORKSPACE_TERMINAL_GROUPS_MAX } from "../../workspace/types.js";
+import {
+  peekProjectWorkspaceCommands,
+  type ProjectWorkspaceCommands,
+} from "../../workspace/workspace-handles.js";
 import { StudioWorkspaceController } from "../StudioWorkspaceController.js";
+import { useUiStore } from "../../../../../stores/uiStore.js";
 import { notifications } from "../../../../../lib/notifications/index.js";
 import { fileViewerRegistry } from "../../viewer/index.js";
 import { TerminalRegistry } from "../terminal-registry.js";
@@ -52,6 +62,16 @@ const noWebgl = { webglLoader: () => Promise.reject(new Error("no gl in jsdom"))
  */
 const fileReads: string[] = [];
 
+/**
+ * The directories this suite lets the bridge answer for, and what was asked.
+ *
+ * Empty for every case but the folder-rename walk, which is the only one that
+ * lists anything: following a renamed directory's tabs is the one path in this
+ * controller that asks main for a token it cannot compute.
+ */
+const listedNodeIds: (string | null)[] = [];
+let directoryPages: Record<string, readonly FileNode[]> = {};
+
 vi.mock("../../../../../lib/api/files.js", () => ({
   readProjectFile: (_projectId: string, nodeId: string) => {
     fileReads.push(nodeId);
@@ -70,20 +90,22 @@ vi.mock("../../../../../lib/api/files.js", () => ({
       },
     });
   },
-  listProjectChildren: () =>
-    Promise.resolve({
+  listProjectChildren: (input: { nodeId: string | null }) => {
+    listedNodeIds.push(input.nodeId);
+    return Promise.resolve({
       ok: true,
       data: {
         ok: true,
         value: {
-          children: [],
+          children: directoryPages[input.nodeId ?? "<root>"] ?? [],
           hasMore: false,
           nextCursor: null,
           totalCount: 0,
           excludedCount: 0,
         },
       },
-    }),
+    });
+  },
   watchProjectFiles: () =>
     Promise.resolve({
       ok: true,
@@ -130,10 +152,17 @@ beforeEach(() => {
   bridge.nextCreate = { ok: true, value: AUTO_TERMINAL };
   registry = new TerminalRegistry(noWebgl);
   fileReads.length = 0;
+  listedNodeIds.length = 0;
+  directoryPages = {};
   fileViewerRegistry.disposeAll();
   // The notification model is a MODULE SINGLETON: a retained loss notification
   // would count itself into the next test in this file.
   notifications.reset();
+  // The FILE TABS' persisted record is a MODULE SINGLETON too, and every case
+  // in this file uses the same project id: a strip one case leaves open would
+  // be restored into the next one's workspace, walking main for paths that
+  // case never mentioned.
+  useUiStore.setState({ studioFileTabs: {} });
   document.body.innerHTML = "";
 });
 
@@ -541,6 +570,74 @@ describe("the first terminal of an opened project", () => {
     // strip's `+` uses, and the state gives way to it.
     expect(screen.getAllByRole("tab")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Open a terminal" })).toBeNull();
+  });
+});
+
+describe("focus lands in a workspace that was just opened", () => {
+  /**
+   * The measured defect: `Enter` on the welcome's "Open <project>" opened the
+   * project and left `document.activeElement` on `document.body`, so a keyboard
+   * user tabbed in from the top of the window to reach the shell that had just
+   * been opened for them. The controller now claims focus for the terminal the
+   * open produced - and only ever from nobody.
+   */
+  it("puts the caret in the auto-opened terminal", async () => {
+    await renderOpened();
+
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute("aria-label")).toBe(
+        "Terminal input",
+      );
+    });
+  });
+
+  it("stays out of a HIDDEN workspace, which nobody is looking at", async () => {
+    // `StudioCenter` keeps every kept-alive project mounted and hides the
+    // inactive ones, so a mount is not an open. It also passes `active: false`
+    // while the boot gate or the unlock curtain covers the window.
+    render(
+      <StudioWorkspaceController projectId="p1" registry={registry} active={false} />,
+    );
+    await waitForOpenedTerminal();
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("never takes focus a user is already holding", async () => {
+    // The restore is a round trip, so the arming outlives the first commit -
+    // and a user who reached for something else in the meantime must keep it.
+    const held = document.createElement("input");
+    document.body.appendChild(held);
+    held.focus();
+
+    await renderOpened();
+    // Give the arming every commit it could possibly retry on.
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(document.activeElement).toBe(held);
+    held.remove();
+  });
+
+  it("claims focus when an un-hidden workspace becomes the shown one", async () => {
+    // A project switch is an UN-HIDE, not a mount: the workspace is already
+    // there, so the open-time landing has to key on becoming active.
+    const view = render(
+      <StudioWorkspaceController projectId="p1" registry={registry} active={false} />,
+    );
+    await waitForOpenedTerminal();
+    expect(document.activeElement).toBe(document.body);
+
+    view.rerender(
+      <StudioWorkspaceController projectId="p1" registry={registry} active />,
+    );
+
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute("aria-label")).toBe(
+        "Terminal input",
+      );
+    });
   });
 });
 
@@ -1278,5 +1375,610 @@ describe("opening a file", () => {
     // holding the old token would answer `invalid_node` for as long as the tab
     // stayed open.
     expect(fileReads).toContain("node-epoch-2");
+  });
+
+  /**
+   * THE TAB FOLLOWS A RENAME, which is the cross-lane defect the browser pass
+   * measured: renaming an open file left the tab titled with the OLD name, so
+   * the strip named a path that was no longer on disk.
+   *
+   * Driven through the real signal the explorer session publishes
+   * (`workspace/file-rename-signal.ts`) rather than by calling the model, so
+   * what is proved here is the WIRING - the controller subscribes, the project
+   * key is honoured, the signal is consumed once - and not the model rule,
+   * which has its own table in `workspace/__tests__/file-tab-rename.test.ts`.
+   */
+  it("follows a RENAME: the tab keeps its identity and takes the new name", async () => {
+    await renderStrictOpened();
+
+    await act(async () => {
+      publishFileOpen("p1", sourceNode("src/before.ts"));
+      await Promise.resolve();
+    });
+    await screen.findByRole("tab", { name: /before\.ts/ });
+
+    await act(async () => {
+      publishFileRename("p1", "src/before.ts", {
+        title: "after.ts",
+        relativePath: "src/after.ts",
+        nodeId: "node-src/after.ts",
+      });
+      await Promise.resolve();
+    });
+
+    // The tab is RENAMED, not closed and reopened: one file tab before, one
+    // after, under the new name.
+    const renamed = await screen.findByRole("tab", { name: /after\.ts/ });
+    expect(renamed).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: /before\.ts/ })).toBeNull();
+    // The VIEWER followed too, because the tab carried the new token: the
+    // registry swapped in a session on the new path.
+    await waitFor(() => {
+      expect(screen.getByTestId("file-viewer").textContent).toContain("src/after.ts");
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fileReads).toContain("node-src/after.ts");
+    expect(useFileRenameSignalStore.getState().signal).toBeNull();
+  });
+
+  it("DROPS a rename that happened in another project", async () => {
+    await renderStrictOpened();
+
+    await act(async () => {
+      publishFileOpen("p1", sourceNode("src/before.ts"));
+      await Promise.resolve();
+    });
+    await screen.findByRole("tab", { name: /before\.ts/ });
+
+    await act(async () => {
+      publishFileRename("p2", "src/before.ts", {
+        title: "after.ts",
+        relativePath: "src/after.ts",
+        nodeId: "node-src/after.ts",
+      });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("tab", { name: /before\.ts/ })).toBeTruthy();
+    // Still parked: it belongs to p2's workspace, not to this one.
+    expect(useFileRenameSignalStore.getState().signal).not.toBeNull();
+  });
+
+  /**
+   * A rename of a file NOBODY HAS OPEN is the ordinary case, and it must be
+   * silent. `retargetFileTab` refuses it by design, and a controller that fed
+   * that refusal to `apply` would raise the workspace's refusal notice - a
+   * "tab not found" sentence at a user who renamed a file in the tree.
+   */
+  it("says nothing when the renamed file has no tab", async () => {
+    await renderStrictOpened();
+
+    await act(async () => {
+      publishFileRename("p1", "src/never-opened.ts", {
+        title: "x.ts",
+        relativePath: "src/x.ts",
+        nodeId: "node-src/x.ts",
+      });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(useFileRenameSignalStore.getState().signal).toBeNull();
+    // And nothing was asked of main: a file rename moves no tab but its own,
+    // so the ordinary case costs one array scan and no bridge call.
+    expect(listedNodeIds).toEqual([]);
+  });
+
+  /**
+   * A RENAMED DIRECTORY MOVES EVERY TAB UNDER IT, which the signal itself
+   * cannot say: the explorer announces the entry the user typed a new name for,
+   * and `src/dir/a.ts` is not that entry.
+   *
+   * VS Code retargets exactly these editors rather than closing them
+   * (`editorService.ts` `handleMovedFile`, :259-300: every editor whose
+   * resource is the moved one OR a child of it). What its `joinPath` cannot do
+   * for us is the TOKEN: `mintFileNodeId` signs the path in main, so the new
+   * one is asked for through the ordinary listing - which is what the two
+   * assertions below prove happened, end to end, through the real registry and
+   * the real viewer.
+   */
+  it("follows a FOLDER rename: the tab under it reads the new path", async () => {
+    await renderStrictOpened();
+
+    await act(async () => {
+      publishFileOpen("p1", sourceNode("src/dir/a.ts"));
+      await Promise.resolve();
+    });
+    await screen.findByRole("tab", { name: /a\.ts/ });
+
+    // What main will answer for the renamed directory: one child, with the
+    // token only main can mint.
+    directoryPages = {
+      "node-src/moved": [
+        {
+          nodeId: "node-src/moved/a.ts",
+          name: "a.ts",
+          path: "src/moved/a.ts",
+          kind: "file",
+          size: 12,
+          modifiedMs: 1,
+        },
+      ],
+    };
+
+    await act(async () => {
+      publishFileRename("p1", "src/dir", {
+        title: "moved",
+        relativePath: "src/moved",
+        nodeId: "node-src/moved",
+      });
+      await Promise.resolve();
+    });
+
+    // THE TAB IS NOT CLOSED and keeps its name - a rename of a parent does not
+    // rename the child - and its viewer now reads the file at the new path.
+    await waitFor(() => {
+      expect(screen.getByTestId("file-viewer").textContent).toContain("src/moved/a.ts");
+    });
+    expect(screen.getByRole("tab", { name: /a\.ts/ })).toBeTruthy();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // The RENAMED DIRECTORY was listed (the viewer's own watch lists the root,
+    // which is why this is a containment rather than an equality).
+    expect(listedNodeIds).toContain("node-src/moved");
+    expect(fileReads).toContain("node-src/moved/a.ts");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * What a mounted workspace publishes for the keyboard table
+ * ------------------------------------------------------------------ */
+
+/**
+ * THE KEYBOARD-REACHABLE ACTIONS, driven through the registry the Studio
+ * keyboard hook reads and observed on the strip a user sees.
+ *
+ * The hook's own suite proves the ROUTING (which project answers, and that an
+ * unanswered chord is left alone) against a fake handle. What only this suite
+ * can prove is that the published commands are the SAME actions the mouse
+ * reaches: a `newTerminal` that opened a pty by its own path would bypass the
+ * keep-alive bound and the publication fence, and a `closeActiveTab` that
+ * removed a tab without killing its pty would leave a shell running with
+ * nothing on screen naming it.
+ *
+ * Each returns whether it ACTED, and the false cases are load-bearing: the hook
+ * takes the keystroke only for a command that answered.
+ */
+describe("the commands a mounted workspace publishes", () => {
+  function commands(): ProjectWorkspaceCommands {
+    const published = peekProjectWorkspaceCommands("p1");
+    if (published === null) throw new Error("the workspace published no commands");
+    return published;
+  }
+
+  it("opens a terminal through the same path the strip's + does", async () => {
+    await renderOpened();
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "t-kbd", pid: 7, shellName: "kbd-shell", displayCwd: "p1" },
+    };
+
+    await act(async () => {
+      expect(commands().newTerminal()).toBe(true);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("tab")).toHaveLength(2);
+    });
+    // The REAL create went over the bridge, with this workspace's project on it.
+    expect(bridge.creates.at(-1)?.projectId).toBe("p1");
+  });
+
+  it("closes the active tab AND kills its pty", async () => {
+    await renderOpened();
+
+    await act(async () => {
+      expect(commands().closeActiveTab()).toBe(true);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    });
+    expect(bridge.kills).toContain(AUTO_TERMINAL.terminalId);
+  });
+
+  it("declines a close when the strip is empty, so the key is left alone", async () => {
+    await renderOpened();
+    await act(async () => {
+      commands().closeActiveTab();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    });
+
+    expect(commands().closeActiveTab()).toBe(false);
+  });
+
+  it("splits the active terminal side by side", async () => {
+    await renderOpened();
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "t-split", pid: 8, shellName: "split-shell", displayCwd: "p1" },
+    };
+
+    await act(async () => {
+      expect(commands().splitActiveTerminal()).toBe(true);
+      await Promise.resolve();
+    });
+
+    // One TAB, two panes with a splitter between them: a split, not a new tab.
+    await waitFor(() => {
+      expect(screen.getAllByRole("tab")).toHaveLength(1);
+      expect(screen.getAllByRole("separator").length).toBeGreaterThan(0);
+    });
+  });
+
+  /**
+   * `Ctrl+Enter` KEEPS THE PREVIEW TAB, through the same promotion the tab's
+   * double click performs, and DECLINES whenever there is nothing to keep.
+   *
+   * The declines are the load-bearing half. `Enter` is a key the workspace must
+   * not swallow, and the hook takes the keystroke only for a command that
+   * acted - so an empty strip, a terminal group and an already-pinned file all
+   * have to answer `false` rather than reporting a promotion that changed
+   * nothing.
+   */
+  it("keeps the preview tab, and declines when there is nothing to keep", async () => {
+    await renderOpened();
+
+    // A terminal group is the active tab: nothing to keep.
+    expect(commands().pinActiveTab()).toBe(false);
+
+    await act(async () => {
+      publishFileOpen(
+        "p1",
+        {
+          nodeId: "node-src/preview.ts",
+          name: "preview.ts",
+          path: "src/preview.ts",
+          kind: "file",
+          size: 120,
+          modifiedMs: 1,
+        },
+        "preview",
+      );
+      await Promise.resolve();
+    });
+    const tab = await screen.findByRole("tab", { name: /preview\.ts/ });
+    // The strip draws the preview state in italics and says it in words.
+    expect(tab.querySelector("span.italic")).not.toBeNull();
+
+    await act(async () => {
+      expect(commands().pinActiveTab()).toBe(true);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("tab", { name: /preview\.ts/ }).querySelector("span.italic"),
+      ).toBeNull();
+    });
+
+    // Already kept: the second press has nothing to do and leaves the key.
+    expect(commands().pinActiveTab()).toBe(false);
+  });
+
+  it("walks the strip in both directions, wrapping", async () => {
+    await renderOpened();
+    await openTerminals(2);
+    await waitFor(() => {
+      expect(screen.getAllByRole("tab")).toHaveLength(3);
+    });
+
+    const titles = (): readonly string[] =>
+      screen.getAllByRole("tab").map((tab) => tab.getAttribute("aria-selected") ?? "");
+    // The third terminal is the one the last open selected.
+    expect(titles()).toEqual(["false", "false", "true"]);
+
+    act(() => {
+      expect(commands().selectTabAtOffset(1)).toBe(true);
+    });
+    expect(titles()).toEqual(["true", "false", "false"]);
+
+    act(() => {
+      expect(commands().selectTabAtOffset(-1)).toBe(true);
+    });
+    expect(titles()).toEqual(["false", "false", "true"]);
+  });
+
+  /**
+   * FOCUS COMES BACK, which is what makes `Ctrl+W` repeatable.
+   *
+   * The closed tab's trigger is REMOVED, and focus left on a removed node drops
+   * the user to `document.body` - outside every Studio surface, so the tab
+   * chords stop resolving and the shortcut closes exactly one tab per pointer
+   * click. Caught by the browser pass, pinned here.
+   */
+  it("puts focus back inside the workspace after a keyboard close", async () => {
+    await renderOpened();
+    await openTerminals(1);
+    await waitFor(() => {
+      expect(screen.getAllByRole("tab")).toHaveLength(2);
+    });
+
+    const card = document.querySelector("[data-vex-workspace-card]");
+    expect(card).not.toBeNull();
+    screen.getAllByRole("tab")[1]?.focus();
+
+    await act(async () => {
+      expect(commands().closeActiveTab()).toBe(true);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("tab")).toHaveLength(1);
+    });
+    // Still in the workspace, and on the tab the close selected.
+    expect(card?.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(screen.getByRole("tab"));
+
+    // And therefore repeatable: the last tab closes too, and focus lands on the
+    // one control an empty strip always has.
+    await act(async () => {
+      expect(commands().closeActiveTab()).toBe(true);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    });
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "New terminal" }),
+    );
+  });
+
+  it("stops publishing when the workspace unmounts", async () => {
+    const view = await renderOpened();
+    expect(peekProjectWorkspaceCommands("p1")).not.toBeNull();
+    act(() => {
+      view.unmount();
+    });
+    expect(peekProjectWorkspaceCommands("p1")).toBeNull();
+  });
+});
+
+/**
+ * THE WATERMARK the empty workspace draws, and where its rows come from.
+ *
+ * The rows are the caller's: `StudioCenter` passes the shortcuts its mounted
+ * keyboard table can actually dispatch. What this proves is the thread - prop
+ * to strip to watermark - and the default a controller mounted WITHOUT that
+ * caller falls back to, which is the keyless list rather than a blank panel.
+ */
+describe("the empty workspace's watermark rows", () => {
+  async function emptyTheWorkspace(): Promise<void> {
+    const published = peekProjectWorkspaceCommands("p1");
+    if (published === null) throw new Error("the workspace published no commands");
+    await act(async () => {
+      published.closeActiveTab();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    });
+  }
+
+  it("renders the rows the caller supplied, label left and keys right", async () => {
+    render(
+      <StudioWorkspaceController
+        projectId="p1"
+        registry={registry}
+        watermarkRows={[
+          { action: "New terminal", keys: "Ctrl+Shift+`" },
+          { action: "Close tab", keys: "Ctrl+W" },
+        ]}
+      />,
+    );
+    await waitForOpenedTerminal();
+    await emptyTheWorkspace();
+
+    const list = document.querySelector("[data-vex-empty-watermark]");
+    expect(list).not.toBeNull();
+    expect([...(list?.querySelectorAll("dt") ?? [])].map((n) => n.textContent)).toEqual([
+      "New terminal",
+      "Close tab",
+    ]);
+    expect([...(list?.querySelectorAll("dd") ?? [])].map((n) => n.textContent)).toEqual([
+      "Ctrl+Shift+`",
+      "Ctrl+W",
+    ]);
+  });
+
+  it("falls back to the surface's own keyless rows with no caller", async () => {
+    await renderOpened();
+    await emptyTheWorkspace();
+
+    const list = document.querySelector("[data-vex-empty-watermark]");
+    expect(list).not.toBeNull();
+    expect([...(list?.querySelectorAll("dd") ?? [])].map((n) => n.textContent)).toEqual([
+      "",
+      "",
+    ]);
+  });
+});
+
+/** The keyboard-reachable commands a mounted workspace published. */
+function commandsFor(projectId: string): ProjectWorkspaceCommands {
+  const published = peekProjectWorkspaceCommands(projectId);
+  if (published === null) throw new Error("the workspace published no commands");
+  return published;
+}
+
+/* ------------------------------------------------------------------ *
+ * File tabs across a restart
+ * ------------------------------------------------------------------ */
+
+/**
+ * THE FILE TABS' OWN HOME, driven through the controller that owns both ends.
+ *
+ * The live test measured the defect this closes: a project left with four
+ * terminals and `.mcp.json` open came back with the four terminals only,
+ * because `toPersistedLayout` deliberately writes no file tab and the terminal
+ * restore channel answers null for a project with no live terminal.
+ *
+ * The RECORD's own rules (bounds, LRU, hostile paths) are a table in
+ * `stores/__tests__/uiStore-studio-file-tabs-v18.test.ts` and the PLACEMENT
+ * rules in `workspace/__tests__/restore-file-tabs.test.ts`. What only this
+ * suite can prove is the WIRING: that opening a file writes the record, that a
+ * mount reads it, that every path in it is re-resolved through main's own
+ * listing before a tab exists, and that a path main cannot confirm is dropped
+ * and COUNTED at the user rather than silently missing.
+ */
+describe("file tabs across a restart", () => {
+  function node(path: string) {
+    return {
+      nodeId: `node-${path}`,
+      name: path.slice(path.lastIndexOf("/") + 1),
+      path,
+      kind: "file" as const,
+      size: 12,
+      modifiedMs: 1,
+    };
+  }
+
+  function persisted(): Record<string, unknown> {
+    return useUiStore.getState().studioFileTabs;
+  }
+
+  it("WRITES the record when a file tab is opened, and again when it closes", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await renderStrictOpened();
+
+    await act(async () => {
+      publishFileOpen("p1", node("src/a.ts"));
+      await Promise.resolve();
+    });
+    await screen.findByRole("tab", { name: /a\.ts/ });
+
+    // DEBOUNCED, on the terminal layout's own timer: nothing is written yet.
+    expect(persisted()["p1"]).toBeUndefined();
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+
+    expect(persisted()["p1"]).toMatchObject({
+      tabs: [{ relativePath: "src/a.ts", pinned: true, active: true }],
+    });
+
+    // And closing it forgets the project rather than storing an empty strip.
+    await act(async () => {
+      commandsFor("p1").closeActiveTab();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+    expect(persisted()["p1"]).toBeUndefined();
+  });
+
+  it("RESTORES a persisted tab, resolving its path through main's own listing", async () => {
+    useUiStore.setState({
+      studioFileTabs: {
+        p1: {
+          tabs: [{ relativePath: "src/a.ts", pinned: true, position: 1, active: false }],
+          savedAtMs: 1,
+        },
+      },
+    });
+    // What main answers for the walk: the root holds `src`, `src` holds `a.ts`.
+    directoryPages = {
+      "<root>": [
+        {
+          nodeId: "node-src",
+          name: "src",
+          path: "src",
+          kind: "directory",
+          size: null,
+          modifiedMs: 1,
+        },
+      ],
+      "node-src": [node("src/a.ts")],
+    };
+
+    // NOT `renderStrictOpened`: a workspace that came back with a file in it
+    // is not empty, so the first-terminal auto-open declines. That is the
+    // behaviour being asserted here as much as the tab is - a relaunch must not
+    // add a shell nobody asked for to a strip that restored.
+    renderStrict();
+
+    const tab = await screen.findByRole("tab", { name: /a\.ts/ });
+    expect(tab).toBeTruthy();
+    // THE TOKEN CAME FROM MAIN, not from the record: the viewer read the file
+    // through the node the walk confirmed.
+    await waitFor(() => {
+      expect(fileReads).toContain("node-src/a.ts");
+    });
+    // And the walk went through the project ROOT, which is the whole security
+    // argument for persisting a path.
+    expect(listedNodeIds).toContain(null);
+    expect(listedNodeIds).toContain("node-src");
+    // Nothing was dropped, so nothing is said about a dropped tab. (The
+    // viewer's own loading row is a `status` too, which is why this asks for
+    // the sentence rather than for the role.)
+    expect(screen.queryByText(/could not be restored/)).toBeNull();
+    // And no terminal was opened over a workspace that restored to something.
+    expect(bridge.attaches).toEqual([]);
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+  });
+
+  it("DROPS a path main cannot confirm, and says how many", async () => {
+    useUiStore.setState({
+      studioFileTabs: {
+        p1: {
+          tabs: [
+            { relativePath: "src/gone.ts", pinned: true, position: 1, active: false },
+          ],
+          savedAtMs: 1,
+        },
+      },
+    });
+    // The root lists nothing: the file was deleted between the sessions.
+    directoryPages = {};
+
+    await renderStrictOpened();
+
+    // The count SURVIVES the auto-open that follows it: a workspace that
+    // restored to nothing opens its first terminal a moment later, and the
+    // transient notice slot is cleared by exactly that success.
+    const notice = await screen.findByRole("status");
+    expect(notice.textContent).toContain("1 file tab could not be restored");
+    expect(screen.queryByRole("tab", { name: /gone\.ts/ })).toBeNull();
+  });
+
+  it("does not restore ANOTHER project's record into this workspace", async () => {
+    useUiStore.setState({
+      studioFileTabs: {
+        p2: {
+          tabs: [{ relativePath: "src/a.ts", pinned: true, position: 0, active: false }],
+          savedAtMs: 1,
+        },
+      },
+    });
+    directoryPages = { "<root>": [node("src/a.ts")] };
+
+    await renderStrictOpened("p1");
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole("tab", { name: /a\.ts/ })).toBeNull();
+    // Nothing was even asked of main: an absent record costs no listing.
+    expect(listedNodeIds).toEqual([]);
   });
 });

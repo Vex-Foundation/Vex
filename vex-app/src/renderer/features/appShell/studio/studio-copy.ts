@@ -61,13 +61,11 @@ export const STUDIO_HOST_CAUSE_SENTENCES: Readonly<
     "No agent executor is installed, so Vex Studio has nothing to serve.",
   endpoint_unavailable:
     "Vex Studio could not open its local endpoint on this machine.",
-  // Says the true thing: it is off, it is off on purpose, and there is nothing
-  // on this machine for the user to repair. Naming the working platforms is
-  // the only remedy that exists.
-  windows_transport_disabled:
-    "Vex Studio is not available on Windows yet: its Windows connection has "
-    + "been kept switched off until its security has been verified. Use Vex "
-    + "Studio on Linux or macOS.",
+  // `windows_transport_disabled` had its sentence here, telling a Windows user
+  // the transport was switched off on purpose. The section 1.6 gate opened, the
+  // wire cause went with it, and this table is exhaustive over the schema's
+  // options, so its entry had to go in the same change.
+  //
   // Four sentences for four different failures. Each says WHAT could not be
   // completed and why, and stops there: the remedy is the card's next step
   // (`STUDIO_HOST_CAUSE_NEXT_STEPS`), which is also what the live region
@@ -158,9 +156,9 @@ export const STUDIO_HOST_CAUSE_NEXT_STEPS: Readonly<
     button: "recheck",
   },
   endpoint_unavailable: { instruction: null, button: "recheck" },
-  // Nothing to do and nothing to check: the transport is off by decision, and
-  // the cause sentence already names the only remedy there is.
-  windows_transport_disabled: { instruction: null, button: null },
+  // `windows_transport_disabled` had its row here, with no step because there
+  // was nothing on the machine to do. It went with the cause when the section
+  // 1.6 gate opened, and this record is exhaustive over the schema's options.
   front_unavailable: {
     instruction: "Reinstall Vex, or rebuild it if you are running from source.",
     button: null,
@@ -323,16 +321,58 @@ export const STUDIO_SEARCH_GROUP_FILES = "Files";
 export const STUDIO_SEARCH_EMPTY = "No project or file matches that name.";
 
 /**
- * THE SEARCH'S BOUND, said out loud on every result list.
+ * THE SEARCH'S SCOPE, said out loud on every result list.
  *
- * The file half of this search runs over the nodes the explorer has ALREADY
- * loaded for the open project. There is no main-side name index behind it, so a
- * file in a folder the user has never expanded is not searched. That is a real
- * limit on the answer and the user is told it rather than being left to infer
- * it from a result list that looks complete.
+ * The file half now runs over a MAIN-SIDE NAME INDEX of the whole project, so a
+ * file in a folder the user has never expanded IS found. Two facts about that
+ * index still belong on screen and are below: it is walked when the search
+ * opens rather than kept live (`studioSearchIndexedAgeLine`), and a project
+ * larger than the index cap is only partly covered
+ * (`studioSearchIndexCappedLine`).
  */
 export const STUDIO_SEARCH_FILE_SCOPE_NOTE =
-  "Files cover the folders you have opened in this project.";
+  "Files cover every file in this project.";
+
+/** The index is still being walked. Shown only while it is. */
+export const STUDIO_SEARCH_INDEX_BUILDING =
+  "Still reading this project's files. Results will fill in.";
+
+/**
+ * WHEN THE ANSWER WAS COLLECTED, and why a user is ever told.
+ *
+ * Nothing reconciles this index from the filesystem while a search is open: it
+ * is walked once when the search opens and reused for every keystroke, which is
+ * the lifetime VS Code's quick open uses for the same reason. That is invisible
+ * for the first seconds and then it is not - a user who just created a file and
+ * cannot find it deserves the reason and the remedy rather than the conclusion
+ * that search is broken. Shown only past `SEARCH_INDEX_AGE_NOTICE_MS`, so a
+ * fresh answer carries no noise.
+ */
+export function studioSearchIndexedAgeLine(
+  fileCount: number,
+  agedMs: number,
+): string {
+  const seconds = Math.round(agedMs / 1000);
+  const age = seconds < 90
+    ? `${String(seconds)}s ago`
+    : `${String(Math.round(seconds / 60))} min ago`;
+  return `Searched ${String(fileCount)} files, indexed ${age}. Reopen the search to pick up new files.`;
+}
+
+/**
+ * THE INDEX'S OWN CAP: the project holds more files than one index may.
+ *
+ * Worse than an unshown match, and said differently for that reason - a name
+ * the walk never collected cannot be found at all, so an empty result here is
+ * not evidence that the file does not exist.
+ */
+export function studioSearchIndexCappedLine(fileCount: number): string {
+  return `This project is larger than the search index. Only the first ${String(fileCount)} files are searched.`;
+}
+
+/** Ranking scored a bounded prefix of the matching set. Narrow the query. */
+export const STUDIO_SEARCH_RANKING_TRUNCATED =
+  "Too many files match to rank them all. Add more of the name.";
 
 /** How many of the matches a bounded group is showing, and how many exist. */
 export function studioSearchShowingLine(shown: number, total: number): string {

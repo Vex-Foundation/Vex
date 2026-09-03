@@ -15,8 +15,8 @@
  * jsdom does not implement `matchMedia`, so `systemPrefersDark()` takes its
  * documented safe-fail branch and reports DARK: `system` resolves to
  * `chronos` throughout this file, deterministically.
- *   5. The vex-studio `runtimeMode` seam defaults to "agent" and is not
- *      persisted.
+ *   5. The vex-studio `runtimeMode` seam defaults to "agent" on a fresh
+ *      install and IS persisted as of v17 (the last Studio location).
  */
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -160,10 +160,18 @@ describe("uiStore theme runtime", () => {
 });
 
 describe("runtimeMode seam", () => {
-  it("defaults to 'agent' and stays out of the persist payload", () => {
+  it("defaults to 'agent' and is written as the last Studio location", () => {
     expect(useUiStore.getState().runtimeMode).toBe("agent");
     useUiStore.getState().setSidebarOpen(true);
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}");
-    expect("runtimeMode" in parsed.state).toBe(false);
+    // v17: the mode is persisted, so a relaunch returns to the shell the user
+    // left. The coercion that keeps the untrusted payload safe is pinned in
+    // `uiStore-persist-hardening.test.ts`.
+    expect(parsed.state.runtimeMode).toBe("agent");
+    useUiStore.getState().setRuntimeMode("studio");
+    const afterSwitch = JSON.parse(
+      window.localStorage.getItem(STORAGE_KEY) ?? "{}",
+    );
+    expect(afterSwitch.state.runtimeMode).toBe("studio");
   });
 });

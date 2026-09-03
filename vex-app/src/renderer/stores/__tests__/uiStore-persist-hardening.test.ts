@@ -12,6 +12,18 @@
  * These tests pin the fix from BOTH directions: the ephemeral slots cannot
  * arrive from storage, the persisted ones still round-trip, and the two new
  * actions never appear in what is written.
+ *
+ * ## The LAST STUDIO LOCATION is now whitelisted, and the contract changed
+ *
+ * `runtimeMode` and `activeProjectId` used to be the named examples of slots
+ * that must never come back from storage. They are persisted as of v17, because
+ * Studio's welcome copy promises "Studio is where you left it when you come
+ * back" and a relaunch used to land in the Agent welcome instead. The
+ * PROPERTY those tests were protecting is unchanged and is asserted here
+ * directly: nothing off-shape reaches either slot. The mode is narrowed to its
+ * closed union and the id to a bounded string, and a surviving id is still only
+ * a candidate - `StudioCenter` drops one the settled project list does not
+ * contain (see `StudioCenter.test.tsx`).
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
@@ -47,8 +59,6 @@ describe("mergeUiState rejects everything outside the persisted whitelist", () =
     const current = currentState();
     const injected = {
       // The whole point: none of these may survive the rehydrate.
-      runtimeMode: "studio",
-      activeProjectId: "9c1b0e8e-0000-4000-8000-000000000000",
       activeSessionId: "44444444-4444-4444-8444-444444444444",
       currentView: "wizard",
       setupGateActive: false,
@@ -64,8 +74,6 @@ describe("mergeUiState rejects everything outside the persisted whitelist", () =
 
     const merged = mergeUiState(injected, current);
 
-    expect(merged.runtimeMode).toBe("agent");
-    expect(merged.activeProjectId).toBeNull();
     expect(merged.activeSessionId).toBeNull();
     expect(merged.currentView).toBe("appShell");
     expect(merged.setupGateActive).toBe(current.setupGateActive);
@@ -89,10 +97,14 @@ describe("mergeUiState rejects everything outside the persisted whitelist", () =
       notificationsEnabled: false,
       bookSectionOrder: ["wallets", "balances"],
       bookTab: "board",
+      runtimeMode: "studio",
+      activeProjectId: "9c1b0e8e-0000-4000-8000-000000000000",
     };
 
     const merged = mergeUiState(payload, current);
 
+    expect(merged.runtimeMode).toBe("studio");
+    expect(merged.activeProjectId).toBe("9c1b0e8e-0000-4000-8000-000000000000");
     expect(merged.themePreference).toBe("celeris");
     expect(merged.sidebarOpen).toBe(false);
     expect(merged.bookOpen).toBe(false);
@@ -135,6 +147,57 @@ describe("mergeUiState rejects everything outside the persisted whitelist", () =
     }
   });
 
+  it("narrows a hand-edited runtimeMode to the closed union", () => {
+    // On the whitelist, therefore coerced: the value reaches the shell's
+    // top-level mode dispatch, and an unknown mode there renders neither
+    // column. Everything but the two members degrades to the launch default.
+    const current = currentState();
+    const hostile = [
+      "STUDIO",
+      "wizard",
+      "",
+      0,
+      1,
+      null,
+      [],
+      {},
+      () => undefined,
+    ] as const;
+    for (const value of hostile) {
+      expect(mergeUiState({ runtimeMode: value } as unknown, current).runtimeMode).toBe(
+        "agent",
+      );
+    }
+    expect(mergeUiState({ runtimeMode: "studio" }, current).runtimeMode).toBe("studio");
+    expect(mergeUiState({ runtimeMode: "agent" }, current).runtimeMode).toBe("agent");
+  });
+
+  it("bounds a hand-edited activeProjectId and degrades anything else to null", () => {
+    // The welcome is the fallback, and it is the SAFE one: a null selection
+    // shows the recents rather than opening anything.
+    const current = currentState();
+    const hostile = [
+      "",
+      "x".repeat(65),
+      42,
+      null,
+      [],
+      {},
+      { toString: () => "../../etc" },
+      () => undefined,
+    ] as const;
+    for (const value of hostile) {
+      expect(
+        mergeUiState({ activeProjectId: value } as unknown, current).activeProjectId,
+      ).toBeNull();
+    }
+    // At the bound, and a plain id, both survive as CANDIDATES. Existence is
+    // the second stage and it lives in `StudioCenter`.
+    expect(
+      mergeUiState({ activeProjectId: "x".repeat(64) }, current).activeProjectId,
+    ).toBe("x".repeat(64));
+  });
+
   it("survives a payload that is not an object at all", () => {
     const current = currentState();
     for (const hostile of [null, 42, "vex", true]) {
@@ -146,7 +209,7 @@ describe("mergeUiState rejects everything outside the persisted whitelist", () =
 });
 
 describe("partializeUiState writes exactly the whitelist", () => {
-  it("never carries runtimeMode, activeProjectId or their actions", () => {
+  it("carries the last Studio location and never an action", () => {
     useUiStore.getState().setRuntimeMode("studio");
     useUiStore.getState().setActiveProjectId("9c1b0e8e-0000-4000-8000-000000000000");
 
@@ -154,8 +217,9 @@ describe("partializeUiState writes exactly the whitelist", () => {
     const keys = Object.keys(payload).toSorted();
 
     expect(keys).toEqual([...PERSISTED_UI_KEYS].toSorted());
-    expect(keys).not.toContain("runtimeMode");
-    expect(keys).not.toContain("activeProjectId");
+    // The LOCATION is written (v17); the ACTIONS never are.
+    expect(payload["runtimeMode"]).toBe("studio");
+    expect(payload["activeProjectId"]).toBe("9c1b0e8e-0000-4000-8000-000000000000");
     expect(keys).not.toContain("setRuntimeMode");
     expect(keys).not.toContain("setActiveProjectId");
   });

@@ -183,6 +183,94 @@ export async function selectShellWindow(app: ElectronApplication): Promise<Page>
   }
 }
 
+/**
+ * A RELAUNCHED app: the second boot, and the shell window inside it.
+ *
+ * The caller OWNS it. Nothing in this module closes it, because nothing here
+ * knows when the test is done with it - see {@link relaunchApp}.
+ */
+export interface RelaunchedVexApp {
+  readonly app: ElectronApplication;
+  readonly shell: Page;
+}
+
+/**
+ * QUIT THE APP AND START IT AGAIN ON THE SAME PROFILE.
+ *
+ * This is the one thing a single-launch fixture cannot do and the only way to
+ * prove a restore: what a workspace, a layout or a selection claims to persist
+ * is only persisted if a SECOND process reads it back off the same disk. VS
+ * Code's own smoke suite has exactly this instrument -
+ * `Application.restart()` (`test/automation/src/application.ts:85`) is `stop()`
+ * then `_start()` against the same user data dir - and its data-loss tests
+ * ("verifies opened editors are restored") are what it exists for.
+ *
+ * ## What travels, and what does not
+ *
+ * The SAME `VEX_CONFIG_DIR` and the same extra environment, because that
+ * directory holds everything a restore reads: the config, the terminal
+ * snapshots, and the Chromium profile whose localStorage carries the renderer's
+ * own `vex-ui` payload. Anything else the first launch was given - the database
+ * door's port and password file, for instance - is passed through `env` by the
+ * caller, since this module cannot know what stack the app was launched
+ * against.
+ *
+ * ## Two ownerships that must not be confused
+ *
+ *  - THE CONFIG DIR belongs to whoever created it (the fixture below, or the
+ *    isolated stack). This function neither creates nor deletes it: deleting it
+ *    here would take the profile out from under the very relaunch it just
+ *    performed, and the owning teardown removes it at the end of the test
+ *    either way.
+ *  - THE RETURNED APP belongs to the CALLER, which must close it - a
+ *    `try`/`finally` around the second half of the test is the shape - because
+ *    the fixture's own teardown closes the FIRST app and has never heard of
+ *    this one.
+ *
+ * The quit goes through {@link closeAppWithEvidence}, so a relaunch whose first
+ * half will not exit produces the named wedged quit participant and the
+ * attached main-process log rather than a bare timeout.
+ *
+ * @throws when the first app will not exit, with the wedge diagnosis.
+ */
+export async function relaunchApp(
+  app: ElectronApplication,
+  configDir: string,
+  testInfo: TestInfo,
+  options: {
+    /** What the first launch was given. Defaults to the main bundle. */
+    readonly args?: readonly string[];
+    /** The first launch's extra environment (the database door, typically). */
+    readonly env?: Readonly<Record<string, string>>;
+  } = {},
+): Promise<RelaunchedVexApp> {
+  const wedged = await closeAppWithEvidence(app, configDir, testInfo);
+  if (wedged !== null) throw new Error(wedged);
+
+  const relaunched = await _electron.launch({
+    args: [...(options.args ?? [MAIN_BUNDLE])],
+    env: {
+      ...process.env,
+      ...options.env,
+      // The SAME profile: this is the whole point of the instrument.
+      VEX_CONFIG_DIR: configDir,
+      VEX_E2E_LOAD_BUILT: "1",
+    },
+  });
+  try {
+    return { app: relaunched, shell: await selectShellWindow(relaunched) };
+  } catch (cause) {
+    // The second boot never showed a window. Close it rather than stranding a
+    // second Electron behind the worker, and let the caller see the cause.
+    try {
+      await relaunched.close();
+    } catch {
+      /* best-effort */
+    }
+    throw cause;
+  }
+}
+
 export interface VexElectronFixture {
   readonly app: ElectronApplication;
   readonly firstWindow: Page;

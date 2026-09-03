@@ -24,7 +24,7 @@ import { TerminalRegistry } from "../terminal-registry.js";
 import {
   clearProjectTerminals,
   peekProjectWorkspaceLifecycle,
-} from "../../workspace/project-terminals.js";
+} from "../../workspace/workspace-handles.js";
 import type { WorkspaceCloseOutcome } from "../../workspace/close-lifecycle.js";
 import {
   installMatchMedia,

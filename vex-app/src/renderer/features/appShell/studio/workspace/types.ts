@@ -123,7 +123,38 @@ export interface WorkspaceFileTab {
    */
   readonly nodeId: string;
   readonly dirty: boolean;
+  /**
+   * PREVIEW, VS Code's model: this tab is the workspace's single throwaway
+   * slot, and the next preview open REPLACES it in place.
+   *
+   * `true` means preview. ABSENT MEANS PINNED, and the absence is the
+   * migration: every file tab that existed before this field - one restored
+   * from an older layout, one built by a caller that has not chosen a mode -
+   * reads as pinned, which is the state those tabs actually had. Expand-only,
+   * like every uiStore hop: a reader gains a field, nothing is rewritten.
+   *
+   * Read it through {@link isPreviewFileTab} rather than by testing the field,
+   * so "absent is pinned" is decided in one place.
+   *
+   * NEVER SET BY A CALLER. `addFileTab` assigns it from the open's
+   * {@link FileOpenMode}, the same way `addPane` owns a pane's share rather
+   * than trusting the one it was handed: a caller that could write this field
+   * could put two previews in one workspace, which is the one invariant the
+   * whole preview model rests on.
+   */
+  readonly preview?: boolean;
 }
+
+/**
+ * HOW a file is opened.
+ *
+ * `"pinned"` is the DEFAULT everywhere - a caller that does not choose gets the
+ * behaviour Studio had before previews existed, so adding the mode changed no
+ * existing gesture. `"preview"` is the explorer's single click: it opens a tab
+ * that the next single click replaces, so browsing a tree does not leave a
+ * strip full of files nobody asked to keep.
+ */
+export type FileOpenMode = "preview" | "pinned";
 
 export type WorkspaceTab = WorkspaceTerminalGroup | WorkspaceFileTab;
 

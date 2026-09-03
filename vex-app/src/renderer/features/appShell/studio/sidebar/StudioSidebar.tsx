@@ -38,12 +38,19 @@
  *
  * ## Search
  *
- * ONE field over two kinds of thing - project names and the files the open
- * project's explorer has already loaded - with grouped results, the shape
- * deepseek's `WorkspaceBrowser` search uses. The bounds are stated on screen
- * (`rail-search-model.ts`), because the file half is NOT a project-wide index:
- * a folder the user never opened was never listed and cannot be searched from
- * the renderer. A main-side name index is a later stage.
+ * ONE field over two kinds of thing - project names and the open project's
+ * files - with grouped results, the shape deepseek's `WorkspaceBrowser` search
+ * uses. The file half is a MAIN-SIDE NAME INDEX over the whole project
+ * (`use-rail-file-index.ts`), merged with the nodes the explorer has already
+ * loaded: so there is an honest answer while the index builds, and a row the
+ * user can already see in the tree wins over the same file found by search.
+ *
+ * The index has a SESSION lifetime - walked when the search opens, reused for
+ * every keystroke, released when it closes - which is what VS Code's quick open
+ * does with its own file-query cache. Its bounds AND ITS AGE are stated on
+ * screen (`rail-search-model.ts`, `StudioRailSearchResults.tsx`): nothing
+ * reconciles it from the filesystem, so a user who just created a file is told
+ * when the answer was collected and that reopening the search picks it up.
  */
 
 import {
@@ -90,6 +97,7 @@ import {
 } from "../explorer/index.js";
 import { openProjectCreator } from "../projects/index.js";
 import { publishFileOpen } from "../workspace/file-open-intent.js";
+import type { FileOpenMode } from "../workspace/types.js";
 import {
   projectFileDriftLabel,
   STUDIO_DRIFT_SENTENCES,
@@ -116,6 +124,7 @@ import {
 } from "./rail-search-model.js";
 import { StudioProjectsSection } from "./StudioProjectsSection.js";
 import { StudioRailSearchResults } from "./StudioRailSearchResults.js";
+import { useRailFileIndex } from "./use-rail-file-index.js";
 
 /** The listbox id the search field's `aria-controls` points at. */
 const SEARCH_LISTBOX_ID = "studio-rail-search-results";
@@ -129,6 +138,55 @@ interface LoadedFileRead {
 
 /** Nothing loaded, and a STABLE identity so the snapshot never churns. */
 const NO_NODES: LoadedFileRead = { nodes: [], truncated: false };
+
+/* ------------------------------------------------------------------ *
+ * The one thing this rail publishes to the rest of Studio
+ * ------------------------------------------------------------------ */
+
+/**
+ * The mounted rail's "open the search and focus it", or null when no rail is
+ * mounted.
+ *
+ * A REGISTERED HANDLE rather than a DOM query, unlike the explorer's focus,
+ * and the difference is what each surface can be reached by. The explorer tree
+ * is always rendered when it exists, so an element is there to focus; the
+ * search FIELD does not exist until the search is open and the rail is wide,
+ * so `Ctrl+P` has to change component state before there is anything to put a
+ * caret in. That state has exactly one owner and this is the narrowest way to
+ * ask it.
+ *
+ * Module-scope and single-slot because the shell mounts exactly one Studio
+ * rail. The registration is identity-checked on the way out, like every other
+ * single-slot registration in this feature, so a rail that unmounted after its
+ * successor mounted cannot delete the successor's handle.
+ */
+let railSearchFocus: (() => void) | null = null;
+
+function publishStudioRailSearchFocus(focus: () => void): () => void {
+  railSearchFocus = focus;
+  return () => {
+    if (railSearchFocus === focus) railSearchFocus = null;
+  };
+}
+
+/**
+ * OPEN THE RAIL'S UNIFIED SEARCH AND FOCUS IT. `Ctrl+P`'s owner.
+ *
+ * Returns whether a rail was mounted to answer. `false` is an ordinary answer -
+ * Studio is not the active shell - and the caller must be able to tell, so a
+ * shortcut nothing answered leaves the keystroke alone instead of eating it.
+ *
+ * Studio's ONE search is the rail's: it spans projects and the loaded file
+ * tree, which is the surface `Go to file` means here. There is no second quick
+ * open to build, and building one would be a second answer to the same
+ * question (see this file's header on the unified search).
+ */
+export function focusStudioRailSearch(): boolean {
+  const focus = railSearchFocus;
+  if (focus === null) return false;
+  focus();
+  return true;
+}
 
 export interface StudioSidebarProps {
   /**
@@ -230,6 +288,9 @@ export function StudioSidebar({
     activeRegistry,
     searching ? activeProjectId : null,
   );
+  // The project-wide half. Its session opens with the search and closes with
+  // it, so the walk happens once per opening rather than once per keystroke.
+  const indexedFiles = useRailFileIndex(activeProjectId, searching, searchText);
   const results = useMemo(
     () =>
       deriveRailSearchResults(
@@ -237,8 +298,9 @@ export function StudioSidebar({
         loadedFiles.nodes,
         searchText,
         loadedFiles.truncated,
+        indexedFiles,
       ),
-    [allProjects, loadedFiles, searchText],
+    [allProjects, loadedFiles, searchText, indexedFiles],
   );
   const hitCount = railSearchHitCount(results);
 
@@ -265,10 +327,51 @@ export function StudioSidebar({
     else setSearchOpen(true);
   }, [collapsed, searchOpen, onToggleSidebar, closeSearch]);
 
+  /**
+   * `Ctrl+P`'s owner: OPEN the search and put the caret in it. Never close it.
+   *
+   * Deliberately not `toggleSearch`. The magnifier is a toggle because a
+   * pointer press on an open search means "put this away"; `Go to file` means
+   * one thing only, and a second press that closed the field would make the
+   * shortcut a coin flip depending on state the user cannot see from the
+   * keyboard. When the field is already open this re-focuses and SELECTS, so a
+   * second press starts a fresh query over the old text rather than appending
+   * to it - VS Code's Quick Open behaves the same way.
+   *
+   * The collapsed branch mirrors the magnifier's, and it is the only place the
+   * rail is expanded: a search field has no room on the 56px spine. The
+   * `searchOpen` effect above lands the focus in that case, because the input
+   * does not exist yet at this point.
+   */
+  const focusSearch = useCallback((): void => {
+    if (collapsed) {
+      onToggleSidebar();
+      setSearchOpen(true);
+      return;
+    }
+    if (!searchOpen) {
+      setSearchOpen(true);
+      return;
+    }
+    const input = searchInputRef.current;
+    input?.focus();
+    input?.select();
+  }, [collapsed, onToggleSidebar, searchOpen]);
+
+  useEffect(() => publishStudioRailSearchFocus(focusSearch), [focusSearch]);
+
+  /**
+   * Park a file for the workspace, in the mode the GESTURE asked for.
+   *
+   * `mode` defaults to `"pinned"`, which is what every route but the tree's
+   * single click means: a search hit the user picked out of a list is a file
+   * they chose, not one they browsed past. Only `ExplorerTree` passes
+   * `"preview"`, and only for a single click.
+   */
   const handleOpenFile = useCallback(
-    (node: FileNode): void => {
+    (node: FileNode, mode: FileOpenMode = "pinned"): void => {
       if (activeProjectId === null) return;
-      publishFileOpen(activeProjectId, node);
+      publishFileOpen(activeProjectId, node, mode);
     },
     [activeProjectId],
   );
@@ -326,6 +429,31 @@ export function StudioSidebar({
     if (activeProjectId === null) return;
     activeRegistry.peek(activeProjectId)?.collapseAll();
   }, [activeRegistry, activeProjectId]);
+
+  /**
+   * The header's New file / New folder, which create AT THE PROJECT ROOT.
+   *
+   * `null` is the root parent, which is what the header's own contract says
+   * these two do and what VS Code's view-title `explorer.newFile` does. The
+   * row menu is the scoped route: it passes the row's own directory.
+   *
+   * They go through `beginCreate` like every other create - the session opens
+   * the name box, validates against the siblings, and commits - so the header
+   * gains a route to the write and never a second way of performing it.
+   */
+  const createInExplorer = useCallback(
+    (kind: "file" | "directory"): void => {
+      if (activeProjectId === null) return;
+      void activeRegistry.peek(activeProjectId)?.beginCreate(null, kind);
+    },
+    [activeRegistry, activeProjectId],
+  );
+  const createExplorerFile = useCallback((): void => {
+    createInExplorer("file");
+  }, [createInExplorer]);
+  const createExplorerFolder = useCallback((): void => {
+    createInExplorer("directory");
+  }, [createInExplorer]);
 
   // The project owns the drift fact (it is read from disk on every project
   // read); the tree only decorates the file it names.
@@ -418,6 +546,8 @@ export function StudioSidebar({
               title={activeProject.name}
               onRefresh={refreshExplorer}
               onCollapseAll={collapseExplorer}
+              onCreateFile={createExplorerFile}
+              onCreateFolder={createExplorerFolder}
             />
             <ExplorerTree
               projectId={activeProject.id}

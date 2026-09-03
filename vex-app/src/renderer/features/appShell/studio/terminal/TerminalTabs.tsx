@@ -42,6 +42,16 @@
  * the tab order and becomes visible on `:focus-visible`, so a keyboard user
  * never chases a control that only a mouse can summon.
  *
+ * ## A PREVIEW file tab looks different and says so
+ *
+ * The workspace model holds at most one preview file tab (see `addFileTab`),
+ * and this strip renders it the way VS Code does: the title in ITALICS, plus
+ * the word `Preview` in the accessible name, because italics are invisible to a
+ * screen reader. Its two promotion gestures are VS Code's as well - a double
+ * click on the tab, and an explicit "Keep" action beside it - and both call the
+ * same `onPinTab`, which is optional: with no owner for it the strip draws no
+ * promotion affordance rather than a control that does nothing.
+ *
  * ## Close and split live BESIDE the trigger, not inside it
  *
  * A `<button>` cannot contain a `<button>`, and the primitive's keyboard
@@ -74,16 +84,20 @@ import { StateDot, type StateDotState } from "../../../../components/ui/state-do
 import { Tabs, TabsList, TabsTrigger } from "../../../../components/ui/tabs.js";
 import { cn } from "../../../../lib/utils.js";
 import type { WorkspaceFileTab, WorkspaceState, WorkspaceTab } from "../workspace/types.js";
+import { isPreviewFileTab } from "../workspace/workspace-model.js";
 import { TerminalPaneGroup } from "./TerminalPaneGroup.js";
 import {
   EMPTY_WORKSPACE_ACTION_COPY,
   EMPTY_WORKSPACE_COPY,
   EMPTY_WORKSPACE_WATERMARK_ROWS,
+  FILE_TAB_PREVIEW_STATE_COPY,
   RENAME_FIELD_LABEL,
   RENAME_HINT_COPY,
   TERMINAL_STATE_COPY,
   closeTabLabel,
   closeTerminalTooltip,
+  keepTabOpenLabel,
+  keepTabOpenTooltip,
   terminalTabTooltip,
 } from "./terminal-copy.js";
 import { prefersReducedMotion } from "./terminal-palette.js";
@@ -143,6 +157,22 @@ export interface TerminalTabsProps {
    */
   readonly onRenameTab: (tabId: string, title: string) => void;
   /**
+   * KEEP a preview tab open, promoting it to a pinned one.
+   *
+   * OPTIONAL, and the option is not a shrug: when no owner answers it, this
+   * strip renders NO promotion affordance at all rather than a dead "Keep open"
+   * button and a double click that does nothing. A caller that opens every file
+   * pinned (the behaviour before previews existed, which is still every
+   * caller's default) never produces a preview tab, so there is nothing for the
+   * control to act on either.
+   *
+   * The gestures it backs are VS Code's, from `multiEditorTabsControl.ts`: a
+   * double click on the tab (`:1126-1150`, which pins an unpinned editor) and
+   * an explicit action. The keyboard command is the same call, made by the
+   * keyboard lane's owner rather than by this component.
+   */
+  readonly onPinTab?: (tabId: string) => void;
+  /**
    * The SHELL reported what it is running. Keyed by terminal id and NOT by tab,
    * for the same reason the directory is: a group is several shells, and a fact
    * about one of them cannot be stored on the tab that holds them all.
@@ -196,6 +226,16 @@ export interface TerminalTabsProps {
   readonly shellId: TerminalShellId;
   readonly shells: readonly TerminalShellOption[];
   readonly onSelectShell: (shellId: TerminalShellId) => void;
+  /**
+   * What the EMPTY workspace's watermark lists.
+   *
+   * The seam this component was built with: the keyboard lane owns which
+   * shortcuts exist and which of them an owner actually answers, so the rows
+   * arrive from the caller rather than being spelled here. Omitted, the
+   * surface's own keyless default stands - the two actions the mockup draws,
+   * with no key column.
+   */
+  readonly watermarkRows?: readonly WatermarkRow[];
 }
 
 export function TerminalTabs({
@@ -209,6 +249,7 @@ export function TerminalTabs({
   onActivatePane,
   onClosePane,
   onRenameTab,
+  onPinTab,
   onShellTitle,
   onDisplayCwdChange,
   onPaneExit,
@@ -219,6 +260,7 @@ export function TerminalTabs({
   shellId,
   shells,
   onSelectShell,
+  watermarkRows,
 }: TerminalTabsProps): JSX.Element {
   const activeTabId = state.activeTabId ?? "";
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -249,6 +291,7 @@ export function TerminalTabs({
                 shellLabelById={shellLabelById}
                 onCloseTab={onCloseTab}
                 onRenameTab={onRenameTab}
+                {...(onPinTab === undefined ? {} : { onPinTab })}
               />
             ))}
             <button
@@ -288,7 +331,12 @@ export function TerminalTabs({
       {notice}
 
       <div className="relative min-h-0 flex-1">
-        {state.tabs.length === 0 ? <EmptyWorkspace onNewTerminal={onNewTerminal} /> : null}
+        {state.tabs.length === 0 ? (
+          <EmptyWorkspace
+            onNewTerminal={onNewTerminal}
+            {...(watermarkRows === undefined ? {} : { watermarkRows })}
+          />
+        ) : null}
         {state.tabs.map((tab) => {
           const isActive = tab.tabId === state.activeTabId;
           return (
@@ -443,8 +491,10 @@ function useStripOverflow(
  */
 function EmptyWorkspace({
   onNewTerminal,
+  watermarkRows,
 }: {
   readonly onNewTerminal: () => void;
+  readonly watermarkRows?: readonly WatermarkRow[];
 }): JSX.Element {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
@@ -461,7 +511,9 @@ function EmptyWorkspace({
         <IconPlus size={12} />
         {EMPTY_WORKSPACE_ACTION_COPY}
       </button>
-      <EmptyWorkspaceWatermark />
+      <EmptyWorkspaceWatermark
+        {...(watermarkRows === undefined ? {} : { rows: watermarkRows })}
+      />
     </div>
   );
 }
@@ -477,10 +529,12 @@ export interface WatermarkRow {
  *
  * `editorGroupWatermark.ts` fills the empty surface with the commands that
  * matter and their shortcuts, which is the difference between a blank panel and
- * a panel that teaches. Studio has no accelerators yet - the keyboard table is
- * UX-5's - so this ships with the actions the mockup draws and NO key column
- * until there are keys. The `rows` prop is the seam: the keyboard brief passes
- * rows with `keys` filled in and nothing here changes.
+ * a panel that teaches. The `rows` prop is the seam, and it is now wired:
+ * `StudioCenter` passes `studioWatermarkRows(studioPlatform, studioBoundIntents())`
+ * down through the controller, so the list is exactly the shortcuts an owner
+ * actually answers, spelled for this platform. The default below stands only
+ * for a surface mounted without that caller - the actions the mockup draws,
+ * with no key column, rather than a blank panel.
  *
  * It is `aria-hidden`: every row names an action that is already a real,
  * focusable control on this surface or in the strip above it, and announcing
@@ -515,6 +569,7 @@ function TabRow({
   shellLabelById,
   onCloseTab,
   onRenameTab,
+  onPinTab,
 }: {
   readonly tab: WorkspaceTab;
   readonly active: boolean;
@@ -522,8 +577,13 @@ function TabRow({
   readonly shellLabelById: ReadonlyMap<string, string>;
   readonly onCloseTab: (tabId: string) => void;
   readonly onRenameTab: (tabId: string, title: string) => void;
+  readonly onPinTab?: (tabId: string) => void;
 }): JSX.Element {
   const isGroup = tab.kind === "terminalGroup";
+  // PREVIEW is a property of the tab, not of this component's memory: the model
+  // owns "at most one preview per workspace" and the strip only reads it.
+  const preview = isPreviewFileTab(tab);
+  const canPin = preview && onPinTab !== undefined;
   const [renaming, setRenaming] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -574,13 +634,32 @@ function TabRow({
             ? tab.title
             : terminalTabTooltip(tab.title, shellLabel, runState)
         }
+        // DOUBLE CLICK means two different things on the two kinds of tab, and
+        // both are the surface's own convention: a terminal tab is RENAMED (the
+        // inline field below), a preview file tab is KEPT. VS Code pins on
+        // double click for exactly this reason - the gesture that says "I am
+        // staying here" is the one that stops the tab being throwaway
+        // (`multiEditorTabsControl.ts:1126-1150`).
         onDoubleClick={
           isGroup
             ? () => {
                 setRenaming(true);
               }
-            : undefined
+            : canPin
+              ? () => {
+                  onPinTab?.(tab.tabId);
+                }
+              : undefined
         }
+        // MIDDLE CLICK CLOSES, on every tab, as VS Code's strip does
+        // (`multiEditorTabsControl.ts:1051-1066`, AUXCLICK button 1). React's
+        // `onAuxClick` is the same event; the button check is what keeps a
+        // right click out, since auxclick fires for that too.
+        onAuxClick={(event) => {
+          if (event.button !== 1) return;
+          event.preventDefault();
+          onCloseTab(tab.tabId);
+        }}
       >
         {isGroup ? <IconTerminal size={12} /> : <IconFile size={12} />}
         {/* The dot is colour-only and `aria-hidden`; the word after the title
@@ -588,11 +667,40 @@ function TabRow({
             accessible name reads "Terminal 1 Running" rather than opening with
             a status nobody asked about yet. */}
         {runState === null ? null : <StateDot state={DOT_BY_STATE[runState]} size={8} />}
-        <span className="max-w-40 truncate">{tab.title}</span>
+        {/* ITALIC IS THE PREVIEW SIGNAL, and it is only half of it: italics say
+            nothing to a screen reader, so the state word below carries the same
+            fact in the accessible name. VS Code paints the identical
+            distinction (`multiEditorTabsControl.ts:1730`). */}
+        <span className={cn("max-w-40 truncate", preview ? "italic" : null)}>
+          {tab.title}
+        </span>
         {runState === null ? null : (
           <span className="sr-only">{TERMINAL_STATE_COPY[runState]}</span>
         )}
+        {preview ? <span className="sr-only">{FILE_TAB_PREVIEW_STATE_COPY}</span> : null}
       </TabsTrigger>
+      {canPin ? (
+        <button
+          type="button"
+          aria-label={keepTabOpenLabel(tab.title)}
+          title={keepTabOpenTooltip(tab.title)}
+          onClick={() => {
+            onPinTab?.(tab.tabId);
+          }}
+          className={cn(
+            // Same hover-revealed, never-keyboard-hidden grammar as close: it
+            // stays in the layout, in the tab order and in the accessibility
+            // tree, and paints on hover of either sibling, on the active tab
+            // and on its own focus ring.
+            "shrink-0 rounded px-1 py-0.5 text-[10px] leading-4 text-ink-tertiary transition-opacity duration-[var(--vex-duration-fast)]",
+            "opacity-0 peer-hover:opacity-100 hover:opacity-100 focus-visible:opacity-100",
+            active ? "opacity-100" : null,
+            "hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+          )}
+        >
+          Keep
+        </button>
+      ) : null}
       <button
         type="button"
         aria-label={closeTabLabel(tab.title)}

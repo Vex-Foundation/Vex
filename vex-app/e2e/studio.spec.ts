@@ -222,17 +222,15 @@ test("Studio journey: the shell switches to Studio and opens the project creator
   await modeGroup.getByRole("radio", { name: "Studio" }).click();
 
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
-  // Studio is NOT a one-way door: its welcome mounts the SAME runtime-mode
-  // capsule the agent hero renders (B4 review blocker 1). The invariant is no
-  // longer "the capsule is gone" but "exactly one capsule, owned by the Studio
-  // welcome, showing Studio as checked" - a stale hero capsule orphaned behind
-  // the Studio columns would double the count and still fails here.
+  // Studio is NOT a one-way door, and the capsule has exactly ONE home: the
+  // rail header, visible on every Studio screen. The invariant is "exactly one
+  // capsule on the page, showing Studio as checked" - a stale hero capsule
+  // orphaned behind the Studio columns, or a second one on the welcome, would
+  // double the count and fail here (the welcome carries a plain button back).
   await expect(modeGroup).toHaveCount(1);
-  await expect(
-    page
-      .locator('[data-vex-area="studio-welcome"]')
-      .getByRole("radiogroup", { name: "Runtime mode" }),
-  ).toHaveCount(1);
+  const studioWelcome = page.locator('[data-vex-area="studio-welcome"]');
+  await expect(studioWelcome.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
+  await expect(studioWelcome.getByRole("button", { name: "Back to Agent mode" })).toHaveCount(1);
   await expect(modeGroup.getByRole("radio", { name: "Studio" })).toHaveAttribute(
     "aria-checked",
     "true",
@@ -290,19 +288,26 @@ test("Studio journey: the shell switches to Studio and opens the project creator
     type: "wallet-inventory",
     description: `evm=${walletInventory.evm} solana=${walletInventory.solana}`,
   });
-  // Through the UI, not only through the bridge: the EVM picker opens and
-  // offers exactly the sentinel, which is what an empty inventory looks like
-  // to a user. `1 + evm` rather than a hardcoded 1, so this stays true for a
-  // fixture that one day seeds wallets.
-  const evmPicker = creator.getByRole("combobox", { name: "EVM wallet" });
-  await expect(evmPicker).toBeVisible();
-  await expect(creator.getByRole("combobox", { name: "Solana wallet" })).toBeVisible();
-  await evmPicker.click();
-  const evmOptions = page.getByRole("listbox", { name: "EVM wallet" }).getByRole("option");
-  await expect(evmOptions).toHaveCount(1 + walletInventory.evm);
-  await expect(evmOptions.first()).toHaveText("None");
-  await page.keyboard.press("Escape");
-  await expect(evmPicker).toHaveAttribute("aria-expanded", "false");
+  // Through the UI, not only through the bridge. An EMPTY inventory is no
+  // longer a picker whose only option is "None": the creator names the path to
+  // add a wallet instead (audit finding I12), so the assertion follows the
+  // inventory the bridge reported rather than assuming the picker exists.
+  if (walletInventory.evm + walletInventory.solana === 0) {
+    await expect(creator.getByText("No wallets yet.")).toBeVisible();
+    await expect(creator.getByText("Add one in Settings, under Wallets.")).toBeVisible();
+    await expect(creator.getByRole("combobox", { name: "EVM wallet" })).toHaveCount(0);
+    await expect(creator.getByRole("combobox", { name: "Solana wallet" })).toHaveCount(0);
+  } else {
+    const evmPicker = creator.getByRole("combobox", { name: "EVM wallet" });
+    await expect(evmPicker).toBeVisible();
+    await expect(creator.getByRole("combobox", { name: "Solana wallet" })).toBeVisible();
+    await evmPicker.click();
+    const evmOptions = page.getByRole("listbox", { name: "EVM wallet" }).getByRole("option");
+    await expect(evmOptions).toHaveCount(1 + walletInventory.evm);
+    await expect(evmOptions.first()).toHaveText("None");
+    await page.keyboard.press("Escape");
+    await expect(evmPicker).toHaveAttribute("aria-expanded", "false");
+  }
   await shot(page, testInfo, screenshots, "03-project-creator");
 
   await creator.getByRole("button", { name: "Cancel" }).click();

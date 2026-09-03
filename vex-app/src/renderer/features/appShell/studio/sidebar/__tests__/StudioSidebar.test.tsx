@@ -9,7 +9,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
@@ -23,6 +23,48 @@ import {
 } from "../../__tests__/studio-fixtures.js";
 
 const projectsListMock = vi.fn<() => Promise<Result<ProjectList>>>();
+/** The two request shapes the rail sends, so the mocks type their calls. */
+interface SearchQueryInput {
+  readonly projectId: string;
+  readonly sessionId: string;
+  readonly query: string;
+  readonly limit?: number;
+}
+interface SearchSessionInput {
+  readonly projectId: string;
+  readonly sessionId: string;
+}
+const searchFileNamesMock = vi.fn<(input: SearchQueryInput) => Promise<unknown>>();
+const releaseSearchSessionMock =
+  vi.fn<(input: SearchSessionInput) => Promise<unknown>>();
+
+/** One main-side answer for the rail's file half, with the defaults filled in. */
+function indexAnswer(
+  overrides: Partial<{
+    matches: Array<{ relativePath: string; nodeId: string; score: number }>;
+    totalMatches: number;
+    truncated: boolean;
+    indexState: "building" | "ready" | "capped";
+    indexedFileCount: number;
+    indexedAtMs: number | null;
+  }> = {},
+): Promise<Result<unknown>> {
+  const matches = overrides.matches ?? [];
+  return Promise.resolve({
+    ok: true,
+    data: {
+      ok: true,
+      value: {
+        matches,
+        totalMatches: overrides.totalMatches ?? matches.length,
+        truncated: overrides.truncated ?? false,
+        indexState: overrides.indexState ?? "ready",
+        indexedFileCount: overrides.indexedFileCount ?? 100,
+        indexedAtMs: overrides.indexedAtMs ?? Date.now(),
+      },
+    },
+  });
+}
 
 // The tree has its own suite (and its own virtualizer seam); this file asserts
 // the SECTION around it, so the tree itself is a marker.
@@ -38,7 +80,8 @@ vi.mock("../../../SidebarProfile.js", () => ({
   SidebarProfile: () => <div data-testid="sidebar-profile" />,
 }));
 
-const { StudioSidebar } = await import("../StudioSidebar.js");
+const { StudioSidebar, focusStudioRailSearch } = await import("../StudioSidebar.js");
+const { studioSurfaceOf } = await import("../../useStudioKeybindings.js");
 
 interface RenderOptions {
   readonly activeProjectId?: string | null;
@@ -82,6 +125,13 @@ beforeAll(() => {
 beforeEach(() => {
   projectsListMock.mockReset();
   projectsListMock.mockResolvedValue({ ok: true, data: [] });
+  searchFileNamesMock.mockReset();
+  // The default index answers with nothing found, so the cases below assert
+  // the LOADED-node behaviour without a project-wide result racing them. The
+  // index's own cases install their own answer.
+  searchFileNamesMock.mockImplementation(() => indexAnswer());
+  releaseSearchSessionMock.mockReset();
+  releaseSearchSessionMock.mockResolvedValue({ ok: true, data: { ok: true, value: null } });
   Object.defineProperty(window, "vex", {
     configurable: true,
     value: {
@@ -89,6 +139,10 @@ beforeEach(() => {
       files: {
         list: () => Promise.resolve({ ok: true, data: null }),
         watch: () => Promise.resolve({ ok: true, data: null }),
+      },
+      search: {
+        fileNames: searchFileNamesMock,
+        releaseSession: releaseSearchSessionMock,
       },
     },
   });
@@ -294,6 +348,47 @@ describe("the other sections", () => {
     expect(section?.textContent).toContain("vex-core");
   });
 
+  /**
+   * THE HEADER'S TWO CREATE ACTIONS EXIST IN THE SHIPPED RAIL.
+   *
+   * `ExplorerHeader` takes `onCreateFile`/`onCreateFolder` as OPTIONAL props
+   * and OMITS the button it has no owner for, which is the right default and
+   * was also, until this wiring, the shipped state: the only route to a create
+   * was the row context menu, so a user looking at an empty project had no
+   * visible way to make the first file. VS Code puts the same two actions in
+   * the same place, and they create AT THE ROOT.
+   *
+   * The session is acquired here because the tree is mocked in this suite:
+   * production acquires it by rendering the real tree, and the header reads it
+   * with `peek` rather than taking a reference of its own.
+   */
+  it("the header's New file and New folder create at the project ROOT", async () => {
+    const project = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    const registry = new ExplorerRegistry();
+    const session = registry.acquire(project.id);
+    const beginCreate = vi
+      .spyOn(session, "beginCreate")
+      .mockResolvedValue(true);
+    try {
+      renderSidebar({ activeProjectId: project.id, registry });
+      await screen.findByTestId("explorer-tree");
+
+      fireEvent.click(screen.getByLabelText("New file"));
+      fireEvent.click(screen.getByLabelText("New folder"));
+
+      // `null` is the root parent, which is what these two promise; the row
+      // menu is the scoped route and passes a directory.
+      expect(beginCreate.mock.calls).toEqual([
+        [null, "file"],
+        [null, "directory"],
+      ]);
+    } finally {
+      beginCreate.mockRestore();
+      registry.release(project.id);
+    }
+  });
+
   it("has NO explorer section without an active project", async () => {
     projectsListMock.mockResolvedValue({
       ok: true,
@@ -481,7 +576,7 @@ describe("search", () => {
       screen.getByRole("group", { name: "Projects" }),
     ).not.toBeNull();
     expect(
-      screen.getByText("Files cover the folders you have opened in this project."),
+      screen.getByText("Files cover every file in this project."),
     ).not.toBeNull();
   });
 
@@ -496,7 +591,7 @@ describe("search", () => {
     const field = await openSearch();
     fireEvent.change(field, { target: { value: "vex" } });
     expect(
-      screen.queryByText("Files cover the folders you have opened in this project."),
+      screen.queryByText("Files cover every file in this project."),
     ).toBeNull();
   });
 
@@ -798,6 +893,389 @@ describe("the explorer pane and its split", () => {
     for (const share of [0.31, 0.5, 0.649]) {
       set(share);
       expect(useUiStore.getState().studioRailExplorerShare).toBe(share);
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * What the rail publishes to the rest of Studio
+ * ------------------------------------------------------------------ */
+
+/**
+ * THE TWO THINGS OUTSIDE THIS COLUMN DEPEND ON, pinned here because this file
+ * owns both and nothing else can notice them breaking.
+ *
+ * The MARKER is a cross-file invariant with no shared constant to enforce it:
+ * `useStudioKeybindings.studioSurfaceOf` decides which shortcuts apply by
+ * asking whether the focused element sits inside `[data-vex-area=
+ * "studio-sidebar"]`, and the attribute lives on this component's `<aside>`. A
+ * rename here would silently move every rail keystroke to the `none` surface,
+ * with both files still compiling and both suites still green - so the
+ * assertion drives the real resolver over a real rendered element rather than
+ * matching the string twice.
+ *
+ * The FUNCTION is `Ctrl+P`'s owner. It is asserted through the field a user
+ * types into, not through the registration, because "the handle was called" is
+ * not the contract - "the search is open and the caret is in it" is.
+ */
+describe("what the rail publishes to the rest of Studio", () => {
+  it("keeps the surface marker the Studio keyboard table resolves against", async () => {
+    renderSidebar();
+    await screen.findByRole("button", { name: "New project" });
+
+    const aside = document.querySelector('[data-vex-area="studio-sidebar"]');
+    expect(aside).not.toBeNull();
+    const inside = aside?.querySelector("button") ?? null;
+    expect(inside).not.toBeNull();
+    expect(studioSurfaceOf(inside)).toBe("rail");
+  });
+
+  it("opens the search and focuses the field", async () => {
+    renderSidebar();
+    await screen.findByRole("button", { name: "New project" });
+    expect(
+      screen.queryByRole("combobox", { name: "Search projects and files" }),
+    ).toBeNull();
+
+    act(() => {
+      expect(focusStudioRailSearch()).toBe(true);
+    });
+
+    const field = screen.getByRole("combobox", { name: "Search projects and files" });
+    expect(document.activeElement).toBe(field);
+  });
+
+  /**
+   * NEVER A TOGGLE. The magnifier closes an open search because a pointer press
+   * on it means "put this away"; `Go to file` means one thing, and a second
+   * press must leave the user in the field rather than throwing them out of it.
+   * The old text is SELECTED so the next keystroke starts a fresh query.
+   */
+  it("re-focuses and selects when the search is already open", async () => {
+    renderSidebar();
+    await screen.findByRole("button", { name: "New project" });
+    act(() => {
+      focusStudioRailSearch();
+    });
+    const field = screen.getByRole("combobox", { name: "Search projects and files" });
+    fireEvent.change(field, { target: { value: "vex" } });
+    (field as HTMLInputElement).blur();
+
+    act(() => {
+      expect(focusStudioRailSearch()).toBe(true);
+    });
+
+    expect(
+      screen.getByRole("combobox", { name: "Search projects and files" }),
+    ).not.toBeNull();
+    expect(document.activeElement).toBe(field);
+    expect((field as HTMLInputElement).selectionStart).toBe(0);
+    expect((field as HTMLInputElement).selectionEnd).toBe(3);
+  });
+
+  it("expands a collapsed rail first, because a 56px spine has no field", async () => {
+    const onToggleSidebar = vi.fn();
+    renderSidebar({ collapsed: true, onToggleSidebar });
+    await screen.findByRole("button", { name: "Search projects and files" });
+
+    act(() => {
+      expect(focusStudioRailSearch()).toBe(true);
+    });
+    expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+  });
+
+  it("declines when no rail is mounted, so the keystroke is left alone", () => {
+    expect(focusStudioRailSearch()).toBe(false);
+  });
+});
+
+/**
+ * The rail's file half, over the MAIN-SIDE name index.
+ *
+ * These cases are about the seam, not the ranking (that has its own table next
+ * to the scorer): a file nobody expanded is reachable, a superseded keystroke's
+ * answer never lands, the index's bounds and its AGE are on screen, the session
+ * is released when the search closes, and none of it disturbs the keyboard
+ * model the combobox already had.
+ */
+describe("the rail's project-wide file search", () => {
+  async function openSearchField(): Promise<HTMLElement> {
+    fireEvent.click(
+      screen.getByRole("button", { name: "Search projects and files" }),
+    );
+    return screen.getByRole("combobox", { name: "Search projects and files" });
+  }
+
+  /** Let the 150 ms debounce fire and the answer settle. */
+  async function settleSearch(): Promise<void> {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+  }
+
+  it("offers a file the explorer never loaded, and opens it on Enter", async () => {
+    vi.useFakeTimers();
+    try {
+      const project = makeProject({ name: "vex-core" });
+      projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+      searchFileNamesMock.mockImplementation(() =>
+        indexAnswer({
+          matches: [
+            { relativePath: "src/never/opened/deep.ts", nodeId: "tok-deep", score: 900 },
+          ],
+        }),
+      );
+      renderSidebar({ activeProjectId: project.id });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const field = await openSearchField();
+      fireEvent.change(field, { target: { value: "deep" } });
+      await settleSearch();
+
+      // The explorer loaded nothing, so this row exists only because main
+      // walked the project.
+      expect(screen.getByRole("option", { name: /deep\.ts/ })).not.toBeNull();
+      expect(searchFileNamesMock).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops a superseded answer instead of letting it overwrite a newer one", async () => {
+    vi.useFakeTimers();
+    try {
+      const project = makeProject({ name: "vex-core" });
+      projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+      let releaseFirst!: (value: unknown) => void;
+      const first = new Promise((resolve) => {
+        releaseFirst = resolve;
+      });
+      searchFileNamesMock.mockImplementation((input) => {
+        if (input.query === "alpha") return first;
+        return indexAnswer({
+          matches: [{ relativePath: "src/beta.ts", nodeId: "tok-beta", score: 900 }],
+        });
+      });
+      renderSidebar({ activeProjectId: project.id });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const field = await openSearchField();
+      fireEvent.change(field, { target: { value: "alpha" } });
+      await settleSearch();
+      fireEvent.change(field, { target: { value: "beta" } });
+      await settleSearch();
+      expect(screen.getByRole("option", { name: /beta\.ts/ })).not.toBeNull();
+
+      // The first request finally answers, for a query the user has moved on
+      // from. Its rows must not appear, and the current rows must survive.
+      await act(async () => {
+        releaseFirst(
+          await indexAnswer({
+            matches: [{ relativePath: "src/alpha.ts", nodeId: "tok-alpha", score: 900 }],
+          }),
+        );
+        await Promise.resolve();
+      });
+
+      expect(screen.queryByRole("option", { name: /alpha\.ts/ })).toBeNull();
+      expect(screen.getByRole("option", { name: /beta\.ts/ })).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says it is still reading rather than claiming there are no matches", async () => {
+    vi.useFakeTimers();
+    try {
+      const project = makeProject({ name: "vex-core" });
+      projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+      searchFileNamesMock.mockImplementation(() =>
+        indexAnswer({ indexState: "building", indexedAtMs: null, indexedFileCount: 0 }),
+      );
+      renderSidebar({ activeProjectId: project.id });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const field = await openSearchField();
+      fireEvent.change(field, { target: { value: "zzz" } });
+      await settleSearch();
+
+      expect(
+        screen.getByText("Still reading this project's files. Results will fill in."),
+      ).not.toBeNull();
+      expect(
+        screen.queryByText("No project or file matches that name."),
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says the cap when the project is larger than the index", async () => {
+    vi.useFakeTimers();
+    try {
+      const project = makeProject({ name: "vex-core" });
+      projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+      searchFileNamesMock.mockImplementation(() =>
+        indexAnswer({
+          indexState: "capped",
+          indexedFileCount: 50_000,
+          matches: [{ relativePath: "src/a.ts", nodeId: "tok-a", score: 900 }],
+        }),
+      );
+      renderSidebar({ activeProjectId: project.id });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const field = await openSearchField();
+      fireEvent.change(field, { target: { value: "a" } });
+      await settleSearch();
+
+      // A name that was never collected cannot be found, so this is the fact
+      // that keeps an empty answer from reading as "the file is not there".
+      expect(
+        screen.getByText(
+          "This project is larger than the search index. Only the first 50000 files are searched.",
+        ),
+      ).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("dates an index the user has held open, and stays quiet while it is fresh", async () => {
+    vi.useFakeTimers();
+    try {
+      const project = makeProject({ name: "vex-core" });
+      projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+      searchFileNamesMock.mockImplementation(() =>
+        indexAnswer({
+          indexedFileCount: 420,
+          // Two minutes old: past the notice window, so the user who just
+          // created a file learns why it is missing and what to do.
+          indexedAtMs: Date.now() - 120_000,
+          matches: [{ relativePath: "src/a.ts", nodeId: "tok-a", score: 900 }],
+        }),
+      );
+      renderSidebar({ activeProjectId: project.id });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const field = await openSearchField();
+      fireEvent.change(field, { target: { value: "a" } });
+      await settleSearch();
+
+      expect(
+        screen.getByText(
+          "Searched 420 files, indexed 2 min ago. Reopen the search to pick up new files.",
+        ),
+      ).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not date a FRESH index, because that would be noise", async () => {
+    vi.useFakeTimers();
+    try {
+      const project = makeProject({ name: "vex-core" });
+      projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+      searchFileNamesMock.mockImplementation(() =>
+        indexAnswer({
+          indexedFileCount: 420,
+          indexedAtMs: Date.now(),
+          matches: [{ relativePath: "src/a.ts", nodeId: "tok-a", score: 900 }],
+        }),
+      );
+      renderSidebar({ activeProjectId: project.id });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const field = await openSearchField();
+      fireEvent.change(field, { target: { value: "a" } });
+      await settleSearch();
+
+      expect(screen.queryByText(/indexed .* ago/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("releases the session when the search closes, so main drops the index", async () => {
+    vi.useFakeTimers();
+    try {
+      const project = makeProject({ name: "vex-core" });
+      projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+      renderSidebar({ activeProjectId: project.id });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const field = await openSearchField();
+      fireEvent.change(field, { target: { value: "a" } });
+      await settleSearch();
+      const openedWith = searchFileNamesMock.mock.calls[0]?.[0];
+      expect(openedWith).toBeDefined();
+
+      fireEvent.keyDown(field, { key: "Escape" });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      // The component that opened the session closes it. Main's idle timer is
+      // a backstop for a crashed renderer, never the contract.
+      expect(releaseSearchSessionMock).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: openedWith?.sessionId }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves the keyboard model alone: arrows still move over merged rows", async () => {
+    vi.useFakeTimers();
+    try {
+      const project = makeProject({ name: "alpha-project" });
+      projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+      searchFileNamesMock.mockImplementation(() =>
+        indexAnswer({
+          matches: [
+            { relativePath: "src/alpha.ts", nodeId: "tok-alpha", score: 900 },
+          ],
+        }),
+      );
+      renderSidebar({ activeProjectId: project.id });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const field = await openSearchField();
+      fireEvent.change(field, { target: { value: "alpha" } });
+      await settleSearch();
+
+      // Projects first, then files - the order the model promises and the
+      // order `aria-activedescendant` walks.
+      fireEvent.keyDown(field, { key: "ArrowDown" });
+      expect(field.getAttribute("aria-activedescendant")).toBe(
+        "studio-rail-search-results-option-0",
+      );
+      fireEvent.keyDown(field, { key: "ArrowDown" });
+      expect(field.getAttribute("aria-activedescendant")).toBe(
+        "studio-rail-search-results-option-1",
+      );
+      // The field never loses focus to a row: the rows are options, not
+      // buttons, which is what keeps a re-derived list from dropping focus.
+      expect(document.activeElement).toBe(field);
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

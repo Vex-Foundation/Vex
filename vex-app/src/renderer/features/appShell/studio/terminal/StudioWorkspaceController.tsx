@@ -39,6 +39,7 @@ import { cn } from "../../../../lib/utils.js";
 import { reportRendererFailure } from "../../../../lib/renderer-error-report.js";
 import { notify } from "../../../../lib/notifications/index.js";
 import type { NotificationHandle } from "../../../../lib/notifications/types.js";
+import { listProjectChildren } from "../../../../lib/api/files.js";
 import {
   createTerminal,
   killTerminal,
@@ -48,6 +49,7 @@ import {
   readTerminalWorkspace,
 } from "../../../../lib/api/terminal.js";
 import {
+  activeTerminalIdOf,
   addFileTab,
   addPane,
   addTerminalGroup,
@@ -57,14 +59,24 @@ import {
   collectCleanups,
   emptyWorkspace,
   fromSnapshot,
+  isPreviewFileTab,
+  pinTab,
   resizePanes,
   selectTab,
   setActivePane,
   setGroupOrientation,
   setPaneDisplayCwd,
+  retargetFileTab,
+  restoreFileTabs,
   setTabTitle,
+  type FileTabTarget,
+  type RestoredFileTab,
+  tabIdAtOffset,
+  toPersistedFileTabs,
   toPersistedLayout,
 } from "../workspace/workspace-model.js";
+import { createPathTokenWalk } from "../workspace/resolve-path-token.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
 import {
   nextTerminalTitle,
   renumberTerminalTabs,
@@ -74,9 +86,20 @@ import {
 } from "./terminal-tab-model.js";
 import { useFileOpenIntentStore } from "../workspace/file-open-intent.js";
 import {
+  focusActiveTerminal,
+  focusWorkspaceStrip,
+  studioFocusPermission,
+} from "../workspace/workspace-focus.js";
+import { useFileRenameSignalStore } from "../workspace/file-rename-signal.js";
+import {
+  fileTabsUnderFolder,
+  resolveRenamedFolderTabs,
+} from "../workspace/renamed-folder-tabs.js";
+import {
   publishProjectTerminals,
+  publishProjectWorkspaceCommands,
   publishProjectWorkspaceLifecycle,
-} from "../workspace/project-terminals.js";
+} from "../workspace/workspace-handles.js";
 import {
   admitsPersist,
   admitsTerminalCreate,
@@ -93,13 +116,18 @@ import {
   type WorkspaceCloseState,
   type WorkspaceCloseWork,
 } from "../workspace/close-lifecycle.js";
-import type { WorkspaceMutation, WorkspaceState } from "../workspace/types.js";
-import { TerminalTabs } from "./TerminalTabs.js";
+import type {
+  FileOpenMode,
+  WorkspaceMutation,
+  WorkspaceState,
+} from "../workspace/types.js";
+import { TerminalTabs, type WatermarkRow } from "./TerminalTabs.js";
 import { FileViewer } from "../viewer/index.js";
 import { terminalRegistry, type TerminalRegistry } from "./terminal-registry.js";
 import {
   CLOSE_FAILURE_COPY,
   CLOSING_CREATE_COPY,
+  fileTabsNotRestoredCopy,
   KEEP_ALIVE_COPY,
   MUTATION_REFUSAL_COPY,
   REFUSAL_COPY,
@@ -147,6 +175,32 @@ export interface StudioWorkspaceControllerProps {
    * where the local close is the honest fallback: there is no set to leave.
    */
   readonly onRetryClose?: () => void;
+  /**
+   * What the EMPTY workspace advertises: the shortcuts a user can reach from
+   * here, spelled for this platform.
+   *
+   * Threaded from the caller rather than computed here, because the honest
+   * answer depends on which intents the mounted keyboard table can actually
+   * dispatch, and that is `StudioCenter`'s fact - it is the component that
+   * mounts the hook. Omitted, the strip shows the surface's own keyless
+   * default, which is the right answer for a controller mounted on its own
+   * (a test) where no keyboard table exists.
+   */
+  readonly watermarkRows?: readonly WatermarkRow[];
+  /**
+   * Whether this workspace is the one the user is LOOKING AT.
+   *
+   * `StudioCenter` keeps every project in the kept-alive set mounted and hides
+   * the inactive ones with `hidden`, so "mounted" and "shown" are different
+   * facts and only the centre holds the second one. It is threaded in for
+   * exactly one purpose - the open-time focus below, which must not fire for a
+   * workspace nobody can see - and it is the CENTRE's decision, not this
+   * component's, for the same reason `watermarkRows` is.
+   *
+   * Defaults to `true`: a controller mounted on its own (a test, a future
+   * single-workspace host) is by definition the one on screen.
+   */
+  readonly active?: boolean;
 }
 
 export function StudioWorkspaceController({
@@ -154,9 +208,26 @@ export function StudioWorkspaceController({
   registry,
   className,
   onRetryClose,
+  watermarkRows,
+  active = true,
 }: StudioWorkspaceControllerProps): JSX.Element {
   const [state, setState] = useState<WorkspaceState>(() => emptyWorkspace(projectId));
   const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * WHAT THE RESTORE COULD NOT BRING BACK, held apart from `notice`.
+   *
+   * `notice` is the TRANSIENT slot: a refusal, a failed close, a status line,
+   * and every successful open clears it because a refusal that has been
+   * answered must not linger. A restore outcome is a different kind of fact -
+   * it is the answer to "is this the workspace I left" - and it was measurably
+   * erased by the auto-open that fires a moment later, so the user who lost a
+   * file tab was told and then untold within one frame.
+   *
+   * It renders in THE SAME ROW, above the transient sentence. One row, two
+   * owners, neither able to overwrite the other; a second badge would be a
+   * second place to look for the same class of news.
+   */
+  const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
   /**
    * Terminals that died with an unexpectedly terminated pty host.
    *
@@ -212,6 +283,17 @@ export function StudioWorkspaceController({
   stateRef.current = state;
   const hydratedRef = useRef(false);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * THE FILE TABS' OWN HYDRATION LATCH, and it is a second one on purpose.
+   *
+   * `hydratedRef` closes when the TERMINAL snapshot has settled; the file tabs
+   * are restored after that, through a per-segment walk that is several IPC
+   * round trips long. Writing the file-tab record while that walk is in flight
+   * would persist an empty strip over the very record it is restoring from -
+   * the same defect the terminal latch exists to prevent, one home along.
+   */
+  const fileTabsHydratedRef = useRef(false);
+  const fileTabsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
    * THE CLOSE PHASE. One owner, and this is it.
    *
@@ -379,7 +461,37 @@ export function StudioWorkspaceController({
     setState(result.state);
   }, []);
 
+  /**
+   * Write this project's FILE TABS now, cancelling any pending debounce.
+   *
+   * A separate write from the terminal layout's because it has a separate home
+   * (`uiStore.studioFileTabs`) and a separate latch, and the same shape as it
+   * for exactly the reasons the terminal one has: a timer that is cleared here
+   * so a flush and its debounce cannot both fire, and a latch so nothing is
+   * written before the restore that would be overwritten has landed.
+   *
+   * `admitsPersist` is NOT consulted, and the difference is the point: the
+   * terminal layout is refused during a close because the close commits its own
+   * snapshot and a late write would race it. The file-tab record has no such
+   * commit - a closing workspace's last file strip is exactly what should come
+   * back when the project is opened again.
+   */
+  const flushFileTabs = useCallback((): void => {
+    if (fileTabsTimerRef.current !== null) {
+      clearTimeout(fileTabsTimerRef.current);
+      fileTabsTimerRef.current = null;
+    }
+    if (!fileTabsHydratedRef.current) return;
+    useUiStore
+      .getState()
+      .setProjectFileTabs(projectId, toPersistedFileTabs(stateRef.current));
+  }, [projectId]);
+
   const flushPersist = useCallback((): void => {
+    // The file tabs go with it: every caller of this function is a "the
+    // renderer may not get another moment" caller (the visibility change, the
+    // unmount), and both homes need the same last write.
+    flushFileTabs();
     if (persistTimerRef.current !== null) {
       clearTimeout(persistTimerRef.current);
       persistTimerRef.current = null;
@@ -387,7 +499,7 @@ export function StudioWorkspaceController({
     if (!hydratedRef.current) return;
     if (!admitsPersist(closeStateRef.current)) return;
     void persistTerminalWorkspace(toPersistedLayout(stateRef.current));
-  }, []);
+  }, [flushFileTabs]);
 
   /* ---------------- restore ---------------- */
 
@@ -395,6 +507,7 @@ export function StudioWorkspaceController({
     generationRef.current += 1;
     const generation = generationRef.current;
     hydratedRef.current = false;
+    fileTabsHydratedRef.current = false;
     // Re-armed with the hydration latch: this is a different project's
     // workspace, or the same one being opened again, and either way it has not
     // been bootstrapped yet.
@@ -406,6 +519,75 @@ export function StudioWorkspaceController({
 
     const opened = projectId;
     setLostTerminalIds(new Set());
+    // A restore outcome describes ONE mount. The next one answers for itself.
+    setRestoreNotice(null);
+
+    /**
+     * BRING THE PERSISTED FILE TABS BACK, re-resolving every path first.
+     *
+     * The record is user-writable localStorage, so a path in it is a CLAIM and
+     * nothing more. Each one is walked segment by segment from the project root
+     * through `files.listChildren` - main's own listing, under main's own
+     * validation - and only the entry main describes, token included, becomes a
+     * tab. An injected path can therefore name only a file main confirms inside
+     * this project, and a path that names anything else resolves to nothing.
+     *
+     * A path that does not resolve is DROPPED AND COUNTED, and the count is
+     * said out loud through the strip's existing notice row. That is
+     * `EditorGroupModel.deserialize` (`editorGroupModel.ts:1218-1260`): what
+     * cannot be restored is coalesced away and the group survives - with the
+     * one difference that a user who left five files open and gets four back is
+     * told so, rather than being left to notice.
+     *
+     * Fenced on the generation like every other publication in this effect, and
+     * again at each await inside the walk, so a project switch mid-walk
+     * publishes nothing.
+     */
+    const bringBackFileTabs = async (): Promise<void> => {
+      const record = useUiStore.getState().studioFileTabs[opened];
+      if (record === undefined || record.tabs.length === 0) {
+        fileTabsHydratedRef.current = true;
+        return;
+      }
+      const isStale = (): boolean =>
+        generation !== generationRef.current || opened !== projectIdRef.current;
+      const walk = createPathTokenWalk({
+        projectId: opened,
+        list: listProjectChildren,
+        isStale,
+      });
+      const resolved: RestoredFileTab[] = [];
+      let dropped = 0;
+      for (const entry of record.tabs) {
+        const node = await walk.resolve(null, entry.relativePath.split("/"));
+        if (isStale()) return;
+        // A DIRECTORY at that path is not a file tab either. The path resolved,
+        // so it is not "gone"; it is not what it was, which the user's count
+        // says just as honestly as a deletion does.
+        if (node === null || node.kind !== "file") {
+          dropped += 1;
+          continue;
+        }
+        resolved.push({
+          tabId: newId("file"),
+          title: node.name,
+          relativePath: node.path,
+          nodeId: node.nodeId,
+          pinned: entry.pinned,
+          position: entry.position,
+          active: entry.active,
+        });
+      }
+      if (isStale()) return;
+      if (resolved.length > 0) {
+        stateRef.current = restoreFileTabs(stateRef.current, resolved);
+        setState(stateRef.current);
+      }
+      // The latch closes BEFORE the notice, so the write path is armed for
+      // whatever the user does next even if nothing came back.
+      fileTabsHydratedRef.current = true;
+      if (dropped > 0) setRestoreNotice(fileTabsNotRestoredCopy(dropped));
+    };
 
     void (async () => {
       const result = await readTerminalWorkspace(opened);
@@ -467,6 +649,11 @@ export function StudioWorkspaceController({
       if (!result.ok || !result.data.ok) {
         hydratedRef.current = true;
         setNotice(RESTORE_FAILED_COPY);
+        // THE FILE TABS STILL COME BACK. Their home is not the terminal
+        // snapshot - that is the whole reason they have one - so a terminal
+        // read Vex could not perform says nothing about the files the user left
+        // open, and returning here would make one failure cost both.
+        await bringBackFileTabs();
         return;
       }
       if (result.data.value !== null) {
@@ -477,6 +664,14 @@ export function StudioWorkspaceController({
         setShellLabelById(shellLabelsOf(result.data.value));
       }
       hydratedRef.current = true;
+      // THE FILE TABS, AFTER the terminals and BEFORE the auto-open.
+      //
+      // After, because their positions are indices into a strip the terminal
+      // restore has to have built first. Before, because the auto-open's whole
+      // question is "did this project come back with nothing", and a workspace
+      // that came back with three files is not empty - opening a shell into it
+      // would be a terminal nobody asked for on every relaunch.
+      await bringBackFileTabs();
       // THE AUTO-OPEN, and it is deliberately asked of the RESULTING STATE
       // rather than of `value === null`. A snapshot can restore to nothing -
       // `fromSnapshot` drops every group whose terminals have no saved buffer,
@@ -540,6 +735,48 @@ export function StudioWorkspaceController({
     };
   }, [state]);
 
+  /**
+   * THE FILE TABS' DEBOUNCED WRITE, on the terminal layout's own timer length.
+   *
+   * Keyed on the FILE PROJECTION of the strip rather than on `state`, because
+   * that is what this record holds: a splitter drag, a pane exit, a shell title
+   * and a terminal open all change `state` and none of them changes a file tab.
+   * A dependency on `state` would rewrite the record - and re-stamp the LRU's
+   * clock, moving other projects toward eviction - on every pointer move of a
+   * split.
+   *
+   * The debounce is the same instrument for the same reason as the layout's:
+   * clicking down a file tree emits a mutation per click, and coalescing them
+   * costs at most this much of a strip if the window dies mid-burst. The
+   * visibility flush and the unmount flush both call `flushFileTabs`, which is
+   * the case that actually matters.
+   */
+  const fileTabsSignature = useMemo(
+    () => JSON.stringify(toPersistedFileTabs(state)),
+    [state],
+  );
+  useEffect(() => {
+    if (!fileTabsHydratedRef.current) return undefined;
+    if (fileTabsTimerRef.current !== null) clearTimeout(fileTabsTimerRef.current);
+    fileTabsTimerRef.current = setTimeout(() => {
+      fileTabsTimerRef.current = null;
+      // Re-checked at the timer, not only when it was armed: a project switch
+      // between the two would write THIS project's strip under the id the
+      // callback captured, which is still correct, but a discarded workspace
+      // must not resurrect the record its delete just removed.
+      if (!fileTabsHydratedRef.current) return;
+      useUiStore
+        .getState()
+        .setProjectFileTabs(projectId, toPersistedFileTabs(stateRef.current));
+    }, PERSIST_DEBOUNCE_MS);
+    return () => {
+      if (fileTabsTimerRef.current !== null) {
+        clearTimeout(fileTabsTimerRef.current);
+        fileTabsTimerRef.current = null;
+      }
+    };
+  }, [fileTabsSignature, projectId]);
+
   useEffect(() => {
     const onVisibility = (): void => {
       // HIDDEN is the last moment the renderer is reliably alive: a window close
@@ -559,7 +796,7 @@ export function StudioWorkspaceController({
    * The Studio centre needs them at exactly one moment: the user closing this
    * kept-alive workspace, which happens WHILE this component is still mounted
    * and which the teardown below deliberately does not handle. See
-   * `workspace/project-terminals.ts` for why the index exists at all.
+   * `workspace/workspace-handles.ts` for why the index exists at all.
    */
   useEffect(() => {
     const terminalIds: string[] = [];
@@ -794,7 +1031,18 @@ export function StudioWorkspaceController({
       clearTimeout(persistTimerRef.current);
       persistTimerRef.current = null;
     }
-  }, [publishCloseState]);
+    // AND THE FILE TABS GO WITH IT, for exactly the reason the layout write is
+    // cancelled: the project is deleted, its paths name nothing, and a record
+    // left behind would hold an LRU slot for a project the user has been told
+    // is gone. The latch is dropped first so neither the debounce nor the
+    // unmount flush can write it back.
+    fileTabsHydratedRef.current = false;
+    if (fileTabsTimerRef.current !== null) {
+      clearTimeout(fileTabsTimerRef.current);
+      fileTabsTimerRef.current = null;
+    }
+    useUiStore.getState().forgetProjectFileTabs(projectId);
+  }, [projectId, publishCloseState]);
 
   useEffect(
     () =>
@@ -1246,18 +1494,27 @@ export function StudioWorkspaceController({
    * No admissibility question to ask first, unlike `openTerminal`: a file tab
    * holds no pty, no lease and no host slot, so `addFileTab` cannot refuse and
    * there is no invisible resource a late completion could strand.
+   *
+   * `mode` is THE GESTURE'S, carried the whole way from the click that made it
+   * (`ExplorerRow` -> `ExplorerTree` -> the open intent). It defaults to
+   * `"pinned"` here as it does in every layer below, so a route that has not
+   * chosen keeps the behaviour it had before previews existed.
    */
   const openFile = useCallback(
-    (node: FileNode): void => {
+    (node: FileNode, mode: FileOpenMode = "pinned"): void => {
       apply((current) =>
-        addFileTab(current, {
-          kind: "file",
-          tabId: newId("file"),
-          title: node.name,
-          relativePath: node.path,
-          nodeId: node.nodeId,
-          dirty: false,
-        }),
+        addFileTab(
+          current,
+          {
+            kind: "file",
+            tabId: newId("file"),
+            title: node.name,
+            relativePath: node.path,
+            nodeId: node.nodeId,
+            dirty: false,
+          },
+          { mode },
+        ),
       );
     },
     [apply],
@@ -1277,8 +1534,90 @@ export function StudioWorkspaceController({
       .getState()
       .consumeFileOpenIntent(parkedFileOpen.intentId, projectId);
     if (taken === null) return;
-    openFile(taken.node);
+    openFile(taken.node, taken.mode);
   }, [openFile, parkedFileOpen, projectId]);
+
+  /**
+   * KEEP a tab, promoting the workspace's preview to a pinned one.
+   *
+   * One handler for both gestures that mean it - the tab's own double click
+   * and its "Keep open" control, and the `Ctrl+Enter` command below - so the
+   * promotion has one route into the model. `pinTab` is idempotent and
+   * refuses only a tab that is not there, so neither gesture has to ask
+   * whether there was anything to promote.
+   */
+  const handlePinTab = useCallback(
+    (tabId: string): void => {
+      apply((current) => pinTab(current, tabId));
+    },
+    [apply],
+  );
+
+  /**
+   * THE TAB FOLLOWS ITS FILE'S RENAME.
+   *
+   * The explorer parks the confirmed rename and this takes it, exactly as the
+   * open intent above is taken and for the same reasons: project-keyed so a
+   * rename in another project cannot retarget a tab here, consume-once so
+   * StrictMode's second pass applies nothing twice.
+   *
+   * The retarget carries the new TOKEN, which is what makes the viewer follow
+   * too: `FileViewerRegistry.acquire` swaps in a session on the new path the
+   * moment the tab's `nodeId` changes.
+   */
+  const parkedFileRename = useFileRenameSignalStore((store) => store.signal);
+  useEffect(() => {
+    if (parkedFileRename === null) return;
+    const taken = useFileRenameSignalStore
+      .getState()
+      .consumeFileRenameSignal(parkedFileRename.signalId, projectId);
+    if (taken === null) return;
+    const retarget = (from: string, to: FileTabTarget): void => {
+      apply((current) => {
+        const outcome = retargetFileTab(current, from, to);
+        // NO TAB ON THAT PATH is the ORDINARY case, not something to tell the
+        // user about: most renames are of files nobody has open. Answering
+        // "unchanged" keeps the workspace's refusal notice for the refusals a
+        // user's own gesture actually caused.
+        return outcome.ok ? outcome : { ok: true, state: current };
+      });
+    };
+    retarget(taken.fromRelativePath, taken.to);
+
+    // AND THE SAME RENAME MAY HAVE BEEN A DIRECTORY'S, which moves every tab
+    // underneath it. The signal names only the entry the user typed a new name
+    // for, so the tabs below it are found here by prefix and their new tokens
+    // are asked for; see `workspace/renamed-folder-tabs.ts` for why a token
+    // cannot be computed on this side of the boundary. A rename of a FILE
+    // selects nothing - no tab can live under a file's path - so the ordinary
+    // case costs one array scan and no bridge call.
+    const under = fileTabsUnderFolder(stateRef.current.tabs, taken.fromRelativePath);
+    if (under.length === 0) return;
+    const generation = generationRef.current;
+    const isStale = (): boolean =>
+      generation !== generationRef.current || projectIdRef.current !== projectId;
+    void resolveRenamedFolderTabs({
+      projectId,
+      fromRelativePath: taken.fromRelativePath,
+      toNodeId: taken.to.nodeId,
+      tabs: under,
+      list: listProjectChildren,
+      isStale,
+    }).then(
+      (followed) => {
+        // THE FENCE, checked again at publication rather than only at start:
+        // everything interesting happens during the listings.
+        if (isStale()) return;
+        for (const one of followed) retarget(one.fromRelativePath, one.to);
+      },
+      (cause: unknown) => {
+        console.warn(
+          `studio workspace: following the rename of ${taken.fromRelativePath} failed`,
+          cause,
+        );
+      },
+    );
+  }, [apply, parkedFileRename, projectId]);
 
   const handleSplit = useCallback(
     (tabId: string, orientation: "horizontal" | "vertical"): void => {
@@ -1370,6 +1709,188 @@ export function StudioWorkspaceController({
     [apply, endTerminal],
   );
 
+  /** The workspace card, for the focus restoration below. */
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  /** A keyboard close is waiting for focus to be put back. See the effect. */
+  const restoreFocusRef = useRef(false);
+
+  /**
+   * PUBLISH THE KEYBOARD-REACHABLE ACTIONS for as long as this workspace is
+   * mounted.
+   *
+   * The keyboard table is mounted once, by `StudioCenter`, and the actions a
+   * `Ctrl+W` or a `Ctrl+Shift+\`` needs are here - in a component that exists
+   * once per kept-alive project and holds the state those actions mutate.
+   * Publishing the handle is how the two meet without either reaching into the
+   * other; `workspace/workspace-handles.ts` explains the seam, which the close
+   * gesture already travels.
+   *
+   * EVERY ROUTE IS AN EXISTING HANDLER, deliberately. A shortcut that opened a
+   * terminal by its own path would bypass the keep-alive bound, the closing
+   * refusal and the publication fence that `openTerminal` enforces, and a
+   * shortcut that closed a tab by its own path would leave its ptys running.
+   * The only thing new here is which gesture calls them.
+   *
+   * Each returns whether it ACTED: the hook takes the keystroke only for a
+   * command that answered, so `Ctrl+W` over an empty workspace reaches the
+   * browser instead of being silently swallowed.
+   *
+   * Reads `stateRef`, never `state`: the effect must not re-publish on every
+   * tab change, and the current strip is what these act on.
+   */
+  useEffect(
+    () =>
+      publishProjectWorkspaceCommands(projectId, {
+        newTerminal: () => {
+          handleNewTerminal();
+          return true;
+        },
+        splitActiveTerminal: () => {
+          const active = stateRef.current.tabs.find(
+            (tab) => tab.tabId === stateRef.current.activeTabId,
+          );
+          // No side-by-side of a file, and nothing to split when the strip is
+          // empty. "horizontal" is the header's own first split control, and
+          // is what VS Code's Split Terminal does: side by side.
+          if (active === undefined || active.kind !== "terminalGroup") return false;
+          handleSplit(active.tabId, "horizontal");
+          return true;
+        },
+        closeActiveTab: () => {
+          const tabId = stateRef.current.activeTabId;
+          if (tabId === null) return false;
+          handleCloseTab(tabId);
+          restoreFocusRef.current = true;
+          return true;
+        },
+        selectTabAtOffset: (offset) => {
+          const tabId = tabIdAtOffset(stateRef.current, offset);
+          if (tabId === null) return false;
+          apply((current) => selectTab(current, tabId));
+          return true;
+        },
+        pinActiveTab: () => {
+          const active = stateRef.current.tabs.find(
+            (tab) => tab.tabId === stateRef.current.activeTabId,
+          );
+          // ONLY A PREVIEW ANSWERS. A terminal group, an already-pinned file
+          // and an empty strip all have nothing to keep, and the hook takes
+          // the keystroke only for a command that acted - which matters here
+          // more than anywhere else in this map, because `Enter` is a key the
+          // workspace must not swallow.
+          if (active === undefined || !isPreviewFileTab(active)) return false;
+          handlePinTab(active.tabId);
+          return true;
+        },
+      }),
+    [apply, handleCloseTab, handleNewTerminal, handlePinTab, handleSplit, projectId],
+  );
+
+  /**
+   * FOCUS COMES BACK after a keyboard close. The rule `RenameField` already
+   * follows, applied to the gesture that needs it most.
+   *
+   * A closed tab's trigger is REMOVED from the DOM, and focus left on a removed
+   * node drops the user to `document.body` - which is outside every Studio
+   * surface, so `studioSurfaceOf` answers `none` and the very next `Ctrl+W`
+   * resolves to nothing. Measured, not theorised: before this, the shortcut
+   * closed exactly one tab per pointer click, and the browser pass is what
+   * caught it (the jsdom suites drive the command directly and never had focus
+   * on a trigger to lose).
+   *
+   * AN EFFECT WITH NO DEPENDENCY ARRAY, and a flag, because the moment that
+   * matters is "after the commit that removed the element" - which is exactly
+   * what a post-commit effect is. A `queueMicrotask` from the key handler would
+   * race React's scheduling of an update that did not originate in a React
+   * event.
+   *
+   * It moves focus only when the workspace LOST it: a user whose focus is still
+   * somewhere in this card (a terminal, the picker) is left where they are.
+   */
+  useEffect(() => {
+    if (!restoreFocusRef.current) return;
+    restoreFocusRef.current = false;
+    const card = cardRef.current;
+    if (card === null || card.contains(document.activeElement)) return;
+    // The newly selected tab, or - when the close emptied the strip - the one
+    // control that is always there. Both are inside the card, so the surface
+    // stays `workspace` and the next shortcut resolves.
+    focusWorkspaceStrip(card);
+  });
+
+  /**
+   * FOCUS LANDS IN A WORKSPACE THAT WAS JUST OPENED.
+   *
+   * The measured defect: `Enter` on the welcome's "Open <project>" opened the
+   * project and left `document.activeElement` on `document.body`, because the
+   * welcome's button was removed from the DOM and nothing claimed the focus it
+   * dropped. A keyboard user then tabbed from the top of the window to reach
+   * the shell that had just been opened for them.
+   *
+   * ARMED, not fired once. When a project is opened its terminals are not
+   * there yet - the restore is an IPC round trip and a first terminal is
+   * bootstrapped after it - so the first commit after `active` turns true has
+   * nothing worth focusing. The flag stays raised while the workspace is still
+   * PRODUCING its terminals (`restoring`, or an open in flight) and the effect,
+   * which has no dependency array, asks again after each commit until there is
+   * a terminal or there is nothing left to wait for.
+   *
+   * IT CANNOT STEAL FOCUS, and that is what makes retrying safe rather than
+   * hostile: `studioFocusPermission` moves focus only when NOTHING holds it.
+   * A user who clicked into the rail, opened a dialog or started typing while
+   * the revive was in flight ends the arming with focus exactly where they put
+   * it. That is `EditorPart.shouldRestoreFocus` and the "focus has not changed
+   * meanwhile" guard in `EditorGroupView.restoreEditors`, applied to the same
+   * situation they were written for - a restore completing after a user has
+   * already acted.
+   */
+  const focusArmedRef = useRef(active);
+  const wasActiveRef = useRef(active);
+  if (active && !wasActiveRef.current) focusArmedRef.current = true;
+  wasActiveRef.current = active;
+
+  useEffect(() => {
+    if (!active || !focusArmedRef.current) return;
+    const card = cardRef.current;
+    const permission = studioFocusPermission(card, document.activeElement);
+    if (permission !== "take" || card === null) {
+      // "inside" and "elsewhere" both end the arming: focus has an owner, and
+      // this workspace is not going to take it away from them.
+      focusArmedRef.current = false;
+      return;
+    }
+    const terminalId = activeTerminalIdOf(stateRef.current);
+    if (terminalId !== null) {
+      // STAY ARMED until it is attached. The tab exists a commit before the
+      // pane's `XtermHost` has acquired the instance and parented its wrapper.
+      if (focusActiveTerminal(card, terminalId)) focusArmedRef.current = false;
+      return;
+    }
+    if (
+      !hydratedRef.current
+      || !fileTabsHydratedRef.current
+      || restoring
+      || pendingOpensRef.current.size > 0
+    ) {
+      // The shell this workspace was opened for is still on its way. Stay
+      // armed rather than parking focus on the strip and calling it done.
+      //
+      // The FILE-TAB LATCH is the second half of the same idea: the persisted
+      // file strip is several listings behind the terminal snapshot, and a
+      // landing that accepted the gap would park focus on the strip a moment
+      // before the tabs it is describing arrive.
+      //
+      // The HYDRATION LATCH is the first of the four and the one that decides
+      // the ordinary open: for the whole of the restore round trip the strip is
+      // legitimately empty, and a landing that accepted it would put the caret
+      // on the `+` button and be finished before the terminal the user opened
+      // the project for had even been asked for.
+      return;
+    }
+    // No terminal to land in: a file tab, or an empty workspace.
+    if (focusWorkspaceStrip(card)) focusArmedRef.current = false;
+  });
+
   return (
     // THE MOCKUP'S CARD. The workspace used to run edge to edge, so the
     // terminal met the window with no boundary and the watermark had nothing
@@ -1378,6 +1899,7 @@ export function StudioWorkspaceController({
     // also the surface the transparent xterm canvas is read against, and the
     // one the palette's contrast is measured on.
     <div
+      ref={cardRef}
       className={cn("flex h-full min-h-0 flex-col bg-surface-base p-3", className)}
       data-vex-workspace-card=""
     >
@@ -1386,11 +1908,17 @@ export function StudioWorkspaceController({
         state={state}
         runFacts={runFacts}
         shellLabelById={shellLabelById}
+        {...(watermarkRows === undefined ? {} : { watermarkRows })}
         {...(registry === undefined ? {} : { registry })}
         onSelectTab={(tabId) => {
           apply((current) => selectTab(current, tabId));
         }}
         onCloseTab={handleCloseTab}
+        // THE STRIP'S OWN KEEP GESTURES - the tab's double click and its "Keep
+        // open" control - reach the same promotion `Ctrl+Enter` does. Without
+        // this prop `TerminalTabs` draws neither, so a preview tab had no
+        // pointer route to being kept at all.
+        onPinTab={handlePinTab}
         onNewTerminal={handleNewTerminal}
         onSplit={handleSplit}
         onResizePanes={(tabId, sizes) => {
@@ -1465,7 +1993,7 @@ export function StudioWorkspaceController({
                 {restoring ? "Restoring..." : "Restore terminals"}
               </button>
             </div>
-          ) : notice === null ? null : (
+          ) : notice === null && restoreNotice === null ? null : (
             <div
               // A FAILED CLOSE IS AN ERROR, not a status: the user asked for
               // something, it did not happen, and their shells are still
@@ -1474,7 +2002,12 @@ export function StudioWorkspaceController({
               role={closeIsFailed(closePhase) ? "alert" : "status"}
               className="flex shrink-0 items-start gap-2 border-b border-line-3 bg-warning-wash px-3 py-2 text-[12px] leading-4 text-ink-primary"
             >
-              <span className="flex-1">{notice}</span>
+              <span className="flex-1">
+                {restoreNotice === null ? null : (
+                  <span className="block">{restoreNotice}</span>
+                )}
+                {notice === null ? null : <span className="block">{notice}</span>}
+              </span>
               {/* THE RETRY, beside the sentence that says a retry is worth
                 * making. The copy has always said "Try closing again" while the
                 * row offered only Dismiss, so the only way to act on it was to
@@ -1503,7 +2036,11 @@ export function StudioWorkspaceController({
               <button
                 type="button"
                 onClick={() => {
+                  // ONE Dismiss for one row: a user who has read it has read
+                  // all of it, and two dismiss buttons in a two-line row is a
+                  // control a keyboard user cannot tell apart by name.
                   setNotice(null);
+                  setRestoreNotice(null);
                 }}
                 className="rounded px-1 text-ink-tertiary hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >

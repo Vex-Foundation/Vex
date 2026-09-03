@@ -107,6 +107,35 @@ export function closeTerminalTooltip(title: string, running: boolean): string {
     : `Close ${title}.`;
 }
 
+/**
+ * THE PREVIEW TAB, IN WORDS.
+ *
+ * Italics are what VS Code paints a preview tab in
+ * (`multiEditorTabsControl.ts:1730`, `italic: !isPinned(editor)`), and italics
+ * are exactly nothing to a screen reader. So the state travels the same way a
+ * terminal's does on this strip: a visual signal plus the state IN WORDS, after
+ * the title, so the accessible name reads "app.ts Preview" rather than opening
+ * with a status nobody asked about yet.
+ */
+export const FILE_TAB_PREVIEW_STATE_COPY = "Preview";
+
+/**
+ * KEEP OPEN: the action that promotes a preview tab to a kept one.
+ *
+ * Named for the tab it acts on, like every other per-tab control here, because
+ * a strip of files whose actions were all called "Keep open" is a strip a
+ * keyboard user cannot navigate by name. The tooltip says what a preview tab IS
+ * - the fact nothing else on screen tells them, and the reason the button is
+ * there at all.
+ */
+export function keepTabOpenLabel(title: string): string {
+  return `Keep ${title} open`;
+}
+
+export function keepTabOpenTooltip(title: string): string {
+  return `Keep ${title} open. Opening another file replaces a preview tab.`;
+}
+
 /** Rename, as a per-tab action and as the double-click the tab already accepts. */
 export function renameTabLabel(title: string): string {
   return `Rename ${title}`;
@@ -263,6 +292,27 @@ export const RESTORE_FAILED_COPY =
   "Vex could not read this project's saved terminal workspace, so nothing was "
   + "restored and no terminal was opened. Open one below, or reopen the project "
   + "to try the restore again.";
+
+/**
+ * FILE TABS THAT COULD NOT COME BACK, counted rather than hidden.
+ *
+ * A persisted path is re-resolved through main before its tab exists, and a
+ * path main cannot confirm - the file was deleted, moved, or is no longer
+ * inside the project - produces no tab. Saying nothing would be the defect the
+ * failed restore above already had: the user left five files open, four came
+ * back, and nothing on screen distinguished that from the fifth having been
+ * closed. It names no path, because the only paths that reach this sentence are
+ * ones Vex could not confirm.
+ *
+ * There is no retry, and that is deliberate: reopening the file is the repair,
+ * and the explorer and the rail's search are both one gesture away.
+ */
+export function fileTabsNotRestoredCopy(count: number): string {
+  return count === 1
+    ? "1 file tab could not be restored. That file is no longer where it was."
+    : `${String(count)} file tabs could not be restored. Those files are no `
+      + "longer where they were.";
+}
 
 /**
  * The EMPTY WORKSPACE, and why it is still reachable.

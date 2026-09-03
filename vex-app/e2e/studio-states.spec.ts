@@ -49,6 +49,7 @@ import path from "node:path";
 
 import type { Page, TestInfo } from "@playwright/test";
 import { test, expect, type VexDatabaseFixture } from "./fixtures/vex-app-with-database.js";
+import { APP_DIR, relaunchApp } from "./fixtures/electron-app.js";
 
 /** Where a capture pass writes. Empty means: assert, photograph nothing. */
 const SHOTS_DIR =
@@ -124,6 +125,14 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
   const projectName = `vex-ux4-${Date.now().toString(36)}`;
   await creator.getByLabel("Name").fill(projectName);
   await creator.locator('[data-vex-agent="claude-code"]').click();
+  // This profile holds no wallet, so the creator shows the empty fieldset and
+  // never the picker. The picker's own rule (nothing pre-selected, and the
+  // "No wallet selected" sentence while wallets exist to pick; live test
+  // 2026-09-03, A7) is proven in `projects/__tests__/ProjectCreator.test.tsx`
+  // and `ProjectSettingsDialog.test.tsx`; a browser proof needs a seeded
+  // wallet, which this spec's fixture does not have.
+  await expect(creator.locator('[data-vex-project-wallets="empty"]')).toBeVisible();
+  await expect(creator.locator('[data-vex-project-wallets="picker"]')).toHaveCount(0);
   await shot(page, "03-creator-filled");
 
   const create = creator.getByRole("button", { name: "Create", exact: true });
@@ -219,6 +228,26 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
   await expect(settingsStrip).toContainText(projectName);
   await expect(save).toBeDisabled();
   await shot(page, "09-project-settings");
+
+  /* ---- 09b: a save's report is not covered by the idle sentence -------- */
+
+  // The live test (2026-09-03, A4) caught "Nothing has changed yet." standing
+  // above a fresh "What Vex did" report. The sentence is the IDLE state alone:
+  // no unsaved edit and no answer to a Save on screen. Grant, acknowledge,
+  // save, and the report must stand without it; then hand the grant back so
+  // the states after this one see the Restricted project they were written
+  // against, which is a second save and a second report to check.
+  await settings.locator("[data-vex-consent-acknowledge]").check();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(settings.getByRole("heading", { name: "What Vex did" })).toBeVisible();
+  await expect(settings.getByText("Nothing has changed yet")).toHaveCount(0);
+  await shot(page, "09b-project-settings-saved");
+  await settings.getByText("Restricted", { exact: true }).click();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(settings.getByRole("heading", { name: "What Vex did" })).toBeVisible();
+  await expect(settings.getByText("Nothing has changed yet")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(settings).toBeHidden();
 
@@ -288,6 +317,13 @@ async function pickTheme(page: Page, theme: "chronos" | "celeris"): Promise<void
   await page.locator(`[data-vex-theme-cube="${theme}"]`).click();
   await expect(page.locator("html")).toHaveAttribute("data-vex-theme", theme);
   await page.keyboard.press("Escape");
+  // THE SCREEN IS GONE, not merely covered. `ShellScreen` renders the Settings
+  // surface as a `role="dialog"` fixed over the shell and its host animates it
+  // OUT (~0.3s), so "the app shell is visible" was true the whole time Settings
+  // was still on top of it - and every click the section below makes would have
+  // landed on the screen instead of the shell. The count assertion waits for
+  // the exit rather than racing it.
+  await expect(page.locator('[data-vex-area="shell-screen"]')).toHaveCount(0);
   await expect(page.locator('[data-vex-screen="appShell"]')).toBeVisible();
   await page.evaluate(() => {
     const tour = document.querySelector("[data-vex-setup-tour]");
@@ -534,10 +570,11 @@ test("UX-3 welcome and status pill: the hero, the recents, the card", async ({
   // reachable states are modelled).
   await expect(welcome.getByRole("button", { name: /^Open / })).toHaveCount(0);
   await expect(welcome).toContainText("No projects yet.");
-  // The way back is a real control here, not a sentence about one.
-  await expect(
-    welcome.getByRole("radiogroup", { name: "Runtime mode" }),
-  ).toBeVisible();
+  // The way back is a real control here, not a sentence about one - a plain
+  // button, because the Agent | Studio capsule has exactly one home (the rail
+  // header) and a second radiogroup with the same name doubled the control.
+  await expect(welcome.getByRole("button", { name: "Back to Agent mode" })).toBeVisible();
+  await expect(welcome.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
   await shot(page, `${theme}-01-studio-welcome-empty`);
 
   /* ---- 13 (the band): the pill in the strip, and its card -------------- */
@@ -648,9 +685,9 @@ test("UX-3 host status: a card for every wire cause", async ({
   const cases = panel.locator("[data-vex-host-preview-case]");
   const count = await cases.count();
   // The panel walks the schema's own options, so this is also the check that a
-  // cause added on the wire reached the surface: the ten causes plus loading,
+  // cause added on the wire reached the surface: the nine causes plus loading,
   // read-failed, running, at-capacity, starting and locked.
-  expect(count).toBeGreaterThanOrEqual(16);
+  expect(count).toBeGreaterThanOrEqual(15);
 
   for (let i = 0; i < count; i += 1) {
     const entry = cases.nth(i);
@@ -894,13 +931,18 @@ test("UX-2 rail and explorer: the spine, the pane, the seam and the search", asy
  * is exactly the class of defect only this pass catches.
  *
  * PLATFORM: this runs the Ctrl chords, because the runner is Linux or Windows.
- * The Cmd half of the table has no reachable runner in this repo, and the
- * report names that gap rather than pretending a Linux pass covered macOS.
+ * The Cmd half of the table has no reachable runner in this repo - and it is
+ * now the half that DIFFERS, since four rows follow VS Code's own `mac:`
+ * overrides rather than substituting Cmd for Ctrl. The report names that gap
+ * rather than pretending a Linux pass covered macOS.
  *
  * Only the intents with a wired owner are exercised, which is the same list the
- * watermark advertises (`studioBoundIntents`). An intent whose owner has not
- * published its function yet does nothing BY DESIGN, and asserting that a key
- * does nothing would freeze that gap into a contract.
+ * watermark advertises (`studioBoundIntents`). `Toggle terminal panel` is the
+ * one row that stays unbound - Studio has no panel to fold away - and asserting
+ * that its key does nothing would freeze that gap into a contract.
+ *
+ * `VEX_UX_THEME` picks the theme, as in the UX-1 section: the watermark state
+ * below is a rendered surface and is captured in both.
  */
 test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", async ({
   vexDb,
@@ -917,8 +959,12 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
       "vex-app build` and rerun",
   );
 
+  const theme = process.env.VEX_UX_THEME === "celeris" ? "celeris" : "chronos";
+  await pickTheme(page, theme);
+
   const shell = page.locator('[data-vex-screen="appShell"]');
   const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
+  const centre = page.locator('[data-vex-area="studio-center"]');
   await expect(sidebar).toBeVisible();
 
   /* ---- 40: Ctrl+B toggles the rail, and toggles it back --------------- */
@@ -926,7 +972,7 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
   await page.keyboard.press("Control+b");
   await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "false");
-  await shot(page, "40-keyboard-rail-collapsed");
+  await shot(page, `${theme}-40-keyboard-rail-collapsed`);
   await page.keyboard.press("Control+b");
   await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
 
@@ -935,7 +981,7 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   await page.keyboard.press("Control+Shift+N");
   const creator = page.getByRole("dialog", { name: "New project" });
   await expect(creator).toBeVisible();
-  await shot(page, "41-keyboard-new-project");
+  await shot(page, `${theme}-41-keyboard-new-project`);
 
   /* ---- 42: every binding is suspended while that dialog is open ------- */
 
@@ -944,7 +990,7 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   // no shortcut while something is pending.
   await page.keyboard.press("Control+b");
   await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
-  await shot(page, "42-keyboard-suspended-by-dialog");
+  await shot(page, `${theme}-42-keyboard-suspended-by-dialog`);
 
   await page.keyboard.press("Escape");
   await expect(creator).toHaveCount(0);
@@ -961,10 +1007,1085 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   // back without first closing what they were looking at.
   await page.keyboard.press("Control+Shift+A");
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "agent");
-  await shot(page, "43-keyboard-back-to-agent");
+  await shot(page, `${theme}-43-keyboard-back-to-agent`);
+
+  /* ---- a project, for the chords that need a workspace ---------------- */
+
+  // Back into Studio the way the user came in, then a real project: every
+  // remaining chord's owner is a MOUNTED workspace, and the welcome screen has
+  // none. That is not a limitation of the test - it is the contract the hook's
+  // "bound is not the same as answerable" rule states, and step 44 below proves
+  // the other half of it.
+  await page
+    .getByRole("radiogroup", { name: "Runtime mode" })
+    .getByRole("radio", { name: "Studio" })
+    .click();
+  await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
+
+  const projectName = `vex-ux5-${Date.now().toString(36)}`;
+  await sidebar.getByRole("button", { name: "New project" }).click();
+  const project = page.getByRole("dialog", { name: "New project" });
+  await project.getByLabel("Name").fill(projectName);
+  await project.locator('[data-vex-agent="claude-code"]').click();
+  await project.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("button", { name: /Done|Close/ }).first().click();
+  await sidebar.getByRole("button", { name: new RegExp(projectName) }).first().click();
+
+  const tabs = centre.getByRole("tablist", { name: "Studio terminals and files" });
+  await expect(tabs.getByRole("tab").first()).toBeVisible({ timeout: 60_000 });
+
+  /* ---- 44: the workspace chords, through a real keyboard -------------- */
+
+  // The workspace has to HOLD focus for the tab chords to apply, exactly as the
+  // table's `when` says: they are the workspace's and its two panels', not the
+  // rail's. Clicking the strip is how a user gets there.
+  await tabs.getByRole("tab").first().click();
+
+  await page.keyboard.press("Control+Shift+`");
+  await expect(tabs.getByRole("tab", { name: /Terminal 2/ })).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.keyboard.press("Control+Shift+`");
+  await expect(tabs.getByRole("tab")).toHaveCount(3, { timeout: 60_000 });
+  await shot(page, `${theme}-44-keyboard-three-terminals`);
+
+  // Ctrl+Tab walks the strip and WRAPS: the third terminal is selected, so one
+  // step forward lands on the first.
+  await expect(tabs.getByRole("tab", { name: /Terminal 3/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.keyboard.press("Control+Tab");
+  await expect(tabs.getByRole("tab", { name: /Terminal 1/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.keyboard.press("Control+Shift+Tab");
+  await expect(tabs.getByRole("tab", { name: /Terminal 3/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
+  // Ctrl+Shift+E hands focus to the project tree, which is a `role="tree"` and
+  // the explorer pane's ONE tab stop.
+  await page.keyboard.press("Control+Shift+E");
+  await expect(sidebar.getByRole("tree", { name: "Project files" })).toBeFocused();
+  await shot(page, `${theme}-45-keyboard-explorer-focused`);
+
+  // Ctrl+P opens the rail's one search and puts the caret in it. NEVER a
+  // toggle: a second press must leave the user in the field.
+  await page.keyboard.press("Control+p");
+  const search = sidebar.getByRole("combobox", { name: "Search projects and files" });
+  await expect(search).toBeFocused();
+  await page.keyboard.press("Control+p");
+  await expect(search).toBeFocused();
+  await shot(page, `${theme}-46-keyboard-go-to-file`);
+  await page.keyboard.press("Escape");
+
+  /* ---- 29: every tab closed by Ctrl+W, and the watermark -------------- */
+
+  await tabs.getByRole("tab").first().click();
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    if ((await tabs.getByRole("tab").count()) === 0) break;
+    await page.keyboard.press("Control+w");
+  }
+  await expect(tabs.getByRole("tab")).toHaveCount(0, { timeout: 60_000 });
+
+  // THE WATERMARK NOW CARRIES KEYS, and it carries exactly the ones an owner
+  // answers. A row with an empty key column would mean the rows never reached
+  // the surface; a `Toggle terminal panel` row would mean the watermark is
+  // advertising the one intent nothing is wired to.
+  const watermark = centre.locator("[data-vex-empty-watermark]");
+  await expect(watermark).toBeVisible();
+  const terms = await watermark.locator("dt").allTextContents();
+  const keys = await watermark.locator("dd").allTextContents();
+  expect(terms).toContain("New terminal");
+  expect(terms).toContain("Close tab");
+  expect(terms).not.toContain("Toggle terminal panel");
+  expect(keys.filter((value) => value.trim() === "")).toHaveLength(0);
+  expect(keys).toContain("Ctrl+W");
+  await shot(page, `${theme}-29-empty-workspace`);
 
   testInfo.annotations.push({
     type: "ux5-shots",
+    description: SHOTS_DIR === "" ? `assertions only (${theme})` : `${SHOTS_DIR} (${theme})`,
+  });
+});
+
+/**
+ * TAB-1: PREVIEW TABS, in a real strip.
+ *
+ * WHY THIS IS A BROWSER ASSERTION. The model's rules are proven as a table in
+ * `workspace/__tests__/preview-tabs.test.ts` and the strip's rendering in
+ * `terminal/__tests__/TerminalTabs.preview.test.tsx`. What neither can prove is
+ * the thing this walk is for: that a user CLICKING FILES IN THE TREE ends up
+ * with the tabs the design promises, through the real explorer, the real intent
+ * channel, the real controller and the real strip.
+ *
+ * ## The gesture is applied by the coordinator, so this section detects it
+ *
+ * TAB-1 does not own `explorer/**`. The single-click-previews and
+ * double-click-pins wiring is two lines in `ExplorerTree.tsx` that the
+ * coordinator applies (they are named in the TAB-1 report), and until they land
+ * the tree opens every file PINNED - which is the mode default and a real
+ * contract of its own. So this walk asserts what is true either way, then
+ * branches: with the gesture wired it proves REPLACEMENT and PROMOTION; without
+ * it, it proves the default did not change and says so in an annotation rather
+ * than passing silently on a state nobody checked.
+ */
+test("TAB-1 preview tabs: one preview per workspace, and how a tab is kept", async ({
+  vexDb,
+}: {
+  vexDb: VexDatabaseFixture;
+}, testInfo: TestInfo) => {
+  test.setTimeout(300_000);
+  const page = vexDb.shell;
+  const reached = await enterStudio(page);
+  test.skip(
+    !reached,
+    "this spec reaches the shell through the diagnostic setup tour, which is " +
+      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
+      "vex-app build` and rerun",
+  );
+
+  const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
+  const centre = page.locator('[data-vex-area="studio-center"]');
+  await expect(sidebar).toBeVisible();
+
+  /* ---- a project with files in it ------------------------------------- */
+
+  const projectName = `vex-tab1-${Date.now().toString(36)}`;
+  await sidebar.getByRole("button", { name: "New project" }).click();
+  const creator = page.getByRole("dialog", { name: "New project" });
+  await creator.getByLabel("Name").fill(projectName);
+  await creator.locator('[data-vex-agent="claude-code"]').click();
+  await creator.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("button", { name: /Done|Close/ }).first().click();
+  await sidebar.getByRole("button", { name: new RegExp(projectName) }).first().click();
+
+  const tabs = centre.getByRole("tablist", { name: "Studio terminals and files" });
+  await expect(tabs.getByRole("tab").first()).toBeVisible({ timeout: 60_000 });
+
+  // FILE rows only: a directory row carries `aria-expanded` and a click on one
+  // toggles it instead of opening anything.
+  const fileRows = sidebar.locator('[role="treeitem"]:not([aria-expanded])');
+  await expect(fileRows.first()).toBeVisible({ timeout: 60_000 });
+  const fileCount = await fileRows.count();
+  test.skip(
+    fileCount < 3,
+    `this walk needs three files in the project tree and found ${String(fileCount)}`,
+  );
+
+  const terminalTabs = await tabs.getByRole("tab").count();
+  const fileTabCount = async (): Promise<number> =>
+    (await tabs.getByRole("tab").count()) - terminalTabs;
+
+  /* ---- the first file, and what the second one does to it -------------- */
+
+  await fileRows.nth(0).click();
+  await expect.poll(fileTabCount).toBe(1);
+  await shot(page, "tab1-01-first-file-open");
+
+  // The second file's own tab is what proves the click LANDED, whichever mode
+  // the tree used - a bare count would race the open and read the pre-click
+  // state as a settled one.
+  const secondName = (await fileRows.nth(1).innerText()).trim();
+  await fileRows.nth(1).click();
+  await expect(
+    tabs.getByRole("tab", { name: secondName, exact: false }),
+  ).toBeVisible({ timeout: 60_000 });
+  const wired = (await fileTabCount()) === 1;
+
+  if (!wired) {
+    // The gesture is not applied yet. What IS proven here is the default the
+    // whole change rests on: a tree click still opens a KEPT tab, so adding the
+    // mode changed no existing route.
+    await expect.poll(fileTabCount).toBe(2);
+    await expect(tabs.locator("span.italic")).toHaveCount(0);
+    await shot(page, "tab1-02-pinned-default-gesture-not-wired");
+    testInfo.annotations.push({
+      type: "tab1",
+      description:
+        "the explorer preview gesture is not applied in this build, so this run "
+        + "proved the pinned default only; rerun once ExplorerTree passes "
+        + '"preview" on single click and "pinned" on double click',
+    });
+    return;
+  }
+
+  /* ---- REPLACEMENT: one preview, in the position it replaced ----------- */
+
+  await expect.poll(fileTabCount).toBe(1);
+  // Italic is the preview signal, and the accessible name carries the word.
+  await expect(tabs.locator("span.italic")).toHaveCount(1);
+  await shot(page, "tab1-02-preview-replaced");
+
+  /* ---- PROMOTION: a double click keeps the tab -------------------------- */
+
+  await fileRows.nth(1).dblclick();
+  await expect(tabs.locator("span.italic")).toHaveCount(0);
+  await expect.poll(fileTabCount).toBe(1);
+  await shot(page, "tab1-03-preview-kept");
+
+  /* ---- and now a third file opens BESIDE it ---------------------------- */
+
+  await fileRows.nth(2).click();
+  await expect.poll(fileTabCount).toBe(2);
+  await expect(tabs.locator("span.italic")).toHaveCount(1);
+  await shot(page, "tab1-04-kept-plus-preview");
+
+  testInfo.annotations.push({
+    type: "tab1-shots",
     description: SHOTS_DIR === "" ? "assertions only" : SHOTS_DIR,
   });
 });
+
+/* ============ IDX-1: go to file, over a project-wide name index ============ */
+
+/**
+ * THE ONE THING VITEST CANNOT PROVE about this surface: that a file the
+ * explorer has NEVER LISTED is reachable from the rail's search.
+ *
+ * Every unit test around the index feeds it a path list or a temp tree of its
+ * own. What none of them can establish is the whole chain in one piece - main
+ * walks the real project directory, mints a node token for a file no renderer
+ * has ever seen, the rail merges that answer into its file group, and Enter
+ * opens it through the same intent a tree row uses. So this walk writes a file
+ * into a folder it then deliberately leaves collapsed, and asserts the tree
+ * does not have it before asserting the search does.
+ */
+test("IDX-1 search: a file the explorer never loaded is found and opened", async ({
+  vexDb,
+}: {
+  vexDb: VexDatabaseFixture;
+}, testInfo: TestInfo) => {
+  test.setTimeout(300_000);
+  const page = vexDb.shell;
+  const reached = await enterStudio(page);
+  test.skip(
+    !reached,
+    "this spec reaches the shell through the diagnostic setup tour, which is " +
+      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
+      "vex-app build` and rerun",
+  );
+
+  const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
+  const centre = page.locator('[data-vex-area="studio-center"]');
+  await expect(sidebar).toBeVisible();
+
+  /* ---- a project, and a file buried where nothing will expand ---------- */
+
+  const stamp = Date.now().toString(36);
+  const projectName = `vex-idx1-${stamp}`;
+  await sidebar.getByRole("button", { name: "New project" }).click();
+  const creator = page.getByRole("dialog", { name: "New project" });
+  await creator.getByLabel("Name").fill(projectName);
+  await creator.locator('[data-vex-agent="claude-code"]').click();
+  await creator.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("button", { name: /Done|Close/ }).first().click();
+
+  // The project's own directory, found rather than derived: the slug is main's
+  // to mint, and a spec that recomputed it would be asserting against its own
+  // copy of that rule instead of against the directory the app actually made.
+  const projectsRoot = vexDb.stack.projectsRoot;
+  const slug = fs
+    .readdirSync(projectsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .find((name) => name.includes(stamp));
+  test.skip(
+    slug === undefined,
+    `no project directory for ${projectName} under ${projectsRoot}; the `
+      + "installer writes nothing when it cannot find the bridge binary its "
+      + "configs point at, so this walk needs a built `vex-mcp`",
+  );
+  if (slug === undefined) return;
+
+  // THREE LEVELS DOWN. The explorer lists one directory at a time and only when
+  // a human expands it, so nothing in this run will have listed this folder.
+  const targetName = `idx1-buried-${stamp}.ts`;
+  const buriedDir = path.join(projectsRoot, slug, "deep", "nested", "folder");
+  fs.mkdirSync(buriedDir, { recursive: true });
+  fs.writeFileSync(path.join(buriedDir, targetName), "export const buried = 1;\n");
+
+  await sidebar.getByRole("button", { name: new RegExp(projectName) }).first().click();
+
+  const explorerPane = sidebar.locator('[data-vex-rail-pane="explorer"]');
+  await expect(explorerPane).toBeVisible();
+  const tabs = centre.getByRole("tablist", { name: "Studio terminals and files" });
+  await expect(tabs.getByRole("tab").first()).toBeVisible({ timeout: 60_000 });
+  await expect(sidebar.locator('[role="treeitem"]').first()).toBeVisible({
+    timeout: 60_000,
+  });
+
+  // THE PRECONDITION, asserted rather than assumed: the tree does not have this
+  // file. Without this line the search assertion below would still pass if the
+  // explorer had somehow loaded the whole project, and would prove nothing
+  // about the index at all.
+  await expect(sidebar.getByRole("treeitem", { name: new RegExp(targetName) })).toHaveCount(
+    0,
+  );
+  await shot(page, "idx1-01-tree-without-the-file");
+
+  /* ---- the search finds it anyway -------------------------------------- */
+
+  await sidebar.getByRole("button", { name: "Search projects and files" }).click();
+  const field = sidebar.getByRole("combobox", {
+    name: "Search projects and files",
+  });
+  await field.fill(`idx1-buried-${stamp}`);
+
+  // POLLED with a real timeout, and NOT by typing again: the first query of a
+  // session answers "building" while main walks the project, and the rail
+  // re-issues the same query on a bounded schedule until the walk settles
+  // (`use-rail-file-index.ts`). The row therefore arrives on a later ANSWER,
+  // with the needle untouched - which is the promise the "Results will fill
+  // in." line makes. That is the surface's contract, not a flake.
+  const option = sidebar.getByRole("option", { name: new RegExp(targetName) });
+  await expect(option).toBeVisible({ timeout: 60_000 });
+  // The row shows WHERE it is, which is what makes two files of one name
+  // distinguishable.
+  await expect(option).toContainText("deep/nested/folder");
+  await shot(page, "idx1-02-search-found-unloaded-file");
+
+  /* ---- and Enter opens it, through the ordinary open intent ------------- */
+
+  const before = await tabs.getByRole("tab").count();
+  await page.keyboard.press("Enter");
+  await expect(
+    tabs.getByRole("tab", { name: new RegExp(targetName) }),
+  ).toBeVisible({ timeout: 60_000 });
+  expect(await tabs.getByRole("tab").count()).toBe(before + 1);
+  // The search put itself away, as it does for a project hit.
+  await expect(explorerPane).toBeVisible();
+  await shot(page, "idx1-03-file-opened-from-search");
+
+  testInfo.annotations.push({
+    type: "idx1-shots",
+    description: SHOTS_DIR === "" ? "assertions only" : SHOTS_DIR,
+  });
+});
+
+/**
+ * EXP-1 explorer actions: the create, the rename, the managed-artifact refusal
+ * and the delete, end to end through the real IPC surface and the real
+ * filesystem.
+ *
+ * WHAT THIS PROVES THAT THE UNIT SUITES CANNOT. Every layer below has its own
+ * test - the mutations against a real temporary directory, the boundary with a
+ * faked domain, the model and the session with a scripted bridge, the name box
+ * and the confirmation as components - and all of them are green while the
+ * wiring between them is wrong. This walk is the only place where a keystroke
+ * in a renderer becomes bytes on disk and back, and it VERIFIES THE WORLD at
+ * each step: it reads the project directory with `fs` rather than trusting the
+ * row the tree drew.
+ */
+test("EXP-1 explorer actions: create, rename and delete a file from the tree", async ({
+  vexDb,
+}: {
+  vexDb: VexDatabaseFixture;
+}, testInfo: TestInfo) => {
+  test.setTimeout(300_000);
+  const page = vexDb.shell;
+  const reached = await enterStudio(page);
+  test.skip(
+    !reached,
+    "this spec reaches the shell through the diagnostic setup tour, which is " +
+      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
+      "vex-app build` and rerun",
+  );
+
+  const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
+  await expect(sidebar).toBeVisible();
+
+  /* ---- a project to act in --------------------------------------------- */
+
+  const stamp = Date.now().toString(36);
+  const projectName = `vex-exp1-${stamp}`;
+  await sidebar.getByRole("button", { name: "New project" }).click();
+  const creator = page.getByRole("dialog", { name: "New project" });
+  await creator.getByLabel("Name").fill(projectName);
+  await creator.locator('[data-vex-agent="claude-code"]').click();
+  await creator.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("button", { name: /Done|Close/ }).first().click();
+
+  // The project's directory is FOUND, not derived: the slug is main's to mint.
+  const projectsRoot = vexDb.stack.projectsRoot;
+  const slug = fs
+    .readdirSync(projectsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .find((name) => name.includes(stamp));
+  test.skip(
+    slug === undefined,
+    `no project directory for ${projectName} under ${projectsRoot}`,
+  );
+  if (slug === undefined) return;
+  const projectDir = path.join(projectsRoot, slug);
+
+  await sidebar.getByRole("button", { name: new RegExp(projectName) }).first().click();
+
+  const explorerPane = sidebar.locator('[data-vex-rail-pane="explorer"]');
+  await expect(explorerPane).toBeVisible();
+  const tree = sidebar.getByRole("tree", { name: "Project files" });
+  await expect(tree).toBeVisible({ timeout: 60_000 });
+  await expect(sidebar.locator('[role="treeitem"]').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await shot(page, "exp1-00-explorer-ready");
+
+  /* ---- CREATE: the row context menu opens a name box in the tree -------- */
+
+  // THE CONTEXT MENU, not the header buttons. The sidebar now passes
+  // `onCreateFile`/`onCreateFolder` to `ExplorerHeader`, so both routes exist;
+  // the menu is the one this walk takes because it is the one a right click AND
+  // the Menu key both reach, so it covers the surface a pointer and a keyboard
+  // share.
+  //
+  // The row it is opened FROM is deliberately `CLAUDE.md`, a FILE: a directory
+  // takes the new entry, a file gives it to its parent, so this creates at the
+  // project ROOT. It also has to be a file here, because a fresh project's root
+  // contains nothing but Vex's own managed artifacts - `.vex/`, `.mcp.json`,
+  // `AGENTS.md`, `CLAUDE.md` - and creating INSIDE `.vex/` is refused by name.
+  const created = `exp1-notes-${stamp}.md`;
+  await tree
+    .getByRole("treeitem", { name: "CLAUDE.md" })
+    .first()
+    .click({ button: "right" });
+  // The menu is portaled to the document, not nested in the tree: a
+  // `role="tree"` may contain only tree items.
+  await page.getByRole("menuitem", { name: "New file" }).click();
+
+  // The box is a ROW, not a dialog: it is inside the tree, on the tree's own
+  // indent grid, beside the names it must not collide with.
+  const nameBox = tree.getByRole("textbox");
+  await expect(nameBox).toBeFocused();
+  await shot(page, "exp1-01-name-box-open");
+
+  // LIVE VALIDATION, before anything is sent: a separator is refused in the row
+  // rather than creating intermediate directories.
+  await nameBox.fill("a/b.txt");
+  await expect(tree.getByRole("alert")).toContainText("slash");
+  await shot(page, "exp1-02-name-refused-inline");
+
+  await nameBox.fill(created);
+  await expect(tree.getByRole("alert")).toHaveCount(0);
+  await page.keyboard.press("Enter");
+
+  // THE WORLD, not the row: the file is on disk, in the project's own folder.
+  await expect
+    .poll(() => fs.existsSync(path.join(projectDir, created)), { timeout: 60_000 })
+    .toBe(true);
+  const createdRow = tree.getByRole("treeitem", { name: created });
+  await expect(createdRow).toBeVisible({ timeout: 60_000 });
+  await shot(page, "exp1-03-file-created");
+
+  /* ---- RENAME: F2 on the focused row, committed with Enter -------------- */
+
+  // RENAMED THROUGH THE MENU, not by clicking the row first: a click on a file
+  // row OPENS it, and a tab for the pre-rename name would confound the open
+  // assertion below with a tab this step created.
+  const renamed = `exp1-renamed-${stamp}.md`;
+  await createdRow.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+
+  const renameBox = tree.getByRole("textbox");
+  await expect(renameBox).toBeFocused();
+  // Seeded with the current name, so a rename is an EDIT rather than a retype.
+  await expect(renameBox).toHaveValue(created);
+  await shot(page, "exp1-04-rename-box-seeded");
+
+  await renameBox.fill(renamed);
+  await page.keyboard.press("Enter");
+
+  await expect
+    .poll(() => fs.existsSync(path.join(projectDir, renamed)), { timeout: 60_000 })
+    .toBe(true);
+  // The old name is GONE from the disk, which is what makes this a rename and
+  // not a copy.
+  expect(fs.existsSync(path.join(projectDir, created))).toBe(false);
+  const renamedRow = tree.getByRole("treeitem", { name: renamed });
+  await expect(renamedRow).toBeVisible({ timeout: 60_000 });
+  await shot(page, "exp1-05-file-renamed");
+
+  /* ---- OPEN: deliberately NOT asserted here ---------------------------- */
+
+  // Opening is not this stage's surface. A click on a file row publishes a
+  // file-open INTENT (`workspace/file-open-intent.ts`) and the workspace
+  // controller decides what a tab is - preview or pinned, deduped on path,
+  // repaired after a close. That owner is being changed in this same tree by
+  // the preview-tabs work, and its own spec ("TAB-1 preview tabs") is where the
+  // tab contract belongs. Asserting it from here would make this walk red for a
+  // neighbour's in-flight change and would duplicate a contract that already
+  // has an owner and a test.
+  //
+  // The bytes are still written, because the delete below has to remove a file
+  // with contents rather than an empty one.
+  fs.writeFileSync(path.join(projectDir, renamed), "# exp1\n");
+
+  /* ---- VEX-MANAGED: the installer's own file refuses to be renamed ------ */
+
+  // The refusal that protects durable provenance. `AGENTS.md` is written by the
+  // installer, so a tree that let the user rename it would leave a provenance
+  // row pointing at a path that no longer exists.
+  const agents = tree.getByRole("treeitem", { name: "AGENTS.md" });
+  if ((await agents.count()) > 0) {
+    await agents.first().click();
+    await page.keyboard.press("F2");
+    await tree.getByRole("textbox").fill(`not-agents-${stamp}.md`);
+    await page.keyboard.press("Enter");
+    // The reason lands ON THE ROW, beside the name that caused it, and the file
+    // is still exactly where the installer put it.
+    await expect(tree.getByRole("alert")).toContainText("Repair", { timeout: 60_000 });
+    expect(fs.existsSync(path.join(projectDir, "AGENTS.md"))).toBe(true);
+    await shot(page, "exp1-07-managed-refusal");
+    await page.keyboard.press("Escape");
+  }
+
+  /* ---- DELETE: through the confirmation, and only through it ------------ */
+
+  await renamedRow.click();
+  await page.keyboard.press("Delete");
+
+  const confirm = page.getByRole("dialog", { name: "Delete from this project" });
+  await expect(confirm).toBeVisible();
+  // THE CONSENT GRAMMAR the user actually reads: what, where it goes, and
+  // whether it can be undone.
+  const consent = confirm.locator('[data-vex-consent="delete-file"]');
+  await expect(consent).toContainText(renamed);
+  await expect(consent).toContainText("trash");
+  // The safer choice has focus (rule 08), so Enter cannot delete by reflex.
+  await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await shot(page, "exp1-08-delete-confirmation");
+
+  // CANCEL FIRST: the file must survive a confirmation the user backed out of.
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirm).toBeHidden();
+  expect(fs.existsSync(path.join(projectDir, renamed))).toBe(true);
+
+  await renamedRow.click();
+  await page.keyboard.press("Delete");
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole("button", { name: /Move to trash|Delete permanently/ }).click();
+
+  // THE WORLD AGAIN: the entry is out of the project directory.
+  await expect
+    .poll(() => fs.existsSync(path.join(projectDir, renamed)), { timeout: 60_000 })
+    .toBe(false);
+  await expect(tree.getByRole("treeitem", { name: renamed })).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  await shot(page, "exp1-09-file-deleted");
+
+  testInfo.annotations.push({
+    type: "exp1-shots",
+    description: SHOTS_DIR === "" ? "assertions only" : SHOTS_DIR,
+  });
+});
+
+/**
+ * HL-1 viewer: the per-line highlight budget, REPORTED rather than hidden.
+ *
+ * vscode-textmate stops colouring a line once it has spent
+ * `LINE_TIME_BUDGET_MS` on it and hands back what it has, so the line keeps
+ * every byte and loses its colours after that point. Before the viewer said so,
+ * a row that was half coloured and half grey looked like a highlighter that had
+ * simply got it wrong. Every unit test around that sentence feeds the copy
+ * function a number; what NONE of them can establish is that a real file, read
+ * through the real IPC surface and tokenized in the real worker at the REAL
+ * budget, reaches the chip at all.
+ *
+ * ## The fixture is a MEASUREMENT, not a guess
+ *
+ * Two bounds have to hold at once, and they pull in opposite directions:
+ *
+ *  - `VIEWER_MAX_TOKENIZE_LINE_LENGTH` is 20,000. A line at or above it is
+ *    emitted PLAIN and counted as a long line, so a megabyte-long line reaches
+ *    the OTHER sentence and never this one;
+ *  - `FILE_READ_MAX_BYTES` is 2 MiB, above which the read is refused outright.
+ *
+ * So the line must cost more than half a second in under 20,000 characters,
+ * which no cheap construction does: the escape-heavy line the tokenizer suite
+ * uses costs about 0.5 ms per KB (18,801 characters measured at 4 to 29 ms),
+ * a hundred times too little. What DOES is the TypeScript grammar's arrow
+ * function lookahead over unclosed parentheses, whose cost is quadratic in
+ * their number. Measured on this machine through the real tokenizer at
+ * `lineTimeBudgetMs: 0` (three warm runs each):
+ *
+ *   3,011 chars -> 680, 475, 524 ms
+ *   6,011 chars -> 2222, 1911, 1882 ms
+ *   9,011 chars -> 4346, 4599, 4329 ms
+ *
+ * 9,000 parentheses is therefore about 8.7x the 500 ms budget with a quadratic
+ * margin under it, well inside both bounds, and at the real budget it is
+ * reported as exactly one abandoned line (`budgetExceededLines: [2]`) while
+ * costing the worker the budget itself - 504, 501, 501 ms - rather than the
+ * four seconds it would take to finish. A slower CI box only widens the margin.
+ *
+ * Generated here rather than committed, for the same reason IDX-1 writes its
+ * own buried file: a fixture that has to be measured is a fixture whose
+ * construction belongs beside the numbers that justify it.
+ */
+test("HL-1 viewer: a line that outruns the highlight budget is reported, not hidden", async ({
+  vexDb,
+}: {
+  vexDb: VexDatabaseFixture;
+}, testInfo: TestInfo) => {
+  test.setTimeout(300_000);
+  const page = vexDb.shell;
+  const reached = await enterStudio(page);
+  test.skip(
+    !reached,
+    "this spec reaches the shell through the diagnostic setup tour, which is " +
+      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
+      "vex-app build` and rerun",
+  );
+
+  const theme = process.env.VEX_UX_THEME === "celeris" ? "celeris" : "chronos";
+  await pickTheme(page, theme);
+
+  const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
+  const centre = page.locator('[data-vex-area="studio-center"]');
+  await expect(sidebar).toBeVisible();
+
+  /* ---- a project, and one file the highlighter cannot finish ----------- */
+
+  const stamp = Date.now().toString(36);
+  const projectName = `vex-hl1-${stamp}`;
+  await sidebar.getByRole("button", { name: "New project" }).click();
+  const creator = page.getByRole("dialog", { name: "New project" });
+  await creator.getByLabel("Name").fill(projectName);
+  await creator.locator('[data-vex-agent="claude-code"]').click();
+  await creator.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("button", { name: /Done|Close/ }).first().click();
+
+  // The project's directory is FOUND, not derived: the slug is main's to mint.
+  const projectsRoot = vexDb.stack.projectsRoot;
+  const slug = fs
+    .readdirSync(projectsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .find((name) => name.includes(stamp));
+  test.skip(
+    slug === undefined,
+    `no project directory for ${projectName} under ${projectsRoot}; the `
+      + "installer writes nothing when it cannot find the bridge binary its "
+      + "configs point at, so this walk needs a built `vex-mcp`",
+  );
+  if (slug === undefined) return;
+
+  // Line 2 is the expensive one, and the lines around it are there so the chip
+  // has a line NUMBER to name that is not the whole file.
+  const fixtureName = "hl1-long-line.ts";
+  const expensiveLine = `const deep = ${"(".repeat(9_000)}1`;
+  fs.writeFileSync(
+    path.join(projectsRoot, slug, fixtureName),
+    ["// HL-1: the line below outruns the per-line highlight budget.", expensiveLine, ""].join(
+      "\n",
+    ),
+  );
+
+  await sidebar.getByRole("button", { name: new RegExp(projectName) }).first().click();
+
+  const explorerPane = sidebar.locator('[data-vex-rail-pane="explorer"]');
+  await expect(explorerPane).toBeVisible();
+  const tabs = centre.getByRole("tablist", { name: "Studio terminals and files" });
+  await expect(tabs.getByRole("tab").first()).toBeVisible({ timeout: 60_000 });
+
+  /* ---- open it, and read what the viewer says about it ----------------- */
+
+  await sidebar
+    .getByRole("treeitem", { name: fixtureName })
+    .first()
+    .click();
+  await expect(tabs.getByRole("tab", { name: new RegExp(fixtureName) })).toBeVisible({
+    timeout: 60_000,
+  });
+
+  // WHICH lines, and how many. The worker spends the budget on the line before
+  // it can report it, so this waits rather than assuming the first paint says
+  // anything.
+  const chip = page.getByTestId("file-viewer-chip");
+  await expect(chip).toContainText("ran out of highlighting time", { timeout: 60_000 });
+  await expect(chip).toContainText("line 2");
+  // And the quieter half: what the budget IS, and that nothing was cut.
+  await expect(page.getByTestId("file-viewer-secondary-note")).toContainText(
+    "half a second",
+  );
+  await shot(page, `${theme}-24-viewer-partly-highlighted`);
+
+  testInfo.annotations.push({
+    type: "hl1-shots",
+    description: SHOTS_DIR === "" ? "assertions only" : SHOTS_DIR,
+  });
+});
+
+/* ====== RESTORE-1/RESTORE-2: the last location comes back, and focus lands ==== */
+
+/**
+ * THE RELAUNCH SECTION, and the only one in this file that quits the app.
+ *
+ * ## Why nothing short of a second process proves this
+ *
+ * Everything here is a claim about DISK. `runtimeMode` and `activeProjectId`
+ * are persisted (uiStore v17), the open FILE TABS are persisted (v18), and the
+ * terminal layout has always been. A single-launch spec can prove that each
+ * writer wrote - and every one of those writes was already green while the
+ * live test measured the product doing the opposite: a project left open with
+ * four terminals and `.mcp.json` came back to the Agent welcome, and reopening
+ * it restored the terminals without the file. Only a second boot reading the
+ * same profile can tell a persisted value from a value that was merely written.
+ *
+ * VS Code's smoke suite is built on exactly this instrument
+ * (`test/automation/src/application.ts:85`, `restart`: stop, start again on the
+ * same user data dir) and its `data-loss.test.ts` is where "verifies opened
+ * editors are restored" lives. `relaunchApp` is that instrument for this app.
+ *
+ * ## The three relaunches, and why they are one test
+ *
+ * Each `vexDb` fixture starts its own Postgres container and migrates a fresh
+ * schema, so three tests would be three containers and three migrations to
+ * prove three facts about one profile. They run in one test, in the order the
+ * profile allows: everything comes back, then a file deleted between sessions
+ * is counted, then an invented project id fails closed. The numbering in the
+ * comments follows the brief's legs, not the wall clock.
+ *
+ * ## The second boot's door
+ *
+ * The app boots to its own setup machine, and this spec's sanctioned way past
+ * it is the diagnostic tour that `VITE_VEX_SETUP_TOUR=1` bakes in - the same
+ * door `enterStudio` uses on the first boot. What must NOT be repeated is the
+ * runtime-mode click: the whole claim is that Studio is where the user left it,
+ * so a section that clicked "Studio" again after the relaunch would prove
+ * nothing at all.
+ */
+test("RESTORE-1 restore: the last location comes back, and focus lands", async ({
+  vexDb,
+}: {
+  vexDb: VexDatabaseFixture;
+}, testInfo: TestInfo) => {
+  // Three boots, three shutdowns and a project create. The fixture's own
+  // container work is budgeted separately.
+  test.setTimeout(900_000);
+  let page = vexDb.shell;
+  const reached = await enterStudio(page);
+  test.skip(
+    !reached,
+    "this spec reaches the shell through the diagnostic setup tour, which is " +
+      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
+      "vex-app build` and rerun",
+  );
+
+  /**
+   * The second boot's door: the tour, and NOTHING ELSE.
+   *
+   * No runtime-mode click and no project click, so every assertion after it is
+   * about what the app restored rather than about what the test just did.
+   */
+  const reEnterShell = async (relaunchedPage: Page): Promise<void> => {
+    await relaunchedPage.waitForLoadState("domcontentloaded");
+    await relaunchedPage.setViewportSize({ width: 1440, height: 900 });
+    await expect(
+      relaunchedPage.locator('[data-vex-screen="systemCheck"]'),
+    ).toBeVisible({ timeout: 120_000 });
+    // THE DOOR MUST NOT KEEP THE FOCUS, and the moment it is handed back
+    // matters more than the fact.
+    //
+    // The real second boot ends at the unlock screen, whose password field is
+    // REMOVED when the vault opens, so the app resumes with NOBODY holding
+    // focus - the one state `studioFocusPermission` (VS Code's
+    // `EditorPart.shouldRestoreFocus`) allows a surface to claim. The
+    // diagnostic tour is a button that stays on screen and keeps focus, and the
+    // workspace's landing is ARMED ONCE and gives up the first time it finds
+    // focus owned by somebody else. Blurring after the click is therefore too
+    // late: measured, it left `document.activeElement` on the body with the
+    // arming already spent, which is the product behaving correctly and the
+    // test measuring its own door.
+    //
+    // So the button hands the focus back IN ITS OWN `focus` HANDLER, before the
+    // click that follows it has changed a single React state - which reproduces
+    // the unlock's hand-off exactly. It opens nothing and selects nothing.
+    const tour = relaunchedPage.locator("[data-vex-setup-tour]");
+    await expect(tour).toBeVisible();
+    const door = tour.getByRole("button", { name: "appShell", exact: true });
+    await door.evaluate((element: HTMLElement) => {
+      element.addEventListener(
+        "focus",
+        () => {
+          element.blur();
+        },
+        { once: true },
+      );
+    });
+    await door.click();
+    await expect(
+      relaunchedPage.locator('[data-vex-screen="appShell"]'),
+    ).toBeVisible();
+  };
+
+  const activeElementLabel = (target: Page): Promise<string> =>
+    target.evaluate(() => {
+      const active = document.activeElement;
+      if (active === null) return "none";
+      if (active === document.body) return "BODY";
+      const label =
+        active.getAttribute("aria-label") ?? (active.textContent ?? "").trim();
+      return `${active.tagName.toLowerCase()}:${label}`;
+    });
+
+  /* ---- 1: a project, its first terminal, and a file tab ---------------- */
+
+  const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
+  const centre = page.locator('[data-vex-area="studio-center"]');
+  await expect(sidebar).toBeVisible();
+
+  const projectName = `vex-restore-${Date.now().toString(36)}`;
+  await sidebar.getByRole("button", { name: "New project" }).click();
+  const creator = page.getByRole("dialog", { name: "New project" });
+  await creator.getByLabel("Name").fill(projectName);
+  await creator.locator('[data-vex-agent="claude-code"]').click();
+  await creator.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("button", { name: /Done|Close/ }).first().click();
+  await sidebar.getByRole("button", { name: new RegExp(projectName) }).first().click();
+
+  const tabs = centre.getByRole("tablist", { name: "Studio terminals and files" });
+  await expect(tabs.getByRole("tab").first()).toBeVisible({ timeout: 120_000 });
+  // RUNNING, not merely present: a tab appears the moment the model gains it,
+  // and a restore comparison against a shell that never started proves nothing.
+  await expect(tabs.getByRole("tab", { name: /Running/ }).first()).toBeVisible({
+    timeout: 120_000,
+  });
+  const terminalTabCount = await tabs.getByRole("tab").count();
+
+  // THE PROJECT ID, taken from the workspace the centre mounted. Every later
+  // assertion about "this project's workspace" and the negative leg's invented
+  // id are about this value.
+  const workspace = centre.locator("[data-vex-studio-workspace]").first();
+  const projectId = await workspace.getAttribute("data-vex-studio-workspace");
+  expect(projectId).not.toBeNull();
+
+  /* ---- 2: focus landed IN THE SHELL, not on the body ------------------- */
+
+  // The measured defect RESTORE-1 closed: opening a project left
+  // `document.activeElement` on `document.body`, so a keyboard user tabbed from
+  // the top of the window to reach the terminal that had just been opened for
+  // them. Asserted BEFORE the file is opened, because clicking a tree row is
+  // itself a focus move and would answer a different question.
+  await expect
+    .poll(() => activeElementLabel(page), { timeout: 60_000 })
+    .toBe("textarea:Terminal input");
+  await shot(page, "restore2-01-project-open-focus-in-terminal");
+
+  /* ---- 1b: a file tab, opened from the explorer ------------------------ */
+
+  const fileRows = sidebar.locator('[role="treeitem"]:not([aria-expanded])');
+  await expect(fileRows.first()).toBeVisible({ timeout: 120_000 });
+  const openedFileName = (await fileRows.first().innerText()).trim();
+  await fileRows.first().click();
+  const fileTab = tabs.getByRole("tab", { name: new RegExp(escapeForRegExp(openedFileName)) });
+  await expect(fileTab).toBeVisible({ timeout: 60_000 });
+  await shot(page, "restore2-02-file-tab-open");
+
+  /* ---- 3: out to Agent mode and back, by keyboard and by the capsule --- */
+
+  const shell = page.locator('[data-vex-screen="appShell"]');
+  await page.keyboard.press("Control+Shift+A");
+  await expect(shell).toHaveAttribute("data-vex-runtime-mode", "agent");
+  // AND FOCUS WENT WITH IT. A mode switch that left focus on the body is the
+  // same defect as the open, one surface along.
+  await expect
+    .poll(() => activeElementLabel(page), { timeout: 30_000 })
+    .toBe("textarea:Session draft");
+  await shot(page, "restore2-03-agent-mode-focus-in-draft");
+
+  await page
+    .getByRole("radiogroup", { name: "Runtime mode" })
+    .getByRole("radio", { name: "Studio" })
+    .click();
+  await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
+  await expect(fileTab).toBeVisible({ timeout: 60_000 });
+
+  /* ---- 4: the relaunch, and what comes back with no further gesture ---- */
+
+  let relaunched = await relaunchApp(vexDb.app, vexDb.stack.configDir, testInfo, {
+    args: [APP_DIR],
+    env: vexDb.stack.env,
+  });
+  try {
+    page = relaunched.shell;
+    await reEnterShell(page);
+
+    const restoredShell = page.locator('[data-vex-screen="appShell"]');
+    // THE MODE came back, with no click on the runtime toggle.
+    await expect(restoredShell).toHaveAttribute("data-vex-runtime-mode", "studio");
+    const restoredCentre = page.locator('[data-vex-area="studio-center"]');
+    await expect(restoredCentre).toBeVisible();
+    // THE PROJECT came back: its workspace is mounted AND shown. `hidden` is
+    // the state a kept-alive but unselected project is in, so "mounted" alone
+    // would pass on a workspace nobody can see.
+    const restoredWorkspace = restoredCentre.locator(
+      `[data-vex-studio-workspace="${projectId ?? ""}"]`,
+    );
+    await expect(restoredWorkspace).toBeVisible({ timeout: 180_000 });
+    await expect(restoredWorkspace).not.toHaveAttribute("hidden", /.*/);
+    // And the welcome is NOT what is on screen. Asked by the welcome's own
+    // public marker, the same one its focus seam uses: a heading name would be
+    // a second, weaker way to name the same surface.
+    await expect(
+      page.locator('[data-vex-area="studio-welcome"]'),
+    ).toHaveCount(0);
+
+    const restoredTabs = restoredCentre.getByRole("tablist", {
+      name: "Studio terminals and files",
+    });
+    // THE FILE TAB IS BACK, by its own title. This is the defect the live test
+    // measured and the whole reason file tabs got a home of their own.
+    await expect(
+      restoredTabs.getByRole("tab", { name: new RegExp(escapeForRegExp(openedFileName)) }),
+    ).toBeVisible({ timeout: 180_000 });
+    // The terminals came back too, in the same number, so the file tab did not
+    // arrive at their expense.
+    await expect
+      .poll(async () => restoredTabs.getByRole("tab", { name: /Terminal/ }).count(), {
+        timeout: 180_000,
+      })
+      .toBe(terminalTabCount);
+    // AND FOCUS LANDED, with no gesture at all since the tour.
+    await expect
+      .poll(() => activeElementLabel(page), { timeout: 60_000 })
+      .toBe("textarea:Terminal input");
+    await shot(page, "restore2-04-relaunched-everything-back");
+
+    /* ---- 6: a file deleted BETWEEN the sessions is dropped and counted -- */
+
+    // Deleted from disk, with the app running, exactly as a user deleting it in
+    // another program would: the persisted path still names it and main's own
+    // walk is what refuses to confirm it.
+    const projectDir = path.join(
+      vexDb.stack.projectsRoot,
+      fs.readdirSync(vexDb.stack.projectsRoot)[0] ?? "",
+    );
+    const deletedFile = path.join(projectDir, openedFileName);
+    expect(fs.existsSync(deletedFile)).toBe(true);
+
+    relaunched = await relaunchApp(relaunched.app, vexDb.stack.configDir, testInfo, {
+      args: [APP_DIR],
+      env: vexDb.stack.env,
+    });
+    // Between the two boots, which is when a file goes missing in practice.
+    fs.rmSync(deletedFile, { force: true });
+    page = relaunched.shell;
+    await reEnterShell(page);
+
+    const afterDeleteCentre = page.locator('[data-vex-area="studio-center"]');
+    await expect(
+      afterDeleteCentre.getByText(/1 file tab could not be restored/),
+    ).toBeVisible({ timeout: 180_000 });
+    // The tab itself is NOT there: a tab pointing at a token main would refuse
+    // is worse than no tab.
+    await expect(
+      afterDeleteCentre
+        .getByRole("tablist", { name: "Studio terminals and files" })
+        .getByRole("tab", { name: new RegExp(escapeForRegExp(openedFileName)) }),
+    ).toHaveCount(0);
+    await shot(page, "restore2-05-dropped-file-tab-counted");
+
+    /* ---- 5: THE NEGATIVE - an invented project id opens nothing --------- */
+
+    const invented = "00000000-0000-4000-8000-000000000000";
+    /**
+     * A HAND-EDITED `vex-ui`, and then FROZEN.
+     *
+     * Two facts force this shape. `vex-ui` lives in the window's own
+     * localStorage, which is a leveldb inside the Chromium profile and is not
+     * writable from Node, so the edit is made through the page - the same
+     * untrusted bytes a user with devtools would write, in the same place. And
+     * the app WRITES THAT KEY ON THE WAY OUT: the visibility flush persists the
+     * workspace's file strip, and zustand's persist rewrites the whole payload
+     * from memory when it does, which silently restored the real project id.
+     * Measured, not theorised - it is why the first run of this leg found the
+     * real workspace after the relaunch.
+     *
+     * So `setItem` is stubbed out in the same synchronous step as the edit.
+     * Nothing this session does afterwards can reach the key, which leaves on
+     * disk exactly the bytes a user would have left there, and the next boot
+     * reads them.
+     */
+    await page.evaluate((id: string) => {
+      const raw = window.localStorage.getItem("vex-ui");
+      if (raw !== null) {
+        const parsed = JSON.parse(raw) as { state?: Record<string, unknown> };
+        if (parsed.state !== undefined) {
+          parsed.state["activeProjectId"] = id;
+          window.localStorage.setItem("vex-ui", JSON.stringify(parsed));
+        }
+      }
+      window.localStorage.setItem = (): void => undefined;
+    }, invented);
+
+    relaunched = await relaunchApp(relaunched.app, vexDb.stack.configDir, testInfo, {
+      args: [APP_DIR],
+      env: vexDb.stack.env,
+    });
+    page = relaunched.shell;
+    await reEnterShell(page);
+
+    const negativeShell = page.locator('[data-vex-screen="appShell"]');
+    // STUDIO IS STILL THE SHELL: the mode survived, which is the half of the
+    // last location that was not invalidated.
+    await expect(negativeShell).toHaveAttribute("data-vex-runtime-mode", "studio");
+    // And the selection FAILED CLOSED: the welcome, with the real project in
+    // its recents, and no workspace mounted for the id nobody minted.
+    await expect(
+      page.locator('[data-vex-area="studio-welcome"]'),
+    ).toBeVisible({ timeout: 180_000 });
+    await expect(
+      page.locator(`[data-vex-studio-workspace="${invented}"]`),
+    ).toHaveCount(0);
+    // THE REAL PROJECT IS IN THE WELCOME'S OWN RECENTS, not merely somewhere on
+    // screen: the rail lists it too, and a page-wide text match would pass on
+    // that instead.
+    await expect(
+      page
+        .locator('[data-vex-area="studio-welcome"]')
+        .getByText(new RegExp(escapeForRegExp(projectName)))
+        .first(),
+    ).toBeVisible({ timeout: 60_000 });
+    // FOCUS LANDS ON THE WELCOME'S OWN FIRST ACTION, not on the body.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () =>
+              document.activeElement?.getAttribute(
+                "data-vex-studio-welcome-action",
+              ) ?? "none",
+          ),
+        { timeout: 60_000 },
+      )
+      .toBe("primary");
+    await shot(page, "restore2-06-invented-project-fails-closed");
+  } finally {
+    // THE RELAUNCHED APP IS THIS TEST'S, not the fixture's: the fixture closes
+    // the app it launched and has never heard of this one. `finally`, so a
+    // failed assertion above does not strand an Electron behind the worker.
+    await relaunched.app.close().catch(() => undefined);
+  }
+
+  testInfo.annotations.push({
+    type: "restore-shots",
+    description: SHOTS_DIR === "" ? "assertions only" : SHOTS_DIR,
+  });
+});
+
+/**
+ * A file or project name inside a `RegExp`, with its metacharacters neutered.
+ *
+ * The names here come from the project template and from a generated project
+ * name (`.mcp.json` among them), and an unescaped `.` in a tab-name pattern
+ * matches any character - which is how a walk starts passing against the wrong
+ * tab.
+ */
+function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

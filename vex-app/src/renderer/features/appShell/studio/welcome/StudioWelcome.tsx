@@ -144,7 +144,15 @@ export function StudioWelcome({
         {onCreateProject !== undefined || firstProject !== null ? (
           <div className="flex flex-wrap items-center justify-center gap-3">
             {onCreateProject !== undefined ? (
-              <Button variant="accent" onClick={onCreateProject}>
+              // THE PRIMARY ACTION, marked so the centre's focus seam can find
+              // it by name rather than by "the first button on the screen" -
+              // the bridge diagnostic and the way back to Agent are buttons
+              // too, and the Start row is the last of the three to render.
+              <Button
+                variant="accent"
+                data-vex-studio-welcome-action="primary"
+                onClick={onCreateProject}
+              >
                 <IconPlus size={15} />
                 {STUDIO_WELCOME_CREATE_LABEL}
               </Button>
@@ -152,6 +160,11 @@ export function StudioWelcome({
             {firstProject !== null ? (
               <Button
                 variant="outline"
+                // The primary action when there is no creator handler: the
+                // marker names the row's FIRST control, whichever it is.
+                data-vex-studio-welcome-action={
+                  onCreateProject === undefined ? "primary" : undefined
+                }
                 onClick={() => onSelectProject(firstProject.id)}
               >
                 <IconFolderOpen size={15} />

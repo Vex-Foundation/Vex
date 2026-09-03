@@ -23,6 +23,7 @@
 import {
   STUDIO_FILE_TABS_MAX,
   WORKSPACE_TERMINAL_GROUPS_MAX,
+  type FileOpenMode,
   type WorkspaceCleanupPlan,
   type WorkspaceFileTab,
   type WorkspaceMutation,
@@ -35,6 +36,7 @@ import type {
   TerminalWorkspaceLayout,
   TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
+import type { PersistedFileTab } from "../../../../stores/uiStore/studio-file-tabs.js";
 
 export function emptyWorkspace(projectId: string): WorkspaceState {
   return { projectId, tabs: [], activeTabId: null };
@@ -103,35 +105,138 @@ export function addTerminalGroup(
   };
 }
 
+/**
+ * Is this tab the workspace's PREVIEW slot?
+ *
+ * The one place "absent means pinned" is decided. A terminal group is never a
+ * preview: the concept is about a file the user is browsing past, and a running
+ * shell is not something a click may replace.
+ */
+export function isPreviewFileTab(tab: WorkspaceTab): tab is WorkspaceFileTab {
+  return tab.kind === "file" && tab.preview === true;
+}
+
+/**
+ * THE TERMINAL THE USER IS IN: the active pane of the active tab, or `null`.
+ *
+ * `null` is an ordinary answer with three causes that are the same answer to
+ * every caller - the strip is empty, the active tab is a FILE, or the active
+ * group's pane record is gone - so it is deliberately not distinguished here.
+ * VS Code holds the same fact as `terminalService.activeInstance` and its
+ * `focusActiveInstance` returns silently when there is none
+ * (`terminalService.ts:406`).
+ *
+ * A SELECTOR, not state: nothing may hold a second answer to "which terminal
+ * is active", because the strip and the panel already render from this one.
+ */
+export function activeTerminalIdOf(state: WorkspaceState): string | null {
+  const active = state.tabs.find((tab) => tab.tabId === state.activeTabId);
+  if (active === undefined || active.kind !== "terminalGroup") return null;
+  const pane = active.panes.find((candidate) => candidate.paneId === active.activePaneId);
+  return pane?.terminalId ?? null;
+}
+
+/**
+ * The workspace's preview tab, or `null`.
+ *
+ * There is AT MOST ONE, and that is an invariant this module maintains rather
+ * than a search that happens to find one result: `addFileTab` is the only
+ * writer of the flag and it clears the previous holder in the same step.
+ * VS Code holds the same fact as a single `preview` field on the group
+ * (`editorGroupModel.ts:212`) and derives `isPinned` from it. We keep the flag
+ * ON THE TAB instead, because the strip renders from the tab list and a
+ * component asking "am I the preview" would otherwise need the whole workspace;
+ * the invariant is preserved here in exchange.
+ */
+export function previewFileTab(state: WorkspaceState): WorkspaceFileTab | null {
+  return state.tabs.find(isPreviewFileTab) ?? null;
+}
+
+/**
+ * Open a file tab.
+ *
+ * `mode` defaults to `"pinned"`, which is exactly what this function did before
+ * previews existed, so no caller changed behaviour by gaining the option.
+ *
+ * ## What `"preview"` does, and why it is VS Code's rule
+ *
+ * A preview open REPLACES the workspace's current preview tab IN ITS POSITION.
+ * That is `editorGroupModel.openEditor`'s `replaceEditor(this.preview, ...)`
+ * path, and the position is the load-bearing half: clicking down a file tree
+ * must not walk a tab along the strip, or the thing the user is reading moves
+ * under them on every arrow press.
+ *
+ * The `preview` field on the incoming tab is IGNORED, exactly as `addPane`
+ * ignores the share it is handed. The mode is the caller's decision; the flag
+ * is this module's, because the "at most one preview" invariant cannot survive
+ * a caller that writes it.
+ *
+ * ## Reopening a file that is already open
+ *
+ * Still selects rather than opening twice, and now also PROMOTES: opening an
+ * already-open preview tab with `"pinned"` pins it, which is how a double click
+ * on a file the single click already previewed keeps it. A `"preview"` open of
+ * an already-open tab changes nothing about its state - VS Code likewise never
+ * demotes a pinned editor on an ordinary open.
+ */
 export function addFileTab(
   state: WorkspaceState,
   tab: WorkspaceFileTab,
+  options?: { readonly mode?: FileOpenMode },
 ): WorkspaceMutation {
+  const mode: FileOpenMode = options?.mode ?? "pinned";
   // A file already open is SELECTED rather than opened twice: two tabs on one
   // path would give the same buffer two dirty flags.
   const existing = state.tabs.find(
     (candidate) => candidate.kind === "file" && candidate.relativePath === tab.relativePath,
   );
-  if (existing !== undefined) {
+  if (existing !== undefined && existing.kind === "file") {
     // The PATH is the identity, the TOKEN is not. A file deleted and recreated,
     // or a project re-subscribed in a new session, is the same tab to the user
     // and a different `nodeId` to main - and the old token no longer verifies,
     // so a tab that kept it could never read its file again. Adopt the incoming
     // one; the tab, its position and its dirty flag stay exactly where they are.
-    if (existing.kind === "file" && existing.nodeId !== tab.nodeId) {
-      return {
-        ok: true,
-        state: {
-          ...state,
-          tabs: state.tabs.map((candidate) =>
-            candidate.tabId === existing.tabId ? { ...existing, nodeId: tab.nodeId } : candidate,
-          ),
-          activeTabId: existing.tabId,
-        },
-      };
+    const adoptsToken = existing.nodeId !== tab.nodeId;
+    const promotes = mode === "pinned" && existing.preview === true;
+    if (!adoptsToken && !promotes) {
+      return { ok: true, state: { ...state, activeTabId: existing.tabId } };
     }
-    return { ok: true, state: { ...state, activeTabId: existing.tabId } };
+    const updated: WorkspaceFileTab = {
+      ...existing,
+      ...(adoptsToken ? { nodeId: tab.nodeId } : {}),
+      ...(promotes ? { preview: false } : {}),
+    };
+    return {
+      ok: true,
+      state: {
+        ...state,
+        tabs: state.tabs.map((candidate) =>
+          candidate.tabId === existing.tabId ? updated : candidate,
+        ),
+        activeTabId: existing.tabId,
+      },
+    };
   }
+
+  const opened: WorkspaceFileTab = { ...tab, preview: mode === "preview" };
+
+  // REPLACEMENT, before the bound. A preview open that lands on an existing
+  // preview adds no tab, so a workspace at the limit can still browse - and the
+  // replaced tab keeps its INDEX, which is what makes the strip stand still.
+  const replaced = mode === "preview" ? previewFileTab(state) : null;
+  if (replaced !== null) {
+    return {
+      ok: true,
+      state: repairSelection({
+        ...state,
+        tabs: state.tabs.map((candidate) =>
+          candidate.tabId === replaced.tabId ? opened : candidate,
+        ),
+        activeTabId: opened.tabId,
+      }),
+    };
+  }
+
   // THE BOUND, and it is checked HERE rather than above the dedupe on purpose:
   // returning to a file that is already open opens nothing, so a full strip
   // must still be able to select the tabs it already holds. Only a genuinely
@@ -144,10 +249,32 @@ export function addFileTab(
     ok: true,
     state: repairSelection({
       ...state,
-      tabs: [...state.tabs, tab],
-      activeTabId: tab.tabId,
+      tabs: [...state.tabs, opened],
+      activeTabId: opened.tabId,
     }),
   };
+}
+
+/**
+ * PROMOTE the preview tab to a kept one. Idempotent.
+ *
+ * The single hook every promotion gesture calls: the tab's double click, its
+ * "Keep open" action, the keyboard command, and - when the viewer becomes
+ * editable - the first edit, which is what VS Code pins on
+ * (`editorGroupModel.doPin`). There is deliberately no `unpinTab`: nothing in
+ * Studio asks for one, and a function with no caller is dead code.
+ *
+ * A tab that is already pinned, and a terminal group, are NOT refusals. Both
+ * are ordinary states for a gesture that fires on whatever the user
+ * double-clicked, and the state comes back IDENTICAL so nothing re-renders.
+ * Only a tab that is not there at all is refused, because that names a real
+ * disagreement between the caller and the strip.
+ */
+export function pinTab(state: WorkspaceState, tabId: string): WorkspaceMutation {
+  const target = state.tabs.find((tab) => tab.tabId === tabId);
+  if (target === undefined) return { ok: false, reason: "unknown_tab", state };
+  if (!isPreviewFileTab(target)) return { ok: true, state };
+  return { ok: true, state: replaceTab(state, { ...target, preview: false }) };
 }
 
 export function selectTab(state: WorkspaceState, tabId: string): WorkspaceMutation {
@@ -155,6 +282,33 @@ export function selectTab(state: WorkspaceState, tabId: string): WorkspaceMutati
     return { ok: false, reason: "unknown_tab", state };
   }
   return { ok: true, state: { ...state, activeTabId: tabId } };
+}
+
+/**
+ * The tab `offset` places from the active one, WRAPPING, or `null`.
+ *
+ * The rule behind `Ctrl+Tab` / `Ctrl+Shift+Tab`, owned here rather than by the
+ * keyboard hook or the controller, because "which tab comes after this one" is
+ * a fact about the strip and the strip's order is this module's.
+ *
+ * WRAPPING is what VS Code's own next/previous pair does over its tab list: a
+ * strip that stopped at the last tab would make the shortcut dead exactly where
+ * a user reaches for it most, and there is no second gesture meaning "and now
+ * go back to the first".
+ *
+ * `null` when the workspace holds no tabs, or when nothing is selected: both
+ * are real states (an empty workspace, a restore that brought nothing back) and
+ * neither has a relative neighbour to name.
+ */
+export function tabIdAtOffset(state: WorkspaceState, offset: number): string | null {
+  const count = state.tabs.length;
+  if (count === 0 || state.activeTabId === null) return null;
+  const index = state.tabs.findIndex((tab) => tab.tabId === state.activeTabId);
+  if (index === -1) return null;
+  // `% count`, then `+ count`, then `% count` again: a negative offset would
+  // otherwise land on a negative index, which is not a tab.
+  const next = (((index + offset) % count) + count) % count;
+  return state.tabs[next]?.tabId ?? null;
 }
 
 /**
@@ -454,6 +608,83 @@ export function setTabTitle(
   return { ok: true, state: replaceTab(state, { ...target, title: next }) };
 }
 
+/**
+ * The three facts a renamed file hands its tab. Main mints all three.
+ *
+ * A narrow record rather than the wire's `FileNode`, so this module keeps its
+ * one dependency (the terminal snapshot schema) and does not gain the files
+ * schema for a three-field read.
+ */
+export interface FileTabTarget {
+  /** The entry's own name, which is what the strip shows. */
+  readonly title: string;
+  /** Project-root-relative, and the tab's DISPLAY and DEDUPE identity. */
+  readonly relativePath: string;
+  /** The fresh node token. A rename always mints one; see `WorkspaceFileTab`. */
+  readonly nodeId: string;
+}
+
+/**
+ * THE TAB FOLLOWS ITS FILE'S RENAME: same tab, same position, new name.
+ *
+ * VS Code's behaviour, and it is a behaviour rather than an omission: renaming
+ * an open file there leaves the editor open on the renamed resource
+ * (`explorerViewer.ts` reopens the moved resources rather than closing them).
+ * A strip that kept the old name would leave the user reading a file under a
+ * title that names nothing on disk, and a strip that closed the tab would take
+ * away what they were looking at as the cost of naming it.
+ *
+ * MATCHED ON THE OLD PATH, not on a tab id, because the caller is the explorer
+ * and the explorer has never heard of a tab. The path is already the file
+ * tab's dedupe identity (`addFileTab`), so this reuses that identity rather
+ * than inventing a second one.
+ *
+ * ALL THREE FIELDS MOVE TOGETHER, and they have to: a rename mints a new node
+ * token (the id is derived from the path), so a tab that kept the old one
+ * could never read its file again, and `FileViewerRegistry.acquire` uses
+ * exactly that token change to swap in a session pointed at the new path.
+ *
+ * `unknown_tab` when no file tab holds that path, which is the ordinary case -
+ * most renames are of files nobody has open - and is why the caller must be
+ * able to ignore a refusal.
+ *
+ * A DIRECTORY RENAME reaches this function too, once per tab that was under
+ * the directory and with that tab's OWN old path: a tab on `dir/file.ts` needs
+ * a token for the new path and only main can mint one, so the paths and the
+ * tokens are resolved first by `workspace/renamed-folder-tabs.ts` and arrive
+ * here as ordinary retargets. This function has one rule for both, which is why
+ * it matches on a path rather than on what kind of entry was renamed.
+ */
+export function retargetFileTab(
+  state: WorkspaceState,
+  fromRelativePath: string,
+  to: FileTabTarget,
+): WorkspaceMutation {
+  const target = state.tabs.find(
+    (tab): tab is WorkspaceFileTab =>
+      tab.kind === "file" && tab.relativePath === fromRelativePath,
+  );
+  if (target === undefined) return { ok: false, reason: "unknown_tab", state };
+  if (
+    target.title === to.title &&
+    target.relativePath === to.relativePath &&
+    target.nodeId === to.nodeId
+  ) {
+    return { ok: true, state };
+  }
+  // The PREVIEW flag and the dirty flag ride along untouched: renaming a file
+  // is not a decision about whether the user meant to keep its tab.
+  return {
+    ok: true,
+    state: replaceTab(state, {
+      ...target,
+      title: to.title,
+      relativePath: to.relativePath,
+      nodeId: to.nodeId,
+    }),
+  };
+}
+
 function replaceTab(state: WorkspaceState, tab: WorkspaceTab): WorkspaceState {
   return {
     ...state,
@@ -524,6 +755,16 @@ export function collectCleanups(
  * editor's own state, and smuggling it into a terminal snapshot would make
  * "restore my terminals" and "reopen my files" share one corruption blast
  * radius for no benefit.
+ *
+ * THE PREVIEW FLAG THEREFORE HAS NO DURABLE HOME EITHER, and its migration is
+ * the field's absence rather than a version hop: `WorkspaceFileTab.preview` is
+ * optional and absent reads as PINNED, so every workspace rebuilt from an older
+ * shape - a restore through {@link fromSnapshot}, which carries no file tabs at
+ * all, and any future file-tab persistence written before this field existed -
+ * comes back with nothing in the throwaway slot. That is the correct reading:
+ * a tab someone kept across a restart is a tab they kept. When file tabs do get
+ * a persisted home, its writer stores `preview` and its reader keeps treating
+ * the missing field as pinned; nothing here has to change.
  */
 export function toPersistedLayout(state: WorkspaceState): TerminalWorkspaceLayout {
   const groups = state.tabs.filter(isGroup);
@@ -608,4 +849,130 @@ export function fromSnapshot(snapshot: TerminalWorkspaceRestore): WorkspaceState
   // to the snapshot's own projectId on the way in, so there is exactly one
   // answer and it cannot disagree with itself.
   return repairSelection({ projectId: snapshot.layout.projectId, tabs, activeTabId });
+}
+
+/**
+ * A file tab to bring back, with everything the strip needs to place it.
+ *
+ * Two halves that come from different places, which is the whole reason this
+ * shape exists: `title`, `relativePath` and `nodeId` are MAIN'S - the entry the
+ * per-segment walk confirmed - while `pinned`, `position` and `active` are the
+ * user's, read back from the persisted record. Nothing here is trusted for
+ * where the tab GOES, only for where it would LIKE to go: every field is
+ * clamped or given up below.
+ */
+export interface RestoredFileTab extends FileTabTarget {
+  readonly tabId: string;
+  /** `false` restores the strip's single throwaway preview slot. */
+  readonly pinned: boolean;
+  /** The saved index in the WHOLE strip. Clamped into the rebuilt one. */
+  readonly position: number;
+  /** Whether this tab was selected. Honoured only if nothing else claimed it. */
+  readonly active: boolean;
+}
+
+/**
+ * PUT THE PERSISTED FILE TABS BACK, among the terminals that already restored.
+ *
+ * Called once per mount with the tabs whose paths main RE-RESOLVED; the ones it
+ * could not are already gone and are counted by the caller, never silently
+ * absorbed here. That is `EditorGroupModel.deserialize`'s shape
+ * (`editorGroupModel.ts:1218-1260`): an editor whose serializer cannot restore
+ * it is dropped by `coalesce`, the indices around the hole are adjusted, and
+ * the group survives with the editors that did come back.
+ *
+ * ## The rules, and why each is the model's rather than the controller's
+ *
+ *  - POSITION is a request, clamped to `[0, tabs.length]`. A saved index means
+ *    a strip that no longer exists - terminals that did not revive leave holes,
+ *    and a project can restore to no terminals at all - so an out-of-range
+ *    index places the tab at the end rather than refusing it. Ties keep the
+ *    persisted order because the list is applied in ascending `position`.
+ *  - A PATH ALREADY OPEN is skipped. `addFileTab` treats the path as the tab's
+ *    identity, and the caller cannot know what the terminal restore left in the
+ *    strip.
+ *  - AT MOST ONE PREVIEW survives, because that is this module's invariant
+ *    everywhere else and a restore is not allowed to be the one path that
+ *    breaks it. The first `pinned: false` keeps the slot; the rest are pinned.
+ *  - THE BOUND is `STUDIO_FILE_TABS_MAX`, checked per tab, so a record written
+ *    by a build with a larger bound cannot restore a strip this one refuses to
+ *    let the user create.
+ *  - ACTIVE WINS ONLY IF NOTHING CLAIMED IT. A restored terminal is what the
+ *    user came back for and `fromSnapshot` has already selected one; the
+ *    persisted flag decides only the case it is the sole answer to, which is a
+ *    workspace whose terminals did not come back.
+ *
+ * The state is returned through `repairSelection`, like every other mutation,
+ * so no caller can observe a selection naming a tab that is not there.
+ */
+export function restoreFileTabs(
+  state: WorkspaceState,
+  restored: readonly RestoredFileTab[],
+): WorkspaceState {
+  const open = new Set(
+    state.tabs
+      .filter((tab): tab is WorkspaceFileTab => tab.kind === "file")
+      .map((tab) => tab.relativePath),
+  );
+  const tabs = [...state.tabs];
+  let fileTabs = open.size;
+  let previewTaken = false;
+  let activeTabId: string | null = null;
+
+  for (const entry of [...restored].sort((a, b) => a.position - b.position)) {
+    if (fileTabs >= STUDIO_FILE_TABS_MAX) break;
+    if (open.has(entry.relativePath)) continue;
+    open.add(entry.relativePath);
+    fileTabs += 1;
+    const preview = !entry.pinned && !previewTaken;
+    if (preview) previewTaken = true;
+    const tab: WorkspaceFileTab = {
+      kind: "file",
+      tabId: entry.tabId,
+      title: entry.title,
+      relativePath: entry.relativePath,
+      nodeId: entry.nodeId,
+      dirty: false,
+      preview,
+    };
+    tabs.splice(Math.min(Math.max(entry.position, 0), tabs.length), 0, tab);
+    if (entry.active && activeTabId === null) activeTabId = tab.tabId;
+  }
+
+  return repairSelection({
+    ...state,
+    tabs,
+    activeTabId: state.activeTabId ?? activeTabId,
+  });
+}
+
+/**
+ * Project the open file tabs onto the persisted record's shape.
+ *
+ * `position` is the index in the WHOLE strip, terminals included, because that
+ * is what the user sees and what the restore has to reproduce: recording the
+ * index among the file tabs alone would put every restored file after every
+ * restored terminal, whatever the strip looked like.
+ *
+ * A PREVIEW TAB IS RECORDED AS PINNED. A tab that survives a restart is a tab
+ * the user kept - the throwaway slot is a live browsing state, and there is
+ * nothing throwaway about a file you come back to tomorrow - and the promotion
+ * belongs at the write, which is the moment that knows the session ended. The
+ * reader still honours whatever the record says, because localStorage is
+ * user-writable and a payload may claim anything.
+ */
+export function toPersistedFileTabs(
+  state: WorkspaceState,
+): readonly PersistedFileTab[] {
+  const persisted: PersistedFileTab[] = [];
+  state.tabs.forEach((tab, index) => {
+    if (tab.kind !== "file") return;
+    persisted.push({
+      relativePath: tab.relativePath,
+      pinned: true,
+      position: index,
+      active: tab.tabId === state.activeTabId,
+    });
+  });
+  return persisted;
 }

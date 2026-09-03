@@ -13,6 +13,7 @@ import {
   type TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
 import {
+  activeTerminalIdOf,
   addFileTab,
   addPane,
   addTerminalGroup,
@@ -29,6 +30,7 @@ import {
   setGroupOrientation,
   setPaneDisplayCwd,
   setTabTitle,
+  tabIdAtOffset,
   terminalGroupCount,
   toPersistedLayout,
 } from "../workspace-model.js";
@@ -145,6 +147,90 @@ describe("creation and selection", () => {
     const state = withGroups(["a"]);
     const outcome = selectTab(state, "ghost");
     expect(outcome).toEqual({ ok: false, reason: "unknown_tab", state });
+  });
+});
+
+/**
+ * THE RULE BEHIND `Ctrl+Tab` / `Ctrl+Shift+Tab`.
+ *
+ * Table-driven over the whole ring, because the two defects this can have are
+ * both at an edge: an offset off the end that returns nothing (the shortcut
+ * dies on the last tab) and a negative index from `-1 % n` (JavaScript's
+ * remainder keeps the sign, so `previous` from the FIRST tab would ask for
+ * `tabs[-1]`).
+ */
+describe("the terminal the user is in", () => {
+  it("is the active pane of the active tab, not the first pane of the strip", () => {
+    let state = withGroups(["g1"]);
+    const added = addPane(state, "g1", {
+      paneId: "g1:1",
+      terminalId: "t-second",
+      relativeSize: 0.5,
+      displayCwd: null,
+    });
+    expect(added.ok).toBe(true);
+    state = added.state;
+    // `addPane` makes the new pane active, which is the pane the user is in.
+    expect(activeTerminalIdOf(state)).toBe("t-second");
+
+    const back = setActivePane(state, "g1", "g1:0");
+    expect(back.ok).toBe(true);
+    expect(activeTerminalIdOf(back.state)).toBe("g1-t");
+  });
+
+  it("answers null for an empty strip and for an active FILE tab", () => {
+    expect(activeTerminalIdOf(emptyWorkspace("p1"))).toBeNull();
+
+    const opened = addFileTab(withGroups(["g1"]), {
+      kind: "file",
+      tabId: "f1",
+      title: "a.ts",
+      relativePath: "a.ts",
+      nodeId: "node-a",
+      dirty: false,
+    });
+    expect(opened.ok).toBe(true);
+    expect(opened.state.activeTabId).toBe("f1");
+    expect(activeTerminalIdOf(opened.state)).toBeNull();
+  });
+});
+
+describe("the tab a relative move lands on", () => {
+  it("walks the ring in both directions, from every tab", () => {
+    const base = withGroups(["a", "b", "c"]);
+    const cases: readonly [active: string, offset: number, landed: string][] = [
+      ["a", 1, "b"],
+      ["b", 1, "c"],
+      ["c", 1, "a"],
+      ["a", -1, "c"],
+      ["b", -1, "a"],
+      ["c", -1, "b"],
+    ];
+    for (const [active, offset, landed] of cases) {
+      const state = mutate(selectTab(base, active));
+      expect(tabIdAtOffset(state, offset), `${active} ${String(offset)}`).toBe(landed);
+    }
+  });
+
+  it("stays on the only tab there is", () => {
+    const state = withGroups(["a"]);
+    expect(tabIdAtOffset(state, 1)).toBe("a");
+    expect(tabIdAtOffset(state, -1)).toBe("a");
+  });
+
+  it("has no neighbour in an empty workspace", () => {
+    expect(tabIdAtOffset(emptyWorkspace("p1"), 1)).toBeNull();
+    expect(tabIdAtOffset(emptyWorkspace("p1"), -1)).toBeNull();
+  });
+
+  it("has no neighbour when nothing is selected", () => {
+    const state: WorkspaceState = { ...withGroups(["a", "b"]), activeTabId: null };
+    expect(tabIdAtOffset(state, 1)).toBeNull();
+  });
+
+  it("has no neighbour when the selection names a tab that is gone", () => {
+    const state: WorkspaceState = { ...withGroups(["a", "b"]), activeTabId: "ghost" };
+    expect(tabIdAtOffset(state, 1)).toBeNull();
   });
 });
 
