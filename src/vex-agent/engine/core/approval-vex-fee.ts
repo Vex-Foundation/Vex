@@ -103,7 +103,7 @@ function describeHumanAmountFee(
   const fee = multiplyDecimalByBps(amount, spec.bps);
   if (fee === null) return undefined;
   const unit = unitLabel(readStringParam(args, spec.tokenKey), spec.tokenKey);
-  return `${rateLabel(spec.bps)} — ${fee} ${unit}. ${spec.tail}`;
+  return `${rateLabel(spec.bps)}: ${fee} ${unit}. ${spec.tail}`;
 }
 
 function describeRawAmountFee(
@@ -121,10 +121,10 @@ function describeRawAmountFee(
     return undefined;
   }
   if (!split.charged) {
-    return `${rateLabel(spec.bps)} on the input token — floors to zero at this size, `
+    return `${rateLabel(spec.bps)} on the input token: it floors to zero at this size, `
       + "so no fee transfer is made at all.";
   }
-  return `${rateLabel(spec.bps)} — ${split.feeRaw} raw units of ${spec.tokenKey}, `
+  return `${rateLabel(spec.bps)}: ${split.feeRaw} raw units of ${spec.tokenKey}, `
     + `included in the ${spec.amountKey} above (the venue is quoted for the remainder).`;
 }
 
@@ -139,7 +139,7 @@ function describeTrenchTradeFee(args: Record<string, unknown>): string | undefin
   const isBuy = readStringParam(args, "tokenIn")?.toUpperCase() === "ETH";
   if (!isBuy) {
     return `${rateLabel(TRENCH_FEE_BPS)} on the ETH you receive, charged as a separate transfer `
-      + "after the sale settles — the exact amount is not known until then, and if the ETH "
+      + "after the sale settles. The exact amount is not known until then, and if the ETH "
       + "proceeds cannot be decoded Vex takes no fee at all.";
   }
   return describeHumanAmountFee(args, {
@@ -148,7 +148,7 @@ function describeTrenchTradeFee(args: Record<string, unknown>): string | undefin
     tokenKey: "tokenIn",
     tail: "Charged as a separate transfer that runs only after the trade confirms, so a trade "
       + "that does not happen is never charged; the curve is quoted for the remainder. This is "
-      + "Vex's fee only — Trench's own 1% curve fee is separate and already inside the quote.",
+      + "Vex's fee only; Trench's own 1% curve fee is separate and already inside the quote.",
   });
 }
 
@@ -163,14 +163,38 @@ export function describeApprovalVexFee(
   args: Record<string, unknown>,
 ): string | undefined {
   switch (toolId) {
-    case "kyberswap.swap.execute":
-      return describeHumanAmountFee(args, {
-        bps: KYBERSWAP_FEE_BPS,
-        amountKey: "amountIn",
-        tokenKey: "tokenIn",
-        tail: "Taken on the input token and included in the amountIn above — the route is "
-          + "priced for the remainder, so the quoted output is already net of it.",
+    // THE ACTION ALIASES, and why they are cases of their own rather than a
+    // resolution step.
+    //
+    // MEASURED (live test pass 2, defect I-2): a real card for a 1 USDC bridge
+    // raised over MCP showed no fee line at all. The MCP surface exports the
+    // ALIAS names, `dispatchTool` never rewrites the call, and the alias router
+    // only learns the venue later and asynchronously - so the name that reaches
+    // this switch is `BridgeExecute`, which matched nothing and fell to
+    // `default`. A user was shown an approval for a transfer whose 25 bps Vex
+    // fee was itemised nowhere.
+    //
+    // An alias may appear here ONLY when its rate and its amount/token keys are
+    // the same whichever venue the router picks, because this line is written
+    // before the routing decision exists:
+    //   - both bridge venues charge `BRIDGE_FEE_BPS` on `amountRaw` of
+    //     `fromToken` (`relay.bridge` and `khalani.bridge` below are identical
+    //     for exactly that reason), so `BridgeExecute` is venue-independent;
+    //   - `BridgeExecuteRelay` and `SwapExecuteUniswap` are pinned to one venue
+    //     by name, so there is no routing decision at all.
+    // `SwapExecute` is DELIBERATELY ABSENT: `routeSwap` picks between
+    // `solana.swap.execute` (which discloses a richer `feePreview` instead, and
+    // is excluded from this module by design) and `kyberswap.swap.execute`, and
+    // a line stated before that choice would name a rate the executor might not
+    // charge. Its card carries no fee line until the venue is known at enqueue.
+    case "BridgeExecute":
+    case "BridgeExecuteRelay":
+      return describeRawAmountFee(args, {
+        bps: BRIDGE_FEE_BPS,
+        amountKey: "amountRaw",
+        tokenKey: "fromToken",
       });
+    case "SwapExecuteUniswap":
     case "uniswap.swap.execute":
       return describeHumanAmountFee(args, {
         bps: UNISWAP_FEE_BPS,
@@ -178,6 +202,14 @@ export function describeApprovalVexFee(
         tokenKey: "tokenIn",
         tail: "Taken on the input token as a separate transfer signed only after the swap "
           + "confirms, so a swap that fails is never charged; amountIn above is the total debited.",
+      });
+    case "kyberswap.swap.execute":
+      return describeHumanAmountFee(args, {
+        bps: KYBERSWAP_FEE_BPS,
+        amountKey: "amountIn",
+        tokenKey: "tokenIn",
+        tail: "Taken on the input token and included in the amountIn above; the route is "
+          + "priced for the remainder, so the quoted output is already net of it.",
       });
     case "relay.bridge":
     case "khalani.bridge":

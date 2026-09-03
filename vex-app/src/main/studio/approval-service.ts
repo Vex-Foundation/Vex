@@ -273,6 +273,13 @@ async function runStudioCallAdmitted(
         options.signal ? { abortSignal: options.signal } : {},
       ),
       readStudioRuntimeAvailability,
+      // WHO ASKED. Carried from the MCP `initialize` handshake so the card a
+      // human decides from names the actor instead of leaving the row blank.
+      // It is untrusted display text and the enqueue path sanitizes it; this
+      // function only forwards it.
+      ...(options.clientName === undefined
+        ? {}
+        : { requestedByClient: options.clientName }),
     });
   } catch (cause: unknown) {
     reserved.reservation.release();

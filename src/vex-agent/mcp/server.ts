@@ -211,6 +211,32 @@ export function createStudioMcpServer(deps: StudioMcpServerDeps): McpServer {
   return server;
 }
 
+/**
+ * The MCP client's self-declared `clientInfo.name`, or `undefined` before the
+ * handshake completed or when the client sent none.
+ *
+ * PIN NOTE (probed against the installed `@modelcontextprotocol/server@2.0.0`,
+ * `dist/createMcpHandler-CLhGwQTn.d.mts`): `Server.getClientVersion()` returns
+ * `Implementation | undefined` and its own doc comment states it stays
+ * functional on BOTH eras - instances serving 2026-07-28 are backfilled per
+ * request from the validated `_meta` envelope, and 2025-era connections keep
+ * the `initialize`-scoped value. The non-deprecated alternative,
+ * `ctx.mcpReq.envelope`, is typed `Partial<RequestMetaEnvelope>` where
+ * `RequestMetaEnvelope = {}`, so reading a name through it would require an
+ * unchecked cast for no extra fact.
+ *
+ * A throw is contained: a name is a nicety on a money-path card, and the card
+ * says "an MCP client" without one. It must never take down a tool call.
+ */
+function requestingClientName(server: McpServer): string | undefined {
+  try {
+    const name = server.server.getClientVersion()?.name;
+    return typeof name === "string" && name.trim().length > 0 ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function registerStudioTool(
   server: McpServer,
   tool: StudioTool,
@@ -229,9 +255,17 @@ function registerStudioTool(
       const startedAt = Date.now();
       const toolCallId = `studio-${randomUUID()}`;
       const token = ctx.mcpReq._meta?.progressToken;
+      const clientName = requestingClientName(server);
       const options: RunStudioCallOptions = {
         signal: ctx.mcpReq.signal,
         cancelCause: () => typedCancelCause(ctx.mcpReq.signal, deps.cancelCause),
+        // WHO IS ASKING, for the approval card's actor row (rule 90). Read
+        // here because this is the only layer that has it: the Vex Studio
+        // handshake line carries `{v, projectId}` and nothing else, and the
+        // client's name arrives inside the MCP `initialize` this SDK server
+        // consumes. Untrusted, self-declared display text - the enqueue path
+        // sanitizes it and nothing branches on it.
+        ...(clientName === undefined ? {} : { clientName }),
         // GUARDED. With no client token the SDK would happily write a
         // token-less, spec-invalid progress frame, so the guard lives here.
         ...(token === undefined
