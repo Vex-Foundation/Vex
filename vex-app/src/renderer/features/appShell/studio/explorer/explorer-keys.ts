@@ -41,7 +41,24 @@ export type ExplorerIntent =
   /** Space: toggle a directory. Does nothing on a file. */
   | { readonly kind: "toggle" }
   /** A printable character joins the type-ahead prefix. */
-  | { readonly kind: "typeAhead"; readonly character: string };
+  | { readonly kind: "typeAhead"; readonly character: string }
+  /** F2: open the name box on the focused row. VS Code's rename key. */
+  | { readonly kind: "rename" }
+  /**
+   * Delete or Shift+Delete: remove the focused row, to the trash or not.
+   *
+   * TWO KEYS FOR TWO DISPOSITIONS, which is VS Code's binding
+   * (`fileActions.ts`: `moveFileToTrashHandler` on Delete,
+   * `deleteFileHandler` on Shift+Delete) and every desktop file manager's. The
+   * DISPOSITION is carried on the intent rather than decided by the handler,
+   * so the confirmation the user reads is chosen by the key they pressed.
+   *
+   * NEITHER DELETES ANYTHING BY ITSELF. Both open the confirmation; the tree
+   * has no keystroke that removes a file without one.
+   */
+  | { readonly kind: "delete"; readonly permanent: boolean }
+  /** The Menu key or Shift+F10: open the focused row's context menu. */
+  | { readonly kind: "contextMenu" };
 
 /** The shape this table reads. A `KeyboardEvent` satisfies it structurally. */
 export interface ExplorerKeyEvent {
@@ -49,6 +66,15 @@ export interface ExplorerKeyEvent {
   readonly ctrlKey: boolean;
   readonly metaKey: boolean;
   readonly altKey: boolean;
+  /**
+   * Shift is read, unlike the other modifiers.
+   *
+   * It is not a chord here: Shift+letter is how a capital is typed, which
+   * type-ahead must see, and Shift+Delete is the disposition switch every file
+   * manager uses. So the table reads it per row rather than letting it through
+   * wholesale the way Ctrl, Meta and Alt are.
+   */
+  readonly shiftKey: boolean;
 }
 
 const MOVES: Readonly<Record<string, ExplorerFocusMove>> = {
@@ -78,6 +104,15 @@ export function resolveExplorerKey(event: ExplorerKeyEvent): ExplorerIntent | nu
   if (event.key === "ArrowRight") return { kind: "expandOrFirstChild" };
   if (event.key === "Enter") return { kind: "activate" };
   if (event.key === " ") return { kind: "toggle" };
+
+  // THE WRITE KEYS. Each opens something the user then confirms - a name box or
+  // a dialog - and none of them changes a file by itself.
+  if (event.key === "F2") return { kind: "rename" };
+  if (event.key === "Delete") return { kind: "delete", permanent: event.shiftKey };
+  // `ContextMenu` is the dedicated key; Shift+F10 is the binding every platform
+  // also honours, and the one a keyboard without a Menu key has.
+  if (event.key === "ContextMenu") return { kind: "contextMenu" };
+  if (event.key === "F10" && event.shiftKey) return { kind: "contextMenu" };
 
   // A single-character `key` is a printable character; every named key
   // ("Tab", "Escape", "F3", "Dead") is longer, which is what makes this test

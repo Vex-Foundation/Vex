@@ -46,9 +46,11 @@
 
 import {
   countLines,
+  HIGHLIGHT_BUDGET_LINES_LISTED,
   isHighlightResponse,
   type HighlightCancel,
   type HighlightRequest,
+  type HighlightSuccess,
   type TokenLine,
 } from "./highlight-protocol.js";
 
@@ -91,7 +93,18 @@ export type HighlightUnavailableReason =
   | "cancelled";
 
 export type HighlightOutcome =
-  | { readonly ok: true; readonly lines: readonly TokenLine[]; readonly longLines: number }
+  | {
+      readonly ok: true;
+      readonly lines: readonly TokenLine[];
+      readonly longLines: number;
+      /**
+       * The lines the per-line highlighting clock ran out on, 1-based and
+       * ascending. See `HighlightSuccess.budgetExceededLines` for the bound on
+       * this list and why the total beside it is the authoritative count.
+       */
+      readonly budgetExceededLines: readonly number[];
+      readonly budgetExceededTotal: number;
+    }
   | { readonly ok: false; readonly reason: HighlightUnavailableReason };
 
 export interface HighlightAsk {
@@ -406,7 +419,7 @@ export class WorkerHighlighterPort implements HighlighterPort {
       pending.resolve({ ok: false, reason: response.reason });
       return;
     }
-    pending.resolve(this.#checkedSuccess(response.lines, response.longLines, pending));
+    pending.resolve(this.#checkedSuccess(response, pending));
   }
 
   /**
@@ -423,28 +436,48 @@ export class WorkerHighlighterPort implements HighlighterPort {
    *    result with too few lines would silently lose the tail.
    *  - `longLines` cannot exceed the lines that exist, and cannot be negative or
    *    fractional. It is shown to the user as a count of their own file's lines.
+   *  - `budgetExceededTotal` is bounded the same way and for the same reason: it
+   *    is announced to the user as a count of their lines.
+   *  - every entry of `budgetExceededLines` is a 1-based line number that
+   *    EXISTS in this file, and the entries strictly ascend. The chip points the
+   *    user at the first of them, so a number outside the file would send them
+   *    to a line that is not there; ascending order is what makes "the first"
+   *    the earliest rather than whichever the worker happened to list first.
+   *  - the list holds at most `HIGHLIGHT_BUDGET_LINES_LISTED` entries and never
+   *    more than the total it summarises. A list LONGER than the total would
+   *    mean the count under-reports what the worker itself found, which is the
+   *    one direction of disagreement that would hide lines from the user.
    *
    * A violation is `malformed_result`, the same fail-closed answer a message of
    * the wrong shape gets, and the viewer shows honest plain text.
    */
-  #checkedSuccess(
-    lines: readonly TokenLine[],
-    longLines: number,
-    pending: Pending,
-  ): HighlightOutcome {
+  #checkedSuccess(response: HighlightSuccess, pending: Pending): HighlightOutcome {
+    const { lines, longLines, budgetExceededLines, budgetExceededTotal } = response;
     if (lines.length !== pending.expectedLines) {
       console.warn(
         `studio viewer highlight: the worker answered with ${String(lines.length)} line(s) for a ${String(pending.expectedLines)}-line file`,
       );
       return { ok: false, reason: "malformed_result" };
     }
-    if (!Number.isInteger(longLines) || longLines < 0 || longLines > lines.length) {
+    if (!isLineCount(longLines, lines.length)) {
       console.warn(
         `studio viewer highlight: the worker reported ${String(longLines)} long line(s) in a ${String(lines.length)}-line file`,
       );
       return { ok: false, reason: "malformed_result" };
     }
-    return { ok: true, lines, longLines };
+    if (!isLineCount(budgetExceededTotal, lines.length)) {
+      console.warn(
+        `studio viewer highlight: the worker reported ${String(budgetExceededTotal)} budget-exceeded line(s) in a ${String(lines.length)}-line file`,
+      );
+      return { ok: false, reason: "malformed_result" };
+    }
+    if (!isLineNumberList(budgetExceededLines, lines.length, budgetExceededTotal)) {
+      console.warn(
+        `studio viewer highlight: the worker listed unusable budget-exceeded line numbers for a ${String(lines.length)}-line file`,
+      );
+      return { ok: false, reason: "malformed_result" };
+    }
+    return { ok: true, lines, longLines, budgetExceededLines, budgetExceededTotal };
   }
 
   /**
@@ -487,6 +520,30 @@ export class WorkerHighlighterPort implements HighlighterPort {
     this.#outstandingByCaller.clear();
     for (const entry of pending) entry.resolve(outcome);
   }
+}
+
+/** A whole, non-negative count of lines that cannot exceed the file's own. */
+function isLineCount(value: number, lines: number): boolean {
+  return Number.isInteger(value) && value >= 0 && value <= lines;
+}
+
+/**
+ * A list of 1-based line numbers inside this file, strictly ascending, and no
+ * longer than either the bound on the list or the total it summarises.
+ */
+function isLineNumberList(
+  numbers: readonly number[],
+  lines: number,
+  total: number,
+): boolean {
+  if (numbers.length > HIGHLIGHT_BUDGET_LINES_LISTED) return false;
+  if (numbers.length > total) return false;
+  let previous = 0;
+  for (const number of numbers) {
+    if (!Number.isInteger(number) || number <= previous || number > lines) return false;
+    previous = number;
+  }
+  return true;
 }
 
 /**

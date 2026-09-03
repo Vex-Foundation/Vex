@@ -18,7 +18,7 @@ function makeKhalaniAliasHandler(name: KhalaniInternalToolName): InternalHandler
       sessionId: context.sessionId,
       walletResolution: context.walletResolution,
       walletPolicy: context.walletPolicy,
-      // Operator Stop — an alias must not be the path that drops it.
+      // Operator Stop - an alias must not be the path that drops it.
       ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
     },
   );

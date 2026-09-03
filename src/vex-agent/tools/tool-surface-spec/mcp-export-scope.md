@@ -15,7 +15,8 @@ The MCP server exports the tool surface EXCEPT the session-bound groups:
 | Wallet / on-chain | YES | wallet_balances, wallet_track_token, wallet_send_prepare, wallet_send_confirm, chain_read, agent_scan |
 | Generic transaction signing | YES | wallet_evm_transaction_prepare, wallet_evm_transaction_confirm, wallet_solana_transaction_prepare, wallet_solana_transaction_confirm |
 | Native wrap conversion | YES | wallet_wrap_prepare, wallet_wrap_confirm |
-| Research | YES | web_research, twitter_account |
+| Research | YES | twitter_account |
+| Web research | NO | web_research |
 | Math | YES | units_convert |
 | Protocol tools | YES, all namespaces | the full catalog (134 toolIds today), under their publicName |
 | Memory | NO | session_memory_search, session_memory_resolve_item, long_memory_suggest, long_memory_search, long_memory_get, long_memory_history |
@@ -35,6 +36,13 @@ The MCP server exports the tool surface EXCEPT the session-bound groups:
   exactly the session-bound ones.
 - Knowledge tools were removed from the agent surface before this program
   and do not return through the export.
+- Web research (`web_research` / `WebResearch`) is NOT exported, owner decision
+  2026-09-03. It is not session-bound; it is a DUPLICATE. Every MCP client that
+  connects (Claude Code, Codex CLI, Gemini CLI) carries its own web search and
+  fetch, so the exported copy cost a Tavily key the user does not otherwise need
+  and about 2 KB of every session's context for a capability the caller already
+  had. The tool stays in the in-app agent surface unchanged: the Vex agent has
+  no client search of its own, so the two lanes diverge on purpose.
 - BoardCompose (Presentation) attaches a rendered board to the in-app
   assistant message and is enforced by the engine turn loop's presentation
   gate ("only call in its batch", "next output is the final reply"). The MCP

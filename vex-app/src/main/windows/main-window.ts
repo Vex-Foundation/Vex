@@ -58,6 +58,11 @@ const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
   "releases.electronjs.org",
   "desktop.docker.com",
   "docs.docker.com",
+  // Go toolchain guidance (Studio bridge readiness panel, from-source runs
+  // only). Path-scoped: the download page and the install doc, nothing else
+  // on go.dev.
+  { host: "go.dev", pathPrefix: "/dl" },
+  { host: "go.dev", pathPrefix: "/doc/install" },
   // DexScreener: agent-surfaced token links (not a block explorer). Exact-host
   // entry is safe — `isAllowedExternalUrl` matches `url.hostname === entry`, so
   // `dexscreener.com.evil.com` / `notdexscreener.com` do not match.

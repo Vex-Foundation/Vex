@@ -516,3 +516,57 @@ describe("ExplorerModel: refresh bookkeeping", () => {
     expect(model.isStale(null)).toBe(true);
   });
 });
+
+/**
+ * The bounded read the rail's file search runs over.
+ *
+ * The bound is the point: one keystroke must not walk an unbounded tree, and a
+ * caller that cannot tell "the whole tree, which happens to be exactly N" from
+ * "the first N of many" cannot tell the user that a matching file may be
+ * missing from their answer. So the read reports its own cut.
+ */
+describe("ExplorerModel: the bounded loaded-node read", () => {
+  it("returns every loaded node, in path order, and claims no truncation", () => {
+    const model = new ExplorerModel();
+    model.setChildren(null, listing([dir("a"), file("r1")]), "replace");
+    model.setChildren("a", listing([file("a1")]), "replace");
+
+    const read = model.loadedNodes(100);
+    expect(read.nodes.map((node) => node.path)).toEqual(["a", "r1", "a1"]);
+    expect(read.truncated).toBe(false);
+  });
+
+  it("reads a COLLAPSED but loaded folder's children: the path index, not the rows", () => {
+    // A folder the user opened and then closed is still searchable. The rendered
+    // rows would not contain it, which is why this reads the index instead.
+    const model = new ExplorerModel();
+    model.setChildren(null, listing([dir("a")]), "replace");
+    model.setChildren("a", listing([file("a1")]), "replace");
+    expect(model.loadedNodes(100).nodes.map((node) => node.path)).toContain("a1");
+  });
+
+  it("stops at the limit and SAYS it stopped", () => {
+    const model = new ExplorerModel();
+    model.setChildren(null, listing([file("r1"), file("r2"), file("r3")]), "replace");
+
+    const read = model.loadedNodes(2);
+    expect(read.nodes).toHaveLength(2);
+    expect(read.truncated).toBe(true);
+  });
+
+  it("a tree of EXACTLY the limit is not truncated - the count is not the signal", () => {
+    const model = new ExplorerModel();
+    model.setChildren(null, listing([file("r1"), file("r2")]), "replace");
+    expect(model.loadedNodes(2)).toEqual({
+      nodes: [expect.objectContaining({ path: "r1" }), expect.objectContaining({ path: "r2" })],
+      truncated: false,
+    });
+  });
+
+  it("a non-positive limit reads nothing, and truncates iff there was anything", () => {
+    const model = new ExplorerModel();
+    expect(model.loadedNodes(0)).toEqual({ nodes: [], truncated: false });
+    model.setChildren(null, listing([file("r1")]), "replace");
+    expect(model.loadedNodes(0)).toEqual({ nodes: [], truncated: true });
+  });
+});

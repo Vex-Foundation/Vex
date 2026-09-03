@@ -5,14 +5,14 @@
  * DRY-RUN-IN-TOOL prequote pattern: ONE toolId both records the prequote (on a
  * `dryRun: true` call) and is gated by it (on the execute call). Both sides call
  * THIS builder with the SAME params, so their match-hashes collide by
- * construction — the same contract every quote-then-execute Pendle pair already
+ * construction - the same contract every quote-then-execute Pendle pair already
  * holds, with the recorder moved inside the tool.
  *
  * WHY THIS REUSES THE `swap` IDENTITY SHAPE rather than introducing an SY kind.
  * An SY wrap is a one-in-one-out token conversion: chain + wallet + tokenIn +
  * tokenOut + amount + slippage is the COMPLETE execute-variance surface, which
  * is exactly `SwapMatchInput`. A dedicated kind would need a new
- * `swap_prequotes.kind` CHECK value — a migration — to express nothing the swap
+ * `swap_prequotes.kind` CHECK value - a migration - to express nothing the swap
  * material does not already bind. There is no market, no PT and no YT to bind:
  * an SY has no maturity and belongs to no market.
  *
@@ -52,7 +52,7 @@ export type PendleSyDirection = "mint" | "redeem";
  * The manifest key carrying the plain-token leg for a direction (SPEC §1.2).
  *
  * A mint pays a token IN and receives SY; a redeem burns SY and receives the
- * token OUT. Both lanes — the handler and this identity builder — read the key
+ * token OUT. Both lanes - the handler and this identity builder - read the key
  * through this ONE function, so the recorder and the gate can never read
  * different keys and silently diverge the digest.
  */
@@ -77,7 +77,7 @@ function requireAddr(raw: string, label: string): string {
 /**
  * Build the canonical Pendle SY identity from (untrusted) params + context.
  *
- * The receiver is ALWAYS the selected EVM wallet — no `recipient` param exists on
+ * The receiver is ALWAYS the selected EVM wallet - no `recipient` param exists on
  * any Pendle manifest, and the calldata intent binding asserts receiver == wallet
  * before signing, so `recipient` is pinned to the wallet and `approveExact` to
  * the executor's constant `false`.

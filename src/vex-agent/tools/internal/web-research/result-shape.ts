@@ -6,7 +6,7 @@
  * extract of the same page. Measured on the recorded probes that duplication
  * was 3,179–9,673 B per call, up to 34 % of the payload. The page read is now
  * FOLDED onto the row it belongs to, and on a row that was read the snippet is
- * DROPPED — not shortened. That is projection (removing a value duplicated
+ * DROPPED - not shortened. That is projection (removing a value duplicated
  * elsewhere in the same payload), never truncation; the coordinator confirmed
  * first-hand that a snippet can be page-chrome junk while the scrape of the
  * same URL is clean structured markdown, so the extract is strictly the better
@@ -14,12 +14,12 @@
  *
  * The page text is emitted RAW. The old code prefixed every extract with
  * `` `# ${title}\n\nSource: ${url}\n\n` `` while `title` and `url` sat beside it
- * as fields — 460–1,392 B per call of re-serialised header.
+ * as fields - 460–1,392 B per call of re-serialised header.
  *
  * `pageRead` is a discriminant, not a boolean: "never asked for" and "asked for
  * and failed" are different facts and the old `ok: boolean` could not tell them
  * apart. A page that could not be read is reported on its own row with the
- * reason — never dropped, never substituted.
+ * reason - never dropped, never substituted.
  *
  * `asOfMs` is the OLDEST capture time in the payload, not the clock: search
  * rows come from a 15-minute cache and page reads from a 60-minute one, so a
@@ -35,7 +35,7 @@ import {
 import type { PublishedAtFields } from "./published-date.js";
 import type { WebSearchOptions } from "./search-options.js";
 
-/** A search row as the provider returned it — also the search cache's row shape. */
+/** A search row as the provider returned it - also the search cache's row shape. */
 export interface WebSearchRow extends PublishedAtFields {
   title: string;
   url: string;
@@ -64,7 +64,7 @@ export interface WebResultRow extends PublishedAtFields {
 export interface WebSearchCounts {
   /** What we asked Tavily for (`maxResults`). */
   requested: number;
-  /** What Tavily returned — it can differ in both directions. */
+  /** What Tavily returned - it can differ in both directions. */
   returned: number;
   /** Distinct URLs we attempted to read. */
   pagesRequested: number;

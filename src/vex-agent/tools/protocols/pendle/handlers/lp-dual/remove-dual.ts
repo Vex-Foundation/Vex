@@ -1,5 +1,5 @@
 /**
- * `pendle.lp.removeDual` — LP → token + PT, the two-output exit.
+ * `pendle.lp.removeDual` - LP → token + PT, the two-output exit.
  *
  * `removeLiquidityDualTokenAndPt` carries a `minTokenOut` AND a `minPtOut`, both
  * resolved BY TOKEN rather than by index (the provider's `outputs` order is its
@@ -7,7 +7,7 @@
  * receipt decode must prove BOTH legs or the row stays pending.
  *
  * EXIT-SHAPED (R5b matrix): removal is legal after expiry, so the matured
- * catalogue is in scope. Prequote-gated — see `../lp-dual-prequote.ts`.
+ * catalogue is in scope. Prequote-gated - see `../lp-dual-prequote.ts`.
  */
 
 import { getAddress, parseUnits, type Address, type Hex } from "viem";
@@ -81,7 +81,7 @@ export async function executePendleLpRemoveDual(
 
     // EXIT-SHAPED (R5b matrix): removal is legal after expiry, so the matured
     // catalogue is in scope. An inactive row is believed only on a parseable,
-    // past expiry — the resolver refuses anything else by name.
+    // past expiry - the resolver refuses anything else by name.
     const resolved = await resolveExitMarketByAddress(chainId, marketAddress);
     if (!resolved || !resolved.market.address) {
       return refuse("route_not_found", "No Pendle market at this address - check pendle__markets_discover (includeMatured:true covers expired markets).");
@@ -98,9 +98,9 @@ export async function executePendleLpRemoveDual(
       : market.underlyingAsset
         ? getAddress(market.underlyingAsset)
         : null;
-    if (!outputToken) return refuse("route_not_found", "No output token — pass tokenOut (the market has no underlying to default to).");
+    if (!outputToken) return refuse("route_not_found", "No output token - pass tokenOut (the market has no underlying to default to).");
     if (outputToken === ptAddress) {
-      return refuse("route_not_found", "tokenOut is this market's PT — the PT leg is delivered automatically; name a plain token instead.");
+      return refuse("route_not_found", "tokenOut is this market's PT - the PT leg is delivered automatically; name a plain token instead.");
     }
     // The LP token IS the market; read its decimals on-chain like any ERC-20.
     const lpToken = await resolveInputToken(chainEntry, marketRaw);
@@ -127,7 +127,7 @@ export async function executePendleLpRemoveDual(
 
     // Signer resolution stays AFTER the dry-run branch decision so a preview never
     // decrypts a key. The dry run still binds the SELECTED address as the
-    // receiver — the same address the execute signs with — so its route safety is
+    // receiver - the same address the execute signs with - so its route safety is
     // the identical check, not a weaker one against a placeholder.
     let wallet: Address;
     let signer: ChainWallet | null = null;
@@ -161,9 +161,9 @@ export async function executePendleLpRemoveDual(
     const intent: PendleTxIntent = {
       action: "lp-remove-dual",
       wallet,
-      // The tolerance BOTH legs are held to — see calldata/price-floor.ts.
+      // The tolerance BOTH legs are held to - see calldata/price-floor.ts.
       slippageBps: slippage.bps,
-      // The "input" being spent is the LP (market) token — approvals bind to it.
+      // The "input" being spent is the LP (market) token - approvals bind to it.
       inputToken: marketAddr,
       inputAmountWei: amountWei,
       isNative: false,
@@ -172,7 +172,7 @@ export async function executePendleLpRemoveDual(
       // elimination. The TOKEN leg is bound here.
       expectedOutputToken: outputToken,
     };
-    // FULL fund-safety extractor — identical on the dry run and the execute.
+    // FULL fund-safety extractor - identical on the dry run and the execute.
     const route = selectSafeRoute(intent, response);
 
     const assetMap = await buildAssetMap(chainId);
@@ -248,7 +248,7 @@ export async function executePendleLpRemoveDual(
     if (broadcast.kind !== "confirmed") return unsettledResult(toolId, broadcast);
 
     // The RESULT is the decoded fill, never the quote. A confirmed dual row
-    // carries BOTH proven legs — the decoder returns nothing at all otherwise —
+    // carries BOTH proven legs - the decoder returns nothing at all otherwise -
     // so the quoted values stay beside them only as the comparison.
     const executedTokenRaw = broadcast.executed.amountOutRaw ?? quotedTokenRaw;
     const executedPtRaw = broadcast.executed.amountOut2Raw ?? quotedPtRaw;

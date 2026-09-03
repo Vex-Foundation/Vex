@@ -1,5 +1,5 @@
 /**
- * TODAY'S CONVENTION DEBT — every violation the tree currently carries.
+ * TODAY'S CONVENTION DEBT - every violation the tree currently carries.
  *
  * The linter lands with the whole fleet already out of convention. Rather than
  * ship a red suite (which nobody can act on) or a weak rule (which nobody can
@@ -9,7 +9,7 @@
  * THE CONTRACT:
  *   - the suite is green while every live violation is listed here;
  *   - a NEW violation is not listed, so it fails immediately;
- *   - a migration wave DELETES the entries it fixes — entries are never added
+ *   - a migration wave DELETES the entries it fixes - entries are never added
  *     by a wave, only removed;
  *   - a stale entry (listed but no longer violated) also fails, so the list
  *     cannot rot into a permanent exemption;
@@ -33,7 +33,7 @@ export interface ManifestLintAllowlistEntry {
   readonly rule: ManifestLintRule;
   /** The param key, literal, or source text this entry excuses. */
   readonly detail: string;
-  /** Why it is still here — usually the wave that will delete this line. */
+  /** Why it is still here - usually the wave that will delete this line. */
   readonly reason: string;
 }
 
@@ -44,7 +44,7 @@ export function allowlistKey(issue: ManifestLintIssue | ManifestLintAllowlistEnt
 
 export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   // ── amount-bps-shape (7) ──
-  // amount/bps shape — an amount typed number, or a key with no In/Out/Raw suffix, or a bps param missing type number + unit "bps".
+  // amount/bps shape - an amount typed number, or a key with no In/Out/Raw suffix, or a bps param missing type number + unit "bps".
   { subject: "BridgeExecuteRelay", rule: "amount-bps-shape", detail: "slippageBps", reason: "pre-convention amount/bps declaration; deleted by W3/W5" },
   { subject: "BridgeQuoteRelay", rule: "amount-bps-shape", detail: "slippageBps", reason: "pre-convention amount/bps declaration; deleted by W3/W5" },
   { subject: "solana.predict.buy", rule: "amount-bps-shape", detail: "amountUsdc", reason: "pre-convention amount/bps declaration; deleted by W3/W5" },
@@ -54,7 +54,7 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "SwapQuoteUniswap", rule: "amount-bps-shape", detail: "slippageBps", reason: "pre-convention amount/bps declaration; deleted by W3/W5" },
 
   // ── chain-doc-parity (55) ──
-  // chain-doc parity — the param does not carry CANONICAL_CHAIN_SENTENCE, so the alias lane and the protocol lane document different accepted formats.
+  // chain-doc parity - the param does not carry CANONICAL_CHAIN_SENTENCE, so the alias lane and the protocol lane document different accepted formats.
   { subject: "BridgeExecute", rule: "chain-doc-parity", detail: "fromChain", reason: "chain description predates CANONICAL_CHAIN_SENTENCE; deleted by W8" },
   { subject: "BridgeExecute", rule: "chain-doc-parity", detail: "toChain", reason: "chain description predates CANONICAL_CHAIN_SENTENCE; deleted by W8" },
   { subject: "BridgeExecuteRelay", rule: "chain-doc-parity", detail: "fromChain", reason: "chain description predates CANONICAL_CHAIN_SENTENCE; deleted by W8" },
@@ -112,7 +112,7 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "WalletTrackToken", rule: "chain-doc-parity", detail: "chain", reason: "chain description predates CANONICAL_CHAIN_SENTENCE; deleted by W8" },
 
   // ── enum-declaration (27) ──
-  // enum declaration — the accepted values are listed in prose only; ProtocolParamDef.enum does not exist yet.
+  // enum declaration - the accepted values are listed in prose only; ProtocolParamDef.enum does not exist yet.
   { subject: "kyberswap.swap.execute", rule: "enum-declaration", detail: "slippageBps", reason: "ProtocolParamDef.enum does not exist yet; deleted by W7" },
   { subject: "kyberswap.swap.quote", rule: "enum-declaration", detail: "slippageBps", reason: "ProtocolParamDef.enum does not exist yet; deleted by W7" },
   { subject: "pendle.claim", rule: "enum-declaration", detail: "chain", reason: "ProtocolParamDef.enum does not exist yet; deleted by W7" },
@@ -142,7 +142,7 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "uniswap.swap.quote", rule: "enum-declaration", detail: "slippageBps", reason: "ProtocolParamDef.enum does not exist yet; deleted by W7" },
 
   // ── exclusive-param-groups (5) ──
-  // XOR declaration — the exclusion is prose only; ProtocolToolManifest.exclusiveParamGroups does not exist yet.
+  // XOR declaration - the exclusion is prose only; ProtocolToolManifest.exclusiveParamGroups does not exist yet.
   { subject: "pendle.market.get", rule: "exclusive-param-groups", detail: "market", reason: "exclusiveParamGroups does not exist yet; deleted by W7" },
   { subject: "solana.swap.execute", rule: "exclusive-param-groups", detail: "dexes", reason: "exclusiveParamGroups does not exist yet; deleted by W7" },
   { subject: "solana.swap.execute", rule: "exclusive-param-groups", detail: "excludeDexes", reason: "exclusiveParamGroups does not exist yet; deleted by W7" },
@@ -150,14 +150,14 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "solana.swap.quote", rule: "exclusive-param-groups", detail: "excludeDexes", reason: "exclusiveParamGroups does not exist yet; deleted by W7" },
 
   // ── generic-error-literal (4) ──
-  // generic error literals — agent-facing text that says nothing the agent can act on.
+  // generic error literals - agent-facing text that says nothing the agent can act on.
   { subject: "src/vex-agent/tools/protocols/pendle/handlers/read-shared.ts", rule: "generic-error-literal", detail: "unexpected error", reason: "generic agent-facing literal; deleted by the error-contract waves (W1/W2)" },
   { subject: "src/vex-agent/tools/protocols/pendle/handlers/shared.ts", rule: "generic-error-literal", detail: "unexpected error", reason: "generic agent-facing literal; deleted by the error-contract waves (W1/W2)" },
   { subject: "src/vex-agent/tools/protocols/trench/handlers/failure.ts", rule: "generic-error-literal", detail: "unexpected error", reason: "generic agent-facing literal; deleted by the error-contract waves (W1/W2)" },
   { subject: "src/vex-agent/tools/protocols/virtuals/handlers.ts", rule: "generic-error-literal", detail: "unexpected error", reason: "generic agent-facing literal; deleted by the error-contract waves (W1/W2)" },
 
   // ── param-description (26) ──
-  // param descriptions — under the 25-char minimum, or missing a unit anchor / decimals source.
+  // param descriptions - under the 25-char minimum, or missing a unit anchor / decimals source.
   { subject: "BridgeExecute", rule: "param-description", detail: "fromToken", reason: "param description predates the description template; deleted by W8" },
   { subject: "BridgeQuote", rule: "param-description", detail: "fromToken", reason: "param description predates the description template; deleted by W8" },
   { subject: "BridgeStatus", rule: "param-description", detail: "fromChain", reason: "param description predates the description template; deleted by W8" },
@@ -211,5 +211,5 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   // `src/tools/**` functions take an explicit bps parameter and hold no default.
 
   // ── tool-description (157) ──
-  // tool descriptions — under the 120-char minimum, or missing a when-to-use / returns / spends anchor.
+  // tool descriptions - under the 120-char minimum, or missing a when-to-use / returns / spends anchor.
 ];

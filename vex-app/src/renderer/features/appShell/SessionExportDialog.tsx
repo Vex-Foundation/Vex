@@ -21,6 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DIALOG_INITIAL_FOCUS,
 } from "../../components/ui/dialog.js";
 import { getSessionTitle } from "./sessionListModel.js";
 
@@ -58,7 +59,11 @@ export function SessionExportDialog({
             variant="ghost"
             onClick={onCancel}
             disabled={pending}
-            autoFocus
+            // The safer choice takes focus (rule 08). `DialogContent` moves
+            // focus here after `showModal()`; React's `autoFocus` prop cannot,
+            // because React never renders it as the attribute the focusing
+            // steps read.
+            {...DIALOG_INITIAL_FOCUS}
             className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
           >
             Cancel

@@ -3,7 +3,7 @@
  *
  * Both `trench.trade_quote` and `trench.trade_execute` take swap-shaped params
  * (`chain`, `tokenIn`, `tokenOut`, `amountIn`). Exactly ONE leg must be native
- * ETH — that decides the direction: native `tokenIn` is a BUY, native `tokenOut`
+ * ETH - that decides the direction: native `tokenIn` is a BUY, native `tokenOut`
  * is a SELL. `min`, `deadline`, `recipient`, and any fee/value parameter are
  * NEVER accepted from the caller (rule 90): a supplied one is rejected BY NAME,
  * never silently dropped, so an attempted override is surfaced rather than hidden.
@@ -65,7 +65,7 @@ export interface ResolvedTradeInputs {
   /** Human amount of the input token (raw param string, unparsed). */
   readonly amountInHuman: string;
   /**
-   * Effective slippage tolerance (bps) Vex applies when computing `min` — the
+   * Effective slippage tolerance (bps) Vex applies when computing `min` - the
    * caller's `slippageBps` when supplied (already validated ≤ cap), else the
    * default. The prequote match-hash binds the RAW param (omitted vs present),
    * so quote and execute must pass the same value or omit on both.
@@ -85,7 +85,7 @@ export function resolveTradeInputs(params: Record<string, unknown>): TradeInputR
   if (forbidden) {
     return {
       ok: false,
-      reason: `Parameter "${forbidden}" is not accepted — Vex derives the minimum output, deadline, recipient, and fees itself; remove it and retry.`,
+      reason: `Parameter "${forbidden}" is not accepted - Vex derives the minimum output, deadline, recipient, and fees itself; remove it and retry.`,
     };
   }
 
@@ -119,7 +119,7 @@ export function resolveTradeInputs(params: Record<string, unknown>): TradeInputR
 
   // slippageBps is the ONE price knob the model may set. Rejected HERE (not only
   // at execute) so a tolerance the execute would refuse never produces a quote
-  // that appears to authorize it — and REJECTED above the cap, never clamped.
+  // that appears to authorize it - and REJECTED above the cap, never clamped.
   const slip = resolveSlippageBps(params);
   if (!slip.ok) return { ok: false, reason: slip.reason };
 
@@ -139,7 +139,7 @@ export function resolveTradeInputs(params: Record<string, unknown>): TradeInputR
 /**
  * Resolve the effective slippage tolerance (bps). Absent → the default; present
  * → validated as a whole number in [0, cap], REJECTING (not clamping) anything
- * above the cap or non-integer/negative — mirroring the swap venues.
+ * above the cap or non-integer/negative - mirroring the swap venues.
  */
 function resolveSlippageBps(
   params: Record<string, unknown>,

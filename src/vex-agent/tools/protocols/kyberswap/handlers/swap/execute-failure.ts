@@ -1,13 +1,13 @@
 /**
- * What `kyberswap.swap.execute` tells the agent — and writes to
- * `agent_activity` — when the staged broadcast loop throws AFTER the intent
+ * What `kyberswap.swap.execute` tells the agent - and writes to
+ * `agent_activity` - when the staged broadcast loop throws AFTER the intent
  * already exists.
  *
  * Three outcomes, in the order they are decided:
- *   1. `DependentLegGasEstimateError` — a leg refused after a leg THIS plan
+ *   1. `DependentLegGasEstimateError` - a leg refused after a leg THIS plan
  *      already confirmed (its own wording, plus the one pool-state narrowing).
- *   2. a classified PRE-SIGN revert with nothing broadcast — a refusal.
- *   3. anything else — the honest "interrupted after it was recorded" wording,
+ *   2. a classified PRE-SIGN revert with nothing broadcast - a refusal.
+ *   3. anything else - the honest "interrupted after it was recorded" wording,
  *      which must never be claimed for the first two.
  *
  * The distinction that decides 2 is `legBroadcastAttempted`, never "was there
@@ -41,14 +41,14 @@ export interface PostIntentFailureInput {
   readonly sessionId: string;
   readonly executionId: number;
   readonly currentIndex: number;
-  /** True once THIS leg's hash was staged — past that point pre-sign safety can no longer be claimed. */
+  /** True once THIS leg's hash was staged - past that point pre-sign safety can no longer be claimed. */
   readonly legBroadcastAttempted: boolean;
   readonly plans: readonly SwapEventPlan[];
   readonly events: readonly AgentActivityEvent[];
   readonly slippage: number;
   /**
    * The price impact of the build this execution was signing, as a FRACTION
-   * (KyberSwap's own convention — `helpers.ts`), so a slippage refusal can put
+   * (KyberSwap's own convention - `helpers.ts`), so a slippage refusal can put
    * the observed impact next to the tolerance that was applied. `null` when the
    * build carried no usable USD legs.
    */
@@ -63,7 +63,7 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
     observedPriceImpactFraction: input.observedPriceImpactFraction,
   };
 
-  // C18: the intent already exists — never call failPreBroadcast (that
+  // C18: the intent already exists - never call failPreBroadcast (that
   // would create a SECOND execution). Abort every planned row from the
   // CURRENT index onward (it never got a hash persisted either, whether
   // this is a CAS-miss throw or any other unexpected failure) and return
@@ -78,7 +78,7 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
   // row can keep its real code; `null` for a `DependentLegGasEstimateError`
   // (its own branch below) and for any error we cannot place.
   const preSignRevert = legBroadcastAttempted ? null : classifyPreSignRevert(err);
-  // The DECODED reason, not viem's verbose message — but still through
+  // The DECODED reason, not viem's verbose message - but still through
   // this venue's single scrub boundary (C37), because the string is chosen
   // by the contract, not by us. Same treatment `uniswap.swap.execute`
   // gives its own classified reason.
@@ -95,11 +95,11 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
   // interruption of unknown scope: nothing was signed for it, the planned
   // rows are finalized "not attempted", and re-running is safe. Saying
   // otherwise is what made a transient RPC lag permanent for an agent
-  // (live 2026-07-24/25 — `dependent-leg-gas-estimate.ts`).
+  // (live 2026-07-24/25 - `dependent-leg-gas-estimate.ts`).
   if (err instanceof DependentLegGasEstimateError) {
     // ERC-20 input (the common USDC→X shape): with an allowance leg in
     // front, a genuine price-guard refusal can only reach the agent HERE,
-    // and the RPC-lag wording — actionable, but naming no parameter — left
+    // and the RPC-lag wording - actionable, but naming no parameter - left
     // it unable to fix the one thing that was wrong. A POOL-STATE reason
     // that survived every retry is admissible evidence (the narrowing and
     // its two arguments live in `pre-sign-revert-refusal.ts`); every other
@@ -126,7 +126,7 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
   }
   if (preSignRevert) {
     // The refusal's own remedy already tells the agent to try another venue
-    // when it knows of no better move — so the venue has to actually be
+    // when it knows of no better move - so the venue has to actually be
     // reachable. Appended, never substituted: the chain's reason and the
     // remedy remain the primary content of the message.
     const fallbackNote = venueFallbackNoteOnPreSignRevert({
@@ -147,7 +147,7 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
   }
   return {
     success: false,
-    output: `${toolId}: an internal error interrupted the swap after it was already recorded — ${safeMessage}. Check the record (execution ${executionId}) before taking any further action.`,
+    output: `${toolId}: an internal error interrupted the swap after it was already recorded - ${safeMessage}. Check the record (execution ${executionId}) before taking any further action.`,
     data: { _executionId: executionId, status: "pending" },
   };
 }

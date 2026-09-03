@@ -3,7 +3,7 @@
  *
  * When the Convert API is unavailable for a MATURED position, the wallet must
  * still be able to exit. This builds the Router `redeemPyToSy(receiver, YT,
- * netPyIn, minSyOut)` calldata directly (from IPActionMiscV3) — no hosted API
+ * netPyIn, minSyOut)` calldata directly (from IPActionMiscV3) - no hosted API
  * involved. The tx always targets the pinned Router; the caller approves the PT
  * (exact `netPyIn`) to the Router and broadcasts.
  *
@@ -12,13 +12,13 @@
  * SY.exchangeRate()`. Live-measured 2026-07-28 on the matured srUSDe market
  * (`agents_dm/agentscan-phase4/live-gate/free-lanes-2026-07-28.md`, LANE 2 /
  * L2-D1): `netPyIn 1896804154210053863` paid `netSyOut 1845564247148178107` at
- * rate `1027763816481086050` — 97.29 %, while the old 1:1 floor demanded
+ * rate `1027763816481086050` - 97.29 %, while the old 1:1 floor demanded
  * 99.49 % and the redemption reverted with `Slippage: INSUFFICIENT_SY_OUT`.
  *
  * So the tolerance is applied to the rate-converted expectation. It is NOT a
  * conversion allowance: it covers only exchange-rate accrual between the read
  * and the mine (the rate rises, output falls slightly). A zero floor is still
- * refused — a redemption must never accept an unbounded-loss `minSyOut` — and a
+ * refused - a redemption must never accept an unbounded-loss `minSyOut` - and a
  * failed rate read is refused BY NAME rather than falling back to 1:1.
  */
 
@@ -31,7 +31,7 @@ import { classifyPendleExpiry } from "./market-maturity.js";
 /**
  * The fallback's PRECONDITION: the position must already be matured (P1-14).
  *
- * `redeemPyToSy` burns PT alone, which the protocol permits only AFTER expiry —
+ * `redeemPyToSy` burns PT alone, which the protocol permits only AFTER expiry -
  * before it, the call needs the YT too and MUST revert on-chain. The redeem
  * handler reaches this branch whenever Convert returns anything other than a
  * `redeem-py` action, INCLUDING a perfectly good `"swap"` and any transport
@@ -74,7 +74,7 @@ export interface RedeemPyToSyPlan {
   minSyOut: bigint;
   /** 1e18-scaled SY exchange rate the floor was computed from. */
   syExchangeRate: bigint;
-  /** `netPyIn * 1e18 / syExchangeRate` — the output before tolerance. */
+  /** `netPyIn * 1e18 / syExchangeRate` - the output before tolerance. */
   expectedSyOut: bigint;
 }
 
@@ -90,7 +90,7 @@ export async function buildRedeemPyToSyPlan(input: {
   publicClient: PublicClient<Transport, Chain>;
   receiver: string;
   yt: string;
-  /** The market's SY — the share token the redemption actually pays. */
+  /** The market's SY - the share token the redemption actually pays. */
   sy: string;
   netPyIn: bigint;
   /**

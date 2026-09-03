@@ -7,20 +7,20 @@ import type { PrequoteFamily } from "@vex-agent/db/repos/swap-prequotes.js";
 import { canonAddress, canonAmount } from "./canonicalize.js";
 
 /**
- * Swap trade identity (Stage 6c/7). `kind: "swap"` is the discriminant tag —
+ * Swap trade identity (Stage 6c/7). `kind: "swap"` is the discriminant tag -
  * Stage 8c made `PrequoteMatchInput` a union so a swap identity and a bridge
  * identity with otherwise-similar values can never collide in the hash.
  *
  * The execute-only money/safety leg (`recipient`/`approveExact`/`slippageBps`)
  * is bound too (Stage 9 security fix). `recipient` (where the output lands) and
- * `approveExact` (allowance behavior) are EVM-execute-only — the swap QUOTE has
- * no such params — so the recorder DEFAULTS them to the executor's omitted-value
+ * `approveExact` (allowance behavior) are EVM-execute-only - the swap QUOTE has
+ * no such params - so the recorder DEFAULTS them to the executor's omitted-value
  * defaults (recipient → the resolved selected wallet, i.e. output-to-self;
  * approveExact → false). A quote then authorizes an execute ONLY when the
  * execute uses those same defaulted values; an execute that SETS a different
  * recipient/approveExact produces a different digest → the gate blocks. Solana
  * has neither concept (recipient=self, approveExact=false are constants there),
- * so they never affect Solana matching — uniform and inert. `slippageBps` IS in
+ * so they never affect Solana matching - uniform and inert. `slippageBps` IS in
  * both the quote and the execute params (both families), so binding it stops a
  * 50bps quote from authorizing a 10000bps execute.
  */
@@ -47,7 +47,7 @@ export interface SwapMatchInput {
   readonly amount: string;
   /**
    * Output recipient. Defaulted to the resolved selected wallet (output-to-self)
-   * when the execute omits it — mirrors `executeKyberSwap`'s
+   * when the execute omits it - mirrors `executeKyberSwap`'s
    * `str(p,"recipient") || signer.address`. Canonicalized per family (EVM
    * lowercase / Solana case-preserve). Solana = the selected wallet (constant).
    */
@@ -55,7 +55,7 @@ export interface SwapMatchInput {
   /**
    * Token-allowance behavior (EVM). `true` iff the execute set `approveExact`;
    * the executor's default when omitted is `false`. Canonicalized to "1"/"0" in
-   * the hash. Solana = false (constant — no allowance concept).
+   * the hash. Solana = false (constant - no allowance concept).
    */
   readonly approveExact: boolean;
   /**
@@ -70,7 +70,7 @@ export interface SwapMatchInput {
    * Jupiter fee-bearing `/build` tail (W5 design §6 R4: "prequote identity
    * hash extended with: feeBps, feeMint, tip, CU strategy, dexes,
    * maxAccounts, wrap"). ALL FIVE are `undefined` (→ "" in the hash material)
-   * for every non-Jupiter swap (kyberswap/uniswap/pendle) — their
+   * for every non-Jupiter swap (kyberswap/uniswap/pendle) - their
    * quote↔execute pairs still collide unchanged, since both sides omit them
    * identically. Only `solana.swap.quote`/`solana.swap.execute` (provider
    * "jupiter") populate real values, via
@@ -108,7 +108,7 @@ export function swapHashMaterial(input: SwapMatchInput): string {
     // Wave-2c venue binding (LOCKED #4): the quoting provider/venue, so a
     // kyber quote and a uniswap quote for the same identity hash differently.
     input.provider.trim().toLowerCase(),
-    // W5 (design §6 R4) Jupiter fee-bearing tail — "" for every non-Jupiter
+    // W5 (design §6 R4) Jupiter fee-bearing tail - "" for every non-Jupiter
     // swap (both sides omit it identically, so their collision is unaffected).
     input.feeBps ?? "",
     input.feeMint ?? "",

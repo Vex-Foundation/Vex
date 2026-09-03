@@ -21,37 +21,10 @@
  * gates §3).
  */
 
-import { describe, expect, it, vi, beforeAll, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { createElement } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-
-// JSDOM does not implement `HTMLDialogElement.showModal()`, so without this the
-// dialog never gets its `open` attribute and Testing Library hides every
-// descendant from `getByRole`. Same block as ReportIssueDialog.test.tsx.
-beforeAll(() => {
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-    show?: () => void;
-  };
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function closePolyfill(this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-      this.dispatchEvent(new Event("close"));
-    };
-  }
-  if (typeof proto.show !== "function") {
-    proto.show = function showPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-});
 
 const IMAGE = {
   imageId: "img_0123456789abcdef0123456789abcdef",

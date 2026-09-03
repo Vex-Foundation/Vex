@@ -18,6 +18,7 @@ import type { ProjectDto } from "@shared/schemas/projects.js";
 import { IconFolderClose, IconWarning } from "../../../../components/icons/index.js";
 import { Pill } from "../../../../components/ui/pill.js";
 import { RailRow } from "../../../../components/ui/rail-list.js";
+import { Tooltip } from "../../../../components/ui/tooltip.js";
 import { StateDot } from "../../../../components/ui/state-dot.js";
 import {
   projectDriftLabel,
@@ -63,14 +64,20 @@ export function ProjectRailRow({
             {projectPermissionTag(project.permission)}
           </Pill>
           {driftSentence !== undefined && driftSentence !== null ? (
-            <span
-              role="img"
-              aria-label={projectDriftLabel(project.name, driftSentence)}
-              data-vex-project-drift={drift ?? undefined}
-              className="flex items-center text-warning"
-            >
-              <IconWarning size={13} />
-            </span>
+            // The glyph carried its meaning ONLY in `aria-label`: a pointer
+            // user saw a warning triangle and had no way to find out what had
+            // drifted. The tooltip says the same sentence the label says, from
+            // the same source, so the two readings cannot diverge.
+            <Tooltip label={projectDriftLabel(project.name, driftSentence)}>
+              <span
+                role="img"
+                aria-label={projectDriftLabel(project.name, driftSentence)}
+                data-vex-project-drift={drift ?? undefined}
+                className="flex items-center text-warning"
+              >
+                <IconWarning size={13} />
+              </span>
+            </Tooltip>
           ) : null}
         </span>
       }

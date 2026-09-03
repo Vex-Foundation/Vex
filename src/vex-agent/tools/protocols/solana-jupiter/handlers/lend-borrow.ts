@@ -1,7 +1,7 @@
 /**
  * Solana/Jupiter Lend BORROW handlers (Agent Scan Phase 3 Batch 5, card B1).
  *
- * Separate file from `./lend.ts` (Earn) — a distinct program family with its
+ * Separate file from `./lend.ts` (Earn) - a distinct program family with its
  * own vault/position/operate vocabulary; see `w5-design.md` §3
  * (`lend_borrow_operate` role) and the owner decisions in the B1 build-factory
  * card (full lifecycle via `/operate`, `/operate-instructions` excluded).
@@ -14,7 +14,7 @@
  * evaluator, `../borrow-risk-preview.ts`); (2) the vault's `supplyToken`/
  * `borrowToken` must be read first to label the `agent_activity` tokenIn/
  * tokenOut legs (Borrow's `/operate` request carries no token identity of
- * its own — only `vaultId`); (3) the response carries `nftId` (the position,
+ * its own - only `vaultId`); (3) the response carries `nftId` (the position,
  * newly assigned when creating), surfaced in the pending output.
  */
 
@@ -71,7 +71,7 @@ import logger from "@utils/logger.js";
 const PROTOCOL = "jupiter";
 const NAMESPACE = "solana";
 
-/** The ONE entry point for provider-error text reaching an output/log/reason (scrub boundary — mirrors ./lend.ts). */
+/** The ONE entry point for provider-error text reaching an output/log/reason (scrub boundary - mirrors ./lend.ts). */
 function borrowFailureMessage(err: unknown): string {
   return summarizeProtocolError(err).message;
 }
@@ -79,7 +79,7 @@ function borrowFailureMessage(err: unknown): string {
 /**
  * `undefined` when the leg is untouched. A close-all sentinel carries no
  * `amountRaw` (magnitude is provider-computed, unknown to us in advance) and
- * therefore no `amountHuman` either — but the vault's OWN token descriptor
+ * therefore no `amountHuman` either - but the vault's OWN token descriptor
  * still labels the leg with symbol/decimals, so the agent reading its activity
  * feed never sees a bare mint string. That descriptor was already fetched to
  * resolve the vault (`/operate` carries no token identity of its own), so this
@@ -124,14 +124,14 @@ function resolveActivityLegs(
 
 /**
  * Jupiter Lend Borrow's `/operate` never wraps/unwraps native SOL (verified
- * live, quoted verbatim: "The API does not wrap or unwrap native SOL" —
+ * live, quoted verbatim: "The API does not wrap or unwrap native SOL" -
  * `developers.jup.ag/docs/lend/borrow/api`, card B3). A leg that PULLS a
  * token FROM the wallet (deposit collateral, repay debt) needs an
  * ALREADY-WRAPPED balance sitting in the wallet's WSOL associated token
- * account when that leg's token is the canonical WSOL mint — native SOL
+ * account when that leg's token is the canonical WSOL mint - native SOL
  * alone is not enough, and the on-chain tx would otherwise fail opaquely
  * after a broadcast. Checked BEFORE requesting the unsigned tx (pre-
- * broadcast, no activity row — same category as the vault-not-found /
+ * broadcast, no activity row - same category as the vault-not-found /
  * invalid-combo checks below). Returns a clear, actionable failure message,
  * or `null` when the leg is fine (not an "in" leg, not WSOL-denominated, or
  * sufficiently funded).
@@ -140,7 +140,7 @@ function resolveActivityLegs(
  * The two spl-token errors that PROVE there is no such token account, and
  * therefore a zero balance: `getAccount` throws `TokenAccountNotFoundError`
  * when the address holds no account at all, and
- * `TokenInvalidAccountOwnerError` when it holds one owned by another program —
+ * `TokenInvalidAccountOwnerError` when it holds one owned by another program -
  * in both cases the wallet has no WSOL there. Every OTHER throw (an RPC that
  * did not answer, a malformed response) proves nothing about the balance.
  *
@@ -167,7 +167,7 @@ async function checkWsolFunding(
 
   // W2g: `catch { balanceRaw = 0n }` used to swallow EVERY failure here,
   // including an RPC that never answered, and then produced a confident,
-  // WRONG "wrap SOL into WSOL first, then retry" on a money path — advice the
+  // WRONG "wrap SOL into WSOL first, then retry" on a money path - advice the
   // agent cannot act on and that cannot succeed, because nothing was ever
   // learned about the balance. Only the ABSENCE of the account proves a zero
   // balance; anything else is an unread balance and must say so.
@@ -178,33 +178,33 @@ async function checkWsolFunding(
     balanceRaw = (await getAccount(connection, ata)).amount;
   } catch (err) {
     if (!isMissingTokenAccount(err)) {
-      // Nothing has been sent anywhere — this is still a pre-broadcast refusal,
+      // Nothing has been sent anywhere - this is still a pre-broadcast refusal,
       // it just names the real cause instead of inventing a WSOL remedy.
-      return `the WSOL balance check could not be completed — the Solana RPC did not answer `
+      return `the WSOL balance check could not be completed - the Solana RPC did not answer `
         + `(${summarizeProtocolError(err).message}). Nothing was sent and no funds moved. `
         + `This is a transport failure, not a verdict about your WSOL balance: retry, and do not `
         + `wrap SOL on the strength of this message.`;
     }
-    balanceRaw = 0n; // the associated token account does not exist — a proven zero balance.
+    balanceRaw = 0n; // the associated token account does not exist - a proven zero balance.
   }
 
   // A close-all sentinel's exact required amount is provider-computed
-  // (unknown to us in advance) — require SOME wrapped balance to exist
+  // (unknown to us in advance) - require SOME wrapped balance to exist
   // rather than a specific amount.
   const sufficient = leg.amountRaw !== null ? balanceRaw >= BigInt(leg.amountRaw) : balanceRaw > 0n;
   if (sufficient) return null;
 
   // Both figures are spelled in WSOL first, raw base units second (rules/90:
-  // a raw amount must travel with the decimals needed to read it — "1000000000"
+  // a raw amount must travel with the decimals needed to read it - "1000000000"
   // reads as a thousandfold error to an agent that guesses). WSOL's decimals
   // are KNOWN here: this branch only runs for the canonical SOL/WSOL mint.
-  // The raws stay in parentheses — additive, never replaced.
+  // The raws stay in parentheses - additive, never replaced.
   const needHuman = formatRawAmount(leg.amountRaw, SOL_DECIMALS);
   const need = needHuman !== null ? `${needHuman} WRAPPED SOL (WSOL) (${leg.amountRaw} raw units)` : "some WRAPPED SOL (WSOL)";
   const foundHuman = formatRawAmount(balanceRaw, SOL_DECIMALS) ?? "an unreadable amount";
   const found = `${foundHuman} WSOL (${balanceRaw.toString()} raw units)`;
   return `this operation needs ${need} already in your wallet's WSOL token `
-    + `account (found ${found}) — Jupiter Lend Borrow's /operate endpoint never wraps native SOL `
+    + `account (found ${found}) - Jupiter Lend Borrow's /operate endpoint never wraps native SOL `
     + "for you. Wrap SOL into WSOL first, then retry.";
 }
 
@@ -236,12 +236,12 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
     }
     const vaultIds = strArray(p, "vaultIds");
 
-    // W4 (owner ruling 2026-07-25 — DISCLOSE, DO NOT BLOCK). A `full`
+    // W4 (owner ruling 2026-07-25 - DISCLOSE, DO NOT BLOCK). A `full`
     // autonomous session never sees the restricted-mode approval preview, so
     // this READ is the only place the agent can obtain an LTV, a distance to
     // liquidation, or the provider's liquidation flag. The vault row carries
     // every input those need (both legs' decimals, both provider prices, the
-    // thresholds), so it is fetched here CONCURRENTLY with the positions —
+    // thresholds), so it is fetched here CONCURRENTLY with the positions -
     // both endpoints are free reads and neither depends on the other.
     //
     // A vault-read failure must NOT fail the positions read: the agent still
@@ -282,10 +282,10 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
       return walletScopeErrorToResult(err);
     }
 
-    // The vault's own supplyToken/borrowToken label the agent_activity legs —
+    // The vault's own supplyToken/borrowToken label the agent_activity legs -
     // `/operate` carries no token identity of its own, only `vaultId`. A
     // local-list miss is a client-side validation failure (never reached the
-    // provider), same category as the missing-param checks above — no
+    // provider), same category as the missing-param checks above - no
     // activity row (mirrors `resolveBorrowOperateRequest`'s own rejections).
     let vault: JupiterLendBorrowVault | undefined;
     try {
@@ -298,7 +298,7 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
       return fail(`${toolId}: vault ${resolved.vaultId} not found in the ${resolved.market} market.`);
     }
 
-    // Native-SOL/WSOL pre-broadcast check (card B3) — a client-side check,
+    // Native-SOL/WSOL pre-broadcast check (card B3) - a client-side check,
     // no activity row, same category as the vault-not-found check above.
     const wsolFailure =
       (await checkWsolFunding(resolved.collateralLeg, vault.supplyToken.address, addr))
@@ -311,7 +311,7 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
       resolved.collateralLeg, resolved.debtLeg, vault.supplyToken, vault.borrowToken,
     );
     // w5-design.md §1: "the /operate delta shape lives in intent_params, not
-    // in the role vocabulary" — a strict, versioned, normalized record (NOT
+    // in the role vocabulary" - a strict, versioned, normalized record (NOT
     // the raw agent params) of which legs moved which way. Recorded on BOTH
     // the pre-broadcast-failure path and the intent-creation path, so a
     // rejected call's audit trail carries the SAME shape a succeeded one would.
@@ -331,7 +331,7 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
       tokenOut,
     };
 
-    // 1. Request the unsigned provider tx BEFORE recording anything — a
+    // 1. Request the unsigned provider tx BEFORE recording anything - a
     // rejection here is pre-broadcast (nothing to record was ever signed).
     let raw: { nftId: number; transaction: string };
     try {
@@ -376,7 +376,7 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
     });
     const eventRow = events[0]!;
 
-    // 3. Sign-only (REPLACE mode — Jupiter Lend Borrow's `/operate` response
+    // 3. Sign-only (REPLACE mode - Jupiter Lend Borrow's `/operate` response
     // carries no blockhash metadata to VERIFY against, same as Earn). A throw
     // here is a POST-INTENT failure: finalize the EXISTING row, never a
     // second intent (design R2).
@@ -389,7 +389,7 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
       await failActivityEvent(eventRow.id, { failureCode: "unknown", failureReason: reason });
       return {
         success: false,
-        output: `${toolId} failed: ${reason} — recorded (execution ${executionId}); nothing was broadcast.`,
+        output: `${toolId} failed: ${reason} - recorded (execution ${executionId}); nothing was broadcast.`,
         data: { _executionId: executionId },
       };
     }
@@ -405,12 +405,12 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
       logger.warn(`${toolId}.staging_cas_miss`, { executionId, eventId: eventRow.id });
       return {
         success: false,
-        output: `${toolId}: an internal error left this operation unrecorded before broadcast — refusing to submit untracked. Check execution ${executionId}; do not retry blindly.`,
+        output: `${toolId}: an internal error left this operation unrecorded before broadcast - refusing to submit untracked. Check execution ${executionId}; do not retry blindly.`,
         data: { _executionId: executionId },
       };
     }
 
-    // 5. Broadcast over RPC — Borrow's `/operate` returns an opaque, TIPLESS
+    // 5. Broadcast over RPC - Borrow's `/operate` returns an opaque, TIPLESS
     // provider transaction, so Jupiter's tip-gated `/tx/v1/submit` (which
     // silently dropped these before 2026-07-24) is not reachable from here.
     // A signature mismatch or an ambiguous transport failure NEVER
@@ -422,10 +422,10 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
     if (broadcast.kind === "rejected_before_broadcast") {
       // The node ANSWERED and refused: nothing went on-chain. Reporting this
       // as "pending confirmation" would be a lie. The row still stays pending
-      // — the sweep owns terminality (design D4).
+      // - the sweep owns terminality (design D4).
       return {
         success: false,
-        output: `${toolId}: this operation was rejected before broadcast — nothing went on-chain: ${broadcast.reason}. Recorded (execution ${executionId}); do not retry until the cause is fixed.`,
+        output: `${toolId}: this operation was rejected before broadcast - nothing went on-chain: ${broadcast.reason}. Recorded (execution ${executionId}); do not retry until the cause is fixed.`,
         data: {
           _executionId: executionId,
           status: "rejected_before_broadcast",
@@ -436,7 +436,7 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
 
     return {
       success: false,
-      output: `Borrow operate broadcast (signature ${prepared.signature}, position ${raw.nftId}) — confirmation pending, tracked automatically. Do not retry.`,
+      output: `Borrow operate broadcast (signature ${prepared.signature}, position ${raw.nftId}) - confirmation pending, tracked automatically. Do not retry.`,
       data: {
         _executionId: executionId,
         status: "pending",

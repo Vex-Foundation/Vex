@@ -41,10 +41,23 @@
  * the service's own report. A leaked `yes` loop would otherwise outlive the
  * run and burn a core.
  *
+ * EVERY SIGNAL GOES THROUGH `assertSignalablePid`, because "the pid the host
+ * reported" and "a process this suite may signal" are not the same set: pid 0
+ * addresses this very process on both platforms, and node-pty reports 0 on
+ * Windows until ConPTY's deferred connect completes. That gate is what stopped
+ * this file from killing its own vitest worker; its doc carries the evidence.
+ *
  * Fake timers are off the table here: a real pty's data arrives on the event
  * loop from a real kernel, and freezing the clock would freeze the thing under
  * test. Grace periods are made short by INJECTION (`graceMs` / `shortGraceMs`)
  * instead.
+ *
+ * ## The Windows trace
+ *
+ * `traceWindowsPhase` writes a structural progress line to stderr on win32 and
+ * nothing anywhere else. It exists because this suite's Windows failures have
+ * been NATIVE deaths, which vitest cannot report; see `windows-trace.ts` for
+ * the reasoning and its removal condition.
  */
 
 import fs from "node:fs/promises";
@@ -66,7 +79,11 @@ import { filesystemLaunchProbe } from "../launch-probe.js";
 import { createNodePtySpawner } from "../node-pty-spawner.js";
 import { scrubEnvironment } from "../process-env.js";
 import { TerminalSnapshotStore } from "../snapshot-store.js";
+import type { PtyAdapter, PtySpawner } from "../types.js";
 import { RecordingPort } from "./scripted-pty.js";
+import { traceWindowsPhase } from "./windows-trace.js";
+
+traceWindowsPhase("module loaded");
 
 /**
  * Grace values small enough that a detach-then-expire is observable inside a
@@ -75,6 +92,55 @@ import { RecordingPort } from "./scripted-pty.js";
  */
 const GRACE_MS = 1_500;
 const SHORT_GRACE_MS = 400;
+
+/**
+ * How far past the high watermark ONE read from the pty may carry the host.
+ *
+ * `TerminalProcess.handlePtyData` counts and decides to pause inside the data
+ * event that crosses the mark, so the overshoot is bounded by a single read -
+ * 64 KiB, node's default for the tty stream node-pty reads through. MEASURED
+ * on Linux over ten runs, idle and under eight spinning cores: 188 to 4 064
+ * characters. The ceiling asserted is the STRUCTURAL bound rather than the
+ * measurement, so it stays true on a platform whose reads are larger while
+ * still failing a pause that was deferred to a later event-loop turn.
+ */
+const PTY_SINGLE_READ_CEILING_CHARS = 65_536;
+
+/**
+ * How long a live pty stream may make NO progress before a test calls it wedged
+ * rather than slow.
+ *
+ * A total-duration budget cannot tell those apart: the only way to make one
+ * survive a loaded box is to raise it until it no longer catches the defect
+ * either, and it has to be raised again every time the volume grows. What the
+ * defect actually looks like - a resume that never happens, an ack path that
+ * stopped - is SILENCE, and silence is load-independent.
+ *
+ * MEASURED with a one-second sampler over the flood - 48 MB at the time, at the
+ * 95-character marker this suite used before ConPTY's row width narrowed it to
+ * 36 MB - while eight spinning cores competed with the suite: the longest
+ * interval between two observed increases of the delivered character count was
+ * 50 ms. Thirty seconds is that with three orders of magnitude of headroom.
+ */
+const FLOW_STALL_MS = 30_000;
+
+/**
+ * The geometry of the flood producer: the pty's width, and a marker that fits
+ * inside one row of it.
+ *
+ * The relationship is the point, which is why they are one pair. A pty on Unix
+ * hands the host the producer's bytes; ConPTY hands it conhost's RENDERING of a
+ * console screen buffer this many columns wide, and a marker wider than the row
+ * arrives there split across two rows. Keeping the marker under the width makes
+ * "every line arrived" a claim about the host on both platforms rather than a
+ * claim about the emulator's line wrapping. See the flood test for the Windows
+ * measurement that forced this.
+ *
+ * The volume is unchanged in kind: 500 000 lines is 36 MB through the pause and
+ * resume cycle, hundreds of times the high watermark.
+ */
+const FLOOD_COLS = 80;
+const FLOOD_MARKER_CHARS = 70;
 
 const WINDOW = "w1";
 const PROJECT = "p1";
@@ -85,12 +151,37 @@ let toMain: TerminalHostMessage[];
 let services: PtyHostService[];
 /** Every pid this test spawned. `afterEach` fails the run if any survives. */
 let spawnedPids: number[];
+/**
+ * Every pty the production spawner handed the host, in spawn order.
+ *
+ * The suite needs a SIGNALABLE pid, and the create reply cannot be the source
+ * of one: on Windows node-pty has no pid yet when that reply is written (see
+ * `assertSignalablePid`), and the host deliberately does not block a create on
+ * a value that arrives later. What it does instead is publish the pid as a
+ * PROPERTY once it exists - a stream this suite would have to attach a consumer
+ * port to observe, and attaching one changes which side paces the pty, which
+ * would silently rewrite the flow-control tests below.
+ *
+ * So the pid is read from the ADAPTER'S OWN LIVE GETTER, which is the same
+ * value by the same mechanism the host reads. This wrapper only records; the
+ * spawner inside it is the production one, unchanged.
+ */
+let spawnedPtys: PtyAdapter[];
 let requestCounter = 0;
+
+function recordingSpawner(): PtySpawner {
+  const spawn = createNodePtySpawner();
+  return (executable, args, options) => {
+    const adapter = spawn(executable, args, options);
+    spawnedPtys.push(adapter);
+    return adapter;
+  };
+}
 
 function buildService(): PtyHostService {
   const service = new PtyHostService({
     // THE PRODUCTION SEAMS. Only these two differ from `host-service.test.ts`.
-    spawn: createNodePtySpawner(),
+    spawn: recordingSpawner(),
     probe: filesystemLaunchProbe,
     baseEnv: scrubEnvironment(process.env),
     snapshotStore: new TerminalSnapshotStore(snapshotDir),
@@ -137,6 +228,7 @@ async function createTerminal(
       executable: "sh",
       args: [...(options.args ?? [])],
       cwd: workDir,
+      projectLabel: "proj",
       cols: options.cols ?? 80,
       rows: options.rows ?? 24,
       // No overlay: the scrubbed base environment is what production gives a
@@ -146,11 +238,98 @@ async function createTerminal(
   });
   if (!outcome.ok) throw new Error(`create refused: ${outcome.code}`);
   const value = outcome.value as { pid: number };
-  spawnedPids.push(value.pid);
-  return value;
+  const adapter = spawnedPtys[spawnedPtys.length - 1];
+  if (adapter === undefined) {
+    throw new Error(`create ${terminalId} replied ok but no pty was spawned`);
+  }
+  // WAIT FOR NODE-PTY TO HAVE A PID, rather than believing the reply's echo.
+  // On Windows that happens when ConPTY's deferred connect() completes, which
+  // needs no output from the shell - so this resolves for `sleep 600` as well
+  // as for a shell that prints a prompt. On Unix it is already true.
+  await until(
+    () => adapter.pid > 0,
+    `node-pty to report a pid for ${terminalId}`,
+    10_000,
+  );
+  // GUARDED AT THE SOURCE, so an unusable pid fails inside the test that
+  // created it - where the trace says which shell it was - rather than inside
+  // `afterEach`, whose failure erases the result of that test as well.
+  const pid = assertSignalablePid(adapter.pid, `create ${terminalId}`);
+  // When the reply DID carry a pid, it must be this one. That is the whole
+  // contract of the echo: best-effort, never wrong.
+  if (value.pid !== 0 && value.pid !== pid) {
+    throw new Error(
+      `create ${terminalId} replied pid ${String(value.pid)} but the pty is ${String(pid)}`,
+    );
+  }
+  spawnedPids.push(pid);
+  traceWindowsPhase(`spawned ${terminalId} pid ${String(pid)}`);
+  return { pid };
 }
 
+/**
+ * THE ONE GATE EVERY SIGNAL IN THIS FILE PASSES THROUGH.
+ *
+ * `process.kill` does not mean "signal this shell" for every integer. Pid 0 in
+ * particular addresses THIS PROCESS on both platforms this suite runs on, by
+ * two different mechanisms:
+ *
+ *  - on POSIX, `kill(0, sig)` addresses the caller's whole process GROUP, which
+ *    is the vitest worker and everything it spawned;
+ *  - on Windows, libuv's `uv_kill` substitutes `GetCurrentProcess()` when the
+ *    pid is 0 and then calls `TerminateProcess` for SIGKILL/SIGTERM/SIGINT, so
+ *    `process.kill(0, "SIGKILL")` terminates the worker outright - with no
+ *    exception to catch, no vitest output, and the results of every test whose
+ *    hooks had not finished lost with it.
+ *
+ * That is not a hypothetical here. node-pty has DEFERRED `conptyNative.connect()`
+ * since 1.2.0-beta.11 (microsoft/node-pty#885; this repo pins 1.2.0-beta.15),
+ * so `IPty.pid` is 0 from `spawn()` until the connection completes on Windows -
+ * `windowsTerminal.js` only assigns `_pid = _agent.innerPid` inside its
+ * `ready_datapipe` handler. `TerminalProcess.start` used to read `pty.pid` on
+ * the line after the spawn, so on Windows the create outcome carried 0, this
+ * suite recorded 0, `isAlive(0)` answered "still running" forever, and the leak
+ * detector spent its whole budget on it before signalling. Both halves are on
+ * the record: run 33602264566 reported "Hook timed out in 10000ms" from that
+ * spin, and once the hook budget was raised to 60 s the spin got to finish and
+ * the SIGKILL landed on the worker (run 33623840152, thirty seconds of silence
+ * and no case reported).
+ *
+ * The host now defers its pid-dependent work to the first data event, the way
+ * VS Code's `TerminalProcess` does, and `createTerminal` above waits for
+ * node-pty's own live getter rather than for the reply. This gate stays: it is
+ * the thing that made the failure legible, and every signal in this file still
+ * has to prove it addresses a shell rather than this worker.
+ *
+ * So a pid that cannot have come from a shell this suite spawned is a THROWN,
+ * NAMED failure rather than a signal. The suite loses a shell it cannot prove
+ * dead - which is a red test with a cause in its message - instead of losing
+ * the worker.
+ */
+function assertSignalablePid(pid: number, what: string): number {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    throw new Error(
+      `${what}: refusing to signal pid ${String(pid)}, which does not identify`
+      + ` a shell this suite spawned. On Windows node-pty reports IPty.pid as 0`
+      + ` until ConPTY's deferred connect() completes (microsoft/node-pty#885),`
+      + ` and process.kill(0, ...) addresses this process - the caller's group`
+      + ` on POSIX, GetCurrentProcess() in libuv's uv_kill on Windows. Reaching`
+      + ` this line means node-pty never reported a pid for a pty it spawned,`
+      + ` so nothing here can prove anything about that shell.`,
+    );
+  }
+  return pid;
+}
+
+/**
+ * Whether the OS still has this process.
+ *
+ * `kill(pid, 0)` is accurate on both platforms once the pid is real: libuv's
+ * Windows `uv_kill` answers signal 0 with `GetExitCodeProcess`, so an exited
+ * process reads as gone even while node-pty still holds a handle to it.
+ */
 function isAlive(pid: number): boolean {
+  assertSignalablePid(pid, "liveness check");
   try {
     process.kill(pid, 0);
     return true;
@@ -182,6 +361,10 @@ async function detectSurvivors(
   pids: readonly number[],
   timeoutMs = 10_000,
 ): Promise<number[]> {
+  // EVERY PID BEFORE THE FIRST SIGNAL. A single unusable pid must abort the
+  // detector rather than have it reach `process.kill` at the bottom of the
+  // loop; see `assertSignalablePid` for what that call does to this worker.
+  for (const pid of pids) assertSignalablePid(pid, "leak detector");
   const deadline = Date.now() + timeoutMs;
   let remaining = pids.filter(isAlive);
   while (remaining.length > 0 && Date.now() < deadline) {
@@ -222,6 +405,47 @@ async function until(
     await delay(20);
   }
   throw new Error(`timed out waiting for: ${what}`);
+}
+
+/**
+ * `until`, for a condition on a stream that must keep MOVING.
+ *
+ * The failure this reports is a STALL - `stallMs` with no observed progress -
+ * not an elapsed total, because a real producer on a shared event loop is
+ * throughput-bound and its total is a property of the machine's load, while
+ * silence is a property of the code. `progress` returns any monotonic measure
+ * of the stream (delivered characters here); `describeState` is evaluated only
+ * on failure and puts the flow-control state in the message, so a stall says
+ * which side stopped instead of only that something did.
+ *
+ * `hardCeilingMs` is a backstop against a stream that dribbles forever without
+ * finishing, and against this loop outliving the test that started it.
+ */
+async function untilProgressing(
+  predicate: () => boolean,
+  progress: () => number,
+  what: string,
+  describeState: () => string,
+  stallMs = FLOW_STALL_MS,
+  hardCeilingMs = 240_000,
+): Promise<void> {
+  const deadline = Date.now() + hardCeilingMs;
+  let seen = progress();
+  let movedAt = Date.now();
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    const now = progress();
+    if (now !== seen) {
+      seen = now;
+      movedAt = Date.now();
+    } else if (Date.now() - movedAt > stallMs) {
+      throw new Error(
+        `stalled for ${String(stallMs)} ms waiting for: ${what} (${describeState()})`,
+      );
+    }
+    await delay(20);
+  }
+  throw new Error(`timed out waiting for: ${what} (${describeState()})`);
 }
 
 /** `until`, for a predicate that has to await something (a serialization). */
@@ -417,9 +641,12 @@ beforeEach(async () => {
   toMain = [];
   services = [];
   spawnedPids = [];
+  spawnedPtys = [];
+  traceWindowsPhase("beforeEach ready");
 });
 
 afterEach(async () => {
+  traceWindowsPhase("afterEach start");
   for (const service of services) {
     try {
       await service.shutdownAll();
@@ -427,13 +654,96 @@ afterEach(async () => {
       // A service that already shut down in the test body is the normal case.
     }
   }
+  traceWindowsPhase("afterEach shutdownAll returned");
   // THE SERVICE'S OWN REPORT IS NOT EVIDENCE, so the world is checked. Every
   // shell this test spawned must be gone because the HOST ended it, not
   // because the harness did.
   const survivors = await detectSurvivors(spawnedPids);
+  traceWindowsPhase(`afterEach survivors ${String(survivors.length)}`);
   await fs.rm(snapshotDir, { recursive: true, force: true });
   await fs.rm(workDir, { recursive: true, force: true });
   expect(survivors).toEqual([]);
+  // THE HOOK OUTLIVES ITS OWN DETECTOR, deliberately. `detectSurvivors` spends
+  // up to 10 s waiting for the shells to go, which is exactly vitest's default
+  // hook budget, so a leak used to be reported as "Hook timed out in 10000ms"
+  // with no pid in it - the shape the Windows lane reported (run 33602264566).
+  // The shutdown above spends real time of its own there too: killing a pty
+  // while conhost is still flushing is a documented Windows hang risk
+  // (microsoft/vscode#71966, mitigated in VS Code by delaying the kill after
+  // the last data event). The budget below leaves both room to finish so the
+  // failure that surfaces is the assertion above, naming the pids that leaked.
+}, 60_000);
+
+/* ------------------------------------------------------------------ *
+ * (0) The Windows canary - WINDOWS ONLY, and it runs FIRST
+ * ------------------------------------------------------------------ */
+
+/**
+ * CAN NODE-PTY SPAWN AT ALL INSIDE A VITEST FORK WORKER ON WINDOWS, AND WHEN
+ * DOES IT KNOW THE PID?
+ *
+ * Everything below this block goes through the host and takes minutes. When the
+ * worker dies, the lane cannot tell "ConPTY cannot run here" from "the suite
+ * signalled the wrong pid" from "the flood overran something", because the
+ * corpse reports nothing. This case answers the first two in under a second,
+ * before any of them has spent a shell.
+ *
+ * It is deliberately NOT routed through `PtyHostService`: the question is about
+ * node-pty and the fork worker, so the only Vex code in the path is the
+ * production spawner. It also uses `cmd.exe` rather than the `sh` every other
+ * case launches, so a missing Git Bash on the runner reads as an `sh`
+ * resolution failure there instead of as ConPTY being broken here.
+ *
+ * `describe.runIf` rather than `skipIf` on the rest of the file: this is a
+ * Windows-only diagnostic being ADDED, so a POSIX run's case count and
+ * assertions are exactly what they were.
+ *
+ * ## The pid assertion is the load-bearing one
+ *
+ * node-pty defers `conptyNative.connect()` (microsoft/node-pty#885), so
+ * `IPty.pid` is 0 until the first data event - `windowsTerminal.js` assigns the
+ * real pid inside `ready_datapipe`, and VS Code carries the same wait in
+ * `terminalProcess.ts`. This case pins BOTH halves of that contract, so when
+ * `PtyHostService` is fixed to resolve the pid the way VS Code does, the
+ * behaviour it must rely on is already proven here.
+ */
+describe.runIf(process.platform === "win32")("ConPTY under a vitest fork worker", () => {
+  traceWindowsPhase("describe: ConPTY canary");
+
+  it("spawns a real shell, reports a pid once it connects, and reads one line", async () => {
+    traceWindowsPhase("canary: start");
+    const spawn = createNodePtySpawner();
+    const pty = spawn(process.env.COMSPEC ?? "cmd.exe", ["/c", "echo VEX_CANARY"], {
+      name: "xterm-256color",
+      cols: 80,
+      rows: 24,
+      cwd: workDir,
+      env: scrubEnvironment(process.env),
+    });
+    traceWindowsPhase(`canary: spawned, pid at spawn ${String(pty.pid)}`);
+
+    let seen = "";
+    const data = pty.onData((chunk) => {
+      seen += chunk;
+    });
+    try {
+      await until(() => seen.includes("VEX_CANARY"), "the canary shell to echo", 20_000);
+      traceWindowsPhase(`canary: read output, pid now ${String(pty.pid)}`);
+
+      // THE DEFERRED-CONNECT CONTRACT. By the first data event node-pty has
+      // completed `connect()` and knows the shell's pid, which is the moment
+      // the host has to read it.
+      expect(pty.pid).toBeGreaterThan(0);
+    } finally {
+      data.dispose();
+      try {
+        pty.kill();
+      } catch {
+        // `echo` may already have exited; the assertion above is the subject.
+      }
+    }
+    traceWindowsPhase("canary: done");
+  }, 30_000);
 });
 
 /* ------------------------------------------------------------------ *
@@ -441,13 +751,41 @@ afterEach(async () => {
  * ------------------------------------------------------------------ */
 
 describe("flow control against a real pty", () => {
+  traceWindowsPhase("describe: flow control");
   /**
    * A consumer that acknowledges exactly as preload does, so the pty is driven
    * through pause and resume repeatedly over a large volume.
+   *
+   * ## Why the shell is HELD OPEN after the flood
+   *
+   * The producer used to end with `echo <sentinel>` and let the shell exit, and
+   * that made this an intermittently failing test on a loaded machine - not
+   * because flow control misbehaved, but because a Linux pty does not promise
+   * to deliver its tail once the slave closes.
+   *
+   * MEASURED, with `TerminalProcess.handlePtyData` instrumented to total every
+   * character the HOST was ever handed, eight spinning cores competing with the
+   * suite: on 5 runs out of 12 node-pty reported `exit` with that total already
+   * 11 095 to 12 836 characters SHORT of the 48 500 016 the shell wrote at the
+   * 95-character marker of the time, and no further data event ever arrived.
+   * The last lines, sentinel included, were gone before any Vex code could see
+   * them. The same loss reproduced with the host's watermark pause disabled
+   * outright (2 of 5 runs), which is what rules our flow control out as the
+   * cause: it is the kernel discarding what is still buffered on the master
+   * when the last slave fd closes, surfacing through node-pty's EIO close path
+   * (`unixTerminal.js`, `_socket.on('error')` -> `close` -> `exit`).
+   *
+   * `read _hold` leaves the shell blocked on the pty after the flood, so the
+   * stream under test never crosses that exit boundary and every assertion
+   * below is about the host again. The exit path keeps its own coverage, where
+   * it can be deterministic: the scripted-pty suites own trailing-output-before
+   * -exit (`flow-control.test.ts`, `launch-and-exit.test.ts`), and `afterEach`
+   * still proves this shell is reaped.
    */
   it(
     "PAUSES a real producer above the high watermark and resumes it on acks, losing nothing",
     async () => {
+      traceWindowsPhase("flood: start");
       const service = buildService();
       const port = new XtermConsumerPort();
       await send(service, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [
@@ -461,38 +799,90 @@ describe("flow control against a real pty", () => {
       // enough to overrun an unpaused consumer immediately. A shell `while`
       // loop is neither - measured at over 120 s for this volume, against
       // 459 ms for `yes`.
+      //
+      // ## Why the marker FITS INSIDE ONE ROW
+      //
+      // The marker used to be 95 characters against an 80-column pty, and that
+      // is what made this test red on the Windows lane - for a reason that is
+      // not loss. A Unix pty is a byte pipe: what the producer writes is what
+      // the host reads, so a marker wider than the row survives the trip
+      // intact. ConPTY is not a pipe. It is conhost RENDERING a console screen
+      // buffer of exactly `FLOOD_COLS` columns back out as VT, so a
+      // 95-character line occupies two rows there and reaches the host as runs
+      // of 80 and 15 characters - the marker never appears whole, and counting
+      // it as missing accuses the host of losing what the emulator only
+      // reflowed. MEASURED on the Windows lane (run 33602264566, job
+      // 100158395057): `markerCount` came back 12 of 500 000 while every other
+      // claim in this test held - the host paused above the watermark within
+      // one read, the producer stayed stopped across the 500 ms window, acks
+      // resumed it, the sentinel arrived and no resync was demanded.
+      //
+      // A marker NARROWER than the row cannot be split by any emulator in the
+      // middle, so the exact count below stays a claim about the host on every
+      // platform instead of a claim about line wrapping. The columns are passed
+      // explicitly rather than inherited from the helper's default, because the
+      // marker's width is only meaningful against the width of the row.
       const lineCount = 500_000;
-      const line = "x".repeat(95);
+      const line = "x".repeat(FLOOD_MARKER_CHARS);
       const sentinel = "VEX_FLOOD_DONE";
       await createTerminal(service, "t1", {
+        cols: FLOOD_COLS,
         args: [
           "-c",
-          `yes '${line}' | head -n ${String(lineCount)}; echo ${sentinel}`,
+          `yes '${line}' | head -n ${String(lineCount)}; echo ${sentinel}; read _hold`,
         ],
       });
       const drain = new PortDrain(port, line, sentinel);
       port.receive({ kind: "attach", terminalId: "t1" });
 
-      // FIRST: do not acknowledge. The host must pause the REAL pty, so the
-      // stream has to STOP rather than growing without bound.
-      await until(
-        () => {
-          drain.pump();
-          return drain.chars > TERMINAL_FLOW_HIGH_WATERMARK_CHARS;
-        },
-        "the first burst to cross the high watermark",
-      );
-      drain.pump();
-      const atPause = drain.chars;
-      await delay(500);
-      drain.pump();
-      const afterWaiting = drain.chars;
+      const terminal = service.terminal("t1");
+      if (terminal === undefined) throw new Error("terminal vanished");
+      const flow = terminal.process;
 
-      // The producer can overrun by at most what was already in flight when
-      // pause was called. What it must NOT do is keep streaming for 500 ms - an
-      // unpaused `yes` delivers tens of megabytes in that window.
-      expect(afterWaiting - atPause).toBeLessThan(TERMINAL_FLOW_HIGH_WATERMARK_CHARS);
-      expect(afterWaiting).toBeLessThan(2_000_000);
+      // THE ATTACH HANDOFF FIRST. Until its last replay chunk has gone out, the
+      // producer is paced by the MIRROR and the handoff ends in
+      // `clearUnacknowledgedChars`, so a pause observed before that point is a
+      // different owner's pause and would be cancelled a moment later.
+      await until(
+        () => port.eventsOfKind("replay").some((event) => event.last),
+        "the attach handoff to finish its replay",
+      );
+      traceWindowsPhase("flood: replay handoff done");
+
+      // FIRST: do not acknowledge. The host must pause the REAL pty.
+      //
+      // The wait is on the host's OWN decision rather than on a byte count in
+      // the consumer, because the consumer's count lags by a coalescing window
+      // and a lagging observer cannot say when the decision was taken.
+      await until(
+        () => flow.isPaused,
+        "the host to pause the pty above the high watermark",
+      );
+      // Nothing has been acknowledged yet, so this counter IS every character
+      // the host has read from the pty since the handoff.
+      const readAtPause = flow.unacknowledged;
+      traceWindowsPhase(`flood: pause observed at ${String(readAtPause)} chars`);
+
+      // THE OVERSHOOT IS BOUNDED BY ONE READ. The pause is decided inside the
+      // data event that crosses the mark, so the host can be past it by at most
+      // the size of a single read - never by a second event's worth. A
+      // regression that deferred the decision to a later turn breaks this.
+      expect(readAtPause).toBeGreaterThan(TERMINAL_FLOW_HIGH_WATERMARK_CHARS);
+      expect(readAtPause).toBeLessThanOrEqual(
+        TERMINAL_FLOW_HIGH_WATERMARK_CHARS + PTY_SINGLE_READ_CEILING_CHARS,
+      );
+
+      // AND THE PRODUCER STAYS STOPPED. Proving that nothing arrives is the one
+      // thing that needs elapsed time: there is no event for "no data". The
+      // window is not the proof of a race, it is the interval over which a
+      // growth of zero is asserted - and an unpaused `yes` puts tens of
+      // megabytes through in it, so a pause that did not reach the OS cannot
+      // survive the check.
+      await delay(500);
+      expect(flow.unacknowledged).toBe(readAtPause);
+      drain.pump();
+      // The consumer sees the same stopped stream, one coalescing window behind.
+      expect(drain.chars).toBeLessThanOrEqual(readAtPause);
 
       // NOW let the consumer acknowledge from its data path, exactly as
       // preload does. If pause had not really stopped the producer the totals
@@ -502,30 +892,42 @@ describe("flow control against a real pty", () => {
       // One ack to restart the stream that is currently paused below the
       // threshold; every ack after this one comes from the data path itself.
       port.receive({ kind: "ack", terminalId: "t1", charCount: drain.chars });
+      traceWindowsPhase("flood: resume acked, waiting for the sentinel");
 
-      await until(
+      await untilProgressing(
         () => {
           drain.pump();
           return drain.sawSentinel;
         },
+        () => drain.chars,
         "the flood to run to completion",
-        // A GENEROUS budget, not a weakened assertion. The volume and the
-        // exact-count check below are unchanged; this only decides how much
-        // CPU starvation the test tolerates before calling it a failure.
-        // Measured on this machine: 4.3 s idle, 7.5 s under six spinning
-        // cores, 132 s while two full `tsc` lint runs (twelve processes at
-        // 4 GB each) were also running. A real producer on a shared event loop
-        // is throughput-bound, so the budget has to clear the pathological
-        // case or the suite reports a scheduler as a flow-control defect.
-        240_000,
+        () =>
+          `delivered ${String(drain.chars)} chars, unacknowledged ${String(flow.unacknowledged)}`
+          + `, paused ${String(flow.isPaused)}, writes in flight ${String(port.outstandingWrites)}`,
       );
       drain.pump();
+      traceWindowsPhase(
+        `flood: done, ${String(drain.chars)} chars, ${String(drain.markerCount)} markers`,
+      );
 
       // NO MID-STREAM LOSS. Every line the shell wrote is in the ordered live
       // stream: the mirror's row bound governs REPLAY, never the live stream.
-      expect(drain.markerCount).toBe(lineCount);
-      // ~48 MB of payload plus the CR the pty adds to every newline.
-      expect(drain.chars).toBeGreaterThan(48_000_000);
+      //
+      // Both numbers travel in the message. A count that comes back wrong says
+      // nothing on its own about WHICH half moved - a stream that arrived whole
+      // with unmatched markers is an emulator artifact, a stream that is short
+      // in characters too is real loss - and a lane on another operating system
+      // is the only place either can be observed.
+      const delivered = () =>
+        `delivered ${String(drain.chars)} chars, ${String(drain.markerCount)}`
+        + ` markers of ${String(lineCount)}`;
+      expect(drain.markerCount, delivered()).toBe(lineCount);
+      // The payload plus the CR the pty adds to every newline: 36 MB on a Unix
+      // pty, and at least that on ConPTY, whose own cursor and erase sequences
+      // only add to the count.
+      expect(drain.chars, delivered()).toBeGreaterThan(
+        lineCount * FLOOD_MARKER_CHARS,
+      );
 
       // MEMORY STAYED BOUNDED. The emergency ceiling is what protects the host
       // when flow control is not enough; a well-behaved consumer never reaches
@@ -541,6 +943,7 @@ describe("flow control against a real pty", () => {
  * ------------------------------------------------------------------ */
 
 describe("a real curses program", () => {
+  traceWindowsPhase("describe: curses program");
   /**
    * `less` is the chosen TUI, and the choice is deliberate.
    *
@@ -555,6 +958,7 @@ describe("a real curses program", () => {
   it(
     "survives alternate-screen and cursor-addressed output in the mirror",
     async () => {
+      traceWindowsPhase("it: curses mirror");
       const service = buildService();
       const port = new RecordingPort();
       await send(service, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [
@@ -644,9 +1048,11 @@ describe("a real curses program", () => {
  * ------------------------------------------------------------------ */
 
 describe("detach and reattach with a real pty", () => {
+  traceWindowsPhase("describe: detach and reattach");
   it(
     "keeps producing output while detached and replays VALID VT on reattach",
     async () => {
+      traceWindowsPhase("it: detach and reattach");
       const service = buildService();
       const first = new RecordingPort();
       await send(service, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [
@@ -728,9 +1134,11 @@ describe("detach and reattach with a real pty", () => {
  * ------------------------------------------------------------------ */
 
 describe("revive across a service restart", () => {
+  traceWindowsPhase("describe: revive across restart");
   it(
     "restores buffers AND layout from a snapshot written by a previous service",
     async () => {
+      traceWindowsPhase("it: revive restores buffers and layout");
       const first = buildService();
       const port = new RecordingPort();
       await send(first, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [
@@ -817,6 +1225,7 @@ describe("revive across a service restart", () => {
   it(
     "keeps a CLOSED workspace's buffers across an orderly quit and a restart",
     async () => {
+      traceWindowsPhase("it: closed workspace survives quit");
       const first = buildService();
       const port = new RecordingPort();
       await send(first, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [
@@ -891,6 +1300,7 @@ describe("revive across a service restart", () => {
  * ------------------------------------------------------------------ */
 
 describe("shutdown against real processes", () => {
+  traceWindowsPhase("describe: shutdown against real processes");
   /**
    * THE ORPHANED-SHELL PROOF, asserted against the OPERATING SYSTEM.
    *
@@ -908,6 +1318,7 @@ describe("shutdown against real processes", () => {
    * red with it.
    */
   it("KILLS every real shell it owns, and the kernel agrees", async () => {
+    traceWindowsPhase("it: shutdown kills every shell");
     const service = buildService();
     const first = await createTerminal(service, "t1", { args: ["-c", "sleep 600"] });
     const second = await createTerminal(service, "t2", { args: ["-c", "sleep 600"] });
@@ -941,6 +1352,7 @@ describe("shutdown against real processes", () => {
    * delete report itself finished with one of its shells still running.
    */
   it("does not answer a kill until the real process has exited", async () => {
+    traceWindowsPhase("it: kill settles on exit");
     const service = buildService();
     const terminal = await createTerminal(service, "t1", { args: ["-c", "sleep 600"] });
     await until(() => isAlive(terminal.pid), "the shell to be running");
@@ -959,6 +1371,7 @@ describe("shutdown against real processes", () => {
 });
 
 describe("mirror-paced flow control against a real pty", () => {
+  traceWindowsPhase("describe: mirror-paced flow control");
   /**
    * THE SLOW-RENDERER PROPERTY, END TO END (F2).
    *
@@ -973,6 +1386,7 @@ describe("mirror-paced flow control against a real pty", () => {
    * observed at the producer.
    */
   it("PAUSES the producer for a consumer that never completes its writes", async () => {
+    traceWindowsPhase("it: mirror-paced pause");
     const service = buildService();
     const port = new XtermConsumerPort();
     await send(service, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [
@@ -1018,6 +1432,7 @@ describe("mirror-paced flow control against a real pty", () => {
 });
 
 describe("a snapshot against a REAL, CONTINUOUSLY PRODUCING shell", () => {
+  traceWindowsPhase("describe: snapshot under continuous production");
   /**
    * (e) THE HOLD REACHES THE OPERATING SYSTEM.
    *
@@ -1053,6 +1468,7 @@ describe("a snapshot against a REAL, CONTINUOUSLY PRODUCING shell", () => {
    * the quit path into a hang, and that the hold is released afterwards.
    */
   it("commits promptly while a real `yes` loop is running", async () => {
+    traceWindowsPhase("it: snapshot under continuous production");
     const service = buildService();
     const port = new RecordingPort();
     await send(service, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [

@@ -7,6 +7,12 @@
  * pin that the banner is session-agnostic, that it says something specific per
  * category (never the generic "Unable to process the message"), and that no
  * provider prose can reach the DOM.
+ *
+ * Since B2.2 the card carries NO live role: the notification announcer speaks
+ * each failure once from the model event, so a `role="alert"` here as well
+ * would say the same failure twice. The card is found by its area attribute
+ * instead, and `engine-error-notifications.test.tsx` owns the announcement
+ * and the two-way dismissal binding.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,9 +27,21 @@ import {
   useEngineErrorRetentionSync,
 } from "../../../lib/api/engine-errors.js";
 import { useEngineErrorStore } from "../../../stores/engineErrorStore.js";
+import { notifications } from "../../../lib/notifications/index.js";
 import { makeEngineBridgeStub } from "../../../test/engine-bridge-stub.js";
 
 const SESSION_A = "00000000-0000-4000-8000-00000000000a";
+
+/** The contextual card, by the attribute that names it. */
+function cardOrNull(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-vex-area="session-error-banner"]');
+}
+
+function card(): HTMLElement {
+  const node = cardOrNull();
+  if (node === null) throw new Error("the session error card is not rendered");
+  return node;
+}
 const SESSION_B = "00000000-0000-4000-8000-00000000000b";
 
 type ErrorCb = (event: EngineErrorEvent) => void;
@@ -60,6 +78,7 @@ beforeEach(() => {
   subscribers = [];
   offError.mockReset();
   useEngineErrorStore.setState({ bySessionId: {} });
+  notifications.reset();
   Object.defineProperty(window, "vex", {
     configurable: true,
     writable: true,
@@ -87,14 +106,14 @@ function wrapper(client: QueryClient) {
 describe("SessionErrorBanner", () => {
   it("renders nothing when the session has no recorded failure", () => {
     render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(cardOrNull()).toBeNull();
   });
 
   it("surfaces a provider 429 with the retry hint - not a generic failure", () => {
     useEngineErrorStore.getState().record(makeEvent());
     render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
 
-    const alert = screen.getByRole("alert");
+    const alert = card();
     expect(alert.getAttribute("data-vex-category")).toBe("capacity");
     expect(alert.textContent).toContain("rate-limited");
     // The whole point: the provider's own retry hint, in seconds.
@@ -106,7 +125,7 @@ describe("SessionErrorBanner", () => {
     useEngineErrorStore.getState().record(makeEvent());
     const alert = (
       render(createElement(SessionErrorBanner, { sessionId: SESSION_A })),
-      screen.getByRole("alert")
+      card()
     );
     expect(alert.textContent).toContain("rate_limit_exceeded");
     expect(alert.textContent).toContain("HTTP 429");
@@ -145,13 +164,14 @@ describe("SessionErrorBanner", () => {
     ];
     for (const category of categories) {
       useEngineErrorStore.setState({ bySessionId: {} });
+      notifications.reset();
       useEngineErrorStore
         .getState()
         .record(makeEvent({ category, errorType: null, retryAfterSeconds: null }));
       const { unmount } = render(
         createElement(SessionErrorBanner, { sessionId: SESSION_A }),
       );
-      const alert = screen.getByRole("alert");
+      const alert = card();
       // Non-generic bar: every category names what failed and what to do.
       expect(alert.textContent, category).not.toContain(
         "Unable to process the message",
@@ -164,7 +184,7 @@ describe("SessionErrorBanner", () => {
   it("is scoped to its session - another session's failure does not render", () => {
     useEngineErrorStore.getState().record(makeEvent({ sessionId: SESSION_B }));
     render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(cardOrNull()).toBeNull();
   });
 });
 
@@ -187,7 +207,7 @@ describe("retention vs invalidation", () => {
     expect(useEngineErrorStore.getState().bySessionId[SESSION_A]).toBeUndefined();
     // …but B's failure was KEPT, and shows the moment B is selected.
     render(createElement(SessionErrorBanner, { sessionId: SESSION_B }));
-    expect(screen.getByRole("alert").textContent).toContain(
+    expect(card().textContent).toContain(
       "Provider account problem",
     );
   });
@@ -244,7 +264,7 @@ describe("retention vs invalidation", () => {
       emit(makeEvent({ scope: "turn", category: "account" }));
     });
     render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
-    expect(screen.getByRole("alert").textContent).toContain(
+    expect(card().textContent).toContain(
       "Provider account problem",
     );
   });

@@ -23,7 +23,7 @@
             "type": "string"
           },
           "walletAddress": {
-            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected.",
+            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet - omit it to read your own. Under session scope a DIFFERENT address is rejected.",
             "type": "string"
           }
         },

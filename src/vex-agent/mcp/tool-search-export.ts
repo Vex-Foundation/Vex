@@ -88,16 +88,22 @@ export const EXPORTED_TOOL_SEARCH_DESCRIPTION =
   "Search the Vex protocol tool catalog. READ-ONLY: it runs no protocol tool, "
   + "signs nothing and moves no funds; it only tells you which tools exist and "
   + "what they take. Use it to find the right tool before calling it. Every "
-  + "tool it returns is already in this server's tools/list and is callable "
-  + "directly by the `publicName` in each row, so there is no select or "
-  + "activation step. Call it with EXACTLY ONE of `query` (an intent phrase, "
-  + "for example \"bridge USDC from Base to Solana\") or `namespace` (a protocol "
-  + "name, to list every tool it has). `limit` is optional and must be a whole "
+  + "tool it returns is in this server's tools/list. Call it by the `publicName` "
+  + "in each row, prefixed the way your client prefixes MCP tools (Claude Code: "
+  + "`mcp__vex__<publicName>`); if your client lists protocol tools with "
+  + "deferred schemas, load the schema the way your client does before calling. "
+  + "For the whole contract of any tool call vex_ToolDescribe. Call this search "
+  + "with EXACTLY ONE of `query` (an intent phrase, for example "
+  + "\"bridge USDC from Base to Solana\") or `namespace` (a protocol name, to "
+  + "list every tool it has). `limit` is optional and must be a whole "
   + `number between 1 and ${MAX_DISCOVERY_LIMIT} (default ${DEFAULT_DISCOVERY_LIMIT} `
   + "for `query`, and the whole namespace for `namespace` unless you name one); "
-  + "an out-of-range limit is refused rather than quietly reduced. `totalCount` "
-  + "is always how many tools matched and `hasMore` says whether the limit left "
-  + "any out, so raise `limit` to see the rest. Rows for a "
+  + "an out-of-range limit is refused rather than quietly reduced. One query "
+  + "answer is bounded and there is NO CURSOR: `totalCount` is always how many "
+  + "tools matched and `hasMore` says whether the limit left any out. Rows it "
+  + "left out are not out of reach - narrow instead, either by passing "
+  + "`namespace` alone to list one protocol in full or by asking a tighter "
+  + "query, or raise `limit`. Rows for a "
   + "tool whose provider key is not configured in this Vex installation carry "
   + "`available: false` and the environment variable NAMES that would enable "
   + "it; the tool still appears, and calling it answers with the same fact.";
@@ -131,7 +137,9 @@ export const EXPORTED_TOOL_SEARCH_INPUT_SCHEMA: JsonSchema = {
         `Maximum rows to return, 1 to ${MAX_DISCOVERY_LIMIT}. Applies to both `
         + `modes: default ${DEFAULT_DISCOVERY_LIMIT} with \`query\`, and the whole `
         + "namespace with `namespace` when omitted. `totalCount` and `hasMore` "
-        + "report what a limit left out. Out-of-range values are refused, not clamped.",
+        + "report what a limit left out; there is no cursor, so reach the rest by "
+        + "raising this limit or by narrowing with `namespace` alone or a tighter "
+        + "query. Out-of-range values are refused, not clamped.",
     },
   },
   additionalProperties: false,
@@ -153,8 +161,9 @@ function refuse(message: string): ExportedToolSearchOutcome {
 const SELECT_REFUSAL =
   `vex_ToolSearch does not support \`${TOOL_SEARCH_SELECT_PREFIX}\`: it is a read-only catalog `
   + "search and cannot make a tool callable, because every exported tool is already in this "
-  + "server's tools/list. Call the tool by the `publicName` this search returns. "
-  + "This call was NOT run.";
+  + "server's tools/list. Call the tool by the `publicName` this search returns, prefixed the way "
+  + "your client prefixes MCP tools; if your client defers protocol schemas, load the schema the "
+  + "way your client does. This call was NOT run.";
 
 interface ExportedToolSearchArgs {
   readonly query?: string;

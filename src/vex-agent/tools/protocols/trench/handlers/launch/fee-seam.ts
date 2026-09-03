@@ -9,15 +9,15 @@
  * The ordering contract the launch handler must honour is unchanged and lives
  * with the implementation (`../../fee/index.ts`):
  *
- *   1. plan the fee — `null` means no leg, NO ROW, and the skipped disclosure;
+ *   1. plan the fee - `null` means no leg, NO ROW, and the skipped disclosure;
  *   2. append `plan.event` as the LAST event of the activity intent, so the row
  *      exists before anything is broadcast;
- *   3. run the launch's own legs — the fee leg is NOT in that loop;
+ *   3. run the launch's own legs - the fee leg is NOT in that loop;
  *   4. only on a CONFIRMED launch, run the fee; on reverted/ambiguous/refused,
  *      finalize the row as never-attempted and never sign it;
  *   5. never fail the launch because the fee failed.
  *
- * `runFeeLeg: null` still means "collector not wired" — a DISCLOSED state
+ * `runFeeLeg: null` still means "collector not wired" - a DISCLOSED state
  * (`fee_leg_not_wired`), never a silent skip: a launch that should have been
  * charged and was not is a fact the record must carry.
  */
@@ -44,14 +44,14 @@ export interface TrenchFeeLegPlanRequest {
 export type PlanTrenchFeeLeg = (request: TrenchFeeLegPlanRequest) => TrenchFeeLegPlan | null;
 
 /**
- * THE launch fee planner — one adapter, shared by every caller that plans a
+ * THE launch fee planner - one adapter, shared by every caller that plans a
  * launch.
  *
  * It renames fields and adds Trench's fixed `chainId`; it computes no amount.
  * It lives here rather than at a call site because there is now more than one
  * caller (the agent's execute leg and the desktop preview), and a second
  * hand-written copy of this mapping would let the number the user is SHOWN
- * drift from the number that is later CHARGED — a disclosure defect that no
+ * drift from the number that is later CHARGED - a disclosure defect that no
  * test of either side alone would catch.
  */
 export const planTrenchLaunchFeeLeg: PlanTrenchFeeLeg = (request) =>

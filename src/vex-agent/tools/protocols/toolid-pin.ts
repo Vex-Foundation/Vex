@@ -3,14 +3,14 @@
  *
  * Dense retrieval is an embedding-similarity search over capability prose, so a
  * query that IS a tool name ("dexscreener__pairs_search", "khalani.brid") is
- * exactly the case it handles worst — the model already knows the answer and
+ * exactly the case it handles worst - the model already knows the answer and
  * only needs the param schema back. This pre-step recognises that query and
  * puts the named manifest at rank 0; everything after it keeps the ranking
  * retrieval produced.
  *
  * BOTH IDENTITIES ARE MATCHED, and that is the point. A manifest has a durable
  * dotted `toolId` and a model-visible `publicName` (`./types.ts`), and the
- * model only ever SEES the latter — it is the only name reaching a provider
+ * model only ever SEES the latter - it is the only name reaching a provider
  * `tools` array. Matching `toolId` alone made the `query` schema's promise
  * ("an exact tool name you have already seen is returned first") false for
  * every name the model could actually have seen. The two are matched
@@ -25,7 +25,7 @@
 import type { ScoredManifest } from "./lexical-score.js";
 import type { ProtocolToolManifest } from "./types.js";
 
-/** Score assigned to a pinned row — above any cosine similarity. */
+/** Score assigned to a pinned row - above any cosine similarity. */
 const PINNED_SCORE = 1;
 
 /** Neither identity contains whitespace; anything that does is intent prose. */

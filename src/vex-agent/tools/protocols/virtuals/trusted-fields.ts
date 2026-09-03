@@ -2,21 +2,21 @@
  * Trusted-field validators for the Virtuals projector boundary.
  *
  * The tolerant client validation (`@tools/virtuals/validation.ts`) only
- * normalizes TYPES (string/number/null) — the VALUES are still untrusted
+ * normalizes TYPES (string/number/null) - the VALUES are still untrusted
  * upstream data. This module narrows structural strings into TRUSTED SHAPES
  * before they are projected into model-facing tool output:
  *
- *   - enums (chain / agent status / factory) — closed allowlists; an unknown
+ *   - enums (chain / agent status / factory) - closed allowlists; an unknown
  *     value becomes `null` (the projector adds a degrade note), NEVER a
  *     pass-through;
- *   - timestamps — must parse as a date and are RE-SERIALIZED to canonical
+ *   - timestamps - must parse as a date and are RE-SERIALIZED to canonical
  *     ISO (the output string is ours, not upstream's);
- *   - addresses — EVM `0x` + 40 hex, or Solana base58 (32-44); else null;
- *   - identifiers (genesis ids/statuses) — strict `[A-Za-z0-9_-]` token;
- *   - URLs — https-only, bounded length, strict URI charset (no quotes,
+ *   - addresses - EVM `0x` + 40 hex, or Solana base58 (32-44); else null;
+ *   - identifiers (genesis ids/statuses) - strict `[A-Za-z0-9_-]` token;
+ *   - URLs - https-only, bounded length, strict URI charset (no quotes,
  *     angle brackets, backticks, whitespace); invalid ⇒ dropped (null).
  *
- * Anything that fails validation is dropped to `null` — hostile payloads in
+ * Anything that fails validation is dropped to `null` - hostile payloads in
  * structural fields can never reach the model. Free-text fields are NOT
  * handled here; those go through `sanitizeForSystemPrompt` + hard caps in
  * `projectors.ts`.
@@ -56,7 +56,7 @@ export function trustedFactory(raw: string | null): TrustedFactory | null {
 
 /**
  * Validate + RE-SERIALIZE a timestamp. The returned string is produced by
- * `Date.toISOString()` — canonical shape, independent of the upstream bytes —
+ * `Date.toISOString()` - canonical shape, independent of the upstream bytes -
  * so even a leniently-parsed input cannot smuggle text through.
  */
 export function trustedIsoTimestamp(raw: string | null): string | null {
@@ -88,7 +88,7 @@ export function trustedIdentifier(raw: string | null, maxLen = 40): string | nul
 // ── URLs ────────────────────────────────────────────────────────────
 
 const MAX_URL_LENGTH = 200;
-/** Strict URI charset — no quotes, angle brackets, backticks, backslash, whitespace. */
+/** Strict URI charset - no quotes, angle brackets, backticks, backslash, whitespace. */
 const SAFE_URL_CHARS = /^[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]+$/;
 
 /**

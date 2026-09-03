@@ -480,7 +480,7 @@ function describeVerifierRefusal(
 ): string {
   const detail = violations.map((v) => `${v.point}: ${v.detail}`).join("; ");
   return (
-    "Refusing to launch: the launchpad's transaction failed Vex's pre-signing checks — "
+    "Refusing to launch: the launchpad's transaction failed Vex's pre-signing checks - "
     + `${detail}. Nothing was signed.`
   );
 }

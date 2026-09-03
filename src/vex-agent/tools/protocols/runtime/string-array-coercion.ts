@@ -3,7 +3,7 @@
  *
  * WHY THIS EXISTS. `acceptsStringArray` compiles to `string | string[]` and the
  * manifest text promises the two spellings are equivalent. A live session
- * (2026-07-30) produced a third one: `chainIds: "[\"robinhood\"]"` — the array,
+ * (2026-07-30) produced a third one: `chainIds: "[\"robinhood\"]"` - the array,
  * JSON-encoded into the string branch. That value is a valid string, so the
  * type gate passes it, and the comma-splitting reader downstream then treats
  * the literal `["robinhood"]` as a chain slug. The result is an empty answer
@@ -11,7 +11,7 @@
  *
  * SCOPE, deliberately narrow. Only a param the manifest DECLARED
  * `acceptsStringArray` is considered, and only a string that parses to a JSON
- * array whose members are ALL strings is rewritten — into exactly the array the
+ * array whose members are ALL strings is rewritten - into exactly the array the
  * model meant. Anything else (a bare word, a comma list, malformed JSON, a JSON
  * object, an array with a non-string member) is returned untouched so the
  * existing validation messages, not this module, decide its fate. Money and

@@ -534,7 +534,10 @@ the coordinator's scratchpad `a1-probe/REPORT.md`):
     overlapped duplex, deadline/close cancellation). The pattern code
     stays, exactly as the owner directed; enablement waits for the
     proof. P4's "current-user DACL" wording stands until the matrix
-    passes or the owner explicitly accepts the named posture. W4 the
+    passes or the owner explicitly accepts the named posture.
+    (SUPERSEDED at stage B4.3b, 2026-09-03: the matrix passed on the
+    required Windows jobs, both flags are true, and the gate and its
+    refusal code are deleted. Contract 1.6 carries the runs.) W4 the
     win32 dial needs FILE_FLAG_OVERLAPPED (plain O_RDWR serializes
     reads and writes on a pipe handle); a build-tagged
     syscall.CreateFile dial is added with the go1.27
@@ -1940,15 +1943,22 @@ frozen in A4a because both sides of the wire depend on them.
    (evidence in item 47); no unlink lifecycle, connect-probe-only
    stale check; the bridge dials via `os.OpenFile` with the
    `halfCloseOrDeadline` seam replacing CloseWrite on pipes. The
-   Windows transport is RUNTIME-DISABLED behind
-   `WINDOWS_TRANSPORT_PROVEN = false` on both owners (revision-log
-   items 50, 52); it refuses with `windows_pending_platform_proof`.
-   Flipping the flag requires the FULL eight-item matrix in contract
-   section 1.6 - including foreign-user pipe-squatting, server
-   impersonation level, and a host-authentication check
-   (GetNamedPipeServerProcessId + server token SID) - run on the
-   required `bridge-windows` CI job. Linux proves derivation, syntax
-   and plan shape only.
+   Windows transport is ENABLED: `WINDOWS_TRANSPORT_PROVEN` is true on
+   both owners since stage B4.3b, and the gate's refusal
+   `windows_pending_platform_proof` is deleted with it. The FULL
+   eight-item matrix in contract section 1.6 - including foreign-user
+   pipe-squatting, server impersonation level, and the
+   host-authentication check (GetNamedPipeServerProcessId + server
+   token SID) - was measured on the required Windows CI jobs: rows 1,
+   2, 3, 7 and 8 on `bridge-windows` run 33646484002, row 4's host half
+   on `vex-app-windows` run 33650332655 and its bridge half in the
+   win32 conformance arm, rows 5 and 6 on `bridge-windows` run
+   33663385959. Linux still proves derivation, syntax and plan shape
+   only; everything else is measured on Windows. (The plain-listen,
+   connect-probe and `os.OpenFile` wording above is superseded by
+   B4.2b: the Windows endpoint is the pipe front with its own protected
+   descriptor, its stale check is the `BOUND.firstInstance` readback,
+   and the dial is the build-tagged overlapped CreateFile.)
 9. Lints and gates (`src/__tests__/vex-agent/mcp/`): description
    budget (first 2000 bytes carry risk class and preconditions),
    annotation completeness per the O7 pin, ASCII-name lint,
@@ -2020,14 +2030,16 @@ frozen in A4a because both sides of the wire depend on them.
    stdin EOF with a delaying peer; blocked stdout; malformed ack with
    embedded newlines; signal teardown.
 4. Windows: compile and package the binary; parse and vector-test
-   pipe syntax; at RUNTIME refuse locally with
-   `windows_pending_platform_proof` BEFORE any dial, including a valid
-   pipe override, while `WINDOWS_TRANSPORT_PROVEN = false`. The
-   build-tagged `dial_windows.go` uses `syscall.CreateFile` with
-   `FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT |
-   SECURITY_IDENTIFICATION`; the host-authentication SID check and the
-   squatting/impersonation tests are REQUIRED-before-flip items in
-   contract 1.6, not shipped runtime code. (Superseded note, kept for
+   pipe syntax; DIAL at runtime. The plan-time refusal
+   `windows_pending_platform_proof` was deleted with the section 1.6
+   gate at stage B4.3b, when `WINDOWS_TRANSPORT_PROVEN` became true on
+   both owners. The build-tagged `dial_windows.go` uses
+   `syscall.CreateFile` with `FILE_FLAG_OVERLAPPED |
+   SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION`; the
+   host-authentication SID check is SHIPPED RUNTIME CODE that runs on
+   every pipe dial (`hostauth_windows.go`), and the squatting and
+   impersonation measurements that were required before the flip are
+   contract 1.6 rows 7 and 8, measured on run 33646484002. (Superseded note, kept for
    history: the earlier plan text said a pipe transport must come from
    a future arc after the ACL decision, never
    accidentally from this stdlib arc).

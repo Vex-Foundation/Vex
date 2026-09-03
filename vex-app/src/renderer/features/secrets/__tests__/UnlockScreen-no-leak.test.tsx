@@ -59,12 +59,9 @@ const CONSOLE_SINKS = ["log", "info", "warn", "error", "debug"] as const;
 let consoleSpies: ReturnType<typeof vi.spyOn>[] = [];
 
 beforeEach(() => {
-  HTMLDialogElement.prototype.showModal = function showModal(): void {
-    this.setAttribute("open", "");
-  };
-  HTMLDialogElement.prototype.close = function close(): void {
-    this.removeAttribute("open");
-  };
+  // The <dialog> modal methods come from `test/setup.ts`
+  // (`test/dialog-modal-polyfill.ts`), which runs the real focusing steps. A
+  // local stub here would reinstall one that focuses nothing.
   mockUnlock.mockReset();
   mockBeginUnlockCurtain.mockReset();
   consoleSpies = CONSOLE_SINKS.map((sink) =>

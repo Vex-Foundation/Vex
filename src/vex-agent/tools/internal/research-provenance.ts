@@ -8,8 +8,8 @@
  * footnote to rows of numbers. Here the payload IS prose written by strangers,
  * and the live recon found the attack shape in the flesh: row #1 of an
  * unfiltered `$WIF` sweep was a reply-shill pasting a contract address. So the
- * label is the FIRST key of every output object — the first thing the model
- * reads — followed immediately by the dot paths that carry the untrusted text.
+ * label is the FIRST key of every output object - the first thing the model
+ * reads - followed immediately by the dot paths that carry the untrusted text.
  * Key order is part of the contract (`JSON.stringify` preserves insertion
  * order) and is pinned by test.
  *

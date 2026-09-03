@@ -7,39 +7,11 @@
  * (TanStack Query), so every render needs a `QueryClientProvider`.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import type { UserProfile } from "@shared/schemas/user-profile.js";
-
-// JSDOM does not implement `HTMLDialogElement.showModal()` — the dialog
-// stays without the `open` attribute and Testing Library's a11y tree hides
-// every descendant from `getByRole`/`getByLabelText`. Polyfilled the same
-// way as shell-sidebar.test.tsx.
-beforeAll(() => {
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-    show?: () => void;
-  };
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function closePolyfill(this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-      this.dispatchEvent(new Event("close"));
-    };
-  }
-  if (typeof proto.show !== "function") {
-    proto.show = function showPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-});
 
 const getUserProfileMock = vi.fn<() => Promise<Result<UserProfile>>>();
 const setUserProfileMock = vi.fn<(profile: UserProfile) => Promise<Result<UserProfile>>>();

@@ -3,12 +3,12 @@
  * for card B1's activity spine).
  *
  * WHAT THIS FILE USED TO PIN. Every mutating handler signed, broadcast, and THEN
- * read the Pendle asset catalogue back for USD valuation — inside the SAME
+ * read the Pendle asset catalogue back for USD valuation - inside the SAME
  * `try`. The `txHash` was a `const` scoped inside that `try`, so a throw in the
  * read-back landed in a `catch` that could not see the hash: the agent was told
  * a funded, already-broadcast trade had simply FAILED, and was free to retry it.
  *
- * WHAT CHANGED. Card B1 moved the evidence — and the valuation reads it needs —
+ * WHAT CHANGED. Card B1 moved the evidence - and the valuation reads it needs -
  * to BEFORE the signature, and routed every broadcast through
  * `signed-broadcast.ts`, which now owns the receipt wait and returns a
  * discriminated outcome instead of a bare hash. Two consequences this suite
@@ -16,17 +16,17 @@
  *
  *   1. The unproven outcomes are no longer exotic post-hoc catches; they are
  *      first-class returns. Every mutating tool must surface the hash, refuse a
- *      retry, and report `success: false` — because `runtime/capture.ts` skips
+ *      retry, and report `success: false` - because `runtime/capture.ts` skips
  *      capture on a failed result, so a mined-but-unproven trade must never
  *      project a lot from amounts nobody decoded.
  *   2. A PRE-broadcast failure never mentions a broadcast or a hash. That
  *      boundary is the one that decides whether an agent may safely retry, and
  *      it must not blur. (Its wording is still pinned byte-for-byte, and now
- *      includes the REAL cause: owner decree 2026-08-02 — a code + hint alone
+ *      includes the REAL cause: owner decree 2026-08-02 - a code + hint alone
  *      told the agent nothing about what actually failed.)
  *
  * `selectSafeRoute` (the fund-safety calldata extractor) is stubbed so these
- * tests reach the broadcast at all — it has its own dedicated suites
+ * tests reach the broadcast at all - it has its own dedicated suites
  * (`calldata*.test.ts`), and re-deriving real Router calldata for six methods
  * here would test the extractor, not the failure path under test.
  */
@@ -194,7 +194,7 @@ const MARKET = {
   isPrime: false,
 };
 
-/** A stubbed safe route — the extractor's own suites cover its real behaviour. */
+/** A stubbed safe route - the extractor's own suites cover its real behaviour. */
 const ROUTE = {
   contractParamInfo: { method: "swapExactTokenForPt", contractCallParams: [] },
   tx: { to: ROUTER, data: "0x1234", from: null, value: null },
@@ -240,14 +240,14 @@ type Res = { success: boolean; output: string; data?: Record<string, unknown> };
 /**
  * An UNPROVEN broadcast: the transaction may be (or is) on-chain, but Vex
  * cannot state the outcome. The agent must get the hash, a refusal to retry,
- * and `success: false` — asserted on behaviour, never on an internal shape.
+ * and `success: false` - asserted on behaviour, never on an internal shape.
  */
 function expectUnprovenBroadcast(res: Res, toolId: string): void {
-  // Never success — the on-chain outcome is not proven.
+  // Never success - the on-chain outcome is not proven.
   expect(res.success).toBe(false);
   // The hash itself, so the agent can surface it.
   expect(res.output).toContain(TX_HASH);
-  // Do not retry — the funds may already be committed.
+  // Do not retry - the funds may already be committed.
   expect(res.output).toMatch(/do not retry/i);
   // The tool is named so the agent knows which leg is in doubt.
   expect(res.output.startsWith(toolId)).toBe(true);
@@ -339,7 +339,7 @@ const MUTATING_TOOLS: Array<{
 
 // ── 1. Unproven outcomes, per tool ───────────────────────────────────
 
-describe.each(MUTATING_TOOLS)("$toolId — unproven broadcast", ({ toolId, run, params, setup }) => {
+describe.each(MUTATING_TOOLS)("$toolId - unproven broadcast", ({ toolId, run, params, setup }) => {
   beforeEach(() => setup?.());
 
   it("an AMBIGUOUS submit surfaces the hash and forbids a retry", async () => {
@@ -350,9 +350,9 @@ describe.each(MUTATING_TOOLS)("$toolId — unproven broadcast", ({ toolId, run, 
       expect.objectContaining({ nodePendingNonce: 11 }),
     );
     expectUnprovenBroadcast(res, toolId);
-    // The exact sentence the card fixes — ambiguity resolves automatically.
+    // The exact sentence the card fixes - ambiguity resolves automatically.
     expect(res.output).toContain(
-      "Cannot prove whether this broadcast landed — do not retry; this attempt is recorded as pending and resolves automatically.",
+      "Cannot prove whether this broadcast landed - do not retry; this attempt is recorded as pending and resolves automatically.",
     );
   });
 
@@ -389,9 +389,12 @@ describe("a PRE-broadcast refusal never mentions a broadcast", () => {
       // The pinned wording now also carries the REAL cause (owner decree
       // 2026-08-02, Codex blocker 4): a code + hint alone hid what actually
       // went wrong. The property this test exists to protect is UNCHANGED and
-      // still asserted by `expectPreBroadcastRefusal` — no broadcast, no hash,
+      // still asserted by `expectPreBroadcastRefusal` - no broadcast, no hash,
       // nothing signed.
       `Pendle buy failed (${ErrorCodes.PENDLE_INVALID_RESPONSE}: Retry shortly; do not treat this as an empty catalogue.`
+      // The joiner is a U+2014 produced by `utils/error-summary/render.ts:160`,
+      // which is outside this change's file set. Pinned as the code actually
+      // emits it; when that renderer is swept, this line follows it.
       + ` — Pendle asset catalogue for chain 1 is unreadable.)`,
     );
   });
@@ -406,9 +409,12 @@ describe("a PRE-broadcast refusal never mentions a broadcast", () => {
       // The pinned wording now also carries the REAL cause (owner decree
       // 2026-08-02, Codex blocker 4): a code + hint alone hid what actually
       // went wrong. The property this test exists to protect is UNCHANGED and
-      // still asserted by `expectPreBroadcastRefusal` — no broadcast, no hash,
+      // still asserted by `expectPreBroadcastRefusal` - no broadcast, no hash,
       // nothing signed.
       `Pendle redeem failed (${ErrorCodes.PENDLE_INVALID_RESPONSE}: Retry shortly; do not treat this as an empty catalogue.`
+      // The joiner is a U+2014 produced by `utils/error-summary/render.ts:160`,
+      // which is outside this change's file set. Pinned as the code actually
+      // emits it; when that renderer is swept, this line follows it.
       + ` — Pendle asset catalogue for chain 1 is unreadable.)`,
     );
   });
@@ -417,7 +423,7 @@ describe("a PRE-broadcast refusal never mentions a broadcast", () => {
   // path must reach the model as its REAL cause. Until now `failureDetail`
   // answered "unexpected error" for every one of the ~40 Pendle write sites,
   // so the agent could not tell "the wallet cannot pay" (only the user can fix
-  // it) from a transient RPC blip (retrying is correct) — and retried blind.
+  // it) from a transient RPC blip (retrying is correct) - and retried blind.
   it("a plain Error on the write path surfaces the REAL cause, never 'unexpected error'", async () => {
     mockConvert.mockRejectedValue(
       new Error(
@@ -439,7 +445,7 @@ describe("a PRE-broadcast refusal never mentions a broadcast", () => {
 
   // Codex blocker 4: the WRAPPED case. `tools/pendle/erc20.ts` turns a failed
   // approval into `VexError(APPROVAL_FAILED, "Failed to reset allowance: <the
-  // node's real words>")` — and the old code+hint-only rendering threw those
+  // node's real words>")` - and the old code+hint-only rendering threw those
   // words away, so an unpayable wallet reached the agent as a bare code it
   // could only retry. Code and hint still LEAD; the real cause follows.
   it("a WRAPPED VexError surfaces the cause buried in its message", async () => {
@@ -464,7 +470,7 @@ describe("a PRE-broadcast refusal never mentions a broadcast", () => {
   });
 
   it("a no-route refusal is RECORDED as a hashless definitively_failed row", async () => {
-    // A refusal must be as visible in Agent Scan as a fill — "nothing happened"
+    // A refusal must be as visible in Agent Scan as a fill - "nothing happened"
     // was previously indistinguishable from "nothing was recorded".
     mockConvert.mockResolvedValue(null);
     const res = (await PENDLE_PT_HANDLERS["pendle.pt.buy"]!(

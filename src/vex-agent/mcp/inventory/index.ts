@@ -54,6 +54,11 @@ import {
   EXPORTED_TOOL_SEARCH_INPUT_SCHEMA,
   EXPORTED_TOOL_SEARCH_PUBLIC_NAME,
 } from "../tool-search-export.js";
+import {
+  EXPORTED_TOOL_DESCRIBE_DESCRIPTION,
+  EXPORTED_TOOL_DESCRIBE_INPUT_SCHEMA,
+  EXPORTED_TOOL_DESCRIBE_PUBLIC_NAME,
+} from "../tool-describe-export.js";
 import { EXPORTED_TOOL_SEARCH_NAME, listExportedTools } from "../export-scope.js";
 import { studioToolAnnotations } from "./annotations.js";
 import { STUDIO_TOOL_TITLES } from "./titles.js";
@@ -62,6 +67,30 @@ import type { StudioTool } from "./types.js";
 export type { StudioTool, StudioToolAnnotations } from "./types.js";
 export { studioToolAnnotations, DESTRUCTIVE_ACTION_KINDS } from "./annotations.js";
 export { STUDIO_TOOL_TITLES } from "./titles.js";
+
+/**
+ * `vex_ToolDescribe` - the ONE exported tool with no in-app `ToolDef` behind it.
+ *
+ * It exists BECAUSE of the MCP surface: a client cuts a description at 2048
+ * characters and never cuts a result, so the whole-contract reader has to be a
+ * tool call. The in-app agent has no such cut and no such need, which is why
+ * this row is assembled here rather than registered as an agent tool that the
+ * dispatcher, the pressure classifier and the prompt stack would all have to
+ * carry. `export-scope.ts` still answers only for tools the registry knows;
+ * this row is the inventory's own, and admission routes it by name.
+ */
+function mcpOnlyToolDescribeRow(): StudioTool {
+  return {
+    kind: "internal",
+    publicName: EXPORTED_TOOL_DESCRIBE_PUBLIC_NAME,
+    title: requireTitle(EXPORTED_TOOL_DESCRIBE_PUBLIC_NAME),
+    description: EXPORTED_TOOL_DESCRIBE_DESCRIPTION,
+    inputSchema: EXPORTED_TOOL_DESCRIBE_INPUT_SCHEMA,
+    // `read`: it runs nothing and records nothing.
+    annotations: studioToolAnnotations("read"),
+    alwaysLoad: true,
+  };
+}
 
 /**
  * Codepoint comparison. NOT `localeCompare`: the exported order is a wire
@@ -115,7 +144,7 @@ function requireTitle(publicName: string): string {
  * the cost is a sort of 159 rows.
  */
 export function buildStudioInventory(): readonly StudioTool[] {
-  const internal: StudioTool[] = [];
+  const internal: StudioTool[] = [mcpOnlyToolDescribeRow()];
   const protocol: StudioTool[] = [];
 
   for (const exported of listExportedTools()) {

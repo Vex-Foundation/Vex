@@ -1,12 +1,12 @@
 /**
- * Launch settlement decoding — `TokenCreated`, and `Bought` when a prebuy rode
+ * Launch settlement decoding - `TokenCreated`, and `Bought` when a prebuy rode
  * along in the same transaction.
  *
  * THE RULE IS DECLINE, NEVER GUESS. A confirmed create whose `TokenCreated` we
  * cannot decode leaves the intent `broadcast_pending` for the identity repair
  * sweep rather than confirming with an invented address. `confirmWith` requires
  * a token address precisely so that "we know a token exists but not which one"
- * is unrepresentable — a wrong address is worse than a missing one, because the
+ * is unrepresentable - a wrong address is worse than a missing one, because the
  * user would act on it.
  *
  * Both events are UNINDEXED (`indexed: false` on every input, verified against
@@ -43,7 +43,7 @@ export interface DecodedLaunch {
   /**
    * Raw token units the prebuy acquired, when it could be proven; `null` when
    * there was no prebuy OR when the `Bought` event could not be cross-checked.
-   * The caller MUST distinguish those two — see {@link decodeLaunchReceipt}.
+   * The caller MUST distinguish those two - see {@link decodeLaunchReceipt}.
    */
   readonly prebuyTokensOutRaw: bigint | null;
 }
@@ -55,7 +55,7 @@ function sameAddress(a: string, b: string): boolean {
 /**
  * Decode a confirmed create receipt.
  *
- * `null` means the token identity could not be established — the caller must
+ * `null` means the token identity could not be established - the caller must
  * leave the row pending, NOT confirm and NOT fail.
  */
 export function decodeLaunchReceipt(input: {
@@ -113,7 +113,7 @@ function decodeTokenCreated(
  * The verified `Bought` ABI has opaque positional names, so the ONLY safe read
  * is the one the funded probe established: the event names the buyer and the
  * token, and the amounts follow. When either identity field fails to match, the
- * positional mapping is unproven and this declines — the launch still confirms,
+ * positional mapping is unproven and this declines - the launch still confirms,
  * but the caller reports the prebuy amount as pending rather than asserting one.
  */
 function decodeBoughtAmount(
@@ -138,7 +138,7 @@ function decodeBoughtAmount(
       if (!identifiesBuyerAndToken) continue;
       // POSITIONS PROVEN BY THE FUNDED PROBE (pinned in `evm.test.ts`):
       // v1 = ETH in, post-fee; v2 = TOKENS OUT; v3 = price. `v3` is a price,
-      // not an amount — returning it would record a number off by orders of
+      // not an amount - returning it would record a number off by orders of
       // magnitude as the user's prebuy. A zero in `v2` is a real answer meaning
       // nothing was acquired, not a decode failure.
       return args.v2;
@@ -150,7 +150,7 @@ function decodeBoughtAmount(
 }
 
 // ── Boundary guards ─────────────────────────────────────────────────────────
-// `decodeEventLog`'s `args` is chain data — an external boundary, validated as
+// `decodeEventLog`'s `args` is chain data - an external boundary, validated as
 // unknown (rule 03) instead of asserted. `getAddress` checksums and throws on a
 // malformed address; both call sites run inside a try/catch whose `continue`
 // is exactly the right response to an unprovable log.

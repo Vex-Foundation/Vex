@@ -68,6 +68,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The gate's integration tests import vex-app modules
+      # (installer/bridge-path.ts pulls `electron`, pty-host/mirror.ts pulls
+      # `@xterm/headless`), and vex-app is its own pnpm project with its own
+      # node_modules. Without this step the gate died on ERR_MODULE_NOT_FOUND
+      # before touching Postgres (inherited from main, run 33546984710).
+      - name: Install vex-app dependencies
+        working-directory: vex-app
+        run: pnpm install --frozen-lockfile
+
       - name: Run the required Studio PostgreSQL and migration gate
         run: pnpm test:studio-postgres
 
@@ -98,12 +107,21 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: bash bridge/build.sh linux amd64
 
-      - name: Install root dependencies (monorepo — @vex-lib/@vex-agent aliases bundle root agent/shared code into vex-app's main process, so root node_modules must exist at build time)
+      - name: Install root dependencies (monorepo - @vex-lib/@vex-agent aliases bundle root agent/shared code into vex-app's main process, so root node_modules must exist at build time)
         working-directory: ${{ github.workspace }}
         run: pnpm install --frozen-lockfile
 
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
+
+      # pnpm does not run the `electron` package's install script here, and
+      # electron 42's index.js downloads the binary ON IMPORT
+      # when dist/ is missing: with parallel vitest workers that is a race
+      # between two extractions (run 33641189028 on macOS: EEXIST on the
+      # framework symlink, and a suite that failed to load). Materialize it
+      # ONCE, up front, so no worker ever downloads.
+      - name: Materialize the Electron binary
+        run: node node_modules/electron/install.js
 
       - name: Lint and typecheck
         run: pnpm run lint
@@ -141,7 +159,11 @@ jobs:
         with:
           go-version: "1.27.0"
           check-latest: false
-          # Pure stdlib: no go.sum, nothing to cache.
+          # Cache deliberately OFF even though bridge/go.sum exists: the module
+          # graph is go-winio (the Windows pipe front) plus x/sys, downloaded in
+          # seconds and verified against the committed go.sum; a restored cache
+          # is one more input to a binary that ships signed. vex-mcp itself
+          # links no third-party package (the import-graph test pins that).
           cache: false
 
       - name: gofmt
@@ -187,40 +209,26 @@ jobs:
           path: bridge/dist/linux-amd64/vex-mcp
           retention-days: 7
 
-  # THE WINDOWS TRANSPORT GATE (bridge endpoint contract section 1.6).
+  # THE WINDOWS TRANSPORT GATE (bridge endpoint contract section 1.6), OPEN.
   #
-  # REQUIRED, and a STUB on purpose. The Windows named-pipe transport is
-  # runtime-disabled on both sides of the wire behind one flag each
+  # REQUIRED, and no longer a stub. Both owners' flags are TRUE
   # (`WINDOWS_TRANSPORT_PROVEN` in vex-app/src/main/studio/mcp-host/
   # endpoint.ts, `endpoint.WindowsTransportProven` in bridge/internal/
-  # endpoint/endpoint.go), because libuv creates the pipe with a NULL security
-  # descriptor and without PIPE_REJECT_REMOTE_CLIENTS, and nobody has measured
-  # what that grants a second user or a remote client on a wallet app.
+  # endpoint/endpoint.go) because THIS job measured the matrix rather than
+  # arguing it: rows 1, 2, 3, 7 and 8 on run 33646484002 (second-user duplex
+  # denial against a control pipe, read-only cross-user connect denied with no
+  # instance consumed, rejectRemote confirmed by readback and the loopback
+  # redirector refused, a foreign account's first-server squat failing the
+  # front's bind closed and refused by host authentication, impersonation level
+  # 1), and rows 5 and 6 on run 33663385959 (overlapped duplex, deadlines and
+  # close cancellation on a real pipe handle). Row 4 is measured on
+  # vex-app-windows: its host half on run 33650332655, its bridge half by the
+  # win32 arm of mcp-bridge-conformance.test.ts.
   #
-  # Today this job only proves the Windows CODE COMPILES and the golden vectors
-  # pass on windows-latest - including the build-tagged overlapped dial
-  # (cmd/vex-mcp/dial_windows.go), which no Linux job executes.
-  #
-  # FLIPPING EITHER FLAG REQUIRES EXTENDING THIS JOB with the full proof matrix
-  # in contract section 1.6: (1) second-user duplex denial, (2) read-only
-  # cross-user connect and handshake-slot exhaustion, (3) remote-client
-  # rejection posture, (4) a native pipe round trip against the real host,
-  # (5) overlapped duplex - a pending read and a concurrent write on the same
-  # handle both complete, (6) deadline and close cancellation, (7) a
-  # foreign-user first-server pipe-squatting test - a second local user creates
-  # the predictable pipe name FIRST and the bridge must not hand it the project
-  # handshake, and (8) a server impersonation-level test for the
-  # SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION client handle.
-  #
-  # PLUS a REQUIRED host-authentication check that does not exist yet:
-  # GetNamedPipeServerProcessId on the connected handle and a comparison of the
-  # server process token's SID against the current user's, or an equivalent
-  # reviewed mechanism, before the handshake is forwarded. SQOS bounds what a
-  # hostile server can do with our token; it does not say who the server is.
-  #
-  # The gate is mechanical: no matrix in this job, no host-authentication
-  # check, no flip. A reviewer who sees either flag change to true in a diff
-  # that does not add these steps here rejects it.
+  # The gate stays mechanical in the other direction now. A diff that sets
+  # either flag false while the other is true is rejected, and re-closing the
+  # transport is a contract change (section 5) carrying both owners plus this
+  # job's steps - never an edit to one constant.
   bridge-windows:
     runs-on: windows-latest
     steps:
@@ -255,15 +263,236 @@ jobs:
         env:
           GOTOOLCHAIN: local
 
+      # THE TWO-ACCOUNT MEASUREMENT: contract 1.6 rows 1, 2, 3, 7 and 8.
+      #
+      # The runner executes as an administrator, so it can create a second
+      # local account - which is the one thing every previous Windows test in
+      # this repository lacked, and the reason the transport gate has been
+      # closed on an unmeasured claim. The account is unprivileged (Users and
+      # nothing else), its password is generated and never printed, and it is
+      # removed in the always-step below. The instrument is
+      # bridge/cmd/probe-pipe-acl: `serve` binds through the front's real
+      # listener.Bind (or a named test-only descriptor for the control and
+      # squatter arms), `dial` opens with the bridge's exact SQOS flags and
+      # classifies the outcome into a closed set. Structural JSON only: never
+      # the descriptor, a SID, an account name, the password or the pipe path.
+      - name: Build the ACL probe
+        working-directory: bridge
+        env:
+          GOTOOLCHAIN: local
+        run: go build -o dist/probe-pipe-acl.exe ./cmd/probe-pipe-acl
+
+      - name: Measure the pipe ACL across two local accounts
+        working-directory: bridge
+        shell: pwsh
+        env:
+          GOTOOLCHAIN: local
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # A directory BOTH accounts can reach. The runner workspace is not
+          # one: its ACL grants a freshly created local user nothing.
+          $root = 'C:\vex-probe'
+          New-Item -ItemType Directory -Force -Path $root, "$root\out" | Out-Null
+          Copy-Item dist\probe-pipe-acl.exe "$root\probe-pipe-acl.exe" -Force
+          $probe = "$root\probe-pipe-acl.exe"
+
+          $user = 'vexprobe' + (Get-Random -Maximum 99999)
+          "VEX_PROBE_USER=$user" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          # Crypto-random, complexity-satisfying, and NEVER printed.
+          $bytes = New-Object byte[] 32
+          [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+          $plain = [Convert]::ToBase64String($bytes) + '!aA9'
+          $secret = ConvertTo-SecureString $plain -AsPlainText -Force
+          $plain = $null
+
+          New-LocalUser -Name $user -Password $secret -PasswordNeverExpires `
+            -UserMayNotChangePassword -Description 'temporary Vex pipe ACL probe account' | Out-Null
+          # Users, and ONLY Users: membership is what grants the logon right,
+          # and the account must not be an administrator.
+          Add-LocalGroupMember -Group 'Users' -Member $user
+          $cred = New-Object System.Management.Automation.PSCredential($user, $secret)
+
+          icacls $root /grant "${user}:(OI)(CI)RX" | Out-Null
+          icacls "$root\out" /grant "${user}:(OI)(CI)M" | Out-Null
+
+          $suffix = [guid]::NewGuid().ToString('N')
+          $frontName   = "\\.\pipe\vex-acl-front-$suffix"
+          $controlName = "\\.\pipe\vex-acl-control-$suffix"
+          $squatName   = "\\.\pipe\vex-acl-squat-$suffix"
+
+          function Start-Serve($name, $descriptor, $ready) {
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName  = $probe
+            $psi.Arguments = "serve --name `"$name`" --ready `"$ready`" --descriptor $descriptor"
+            $psi.RedirectStandardInput  = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.UseShellExecute = $false
+            return [System.Diagnostics.Process]::Start($psi)
+          }
+          function Wait-Ready($ready) {
+            for ($i = 0; $i -lt 150; $i++) {
+              if (Test-Path $ready) { return (Get-Content -Raw $ready) }
+              Start-Sleep -Milliseconds 100
+            }
+            throw "the serve process never wrote its ready file: $ready"
+          }
+          # Stdin EOF is the shutdown, and the process is joined: no kill, no sleep.
+          function Stop-Serve($p) {
+            $p.StandardInput.Close()
+            $out = $p.StandardOutput.ReadToEnd()
+            $p.WaitForExit()
+            return $out
+          }
+          function Dial-AsRunner($name, $expect, $access, $label) {
+            $argv = @('dial', '--name', $name, '--access', $access)
+            if ($expect) { $argv += @('--expect', $expect) }
+            $line = & $probe @argv
+            $code = $LASTEXITCODE
+            Write-Host "[$label] runner-user: $line"
+            if ($code -ne 0) { throw "[$label] the probe exited $code" }
+            return ($line | ConvertFrom-Json)
+          }
+          function Dial-AsTempUser($name, $expect, $access, $label) {
+            $out = "$root\out\$label.json"
+            Remove-Item $out -ErrorAction SilentlyContinue
+            $argv = @('dial', '--name', $name, '--access', $access)
+            if ($expect) { $argv += @('--expect', $expect) }
+            try {
+              $p = Start-Process -FilePath $probe -ArgumentList $argv -Credential $cred `
+                -WorkingDirectory $root -RedirectStandardOutput $out `
+                -RedirectStandardError "$root\out\$label.err" -PassThru -Wait
+            } catch {
+              # MEASURED, NOT ASSUMED. If the hosted runner refuses a
+              # credential start, this line is the finding and the step is red
+              # (the documented fallback is a scheduled task under the account).
+              Write-Host "credential-start-unavailable: $($_.Exception.Message)"
+              throw
+            }
+            $line = (Get-Content -Raw $out).Trim()
+            Write-Host "[$label] second local account: $line"
+            if (-not $line) { throw "[$label] the probe printed nothing" }
+            $json = $line | ConvertFrom-Json
+            # The JSON is authoritative: Start-Process -Credential does not
+            # always surface an exit code to a caller that cannot open the
+            # process, and `match` says the same thing without that caveat.
+            if ($expect -and -not $json.match) {
+              throw "[$label] expected $expect, measured $($json.outcome) (windowsError $($json.windowsError))"
+            }
+            return $json
+          }
+
+          # ---- rows 1, 2, 3, 8: the front's pipe and the control pipe -------
+          $frontReady   = "$root\out\front-ready.json"
+          $controlReady = "$root\out\control-ready.json"
+          $front   = Start-Serve $frontName   'front'         $frontReady
+          $control = Start-Serve $controlName 'winio-default' $controlReady
+
+          $frontFlags = (Wait-Ready $frontReady).Trim()
+          Wait-Ready $controlReady | Out-Null
+          # ROW 3, first half: the reject-remote bit the front CONFIRMED by
+          # readback becomes a stated number in the job log.
+          Write-Host "MEASURED front BOUND flags: $frontFlags"
+
+          $connected = 0
+          $r = Dial-AsRunner   $frontName   'connected' 'duplex' 'row8-runner-duplex'; $connected++
+          $r = Dial-AsRunner   $frontName   'connected' 'read'   'row8-runner-read';   $connected++
+          # ROW 1: the second account is denied a duplex open.
+          Dial-AsTempUser      $frontName   'denied'    'duplex' 'row1-second-user-duplex' | Out-Null
+          # ROW 2: and denied a READ-ONLY open, so it cannot consume an instance.
+          Dial-AsTempUser      $frontName   'denied'    'read'   'row2-second-user-read'   | Out-Null
+          # ROW 1 CONTROL: the same account CONNECTS to the default descriptor,
+          # so the denial above is the front's DACL and not the account.
+          Dial-AsTempUser      $controlName 'connected' 'read'   'row1-control-read'       | Out-Null
+          # Recorded, not asserted: duplex against the default descriptor.
+          Dial-AsTempUser      $controlName ''          'duplex' 'row1-control-duplex'     | Out-Null
+          # ROW 3, second half: the loopback REDIRECTOR path, recorded only -
+          # nobody has measured what Windows does here.
+          $loopback = Dial-AsRunner "\\localhost\pipe\vex-acl-front-$suffix" '' 'duplex' 'row3-loopback'
+          Write-Host "MEASURED loopback redirector outcome: $($loopback.outcome) (windowsError $($loopback.windowsError))"
+          if ($loopback.outcome -eq 'connected') { $connected++ }
+
+          # ---- row 7: the foreign-user squatter ----------------------------
+          $squatReady = "$root\out\squat-ready.json"
+          $squatOut   = "$root\out\squat.log"
+          $squatter = Start-Process -FilePath $probe -Credential $cred -WorkingDirectory $root `
+            -ArgumentList @('serve', '--name', $squatName, '--ready', $squatReady, '--descriptor', 'open') `
+            -RedirectStandardOutput $squatOut -RedirectStandardError "$root\out\squat.err" -PassThru
+          Wait-Ready $squatReady | Out-Null
+
+          # 7a: the FRONT refuses to serve a name a foreign account already
+          # serves. go-winio's first instance is FILE_CREATE, so it fails closed.
+          $collisionReady = "$root\out\collision-ready.json"
+          Remove-Item $collisionReady -ErrorAction SilentlyContinue
+          $collision = & $probe serve --name $squatName --ready $collisionReady --descriptor front
+          $collisionCode = $LASTEXITCODE
+          Write-Host "[row7a] front binding a squatted name: $collision (exit $collisionCode)"
+          if ($collisionCode -eq 0) { throw "[row7a] the front bound a name another user already serves" }
+          if ($collision -notmatch '"outcome":"bind_failed"') { throw "[row7a] expected bind_failed, got: $collision" }
+          if (Test-Path $collisionReady) { throw "[row7a] the front reported BOUND for a failed bind" }
+
+          # 7b: the BRIDGE refuses a foreign server, through the production
+          # dial and the real SID comparison.
+          $env:VEX_PROBE_FOREIGN_PIPE = $squatName
+          # -v so the log shows PASS, never a silent skip on a missing env.
+          go test -count=1 -v -run TestHostAuthRefusesAForeignUsersServer ./cmd/vex-mcp
+          if ($LASTEXITCODE -ne 0) { throw "[row7b] host authentication did not refuse the foreign server" }
+          Remove-Item Env:\VEX_PROBE_FOREIGN_PIPE
+
+          Stop-Process -Id $squatter.Id -Force
+          Write-Host "[row7] squatter log:"; Get-Content $squatOut -ErrorAction SilentlyContinue
+
+          # ---- close the serve processes and read what they recorded --------
+          $controlLog = Stop-Serve $control
+          $frontLog   = Stop-Serve $front
+          Write-Host "front serve log:";   Write-Host $frontLog
+          Write-Host "control serve log:"; Write-Host $controlLog
+
+          $accepted = @($frontLog -split "`n" | Where-Object { $_ -match '"event":"accepted"' } |
+            ForEach-Object { $_.Trim() | ConvertFrom-Json })
+          if ($accepted.Count -lt 1) { throw "the front accepted nothing; the measurement did not run" }
+          # ROW 8: the level a server actually receives from the bridge's own
+          # SQOS flags. SecurityIdentification is 1.
+          Write-Host "MEASURED impersonation level: $($accepted[0].impersonationLevel) ($($accepted[0].impersonationLevelName))"
+          if ($accepted[0].impersonationLevel -ne 1) {
+            throw "[row8] the server received impersonation level $($accepted[0].impersonationLevel); the SQOS flags must cap it at 1 (identification)"
+          }
+          # ROW 2 cross-check: only the connects that SUCCEEDED were accepted,
+          # so no cross-user connect consumed an instance.
+          if ($accepted.Count -ne $connected) {
+            throw "[row2] the front accepted $($accepted.Count) connections for $connected successful dials"
+          }
+
+      # ALWAYS: the account and its workspace do not outlive the job.
+      - name: Remove the temporary local account
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:VEX_PROBE_USER) {
+            Get-Process probe-pipe-acl -ErrorAction SilentlyContinue | Stop-Process -Force
+            Remove-LocalUser -Name $env:VEX_PROBE_USER -ErrorAction SilentlyContinue
+            Get-CimInstance Win32_UserProfile -ErrorAction SilentlyContinue |
+              Where-Object { $_.LocalPath -like "*\$($env:VEX_PROBE_USER)" } |
+              Remove-CimInstance -ErrorAction SilentlyContinue
+          }
+          Remove-Item -Recurse -Force 'C:\vex-probe' -ErrorAction SilentlyContinue
   vex-app-e2e:
-    # Required gate from day 1 — boot smoke against the built Electron
+    # Required gate from day 1 - boot smoke against the built Electron
     # bundle. If this flakes we treat that as a real bug, not as a
     # soft check (no continue-on-error). `needs:` here gates START
     # ordering only; this job runs in a fresh runner and rebuilds the
     # bundle + reinstalls node_modules from scratch (per-job filesystem
     # isolation in GitHub Actions).
     runs-on: ubuntu-latest
+    # ORDERING ONLY, NOT GATING. `needs:` alone also SKIPS this job when the
+    # unit lane goes red, and the unit lane is currently red on an unrelated
+    # pre-existing real-pty timing failure that also fails on `main`. A required
+    # gate that silently skips proves nothing, so `!cancelled()` keeps the start
+    # ordering and still runs the smoke. Drop this back to a plain `needs:` once
+    # the real-pty flake is fixed.
     needs: vex-app-build-and-test
+    if: ${{ !cancelled() }}
     defaults:
       run:
         working-directory: vex-app
@@ -276,12 +505,28 @@ jobs:
 
       - run: corepack enable
 
-      - name: Install root dependencies (monorepo — same reason as the build-and-test job)
+      - name: Install root dependencies (monorepo - same reason as the build-and-test job)
         working-directory: ${{ github.workspace }}
         run: pnpm install --frozen-lockfile
 
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
+
+      # The Studio journey spec creates a real project, and since the batch-1
+      # contract change project creation renders agent config files through the
+      # Go bridge. Without the bridge binary the spec fails honestly with
+      # `bridge_unavailable`, so the bridge is an e2e build prerequisite here
+      # exactly as it is in `pnpm dev`.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
+      - name: Build the Studio bridge for this runner
+        env:
+          GOTOOLCHAIN: local
+        run: pnpm run build:bridge:dev
 
       - name: Build (e2e needs the bundled main + preload + renderer)
         # THE TOUR FLAG IS WHAT MAKES `studio.spec.ts` RUN AT ALL.
@@ -333,3 +578,272 @@ jobs:
           name: playwright-report
           path: vex-app/playwright-report/
           retention-days: 7
+
+  # ==========================================================================
+  # THE SHIPPED OS/ARCH MATRIX, and what CI actually covers of it.
+  #
+  # Verified against vex-app/electron-builder.release.yml (the PRODUCTION
+  # profile; the dev profile electron-builder.yml is wider and is not what
+  # users receive):
+  #
+  #   macOS    dmg  arm64 + x64   and  zip  arm64 + x64   (zip is what
+  #                                     electron-updater consumes)
+  #   Windows  nsis x64           (arm64 deferred past the first release)
+  #   Linux    AppImage x64  and  deb x64
+  #
+  # Before the three jobs below, the vitest suites had NEVER executed on
+  # Windows or macOS and no macOS runner of any kind existed in this workflow:
+  # two of the three shipped platforms were asserted only by a Linux run. The
+  # native payload contract (node-pty prebuilds, @parcel/watcher payloads, the
+  # staged bridge in extraResources) was likewise proven only when a human
+  # packaged locally, because probe:node-pty and check:package appeared in no
+  # job.
+  # ==========================================================================
+
+  # vex-app unit suites on macOS, plus the Go bridge on darwin.
+  #
+  # darwin is the only runner here that executes src/main/studio/__tests__/
+  # mcp-host-bind.test.ts for real: that suite binds a unix endpoint and is
+  # `describe.skip` on win32, so on Windows it proves nothing and on Linux it
+  # exercises a different kernel's unix-socket and uid behaviour than half the
+  # user base runs.
+  #
+  # SCOPE NOTE: this job deliberately does NOT build the bridge binary, so the
+  # darwin side of mcp-bridge-conformance.test.ts still self-skips here. A
+  # darwin conformance lane needs VEX_REQUIRE_BRIDGE_CONFORMANCE plus a staged
+  # darwin binary to be a gate rather than a silent skip, and that is Batch 3
+  # work, not B0.4.
+  vex-app-macos:
+    # REQUIRED since 2026-09-02. It started soft (Batch 0) while its findings
+    # were triaged in Batch 3 rounds 1-3; run 33616868569 was the first green
+    # end to end (vitest 9712 passed / 17 skipped, plus the darwin Go step).
+    # Its required status is a precondition of the Batch 4 stages that touch
+    # the Windows transport (B4.2b-2 onward) and of the B4.3 gate flip; the
+    # skips it still carries are visible `skipIf` guards with a stated
+    # platform reason, never a silent early return.
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: vex-app
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: corepack enable
+
+      # Same pinned SHA and same exact toolchain version as bridge-build-and-test
+      # and bridge-windows: a darwin-only compile or test difference must be the
+      # finding, not a toolchain difference.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
+      - name: Install root dependencies (monorepo, same reason as the build-and-test job)
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Install vex-app dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Same reason as vex-app-build-and-test: electron 42 downloads on import
+      # when dist/ is missing, and parallel vitest workers raced the extraction
+      # on this runner (run 33641189028). Materialize once, up front.
+      - name: Materialize the Electron binary
+        run: node node_modules/electron/install.js
+
+      - name: Test (vitest, darwin)
+        run: pnpm test
+
+      # The same golden vectors the Linux and Windows bridge jobs run, on the
+      # third shipped kernel. `bridge` is addressed absolutely because this
+      # job's default working-directory is vex-app.
+      - name: Bridge tests (race, darwin)
+        working-directory: ${{ github.workspace }}/bridge
+        run: go test -race ./...
+        env:
+          GOTOOLCHAIN: local
+
+  # vex-app unit suites on Windows.
+  #
+  # bridge-windows already covers the Go side on this platform; nothing has
+  # ever covered the TypeScript side, where path handling, the pty host and the
+  # Studio endpoint code all take different branches.
+  vex-app-windows:
+    # REQUIRED since 2026-09-02. It started soft (Batch 0); Batch 3 rounds 1-3
+    # took it from about 22 failing suites to zero failing tests, and round 4
+    # closed the last finding, a vitest worker that died at teardown: node-pty
+    # defers ConPTY's connect, so the pty pid is 0 until the first data event,
+    # and the real-pty survivor detector's SIGKILL of pid 0 was TerminateProcess
+    # on the worker itself. Run 33631699970 was the first green end to end
+    # (full run 9674 passed / 79 skipped; pty host alone 145 passed, every
+    # real-pty phase traced to completion with zero survivors). Its required
+    # status is a precondition of the Batch 4 stages that touch the Windows
+    # transport (B4.2b-2 onward) and of the B4.3 gate flip; the skips it still
+    # carries are visible `skipIf` guards with a stated platform reason (the
+    # MCP socket suites wait on the transport gate), never a silent early
+    # return. The two vitest steps stay: a worker killed by a native crash
+    # prints nothing, so the isolated verbose pty-host run remains the
+    # attribution a future regression would need.
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: vex-app
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: corepack enable
+
+      - name: Install root dependencies (monorepo, same reason as the build-and-test job)
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Install vex-app dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Same reason as vex-app-build-and-test: electron 42 downloads on import
+      # when dist/ is missing, and parallel vitest workers would race the
+      # extraction. Materialize once, up front.
+      - name: Materialize the Electron binary
+        run: node node_modules/electron/install.js
+
+      # The Windows named-pipe front, built here so the main-process relay
+      # suite can spawn the REAL vex-pipe-front.exe on the required lane
+      # (B4.2b-2b): a fake front proves the state machines, only the real
+      # one proves the spawn, the inherited overlapped planes, the descriptor
+      # readback and the pipe end to end. Same pinned SHA and exact toolchain
+      # as bridge-windows; the build script refuses any other patch.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          # Same reasoning as bridge-build-and-test: go.sum verifies every
+          # download, and a restored cache is one more input to a binary
+          # that ships signed.
+          cache: false
+
+      # Both Windows artifacts: the front the host spawns AND vex-mcp.exe, which
+      # the conformance suite's win32 arm dials over the pipe the front binds
+      # (contract 1.6 row 4). build.sh builds both for this target.
+      - name: Build the bridge and the pipe front (windows/amd64)
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: bash bridge/build.sh windows amd64
+        env:
+          GOTOOLCHAIN: local
+
+      # Attribution by contrast: a worker that dies at teardown is reported by
+      # vitest without a file name, so the pty host (the ConPTY suspect) ALSO
+      # runs on its own. Full run red + isolated run red = the pty host; full
+      # run red + isolated run green = somewhere else, or an interaction.
+      # (`vitest --exclude` was measured NOT to drop these files under this
+      # workspace config, so the full run stays whole.)
+      - name: Test (vitest, win32)
+        run: pnpm test
+        env:
+          # REQUIRED, not advisory: this makes the win32 conformance arm FAIL
+          # rather than skip when the built vex-mcp.exe is missing. A silent
+          # skip on a required lane is indistinguishable from a green run, and
+          # this arm is the only proof of row 4's bridge half.
+          VEX_REQUIRE_BRIDGE_CONFORMANCE: "1"
+
+      # Verbose on purpose: run 33620108370 attributed the dying worker to
+      # this directory (eight of its nine files completed, real-pty never
+      # reported), and a worker killed by a native crash prints nothing, so
+      # the last test name the verbose reporter printed before the death is
+      # the attribution the next fix needs.
+      - name: Test (vitest, win32, pty host alone)
+        if: ${{ !cancelled() }}
+        run: pnpm exec vitest run src/pty-host --reporter=verbose
+
+  # THE NATIVE PAYLOAD GATE: what electron-builder actually produced.
+  #
+  # REQUIRED, on the same ubuntu-latest image every other required job already
+  # passes on, running the same command a developer runs locally
+  # (`pnpm --dir vex-app package`). It is not an unmeasured platform; it is a
+  # measured platform whose packaging step had simply never been wired into CI.
+  #
+  # ORDER IS THE POINT. `check:package` fails when it finds no packaged payload
+  # (a gate that silently skips is not a gate), so packaging must run FIRST.
+  # The `package` script already encodes exactly that order:
+  #   build -> build:bridge -> prepackage:bridge -> electron-builder --dir
+  #   -> check:package
+  # so this job calls the script rather than restating the chain and letting the
+  # two drift.
+  #
+  # The probes then drive the result under a real Electron runtime, which is the
+  # only thing that can prove WHICH native artifact loads: node-pty searches
+  # build/Release before prebuilds/, so "node-pty worked" is compatible with the
+  # reviewed, unpacked, signed prebuild never being touched.
+  vex-app-package-payload:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vex-app
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: corepack enable
+
+      # `pnpm run build:bridge` shells out to bridge/build.sh for both
+      # architectures of the host platform, so the Go toolchain is a packaging
+      # prerequisite here, not an optional extra.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
+      - name: Install root dependencies (monorepo, same reason as the build-and-test job)
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Install vex-app dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Package (--dir) and check the packaged payload
+        run: pnpm run package
+
+      # pnpm does not run the `electron` package's install script on this
+      # runner, so `node_modules/electron/dist` does not exist after install.
+      # Run the package's own installer directly: it downloads and extracts
+      # the dist WITHOUT launching the binary. Run 33535891931 measured that
+      # `electron --version` is NOT launch-free - the CLI downloaded the dist
+      # and then started the binary, which aborted on the fresh unprivileged
+      # chrome-sandbox before printing anything. This must precede the
+      # ownership fix below: a download after it would land a fresh,
+      # unprivileged chrome-sandbox again.
+      - name: Materialize the Electron binary
+        run: node node_modules/electron/install.js
+
+      # GitHub's ubuntu runners install node_modules as an unprivileged user,
+      # so Electron's SUID sandbox helper is not root:4755 and a RAW `electron`
+      # launch aborts with a FATAL setuid_sandbox_host error (the e2e job never
+      # hits this because Playwright's launcher passes --no-sandbox). Restore
+      # the helper's expected ownership in BOTH the installed tree and the
+      # freshly packaged output so the probes run with the sandbox ON; never
+      # work around this with ELECTRON_DISABLE_SANDBOX.
+      - name: Restore Electron SUID sandbox helpers
+        run: sudo find "$PWD" -name chrome-sandbox -type f -exec chown root:root {} + -exec chmod 4755 {} +
+
+      # xvfb because Electron initializes its display layer at startup even
+      # when the probe opens no window. The unpackaged probe runs first: if it
+      # fails, the packaged failure below would be about node_modules rather
+      # than about packaging, and the two must stay distinguishable.
+      - name: Probe node-pty in the installed tree
+        run: xvfb-run -a pnpm run probe:node-pty
+
+      - name: Probe node-pty inside the packaged app
+        run: xvfb-run -a pnpm run probe:node-pty:packaged

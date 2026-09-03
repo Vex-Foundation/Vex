@@ -208,11 +208,11 @@ function renderSafetyVerdict(verdict: SafetyVerdict): string {
     case "pass":
       return "pass";
     case "unknown":
-      return "UNVERIFIED — audit unavailable";
+      return "UNVERIFIED - audit unavailable";
     case "fail":
       // A `fail` is blocked at the gate and never reaches the approval preview;
       // render defensively if it ever does (must never read as safe).
-      return "FAILED — flagged unsafe";
+      return "FAILED - flagged unsafe";
   }
 }
 
@@ -336,7 +336,7 @@ export function buildIntentPreview(
     // the typed `extras.fotTax` (NOT raw args) → unspoofable. The verdict must
     // be present for an FoT to exist (it rides the same matched prequote).
     if (extras.fotTax !== undefined && Number.isFinite(extras.fotTax)) {
-      criticalArgs.safety = `${criticalArgs.safety} — fee-on-transfer ${extras.fotTax}%`;
+      criticalArgs.safety = `${criticalArgs.safety} - fee-on-transfer ${extras.fotTax}%`;
     }
   }
 
@@ -448,6 +448,51 @@ export interface PolicySnapshot {
   contextUsageBand: InternalToolContext["contextUsageBand"];
   missionId: string | null;
   missionRunId: string | null;
+  /**
+   * WHO asked, when an external MCP client did: the `clientInfo.name` its
+   * `initialize` handshake declared, sanitized by
+   * {@link sanitizeRequestingClientName}. `null` for Vex's own agent loop and
+   * for an MCP client whose declared name is unusable.
+   *
+   * PROVENANCE, NOT AUTHORITY. It is display text an external process chose
+   * for itself, so nothing may branch on it: it rides `policy_json`, which no
+   * gate reads, and it is deliberately NOT in `preview_json` - the card that
+   * the Studio authority digest binds and the pre-dispatch revalidation
+   * rebuilds from `(toolName, toolArgs, result)` alone. A field the rebuild
+   * cannot reproduce would make every Studio dispatch refuse on card
+   * mismatch.
+   */
+  requestedByClient: string | null;
+}
+
+/**
+ * The longest `clientInfo.name` this build will show a human.
+ *
+ * An over-long name is DROPPED, never shortened: the actor line is one of the
+ * facts rule 90 binds an approval to, and a name cut mid-word is a name the
+ * reader cannot verify - "Claude Cod..." and "Claude Code" read the same and are
+ * not. Falling back to the unknown label claims less rather than more.
+ */
+export const REQUESTING_CLIENT_NAME_MAX = 60;
+
+/**
+ * Make an MCP client's self-declared name safe to store and to render, or
+ * refuse it.
+ *
+ * The value arrives from an external process's `initialize` params, so it is
+ * untrusted input at a trust boundary (rule 04): control characters could forge
+ * lines in a card a human reads, and an unbounded string is a display-surface
+ * denial of service. Returns `null` for anything it will not vouch for, and the
+ * caller renders the honest unknown label instead of a blank.
+ */
+export function sanitizeRequestingClientName(name: unknown): string | null {
+  if (typeof name !== "string") return null;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(name)) return null;
+  const trimmed = name.trim();
+  if (trimmed.length === 0) return null;
+  if (trimmed.length > REQUESTING_CLIENT_NAME_MAX) return null;
+  return trimmed;
 }
 
 /**
@@ -455,7 +500,10 @@ export interface PolicySnapshot {
  * the live context — a permission downgrade or band change between enqueue
  * and approve is observable from the diff.
  */
-export function buildPolicySnapshot(context: InternalToolContext): PolicySnapshot {
+export function buildPolicySnapshot(
+  context: InternalToolContext,
+  requestedByClient?: unknown,
+): PolicySnapshot {
   return {
     permission: context.sessionPermission,
     sessionKind: context.sessionKind,
@@ -463,5 +511,6 @@ export function buildPolicySnapshot(context: InternalToolContext): PolicySnapsho
     contextUsageBand: context.contextUsageBand,
     missionId: context.missionId,
     missionRunId: context.missionRunId,
+    requestedByClient: sanitizeRequestingClientName(requestedByClient),
   };
 }

@@ -13,7 +13,7 @@ import type {
  * it authors, and {@link validatePreparedActionFollowUp} compares it against a
  * literal here; the two lived in different modules with no shared symbol, so
  * the Batch 2 rename silently broke the pair (the validator answered
- * `unknown_mapping` for every transfer — fail-closed, but the feature was
+ * `unknown_mapping` for every transfer - fail-closed, but the feature was
  * dead). Both sides now import these, so a future rename is a COMPILE ERROR
  * rather than a money-path feature that quietly stops working.
  *
@@ -57,10 +57,10 @@ function isScalar(value: unknown): value is ApprovalPreviewScalar {
  * Validate and canonicalize a handler-authored follow-up. Unknown pairs fail
  * closed. For wallet sends, only walletFamily + intentId cross into confirm
  * args (`criticalArgs` keeps the preview vocabulary, where the family is still
- * spelled `network` — that is stored preview data, not a param);
+ * spelled `network` - that is stored preview data, not a param);
  * the richer preview is validated independently and never rebuilt from args.
  *
- * Maintainer decision (2026-07): wallet-only. Exactly one mapping —
+ * Maintainer decision (2026-07): wallet-only. Exactly one mapping -
  * WalletSendPrepare → WalletSendConfirm. Do not add a second mapping
  * without an explicit product decision; every other source/target pair fails
  * closed as "unknown_mapping".

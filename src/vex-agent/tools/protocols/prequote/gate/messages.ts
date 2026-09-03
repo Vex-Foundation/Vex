@@ -15,17 +15,17 @@ const SWAP_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   no_session:
     "Swap blocked: could not verify a fresh quote (no session). Re-run the swap quote and retry.",
   unresolved_token:
-    "Swap blocked: unresolved execute token — pass the exact token address the quote returned, then retry.",
+    "Swap blocked: unresolved execute token - pass the exact token address the quote returned, then retry.",
   no_quote:
-    "Swap blocked: no fresh quote for these exact params — the execute must use EXACTLY the same params as the quote, including slippageBps (same value, or omitted on both sides). Call the swap quote first with those params, then retry.",
+    "Swap blocked: no fresh quote for these exact params - the execute must use EXACTLY the same params as the quote, including slippageBps (same value, or omitted on both sides). Call the swap quote first with those params, then retry.",
   safety_fail:
-    "Swap blocked: the quoted token was flagged unsafe (honeypot/scam) by the pre-quote safety check. If this is the token you are BUYING, do not retry — pick a different token. If this is a token you already HOLD and are trying to exit, this block is not protecting you: report it and stop rather than retrying, because Vex has no exit path for a flagged holding today.",
+    "Swap blocked: the quoted token was flagged unsafe (honeypot/scam) by the pre-quote safety check. If this is the token you are BUYING, do not retry - pick a different token. If this is a token you already HOLD and are trying to exit, this block is not protecting you: report it and stop rather than retrying, because Vex has no exit path for a flagged holding today.",
   wallet_setup:
-    "Swap blocked: the mission is still in setup (no active run), so swaps cannot broadcast yet. Accept and start the mission run, then swap — do NOT re-quote.",
+    "Swap blocked: the mission is still in setup (no active run), so swaps cannot broadcast yet. Accept and start the mission run, then swap - do NOT re-quote.",
   wallet_scope:
-    "Swap blocked: the selected wallet can't be used — it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet (re-accept the mission contract if a mission is active), then retry — do NOT re-quote.",
+    "Swap blocked: the selected wallet can't be used - it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet (re-accept the mission contract if a mission is active), then retry - do NOT re-quote.",
   wallet_not_selected:
-    "Swap blocked: no wallet is selected (or configured) for this swap's chain in the current session. Select a wallet, then retry — do NOT re-quote.",
+    "Swap blocked: no wallet is selected (or configured) for this swap's chain in the current session. Select a wallet, then retry - do NOT re-quote.",
   // Unreachable on the swap path (only the bridge execute carries these params),
   // but the reason map must be total over GateBlockReason.
   unbindable_param:
@@ -40,19 +40,19 @@ const BRIDGE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   // A bridge execute has no bare-symbol leg (addresses are passed through), so
   // this reason is unreachable on the bridge path; keep a coherent message.
   unresolved_token:
-    "Bridge blocked: unresolved bridge token — pass the exact token addresses the quote returned, then retry.",
+    "Bridge blocked: unresolved bridge token - pass the exact token addresses the quote returned, then retry.",
   no_quote:
     "Bridge blocked: no fresh bridge quote for these exact params. Call BridgeQuote first, then retry.",
   safety_fail:
     "Bridge blocked: the quoted route was flagged unsafe. Aborting.",
   wallet_setup:
-    "Bridge blocked: the mission is still in setup (no active run), so bridges cannot broadcast yet. Accept and start the mission run, then bridge — do NOT re-quote.",
+    "Bridge blocked: the mission is still in setup (no active run), so bridges cannot broadcast yet. Accept and start the mission run, then bridge - do NOT re-quote.",
   wallet_scope:
-    "Bridge blocked: a wallet for this bridge can't be used — it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet (re-accept the mission contract if a mission is active), then retry — do NOT re-quote.",
+    "Bridge blocked: a wallet for this bridge can't be used - it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet (re-accept the mission contract if a mission is active), then retry - do NOT re-quote.",
   wallet_not_selected:
-    "Bridge blocked: no wallet is selected (or configured) for one of the bridge's chains in the current session. Select a wallet, then retry — do NOT re-quote.",
+    "Bridge blocked: no wallet is selected (or configured) for one of the bridge's chains in the current session. Select a wallet, then retry - do NOT re-quote.",
   unbindable_param:
-    "Bridge blocked: routeId/depositMethod cannot be bound to a quote — omit them (the bridge selects the best route) or this execute can't be verified.",
+    "Bridge blocked: routeId/depositMethod cannot be bound to a quote - omit them (the bridge selects the best route) or this execute can't be verified.",
 };
 
 const REDEEM_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
@@ -67,11 +67,11 @@ const REDEEM_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   safety_fail:
     "Redeem blocked: the quoted redemption was flagged unsafe. Aborting.",
   wallet_setup:
-    "Redeem blocked: the mission is still in setup (no active run), so redeems cannot broadcast yet. Accept and start the mission run, then redeem — do NOT re-quote.",
+    "Redeem blocked: the mission is still in setup (no active run), so redeems cannot broadcast yet. Accept and start the mission run, then redeem - do NOT re-quote.",
   wallet_scope:
-    "Redeem blocked: the selected wallet can't be used — it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry — do NOT re-quote.",
+    "Redeem blocked: the selected wallet can't be used - it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry - do NOT re-quote.",
   wallet_not_selected:
-    "Redeem blocked: no wallet is selected (or configured) for Ethereum in the current session. Select a wallet, then retry — do NOT re-quote.",
+    "Redeem blocked: no wallet is selected (or configured) for Ethereum in the current session. Select a wallet, then retry - do NOT re-quote.",
   // Unreachable on the redeem path (redeem carries no unbindable params), but the
   // reason map must be total over GateBlockReason.
   unbindable_param:
@@ -90,11 +90,11 @@ const MINT_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   safety_fail:
     "Mint blocked: the quoted mint was flagged unsafe. Aborting.",
   wallet_setup:
-    "Mint blocked: the mission is still in setup (no active run), so mints cannot broadcast yet. Accept and start the mission run, then mint — do NOT re-quote.",
+    "Mint blocked: the mission is still in setup (no active run), so mints cannot broadcast yet. Accept and start the mission run, then mint - do NOT re-quote.",
   wallet_scope:
-    "Mint blocked: the selected wallet can't be used — it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry — do NOT re-quote.",
+    "Mint blocked: the selected wallet can't be used - it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry - do NOT re-quote.",
   wallet_not_selected:
-    "Mint blocked: no wallet is selected (or configured) for this mint's chain in the current session. Select a wallet, then retry — do NOT re-quote.",
+    "Mint blocked: no wallet is selected (or configured) for this mint's chain in the current session. Select a wallet, then retry - do NOT re-quote.",
   unbindable_param:
     "Mint blocked: a parameter cannot be bound to a quote. Remove it and retry.",
 };
@@ -111,11 +111,11 @@ const REDEEM_PY_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   safety_fail:
     "Redeem blocked: the quoted redemption was flagged unsafe. Aborting.",
   wallet_setup:
-    "Redeem blocked: the mission is still in setup (no active run), so redeems cannot broadcast yet. Accept and start the mission run, then redeem — do NOT re-quote.",
+    "Redeem blocked: the mission is still in setup (no active run), so redeems cannot broadcast yet. Accept and start the mission run, then redeem - do NOT re-quote.",
   wallet_scope:
-    "Redeem blocked: the selected wallet can't be used — it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry — do NOT re-quote.",
+    "Redeem blocked: the selected wallet can't be used - it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry - do NOT re-quote.",
   wallet_not_selected:
-    "Redeem blocked: no wallet is selected (or configured) for this redeem's chain in the current session. Select a wallet, then retry — do NOT re-quote.",
+    "Redeem blocked: no wallet is selected (or configured) for this redeem's chain in the current session. Select a wallet, then retry - do NOT re-quote.",
   unbindable_param:
     "Redeem blocked: a parameter cannot be bound to a quote. Remove it and retry.",
 };
@@ -132,11 +132,11 @@ const LP_ADD_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   safety_fail:
     "Add liquidity blocked: the quoted add was flagged unsafe. Aborting.",
   wallet_setup:
-    "Add liquidity blocked: the mission is still in setup (no active run), so LP adds cannot broadcast yet. Accept and start the mission run, then add — do NOT re-quote.",
+    "Add liquidity blocked: the mission is still in setup (no active run), so LP adds cannot broadcast yet. Accept and start the mission run, then add - do NOT re-quote.",
   wallet_scope:
-    "Add liquidity blocked: the selected wallet can't be used — it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry — do NOT re-quote.",
+    "Add liquidity blocked: the selected wallet can't be used - it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry - do NOT re-quote.",
   wallet_not_selected:
-    "Add liquidity blocked: no wallet is selected (or configured) for this add's chain in the current session. Select a wallet, then retry — do NOT re-quote.",
+    "Add liquidity blocked: no wallet is selected (or configured) for this add's chain in the current session. Select a wallet, then retry - do NOT re-quote.",
   unbindable_param:
     "Add liquidity blocked: a parameter cannot be bound to a quote. Remove it and retry.",
 };
@@ -153,11 +153,11 @@ const LP_REMOVE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   safety_fail:
     "Remove liquidity blocked: the quoted removal was flagged unsafe. Aborting.",
   wallet_setup:
-    "Remove liquidity blocked: the mission is still in setup (no active run), so LP removes cannot broadcast yet. Accept and start the mission run, then remove — do NOT re-quote.",
+    "Remove liquidity blocked: the mission is still in setup (no active run), so LP removes cannot broadcast yet. Accept and start the mission run, then remove - do NOT re-quote.",
   wallet_scope:
-    "Remove liquidity blocked: the selected wallet can't be used — it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry — do NOT re-quote.",
+    "Remove liquidity blocked: the selected wallet can't be used - it may have changed or been removed, or it isn't in the mission's allowed set. Re-select a valid wallet, then retry - do NOT re-quote.",
   wallet_not_selected:
-    "Remove liquidity blocked: no wallet is selected (or configured) for this remove's chain in the current session. Select a wallet, then retry — do NOT re-quote.",
+    "Remove liquidity blocked: no wallet is selected (or configured) for this remove's chain in the current session. Select a wallet, then retry - do NOT re-quote.",
   unbindable_param:
     "Remove liquidity blocked: a parameter cannot be bound to a quote. Remove it and retry.",
 };

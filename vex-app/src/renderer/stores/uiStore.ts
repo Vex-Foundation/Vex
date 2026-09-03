@@ -43,8 +43,10 @@ import {
 import {
   clampBookWidth,
   clampSidebarWidth,
+  clampStudioRailExplorerShare,
   DEFAULT_BOOK_WIDTH,
   DEFAULT_SIDEBAR_WIDTH,
+  STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
 } from "./uiStore/layout.js";
 import {
   mergeUiState,
@@ -55,6 +57,18 @@ import {
   DEFAULT_RUNTIME_MODE,
   type RuntimeMode,
 } from "./uiStore/runtime-mode.js";
+import {
+  forgetProjectFileTabs as dropProjectFileTabs,
+  putProjectFileTabs,
+  type PersistedFileTab,
+  type StudioFileTabsByProject,
+} from "./uiStore/studio-file-tabs.js";
+
+export type {
+  PersistedFileTab,
+  PersistedProjectFileTabs,
+  StudioFileTabsByProject,
+} from "./uiStore/studio-file-tabs.js";
 
 /**
  * Which mission/plan review dialog (if any) the DESK RULE header cluster
@@ -135,17 +149,23 @@ export interface UiState {
   /**
    * Which shell the frame dispatches: the agent columns or the Studio ones.
    *
-   * NOT persisted (ratified decision 4). A launch always lands in agent mode,
-   * and `partializeUiState` is the only writer of the persisted payload, so a
-   * hand-edited `vex-ui` object cannot inject this slot either (see
-   * `uiStore/persistence.ts`).
+   * PERSISTED, with `activeProjectId`, as the LAST STUDIO LOCATION - the pair
+   * the Studio welcome's own copy promises ("Studio is where you left it when
+   * you come back"). Coerced to this closed union on every rehydrate, because
+   * localStorage is untrusted; see `uiStore/persistence.ts` for the two-stage
+   * validation and why the earlier "never persisted" decision was about the
+   * merge that spread the whole payload rather than about the slot.
    */
   readonly runtimeMode: RuntimeMode;
   /**
    * Currently-selected Studio project. `null` means the Studio welcome screen.
    *
-   * NOT persisted, for the same reason `activeSessionId` is not: a selection is
-   * launch-ephemeral, and the project row it names may not exist next launch.
+   * PERSISTED as a CANDIDATE only. It is coerced to a bounded string on
+   * rehydrate and then confirmed against the settled project list by
+   * `StudioCenter`'s stale-selection repair, which gives it up when the project
+   * no longer exists - the same shape as VS Code validating a remembered
+   * workspace path before opening it. `activeSessionId` stays ephemeral: a
+   * session is not a location the welcome copy promises to restore.
    */
   readonly activeProjectId: string | null;
   readonly sidebarOpen: boolean;
@@ -293,6 +313,34 @@ export interface UiState {
    * tab control and for nothing else.
    */
   readonly bookTab: BookTab;
+  /**
+   * The Studio rail's vertical split: the EXPLORER pane's share of the list
+   * region, the PROJECTS list above it taking the rest.
+   *
+   * A LAYOUT PREFERENCE in the same class as `sidebarWidth`: the user sets it
+   * by dragging the seam (or with the separator's arrow keys) and nothing else
+   * writes it. In particular a temporary constraint - a short window, a
+   * collapsed rail, a project with no files - never rewrites it, so the pane
+   * comes back the size the user chose (rule 08, layout).
+   */
+  readonly studioRailExplorerShare: number;
+  /**
+   * THE OPEN FILE TABS, per project, so a relaunch reopens the files the user
+   * left open.
+   *
+   * The terminal snapshot cannot hold them: it is the pty host's file, its
+   * schema describes terminals, and its restore channel answers null for a
+   * project with no live terminal - so a file-only workspace could never come
+   * back through it. VS Code keeps editor state in workbench storage for the
+   * same separation (`EditorPart.saveState`).
+   *
+   * Written by the workspace owner (`StudioWorkspaceController`) whenever the
+   * file-tab list changes, debounced on the same timer as the terminal layout.
+   * Read once per mount, AFTER the terminal restore has settled, and every path
+   * in it is re-resolved through main before a tab exists. Bounds, refusals and
+   * the security argument: `uiStore/studio-file-tabs.ts`.
+   */
+  readonly studioFileTabs: StudioFileTabsByProject;
   /** Set the theme choice: resolves + writes documentElement in one step. */
   readonly setThemePreference: (value: VexThemePreference) => void;
   readonly setSidebarOpen: (value: boolean) => void;
@@ -382,6 +430,25 @@ export interface UiState {
   readonly setStudioBookSectionOrder: (order: readonly string[]) => void;
   /** User-driven only: the tab control calls this and nothing else does. */
   readonly setBookTab: (tab: BookTab) => void;
+  /** Live drag write: clamps into the rail split's contract range. */
+  readonly setStudioRailExplorerShare: (share: number) => void;
+  /**
+   * Record one project's open file tabs, stamping the LRU's clock.
+   *
+   * An EMPTY list forgets the project, which is what a strip with no files
+   * means. The per-project and per-record bounds are enforced here rather than
+   * by the caller, so no writer can grow this slot past them.
+   */
+  readonly setProjectFileTabs: (
+    projectId: string,
+    tabs: readonly PersistedFileTab[],
+  ) => void;
+  /**
+   * Forget one project's file tabs. Called when the project is DELETED: its
+   * paths name nothing any more, and keeping them would spend an LRU slot on a
+   * project Vex has told the user is gone.
+   */
+  readonly forgetProjectFileTabs: (projectId: string) => void;
   readonly appendLog: (entry: UiLogEntry) => void;
   readonly clearLogs: () => void;
 }
@@ -423,6 +490,8 @@ export const useUiStore = create<UiState>()(
       bookSectionOrder: [],
       studioBookSectionOrder: [],
       bookTab: "portfolio",
+      studioRailExplorerShare: STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
+      studioFileTabs: {},
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setSidebarWidth: (px) => set({ sidebarWidth: clampSidebarWidth(px) }),
       setBookWidth: (px) => set({ bookWidth: clampBookWidth(px) }),
@@ -485,6 +554,21 @@ export const useUiStore = create<UiState>()(
       setStudioBookSectionOrder: (studioBookSectionOrder) =>
         set({ studioBookSectionOrder }),
       setBookTab: (bookTab) => set({ bookTab }),
+      setStudioRailExplorerShare: (share) =>
+        set({ studioRailExplorerShare: clampStudioRailExplorerShare(share) }),
+      setProjectFileTabs: (projectId, tabs) =>
+        set((state) => ({
+          studioFileTabs: putProjectFileTabs(
+            state.studioFileTabs,
+            projectId,
+            tabs,
+            Date.now(),
+          ),
+        })),
+      forgetProjectFileTabs: (projectId) =>
+        set((state) => ({
+          studioFileTabs: dropProjectFileTabs(state.studioFileTabs, projectId),
+        })),
       appendLog: (entry) =>
         set((state) => ({
           logBuffer: [...state.logBuffer, entry].slice(-MAX_RENDER_LOGS),
@@ -493,7 +577,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 15,
+      version: 18,
       // Re-stamp the document root once the coerced, resolved theme is
       // known - theme-boot.js painted the pre-bundle frame from the RAW
       // payload, and a tampered value must not survive on <html>.

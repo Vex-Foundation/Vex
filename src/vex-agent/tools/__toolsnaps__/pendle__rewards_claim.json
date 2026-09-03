@@ -7,15 +7,15 @@
         "additionalProperties": false,
         "properties": {
           "chain": {
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
             "type": "string"
           },
           "dryRun": {
-            "description": "Preview the positions that would be claimed — including eligibleMarkets and skippedMarkets — without executing.",
+            "description": "Preview the positions that would be claimed - including eligibleMarkets and skippedMarkets - without executing.",
             "type": "boolean"
           },
           "market": {
-            "description": "Optional MARKET CONTRACT ADDRESS to scope the claim to one market — the way to reach a market the unscoped sweep reported in skippedMarkets (no cap applies to a scoped claim). Omit to sweep up to 10 held markets on the chain.",
+            "description": "Optional MARKET CONTRACT ADDRESS to scope the claim to one market - the way to reach a market the unscoped sweep reported in skippedMarkets (no cap applies to a scoped claim). Omit to sweep up to 10 held markets on the chain.",
             "type": "string"
           }
         },

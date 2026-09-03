@@ -15,7 +15,7 @@
             "type": "string"
           },
           "withdrawAll": {
-            "description": "Exit the ENTIRE Earn position for this asset, dust-free (redeems the position's full share balance rather than an underlying amount). Mutually exclusive with amountRaw — provide exactly one, never both. Never pass withdrawAll: false; omit it and pass amountRaw instead.",
+            "description": "Exit the ENTIRE Earn position for this asset, dust-free (redeems the position's full share balance rather than an underlying amount). Mutually exclusive with amountRaw - provide exactly one, never both. Never pass withdrawAll: false; omit it and pass amountRaw instead.",
             "type": "boolean"
           }
         },

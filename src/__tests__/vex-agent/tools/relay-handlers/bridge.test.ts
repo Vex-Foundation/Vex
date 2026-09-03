@@ -26,11 +26,23 @@ const ERC20 = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
 // ── Relay client (getQuote + getIntentStatus) + cached chains ──
 const mockGetQuote = vi.fn();
 
-/** The first `/quote` request body — no quote requested is the test failure. */
-function firstQuoteRequest(): { slippageTolerance?: string } {
+/**
+ * The first `/quote` request body - no quote requested is the test failure.
+ *
+ * The three ADDRESS fields are declared alongside the tolerance because they
+ * are the money leg the suite asserts on: `user`, `recipient` and `refundTo`
+ * are all derived from the session's selected wallet and none of them is a
+ * parameter.
+ */
+function firstQuoteRequest(): {
+  slippageTolerance?: string;
+  user?: string;
+  recipient?: string;
+  refundTo?: string;
+} {
   const [call] = mockGetQuote.mock.calls;
   assert.ok(call, "no quote was requested");
-  return call[0] as { slippageTolerance?: string };
+  return call[0] as { slippageTolerance?: string; user?: string; recipient?: string; refundTo?: string };
 }
 const mockGetIntentStatus = vi.fn();
 const mockGetCachedRelayChains = vi.fn();
@@ -668,6 +680,53 @@ describe("relay.quote.get — read preview keeps the prequote structural shape +
 // model-injected URL or key-shaped string reached tool output without ever
 // passing the sanitisation boundary. Chain resolution is real here (only the
 // Relay client/gates are mocked), so these exercise the true throw.
+describe("the bridge destination is DERIVED - both Relay entry points", () => {
+  /**
+   * `recipient` used to be a Relay bridge param defaulted to the selected
+   * wallet, so a model (or an injection reaching tool params) could name any
+   * address and the funds would go there. Rule 90: a value that can redirect
+   * funds never originates from model input; both wallet references agree
+   * (MetaMask quotes for the selected account, Rabby's bridge UI has no
+   * recipient input). The capability is REMOVED and the key is refused by name.
+   */
+  const ATTACKER = "0xeFEfeFEfeFeFEFEFEfefeFeFefEfEfEfeFEFEFEf";
+
+  it("the quote request delivers to the session's selected wallet", async () => {
+    await RELAY_BRIDGE_HANDLERS["relay.quote.get"](PARAMS, CTX);
+
+    const request = firstQuoteRequest();
+    expect(request.recipient).toBe(SEL_EVM);
+    expect(request.user).toBe(SEL_EVM);
+    expect(request.refundTo).toBe(SEL_EVM);
+  });
+
+  it("the execute request delivers to the session's selected wallet", async () => {
+    await runBridge();
+
+    const request = firstQuoteRequest();
+    expect(request.recipient).toBe(SEL_EVM);
+  });
+
+  for (const toolId of ["relay.quote.get", "relay.bridge"] as const) {
+    it(`${toolId} rejects a supplied recipient BY NAME, quoting nothing and signing nothing`, async () => {
+      const result = await RELAY_BRIDGE_HANDLERS[toolId]({ ...PARAMS, recipient: ATTACKER }, CTX);
+
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("recipient is not a parameter");
+      // The address the bridge WOULD deliver to, and the tool that can send
+      // somewhere else - not a bare refusal the agent retries under a synonym.
+      expect(result.output).toContain(SEL_EVM);
+      expect(result.output).toContain("WalletSendPrepare");
+      expect(result.output).not.toContain(ATTACKER);
+      // No provider request, no recording, no signing.
+      expect(mockGetQuote).not.toHaveBeenCalled();
+      expect(mockCreateIntent).not.toHaveBeenCalled();
+      expect(mockPreFail).not.toHaveBeenCalled();
+      expect(mockSign).not.toHaveBeenCalled();
+    });
+  }
+});
+
 describe("relay leg resolution — model-supplied params reach output only through the scrub boundary", () => {
   const INJECTED_URL = "https://evil.example.com/x?key=LEAKEDKEY123";
 

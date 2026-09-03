@@ -45,7 +45,7 @@ import type {
   ProjectDeleteResult,
   ProjectDto,
 } from "@shared/schemas/projects.js";
-import { clearToast, getToastSnapshot } from "../../../../../lib/toast.js";
+import { notifications } from "../../../../../lib/notifications/index.js";
 import {
   installStudioDomStubs,
   makeProject,
@@ -53,14 +53,20 @@ import {
 import {
   clearProjectTerminals,
   publishProjectTerminals,
-} from "../../workspace/project-terminals.js";
+} from "../../workspace/workspace-handles.js";
 import { ProjectDeleteDialog } from "../ProjectDeleteDialog.js";
 import {
+  PROJECT_DELETE_CONSEQUENCE_FOLDER_KEPT,
+  PROJECT_DELETE_CONSEQUENCE_FOLDER_TRASHED,
+  PROJECT_DELETE_CONSEQUENCE_UNDO,
+  PROJECT_DELETE_CONSEQUENCE_UNDO_TRASHED,
   PROJECT_DELETE_OUTCOME_SENTENCES,
   PROJECT_DELETE_TRASH_ELSEWHERE_NOTE,
   PROJECT_DELETE_TRASH_LABEL,
   PROJECT_DELETE_TRASH_LOCKED_NOTE,
   PROJECT_TRASH_SENTENCES,
+  projectDeleteConsequenceWhat,
+  projectFolderLine,
 } from "../projects-copy.js";
 
 const deleteMock = vi.fn<(input: ProjectDeleteInput) => Promise<Result<ProjectDeleteResult>>>();
@@ -73,10 +79,9 @@ beforeEach(() => {
   deleteMock.mockReset();
   deleteMock.mockResolvedValue({ ok: true, data: { outcome: "already_removed" } });
   clearProjectTerminals();
-  // The toast store is module state; a toast raised by a previous case would
-  // make "no toast was shown" pass for the wrong reason.
-  const standing = getToastSnapshot();
-  if (standing !== null) clearToast(standing.id);
+  // The notification model is module state; a toast raised by a previous case
+  // would make "no toast was shown" pass for the wrong reason.
+  notifications.reset();
   Object.defineProperty(window, "vex", {
     configurable: true,
     value: { projects: { delete: deleteMock } },
@@ -651,7 +656,7 @@ describe("every delete outcome", () => {
     await screen.findByText(PROJECT_DELETE_OUTCOME_SENTENCES.not_found);
     expect(onDeleted).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
-    expect(getToastSnapshot()).toBeNull();
+    expect(notifications.getSnapshot().items).toHaveLength(0);
   });
 
   it("renders a refusal Result by name rather than as a generic error", async () => {
@@ -669,11 +674,14 @@ describe("every delete outcome", () => {
     });
     renderDialog();
     await confirmDelete();
-    expect(
-      await screen.findByText(
-        "A wallet selected by this project no longer matches its stored address.",
-      ),
-    ).not.toBeNull();
+    const line = await screen.findByText(
+      "A wallet selected by this project no longer matches its stored address.",
+    );
+    expect(line).not.toBeNull();
+    // PINNED, not the last child of the scrolling body. A refusal for a
+    // destructive action that lands below the fold of a tall dialog is a
+    // refusal the user never sees, next to a button they will press again.
+    expect(line.closest("[data-vex-dialog-pinned]")).not.toBeNull();
   });
 });
 
@@ -773,5 +781,102 @@ describe("focus", () => {
         screen.getByRole("button", { name: "Cancel" }),
       );
     });
+  });
+});
+
+/* ------------------------- the consent grammar (UX-4) ---------------------- */
+
+function strip(): HTMLElement {
+  const node = document.querySelector("[data-vex-dialog-consequence]");
+  if (!(node instanceof HTMLElement)) throw new Error("no consequence strip");
+  return node;
+}
+
+describe("the consequence strip", () => {
+  it("states what, to what, and that it cannot be undone", () => {
+    const { project } = renderDialog();
+    const text = strip().textContent ?? "";
+    expect(text).toContain(projectDeleteConsequenceWhat("atlas"));
+    expect(text).toContain(projectFolderLine(project.displayPath));
+    expect(text).toContain(PROJECT_DELETE_CONSEQUENCE_FOLDER_KEPT);
+    expect(text).toContain(PROJECT_DELETE_CONSEQUENCE_UNDO);
+    // Delete keeps the destructive register to itself (audit A10).
+    expect(strip().getAttribute("data-vex-dialog-consequence")).toBe("warning");
+  });
+
+  it("sits outside the body's scroll region, above the typed confirmation", () => {
+    renderDialog();
+    const body = document.querySelector("[data-vex-dialog-body]");
+    expect(body).not.toBeNull();
+    expect(body?.contains(strip())).toBe(false);
+  });
+
+  it("follows the trash checkbox, because the act changes when it is ticked", () => {
+    renderDialog();
+    fireEvent.click(screen.getByLabelText(PROJECT_DELETE_TRASH_LABEL, { exact: false }));
+    const text = strip().textContent ?? "";
+    expect(text).toContain(PROJECT_DELETE_CONSEQUENCE_FOLDER_TRASHED);
+    // The undo line changes with it: the project still cannot come back, and
+    // the folder now can. Saying only the first half would be a half-truth
+    // about the user's files.
+    expect(text).toContain(PROJECT_DELETE_CONSEQUENCE_UNDO_TRASHED);
+    expect(text).not.toContain(PROJECT_DELETE_CONSEQUENCE_FOLDER_KEPT);
+  });
+
+  it("names the project the strip is about, not the one before it", () => {
+    const { setProject } = renderDialog();
+    // A different live row is a different dialog. The strip must follow it or
+    // it would describe a delete of a project nobody is looking at.
+    const other = makeProject({ name: "borealis" });
+    setProject(other);
+    expect(strip().textContent).toContain(
+      projectDeleteConsequenceWhat("borealis"),
+    );
+  });
+});
+
+describe("a proposal that changes under the dialog", () => {
+  it("disarms the confirm when the project is renamed after the name was typed", () => {
+    const { project, setProject } = renderDialog();
+    typeName("atlas");
+    expect(confirmButton().disabled).toBe(false);
+
+    // The row this dialog is aimed at was renamed from another window. The
+    // typed confirmation was given for a project that no longer answers to
+    // that name, so it stops arming the button - the confirm cannot submit
+    // from a proposal that has moved.
+    setProject({ ...project, name: "atlas-2" });
+    expect(confirmButton().disabled).toBe(true);
+    expect(strip().textContent).toContain(
+      projectDeleteConsequenceWhat("atlas-2"),
+    );
+  });
+});
+
+describe("the initial focus a real browser will honour", () => {
+  it("marks Cancel with the autofocus attribute the dialog focusing steps read", () => {
+    renderDialog();
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    // The `focus` suite above asserts `document.activeElement`, and it passed
+    // throughout while a real browser focused the typed confirmation field
+    // instead: React does not emit `autoFocus` as a content attribute, and the
+    // jsdom stub of the day ran no focusing steps. Both halves are fixed -
+    // `DialogContent` moves focus itself after `showModal()`, and the polyfill
+    // in `test/dialog-modal-polyfill.ts` runs the real steps - and this stays
+    // an assertion on the ATTRIBUTE, which is what a browser reads. See
+    // `DIALOG_INITIAL_FOCUS`.
+    expect(cancel.hasAttribute("autofocus")).toBe(true);
+  });
+});
+
+describe("the dialog's own posture", () => {
+  it("routes the native Escape intent through the close intent", () => {
+    const { onClose } = renderDialog();
+    const dialog = document.querySelector("dialog");
+    if (dialog === null) throw new Error("no dialog");
+    // The `cancel` event IS the browser's Escape intent on a modal `<dialog>`;
+    // the jsdom polyfill implements `showModal` without the UA key handling.
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    expect(onClose).toHaveBeenCalled();
   });
 });

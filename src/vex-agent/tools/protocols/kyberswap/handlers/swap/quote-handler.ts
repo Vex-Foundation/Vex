@@ -1,5 +1,5 @@
 /**
- * `kyberswap.swap.quote` — the read-only route probe. It signs nothing and
+ * `kyberswap.swap.quote` - the read-only route probe. It signs nothing and
  * records nothing; its two jobs are seeding the prequote the execute is matched
  * against, and surfacing token danger the agent would otherwise not see.
  */
@@ -35,7 +35,7 @@ import {
 } from "../../../quote-authority/snapshot.js";
 
 /**
- * The human spelling of a raw base-unit amount for the summary string only —
+ * The human spelling of a raw base-unit amount for the summary string only -
  * `routeSummary.amountOut` keeps the raw value. Falls back to the input when
  * it is not an integer string (a display fallback must never throw a quote).
  * The conversion is owned by `protocols/amount-display.ts`.
@@ -79,7 +79,7 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
 
   // Rejected HERE, not only at the execute: this quote seeds the prequote
   // the execute is matched against, and `slippageBps` is part of that
-  // identity — so a tolerance the execute would refuse must never produce a
+  // identity - so a tolerance the execute would refuse must never produce a
   // quote that appears to authorize it.
   const quoteSlippage = resolveKyberSlippageBps("kyberswap.swap.quote", p);
   if (!quoteSlippage.ok) return fail(quoteSlippage.reason);
@@ -98,7 +98,7 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
   let tokenIn: ResolvedKyberTokenMetadata;
   let tokenOut: ResolvedKyberTokenMetadata;
   try {
-    // Strict: address-only (+ native sentinel/keyword) — symbols are NOT
+    // Strict: address-only (+ native sentinel/keyword) - symbols are NOT
     // resolved via Kyber's DEX search here. A symbol like "USDC" can match the
     // wrong contract (e.g. axlUSDC) and seed a prequote for the wrong token, so
     // the quote resolution is symmetric with execute (resolveTokenMetadataStrict)
@@ -112,7 +112,7 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
   // `NATIVE` sentinel, which tells the agent nothing about what it is trading;
   // these annotate it with the chain's real ticker (`NATIVE (ETH)`), degrading
   // to the bare sentinel when the chain cannot be resolved. `tokenIn.symbol`
-  // itself stays canonical — it is what gets persisted and matched on.
+  // itself stays canonical - it is what gets persisted and matched on.
   const tokenInLabel = annotateNativeSymbol(tokenIn.symbol, chainId);
   const tokenOutLabel = annotateNativeSymbol(tokenOut.symbol, chainId);
   const amountIn = parseUnits(amountInRaw, tokenIn.decimals).toString();
@@ -186,20 +186,20 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
   const note = eligibilityNote(eligibility, slug, wrapPairRefusal);
 
   // Output-polish (plan §4.2): compact human summary FIRST, machine fields
-  // after — as one JSON key ordering, not a free-text prefix, so `output`
+  // after - as one JSON key ordering, not a free-text prefix, so `output`
   // stays parseable (every tool in this codebase returns JSON via `ok()`,
   // and downstream tests/consumers rely on `JSON.parse(result.output)`).
   //
   // The summary's amountOut is HUMAN units (2026-07-30): a live session showed
   // a weaker model copying the raw base-unit figure from this string into its
   // user-facing reply ("~1926791258702869954560 VEX"). The raw value stays
-  // untouched in `routeSummary.amountOut` — machines read that; this string is
+  // untouched in `routeSummary.amountOut` - machines read that; this string is
   // the human/agent layer. Falls back to raw if the provider ever returns a
   // non-integer string, rather than failing the quote over a display detail.
   const summary =
     `Quote: ${amountInRaw} ${tokenInLabel} → ~${humanizeAmountOut(route.amountOut, tokenOut.decimals)} ${tokenOutLabel} `
     + `(~$${route.amountOutUsd} est.) on ${slug}. Gas ~$${route.gasUsd} est.`
-    // On an L2 the L1 data fee can rival or exceed execution gas — quoting
+    // On an L2 the L1 data fee can rival or exceed execution gas - quoting
     // only `gasUsd` understated the real cost of the trade.
     + (route.l1FeeUsd !== null ? ` L1 data fee ~$${route.l1FeeUsd} est.` : "")
     + (route.priceImpact !== null ? ` Price impact ${(route.priceImpact * 100).toFixed(2)}%.` : "")

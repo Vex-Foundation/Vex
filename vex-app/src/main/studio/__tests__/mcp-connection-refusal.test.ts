@@ -20,10 +20,9 @@
  * the window is genuinely open rather than closed by a fast test double.
  */
 
-import { EventEmitter } from "node:events";
-
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { FakeDuplexTransport } from "@vex-agent/mcp/duplex-transport-fake.js";
 import type { StudioConnectionHandle } from "@vex-agent/mcp/server.js";
 
 import {
@@ -35,7 +34,6 @@ import {
   atCapacityRefusal,
   STUDIO_HANDSHAKE_DEADLINE_MS,
 } from "../mcp-host/handshake.js";
-import { testSocket } from "./socket-test-adapter.js";
 
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -44,69 +42,19 @@ vi.mock("../../logger/index.js", () => ({
 const PROJECT_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 
 /**
- * A socket whose writes are accepted and never completed, until released.
+ * A wire whose writes are accepted and never completed, until released.
  *
- * `autoComplete` flips it to an ordinary well-behaved socket, for the cases
- * where the held writable side is not the subject.
+ * The shared fake in its `hold` policy. `flushWrites()` lets every held write
+ * complete in order; `acceptDeferred()` flips it to an ordinary well-behaved
+ * wire, for the cases where the held writable side is not the subject.
  */
-class HeldSocket extends EventEmitter {
-  destroyed = false;
-  writableEnded = false;
-  paused = false;
-  autoComplete = false;
-  readonly written: string[] = [];
-  private readonly pendingCallbacks: (() => void)[] = [];
-
-  write(line: string, callback?: () => void): boolean {
-    this.written.push(line);
-    if (callback === undefined) return true;
-    if (this.autoComplete) {
-      setImmediate(callback);
-      return true;
-    }
-    this.pendingCallbacks.push(callback);
-    return false;
-  }
-
-  /** Let every held write complete, in order. */
-  releaseWrites(): void {
-    const callbacks = this.pendingCallbacks.splice(0, this.pendingCallbacks.length);
-    for (const callback of callbacks) callback();
-    this.emit("drain");
-  }
-
-  pause(): this {
-    this.paused = true;
-    return this;
-  }
-
-  resume(): this {
-    this.paused = false;
-    return this;
-  }
-
-  setNoDelay(): this {
-    return this;
-  }
-
-  end(): void {
-    this.writableEnded = true;
-  }
-
-  destroy(): void {
-    this.destroyed = true;
-    this.emit("close");
-  }
-
-  /** Has a `data` listener, i.e. is the host still reading the handshake? */
-  hasDataListener(): boolean {
-    return this.listenerCount("data") > 0;
-  }
+function heldWire(): FakeDuplexTransport {
+  return new FakeDuplexTransport("hold");
 }
 
 interface Harness {
   readonly connection: StudioConnection;
-  readonly socket: HeldSocket;
+  readonly socket: FakeDuplexTransport;
   readonly reservations: () => number;
   readonly served: () => number;
   readonly acks: () => readonly string[];
@@ -118,7 +66,7 @@ interface HarnessOptions {
 }
 
 function harness(options: HarnessOptions = {}): Harness {
-  const socket = new HeldSocket();
+  const socket = heldWire();
   let reservations = 0;
   let served = 0;
   const deps: StudioConnectionDeps = {
@@ -136,7 +84,7 @@ function harness(options: HarnessOptions = {}): Harness {
     },
     onClosed: (): void => undefined,
   };
-  const connection = new StudioConnection("c-test", testSocket(socket), deps);
+  const connection = new StudioConnection("c-test", socket, deps);
   return {
     connection,
     socket,
@@ -171,13 +119,13 @@ describe("a handshake that arrives while a cap refusal is in flight", () => {
 
     // The peer's handshake was already on the wire. Even if something re-emits
     // it, nothing may parse it into a reservation.
-    test.socket.emit("data", handshakeLine());
+    test.socket.deliver(handshakeLine());
     await Promise.resolve();
 
     expect(test.reservations()).toBe(0);
     expect(test.served()).toBe(0);
 
-    test.socket.releaseWrites();
+    test.socket.flushWrites();
     await refusing;
 
     // EXACTLY ONE ack, and it is the refusal. A success ack behind it would be
@@ -194,7 +142,7 @@ describe("a handshake that arrives while a cap refusal is in flight", () => {
     const test = harness();
     const first = test.connection.refuse(atCapacityRefusal(16, "MCP connections"));
     await test.connection.refuse(atCapacityRefusal(4, "connections waiting to handshake"));
-    test.socket.releaseWrites();
+    test.socket.flushWrites();
     await first;
     expect(test.acks()).toHaveLength(1);
   });
@@ -213,7 +161,7 @@ describe("a handshake that arrives after the deadline fired", () => {
     expect(test.socket.paused).toBe(true);
 
     // ... and then it wrote. Late is late.
-    test.socket.emit("data", handshakeLine());
+    test.socket.deliver(handshakeLine());
     await Promise.resolve();
 
     expect(test.reservations()).toBe(0);
@@ -249,8 +197,8 @@ describe("dispose", () => {
       },
     });
 
-    test.socket.autoComplete = true;
-    test.socket.emit("data", handshakeLine());
+    test.socket.acceptDeferred();
+    test.socket.deliver(handshakeLine());
     await waitFor(() => test.connection.isServing());
 
     const first = test.connection.dispose("lock");

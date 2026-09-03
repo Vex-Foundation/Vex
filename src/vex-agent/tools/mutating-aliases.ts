@@ -20,22 +20,26 @@
  *   - THROWS `MutatingAliasRouteError` on an un-routable request (unknown
  *     family, chain not usable on this venue, invalid args). The dispatcher
  *     turns the throw into a bounded failure
- *     ToolResult — it never dispatches a guessed target.
+ *     ToolResult - it never dispatches a guessed target.
  *
- * `side` / `recipient` are REMOVED from the unified contract (plan §11.2) — no
+ * `side` / `recipient` are REMOVED from the unified contract (plan §11.2) - no
  * lot-direction/PnL tracking survives Agent Scan, and wallet-delta receipt
- * decoding is the truth invariant for the output leg.
+ * decoding is the truth invariant for the output leg. On the BRIDGE routers
+ * `recipient` is removed for a second, stronger reason: the destination is the
+ * wallet selected for this project on the destination chain, so a supplied key
+ * is refused BY NAME with the shared bridge-destination sentence
+ * (`./protocols/bridge-recipient-param.js`), never forwarded and never dropped.
  *
  * The two swap executes take their `chain` from the SAME schema as the quotes
  * (`./internal/chain-param.js`): a slug, a digit string, or a JSON number, all
  * normalized to one trimmed string. Quote and execute must accept the same
- * forms — an execute that refuses what its own quote accepted is a dead end the
+ * forms - an execute that refuses what its own quote accepted is a dead end the
  * model cannot reason its way out of. The bridge routers are deliberately
  * excluded (their chain names belong to the Khalani/Relay namespaces and feed
  * the bridge prequote match-hash).
  *
  * Units: `amountIn` is the HUMAN decimal of `tokenIn` (e.g. "1.5"), matching
- * the kyber/uniswap/jupiter `amountIn` string — translation preserves the
+ * the kyber/uniswap/jupiter `amountIn` string - translation preserves the
  * value, it does not convert units.
  */
 
@@ -47,6 +51,7 @@ import { isNumericChainIdInput } from "@tools/kyberswap/chains.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
 import { findCallerSuppliedForbiddenParam } from "@tools/khalani/request.js";
 import { khalaniSlippageRejection } from "./protocols/khalani/slippage-unsupported.js";
+import { bridgeRecipientAliasRefusal } from "./protocols/bridge-recipient-param.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 
 /** A resolved target for a mutating protocol-alias. */
@@ -58,7 +63,7 @@ export interface ResolvedAliasTarget {
 /**
  * Thrown by a router when the alias cannot be routed to a concrete target
  * (unknown family, chain not usable on this venue, invalid args). Carries a
- * bounded, agent-facing message — never raw
+ * bounded, agent-facing message - never raw
  * provider/DB text. The dispatcher returns it as a failed ToolResult; the
  * predicate `dispatchTargetIsMutating` swallows it and falls back to the
  * registry mutating flag (the throw is a validation signal, not a side-effect
@@ -83,15 +88,15 @@ export type MutatingAliasRouter = (
   sessionId: string | undefined,
 ) => ResolvedAliasTarget | Promise<ResolvedAliasTarget>;
 
-// ── SwapExecute — EVM (KyberSwap ONLY) / Solana (Jupiter execute) router ──
+// ── SwapExecute - EVM (KyberSwap ONLY) / Solana (Jupiter execute) router ──
 
 /**
- * `SwapExecute` alias args. `side` / `recipient` are REMOVED (plan §11.2 — no
+ * `SwapExecute` alias args. `side` / `recipient` are REMOVED (plan §11.2 - no
  * lot-direction tracking survives, and the Jupiter execute manifest never had
  * a recipient param either). `amountIn` is a HUMAN decimal string for both
  * families.
  */
-// `.strict()` (FIX-SPINE round 1, finding 14/C4) — the removed legacy
+// `.strict()` (FIX-SPINE round 1, finding 14/C4) - the removed legacy
 // `side`/`recipient`/`amount` fields are REJECTED with a clear message, never
 // silently stripped. Silently dropping `recipient` in particular would be a
 // transaction-safety-significant silent behavior change.
@@ -110,7 +115,7 @@ type SwapArgs = z.infer<typeof SwapArgs>;
 
 /**
  * Resolve the `SwapExecute` alias to a concrete swap EXECUTE toolId +
- * translated params. EVM → `kyberswap.swap.execute` ONLY (plan §11.2 — the
+ * translated params. EVM → `kyberswap.swap.execute` ONLY (plan §11.2 - the
  * silent Uniswap fallback is removed); Solana → `solana.swap.execute`
  * (unchanged). Throws `MutatingAliasRouteError` on invalid args or an unknown
  * family; when the chain has NO KyberSwap aggregator support at all it throws a
@@ -132,17 +137,17 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
 
   const family = classifySwapFamily(a.chain);
   if (family.kind === "unknown") {
-    // A chain ID is refused AS an id — same branch and same wording as the
+    // A chain ID is refused AS an id - same branch and same wording as the
     // quote half (`internal/action-aliases.ts`). It came from TokenFind, so
     // "cannot determine swap family" would read as a lookup mistake rather than
     // the truth: no venue in the tree serves that chain. This runs BEFORE the
-    // venue branch below on purpose — pointing at the Uniswap venue would claim
+    // venue branch below on purpose - pointing at the Uniswap venue would claim
     // it covers a chain nothing registers.
     if (isNumericChainIdInput(a.chain)) {
       throw new MutatingAliasRouteError(
         `SwapExecute: chain id ${a.chain} is not a chain Vex can swap on. ` +
-          `Pass a supported EVM chain — either its slug or the chain id TokenFind ` +
-          `returns (ethereum/1, base/8453, arbitrum/42161, …) — or "solana".`,
+          `Pass a supported EVM chain - either its slug or the chain id TokenFind ` +
+          `returns (ethereum/1, base/8453, arbitrum/42161, …) - or "solana".`,
       );
     }
     throw new MutatingAliasRouteError(
@@ -153,7 +158,7 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
 
   if (family.kind === "solana") {
     // W5a: the Jupiter execute manifest now uses the SAME keys as the alias
-    // (tokenIn/tokenOut/amountIn, human decimal STRING) — pass them through
+    // (tokenIn/tokenOut/amountIn, human decimal STRING) - pass them through
     // rather than round-tripping the amount through a float.
     const params: Record<string, unknown> = {
       tokenIn: a.tokenIn,
@@ -164,14 +169,14 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
     return { toolId: "solana.swap.execute", params };
   }
 
-  // EVM tokens MUST be a contract address or native — the execute handler
+  // EVM tokens MUST be a contract address or native - the execute handler
   // resolves strictly (resolveTokenMetadataStrict), so a bare symbol would only
   // fail deeper inside with a less-clear error. Reject it EARLY with the same
   // doctrine message the quote alias uses (symmetry: a symbol is never DEX-
   // resolved on the EVM path; use TokenFind first).
   if (!isEvmSwapTokenInput(a.tokenIn) || !isEvmSwapTokenInput(a.tokenOut)) {
     throw new MutatingAliasRouteError(
-      "SwapExecute: EVM tokens must be a contract address — resolve the symbol with " +
+      "SwapExecute: EVM tokens must be a contract address - resolve the symbol with " +
         "TokenFind first, or pass native ETH/native.",
     );
   }
@@ -182,7 +187,7 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
   if (family.venue === "uniswap") {
     throw new MutatingAliasRouteError(
       `SwapExecute: KyberSwap does not support chain "${a.chain}". ` +
-        `Use SwapExecuteUniswap for this chain — quote it with SwapQuoteUniswap first.`,
+        `Use SwapExecuteUniswap for this chain - quote it with SwapQuoteUniswap first.`,
     );
   }
 
@@ -196,10 +201,10 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
   return { toolId: "kyberswap.swap.execute", params };
 }
 
-// ── SwapExecuteUniswap — HIDDEN EVM-only Uniswap fallback execute ────────
+// ── SwapExecuteUniswap - HIDDEN EVM-only Uniswap fallback execute ────────
 
 const SwapExecuteUniswapArgs = z.object({
-  // Same shared schema as `SwapQuoteUniswap` — see `SwapArgs` above.
+  // Same shared schema as `SwapQuoteUniswap` - see `SwapArgs` above.
   chain: ChainParam,
   tokenIn: z.string().min(1, { message: "tokenIn is required" }),
   tokenOut: z.string().min(1, { message: "tokenOut is required" }),
@@ -211,7 +216,7 @@ type SwapExecuteUniswapArgs = z.infer<typeof SwapExecuteUniswapArgs>;
 
 /**
  * Resolve the `SwapExecuteUniswap` alias. Resolves DIRECTLY against the Uniswap
- * deployment registry, NOT `classifySwapFamily` — that would prioritize
+ * deployment registry, NOT `classifySwapFamily` - that would prioritize
  * KyberSwap on a chain it ALSO covers, and the whole point of naming the venue
  * in the tool is to reach Uniswap even there.
  */
@@ -235,7 +240,7 @@ function routeSwapExecuteUniswap(
   }
   if (!isEvmSwapTokenInput(a.tokenIn) || !isEvmSwapTokenInput(a.tokenOut)) {
     throw new MutatingAliasRouteError(
-      "SwapExecuteUniswap: EVM tokens must be a contract address — resolve the symbol with "
+      "SwapExecuteUniswap: EVM tokens must be a contract address - resolve the symbol with "
         + "TokenFind first, or pass native ETH/native.",
     );
   }
@@ -250,7 +255,7 @@ function routeSwapExecuteUniswap(
   return { toolId: "uniswap.swap.execute", params };
 }
 
-// ── BridgeExecute — Khalani cross-chain bridge EXECUTE router ─────────────────────
+// ── BridgeExecute - Khalani cross-chain bridge EXECUTE router ─────────────────────
 
 /**
  * `BridgeExecute` alias args. Mirrors the read-only `BridgeQuote` shape (Stage 8a) so
@@ -258,7 +263,7 @@ function routeSwapExecuteUniswap(
  * with `BridgeExecute`. Translation is a pass-through to `khalani.bridge`'s EXACT param
  * keys (verified against the khalani manifest:
  * fromChain/fromToken/toChain/toToken/amountRaw + the optional overrides). `dryRun`
- * is intentionally NOT accepted — the alias is the real broadcast; a dry run is
+ * is intentionally NOT accepted - the alias is the real broadcast; a dry run is
  * reached by calling the Khalani bridge tool directly with `dryRun: true`.
  * The EXECUTE-ONLY `routeId`/`depositMethod` knobs are ALSO not accepted (8c
  * security fix): the quote can never bind them, so the bridge auto-selects the
@@ -267,14 +272,15 @@ function routeSwapExecuteUniswap(
  * `referrer`/`referrerFeeBps` are likewise not accepted: they set a referral fee
  * deducted from the bridged output and paid to an arbitrary address, and Vex
  * never derives a fee from model params. `routeBridge` rejects them by name
- * before parsing. See the policy in `@tools/khalani/request.js`.
+ * before parsing. See the policy in `@tools/khalani/request.js`. `recipient` is
+ * refused the same way, for the same reason applied to the destination itself.
  *
  * Units: `amountRaw` is in RAW base units (wei/lamports), matching the khalani
- * bridge manifest — translation preserves the value, it does not convert.
+ * bridge manifest - translation preserves the value, it does not convert.
  */
 // `routeId` / `depositMethod` are deliberately ABSENT (8c security fix). They are
 // EXECUTE-ONLY khalani.bridge knobs with NO counterpart in the bridge quote, so
-// they can never be bound to a quote — the bridge auto-selects the best route.
+// they can never be bound to a quote - the bridge auto-selects the best route.
 // `.strict()` REJECTS them (and any other unknown key) at the alias boundary so
 // the agent cannot smuggle them through the menu; the execute gate independently
 // fail-closes them on the direct protocol-call path.
@@ -287,10 +293,13 @@ const BridgeArgs = z
     amountRaw: z.string().min(1, { message: "amountRaw is required (raw base units)" }),
     tradeType: z.string().min(1).optional(),
     fromAddress: z.string().min(1).optional(),
-    recipient: z.string().min(1).optional(),
+    // No `recipient` - a bridge delivers to the wallet selected for this
+    // project on the destination chain. `.strict()` would refuse the key as an
+    // anonymous unknown one; `routeBridge` refuses it BY NAME first, with the
+    // remedy (`./protocols/bridge-recipient-param.js`).
     filler: z.string().min(1).optional(),
     // Relay-only price protection, in basis points (1 bps = 0.01%). REJECTED by
-    // name on the Khalani branch — Khalani exposes no slippage tolerance.
+    // name on the Khalani branch - Khalani exposes no slippage tolerance.
     slippageBps: z.number().int().nonnegative().optional(),
   })
   .strict();
@@ -315,14 +324,20 @@ async function routeBridge(args: Record<string, unknown>): Promise<ResolvedAlias
   // Fee params and the refund destination are rejected BY NAME before anything
   // else, so an attempted overcharge or refund redirection reads as an explicit
   // refusal rather than a generic unknown-key error. `.strict()` below would
-  // also reject them, but not legibly — and a silent drop would hide the
+  // also reject them, but not legibly - and a silent drop would hide the
   // attempt entirely.
   const forbiddenParam = findCallerSuppliedForbiddenParam(args);
   if (forbiddenParam !== null) {
     throw new MutatingAliasRouteError(
-      `BridgeExecute: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
+      `BridgeExecute: ${forbiddenParam.param} is not an accepted parameter - ${forbiddenParam.reason} Remove it and retry.`,
     );
   }
+
+  // The DESTINATION, refused by name before `.strict()` can answer it as an
+  // anonymous unknown key - an agent that reads "unrecognized key" tries a
+  // synonym, and there is no synonym that works.
+  const suppliedRecipient = bridgeRecipientAliasRefusal("BridgeExecute", args);
+  if (suppliedRecipient !== null) throw new MutatingAliasRouteError(suppliedRecipient);
 
   // `slippageBps` is REJECTED BY NAME whenever this call routes to Khalani
   // (SPEC §2.4 item 21). It used to be dropped in silence, which told the agent
@@ -343,7 +358,7 @@ async function routeBridge(args: Record<string, unknown>): Promise<ResolvedAlias
   const venue = await resolveBridgeVenue(a.fromChain, a.toChain);
   if (venue.venue === null) throw new MutatingAliasRouteError(`BridgeExecute: ${venue.refusal}`);
   if (venue.venue === "relay") {
-    // Relay params — no referrer/fee/filler/fromAddress surface (Khalani-only).
+    // Relay params - no referrer/fee/filler/fromAddress surface (Khalani-only).
     const params: Record<string, unknown> = {
       fromChain: a.fromChain,
       fromToken: a.fromToken,
@@ -352,7 +367,6 @@ async function routeBridge(args: Record<string, unknown>): Promise<ResolvedAlias
       amountRaw: a.amountRaw,
     };
     if (a.tradeType !== undefined) params.tradeType = a.tradeType;
-    if (a.recipient !== undefined) params.recipient = a.recipient;
     if (a.slippageBps !== undefined) params.slippageBps = a.slippageBps;
     return { toolId: "relay.bridge", params };
   }
@@ -366,17 +380,16 @@ async function routeBridge(args: Record<string, unknown>): Promise<ResolvedAlias
   };
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
   if (a.fromAddress !== undefined) params.fromAddress = a.fromAddress;
-  if (a.recipient !== undefined) params.recipient = a.recipient;
   if (a.filler !== undefined) params.filler = a.filler;
-  // routeId / depositMethod are NOT forwarded — they are absent from BridgeArgs
+  // routeId / depositMethod are NOT forwarded - they are absent from BridgeArgs
   // (.strict() rejects them). See the BridgeArgs schema note (8c security fix).
   return { toolId: "khalani.bridge", params };
 }
 
-// ── BridgeExecuteRelay — Relay-only bridge EXECUTE ────────────────────────
+// ── BridgeExecuteRelay - Relay-only bridge EXECUTE ────────────────────────
 
 /**
- * `BridgeExecuteRelay` alias args — the Relay subset of the bridge contract
+ * `BridgeExecuteRelay` alias args - the Relay subset of the bridge contract
  * (no referrer/fee/filler/fromAddress surface; those are Khalani-only). Mirrors
  * the Relay branch of the generic `BridgeExecute` router so quote↔execute currencies
  * and chains collide on the venue-bound prequote identity.
@@ -389,8 +402,10 @@ const BridgeExecuteRelayArgs = z
     toToken: z.string().min(1, { message: "toToken is required" }),
     amountRaw: z.string().min(1, { message: "amountRaw is required (raw base units)" }),
     tradeType: z.string().min(1).optional(),
-    recipient: z.string().min(1).optional(),
-    // No `refundTo` — the refund destination is derived from the selected
+    // No `recipient` - the destination is derived from the wallet selected for
+    // this project on the destination chain; `routeBridgeExecuteRelay` refuses
+    // a supplied key by name (`./protocols/bridge-recipient-param.js`).
+    // No `refundTo` - the refund destination is derived from the selected
     // source wallet on both venues (refund-destination policy in
     // `@tools/khalani/request.js`).
     slippageBps: z.number().int().nonnegative().optional(),
@@ -417,9 +432,13 @@ function routeBridgeExecuteRelay(
   const forbiddenParam = findCallerSuppliedForbiddenParam(args);
   if (forbiddenParam !== null) {
     throw new MutatingAliasRouteError(
-      `BridgeExecuteRelay: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
+      `BridgeExecuteRelay: ${forbiddenParam.param} is not an accepted parameter - ${forbiddenParam.reason} Remove it and retry.`,
     );
   }
+
+  // Same by-name bridge-destination refusal as the generic router.
+  const suppliedRecipient = bridgeRecipientAliasRefusal("BridgeExecuteRelay", args);
+  if (suppliedRecipient !== null) throw new MutatingAliasRouteError(suppliedRecipient);
 
   const parsed = BridgeExecuteRelayArgs.safeParse(args);
   if (!parsed.success) {
@@ -439,7 +458,6 @@ function routeBridgeExecuteRelay(
     amountRaw: a.amountRaw,
   };
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
-  if (a.recipient !== undefined) params.recipient = a.recipient;
   if (a.slippageBps !== undefined) params.slippageBps = a.slippageBps;
   return { toolId: "relay.bridge", params };
 }

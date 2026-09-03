@@ -4,8 +4,28 @@
  * had to stay compatible with was never wired and has been removed).
  *
  * The canonical file at `${SECRETS_DIR}/pg_password` is always written
- * plaintext mode 0o600. DPAPI / Keychain / libsecret defense-in-depth
- * is deferred to a future M11 task that adds a shared decryption shim.
+ * plaintext, REQUESTING mode 0o600 inside a 0o700 directory. DPAPI /
+ * Keychain / libsecret defense-in-depth is deferred to a future M11 task
+ * that adds a shared decryption shim.
+ *
+ * WHAT THE MODE BIT ACTUALLY BUYS, PER PLATFORM. The `mode` arguments below
+ * are a POSIX request, not a portable guarantee - this header previously
+ * claimed 0600 unconditionally, which is only true on two of our three
+ * targets:
+ *
+ *   - macOS / Linux: the kernel enforces the mode, and it IS the access
+ *     boundary. The process umask can only clear further bits, so it can
+ *     never widen these.
+ *   - Windows: libuv maps `mode` onto the read-only attribute alone; the
+ *     group/other bits have no NTFS ACL representation and are a NO-OP. The
+ *     real boundary is inherited rather than set here - `${SECRETS_DIR}`
+ *     lives under the per-user `%APPDATA%` tree, whose default ACL admits
+ *     the owning user plus the local SYSTEM/Administrators principals and
+ *     nobody else. Another unprivileged local user cannot read the file; a
+ *     local administrator can, which is equally true of DPAPI at rest.
+ *
+ * Nothing here depends on this note - it exists so a reader does not take the
+ * 0o600 literal below as a cross-platform permission claim.
  *
  * The boot-time cleanup pass enumerates the secrets directory for any
  * orphaned `*.transient` files left over from a previous session that

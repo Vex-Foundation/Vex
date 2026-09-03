@@ -28,10 +28,47 @@ export interface PtyDisposable {
  * letting it fill a queue in this process.
  */
 export interface PtyAdapter {
+  /**
+   * The shell's process id, READ LIVE - never snapshotted by an implementer.
+   *
+   * On Windows this is `0` until ConPTY has connected. node-pty >= 1.2.0-beta.11
+   * defers `conptyNative.connect()` onto the conout worker's ready callback
+   * (`windowsPtyAgent.js:39` initialises `_innerPid = 0`, `:134` assigns the real
+   * one inside `_completePtyConnection`), and `windowsTerminal.js:62` copies that
+   * zero into the terminal at construction, refreshing it only in the
+   * `ready_datapipe` handler (`:67-69`). A caller that reads this once, at spawn,
+   * therefore holds `0` for the rest of the session on Windows - see
+   * `terminal-process.ts`, which defers every pid-dependent step to the first
+   * data event exactly as VS Code's `TerminalProcess` does
+   * (microsoft/node-pty#885).
+   *
+   * `0` means NOT YET KNOWN. It is never a process that can be signalled or
+   * probed.
+   */
   readonly pid: number;
   readonly process: string;
   onData(listener: (data: string) => void): PtyDisposable;
   onExit(listener: (event: { exitCode: number; signal?: number }) => void): PtyDisposable;
+  /**
+   * The pty's data socket FAILED, with an error node-pty does not treat as
+   * ordinary.
+   *
+   * This seam exists because node-pty's own socket error handler RETHROWS: it
+   * ignores `EAGAIN` and `EIO`/`errno 5`, and then, for anything else, throws
+   * the error unless the socket already carries a second `error` listener
+   * (`windowsTerminal.js:90-104`, `unixTerminal.js:101-127`). node-pty registers
+   * no such listener of its own (`terminal.js:90-94` forwards only `data` and
+   * `exit`), so without this seam a conout failure becomes an UNCAUGHT EXCEPTION
+   * in the pty host - which takes down every terminal in every project, not just
+   * the one whose socket broke.
+   *
+   * The IMPLEMENTER registers that second listener at spawn, before any consumer
+   * subscribes, because a listener attached later is a race against the very
+   * error it exists to survive. Only the errors node-pty would have rethrown are
+   * forwarded; the ones it classifies as ordinary lifecycle are not, because the
+   * exit event already carries them.
+   */
+  onError(listener: (error: Error) => void): PtyDisposable;
   write(data: string): void;
   resize(cols: number, rows: number): void;
   kill(signal?: string): void;

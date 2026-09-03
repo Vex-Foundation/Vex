@@ -4,7 +4,7 @@
  * breakdown, the per-leg event plan, and the atomic intent creation.
  *
  * NOTHING here has been signed. Every failure THROWS, and the caller's single
- * catch records it with `failPreBroadcast` (C18: pre-intent only) — which is
+ * catch records it with `failPreBroadcast` (C18: pre-intent only) - which is
  * exactly why the intent creation is the LAST statement of this phase.
  */
 
@@ -86,8 +86,8 @@ export interface PrepareSwapExecutionInput {
   readonly approvedSnapshot: RouteSnapshot;
   /**
    * Legs whose honeypot/FoT check could not run (W2b). Persisted onto the
-   * activity row's `intent_params` under a Vex-authored `_`-prefixed key —
-   * same established pattern as the Jupiter lend `/operate` delta shape — so
+   * activity row's `intent_params` under a Vex-authored `_`-prefixed key -
+   * same established pattern as the Jupiter lend `/operate` delta shape - so
    * the record itself says the swap ran without that protection. No schema
    * change: `intent_params` is already a sanitized, capped JSON blob.
    */
@@ -147,12 +147,12 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
   // ── Pre-sign calldata assertion (the ONE gate on the opaque blob) ──
   // KyberSwap embeds the price protection inside calldata WE did not
   // build, so it is decoded and held to the floor THIS fresh route implies
-  // at the caller's own slippage — plus the fee line, the flags, the
+  // at the caller's own slippage - plus the fee line, the flags, the
   // target, the spender and the native value. Runs BEFORE the intent is
   // created, so a refusal is a clean pre-broadcast failure with nothing
   // signed and nothing broadcast. It bounds what the BUILD may do to the
   // trade; it does not second-guess where the market moved since the
-  // quote — `slippageBps` owns that.
+  // quote - `slippageBps` owns that.
   const swapGuard = {
     built: {
       calldata: buildResp.data.data as Hex,
@@ -174,7 +174,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
       freshMinOutRaw: BigInt(approvedSnapshot.approvedMinOutRaw),
       floorAllowanceRaw: KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
       // The pools of the very route summary posted to `/route/build`
-      // above — never a second, fresher route, which would let the guard
+      // above - never a second, fresher route, which would let the guard
       // bless a build against a route the agent never approved.
       routeFirstHops: deriveRouteFirstHops(approvedSummary.route),
     },
@@ -188,7 +188,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
         : ErrorCodes.KYBER_UNSAFE_BUILD,
       // Kept SHORT on purpose: `summarizeProtocolError` joins message +
       // hint and caps the pair at 200 chars, so a verbose reason silently
-      // truncates away the actionable tail — the one part of a refusal the
+      // truncates away the actionable tail - the one part of a refusal the
       // agent must always receive.
       `Refused before signing: ${verdict.reason}.`,
       verdict.kind === "price_floor"
@@ -199,7 +199,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
 
   // C21 (Codex final-review finding 6): the native-in "requested" leg
   // recorded on the swap event is the SIGNED transaction's own declared
-  // value (`transactionValue`), never a locally re-derived `amountIn` —
+  // value (`transactionValue`), never a locally re-derived `amountIn` -
   // this is also what the settlement decoder treats as the EXECUTED
   // truth for a native leg (Kyber is exact-input, so the two coincide by
   // construction, but the build response is the authoritative source).
@@ -208,8 +208,8 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
     ? formatUnits(BigInt(buildResp.data.transactionValue), tokenIn.decimals)
     : amountInRaw;
 
-  // The durable cost breakdown (migration 050). Derived here — AFTER the
-  // calldata guard above accepted the build — so "25 bps of the input, on
+  // The durable cost breakdown (migration 050). Derived here - AFTER the
+  // calldata guard above accepted the build - so "25 bps of the input, on
   // the source token" is a proven property of the payload about to be
   // signed rather than an assumption.
   const swapCosts = estimateKyberSwapCostsUsd({
@@ -220,7 +220,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
   // The same fee as a FACT rather than a USD estimate (migration 050
   // Part 2). `amountIn` is the very bigint the guard just pinned to
   // `desc.amount`, and the guard also pinned the rate, the source-side
-  // charge and the no-partial-fill flag — so this is the router's own
+  // charge and the no-partial-fill flag - so this is the router's own
   // arithmetic over proven inputs, not a re-derivation of a provider hint.
   // It is recorded even when `usdVexFeeEst` is undefined, which is what
   // makes an absent USD read as "price unknown" instead of "no fee".
@@ -266,9 +266,9 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
       usdOutEst: buildResp.data.amountOutUsd,
       // `usd_fee_est` is FROZEN for the migration-050 dual-write window:
       // it keeps receiving `gasUsd` alone, byte-identical to its
-      // pre-050 behavior, so old readers are unaffected. The honest gas —
+      // pre-050 behavior, so old readers are unaffected. The honest gas -
       // L2 execution PLUS the L1 data fee, which on an OP-stack chain can
-      // rival or exceed it — goes to `usd_network_gas_est`, so the two
+      // rival or exceed it - goes to `usd_network_gas_est`, so the two
       // legitimately differ on those chains. A later contract migration
       // drops `usd_fee_est`.
       usdFeeEst: buildResp.data.gasUsd,
@@ -278,7 +278,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
       // was actually collected, so summing confirmed rows is honest revenue.
       usdVexFeeEst: swapCosts.usdVexFeeEst,
       // Charged on the SOURCE token and taken OUT of the input, so this is
-      // a component of `tokenIn.amountRaw` above — never an extra debit.
+      // a component of `tokenIn.amountRaw` above - never an extra debit.
       vexFee: {
         tokenAddress: tokenIn.address,
         tokenSymbol: tokenIn.symbol,
@@ -295,7 +295,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
         // does not read it and `amount_out_raw` keeps its meaning (the build
         // response's own amountOut).
         approvedMinOutRaw: approvedSnapshot.approvedMinOutRaw,
-        // R1 Step 5a — the decode inputs, persisted at INTENT time. The router
+        // R1 Step 5a - the decode inputs, persisted at INTENT time. The router
         // is the one `verifyRouterAddress` accepted above, not a value echoed
         // back from the build; the declared value is the signed transaction's
         // own, and it is recorded only when the input really is native, because

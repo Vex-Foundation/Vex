@@ -1,10 +1,10 @@
 /**
- * `trench.launch_request_form` — the agent ASKS the user to launch a token.
+ * `trench.launch_request_form` - the agent ASKS the user to launch a token.
  *
  * `mutating: false`. This tool DRAFTS and goes PENDING. It never signs, never
  * broadcasts and never spends: it inserts a `token_launch_intents` row at
  * `awaiting_user_form` carrying the ORIGINAL tool-call id, then returns
- * `pendingUserForm` — the §C3b sibling of `pendingApproval`.
+ * `pendingUserForm` - the §C3b sibling of `pendingApproval`.
  *
  * WHO DOES WHAT. This handler makes the wait DURABLE and nothing else. The turn
  * loop's user-form arm (`turn-loop-tool-batch/user-form-stop.ts`) owns the park,
@@ -21,7 +21,7 @@
  * owns the mechanics; this handler owns the launch-shaped decision to use them.
  *
  * The tool-call id is the load-bearing detail. Without it the eventual result
- * answers no pending call and the turn cannot close — which is why it is
+ * answers no pending call and the turn cannot close - which is why it is
  * persisted on the row rather than held in memory, and why the DB CHECK
  * `token_launch_intents_form_path_has_tool_call` requires it on this path.
  */
@@ -62,7 +62,7 @@ export async function trenchLaunchRequestFormHandler(
   const sessionId = context.sessionId;
   if (!sessionId) return fail(`${TOOL_ID} requires an active session.`);
 
-  // The tool-call id comes from the HOST, never from params — a model-supplied
+  // The tool-call id comes from the HOST, never from params - a model-supplied
   // one could park a form that answers a different call. Absent means this
   // dispatch was not a model tool call at all (previews, maintenance, internal
   // resumes), and parking a turn nothing can answer would hang it forever, so
@@ -88,8 +88,8 @@ export async function trenchLaunchRequestFormHandler(
   const intentId = randomUUID();
   const expiresAt = new Date(Date.now() + FORM_WINDOW_MS).toISOString();
 
-  // Creation is precisely the transition a row lock cannot exclude — the row has
-  // no identity to lock until it exists — so it happens under the session
+  // Creation is precisely the transition a row lock cannot exclude - the row has
+  // no identity to lock until it exists - so it happens under the session
   // control lock, or the compaction safe-moment gate can read `clear` a
   // microsecond before this money state comes into existence.
   await withTransaction(async (client) => {
@@ -116,7 +116,7 @@ export async function trenchLaunchRequestFormHandler(
 
   // PENDING, not answered. The row above made the wait durable; the turn loop's
   // user-form arm (`turn-loop-tool-batch/user-form-stop.ts`) now owns what
-  // happens next — the operator-stop gate, the park, and the dialog push, in
+  // happens next - the operator-stop gate, the park, and the dialog push, in
   // one transaction with emit-after-commit.
   //
   // This handler deliberately does NOT park, emit, or produce a tool result.
@@ -131,7 +131,7 @@ export async function trenchLaunchRequestFormHandler(
 }
 
 /**
- * Read the host-threaded tool-call id, treating blank as absent — a whitespace
+ * Read the host-threaded tool-call id, treating blank as absent - a whitespace
  * id answers no call, and the DB CHECK on this path would take it anyway.
  */
 function readHostToolCallId(context: ProtocolExecutionContext): string | null {

@@ -1,5 +1,5 @@
 /**
- * `PlanWrite` handler — idempotent upsert of the session's action plan.
+ * `PlanWrite` handler - idempotent upsert of the session's action plan.
  *
  * Defense-in-depth: re-checks plan-mode is enabled in the DB (the registry
  * `requiresPlanMode` gate is model-facing only). Length-caps the markdown on
@@ -7,7 +7,7 @@
  * plan emits a `plan_pause` EngineSignal so the turn-loop parks the run in
  * `paused_plan_acceptance` (mission text does not break the loop, so we cannot
  * wait for the next execution attempt). In agent mode (one-shot) there is no run
- * to pause — the dispatcher execution gate enforces acceptance and the agent
+ * to pause - the dispatcher execution gate enforces acceptance and the agent
  * replies asking the user to accept.
  */
 
@@ -53,7 +53,7 @@ export async function handlePlanWrite(
   // the atomic enabled-guard skipped the update. Fail WITHOUT emitting a pause
   // signal, so the run is never parked with a disabled, unaccepted plan.
   if (!updated) {
-    return fail("Plan mode was turned off before the plan could be saved — re-enable plan mode and write the plan again.");
+    return fail("Plan mode was turned off before the plan could be saved - re-enable plan mode and write the plan again.");
   }
   // `upsertPlan` resets accepted_at to NULL on a content change; a no-op write
   // preserves it. So `updated.accepted` is the authoritative post-write state.

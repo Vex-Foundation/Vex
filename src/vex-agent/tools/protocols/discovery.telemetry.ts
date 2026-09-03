@@ -2,10 +2,10 @@
  * Telemetry for the ToolSearch meta-tool.
  *
  * Privacy mode (DISCOVERY_QUERY_PRIVACY env var):
- * - "raw" — full query as sent (default; appropriate for dev / local debugging).
- * - "normalized" — trimmed + lowercased.
- * - "sanitized" — alphanumeric tokens only (drops addresses, amounts, special chars).
- * - "hashed" — first 16 hex chars of sha256 over normalized query.
+ * - "raw" - full query as sent (default; appropriate for dev / local debugging).
+ * - "normalized" - trimmed + lowercased.
+ * - "sanitized" - alphanumeric tokens only (drops addresses, amounts, special chars).
+ * - "hashed" - first 16 hex chars of sha256 over normalized query.
  *
  * Code review checklist for PR1: production deployments must set
  * DISCOVERY_QUERY_PRIVACY=sanitized (or hashed) before opting into log
@@ -81,9 +81,9 @@ export interface DiscoveryTelemetryInput {
   request: ProtocolDiscoveryRequest;
   result: ProtocolDiscoveryResult;
   discoveryRunId: string;
-  /** Calling surface — "vex_agent" | "mcp_local" | undefined (defaults to "vex_agent"). */
+  /** Calling surface - "vex_agent" | "mcp_local" | undefined (defaults to "vex_agent"). */
   sourceSurface?: string;
-  /** Session ID of the calling surface — enables grouping discoveries within one host session. */
+  /** Session ID of the calling surface - enables grouping discoveries within one host session. */
   sourceSession?: string;
 }
 
@@ -116,7 +116,7 @@ export function logDiscoveryTelemetry({ request, result, discoveryRunId, sourceS
     candidateCount: retrieval?.candidateCount,
     topkToolIds: matchedToolIds,
     // W7 enriched the row shape (exampleParams, required, actionKind,
-    // constraints) and raised the default limit — both grow the payload the
+    // constraints) and raised the default limit - both grow the payload the
     // model pays for on every discovery. Measure it rather than assume it:
     // `payloadChars` is the serialized ROWS only, so a regression is
     // attributable to the row shape and not to warnings or retrieval meta.
@@ -141,12 +141,12 @@ export interface SelectTelemetryInput {
 }
 
 /**
- * `ToolSearch` select-mode completion event — METADATA ONLY.
+ * `ToolSearch` select-mode completion event - METADATA ONLY.
  *
  * Counts and the payload SIZE, never a row body: rule 07. `payloadChars` is
  * what makes the recurring-cost regression measurable without storing the
  * content it measures, and it is the number that proves the merge's central
- * claim — select used to answer with full manifests, and this event is where a
+ * claim - select used to answer with full manifests, and this event is where a
  * regression back to that would show up first.
  *
  * `rejectedCount` is derived from the ROWS, not from `warnings`: a warning can

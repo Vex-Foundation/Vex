@@ -1,12 +1,12 @@
 /**
- * `trench.trade_quote` handler — READ-ONLY curve price quote.
+ * `trench.trade_quote` handler - READ-ONLY curve price quote.
  *
  * Reads the DETERMINISTIC, FEE-INCLUSIVE `quote()` and `fakepool_stats()` on the
  * Diamond and discloses the exact expected output, the 1% ETH-leg fee, the price
  * impact against the curve reserves, and progress toward graduation. Signs
  * nothing. The output is swap-shaped (`chainId`, `tokenIn.address`,
  * `tokenOut.address`, `safety`) so the runtime records a `swap` prequote
- * (provider "trench") whose match-hash binds tokenIn/tokenOut/amount/chain — the
+ * (provider "trench") whose match-hash binds tokenIn/tokenOut/amount/chain - the
  * gate the paired `trench.trade_execute` is checked against.
  */
 
@@ -35,7 +35,7 @@ const NO_FEE_AT_THIS_SIZE =
  * what `trench.trade_execute` discloses, so an agent that quotes and then
  * executes never sees the number change under it.
  *
- * On a SELL the figure is necessarily an ESTIMATE — the base is the ETH the sell
+ * On a SELL the figure is necessarily an ESTIMATE - the base is the ETH the sell
  * will produce, and the execute leg re-derives it from the DECODED proceeds. The
  * `basis` field says so explicitly rather than leaving it implied.
  */
@@ -94,7 +94,7 @@ export async function trenchTradeQuoteHandler(
 
     // On a SELL the base is the ETH RECEIVED (the owner-approved deviation from
     // `currency_in`), and at quote time the only figure available is the
-    // estimate — the execute leg re-derives it from the DECODED proceeds.
+    // estimate - the execute leg re-derives it from the DECODED proceeds.
     const vexFee = buildQuoteFeeDisclosure(side, amountInRaw, expectedOutRaw, buyFeeSplit);
 
     // 1% fee on the ETH leg. On a BUY the ETH leg is the input; on a SELL it is
@@ -133,7 +133,7 @@ export async function trenchTradeQuoteHandler(
       // Swap-shaped identity fields the prequote recorder reads (extractEvm):
       tokenIn: { address: tokenInAddress },
       tokenOut: { address: tokenOutAddress },
-      // No honeypot oracle exists for RBC curve tokens — the ETH leg is native,
+      // No honeypot oracle exists for RBC curve tokens - the ETH leg is native,
       // the token leg is unchecked → the prequote verdict is `unknown`
       // (allowed-with-approval-warning), never a false `pass`.
       safety: {

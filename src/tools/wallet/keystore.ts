@@ -134,6 +134,64 @@ export function keystoreExists(): boolean {
   return keystoreFileExists(KEYSTORE_FILE);
 }
 
+/**
+ * THE KEYSTORE RENAME CONTENTION POLICY (rule 04's explicit shape).
+ *
+ * ELIGIBLE FAILURE CLASSES: `EPERM`, `EACCES`, `EBUSY` from `renameSync` alone.
+ * ATTEMPTS: the first plus at most three retries. BACKOFF: 20ms, 45ms, 90ms,
+ * jittered by +/-25%, so under 200ms of added latency in the worst case.
+ * IDEMPOTENCY: repeating `rename(temp, target)` is safe - the failure means it
+ * did not happen, and the temp file is still exactly the bytes we wrote.
+ * AFTER EXHAUSTION: a NAMED `KEYSTORE_WRITE_LOCKED` refusal, never another
+ * attempt. The existing keystore is untouched, so nothing was lost.
+ *
+ * WHY IT IS NEEDED AT ALL: on Windows a keystore file that another process has
+ * open without `FILE_SHARE_DELETE` cannot be renamed over, and the processes
+ * that open a file in the Vex config directory are backup agents, file-syncing
+ * clients and antivirus scanners - all of which let go within milliseconds. A
+ * single attempt turns that into a failed wallet import the user cannot act on.
+ *
+ * WHY THE SLEEP IS `Atomics.wait`: this function is SYNCHRONOUS by contract
+ * (every keystore caller is), so there is no event loop to yield to. `Atomics.
+ * wait` blocks the thread for a bounded interval without the CPU burn of a spin
+ * loop. The total block is under 200ms and only on a path that is already
+ * failing.
+ */
+const KEYSTORE_RENAME_RETRY_DELAYS_MS: readonly number[] = [20, 45, 90];
+
+function isRenameContention(cause: unknown): boolean {
+  if (typeof cause !== "object" || cause === null) return false;
+  const code = (cause as { code?: unknown }).code;
+  return code === "EPERM" || code === "EACCES" || code === "EBUSY";
+}
+
+/** Bounded synchronous sleep. See the policy note above for why it is sync. */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function renameWithContentionRetry(tmpFile: string, path: string): void {
+  for (let attempt = 0; attempt <= KEYSTORE_RENAME_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      renameSync(tmpFile, path);
+      return;
+    } catch (cause) {
+      if (!isRenameContention(cause)) throw cause;
+      const wait = KEYSTORE_RENAME_RETRY_DELAYS_MS[attempt];
+      if (wait === undefined) {
+        throw new VexError(
+          ErrorCodes.KEYSTORE_WRITE_LOCKED,
+          "The keystore file could not be replaced: another program is holding it open, or the "
+            + "Vex config folder is not writable. Your existing keystore was NOT changed.",
+          "Close anything that may have the file open (a backup or file-syncing client, an "
+            + "antivirus scanner, an editor, or another Vex window), then try again.",
+        );
+      }
+      sleepSync(Math.round(wait * (0.75 + Math.random() * 0.5)));
+    }
+  }
+}
+
 export function saveKeystoreFile(path: string, keystore: KeystoreV1): void {
   ensureConfigDir();
 
@@ -146,7 +204,7 @@ export function saveKeystoreFile(path: string, keystore: KeystoreV1): void {
     if (process.platform !== "win32") {
       try { chmodSync(tmpFile, 0o600); } catch { /* non-fatal on platforms without POSIX perms */ }
     }
-    renameSync(tmpFile, path);
+    renameWithContentionRetry(tmpFile, path);
     logger.debug(`Keystore saved to ${path}`);
   } catch (err) {
     try {

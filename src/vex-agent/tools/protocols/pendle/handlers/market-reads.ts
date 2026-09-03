@@ -1,24 +1,24 @@
 /**
- * Pendle MARKET-DATA read handler map — the six per-market / per-asset reads,
+ * Pendle MARKET-DATA read handler map - the six per-market / per-asset reads,
  * and the one place their asset-decimals dependency is chosen.
  *
  * WHY THE WIRING LIVES HERE. Order-book sizes, merkle reward amounts and a
  * market's leg identity all arrive as raw base units with NO decimals: neither
  * the documented market catalogue nor those endpoints publish them. The handlers
  * therefore take the lookup as a REQUIRED argument (`asset-decimals.ts`), so the
- * choice cannot be made by accident — and this module makes it: the catalogue
+ * choice cannot be made by accident - and this module makes it: the catalogue
  * behind `buildAssetMap`, the same source `pendle.position.value` reads for the
  * same reason.
  *
  * `buildAssetMap` is IMPORTED, never modified. It belongs to the frozen money
- * path, and this direction — a read handler consuming a shared resolver — is the
+ * path, and this direction - a read handler consuming a shared resolver - is the
  * one that already exists in this tree. Nothing here can widen it: the adapter
  * below narrows each asset to a symbol and a decimals count and drops the price
  * fields that back valuation and sizing.
  *
  * When the catalogue read FAILS, `resolveAssetFacts` hands the handler the
  * failure instead of an empty map, and the affected amounts ship raw and flagged
- * `unreadable` with the reason named — never at an assumed 18 decimals.
+ * `unreadable` with the reason named - never at an assumed 18 decimals.
  */
 
 import type { ProtocolHandler } from "../../types.js";

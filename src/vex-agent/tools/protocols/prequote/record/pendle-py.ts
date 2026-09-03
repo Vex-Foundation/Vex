@@ -1,5 +1,5 @@
 /**
- * Pendle PY prequote recording (P4) — `pendle.py.quote` records either a `mint`
+ * Pendle PY prequote recording (P4) - `pendle.py.quote` records either a `mint`
  * or a pre-expiry `redeem_py`.
  */
 
@@ -19,8 +19,8 @@ import { writePrequoteRow } from "./row.js";
 
 /**
  * Record a Pendle PY prequote (P4). `pendle.py.quote` records EITHER a `mint`
- * prequote (direction "mint" — token → PT+YT) OR a `redeem_py` prequote
- * (direction "redeem" — pre-expiry PT+YT → token), decided from the echoed
+ * prequote (direction "mint" - token → PT+YT) OR a `redeem_py` prequote
+ * (direction "redeem" - pre-expiry PT+YT → token), decided from the echoed
  * `direction`. Each uses its dedicated identity (never the swap / redeem one).
  * Best-effort: a wallet-scope / identity throw is a bounded skip.
  */
@@ -74,7 +74,7 @@ export async function recordPendlePyPrequote(
     return;
   }
 
-  // Pre-expiry redeem (direction "redeem") — dedicated redeem_py identity.
+  // Pre-expiry redeem (direction "redeem") - dedicated redeem_py identity.
   let identity;
   try {
     identity = await buildPendleRedeemPyIdentity(sessionId, params, context);

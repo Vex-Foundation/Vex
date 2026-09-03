@@ -1,5 +1,5 @@
 /**
- * Launch boundary validation — the first gate every launch request passes.
+ * Launch boundary validation - the first gate every launch request passes.
  *
  * Three responsibilities, all rule-90:
  *
@@ -11,7 +11,7 @@
  *    would let a model set the spend directly.
  * 2. **Raw amounts travel with their decimals.** The prebuy is parsed once, here,
  *    into wei at 18 decimals, and every later stage handles bigint wei only.
- *    `"1047061"` next to a bare mint is 1.05 at 6 decimals and 0.00105 at 9 — a
+ *    `"1047061"` next to a bare mint is 1.05 at 6 decimals and 0.00105 at 9 - a
  *    thousandfold error for whoever guesses, so nothing downstream is allowed to.
  * 3. **Metadata that create() writes forever is rejected, never repaired.** A
  *    control character or a double quote in name, symbol, description or a link
@@ -58,8 +58,8 @@ export const FORBIDDEN_LAUNCH_PARAMS = [
 const ETH_DECIMALS = 18;
 
 /**
- * Fat-finger ceiling on the prebuy, in ETH. NOT the spend gate — the mission
- * ceiling (§C6) is — but a magnitude this far outside any plausible launch is a
+ * Fat-finger ceiling on the prebuy, in ETH. NOT the spend gate - the mission
+ * ceiling (§C6) is - but a magnitude this far outside any plausible launch is a
  * mistake worth refusing before the rest of the machinery runs.
  */
 const PREBUY_SANITY_MAX_ETH = 1_000n;
@@ -90,7 +90,7 @@ function refuse(reason: string): LaunchValidation {
  * incidental later failure that would obscure what it attempted.
  */
 export function validateLaunchRequest(p: Record<string, unknown>): LaunchValidation {
-  // 1. Forbidden params — presence is the offence, whatever the value.
+  // 1. Forbidden params - presence is the offence, whatever the value.
   //    `null`, `0`, `""` and `false` all count: a falsy forbidden param is still
   //    an attempt to reach the money path.
   const supplied = FORBIDDEN_LAUNCH_PARAMS.filter((key) => key in p);
@@ -102,7 +102,7 @@ export function validateLaunchRequest(p: Record<string, unknown>): LaunchValidat
     );
   }
 
-  // 1b. On-chain metadata text — checked on the RAW values, before any trim and
+  // 1b. On-chain metadata text - checked on the RAW values, before any trim and
   //     before the link scheme check, because create() writes these fields
   //     immutably and a repaired string is not the string the user reviewed.
   for (const field of ["name", "symbol", "description", "links"] as const) {
@@ -132,7 +132,7 @@ export function validateLaunchRequest(p: Record<string, unknown>): LaunchValidat
       return refuse(`each link must be at most ${LINK_LEN_MAX} characters.`);
     }
     if (!/^https:\/\//i.test(link)) {
-      return refuse(`each link must be an https URL — received "${link.slice(0, 48)}".`);
+      return refuse(`each link must be an https URL - received "${link.slice(0, 48)}".`);
     }
   }
 
@@ -140,7 +140,7 @@ export function validateLaunchRequest(p: Record<string, unknown>): LaunchValidat
   if (!imageId) {
     return refuse(
       "A Trench launch requires an image. The token's image is written on-chain by create() and "
-        + "can never be added afterwards, so Vex refuses to launch without one — upload an image to "
+        + "can never be added afterwards, so Vex refuses to launch without one - upload an image to "
         + "the Trench Photos locker on the right, then name its imageId.",
     );
   }

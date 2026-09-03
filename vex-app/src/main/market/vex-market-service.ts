@@ -15,8 +15,9 @@
  *
  * Lifecycle mirrors `agent/sync-worker.ts`: an immediate first tick, a
  * non-reentrant single-in-flight guard per source, and an idempotent async
- * `stop()` that clears every timer and drains any in-flight tick (a probe that
- * resolves AFTER quit begins must not publish or reschedule). Self-scheduling
+ * `stop()` that clears every timer and drains any in-flight tick, BOUNDED by
+ * `drainTimeoutMs` (a probe that resolves AFTER quit begins must not publish
+ * or reschedule, so one that never resolves can simply be abandoned). Self-scheduling
  * `setTimeout` (not a fixed `setInterval`) is used so a failed poll can back
  * off with jitter — the price loop retries at `base·2^failures` (capped) so a
  * DexScreener 429 does not hammer the endpoint.
@@ -42,6 +43,7 @@ const DEFAULTS = {
   sparklineIntervalMs: 60_000,
   holderIntervalMs: 120_000,
   maxBackoffMs: 60_000,
+  drainTimeoutMs: 2_000,
 } as const;
 
 export interface VexMarketServiceDeps {
@@ -56,6 +58,16 @@ export interface VexMarketServiceDeps {
   readonly maxBackoffMs: number;
   /** Extra delay added to a backed-off retry; default is 0–1s of jitter. */
   readonly jitterMs: () => number;
+  /**
+   * How long `stop()` waits for an in-flight poll before abandoning it.
+   *
+   * This is a QUIT budget, not a request timeout: the poll it waits on rides
+   * the app's Chromium transport, whose window the quit is in the middle of
+   * destroying, so the request can be left permanently unsettled by something
+   * this module does not own. A drain with no bound turns that into an app
+   * that cannot close.
+   */
+  readonly drainTimeoutMs: number;
 }
 
 interface Loop {
@@ -87,6 +99,7 @@ export function setupVexMarketService(
   const holderIntervalMs = deps.holderIntervalMs ?? DEFAULTS.holderIntervalMs;
   const maxBackoffMs = deps.maxBackoffMs ?? DEFAULTS.maxBackoffMs;
   const jitterMs = deps.jitterMs ?? (() => Math.round(Math.random() * 1_000));
+  const drainTimeoutMs = deps.drainTimeoutMs ?? DEFAULTS.drainTimeoutMs;
 
   let stopped = false;
 
@@ -175,6 +188,7 @@ export function setupVexMarketService(
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight: Promise<void> | null = null;
     let failures = 0;
+    let abandoned = false;
 
     const schedule = (delayMs: number): void => {
       if (stopped) return;
@@ -216,12 +230,37 @@ export function setupVexMarketService(
         }
       },
       drain: async () => {
-        if (inFlight !== null) {
-          try {
-            await inFlight;
-          } catch {
-            // failures are already handled in `catch` above
-          }
+        const pending = inFlight;
+        if (pending === null) return;
+        // BOUNDED, and the deadline is armed before the await. `pending` is a
+        // provider read riding the app's Chromium transport: when the quit
+        // destroys the window that transport lives in, the request's promise
+        // is never settled at all - no rejection, no timer, nothing for the
+        // event loop to hold - and this drain waited on it forever. That is
+        // the defect that made `app.close()` never return.
+        //
+        // Abandoning it is safe and changes nothing observable: `stopped` is
+        // already true and every tick re-checks it after each await, so a poll
+        // that lands late can neither publish nor reschedule.
+        let releaseDeadline: () => void = () => undefined;
+        const deadline = new Promise<void>((resolve) => {
+          releaseDeadline = resolve;
+        });
+        const timer = setTimeout(() => {
+          abandoned = true;
+          releaseDeadline();
+        }, drainTimeoutMs);
+        try {
+          await Promise.race([pending.catch(() => undefined), deadline]);
+        } finally {
+          clearTimeout(timer);
+          releaseDeadline();
+        }
+        if (abandoned) {
+          log.warn(
+            `[vex-market] a poll did not settle within ${String(drainTimeoutMs)}ms of quit; `
+              + "abandoning it - it can no longer publish or reschedule",
+          );
         }
       },
     };

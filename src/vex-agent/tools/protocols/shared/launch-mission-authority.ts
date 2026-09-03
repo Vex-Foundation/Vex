@@ -50,7 +50,7 @@ export async function checkMissionLaunchAuthority(
     return {
       ok: false,
       reason:
-        `Refusing to launch: mission run ${input.missionRunId} ${refusal} — it stopped, finished, or `
+        `Refusing to launch: mission run ${input.missionRunId} ${refusal} - it stopped, finished, or `
         + "disappeared while this launch was being prepared, and only a live run can authorize new "
         + "spending. Nothing was signed.",
     };

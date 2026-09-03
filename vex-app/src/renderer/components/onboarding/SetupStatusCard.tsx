@@ -8,6 +8,21 @@
  * `error`) speak the AMENDMENT A3 rail recipe: a left 2px color rail,
  * no fill, no rounded container (the boxed 45/12 recipe is retired
  * with the rest of the boxed composition).
+ *
+ * ## It is a LIVE REGION, and it has to be its own
+ *
+ * These cards are the only thing that reports a pre-shell branch: Docker not
+ * running, a compose bootstrap failing, a migration finishing. All of it
+ * arrives while the user is watching a screen that changes under them without
+ * any focus moving, so a sighted user sees the word change and nobody else is
+ * told anything. The app-wide notification announcer is NOT the owner here -
+ * it lives inside the shell, which does not exist yet on these screens.
+ *
+ * The role follows the tone, and the split is the component's own `isAlert`:
+ * an alert tone (`warn` / `error`) is a failure the user has to act on and
+ * interrupts (`alert`), while a calm tone is progress and waits its turn
+ * (`status`). One rule, so no call site has to decide, and the visual rail and
+ * the announcement can never disagree about which one this is.
  */
 
 import { type JSX, type ReactNode } from "react";
@@ -62,6 +77,7 @@ export function SetupStatusCard({
   const isAlert = alertRail[tone] !== undefined;
   return (
     <div
+      role={isAlert ? "alert" : "status"}
       className={cn(
         "flex flex-col gap-1",
         isAlert ? alertRail[tone] : "items-center text-center",

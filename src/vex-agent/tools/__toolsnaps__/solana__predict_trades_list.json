@@ -7,7 +7,7 @@
         "additionalProperties": false,
         "properties": {
           "limit": {
-            "description": "Max results, 1-100. Required — this feed has no upstream owner/market scope, so an explicit window is required to avoid an unbounded response.",
+            "description": "Max results, 1-100. Required - this feed has no upstream owner/market scope, so an explicit window is required to avoid an unbounded response.",
             "type": "number"
           },
           "offset": {

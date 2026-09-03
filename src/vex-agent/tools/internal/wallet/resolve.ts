@@ -4,14 +4,14 @@
  * inventory resolvers, and enforces mission scope.
  *
  * Two entry points, deliberately split (Codex stage-5B review):
- *   - `resolveSelectedAddress` — address-only, NEVER decrypts a key. For
+ *   - `resolveSelectedAddress` - address-only, NEVER decrypts a key. For
  *     WalletBalances / send prepare / balance display.
- *   - `resolveSigningWallet` — decrypts the key. ONLY after the approval gate
+ *   - `resolveSigningWallet` - decrypts the key. ONLY after the approval gate
  *     and immediately before broadcast (WalletSendConfirm executors).
  *
  * Both validate the session selection (id + address snapshot, via
  * `resolveSelectedEntry`) AND the mission wallet policy. Mission policy is NOT
- * gated on `sessionKind` — it rides the explicit `WalletPolicy` value.
+ * gated on `sessionKind` - it rides the explicit `WalletPolicy` value.
  */
 
 import { VexError, ErrorCodes } from "../../../../errors.js";
@@ -36,8 +36,8 @@ function assertWalletPolicy(
   if (policy.kind === "none") return;
   if (policy.kind === "invalid") {
     // Least-privilege setup exception (read-only callers only): during a
-    // mission's SETUP phase — a mission exists but has NO active run, so the
-    // policy is invalid with reason "mission_without_active_run" — read-only
+    // mission's SETUP phase - a mission exists but has NO active run, so the
+    // policy is invalid with reason "mission_without_active_run" - read-only
     // resolvers opt in to let the session read its OWN selected wallet so setup
     // can be a research+planning phase. ALL other invalid reasons (active-run
     // contract drift: missing_or_malformed_snapshot / empty_allowed_wallets)
@@ -46,7 +46,7 @@ function assertWalletPolicy(
     if (allowSetupRead && policy.reason === "mission_without_active_run") return;
     throw new VexError(
       ErrorCodes.WALLET_SCOPE_MISMATCH,
-      "Mission wallet policy is invalid (contract drift — no accepted allowed wallets).",
+      "Mission wallet policy is invalid (contract drift - no accepted allowed wallets).",
       "Re-accept the mission contract and start a fresh run.",
     );
   }
@@ -60,7 +60,7 @@ function assertWalletPolicy(
 }
 
 /**
- * Resolve the selected wallet ADDRESS for a family — no key decrypt. Throws a
+ * Resolve the selected wallet ADDRESS for a family - no key decrypt. Throws a
  * typed VexError on missing selection, removed wallet, address drift, or
  * mission-policy violation. Callers convert with `walletScopeErrorToResult`.
  */
@@ -107,14 +107,14 @@ export interface SelectedWalletAddresses {
  * Resolve BOTH families' selected addresses for read-side wallet scoping.
  *
  *  - Invalid mission policy fails closed FIRST (contract drift must never
- *    degrade to an empty/global read — Codex 5E-2 review).
+ *    degrade to an empty/global read - Codex 5E-2 review).
  *  - A family with no wallet (`WALLET_NOT_SELECTED` for a session, or
  *    `WALLET_NOT_CONFIGURED` for default resolution) is a VALID empty → null; the
  *    read simply shows nothing for that family.
  *  - Address drift / removed wallet / policy violation (`WALLET_SCOPE_MISMATCH`)
  *    re-throws so the read fails closed.
  *
- * `all` may be empty (a valid session with neither family selected) — callers
+ * `all` may be empty (a valid session with neither family selected) - callers
  * MUST treat an empty set as "no rows", never as a global query.
  */
 export function resolveSelectedAddressSet(
@@ -124,7 +124,7 @@ export function resolveSelectedAddressSet(
   if (policy.kind === "invalid") {
     throw new VexError(
       ErrorCodes.WALLET_SCOPE_MISMATCH,
-      "Mission wallet policy is invalid (contract drift — no accepted allowed wallets).",
+      "Mission wallet policy is invalid (contract drift - no accepted allowed wallets).",
       "Re-accept the mission contract and start a fresh run.",
     );
   }
@@ -171,7 +171,7 @@ export function resolveSelectedAddressSetForRead(
   if (policy.kind === "invalid" && policy.reason !== "mission_without_active_run") {
     throw new VexError(
       ErrorCodes.WALLET_SCOPE_MISMATCH,
-      "Mission wallet policy is invalid (contract drift — no accepted allowed wallets).",
+      "Mission wallet policy is invalid (contract drift - no accepted allowed wallets).",
       "Re-accept the mission contract and start a fresh run.",
     );
   }
@@ -182,7 +182,7 @@ export function resolveSelectedAddressSetForRead(
 }
 
 /**
- * Read variant of `tryResolveSelectedAddress` — maps "validly absent" to null
+ * Read variant of `tryResolveSelectedAddress` - maps "validly absent" to null
  * and re-throws drift, resolving through `resolveSelectedAddressForRead` so the
  * setup exception applies. Mirrors `tryResolveSelectedAddress` exactly.
  */

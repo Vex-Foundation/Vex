@@ -1,5 +1,5 @@
 /**
- * The launch's ATTRIBUTION step — claiming the VEX badge on trench.express.
+ * The launch's ATTRIBUTION step - claiming the VEX badge on trench.express.
  *
  * One reason to change: how a confirmed launch proves to the launchpad that Vex
  * created it. Split out of `broadcast.ts` because it is a different concern
@@ -10,11 +10,11 @@
  * ── Why the signature is produced HERE and nowhere else ────────────────────
  *
  * The attested string names the token, and the token's address only exists once
- * the create receipt has been decoded — so it cannot be pre-signed, and there is
+ * the create receipt has been decoded - so it cannot be pre-signed, and there is
  * no parallel-at-launch shortcut to take. After this handler returns, its
  * wallet client is gone: the identity-repair and attribution sweeps hold no
  * signer, by construction and by decree. This function therefore runs
- * SYNCHRONOUSLY right after the confirm, with no artificial delay —
+ * SYNCHRONOUSLY right after the confirm, with no artificial delay -
  * `personal_sign` is a local operation, not a network round trip.
  *
  * A wallet that refuses to sign costs the token its badge and nothing else: the

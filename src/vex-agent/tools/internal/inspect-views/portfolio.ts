@@ -1,7 +1,7 @@
 /**
- * Agent Scan — portfolio views: summary, balances, snapshots, executions.
+ * Agent Scan - portfolio views: summary, balances, snapshots, executions.
  * Aggregate balance state and protocol-execution audit (Agent Scan plan v3
- * §1.9/§4.7 — the profit-computation system is deleted; `summary` is
+ * §1.9/§4.7 - the profit-computation system is deleted; `summary` is
  * balances-only, no realized/unrealized PnL).
  */
 
@@ -30,7 +30,7 @@ export async function inspectSummary(addresses: string[]): Promise<ToolResult> {
       activeChains: latestSnapshot.activeChains,
       at: latestSnapshot.at,
     } : null,
-    note: "Scoped to this session's selected wallet(s). Balances only — trade history, amounts, and explorer refs live in `transactions`; compute PnL yourself from those recorded numbers if you need it.",
+    note: "Scoped to this session's selected wallet(s). Balances only - trade history, amounts, and explorer refs live in `transactions`; compute PnL yourself from those recorded numbers if you need it.",
   });
 }
 
@@ -48,7 +48,7 @@ export async function inspectBalances(addresses: string[]): Promise<ToolResult> 
 export async function inspectSnapshots(addresses: string[]): Promise<ToolResult> {
   const { getAggregateSnapshots } = await import("@vex-agent/db/repos/balances.js");
   // Aggregated per full-sync cycle across the selected wallet set (complete
-  // cycles only — partial syncs excluded).
+  // cycles only - partial syncs excluded).
   const snapshots = await getAggregateSnapshots(addresses, "7d");
 
   return ok({

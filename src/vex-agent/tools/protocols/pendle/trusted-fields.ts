@@ -2,18 +2,18 @@
  * Trusted-field validators for the Pendle projector boundary (Wave-3 doctrine).
  *
  * The tolerant client validation (`@tools/pendle/validation.ts`) only narrows
- * TYPES — the VALUES are still untrusted hosted-API data. This module narrows
+ * TYPES - the VALUES are still untrusted hosted-API data. This module narrows
  * structural strings into TRUSTED SHAPES before they are projected into
  * model-facing tool output:
- *   - addresses — EVM `0x` + 40 hex, else null;
- *   - timestamps — must parse and are RE-SERIALIZED to canonical ISO (the output
+ *   - addresses - EVM `0x` + 40 hex, else null;
+ *   - timestamps - must parse and are RE-SERIALIZED to canonical ISO (the output
  *     string is ours, not upstream's);
- *   - category ids — strict `[a-z0-9_-]` token, bounded;
- *   - numbers — finite + bounded, else null.
+ *   - category ids - strict `[a-z0-9_-]` token, bounded;
+ *   - numbers - finite + bounded, else null.
  *
  * Free-text (market names, PT symbols) goes through `sanitizeForSystemPrompt` +
  * a hard length cap. A hostile string in any structural field can never reach
- * the model — it degrades to null and the projector notes the drop.
+ * the model - it degrades to null and the projector notes the drop.
  */
 
 import { sanitizeForSystemPrompt } from "@vex-agent/engine/prompts/sanitize.js";
@@ -27,7 +27,7 @@ export function trustedAddress(raw: string | null): string | null {
 }
 
 /**
- * Validate + RE-SERIALIZE a timestamp to canonical ISO — the output is produced
+ * Validate + RE-SERIALIZE a timestamp to canonical ISO - the output is produced
  * by `Date.toISOString()`, independent of the upstream bytes.
  */
 export function trustedIsoTimestamp(raw: string | null): string | null {

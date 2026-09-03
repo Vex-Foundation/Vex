@@ -72,6 +72,33 @@ import { formatChainFamily, normalizeAddressForFamily, resolveConfiguredAddress 
 // owner decision that must arrive with a user-authorized destination channel —
 // not a tool param.
 
+// -- Bridge-destination policy (security) ----------------------------
+//
+// `recipient` is where the money LANDS when a bridge succeeds. It used to be a
+// tool param on both bridge families, defaulted to the selected destination
+// wallet only when the caller omitted it, so a model - or a prompt injection
+// reaching tool params - could name any address on earth and the funds would go
+// there. Unlike `refundTo` it IS on the approval preview's allowlist, so a
+// RESTRICTED project's human sees the address; a FULL project sees no card at
+// all, and there the parameter was the whole authorization.
+//
+// Rule 90 settles it: "Fee receiver, destination, or other value that can
+// redirect funds never originates from model input." Both wallet references
+// agree - MetaMask's bridge controller quotes for the SELECTED account
+// (`bridge-controller.ts` #getMultichainSelectedAccount; `destWalletAddress`
+// exists only for the SAME user's account on the other VM, and quoting refuses
+// when it is missing) and Rabby's bridge flow has no recipient input at all.
+//
+// So the capability is REMOVED, not disclosed: the destination is ALWAYS
+// `resolveSelectedAddress(..., destinationFamily)`, `recipient` is absent from
+// every bridge manifest, and a caller that supplies the key is REJECTED BY NAME
+// with the address the bridge will actually deliver to. `QuoteRequestInput`
+// keeps a REQUIRED `recipient` because the outbound provider request still
+// carries the field - it is now the derived value or nothing compiles.
+//
+// A user who wants funds elsewhere bridges to their own wallet and then sends,
+// which is a separate approval the human sees and answers.
+
 /** Tool/alias param keys that must never originate from a caller. */
 export const KHALANI_FORBIDDEN_FEE_PARAMS = ["referrer", "referrerFeeBps"] as const;
 
@@ -201,7 +228,15 @@ export interface QuoteRequestInput {
   amount: string;
   tradeType?: string;
   fromAddress?: string;
-  recipient?: string;
+  /**
+   * The DERIVED bridge destination: the wallet selected for this project on the
+   * destination chain's family, resolved by the caller through
+   * `resolveSelectedAddress` before this builder is entered. REQUIRED, and
+   * never a tool param - see the bridge-destination policy above. Required is
+   * the compile-time half of that rule: no code path can leave the destination
+   * to a fallback, and none can put a caller's address on the wire.
+   */
+  recipient: string;
   /**
    * NO `refundTo`. It is derived from the resolved source address — see the
    * refund-destination policy above. Its absence here is the compile-time half
@@ -220,10 +255,16 @@ export interface PreparedQuoteRequest {
   request: QuoteRequest;
 }
 
+/**
+ * Resolve the quote's SOURCE address: the caller's value, else the configured
+ * wallet for the family. `fallbackRole` no longer admits "recipient" - the
+ * destination is derived by the caller and never falls back (bridge-destination
+ * policy above), so the only role left is the source.
+ */
 export function resolveQuoteAddress(
   input: string | undefined,
   family: "eip155" | "solana",
-  fallbackRole: "from" | "recipient",
+  fallbackRole: "from",
 ): string {
   const fallback = resolveConfiguredAddress(family);
   const value = input ?? fallback;
@@ -268,9 +309,10 @@ export async function prepareQuoteRequest(input: QuoteRequestInput): Promise<Pre
   const toFamily = getChainFamily(toChainId, chains);
 
   const fromAddress = resolveQuoteAddress(input.fromAddress, fromFamily, "from");
-  const recipient = input.recipient
-    ? normalizeAddressForFamily(input.recipient, toFamily, "recipient")
-    : resolveQuoteAddress(undefined, toFamily, "recipient");
+  // DERIVED, never supplied (bridge-destination policy above): the caller has
+  // already resolved the destination-family selected wallet. Only normalized
+  // here, so the provider gets the family's canonical spelling.
+  const recipient = normalizeAddressForFamily(input.recipient, toFamily, "recipient");
   // DERIVED, never supplied (refund-destination policy above): a failed bridge
   // returns the money to the wallet it left. `fromAddress` is already the
   // resolved source address — under a session that is the selected source

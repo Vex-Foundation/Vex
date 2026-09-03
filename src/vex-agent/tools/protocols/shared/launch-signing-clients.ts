@@ -1,8 +1,8 @@
 /**
  * Signing-client resolution for the launch execute leg.
  *
- * SHARED by every launchpad's execute leg. It owns ONE decision — when the
- * private key may be decrypted — and that decision must not have two
+ * SHARED by every launchpad's execute leg. It owns ONE decision - when the
+ * private key may be decrypted - and that decision must not have two
  * implementations: it was written for Trench and moved here MOVE-ONLY when
  * pools.fun's execute leg needed the same one. The launch
  * handler resolves the ADDRESS first (never decrypts) so that a failure before

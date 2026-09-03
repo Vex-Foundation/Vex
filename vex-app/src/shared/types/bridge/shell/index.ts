@@ -17,6 +17,7 @@ import type { DockerBridge } from "./docker.js";
 import type { FilesBridge } from "./files.js";
 import type { MarketBridge } from "./market.js";
 import type { OnboardingBridge } from "./onboarding.js";
+import type { SearchBridge } from "./search.js";
 import type { SecretsBridge } from "./secrets.js";
 import type { SettingsBridge } from "./settings.js";
 import type { StudioBridge } from "./studio.js";
@@ -33,6 +34,7 @@ export type { DockerBridge } from "./docker.js";
 export type { FilesBridge } from "./files.js";
 export type { MarketBridge } from "./market.js";
 export type { OnboardingBridge } from "./onboarding.js";
+export type { SearchBridge } from "./search.js";
 export type { SecretsBridge } from "./secrets.js";
 export type { SettingsBridge } from "./settings.js";
 export type { StudioBridge } from "./studio.js";
@@ -59,4 +61,5 @@ export interface VexShellBridge {
   readonly studio: StudioBridge;
   readonly terminal: TerminalBridge;
   readonly files: FilesBridge;
+  readonly search: SearchBridge;
 }

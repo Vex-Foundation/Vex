@@ -1,6 +1,6 @@
 /**
  * Jupiter Lend BORROW manifests (Agent Scan Phase 3 Batch 5, card B1).
- * Separate from `./lend.ts` (Earn) — a distinct program family (collateral/
+ * Separate from `./lend.ts` (Earn) - a distinct program family (collateral/
  * debt positions tracked as NFTs, one shared `/operate` endpoint for the
  * full lifecycle). Param resolution for `borrowOperate` lives in
  * `../borrow-operate-params.ts`.
@@ -19,7 +19,7 @@ export const LEND_BORROW_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "market", type: "string", description: "Which Borrow market: \"main\" or \"ethena\" (default \"main\"). Vault ids are scoped per market — the same vaultId in a different market is a different vault. An unrecognized value is rejected." },
+      { key: "market", type: "string", description: "Which Borrow market: \"main\" or \"ethena\" (default \"main\"). Vault ids are scoped per market - the same vaultId in a different market is a different vault. An unrecognized value is rejected." },
       { key: "vaultIds", type: "string", description: "Comma-separated vault-id allow-list (matches the provider's own numeric vault id). Omit for all vaults." },
     ],
     exampleParams: {},
@@ -64,8 +64,8 @@ export const LEND_BORROW_TOOLS: readonly ProtocolToolManifest[] = [
     ],
     exampleParams: { vaultId: 1, depositAmountRaw: "30000000" },
     // Four at-most-one groups say what six prose sentences and two handler
-    // checks said: one collateral param, one debt param, and — the two
-    // DIRECTION groups — never two legs moving the same way, which is the
+    // checks said: one collateral param, one debt param, and - the two
+    // DIRECTION groups - never two legs moving the same way, which is the
     // ledger constraint `resolveBorrowOperateRequest` refuses on and which no
     // param description documented. Money in: deposit collateral, repay debt.
     // Money out: withdraw collateral, borrow debt.

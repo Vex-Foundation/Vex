@@ -7,7 +7,7 @@
         "additionalProperties": false,
         "properties": {
           "includeMarkets": {
-            "description": "Include each recommended event's nested markets array (default false — lean).",
+            "description": "Include each recommended event's nested markets array (default false - lean).",
             "type": "boolean"
           },
           "provider": {
@@ -15,7 +15,7 @@
             "type": "string"
           },
           "walletAddress": {
-            "description": "The wallet ACCOUNT to base recommendations on, as a Solana address — any wallet, not only your own.",
+            "description": "The wallet ACCOUNT to base recommendations on, as a Solana address - any wallet, not only your own.",
             "type": "string"
           }
         },

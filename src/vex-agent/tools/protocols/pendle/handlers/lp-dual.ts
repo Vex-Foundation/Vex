@@ -1,5 +1,5 @@
 /**
- * Pendle DUAL-LP handlers (R5d card E3) — `pendle.lp.removeDual` (LP → token +
+ * Pendle DUAL-LP handlers (R5d card E3) - `pendle.lp.removeDual` (LP → token +
  * PT) and `pendle.lp.addKeepYt` (token → LP + kept YT).
  *
  * This file is the dual-LP family's PUBLIC ENTRY POINT; each tool's
@@ -17,17 +17,17 @@
  *      than by index, because the provider's `outputs` order is its own (measured
  *      2026-07-28: asking `[underlying, PT]` and `[PT, underlying]` both came
  *      back `[PT, underlying]`). This family reads its own quoted amounts the
- *      same way — by token, never positionally.
+ *      same way - by token, never positionally.
  *   2. THE DURABLE ROW carries an Option-C second leg (migration 053), which
  *      `yield_lp` permits. The INTENT stages it, so the row states both
  *      instruments before a signature exists rather than discovering the second
  *      one afterwards.
  *   3. THE RECEIPT must prove BOTH. `decodePendleSettlement` requires a proven
  *      inflow for `tokenOut2` whenever the plan names one, so a confirmed dual
- *      row can never report one leg and invent the other — an unprovable second
+ *      row can never report one leg and invent the other - an unprovable second
  *      leg leaves the row pending for the repair sweep instead.
- *   4. THE ACTION BIND. Convert labels a keep-YT add plain `"add-liquidity"` —
- *      the SAME string a single-token add returns — so the response's action
+ *   4. THE ACTION BIND. Convert labels a keep-YT add plain `"add-liquidity"` -
+ *      the SAME string a single-token add returns - so the response's action
  *      field cannot tell them apart. What can, and does, is the METHOD row in
  *      `calldata/bind-route.ts`: an `lp-add-keep-yt` intent accepts only
  *      `addLiquiditySingleTokenKeepYt` calldata.
@@ -35,17 +35,17 @@
  * MATURITY follows the R5b matrix by SHAPE, not by family. The dual remove is
  * exit-shaped, so it resolves matured markets through
  * `resolveExitMarketByAddress` exactly as `pendle.lp.remove` does. The keep-YT
- * add is buy-shaped — liquidity cannot be added after expiry at all — so it stays
+ * add is buy-shaped - liquidity cannot be added after expiry at all - so it stays
  * ACTIVE-ONLY and names maturity as the refusal reason through
  * `explainUnresolvedPendleMarket`, reusing the `lp.add` refusal because the next
  * step it recommends is the correct one for this tool too.
  *
- * PREQUOTE — the DRY-RUN-IN-TOOL pattern. A `dryRun: true` call quotes through
+ * PREQUOTE - the DRY-RUN-IN-TOOL pattern. A `dryRun: true` call quotes through
  * Convert, runs the FULL fund-safety extractor, records the authorization, and
  * broadcasts nothing; the execute re-fetches, re-runs every check, and is refused
  * unless a fresh dry run with IDENTICAL params exists. See `./lp-dual-prequote.ts`.
  *
- * Upstream error text NEVER reaches the model — only bounded, code-keyed detail.
+ * Upstream error text NEVER reaches the model - only bounded, code-keyed detail.
  */
 
 import type { ProtocolHandler } from "../../types.js";

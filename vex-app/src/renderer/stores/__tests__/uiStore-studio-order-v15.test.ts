@@ -105,12 +105,18 @@ describe("a hand-edited Studio order is coerced on EVERY rehydrate", () => {
   });
 
   it("an injected ephemeral slot is still dropped alongside it", () => {
+    // `currentView` is the boot machine and is still ephemeral in both
+    // directions. `runtimeMode` moved onto the whitelist in v17 (the last
+    // Studio location) and is coerced rather than dropped; that pair is pinned
+    // in `uiStore-persist-hardening.test.ts`.
+    const current = currentState();
     const merged = mergeUiState(
-      { studioBookSectionOrder: ["portfolio"], runtimeMode: "studio" },
-      currentState(),
+      { studioBookSectionOrder: ["portfolio"], currentView: "wizard" },
+      current,
     );
     expect(merged.studioBookSectionOrder).toEqual(["portfolio"]);
-    expect(merged.runtimeMode).toBe("agent");
+    // The STORE-CONSTRUCTED value, not a literal written a second time here.
+    expect(merged.currentView).toBe(current.currentView);
   });
 });
 

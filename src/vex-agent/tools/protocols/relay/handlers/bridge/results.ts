@@ -1,6 +1,6 @@
 /**
- * Every agent-facing body `relay.bridge` can return — the rejected, in-flight,
- * pending, failed, unconfirmed, not-attempted and interrupted shapes — plus the
+ * Every agent-facing body `relay.bridge` can return - the rejected, in-flight,
+ * pending, failed, unconfirmed, not-attempted and interrupted shapes - plus the
  * hashless pre-sign failure row that accompanies the rejected one.
  *
  * TRUTHFUL OUTPUT (B5/§4) is this module's single responsibility:
@@ -32,7 +32,7 @@ import type { OriginBroadcast } from "./broadcast.js";
 import type { RelayFeeCollection } from "./fee-leg.js";
 import { BRIDGE_TOOL_ID, PROTOCOL } from "./constants.js";
 
-/** A never-completed bridge's fee disclosure — nothing was ever charged on these paths. */
+/** A never-completed bridge's fee disclosure - nothing was ever charged on these paths. */
 export type FeeNotTaken = BridgeFeeDisclosure & RelayFeeCollection;
 
 /** Pre-sign gate/validation failure → hashless `definitively_failed` logical row (R15/C1). */
@@ -78,7 +78,7 @@ export function inFlightResult(from: BridgeEndpointDisplay, to: BridgeEndpointDi
     summary: `A bridge is already in flight for this route (${from.name} → ${to.name}).`,
     message:
       `A bridge is already in flight for this route (${from.name} → ${to.name}). `
-      + "Wait for it to finalize before starting another — Vex is tracking it automatically. Do NOT re-bridge.",
+      + "Wait for it to finalize before starting another - Vex is tracking it automatically. Do NOT re-bridge.",
     fromChain: from,
     toChain: to,
   };
@@ -117,7 +117,7 @@ function explorerRefs(broadcasts: readonly OriginBroadcast[], from: BridgeEndpoi
 
 /**
  * Truthful pending result (B5/C3): the origin deposit was broadcast but the
- * bridge is NOT final — `success:false` so the runtime never seeds balances for
+ * bridge is NOT final - `success:false` so the runtime never seeds balances for
  * a pending bridge (C3) and the model never reads it as completion. The logical
  * row stays pending for the W4 sweep. The last in-turn provider status is
  * surfaced honestly (incl. a refund/failure distinction) but NEVER terminalizes
@@ -136,7 +136,7 @@ export function pendingResult(args: {
   depositUnconfirmed: boolean;
   vexFee: BridgeFeeDisclosure;
   feeCollection: RelayFeeCollection;
-  /** O-8 — what the durable provider-status write did, disclosed rather than assumed. */
+  /** O-8 - what the durable provider-status write did, disclosed rather than assumed. */
   providerStatusRecording: ProviderStatusRecording;
 }): ToolResult {
   const { executionId, requestId, from, to, inSide, outSide, feeUsdByBucket, broadcasts, poll } = args;
@@ -151,8 +151,8 @@ export function pendingResult(args: {
   const failReason = poll?.failReason ?? null;
   const refundFailReason = poll?.refundFailReason ?? null;
   // Relay's OWN reason, in its documented closed vocabulary, appended verbatim
-  // (W2c): `BLOCKED_WALLET` — funds NOT auto-refunded, compliance review — and
-  // `TTL_EXPIRED` — refunded — were reported with the same sentence before this.
+  // (W2c): `BLOCKED_WALLET` - funds NOT auto-refunded, compliance review - and
+  // `TTL_EXPIRED` - refunded - were reported with the same sentence before this.
   const reasonSuffix =
     failReason === null && refundFailReason === null
       ? ""
@@ -162,37 +162,37 @@ export function pendingResult(args: {
   if (providerStatus === "refund") {
     fillStatus = "reported_refund";
     message =
-      `Relay currently reports this bridge as REFUNDED — the destination amount did NOT arrive and funds are being returned to your refund address.${reasonSuffix} `
+      `Relay currently reports this bridge as REFUNDED - the destination amount did NOT arrive and funds are being returned to your refund address.${reasonSuffix} `
       + `Money back is NOT a successful bridge. Vex will independently verify and finalize this record automatically. Do NOT re-bridge.`;
   } else if (providerStatus === "failure") {
     fillStatus = "reported_failure";
     message =
-      `Relay currently reports this bridge as FAILED — the destination amount did NOT arrive.${reasonSuffix} `
+      `Relay currently reports this bridge as FAILED - the destination amount did NOT arrive.${reasonSuffix} `
       + `Vex will independently verify and finalize this record automatically; check the request id before any manual action. Do NOT re-bridge.`;
   } else if (providerStatus === "success") {
     fillStatus = "reported_success";
     message =
-      `${depositState}; Relay reports the destination fill succeeded. Vex will independently verify and finalize the record automatically — `
+      `${depositState}; Relay reports the destination fill succeeded. Vex will independently verify and finalize the record automatically - `
       + `treat it as in progress until then. Do NOT re-bridge.`;
   } else {
     // The in-turn poll is bounded to a few seconds and is INFORMATIONAL: the
-    // background sweep owns confirmation. Say so, and name the waiting pattern —
+    // background sweep owns confirmation. Say so, and name the waiting pattern -
     // an agent told only "in progress" re-polls in a loop and burns the turn.
     message =
-      `${depositState}; the destination fill is in progress${providerStatus ? ` (last status: ${providerStatus})` : ""} — Vex is tracking it automatically `
+      `${depositState}; the destination fill is in progress${providerStatus ? ` (last status: ${providerStatus})` : ""} - Vex is tracking it automatically `
       + `and will finalize the record once the fill is independently verified. This result was returned as soon as the short in-turn check ended; `
-      + `Vex's background sweep owns confirmation, so do NOT poll or re-run this tool in a loop — use LoopDefer if you need to wait. Do NOT re-bridge.`;
+      + `Vex's background sweep owns confirmation, so do NOT poll or re-run this tool in a loop - use LoopDefer if you need to wait. Do NOT re-bridge.`;
   }
   // `observed:false` means EVERY status call in the window threw. That is NOT
   // "still pending", and collapsing it to `providerStatus: null` made the two
   // indistinguishable. The last failure is a bounded code + status only.
   if (poll !== null && !poll.observed) {
-    message += ` NOTE: Relay's status API was unreachable this turn${describePollError(poll.lastError)}, so no provider status was read — that is NOT the same as "still pending". The bridge itself is unaffected; Vex's background sweep owns confirmation.`;
+    message += ` NOTE: Relay's status API was unreachable this turn${describePollError(poll.lastError)}, so no provider status was read - that is NOT the same as "still pending". The bridge itself is unaffected; Vex's background sweep owns confirmation.`;
   }
 
   const body = {
     status: "pending",
-    summary: `${bridgeSummaryLine(inSide, from, to)}. ${depositState}; destination fill in progress — tracked automatically.`,
+    summary: `${bridgeSummaryLine(inSide, from, to)}. ${depositState}; destination fill in progress - tracked automatically.`,
     message,
     fromChain: from,
     toChain: to,
@@ -201,10 +201,10 @@ export function pendingResult(args: {
     /** Relay's own closed-vocabulary reason, or null when it sent none. */
     providerFailReason: failReason,
     providerRefundFailReason: refundFailReason,
-    /** True when EVERY status call this turn threw — no provider status was read. */
+    /** True when EVERY status call this turn threw - no provider status was read. */
     providerStatusUnreachable: poll !== null && !poll.observed,
     // O-8: whether the status above actually reached `AgentScan`, and if not,
-    // WHY — `null` means none was read, so there was nothing to record. A write
+    // WHY - `null` means none was read, so there was nothing to record. A write
     // that silently did nothing does not meet "AgentScan is fed at return".
     providerStatusRecorded: args.providerStatusRecording.providerStatusRecorded,
     providerStatusRecordedReason: args.providerStatusRecording.providerStatusRecordedReason,
@@ -213,7 +213,7 @@ export function pendingResult(args: {
     txHashes: destinationTxHashes,
     amounts: { in: inSide, out: outSide },
     // Disclosure + collection outcome. `collection` describes Vex's revenue
-    // only — it never qualifies whether the user's bridge worked.
+    // only - it never qualifies whether the user's bridge worked.
     vexFee: { ...args.vexFee, ...args.feeCollection },
     feeUsdByBucket,
   };
@@ -231,7 +231,7 @@ export function pendingResult(args: {
   };
 }
 
-/** The origin approve/deposit reverted on-chain — nothing bridged, nothing charged. */
+/** The origin approve/deposit reverted on-chain - nothing bridged, nothing charged. */
 export function originRevertedResult(args: {
   executionId: number;
   requestId: string;
@@ -247,7 +247,7 @@ export function originRevertedResult(args: {
     status: "failed",
     summary: `Relay bridge failed: the origin ${role} reverted on-chain. No funds were bridged.`,
     message:
-      `The origin ${role} transaction (${txHash}) reverted on-chain — the bridge did not execute and no destination fill will occur. No funds left the origin chain.`,
+      `The origin ${role} transaction (${txHash}) reverted on-chain - the bridge did not execute and no destination fill will occur. No funds left the origin chain.`,
     fromChain: from,
     toChain: to,
     requestId,
@@ -331,7 +331,7 @@ export function gasEstimateNotAttemptedResult(args: {
  * autonomous agent cannot act on and which reads as "funds may be in flight".
  * Nothing was signed for the refused step, every remaining row is finalized
  * "not attempted", and the agent is told the one thing that can change the
- * outcome — a fresh quote.
+ * outcome - a fresh quote.
  */
 export function nativeValueNotAttemptedResult(args: {
   executionId: number;
@@ -361,7 +361,7 @@ export function nativeValueNotAttemptedResult(args: {
     data: {
       ...body,
       _executionId: executionId,
-      // A retry only helps with a DIFFERENT quote — never a re-send of this
+      // A retry only helps with a DIFFERENT quote - never a re-send of this
       // one, which is deterministically refused again.
       retryable: false,
       ...(broadcasts.length > 0 ? { _explorerRefs: explorerRefs(broadcasts, from) } : {}),

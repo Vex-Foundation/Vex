@@ -1,12 +1,12 @@
 /**
- * `pendle.lp.transfer` — LP → LP across two markets.
+ * `pendle.lp.transfer` - LP → LP across two markets.
  *
  * A `transfer-liquidity` Convert response comes back as a `callAndReflect` body
  * carrying whole Router calls as `bytes`, so it is bound by
  * `selectSafeReflectRoute` rather than the plain single-leg binder.
  *
  * MATURITY MATRIX (R5b), per leg: the SOURCE market resolves through the EXIT
- * resolver — leaving a matured pool is legal and necessary — while the
+ * resolver - leaving a matured pool is legal and necessary - while the
  * DESTINATION resolves ACTIVE-ONLY and names maturity as the refusal reason.
  */
 
@@ -90,10 +90,10 @@ export async function executePendleLpTransfer(
     };
 
     if (fromMarketParam === toMarketParam) {
-      return refuse("route_not_found", `${toolId}: fromMarket and toMarket are the same market — there is nothing to move.`);
+      return refuse("route_not_found", `${toolId}: fromMarket and toMarket are the same market - there is nothing to move.`);
     }
 
-    // SOURCE — exit-shaped: leaving a matured pool is legal and necessary.
+    // SOURCE - exit-shaped: leaving a matured pool is legal and necessary.
     const source = await resolveExitMarketByAddress(chainId, fromMarketParam);
     if (!source || !source.market.address) {
       return refuse(
@@ -101,7 +101,7 @@ export async function executePendleLpTransfer(
         "No Pendle market at that fromMarket address - check pendle__markets_discover (includeMatured:true covers expired markets).",
       );
     }
-    // DESTINATION — buy-shaped: ACTIVE ONLY; maturity named via the read lane.
+    // DESTINATION - buy-shaped: ACTIVE ONLY; maturity named via the read lane.
     const destination = await resolveMarketByAddress(chainId, toMarketParam);
     if (!destination || !destination.address) {
       return refuse(
@@ -112,7 +112,7 @@ export async function executePendleLpTransfer(
     const fromMarket = getAddress(source.market.address);
     const toMarket = getAddress(destination.address);
 
-    // The market IS the LP token — read its decimals on-chain like any ERC-20.
+    // The market IS the LP token - read its decimals on-chain like any ERC-20.
     const lpIn = await resolveInputToken(chainEntry, fromRaw);
     const amountWei = parseUnits(amountInRaw, lpIn.decimals);
     const slippage = resolvePendleSlippage(toolId, num(p, "slippageBps"));
@@ -159,8 +159,8 @@ export async function executePendleLpTransfer(
       inputAmountWei: amountWei,
       slippageBps: slippage.bps,
       expectedLegMarkets: [fromMarket, toMarket],
-      // A transfer delivers the DESTINATION market's LP — the market IS its LP
-      // token — and nothing else.
+      // A transfer delivers the DESTINATION market's LP - the market IS its LP
+      // token - and nothing else.
       expectedRouteOutputs: [toMarket],
     };
     const route = selectSafeReflectRoute(intent, response);

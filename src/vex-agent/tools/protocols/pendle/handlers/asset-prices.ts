@@ -1,15 +1,15 @@
 /**
- * `pendle.prices.assets` — USD marks for Pendle assets (PT, YT, LP, SY) on one
+ * `pendle.prices.assets` - USD marks for Pendle assets (PT, YT, LP, SY) on one
  * chain, including assets the wallet does not hold (G-08).
  *
  * WHAT THIS NUMBER IS, AND IS NOT. It is Pendle's own snapshot, refreshed on the
  * order of 15-60 seconds (its endpoint doc says "approximately every minute",
- * its FAQ says "every 15 seconds" — the honest range is both). It is for
+ * its FAQ says "every 15 seconds" - the honest range is both). It is for
  * display and portfolio arithmetic. It is NOT a pre-trade rate: Pendle routes
  * that to `swapping-prices`, surfaced by `pendle.market.get`, and its docs are
  * explicit that a quote endpoint is not a price oracle either.
  *
- * The endpoint answers with a MAP keyed by `chainId-address`, not an array —
+ * The endpoint answers with a MAP keyed by `chainId-address`, not an array -
  * a shape that reads as "no data" if mis-parsed. The read shelf decodes it; this
  * handler adds the half the map cannot express: which REQUESTED ids came back
  * with no price. Dropping them silently would let an unpriced asset read as a
@@ -28,7 +28,7 @@ const TOOL_ID = "pendle.prices.assets";
 
 const PRICE_NOTE =
   "These are Pendle's own USD marks, refreshed roughly every 15-60 seconds. They are display and portfolio figures, " +
-  "NOT an executable quote — what a PT actually trades at depends on the market's depth at your size.";
+  "NOT an executable quote - what a PT actually trades at depends on the market's depth at your size.";
 
 export async function pendleAssetPrices(
   p: Record<string, unknown>,
@@ -87,7 +87,7 @@ export async function pendleAssetPrices(
       : {
           missingIds,
           missingNote:
-            "Pendle does not price these ids on this chain. That is not a price of zero — the asset may not be a " +
+            "Pendle does not price these ids on this chain. That is not a price of zero - the asset may not be a " +
             "Pendle PT/YT/LP/SY at all, or may live on another chain. Confirm it with pendle__market_get.",
         }),
     prices,
@@ -104,7 +104,7 @@ function summarize(chain: string, count: number, missing: number, types: readonl
   }
   return (
     `${count} ${scope} priced on ${chain}` +
-    (missing > 0 ? `; ${missing} requested id(s) came back unpriced — see missingIds` : "") +
+    (missing > 0 ? `; ${missing} requested id(s) came back unpriced - see missingIds` : "") +
     ". Provider marks, not executable quotes."
   );
 }

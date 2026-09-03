@@ -1,7 +1,7 @@
 /**
  * UpdateLayer (updater redesign Part A). Verifies the defensive no-op when
- * the updater bridge is absent, that the sticky update toast renders through
- * the global ToastHost for an `available` status, that "Later" snoozes ONLY the current version
+ * the updater bridge is absent, that the update notification renders through
+ * the global ToastHost stack for an `available` status, that "Later" snoozes ONLY the current version
  * while a NEWER version pushed over `onStatus` still surfaces (item 2 —
  * snooze must not suppress discovery of a newer release), that "Try again"
  * on `blockedByOperation` re-invokes the correct action per `blockedAction`,
@@ -17,9 +17,9 @@ import type { UpdateStatus } from "@shared/schemas/updater.js";
 
 const { UpdateLayer } = await import("../UpdateLayer.js");
 const { ToastHost } = await import("../../../components/ui/toast-host.js");
-const { clearStickyToast } = await import("../../../lib/toast.js");
+const { notifications } = await import("../../../lib/notifications/index.js");
 
-/** The layer writes the sticky slot; the host renders it - mount both. */
+/** The layer raises the notification; the host renders the stack - mount both. */
 function layerWithHost(): ReactNode {
   return createElement(
     "div",
@@ -89,9 +89,10 @@ function withClient(children: ReactNode): ReactNode {
 afterEach(() => {
   // @ts-expect-error — test cleanup
   delete window.vex;
-  // The sticky slot is module-level; a torn-down layer's cleanup already
-  // ran, but clear defensively so one test can never leak into the next.
-  clearStickyToast();
+  // The notification model is module-level; a torn-down layer's cleanup
+  // already closed its handle, but reset defensively so one test can never
+  // leak a retained notification into the next.
+  notifications.reset();
 });
 
 describe("UpdateLayer", () => {
@@ -203,8 +204,8 @@ describe("UpdateLayer", () => {
       retryable: true,
     });
     render(withClient(layerWithHost()));
-    await screen.findByLabelText("Dismiss update notification");
-    fireEvent.click(screen.getByLabelText("Dismiss update notification"));
+    await screen.findByLabelText("Dismiss notification: Update failed");
+    fireEvent.click(screen.getByLabelText("Dismiss notification: Update failed"));
     await waitFor(() =>
       expect(screen.queryByText("Update failed")).toBeNull(),
     );
@@ -218,7 +219,7 @@ describe("UpdateLayer", () => {
     // ticks, not a single batched update.
     push({ kind: "checking", currentVersion: "1.0.0" });
     await waitFor(() =>
-      expect(screen.queryByLabelText("Dismiss update notification")).toBeNull(),
+      expect(screen.queryByLabelText("Dismiss notification: Update failed")).toBeNull(),
     );
     push({
       kind: "error",
@@ -227,7 +228,7 @@ describe("UpdateLayer", () => {
       retryable: true,
     });
     expect(
-      await screen.findByLabelText("Dismiss update notification"),
+      await screen.findByLabelText("Dismiss notification: Update failed"),
     ).toBeTruthy();
   });
 });

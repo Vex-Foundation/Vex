@@ -20,9 +20,10 @@ import { ExplorerRegistry } from "../explorer/index.js";
 import { TerminalRegistry } from "../terminal/index.js";
 import {
   clearProjectTerminals,
+  peekProjectTerminals,
   publishProjectTerminals,
   publishProjectWorkspaceLifecycle,
-} from "../workspace/project-terminals.js";
+} from "../workspace/workspace-handles.js";
 import type { WorkspaceCloseOutcome } from "../workspace/close-lifecycle.js";
 import { STUDIO_WORKSPACE_KEEP_ALIVE_MAX } from "../workspace/keep-alive.js";
 import { installStudioDomStubs, makeError, makeProject } from "./studio-fixtures.js";
@@ -37,7 +38,17 @@ const projectsListMock = vi.fn<() => Promise<Result<ProjectList>>>();
  * controller's own close - a retry that succeeds has to leave the kept-alive
  * set, and the set is this component's. A marker with no such button could not
  * tell a wired retry from an unwired one.
+ *
+ * Projects whose controller must THROW on render.
+ *
+ * A workspace render throw is the failure the per-workspace boundary exists
+ * for, and it is not otherwise reachable from this suite: the real one comes
+ * out of a bad persisted layout deep inside the controller. Driving it from
+ * outside React keeps the crash deterministic and lets a subject cross from
+ * failing to healthy without remounting anything.
  */
+const controllerCrash = { projectIds: new Set<string>() };
+
 vi.mock("../terminal/StudioWorkspaceController.js", () => ({
   StudioWorkspaceController: ({
     projectId,
@@ -45,13 +56,18 @@ vi.mock("../terminal/StudioWorkspaceController.js", () => ({
   }: {
     projectId: string;
     onRetryClose?: () => void;
-  }) => (
-    <div data-testid={`workspace-${projectId}`}>
-      <button type="button" onClick={onRetryClose}>
-        {`Try closing ${projectId} again`}
-      </button>
-    </div>
-  ),
+  }) => {
+    if (controllerCrash.projectIds.has(projectId)) {
+      throw new TypeError("workspace layout is not iterable");
+    }
+    return (
+      <div data-testid={`workspace-${projectId}`}>
+        <button type="button" onClick={onRetryClose}>
+          {`Try closing ${projectId} again`}
+        </button>
+      </div>
+    );
+  },
 }));
 
 /**
@@ -146,6 +162,7 @@ beforeEach(() => {
   // The project index is a MODULE SINGLETON. Terminal ids or a close handler
   // left by the previous test would be taken by this one.
   clearProjectTerminals();
+  controllerCrash.projectIds.clear();
   projectsListMock.mockReset();
   projectsListMock.mockResolvedValue({ ok: true, data: [] });
   useUiStore.setState({ activeProjectId: null, runtimeMode: "studio" });
@@ -153,6 +170,15 @@ beforeEach(() => {
     configurable: true,
     value: {
       projects: { list: projectsListMock },
+      // A READY bridge, so the readiness panel renders nothing. Without the
+      // stub the query rejects and the panel renders its honest "the check did
+      // not answer" branch, which is a real alert and would make every
+      // "no alert here" assertion in this suite pass or fail for the wrong
+      // reason. `bridge-readiness` has its own suite.
+      studio: {
+        getBridgeReadiness: () =>
+          Promise.resolve({ ok: true, data: { kind: "ready" } }),
+      },
       files: {
         list: () => Promise.resolve({ ok: true, data: null }),
         watch: () => Promise.resolve({ ok: true, data: null }),
@@ -175,6 +201,72 @@ describe("welcome versus workspace", () => {
 
     select(project.id);
     await screen.findByTestId(`workspace-${project.id}`);
+  });
+});
+
+describe("the bridge diagnostic in the open-project view", () => {
+  /**
+   * A user with projects goes straight into a workspace and never sees the
+   * welcome screen again, so a bridge that is missing would have been reported
+   * once - at a moment they may not have been present for - and never after.
+   */
+  function unbuiltBridge(): void {
+    Object.defineProperty(window, "vex", {
+      configurable: true,
+      value: {
+        projects: { list: projectsListMock },
+        studio: {
+          getBridgeReadiness: () =>
+            Promise.resolve({
+              ok: true,
+              data: {
+                kind: "missing_dev",
+                platform: "linux",
+                requiredGoVersion: "go1.27.0",
+                go: { kind: "absent" },
+              },
+            }),
+        },
+        files: {
+          list: () => Promise.resolve({ ok: true, data: null }),
+          watch: () => Promise.resolve({ ok: true, data: null }),
+        },
+      },
+    });
+  }
+
+  it("reports a missing bridge beside an OPEN project, not only on welcome", async () => {
+    unbuiltBridge();
+    const project = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    select(project.id);
+    await screen.findByTestId(`workspace-${project.id}`);
+    const panels = document.querySelectorAll(
+      '[data-vex-area="studio-bridge-readiness"]',
+    );
+    // Exactly ONE: welcome and the open-project view are mutually exclusive,
+    // so the panel is never in the tree twice.
+    expect(panels).toHaveLength(1);
+    expect(panels[0]?.textContent).toContain("has not been built yet");
+    // And it is NOT inside a workspace subtree, so a workspace that falls over
+    // cannot take the installation-level diagnostic down with it.
+    expect(panels[0]?.closest("[data-vex-studio-workspace]")).toBeNull();
+  });
+
+  it("renders nothing at all when the bridge is there", async () => {
+    const project = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+    select(project.id);
+    await screen.findByTestId(`workspace-${project.id}`);
+
+    expect(
+      document.querySelector('[data-vex-area="studio-bridge-readiness"]'),
+    ).toBeNull();
   });
 });
 
@@ -365,6 +457,115 @@ describe("keep-alive", () => {
     expect(rows[2]?.textContent).toContain("No running terminals");
     // Nothing invented for the row whose workspace published no count.
     expect(rows[3]?.textContent).toBe("p4Close");
+  });
+});
+
+describe("the last Studio location, restored", () => {
+  /**
+   * v17 persists `runtimeMode` and `activeProjectId`, so a relaunch arrives
+   * here with a selection already in the store rather than with `null`. The
+   * store's coercion says the id is a well-formed string; only THIS component
+   * can say whether it names a project that still exists, and the answer has to
+   * be reached against a SETTLED list - which is why the check is the repair
+   * effect and not a second one.
+   */
+  it("opens the project the store came back holding", async () => {
+    const project = makeProject({ name: "left-open" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    // The rehydrated store, before the centre ever mounts.
+    useUiStore.setState({ runtimeMode: "studio", activeProjectId: project.id });
+
+    renderCenter();
+
+    expect(await screen.findByTestId(`workspace-${project.id}`)).not.toBeNull();
+    expect(useUiStore.getState().activeProjectId).toBe(project.id);
+  });
+
+  it("falls back to the welcome, still in Studio, when the id no longer exists", async () => {
+    const survivor = makeProject({ name: "survivor" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [survivor] });
+    // A project deleted between sessions, or a hand-written localStorage id.
+    useUiStore.setState({
+      runtimeMode: "studio",
+      activeProjectId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    renderCenter();
+
+    await screen.findByRole("heading", { name: "Vex Studio" });
+    await waitFor(() => {
+      expect(useUiStore.getState().activeProjectId).toBeNull();
+    });
+    // Studio, with its recents - not a bounce back to the Agent shell.
+    expect(useUiStore.getState().runtimeMode).toBe("studio");
+    expect(
+      screen.queryByTestId("workspace-11111111-1111-4111-8111-111111111111"),
+    ).toBeNull();
+  });
+});
+
+describe("focus lands on the welcome", () => {
+  /**
+   * Entering Studio unmounts the mode capsule the user pressed, so focus falls
+   * to `document.body` and a keyboard user tabs in from the top of the window.
+   * The centre puts it on the welcome's primary action instead - and never
+   * takes focus somebody else is holding.
+   */
+  it("puts focus on the primary action once the Start row exists", async () => {
+    projectsListMock.mockResolvedValue({ ok: true, data: [] });
+    useUiStore.setState({ setupGateActive: false, unlockCurtainActive: false });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    await waitFor(() => {
+      expect(
+        document.activeElement?.getAttribute("data-vex-studio-welcome-action"),
+      ).toBe("primary");
+    });
+  });
+
+  it("waits while the boot gate or the unlock curtain covers the window", async () => {
+    // Both are full-window overlays rendered ABOVE this column while it is
+    // already mounted. Focusing a control behind one puts the caret somewhere
+    // the user cannot see and cannot leave except by tabbing blind.
+    projectsListMock.mockResolvedValue({ ok: true, data: [] });
+    useUiStore.setState({ setupGateActive: true, unlockCurtainActive: false });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+    await screen.findByRole("button", { name: /New project/i });
+
+    expect(document.activeElement).toBe(document.body);
+
+    // The gate lifts, and the landing happens then.
+    act(() => {
+      useUiStore.getState().dismissSetupGate();
+    });
+    await waitFor(() => {
+      expect(
+        document.activeElement?.getAttribute("data-vex-studio-welcome-action"),
+      ).toBe("primary");
+    });
+  });
+
+  it("never takes focus from a control the user is already on", async () => {
+    projectsListMock.mockResolvedValue({ ok: true, data: [] });
+    useUiStore.setState({ setupGateActive: false, unlockCurtainActive: false });
+    // Someone is focused BEFORE the centre gets its first commit.
+    const held = document.createElement("button");
+    document.body.appendChild(held);
+    held.focus();
+    expect(document.activeElement).toBe(held);
+
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: /New project/i }),
+      ).not.toBeNull();
+    });
+
+    expect(document.activeElement).toBe(held);
+    held.remove();
   });
 });
 
@@ -752,5 +953,136 @@ describe("a DELETED project", () => {
     await waitFor(() => {
       expect(mounted.isConnected).toBe(false);
     });
+  });
+});
+
+/**
+ * PER-WORKSPACE CONTAINMENT.
+ *
+ * Before the boundary this suite's crash took the whole React root with it:
+ * React 19 unmounts the root when a render throws with nothing above it, so one
+ * project's bad layout blanked the window and every OTHER project's workspace
+ * with it. Remove the `ErrorBoundary` from `StudioProjectWorkspace` and the
+ * first test here goes red - nothing renders at all.
+ *
+ * The preservation half is the one that matters for the product: the terminal
+ * instances and the ptys live OUTSIDE React (the registry and the pty host), so
+ * a fallback and a retry must not cost the user a single running shell.
+ */
+describe("a workspace that throws", () => {
+  beforeEach(() => {
+    // React reports every caught error through console.error. The assertions
+    // are about the surface, and the banner buries a real failure in noise.
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  it("is contained: its own recovery surface, other workspaces untouched", async () => {
+    const healthy = makeProject({ name: "healthy" });
+    const broken = makeProject({ name: "broken" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [healthy, broken] });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    select(healthy.id);
+    const healthyNode = await screen.findByTestId(`workspace-${healthy.id}`);
+
+    controllerCrash.projectIds.add(broken.id);
+    select(broken.id);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("TypeError");
+    // Contained, not fatal: the healthy workspace is the SAME node it was.
+    expect(screen.getByTestId(`workspace-${healthy.id}`)).toBe(healthyNode);
+  });
+
+  it("PRESERVES the project's terminals and ptys across fallback and retry", async () => {
+    const project = makeProject({ name: "broken" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    const harness = renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    // The registry entries a live workspace owns. Killing these is what a
+    // careless recovery (unmount, dispose, reload) would cost the user.
+    publishProjectTerminals(project.id, ["term-a", "term-b"]);
+
+    controllerCrash.projectIds.add(project.id);
+    select(project.id);
+    await screen.findByRole("alert");
+
+    // NOTHING was disposed and no pty was killed: the terminal index still
+    // names both shells, and the registry's dispose was never called.
+    expect(peekProjectTerminals(project.id)).toEqual(["term-a", "term-b"]);
+    expect(harness.disposedTerminals).toEqual([]);
+
+    controllerCrash.projectIds.delete(project.id);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    await screen.findByTestId(`workspace-${project.id}`);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(peekProjectTerminals(project.id)).toEqual(["term-a", "term-b"]);
+    expect(harness.disposedTerminals).toEqual([]);
+  });
+
+  it("offers a route back to welcome that keeps the workspace alive", async () => {
+    const project = makeProject({ name: "broken" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    const harness = renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+    publishProjectTerminals(project.id, ["term-a"]);
+
+    controllerCrash.projectIds.add(project.id);
+    select(project.id);
+    await screen.findByRole("alert");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Return to Studio welcome" }),
+    );
+
+    // The selection moved; the project did NOT leave the kept-alive set, so
+    // its shells keep running and reopening it costs nothing.
+    await waitFor(() => {
+      expect(useUiStore.getState().activeProjectId).toBeNull();
+    });
+    expect(
+      document.querySelector(`[data-vex-studio-workspace="${project.id}"]`),
+    ).not.toBeNull();
+    expect(peekProjectTerminals(project.id)).toEqual(["term-a"]);
+    expect(harness.disposedTerminals).toEqual([]);
+  });
+});
+
+describe("the workspace switch is animated as an un-hide", () => {
+  /**
+   * A workspace is never unmounted, so React drives no entrance here: the
+   * class is on the wrapper permanently while the project is active, and the
+   * browser replays the keyframe because the element left `display: none`.
+   * What the test can prove is the half that is ours - exactly one wrapper
+   * carries the entrance at a time, and the hidden ones carry none of it.
+   */
+  const wrapperFor = (projectId: string): Element => {
+    const el = document.querySelector(`[data-vex-studio-workspace="${projectId}"]`);
+    if (el === null) throw new Error(`no wrapper for ${projectId}`);
+    return el;
+  };
+
+  it("puts the entrance on the shown workspace and never on a hidden one", async () => {
+    const first = makeProject({ name: "first" });
+    const second = makeProject({ name: "second" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [first, second] });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    select(first.id);
+    await screen.findByTestId(`workspace-${first.id}`);
+    expect(wrapperFor(first.id).className).toContain("vex-surface-enter");
+
+    select(second.id);
+    await screen.findByTestId(`workspace-${second.id}`);
+    expect(wrapperFor(second.id).className).toContain("vex-surface-enter");
+    // The kept-alive one is hidden and inert: an entrance left on it would
+    // replay the moment it is shown again for no state change of its own.
+    expect(wrapperFor(first.id).className).toContain("hidden");
+    expect(wrapperFor(first.id).className).not.toContain("vex-surface-enter");
+    expect(wrapperFor(first.id).hasAttribute("hidden")).toBe(true);
   });
 });

@@ -44,7 +44,15 @@ function harness(): Harness {
     ran.push(language);
     return new Promise((resolve) => {
       waiting.push(() => {
-        resolve({ ok: true, result: { lines: [[]], longLines: 0 } });
+        resolve({
+          ok: true,
+          result: {
+            lines: [[]],
+            longLines: 0,
+            budgetExceededLines: [],
+            budgetExceededTotal: 0,
+          },
+        });
       });
     });
   };
@@ -120,7 +128,7 @@ describe("the highlight queue", () => {
     // answer was posted for it.
     expect(h.ran).toEqual(["typescript"]);
     expect(h.posted).toEqual([
-      { kind: "result", requestId: 1, ok: true, lines: [[]], longLines: 0 },
+      { kind: "result", requestId: 1, ok: true, lines: [[]], longLines: 0, budgetExceededLines: [], budgetExceededTotal: 0 },
     ]);
   });
 
@@ -152,7 +160,7 @@ describe("the highlight queue", () => {
     h.finish();
     await flush();
     expect(h.posted).toEqual([
-      { kind: "result", requestId: 2, ok: true, lines: [[]], longLines: 0 },
+      { kind: "result", requestId: 2, ok: true, lines: [[]], longLines: 0, budgetExceededLines: [], budgetExceededTotal: 0 },
     ]);
   });
 
@@ -168,7 +176,7 @@ describe("the highlight queue", () => {
     await flush();
 
     expect(h.posted).toEqual([
-      { kind: "result", requestId: 99, ok: true, lines: [[]], longLines: 0 },
+      { kind: "result", requestId: 99, ok: true, lines: [[]], longLines: 0, budgetExceededLines: [], budgetExceededTotal: 0 },
     ]);
   });
 

@@ -30,6 +30,31 @@
  * already started painting. The host emits one per replay today; the latch is
  * defence, and it is cheap.
  *
+ * ## THE CHORDS THIS HOST REFUSES TO SEND TO THE SHELL
+ *
+ * xterm encodes a modified keypress into a control sequence and writes it to
+ * the pty, and it does that BEFORE anything at the document level sees the
+ * key: `Ctrl+W` reached the shell as `0x17` and `Ctrl+Tab` was swallowed
+ * whole, so the Studio table's own chords did nothing whenever the caret was
+ * in a terminal - measured on the built app, while the same chords worked from
+ * the tab strip a few pixels above.
+ *
+ * The repair is VS Code's `commandsToSkipShell` discipline
+ * (`terminalInstance.ts:1143-1200`): a custom key event handler that returns
+ * `false` for the keys the workbench owns, so xterm processes none of them and
+ * they travel on. Which keys those are is not restated here - it is
+ * `isStudioTerminalChord`, a projection of the one table
+ * (`studio/keybindings.ts`), so the set this refuses and the set the hook acts
+ * on cannot drift apart.
+ *
+ * IT DOES NOT `preventDefault`, and that is the one place this departs from
+ * the reference. VS Code calls it because its keybinding service dispatches
+ * from its own listener; Studio's hook is a BUBBLE-phase listener on
+ * `document` that treats `defaultPrevented` as "a surface nearer the key
+ * already dealt with it" and returns. Preventing the default here would
+ * therefore refuse the chord in xterm AND cancel it in the hook, which is the
+ * defect this fixes with extra steps.
+ *
  * ## The clear goes THROUGH the write queue, not around it
  *
  * The obvious implementation - call `terminal.reset()` from the resync handler -
@@ -62,6 +87,8 @@ import {
   resizeTerminal,
   writeTerminal,
 } from "../../../../lib/api/terminal.js";
+import { isStudioTerminalChord } from "../keybindings.js";
+import { studioPlatform, type StudioPlatform } from "../keybindings-labels.js";
 import { terminalRegistry, type TerminalRegistry } from "./terminal-registry.js";
 
 /**
@@ -100,10 +127,23 @@ export interface XtermHostProps {
   readonly visible: boolean;
   readonly registry?: TerminalRegistry;
   readonly onTitleChange?: (title: string) => void;
-  readonly onCwdChange?: (cwd: string) => void;
+  /**
+   * The shell's directory changed, AS A LABEL.
+   *
+   * Never a filesystem path: main and the pty host derive this before it
+   * crosses the port (`pty-host/display-cwd.ts`), so the renderer has neither
+   * the value nor the authority to open anything with it. It is header text.
+   */
+  readonly onDisplayCwdChange?: (displayCwd: string) => void;
   readonly onExit?: (info: { exitCode: number; signal: number | null }) => void;
   /** Raised when the user interacts, so the group can mark this pane active. */
   readonly onActivate?: () => void;
+  /**
+   * The platform whose modifier the refused chords are read against. Defaults
+   * to this window's; a test states it so all three are provable, exactly as
+   * `useStudioKeybindings` takes it.
+   */
+  readonly platform?: StudioPlatform;
   readonly className?: string;
 }
 
@@ -112,9 +152,10 @@ export function XtermHost({
   visible,
   registry = terminalRegistry,
   onTitleChange,
-  onCwdChange,
+  onDisplayCwdChange,
   onExit,
   onActivate,
+  platform = studioPlatform,
   className,
 }: XtermHostProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -128,8 +169,8 @@ export function XtermHost({
   // fresh closure does not tear down and re-establish the SUBSCRIPTIONS - which
   // would detach and reattach the pty, and replay the whole buffer, on every
   // parent render.
-  const handlersRef = useRef({ onTitleChange, onCwdChange, onExit });
-  handlersRef.current = { onTitleChange, onCwdChange, onExit };
+  const handlersRef = useRef({ onTitleChange, onDisplayCwdChange, onExit });
+  handlersRef.current = { onTitleChange, onDisplayCwdChange, onExit };
 
   const pushSize = useCallback(
     (size: { cols: number; rows: number } | null): void => {
@@ -145,6 +186,14 @@ export function XtermHost({
 
     const entry = registry.acquire(terminalId);
     registry.attach(terminalId, container);
+
+    // REFUSED, not consumed: `false` makes xterm return before it encodes the
+    // key or cancels the event, so the keypress bubbles to the document
+    // listener that owns the Studio table. See the module header for why this
+    // does not `preventDefault`, and `keybindings.ts` for what the set is.
+    entry.terminal.attachCustomKeyEventHandler(
+      (event) => !isStudioTerminalChord(event, platform),
+    );
 
     // Latched per replay: set by a resync, cleared by the first byte that
     // follows it. See the module header.
@@ -180,7 +229,9 @@ export function XtermHost({
     });
     const offProperty = onTerminalProperty(terminalId, (change) => {
       if (change.property === "title") handlersRef.current.onTitleChange?.(change.value);
-      if (change.property === "cwd") handlersRef.current.onCwdChange?.(change.value);
+      if (change.property === "displayCwd") {
+        handlersRef.current.onDisplayCwdChange?.(change.value);
+      }
     });
     const offExit = onTerminalExit(terminalId, (info) => {
       setExit(info);
@@ -209,10 +260,14 @@ export function XtermHost({
       // DETACH, never kill: unmounting a pane is a mode switch or a StrictMode
       // remount, not a decision to end the user's shell. The pty keeps running
       // through its grace period and replays on return.
+      // The terminal outlives this component (the registry owns it), so the
+      // policy this host attached is withdrawn with it rather than left on an
+      // instance no consumer is driving.
+      entry.terminal.attachCustomKeyEventHandler(() => true);
       void detachTerminal(terminalId);
       registry.release(terminalId);
     };
-  }, [pushSize, registry, terminalId]);
+  }, [platform, pushSize, registry, terminalId]);
 
   // Visibility is its own effect: it changes far more often than the terminal
   // id, and folding it into the subscription effect would re-attach the pty on

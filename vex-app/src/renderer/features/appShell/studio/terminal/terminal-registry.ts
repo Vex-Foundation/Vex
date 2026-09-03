@@ -281,6 +281,16 @@ export class TerminalRegistry {
       // host cannot reproduce after a reattach.
       scrollback: TERMINAL_SCROLLBACK_ROWS,
       allowProposedApi: true,
+      // WITHOUT THIS THE PANE PAINTS OPAQUE BLACK. The palette's background is
+      // alpha 0 so the card surface and the brand watermark show through; with
+      // `allowTransparency` at its default (false) xterm composites every cell
+      // onto its own opaque background instead, and the watermark the pane
+      // renders underneath is never visible. The WebGL renderer honours the
+      // flag (`@xterm/addon-webgl` 0.19.0 passes it into the texture atlas and
+      // returns NULL_COLOR for cell backgrounds), so this is not a
+      // renderer-specific escape hatch. See `terminal-palette.ts` for why the
+      // token is spelled `#00000000` rather than `transparent`.
+      allowTransparency: true,
       convertEol: false,
       cursorBlink: !prefersReducedMotion(),
       // The library's only inertial behaviour. Reduced motion collapses it.

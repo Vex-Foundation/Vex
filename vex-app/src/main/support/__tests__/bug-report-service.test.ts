@@ -102,14 +102,32 @@ describe("createBugReport service orchestrator", () => {
       "../bug-report-service.js"
     );
     __resetInstallIdCacheForTests();
+    // `sunos` is deliberately a platform no runner of this suite can BE, so
+    // the assertion proves the value was threaded from the seam onto the
+    // insert. Comparing against `process.platform` compared the runner to
+    // itself and would have passed even if the field were dropped.
+    await createBugReport(validInput, {
+      transport: { enqueue: (id: string) => transportMock(id) },
+      platform: "sunos",
+    });
+    const insert = insertMock.mock.calls[0]?.[0] as BugReportInsert;
+    expect(insert.appVersion).toBe("0.1.0-test");
+    expect(insert.osPlatform).toBe("sunos");
+    expect(insert.installId).toBeNull();
+    expect(insert.correlationId).toBe("req-test");
+  });
+
+  it("defaults osPlatform to the host platform when no seam is injected", async () => {
+    transportMock.mockResolvedValueOnce({ uploadState: "not_configured" });
+    const { createBugReport, __resetInstallIdCacheForTests } = await import(
+      "../bug-report-service.js"
+    );
+    __resetInstallIdCacheForTests();
     await createBugReport(validInput, {
       transport: { enqueue: (id: string) => transportMock(id) },
     });
     const insert = insertMock.mock.calls[0]?.[0] as BugReportInsert;
-    expect(insert.appVersion).toBe("0.1.0-test");
     expect(insert.osPlatform).toBe(process.platform);
-    expect(insert.installId).toBeNull();
-    expect(insert.correlationId).toBe("req-test");
   });
 
   it("uses refs.correlationId when provided, else falls back to the IPC requestId", async () => {

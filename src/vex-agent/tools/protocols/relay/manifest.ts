@@ -1,5 +1,5 @@
 /**
- * Relay protocol manifest — keyless cross-chain bridge (quote + bridge).
+ * Relay protocol manifest - keyless cross-chain bridge (quote + bridge).
  * The only bridge to/from Robinhood Chain (Khalani does not cover 4663).
  */
 

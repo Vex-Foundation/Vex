@@ -7,7 +7,7 @@
  * The hash material is a security surface: two DIFFERENT applied slippages must
  * never produce the same digest, or the gate authorises a pair it never
  * compared. Nothing here may therefore round, floor, truncate, or default an
- * out-of-contract value into hash material — an invalid slippage THROWS, which
+ * out-of-contract value into hash material - an invalid slippage THROWS, which
  * both callers already treat as fail-closed (the recorder skips the row, so the
  * gate then blocks for want of a prequote; the gate blocks directly).
  */

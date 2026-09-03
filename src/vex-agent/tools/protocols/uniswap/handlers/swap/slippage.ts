@@ -4,13 +4,13 @@
  * The manifest `unit: "bps"` gate (`runtime/bps-param.ts`) proves the value is a
  * whole, non-negative number of basis points but deliberately applies no
  * maximum; the maximum is product policy with one owner
- * (`slippage-policy.ts`). No `venueMaxBps` is passed — Uniswap publishes no
+ * (`slippage-policy.ts`). No `venueMaxBps` is passed - Uniswap publishes no
  * venue maximum below Vex's ceiling (`applySlippage` is pure arithmetic over
  * `[0, 10000]`), so the ceiling binds on its own.
  *
  * REJECTED, never clamped. `applySlippage` used to fold an out-of-range value
  * to 10,000 bps, which silently authorised a total-loss tolerance instead of
- * surfacing the caller's mistake — the same failure class as silently dropping
+ * surfacing the caller's mistake - the same failure class as silently dropping
  * a caller-supplied fee parameter. Resolved identically for the quote and the
  * execute so the pair cannot disagree about what was authorised.
  */

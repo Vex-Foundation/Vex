@@ -1,12 +1,12 @@
 /**
- * `uniswap.swap.execute` — the orchestrator.
+ * `uniswap.swap.execute` - the orchestrator.
  *
  * It owns the order in which authority is acquired and evidence is gathered:
  * preview guard → tolerance → session → chain → wallet ADDRESS (never decrypts)
  * → tokens + quote → signing wallet → balance/spender/allowance guards → the
  * events plan and the intent. Only then does the staged loop sign anything.
  *
- * Everything before the intent exists fails through `failPreBroadcast` — a
+ * Everything before the intent exists fails through `failPreBroadcast` - a
  * hashless `definitively_failed` row; everything after it fails through
  * `postIntentFailureResult`, which never opens a second execution (C18).
  */
@@ -72,7 +72,7 @@ export async function executeUniswapSwap(
   context: ProtocolExecutionContext,
 ): Promise<ToolResult> {
   // C24 (Codex final-review round 1, finding 8): the manifest declares no
-  // `dryRun` param (five-field contract is final) — a caller that still
+  // `dryRun` param (five-field contract is final) - a caller that still
   // passes it must NEVER reach a real broadcast just because the runtime's
   // spine-inherited `previewSupport:true` matrix row treated the call as a
   // preview (`RESERVED_RUNTIME_PARAM_KEYS` always accepts `dryRun` regardless
@@ -81,7 +81,7 @@ export async function executeUniswapSwap(
     return fail(`${TOOL_ID} does not support dryRun preview - call uniswap__swap_quote instead.`);
   }
 
-  // Vex's fee rate and receiver are product constants — a caller-supplied one
+  // Vex's fee rate and receiver are product constants - a caller-supplied one
   // is surfaced by name, never dropped, and never reaches a durable row.
   const forbidden = checkForbiddenFeeParams(p);
   if (forbidden) return fail(forbidden);
@@ -89,22 +89,22 @@ export async function executeUniswapSwap(
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
   if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
 
-  // Vex's slippage ceiling — pure, and BEFORE the session/chain/wallet steps so
+  // Vex's slippage ceiling - pure, and BEFORE the session/chain/wallet steps so
   // an out-of-range tolerance never reaches a durable row or a signing key.
   const slippage = resolveUniswapSlippageBps(TOOL_ID, p);
   if (!slippage.ok) return fail(slippage.reason);
   const slippageBps = slippage.bps;
 
   // The prequote gate (executeProtocolTool) already blocks this tool without a
-  // session — sessionId is guaranteed present here.
+  // session - sessionId is guaranteed present here.
   const sessionId = context.sessionId;
   if (!sessionId) return fail(`${TOOL_ID} requires an active session.`);
 
-  // Step 1 — resolve the chain. No wallet/chain known yet on failure, so no
+  // Step 1 - resolve the chain. No wallet/chain known yet on failure, so no
   // durable row is written (same treatment as a param-validation failure).
   const deployment = requireDeployment(chain);
 
-  // Step 2 (C22-equivalent for Uniswap) — address-only wallet resolution
+  // Step 2 (C22-equivalent for Uniswap) - address-only wallet resolution
   // (NEVER decrypts) so a failure from here on CAN be durably recorded with
   // a real walletAddress. The signing key itself is resolved later.
   let walletAddress: string;
@@ -197,7 +197,7 @@ export async function executeUniswapSwap(
   }
   quoted = { ...quoted, minAmountOut: approvedMinOut };
 
-  // Per-session signing wallet — resolved only now that dryRun is rejected
+  // Per-session signing wallet - resolved only now that dryRun is rejected
   // and the quote succeeded, so a rejected/failed call never decrypts a key.
   let signer: ChainWallet;
   try {
@@ -234,7 +234,7 @@ export async function executeUniswapSwap(
     );
   }
 
-  // The swap legs are planned for the NET amount — that is what the router
+  // The swap legs are planned for the NET amount - that is what the router
   // pulls and what the approval must cover. The fee leg carries the remainder,
   // so the two rows sum to exactly what the user asked to spend.
   const swapAmount = feeCharge.swapAmountRaw;
@@ -252,7 +252,7 @@ export async function executeUniswapSwap(
   });
   const swapLegCount = events.length;
 
-  // LAST index, always — the fee is signed only after the swap confirms, and
+  // LAST index, always - the fee is signed only after the swap confirms, and
   // an abort of "everything after leg i" must be able to reach it.
   const feePlan: UniswapFeeLegPlan | null = planUniswapFeeLeg({
     charge: feeCharge, deployment, tokenIn, walletAddress: signer.address, sessionId,
@@ -272,7 +272,7 @@ export async function executeUniswapSwap(
   let refusedRole: AgentActivityEvent["eventRole"] = "swap";
   try {
     // ONLY the swap's own legs. The fee row sits at `swapLegCount` and is
-    // driven outside this loop — a revert or an abort in here must not be able
+    // driven outside this loop - a revert or an abort in here must not be able
     // to reach it.
     for (let i = 0; i < swapEvents.length; i++) {
       const event = swapEvents[i]!;
@@ -294,7 +294,7 @@ export async function executeUniswapSwap(
       );
 
       if (outcome.kind === "ambiguous") {
-        // C17: the events STRICTLY AFTER this one were NEVER signed — finalize
+        // C17: the events STRICTLY AFTER this one were NEVER signed - finalize
         // them (this event itself stays pending; ambiguity never terminalizes).
         const next = createdEvents[i + 1];
         if (next) {
@@ -331,7 +331,7 @@ export async function executeUniswapSwap(
         try {
           await confirmActivityEvent(event.id, {});
         } catch (err) {
-          // C16: bookkeeping-only — never propagated (the approval already succeeded).
+          // C16: bookkeeping-only - never propagated (the approval already succeeded).
           logger.warn("uniswap.swap.execute.confirm_failed", {
             id: event.id, role: event.eventRole,
             error: uniswapFailureMessage(err),
@@ -363,7 +363,7 @@ export async function executeUniswapSwap(
       });
     }
 
-    // Unreachable — `createdEvents` always has at least the swap entry, and
+    // Unreachable - `createdEvents` always has at least the swap entry, and
     // the loop above returns on every branch. Kept for exhaustiveness.
     throw new Error("uniswap__swap_execute: staged broadcast loop exited without a result");
   } catch (err) {
@@ -375,7 +375,7 @@ export async function executeUniswapSwap(
  * Run the Vex fee leg after a CONFIRMED swap and attach its disclosure.
  * Nothing here can change whether the swap succeeded.
  *
- * TOTAL BY CONSTRUCTION — this function NEVER throws, and that is what keeps
+ * TOTAL BY CONSTRUCTION - this function NEVER throws, and that is what keeps
  * the guarantee true rather than merely intended: the swap is already confirmed
  * on-chain by the time it is called, so an escape into the orchestrator's outer
  * catch would report a settled swap as failed. Both of its awaits are
@@ -383,8 +383,8 @@ export async function executeUniswapSwap(
  * whether it applied; `runUniswapFeeLeg` documents "Never throws. Every path
  * returns a report."). Do not add a throwing call here.
  *
- * The fee base is the amount the user ASKED to spend — known exactly before the
- * swap ran and unaffected by what the settlement decoded — so a swap whose
+ * The fee base is the amount the user ASKED to spend - known exactly before the
+ * swap ran and unaffected by what the settlement decoded - so a swap whose
  * amounts could not be decoded is still charged correctly.
  */
 async function attachVexFee(x: {
@@ -408,7 +408,7 @@ async function attachVexFee(x: {
       disclosure,
     });
 
-  // No fee applied at all — dust, or a token Vex declines to skim. There is no
+  // No fee applied at all - dust, or a token Vex declines to skim. There is no
   // row to finalize either, because none was ever planned.
   if (x.feePlan === null) {
     return attach(uniswapFeeNotCharged(disclosure.charged ? "no fee applies" : disclosure.reason));

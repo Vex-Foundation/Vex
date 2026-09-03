@@ -31,18 +31,29 @@
  * is looking at. Not rendering them would have the same pixels and would fork
  * the strip's composition by mode for no gain.
  *
- * `GlobalErrorBanner` and `GlobalApprovals` are deliberately NOT gated:
- * approvals are one app-wide queue and are meant to be visible in whichever
- * mode the user is in. `ShellStatusStrip.test.tsx` asserts all of this rather
- * than trusting it.
+ * `GlobalApprovals` is deliberately NOT gated: approvals are one app-wide
+ * queue and are meant to be visible in whichever mode the user is in.
+ * `ShellStatusStrip.test.tsx` asserts all of this rather than trusting it.
+ *
+ * `NotificationCenter` and `NotificationAnnouncer` join it for the same reason
+ * and are mounted for the same reason the strip itself is: exactly one of each
+ * per window, above the mode dispatch. Two centers would fork one list, and
+ * two announcers would speak every message twice. B2.2 retired the separate
+ * `GlobalErrorBanner` pill into the center: session-less engine failures are
+ * notifications, and a second flank surface for them announced nothing. The announcer
+ * renders only screen-reader live regions (no pixels), and it lives at the
+ * strip rather than in `ToastHost` because a permanent `role="alert"` node
+ * inside the toast host would make every `role="alert"` query in the app
+ * ambiguous.
  */
 
 import type { JSX } from "react";
 import type { RuntimeMode } from "../../stores/uiStore.js";
 import { DeskRuleTapeState } from "./DeskRuleTapeState.js";
 import { GlobalApprovals } from "./GlobalApprovals.js";
-import { GlobalErrorBanner } from "./GlobalErrorBanner.js";
 import { MissionRail } from "./MissionRail.js";
+import { NotificationCenter } from "./NotificationCenter.js";
+import { NotificationAnnouncer } from "../../components/ui/notification-announcer.js";
 import { SessionExportControl } from "./SessionExportControl.js";
 import { StudioHostStatusWord } from "./StudioHostStatusWord.js";
 
@@ -73,10 +84,12 @@ export function ShellStatusStrip({
         )}
       </div>
       <div className="flex items-center justify-end gap-2">
-        {/* Session-LESS failures (memory maintenance) surface here: they
-         * belong to no conversation. Renders null when idle. */}
-        <GlobalErrorBanner />
+        {/* Session-LESS failures (memory maintenance) reach the user here
+         * too: they are notifications now, so the center is their surface and
+         * there is no second pill beside it. Renders null when idle. */}
+        <NotificationCenter />
         <GlobalApprovals />
+        <NotificationAnnouncer />
         <SessionExportControl activeSessionId={sessionScopedId} />
       </div>
     </header>

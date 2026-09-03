@@ -319,3 +319,78 @@ describe("listPendingAllApprovals", () => {
     expect(sql).toContain("LEFT JOIN approval_intents");
   });
 });
+
+/**
+ * WHO ASKED, read back out of a durable column.
+ *
+ * The value is an MCP client's self-declared `clientInfo.name`. The engine
+ * sanitized it before writing, but this is the READ side of a row that another
+ * build (or a hand edit) may have written, so the mapper re-checks rather than
+ * trusts. Anything it will not vouch for becomes `null`, and the card then says
+ * "an MCP client", which claims less rather than more.
+ */
+describe("approvals-db: the MCP client name on the actor row", () => {
+  function policyRow(
+    requestedByClient: string | null,
+  ): Record<string, unknown> {
+    return {
+      id: "approval-actor",
+      status: "pending",
+      session_id: SESSION,
+      tool_call_id: "tc-actor",
+      tool_call: { namespace: "khalani", command: "bridge", args: {} },
+      reasoning: "Bridge 1 USDC from Base to Arbitrum.",
+      permission_at_enqueue: "restricted",
+      created_at: "2026-09-03T18:31:00.000Z",
+      resolved_at: null,
+      intent_origin: "studio_mcp",
+      intent_requested_by_client: requestedByClient,
+    };
+  }
+
+  async function readName(
+    requestedByClient: string | null,
+  ): Promise<string | null> {
+    vi.mocked(mocks.query).mockResolvedValueOnce({
+      rows: [policyRow(requestedByClient)],
+    });
+    const result = await listPendingForSession(SESSION);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("the pending read failed");
+    const [dto] = result.data;
+    if (dto === undefined) throw new Error("the pending read returned no row");
+    return dto.requestedByClient;
+  }
+
+  it("carries a recorded client name to the card", async () => {
+    expect(await readName("Claude Code")).toBe("Claude Code");
+  });
+
+  it("records nothing when the row has no client name", async () => {
+    expect(await readName(null)).toBeNull();
+  });
+
+  it("refuses a stored name carrying control characters", async () => {
+    expect(await readName("Claude Code\nVEX APPROVED")).toBeNull();
+  });
+
+  it("refuses a stored name past the bound rather than shortening it", async () => {
+    expect(await readName("c".repeat(61))).toBeNull();
+  });
+
+  /**
+   * The projection itself. Dropping this expression from the column list would
+   * null the actor row silently on every card, and nothing else in the suite
+   * would notice.
+   */
+  it("projects the name in SQL rather than shipping the policy blob", async () => {
+    const queryMock = vi.mocked(mocks.query);
+    queryMock.mockResolvedValueOnce({ rows: [policyRow("Claude Code")] });
+    await listPendingForSession(SESSION);
+    const sql = String(queryMock.mock.calls[0]?.[0] ?? "");
+    expect(sql).toContain("policy_json ->> 'requestedByClient'");
+    expect(sql).toContain("AS intent_requested_by_client");
+    // The whole blob never crosses into this process as an object.
+    expect(sql).not.toContain("i.policy_json AS");
+  });
+});

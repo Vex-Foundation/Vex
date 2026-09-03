@@ -39,6 +39,7 @@ import {
 } from "react";
 import type { FileNode } from "@shared/schemas/files.js";
 import { cn } from "../../../../lib/utils.js";
+import type { FileOpenMode } from "../workspace/types.js";
 import {
   EXPLORER_TREE_LABEL,
   SHOW_MORE_FAILED,
@@ -56,6 +57,16 @@ import type { ExplorerRow as ExplorerRowModel } from "./explorer-rows.js";
 import { explorerRegistry, type ExplorerRegistry } from "./explorer-registry.js";
 import type { ExplorerSession } from "./explorer-session.js";
 import { EXPLORER_ROW_HEIGHT, ExplorerRow } from "./ExplorerRow.js";
+import { ExplorerEditRow } from "./ExplorerEditRow.js";
+import {
+  ExplorerDeleteDialog,
+  type ExplorerDeleteRequest,
+} from "./ExplorerDeleteDialog.js";
+import {
+  ExplorerRowMenu,
+  type ExplorerMenuAction,
+  type ExplorerMenuRequest,
+} from "./ExplorerRowMenu.js";
 
 /** Rows rendered beyond the viewport, so a scroll does not show blank space. */
 const EXPLORER_OVERSCAN = 8;
@@ -84,10 +95,24 @@ export interface ExplorerTreeProps {
    * A file row was activated. Called ONLY for `kind: "file"`: main refuses to
    * read a symlink (`symlinked_path`) or a device (`not_a_file`), so opening a
    * tab for one would promise a viewer that can never render.
+   *
+   * `mode` is what the GESTURE meant, never what the tree decided: a single
+   * click previews, a double click and the keyboard's Enter keep the tab. The
+   * tree does not know what a tab is; it reports the gesture and the workspace
+   * owns the rest.
    */
-  readonly onOpenFile: (node: FileNode) => void;
+  readonly onOpenFile: (node: FileNode, mode: FileOpenMode) => void;
   readonly registry?: ExplorerRegistry;
   readonly viewport?: ExplorerViewportObservers;
+  /**
+   * Project-relative path -> the drift sentence for that file.
+   *
+   * The tree does not decide what has drifted: the PROJECT owns that fact (it
+   * arrives on the project DTO, read from disk on every project read), and the
+   * sidebar hands it down. Absent means "no decorations", which is what every
+   * mount outside the Studio sidebar wants.
+   */
+  readonly driftedPaths?: ReadonlyMap<string, string>;
   readonly className?: string;
 }
 
@@ -96,6 +121,7 @@ export function ExplorerTree({
   onOpenFile,
   registry,
   viewport,
+  driftedPaths,
   className,
 }: ExplorerTreeProps): JSX.Element {
   const activeRegistry = registry ?? explorerRegistry;
@@ -107,7 +133,24 @@ export function ExplorerTree({
    */
   const treeRef = useRef<HTMLDivElement>(null);
   const typeAheadRef = useRef<{ prefix: string; atMs: number } | null>(null);
+  /**
+   * A PREVIEW open just published a file, so focus belongs here until the user
+   * asks for the editor. Read and cleared by the repair effect below.
+   */
+  const keepFocusRef = useRef(false);
+  /** Cancels the one frame the repair owns, so unmount leaves nothing pending. */
+  const repairFrameRef = useRef<(() => void) | null>(null);
   const [session, setSession] = useState<ExplorerSession | null>(null);
+  /** The open context menu, or `null`. Owned here: it is chrome over the tree. */
+  const [menu, setMenu] = useState<ExplorerMenuRequest | null>(null);
+  /**
+   * The delete awaiting confirmation, or `null`.
+   *
+   * The tree never deletes without one. This state is the ONLY path from a key
+   * or a menu row to `session.deleteNode`, which is what makes "a keystroke
+   * cannot remove a file" a property of the component rather than a habit.
+   */
+  const [deleteRequest, setDeleteRequest] = useState<ExplorerDeleteRequest | null>(null);
 
   /**
    * Acquire in an effect, never in render.
@@ -125,6 +168,56 @@ export function ExplorerTree({
       activeRegistry.release(projectId);
     };
   }, [activeRegistry, projectId]);
+
+  /**
+   * KEEP FOCUS IN THE TREE ACROSS A PREVIEW OPEN.
+   *
+   * A single click opens a preview, and the preview mounts in a surface this
+   * component does not own. Measured on the built app (live test 2026-09-03,
+   * I-5): after that click `document.activeElement` was `body`, so F2, Delete
+   * and Shift+F10 went nowhere until the user refocused the tree.
+   *
+   * The permission is `studioFocusPermission`'s and VS Code's
+   * `EditorPart.shouldRestoreFocus`: take focus ONLY when nothing holds it. A
+   * user who clicked into the viewer, the terminal or the composer between the
+   * open and this repair keeps their focus, because the repair sees a real
+   * active element and does nothing.
+   *
+   * Twice, and no more: once on the commit that follows the open, and once on
+   * the next frame, because the surface that mounts can drop focus in a LATER
+   * effect than this one. The frame is owned - one handle, cancelled on
+   * unmount - so an unmounted tree never runs it.
+   */
+  useEffect(() => {
+    if (!keepFocusRef.current) return;
+    keepFocusRef.current = false;
+    const container = treeRef.current;
+    if (container === null) return;
+    const doc = container.ownerDocument;
+    const repair = (): void => {
+      const active = doc.activeElement;
+      if (active === null || active === doc.body) container.focus({ preventScroll: true });
+    };
+    repair();
+    const view = doc.defaultView;
+    if (view === null || typeof view.requestAnimationFrame !== "function") return;
+    repairFrameRef.current?.();
+    const frame = view.requestAnimationFrame(() => {
+      repairFrameRef.current = null;
+      repair();
+    });
+    repairFrameRef.current = () => {
+      repairFrameRef.current = null;
+      view.cancelAnimationFrame(frame);
+    };
+  });
+
+  useEffect(
+    () => () => {
+      repairFrameRef.current?.();
+    },
+    [],
+  );
 
   const subscribe = useCallback(
     (onChange: () => void) => {
@@ -155,7 +248,7 @@ export function ExplorerTree({
   });
 
   const focusedRowId = session?.getFocusedRowId() ?? null;
-  const selectedRowId = session?.getSelectedRowId() ?? null;
+  const openedRowId = session?.getOpenedRowId() ?? null;
   const focusedIndex =
     session === null || focusedRowId === null ? -1 : session.model.getIndexOf(focusedRowId);
 
@@ -172,7 +265,7 @@ export function ExplorerTree({
   );
 
   const activateRow = useCallback(
-    (row: ExplorerRowModel) => {
+    (row: ExplorerRowModel, mode: FileOpenMode) => {
       if (session === null) return;
       if (row.kind === "loadMore") {
         session.loadMore(row.parentId);
@@ -182,25 +275,114 @@ export function ExplorerTree({
         if (row.action === "retry") session.retry(row.parentId);
         return;
       }
-      session.setSelectedRowId(row.id);
+      // The name box owns its own keys and its own clicks; activating it from
+      // the tree would commit or open something under a caret.
+      if (row.kind === "edit") return;
       if (row.node.kind === "directory") {
         session.toggle(row.id);
         return;
       }
-      if (row.node.kind === "file") onOpenFile(row.node);
+      if (row.node.kind !== "file") return;
+      // The open marker is the OPEN file's, so it moves only when a file is
+      // actually handed to the workspace. A directory toggled open is not an
+      // open file, and marking it as one would put the decoration on a row no
+      // tab corresponds to.
+      session.setOpenedRowId(row.id);
+      onOpenFile(row.node, mode);
+      // VS Code's split, verbatim in shape (`listService.ts:717-733`): a
+      // POINTER open passes `preserveFocus: true` and the explorer keeps
+      // focus, while a double click and Enter pass `preserveFocus: false` and
+      // hand it to the editor. Here the open is published to another owner and
+      // a surface mounting in that commit can leave focus on `body`, so the
+      // preview open re-asserts it - and only when NOTHING holds it, which is
+      // `workspace-focus.ts`'s own permission and VS Code's
+      // `EditorPart.shouldRestoreFocus`.
+      if (mode === "preview") keepFocusRef.current = true;
     },
     [onOpenFile, session],
   );
 
+  /**
+   * A row was activated by a pointer or, through `dispatch`, by a key.
+   *
+   * `mode` DEFAULTS TO PINNED, which is the keyboard's answer: VS Code's tree
+   * opens preview on a single click and PINNED on Enter
+   * (`explorerView.ts:532-549` reads `editorOptions.pinned` off the open
+   * event, which its list sets for a keyboard open), because a user arrowing
+   * to a file and pressing Enter has chosen it rather than browsed past it.
+   */
   const selectRow = useCallback(
-    (rowId: string) => {
+    (rowId: string, mode: FileOpenMode = "pinned") => {
       if (session === null) return;
       const index = session.model.getIndexOf(rowId);
       if (index === -1) return;
       session.setFocusedRowId(rowId);
-      activateRow(session.model.getRow(index));
+      activateRow(session.model.getRow(index), mode);
     },
     [activateRow, session],
+  );
+
+  /**
+   * Ask for a delete. It OPENS THE CONFIRMATION and never writes.
+   *
+   * The disposition the caller chose (the key, or the menu row) travels into
+   * the dialog so the sentence the user reads is the one their action implied.
+   */
+  const requestDelete = useCallback(
+    (rowId: string, permanent: boolean) => {
+      if (session === null) return;
+      const node = session.model.nodeOf(rowId);
+      if (node === null) return;
+      setDeleteRequest({ node, mode: permanent ? "permanent" : "trash" });
+    },
+    [session],
+  );
+
+  /** Open the name box for a new entry, in the directory the row implies. */
+  const requestCreate = useCallback(
+    (rowId: string | null, kind: "file" | "directory") => {
+      if (session === null) return;
+      // The rule is the SESSION's, so this route and the header's cannot drift
+      // apart: a directory takes the new entry, a file gives it to its parent.
+      void session.beginCreate(session.createParentId(rowId), kind);
+    },
+    [session],
+  );
+
+  /** Open the row's menu, anchored where the caller says. */
+  const openMenu = useCallback(
+    (rowId: string, x: number, y: number) => {
+      if (session === null) return;
+      const node = session.model.nodeOf(rowId);
+      if (node === null) return;
+      session.setFocusedRowId(rowId);
+      setMenu({ rowId, name: node.name, x, y });
+    },
+    [session],
+  );
+
+  const onMenuSelect = useCallback(
+    (action: ExplorerMenuAction, rowId: string) => {
+      if (session === null) return;
+      switch (action) {
+        case "newFile":
+          requestCreate(rowId, "file");
+          return;
+        case "newFolder":
+          requestCreate(rowId, "directory");
+          return;
+        case "rename":
+          session.beginRename(rowId);
+          return;
+        case "delete":
+          requestDelete(rowId, false);
+          return;
+        case "deletePermanent":
+          requestDelete(rowId, true);
+          return;
+      }
+    },
+    [requestCreate, requestDelete, session],
   );
 
   const dispatch = useCallback(
@@ -277,12 +459,39 @@ export function ExplorerTree({
         }
         case "activate": {
           if (liveIndex === -1) return true;
-          activateRow(session.model.getRow(current));
+          // PINNED, as VS Code's Enter is. See `selectRow`.
+          activateRow(session.model.getRow(current), "pinned");
           return true;
         }
         case "toggle": {
           const row = session.model.getRow(current);
           if (row.kind === "node" && row.node.kind === "directory") session.toggle(row.id);
+          return true;
+        }
+        case "rename": {
+          const row = session.model.getRow(current);
+          if (liveIndex !== -1 && row.kind === "node") session.beginRename(row.id);
+          return true;
+        }
+        case "delete": {
+          const row = session.model.getRow(current);
+          // NOTHING IS DELETED HERE. The key opens the confirmation, and the
+          // confirmation is the only caller of the write.
+          if (liveIndex !== -1 && row.kind === "node") {
+            requestDelete(row.id, intent.permanent);
+          }
+          return true;
+        }
+        case "contextMenu": {
+          const row = session.model.getRow(current);
+          if (liveIndex === -1 || row.kind !== "node") return true;
+          // A KEYBOARD opening has no pointer, so the menu anchors on the row's
+          // own rectangle and appears attached to what it acts on.
+          const element = treeRef.current?.querySelector<HTMLElement>(
+            `[data-row-id="${CSS.escape(row.id)}"]`,
+          );
+          const rect = element?.getBoundingClientRect();
+          openMenu(row.id, rect?.left ?? 0, rect?.bottom ?? 0);
           return true;
         }
         case "typeAhead": {
@@ -303,7 +512,7 @@ export function ExplorerTree({
         }
       }
     },
-    [activateRow, moveFocusTo, session, virtualizer],
+    [activateRow, moveFocusTo, openMenu, requestDelete, session, virtualizer],
   );
 
   /**
@@ -395,6 +604,42 @@ export function ExplorerTree({
         {items.map((item) => {
           if (session === null || item.index >= session.model.getRowCount()) return null;
           const row = session.model.getRow(item.index);
+          if (row.kind === "edit") {
+            return (
+              <div
+                key={item.key}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${String(item.start)}px)`,
+                }}
+              >
+                <ExplorerEditRow
+                  domId={rowDomId(projectId, row.id)}
+                  intent={row.intent}
+                  level={row.level}
+                  posInSet={row.posInSet}
+                  setSize={row.setSize}
+                  initialName={row.initialName}
+                  message={row.message}
+                  submitting={row.submitting}
+                  validate={(name) => session.validateEditName(name)}
+                  onCommit={(name) => {
+                    void session.commitEdit(name);
+                  }}
+                  onCancel={() => {
+                    session.cancelEdit();
+                    // Focus goes back to the tree, not to the page: the box was
+                    // the only focusable thing in here, and a cancel that left
+                    // focus on `body` would strand the user's arrow keys.
+                    treeRef.current?.focus({ preventScroll: true });
+                  }}
+                />
+              </div>
+            );
+          }
           const presentation = describeRow(row);
           const descriptionId =
             presentation.description === null ? null : `${rowDomId(projectId, row.id)}-desc`;
@@ -422,15 +667,50 @@ export function ExplorerTree({
                 loading={presentation.loading}
                 errored={presentation.errored}
                 focused={focusedRowId === row.id}
-                selected={selectedRowId === row.id}
+                open={openedRowId === row.id}
                 describedById={descriptionId}
                 description={presentation.description}
+                driftLabel={
+                  row.kind === "node" && row.node.kind === "file"
+                    ? driftedPaths?.get(row.node.path) ?? null
+                    : null
+                }
+                pending={row.kind === "node" ? row.pending : null}
                 onSelect={selectRow}
+                onContextMenu={row.kind === "node" ? openMenu : null}
               />
             </div>
           );
         })}
       </div>
+
+      {/* CHROME OVER THE TREE, not inside it: a `role="tree"` may contain only
+        * tree items, and a menu or a dialog in there would put controls into
+        * the arrow-key sequence a screen reader walks. */}
+      <ExplorerRowMenu
+        request={menu}
+        onSelect={onMenuSelect}
+        onClose={() => {
+          setMenu(null);
+          treeRef.current?.focus({ preventScroll: true });
+        }}
+      />
+      <ExplorerDeleteDialog
+        request={deleteRequest}
+        onClose={() => {
+          setDeleteRequest(null);
+          treeRef.current?.focus({ preventScroll: true });
+        }}
+        onConfirm={async (node, mode) => {
+          if (session === null) {
+            return { ok: false, code: null, message: "This project is no longer open." };
+          }
+          const outcome = await session.deleteNode(node.nodeId, mode);
+          return outcome.ok
+            ? { ok: true }
+            : { ok: false, code: outcome.code, message: outcome.message };
+        }}
+      />
     </div>
   );
 }
@@ -468,7 +748,7 @@ interface RowPresentation {
  * three ternaries inside JSX, and so a row kind added to the model shows up
  * here as a missing branch.
  */
-function describeRow(row: ExplorerRowModel): RowPresentation {
+function describeRow(row: Exclude<ExplorerRowModel, { kind: "edit" }>): RowPresentation {
   if (row.kind === "loadMore") {
     return {
       label:

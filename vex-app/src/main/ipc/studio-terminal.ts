@@ -31,11 +31,13 @@ import {
   terminalPersistWorkspaceInputSchema,
   terminalPortTicketSchema,
   terminalResizeInputSchema,
+  terminalShellCatalogueSchema,
   terminalWorkspaceRestoreSchema,
   terminalWriteInputSchema,
   terminalOutcomeSchema,
   type TerminalHostAvailability,
 } from "@shared/schemas/terminal.js";
+import { readShellCatalogue } from "../studio/shell-catalogue.js";
 import { terminalDomain } from "../studio/terminal-domain.js";
 import { registerHandler, type HandlerContext } from "./register-handler.js";
 
@@ -91,6 +93,7 @@ export function registerStudioTerminalHandlers(): Array<() => void> {
             await terminalDomain().create(
               windowIdOf(ctx),
               input.projectId,
+              input.shellId,
               input.cols,
               input.rows,
             ),
@@ -208,6 +211,24 @@ export function registerStudioTerminalHandlers(): Array<() => void> {
             await terminalDomain().openWorkspace(windowIdOf(ctx), input.projectId),
           ),
         ),
+    }),
+
+    /**
+     * WHICH SHELLS the picker may offer, and which one is preselected.
+     *
+     * READ-ONLY and side-effect free: it probes the filesystem for the
+     * catalogue's candidate paths and returns ids, labels and a boolean. NO
+     * PATH is in the answer, which is what keeps a compromised renderer from
+     * learning where anything lives, and the answer is ADVISORY - `create`
+     * re-resolves the chosen id in main before it spawns anything, so a stale
+     * or tampered catalogue cannot widen what may be launched.
+     */
+    registerHandler({
+      channel: CH.terminal.shellCatalogue,
+      domain: "studio",
+      inputSchema: empty,
+      outputSchema: terminalShellCatalogueSchema,
+      handle: async () => ok(await readShellCatalogue()),
     }),
 
     registerHandler({

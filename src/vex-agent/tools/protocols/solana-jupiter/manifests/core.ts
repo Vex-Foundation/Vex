@@ -49,9 +49,9 @@ export const CORE_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "category", type: "string", enum: ["toptrending", "toptraded", "toporganicscore", "recent", "lst", "verified", "stocks"], description: "Category: recent (freshly launched tokens, newest first — measured live: ages 10-175 s since mint, createdAt on every row; use for brand-new/fresh tokens), toptrending (most price movement), toptraded (highest volume), toporganicscore (highest real/organic activity), verified (Jupiter-verified), lst (liquid staking), stocks (tokenized equities, e.g. Ondo, Remora)." },
+      { key: "category", type: "string", enum: ["toptrending", "toptraded", "toporganicscore", "recent", "lst", "verified", "stocks"], description: "Category: recent (freshly launched tokens, newest first - measured live: ages 10-175 s since mint, createdAt on every row; use for brand-new/fresh tokens), toptrending (most price movement), toptraded (highest volume), toporganicscore (highest real/organic activity), verified (Jupiter-verified), lst (liquid staking), stocks (tokenized equities, e.g. Ondo, Remora)." },
       { key: "interval", type: "string", enum: ["5m", "1h", "6h", "24h"], description: "Time interval: 5m, 1h, 6h, 24h." },
-      { key: "limit", type: "number", description: "Max rows returned (default 20). Server-side for the top* categories; applied Vex-side for recent/lst/verified/stocks with returned/totalMatched/hasMore accounting — nothing is silently dropped." },
+      { key: "limit", type: "number", description: "Max rows returned (default 20). Server-side for the top* categories; applied Vex-side for recent/lst/verified/stocks with returned/totalMatched/hasMore accounting - nothing is silently dropped." },
       { key: "statsInterval", type: "string", enum: ["5m", "1h", "6h", "24h", "all"], description: "Which stats window to include per token: 5m, 1h, 6h, or 24h, or all for every window (default: same as interval, or 1h)." },
       { key: "minOrganicScore", type: "number", description: "Only include tokens with organicScore >= this value (0-100). Rejected if out of range." },
       { key: "verifiedOnly", type: "boolean", description: "Only include Jupiter-verified tokens." },

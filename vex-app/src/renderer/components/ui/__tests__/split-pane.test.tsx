@@ -120,6 +120,67 @@ describe("SplitPane input paths", () => {
     expect(onResize).not.toHaveBeenCalled();
   });
 
+  /**
+   * THE SEAM STAYS LIT FOR THE WHOLE DRAG.
+   *
+   * The defect this guards is invisible in a screenshot and obvious in the
+   * hand: pointer capture pulls the cursor off the 8px strip within a few
+   * pixels, so a `:hover`-only highlight goes dark the instant the drag starts.
+   * VS Code's sash carries a separate `.active` state for exactly this, and
+   * `data-dragging` is ours. Asserted on the ATTRIBUTE rather than on a
+   * computed colour, because jsdom does not resolve Tailwind variants and the
+   * attribute is the contract the stylesheet keys off.
+   */
+  it("marks the separator as dragging for the whole drag, and clears it after", () => {
+    render(
+      <SplitPane orientation="horizontal" sizes={[0.5, 0.5]} onResize={vi.fn()} className="strip">
+        {[<div key="a">A</div>, <div key="b">B</div>]}
+      </SplitPane>,
+    );
+    sizeContainer(1000);
+
+    const separator = screen.getByRole("separator");
+    expect(separator.hasAttribute("data-dragging")).toBe(false);
+
+    fireEvent.pointerDown(separator, { button: 0, clientX: 500, pointerId: 1 });
+    expect(separator.hasAttribute("data-dragging")).toBe(true);
+    fireEvent.pointerMove(separator, { clientX: 700, pointerId: 1 });
+    expect(separator.hasAttribute("data-dragging")).toBe(true);
+
+    fireEvent.pointerUp(separator, { pointerId: 1 });
+    expect(separator.hasAttribute("data-dragging")).toBe(false);
+  });
+
+  it("clears the dragging mark when the pointer is CANCELLED, not only on up", () => {
+    // A cancelled pointer (the OS took it, a touch became a scroll) ends the
+    // drag through the same handler; a seam left lit afterwards would advertise
+    // a drag that is not happening.
+    render(
+      <SplitPane orientation="horizontal" sizes={[0.5, 0.5]} onResize={vi.fn()} className="strip">
+        {[<div key="a">A</div>, <div key="b">B</div>]}
+      </SplitPane>,
+    );
+    sizeContainer(1000);
+
+    const separator = screen.getByRole("separator");
+    fireEvent.pointerDown(separator, { button: 0, clientX: 500, pointerId: 1 });
+    fireEvent.pointerCancel(separator, { pointerId: 1 });
+    expect(separator.hasAttribute("data-dragging")).toBe(false);
+  });
+
+  it("does not mark a non-primary press as a drag", () => {
+    render(
+      <SplitPane orientation="horizontal" sizes={[0.5, 0.5]} onResize={vi.fn()} className="strip">
+        {[<div key="a">A</div>, <div key="b">B</div>]}
+      </SplitPane>,
+    );
+    sizeContainer(1000);
+
+    const separator = screen.getByRole("separator");
+    fireEvent.pointerDown(separator, { button: 2, clientX: 500, pointerId: 1 });
+    expect(separator.hasAttribute("data-dragging")).toBe(false);
+  });
+
   it("ignores a non-primary button, so a context menu does not resize", () => {
     const onResize = vi.fn();
     render(

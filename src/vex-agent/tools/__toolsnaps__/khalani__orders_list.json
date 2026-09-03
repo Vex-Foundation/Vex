@@ -30,7 +30,7 @@
                 "type": "array"
               }
             ],
-            "description": "Comma-separated order IDs to filter. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+            "description": "Comma-separated order IDs to filter. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) - the two are equivalent."
           },
           "toChain": {
             "description": "Destination chain filter (ID or alias).",

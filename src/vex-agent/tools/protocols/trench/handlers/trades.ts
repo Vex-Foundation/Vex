@@ -1,10 +1,10 @@
 /**
- * `trench.trades` handler — per-token trade tape over the undocumented
+ * `trench.trades` handler - per-token trade tape over the undocumented
  * `/api/trades` endpoint (READ-ONLY). `page` is REQUIRED by the provider.
  *
  * The endpoint is undocumented, so the output labels itself provisional and the
  * reader stays tolerant (display-grade fields nullable). Trade rows carry no
- * `token` field — the token is the query parameter — so it is echoed back for
+ * `token` field - the token is the query parameter - so it is echoed back for
  * the caller's context.
  */
 
@@ -67,7 +67,7 @@ export async function trenchTradesHandler(p: Record<string, unknown>) {
       token,
       page: pageRead.value ?? 0,
       count: rows.length,
-      source: "undocumented launchpad endpoint — treat as provisional",
+      source: "undocumented launchpad endpoint - treat as provisional",
       trades: rows.map(projectTrade),
     });
   } catch (err) {

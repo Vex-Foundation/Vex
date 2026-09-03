@@ -6,14 +6,14 @@ const CHAIN_PARAM = {
   key: "chain",
   type: "string" as const,
   required: true,
-  description: "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
+  description: "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
 };
 
 const MARKET_PARAM = {
   key: "market",
   type: "string" as const,
   required: true,
-  description: "The Pendle MARKET (LP) CONTRACT ADDRESS — the LP anchor liquidity is added to or removed from.",
+  description: "The Pendle MARKET (LP) CONTRACT ADDRESS - the LP anchor liquidity is added to or removed from.",
 };
 
 export const PENDLE_LP_TOOLS: readonly ProtocolToolManifest[] = [
@@ -32,7 +32,7 @@ export const PENDLE_LP_TOOLS: readonly ProtocolToolManifest[] = [
       MARKET_PARAM,
       { key: "tokenIn", type: "string", description: "ADD only: the payment token CONTRACT ADDRESS to deposit (ERC-20; use WETH for ETH)." },
       { key: "tokenOut", type: "string", description: "REMOVE only: the output token CONTRACT ADDRESS. Defaults to the market's underlying asset." },
-      { key: "amountIn", type: "string", required: true, description: "Human-readable amount — add: the payment token amount; remove: the LP token amount to burn." },
+      { key: "amountIn", type: "string", required: true, description: "Human-readable amount - add: the payment token amount; remove: the LP token amount to burn." },
       { key: "slippageBps", type: "number", unit: "bps", description: `Slippage tolerance in basis points (default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%).` },
     ],
     exampleParams: { chain: "ethereum", direction: "add", market: "0x34280882267ffa6383b363e278b027be083bbe3b", tokenIn: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0", amountIn: "1" },

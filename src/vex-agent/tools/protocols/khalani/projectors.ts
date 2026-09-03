@@ -5,12 +5,12 @@
  * `chains.list` returns a full `KhalaniChain[]` with `rpcUrls`/`blockExplorers`,
  * `tokens.{top,search,balances}` and `tokens.autocomplete` return full
  * `KhalaniToken` rows carrying a `logoURI` plus an open `extensions[key:unknown]`
- * passthrough bag. On the hot pre-mutation path (`tokens.search` — the canonical
+ * passthrough bag. On the hot pre-mutation path (`tokens.search` - the canonical
  * cross-chain contract resolver) and on `chains.list`/`autocomplete` this is the
  * biggest byte sink in the Khalani bundle and dilutes the contract/price signal.
  *
- * These pure projectors strip that noise at the handler seam — BEFORE the result
- * is serialized — so the model sees a lean, decision-relevant row: token identity
+ * These pure projectors strip that noise at the handler seam - BEFORE the result
+ * is serialized - so the model sees a lean, decision-relevant row: token identity
  * plus the lifted price/balance/risk signal, and chain identity plus native-coin
  * facts. Every Khalani read tool is `mutating:false` / `actionKind:"read"` with
  * no `_tradeCapture`, so trimming both the output string and the unused `data` is
@@ -18,7 +18,7 @@
  *
  * The internal rpc/explorer resolvers (`getChainRpcUrl`/`getChainExplorerUrl` in
  * `@tools/khalani/chains.js`) read `rpcUrls`/`blockExplorers` off the CACHED chain
- * REGISTRY (`getCachedKhalaniChains()`), never off this projected tool output — so
+ * REGISTRY (`getCachedKhalaniChains()`), never off this projected tool output - so
  * dropping those provider-metadata blocks here does not affect chain resolution or
  * bridging.
  *
@@ -28,7 +28,7 @@
  * Every field read is defensive: the shapes come from an external API, so missing
  * / null / wrong-typed fields are normalised rather than assumed present. Note:
  * `KhalaniTokenMeta` (the `fromTokenMeta`/`toTokenMeta` on `KhalaniOrder`) is a
- * DIFFERENT, already-minimal shape (`{symbol,decimals,logoURI?}`) — it is NOT a
+ * DIFFERENT, already-minimal shape (`{symbol,decimals,logoURI?}`) - it is NOT a
  * `KhalaniToken`, so it is intentionally NOT routed through `projectToken`.
  */
 
@@ -61,7 +61,7 @@ export interface ConciseKhalaniToken {
  * Concise Khalani chain row. KEEPS chain identity (`id`/`name`/`type`) and the
  * native-coin facts an agent needs to reason about amounts (`nativeSymbol`/
  * `nativeDecimals`, lifted from `nativeCurrency`). DROPS `rpcUrls`,
- * `blockExplorers`, and other heavy provider metadata — those are resolved
+ * `blockExplorers`, and other heavy provider metadata - those are resolved
  * internally from the cached registry, not from this output.
  */
 export interface ConciseKhalaniChain {
@@ -78,7 +78,7 @@ export interface ConciseKhalaniChain {
  * KEEPS the route identity/pricing/ETA an agent picks a route with, PLUS the
  * quote's own DEADLINE. The deadline used to be dropped even though
  * `handlers/bridge-execute.ts` hard-fails (`deadline_expired`) on exactly it
- * — so `khalani.quote.get` told the agent nothing about how long its quote
+ * - so `khalani.quote.get` told the agent nothing about how long its quote
  * was good for. Both raw provider timestamps are surfaced alongside the
  * single EFFECTIVE deadline the executor enforces, so the agent never has to
  * re-derive the precedence rule (see {@link khalaniRouteExpiryUnixSeconds}).
@@ -93,7 +93,7 @@ export interface ConciseKhalaniQuoteRoute {
   etaSeconds: number;
   /**
    * The deadline `khalani.bridge` actually enforces, unix SECONDS.
-   * `null` means the provider set none (both timestamps absent or 0) — the
+   * `null` means the provider set none (both timestamps absent or 0) - the
    * executor skips the freshness check in exactly that case.
    */
   expiresAtUnixSeconds: number | null;
@@ -103,7 +103,7 @@ export interface ConciseKhalaniQuoteRoute {
   validBeforeUnixSeconds: number;
   /** Raw provider `quote.quoteExpiresAt`, unix seconds; takes precedence over `validBefore` when present. `null` when the provider omitted it. */
   quoteExpiresAtUnixSeconds: number | null;
-  /** Provider gas estimate for the deposit leg, raw provider string (units are the provider's own, unlabeled — not a USD figure). `null` when absent. */
+  /** Provider gas estimate for the deposit leg, raw provider string (units are the provider's own, unlabeled - not a USD figure). `null` when absent. */
   estimatedGas: string | null;
   tags: string[] | null;
 }
@@ -123,7 +123,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * `handlers/bridge-execute.ts` (the hard `deadline_expired` gate) and the
  * `khalani.quote.get` / dryRun previews all read it through here, so the
  * deadline an agent is SHOWN can never drift from the deadline that is
- * ENFORCED. Values are untrusted provider numbers — non-finite is treated as
+ * ENFORCED. Values are untrusted provider numbers - non-finite is treated as
  * "no deadline", never as `NaN` arithmetic.
  */
 export function khalaniRouteExpiryUnixSeconds(route: QuoteRoute): number | null {
@@ -154,7 +154,7 @@ export function projectToken(t: KhalaniToken): ConciseKhalaniToken {
     decimals: t.decimals,
   };
 
-  // `extensions` is an open bag from an external API — narrow every read.
+  // `extensions` is an open bag from an external API - narrow every read.
   const ext: unknown = t.extensions;
   if (isRecord(ext)) {
     const price: unknown = ext.price;

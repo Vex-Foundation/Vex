@@ -11,21 +11,21 @@
  * returns arrives at 1,000,000 native units = $1.00 ("micro-USD"), per
  * developers.jup.ag/docs/prediction's "Numeric-format hazard" note
  * (recon-docs-prediction.md §2: "All USD-denominated fields are 'micro USD'
- * strings ... never parseFloat/Number") — confirmed live for the market
+ * strings ... never parseFloat/Number") - confirmed live for the market
  * pricing fields (see `JupiterPredictionUnits.md`). Before W1-B every money
  * field was passed through RAW: an agent reading `volumeUsd:
  * "26003599000000"` would reasonably believe that was $26 trillion, not ~$26M.
  * Each one now becomes an exact-decimal dollar string plus a `<field>Micro`
- * sibling carrying the untouched raw magnitude — both agent-visible, per the
+ * sibling carrying the untouched raw magnitude - both agent-visible, per the
  * owner's money convention.
  *
  * ALL CONVERSION IS PURE BASE-10 DIGIT-STRING SHIFTING (or BigInt, for token
- * units). No `parseFloat`, no `Number`, no float division — the on-chain
+ * units). No `parseFloat`, no `Number`, no float division - the on-chain
  * u64/u128/i128 magnitudes the docs warn about must never lose precision.
  *
  * TOKEN UNITS ARE A DIFFERENT FAMILY FROM MICRO-USD, and conflating them is
  * the defect class this whole phase is fixing. `transferAmountToken` is a
- * TOKEN amount (the payout asset's own decimals), not a dollar figure — see
+ * TOKEN amount (the payout asset's own decimals), not a dollar figure - see
  * `describePredictionTransferAmount`.
  */
 
@@ -41,7 +41,7 @@ import type { JupiterPredictionHistoryEvent } from "@tools/solana-ecosystem/jupi
 
 // ── Micro-USD conversion (exact-decimal USD string + raw *Micro sibling) ──
 
-/** 1,000,000 native units = $1.00 (6 implied decimals) — see file header. */
+/** 1,000,000 native units = $1.00 (6 implied decimals) - see file header. */
 const MICRO_USD_DECIMALS = 6;
 
 /** Strip a leading run of zeros that isn't the whole (single-digit) string. */
@@ -85,7 +85,7 @@ export function microUsdToDollarString(raw: string | number | null | undefined):
  * The untouched upstream micro-USD magnitude, always surfaced as a string
  * (never a bare JS number, so large on-chain integers never round-trip
  * through float precision). Unlike {@link microUsdToDollarString}, this never
- * validates — the whole point of the raw sibling is to preserve exactly what
+ * validates - the whole point of the raw sibling is to preserve exactly what
  * was received, even if it turns out to be unparseable.
  */
 function microUsdRawSibling(raw: string | number | null | undefined): string | null {
@@ -114,10 +114,10 @@ export function convertMicroUsdFields(
  * price fields in the same object: a fixture cross-check (see
  * `JupiterPredictionUnits.md`) shows it already arrives in whole dollars, not
  * micro-USD (it matched the parent event's micro-USD `volumeUsd` string
- * divided by 1e6 exactly). Confidence: inferred, single data point —
+ * divided by 1e6 exactly). Confidence: inferred, single data point -
  * re-verify against a second live market before treating this as settled
  * fact. Only a plain string conversion happens here (never a bare JS number
- * for money, per the owner's money convention) — no synthetic `*Micro`
+ * for money, per the owner's money convention) - no synthetic `*Micro`
  * sibling is added because there is no confirmed native micro-scaled form of
  * this field to preserve; inventing one would fabricate provenance the
  * provider never actually sent.
@@ -132,11 +132,11 @@ export function wholeDollarToExactString(raw: number | undefined): string | null
 /**
  * The `*Usd`-suffixed money fields on a `GET /history` event (docs: "all
  * USD-denominated fields are micro-USD"), plus `realizedPnl` /
- * `realizedPnlBeforeFees` — CONFIRMED micro-USD (F2, developers.jup.ag/docs/
+ * `realizedPnlBeforeFees` - CONFIRMED micro-USD (F2, developers.jup.ag/docs/
  * prediction/position-data: "Realized P&L in micro USD" / "Realized P&L
  * before fees in micro USD") despite carrying no `Usd` suffix themselves.
  * `transferAmountToken` is deliberately EXCLUDED and handled separately below
- * — the SAME doc page confirms it is "Token amount transferred (native token
+ * - the SAME doc page confirms it is "Token amount transferred (native token
  * units)", a DIFFERENT unit family (the transferred token's own decimals, not
  * this domain's fixed 6-decimal micro-USD scale); converting it with the
  * micro-USD shift would fabricate a wrong dollar amount.
@@ -157,7 +157,7 @@ const HISTORY_MONEY_FIELDS = [
  * must travel with the decimals needed to read it" is the standing money rule;
  * this is that rule applied to the one prediction field that violated it.
  *
- * WHY JupUSD, CONCRETELY. The asset is not guessed — it is the same constant
+ * WHY JupUSD, CONCRETELY. The asset is not guessed - it is the same constant
  * the payout leg and the settlement decoder assert, and this exact field is
  * how it was corroborated. On the live 2026-07-25 capture
  * (`agents_dm/predict-read-shapes/history.json`), the `order_closed` event's
@@ -198,7 +198,7 @@ export function describePredictionTransferAmount(
   };
 }
 
-/** `null` — never an approximation — when the raw value is not a readable integer. */
+/** `null` - never an approximation - when the raw value is not a readable integer. */
 function exactTokenAmount(raw: string): string | null {
   if (!/^-?\d+$/.test(raw)) return null;
   try {
@@ -211,12 +211,12 @@ function exactTokenAmount(raw: string): string | null {
 /**
  * Restate a metadata object's display-only `closeTime` in ONE unambiguous
  * shape: the untouched raw wire value stays put (provenance), and
- * `closeTimeIso` carries the same instant as ISO-8601 UTC — the same
+ * `closeTimeIso` carries the same instant as ISO-8601 UTC - the same
  * "converted value + raw sibling" pairing {@link convertMicroUsdFields} uses
  * for money.
  *
  * Needed because the provider serializes this field two ways (ISO string on
- * `/events*`, unix-SECONDS number on `/positions`+`/history` — see
+ * `/events*`, unix-SECONDS number on `/positions`+`/history` - see
  * `prediction-api/close-time.ts`). `GET /history` is the only projection that
  * forwards these metadata objects WHOLE, so it is the only place the
  * polymorphism can reach the agent; every other prediction projection curates
@@ -233,13 +233,13 @@ function withCloseTimeIso(metadata: unknown): unknown {
 
 /**
  * Convert a `GET /history` event's money fields in place. Every other field
- * (ids, timestamps, contracts-family quantities) passes through untouched —
+ * (ids, timestamps, contracts-family quantities) passes through untouched -
  * this is a money-correctness fix, not a field-set redesign, with two
  * deliberate exceptions: `transferAmountToken` is replaced by the labelled
  * sibling set from {@link describePredictionTransferAmount} (raw value
  * preserved under `transferAmountTokenRaw`, plus the mint/symbol/decimals
  * needed to read it) so it can never be mistaken for one of the dozen
- * converted `*Usd` dollar strings surrounding it in the same object — and
+ * converted `*Usd` dollar strings surrounding it in the same object - and
  * `eventMetadata`/`marketMetadata`, which get a unit-explicit `closeTimeIso`
  * sibling per {@link withCloseTimeIso}.
  */

@@ -18,7 +18,7 @@ import type {
   SettingsSection,
   ShellScreenOrigin,
 } from "../../../stores/uiStore.js";
-import { EASE_STANDARD } from "../../../lib/motion.js";
+import { EASE_STANDARD } from "../../../lib/motion/index.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import { useWizardState } from "../../../lib/api/wizard.js";
 import { ShellScreen } from "./ShellScreen.js";

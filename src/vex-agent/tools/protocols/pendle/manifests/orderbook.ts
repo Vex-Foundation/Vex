@@ -8,7 +8,7 @@ import {
 } from "../market-read-params.js";
 
 /**
- * `pendle.orderbook` — resting limit-order depth Vex cannot trade against.
+ * `pendle.orderbook` - resting limit-order depth Vex cannot trade against.
  *
  * The description leads with that limitation because the tool's whole purpose is
  * disclosure: Vex pins `useLimitOrder: false` on every quote, and an agent that
@@ -24,7 +24,7 @@ export const PENDLE_ORDERBOOK_TOOL: ProtocolToolManifest = {
   lifecycle: "active",
   description:
     "Show the resting LIMIT-ORDER depth on one Pendle market: implied-APY levels with their sizes on the long-yield " +
-    "and short-yield sides, plus the best level on each side. Vex CANNOT FILL these orders — every Pendle quote and " +
+    "and short-yield sides, plus the best level on each side. Vex CANNOT FILL these orders - every Pendle quote and " +
     "trade Vex builds routes through the AMM only, so this is the price quality being forgone, not a price you can " +
     "take. Use this when you want to judge whether an AMM quote is competitive, how deep the market is around your " +
     "size, or how much price quality a limit order elsewhere would capture. RETURNS `summary`, `chain`, `market`, " +

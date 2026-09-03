@@ -1,5 +1,5 @@
 /**
- * `CompactApply` tool handler — a deliberately thin shell over `requestApply`.
+ * `CompactApply` tool handler - a deliberately thin shell over `requestApply`.
  *
  * Everything that could go wrong in a cutover (the lease, the lock order, the
  * money gate, the two-phase FSM) lives behind `requestApply` and the runner's
@@ -11,7 +11,7 @@
  * reported as what it is:
  *
  *   - a queued request is NOT a completed compaction, and the copy must not
- *     imply the context is already smaller — the agent would then plan the next
+ *     imply the context is already smaller - the agent would then plan the next
  *     turn against a budget it does not have;
  *   - `queued_no_live_runner` is an honest, durable "it will happen later",
  *     never an error and never a success claim;
@@ -20,7 +20,7 @@
  *     copy that tells it to simply carry on rather than retry in a loop.
  *
  * No `engineSignal` is returned on any path. `compact_committed` aborts the
- * rest of the tool batch, and nothing has been committed here — emitting it
+ * rest of the tool batch, and nothing has been committed here - emitting it
  * would discard the agent's remaining calls for a cutover that has not
  * happened yet.
  */
@@ -31,7 +31,7 @@ import { requestApply } from "@vex-agent/engine/compaction/apply/index.js";
 import logger from "@utils/logger.js";
 
 /**
- * The tool declares NO parameters, and nothing here reads one — the whole call
+ * The tool declares NO parameters, and nothing here reads one - the whole call
  * is `{ sessionId, source }` from the context. There used to be a
  * `z.object({}).passthrough()` guard with a rejection branch; passthrough
  * accepts every object, models only ever emit an object, and the branch's data
@@ -58,7 +58,7 @@ export async function handleCompactApply(
       return {
         success: true,
         output:
-          "Compaction queued. The runtime will apply it at the next safe boundary — " +
+          "Compaction queued. The runtime will apply it at the next safe boundary - " +
           "possibly before your next turn, possibly a little later if a payment, approval " +
           "or on-chain action is still unresolved. Context is NOT smaller yet; keep working " +
           "and you will see the reduced pressure once it lands.",
@@ -69,7 +69,7 @@ export async function handleCompactApply(
       return {
         success: true,
         output:
-          "A compaction was already queued for this conversation — this call added nothing. " +
+          "A compaction was already queued for this conversation - this call added nothing. " +
           "It will apply at the next safe boundary; no further action is needed from you.",
         data: { queued: true, already_requested: true, preparation_id: outcome.preparationId },
       };
@@ -94,7 +94,7 @@ export async function handleCompactApply(
         output:
           `No compaction is ready to apply right now (preparation state: ${outcome.status}). ` +
           "The runtime prepares one in the background and applies it automatically when needed. " +
-          "Continue with your work — do not retry this call.",
+          "Continue with your work - do not retry this call.",
         data: { applied: false, status: outcome.status },
       };
 
@@ -104,7 +104,7 @@ export async function handleCompactApply(
         output:
           "There is no prepared compaction for this conversation. The runtime forks one " +
           "automatically once context pressure reaches the warning band, and falls back to a " +
-          "deterministic compaction if that fails. Continue with your work — do not retry this call.",
+          "deterministic compaction if that fails. Continue with your work - do not retry this call.",
         data: { applied: false },
       };
   }

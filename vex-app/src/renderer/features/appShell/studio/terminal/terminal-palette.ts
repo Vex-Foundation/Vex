@@ -46,6 +46,22 @@ const ANSI_SLOTS = [
 const NEUTRAL = "rgba(128, 136, 152, 1)";
 
 /**
+ * Transparent, IN THE ONE SYNTAX XTERM ACCEPTS.
+ *
+ * xterm 6.0.0 resolves a theme colour with `css.toColor`, which takes hex
+ * (3-8 digits) and `rgb()/rgba()` directly and sends everything else to a 1x1
+ * canvas probe that THROWS when the result is not fully opaque
+ * (`css.toColor: Unsupported css format`). `ThemeService` swallows that throw
+ * and keeps its own default, `#000000`. So the CSS keyword `transparent` -
+ * which this bridge and the stylesheet both used to hand over - produced an
+ * OPAQUE BLACK canvas in both themes: the dark theme looked deliberate and the
+ * light theme shipped near-black ink on black. The 8-digit hex takes the fast
+ * path with alpha 0. Terminals are created with `allowTransparency: true` so
+ * that alpha reaches the renderer instead of being composited away.
+ */
+const TRANSPARENT = "#00000000";
+
+/**
  * Read one custom property off `element`'s computed style. An unknown property
  * returns the empty string, which is treated exactly like an absent one.
  */
@@ -64,9 +80,10 @@ function readVar(
  *
  * The BACKGROUND stays transparent by contract: the pane paints its own surface
  * and layers the brand watermark UNDER the terminal, so an opaque background
- * here would hide it. The stylesheet declares `transparent` in both themes and
+ * here would hide it. The stylesheet declares `#00000000` in both themes and
  * the fallback repeats it, because a fallback that painted a colour would break
- * the watermark exactly when the token lookup failed.
+ * the watermark exactly when the token lookup failed - and because the keyword
+ * `transparent` is not transparent to xterm at all (see {@link TRANSPARENT}).
  */
 export function readTerminalTheme(element: HTMLElement | null): ITheme {
   const styles =
@@ -75,10 +92,10 @@ export function readTerminalTheme(element: HTMLElement | null): ITheme {
       : null;
 
   const theme: Record<string, string> = {
-    background: readVar(styles, "--vex-alias-term-background", "transparent"),
+    background: readVar(styles, "--vex-alias-term-background", TRANSPARENT),
     foreground: readVar(styles, "--vex-alias-term-foreground", NEUTRAL),
     cursor: readVar(styles, "--vex-alias-term-cursor", NEUTRAL),
-    cursorAccent: readVar(styles, "--vex-alias-term-background", "transparent"),
+    cursorAccent: readVar(styles, "--vex-alias-term-background", TRANSPARENT),
     selectionBackground: readVar(
       styles,
       "--vex-alias-term-selection",

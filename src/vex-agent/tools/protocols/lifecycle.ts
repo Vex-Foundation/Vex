@@ -1,16 +1,16 @@
 /**
- * Protocol namespace lifecycle — single source of truth.
+ * Protocol namespace lifecycle - single source of truth.
  *
  * Each protocol namespace registered in `catalog.ts:NAMESPACE_MODULES` carries
  * one of three lifecycle states. The lifecycle is enforced at three boundaries:
  *
- *   1. **ToolSearch** — only `active` namespaces appear in the
+ *   1. **ToolSearch** - only `active` namespaces appear in the
  *      LLM-facing catalog.
- *   2. **execution** — only `active` namespaces are executable by
+ *   2. **execution** - only `active` namespaces are executable by
  *      default. `deprecated_hidden` namespaces refuse with a clear
  *      message; the user can opt-in via `VEX_ALLOW_DEPRECATED_PROTOCOLS=1`
  *      for migration-period workflows. `reserved` namespaces never execute.
- *   3. **tool_embeddings reembed** — only `active` namespaces are
+ *   3. **tool_embeddings reembed** - only `active` namespaces are
  *      re-embedded for dense discovery. Deprecated/reserved are skipped
  *      silently.
  *
@@ -29,7 +29,7 @@ export type NamespaceLifecycle = "active" | "deprecated_hidden" | "reserved";
 
 /**
  * Per-namespace lifecycle assignment. Adding a new namespace requires
- * a row here — TypeScript enforces totality via `Record<ProtocolNamespace, ...>`.
+ * a row here - TypeScript enforces totality via `Record<ProtocolNamespace, ...>`.
  */
 export const NAMESPACE_LIFECYCLE: Record<ProtocolNamespace, NamespaceLifecycle> = {
   khalani: "active",
@@ -79,7 +79,7 @@ export function isExecutableNamespace(ns: ProtocolNamespace): boolean {
  * True iff the namespace should be included in `tool_embeddings` reembed.
  *
  * Same defensive default as `isExecutableNamespace`: missing row defaults to
- * `active` (we'd rather embed an unknown namespace than skip it silently —
+ * `active` (we'd rather embed an unknown namespace than skip it silently -
  * the lint will catch it).
  */
 export function isReembeddableNamespace(ns: ProtocolNamespace): boolean {

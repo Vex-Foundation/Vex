@@ -3,21 +3,21 @@
  *
  * THE MEASUREMENT. Tavily populates `publishedDate` on 10/10 rows with
  * `topic: "news"` and 0/9 without it, in RFC 1123 form
- * (`"Fri, 24 Jul 2026 00:00:00 GMT"`) — and with MIXED PRECISION: on one live
+ * (`"Fri, 24 Jul 2026 00:00:00 GMT"`) - and with MIXED PRECISION: on one live
  * news window 9 rows carried a real second-level time and one carried
  * `00:00:00`, which means "that day", not midnight.
  *
  * THE CONTRACT. Three fields, because one number cannot carry all three facts:
  *
  *   `publishedAt`           the provider's own string, verbatim, or null
- *   `publishedAtMs`         a FINITE epoch ms, or null — never NaN
+ *   `publishedAtMs`         a FINITE epoch ms, or null - never NaN
  *   `publishedAtPrecision`  "day" | "second", present ONLY when Ms is non-null
  *
  * A midnight-UTC instant is reported as `"day"` precision. A genuine midnight
  * publication is indistinguishable from a date-only value in this data, so the
  * conservative reading wins: the agent is told the day is trustworthy and the
- * time of day is not. The alternative — dropping the value, or reporting
- * second precision — would either lose the date or fabricate a time.
+ * time of day is not. The alternative - dropping the value, or reporting
+ * second precision - would either lose the date or fabricate a time.
  *
  * A value the provider sent but we cannot parse is NOT discarded: the string
  * survives on `publishedAt` while `publishedAtMs` is null, so the agent can see

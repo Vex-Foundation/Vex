@@ -75,3 +75,57 @@ export function crossModeApprovalToast(input: {
   if (input.othersAwaiting <= 0) return line;
   return `${line}, and ${String(input.othersAwaiting)} more awaiting`;
 }
+
+/** The eyebrow above the actor line in the approval card's details. */
+export const APPROVAL_ACTOR_FIELD_LABEL = "Requested by";
+
+/** The eyebrow above the approval's own identifier. */
+export const APPROVAL_PROPOSAL_FIELD_LABEL = "Proposal";
+
+/** The eyebrow above the moment this approval stops being decidable. */
+export const APPROVAL_EXPIRY_FIELD_LABEL = "Expires";
+
+/** What the card says when no MCP client name was recorded. */
+export const APPROVAL_UNNAMED_MCP_CLIENT = "an MCP client";
+
+/**
+ * WHO proposed this action, as one sentence for the card's actor row.
+ *
+ * Rule 90 binds an approval to its actor AND to whether an agent proposed it,
+ * and the two are one fact for a reader: "Claude Code (an MCP client) in
+ * project vex-studio" answers both at once. The three inputs are the three
+ * things Vex actually knows, and none of them is derived from model input:
+ *
+ *   - `origin` is the durable provenance column (`agent` / `studio_mcp`), the
+ *     only one of the three that is authority-relevant;
+ *   - `requestedByClient` is the client's self-declared `initialize` name,
+ *     sanitized and bounded at both boundaries it crosses. An absent name is
+ *     the honest {@link APPROVAL_UNNAMED_MCP_CLIENT}, NEVER a blank row;
+ *   - the project display is where the client is working.
+ *
+ * `null` means there is no actor row to render: an approval with no recorded
+ * provenance must not be captioned "Vex's agent", because a Studio-originated
+ * row wearing that caption is a lie about authority (see
+ * `normaliseIntentOrigin`).
+ *
+ * NOT "Terminal N". The terminal a client runs in is not knowable here: a
+ * Studio MCP connection binds a `projectId` in its handshake line and nothing
+ * else, and one project's endpoint serves every terminal in it. The project is
+ * the finest true answer, so it is the one given.
+ */
+export function approvalActorLine(input: {
+  readonly origin: "agent" | "studio_mcp" | null;
+  readonly requestedByClient: string | null;
+  readonly projectId: string | null;
+  readonly projectName: string | null;
+}): string | null {
+  if (input.origin === null) return null;
+  if (input.origin === "agent") return "Vex's own agent";
+  const trimmed = input.requestedByClient?.trim() ?? "";
+  const who =
+    trimmed.length > 0
+      ? `${trimmed} (an MCP client)`
+      : APPROVAL_UNNAMED_MCP_CLIENT;
+  if (input.projectId === null) return who;
+  return `${who} in ${approvalProjectDisplay(input.projectId, input.projectName)}`;
+}

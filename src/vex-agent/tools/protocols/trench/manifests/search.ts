@@ -1,7 +1,7 @@
 import type { ProtocolToolManifest } from "../../types.js";
 import { TRENCH_SEARCH_DISCOVERY } from "../../embeddings/trench/search.js";
 
-// Trench Express name/symbol search — READ-ONLY. Thin wrapper over the
+// Trench Express name/symbol search - READ-ONLY. Thin wrapper over the
 // launchpad `/api/search` endpoint.
 
 export const TRENCH_SEARCH_TOOLS: readonly ProtocolToolManifest[] = [

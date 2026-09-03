@@ -50,6 +50,7 @@ import {
 
 import {
   STUDIO_TEST_BRIEF,
+  STUDIO_TEST_ENVIRONMENT,
   STUDIO_TEST_FACTS,
   existingConfigFixture,
 } from "./render-fixtures.js";
@@ -509,17 +510,18 @@ describe("JSON merges", () => {
  * of the fresh file, the bytes after a merge into a user's existing file, and
  * the bytes after a remove. `AGENTS.md` is the one file whose content changes
  * with the project, so its goldens are rendered from the fixed
- * `STUDIO_TEST_BRIEF` rather than from a live inventory.
+ * `STUDIO_TEST_BRIEF` and the fixed `STUDIO_TEST_ENVIRONMENT` rather than from a
+ * live inventory or the machine's own provider keys.
  */
 describe("AGENTS.md and CLAUDE.md", () => {
   const USER_AGENTS = "# Contributing\n\nRun the tests before you push.\n";
   const USER_CLAUDE = "# My rules\n\nBe brief.\n";
 
   it("renders the committed AGENTS.md goldens", () => {
-    compareGolden("AGENTS.fresh.md", renderStudioManagedBlock(STUDIO_TEST_BRIEF));
+    compareGolden("AGENTS.fresh.md", renderStudioManagedBlock(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT));
     compareGolden("AGENTS.existing.md", USER_AGENTS);
     const merged = textOf(
-      mergeStudioManagedBlock(USER_AGENTS, STUDIO_TEST_BRIEF, { overwriteDrift: false }),
+      mergeStudioManagedBlock(USER_AGENTS, STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }),
       "AGENTS.md merge",
     );
     compareGolden("AGENTS.merged.md", merged);
@@ -542,7 +544,7 @@ describe("AGENTS.md and CLAUDE.md", () => {
 
   it("returns AGENTS.md to the user's original bytes after merge then remove", () => {
     const merged = textOf(
-      mergeStudioManagedBlock(USER_AGENTS, STUDIO_TEST_BRIEF, { overwriteDrift: false }),
+      mergeStudioManagedBlock(USER_AGENTS, STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }),
       "AGENTS.md merge",
     );
     expect(textOf(removeStudioManagedBlock(merged), "AGENTS.md remove")).toBe(USER_AGENTS);

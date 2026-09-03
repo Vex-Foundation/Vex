@@ -1,5 +1,5 @@
 /**
- * Wallet read handler — live balance snapshot for configured wallets.
+ * Wallet read handler - live balance snapshot for configured wallets.
  *
  * Chain scope is INCLUSIVE (Khalani-first, local-registry fallback): chains the
  * Khalani registry covers scan via the Khalani multi-chain read; chains only in
@@ -59,7 +59,7 @@ import { throwIfAborted } from "@utils/cancellation.js";
 const WalletReadArgs = z.object({
   walletFamily: z.enum(["eip155", "solana", "all"]).optional().default("all"),
   // Empty / whitespace-only `chainIds` is treated as omission (scan all chains).
-  // LLM serializers often emit `""` for "no value" — see plan PR-balance-toolkit.
+  // LLM serializers often emit `""` for "no value" - see plan PR-balance-toolkit.
   //
   // An ARRAY is accepted alongside the CSV string (`acceptsStringArray`
   // semantics, SPEC §2.10 item 12): the manifest advertises both, and a model
@@ -81,7 +81,7 @@ const WalletReadArgs = z.object({
   limit: z.number().int().positive({
     message:
       "limit must be a positive whole number of tokens, and it only applies with "
-      + "response_format:\"concise\" — the default 'detailed' format returns every row. "
+      + "response_format:\"concise\" - the default 'detailed' format returns every row. "
       + "Omit limit to keep them all",
   }).optional(),
   // 'detailed' (DEFAULT, compatibility-first) returns every projected token.
@@ -217,7 +217,7 @@ const MAX_UNPRICED_TOKENS_PER_SNAPSHOT = 20;
 // ── Chain scope (Khalani-first, local fallback) ─────────────────
 
 interface BalanceChainScope {
-  /** Khalani-side selection — never contains local-only chains. */
+  /** Khalani-side selection - never contains local-only chains. */
   selection: BalanceChainSelection;
   /** Local-registry (non-Khalani) EVM chain ids to scan direct-RPC. */
   localChainIds: number[];
@@ -254,7 +254,7 @@ async function partitionBalanceChainScope(raw: string | undefined): Promise<Bala
   }
   return {
     // An all-local request leaves the Khalani side EMPTY (rawProvided false
-    // there) — the family loop below must then skip the Khalani scan entirely,
+    // there) - the family loop below must then skip the Khalani scan entirely,
     // never fall through to "no filter = scan all Khalani chains".
     selection: await parseBalanceChainSelection(
       khalaniParts.length > 0 ? khalaniParts.join(",") : undefined,
@@ -286,7 +286,7 @@ function heldUsd(balanceWei: bigint, decimals: number, priceUsd: number | null):
 /**
  * Live-read one local chain into the snapshot token shape. Scans the SAME
  * token set as the background sync (seed ∪ tracked). Failures collapse to a
- * bounded per-chain error — SECURITY: raw provider errors can carry the RPC
+ * bounded per-chain error - SECURITY: raw provider errors can carry the RPC
  * URL / HTML bodies and never reach the model output.
  */
 async function readLocalChainSnapshot(
@@ -338,7 +338,7 @@ async function readLocalChainSnapshot(
     };
   } catch (err) {
     // Owner decree (2026-08-02): the REAL cause reaches the agent. This was a
-    // bare `catch {}` — the error object was dropped on the floor, so a dead
+    // bare `catch {}` - the error object was dropped on the floor, so a dead
     // RPC, a bad token in the scan set and a chain misconfiguration were all
     // reported to the model (and logged nowhere) as the same five words. The
     // provider's text is untrusted, so it is scrubbed + bounded by the
@@ -509,7 +509,7 @@ export async function handleWalletBalances(
         }
       }
 
-      // Local (non-Khalani) chains — direct RPC, same failure surface as a
+      // Local (non-Khalani) chains - direct RPC, same failure surface as a
       // Khalani per-chain error (the family snapshot survives a dead chain).
       //
       // Bounded-concurrency, not serial: each chain costs a scan-set build, an

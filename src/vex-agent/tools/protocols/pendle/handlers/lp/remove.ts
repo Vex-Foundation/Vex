@@ -1,5 +1,5 @@
 /**
- * `pendle.lp.remove` — burn the LP token back to ONE output token (Convert
+ * `pendle.lp.remove` - burn the LP token back to ONE output token (Convert
  * action `remove-liquidity`, `removeLiquiditySingleToken`).
  *
  * Same discipline as the add: fresh Convert re-fetch → `selectSafeRoute`
@@ -7,8 +7,8 @@
  * allowance to the pinned Router → broadcast. Approval- and prequote-gated
  * (kind `lp_remove`).
  *
- * EXIT PATH (R5b): removal is legal after expiry — Pendle documents it as
- * callable regardless of the market's expiry — so the matured catalogue is in
+ * EXIT PATH (R5b): removal is legal after expiry - Pendle documents it as
+ * callable regardless of the market's expiry - so the matured catalogue is in
  * scope. FULL-EXIT detection is fail-safe: an unreadable LP balance is NOT a
  * proven full exit, so the position stays open.
  */
@@ -74,8 +74,8 @@ export async function executePendleLpRemove(p: Record<string, unknown>, context:
       );
       return fail(message);
     };
-    // EXIT PATH (R5b): removal is legal after expiry — Pendle documents remove
-    // as "callable regardless of the market's expiry" — so this resolves the
+    // EXIT PATH (R5b): removal is legal after expiry - Pendle documents remove
+    // as "callable regardless of the market's expiry" - so this resolves the
     // matured catalogue too. An inactive row is only believed on a parseable,
     // past expiry; anything else is refused by name inside the resolver.
     const resolved = await resolveExitMarketByAddress(chainId, marketAddress);
@@ -90,7 +90,7 @@ export async function executePendleLpRemove(p: Record<string, unknown>, context:
       : market.underlyingAsset
         ? getAddress(market.underlyingAsset)
         : null;
-    if (!outputToken) return refuse("route_not_found", "No output token — pass tokenOut (the market has no underlying to default to).");
+    if (!outputToken) return refuse("route_not_found", "No output token - pass tokenOut (the market has no underlying to default to).");
     // LP token decimals read ON-CHAIN (the market IS a plain ERC-20 LP token).
     const lpToken = await resolveInputToken(chainEntry, marketRaw);
     const amountWei = parseUnits(amountInRaw, lpToken.decimals);
@@ -123,9 +123,9 @@ export async function executePendleLpRemove(p: Record<string, unknown>, context:
     const intent: PendleTxIntent = {
       action: "lp-remove",
       wallet,
-      // The tolerance this route is held to — see calldata/price-floor.ts.
+      // The tolerance this route is held to - see calldata/price-floor.ts.
       slippageBps: slippage.bps,
-      // The "input" being spent is the LP (market) token — approvals bind to it.
+      // The "input" being spent is the LP (market) token - approvals bind to it.
       inputToken: marketAddr,
       inputAmountWei: amountWei,
       isNative: false,

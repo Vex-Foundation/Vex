@@ -1,12 +1,12 @@
 /**
- * Tool registry visibility — session-aware projection of the master TOOLS
+ * Tool registry visibility - session-aware projection of the master TOOLS
  * array down to the surface a given session/pressure context may see.
  *
  * Owns the visibility context types, the per-context filter chain
  * (`getVisibleToolDefs`), and the private gate helpers
  * (`passesVisibility` / `passesPressureSafety`).
  *
- * Consumes the master array + by-name lookup from `./lookup.js` — it must
+ * Consumes the master array + by-name lookup from `./lookup.js` - it must
  * never import the `registry.js` façade (cycle).
  */
 
@@ -26,7 +26,7 @@ import { TOOLS } from "./lookup.js";
  * mode-only visibility (e.g. `LoopDefer` is mission-only).
  *
  * `contextUsageBand` is derived from `sessions.token_count` via
- * `computeBand()` — it lags by one turn (previous prompt size) and callers
+ * `computeBand()` - it lags by one turn (previous prompt size) and callers
  * are expected to recompute per turn rather than cache.
  */
 export interface ToolVisibilityContext {
@@ -45,7 +45,7 @@ export interface ToolVisibilityContext {
   missionRunActive: boolean;
   /**
    * True iff session-scoped plan-mode is enabled (turn-start snapshot from
-   * `EngineContext.planMode`). A STATIC axis (part of `ToolVisibilityBase`) —
+   * `EngineContext.planMode`). A STATIC axis (part of `ToolVisibilityBase`) -
    * gates `PlanWrite` via `ToolVisibility.requiresPlanMode`. The dispatcher's
    * hard execution gate uses a live DB read instead (acceptance can change
    * mid-batch); this flag only controls what the LLM sees.
@@ -56,13 +56,13 @@ export interface ToolVisibilityContext {
    * True iff the session has at least one active narrative memory chunk
    * (Track-2 compaction output). Gates `SessionMemorySearch` /
    * `SessionMemoryResolve` via `ToolVisibility.requiresSessionMemory` so a
-   * fresh session is never shown no-op memory tools. Recomputed per turn —
+   * fresh session is never shown no-op memory tools. Recomputed per turn -
    * chunks first appear after a compact, possibly mid-session.
    */
   hasSessionMemory: boolean;
   /**
    * True iff a compaction preparation is live enough to relieve the pressure
-   * on its own (contract C8) — a validated summary is ready, or branch A still
+   * on its own (contract C8) - a validated summary is ready, or branch A still
    * holds its lease with attempts remaining. While true, the `barrier` band
    * stops stripping `mutating` tools, because the thing the barrier exists to
    * force is already under way.
@@ -72,7 +72,7 @@ export interface ToolVisibilityContext {
    * `barrierBypassAllowed` from the per-turn preparation read, which fails
    * closed on an unreadable state; absent here ⇒ false ⇒ today's barrier.
    *
-   * Scope is `barrier` only. `critical` keeps stripping — forced apply owns
+   * Scope is `barrier` only. `critical` keeps stripping - forced apply owns
    * that band, and a session that deep needs the runtime to act, not the agent.
    */
   preparationBypassesBarrier: boolean;
@@ -93,7 +93,7 @@ export interface ToolVisibilityContext {
  * (`buildTurnPromptStack`) augments this with `contextUsageBand`,
  * `hasSessionMemory` and the two compaction-preparation axes to form the single
  * `ToolVisibilityContext` used for BOTH the OpenAI tools array AND the
- * system-prompt Tool Map — so the two can never drift.
+ * system-prompt Tool Map - so the two can never drift.
  */
 export type ToolVisibilityBase = Omit<
   ToolVisibilityContext,
@@ -104,7 +104,7 @@ export type ToolVisibilityBase = Omit<
 >;
 
 /**
- * Convenience constructor for `ToolVisibilityContext` — agent-session
+ * Convenience constructor for `ToolVisibilityContext` - agent-session
  * defaults with optional overrides. Primarily used by tests to avoid
  * inlining a 5-field object at every call site.
  */
@@ -130,15 +130,15 @@ export function defaultVisibilityContext(
  * Filter the master TOOLS array for a given session context, returning
  * `ToolDef` rows (not the OpenAI projection). Shared upstream of
  * `getOpenAITools` AND of `buildToolCatalogPrompt` so the LLM-visible
- * catalog and the system-prompt Tool Map never drift — both layers
+ * catalog and the system-prompt Tool Map never drift - both layers
  * consume the same filter output for the same `ToolVisibilityContext`.
  *
  * Filter chain (order matters):
- *   1. `requiresEnv` / `showOnlyWhenEnvMissing` — env-var gates.
- *   2. `proactive` — hidden when `sessionKind === "agent"`.
- *   3. `passesVisibility` — band gate + mission-setup/run / agent-hidden /
+ *   1. `requiresEnv` / `showOnlyWhenEnvMissing` - env-var gates.
+ *   2. `proactive` - hidden when `sessionKind === "agent"`.
+ *   3. `passesVisibility` - band gate + mission-setup/run / agent-hidden /
  *      mission-setup-hidden / requiresMissionActiveRun gates.
- *   4. `passesPressureSafety` — PR2 cutover catalog-level filter
+ *   4. `passesPressureSafety` - PR2 cutover catalog-level filter
  *      (drops `mutating` at barrier+, unless a live preparation bypasses it).
  */
 /**
@@ -147,7 +147,7 @@ export function defaultVisibilityContext(
  * (`./protocol.ts`), so there is nothing to withhold and a filter over an empty
  * set would be a gate with no subject. The envelope's dispatch route survives
  * for approval resume, and `dispatchTool` refuses the name outright when the
- * call is `modelOriginated` — that refusal, not a catalog filter, is what keeps
+ * call is `modelOriginated` - that refusal, not a catalog filter, is what keeps
  * it closed to the model.
  */
 export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef[] {
@@ -160,11 +160,11 @@ export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef
 }
 
 /**
- * Catalog-level pressure-safety filter — the soft layer that keeps the
+ * Catalog-level pressure-safety filter - the soft layer that keeps the
  * LLM-visible tool catalog consistent with the dispatcher's hard-deny.
  *
  * At pressure barrier+ (`barrier` or `critical`), the agent's full mutating
- * surface is restricted — only `read_only` and `safe_at_barrier` tools are
+ * surface is restricted - only `read_only` and `safe_at_barrier` tools are
  * usable. Showing `mutating` tools in the catalog at those bands would invite
  * the model to emit calls the dispatcher then rejects with the deny error,
  * wasting a turn and confusing the model.
@@ -173,7 +173,7 @@ export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef
  * compaction is already being prepared in the background, forcing it a second
  * time by amputating the agent's tools buys nothing and costs the session its
  * ability to finish what it started. So while `bypass` is true the `mutating`
- * drop is suppressed — but ONLY at `barrier`, and ONLY for that drop:
+ * drop is suppressed - but ONLY at `barrier`, and ONLY for that drop:
  *
  *   - `critical` still strips. That band belongs to the runtime's forced apply,
  *     and an agent at 92% should not be starting new fund-moving work.
@@ -185,7 +185,7 @@ export function getVisibleToolDefs(ctx: ToolVisibilityContext): readonly ToolDef
  *
  * Tools without `pressureSafety` declared default to "mutating" via the
  * required-field invariant in `ToolDef`, so undefined cases cannot reach
- * here — the compiler enforced classification at registration time.
+ * here - the compiler enforced classification at registration time.
  */
 function passesPressureSafety(
   tool: ToolDef,
@@ -216,13 +216,13 @@ function passesVisibility(
   }
   if (v.band === "critical" && ctx.contextUsageBand !== "critical") return false;
 
-  // Mission active run gate — only mission sessions with an active run
+  // Mission active run gate - only mission sessions with an active run
   // see autonomy primitives like `LoopDefer`. Agent mode never loops.
   if (v.requiresMissionActiveRun && !ctx.missionRunActive) {
     return false;
   }
 
-  // Autonomous-loop gate — a session that can act between user messages. See
+  // Autonomous-loop gate - a session that can act between user messages. See
   // `ToolVisibility.requiresAutonomousLoop` for the owner decree behind it.
   if (v.requiresAutonomousLoop
       && !ctx.missionRunActive
@@ -247,17 +247,17 @@ function passesVisibility(
     return false;
   }
 
-  // Session-memory gate — hide memory tools until Track-2 chunks exist for the
+  // Session-memory gate - hide memory tools until Track-2 chunks exist for the
   // session (a fresh session has nothing to recall). Recomputed per turn.
   if (v.requiresSessionMemory && !ctx.hasSessionMemory) return false;
 
-  // Plan-mode gate — hide `PlanWrite` unless the user enabled plan-mode for
+  // Plan-mode gate - hide `PlanWrite` unless the user enabled plan-mode for
   // this session. Combined with `hiddenInMissionSetup` on the tool def this
   // yields: visible in agent + active mission runs (plan-mode on), hidden in
   // mission setup and whenever plan-mode is off.
   if (v.requiresPlanMode && !ctx.planMode) return false;
 
-  // Prepared-compaction readiness gate — `CompactApply` exists only while
+  // Prepared-compaction readiness gate - `CompactApply` exists only while
   // there is something prepared to apply. Fails closed: an unreadable
   // preparation state resolves to "not ready" upstream, so the tool simply is
   // not offered rather than being offered and then refusing.

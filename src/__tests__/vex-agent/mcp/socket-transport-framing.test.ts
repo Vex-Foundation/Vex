@@ -12,17 +12,14 @@
  *      destroyed and the transport never announced `onclose` - which is the edge
  *      that aborts an in-flight approval.
  *
- * The socket here is a fake whose writable side is genuinely blocked: `write`
- * returns `false` and its callback is never invoked. That is what makes the
- * deadline assertion real rather than a hopeful sleep.
+ * The wire here is the shared fake in its `stall` policy: `write` returns
+ * `false` and its callback is never invoked. That is what makes the deadline
+ * assertion real rather than a hopeful sleep.
  */
-
-import { EventEmitter } from "node:events";
 
 import { describe, expect, it } from "vitest";
 
-import { Socket } from "node:net";
-
+import { FakeDuplexTransport } from "@vex-agent/mcp/duplex-transport-fake.js";
 import {
   StudioSocketTransport,
   progressCoalesceKey,
@@ -33,61 +30,13 @@ import {
   STUDIO_WIRE_ERROR_CODES,
 } from "@vex-agent/mcp/wire-errors.js";
 
-/** A socket that accepts bytes and never finishes writing them. */
-class StalledSocket extends EventEmitter {
-  destroyed = false;
-  writableEnded = false;
-  readonly written: string[] = [];
-  destroyCount = 0;
-
-  write(line: string, _callback?: () => void): boolean {
-    this.written.push(line);
-    return false;
-  }
-
-  pause(): this {
-    return this;
-  }
-
-  resume(): this {
-    return this;
-  }
-
-  setNoDelay(): this {
-    return this;
-  }
-
-  end(): void {
-    this.writableEnded = true;
-  }
-
-  destroy(): void {
-    this.destroyCount += 1;
-    this.destroyed = true;
-    this.emit("close");
-  }
-}
-
-function testSocket(backing: StalledSocket): Socket {
-  const socket = new Socket();
-  Object.defineProperties(socket, {
-    destroyed: { configurable: true, get: () => backing.destroyed },
-    writableEnded: { configurable: true, get: () => backing.writableEnded },
-    write: { configurable: true, value: backing.write.bind(backing) },
-    on: { configurable: true, value: backing.on.bind(backing) },
-    once: { configurable: true, value: backing.once.bind(backing) },
-    off: { configurable: true, value: backing.off.bind(backing) },
-    pause: { configurable: true, value: backing.pause.bind(backing) },
-    resume: { configurable: true, value: backing.resume.bind(backing) },
-    setNoDelay: { configurable: true, value: backing.setNoDelay.bind(backing) },
-    end: { configurable: true, value: backing.end.bind(backing) },
-    destroy: { configurable: true, value: backing.destroy.bind(backing) },
-  });
-  return socket;
+/** A wire that accepts bytes and never finishes writing them. */
+function stalledWire(): FakeDuplexTransport {
+  return new FakeDuplexTransport("stall");
 }
 
 function makeTransport(
-  socket: StalledSocket,
+  socket: FakeDuplexTransport,
   options: {
     readonly writeLine?: (line: string, progressKey: string | null) => Promise<void>;
     readonly shutdownDeadlineMs?: number;
@@ -101,7 +50,7 @@ function makeTransport(
   const state = { closes: 0 };
   const errors: Error[] = [];
   const failures: SocketTransportFailure[] = [];
-  const transport = new StudioSocketTransport(testSocket(socket), {
+  const transport = new StudioSocketTransport(socket, {
     shutdownDeadlineMs: options.shutdownDeadlineMs ?? 60,
     onFailure: (failure) => {
       failures.push(failure);
@@ -133,7 +82,7 @@ function sleep(ms: number): Promise<void> {
 
 describe("a framing failure behind a blocked writable side", () => {
   it("routes the error line through the OWNER'S writer, never the socket", async () => {
-    const socket = new StalledSocket();
+    const socket = stalledWire();
     const lines: { line: string; key: string | null }[] = [];
     // The owner's writer, blocked exactly like the real queue behind a peer
     // that stopped reading: it accepts the frame and never settles.
@@ -146,7 +95,7 @@ describe("a framing failure behind a blocked writable side", () => {
     const harness = makeTransport(socket, { writeLine });
     await harness.transport.start();
 
-    socket.emit("data", Buffer.from("this is not json\n"));
+    socket.deliver(Buffer.from("this is not json\n"));
 
     // The error went to the WRITER. Nothing was written to the socket directly,
     // which is what keeps one writer per connection true.
@@ -164,7 +113,7 @@ describe("a framing failure behind a blocked writable side", () => {
   });
 
   it("destroys the connection within the deadline and announces onclose once", async () => {
-    const socket = new StalledSocket();
+    const socket = stalledWire();
     const harness = makeTransport(socket, {
       writeLine: () => new Promise<void>(() => {
         // Never settles.
@@ -173,7 +122,7 @@ describe("a framing failure behind a blocked writable side", () => {
     });
     await harness.transport.start();
 
-    socket.emit("data", Buffer.from("this is not json\n"));
+    socket.deliver(Buffer.from("this is not json\n"));
     // BEFORE the deadline the connection is still open: the peer is genuinely
     // being given its chance to hear why.
     expect(socket.destroyed).toBe(false);
@@ -188,7 +137,7 @@ describe("a framing failure behind a blocked writable side", () => {
   });
 
   it("does not buffer the frames that arrive after the failure", async () => {
-    const socket = new StalledSocket();
+    const socket = stalledWire();
     const harness = makeTransport(socket, {
       writeLine: () => new Promise<void>(() => undefined),
       shutdownDeadlineMs: 40,
@@ -199,9 +148,9 @@ describe("a framing failure behind a blocked writable side", () => {
     };
     await harness.transport.start();
 
-    socket.emit("data", Buffer.from("this is not json\n"));
+    socket.deliver(Buffer.from("this is not json\n"));
     for (let index = 0; index < 200; index += 1) {
-      socket.emit("data", Buffer.from(`{"jsonrpc":"2.0","id":${String(index)}}\n`));
+      socket.deliver(Buffer.from(`{"jsonrpc":"2.0","id":${String(index)}}\n`));
     }
 
     // The transport is FAILED: it consumes nothing more, so a peer cannot make
@@ -215,11 +164,11 @@ describe("a framing failure behind a blocked writable side", () => {
   it("destroys immediately when there is no writer to try", async () => {
     // No `writeLine`: the transport writes the line itself, which is the
     // standalone case. The close still happens, bounded the same way.
-    const socket = new StalledSocket();
+    const socket = stalledWire();
     const harness = makeTransport(socket, { shutdownDeadlineMs: 40 });
     await harness.transport.start();
 
-    socket.emit("data", Buffer.from("this is not json\n"));
+    socket.deliver(Buffer.from("this is not json\n"));
     expect(socket.written).toHaveLength(1);
     await sleep(150);
     expect(socket.destroyed).toBe(true);
@@ -239,11 +188,11 @@ describe("transport-produced errors", () => {
   const SENTINEL = "SECRET_SENTINEL_XYZ";
 
   it("reports a malformed frame as the CODE, with no wire bytes anywhere", async () => {
-    const socket = new StalledSocket();
+    const socket = stalledWire();
     const harness = makeTransport(socket, { shutdownDeadlineMs: 40 });
     await harness.transport.start();
 
-    socket.emit("data", Buffer.from(`{not json ${SENTINEL}\n`));
+    socket.deliver(Buffer.from(`{not json ${SENTINEL}\n`));
 
     expect(harness.errors).toHaveLength(1);
     expect(harness.errors[0]?.message).toBe("invalid_json");
@@ -257,12 +206,12 @@ describe("transport-produced errors", () => {
   });
 
   it("reports an over-long line as the CODE, with the byte count on the failure", async () => {
-    const socket = new StalledSocket();
+    const socket = stalledWire();
     const harness = makeTransport(socket, { shutdownDeadlineMs: 40 });
     await harness.transport.start();
 
     const padding = SENTINEL.repeat(Math.ceil((4 * 1024 * 1024 + 32) / SENTINEL.length));
-    socket.emit("data", Buffer.from(padding));
+    socket.deliver(Buffer.from(padding));
 
     expect(harness.errors[0]?.message).toBe("line_too_long");
     const failure = harness.failures[0];

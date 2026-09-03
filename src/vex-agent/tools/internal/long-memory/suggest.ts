@@ -1,5 +1,5 @@
 /**
- * MemorySuggest handler — the agent's ONLY write-door into long-term
+ * MemorySuggest handler - the agent's ONLY write-door into long-term
  * memory (memory-system/s2-plan.md §2). It STAGES a candidate + enqueues a
  * consolidate job; it never writes long-term memory directly. The async manager
  * (S4) reviews, dedupes, and decides promotion.
@@ -20,7 +20,7 @@
  *      AND false).
  *   9. return concise (default) or detailed per `response_format`.
  *
- * Boundary discipline: this handler imports the memory module + repos only —
+ * Boundary discipline: this handler imports the memory module + repos only -
  * never the renderer, wallet, or signing authority. `fail(msg)` IS the agent's
  * steering channel; reject messages teach the agent to re-suggest the durable
  * lesson without secrets / live values.
@@ -57,14 +57,14 @@ import type { InternalToolContext } from "../types.js";
 import { str, num, ok, fail } from "../types.js";
 import { readResponseFormat, type ResponseFormat } from "@vex-agent/response-format.js";
 
-// ── Steering messages (D-A — advertised, agent-facing) ───────────
+// ── Steering messages (D-A - advertised, agent-facing) ───────────
 
 const SECRET_REJECT_MESSAGE =
   "A secret (key/seed/token) was detected and memory never stores secrets. Remove it and re-suggest the durable lesson only.";
 const LIVE_STATE_REJECT_MESSAGE =
   "This reads as live state (balances/prices/amounts), which goes stale. Record the durable LESSON, not the live values.";
 const ENGLISH_REJECT_MESSAGE =
-  "This doesn't read as English, and persisted memory is English-only (embedding retrieval). Rewrite the durable lesson in English and re-suggest — entities/tags may keep tickers and protocol ids.";
+  "This doesn't read as English, and persisted memory is English-only (embedding retrieval). Rewrite the durable lesson in English and re-suggest - entities/tags may keep tickers and protocol ids.";
 
 // ── Redaction of free-text fields ────────────────────────────────
 
@@ -80,7 +80,7 @@ interface RedactedFreeText {
 
 /**
  * Redact (hard-redact + mask) every persisted free-text field and aggregate the
- * counts across ALL of them (R1 gate — a secret in any stored string must not
+ * counts across ALL of them (R1 gate - a secret in any stored string must not
  * survive). Returns the redacted values plus the aggregate Tier-1 / Tier-2
  * counts the caller uses for the reject decision and sensitivity derivation.
  */
@@ -128,12 +128,12 @@ function scannedStringsContainSecret(input: CandidateSuggestInput): boolean {
 /**
  * Map the snake_case tool params to the camelCase `candidateSuggestInputSchema`
  * shape and validate. `response_format` is a tool-only param (read separately by
- * the caller) and is intentionally NOT mapped — it is not a candidate field.
+ * the caller) and is intentionally NOT mapped - it is not a candidate field.
  * Returns the parsed input or a typed Zod error for a readable steering message.
  *
  * Only keys the agent actually supplied are forwarded; the schema applies its
  * own defaults (`.strict()` rejects any unknown key). Optional point-in-time
- * fields stay as ISO strings here — the caller converts them to `Date | null`.
+ * fields stay as ISO strings here - the caller converts them to `Date | null`.
  */
 function mapAndValidate(
   params: Record<string, unknown>,
@@ -180,13 +180,13 @@ export async function handleLongMemorySuggest(
   params: Record<string, unknown>,
   context: InternalToolContext,
 ): Promise<ToolResult> {
-  // 1. Read + map + validate. response_format is tool-only — read separately and
+  // 1. Read + map + validate. response_format is tool-only - read separately and
   // never forwarded to the candidate schema.
   const responseFormat: ResponseFormat = readResponseFormat(params, "concise");
 
   const mapResult = mapAndValidate(params);
   if (!mapResult.ok) {
-    return fail(`MemorySuggest rejected the input — ${firstIssueMessage(mapResult.error)}`);
+    return fail(`MemorySuggest rejected the input - ${firstIssueMessage(mapResult.error)}`);
   }
   const input = mapResult.input;
 
@@ -202,7 +202,7 @@ export async function handleLongMemorySuggest(
     return fail(SECRET_REJECT_MESSAGE);
   }
 
-  // 3. Live-state reject on the redacted free-text aggregate — INCLUDING entities
+  // 3. Live-state reject on the redacted free-text aggregate - INCLUDING entities
   // and tags (they are persisted too, so live state must not be smuggled there).
   const liveStateText = [
     redacted.title,
@@ -220,7 +220,7 @@ export async function handleLongMemorySuggest(
     return fail(LIVE_STATE_REJECT_MESSAGE);
   }
 
-  // 3b. English-by-contract (§10.4) on the REDACTED persisted text — embedding
+  // 3b. English-by-contract (§10.4) on the REDACTED persisted text - embedding
   // retrieval is English-only, so a non-English lesson is steered back to the
   // agent for translation before anything is hashed, embedded, or stored.
   if (
@@ -253,7 +253,7 @@ export async function handleLongMemorySuggest(
   try {
     const promoted = await knowledgeRepo.findByContentHash(contentHash);
     if (promoted) {
-      // Already long-term memory — neither insert nor enqueue.
+      // Already long-term memory - neither insert nor enqueue.
       memLog("suggest", "duplicate", {
         sessionId: context.sessionId,
         kind: input.kind,
@@ -268,7 +268,7 @@ export async function handleLongMemorySuggest(
   const latestCandidate = await findLatestCandidateByContentHash(contentHash);
   if (latestCandidate && latestCandidate.status !== "pending") {
     // A terminal candidate (promoted/rejected/superseded/merged/expired/retained)
-    // for this exact redacted content — short-circuit, no insert/enqueue. A
+    // for this exact redacted content - short-circuit, no insert/enqueue. A
     // `pending` match is handled by insertCandidate's upsert (inserted:false).
     memLog("suggest", "duplicate", {
       candidateId: latestCandidate.id,
@@ -282,7 +282,7 @@ export async function handleLongMemorySuggest(
     });
   }
 
-  // 6. Embed AFTER redaction (FIX-4). Fail-loud — NO non-embedded fallback.
+  // 6. Embed AFTER redaction (FIX-4). Fail-loud - NO non-embedded fallback.
   let config;
   try {
     config = loadEmbeddingConfig();
@@ -308,7 +308,7 @@ export async function handleLongMemorySuggest(
   const sensitivity = deriveCandidateSensitivity(redacted.maskCount);
   const retrievalUntil = computeRetrievalUntil(recordedAt);
 
-  // 8. Insert + enqueue ATOMICALLY (R2 gate — never a candidate without a wake,
+  // 8. Insert + enqueue ATOMICALLY (R2 gate - never a candidate without a wake,
   // and always wake a pending one). Enqueue runs for inserted true AND false.
   let candidateId: string;
   let inserted: boolean;
@@ -335,7 +335,7 @@ export async function handleLongMemorySuggest(
           retrievalUntil,
           retainUntil: null,
           embedding,
-          // Honest provenance — stamp the model the provider reported + the real
+          // Honest provenance - stamp the model the provider reported + the real
           // vector length (mirror insertEntry in db/repos/knowledge/crud.ts).
           embeddingModel: providerModel,
           embeddingDim: embedding.length,
@@ -347,7 +347,7 @@ export async function handleLongMemorySuggest(
         },
         tx,
       );
-      // Wake the manager even on inserted:false — a pending-hash conflict still
+      // Wake the manager even on inserted:false - a pending-hash conflict still
       // left a pending candidate that needs consolidation; skipping the wake
       // could strand it if its original job already ran.
       await enqueueConsolidateJob(tx);
@@ -360,7 +360,7 @@ export async function handleLongMemorySuggest(
     return fail(`MemorySuggest failed: ${msg}`);
   }
 
-  // memLog accepted — ONLY allowlisted keys (NOT `sensitivity`; the logger has
+  // memLog accepted - ONLY allowlisted keys (NOT `sensitivity`; the logger has
   // no such key and S2 adds none).
   memLog("suggest", "accepted", {
     candidateId,

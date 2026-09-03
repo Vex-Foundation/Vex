@@ -1,5 +1,5 @@
 /**
- * The launch AUTHORIZE-AND-CONSUME step — the exactly-once gate.
+ * The launch AUTHORIZE-AND-CONSUME step - the exactly-once gate.
  *
  * One reason to change: what it takes to claim a launch for signing. The intent
  * is created at its entry state (`authorized`) and CAS-consumed in ONE
@@ -46,7 +46,7 @@ export interface AuthorizeAndConsumeInput {
   /**
    * Which C0 variant authorized this dispatch (`../execute.ts` decides it from
    * host evidence). `full_autonomy` is the ONLY one the mission liveness gate
-   * and the launch-count ceiling apply to — both are mission-scoped.
+   * and the launch-count ceiling apply to - both are mission-scoped.
    *
    * SPELLED OUT, not `Exclude<LaunchAuthorizationKind, "user_submit">`. The
    * excluding form would silently re-admit `approval_card` as a live internal
@@ -73,7 +73,7 @@ export async function authorizeAndConsumeLaunch(
     // The image was deleted from the locker between planning and this write,
     // and the intent writers fail closed on it (the whole transaction rolled
     // back, so no intent exists). That is a NAMED, recoverable situation with
-    // one obvious remedy — not an unknown error the agent should retry blindly
+    // one obvious remedy - not an unknown error the agent should retry blindly
     // or report as a system fault. Every other failure still propagates: this
     // catch narrows to one class and re-throws the rest.
     if (err instanceof LaunchImageMissingError) {
@@ -81,7 +81,7 @@ export async function authorizeAndConsumeLaunch(
         ok: false as const,
         reason:
           `Refusing to launch: the image "${err.imageId}" is no longer in the Trench Photos locker `
-          + "— it was deleted after this launch was planned. Upload the image again on the right and "
+          + "- it was deleted after this launch was planned. Upload the image again on the right and "
           + "retry. Nothing was signed.",
       };
     }
@@ -113,7 +113,7 @@ async function authorizeAndConsumeInTransaction(
       intentId: input.intentId,
       sessionId: input.sessionId,
       // `agent` for BOTH execute paths, deliberately. Neither the mission path
-      // nor a full-permission chat launch has a FORM step — C1 puts both of
+      // nor a full-permission chat launch has a FORM step - C1 puts both of
       // them at `authorized` as their entry state, and the DB CHECK
       // `token_launch_intents_form_path_has_tool_call` REQUIRES a `tool_call_id`
       // on `agent_requested_form`, which an execute-time row does not have.
@@ -132,7 +132,7 @@ async function authorizeAndConsumeInTransaction(
       prebuyDecimals: PREBUY_DECIMALS,
       authorizationId: input.authorizationId,
       authorizationKind: input.authorizationKind,
-      // AUDIT ONLY on every agent path — nothing here or downstream reads it
+      // AUDIT ONLY on every agent path - nothing here or downstream reads it
       // back to decide (the gate is re-derive-and-compare plus the CAS; see
       // `../authorization.ts`). `null` when the path has no honest record to
       // write, which is never a silent omission: the row still carries the
@@ -159,7 +159,7 @@ async function authorizeAndConsumeInTransaction(
  * Move a live intent to `terminal_failure` with a STRUCTURAL-ONLY reason.
  *
  * `reason` must stay an `ErrorKind:errorHash`-shaped label: raw RPC and provider
- * errors carry URLs, request bodies, addresses and auth headers. Best-effort —
+ * errors carry URLs, request bodies, addresses and auth headers. Best-effort -
  * a failed settle must not mask the refusal that caused it.
  */
 export async function settleLaunchFailure(

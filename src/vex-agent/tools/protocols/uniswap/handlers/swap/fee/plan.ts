@@ -4,7 +4,7 @@
  * Produces the ready-to-sign transfer and the `agent_activity` row it will be
  * recorded under as ONE object, so a caller cannot sign a leg it did not
  * record. The disclosure it belongs to was already computed with the amount
- * (`@tools/uniswap/fee`'s `resolveUniswapFeeCharge`) — the quote needs it
+ * (`@tools/uniswap/fee`'s `resolveUniswapFeeCharge`) - the quote needs it
  * before any of this exists.
  *
  * `null` means NO FEE AT ALL: there is then no leg, no row, and no index in the
@@ -12,7 +12,7 @@
  * nothing.
  *
  * The fee row is planned as the LAST event of the execution and driven OUTSIDE
- * the loop that runs the swap's own legs — see `run.ts` for why the ordering is
+ * the loop that runs the swap's own legs - see `run.ts` for why the ordering is
  * the safety property.
  */
 
@@ -68,7 +68,7 @@ export function planUniswapFeeLeg(input: {
       sessionId: input.sessionId,
       // The fee IS this row: it lives in `tokenIn`/`amountIn`, exactly as a
       // `bridge_fee` or `trench_fee` row does. The `vexFee`
-      // (`AgentActivityVexFeeCharge`) columns are deliberately NOT set — those
+      // (`AgentActivityVexFeeCharge`) columns are deliberately NOT set - those
       // are for venues that take the fee inside the transaction being recorded,
       // and setting both stores the same money twice.
       tokenIn: {

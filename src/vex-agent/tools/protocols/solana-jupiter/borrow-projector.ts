@@ -1,51 +1,51 @@
 /**
  * Jupiter Lend Borrow vaults/positions concise projectors (Agent Scan Phase 3
- * Batch 5, card B1; wire shape corrected in card B3 — see
+ * Batch 5, card B1; wire shape corrected in card B3 - see
  * `../../../../../src/tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/types.ts`).
  *
  * `GET /borrow/vaults` and `GET /borrow/positions` are already small,
- * flat-ish shapes (unlike Earn's ~30-field-per-token nesting) — this
+ * flat-ish shapes (unlike Earn's ~30-field-per-token nesting) - this
  * projector's main job is not size-trimming but UNIT LABELING.
  *
  * TOKEN IDENTITY (2026-07-25 restoration, live hazard): every `*Raw` field
- * below — and every one of `solana.lend.borrowOperate`'s six amount params —
+ * below - and every one of `solana.lend.borrowOperate`'s six amount params -
  * is raw ATOMIC units of a specific leg's token. An earlier revision of this
  * projector emitted only the two mint ADDRESSES, so `minimumBorrowingRaw:
  * "1047061"` next to a bare mint was unreadable: 1.05 at 6 decimals, or
  * 0.00105 at 9. Both legs therefore now carry `symbol` + `decimals` +
  * the provider's own `price`, all of which the vault row ALREADY carries on
- * the wire (`JupiterLendBorrowToken`) — pure projection, no extra fetch. This
+ * the wire (`JupiterLendBorrowToken`) - pure projection, no extra fetch. This
  * mirrors the Earn sibling (`./lend-projector.ts`'s `assetDecimals`/
  * `assetSymbol`/`assetPriceUsd`) so both Lend shelves read the same way.
  * `uiSymbol` is deliberately NOT surfaced: it renders WSOL as "SOL", and
  * Borrow's `/operate` never wraps or unwraps native SOL (see
  * `../../../../tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/
- * types.ts`) — the mint's real `symbol` is the non-misleading one here.
+ * types.ts`) - the mint's real `symbol` is the non-misleading one here.
  *
  * The other job is UNIT LABELING:
  * `collateralFactor`/`liquidationThreshold` are provider-scaled DIGIT-STRING
  * integers with no unit suffix on the wire (verified live: "collateralFactor
- * (max LTV, where 800 corresponds to 80%)" — raw/10 = percent, one implied
+ * (max LTV, where 800 corresponds to 80%)" - raw/10 = percent, one implied
  * decimal digit). Every formatted percent field carries its raw sibling
  * (OWNER RULE: a scaled agent-visible field must expose its own raw form
- * too), via pure decimal-point shifting on the STRING form — no
+ * too), via pure decimal-point shifting on the STRING form - no
  * `parseFloat`/division, so no precision can be invented or lost (mirrors
  * `./lend-projector.ts`'s `formatBasisPointsAsPercent`, which shifts a
- * DIFFERENT number of digits for Earn's distinct 1e4-scaled rate fields —
+ * DIFFERENT number of digits for Earn's distinct 1e4-scaled rate fields -
  * the two are not shared because the divisor differs and each lives with
  * its own confirmed-vs-assumed unit note).
  *
  * `liquidationThreshold`'s own scale is NOT independently confirmed by prose
- * in the live docs (only `collateralFactor`'s is) — three recorded live
+ * in the live docs (only `collateralFactor`'s is) - three recorded live
  * fixtures (`__tests__/solana/fixtures/lend-borrow/vaults-main.json` ids 1 +
  * 40, `vaults-ethena.json` id 5) all show a plausible
  * collateralFactor < liquidationThreshold < liquidationMaxLimit ordering
- * under the SAME raw/10 scale, so this shelf projects it that way — see
+ * under the SAME raw/10 scale, so this shelf projects it that way - see
  * `liquidationThresholdPercent`'s doc below and `../../../../tools/
  * solana-ecosystem/jupiter/jupiter-lend/borrow-api/JupiterLendBorrowApi.md`'s
  * "Unit-scale caveat".
  *
- * NO field is ever dropped by count/window (OWNER RULE) — filtering is
+ * NO field is ever dropped by count/window (OWNER RULE) - filtering is
  * always an explicit, agent-controlled `vaultIds` allow-list, never a silent
  * default cap.
  */
@@ -72,9 +72,9 @@ export interface ConciseJupiterLendBorrowVault {
   vaultId: string;
   /** Collateral leg mint. Deposits/withdrawals (`depositAmountRaw`/`withdrawAmountRaw`) are denominated in THIS token. */
   supplyTokenAddress: string;
-  /** Collateral mint symbol as the provider reports it (e.g. "WSOL" — the wrapped mint, not "SOL"). */
+  /** Collateral mint symbol as the provider reports it (e.g. "WSOL" - the wrapped mint, not "SOL"). */
   supplyTokenSymbol: string;
-  /** Collateral token decimals — REQUIRED to read `withdrawableRaw` and to build `depositAmountRaw`/`withdrawAmountRaw`. */
+  /** Collateral token decimals - REQUIRED to read `withdrawableRaw` and to build `depositAmountRaw`/`withdrawAmountRaw`. */
   supplyTokenDecimals: number;
   /** Provider's own point-in-time USD quote for the collateral token, exact decimal string (Jupiter's number, not a Vex valuation). */
   supplyTokenPriceUsd: string;
@@ -82,15 +82,15 @@ export interface ConciseJupiterLendBorrowVault {
   borrowTokenAddress: string;
   /** Debt mint symbol as the provider reports it. */
   borrowTokenSymbol: string;
-  /** Debt token decimals — REQUIRED to read `borrowableRaw`/`minimumBorrowingRaw` and to build `borrowAmountRaw`/`repayAmountRaw`. */
+  /** Debt token decimals - REQUIRED to read `borrowableRaw`/`minimumBorrowingRaw` and to build `borrowAmountRaw`/`repayAmountRaw`. */
   borrowTokenDecimals: number;
   /** Provider's own point-in-time USD quote for the debt token, exact decimal string (Jupiter's number, not a Vex valuation). */
   borrowTokenPriceUsd: string;
-  /** Max LTV as an exact percent string (e.g. "80.0%") — CONFIRMED scale (see module doc). */
+  /** Max LTV as an exact percent string (e.g. "80.0%") - CONFIRMED scale (see module doc). */
   maxLtvPercent: string | null;
   /** Raw `collateralFactor` exactly as given by the provider (digit string). */
   maxLtvRaw: string;
-  /** Liquidation threshold as an exact percent string — scale ASSUMED same as `maxLtvPercent`, NOT independently confirmed (see module doc). */
+  /** Liquidation threshold as an exact percent string - scale ASSUMED same as `maxLtvPercent`, NOT independently confirmed (see module doc). */
   liquidationThresholdPercent: string | null;
   /** Raw `liquidationThreshold` exactly as given by the provider (digit string). */
   liquidationThresholdRaw: string;
@@ -100,7 +100,7 @@ export interface ConciseJupiterLendBorrowVault {
   withdrawableRaw: string;
   /**
    * Smallest non-zero debt allowed, documented as raw atomic units of
-   * `borrowTokenAddress` — read it with `borrowTokenDecimals` (the figure is
+   * `borrowTokenAddress` - read it with `borrowTokenDecimals` (the figure is
    * meaningless without them). SCALE CAVEAT (owner, 2026-07-24): under that
    * documented reading two live vaults disagree by four orders of magnitude
    * (1047061 on a 6-decimal USDC-debt vault ≈ $1.05, 1054 on a 9-decimal
@@ -127,7 +127,7 @@ export interface ConciseJupiterLendBorrowPosition {
   positionId: string;
   /** Pass this as `solana.lend.borrowOperate`'s `vaultId`. Also the key into `solana.lend.borrowVaults` for the vault's full config. */
   vaultId: string;
-  /** The protocol's OWN liquidation flag. `"unknown"` means the provider did not report it — it does NOT mean the position is healthy. */
+  /** The protocol's OWN liquidation flag. `"unknown"` means the provider did not report it - it does NOT mean the position is healthy. */
   liquidationStatus: JupiterLendBorrowLiquidationStatus;
   /** Collateral leg mint, from the vault. `null` when the vault could not be read (see `risk`). */
   supplyTokenAddress: string | null;
@@ -141,15 +141,15 @@ export interface ConciseJupiterLendBorrowPosition {
   borrowTokenSymbol: string | null;
   /** REQUIRED to read `borrowRaw`/`dustBorrowRaw`/`totalDebtRaw` and to build `borrowAmountRaw`/`repayAmountRaw`. */
   borrowTokenDecimals: number | null;
-  /** Debt principal, raw atomic units of the debt token. NOT the whole debt — see `totalDebtRaw`. */
+  /** Debt principal, raw atomic units of the debt token. NOT the whole debt - see `totalDebtRaw`. */
   borrowRaw: string;
   /** Accrued-interest residue, ADDITIONAL to `borrowRaw` (see the wire type's `dustBorrow` doc). Raw atomic units of the debt token. */
   dustBorrowRaw: string;
-  /** `borrowRaw + dustBorrowRaw` — the true debt, and what `risk` is computed from. `null` only if a raw amount was unreadable. */
+  /** `borrowRaw + dustBorrowRaw` - the true debt, and what `risk` is computed from. `null` only if a raw amount was unreadable. */
   totalDebtRaw: string | null;
   /** The vault's borrow ceiling, exact percent string. A new borrow/withdrawal must keep the position under it. */
   maxLtvPercent: string | null;
-  /** The LTV at or above which this position can be liquidated. Provider scale INFERRED, not documented (see module doc) — leave margin. */
+  /** The LTV at or above which this position can be liquidated. Provider scale INFERRED, not documented (see module doc) - leave margin. */
   liquidationThresholdPercent: string | null;
   /** Current LTV and distance to liquidation, or a NAMED reason neither could be computed. Branch on `risk.status` before acting. */
   risk: JupiterLendBorrowPositionRisk;
@@ -167,14 +167,14 @@ export type BorrowVaultLookup =
 
 /**
  * `solana.lend.borrowPositions`' full output. The interpretation guidance is
- * stated ONCE here rather than repeated per row — it is long because, with no
+ * stated ONCE here rather than repeated per row - it is long because, with no
  * approval gate in autonomous mode, it is the safety control.
  */
 export interface JupiterLendBorrowPositionsReadout {
   readonly market: JupiterLendBorrowMarket;
   /** Whether the vault list backing every decimals/price/threshold below could be read. */
   readonly vaultDataStatus: BorrowVaultLookup["status"];
-  /** Why it could not be read. `null` when it was read — never omitted. */
+  /** Why it could not be read. `null` when it was read - never omitted. */
   readonly vaultDataReason: string | null;
   readonly howToReadRisk: string;
   readonly positions: readonly ConciseJupiterLendBorrowPosition[];
@@ -192,17 +192,17 @@ const HOW_TO_READ_RISK =
   + "accrued interest, ADDITIONAL to the principal) and is what LTV is computed from. Branch on risk.status before "
   + "acting: \"computed\" means currentLtvPercent and ltvPercentagePointsToLiquidation are usable; "
   + "\"undercollateralized\" means debt against no collateral, already past liquidation; \"unknown\" means the risk "
-  + "numbers could NOT be computed and is NOT a statement that the position is safe — read risk.reason, and prefer "
+  + "numbers could NOT be computed and is NOT a statement that the position is safe - read risk.reason, and prefer "
   + "repaying or depositing over borrowing or withdrawing until it clears. LTV is an estimate from Jupiter's own "
   + "point-in-time vault prices at read time, not the protocol's on-chain valuation: it rises when you borrow more or "
   + "withdraw collateral, falls when you repay or deposit, and moves with the market between reads. maxLtvPercent is "
   + "the ceiling a new borrow or withdrawal must stay under; at or above liquidationThresholdPercent the position can "
   + "be liquidated. The liquidation-threshold scale is inferred from provider data rather than documented, so leave "
-  + "margin instead of sizing to the last point. liquidationStatus is the provider's own isLiquidated flag — "
+  + "margin instead of sizing to the last point. liquidationStatus is the provider's own isLiquidated flag - "
   + "\"unknown\" means it was not reported, not that the position is healthy.";
 
 export interface JupiterLendBorrowVaultFilters {
-  /** Case-sensitive vault-id allow-list (matches the provider's own numeric `id`, stringified). Omit for all vaults — a filter, never a default cap. */
+  /** Case-sensitive vault-id allow-list (matches the provider's own numeric `id`, stringified). Omit for all vaults - a filter, never a default cap. */
   vaultIds?: readonly string[];
 }
 
@@ -214,7 +214,7 @@ export interface JupiterLendBorrowPositionFilters {
 // ── Filtering + projection ─────────────────────────────────────
 //
 // `formatTenthsAsPercent` (the provider's raw/10 percent scale) now lives in
-// `./borrow-health.ts`, which owns every scale this shelf reads — it was
+// `./borrow-health.ts`, which owns every scale this shelf reads - it was
 // hand-copied into `./borrow-risk-preview.ts` as well, and two copies of a
 // money scale is one too many.
 
@@ -262,7 +262,7 @@ export function projectJupiterLendBorrowVaults(
 /**
  * A position with no readable vault: identity and thresholds are explicitly
  * `null` (never omitted) and the risk block carries the reason. The raw
- * amounts still ship — withholding them would hide the position entirely —
+ * amounts still ship - withholding them would hide the position entirely -
  * but the reason says plainly that their scale is unknown, so they must not
  * be read as token amounts or used to size an operation.
  */
@@ -341,7 +341,7 @@ function projectPosition(
  * defensively (external API response).
  *
  * `vaults` is passed in rather than fetched here so this stays pure and the
- * handler owns provider I/O — and, critically, so a FAILED vault read is a
+ * handler owns provider I/O - and, critically, so a FAILED vault read is a
  * value this projector can disclose instead of an exception that would take
  * the whole positions read down with it. Disclosure over refusal is the
  * owner's ruling for this surface.

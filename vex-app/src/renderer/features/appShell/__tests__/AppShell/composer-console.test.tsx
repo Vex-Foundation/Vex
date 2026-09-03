@@ -37,7 +37,17 @@ import {
   resetSubmitKeyBehaviorForTest,
   setSubmitKeyBehavior,
 } from "../../../../lib/composer-submission-policy.js";
-import { getToastSnapshot } from "../../../../lib/toast.js";
+import { notifications } from "../../../../lib/notifications/index.js";
+
+/**
+ * The transient toast is a notification-model entry since B2.2: the store that
+ * held one message and forgot it is gone, so the assertions read the model's
+ * newest retained item instead of a slot.
+ */
+function latestToastText(): string | null {
+  return notifications.getSnapshot().items[0]?.message ?? null;
+}
+
 
 const mockChatSteer = vi.fn();
 
@@ -130,7 +140,10 @@ function agentRow(over: Partial<SessionListItem> = {}): SessionListItem {
   };
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  notifications.reset();
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -334,7 +347,7 @@ describe("composer capsule - slash commands (combobox)", () => {
     ).toBe(1);
     fireEvent.keyDown(field, { key: "Enter" });
     expect(field.value).toBe("");
-    expect(getToastSnapshot()?.text).toBe("Draft cleared.");
+    expect(latestToastText()).toBe("Draft cleared.");
     // The command consumed the Enter - no chat submit fired.
     expect(mockSubmitChat.mutateAsync).not.toHaveBeenCalled();
   });

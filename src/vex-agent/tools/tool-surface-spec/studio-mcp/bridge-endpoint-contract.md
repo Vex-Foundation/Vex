@@ -17,7 +17,10 @@ AMENDED AGAIN in the same fix arc, from external review turn 2:
 - THE WINDOWS TRANSPORT IS RUNTIME-DISABLED behind one mechanical flag (1.6),
   refusing with `windows_pending_platform_proof`. Derivation, the pipe name,
   the override syntax and the handshake path are UNCHANGED and stay
-  vector-tested; only opening the transport is refused.
+  vector-tested; only opening the transport is refused. (SUPERSEDED at stage
+  B4.3b: the matrix was measured, the flag is TRUE on both owners, and the gate
+  and its refusal code are gone. Section 1.6 carries the current state; this
+  line records what that amendment did at the time.)
 - THE BRIDGE'S STDERR BOUND COVERS THE COMPLETE LINE (3.4), prefix and newline
   included.
 - THE WINDOWS DIAL IS OVERLAPPED (3.5).
@@ -205,14 +208,57 @@ permissions are the access control and the handshake is the admission check.
 
 ### 1.2 Derivation per OS
 
-**Linux.** `$XDG_RUNTIME_DIR/vex-studio-<hash>.sock` when `XDG_RUNTIME_DIR` is
-set, absolute, a directory, owned by the current uid, and has no group or other
-permission bits. Any of those failing falls through to the tmpdir form below.
-Those are the four ways a runtime directory stops being private, and a listener
-in a directory another user can read is the failure this whole section exists
-to prevent.
+**Linux.** The derivation is a PURE FUNCTION of four facts - the uid, the config
+directory, `XDG_RUNTIME_DIR`, and the filesystem facts of `/run/user/<uid>` -
+evaluated by both owners in this order:
 
-**Linux fallback and macOS.**
+| # | condition | endpoint | parent created by Vex |
+| --- | --- | --- | --- |
+| 1 | `XDG_RUNTIME_DIR` is set, absolute and a PRIVATE DIRECTORY | `$XDG_RUNTIME_DIR/vex-studio-<hash>.sock` | no |
+| 2 | otherwise, `/run/user/<uid>` is a PRIVATE DIRECTORY | `/run/user/<uid>/vex-studio-<hash>.sock` | no |
+| 3 | otherwise | `<tmpdir>/vex-studio-<uid>/vex-studio-<hash>.sock` | yes |
+
+PRIVATE DIRECTORY means the same four things in rows 1 and 2, established with
+`lstat`: it exists, it is a directory, it is owned by the current uid, and it
+has no group or other permission bits. Those are the four ways a runtime
+directory stops being private, and a listener in a directory another user can
+read is the failure this whole section exists to prevent.
+
+ROW 2 IS WHY THE TWO SIDES CANNOT DISAGREE, and it exists because they did.
+`XDG_RUNTIME_DIR` is an ENVIRONMENT variable, and the app and the bridge are
+spawned by different parents: the app inherits a desktop session's environment,
+the bridge inherits whatever its MCP client hands it. Codex CLI hands it almost
+nothing, by design rather than by accident - `create_env_for_mcp_server`
+(`codex-rs/rmcp-client/src/utils.rs:16`, reference checkout) builds a stdio MCP
+server's environment from the `DEFAULT_ENV_VARS` ALLOWLIST (same file, `:163`:
+HOME, LOGNAME, PATH, SHELL, USER, `__CF_USER_TEXT_ENCODING`, LANG, LC_ALL,
+TERM, TMPDIR, TZ) plus that server's own config `env` map, and
+`codex-rs/core/src/spawn.rs:83` calls `env_clear()` before applying it.
+`XDG_RUNTIME_DIR` is not on that list. MEASURED with the built bridge: with the
+developer's own environment it derived `/run/user/1000/...`; with an
+environment carrying only HOME and PATH it derived `/tmp/vex-studio-1000/...`
+and exited 2 before answering `initialize`, and the client reported a broken
+pipe. Row 2 is a FILESYSTEM fact rather than an environment one, so both sides
+read it identically whatever their parent forwarded.
+
+Vex's Codex installer dialect could instead write `env = { XDG_RUNTIME_DIR =
+... }` into the client's config. That is NOT the fix and is not done: it would
+freeze one login session's value into a file that outlives the session, and it
+would leave every other environment-scrubbing client broken. It is also
+structurally impossible today - the per-dialect key allowlist in
+`installer/render/entry.ts` carries no `env` key at all, which is what makes
+"Vex never writes an environment for the bridge child" a property rather than a
+promise.
+
+VS CODE, AND WHERE VEX DIVERGES. `createStaticIPCHandle`
+(`src/vs/base/parts/ipc/node/ipc.net.ts`, reference checkout) prefers
+`XDG_RUNTIME_DIR` and otherwise falls back to a caller-supplied directory, with
+no middle rung and no ownership or mode check. Vex needs row 2 because VS
+Code's two sides are one process tree sharing an environment and ours are not,
+and it keeps rows 1 and 2 behind the privacy gate because this listener fronts
+a self-custodial wallet's MCP host rather than an editor's window.
+
+**Linux fallback (row 3) and macOS.**
 
 ```
 <tmpdir>/vex-studio-<uid>/vex-studio-<hash>.sock
@@ -389,6 +435,34 @@ The `endpointAncestorIdentity.changed` golden vector supplies one path and the
 complete expected sentence. The TypeScript host and Go bridge independently
 format and test that same vector, so code or sentence drift is a red test.
 
+AN ABSENT DIRECTORY IS NOT A CHANGED ONE. Capturing the chain for a directory
+that does not exist is not a replacement and is not reported as one:
+
+| requirement | refusal code |
+| --- | --- |
+| the endpoint directory exists when the chain is captured | `endpoint_directory_missing` |
+
+It is the same failure class, and therefore the same exit code (2), as every
+other local refusal. It is BRIDGE-SIDE ONLY: the host creates its own parent
+directory (section 1.2, row 3) and never reaches this state, which is why the
+sentence is not in the shared vector table. The bridge completes it with the
+one clause the endpoint planner cannot know - whether THIS process was given an
+`XDG_RUNTIME_DIR` at all - so a client that forwarded the variable is not told
+it did not:
+
+```
+endpoint_directory_missing: The Vex Studio endpoint directory <absolute-path> does not exist. Vex is not running for this configuration.
+endpoint_directory_missing: The Vex Studio endpoint directory <absolute-path> does not exist. Vex is not running for this configuration, or it is listening under XDG_RUNTIME_DIR, which this client did not forward to the bridge.
+```
+
+The defect this replaced was measured, not imagined: a scrubbed-environment
+client derived `/tmp/vex-studio-1000` while the app listened under
+`/run/user/1000`, and the bridge reported that the ancestor of a directory
+which had never existed "changed before use" - a sentence describing a swap
+attack, printed for an ordinary "Vex is somewhere else". Section 1.2 row 2 is
+what stops the divergence; this is what the user is told when a directory is
+absent anyway.
+
 ACCEPTED RESIDUAL, STATED PLAINLY. These checks are path-based because Node has
 no descriptor-relative socket bind/unlink API, and Go has no matching
 cross-platform standard-library primitive. If a filesystem removes and
@@ -403,28 +477,47 @@ is mandatory too. Replacing a target ancestor in the ordinary case changes an
 identity in that second chain and refuses. The same-path device/inode reuse
 residual above applies to both views.
 
-### 1.6 The Windows transport gate, and how it opens
+### 1.6 The Windows transport gate, and how it opened
 
-THE WINDOWS NAMED-PIPE TRANSPORT IS RUNTIME-DISABLED. Both owners hold one
-flag, and both refuse a pipe plan with the code `windows_pending_platform_proof`
-while it is false:
+THE WINDOWS NAMED-PIPE TRANSPORT IS ENABLED. Both owners hold one flag, both
+read TRUE, and the two are ONE decision:
 
 | owner | flag |
 | --- | --- |
 | host | `WINDOWS_TRANSPORT_PROVEN` in `vex-app/src/main/studio/mcp-host/endpoint.ts` |
 | bridge | `endpoint.WindowsTransportProven` in `bridge/internal/endpoint/endpoint.go` |
 
-The refusal is applied at the site that would TOUCH the transport - the host
-before `server.listen`, the bridge before the dial - and it maps to the
-existing local-refusal exit code 2 (section 3.4).
+THE REVIEWER'S RULE, INVERTED WITH THE FLIP AND STILL MECHANICAL: a reviewer who
+sees EITHER flag false while the other is true rejects the change. Closing the
+transport again is a contract change (section 5) carrying both owners in one
+diff, never an edit to one constant. Each flag is asserted true by its own test
+- `mcp-host-endpoint.test.ts`'s "has the transport OPEN, and serves the pipe the
+derivation names" and `endpoint_test.go`'s
+`TestWindowsTransportIsProvenAndTheDerivedPipeIsDialled` - so a lone edit fails
+its own language's suite before a human reads it.
 
-WHAT IS NOT DISABLED. The pattern stays, and stays vector-tested: the
-derivation of `\\.\pipe\vex-studio-<hash>` (1.2), the pipe-syntax validator and
-the win32 override plan (1.4), the plan shape, and the handshake and relay
-paths a pipe would use. A change that "disabled Windows" by breaking any of
-those would fail the vectors, which is the point.
+WHAT WENT WITH THE GATE. The plan-time refusal and its code
+`windows_pending_platform_proof` are DELETED on both sides
+(`unprovenWindowsTransport`, `UnprovenWindowsTransport`,
+`RefuseWindowsPendingPlatformProof`), together with the host status cause
+`windows_transport_disabled` and its renderer copy: with the flag true no path
+could produce any of them, and a branch that cannot fire is not a control. The
+code never crossed the wire - it was each process refusing its own plan, printed
+to stderr as exit 2 - so no reader of either side had to be migrated.
 
-WHY IT IS CLOSED. libuv - what Node's `server.listen` reaches on win32 -
+WHAT PROTECTS THE TRANSPORT NOW is measured rather than assumed, and runs on
+every attempt rather than once at plan time: the front's PROTECTED two-ACE
+descriptor with the readback main requires before it publishes anything
+(`pipe_security_unconfirmed` otherwise), and, on the client side, the SQOS flags
+plus the server-SID host authentication below.
+
+WHAT IS NOT AFFECTED. The pattern stays, and stays vector-tested: the derivation
+of `\\.\pipe\vex-studio-<hash>` (1.2), the pipe-syntax validator and the win32
+override plan (1.4), the plan shape, and the handshake and relay paths. Opening
+the gate changed no plan.
+
+WHY IT WAS CLOSED, and what the measurement replaced. libuv - what Node's
+`server.listen` reaches on win32 -
 creates the pipe with a NULL security descriptor and WITHOUT
 `PIPE_REJECT_REMOTE_CLIENTS`. The resulting DEFAULT security descriptor grants
 Everyone, and the anonymous logon, READ access. Duplex is denied to a second
@@ -435,72 +528,206 @@ remote-client posture nobody has measured. Rule 90 fails closed until it is
 measured, and VS Code's precedent is evidence about VS Code's threat model,
 not a measurement of ours.
 
-HOW IT OPENS - MECHANICALLY, NOT EDITORIALLY. The REQUIRED CI job
-`bridge-windows` (`.github/workflows/ci.yml`) runs on `windows-latest`. It
-exists today as a STUB: it compiles every package for `windows/amd64`,
-including the build-tagged overlapped dial, and runs the Go vector tests there.
-FLIPPING EITHER FLAG REQUIRES EXTENDING THAT JOB with the full proof matrix
-below, and the reviewer's check is mechanical: no matrix in the job, no flip.
+THAT REASONING NO LONGER DESCRIBES THE PIPE VEX CREATES. Since B4.2b the
+`vex-pipe-front` child binds the pipe under its own PROTECTED two-ACE
+descriptor and libuv never sees the handle, and rows 1 and 2 below measured the
+consequence rather than arguing it: a second local account is denied duplex AND
+read-only access, against a control pipe in the same run that admits it.
+
+HOW IT OPENED - MECHANICALLY, NOT EDITORIALLY. The REQUIRED CI jobs
+`bridge-windows` and `vex-app-windows` (`.github/workflows/ci.yml`) run on
+`windows-latest`. The gate could only be opened by EXTENDING them with the full
+proof matrix below, and it was: every row now names the run that measured it.
+The same rule governs any future re-closing - no matrix, no claim.
+
+THE INSTRUMENT THAT MEASURES FIVE OF THE EIGHT. `bridge/cmd/probe-pipe-acl`
+is a Windows-only probe binary (non-Windows stub, exit 2, the same build-tag
+split every command in the module uses). It ships in nothing and no packaging
+path builds it. It has two modes:
+
+- `serve --name <pipe> --ready <file> [--descriptor front|winio-default|open]`
+  binds through the REAL `listener.Bind` - the front's compiled-in descriptor
+  and the front's readback, nothing re-implemented - writes the CONFIRMED BOUND
+  flags to the ready file as JSON, runs the real `listener.Serve`, records every
+  accepted connection's client pid and the impersonation level a server actually
+  receives, and exits on stdin EOF. The two non-`front` descriptors are TEST
+  ONLY arms of the measurement, and they exist on the probe and never on the
+  front: `winio-default` is go-winio's default named-pipe ACL, the CONTROL that
+  attributes a denial to the front's DACL rather than to the account; `open` is
+  `D:P(A;;FA;;;WD)`, the accurate SQUATTER, because an adversary who takes the
+  pipe name in order to be talked to grants everyone access.
+- `dial --name <pipe> [--expect connected|denied] [--access duplex|read]` opens
+  the pipe with the SAME flags the shipped bridge sends
+  (`FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION`,
+  mirroring `cmd/vex-mcp/dial_windows.go`), classifies the result into the
+  closed set `{connected, access_denied, file_not_found, pipe_busy,
+  other(code)}` and prints ONE JSON line. Omitting `--expect` RECORDS the
+  outcome without asserting one, which is what an unmeasured question gets.
+
+Its output is structural: outcome names, Windows error codes, process ids and
+enum numbers. Never the descriptor, never a SID, never an account name, never
+the password the job generates, never the pipe path - a Windows error string
+carries that path, which is why no error string is ever printed.
 
 The proof matrix, all eight on a Windows runner:
 
-1. SECOND-USER DUPLEX DENIAL. A second local user account's duplex connect to
-   the served pipe is denied by the default security descriptor.
-2. READ-ONLY CROSS-USER CONNECT. What a second user's READ-ONLY connect
-   actually does to the host: whether it consumes a pipe instance and a
-   handshake-pending slot, and what the host does about it. Slot exhaustion by
-   a user who can never complete a handshake must be shown to be impossible or
-   bounded.
-3. REMOTE-CLIENT REJECTION. The posture for a connect arriving over the
-   network, and whether the served pipe sets `PIPE_REJECT_REMOTE_CLIENTS` or
-   the host otherwise refuses it.
-4. NATIVE PIPE ROUND TRIP. The real host and the real built bridge exchanging
-   a handshake and MCP frames over the pipe, the Windows equivalent of the
-   Linux conformance suite.
-5. OVERLAPPED DUPLEX. A pending read and a concurrent write on the SAME
-   overlapped handle both complete - the property section 3.5's dial exists
-   for, and the one a synchronous handle does not have.
-6. DEADLINE AND CLOSE CANCELLATION. The ack deadline and the drain deadline
-   both actually fire on the pipe handle, and closing during a blocked
-   operation cancels it rather than hanging teardown.
-7. FOREIGN-USER FIRST-SERVER PIPE SQUATTING. A SECOND local user account
-   creates `\\.\pipe\vex-studio-<hash>` FIRST, before Vex's host binds it, and
-   answers the connect. The bridge must NOT hand that server the project
-   handshake. The pipe name is derived from a hash of the config directory
-   (1.2) and is therefore predictable, and a named pipe is first-come: the
-   name is not a secret and being the first creator is not an authorisation.
-   This test is the one that proves the anti-squatting control exists, so it
-   must fail if the control is removed.
-8. SERVER IMPERSONATION LEVEL. The client handle the bridge opens must cap the
-   server at IDENTIFICATION. `bridge/cmd/vex-mcp/dial_windows.go` passes
-   `SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION` to `CreateFile`; the test
-   measures the level a server actually receives (an impersonating server can
-   identify the client and must not be able to act as it).
+1. SECOND-USER DUPLEX DENIAL - CI-MEASURED on `bridge-windows`, run
+   33646484002 (commit 937e8598, 2026-09-02: `access_denied`, ERROR_ACCESS_DENIED
+   5, zero busy retries). A temporary local account, created by the job and
+   removed in an always-step, dials the pipe the front bound and is refused with
+   ERROR_ACCESS_DENIED, while the same account CONNECTS to the control pipe
+   served with go-winio's default descriptor in the same run. The pairing is
+   what makes it evidence: the denial is the front's DACL, not the account.
+   (Was: "denied by the default security descriptor" - superseded, the front now
+   binds its own PROTECTED two-ACE descriptor and libuv never sees the pipe.)
+2. READ-ONLY CROSS-USER CONNECT - CI-MEASURED on `bridge-windows`, run
+   33646484002 (`access_denied`, ERROR_ACCESS_DENIED 5; the front's serve log
+   accepted exactly the two runner-user dials and nothing else, so no
+   cross-user connect consumed an instance). The same temporary account dials
+   the front's pipe with
+   GENERIC_READ only and is refused with ERROR_ACCESS_DENIED: the front's DACL
+   has no Everyone ACE, so the read-only open the default descriptor would have
+   allowed is denied too. The serve side's `serve_done` line reports how many
+   connections were accepted in total, so a read-only connect that had consumed
+   an instance would be visible as one. The slot-exhaustion vector this row was
+   written for therefore cannot be reached by another local user; it remains
+   reachable by another process of the SAME user, which is out of scope for this
+   boundary and is bounded instead by `maxRaw` (section 8.1).
+3. REMOTE-CLIENT REJECTION - PARTIALLY CI-MEASURED on `bridge-windows`, run
+   33646484002. Two facts are recorded and neither is asserted: the
+   `rejectRemote` bit of the BOUND flags the front CONFIRMED by readback
+   (measured TRUE: `flagsApplied` 7 = rejectRemote | firstInstance |
+   messageMode, so `FILE_PIPE_REJECT_REMOTE_CLIENTS` does read back from
+   `FilePipeLocalInformation.NamedPipeType`, a fact MS-FSCC leaves undocumented),
+   and the classified outcome of a dial through the loopback redirector path
+   `\\localhost\pipe\<name>`, which the pipe file system treats as a network
+   client (measured `access_denied`, ERROR_ACCESS_DENIED 5, for the OWNER of the
+   pipe: the redirector path is refused even to the account the DACL admits,
+   which is the posture the reject-remote bit promises). A connect arriving from
+   ANOTHER MACHINE is NOT measured and cannot be on a hosted runner: it needs a
+   second host on the same network and inbound SMB, neither of which a GitHub
+   runner has.
+4. NATIVE PIPE ROUND TRIP - BOTH HALVES. The HOST half is measured by
+   `front-real-binary.test.ts` on `vex-app-windows`, run 33650332655: the real
+   built `vex-pipe-front.exe`, spawned by the real host, reported BOUND with
+   every required flag confirmed, relayed main's refusal line byte for byte to a
+   real pipe client, and answered LOCK inside its deadline. The BRIDGE half is
+   the WIN32 ARM of `mcp-bridge-conformance.test.ts` on the same lane: the real
+   built `vex-mcp.exe` dials the pipe the real host's front bound, completes the
+   handshake, and relays MCP frames the host's own parser answers - a full
+   `initialize` round trip, a 512 KiB `tools/call` argument compared against the
+   bytes the HOST saw (a message-mode pipe with 4096-byte kernel buffers is
+   where a reframing relay breaks, and `AF_UNIX` never asks that question), the
+   `unknown_project` refusal arriving as exit 5 through the front, and stdin EOF
+   ending in exit 0 through section 3.5's NO-half-close branch, which only this
+   transport reaches. The arm takes its pipe name from `VEX_STUDIO_SOCKET` for
+   the isolation reason the unix arm takes a temp directory, and it fails rather
+   than skips when `VEX_REQUIRE_BRIDGE_CONFORMANCE=1` is set on that lane.
+5. OVERLAPPED DUPLEX - MEASURED by `TestPipeDialSupportsConcurrentDuplex`
+   (`bridge/cmd/vex-mcp/dial_windows_test.go`) on `bridge-windows`, run
+   33663385959 (commit bd577f91, 2026-09-02). A read and a write outstanding TOGETHER on the handle
+   `dialPipe` opens, both completing and byte-verified. The concurrency is
+   constructed rather than timed: the client writes 1 MiB against 4096-byte
+   kernel buffers, the server takes a 64-byte prefix and stops - so the write is
+   arithmetically still outstanding - and the client's read of the server's
+   answer completes while the write's completion channel is still empty. A
+   synchronous handle deadlocks on exactly that pattern.
+6. DEADLINE AND CLOSE CANCELLATION - MEASURED by
+   `TestPipeHandleTakesARealDeadline`, `TestPipeAckDeadlineFiresOnASilentHost`,
+   `TestPipeDrainDeadlineFiresOnASilentHost` and
+   `TestClosingThePipeCancelsABlockedRead` (same file) on `bridge-windows`, run
+   33663385959. In order: `SetDeadline` returns nil on the overlapped
+   handle and the read it bounds ends in `os.ErrDeadlineExceeded`, which turns
+   `dial_windows.go`'s `setDeadlineImpl` note from a reading of the go1.27.0
+   sources into a measurement; `handshake.Perform` against a pipe server that
+   accepts and never answers ends on that deadline, with the server confirmed to
+   have received the request line, so the bound is on the ack and not on the
+   write; `relay.Run` against the same silent server returns
+   `OutcomeDrainDeadline` with `HalfClosed:false`, which is the pipe's lack of a
+   half-close reported rather than presented as a clean close; and `Close` under
+   a read parked in the kernel returns that read with `os.ErrClosed` or
+   ERROR_OPERATION_ABORTED and no bytes. Every wait is a channel join under a
+   bounded timer; no sleep stands in for a proof.
+7. FOREIGN-USER FIRST-SERVER PIPE SQUATTING - CI-MEASURED on `bridge-windows`,
+   run 33646484002 (front: `{"outcome":"bind_failed"}`, exit 3, no ready file;
+   bridge: `TestHostAuthRefusesAForeignUsersServer` passed against the
+   temporary account's server), in two halves.
+   - The FRONT'S half: the temporary account serves the name first, then the
+     front is asked to bind the SAME name through the real `listener.Bind` and
+     FAILS CLOSED - go-winio's first instance uses the FILE_CREATE disposition,
+     so the collision is a bind failure and no BOUND is ever reported. The job
+     asserts the probe's `{"outcome":"bind_failed"}` line and the ABSENCE of a
+     ready file.
+   - The BRIDGE'S half: with the temporary account's server up,
+     `go test -run TestHostAuthRefusesAForeignUsersServer ./cmd/vex-mcp` drives
+     the PRODUCTION `dialPipe` against it - real CreateFile with the shipped SQOS
+     flags, real `GetNamedPipeServerProcessId`, real token query, real SID
+     comparison - and asserts the typed local refusal
+     `windows_host_not_current_user`, that no connection was returned, and that
+     the refusal carries a pid and no SID. Off that job the test SKIPS with its
+     reason rather than passing.
+   This is the test that proves the anti-squatting control exists, so it must
+   fail if the control is removed.
+8. SERVER IMPERSONATION LEVEL - CI-MEASURED on `bridge-windows`, run
+   33646484002 (every accepted connection, duplex and read-only alike:
+   `impersonationLevel` 1, `identification`). Measured FROM THE SERVER'S SIDE,
+   which is the only
+   honest way to ask it: for every accepted connection the probe impersonates
+   the client on a locked operating-system thread
+   (`ImpersonateNamedPipeClient`), reads `TokenImpersonationLevel` off the
+   thread token, reverts, and reports the enum number and its name. Against the
+   bridge's own SQOS flags the level must be SecurityIdentification, which is
+   **1** - the value 2 is SecurityImpersonation, the level those flags exist to
+   prevent, and TokenImpersonation, a different enum in the same header, is also
+   2. The job asserts 1 on the runner-user duplex dial and records the level for
+   every other accepted connection.
 
-REQUIRED BEFORE THE FLIP, AND NOT IMPLEMENTED TODAY: HOST AUTHENTICATION.
+REQUIRED BEFORE THE FLIP: HOST AUTHENTICATION - IMPLEMENTED, AND CROSS-USER
+MEASURED SINCE THE TWO-ACCOUNT STEP OF ROW 7 ABOVE.
 
-Before the bridge forwards the handshake it MUST verify that the connected
-server belongs to the CURRENT USER: `GetNamedPipeServerProcessId` on the
-connected handle, then a comparison of that process's token SID against the
-current user's SID, or an equivalent reviewed authenticated-host mechanism. A
-mismatch fails closed with a local refusal, before the project id leaves the
-process.
+The bridge authenticates the pipe server before the handshake. In
+`bridge/cmd/vex-mcp/hostauth_windows.go`, between `CreateFile` returning a
+handle and that handle becoming a connection, the bridge calls
+`GetNamedPipeServerProcessId` on the connected handle, opens the reported
+process with `PROCESS_QUERY_LIMITED_INFORMATION`, opens its token with
+`TOKEN_QUERY`, reads `GetTokenInformation(TokenUser)`, and compares the
+resulting user SID, in canonical string form, with this process's own
+process-token user SID. Anything other than an exact match - a mismatch, an
+empty SID, or a failure at any step - closes the raw handle and returns the
+local refusal `windows_host_not_current_user`, which exits 2 (local refusal,
+section 3.4), not 3 (dial failed). No byte, and in particular not the project
+id, leaves the process on that path: the handshake is unreachable because no
+connection is ever constructed. The refusal names the pipe path and the server
+pid; it never reports the other user's identity.
 
 The SQOS flag of item 8 is NECESSARY, NOT SUFFICIENT. It bounds what a hostile
 server can do with the client's token; it says nothing about WHO the server is.
 The host-authentication check is the load-bearing anti-squatting control, and
 item 7 is its test.
 
-The check is DELIBERATELY NOT WRITTEN YET. It is Windows-runtime code that
-cannot be exercised on the Linux development and CI hosts, and the transport is
-runtime-disabled, so writing it blind would ship an unmeasured security control
-rather than a measured one. It is named here as a REQUIRED-BEFORE-FLIP item, in
-the same words in `dial_windows.go`, and the reviewer's check is mechanical: no
-host-authentication check and no passing item 7, no flip.
+This is one of the measurements the gate opened on: with rows 4, 5 and 6 since
+measured, `endpoint.WindowsTransportProven` and `WINDOWS_TRANSPORT_PROVEN` are
+both true.
 
-Until all eight run in that job AND the host-authentication check exists,
-Windows users get one honest refusal sentence naming the reason, and Vex Studio
-is a Linux and macOS feature.
+What the `bridge-windows` job now proves about THIS control: the SAME-USER path
+end to end against a real in-test named-pipe server, driving the real
+`GetNamedPipeServerProcessId` and token comparison; the refusal branches through
+an injected identity-resolver seam, asserting in each case that the pipe server
+received zero bytes; and, since row 7's second half, the CROSS-USER refusal
+against a pipe genuinely served by a temporary local account the job creates and
+removes. The check accepts any same-user server by design - the boundary this
+control enforces is the other user, not another program running as this one.
+
+All eight ran. Vex Studio is a Windows feature as well as a Linux and macOS one,
+and the refusal sentence Windows users used to get has no producer left.
+
+WHAT THE MATRIX STILL DOES NOT PROVE, stated rather than rounded up. A
+genuinely OFF-MACHINE client is not measurable on one hosted runner (row 3
+records the reject-remote readback and the loopback-redirector denial instead,
+and asserts only the second). A DOMAIN-JOINED machine, where the account and
+group SIDs the descriptor is built from come from a directory rather than the
+local SAM, is not covered by any row. And no human has run the pipe on a real
+Windows desktop: every row above is CI evidence.
 
 ---
 
@@ -628,11 +855,30 @@ So the host owns one serialized send owner per connection:
 
 ### 3.2 Close
 
-A peer FIN propagates as the transport's `onclose`, exactly once. That is what
-aborts every in-flight MCP request handler's `AbortSignal`, which is what
-withdraws a blocked Studio approval. Missing that edge leaves an approval
-waiting for a peer that is gone; firing it twice is a second teardown of an
-already-closed instance. The transport latches it.
+CORRECTED to the landed seam. An earlier revision of this section said a peer
+FIN propagates as the transport's `onclose`. IT DOES NOT, and the difference is
+a whole class of session:
+
+- A PEER FIN raises the wire's `end` - readable EOF - and the WRITABLE SIDE IS
+  PRESERVED. `src/vex-agent/mcp/duplex-transport.ts` states it as an obligation
+  on every implementation: "A peer that half-closes is saying 'no more
+  requests', not 'no more answers': `end` must fire without the writable side
+  being torn down, so the last response of a one-shot session can still be
+  written. An implementation that ends the writable side on peer FIN breaks
+  every `claude -p` style session, silently." On that edge
+  `StudioSocketTransport` starts its BOUNDED POST-EOF DRAIN under one absolute
+  deadline, so answers to already-sent requests are still written. The edge is
+  queryable after the fact as `readableEnded`, because Node does not replay
+  `end` to a late listener.
+- THE WIRE BEING GONE - the `close` edge - is what announces `onclose`, exactly
+  once. THAT is what aborts every in-flight MCP request handler's `AbortSignal`,
+  which is what withdraws a blocked Studio approval. Missing that edge leaves an
+  approval waiting for a peer that is gone; firing it twice is a second teardown
+  of an already-closed instance. The transport latches it.
+
+Announcing `onclose` on the FIN edge is the exact defect the drain exists to
+undo: it aborted every in-flight handler at the moment a one-shot bridge stopped
+asking, so the answers it was waiting for were never written.
 
 Shutdown gives the writable side 5000 ms to flush, then destroys.
 
@@ -679,7 +925,7 @@ not fit is REPORTED with its exact omitted byte count, never silently dropped.
 | --- | --- | --- |
 | 0 | the session ended cleanly | client stdin EOF after the drain, or peer EOF |
 | 1 | usage | no project id, a non-UUID project id, an unknown argument |
-| 2 | endpoint refused locally | every `RefusalCode` in sections 1.4 and 1.5.1, including `override_pipe_on_unix` and `endpoint_ancestor_changed`, plus `windows_pending_platform_proof` from the section 1.6 gate. `windows_probe_pending` was REMOVED with the Windows adoption in section 1.2 and is no longer a code either side emits |
+| 2 | endpoint refused locally | every `RefusalCode` in sections 1.4 and 1.5.1, including `override_pipe_on_unix`, `endpoint_ancestor_changed` and the bridge-only `endpoint_directory_missing`, plus `windows_host_not_current_user` from the host authentication in 1.6. `windows_probe_pending` was REMOVED with the Windows adoption in section 1.2, and `windows_pending_platform_proof` was REMOVED with the section 1.6 gate it belonged to; neither is a code either side emits |
 | 3 | dial failed | ENOENT, ECONNREFUSED, EACCES, or the dial timeout |
 | 4 | handshake failed | write failure, ack deadline, ack over the bound, or an ack that fails the strict parse |
 | 5 | refused `unknown_project` | ack |
@@ -691,12 +937,19 @@ not fit is REPORTED with its exact omitted byte count, never silently dropped.
 | 11 | the relay failed | the client stopped reading, or the socket failed mid-session |
 | 12 | a signal stopped the bridge | SIGINT, SIGTERM or SIGHUP |
 
-NO RETRY, anywhere. A retry would blur the host's locked-listener lifecycle: a
-bridge that reconnected after a lock would be talking to a Vex that
-deliberately stopped accepting, and a retry after an ack refusal would repeat a
-decision the host already made. The only future reconsideration on the record
-is ONE bounded pre-handshake retry for ENOENT/ECONNREFUSED - never after an
-ack, and never for `locked`, `malformed`, `at_capacity` or a version refusal.
+NO RETRY, anywhere. AN ACK IS A DECISION THE HOST ALREADY MADE, AND IT IS
+TERMINAL FOR THIS PROCESS. That is the whole rationale, and it does not depend
+on the listener's lifecycle: since section 4.1 the host keeps its listener bound
+across a relock, so a `locked` refusal is an answer the host chose to send, not
+a door that happened to be shut. Reconnecting would re-ask a question that was
+answered - the host would answer it the same way for as long as the vault stays
+locked - and it would hide the honest exit code (7) from the supervising client
+behind a loop. The user unlocks Vex and starts the bridge again; the client is
+the thing that decides to reconnect, not the bridge.
+
+The only future reconsideration on the record is ONE bounded pre-handshake retry
+for ENOENT/ECONNREFUSED - never after an ack, and never for `locked`,
+`malformed`, `at_capacity` or a version refusal.
 
 ### 3.5 The relay's shutdown state machine, asymmetric on purpose
 
@@ -801,13 +1054,44 @@ A transport-produced error carries a CLOSED code and nothing else
 never travel into an `Error` the host logs; the log line carries the code and,
 for an over-long line, the byte count.
 
-### 4.1 Lock order
+### 4.1 Lock order, and what a lock does NOT close
+
+THE LISTENER AND THE DOOR ARE TWO OWNERS. The listener is bound once at
+app-ready, as soon as the host's executor is configured, and it is independent
+of the vault and of the settlement readiness barrier. ADMISSION - may what
+arrives on that socket be served - is what a lock closes. Only application quit
+closes the listener.
+
+The trade this replaces was worse for the bridge and for the user: while a lock
+closed the listener, "Vex is locked" reached a bridge as the same
+`ECONNREFUSED` that also means "Vex is not installed" and "Vex is still
+starting", so the only honest sentence a bridge could print covered three
+unrelated causes.
+
+A LOCKED OR UNREADY HOST ANSWERS BEFORE IT READS. The connection is accepted, a
+typed refusal is written, and the host closes the connection:
+
+- the refusal code is `locked`, which is ALREADY in the closed set of section
+  2.2 ("Vex is locked, still starting, or shutting down"), so this is not a
+  protocol change and a v1 bridge already switches on it (exit code 7);
+- NO project bytes are read. The host does not parse a handshake line, so no
+  project identifier crosses the wire in either direction and the refusal
+  carries none;
+- NO established-connection reservation is taken and no handshake-pending slot
+  is held, so a flood of connects against a locked Vex can consume only the raw
+  listener bound of section 3 and never the bounds a real bridge needs;
+- NO idle connection is retained. The host does not hold an open socket for a
+  peer it has refused.
 
 `lockSecretSession` runs, in this order:
 
 1. the synchronous scrub and signing revocation, unchanged and FIRST;
-2. `lockStudioMcpHost()` - mark locked, close the listener, destroy every
-   registered socket, SYNCHRONOUSLY;
+2. `lockStudioMcpHost()` - close ADMISSION (which advances the lifecycle epoch,
+   so every start and every in-progress connection establish is fenced) and
+   destroy every established and handshaking connection with the trusted cause,
+   SYNCHRONOUSLY. The listener and its endpoint SURVIVE, and their identity does
+   not change: an unlock serves again over the same bound socket, with no
+   rebind and no new address for a bridge to discover;
 3. the existing provider reset, dispatch-generation advance and durable
    refusal pass.
 
@@ -817,8 +1101,51 @@ from dispatching, and a fence delayed behind a peer's FIN is a fence that is
 down for as long as that peer is slow. Per-connection EOF refusals are never
 awaited before the advance.
 
+UNLOCK IS NOT THE MIRROR OF LOCK. Admission opens only after the unlock's own
+dispatch-generation advance has committed, its dispatch poison is clear, and
+its pending durable refusal has been written. A vault that is unlocked while
+those are outstanding is `unready`, not `ready`, and it refuses exactly the way
+a locked host does.
+
+READINESS GATES ADMISSION, NOT THE BIND. The settlement readiness barrier
+refuses handshakes and calls; it never decides whether a socket exists. A host
+that binds while the barrier is still closed, and whose barrier then opens
+through the barrier's own retry path, starts serving with no second unlock and
+no listener restart.
+
 Quit runs listener, then connections, then the existing Studio teardown, inside
 the ordered quit task so it happens before Compose stops Postgres.
+
+#### 4.1.1 The Windows front-relayed transport (B4.2b, LANDED)
+
+IMPLEMENTED. This paragraph was written conditionally, before the transport
+existed, so that the lock invariant above could not later be weakened silently
+to fit handles main does not own. It now describes shipped behavior: on unix
+the host speaks to the bridge over a DIRECT socket, and on Windows through the
+pipe front, with the section 1.6 gate open.
+
+When the Windows transport is served through a front relay, main can no longer
+destroy the peer's handle itself, and claiming synchronous remote destruction
+would be false. The invariant is therefore LOGICAL-SYNC PLUS BOUNDED-PHYSICAL:
+
+- SYNCHRONOUS AND LOGICAL, in main, in the tick the lock is decided: admission
+  is closed, the epoch is advanced, the trusted cause is latched on every
+  logical connection, every host-side handler is aborted, and every frame that
+  arrives from the front under a stale epoch is discarded. Nothing a peer can
+  do after this tick reaches a tool.
+- A PRIORITY LOCK FRAME to the front, ahead of any queued traffic.
+- A BOUNDED PHYSICAL CLOSE: the front closes the real handles and acknowledges
+  within a stated deadline. If the control frame cannot be admitted immediately,
+  or the acknowledgement does not arrive within the deadline, main KILLS the
+  front process and restarts it LOCKED. A front that cannot be commanded is
+  never left holding live handles.
+- FAIL CLOSED ON CONTROL-CHANNEL LOSS: a lost control channel defaults to
+  closing, never to optimistic admission. The test obligation this paragraph
+  owed is DISCHARGED by "kills and restarts the front when LOCK_ACK misses its
+  deadline" (`front-supervisor.test.ts`): admission closes and the epoch
+  advances synchronously, LOCK carries the new epoch, and a front that does not
+  acknowledge inside 1000 ms is killed and restarted LOCKED rather than left
+  holding live handles.
 
 ---
 

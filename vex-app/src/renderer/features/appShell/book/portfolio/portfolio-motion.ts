@@ -15,7 +15,7 @@
  */
 
 import type { Variants } from "motion/react";
-import { EASE_STANDARD, SPRING_PANEL } from "../../../../lib/motion.js";
+import { EASE_STANDARD, SPRING_PANEL } from "../../../../lib/motion/index.js";
 
 export const stackVariants: Variants = {
   hidden: { opacity: 0, y: 28, scale: 0.62 },

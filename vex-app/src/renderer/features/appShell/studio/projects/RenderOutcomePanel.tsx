@@ -15,6 +15,17 @@
  * condition are printed in full: they are already sanitized by main (rule 07)
  * and they are the only part the user can act on.
  *
+ * ## A run failure is the HEADLINE, not a footnote
+ *
+ * When the run itself could not do any file work - no bridge binary, a render
+ * that could not start - `render.runFailure` says so at the top, in place of
+ * the trigger line. Both of those facts used to arrive as an artifact-level
+ * `launch_required` warning at the BOTTOM of this panel, so the user read "Vex
+ * reconciled this project's files against the scope you saved" and "Select a
+ * coding agent to get one" above the single sentence that was true. The trigger
+ * line is suppressed rather than joined, because a run that wrote nothing has
+ * no honest version of it.
+ *
  * ## `superseded` is a real answer
  *
  * A run that rendered nothing because a newer scope version was already queued
@@ -27,30 +38,44 @@
 import type { JSX } from "react";
 import type {
   StudioArtifactOutcome,
+  StudioProjectRefreshFailure,
   StudioRenderOutcome,
 } from "@shared/schemas/studio-installer.js";
 import { IconWarning } from "../../../../components/icons/index.js";
 import { Pill } from "../../../../components/ui/pill.js";
+import {
+  StateDot,
+  type StateDotState,
+} from "../../../../components/ui/state-dot.js";
 import { agentPresentation } from "./studio-agent-catalogue.js";
 import {
+  AGENT_CLIENT_STEP_SENTENCES,
   ARTIFACT_KIND_LABELS,
   ARTIFACT_STATUS_LABELS,
   DRIFT_BLOCKED_SENTENCE,
   INSTALLER_WARNING_SENTENCES,
   PROJECT_OUTCOME_LIST_LABEL,
+  PROJECT_REFRESH_FAILURE_SENTENCES,
   PROJECT_WARNING_LIST_LABEL,
   REFUSAL_REASON_SENTENCES,
-  RENDER_INCOMPLETE_NOTICE,
-  RENDER_OUTCOME_EMPTY,
+  RENDER_INCOMPLETE_NOTICES,
   RENDER_OUTCOME_TITLE,
-  RENDER_TRIGGER_SENTENCES,
+  RUN_FAILURE_SENTENCES,
   RENDER_WARNINGS_TITLE,
   agentSupportReturnsSentence,
   artifactChangeLabel,
+  renderOutcomeEmptySentence,
+  renderTriggerSentence,
 } from "./projects-copy.js";
 
 export interface RenderOutcomePanelProps {
   readonly render: StudioRenderOutcome;
+  /**
+   * The project could not be re-read after the change committed. Passed only by
+   * the surfaces whose call can produce one; the row shown beside this panel is
+   * then the committed row, which is real but may be behind.
+   */
+  readonly refreshFailure?: StudioProjectRefreshFailure | null;
 }
 
 /**
@@ -66,32 +91,106 @@ function isDeclined(outcome: StudioArtifactOutcome): boolean {
   );
 }
 
+/**
+ * THE ROW'S STATE GLYPH, one per outcome status.
+ *
+ * The rows were a wall of sentences: name, path, verdict word and a full
+ * paragraph each, with nothing to scan (audit finding I4). deepseek's `ToolRow`
+ * gives every row a 16px leading state slot and keeps the sentence as secondary
+ * text; this is the same slot over this panel's own vocabulary.
+ *
+ * `refused` is the only ERROR: it is the one status that means Vex tried and
+ * could not. `drift_blocked` and `unsupported` are decisions, not failures, and
+ * read in the warning register the `caution` pill beside them already uses -
+ * splitting the two would give one row two different verdicts.
+ *
+ * `Record` over the closed union rather than a switch with a default, so a new
+ * wire status is a compile error here instead of a row with no glyph.
+ */
+const ARTIFACT_STATUS_DOTS: Readonly<
+  Record<StudioArtifactOutcome["status"], StateDotState>
+> = {
+  written: "done",
+  unchanged: "done",
+  removed: "done",
+  refused: "error",
+  drift_blocked: "warning",
+  unsupported: "warning",
+};
+
 export function RenderOutcomePanel({
   render,
+  refreshFailure = null,
 }: RenderOutcomePanelProps): JSX.Element {
+  // The incomplete notice is REDUNDANT under a run failure: the failure already
+  // says nothing was written and what to do about it, and a second warning
+  // repeating "Repair it from the project menu" reads as two separate problems.
+  const incompleteNotice =
+    render.completed || render.runFailure !== null
+      ? null
+      : RENDER_INCOMPLETE_NOTICES[render.trigger];
+
   return (
     <section
       className="flex flex-col gap-3"
       data-vex-render-outcome={render.trigger}
+      data-vex-run-failure={render.runFailure?.kind ?? undefined}
     >
       <div className="flex flex-col gap-1">
         <h3 className="vex-eyebrow">{RENDER_OUTCOME_TITLE}</h3>
-        <p className="text-xs text-ink-tertiary">
-          {RENDER_TRIGGER_SENTENCES[render.trigger]}
-        </p>
-        {!render.completed ? (
+
+        {/* THE HEADLINE, when there is one. A re-read that failed comes first:
+          * it qualifies the project row shown beside this panel, which the
+          * reader is looking at right now. */}
+        {refreshFailure !== null ? (
+          <p
+            role="status"
+            className="flex items-start gap-1.5 text-xs text-warning"
+            data-vex-refresh-failure={refreshFailure.kind}
+          >
+            <IconWarning size={13} className="mt-0.5 shrink-0" />
+            <span className="flex flex-col gap-0.5">
+              <span>{PROJECT_REFRESH_FAILURE_SENTENCES[refreshFailure.kind]}</span>
+              <span className="text-ink-tertiary">{refreshFailure.detail}</span>
+            </span>
+          </p>
+        ) : null}
+
+        {render.runFailure !== null ? (
           <p
             role="status"
             className="flex items-start gap-1.5 text-xs text-warning"
           >
             <IconWarning size={13} className="mt-0.5 shrink-0" />
-            <span>{RENDER_INCOMPLETE_NOTICE}</span>
+            <span className="flex flex-col gap-0.5">
+              <span>{RUN_FAILURE_SENTENCES[render.runFailure.kind]}</span>
+              {/* Main's own sanitized explanation, which is the part that says
+                * WHICH bridge path was searched or WHICH refusal stopped the
+                * run. */}
+              <span className="text-ink-tertiary">{render.runFailure.detail}</span>
+            </span>
+          </p>
+        ) : (
+          <p className="text-xs text-ink-tertiary">
+            {renderTriggerSentence(render)}
+          </p>
+        )}
+
+        {incompleteNotice !== null ? (
+          <p
+            role="status"
+            className="flex items-start gap-1.5 text-xs text-warning"
+          >
+            <IconWarning size={13} className="mt-0.5 shrink-0" />
+            <span>{incompleteNotice}</span>
           </p>
         ) : null}
       </div>
 
       {render.artifacts.length === 0 ? (
-        <p className="text-xs text-ink-tertiary">{RENDER_OUTCOME_EMPTY}</p>
+        <p className="text-xs text-ink-tertiary">
+          {renderOutcomeEmptySentence(render)}
+        </p>
       ) : (
         <ArtifactOutcomeList artifacts={render.artifacts} />
       )}
@@ -165,6 +264,12 @@ function ArtifactRow({
   readonly artifact: StudioArtifactOutcome;
 }): JSX.Element {
   const declined = isDeclined(artifact);
+  const clientStep =
+    artifact.kind === "agent-config"
+    && artifact.agentId !== null
+    && (artifact.status === "written" || artifact.status === "unchanged")
+      ? AGENT_CLIENT_STEP_SENTENCES[artifact.agentId] ?? null
+      : null;
   const agentName =
     artifact.agentId === null
       ? null
@@ -177,7 +282,15 @@ function ArtifactRow({
       data-vex-artifact-kind={artifact.kind}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 flex-col">
+        {/* The leading state slot. No `label`: the Pill on the same line
+          * carries the verdict WORD, and an sr-only copy of it would announce
+          * every row's status twice. */}
+        <StateDot
+          state={ARTIFACT_STATUS_DOTS[artifact.status]}
+          size={8}
+          className="shrink-0"
+        />
+        <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-xs text-ink-primary">
             {agentName === null
               ? ARTIFACT_KIND_LABELS[artifact.kind]
@@ -219,6 +332,17 @@ function ArtifactRow({
           <span>{agentSupportReturnsSentence(artifact.supportReturnsWhen)}</span>
         </span>
       ) : null}
+
+      {/* THE STEP THAT IS STILL THE USER'S. Only under a config Vex actually
+        * left in place: a refused, drift-blocked, unsupported or REMOVED row
+        * has no server for the client to be pointed at, and telling the reader
+        * to accept one there would be an instruction about a file that is not
+        * there. */}
+      {clientStep === null ? null : (
+        <span className="text-xs text-ink-tertiary" data-vex-client-step={artifact.agentId}>
+          {clientStep}
+        </span>
+      )}
     </li>
   );
 }

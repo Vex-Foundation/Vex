@@ -1,24 +1,24 @@
 /**
- * §C0 — the LAUNCH AUTHORIZATION RECORD.
+ * §C0 - the LAUNCH AUTHORIZATION RECORD.
  *
  * The single most important contract in the launch path. One discriminated
  * record exists for EVERY way a launch can happen; there is no "unauthorized but
  * allowed" path, because a launch spends real, irreversible funds.
  *
  *   `user_submit`    a human filled the form and clicked Deploy. That click is
- *                    the spend consent. MAIN — never the renderer — reconstructs
+ *                    the spend consent. MAIN - never the renderer - reconstructs
  *                    and binds the fields.
  *   `approval_card`  a RESTRICTED agent proposed a launch and the human resolved
  *                    an approval card. Binds the approval id and the permission
  *                    snapshot.
  *   `full_autonomy`  a FULL-autonomy mission launched unattended. **This is NOT
  *                    user consent and is never labelled as such anywhere in this
- *                    codebase** — no human acted. It is trusted host/engine
+ *                    codebase** - no human acted. It is trusted host/engine
  *                    evidence that a mission was permitted to spend, so it binds
  *                    the mission provenance that granted the permission.
  *   `session_full`   the user put THIS CHAT SESSION in full permission and asked
  *                    for the launch. The same consent basis every other mutating
- *                    tool executes on in full mode (`SwapExecute` precedent) —
+ *                    tool executes on in full mode (`SwapExecute` precedent) -
  *                    attended, no approval card, no mission, so it binds nothing
  *                    but the session's own permission snapshot. Owner decree
  *                    2026-08-02; mission ceilings are mission-scoped and do not
@@ -28,9 +28,9 @@
  * spend, the audit answer to "what exactly was authorized?" has one shape.
  *
  * INTEGRITY DOES NOT COME FROM STORAGE. The record is re-derived from first
- * principles immediately before signing — the fee is re-read at a fresh anchored
+ * principles immediately before signing - the fee is re-read at a fresh anchored
  * block, the image bytes are re-resolved and re-hashed, the calldata is
- * re-encoded, `msg.value` is recomposed — and every field is compared. Any
+ * re-encoded, `msg.value` is recomposed - and every field is compared. Any
  * difference REFUSES. So a record that was tampered with, a fee that moved, or
  * an image swapped between authorization and execution all fail the same way,
  * and none of them depends on trusting a stored blob.
@@ -43,8 +43,8 @@
  * THE PERSISTED `authorization_json` COLUMN IS AUDIT, NOT THE GATE.
  *
  * The record is written to `token_launch_intents.authorization_json` so a
- * reviewer can reconstruct MONTHS LATER exactly what was authorized — which
- * fields, which fee at which block, which image digest, which permission —
+ * reviewer can reconstruct MONTHS LATER exactly what was authorized - which
+ * fields, which fee at which block, which image digest, which permission -
  * without walking the chain. That is worth a column on a real-funds path.
  *
  * ON THE AGENT PATHS (`approval_card`, `full_autonomy`) it is **write-and-audit
@@ -65,9 +65,9 @@
  *      before execution. A consent separated in time and process from the
  *      signature can only be carried by a persisted record. Comparing a fresh
  *      derivation against another freshly built plan would compare the new plan
- *      with itself and gate NOTHING — strictly worse than reading storage.
+ *      with itself and gate NOTHING - strictly worse than reading storage.
  *   2. PRESCRIPTION. The reviewer's C0 specification is verbatim: "compare the
- *      fresh plan against that snapshot — not another handler-built plan."
+ *      fresh plan against that snapshot - not another handler-built plan."
  *   3. PRECEDENT. `approval_queue` / `approval_intents` already store consent
  *      and read it back to decide. `user_submit` places no weaker trust in the
  *      database than the approvals pattern the whole system already rests on.
@@ -77,7 +77,7 @@
  * read, it is cross-checked against the intent row's own columns (a record that
  * disagrees with its own row proves tampering or a writer bug), what gets
  * SIGNED still comes from a fresh re-derivation that must match it field by
- * field — image digest included, so bytes swapped in the locker are drift — and
+ * field - image digest included, so bytes swapped in the locker are drift - and
  * the CAS remains the single-use gate.
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -108,7 +108,7 @@ export interface LaunchAuthorizationBinding {
   readonly prebuyWei: string;
   /** `creationFeeWei + prebuyWei`, exactly. The consent-bound figure. */
   readonly msgValueWei: string;
-  /** Vex's 25 bps fee (§C7) — a SEPARATE later transaction, never in msg.value. */
+  /** Vex's 25 bps fee (§C7) - a SEPARATE later transaction, never in msg.value. */
   readonly vexFeeWei: string;
   readonly anchorBlockNumber: string;
 
@@ -120,7 +120,7 @@ export interface LaunchAuthorizationBinding {
   // ── who ──
   readonly sessionId: string;
   readonly walletAddress: Address;
-  /** Permission AT AUTHORIZATION TIME — not at execution time. */
+  /** Permission AT AUTHORIZATION TIME - not at execution time. */
   readonly permission: Permission;
 }
 
@@ -160,7 +160,7 @@ export type LaunchAuthorization =
       readonly authorizedAt: string;
     };
 
-/** sha256 of image bytes, hex — the value compared against the locker digest. */
+/** sha256 of image bytes, hex - the value compared against the locker digest. */
 export function launchImageDigest(bytes: Uint8Array): string {
   return sha256(toHex(bytes));
 }
@@ -224,7 +224,7 @@ export type LaunchAuthorizationCheck =
  *
  * THIS IS THE LAST GATE BEFORE SIGNING. It reports EVERY field that moved rather
  * than the first, because a refusal on a real-funds path should be diagnosable
- * in one round trip — "the fee moved AND the image changed" is a materially
+ * in one round trip - "the fee moved AND the image changed" is a materially
  * different situation from either alone.
  *
  * `permission` is compared too: a session downgraded from full to restricted
@@ -278,7 +278,7 @@ export function checkLaunchAuthorizationUnchanged(
     ok: false,
     drift,
     reason:
-      "Refusing to launch: what was authorized is not what would be signed now — "
+      "Refusing to launch: what was authorized is not what would be signed now - "
       + `${detail}. Nothing was signed. Review the launch and authorize it again.`,
   };
 }

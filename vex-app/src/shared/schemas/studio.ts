@@ -58,11 +58,64 @@ export const studioHostUnavailableCauseSchema = z.enum([
   /** No executor is installed, so the host refuses to serve calls it cannot run. */
   "not_configured",
   /**
-   * The endpoint could not be planned, verified, or bound. Covers the Windows
-   * transport gate, directory ownership and mode checks, the stale-endpoint
-   * probe, and `listen` failures. The specific sentence stays in main's log.
+   * The endpoint could not be planned, verified, or bound. Covers directory
+   * ownership and mode checks, the stale-endpoint probe, and `listen`
+   * failures. The specific sentence stays in main's log.
    */
   "endpoint_unavailable",
+  /*
+   * `windows_transport_disabled` stood here while the section 1.6 Windows
+   * transport gate was closed. The gate opened on the CI runs recorded in
+   * `mcp-host/endpoint.ts`, no path can produce the cause any longer, and
+   * renderer and main ship in one artifact, so the reader and the writer went
+   * together and no rollout ordering applied.
+   */
+  /**
+   * The Windows pipe-front CHILD PROCESS is not usable: its binary is missing
+   * from the installation, it could not be spawned, or it refused the frozen
+   * `HELLO` numbers main and it are built to share.
+   *
+   * A PACKAGING FAULT, and its own member rather than another
+   * `endpoint_unavailable`: the remedy is to repair the installation
+   * (reinstall Vex, or rebuild the bridge when running from source), which is
+   * not the remedy for any other endpoint refusal. Following the same rule as
+   * every other member, the DETAIL - which binary, which path, which field -
+   * stays in main's log and never reaches the wire.
+   */
+  "front_unavailable",
+  /**
+   * WINDOWS DID NOT CONFIRM THE PIPE'S PROTECTION, so Vex did not serve on it.
+   *
+   * The front reads its security descriptor and its pipe flags back from the
+   * created handle at runtime and reports what it VERIFIED, never what it asked
+   * for (`pipe-front-protocol.md` section 6.2). Main requires `rejectRemote`,
+   * `firstInstance` and `messageMode`, and refuses to publish a listener when
+   * any of them comes back unconfirmed or when the descriptor readback does not
+   * match (`ERROR` 5). This is the FAIL-CLOSED half of the whole Windows
+   * transport arc: a wallet transport whose cross-user access cannot be
+   * demonstrated is not opened, and saying "could not open its endpoint" here
+   * would hide a security refusal behind a generic failure.
+   */
+  "pipe_security_unconfirmed",
+  /**
+   * The pipe front died repeatedly and its restart budget is spent.
+   *
+   * Its own member because the remedy is a RESTART OF VEX rather than a repair
+   * of the installation: the budget never resets while main lives (the same
+   * rule the pty host follows), so a front that crash-looped once will not come
+   * back on its own however long the user waits.
+   */
+  "front_restart_budget_exhausted",
+  /**
+   * The admission fence epoch is spent, so admission is closed for the life of
+   * this process (`pipe-front-protocol.md` section 5.2).
+   *
+   * Its own member because it is the one unavailable state an UNLOCK cannot
+   * clear: the fence that makes a lock safe can no longer be raised, so Vex
+   * keeps the door shut. The remedy is a full application restart, and it must
+   * never be reported as "locked", which invites an unlock that cannot work.
+   */
+  "admission_permanently_closed",
 ]);
 export type StudioHostUnavailableCause = z.infer<
   typeof studioHostUnavailableCauseSchema
@@ -71,13 +124,16 @@ export type StudioHostUnavailableCause = z.infer<
 /**
  * The host's lifecycle state.
  *
- *  - `running`    - the listener is bound and published.
- *  - `locked`     - Vex is locked; the listener is deliberately closed, because
- *                   an always-open door on a self-custodial wallet is not a
- *                   trade this app makes for a nicer diagnostic.
- *  - `starting`   - a start attempt is in flight and has not reached its
+ *  - `running`    - the listener is bound and a peer would be served.
+ *  - `locked`     - Vex is locked. The listener stays bound and every connect
+ *                   is answered with a typed `locked` refusal that reads no
+ *                   project bytes, which is the honest answer a bridge cannot
+ *                   derive from a connection error. Nothing is admitted.
+ *  - `starting`   - a bind attempt is in flight and has not reached its
  *                   publication gate.
- *  - `unavailable`- not serving, and `cause` says why.
+ *  - `unavailable`- not serving, and `cause` says why. Covers both a listener
+ *                   that is not up and a bound listener whose readiness barrier
+ *                   has not opened yet.
  */
 export const studioHostStateSchema = z.enum([
   "running",

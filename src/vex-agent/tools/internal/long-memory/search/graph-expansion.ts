@@ -52,7 +52,7 @@ export const EMPTY_EXPANSION: GraphExpansion = { results: [], dropped: 0, seedCo
 
 /**
  * Bounded fetch headroom over the result cap so dedupe vs already-returned ids
- * and duplicate per-entity links cannot starve the fill — still a hard bound
+ * and duplicate per-entity links cannot starve the fill - still a hard bound
  * (never unbounded fan-out).
  */
 const EXPANSION_ENTRY_FETCH_LIMIT = 4 * LONG_MEMORY_INLINE_CAP;
@@ -64,13 +64,13 @@ const EXPANSION_ENTRY_FETCH_LIMIT = 4 * LONG_MEMORY_INLINE_CAP;
  *   → active valid-time edges (both directions, per-entity cap)
  *   → neighbor entities → their ACTIVE entries (dedupe vs already returned,
  *     cap min(remainingSlots, GRAPH_EXPANSION_MAX_RESULTS)).
- * Four batch queries total — zero N+1.
+ * Four batch queries total - zero N+1.
  *
- * Scoring: `graphScore(seed.score, neighbor)` — strictly below every positive
+ * Scoring: `graphScore(seed.score, neighbor)` - strictly below every positive
  * seed (the seed's own tier×activation already live in seed.score; only the
  * NEIGHBOR's credibility multiplies in). Seeds with score ≤ 0 are skipped
- * (Codex R1 — the strict inequality is meaningless for them). Results carry
- * `via:'graph'` + `viaEntity` and an EMPTY contentMd (bounded pointers — the
+ * (Codex R1 - the strict inequality is meaningless for them). Results carry
+ * `via:'graph'` + `viaEntity` and an EMPTY contentMd (bounded pointers - the
  * agent fetches full content via MemoryGet).
  */
 export async function expandViaGraph(
@@ -155,7 +155,7 @@ export async function expandViaGraph(
   }
   if (viaByEntry.size === 0) return { ...EMPTY_EXPANSION, seedCount: seeds.length };
 
-  // 4. Entry DTOs (active + non-expired in SQL — the S3 invariant holds).
+  // 4. Entry DTOs (active + non-expired in SQL - the S3 invariant holds).
   const entries = await deps.getActiveEntriesByIds(Array.from(viaByEntry.keys()));
   const scored: LongMemoryKnowledgeResult[] = [];
   for (const entry of entries) {
@@ -169,7 +169,7 @@ export async function expandViaGraph(
       kind: entry.kind,
       title: entry.title,
       summary: entry.summary,
-      // Bounded pointer — expansion never inlines full content; the agent
+      // Bounded pointer - expansion never inlines full content; the agent
       // fetches it via MemoryGet when the lead matters.
       contentMd: "",
       similarity: 0,

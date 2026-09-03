@@ -3,11 +3,11 @@
  *
  * Each internal tool handler is an async function that takes params
  * and returns an InternalToolResult. Handlers do NOT know about
- * sessions, SSE events, or the inference loop — they are pure
+ * sessions, SSE events, or the inference loop - they are pure
  * param-in → result-out functions.
  *
  * Session context (loadedDocuments, messages) is passed explicitly
- * where needed — not as a god-object dependency.
+ * where needed - not as a god-object dependency.
  */
 
 import type { ToolResult } from "../types.js";
@@ -20,7 +20,7 @@ export type InternalToolResult = ToolResult;
 
 /** Context passed to internal tools that need session awareness */
 export interface InternalToolContext {
-  /** Session ID — for DB operations */
+  /** Session ID - for DB operations */
   sessionId: string;
   /** Loaded content injected into the system prompt (e.g. MemoryGet → key `long_memory:{id}`). */
   loadedDocuments: Map<string, string>;
@@ -32,12 +32,12 @@ export interface InternalToolContext {
   sessionPermission: Permission;
   /** Whether this call was pre-approved */
   approved: boolean;
-  /** Active mission run ID — for MissionStop guard */
+  /** Active mission run ID - for MissionStop guard */
   missionRunId: string | null;
   /**
    * Session-scoped plan-mode flag (turn-start snapshot from EngineContext).
    * Gates the dispatcher's plan-acceptance check: when false (the default /
-   * common case) the gate skips its live `session_plans` read entirely — so a
+   * common case) the gate skips its live `session_plans` read entirely - so a
    * non-plan-mode dispatch costs no extra DB query. Plan-mode cannot toggle
    * mid-turn (the IPC toggle is out-of-band), so the snapshot is accurate for
    * the gate-activation decision; the live read inside the gate then resolves
@@ -49,7 +49,7 @@ export interface InternalToolContext {
   /**
    * Approval id when this dispatch is the COLD RESUME of an approval the user
    * resolved, and `undefined`/`null` on every live turn (there is no approval
-   * to name). Host-side evidence only — it is never derived from model input.
+   * to name). Host-side evidence only - it is never derived from model input.
    *
    * Threaded to `ProtocolExecutionContext.approvalId` so an authorization
    * record can bind WHICH approval authorized an irreversible spend (C0's
@@ -70,8 +70,8 @@ export interface InternalToolContext {
   approvedQuoteAuthority?: ApprovedQuoteAuthority | null;
   /**
    * True ONLY for a call the model emitted in a live turn. Set in exactly one
-   * place — `engine/core/turn-loop-tool-batch/execute.ts`'s `buildToolContext`
-   * — and never derived from tool arguments, so the model cannot set, clear or
+   * place - `engine/core/turn-loop-tool-batch/execute.ts`'s `buildToolContext`
+   * - and never derived from tool arguments, so the model cannot set, clear or
    * forge it.
    *
    * It exists to keep `execute_tool` closed to the model (discovered tools are
@@ -85,21 +85,41 @@ export interface InternalToolContext {
    */
   modelOriginated?: true;
   /**
-   * Session kind — propagated from EngineContext. Lets handlers defense-in-depth
+   * WHICH SURFACE this dispatch came from, for the one thing that legitimately
+   * differs between them: whether a prepared action has a trusted follow-up
+   * dispatcher behind it.
+   *
+   * The in-app lane has the turn loop, which dispatches a prepare's
+   * `preparedActionFollowUp` itself
+   * (`engine/core/turn-loop-tool-batch/prepared-follow-up.ts`). The MCP lane has
+   * no turn loop and no other consumer of that field, so over MCP the confirm
+   * call is the CALLER's - and a prepare that told an external agent "Vex will
+   * confirm it automatically" left it waiting for a dispatch that never comes
+   * (live-test pass 2, finding I-1).
+   *
+   * ABSENT means `"in_app"`. Every in-app context builder legitimately omits it;
+   * the ONE producer of `"mcp"` is `mcp/project-context.ts`, the single builder
+   * of the MCP lane's context. It is host-side evidence, never derived from tool
+   * arguments or model output, and it grants nothing: no gate, no approval and
+   * no authority reads it.
+   */
+  toolLane?: "in_app" | "mcp";
+  /**
+   * Session kind - propagated from EngineContext. Lets handlers defense-in-depth
    * their own preconditions without relying solely on the registry visibility
    * filter (e.g. `LoopDefer` handler rejects non-mission calls even if the
    * model somehow emits the tool name).
    */
   sessionKind: SessionKind;
   /**
-   * Context-usage band at dispatch time — derived from the previous prompt's
+   * Context-usage band at dispatch time - derived from the previous prompt's
    * token count. Used by band-scoped handlers for defense-in-depth against
    * calls outside their intended band.
    */
   contextUsageBand: "normal" | "warning" | "barrier" | "critical";
   /**
    * True iff a live compaction preparation suppresses the `barrier` mutating
-   * block for this turn (contract C8). ABSENT ⇒ FALSE ⇒ today's barrier — the
+   * block for this turn (contract C8). ABSENT ⇒ FALSE ⇒ today's barrier - the
    * fail-closed default that every context builder except the live tool-batch
    * path deliberately relies on.
    *
@@ -113,7 +133,7 @@ export interface InternalToolContext {
   preparationBypassesBarrier?: boolean;
   /**
    * Origin of the call. Used for knowledge provenance (knowledge_entries.source_surface).
-   * - undefined / "vex_agent": Vex Agent (mission loop, chat, scripts) — default
+   * - undefined / "vex_agent": Vex Agent (mission loop, chat, scripts) - default
    * - "mcp_local": legacy import/export provenance value retained for backups
    *
    * Defaulting to undefined means existing call sites stay unchanged; the knowledge
@@ -132,7 +152,7 @@ export interface InternalToolContext {
    * Consumed by the wallet resolvers.
    */
   walletResolution: WalletResolution;
-  /** Mission wallet policy — enforced alongside the resolution by the resolvers. */
+  /** Mission wallet policy - enforced alongside the resolution by the resolvers. */
   walletPolicy: WalletPolicy;
   /**
    * Operator Stop for the turn that owns this dispatch.
@@ -145,7 +165,7 @@ export interface InternalToolContext {
    * MUST NOT be observed inside a sign→broadcast→persist window. See
    * `@tools/evm-chains/staged-broadcast.ts` and
    * `turn-loop-tool-batch.ts:165-170`: a leg that may already have moved funds
-   * runs to completion, always. That exemption is enforced structurally — the
+   * runs to completion, always. That exemption is enforced structurally - the
    * never-interrupt modules take no signal parameter at all, and
    * `src/__tests__/vex-agent/tools/never-interrupt-no-abort-signal.test.ts`
    * fails the build if the identifier appears in any of them.
@@ -154,8 +174,8 @@ export interface InternalToolContext {
    * ABSENT means "no cancellation", never "cancelled". The producers that
    * deliberately leave it unset, so a future reader knows each omission is a
    * decision and not an oversight:
-   *  - `engine/core/run-tool.ts` — operator direct invoke; there is no turn.
-   *  - `approval-runtime/post-tx/dispatch-approved` — cold approval resume;
+   *  - `engine/core/run-tool.ts` - operator direct invoke; there is no turn.
+   *  - `approval-runtime/post-tx/dispatch-approved` - cold approval resume;
    *    the turn that requested the approval is long gone.
    */
   abortSignal?: AbortSignal;
@@ -166,7 +186,7 @@ export interface InternalToolContext {
 /**
  * Safe string accessor for tool params.
  *
- * A wrong TYPE collapses to `""`, the same value an ABSENT key gives — so a
+ * A wrong TYPE collapses to `""`, the same value an ABSENT key gives - so a
  * caller that reports `!value` as "Missing required: x" tells the model a
  * supplied field was never sent, and the model resends it identically. Use
  * {@link missingOrWrongTypeMessage} to phrase the rejection.
@@ -183,14 +203,14 @@ export function num(params: Record<string, unknown>, key: string): number | unde
 }
 
 /**
- * Why a `str()`/`num()` read came back empty — absent, or present with the
- * wrong type — phrased for the model.
+ * Why a `str()`/`num()` read came back empty - absent, or present with the
+ * wrong type - phrased for the model.
  *
  * The distinction is the whole point. `ChainRead {chain: 8453}` is a NUMBER
  * where the tool wants the string spelling; answering "Missing required:
  * chain" is factually false (`TokenFind` returns the chain id as a number, so
  * this is the form the agent normally holds) and the only repair it suggests is
- * the one that cannot work. Values are never echoed — only the shape.
+ * the one that cannot work. Values are never echoed - only the shape.
  */
 export function missingOrWrongTypeMessage(
   params: Record<string, unknown>,
@@ -200,10 +220,10 @@ export function missingOrWrongTypeMessage(
   const value = params[key];
   if (value === undefined || value === null) return `Missing required: ${key} (${expected})`;
   if (typeof value === "string" && value.trim() === "") {
-    return `${key} arrived empty — supply ${expected}, or omit the field entirely`;
+    return `${key} arrived empty - supply ${expected}, or omit the field entirely`;
   }
   const received = Array.isArray(value) ? "array" : typeof value;
-  return `${key} must be ${expected} — it arrived as a ${received}. Resend it with that type.`;
+  return `${key} must be ${expected} - it arrived as a ${received}. Resend it with that type.`;
 }
 
 /** Safe boolean accessor for tool params */
@@ -212,7 +232,7 @@ export function bool(params: Record<string, unknown>, key: string): boolean {
 }
 
 /**
- * Safe enum accessor for tool params — returns the value only if it matches
+ * Safe enum accessor for tool params - returns the value only if it matches
  * one of the allowed literals, otherwise undefined. Handlers resolve their
  * own default (usually server-side, because LLMs frequently omit defaults
  * even when the schema declares one).

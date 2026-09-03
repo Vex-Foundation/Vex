@@ -1,5 +1,5 @@
 /**
- * W9b — `bridge_status` / `khalani.orders.get` merges the provider's order
+ * W9b - `bridge_status` / `khalani.orders.get` merges the provider's order
  * state with Vex's own `agent_activity` record.
  *
  * Before this, the read path was a pure provider pass-through: the agent's
@@ -77,7 +77,7 @@ describe("khalani order correlation (W9b)", () => {
     const { correlation } = await describeKhalaniOrderCorrelation("order_abc123");
     expect(correlation?.note).toBe(
       'Vex has not yet verified this bridge on-chain (logical row still pending), so Khalani\'s "filled" '
-      + "view can be ahead of Vex's. Vex finalizes the record itself — do not re-bridge.",
+      + "view can be ahead of Vex's. Vex finalizes the record itself - do not re-bridge.",
     );
   });
 
@@ -98,7 +98,7 @@ describe("khalani order correlation (W9b)", () => {
     expect(mockListActivityLegsByExecutionId).not.toHaveBeenCalled();
   });
 
-  it("degrades to a stated note — never a throw — when the DB read fails", async () => {
+  it("degrades to a stated note - never a throw - when the DB read fails", async () => {
     mockFindActivityByProviderOrderId.mockRejectedValue(new Error("connection refused to 10.0.0.5"));
 
     const { correlation, correlationNote } = await describeKhalaniOrderCorrelation("order_abc123");

@@ -1,7 +1,7 @@
 /**
  * `khalani.bridge` provider submit + order-id attach (steps 14 and 15 of the
  * staged-execute contract, split out in 0R.4, refactor-only). The deposit is
- * already confirmed on-chain here, so every failure is PENDING and tracked —
+ * already confirmed on-chain here, so every failure is PENDING and tracked -
  * never a "do it again" instruction.
  */
 
@@ -31,7 +31,7 @@ export interface KhalaniSubmitInput {
 }
 
 export type KhalaniSubmitOutcome =
-  /** The order id to poll — the PERSISTED one, never a newly-returned conflicting one (m4). */
+  /** The order id to poll - the PERSISTED one, never a newly-returned conflicting one (m4). */
   | { readonly outcome: "attached"; readonly pollOrderId: string }
   | { readonly outcome: "halted"; readonly result: ToolResult };
 
@@ -46,7 +46,7 @@ export async function submitKhalaniDeposit(input: KhalaniSubmitInput): Promise<K
   } catch (err) {
     const externalName = err instanceof VexError ? err.externalName : undefined;
     if (externalName === "DuplicateRecordException") {
-      // Already submitted — fetch the existing order (no new action).
+      // Already submitted - fetch the existing order (no new action).
       const existing = await fetchExistingOrderId(input.fromAddress, depositTxHash);
       if (existing) {
         orderId = existing;
@@ -64,7 +64,7 @@ export async function submitKhalaniDeposit(input: KhalaniSubmitInput): Promise<K
       await skipKhalaniFeeLeg(input, "provider order submission pending; fee not attempted");
       return {
         outcome: "halted",
-        result: bridgeResult({ ...pendingBase, success: false, status: "pending", message: `The deposit confirmed on-chain (${depositTxHash}) but the provider order submission is pending — it is recorded and tracked automatically. Do not re-bridge.`, legs: recordedLegs, depositTxHash }),
+        result: bridgeResult({ ...pendingBase, success: false, status: "pending", message: `The deposit confirmed on-chain (${depositTxHash}) but the provider order submission is pending - it is recorded and tracked automatically. Do not re-bridge.`, legs: recordedLegs, depositTxHash }),
       };
     }
   }
@@ -81,13 +81,13 @@ export async function submitKhalaniDeposit(input: KhalaniSubmitInput): Promise<K
     const persisted = attach.row?.providerOrderId ?? null;
     if (!persisted) {
       // Defensive: a genuine conflict always carries a persisted id, but never
-      // poll the conflicting id — skip the poll with a truthful pending output.
+      // poll the conflicting id - skip the poll with a truthful pending output.
       await skipKhalaniFeeLeg(input, "provider order id could not be reconciled; fee not attempted");
       return {
         outcome: "halted",
         result: bridgeResult({
           ...pendingBase, success: false, status: "pending", depositTxHash,
-          message: `The deposit confirmed on-chain (${depositTxHash}) but the provider order id could not be reconciled this turn — it is recorded and tracked automatically. Do not re-bridge.`,
+          message: `The deposit confirmed on-chain (${depositTxHash}) but the provider order id could not be reconciled this turn - it is recorded and tracked automatically. Do not re-bridge.`,
           legs: recordedLegs,
         }),
       };

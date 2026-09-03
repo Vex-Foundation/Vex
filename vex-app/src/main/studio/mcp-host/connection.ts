@@ -1,5 +1,11 @@
 /**
- * ONE Vex Studio MCP connection, from accepted socket to settled teardown.
+ * ONE Vex Studio MCP connection, from accepted wire to settled teardown.
+ *
+ * The wire is a `StudioDuplexTransport` (`@vex-agent/mcp/duplex-transport.js`),
+ * not a `net.Socket`: on Unix it is the socket adapter next door, and on
+ * Windows it will be a pipe-front channel. Everything below is written against
+ * that contract, and the comments that say "socket" describe the semantics the
+ * contract inherits from Node streams, which every implementation owes.
  *
  * The lifecycle owner. Everything a connection acquires is acquired here and
  * released here, exactly once, whichever of the six teardown causes fires
@@ -33,9 +39,8 @@
  * the abort reason's TYPE and answers `cancelled` itself.
  */
 
-import type { Socket } from "node:net";
-
 import type { StudioToolCall } from "@vex-agent/mcp/admission.js";
+import type { StudioDuplexTransport } from "@vex-agent/mcp/duplex-transport.js";
 import type {
   RunStudioCallOptions,
   StudioCallOutcome,
@@ -47,6 +52,7 @@ import type { StudioWireErrorCode } from "@vex-agent/mcp/wire-errors.js";
 import { log } from "../../logger/index.js";
 import {
   encodeStudioHandshakeAck,
+  handshakeTimeoutRefusal,
   parseStudioHandshake,
   STUDIO_HANDSHAKE_DEADLINE_MS,
   type StudioHandshakeRefused,
@@ -106,7 +112,7 @@ export interface StudioConnectionDeps {
 }
 
 export interface ServeConnectionInput {
-  readonly socket: Socket;
+  readonly wire: StudioDuplexTransport;
   readonly remainder: Buffer;
   readonly projectId: string;
   readonly runCall: StudioRunCall;
@@ -122,7 +128,7 @@ export interface ServeConnectionInput {
 
 export class StudioConnection {
   readonly id: string;
-  private readonly socket: Socket;
+  private readonly wire: StudioDuplexTransport;
   private readonly deps: StudioConnectionDeps;
   private readonly outbound: StudioOutboundQueue;
 
@@ -163,13 +169,13 @@ export class StudioConnection {
    */
   private disposal: Promise<void> | null = null;
 
-  constructor(id: string, socket: Socket, deps: StudioConnectionDeps) {
+  constructor(id: string, wire: StudioDuplexTransport, deps: StudioConnectionDeps) {
     this.id = id;
-    this.socket = socket;
+    this.wire = wire;
     this.deps = deps;
     // Registered AT ACQUISITION, before anything can fail: the queue is the
-    // socket's only writer and must be closed on every path out of here.
-    this.outbound = new StudioOutboundQueue(socket, {
+    // wire's only writer and must be closed on every path out of here.
+    this.outbound = new StudioOutboundQueue(wire, {
       onOverflow: (reason, pending) => {
         log.warn(
           `[studio:mcp] outbound overflow id=${this.id} reason=${reason} `
@@ -179,22 +185,21 @@ export class StudioConnection {
       },
     });
 
-    socket.setNoDelay(true);
-    socket.on("error", this.handleSocketError);
-    socket.on("close", this.handleSocketClose);
-    socket.on("data", this.handleHandshakeData);
+    // `setNoDelay` moved to the wire's own construction
+    // (`node-socket-transport.ts`): it is socket mechanics, not connection
+    // lifecycle state, and a wire that is not a socket has no such setting.
+    wire.on("error", this.handleSocketError);
+    wire.on("close", this.handleSocketClose);
+    wire.on("data", this.handleHandshakeData);
 
     this.handshakeTimer = setTimeout(() => {
       this.handshakeTimer = null;
       if (this.phase !== "handshaking") return;
       log.warn(`[studio:mcp] handshake deadline id=${this.id}`);
-      void this.refuse({
-        kind: "refused",
-        code: "malformed",
-        message:
-          `No Vex Studio handshake arrived within ${String(STUDIO_HANDSHAKE_DEADLINE_MS)} ms. `
-          + "Send the handshake line first and wait for the ack.",
-      });
+      // The line itself is authored ONCE, in `handshake.ts`, because the
+      // Windows front relays the same bytes from `HELLO` when it owns this
+      // timer. Two copies would be two authors of a refusal a bridge parses.
+      void this.refuse(handshakeTimeoutRefusal());
     }, STUDIO_HANDSHAKE_DEADLINE_MS);
     this.handshakeTimer.unref?.();
   }
@@ -234,8 +239,8 @@ export class StudioConnection {
     // race with the kernel.
     this.phase = "refusing";
     this.clearHandshakeTimer();
-    this.socket.off("data", this.handleHandshakeData);
-    if (!this.socket.destroyed) this.socket.pause();
+    this.wire.off("data", this.handleHandshakeData);
+    if (!this.wire.destroyed) this.wire.pause();
     this.buffered = Buffer.alloc(0);
     // A refused connection never becomes established, so its reservation goes
     // back immediately rather than at teardown: the next handshake in the same
@@ -277,7 +282,7 @@ export class StudioConnection {
 
     this.releaseConnectionSlot();
     this.clearHandshakeTimer();
-    this.socket.off("data", this.handleHandshakeData);
+    this.wire.off("data", this.handleHandshakeData);
     this.outbound.close();
 
     // The entry's close tears down the pinned instance and calls the
@@ -289,7 +294,7 @@ export class StudioConnection {
         log.warn(`[studio:mcp] connection close failed id=${this.id}`, cause2);
       });
     }
-    if (!this.socket.destroyed) this.socket.destroy();
+    if (!this.wire.destroyed) this.wire.destroy();
     this.deps.onClosed(this);
   }
 
@@ -310,7 +315,7 @@ export class StudioConnection {
     this.releaseConnectionSlot();
     this.clearHandshakeTimer();
     this.outbound.close();
-    if (!this.socket.destroyed) this.socket.destroy();
+    if (!this.wire.destroyed) this.wire.destroy();
   }
 
   private readonly handleSocketError = (error: Error): void => {
@@ -340,8 +345,8 @@ export class StudioConnection {
     // transport exists spans an ack write and a dynamic import of the MCP SDK,
     // which is easily long enough for a client's `initialize` to land in it.
     // The transport resumes the socket once its own listeners are attached.
-    this.socket.off("data", this.handleHandshakeData);
-    this.socket.pause();
+    this.wire.off("data", this.handleHandshakeData);
+    this.wire.pause();
     this.buffered = Buffer.alloc(0);
     // THE ESTABLISHED BOUND, claimed HERE and SYNCHRONOUSLY. This is the last
     // point before an await, so it is the only place the claim can be atomic
@@ -384,7 +389,7 @@ export class StudioConnection {
 
     this.phase = "serving";
     this.served = this.deps.serveConnection({
-      socket: this.socket,
+      wire: this.wire,
       remainder,
       projectId,
       runCall: this.boundedRunCall,

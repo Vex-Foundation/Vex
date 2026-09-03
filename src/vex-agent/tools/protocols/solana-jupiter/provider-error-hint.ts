@@ -8,8 +8,8 @@
  * EVERY 404 on `pnl-history` into "the endpoint is down upstream". An
  * entitlement 403, a non-geographic IP ban and a WAF refusal are all real and
  * all read as a geo-block; the module's own doc admitted "No live geo-blocked
- * capture exists". The provider's words — the only evidence that separates
- * those cases — were discarded, and so was `httpStatus`, the one field a
+ * capture exists". The provider's words - the only evidence that separates
+ * those cases - were discarded, and so was `httpStatus`, the one field a
  * caller can branch on.
  *
  * THE RULE THIS ENCODES (rules/04, agent-facing tool errors surface the REAL
@@ -17,9 +17,9 @@
  * evidence that the provider ANSWERED and evidence of the response CLASS. It
  * is not evidence of the CAUSE. So the provider's sentence stays first and
  * intact, the Vex hint follows as a named possibility, and `httpStatus`,
- * `code` and `externalName` are all carried through so nothing downstream —
+ * `code` and `externalName` are all carried through so nothing downstream -
  * `classifyError`'s status-first branch, `provider-failure-mapping.ts`, the
- * activity row — loses the fact that a provider refused.
+ * activity row - loses the fact that a provider refused.
  *
  * The original error is preserved as `cause`, per rules/03.
  */
@@ -31,7 +31,7 @@ import { VexError } from "../../../../errors.js";
  * or the original error untouched when it is not a `VexError` answering with
  * `status` (nothing to append to, and nothing proven).
  *
- * The hint is an authored literal — never provider bytes — so it is appended
+ * The hint is an authored literal - never provider bytes - so it is appended
  * after the provider's already-scrubbed text rather than mixed into it.
  */
 export function appendProviderHint(err: unknown, status: number, hint: string): unknown {

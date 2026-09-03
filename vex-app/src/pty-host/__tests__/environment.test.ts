@@ -109,6 +109,52 @@ describe("buildTerminalEnvironment", () => {
   });
 });
 
+/**
+ * THE SEAM, composed: `scrubEnvironment` builds the base at host boot
+ * (`pty-host/index.ts`), `buildTerminalEnvironment` applies main's per-terminal
+ * overlay over it (`terminal-process.ts`), and only the result reaches a shell.
+ * Testing the two apart cannot show the property that matters here - that the
+ * deny-list strips Vex's own variables from the BASE while the one key main
+ * chose to put back survives.
+ */
+describe("the base and the overlay, composed as the pty host composes them", () => {
+  const launcherEnvironment: NodeJS.ProcessEnv = {
+    PATH: "/usr/bin",
+    HOME: "/home/u",
+    ELECTRON_RUN_AS_NODE: "1",
+    // What the launcher exported, which is NOT what this app resolved: a
+    // shell that inherited it would send its bridge to the wrong Vex.
+    VEX_CONFIG_DIR: "/home/u/.config/vex",
+    ...ptyHostEnvironment("/home/u/.config/vex/studio/terminal-snapshots"),
+  };
+
+  it("strips ELECTRON_*, VEX_* and the pty host's OWN boot keys from the base", () => {
+    const base = scrubEnvironment(launcherEnvironment);
+    expect(base).not.toHaveProperty("ELECTRON_RUN_AS_NODE");
+    expect(base).not.toHaveProperty("VEX_CONFIG_DIR");
+    for (const key of PTY_HOST_CONFIG_KEYS) {
+      expect(base, `${key} survived the deny-list`).not.toHaveProperty(key);
+    }
+    expect(base["PATH"]).toBe("/usr/bin");
+  });
+
+  it("lets main's overlay put VEX_CONFIG_DIR back, with the value it resolved", () => {
+    const base = scrubEnvironment(launcherEnvironment);
+    const env = buildTerminalEnvironment(base, {
+      VEX_CONFIG_DIR: "/tmp/vex-e2e-fixture/config",
+    });
+    // The overlay is the OWNER of what Vex's own integration needs, exactly as
+    // VS Code's workbench adds its keys after sanitizing rather than widening
+    // the preserve list.
+    expect(env["VEX_CONFIG_DIR"]).toBe("/tmp/vex-e2e-fixture/config");
+    // And the deny-list is unchanged by that: nothing else came back.
+    expect(env).not.toHaveProperty("ELECTRON_RUN_AS_NODE");
+    for (const key of PTY_HOST_CONFIG_KEYS) {
+      expect(env, `${key} reached a shell`).not.toHaveProperty(key);
+    }
+  });
+});
+
 describe("sanitizeEnvForLogging", () => {
   it("replaces every VALUE with its length and keeps every NAME", () => {
     const sanitized = sanitizeEnvForLogging({

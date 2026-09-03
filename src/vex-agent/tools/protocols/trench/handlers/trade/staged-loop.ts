@@ -4,12 +4,12 @@
  *
  * Three outcomes, three different truths, and the differences are the whole
  * safety of the loop:
- *   - `ambiguous`  — the transaction may still settle. The row stays PENDING
+ *   - `ambiguous`  - the transaction may still settle. The row stays PENDING
  *                    with its staged hash, every leg behind it is aborted, and
  *                    it is NEVER re-broadcast: a blind retry could spend twice.
- *   - `reverted`   — definitively failed. The row fails with `mined_revert` and
+ *   - `reverted`   - definitively failed. The row fails with `mined_revert` and
  *                    nothing further is attempted.
- *   - `confirmed`  — its block anchors the NEXT leg's gas estimate
+ *   - `confirmed`  - its block anchors the NEXT leg's gas estimate
  *                    (`priorLegAnchorFrom`), because the estimating node does
  *                    not always see the allowance this loop just confirmed.
  *
@@ -68,12 +68,12 @@ export interface StagedLoopInput {
 
 /**
  * The fee leg's pre-created row and its planned shape. `plan === null` means no
- * fee applies at this size, and then `rowId` is null too — there is no row.
+ * fee applies at this size, and then `rowId` is null too - there is no row.
  */
 export interface StagedLoopFee {
   readonly plan: TrenchFeeLegPlan | null;
   readonly rowId: number | null;
-  /** The base the plan was built from — the disclosure's base when it is skipped. */
+  /** The base the plan was built from - the disclosure's base when it is skipped. */
   readonly baseWei: bigint;
   readonly identity: TradeFeeIdentity;
 }
@@ -97,7 +97,7 @@ export async function runStagedLoop(x: StagedLoopInput): Promise<ToolResult> {
             legBroadcastAttempted = true;
             const res = await markActivityBroadcast(eventRow.id, handles);
             if (!res.applied) {
-              throw new Error(`agent_activity: markActivityBroadcast CAS miss for event ${eventRow.id} — refusing to broadcast untracked`);
+              throw new Error(`agent_activity: markActivityBroadcast CAS miss for event ${eventRow.id} - refusing to broadcast untracked`);
             }
           },
           onAccepted: async () => {
@@ -122,7 +122,7 @@ export async function runStagedLoop(x: StagedLoopInput): Promise<ToolResult> {
         await abortRemaining(executionId, i + 1, `earlier ${plan.eventRole} ambiguous`);
         return {
           success: false,
-          output: `${TOOL_ID}: broadcast of the ${plan.eventRole} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle. Do not retry; this attempt is recorded as pending and will resolve automatically. Verify with ChainRead tx_receipt.`,
+          output: `${TOOL_ID}: broadcast of the ${plan.eventRole} transaction (${outcome.txHash}) could not be confirmed yet - it may still settle. Do not retry; this attempt is recorded as pending and will resolve automatically. Verify with ChainRead tx_receipt.`,
           data: { _executionId: executionId, txHash: outcome.txHash, status: "pending" },
         };
       }
@@ -186,7 +186,7 @@ export async function runStagedLoop(x: StagedLoopInput): Promise<ToolResult> {
  * On a SELL the leg is RE-PLANNED from the decoded proceeds, because the row was
  * planned from the quote and the fee must be 25 bps of what actually arrived.
  * When the decode declined (`ethOutRaw === null`) there is no provable base, so
- * no fee is taken at all — never 25 bps of an estimate.
+ * no fee is taken at all - never 25 bps of an estimate.
  */
 async function attachVexFee(
   x: StagedLoopInput,
@@ -206,7 +206,7 @@ async function attachVexFee(
 
   // FIRST, and before anything else can publish a number: a SELL whose proceeds
   // did not decode has NO base Vex can prove. The row was planned from the
-  // quote, and the quote must not survive into the record of a settled trade —
+  // quote, and the quote must not survive into the record of a settled trade -
   // not as a fee, and not even as the fee's stated base.
   const sellProceedsWei = x.side === "sell" ? finalized.ethOutRaw : null;
   if (x.side === "sell" && sellProceedsWei === null) {
@@ -216,7 +216,7 @@ async function attachVexFee(
     );
   }
 
-  // NO fee applied at all — the 25 bps floored to zero when the row was planned.
+  // NO fee applied at all - the 25 bps floored to zero when the row was planned.
   if (fee.plan === null) return skip(trenchFeeNotCharged(), tradeFeeSkipped(x.side, fee.baseWei));
   // A fee DID apply but has no row to record it under. A different truth from
   // the line above, and the audit surface must be able to tell them apart.

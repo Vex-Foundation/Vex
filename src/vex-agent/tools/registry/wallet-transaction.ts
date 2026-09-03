@@ -16,11 +16,31 @@
  */
 
 import type { ToolDef } from "../types.js";
-import { CANONICAL_CHAIN_SENTENCE } from "../protocols/conventions.js";
+import {
+  CANONICAL_CHAIN_SENTENCE,
+  CANONICAL_CONFIRM_HANDOFF_SENTENCE,
+  CANONICAL_MCP_APPROVAL_SENTENCE,
+  canonicalPrepareHandoffSentence,
+} from "../protocols/conventions.js";
+import {
+  EVM_TRANSACTION_VEX_FEE,
+  SOLANA_TRANSACTION_NO_VEX_FEE,
+} from "../vex-fee-notes.js";
 
+/**
+ * The fee-cap sentence, and why the schema marks the caps OPTIONAL.
+ *
+ * They are required IN EFFECT: `parseEvmFeeBounds` refuses a prepare that
+ * carries none. They are optional IN THE SCHEMA because the refusal is the
+ * first half of the documented two-call workflow, and the MCP SDK validates
+ * this schema BEFORE the handler runs - a `required` entry would make the
+ * hint-carrying refusal unreachable over MCP and leave a coding agent inventing
+ * the one number that must never be invented (clarity finding I5).
+ */
 const EVM_FEE_BOUNDS_SENTENCE =
-  "REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without "
-  + "the caps refuses by name and returns the current estimate as a labelled hint you can choose from.";
+  "REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network "
+  + "estimate, so a call without the caps is refused by name and returns the current estimate as a "
+  + "labelled hint you choose from. That refusal is the first call of the two-call workflow.";
 
 export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
   {
@@ -30,32 +50,35 @@ export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
     pressureSafety: "mutating",
     actionKind: "approval_prepare",
     description:
-      "Prepare an ARBITRARY EVM transaction for approval. It SPENDS NOTHING and signs nothing: it "
-      + "decodes the calldata, simulates it, records one durable intent and hands back its id. THE "
-      + "INTENT IS WHAT GETS APPROVED, so the decoded effects and the fee caps recorded here are "
-      + "exactly what the user is shown and confirms. Use this when the user wants to send a "
-      + "transaction Vex has no dedicated tool for, and before any call to `WalletEvmTransactionConfirm` "
-      + "- confirm has no other way to obtain an intentId. DECODE IS FAIL CLOSED: the v1 set is ERC-20 "
-      + "transfer/approve/transferFrom/increaseAllowance/permit, Permit2 approve/permit/transferFrom at "
-      + "the canonical Permit2 address for the chain, and a plain native transfer with `data` of `0x` "
-      + "sent to an address that has no code. An unknown selector, a malformed layout, a Permit2 call "
-      + "to any other address, or empty calldata sent to a contract is REFUSED BY NAME before an intent "
-      + "exists; router and aggregator calldata is deliberately outside v1. A caller-supplied `from`, "
-      + "fee payer or fee receiver is refused by name too: the sender is the wallet selected for this "
-      + "session. VEX FEE: Vex charges 25 bps (0.25%) of this transaction's own valueWei, as a "
-      + "SEPARATE transfer to the Vex treasury that runs only AFTER the transaction confirms, with "
-      + "its own bounded network fee on top of the transaction's. A zero-value transaction - every "
-      + "ERC-20 transfer and every approve - pays NOTHING. Nor is anything charged when the 25 bps "
-      + "would be at or below what its own collection transfer could cost at the gas caps you set: "
-      + "Vex does not take a fee that costs the user more to collect than it is worth. Whichever "
-      + "applies is shown ON THE APPROVAL CARD, with its amount, the treasury address and that extra "
-      + "network-fee ceiling, or the explicit reason no fee is taken. The fee is not a parameter and "
-      + "cannot be set, redirected or waived by a caller. RETURNS intentId, chain, chainId, "
-      + "walletAddress, status 'prepared', expiresAt, the decoded effects, the approval preview, "
-      + "approvedFeeBounds echoing the caps you supplied, and vexFee stating the charge or the reason "
-      + "there is none. The intent is scoped to this session, expires in 10 minutes, and binds the "
-      + "wallet selected right now; if that selection changes, confirm refuses rather than signing "
-      + "from another address.",
+      "Prepare an EVM transaction Vex has no dedicated tool for, within the CLOSED decode set below. "
+      + "It SPENDS NOTHING and signs nothing: it "
+      + "decodes the calldata, simulates it, records one durable intent and returns its id. THE "
+      + "INTENT IS WHAT GETS APPROVED: the decoded effects and the fee caps recorded here are "
+      + "exactly what the user is shown and confirms. "
+      + canonicalPrepareHandoffSentence("WalletEvmTransactionConfirm")
+      + " TWO CALLS: call once WITHOUT the fee caps for the refusal that names them and carries the "
+      + "network estimate as a labelled hint, then again with the caps. DECODE IS "
+      + "FAIL CLOSED: the v1 set is "
+      + "ERC-20 transfer/approve/transferFrom/increaseAllowance/permit, Permit2 "
+      + "approve/permit/transferFrom at the canonical Permit2 address for the chain, and a plain native "
+      + "transfer with `data` of `0x` sent to an address that has no code. An unknown selector, a "
+      + "malformed layout, a Permit2 call to any other address, or empty calldata sent to a contract is "
+      + "REFUSED BY NAME before an intent exists; router and aggregator calldata is outside v1. A caller-supplied `from`, fee payer or fee receiver is refused by name too: the sender is "
+      + "the wallet selected for this session. VEX FEE: 25 bps (0.25%) of this transaction's own "
+      + "valueWei, a SEPARATE treasury transfer signed only AFTER it confirms, under its own bounded "
+      + "network fee. A zero-value transaction - every ERC-20 transfer and every approve - pays "
+      + "NOTHING. It is no parameter: it cannot be set, redirected or "
+      + "waived. The intent is scoped to this session, expires in 10 minutes, and binds the wallet "
+      + "selected right now; if that selection changes, confirm refuses rather than signing from "
+      + "another address. RETURNS the intent id, its status and the fields "
+      + "named in the result. Full contract: vex_ToolDescribe.",
+    // The field list this description used to carry inline, moved here whole
+    // when the text had to fit the client's 2048-character cut.
+    returns:
+      "RETURNS intentId, chain, chainId, walletAddress, status 'prepared', expiresAt, the decoded "
+      + "effects, the approval preview, approvedFeeBounds echoing the caps you supplied, and vexFee "
+      + "stating the charge or the reason there is none.",
+    vexFee: EVM_TRANSACTION_VEX_FEE,
     parameters: {
       type: "object",
       properties: {
@@ -84,7 +107,10 @@ export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
         },
         gasLimit: {
           type: "string",
-          description: `Maximum gas UNITS, as a decimal integer string. ${EVM_FEE_BOUNDS_SENTENCE}`,
+          description:
+            "Maximum gas UNITS, as a decimal integer string. The second call passes this plus EITHER "
+            + "the 1559 pair (`maxFeePerGasWei` with `maxPriorityFeePerGasWei`, required TOGETHER) OR "
+            + `the legacy \`gasPriceWei\` - never both pricing modes. ${EVM_FEE_BOUNDS_SENTENCE}`,
         },
         maxFeePerGasWei: {
           type: "string",
@@ -105,7 +131,7 @@ export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
             + `without EIP-1559. Mutually exclusive with the 1559 pair. ${EVM_FEE_BOUNDS_SENTENCE}`,
         },
       },
-      required: ["chain", "to", "gasLimit"],
+      required: ["chain", "to"],
     },
   },
   {
@@ -117,25 +143,27 @@ export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
     description:
       "Broadcast the EVM transaction that `WalletEvmTransactionPrepare` already prepared. This is the "
       + "call that SPENDS REAL FUNDS: it signs with the user's wallet and sends an IRREVERSIBLE "
-      + "on-chain transaction. APPROVAL: in a restricted session it signs nothing, decrypts nothing "
-      + "and consumes nothing - it comes back asking for approval, and that approval is bound to the "
-      + "exact decoded proposal and to this intent's own expiry. BEFORE IT SIGNS it re-reads the "
+      + "on-chain transaction. " + CANONICAL_CONFIRM_HANDOFF_SENTENCE + " "
+      + CANONICAL_MCP_APPROVAL_SENTENCE + " Nothing is signed, decrypted or "
+      + "consumed until it is authorized, bound to the exact decoded proposal "
+      + "and this intent's expiry. BEFORE IT SIGNS it re-reads the "
       + "session's selected wallet, re-resolves the chain, re-decodes the calldata against current "
-      + "chain state (which re-checks that a `data` of `0x` still targets an address with no code), "
-      + "re-simulates, and re-derives the proposal digest; any drift REFUSES BY NAME with nothing "
-      + "signed and the intent left pending. The approved fee caps are enforced on the request that "
-      + "is actually signed: a gas limit or price above them refuses before signing. RETURNS the "
-      + "outcome, txHash, chain and the echoed approvedFeeBounds, with a DISTINCT outcome for "
-      + "confirmed, reverted on-chain, broadcast with confirmation UNKNOWN, and failed before "
-      + "broadcast. Only the last is safe to prepare again: a reverted transaction is real and paid "
-      + "a network fee, and an unknown one may be settling right now - Vex tracks it and NEVER "
-      + "re-sends it, and neither should you. VEX FEE: the 25 bps fee shown on the approval card is "
-      + "charged ONLY if this transaction CONFIRMS, as a separate treasury transfer signed afterwards "
-      + "under its own bounded gas ceiling. A transaction that reverts, stays unconfirmed or refuses "
-      + "before broadcast is never charged. A fee that fails, reverts or cannot be confirmed leaves "
-      + "this transaction completely unaffected and is NEVER re-sent. The result echoes vexFee with "
-      + "its own outcome, the amount planned, and - only where the chain proved it - the amount "
-      + "collected.",
+      + "chain state (re-checking that a `data` of `0x` still targets an address with no code), "
+      + "re-simulates and re-derives the proposal digest; any drift REFUSES BY NAME with nothing signed "
+      + "and the intent left pending. The approved fee caps are enforced on the request that "
+      + "is signed: a gas limit or price above them refuses. RETURNS four DISTINCT outcomes - "
+      + "confirmed, reverted on-chain, broadcast with confirmation UNKNOWN, failed before broadcast "
+      + "- and only the LAST is safe to prepare again: a reverted transaction is real and paid a "
+      + "network fee, and an unknown one may be settling right now, which Vex tracks and NEVER "
+      + "re-sends. Neither should you. VEX FEE: the 25 bps shown on the card is charged ONLY if this "
+      + "transaction CONFIRMS, as a separate treasury transfer signed afterwards under its own "
+      + "bounded gas ceiling; a fee leg that fails, reverts or is unconfirmed leaves this transaction "
+      + "unaffected, is NEVER re-sent, and echoes its own outcome. Full contract: vex_ToolDescribe.",
+    returns:
+      "RETURNS the outcome, txHash, chain and the echoed approvedFeeBounds, with a DISTINCT outcome "
+      + "for confirmed, reverted on-chain, broadcast with confirmation UNKNOWN, and failed before "
+      + "broadcast.",
+    vexFee: EVM_TRANSACTION_VEX_FEE,
     parameters: {
       type: "object",
       properties: {
@@ -156,13 +184,18 @@ export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
     pressureSafety: "mutating",
     actionKind: "approval_prepare",
     description:
-      "Prepare an ARBITRARY Solana transaction for approval. It SPENDS NOTHING and signs nothing, and "
+      "Prepare a Solana transaction Vex has no dedicated tool for, within the CLOSED decode set "
+      + "below. It SPENDS NOTHING and signs nothing, and "
       + "it never touches a private key: it verifies the fee payer and sole-signer shape against the "
       + "wallet selected for this session, INSTALLS A FRESH BLOCKHASH before anything is simulated or "
       + "shown, decodes every instruction, simulates the canonical message and records one durable "
       + "intent. The fresh blockhash matters: it means the message the user approves is byte-for-byte "
-      + "the message that will be signed. Use this when the user wants to send a Solana transaction Vex "
-      + "has no dedicated tool for, and before any call to `WalletSolanaTransactionConfirm`. DECODE IS "
+      + "the message that will be signed. "
+      + canonicalPrepareHandoffSentence("WalletSolanaTransactionConfirm")
+      + " TWO CALLS: "
+      + "`computeUnitLimit` and `computeUnitPriceMicroLamports` are required in effect and optional in "
+      + "the schema, so a first call without them is refused by name and carries the current network "
+      + "estimate as a labelled hint you choose from. DECODE IS "
       + "FAIL CLOSED and allowlists exact instruction VARIANTS, not program names: System transfer, "
       + "classic SPL Token transfer/transferChecked/approve/revoke, ComputeBudget compute-unit limit "
       + "and price, and Memo. TOKEN-2022 IS REFUSED BY NAME because its extensions can add a transfer "
@@ -173,6 +206,13 @@ export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
       + "instructions, the approval preview, approvedFeeBounds and expiresAt. That displayed expiry is "
       + "a 60 second readability cap; lastValidBlockHeight is the real bound and confirm rechecks the "
       + "current block height against it.",
+    // Still inline in the description above; exposed here so a client that cut
+    // the tail can read it from a result. The suite asserts the two agree.
+    returns:
+      "RETURNS intentId, walletAddress, feePayer, status "
+      + "'prepared', recentBlockhash, lastValidBlockHeight, canonicalMessageBase64, the decoded "
+      + "instructions, the approval preview, approvedFeeBounds and expiresAt.",
+    vexFee: SOLANA_TRANSACTION_NO_VEX_FEE,
     parameters: {
       type: "object",
       properties: {
@@ -186,20 +226,23 @@ export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
         computeUnitLimit: {
           type: "string",
           description:
-            "REQUIRED cap on the requested COMPUTE UNITS, as a decimal integer string. The priority "
-            + "fee is charged on the requested limit rather than on units actually used, so this is "
-            + "part of what you authorize. Calling without the caps refuses by name and returns the "
-            + "current network estimate as a labelled hint.",
+            "Cap on the requested COMPUTE UNITS, as a decimal integer string. REQUIRED IN EFFECT, "
+            + "optional in the schema, and required TOGETHER with computeUnitPriceMicroLamports: a call "
+            + "without the caps is refused by name and returns the current network estimate as a "
+            + "labelled hint, which is the first call of the two-call workflow. The priority fee is "
+            + "charged on the requested limit rather than on units actually used, so this is part of "
+            + "what you authorize.",
         },
         computeUnitPriceMicroLamports: {
           type: "string",
           description:
-            "REQUIRED cap on the priority price per compute unit, in RAW micro-lamports as a decimal "
-            + "integer string. Together with computeUnitLimit it fixes the maximum priority fee in "
-            + "lamports, which is echoed back in approvedFeeBounds.",
+            "Cap on the priority price per compute unit, in RAW micro-lamports as a decimal integer "
+            + "string. REQUIRED IN EFFECT, optional in the schema, and required TOGETHER with "
+            + "computeUnitLimit; the two fix the maximum priority fee in lamports, which is echoed back "
+            + "in approvedFeeBounds.",
         },
       },
-      required: ["transactionBase64", "computeUnitLimit", "computeUnitPriceMicroLamports"],
+      required: ["transactionBase64"],
     },
   },
   {
@@ -211,9 +254,10 @@ export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
     description:
       "Broadcast the Solana transaction that `WalletSolanaTransactionPrepare` already prepared. This "
       + "is the call that SPENDS REAL FUNDS: it signs with the user's wallet and sends an "
-      + "IRREVERSIBLE transaction. APPROVAL: in a restricted session it signs nothing, decrypts "
-      + "nothing and consumes nothing - it comes back asking for approval, and that approval is bound "
-      + "to the exact canonical message and to this intent's own expiry. BEFORE IT SIGNS it re-reads "
+      + "IRREVERSIBLE transaction. " + CANONICAL_CONFIRM_HANDOFF_SENTENCE + " "
+      + CANONICAL_MCP_APPROVAL_SENTENCE + " Nothing is signed, decrypted or "
+      + "consumed until it is authorized, and the authorization is bound to the exact canonical "
+      + "message and to this intent's own expiry. BEFORE IT SIGNS it re-reads "
       + "the session's selected wallet, checks the CURRENT BLOCK HEIGHT against the intent's "
       + "lastValidBlockHeight (the real expiry; the displayed 60 second cap is only for readability), "
       + "re-resolves every address lookup table, re-decodes every instruction, re-simulates, checks "
@@ -224,6 +268,13 @@ export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
       + "confirmed, failed on-chain, broadcast with confirmation UNKNOWN, and failed before "
       + "broadcast. Only the last is safe to prepare again: Vex tracks an unknown one and NEVER "
       + "re-sends it, and neither should you.",
+    returns:
+      "RETURNS the outcome, the "
+      + "transaction signature and the echoed approvedFeeBounds, with a DISTINCT outcome for "
+      + "confirmed, failed on-chain, broadcast with confirmation UNKNOWN, and failed before "
+      + "broadcast. Only the last is safe to prepare again: Vex tracks an unknown one and NEVER "
+      + "re-sends it, and neither should you.",
+    vexFee: SOLANA_TRANSACTION_NO_VEX_FEE,
     parameters: {
       type: "object",
       properties: {

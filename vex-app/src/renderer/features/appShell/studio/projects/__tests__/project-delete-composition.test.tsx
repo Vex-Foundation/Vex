@@ -42,7 +42,7 @@ import type {
   ProjectList,
 } from "@shared/schemas/projects.js";
 import { projectKeys } from "../../../../../lib/api/projects.js";
-import { clearToast, getToastSnapshot } from "../../../../../lib/toast.js";
+import { notifications } from "../../../../../lib/notifications/index.js";
 import {
   installStudioDomStubs,
   makeProject,
@@ -74,8 +74,9 @@ beforeEach(() => {
   listMock.mockResolvedValue({ ok: true, data: [ATLAS] });
   deleteMock.mockReset();
   useProjectDialogStore.setState({ request: null });
-  const standing = getToastSnapshot();
-  if (standing !== null) clearToast(standing.id);
+  // The notification model is module state; a toast raised by a previous case
+  // would make "no toast was shown" pass for the wrong reason.
+  notifications.reset();
   Object.defineProperty(window, "vex", {
     configurable: true,
     value: { projects: { list: listMock, delete: deleteMock } },
@@ -155,7 +156,7 @@ describe("a not_found answer", () => {
     await screen.findByText(PROJECT_DELETE_OUTCOME_SENTENCES.not_found);
     // Nothing was claimed about a project that still exists.
     expect(onProjectDeleted).not.toHaveBeenCalled();
-    expect(getToastSnapshot()).toBeNull();
+    expect(notifications.getSnapshot().items).toHaveLength(0);
     // And the dialog is standing on the FRESH row, found by id.
     await screen.findByText("Type the project name to confirm: atlas-2");
     expect(useProjectDialogStore.getState().request).not.toBeNull();
@@ -176,7 +177,7 @@ describe("a not_found answer", () => {
       expect(useProjectDialogStore.getState().request).toBeNull();
     });
     expect(onProjectDeleted).not.toHaveBeenCalled();
-    expect(getToastSnapshot()).toBeNull();
+    expect(notifications.getSnapshot().items).toHaveLength(0);
   });
 });
 

@@ -23,6 +23,7 @@
 import { app } from "electron";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { TelemetryStackDigest } from "@shared/types/bridge/common.js";
 import { preferencesStore } from "../preferences/store.js";
 import { resolveDsn } from "./dsn.js";
 import {
@@ -156,6 +157,14 @@ export async function captureRendererError(input: {
   readonly kind: "caught" | "uncaught" | "boundary";
   readonly message: string;
   readonly componentStack?: string | null;
+  /** The id the renderer's recovery surface showed the user (B0.2). */
+  readonly correlationId?: string | null;
+  readonly errorName?: string | null;
+  /**
+   * Bounded structured frames. Carried in `extra` like every other
+   * renderer-controlled value, so the redacting beforeSend hook covers it.
+   */
+  readonly stack?: TelemetryStackDigest | null;
 }): Promise<boolean> {
   if (!sentryInitialized) return false;
   try {
@@ -166,6 +175,9 @@ export async function captureRendererError(input: {
       extra: {
         rendererMessage: input.message,
         componentStack: input.componentStack ?? null,
+        correlationId: input.correlationId ?? null,
+        errorName: input.errorName ?? null,
+        stack: input.stack ?? null,
       },
     });
     return true;

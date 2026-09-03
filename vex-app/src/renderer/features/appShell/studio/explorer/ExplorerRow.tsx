@@ -16,6 +16,8 @@
 
 import { memo, type CSSProperties, type JSX } from "react";
 import type { FileNodeKind } from "@shared/schemas/files.js";
+import type { FileOpenMode } from "../workspace/types.js";
+import type { ExplorerRowPending } from "./explorer-rows.js";
 import {
   IconChevronRight,
   IconFile,
@@ -25,6 +27,7 @@ import {
   IconLoading,
   IconWarning,
 } from "../../../../components/icons/index.js";
+import { StateDot } from "../../../../components/ui/state-dot.js";
 import { cn } from "../../../../lib/utils.js";
 
 /** Row height in pixels. A file tree is denser than the 32px rail row. */
@@ -52,13 +55,71 @@ export interface ExplorerRowProps {
   readonly expanded: boolean | null;
   readonly loading: boolean;
   readonly errored: boolean;
+  /**
+   * THE SELECTED ROW, which in this single-select tree is also the keyboard
+   * cursor. It carries `aria-selected` and the selection fill.
+   *
+   * Both used to follow the OPEN FILE instead, so a user arrowing through the
+   * tree kept hearing one row announced as selected however far they moved
+   * (live test 2026-09-03, I-5).
+   */
   readonly focused: boolean;
-  readonly selected: boolean;
+  /**
+   * This row's file is the one the workspace has open.
+   *
+   * A DECORATION, never the selection: it marks the row with
+   * `data-vex-explorer-open` so the tab strip and the tree agree about which
+   * file is open, while what is ANNOUNCED as selected stays where the keyboard
+   * is.
+   */
+  readonly open: boolean;
   /** The id of the visually-hidden description, or `null` when there is none. */
   readonly describedById: string | null;
   /** The description's text. Rendered inside the row so the id resolves. */
   readonly description: string | null;
-  readonly onSelect: (rowId: string) => void;
+  /**
+   * This file is a Vex-managed artifact that has drifted, said in words
+   * (`"AGENTS.md: Edited since Vex wrote it"`), or `null` for every other row.
+   *
+   * A DECORATION in VS Code's sense (`explorerDecorationsProvider.ts`): the
+   * badge sits on the resource the fact is about, not only on the project row
+   * above it. A string rather than an object so the memo still compares by
+   * value.
+   */
+  readonly driftLabel: string | null;
+  /**
+   * A write this row is waiting on, or `null`.
+   *
+   * The row KEEPS its name and its place while it is pending. A row that
+   * vanished on Enter and came back on the answer would flicker; one that
+   * vanished and did not come back would have deleted itself for a delete that
+   * was refused.
+   */
+  readonly pending: ExplorerRowPending | null;
+  /**
+   * The row was activated, and WHICH GESTURE did it.
+   *
+   * A single click asks for a PREVIEW, a double click asks for a KEPT tab.
+   * That is VS Code's split, from the same two events: its list opens on
+   * single click with the preview flag and its tab control pins on
+   * `DBLCLICK` (`multiEditorTabsControl.ts:1125-1150`). The mode travels with
+   * the gesture because the gesture is the only thing that knows it - by the
+   * time the workspace reads it, the click is long over.
+   *
+   * A DOUBLE CLICK ALSO FIRES A SINGLE ONE first, and that is fine rather
+   * than tolerated: the preview open lands, then the pinned open promotes the
+   * same tab in place (`addFileTab` selects and pins an already-open path), so
+   * the user sees one tab either way.
+   */
+  readonly onSelect: (rowId: string, mode: FileOpenMode) => void;
+  /**
+   * Right click, with viewport coordinates. `null` on rows that have no menu.
+   *
+   * A primitive callback rather than a menu here, because this component is
+   * memoized on primitives: a menu rendered per row would mount one control per
+   * row in a virtualized list, which is exactly what the tree-wide menu avoids.
+   */
+  readonly onContextMenu: ((rowId: string, x: number, y: number) => void) | null;
 }
 
 function LeadingGlyph({
@@ -104,7 +165,7 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
       aria-level={props.level + 1}
       aria-posinset={props.posInSet}
       aria-setsize={props.setSize}
-      aria-selected={props.selected}
+      aria-selected={props.focused}
       // Only expandable rows carry it; VS Code removes the attribute outright
       // rather than writing `aria-expanded="false"` on a leaf
       // (`abstractTree.ts:492-494`), because a false there announces a file as a
@@ -113,14 +174,42 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
       {...(props.describedById === null ? {} : { "aria-describedby": props.describedById })}
       {...(props.rowKind === "node" ? {} : { "aria-label": props.label })}
       style={style}
+      data-row-pending={props.pending ?? undefined}
+      data-vex-explorer-open={props.open ? "true" : undefined}
       onClick={() => {
-        props.onSelect(props.rowId);
+        props.onSelect(props.rowId, "preview");
       }}
+      onDoubleClick={() => {
+        props.onSelect(props.rowId, "pinned");
+      }}
+      onContextMenu={
+        props.onContextMenu === null
+          ? undefined
+          : (event) => {
+              // The platform menu would offer Reload and Inspect over a file
+              // tree, so this row owns the gesture outright.
+              event.preventDefault();
+              event.stopPropagation();
+              props.onContextMenu?.(props.rowId, event.clientX, event.clientY);
+            }
+      }
       className={cn(
         "flex w-full cursor-pointer select-none items-center gap-1 pr-2 text-[13px] leading-[24px]",
         // Hover fill and selected fill are the same tint, as the rail rows are.
-        props.selected ? "bg-interactive-hover" : "hover:bg-interactive-hover",
-        props.focused ? "ring-1 ring-inset ring-ring" : null,
+        // `vex-tint` settles that fill over the fast step instead of snapping
+        // it. COLOUR ONLY, and that is a constraint rather than a preference:
+        // the row sits inside a virtualizer wrapper positioned by `transform`,
+        // so anything here that moved a box would fight the list's own
+        // translation. Safe against row reuse because the virtualizer keys by
+        // ROW ID (`getItemKey` in ExplorerTree), so scrolling remounts rows
+        // rather than repainting one element as a different file.
+        "vex-tint",
+        // ONE ROW carries both marks, because one row is both: the selection
+        // fill and the focus ring belong to the keyboard cursor in a
+        // single-select tree.
+        props.focused
+          ? "bg-interactive-hover ring-1 ring-inset ring-ring"
+          : "hover:bg-interactive-hover",
         props.rowKind === "notice" ? "text-ink-tertiary" : "text-ink-primary",
       )}
     >
@@ -128,15 +217,21 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
         aria-hidden="true"
         className="flex h-4 w-4 shrink-0 items-center justify-center text-ink-tertiary"
       >
-        {props.loading ? (
+        {/* A PENDING WRITE takes the twistie slot, so a row waiting on main is
+          * visibly busy without the list reflowing. It outranks the directory's
+          * own loading spinner: a folder being renamed while its children load
+          * is one row the user is waiting on, not two. */}
+        {props.loading || props.pending !== null ? (
           <IconLoading size={12} />
         ) : isDirectory ? (
           <IconChevronRight
             size={12}
-            className={cn(
-              "transition-transform duration-150 motion-reduce:transition-none",
-              props.expanded === true ? "rotate-90" : null,
-            )}
+            // `vex-twistie` replaced a hand-written
+            // `transition-transform duration-150 motion-reduce:transition-none`:
+            // same behaviour, but the 150 is now the `--vex-duration-base`
+            // token and the reduced-motion collapse is stated once in the
+            // primitive instead of per call site.
+            className={cn("vex-twistie", props.expanded === true ? "rotate-90" : null)}
           />
         ) : null}
       </span>
@@ -160,6 +255,19 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
       >
         {props.label}
       </span>
+      {props.driftLabel === null ? null : (
+        // The SAME state vocabulary the project row and the outcome rows use,
+        // so one glyph means one thing across Studio. `label` is what makes it
+        // more than a colour: the dot itself is aria-hidden, and this row has
+        // no visible word saying the file drifted.
+        <span
+          className="flex shrink-0 items-center text-warning"
+          title={props.driftLabel}
+          data-vex-file-drift="true"
+        >
+          <StateDot state="warning" size={8} label={props.driftLabel} />
+        </span>
+      )}
       {props.describedById === null || props.description === null ? null : (
         <span id={props.describedById} className="sr-only">
           {props.description}
