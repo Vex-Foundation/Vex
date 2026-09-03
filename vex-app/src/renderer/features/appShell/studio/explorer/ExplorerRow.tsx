@@ -16,6 +16,8 @@
 
 import { memo, type CSSProperties, type JSX } from "react";
 import type { FileNodeKind } from "@shared/schemas/files.js";
+import type { FileOpenMode } from "../workspace/types.js";
+import type { ExplorerRowPending } from "./explorer-rows.js";
 import {
   IconChevronRight,
   IconFile,
@@ -69,7 +71,39 @@ export interface ExplorerRowProps {
    * value.
    */
   readonly driftLabel: string | null;
-  readonly onSelect: (rowId: string) => void;
+  /**
+   * A write this row is waiting on, or `null`.
+   *
+   * The row KEEPS its name and its place while it is pending. A row that
+   * vanished on Enter and came back on the answer would flicker; one that
+   * vanished and did not come back would have deleted itself for a delete that
+   * was refused.
+   */
+  readonly pending: ExplorerRowPending | null;
+  /**
+   * The row was activated, and WHICH GESTURE did it.
+   *
+   * A single click asks for a PREVIEW, a double click asks for a KEPT tab.
+   * That is VS Code's split, from the same two events: its list opens on
+   * single click with the preview flag and its tab control pins on
+   * `DBLCLICK` (`multiEditorTabsControl.ts:1125-1150`). The mode travels with
+   * the gesture because the gesture is the only thing that knows it - by the
+   * time the workspace reads it, the click is long over.
+   *
+   * A DOUBLE CLICK ALSO FIRES A SINGLE ONE first, and that is fine rather
+   * than tolerated: the preview open lands, then the pinned open promotes the
+   * same tab in place (`addFileTab` selects and pins an already-open path), so
+   * the user sees one tab either way.
+   */
+  readonly onSelect: (rowId: string, mode: FileOpenMode) => void;
+  /**
+   * Right click, with viewport coordinates. `null` on rows that have no menu.
+   *
+   * A primitive callback rather than a menu here, because this component is
+   * memoized on primitives: a menu rendered per row would mount one control per
+   * row in a virtualized list, which is exactly what the tree-wide menu avoids.
+   */
+  readonly onContextMenu: ((rowId: string, x: number, y: number) => void) | null;
 }
 
 function LeadingGlyph({
@@ -124,9 +158,24 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
       {...(props.describedById === null ? {} : { "aria-describedby": props.describedById })}
       {...(props.rowKind === "node" ? {} : { "aria-label": props.label })}
       style={style}
+      data-row-pending={props.pending ?? undefined}
       onClick={() => {
-        props.onSelect(props.rowId);
+        props.onSelect(props.rowId, "preview");
       }}
+      onDoubleClick={() => {
+        props.onSelect(props.rowId, "pinned");
+      }}
+      onContextMenu={
+        props.onContextMenu === null
+          ? undefined
+          : (event) => {
+              // The platform menu would offer Reload and Inspect over a file
+              // tree, so this row owns the gesture outright.
+              event.preventDefault();
+              event.stopPropagation();
+              props.onContextMenu?.(props.rowId, event.clientX, event.clientY);
+            }
+      }
       className={cn(
         "flex w-full cursor-pointer select-none items-center gap-1 pr-2 text-[13px] leading-[24px]",
         // Hover fill and selected fill are the same tint, as the rail rows are.
@@ -147,7 +196,11 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
         aria-hidden="true"
         className="flex h-4 w-4 shrink-0 items-center justify-center text-ink-tertiary"
       >
-        {props.loading ? (
+        {/* A PENDING WRITE takes the twistie slot, so a row waiting on main is
+          * visibly busy without the list reflowing. It outranks the directory's
+          * own loading spinner: a folder being renamed while its children load
+          * is one row the user is waiting on, not two. */}
+        {props.loading || props.pending !== null ? (
           <IconLoading size={12} />
         ) : isDirectory ? (
           <IconChevronRight

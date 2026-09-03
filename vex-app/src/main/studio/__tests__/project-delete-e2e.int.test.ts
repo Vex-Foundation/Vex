@@ -243,6 +243,12 @@ async function resetDatabase(): Promise<void> {
 
 const PROJECT_NAME = "Test";
 /**
+ * The config directory the domain under test is told this app resolved. The
+ * terminal overlay carries it; nothing in THIS suite reads it back, so any
+ * absolute path serves.
+ */
+const CONFIG_DIR_FIXTURE = "/tmp/vex-delete-e2e/config";
+/**
  * The registry entry, narrowed through the production guard.
  *
  * `STUDIO_AGENTS` is typed as the union, and only the writable variant has a
@@ -1827,6 +1833,7 @@ describe("deleteProject: step 6, closing what the project owns", () => {
     // its leases, its counts, its close hook - is the production code.
     const domain = new TerminalDomain(
       {
+        configDir: CONFIG_DIR_FIXTURE,
         resolveProjectLocation: () =>
           Promise.resolve({ directory: doomed.directory, label: doomed.slug }),
         readProjectActivation: realProjectActivation,
@@ -1927,6 +1934,7 @@ describe("deleteProject: step 6, closing what the project owns", () => {
 
     const domain = new TerminalDomain(
       {
+        configDir: CONFIG_DIR_FIXTURE,
         resolveProjectLocation: () =>
           Promise.resolve({ directory: doomed.directory, label: doomed.slug }),
         readProjectActivation: realProjectActivation,
@@ -2074,6 +2082,7 @@ describe("deleteProject: step 6, closing what the project owns", () => {
     });
 
     const depsFor = (): import("../terminals.js").TerminalDomainDeps => ({
+      configDir: CONFIG_DIR_FIXTURE,
       resolveProjectLocation: () =>
         Promise.resolve({ directory: doomed.directory, label: doomed.slug }),
       readProjectActivation: realProjectActivation,
@@ -2232,6 +2241,7 @@ describe("deleteProject: step 6, closing what the project owns", () => {
     ]);
     const domain = new TerminalDomain(
       {
+        configDir: CONFIG_DIR_FIXTURE,
         resolveProjectLocation: (projectId) => {
           const directory = directories.get(projectId);
           return Promise.resolve(
@@ -2463,6 +2473,10 @@ describe("deleteProject: the file watcher", () => {
       subscribeNative: subscribeNativeWatcher,
       pollForRoot: pollForRootReturn,
       rootExists: projectRootExists,
+      // The trash is INJECTED into the files domain the same way it is into the
+      // delete path (`deps.trashItem` above): this suite never deletes a FILE
+      // from the tree, and naming the capability keeps that explicit.
+      trashItem: () => Promise.reject(new Error("no file trash in this suite")),
       publish: (_windowId, event) => {
         events.push(event);
       },
@@ -2602,6 +2616,7 @@ describe("deleteProject: the file watcher", () => {
       subscribeNative: subscribeNativeWatcher,
       pollForRoot: pollForRootReturn,
       rootExists: projectRootExists,
+      trashItem: () => Promise.reject(new Error("no file trash in this suite")),
       publish: () => undefined,
     });
 

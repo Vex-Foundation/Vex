@@ -40,10 +40,22 @@ interface ExplorerRowBase {
   readonly setSize: number;
 }
 
+/**
+ * A write this row is waiting on, or `null`.
+ *
+ * The row keeps its place and its name while it is pending: a row that vanished
+ * on Enter and came back on the answer would flicker, and a row that vanished
+ * and did NOT come back (a refusal) would have deleted itself for a delete that
+ * did not happen.
+ */
+export type ExplorerRowPending = "creating" | "renaming" | "deleting";
+
 /** A real filesystem entry. */
 export interface ExplorerNodeRow extends ExplorerRowBase {
   readonly kind: "node";
   readonly node: FileNode;
+  /** A mutation this row is waiting for main to answer. */
+  readonly pending: ExplorerRowPending | null;
   /** Directories only; always false for a file. */
   readonly expanded: boolean;
   /** Whether this directory's children have been listed at least once. */
@@ -91,7 +103,65 @@ export interface ExplorerNoticeRow extends ExplorerRowBase {
   readonly tone: ExplorerNoticeTone;
 }
 
-export type ExplorerRow = ExplorerNodeRow | ExplorerLoadMoreRow | ExplorerNoticeRow;
+/**
+ * THE EDIT ROW: an input rendered AS a tree row.
+ *
+ * VS Code's model exactly (`explorerViewer.ts:904-923`, `renderInputBox`): the
+ * label is hidden and an input box takes its place inside the same row element,
+ * validated live, committed on Enter, cancelled on Escape. The alternative - a
+ * modal dialog asking for a name - was rejected there and is rejected here for
+ * the same reason: the name belongs at the position the entry will occupy, and
+ * a dialog hides the very list the user is choosing a unique name against.
+ *
+ * AT MOST ONE exists in the tree, which is why the model holds a single edit
+ * rather than a flag per node. Two open name boxes would be two answers to
+ * "what is the user typing", and the second would have to be abandoned anyway.
+ *
+ * A `rename` REPLACES the row it names, so the tree does not grow while it is
+ * open; a create ADDS one, as the last child of its parent, because that is the
+ * only position the renderer can choose without inventing a total order that
+ * belongs to main.
+ */
+export interface ExplorerEditRow extends ExplorerRowBase {
+  readonly kind: "edit";
+  readonly intent: EditIntent;
+  /** What the input starts with: empty for a create, the old name for a rename. */
+  readonly initialName: string;
+  /** The node being renamed, or `null` for a create. */
+  readonly targetId: string | null;
+  /**
+   * The refusal shown under the input, or `null`.
+   *
+   * It carries a refusal from MAIN as well as a live validation message: a
+   * create that main rejected reopens its row with the reason on it, which is
+   * what "the error is the row's own state" means. A toast would put the
+   * sentence somewhere other than the name that caused it.
+   */
+  readonly message: string | null;
+  /** The commit is in flight. The input stays mounted and goes read-only. */
+  readonly submitting: boolean;
+}
+
+/** What an open edit row will do when it commits. */
+export type EditIntent = "createFile" | "createFolder" | "rename";
+
+export type ExplorerRow =
+  | ExplorerNodeRow
+  | ExplorerLoadMoreRow
+  | ExplorerNoticeRow
+  | ExplorerEditRow;
+
+/** An open edit, as the model holds it. */
+export interface EditDescriptor {
+  readonly intent: EditIntent;
+  /** The directory the entry belongs to. `null` is the project root. */
+  readonly parentId: string | null;
+  /** The node being renamed, or `null` for a create. */
+  readonly targetId: string | null;
+  readonly initialName: string;
+  readonly message: string | null;
+  readonly submitting: boolean;
+}
 
 /** How a listing joins what a directory already holds. */
 export type SetChildrenMode = "replace" | "append";

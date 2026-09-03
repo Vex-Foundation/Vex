@@ -69,6 +69,19 @@ vi.mock("../../../../../lib/api/files.js", () => ({
     subscriptionId: string,
     cb: Parameters<FilesApiFake["onFilesEvent"]>[1],
   ) => api.onFilesEvent(subscriptionId, cb),
+  // This suite is about ACTIVATION, the publication fence and the scheduler; it
+  // never writes. The three mutation functions are NAMED and made to throw
+  // rather than omitted, so a test that started writing here fails loudly
+  // instead of calling `undefined` and reporting something unrelated.
+  createProjectNode: () => {
+    throw new Error("this suite never writes");
+  },
+  renameProjectNode: () => {
+    throw new Error("this suite never writes");
+  },
+  deleteProjectNode: () => {
+    throw new Error("this suite never writes");
+  },
 }));
 
 /** Let every queued microtask settle. The session awaits several per activation. */

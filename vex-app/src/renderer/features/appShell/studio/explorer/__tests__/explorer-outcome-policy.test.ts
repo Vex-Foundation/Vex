@@ -171,6 +171,19 @@ describe("decideListingFailure", () => {
     watcher_unavailable: "folderError",
     unknown_subscription: "folderError",
     io_error: "folderError",
+    // The MUTATION codes (stage EXP-1). A listing cannot answer with one -
+    // `listChildren` never writes - and they are here for the same reason
+    // `path_changed` is: the wire type is ONE set, and a code this table did
+    // not name would fall through to whatever the last branch happens to be on
+    // the day it first arrives. `folderError` is that fallthrough named on
+    // purpose, and it is the safe one: it shows the code's sentence on the row
+    // and offers no retry.
+    name_invalid: "folderError",
+    name_exists: "folderError",
+    vex_managed: "folderError",
+    write_denied: "folderError",
+    trash_unavailable: "folderError",
+    mutation_busy: "folderError",
   };
 
   it("covers every error code the wire can answer with", () => {

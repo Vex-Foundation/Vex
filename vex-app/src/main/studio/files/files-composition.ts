@@ -18,6 +18,7 @@ import type { FilesEvent } from "@shared/schemas/files.js";
 
 import { getProject } from "../../database/projects/read.js";
 import { log } from "../../logger/index.js";
+import { trashItemToOsTrash } from "../os-trash.js";
 import { resolveProjectDirectory, resolveProjectsRoot } from "../projects-root.js";
 import { FilesDomain, type ProjectFilesLocation } from "./files-domain.js";
 import {
@@ -77,6 +78,10 @@ export function filesDomain(): FilesDomain {
     pollForRoot: pollForRootReturn,
     rootExists: projectRootExists,
     publish,
+    // THE SAME trash capability the project delete uses, from the same owner.
+    // Two ways for this app to move a user's files to the trash would be two
+    // places to get "did it actually go to the trash" wrong.
+    trashItem: trashItemToOsTrash,
   });
   return instance;
 }

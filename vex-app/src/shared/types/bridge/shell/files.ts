@@ -1,7 +1,10 @@
 import type { Result } from "../../../ipc/result.js";
 import type {
   FileContent,
+  FileDeleteMode,
+  FileDeleteResult,
   FileListing,
+  FileNode,
   FilesEvent,
   FilesOutcome,
   FilesSubscription,
@@ -16,10 +19,18 @@ import type {
  * every single call - so a token is a NAME the tree can hold, never an
  * authority it can spend.
  *
- * READ-ONLY. There is no write, create, rename or delete method here. Mutating
- * a user's repository from a file tree is an approval-gated action and no
- * approval for it exists yet; adding the method first and the approval later is
- * how a capability ships without its gate.
+ * THREE METHODS WRITE (stage EXP-1). This block used to say "READ-ONLY...
+ * mutating a user's repository from a file tree is an approval-gated action and
+ * no approval for it exists yet", and the gate arrived with the methods rather
+ * than after them: the actor is the USER in their own window (main reads the
+ * sender, never a payload field), a delete is sent only from an explicit
+ * confirmation whose disposition travels with it, Vex's own artifacts are
+ * refused by name, and nothing here takes a path - a create names a parent and
+ * an entry name, a rename names a node and an entry name, so neither can move
+ * anything or address a destination outside the project.
+ *
+ * These are NOT model-callable. No tool proposes them and no agent surface
+ * reaches them; they exist for a person clicking in a tree.
  *
  * Every method answers with a DISCRIMINATED OUTCOME inside a successful
  * `Result`: "this file is binary", "this file is larger than the viewer will
@@ -79,6 +90,54 @@ export interface FilesBridge {
   readonly unwatchFile: (input: {
     subscriptionId: string;
   }) => Promise<Result<FilesOutcome<null>>>;
+
+  /**
+   * Create one entry inside a directory. `parentNodeId: null` is the root.
+   *
+   * `name` is a SINGLE entry name: a separator in it is refused rather than
+   * creating intermediate directories, because a path arriving through this
+   * surface is the one thing its design rules out. On success the node comes
+   * back described exactly as a listing would describe it, so the tree can show
+   * the row immediately instead of waiting for the watcher.
+   *
+   * `name_exists` comes from the kernel (`O_CREAT|O_EXCL`, `mkdir`), not from a
+   * check main made a moment earlier, so it cannot be wrong about a race.
+   */
+  readonly createNode: (input: {
+    projectId: string;
+    parentNodeId: string | null;
+    name: string;
+    kind: "file" | "directory";
+  }) => Promise<Result<FilesOutcome<FileNode>>>;
+
+  /**
+   * Rename one entry IN PLACE. The parent directory never changes.
+   *
+   * There is no destination parameter, so this cannot move anything and cannot
+   * name a target outside the project. A case-only rename (`readme.md` ->
+   * `README.md`) is a rename, not a collision, on every platform.
+   */
+  readonly renameNode: (input: {
+    projectId: string;
+    nodeId: string;
+    name: string;
+  }) => Promise<Result<FilesOutcome<FileNode>>>;
+
+  /**
+   * Delete one entry. A directory goes with its contents.
+   *
+   * `mode` is the disposition the user's confirmation described and main
+   * honours exactly it. A `trash` the platform refuses answers
+   * `trash_unavailable` with the entry UNTOUCHED - it never falls through to a
+   * permanent delete, because the sentence the user read said they could
+   * restore it. Offering permanent removal after that refusal is the caller's
+   * job, and it is a second decision the person makes.
+   */
+  readonly deleteNode: (input: {
+    projectId: string;
+    nodeId: string;
+    mode: FileDeleteMode;
+  }) => Promise<Result<FilesOutcome<FileDeleteResult>>>;
 
   /**
    * Events for ONE subscription. Returns an idempotent cleanup.

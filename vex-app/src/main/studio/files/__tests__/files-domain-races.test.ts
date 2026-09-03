@@ -176,6 +176,10 @@ beforeEach(async () => {
     publish: (windowId, event) => {
       events.push({ windowId, event });
     },
+    // This suite is about watcher and subscription RACES and never deletes. The
+    // capability is still named rather than defaulted, so a delete added here
+    // later fails loudly instead of quietly doing nothing.
+    trashItem: () => Promise.reject(new Error("no trash in this suite")),
   });
 });
 
@@ -446,6 +450,10 @@ describe("a read that is still working when the project closes underneath it", (
       pollForRoot: () => () => undefined,
       rootExists: () => Promise.resolve(true),
       publish: () => undefined,
+      // The trash is INJECTED (see `os-trash.ts`): this suite drives the real
+      // filesystem without Electron, so a suite that never deletes still has
+      // to name the capability it is not using.
+      trashItem: () => Promise.reject(new Error("no trash in this suite")),
     });
 
     try {
@@ -494,6 +502,10 @@ describe("a read in flight when a delete begins", () => {
       pollForRoot: () => () => undefined,
       rootExists: () => Promise.resolve(true),
       publish: () => undefined,
+      // The trash is INJECTED (see `os-trash.ts`): this suite drives the real
+      // filesystem without Electron, so a suite that never deletes still has
+      // to name the capability it is not using.
+      trashItem: () => Promise.reject(new Error("no trash in this suite")),
     });
 
     try {

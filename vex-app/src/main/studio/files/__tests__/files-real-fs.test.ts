@@ -38,9 +38,11 @@
 import {
   mkdir,
   mkdtemp,
+  readFile,
   readdir,
   rename,
   rm,
+  stat,
   symlink,
   truncate,
   writeFile,
@@ -99,7 +101,11 @@ import {
   projectRootExists,
   subscribeNativeWatcher,
 } from "../native-adapters.js";
-import { mintFileNodeId, resetFileNodeEpochsForTests } from "../node-id.js";
+import {
+  invalidateProjectNodes,
+  mintFileNodeId,
+  resetFileNodeEpochsForTests,
+} from "../node-id.js";
 
 const PROJECT = "11111111-2222-3333-4444-555555555555";
 const WINDOW = "1";
@@ -107,6 +113,18 @@ const WINDOW = "1";
 let root = "";
 let domain: FilesDomain;
 let events: FilesEvent[] = [];
+/**
+ * Where the fake trash puts things.
+ *
+ * OUTSIDE the project root, because that is the property that matters: a
+ * "trash" inside the tree would still be listed by the explorer, and a delete
+ * test could pass while the entry never left.
+ */
+let trashDirectory = "";
+/** Absolute paths `trashItem` was asked to take, in order. */
+let trashed: string[] = [];
+/** Make the next `trashItem` reject, as a platform with no trash does. */
+let trashFails = false;
 
 /**
  * The one place this suite waits on the real world.
@@ -158,6 +176,9 @@ beforeEach(async () => {
   // comparison in this feature is made against the place the directory actually
   // is.
   root = await realpath(await mkdtemp(path.join(tmpdir(), "vex-files-")));
+  trashDirectory = await realpath(await mkdtemp(path.join(tmpdir(), "vex-files-trash-")));
+  trashed = [];
+  trashFails = false;
   domain = new FilesDomain({
     // The ANCHOR and the directory, as production supplies them: the projects
     // root is the realpath'd parent, and the project directory is the lexical
@@ -174,12 +195,31 @@ beforeEach(async () => {
     publish: (_windowId, event) => {
       events.push(event);
     },
+    /**
+     * THE TRASH, faked at the SAME seam production injects it.
+     *
+     * `shell.trashItem` needs a desktop session and a real XDG trash directory,
+     * neither of which exists in this runtime, so the capability is the one
+     * thing this suite does not drive for real - exactly as
+     * `project-delete-e2e.int.test.ts` fakes it at `deps.trashItem`. What the
+     * fake preserves is everything the code under test can observe: the entry
+     * REALLY leaves the project (it is moved, not unlinked, so "the user can
+     * get it back" stays true of the fake as well), the path it was asked to
+     * take is recorded so a test can assert what was trashed, and a refusal is
+     * a rejection, which is the only shape the real API's failure has.
+     */
+    trashItem: async (absolutePath) => {
+      if (trashFails) throw new Error("EPERM: no trash on this platform");
+      trashed.push(absolutePath);
+      await rename(absolutePath, path.join(trashDirectory, path.basename(absolutePath)));
+    },
   });
 });
 
 afterEach(async () => {
   await domain.dispose();
   await rm(root, { recursive: true, force: true });
+  await rm(trashDirectory, { recursive: true, force: true });
 });
 
 /* ------------------------------------------------------------------ *
@@ -265,6 +305,10 @@ describe("containment against a real filesystem", () => {
       pollForRoot: pollForRootReturn,
       rootExists: projectRootExists,
       publish: () => undefined,
+      // The trash is INJECTED (see `os-trash.ts`): this suite drives the real
+      // filesystem without Electron, so a suite that never deletes still has
+      // to name the capability it is not using.
+      trashItem: () => Promise.reject(new Error("no trash in this suite")),
     });
 
     try {
@@ -307,6 +351,10 @@ describe("containment against a real filesystem", () => {
       pollForRoot: pollForRootReturn,
       rootExists: projectRootExists,
       publish: () => undefined,
+      // The trash is INJECTED (see `os-trash.ts`): this suite drives the real
+      // filesystem without Electron, so a suite that never deletes still has
+      // to name the capability it is not using.
+      trashItem: () => Promise.reject(new Error("no trash in this suite")),
     });
     try {
       expect(
@@ -1045,5 +1093,602 @@ describe("subscriptions, leases and teardown", () => {
     await watchTree();
     await domain.dispose();
     expect(heldProjectLeases(PROJECT, "watcher")).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Mutations (stage EXP-1)
+ * ------------------------------------------------------------------ *
+ *
+ * The write half, over the same real filesystem and the same authority chain
+ * the reads go through. What each block establishes is a property the surface
+ * PROMISES and that a fixture could not decide: that `fs.rename` silently
+ * overwriting an existing file (measured on this platform) never reaches a
+ * user's file, that a create is exclusive at the kernel rather than behind a
+ * check, that the trash is a MOVE and its refusal leaves the entry alone, and
+ * that Vex's own artifacts are refused by name.
+ */
+
+/** The absolute path of a project-relative entry, for asserting on the disk. */
+function at(relativePath: string): string {
+  return path.join(root, relativePath);
+}
+
+async function exists(relativePath: string): Promise<boolean> {
+  try {
+    await stat(at(relativePath));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+describe("creating entries", () => {
+  it("creates a file at the root and describes it exactly as a listing does", async () => {
+    const created = await domain.createNode({
+      projectId: PROJECT,
+      parentNodeId: null,
+      name: "notes.md",
+      kind: "file",
+    });
+
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.value.name).toBe("notes.md");
+    expect(created.value.path).toBe("notes.md");
+    expect(created.value.kind).toBe("file");
+    expect(created.value.size).toBe(0);
+    // THE WORLD, not the self-report: the file is on disk and empty.
+    expect(await readFile(at("notes.md"), "utf8")).toBe("");
+
+    // The node it handed back is the node a listing produces for the same
+    // entry - same token, same fields - which is what lets the tree merge the
+    // optimistic row with the refresh instead of showing two.
+    const listed = await domain.listChildren({ projectId: PROJECT, nodeId: null });
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    const row = listed.value.children.find((child) => child.name === "notes.md");
+    expect(row?.nodeId).toBe(created.value.nodeId);
+    expect(row?.kind).toBe("file");
+  });
+
+  it("creates a folder inside a folder, addressed by its parent's token", async () => {
+    await mkdir(at("src"));
+    const created = await domain.createNode({
+      projectId: PROJECT,
+      parentNodeId: mintFileNodeId(PROJECT, "src"),
+      name: "lib",
+      kind: "directory",
+    });
+
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.value.path).toBe("src/lib");
+    expect(created.value.kind).toBe("directory");
+    expect((await stat(at("src/lib"))).isDirectory()).toBe(true);
+  });
+
+  it("REFUSES a name that already exists, and the kernel decides it", async () => {
+    await writeFile(at("taken.txt"), "original", "utf8");
+
+    const created = await domain.createNode({
+      projectId: PROJECT,
+      parentNodeId: null,
+      name: "taken.txt",
+      kind: "file",
+    });
+
+    expect(created).toEqual({ ok: false, code: "name_exists" });
+    // THE CRITICAL SIDE EFFECT THAT MUST NOT HAPPEN: the existing file's bytes
+    // are untouched. `open(..., "wx")` is O_CREAT|O_EXCL, so there is no
+    // check-then-act window in which a plain `w` could have truncated it.
+    expect(await readFile(at("taken.txt"), "utf8")).toBe("original");
+  });
+
+  it("REFUSES a name carrying a separator rather than creating directories", async () => {
+    // VS Code creates the intermediate directories here; this surface does not,
+    // because a path arriving through it is what its whole design rules out.
+    const created = await domain.createNode({
+      projectId: PROJECT,
+      parentNodeId: null,
+      name: "a/b.txt",
+      kind: "file",
+    });
+
+    expect(created).toEqual({ ok: false, code: "name_invalid" });
+    expect(await exists("a")).toBe(false);
+  });
+
+  it("REFUSES to create inside something that is not a directory", async () => {
+    await writeFile(at("file.txt"), "x", "utf8");
+    const created = await domain.createNode({
+      projectId: PROJECT,
+      parentNodeId: mintFileNodeId(PROJECT, "file.txt"),
+      name: "child.txt",
+      kind: "file",
+    });
+    expect(created).toEqual({ ok: false, code: "not_a_directory" });
+  });
+
+  it("REFUSES to create through a symlinked parent that escapes the project", async () => {
+    await symlink("/tmp", at("escape"), "dir");
+    const created = await domain.createNode({
+      projectId: PROJECT,
+      parentNodeId: mintFileNodeId(PROJECT, "escape"),
+      name: "planted.txt",
+      kind: "file",
+    });
+    // The parent resolves as a SYMLINK, and the write is refused before any
+    // syscall reaches the place it points at.
+    expect(created).toEqual({ ok: false, code: "symlinked_path" });
+  });
+
+  it("REFUSES a forged parent token, so no path can be invented", async () => {
+    const created = await domain.createNode({
+      projectId: PROJECT,
+      parentNodeId: "f1.forged.forged",
+      name: "planted.txt",
+      kind: "file",
+    });
+    expect(created).toEqual({ ok: false, code: "invalid_node" });
+    expect(await exists("planted.txt")).toBe(false);
+  });
+});
+
+describe("renaming entries", () => {
+  it("renames a file in place and returns its NEW token", async () => {
+    await writeFile(at("old.txt"), "content", "utf8");
+    const before = mintFileNodeId(PROJECT, "old.txt");
+
+    const renamed = await domain.renameNode({
+      projectId: PROJECT,
+      nodeId: before,
+      name: "new.txt",
+    });
+
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) return;
+    expect(renamed.value.path).toBe("new.txt");
+    // The token is derived from the PATH, so a renamed entry necessarily has a
+    // new one. The tree removes the old row and inserts this node.
+    expect(renamed.value.nodeId).not.toBe(before);
+    expect(await readFile(at("new.txt"), "utf8")).toBe("content");
+    expect(await exists("old.txt")).toBe(false);
+  });
+
+  it("REFUSES to overwrite an existing entry, which bare fs.rename would do", async () => {
+    // THE MEASURED HAZARD, and the reason the collision check exists: on this
+    // platform `fs.rename` silently replaces the target file. A rename that
+    // reached the syscall unchecked would destroy `keep.txt` without a word.
+    await writeFile(at("move.txt"), "moving", "utf8");
+    await writeFile(at("keep.txt"), "precious", "utf8");
+
+    const renamed = await domain.renameNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, "move.txt"),
+      name: "keep.txt",
+    });
+
+    expect(renamed).toEqual({ ok: false, code: "name_exists" });
+    expect(await readFile(at("keep.txt"), "utf8")).toBe("precious");
+    expect(await readFile(at("move.txt"), "utf8")).toBe("moving");
+  });
+
+  it("allows a CASE-ONLY rename, which is a rename and not a collision", async () => {
+    // Measured on this platform: the two names are two entries on a
+    // case-sensitive filesystem, so nothing is at the target. On macOS and
+    // Windows the target lstats to the SOURCE, and the identity comparison in
+    // `wouldOverwriteAnother` is what keeps this from being read as a clash.
+    await writeFile(at("readme.md"), "text", "utf8");
+
+    const renamed = await domain.renameNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, "readme.md"),
+      name: "README.md",
+    });
+
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) return;
+    expect(renamed.value.name).toBe("README.md");
+    expect(await readFile(at("README.md"), "utf8")).toBe("text");
+  });
+
+  it("renames a directory WITH its contents, and the children follow", async () => {
+    await mkdir(at("olddir"));
+    await writeFile(at("olddir/inner.txt"), "inner", "utf8");
+
+    const renamed = await domain.renameNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, "olddir"),
+      name: "newdir",
+    });
+
+    expect(renamed.ok).toBe(true);
+    expect(await readFile(at("newdir/inner.txt"), "utf8")).toBe("inner");
+  });
+
+  it("REFUSES to rename the project root", async () => {
+    const renamed = await domain.renameNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, ""),
+      name: "somethingelse",
+    });
+    // Renaming the project's own folder is the project lifecycle's business and
+    // would strand every durable row that names the slug.
+    expect(renamed).toEqual({ ok: false, code: "outside_project" });
+  });
+
+  it("REFUSES a name a Windows checkout could not carry", async () => {
+    await writeFile(at("fine.txt"), "x", "utf8");
+    for (const name of ["CON", "nul.txt", "trailing.", "with:colon", "ends "]) {
+      expect(
+        await domain.renameNode({
+          projectId: PROJECT,
+          nodeId: mintFileNodeId(PROJECT, "fine.txt"),
+          name,
+        }),
+      ).toEqual({ ok: false, code: "name_invalid" });
+    }
+    // Nothing moved: every refusal happened before a syscall.
+    expect(await exists("fine.txt")).toBe(true);
+  });
+});
+
+describe("Vex-managed artifacts", () => {
+  /** Every path the installer owns must be refused, not a sample of them. */
+  const MANAGED = ["AGENTS.md", "CLAUDE.md", ".mcp.json", ".codex/config.toml"];
+
+  it.each(MANAGED)("REFUSES to rename %s, naming Repair as the remedy", async (managed) => {
+    await mkdir(path.dirname(at(managed)), { recursive: true });
+    await writeFile(at(managed), "managed", "utf8");
+
+    const renamed = await domain.renameNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, managed),
+      name: "mine.txt",
+    });
+
+    expect(renamed).toEqual({ ok: false, code: "vex_managed" });
+    expect(await readFile(at(managed), "utf8")).toBe("managed");
+  });
+
+  it.each(MANAGED)("REFUSES to delete %s", async (managed) => {
+    await mkdir(path.dirname(at(managed)), { recursive: true });
+    await writeFile(at(managed), "managed", "utf8");
+
+    const deleted = await domain.deleteNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, managed),
+      mode: "trash",
+    });
+
+    expect(deleted).toEqual({ ok: false, code: "vex_managed" });
+    expect(trashed).toEqual([]);
+    expect(await exists(managed)).toBe(true);
+  });
+
+  it("REFUSES everything under .vex, whatever it is called", async () => {
+    await mkdir(at(".vex/mcp"), { recursive: true });
+    await writeFile(at(".vex/mcp/kimi.json"), "{}", "utf8");
+
+    expect(
+      await domain.deleteNode({
+        projectId: PROJECT,
+        nodeId: mintFileNodeId(PROJECT, ".vex/mcp/kimi.json"),
+        mode: "permanent",
+      }),
+    ).toEqual({ ok: false, code: "vex_managed" });
+    expect(
+      await domain.deleteNode({
+        projectId: PROJECT,
+        nodeId: mintFileNodeId(PROJECT, ".vex"),
+        mode: "permanent",
+      }),
+    ).toEqual({ ok: false, code: "vex_managed" });
+    expect(await exists(".vex/mcp/kimi.json")).toBe(true);
+  });
+
+  it("REFUSES to CREATE a managed artifact the installer would overwrite", async () => {
+    const created = await domain.createNode({
+      projectId: PROJECT,
+      parentNodeId: null,
+      name: "AGENTS.md",
+      kind: "file",
+    });
+    expect(created).toEqual({ ok: false, code: "vex_managed" });
+    expect(await exists("AGENTS.md")).toBe(false);
+  });
+
+  it("leaves a file that merely LOOKS managed alone", async () => {
+    // The rule is the exact path, not a name anywhere in the tree: a user's own
+    // `docs/AGENTS.md` is theirs.
+    await mkdir(at("docs"));
+    await writeFile(at("docs/AGENTS.md"), "mine", "utf8");
+
+    const renamed = await domain.renameNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, "docs/AGENTS.md"),
+      name: "NOTES.md",
+    });
+    expect(renamed.ok).toBe(true);
+    expect(await readFile(at("docs/NOTES.md"), "utf8")).toBe("mine");
+  });
+});
+
+describe("deleting entries", () => {
+  it("moves a file to the TRASH rather than unlinking it", async () => {
+    await writeFile(at("doomed.txt"), "bytes", "utf8");
+
+    const deleted = await domain.deleteNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, "doomed.txt"),
+      mode: "trash",
+    });
+
+    expect(deleted).toEqual({
+      ok: true,
+      value: { path: "doomed.txt", disposition: "trash", kind: "file" },
+    });
+    expect(trashed).toEqual([at("doomed.txt")]);
+    expect(await exists("doomed.txt")).toBe(false);
+    // THE PROMISE THE CONFIRMATION MADE: the bytes still exist somewhere the
+    // user can reach. A delete that unlinked would pass every assertion above
+    // and break the sentence the user agreed to.
+    expect(await readFile(path.join(trashDirectory, "doomed.txt"), "utf8")).toBe("bytes");
+  });
+
+  it("deletes a directory WITH its contents when the user chose permanent", async () => {
+    await mkdir(at("tree/nested"), { recursive: true });
+    await writeFile(at("tree/nested/leaf.txt"), "leaf", "utf8");
+
+    const deleted = await domain.deleteNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, "tree"),
+      mode: "permanent",
+    });
+
+    expect(deleted).toEqual({
+      ok: true,
+      value: { path: "tree", disposition: "permanent", kind: "directory" },
+    });
+    expect(await exists("tree")).toBe(false);
+    // The trash was NEVER consulted: permanent means permanent.
+    expect(trashed).toEqual([]);
+  });
+
+  it("LEAVES THE ENTRY ALONE when the trash refuses, and never falls back", async () => {
+    // The whole point of `trash_unavailable` being its own code. A fallback to
+    // an unlink here would permanently destroy a file whose confirmation said
+    // it could be restored.
+    await writeFile(at("safe.txt"), "still here", "utf8");
+    trashFails = true;
+
+    const deleted = await domain.deleteNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, "safe.txt"),
+      mode: "trash",
+    });
+
+    expect(deleted).toEqual({ ok: false, code: "trash_unavailable" });
+    expect(await readFile(at("safe.txt"), "utf8")).toBe("still here");
+  });
+
+  it("REFUSES to delete the project root", async () => {
+    const deleted = await domain.deleteNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, ""),
+      mode: "permanent",
+    });
+    expect(deleted).toEqual({ ok: false, code: "outside_project" });
+    expect(await exists("")).toBe(true);
+  });
+
+  it("REFUSES a forged token", async () => {
+    await writeFile(at("real.txt"), "x", "utf8");
+    expect(
+      await domain.deleteNode({
+        projectId: PROJECT,
+        nodeId: "f1.forged.forged",
+        mode: "permanent",
+      }),
+    ).toEqual({ ok: false, code: "invalid_node" });
+    expect(await exists("real.txt")).toBe(true);
+  });
+
+  it("answers not_found for something already gone", async () => {
+    const token = mintFileNodeId(PROJECT, "never.txt");
+    expect(
+      await domain.deleteNode({ projectId: PROJECT, nodeId: token, mode: "permanent" }),
+    ).toEqual({ ok: false, code: "not_found" });
+  });
+});
+
+/**
+ * A promise a test can hold open and then release.
+ *
+ * The write lock is the subject of the two tests below, and the only way to
+ * observe it is to PARK a write inside a collaborator the test controls. The
+ * trash is that collaborator: it is injected, it is awaited inside the lock,
+ * and parking it needs no sleep - so these prove the lock rather than proving
+ * that a timer elapsed.
+ */
+function openGate(): { readonly held: Promise<void>; readonly release: () => void } {
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { held, release: () => { release(); } };
+}
+
+describe("write serialisation and cancellation", () => {
+  it("SERIALISES writes for one project rather than racing them", async () => {
+    // Two creates issued together. Both must land: a lock that dropped or
+    // overwrote work would show up here as a missing file, and a lock that
+    // deadlocked would show up as a timeout.
+    const names = Array.from({ length: 8 }, (_, index) => `p${String(index)}.txt`);
+    const outcomes = await Promise.all(
+      names.map((name) =>
+        domain.createNode({ projectId: PROJECT, parentNodeId: null, name, kind: "file" }),
+      ),
+    );
+
+    expect(outcomes.every((outcome) => outcome.ok)).toBe(true);
+    const listed = await readdir(root);
+    for (const name of names) expect(listed).toContain(name);
+  });
+
+  it("REFUSES with mutation_busy rather than queueing past the deadline", async () => {
+    // A domain whose lock deadline is immediate, so the second writer meets the
+    // bound without this test sleeping for it. `gate` holds the first write
+    // inside its trash call, which is the one collaborator a test can park.
+    const gate = openGate();
+    const busyRoot = root;
+    const busy = new FilesDomain({
+      resolveProjectDirectory: () =>
+        Promise.resolve({
+          anchoredRoot: path.dirname(busyRoot),
+          projectDirectory: busyRoot,
+        }),
+      subscribeNative: subscribeNativeWatcher,
+      pollForRoot: pollForRootReturn,
+      rootExists: projectRootExists,
+      publish: () => undefined,
+      trashItem: () => gate.held,
+      mutationTimeoutMs: 10,
+    });
+    await writeFile(at("parked.txt"), "x", "utf8");
+
+    const first = busy.deleteNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, "parked.txt"),
+      mode: "trash",
+    });
+    // Let the first write acquire the lock before the second asks for it.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const second = await busy.createNode({
+      projectId: PROJECT,
+      parentNodeId: null,
+      name: "waiting.txt",
+      kind: "file",
+    });
+
+    expect(second).toEqual({ ok: false, code: "mutation_busy" });
+    // NOTHING WAS WRITTEN by the refused mutation: `mutation_busy` is a refusal
+    // at the door, not a write that failed halfway.
+    expect(await exists("waiting.txt")).toBe(false);
+
+    gate.release();
+    await first;
+    await busy.dispose();
+  });
+
+  it("CANCELS before writing anything when the request's signal aborts", async () => {
+    const gate = openGate();
+    const cancelRoot = root;
+    const cancelling = new FilesDomain({
+      resolveProjectDirectory: () =>
+        Promise.resolve({
+          anchoredRoot: path.dirname(cancelRoot),
+          projectDirectory: cancelRoot,
+        }),
+      subscribeNative: subscribeNativeWatcher,
+      pollForRoot: pollForRootReturn,
+      rootExists: projectRootExists,
+      publish: () => undefined,
+      trashItem: () => gate.held,
+    });
+    await writeFile(at("blocking.txt"), "x", "utf8");
+
+    const first = cancelling.deleteNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, "blocking.txt"),
+      mode: "trash",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const controller = new AbortController();
+    const second = cancelling.createNode({
+      projectId: PROJECT,
+      parentNodeId: null,
+      name: "cancelled.txt",
+      kind: "file",
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    // An AbortError, which `registerHandler` normalises into the surface's one
+    // cancellation contract (`internal.cancelled`) rather than a second one
+    // expressed as an outcome code.
+    await expect(second).rejects.toMatchObject({ name: "AbortError" });
+    expect(await exists("cancelled.txt")).toBe(false);
+
+    gate.release();
+    await first;
+    await cancelling.dispose();
+  });
+});
+
+describe("a mutation of a project that closed underneath it", () => {
+  it("REFUSES a token the delete already spent, before touching the disk", async () => {
+    await writeFile(at("late.txt"), "x", "utf8");
+    const token = mintFileNodeId(PROJECT, "late.txt");
+    // The project is tombstoned FIRST, which spends every token it ever issued.
+    // The refusal is `invalid_node` and deliberately not `project_closed`:
+    // `node-id.ts` answers one refusal for every way a token can be wrong, so a
+    // forger learns nothing about how close they got, and a legitimate caller
+    // re-lists either way.
+    invalidateProjectNodes(PROJECT);
+
+    expect(
+      await domain.deleteNode({ projectId: PROJECT, nodeId: token, mode: "permanent" }),
+    ).toEqual({ ok: false, code: "invalid_node" });
+    // NOTHING WAS WRITTEN. The refusal is at the door.
+    expect(await exists("late.txt")).toBe(true);
+  });
+
+  it("refuses to REPORT a delete whose project closed while it was in flight", async () => {
+    // The second fence, and the one a pre-flight check cannot cover: the
+    // authority was established, the syscall ran, and the tombstone committed
+    // in between. The entry IS gone - main owns that - and the honest answer
+    // names the project rather than describing a tree this caller may no longer
+    // be allowed to see.
+    const gate = openGate();
+    const closingRoot = root;
+    const closing = new FilesDomain({
+      resolveProjectDirectory: () =>
+        Promise.resolve({
+          anchoredRoot: path.dirname(closingRoot),
+          projectDirectory: closingRoot,
+        }),
+      subscribeNative: subscribeNativeWatcher,
+      pollForRoot: pollForRootReturn,
+      rootExists: projectRootExists,
+      publish: () => undefined,
+      trashItem: async (absolutePath) => {
+        trashed.push(absolutePath);
+        await gate.held;
+        await rename(absolutePath, path.join(trashDirectory, path.basename(absolutePath)));
+      },
+    });
+    await writeFile(at("inflight.txt"), "x", "utf8");
+
+    const deleting = closing.deleteNode({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, "inflight.txt"),
+      mode: "trash",
+    });
+    // Parked inside the trash call, with the project's authority already
+    // established. The tombstone lands now.
+    await vi.waitFor(() => {
+      expect(trashed).toHaveLength(1);
+    });
+    invalidateProjectNodes(PROJECT);
+    gate.release();
+
+    expect(await deleting).toEqual({ ok: false, code: "project_closed" });
+    // The file really did go: the refusal is about what may be REPORTED, not a
+    // claim that nothing happened.
+    expect(await exists("inflight.txt")).toBe(false);
+    await closing.dispose();
   });
 });

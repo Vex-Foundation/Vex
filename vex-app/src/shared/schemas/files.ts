@@ -207,6 +207,34 @@ export const FILES_RAW_EVENTS_MAX = FILES_PENDING_CHANGES_MAX * 4;
 /** The longest project-relative path this surface will carry. */
 export const FILES_RELATIVE_PATH_MAX = 4_096;
 
+/**
+ * The longest single entry NAME a create or a rename will accept.
+ *
+ * 255, which is `NAME_MAX` on every filesystem Vex ships against (ext4, APFS,
+ * NTFS) measured in BYTES on Linux and in UTF-16 code units on Windows. The
+ * bound here counts code units, so a name of 255 emoji is accepted by this
+ * schema and refused by Linux with `ENAMETOOLONG`; that refusal arrives as
+ * `write_denied` and names the file rather than being guessed at here. The
+ * schema's job is to stop a megabyte of text reaching a syscall, not to
+ * predict every filesystem's own accounting.
+ */
+export const FILES_NAME_MAX = 255;
+
+/**
+ * How long a mutation will wait for this project's write lock before refusing.
+ *
+ * Writes are serialised per project (one at a time), so a slow delete of a
+ * large directory can hold the lock while the user renames something else. Ten
+ * seconds is far longer than any local filesystem operation this surface
+ * performs and short enough that a wedged write surfaces as a named refusal
+ * the user can act on rather than as a dialog that never answers.
+ *
+ * AT THE BOUND: the waiting mutation is refused with `mutation_busy` and NOTHING
+ * is written. It is never queued behind the deadline, because a create the user
+ * gave up on must not land minutes later.
+ */
+export const FILES_MUTATION_TIMEOUT_MS = 10_000;
+
 /** The longest project id this surface will carry. */
 export const FILES_PROJECT_ID_MAX = 64;
 
@@ -388,8 +416,117 @@ export const filesErrorCodeSchema = z.enum([
   "unknown_subscription",
   /** The filesystem refused, for a reason main logged and will not repeat here. */
   "io_error",
+
+  /* ---- mutations (stage EXP-1) ---- */
+
+  /**
+   * The NAME cannot be used: empty, all whitespace, a path separator, `.` or
+   * `..`, a trailing dot or space, a Windows device name, or over
+   * `FILES_NAME_MAX`. {@link fileNameRefusal} is the shared decision, so the
+   * renderer's live validation and main's enforcement cannot disagree.
+   */
+  "name_invalid",
+  /** Something is already at that name. Main checked the disk, not a listing. */
+  "name_exists",
+  /**
+   * Vex writes this file, so the tree will not rename or delete it.
+   *
+   * A separate code rather than a flavour of `write_denied` because the remedy
+   * is a Vex action - Repair, or changing the project's scope - and not a
+   * filesystem permission the user could change.
+   */
+  "vex_managed",
+  /** The filesystem refused the write itself: permissions, a read-only mount. */
+  "write_denied",
+  /**
+   * The operating system has no trash here, or refused to use it. The file is
+   * UNTOUCHED; permanent delete is the explicit second choice.
+   */
+  "trash_unavailable",
+  /**
+   * Another write for this project held the lock past
+   * `FILES_MUTATION_TIMEOUT_MS`. Nothing was written; the user may try again.
+   */
+  "mutation_busy",
 ]);
 export type FilesErrorCode = z.infer<typeof filesErrorCodeSchema>;
+
+/* ------------------------------------------------------------------ *
+ * Names
+ * ------------------------------------------------------------------ */
+
+/**
+ * Why a proposed entry name cannot be used, or `null` when it can.
+ *
+ * ONE decision, on the shared contract, because it has two enforcement points
+ * that must agree: the renderer validates as the user types (VS Code's
+ * `validateFileName`, `fileActions.ts:715-767`, rendered live inside the row's
+ * input box) and main refuses at the syscall. Two copies of a rule is how the
+ * two copies eventually disagree, and here disagreement means an inline error
+ * the user cannot resolve or a name the UI accepted and the disk did not.
+ *
+ * COLLISIONS ARE NOT DECIDED HERE. Whether `README.md` already exists is a
+ * question about a disk, and only main has one; the renderer's optimistic
+ * check against the siblings it has listed is an early message, never the
+ * boundary. Main answers `name_exists` from `lstat`.
+ *
+ * THE WINDOWS RULES APPLY ON EVERY PLATFORM, which is stricter than VS Code
+ * (whose `hasValidBasename` takes the target OS). A project folder is a
+ * repository: it gets cloned onto Windows, zipped, and checked out by a
+ * colleague. A name Vex allowed on Linux that no Windows checkout can contain
+ * is a defect the user meets later, somewhere Vex cannot explain it.
+ */
+export type FileNameRefusal =
+  | "empty"
+  | "separator"
+  | "relative"
+  | "trailing"
+  | "reserved"
+  | "control"
+  | "too_long";
+
+/** `CON`, `PRN`, `COM1`... Reserved by Windows in EVERY directory, extension or not. */
+const WINDOWS_DEVICE_NAMES = new Set([
+  "con", "prn", "aux", "nul",
+  "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+  "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+]);
+
+/** Illegal in a Windows filename; `/` is illegal everywhere. */
+// eslint-disable-next-line no-control-regex
+const NAME_ILLEGAL = /[\u0000-\u001f<>:"|?*]/;
+
+/**
+ * Decide one name. Pure, synchronous, and total over the union above.
+ *
+ * @param name the name exactly as the user typed it, NOT trimmed. Leading and
+ *   trailing whitespace is significant: a trailing space is legal on POSIX,
+ *   invisible in every tree, and silently stripped by Windows, so it is refused
+ *   rather than quietly repaired into a different name than the one shown.
+ * @returns the refusal, or `null` when the name is usable.
+ */
+export function fileNameRefusal(name: string): FileNameRefusal | null {
+  if (name.length === 0 || name.trim().length === 0) return "empty";
+  if (name.length > FILES_NAME_MAX) return "too_long";
+  if (name === "." || name === "..") return "relative";
+  if (name.includes("/") || name.includes("\\")) return "separator";
+  if (NAME_ILLEGAL.test(name)) return "control";
+  if (name.endsWith(".") || name.endsWith(" ") || name.startsWith(" ")) return "trailing";
+  // The device rule ignores the extension: `nul.txt` is refused too, because
+  // Windows resolves it to the device.
+  const stem = name.split(".")[0]?.toLowerCase() ?? "";
+  if (WINDOWS_DEVICE_NAMES.has(stem)) return "reserved";
+  return null;
+}
+
+/** A name that has already passed {@link fileNameRefusal}. */
+export const fileNameSchema = z
+  .string()
+  .min(1)
+  .max(FILES_NAME_MAX)
+  .refine((value) => fileNameRefusal(value) === null, {
+    message: "invalid entry name",
+  });
 
 /**
  * A discriminated outcome inside a successful `Result`.
@@ -746,6 +883,97 @@ export type FilesSubscription = z.infer<typeof filesSubscriptionSchema>;
 /* ------------------------------------------------------------------ *
  * Response schemas
  * ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ *
+ * Mutations (stage EXP-1)
+ * ------------------------------------------------------------------ */
+
+/**
+ * A CREATE addresses a PARENT plus a NAME, never a path.
+ *
+ * The name is a single entry name and the separator refusal in
+ * {@link fileNameRefusal} is what keeps it one: VS Code lets `a/b/c` in a new-file
+ * box create the intermediate directories (`fileActions.ts:81-86` then refreshes
+ * because "multiple resources will get created"), and that convenience is a
+ * path arriving through a surface whose whole design is that no path does. The
+ * user makes the folder, then the file.
+ *
+ * `parentNodeId: null` creates at the project root, matching every other
+ * addressing mode on this surface.
+ */
+export const filesCreateInputSchema = z
+  .object({
+    projectId: filesProjectIdSchema,
+    parentNodeId: fileNodeIdSchema.nullable(),
+    name: fileNameSchema,
+    /** A regular file or a directory. Nothing else can be created from a tree. */
+    kind: z.enum(["file", "directory"]),
+  })
+  .strict();
+export type FilesCreateInput = z.infer<typeof filesCreateInputSchema>;
+
+/**
+ * A RENAME addresses the node and a NEW NAME. It cannot move anything.
+ *
+ * Moving is a different action with a different confirmation (a destination the
+ * user has to see) and a different failure set, and accepting a target path
+ * here would be exactly the "just one path parameter" this surface refuses.
+ * `fs.rename` therefore never crosses the project root: the target is always
+ * `dirname(source) + name`, derived in main.
+ */
+export const filesRenameInputSchema = z
+  .object({
+    projectId: filesProjectIdSchema,
+    nodeId: fileNodeIdSchema,
+    name: fileNameSchema,
+  })
+  .strict();
+export type FilesRenameInput = z.infer<typeof filesRenameInputSchema>;
+
+/**
+ * How a delete disposes of the entry. The user chose this, in the dialog.
+ *
+ * `trash` is the default and the only one the ordinary keystroke reaches.
+ * `permanent` is a SECOND, explicit choice: it exists because a platform can
+ * have no trash (a Linux box with no XDG trash directory on that mount is the
+ * ordinary case) and because Shift+Delete is what a user who means it presses.
+ * It is never a silent fallback from a failed `trash` - main answers
+ * `trash_unavailable`, the dialog says so, and the user decides again.
+ */
+export const fileDeleteModeSchema = z.enum(["trash", "permanent"]);
+export type FileDeleteMode = z.infer<typeof fileDeleteModeSchema>;
+
+export const filesDeleteInputSchema = z
+  .object({
+    projectId: filesProjectIdSchema,
+    nodeId: fileNodeIdSchema,
+    mode: fileDeleteModeSchema,
+  })
+  .strict();
+export type FilesDeleteInput = z.infer<typeof filesDeleteInputSchema>;
+
+/**
+ * What a delete DID, echoed back.
+ *
+ * The disposition is on the wire rather than assumed from the request because
+ * the confirmation the user read said "you can restore this from the Trash" or
+ * "this cannot be undone", and the result has to be able to prove which of the
+ * two actually happened. `entries` is what was removed: 1 for a file, and for a
+ * directory the count main removed, so the UI can say it.
+ */
+export const fileDeleteResultSchema = z
+  .object({
+    /** The project-relative path that is now gone. */
+    path: fileRelativePathSchema,
+    disposition: fileDeleteModeSchema,
+    kind: fileNodeKindSchema,
+  })
+  .strict();
+export type FileDeleteResult = z.infer<typeof fileDeleteResultSchema>;
+
+export const filesCreateResultSchema = filesOutcomeSchema(fileNodeSchema);
+export const filesRenameResultSchema = filesOutcomeSchema(fileNodeSchema);
+export const filesDeleteResultSchema = filesOutcomeSchema(fileDeleteResultSchema);
 
 export const filesListChildrenResultSchema = filesOutcomeSchema(fileListingSchema);
 export const filesReadFileResultSchema = filesOutcomeSchema(fileContentSchema);

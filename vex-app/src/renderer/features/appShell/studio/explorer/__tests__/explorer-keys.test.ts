@@ -17,13 +17,14 @@ import {
 
 function press(
   key: string,
-  modifiers: { ctrl?: boolean; meta?: boolean; alt?: boolean } = {},
+  modifiers: { ctrl?: boolean; meta?: boolean; alt?: boolean; shift?: boolean } = {},
 ): ExplorerIntent | null {
   return resolveExplorerKey({
     key,
     ctrlKey: modifiers.ctrl ?? false,
     metaKey: modifiers.meta ?? false,
     altKey: modifiers.alt ?? false,
+    shiftKey: modifiers.shift ?? false,
   });
 }
 
@@ -43,6 +44,13 @@ describe("resolveExplorerKey", () => {
     ["R", { kind: "typeAhead", character: "R" }],
     ["7", { kind: "typeAhead", character: "7" }],
     [".", { kind: "typeAhead", character: "." }],
+    // THE WRITE KEYS (stage EXP-1). `Delete` moved out of the pass-through list
+    // below when the tree gained a delete: the contract changed deliberately,
+    // and neither of these keys removes anything by itself - each resolves to
+    // an intent whose handler opens a name box or a confirmation.
+    ["F2", { kind: "rename" }],
+    ["Delete", { kind: "delete", permanent: false }],
+    ["ContextMenu", { kind: "contextMenu" }],
   ];
 
   for (const [key, expected] of table) {
@@ -51,12 +59,33 @@ describe("resolveExplorerKey", () => {
     });
   }
 
-  const passthrough = ["Tab", "Escape", "F3", "Shift", "Backspace", "Delete", "Insert"];
+  it("reads Shift on Delete as the PERMANENT disposition", () => {
+    // The two dispositions are two keys, as they are in VS Code and in every
+    // desktop file manager. The intent carries which, so the confirmation the
+    // user reads is the one their keystroke implied.
+    expect(press("Delete", { shift: true })).toEqual({ kind: "delete", permanent: true });
+  });
+
+  it("opens the context menu from Shift+F10 as well as the Menu key", () => {
+    // The binding a keyboard without a dedicated Menu key still has.
+    expect(press("F10", { shift: true })).toEqual({ kind: "contextMenu" });
+    // Bare F10 is the platform's, not ours.
+    expect(press("F10")).toBeNull();
+  });
+
+  const passthrough = ["Tab", "Escape", "F3", "Shift", "Backspace", "Insert"];
   for (const key of passthrough) {
     it(`lets ${key} through`, () => {
       expect(press(key)).toBeNull();
     });
   }
+
+  it("still lets a chorded write key through to the application", () => {
+    // Ctrl+Delete and Cmd+Delete belong to the platform and to the app's own
+    // shortcuts; a tree that ate them would break both.
+    expect(press("Delete", { ctrl: true })).toBeNull();
+    expect(press("F2", { meta: true })).toBeNull();
+  });
 
   it("lets every chord through, so the application keeps its shortcuts", () => {
     // A tree that swallowed Ctrl+F to type-ahead for "f" would break find.
@@ -67,7 +96,7 @@ describe("resolveExplorerKey", () => {
   });
 
   it("treats Shift+letter as type-ahead, because that is how a capital is typed", () => {
-    expect(resolveExplorerKey({ key: "A", ctrlKey: false, metaKey: false, altKey: false })).toEqual({
+    expect(press("A", { shift: true })).toEqual({
       kind: "typeAhead",
       character: "A",
     });

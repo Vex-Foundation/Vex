@@ -15,7 +15,13 @@
  *    file turns the code into English.
  */
 
-import type { FilesErrorCode, FilesWatcherWarning } from "@shared/schemas/files.js";
+import type {
+  FileDeleteMode,
+  FileNameRefusal,
+  FileNodeKind,
+  FilesErrorCode,
+  FilesWatcherWarning,
+} from "@shared/schemas/files.js";
 
 /* ------------------------------------------------------------------ *
  * Chrome
@@ -139,6 +145,20 @@ const LISTING_ERROR_COPY: Readonly<Record<FilesErrorCode, string>> = {
     "The file watcher is not running for this project, so the tree will not update on its own.",
   unknown_subscription: "This project's file subscription ended. Refreshing will start a new one.",
   io_error: "This folder could not be read.",
+
+  // The mutation codes. A LISTING never produces one, and they are here because
+  // the table is exhaustive over the wire's enum on purpose: adding a code to
+  // the shared schema without deciding what the tree says about it is a compile
+  // error, which is exactly how these six arrived. The sentences the user
+  // actually reads for a failed create, rename or delete come from
+  // `mutationErrorText` below, which is aimed at the row being edited rather
+  // than at a folder that could not be read.
+  name_invalid: "That name cannot be used.",
+  name_exists: "Something with that name is already here.",
+  vex_managed: "Vex manages this file. Use Repair to change it.",
+  write_denied: "This project folder is not writable.",
+  trash_unavailable: "This system has no trash available.",
+  mutation_busy: "Another change to this project is still running. Try again.",
 };
 
 export function listingErrorText(code: FilesErrorCode): string {
@@ -157,3 +177,160 @@ export const LISTING_TRANSPORT_FAILED =
 /** The watcher could not be started at all, so nothing can be listed either. */
 export const WATCH_FAILED =
   "Vex could not open this project's files. Use Refresh to try again.";
+
+/* ------------------------------------------------------------------ *
+ * Creating, renaming and deleting
+ * ------------------------------------------------------------------ */
+
+export const EXPLORER_NEW_FILE_LABEL = "New file";
+export const EXPLORER_NEW_FOLDER_LABEL = "New folder";
+export const EXPLORER_RENAME_LABEL = "Rename";
+export const EXPLORER_DELETE_LABEL = "Delete";
+export const EXPLORER_DELETE_PERMANENT_LABEL = "Delete permanently";
+
+export const EXPLORER_NEW_FILE_TOOLTIP = "Create a file in this project";
+export const EXPLORER_NEW_FOLDER_TOOLTIP = "Create a folder in this project";
+
+/** The accessible name of the row context menu, which names its subject. */
+export function rowMenuLabel(name: string): string {
+  return `Actions for ${name}`;
+}
+
+/**
+ * The edit row's accessible name.
+ *
+ * It states the two keys, because the input replaces the row it names and a
+ * screen-reader user who cannot see that has no other way to learn how to
+ * commit or abandon it. VS Code's own input box does the same
+ * (`explorerViewer.ts:1075`: "Type file name. Press Enter to confirm or Escape
+ * to cancel.").
+ */
+export const EXPLORER_EDIT_ARIA_LABEL =
+  "Type a name. Press Enter to confirm or Escape to cancel.";
+
+/**
+ * Why a typed name cannot be used. Shown LIVE, under the input, as it is typed.
+ *
+ * One sentence per refusal the shared rule can produce, because a user who is
+ * told only "invalid name" has to guess which character offended. Exhaustive
+ * over `FileNameRefusal` for the same reason the listing table is exhaustive
+ * over `FilesErrorCode`.
+ */
+const NAME_REFUSAL_COPY: Readonly<Record<FileNameRefusal, string>> = {
+  empty: "A name is required.",
+  separator: "A name cannot contain a slash. Create the folder first, then the file inside it.",
+  relative: "A name cannot be \".\" or \"..\".",
+  trailing: "A name cannot start or end with a space, or end with a dot.",
+  reserved: "That name is reserved by Windows and would not survive a checkout there.",
+  control: "A name cannot contain < > : \" | ? * or a control character.",
+  too_long: "That name is too long.",
+};
+
+export function nameRefusalText(refusal: FileNameRefusal): string {
+  return NAME_REFUSAL_COPY[refusal];
+}
+
+/** The sibling collision the renderer can see before main is even asked. */
+export function nameTakenText(name: string): string {
+  return `"${name}" is already here. Choose a different name.`;
+}
+
+/**
+ * What a failed create, rename or delete says ON THE ROW.
+ *
+ * Aimed at the entry the user was editing, which is why it is not
+ * `listingErrorText`: "This folder could not be read" is the wrong sentence for
+ * a rename that was refused, and a user who reads it looks for the wrong
+ * problem. Every code a mutation can answer with has a row here; anything else
+ * falls to the listing table, which is total over the enum.
+ */
+const MUTATION_ERROR_COPY: Partial<Readonly<Record<FilesErrorCode, string>>> = {
+  name_invalid: "That name cannot be used.",
+  name_exists: "Something with that name is already here.",
+  vex_managed:
+    "Vex writes this file, so it cannot be renamed or deleted here. Change the project's agents, or use Repair.",
+  write_denied: "Vex is not allowed to write here. Check the folder's permissions.",
+  trash_unavailable:
+    "This system has no trash available, so nothing was deleted. You can delete it permanently instead.",
+  mutation_busy: "Another change to this project is still running. Try again in a moment.",
+  not_found: "This is no longer on disk.",
+  invalid_node: "This row is out of date. Refresh the tree and try again.",
+  not_a_directory: "This is not a folder any more.",
+  symlinked_path: "This is a symbolic link. Vex does not follow links out of a project.",
+  outside_project: "Vex will not change anything outside the project folder.",
+  project_closed: ROOT_CLOSED,
+  io_error: "The filesystem refused the change.",
+};
+
+/** The one sentence for a mutation that did not complete at all. */
+export const MUTATION_TRANSPORT_FAILED = "Vex could not reach the file service. Try again.";
+
+/** The sentence for a mutation the user cancelled. Stated, never silent. */
+export const MUTATION_CANCELLED = "That change was cancelled. Nothing was written.";
+
+export function mutationErrorText(code: FilesErrorCode): string {
+  return MUTATION_ERROR_COPY[code] ?? listingErrorText(code);
+}
+
+/* ---- the delete confirmation's consent grammar ---- */
+
+export const EXPLORER_DELETE_TITLE = "Delete from this project";
+export const EXPLORER_DELETE_CANCEL = "Cancel";
+
+/**
+ * WHAT is being deleted, and it names the entry rather than counting rows.
+ *
+ * VS Code says "Are you sure you want to delete 'x'?" for a file and "...'x' and
+ * its contents?" for a folder (`fileActions.ts:278-282`). The folder half is
+ * kept verbatim in meaning, because "and its contents" is the whole difference
+ * between the two actions and a user who skims the title must still meet it.
+ */
+export function deleteConsequenceWhat(name: string, kind: FileNodeKind): string {
+  return kind === "directory"
+    ? `Delete "${name}" and everything inside it`
+    : `Delete "${name}"`;
+}
+
+/** WHERE it goes. The user chose this, and the sentence proves which. */
+export function deleteDispositionLine(mode: FileDeleteMode): string {
+  return mode === "trash"
+    ? "It moves to this system's trash."
+    : "It is removed from disk immediately.";
+}
+
+/**
+ * WHETHER it can be undone. The half of the grammar that decides the register.
+ *
+ * VS Code's two sentences, split the same way: "You can restore this file from
+ * the Trash" (`fileActions.ts:175-177`) against "This action is irreversible!"
+ * (`fileActions.ts:162`).
+ */
+export function deleteUndoLine(mode: FileDeleteMode): string {
+  return mode === "trash"
+    ? "You can restore it from the trash."
+    : "This cannot be undone. Vex has no way to bring it back.";
+}
+
+/** The confirm button, which says the disposition rather than "OK". */
+export function deleteConfirmLabel(mode: FileDeleteMode): string {
+  return mode === "trash" ? "Move to trash" : "Delete permanently";
+}
+
+export const EXPLORER_DELETE_PENDING = "Deleting...";
+
+/**
+ * The offer made when the trash refused, and the reason it is an OFFER.
+ *
+ * The entry is untouched at this point. Deleting it anyway would remove
+ * something the user was told they could restore, so the second disposition is
+ * a second decision, with its own irreversible sentence and its own press.
+ */
+export const EXPLORER_TRASH_UNAVAILABLE_OFFER =
+  "This system has no trash available, so nothing was deleted. Delete it permanently instead?";
+
+/** Announced after a delete lands, so the outcome is not only a vanished row. */
+export function deletedAnnouncement(name: string, mode: FileDeleteMode): string {
+  return mode === "trash"
+    ? `Moved "${name}" to the trash.`
+    : `Permanently deleted "${name}".`;
+}

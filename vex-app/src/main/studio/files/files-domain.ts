@@ -97,8 +97,11 @@ import {
   FILES_EVENTS_OUTSTANDING_MAX,
   FILES_SUBSCRIPTIONS_PER_WINDOW_MAX,
   FILES_WATCHERS_MAX,
+  type FileDeleteMode,
+  type FileDeleteResult,
   type FileListing,
   type FileContent,
+  type FileNode,
   type FilesEvent,
   type FilesErrorCode,
   type FilesOutcome,
@@ -119,6 +122,7 @@ import {
   projectNodeEpoch,
   resolveFileNodeId,
 } from "./node-id.js";
+import { ProjectFileMutations, type TrashItem } from "./mutations.js";
 import { PROJECT_ROOT_RELATIVE, realProjectDirectory, resolveNodePath } from "./node-path.js";
 import { readFileForViewer } from "./read.js";
 import {
@@ -158,6 +162,14 @@ export interface FilesDomainDependencies {
   readonly rootExists: (directory: string) => Promise<boolean>;
   /** Deliver one event to one window. A destroyed window is the caller's problem. */
   readonly publish: (windowId: string, event: FilesEvent) => void;
+  /**
+   * Move a path to the OS trash. INJECTED, exactly as `project-delete.ts`
+   * injects it and for the same reason: `os-trash.ts` imports `electron`, and
+   * this module's own real-filesystem suite must run without it.
+   */
+  readonly trashItem: TrashItem;
+  /** Test seam: how long a mutation waits for this project's write lock. */
+  readonly mutationTimeoutMs?: number;
 }
 
 interface Subscription {
@@ -224,9 +236,26 @@ export class FilesDomain {
   private readonly inFlightWatches = new Map<string, Set<string>>();
   private readonly unregisterCloseHook: () => void;
   private admitting = true;
+  /**
+   * The WRITE half of this surface. See `mutations.ts`.
+   *
+   * It is handed this domain's own `locate` and `stillAuthorised` rather than
+   * re-deriving anything: the authority chain has one implementation, and a
+   * write that could reach a syscall having skipped a link of it is the exact
+   * defect the token design exists to make impossible.
+   */
+  private readonly mutations: ProjectFileMutations;
 
   constructor(deps: FilesDomainDependencies) {
     this.deps = deps;
+    this.mutations = new ProjectFileMutations({
+      locate: (projectId, nodeId) => this.locate(projectId, nodeId),
+      stillAuthorised: (projectId, epoch) => this.stillAuthorised(projectId, epoch),
+      trashItem: deps.trashItem,
+      ...(deps.mutationTimeoutMs === undefined
+        ? {}
+        : { timeoutMs: deps.mutationTimeoutMs }),
+    });
     // Step 6 of a project delete closes this project's watcher, AFTER the
     // tombstone has committed.
     this.unregisterCloseHook = registerProjectCloseHook((projectId) =>
@@ -408,6 +437,73 @@ export class FilesDomain {
       return { ok: false, code: "project_closed" };
     }
     return content;
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Writes
+   * ---------------------------------------------------------------- */
+
+  /**
+   * The three mutations, each under the SAME drained `fileOperation` lease a
+   * read takes.
+   *
+   * The lease is what makes step 3 of a project delete wait for a write already
+   * in flight, exactly as it waits for a read: a rename halfway through when
+   * the tombstone commits would leave the provenance store describing a file
+   * under a name that no longer exists. Nothing new is admitted behind it,
+   * because the gate closed admission in step 1 and the acquisition here is
+   * itself the admission check.
+   *
+   * These three methods are the only growth this file takes for the write half.
+   * The mechanics - names, the managed-artifact refusal, the write lock, the
+   * trash, the last-moment re-resolution - all live in `mutations.ts`, and what
+   * stays here is the lease, which is this module's own responsibility and
+   * cannot move without splitting the lifecycle owner in two.
+   */
+  async createNode(input: {
+    readonly projectId: string;
+    readonly parentNodeId: string | null;
+    readonly name: string;
+    readonly kind: "file" | "directory";
+    readonly signal?: AbortSignal;
+  }): Promise<FilesOutcome<FileNode>> {
+    const leased = acquireProjectLease(input.projectId, "fileOperation");
+    if (!leased.ok) return { ok: false, code: "project_closed" };
+    try {
+      return await this.mutations.create(input);
+    } finally {
+      leased.lease.release();
+    }
+  }
+
+  async renameNode(input: {
+    readonly projectId: string;
+    readonly nodeId: string;
+    readonly name: string;
+    readonly signal?: AbortSignal;
+  }): Promise<FilesOutcome<FileNode>> {
+    const leased = acquireProjectLease(input.projectId, "fileOperation");
+    if (!leased.ok) return { ok: false, code: "project_closed" };
+    try {
+      return await this.mutations.rename(input);
+    } finally {
+      leased.lease.release();
+    }
+  }
+
+  async deleteNode(input: {
+    readonly projectId: string;
+    readonly nodeId: string;
+    readonly mode: FileDeleteMode;
+    readonly signal?: AbortSignal;
+  }): Promise<FilesOutcome<FileDeleteResult>> {
+    const leased = acquireProjectLease(input.projectId, "fileOperation");
+    if (!leased.ok) return { ok: false, code: "project_closed" };
+    try {
+      return await this.mutations.delete(input);
+    } finally {
+      leased.lease.release();
+    }
   }
 
   /* ---------------------------------------------------------------- *

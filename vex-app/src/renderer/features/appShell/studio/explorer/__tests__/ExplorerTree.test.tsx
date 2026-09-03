@@ -21,6 +21,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileNode } from "@shared/schemas/files.js";
+import type { FileOpenMode } from "../../workspace/types.js";
 import { ExplorerRegistry } from "../explorer-registry.js";
 import { ExplorerTree } from "../ExplorerTree.js";
 import {
@@ -101,7 +102,7 @@ function standardTree(): void {
 }
 
 async function mountTree(
-  onOpenFile: (node: FileNode) => void = () => undefined,
+  onOpenFile: (node: FileNode, mode: FileOpenMode) => void = () => undefined,
   driftedPaths?: ReadonlyMap<string, string>,
 ): Promise<void> {
   render(
@@ -490,6 +491,64 @@ describe("mouse", () => {
     fireEvent.click(rowFor("src"));
     await flush();
     expect(rowFor("src").getAttribute("aria-expanded")).toBe("false");
+  });
+
+  /**
+   * THE GESTURE DECIDES THE MODE, which is the whole of the preview contract on
+   * this side: a single click asks for a throwaway tab, a double click asks for
+   * a kept one. VS Code's own split, from the same two DOM events
+   * (`multiEditorTabsControl.ts:1125-1150` pins on `DBLCLICK`).
+   *
+   * A DOUBLE CLICK ALSO FIRES A SINGLE ONE, and the sequence asserted here is
+   * the one the browser really produces - preview, then pinned - because the
+   * workspace's promotion rule (`addFileTab` pins an already-open path) is
+   * written against exactly that pair. A test that fired only `dblclick` would
+   * be proving a sequence no user can generate.
+   */
+  it("a single click asks for a PREVIEW and a double click for a KEPT tab", async () => {
+    standardTree();
+    const opened: { path: string; mode: FileOpenMode }[] = [];
+    await mountTree((node, mode) => opened.push({ path: node.path, mode }));
+
+    fireEvent.click(rowFor("src"));
+    await flush();
+
+    fireEvent.click(rowFor("alpha.ts"));
+    await flush();
+    expect(opened).toEqual([{ path: "src/alpha.ts", mode: "preview" }]);
+
+    fireEvent.click(rowFor("beta.ts"));
+    fireEvent.doubleClick(rowFor("beta.ts"));
+    await flush();
+    expect(opened.slice(1)).toEqual([
+      { path: "src/beta.ts", mode: "preview" },
+      { path: "src/beta.ts", mode: "pinned" },
+    ]);
+  });
+
+  /**
+   * ENTER IS PINNED, and that is a deliberate difference from the click beside
+   * it: VS Code reads `editorOptions.pinned` off its open event and its list
+   * sets it for a keyboard open (`explorerView.ts:532-549`), because a user who
+   * arrowed to a file and pressed Enter has CHOSEN it rather than browsed past
+   * it.
+   */
+  it("Enter opens a file PINNED, unlike the single click", async () => {
+    standardTree();
+    const opened: { path: string; mode: FileOpenMode }[] = [];
+    await mountTree((node, mode) => opened.push({ path: node.path, mode }));
+
+    fireEvent.click(rowFor("src"));
+    await flush();
+
+    const tree = screen.getByRole("tree");
+    tree.focus();
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    await flush();
+    fireEvent.keyDown(tree, { key: "Enter" });
+    await flush();
+
+    expect(opened).toEqual([{ path: "src/alpha.ts", mode: "pinned" }]);
   });
 });
 

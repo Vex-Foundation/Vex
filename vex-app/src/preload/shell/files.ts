@@ -45,9 +45,12 @@
 import { EV, CH } from "../../shared/ipc/channels.js";
 import {
   filesAckEventInputSchema,
+  filesCreateInputSchema,
+  filesDeleteInputSchema,
   filesEventSchema,
   filesListChildrenInputSchema,
   filesReadFileInputSchema,
+  filesRenameInputSchema,
   filesUnwatchInputSchema,
   filesWatchInputSchema,
   type FilesEvent,
@@ -132,6 +135,23 @@ export const files = {
 
   unwatchFile(input) {
     return invokeWithSchema(CH.files.unwatchFile, input, filesUnwatchInputSchema);
+  },
+
+  // THE WRITES. Validated here with the same schemas main parses them with, so
+  // a name the shared rule refuses never reaches the privileged process at all
+  // and the component gets a `validation.invalid_input` it can act on. That is
+  // a developer backstop and not the boundary: main enforces the same rule
+  // again, because a preload that could be bypassed is not a gate.
+  createNode(input) {
+    return invokeWithSchema(CH.files.create, input, filesCreateInputSchema);
+  },
+
+  renameNode(input) {
+    return invokeWithSchema(CH.files.rename, input, filesRenameInputSchema);
+  },
+
+  deleteNode(input) {
+    return invokeWithSchema(CH.files.delete, input, filesDeleteInputSchema);
   },
 
   onFilesEvent(subscriptionId, cb) {
