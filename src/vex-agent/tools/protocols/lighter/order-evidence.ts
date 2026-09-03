@@ -5,6 +5,7 @@ import type {
 } from "@tools/lighter/order-preview.js";
 import {
   decimalToLighterInteger,
+  formatLighterIntegerAmount,
 } from "@tools/lighter/order-preview.js";
 
 /**
@@ -104,10 +105,13 @@ export function findMatchingLighterOrder(
     );
   }
   const match = identityMatches[0] ?? null;
-  if (match !== null && !lighterOrderMatchesEvidenceScope(match, scope)) {
-    throw new LighterOrderEvidenceConflictError(
-      "Lighter order evidence conflicts with the approved order semantics.",
-    );
+  if (match !== null) {
+    const conflict = lighterOrderEvidenceConflict(match, scope);
+    if (conflict !== null) {
+      throw new LighterOrderEvidenceConflictError(
+        `Lighter order evidence conflicts with the approved order semantics: ${conflict}.`,
+      );
+    }
   }
   return match;
 }
@@ -125,48 +129,55 @@ export function lighterOrderMatchesEvidenceScope(
   order: LighterAccountOrder,
   scope: LighterOrderEvidenceScope,
 ): boolean {
+  return lighterOrderEvidenceConflict(order, scope) === null;
+}
+
+/** Returns a bounded field name, never provider error text or secret material. */
+export function lighterOrderEvidenceConflict(
+  order: LighterAccountOrder,
+  scope: LighterOrderEvidenceScope,
+): string | null {
   if (order.side !== undefined) {
     const side = order.side.trim().toLowerCase();
     // Lighter still returns an empty deprecated `side` field in some account
     // payloads. Treat only the blank value as omitted; `is_ask` below remains
     // authoritative when present, while every non-empty unknown/conflicting
     // value still fails closed.
-    if (side !== "" && ((side !== "buy" && side !== "sell") || side !== scope.side)) return false;
+    if (side !== "" && ((side !== "buy" && side !== "sell") || side !== scope.side)) return "side";
   }
-  if (order.is_ask !== undefined && order.is_ask !== (scope.side === "sell")) return false;
+  if (order.is_ask !== undefined && order.is_ask !== (scope.side === "sell")) return "is_ask";
   if (
     scope.orderType !== undefined
     && order.type !== undefined
     && normalizeProviderOrderLabel(order.type) !== scope.orderType
-  ) return false;
+  ) return "type";
   if (
     scope.timeInForce !== undefined
     && order.time_in_force !== undefined
     && normalizeProviderOrderLabel(order.time_in_force) !== scope.timeInForce
-  ) return false;
+  ) return "time_in_force";
   if (
     scope.reduceOnly !== undefined
     && order.reduce_only !== undefined
     && order.reduce_only !== scope.reduceOnly
-  ) return false;
+  ) return "reduce_only";
   if (scope.exactSemanticTerms === true) {
     if (!providerDecimalMatchesApprovedInteger(
       order.initial_base_amount,
       scope.baseDecimals,
       scope.baseAmountInteger,
       false,
-    )) return false;
+    )) return "initial_base_amount";
     if (!providerDecimalMatchesApprovedInteger(
       order.price,
       scope.priceDecimals,
       scope.priceInteger,
       false,
-    )) return false;
-    if (order.base_size !== undefined && !providerWireIntegerMatches(order.base_size, scope.baseAmountInteger)) {
-      return false;
-    }
+    )) return "price";
+    // Account order base_size can be zero after execution. The immutable
+    // initial_base_amount above is the approved quantity, not base_size.
     if (order.base_price !== undefined && !providerWireIntegerMatches(order.base_price, scope.priceInteger)) {
-      return false;
+      return "base_price";
     }
     if (
       order.trigger_price !== undefined
@@ -176,7 +187,7 @@ export function lighterOrderMatchesEvidenceScope(
         scope.triggerPriceInteger === null ? "0" : scope.triggerPriceInteger,
         true,
       )
-    ) return false;
+    ) return "trigger_price";
     if (
       order.order_expiry !== undefined
       && (
@@ -184,9 +195,19 @@ export function lighterOrderMatchesEvidenceScope(
         || !Number.isSafeInteger(order.order_expiry)
         || order.order_expiry !== scope.signedOrderExpiryMs
       )
-    ) return false;
+    ) return "order_expiry";
   }
-  return true;
+  if (order.status?.trim().toLowerCase() === "filled") {
+    try {
+      const initial = decimalToLighterInteger(order.initial_base_amount, 18, "initial size");
+      const filled = decimalToLighterInteger(order.filled_base_amount ?? "", 18, "filled size");
+      const remaining = decimalToLighterInteger(order.remaining_base_amount ?? "", 18, "remaining size", { allowZero: true });
+      if (filled !== initial || remaining !== 0n) return "filled_amounts";
+    } catch {
+      return "filled_amounts";
+    }
+  }
+  return null;
 }
 
 function providerDecimalMatchesApprovedInteger(
@@ -260,10 +281,10 @@ export function stateFromActiveLighterOrder(
 export function stateFromInactiveLighterOrder(
   order: LighterAccountOrder,
 ): "sequencer_pending" | "partially_filled" | "filled" | "canceled" | "rejected" {
-  const status = (order.status ?? "").toLowerCase();
+  const status = (order.status ?? "").trim().toLowerCase();
   const hasPositiveFill = lighterDecimalGreaterThanZero(order.filled_base_amount);
   if (status.includes("partial") && status.includes("fill")) return "partially_filled";
-  if (status.includes("fill")) return "filled";
+  if (status === "filled") return "filled";
   if (status.includes("cancel") || status.includes("expire")) {
     return hasPositiveFill ? "partially_filled" : "canceled";
   }
@@ -300,6 +321,7 @@ export function lighterOrderEvidenceJson(
     remainingBaseAmount: order.remaining_base_amount ?? null,
     filledBaseAmount: order.filled_base_amount ?? null,
     filledQuoteAmount: order.filled_quote_amount ?? null,
+    averageExecutionPrice: averageExecutionPrice(order.filled_quote_amount, order.filled_base_amount),
   };
 }
 
@@ -337,4 +359,16 @@ export function lighterOrderIdFromTrade(
   scope: LighterOrderEvidenceScope,
 ): string {
   return scope.side === "buy" ? trade.bid_id_str : trade.ask_id_str;
+}
+
+/** Derive the average from actual fills, never from the order's execution bound. */
+function averageExecutionPrice(quote: string | undefined, base: string | undefined): string | null {
+  if (quote === undefined || base === undefined) return null;
+  try {
+    const quoteUnits = decimalToLighterInteger(quote, 18, "filled quote");
+    const baseUnits = decimalToLighterInteger(base, 18, "filled base");
+    return formatLighterIntegerAmount(quoteUnits * 10n ** 18n / baseUnits, 18);
+  } catch {
+    return null;
+  }
 }

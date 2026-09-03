@@ -25,8 +25,8 @@ function confirmed(
 }
 
 describe("Lighter live order create user guidance", () => {
-  it("reports a filled or open order as placed and on-chain", () => {
-    for (const state of ["open", "filled", "partially_filled"] as const) {
+  it("reports an open or partially filled order as placed", () => {
+    for (const state of ["open", "partially_filled"] as const) {
       const guidance = lighterLiveOrderCreateUserGuidance(confirmed(state));
       expect(guidance).toContain(state);
       expect(guidance.toLowerCase()).toContain("order was placed");
@@ -34,6 +34,24 @@ describe("Lighter live order create user guidance", () => {
       // It steers the model away from the stale preview/preparation framing.
       expect(guidance.toLowerCase()).toContain("do not describe this as a preview");
     }
+  });
+
+  it("reports confirmed full fills using execution amounts and average price", () => {
+    const guidance = lighterLiveOrderCreateUserGuidance(confirmed("filled"));
+    expect(guidance).toContain("fully filled");
+    expect(guidance).toContain("filledBaseAmount");
+    expect(guidance).toContain("averageExecutionPrice");
+    expect(guidance).toContain("not the average fill price");
+    expect(guidance).toContain("Do not describe this as a preview");
+  });
+
+  it("does not claim final order status from a single trade", () => {
+    const result = confirmed("partially_filled");
+    if (result.status !== "provider_confirmed") throw new Error("expected confirmed fixture");
+    const guidance = lighterLiveOrderCreateUserGuidance({ ...result, evidenceSource: "account_trade" });
+    expect(guidance).toContain("trade alone does not prove a partial or full fill");
+    expect(guidance).toContain("lighter.order.status");
+    expect(guidance).toContain("observed trade size and price");
   });
 
   it("describes state=open only as an open order, never an open position", () => {

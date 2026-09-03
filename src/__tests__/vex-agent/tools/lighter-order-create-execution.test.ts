@@ -401,6 +401,7 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
     now: vi.fn(() => NOW),
     wait: vi.fn(async () => undefined),
     intents: {
+      findByIntentIdAnySession: vi.fn(async () => null),
       markPreSubmitRevalidated: vi.fn(async () => APPROVED_INTENT_ROW),
       markSigned: vi.fn(async () => ({ ok: true }) as never),
       markSubmitted: vi.fn(async () => ({ ok: true }) as never),
@@ -891,7 +892,7 @@ describe("Lighter approved create execution pipeline", () => {
         ...deps().client,
         getAccountInactiveOrders: vi.fn(async () => ({
           code: 200,
-          orders: [accountOrder({ status: "filled" })],
+          orders: [accountOrder({ status: "filled", filled_base_amount: "1", remaining_base_amount: "0" })],
         })),
       },
     });
@@ -1495,6 +1496,52 @@ describe("Lighter approved create execution pipeline", () => {
     }));
     expect(d.client.sendTx).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ status: "sequencer_pending" });
+  });
+
+  it("returns the actual full fill when the provider reports zero base_size after execution", async () => {
+    const d = deps();
+    vi.mocked(d.client.getAccountInactiveOrders)
+      .mockResolvedValueOnce({ code: 200, orders: [] })
+      .mockResolvedValue({ code: 200, orders: [accountOrder({
+        status: "filled", base_size: 0, filled_base_amount: "1", remaining_base_amount: "0",
+        filled_quote_amount: "3000.25", is_ask: false,
+      })] });
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+    expect(result).toMatchObject({ status: "provider_confirmed", executionState: "filled",
+      providerEvidence: { filledBaseAmount: "1", remainingBaseAmount: "0", filledQuoteAmount: "3000.25", averageExecutionPrice: "3000.25" },
+    });
+    expect(d.client.sendTx).toHaveBeenCalledTimes(1);
+    expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
+  });
+
+  it("does not turn a fill already confirmed by the stream into a persistence error", async () => {
+    const d = deps();
+    vi.mocked(d.client.getAccountInactiveOrders)
+      .mockResolvedValueOnce({ code: 200, orders: [] })
+      .mockResolvedValue({ code: 200, orders: [accountOrder({
+        status: "filled", base_size: 0, filled_base_amount: "1", remaining_base_amount: "0", filled_quote_amount: "3000",
+      })] });
+    vi.mocked(d.intents.markProviderOutcome).mockResolvedValue(null);
+    vi.mocked(d.intents.findByIntentIdAnySession).mockResolvedValue({
+      ...APPROVED_INTENT_ROW, executionState: "filled", clientOrderIndex: UNSIGNED_ORDER.clientOrderIndex,
+      providerOrderId: "123", providerOrderStatus: "filled", providerOutcomeSource: "inactive_order",
+      providerOutcomeJson: { filledBaseAmount: "1", remainingBaseAmount: "0", filledQuoteAmount: "3000", averageExecutionPrice: "3000" },
+    });
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+    expect(result).toMatchObject({ status: "provider_confirmed", executionState: "filled", providerEvidence: { filledBaseAmount: "1" } });
+    expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
+    expect(d.client.sendTx).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a contradictory filled quantity specifically without submitting again", async () => {
+    const d = deps();
+    vi.mocked(d.client.getAccountInactiveOrders)
+      .mockResolvedValueOnce({ code: 200, orders: [] })
+      .mockResolvedValue({ code: 200, orders: [accountOrder({ status: "filled", filled_base_amount: "0.5", remaining_base_amount: "0" })] });
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+    expect(result).toMatchObject({ status: "ambiguous", reason: expect.stringContaining("filled_amounts") });
+    expect(d.client.sendTx).toHaveBeenCalledTimes(1);
+    expect(d.intents.markProviderOutcome).not.toHaveBeenCalled();
   });
 
   it("records active provider order evidence when the submitted client order is visible", async () => {

@@ -90,6 +90,7 @@ export interface LighterOrderRepairReport {
   readonly nonceBlockedAfter: boolean;
   readonly liveNextNonce: number | null;
   readonly reservedNonce: string | null;
+  readonly providerEvidence?: Record<string, unknown> | null;
   readonly guidance: string;
 }
 
@@ -224,7 +225,9 @@ export async function repairLighterOrderIntent(
   deps: LighterOrderRepairDeps = defaultLighterOrderRepairDeps(),
 ): Promise<LighterOrderRepairReport> {
   const base = baseReport(intent);
-  if (!isUnresolvedState(intent.executionState)) {
+  if (!isUnresolvedState(intent.executionState)
+    && intent.executionState !== "open"
+    && intent.executionState !== "partially_filled") {
     return {
       ...base,
       resolution: "already_terminal",
@@ -349,7 +352,7 @@ async function resolveFromProviderEvidence(
         stateAfter: conflicted?.executionState ?? intent.executionState,
         resolution: "degraded",
         guidance:
-          "Lighter returned the exact client order id with terms that conflict with the approved order. "
+          `${error.message} `
           + "Treat the outcome as ambiguous, do not resubmit, and investigate the provider evidence before trading on this key.",
       };
     }
@@ -405,11 +408,12 @@ async function persistEvidence(
     stateAfter: resolved?.executionState ?? intent.executionState,
     resolution: "provider_evidence",
     evidenceSource: outcome.source,
+    providerEvidence: outcome.json,
     nonceBlockedAfter,
     guidance:
-      outcome.state === "open" || outcome.state === "partially_filled"
-        ? `Provider evidence shows the order is ${outcome.state}; it is live on Lighter, not lost.`
-        : `Provider evidence resolved the order as ${outcome.state}.`,
+      outcome.source === "account_trade"
+        ? "A matching trade confirms a fill occurred. Its size is not necessarily the total filled; check the exact order history for final status before calling it fully or partially filled. Do not resubmit."
+        : `Provider evidence shows the order is ${outcome.state}. Report the actual filled and remaining amounts from providerEvidence, and use averageExecutionPrice rather than the order price.`,
   };
 }
 
@@ -617,6 +621,7 @@ function baseReport(
     nonceBlockedAfter: intent.nonceReservationId !== null,
     liveNextNonce,
     reservedNonce: null,
+    providerEvidence: intent.providerOutcomeJson,
     guidance: "",
   };
 }

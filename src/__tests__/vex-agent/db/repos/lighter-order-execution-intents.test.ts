@@ -665,7 +665,8 @@ describe("lighter order execution intents repo", () => {
     const [sql, params] = mockQueryOne.mock.calls[0]!;
     expect(sql).toContain("SET execution_state = $4");
     expect(sql).toContain("provider_outcome_json = $8::jsonb");
-    expect(sql).toContain("execution_state IN ('api_accepted','sequencer_pending')");
+    expect(sql).toContain("execution_state IN ('api_accepted','sequencer_pending','ambiguous')");
+    expect(sql).toContain("execution_state = 'partially_filled' AND $4 IN ('partially_filled','filled','canceled','rejected')");
     expect(params).toEqual([
       "lighter-exec-1",
       "session-1",
