@@ -1,3 +1,4 @@
+import { confirmedLighterCloseDisposition } from "./close-position-confirmation.js";
 import {
   getLighterClient,
   type LighterClient,
@@ -241,7 +242,7 @@ async function reconcileProviderEvidence(
         by: "index",
         value: String(intent.accountIndex),
         activeOnly: false,
-      }),
+      }, { fresh: true }),
     ]);
     const streamDeps = streamDepsFrom(deps);
     await reconcileLighterAccountStreamMessage(
@@ -264,8 +265,8 @@ async function reconcileProviderEvidence(
     );
     const accountMatches = accountResponse.accounts.filter((account) =>
       (account.index ?? account.account_index) === intent.accountIndex);
-    if (accountMatches.length === 1) {
-      const positions = accountMatches[0]?.positions ?? [];
+    if (accountMatches.length === 1 && Array.isArray(accountMatches[0]?.positions)) {
+      const positions = accountMatches[0]!.positions!;
       await reconcileLighterAccountStreamMessage(
         intent.environment,
         intent.accountIndex,
@@ -295,6 +296,13 @@ async function persistFlatPositionSnapshot(
 ): Promise<LighterOrderLifecycleIntentRow> {
   const existing = intent.providerOutcomeJson;
   if (existing?.kind !== "lighter_lifecycle_stream_evidence" || asRecord(existing.closeOrder) === null) return intent;
+  const initial = asRecord(intent.providerSnapshotJson.position);
+  if (confirmedLighterCloseDisposition({
+    initialPosition: initial?.position, initialSign: initial?.sign,
+    filledAmount: asRecord(existing.closeOrder)?.filledBaseAmount,
+    resultingPosition: "0", resultingSign: 0,
+    sizeDecimals: intent.providerSnapshotJson.marketSizeDecimals,
+  }) !== "closed") return intent;
   const evidence = {
     ...existing,
     resultingPosition: null,

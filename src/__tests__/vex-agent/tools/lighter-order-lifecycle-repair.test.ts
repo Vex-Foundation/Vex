@@ -190,7 +190,7 @@ describe("Lighter order lifecycle repair", () => {
       requestedPriceInteger: "4950",
       requestedSide: "sell",
       reduceOnly: true,
-      providerSnapshotJson: { position: { sign: 1, position: "1.0000" } },
+      providerSnapshotJson: { position: { sign: 1, position: "1.0000" }, marketSizeDecimals: 4 },
     });
     const d = deps(row, { inactive: [closeOrder], positions: [] });
 

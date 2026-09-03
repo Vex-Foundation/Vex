@@ -1,3 +1,4 @@
+import { confirmedLighterCloseDisposition } from "./close-position-confirmation.js";
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
 import { decimalToLighterInteger } from "@tools/lighter/order-preview.js";
 import { deriveVexAssignedClientOrderIndex } from "@tools/lighter/signer-order.js";
@@ -319,17 +320,17 @@ function finishCloseOutcome(
   const closeOrder = asRecord(detail.closeOrder);
   const resultingPosition = asRecord(detail.resultingPosition);
   const initialPosition = asRecord(intent.providerSnapshotJson.position);
-  const validPosition = resultingPosition !== null
-    && typeof resultingPosition.position === "string"
-    && (resultingPosition.position === "0" || resultingPosition.sign === initialPosition?.sign);
-  const complete = closeOrder !== null && validPosition;
+  const disposition = confirmedLighterCloseDisposition({
+    initialPosition: initialPosition?.position, initialSign: initialPosition?.sign,
+    filledAmount: closeOrder?.filledBaseAmount,
+    resultingPosition: resultingPosition?.position, resultingSign: resultingPosition?.sign,
+    sizeDecimals: intent.providerSnapshotJson.marketSizeDecimals,
+  });
   return {
-    state: complete ? "completed" : "sequencer_pending",
+    state: disposition === null ? "sequencer_pending" : "completed",
     evidence: lifecycleEvidence(intent, {
       ...detail,
-      disposition: complete
-        ? (isZeroDecimal(String(resultingPosition.position)) ? "closed" : "partially_closed")
-        : "awaiting_correlated_order_and_position",
+      disposition: disposition ?? "awaiting_correlated_order_and_position",
     }),
   };
 }

@@ -299,7 +299,7 @@ describe("Lighter account stream lifecycle reconciliation", () => {
       requestedPriceInteger: "4950",
       requestedSide: "sell",
       reduceOnly: true,
-      providerSnapshotJson: { position: { sign: 1, position: "1.0000" } },
+      providerSnapshotJson: { position: { sign: 1, position: "1.0000" }, marketSizeDecimals: 4 },
     });
     const first = deps([close]);
     await reconcileLighterAccountStreamMessage("rhc", 42, orderFrame([order({
@@ -308,6 +308,10 @@ describe("Lighter account stream lifecycle reconciliation", () => {
     })]), first);
     const pendingCall = first.lifecycleIntents.markStreamEvidence.mock.calls[0]![0];
     expect(pendingCall.state).toBe("sequencer_pending");
+
+    const stale = deps([lifecycleIntent({ ...close, providerOutcomeJson: pendingCall.evidence })]);
+    await reconcileLighterAccountStreamMessage("rhc", 42, positionFrame("1.0000"), stale);
+    expect(stale.lifecycleIntents.markStreamEvidence).toHaveBeenCalledWith(expect.objectContaining({ state: "sequencer_pending" }));
 
     const second = deps([lifecycleIntent({
       ...close,
