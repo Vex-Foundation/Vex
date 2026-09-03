@@ -873,3 +873,63 @@ describe("the shell catalogue is an enumerated contract", () => {
     expect(terminalShellCatalogueSchema.safeParse({ shells }).success).toBe(false);
   });
 });
+
+/**
+ * THE REVIVE REQUEST'S ENVIRONMENT OVERLAY, and the compatibility it promises.
+ *
+ * A restored terminal is a NEW shell: the old process is gone and only its
+ * scrollback survived. It therefore needs the same overlay a create carries,
+ * and the snapshot deliberately holds none (see "never lets an environment
+ * ride a persisted snapshot" above), so the only place it can come from is the
+ * request. Before this field a revive sent nothing and the host launched every
+ * restored shell from the bare scrubbed base - which has `VEX_*` stripped.
+ *
+ * The field is EXPAND-ONLY, which is the half a schema test can prove and a
+ * behaviour test cannot: a request minted by a main that predates it still
+ * parses, so a reader can ship ahead of its writer.
+ */
+describe("a revive carries the environment overlay a create carries", () => {
+  const revive = (extra: Record<string, unknown>): unknown => ({
+    requestId: "r1",
+    request: {
+      kind: "revive",
+      projectId: "p1",
+      windowId: "w1",
+      projectLabel: "proj",
+      assignments: [{ from: "t1", to: "t2" }],
+      ...extra,
+    },
+  });
+
+  it("accepts an overlay, and hands it through as the record it was given", () => {
+    const parsed = terminalHostEnvelopeSchema.safeParse(
+      revive({ env: { VEX_CONFIG_DIR: "/home/u/.config/vex-alt", STALE: null } }),
+    );
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    if (parsed.data.request.kind !== "revive") throw new Error("wrong branch");
+    expect(parsed.data.request.env).toEqual({
+      VEX_CONFIG_DIR: "/home/u/.config/vex-alt",
+      STALE: null,
+    });
+  });
+
+  it("still accepts a request that carries NO overlay, and reports its absence", () => {
+    // The compatibility claim, asserted rather than assumed. `undefined` is
+    // what the host resolves to the empty overlay at its boundary, which is
+    // the behaviour that shipped before the field existed.
+    const parsed = terminalHostEnvelopeSchema.safeParse(revive({}));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    if (parsed.data.request.kind !== "revive") throw new Error("wrong branch");
+    expect(parsed.data.request.env).toBeUndefined();
+  });
+
+  it("refuses an overlay value that is neither a string nor a delete", () => {
+    // The overlay's three outcomes are set, delete and leave alone. A number
+    // is a fourth thing the composer has no meaning for, and it reaches the
+    // host across a process boundary.
+    expect(terminalHostEnvelopeSchema.safeParse(revive({ env: { A: 7 } })).success)
+      .toBe(false);
+  });
+});

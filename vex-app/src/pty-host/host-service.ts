@@ -876,7 +876,18 @@ export class PtyHostService {
           // and must not be: it is a capture of the user's credentials, tokens
           // and paths, and a file that held one would keep it for the life of
           // the project.
-          env: {},
+          //
+          // Which is why the overlay comes from THE REQUEST: main computed it
+          // moments ago, from the same function a create's overlay comes from,
+          // and the host composes base + overlay through the one
+          // `buildTerminalEnvironment` both launches already share. `{}` was
+          // the defect - a restored shell launched from the bare scrubbed
+          // base, and that base has `VEX_*` stripped, so every terminal that
+          // survived a restart lost `VEX_CONFIG_DIR` and its `vex-mcp` dialled
+          // a socket nobody bound. An older main that sends no overlay keeps
+          // the previous behaviour, resolved HERE at the boundary rather than
+          // deeper down the launch.
+          env: request.env ?? {},
         },
         reducedRowsAtSpawn: entry.reducedRows,
         // WRITE-THROUGH into the mirror, and BEFORE the shell starts: the replay

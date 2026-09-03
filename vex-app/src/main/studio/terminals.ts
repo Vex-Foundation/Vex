@@ -98,6 +98,23 @@ export type ProjectActivation = "active" | "absent" | "unreadable";
 
 /** Everything this domain does not own and must be given. */
 export interface TerminalDomainDeps {
+  /**
+   * The RESOLVED Vex config directory this application instance is running
+   * for, as `main/paths/config-dir.ts` resolved it at boot.
+   *
+   * INJECTED, never read from `process.env` here. `VEX_CONFIG_DIR` is an
+   * override the resolver applies alongside `XDG_CONFIG_HOME`, `APPDATA` and
+   * the platform default, so the variable is not the answer - the resolver's
+   * output is. A domain that read the variable would export nothing at all on
+   * the ordinary path, which is every install that never sets it.
+   *
+   * It exists because a terminal's `vex-mcp` re-derives the Studio socket from
+   * ITS OWN environment (`bridge/internal/configdir/configdir.go`). Without
+   * this the bridge dialled the DEFAULT directory's socket while an app under
+   * an override listened on another one, and exited 3 saying Vex was not
+   * running.
+   */
+  readonly configDir: string;
   /** Absolute working directory for a project, or `null` when unknown. */
   /**
    * WHERE a project's shells start, and WHAT the project is called.
@@ -211,6 +228,29 @@ interface PortTicket {
 
 function refuse(code: TerminalErrorCode): TerminalOutcome<never> {
   return { ok: false, code };
+}
+
+/**
+ * THE ENVIRONMENT OVERLAY every Studio terminal opens with: what VEX's OWN
+ * integration needs, and nothing else.
+ *
+ * The split is VS Code's. `sanitizeProcessEnvironment` strips the application's
+ * private variables from the base for every shell, and the workbench then ADDS
+ * back exactly what its own integration requires
+ * (`terminalEnvironment.ts: createTerminalEnvironment`, which sanitizes and
+ * then calls `addTerminalEnvironmentKeys`). The pty host keeps stripping
+ * `VEX_*` - including its own boot keys, which a shell must never inherit -
+ * and this is the one key main puts back, from a value it resolved rather than
+ * from whatever the launcher happened to export.
+ *
+ * ONE KEY, and the list does not grow without a product decision. Every entry
+ * here is state a user's shell, and every process they start from it, now
+ * carries.
+ */
+export function studioTerminalEnvironmentOverlay(
+  configDir: string,
+): Record<string, string> {
+  return { VEX_CONFIG_DIR: configDir };
 }
 
 /**
@@ -465,11 +505,13 @@ export class TerminalDomain {
           projectLabel: location.label,
           cols,
           rows,
-          // No overlay in B2: the base environment plus Vex's own assertions is
-          // the whole contract. A project-scoped overlay is a product decision
-          // that has not been made, and inventing one here would put a policy in
-          // the wrong owner.
-          env: {},
+          // ONE overlay key, and it is Vex's own integration rather than a
+          // project preference: a terminal's `vex-mcp` re-derives the Studio
+          // socket from its environment, so a shell without the config
+          // directory this app resolved dials a socket nobody bound. A
+          // PROJECT-SCOPED overlay remains a product decision that has not
+          // been made; this is not one.
+          env: studioTerminalEnvironmentOverlay(this.deps.configDir),
         },
       });
       if (!outcome.ok) return outcome;
@@ -847,6 +889,15 @@ export class TerminalDomain {
         projectId,
         windowId,
         projectLabel: location.label,
+        // THE SAME OVERLAY A CREATE SENDS, from the same function. A restored
+        // terminal is a NEW shell - the old process is gone and only its
+        // scrollback survived - so it needs the config directory this app
+        // resolved exactly as a fresh one does. Sending it here rather than
+        // reviving from a persisted environment is deliberate: the snapshot
+        // holds none, on purpose, and a value main recomputes now is also the
+        // one that is right after the user moved their config directory
+        // between sessions.
+        env: studioTerminalEnvironmentOverlay(this.deps.configDir),
         assignments,
       });
       if (!outcome.ok) return outcome;

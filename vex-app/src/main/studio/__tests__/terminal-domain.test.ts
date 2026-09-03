@@ -303,6 +303,14 @@ class FakeStarter implements PtyHost {
   }
 }
 
+/**
+ * The config directory this fake app instance resolved. Deliberately NOT the
+ * platform default: an overlay that carried the right value only when the
+ * default was in force would pass while the defect - an app running for an
+ * overridden directory - stayed unfixed.
+ */
+const TEST_CONFIG_DIR = "/tmp/vex-e2e-fixture/config";
+
 let starter: FakeStarter;
 const posted: Array<{ channel: string; payload: unknown; transfer: unknown[] }> = [];
 let lostSpy = vi.fn((_terminalIds: readonly string[]) => {});
@@ -343,6 +351,7 @@ function holdCwd(): () => void {
 function build(): InstanceType<typeof TerminalDomain> {
   return new TerminalDomain(
     {
+      configDir: TEST_CONFIG_DIR,
       resolveProjectLocation: async (projectId) => {
         if (cwdHold !== null) await cwdHold;
         return projectId === "missing"
@@ -450,6 +459,117 @@ describe("the shell id is re-resolved in main on every create", () => {
     // shell once would lose a terminal slot for the session.
     expect((await domain.create("w1", "p1", "bash", 80, 24)).ok).toBe(true);
     expect(domain.liveCount).toBe(1);
+    await domain.dispose();
+  });
+});
+
+/**
+ * THE ENVIRONMENT OVERLAY main puts on every terminal.
+ *
+ * A Studio terminal's `vex-mcp` re-derives the Studio socket from ITS OWN
+ * environment. The pty host strips `VEX_*` from the base for every shell, so
+ * without this overlay a shell in an app running for an overridden config
+ * directory dialled the DEFAULT directory's socket and exited 3 - measured,
+ * with the app listening elsewhere the whole time.
+ *
+ * The second case is the one that keeps this honest: the overlay is Vex's own
+ * integration, not a place to accumulate exports. Every key here is state
+ * every process the user starts from that shell inherits.
+ */
+describe("the terminal environment overlay", () => {
+  it("carries the config directory THIS app resolved, on every create", async () => {
+    const domain = build();
+    expect((await domain.create("w1", "p1", "system_default", 80, 24)).ok).toBe(true);
+    const created = starter.requests.find((request) => request.kind === "create");
+    if (created === undefined || created.kind !== "create") {
+      throw new Error("no create reached the host");
+    }
+    expect(created.launch.env["VEX_CONFIG_DIR"]).toBe(TEST_CONFIG_DIR);
+    await domain.dispose();
+  });
+
+  it("carries NOTHING ELSE", async () => {
+    const domain = build();
+    expect((await domain.create("w1", "p1", "system_default", 80, 24)).ok).toBe(true);
+    const created = starter.requests.find((request) => request.kind === "create");
+    if (created === undefined || created.kind !== "create") {
+      throw new Error("no create reached the host");
+    }
+    // A whole-object assertion rather than a key count: a new export is a
+    // product decision, and this is where it has to be made deliberately.
+    expect(created.launch.env).toEqual({ VEX_CONFIG_DIR: TEST_CONFIG_DIR });
+    await domain.dispose();
+  });
+
+  it("is the value it was GIVEN, never one read from the process", async () => {
+    // The domain is handed the resolver's output. Reading `VEX_CONFIG_DIR`
+    // here instead would export nothing on every install that never sets it,
+    // which is nearly all of them.
+    const previous = process.env["VEX_CONFIG_DIR"];
+    process.env["VEX_CONFIG_DIR"] = "/somewhere/the/launcher/exported";
+    try {
+      const domain = build();
+      expect((await domain.create("w1", "p1", "system_default", 80, 24)).ok).toBe(true);
+      const created = starter.requests.find((request) => request.kind === "create");
+      if (created === undefined || created.kind !== "create") {
+        throw new Error("no create reached the host");
+      }
+      expect(created.launch.env["VEX_CONFIG_DIR"]).toBe(TEST_CONFIG_DIR);
+      await domain.dispose();
+    } finally {
+      if (previous === undefined) delete process.env["VEX_CONFIG_DIR"];
+      else process.env["VEX_CONFIG_DIR"] = previous;
+    }
+  });
+
+  /**
+   * A RESTORED TERMINAL IS A NEW SHELL, and it needs the same overlay.
+   *
+   * This was the gap the create-path fix left open, and it is the one a user
+   * actually hits: they restart Vex, every terminal comes back with its
+   * scrollback, and every one of them is a fresh process that carries no
+   * `VEX_CONFIG_DIR` at all - because the snapshot holds no environment by
+   * design and the host's base has `VEX_*` stripped. Under an overridden
+   * config directory every restored terminal's `vex-mcp` then exited 3.
+   *
+   * ONE ENVIRONMENT PATH, which is VS Code's model: `_reviveTerminalProcess`
+   * runs a revived terminal through the ordinary `createProcess` with the
+   * launch environment rather than through a second restore-only path.
+   */
+  it("carries the same config directory on a REVIVE, not only on a create", async () => {
+    const domain = build();
+    starter.snapshot = snapshotFor(2);
+
+    const restored = await domain.openWorkspace("w1", "p1");
+    expect(restored.ok).toBe(true);
+
+    const revive = starter.requests.find((request) => request.kind === "revive");
+    if (revive === undefined || revive.kind !== "revive") {
+      throw new Error("no revive reached the host");
+    }
+    expect(revive.env?.["VEX_CONFIG_DIR"]).toBe(TEST_CONFIG_DIR);
+    await domain.dispose();
+  });
+
+  it("sends the SAME overlay on a revive as on a create, key for key", async () => {
+    // Not two lists that happen to agree today. If the create overlay ever
+    // grows a key the revive path does not send, a restored terminal becomes
+    // a quietly different shell from a fresh one - which is the whole class of
+    // defect this pair exists to catch.
+    const domain = build();
+    starter.snapshot = snapshotFor(1);
+    expect((await domain.openWorkspace("w1", "p1")).ok).toBe(true);
+    expect((await domain.create("w1", "p1", "system_default", 80, 24)).ok).toBe(true);
+
+    const revive = starter.requests.find((request) => request.kind === "revive");
+    const created = starter.requests.find((request) => request.kind === "create");
+    if (revive === undefined || revive.kind !== "revive") {
+      throw new Error("no revive reached the host");
+    }
+    if (created === undefined || created.kind !== "create") {
+      throw new Error("no create reached the host");
+    }
+    expect(revive.env).toEqual(created.launch.env);
     await domain.dispose();
   });
 });
@@ -1483,6 +1603,7 @@ describe("persistWorkspace under the lifecycle gate", () => {
       let reads = 0;
       const counting = new TerminalDomain(
         {
+          configDir: TEST_CONFIG_DIR,
           resolveProjectLocation: (projectId) =>
             Promise.resolve({ directory: `/projects/${projectId}`, label: projectId }),
           readProjectActivation: (projectId) => {

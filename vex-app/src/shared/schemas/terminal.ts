@@ -846,6 +846,29 @@ export const terminalHostRequestSchema = z.discriminatedUnion("kind", [
        * can rename between sessions, and the host would render the old one.
        */
       projectLabel: z.string().min(1).max(128),
+      /**
+       * The SAME environment overlay `terminalLaunchSchema` carries, for the
+       * same reason and with the same meaning: `null` deletes, an absent key
+       * leaves the host's scrubbed base alone, a string sets.
+       *
+       * IT IS HERE BECAUSE A RESTORED TERMINAL IS A NEW SHELL. The snapshot
+       * deliberately holds no environment (see `terminalSnapshotEntrySchema`),
+       * so a revive that sent none launched every restored shell with the bare
+       * base - and the base has `VEX_*` stripped, so under an overridden config
+       * directory every restored terminal's `vex-mcp` dialled the default
+       * socket and exited 3. VS Code makes the same call: `_reviveTerminalProcess`
+       * runs a revived terminal through the ORDINARY `createProcess` with the
+       * launch environment, because there is one launch path and not a create
+       * path beside a restore path.
+       *
+       * OPTIONAL, and expand-only: a revive request minted by an older main
+       * still parses and revives with the empty overlay, which is exactly the
+       * behaviour that shipped before this field existed. The one consumer
+       * resolves the absence at the boundary rather than in execution.
+       */
+      env: z
+        .record(z.string().max(256), z.string().max(32_768).nullable())
+        .optional(),
       assignments: z
         .array(terminalReviveAssignmentSchema)
         .min(1)

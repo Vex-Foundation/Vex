@@ -368,7 +368,12 @@ describe("workspace reads", () => {
 function buildPooled(snapshotDirectory = directory): {
   service: PtyHostService;
   ptys: ScriptedPty[];
-  launches: Array<{ executable: string; args: readonly string[]; cwd: string }>;
+  launches: Array<{
+    executable: string;
+    args: readonly string[];
+    cwd: string;
+    env: Record<string, string>;
+  }>;
 } {
   const pool = scriptedSpawnerPool();
   const service = new PtyHostService({
@@ -674,6 +679,86 @@ describe("F1 - revive", () => {
         data: "x",
       }),
     ).toEqual({ ok: false, code: "unknown_terminal" });
+
+    await second.service.shutdownAll();
+  });
+
+  /**
+   * THE REVIVED SHELL GETS THE REQUEST'S OVERLAY, composed through the one
+   * function both launches share.
+   *
+   * The snapshot holds no environment and must not, so a revive that sent none
+   * launched every restored shell from the bare scrubbed base - and that base
+   * has `VEX_*` stripped, which is exactly the variable Vex's own bridge needs.
+   * Under an overridden config directory every terminal that survived a
+   * restart dialled a socket nobody bound and exited 3.
+   *
+   * ASSERTED AT THE SPAWN, not at the request: the request is main's claim and
+   * the spawn is what a shell actually inherits. Goes red the moment
+   * `reviveProject` goes back to `env: {}`.
+   */
+  it("launches a revived terminal with the overlay the REQUEST carried", async () => {
+    const first = buildPooled();
+    await send(first.service, createRequest("t1", "w1"));
+    first.ptys[0]?.emit("x\r\n");
+    await first.service.terminal("t1")?.process.mirror.drain();
+    await send(first.service, layoutFor(["t1"]));
+    await first.service.shutdownAll();
+
+    const second = buildPooled();
+    const revived = await send(second.service, {
+      kind: "revive",
+      projectLabel: "proj",
+      projectId: "p1",
+      windowId: "w9",
+      env: { VEX_CONFIG_DIR: "/home/u/.config/vex-alt", PATH: null },
+      assignments: [{ from: "t1", to: "t9" }],
+    });
+    if (!revived.ok) throw new Error(`revive refused: ${revived.code}`);
+
+    const launch = second.launches[0];
+    if (launch === undefined) throw new Error("nothing was spawned");
+    // SET, from the overlay the request carried.
+    expect(launch.env["VEX_CONFIG_DIR"]).toBe("/home/u/.config/vex-alt");
+    // DELETED, because `null` is the overlay's third outcome and a revive must
+    // honour it exactly as a create does - otherwise the two launch paths
+    // disagree about what the overlay means.
+    expect(launch.env).not.toHaveProperty("PATH");
+    // And the host's own assertions still ride over the top, which is what
+    // proves this went through `buildTerminalEnvironment` rather than around it.
+    expect(launch.env["TERM_PROGRAM"]).toBe("vex-studio");
+
+    await second.service.shutdownAll();
+  });
+
+  /**
+   * COMPATIBILITY, at the seam that has to hold it: a revive request from a
+   * main that predates the field revives with the empty overlay rather than
+   * being refused. The reader can ship ahead of the writer.
+   */
+  it("revives with the EMPTY overlay when the request carries none", async () => {
+    const first = buildPooled();
+    await send(first.service, createRequest("t1", "w1"));
+    first.ptys[0]?.emit("x\r\n");
+    await first.service.terminal("t1")?.process.mirror.drain();
+    await send(first.service, layoutFor(["t1"]));
+    await first.service.shutdownAll();
+
+    const second = buildPooled();
+    const revived = await send(second.service, {
+      kind: "revive",
+      projectLabel: "proj",
+      projectId: "p1",
+      windowId: "w9",
+      assignments: [{ from: "t1", to: "t9" }],
+    });
+    if (!revived.ok) throw new Error(`revive refused: ${revived.code}`);
+
+    const launch = second.launches[0];
+    if (launch === undefined) throw new Error("nothing was spawned");
+    // The base this service was built with, untouched, plus the assertions.
+    expect(launch.env["PATH"]).toBe("/usr/bin");
+    expect(launch.env).not.toHaveProperty("VEX_CONFIG_DIR");
 
     await second.service.shutdownAll();
   });

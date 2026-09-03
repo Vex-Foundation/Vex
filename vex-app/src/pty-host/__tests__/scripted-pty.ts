@@ -193,15 +193,32 @@ export function scriptedSpawner(pty: ScriptedPty): {
 export function scriptedSpawnerPool(): {
   spawn: PtySpawner;
   ptys: ScriptedPty[];
-  calls: Array<{ executable: string; args: readonly string[]; cwd: string }>;
+  calls: Array<{
+    executable: string;
+    args: readonly string[];
+    cwd: string;
+    /**
+     * THE COMPOSED ENVIRONMENT node-pty was actually handed - base, overlay and
+     * the host's assertions, after `buildTerminalEnvironment`. Recorded because
+     * a revive's overlay is only observable here: the request carries it, the
+     * launch carries it, and the only place it becomes a fact about a process
+     * is the spawn.
+     */
+    env: Record<string, string>;
+  }>;
 } {
   const ptys: ScriptedPty[] = [];
-  const calls: Array<{ executable: string; args: readonly string[]; cwd: string }> = [];
+  const calls: Array<{
+    executable: string;
+    args: readonly string[];
+    cwd: string;
+    env: Record<string, string>;
+  }> = [];
   return {
     ptys,
     calls,
     spawn: (executable, args, options) => {
-      calls.push({ executable, args, cwd: options.cwd });
+      calls.push({ executable, args, cwd: options.cwd, env: options.env });
       const pty = new ScriptedPty();
       ptys.push(pty);
       return pty;

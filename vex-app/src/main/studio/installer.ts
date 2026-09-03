@@ -225,7 +225,7 @@ async function runRenderAdmitted(
 
   // TWO PASSES, AND `AGENTS.md` IS THE SECOND ONE.
   //
-  // The managed block PROMISES its reader, in `renderStudioChangeLog`, that
+  // The managed block PROMISES its reader, in its "What's new" section, that
   // "every regeneration that changed anything adds a line here". With one pass
   // that was false by construction: the brief was built before reconciliation
   // and the note was appended after it, so the line describing a run only ever

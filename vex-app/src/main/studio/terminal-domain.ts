@@ -14,6 +14,7 @@ import { CH, EV } from "@shared/ipc/channels.js";
 import type { TerminalHostAvailability } from "@shared/schemas/terminal.js";
 import { getProject } from "../database/projects/read.js";
 import { log } from "../logger/index.js";
+import { CONFIG_DIR } from "../paths/config-dir.js";
 import { resolveProjectDirectory, resolveProjectsRoot } from "./projects-root.js";
 import { resolveShellLaunch } from "./shell-catalogue.js";
 import { TerminalDomain, type ProjectActivation } from "./terminals.js";
@@ -81,6 +82,10 @@ let instance: TerminalDomain | null = null;
 /** The process-wide terminal domain, created on first use. */
 export function terminalDomain(): TerminalDomain {
   instance ??= new TerminalDomain({
+    // The dir this app instance actually resolved, read HERE because wiring is
+    // this file's job: the domain is given the answer and never asks the
+    // environment for it.
+    configDir: CONFIG_DIR,
     resolveProjectLocation,
     readProjectActivation,
     resolveShellLaunch: (shellId) => resolveShellLaunch(shellId),
