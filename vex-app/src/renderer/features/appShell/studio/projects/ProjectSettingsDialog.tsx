@@ -269,6 +269,28 @@ export function ProjectSettingsDialog({
   const dirty =
     draft !== null && stored !== null && !sameScope(draft, stored);
   const pending = updateMutation.isPending;
+  /**
+   * A SAVE HAS BEEN ANSWERED and its answer is still on screen: the render
+   * report, or the refusal that took its place. Both are the reply to the Save
+   * the user pressed, and neither is cleared by editing the form again - only a
+   * fresh submit, a conflict reload or reopening the dialog takes one down.
+   */
+  const outcomeOnScreen = render !== null || submitError !== null;
+  /**
+   * THE IDLE SENTENCE'S OWN STATE (rule 08: idle, loading, success, failure).
+   *
+   * "Nothing has changed yet" is true only against the SAVED values, and after
+   * a save the form is re-seeded from them - so the sentence became true again
+   * the instant the report of that save appeared and printed a stale idle
+   * prompt over a fresh outcome (live test 2026-09-03, A4, shot 38). It belongs
+   * to the idle state alone: no unsaved edit AND no answer standing. Same rule
+   * deepseek's approval surfaces keep - the outcome replaces the prompt, and
+   * the prompt never lingers over the outcome - and the same one VS Code's
+   * settings editor keeps by clearing `pendingSettingUpdate` on the resolved
+   * write and re-deriving the modified label from the CONFIGURED value
+   * (`settingsEditor2.ts`, `updateChangedSetting` / `updateModifiedLabelForKey`).
+   */
+  const showUnchangedNotice = !dirty && !outcomeOnScreen;
   /** The scope this form would SAVE grants Full access. */
   const grantingFullAccess = draft !== null && draft.permission === "full";
   const consentMissing = grantingFullAccess && !fullAccessAcknowledged;
@@ -470,7 +492,7 @@ export function ProjectSettingsDialog({
               draft={draft}
               pending={pending}
               inventory={inventory}
-              dirty={dirty}
+              showUnchangedNotice={showUnchangedNotice}
               onDraftChange={applyDraft}
             />}
 
@@ -548,7 +570,7 @@ function SettingsBody({
   draft,
   pending,
   inventory,
-  dirty,
+  showUnchangedNotice,
   onDraftChange,
 }: {
   readonly project: ProjectDto | null;
@@ -560,7 +582,8 @@ function SettingsBody({
     readonly evm: readonly WalletSelectOption[];
     readonly solana: readonly WalletSelectOption[];
   };
-  readonly dirty: boolean;
+  /** The form is idle: nothing edited, and no answer to a Save on screen. */
+  readonly showUnchangedNotice: boolean;
   readonly onDraftChange: (next: ScopeDraft) => void;
 }): JSX.Element | null {
   // Four reachable states, not one: still loading, the read failed, the read
@@ -605,9 +628,11 @@ function SettingsBody({
         onAgentsChange={(agents) => onDraftChange({ ...draft, agents })}
         disabled={pending}
       />
-      {/* Only while nothing has changed: printed beside a dirty form it would
-        * contradict the enabled Save button sitting under it. */}
-      {!dirty ? (
+      {/* THE IDLE SENTENCE, and only in the idle state. Beside a dirty form it
+        * would contradict the enabled Save button sitting under it; over a
+        * render report it would say nothing had changed above the account of
+        * what Vex just changed. See `showUnchangedNotice` at the owner. */}
+      {showUnchangedNotice ? (
         <p className="text-xs text-ink-tertiary">{PROJECT_SETTINGS_UNCHANGED}</p>
       ) : null}
     </>

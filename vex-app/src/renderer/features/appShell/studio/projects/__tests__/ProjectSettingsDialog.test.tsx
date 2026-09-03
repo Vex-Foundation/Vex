@@ -41,8 +41,11 @@ import {
   PROJECT_SCOPE_CONFLICT_RELOAD,
   PROJECT_SCOPE_CONFLICT_RELOADING,
   PROJECT_SCOPE_CONFLICT_TITLE,
+  PROJECT_SETTINGS_UNCHANGED,
   PROJECT_WALLET_EVM_LABEL,
   PROJECT_WALLET_SOLANA_LABEL,
+  PROJECT_WALLETS_UNSELECTED,
+  RENDER_OUTCOME_TITLE,
 } from "../projects-copy.js";
 
 const getMock = vi.fn<() => Promise<Result<ProjectGetResult>>>();
@@ -91,15 +94,24 @@ beforeEach(() => {
   });
 });
 
-function renderSettings(): void {
+function renderSettings(): {
+  /** Re-render the same tree with a different `projectId` (null closes it). */
+  readonly setProjectId: (next: string | null) => void;
+} {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  render(
+  const tree = (projectId: string | null) => (
     <QueryClientProvider client={client}>
-      <ProjectSettingsDialog projectId={STORED.id} onClose={() => undefined} />
-    </QueryClientProvider>,
+      <ProjectSettingsDialog projectId={projectId} onClose={() => undefined} />
+    </QueryClientProvider>
   );
+  const { rerender } = render(tree(STORED.id));
+  return {
+    setProjectId: (next) => {
+      rerender(tree(next));
+    },
+  };
 }
 
 function saveButton(): HTMLButtonElement {
@@ -598,5 +610,141 @@ describe("the render report", () => {
     expect(
       screen.getByText("Pass --mcp-config-file when you start Kimi."),
     ).not.toBeNull();
+  });
+});
+
+/* ------------------- the idle sentence, and its state (A4) ---------------- */
+
+/**
+ * RED ON REVERT: put `!dirty` back in place of `showUnchangedNotice` in
+ * `SettingsBody` and both cases here fail on their first assertion. A save
+ * re-seeds the form from the row it returns, so the form is clean again the
+ * moment the report lands and the idle prompt printed itself directly above
+ * the account of what Vex had just written (live test 2026-09-03, A4).
+ *
+ * WHICH MECHANISM TAKES THE REPORT DOWN: it is REPLACED, never dismissed.
+ * Nothing in this dialog or in `RenderOutcomePanel` offers a dismissal; the
+ * report is cleared only by the next submit, by the conflict reload, or by the
+ * dialog closing. So a later edit cannot bring the sentence back on its own,
+ * which is what the second case pins.
+ */
+function savedResult(): Result<ProjectUpdateScopeResult> {
+  return {
+    ok: true,
+    data: {
+      project: { ...STORED, scopeVersion: 8, agents: ["codex", "cursor"] },
+      render: {
+        scopeVersion: 8,
+        completed: true,
+        trigger: "scope_update",
+        artifacts: [
+          {
+            status: "written",
+            kind: "agent-config",
+            agentId: "cursor",
+            path: ".cursor/mcp.json",
+            change: "created",
+          },
+        ],
+        warnings: [],
+        runFailure: null,
+      },
+      refreshFailure: null,
+    },
+  };
+}
+
+describe("the idle sentence", () => {
+  it("gives way to the report of the save that made the form clean again", async () => {
+    updateMock.mockResolvedValue(savedResult());
+    renderSettings();
+    await loaded();
+    // The idle state, before anything is asked of Vex.
+    expect(screen.getByText(PROJECT_SETTINGS_UNCHANGED)).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Cursor/ }));
+    expect(screen.queryByText(PROJECT_SETTINGS_UNCHANGED)).toBeNull();
+    fireEvent.click(saveButton());
+
+    // The report is on screen and the form is clean against the SAVED row -
+    // which is exactly the state that used to print "Nothing has changed yet"
+    // above it.
+    expect(await screen.findByText(RENDER_OUTCOME_TITLE)).not.toBeNull();
+    expect(saveButton().disabled).toBe(true);
+    expect(screen.queryByText(PROJECT_SETTINGS_UNCHANGED)).toBeNull();
+  });
+
+  it("stays away until the report is gone, not merely until the form is clean", async () => {
+    updateMock.mockResolvedValue(savedResult());
+    const { setProjectId } = renderSettings();
+    await loaded();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Cursor/ }));
+    fireEvent.click(saveButton());
+    await screen.findByText(RENDER_OUTCOME_TITLE);
+
+    // A later edit, and then the same edit undone: the form is clean against
+    // the saved values again while the report of that save still stands. The
+    // sentence must not come back under it.
+    fireEvent.click(screen.getByRole("checkbox", { name: /Cursor/ }));
+    expect(saveButton().disabled).toBe(false);
+    expect(screen.queryByText(PROJECT_SETTINGS_UNCHANGED)).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Cursor/ }));
+    expect(saveButton().disabled).toBe(true);
+    expect(screen.getByText(RENDER_OUTCOME_TITLE)).not.toBeNull();
+    expect(screen.queryByText(PROJECT_SETTINGS_UNCHANGED)).toBeNull();
+
+    // Closing and reopening is one of the three paths that clears the report
+    // (the others are the next submit and the conflict reload). With it gone
+    // the dialog is idle again, and says so.
+    setProjectId(null);
+    setProjectId(STORED.id);
+    await loaded();
+    expect(screen.queryByText(RENDER_OUTCOME_TITLE)).toBeNull();
+    expect(screen.getByText(PROJECT_SETTINGS_UNCHANGED)).not.toBeNull();
+  });
+});
+
+/* -------------- the wallets a project would be saved without (A7) --------- */
+
+describe("an unselected wallet picker", () => {
+  it("says the project will hold no wallet while wallets exist to pick", async () => {
+    withWallets();
+    renderSettings();
+    await loaded();
+
+    // The stored project selected neither, and nothing selected one for it:
+    // pre-selecting the only wallet per chain was rejected (see
+    // `PROJECT_WALLETS_UNSELECTED`), so the dialog states the consequence.
+    expect(
+      document
+        .querySelector('[data-vex-project-wallets="picker"]')
+        ?.getAttribute("data-vex-project-wallets-selection"),
+    ).toBe("none");
+    expect(screen.getByText(PROJECT_WALLETS_UNSELECTED)).not.toBeNull();
+  });
+
+  it("goes silent as soon as one family is selected", async () => {
+    withWallets();
+    renderSettings();
+    await loaded();
+    await selectWallet(PROJECT_WALLET_EVM_LABEL, /Treasury/);
+    expect(screen.queryByText(PROJECT_WALLETS_UNSELECTED)).toBeNull();
+  });
+
+  it("says nothing when the project already holds a wallet", async () => {
+    withWallets();
+    getMock.mockResolvedValue({
+      ok: true,
+      data: {
+        ...STORED,
+        wallets: {
+          evm: { id: EVM_WALLET.id, address: EVM_WALLET.address },
+          solana: null,
+        },
+      },
+    });
+    renderSettings();
+    await loaded();
+    expect(screen.queryByText(PROJECT_WALLETS_UNSELECTED)).toBeNull();
   });
 });

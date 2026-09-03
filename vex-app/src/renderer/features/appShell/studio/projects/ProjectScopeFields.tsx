@@ -49,6 +49,7 @@ import {
   PROJECT_WALLETS_LEGEND,
   PROJECT_WALLETS_NONE_HELP,
   PROJECT_WALLETS_NONE_TITLE,
+  PROJECT_WALLETS_UNSELECTED,
 } from "./projects-copy.js";
 
 /**
@@ -135,8 +136,18 @@ export function ProjectWalletFieldset({
       </fieldset>
     );
   }
+  // NOTHING PICKED, out of wallets that exist. The pickers default to None and
+  // stay there unless the user chooses, deliberately (see
+  // `PROJECT_WALLETS_UNSELECTED`), so the fieldset states the consequence
+  // rather than letting the project be saved into an agent that will answer its
+  // first balance question with "no wallets selected".
+  const noneSelected = evmWalletId === null && solanaWalletId === null;
   return (
-    <fieldset className="flex flex-col gap-2.5" data-vex-project-wallets="picker">
+    <fieldset
+      className="flex flex-col gap-2.5"
+      data-vex-project-wallets="picker"
+      data-vex-project-wallets-selection={noneSelected ? "none" : "some"}
+    >
       <legend className="vex-eyebrow">{PROJECT_WALLETS_LEGEND}</legend>
       <p className="text-xs text-ink-tertiary">{PROJECT_WALLETS_HELP}</p>
       <div className="grid grid-cols-2 gap-2">
@@ -157,6 +168,9 @@ export function ProjectWalletFieldset({
           onChange={onSolanaChange}
         />
       </div>
+      {noneSelected ? (
+        <p className="text-xs text-ink-tertiary">{PROJECT_WALLETS_UNSELECTED}</p>
+      ) : null}
     </fieldset>
   );
 }

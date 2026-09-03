@@ -137,7 +137,7 @@ import { IconWarning } from "../../../../components/icons/index.js";
 import { cn } from "../../../../lib/utils.js";
 import { showToast } from "../../../../lib/toast.js";
 import { useDeleteProject } from "../../../../lib/api/projects.js";
-import { peekProjectTerminals } from "../workspace/project-terminals.js";
+import { peekProjectTerminals } from "../workspace/workspace-handles.js";
 import { useLiveAnnouncer } from "../../../../components/ui/live-region.js";
 import { SubmitError } from "../../../../components/ui/submit-error.js";
 import { ArtifactOutcomeList } from "./RenderOutcomePanel.js";

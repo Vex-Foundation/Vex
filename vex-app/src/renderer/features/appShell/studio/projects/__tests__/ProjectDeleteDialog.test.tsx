@@ -53,7 +53,7 @@ import {
 import {
   clearProjectTerminals,
   publishProjectTerminals,
-} from "../../workspace/project-terminals.js";
+} from "../../workspace/workspace-handles.js";
 import { ProjectDeleteDialog } from "../ProjectDeleteDialog.js";
 import {
   PROJECT_DELETE_CONSEQUENCE_FOLDER_KEPT,

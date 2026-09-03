@@ -209,6 +209,31 @@ export const PROJECT_WALLETS_NONE_TITLE = "No wallets yet.";
 export const PROJECT_WALLETS_NONE_HELP =
   "Add one in Settings, under Wallets. It appears here the next time you open this dialog, and a project's wallets can be changed at any time after it exists.";
 
+/**
+ * WHAT AN UNSELECTED PICKER MEANS, said before the project is saved.
+ *
+ * Live test 2026-09-03 (A7): a profile held exactly one wallet per chain, both
+ * pickers stood at "None" because that is the default, and the project was
+ * created that way. The first thing the agent in it was asked was a balance,
+ * and the only honest answer it could give was "no wallets selected" - a fact
+ * the dialog knew at save time and never said. So the fieldset says it, in the
+ * same plain register as the empty-inventory copy above, while the choice is
+ * still on screen and free to change.
+ *
+ * OWNER DECISION, 2026-09-03: pre-selecting the only wallet was REJECTED.
+ * Selecting a wallet is what puts an agent's reach over that wallet into the
+ * project, and the Full-access strip with its acknowledgement - dropped on
+ * every wallet change - exists because that reach is granted deliberately, by
+ * an act of the user. A default that picked the wallet for them would
+ * pre-consent the exact thing the strip was built to make explicit, and would
+ * do it silently for the single-wallet profile that is the most common one.
+ * VS Code defaults no setting to a resource the user did not name, and
+ * deepseek-harness makes every capability grant an explicit act. The picker may
+ * list a lone wallet first; it never arrives chosen.
+ */
+export const PROJECT_WALLETS_UNSELECTED =
+  "No wallet selected. Agents in this project will hold no wallet, so a balance or a transfer has nothing to act on. Pick one above, or add another in Settings under Wallets. A project's wallets can be changed at any time.";
+
 export const PROJECT_AGENTS_LEGEND = "Coding agents";
 export const PROJECT_AGENTS_HELP =
   "Vex writes an MCP config for each agent you select, inside this project's folder. You can change the selection later.";
@@ -228,6 +253,16 @@ export function agentLaunchSentence(instruction: string): string {
 export const PROJECT_SETTINGS_TITLE = "Project settings";
 export const PROJECT_SETTINGS_SUBMIT = "Save";
 export const PROJECT_SETTINGS_PENDING = "Saving";
+/**
+ * THE IDLE SENTENCE, and it is only true in the idle state.
+ *
+ * "Nothing has changed" is a claim about the SAVED values, and after a save the
+ * form is re-seeded from them - so this sentence became true again the moment
+ * the report of that save appeared, and printed a stale prompt above the
+ * account of what Vex had just written (live test 2026-09-03, A4, shot 38).
+ * `ProjectSettingsDialog` shows it only while nothing is edited AND no answer
+ * to a Save stands on screen.
+ */
 export const PROJECT_SETTINGS_UNCHANGED =
   "Nothing has changed yet. Edit the permission, the wallets or the agents to save.";
 export const PROJECT_SETTINGS_LOADING = "Loading this project";

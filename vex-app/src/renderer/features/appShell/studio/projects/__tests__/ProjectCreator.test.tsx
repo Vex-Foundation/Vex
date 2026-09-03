@@ -47,8 +47,10 @@ import {
   fullAccessWalletsLine,
   PROJECT_FILES_REPAIR_ACTION,
   PROJECT_REFRESH_FAILURE_SENTENCES,
+  PROJECT_WALLET_EVM_LABEL,
   PROJECT_WALLETS_NONE_HELP,
   PROJECT_WALLETS_NONE_TITLE,
+  PROJECT_WALLETS_UNSELECTED,
   RENDER_OUTCOME_EMPTY_COMPLETED,
   RENDER_OUTCOME_EMPTY_INCOMPLETE,
   RENDER_TRIGGER_SENTENCES,
@@ -743,11 +745,82 @@ describe("the dialog's own consent posture", () => {
     const dialog = document.querySelector("dialog");
     if (dialog === null) throw new Error("no dialog");
     // The `cancel` event IS the browser's Escape intent on a modal `<dialog>`;
-    // the jsdom polyfill in `studio-fixtures.ts` implements `showModal` without
-    // the UA key handling, so the event is dispatched directly. What is under
-    // test is that the component routes that intent through the controlled
-    // path rather than letting the element close itself.
+    // the jsdom polyfill in `test/dialog-modal-polyfill.ts` implements
+    // `showModal` without the UA key handling, so the event is dispatched
+    // directly. What is under test is that the component routes that intent
+    // through the controlled path rather than letting the element close itself.
     fireEvent(dialog, new Event("cancel", { cancelable: true }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
+/* ------------- the wallets a project would be created without (A7) -------- */
+
+/**
+ * Live test 2026-09-03 (A7): the profile held exactly one wallet per chain,
+ * both pickers stood at their "None" default, and the project was created that
+ * way - so the first balance question the agent in it was asked could only be
+ * answered "no wallets selected".
+ *
+ * The owner REJECTED pre-selecting the lone wallet: selecting a wallet is the
+ * act that puts an agent's reach over it into the project, and the Full-access
+ * strip exists precisely because that reach is granted deliberately. So the
+ * creator states the consequence instead, and these cases pin BOTH halves -
+ * the sentence appears exactly while wallets exist with none chosen, and
+ * nothing arrives chosen.
+ *
+ * RED ON REVERT: pre-select the only wallet in `ProjectWalletFieldset` and the
+ * wire-input assertion here fails with the id it selected on the user's behalf;
+ * drop the notice and the first assertion fails.
+ */
+const A7_EVM_WALLET = {
+  id: "evm-1",
+  address: "0x2222222222222222222222222222222222222222",
+  label: "Treasury",
+};
+const A7_SOLANA_WALLET = {
+  id: "sol-1",
+  address: "So11111111111111111111111111111111111111112",
+  label: "Trading",
+};
+
+describe("the wallets fieldset with wallets to pick", () => {
+  beforeEach(() => {
+    walletsMock.mockResolvedValue({
+      ok: true,
+      data: { evm: [A7_EVM_WALLET], solana: [A7_SOLANA_WALLET] },
+    });
+  });
+
+  it("says the project will hold no wallet, and selects none itself", async () => {
+    renderCreator();
+    const fieldset = await screen.findByText(PROJECT_WALLETS_UNSELECTED);
+    expect(fieldset).not.toBeNull();
+    expect(
+      document
+        .querySelector('[data-vex-project-wallets="picker"]')
+        ?.getAttribute("data-vex-project-wallets-selection"),
+    ).toBe("none");
+
+    // And the create carries what the user actually chose: nothing.
+    typeName("atlas");
+    fireEvent.click(submitButton());
+    await waitFor(() => {
+      expect(createMock).toHaveBeenCalled();
+    });
+    expect(createMock.mock.calls[0]?.[0].wallets).toEqual({
+      evm: null,
+      solana: null,
+    });
+  });
+
+  it("goes silent as soon as a wallet is chosen", async () => {
+    renderCreator();
+    await screen.findByText(PROJECT_WALLETS_UNSELECTED);
+    fireEvent.click(
+      await screen.findByRole("combobox", { name: PROJECT_WALLET_EVM_LABEL }),
+    );
+    fireEvent.click(screen.getByRole("option", { name: /Treasury/ }));
+    expect(screen.queryByText(PROJECT_WALLETS_UNSELECTED)).toBeNull();
   });
 });
