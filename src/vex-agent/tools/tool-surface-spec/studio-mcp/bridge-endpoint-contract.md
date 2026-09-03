@@ -208,14 +208,57 @@ permissions are the access control and the handshake is the admission check.
 
 ### 1.2 Derivation per OS
 
-**Linux.** `$XDG_RUNTIME_DIR/vex-studio-<hash>.sock` when `XDG_RUNTIME_DIR` is
-set, absolute, a directory, owned by the current uid, and has no group or other
-permission bits. Any of those failing falls through to the tmpdir form below.
-Those are the four ways a runtime directory stops being private, and a listener
-in a directory another user can read is the failure this whole section exists
-to prevent.
+**Linux.** The derivation is a PURE FUNCTION of four facts - the uid, the config
+directory, `XDG_RUNTIME_DIR`, and the filesystem facts of `/run/user/<uid>` -
+evaluated by both owners in this order:
 
-**Linux fallback and macOS.**
+| # | condition | endpoint | parent created by Vex |
+| --- | --- | --- | --- |
+| 1 | `XDG_RUNTIME_DIR` is set, absolute and a PRIVATE DIRECTORY | `$XDG_RUNTIME_DIR/vex-studio-<hash>.sock` | no |
+| 2 | otherwise, `/run/user/<uid>` is a PRIVATE DIRECTORY | `/run/user/<uid>/vex-studio-<hash>.sock` | no |
+| 3 | otherwise | `<tmpdir>/vex-studio-<uid>/vex-studio-<hash>.sock` | yes |
+
+PRIVATE DIRECTORY means the same four things in rows 1 and 2, established with
+`lstat`: it exists, it is a directory, it is owned by the current uid, and it
+has no group or other permission bits. Those are the four ways a runtime
+directory stops being private, and a listener in a directory another user can
+read is the failure this whole section exists to prevent.
+
+ROW 2 IS WHY THE TWO SIDES CANNOT DISAGREE, and it exists because they did.
+`XDG_RUNTIME_DIR` is an ENVIRONMENT variable, and the app and the bridge are
+spawned by different parents: the app inherits a desktop session's environment,
+the bridge inherits whatever its MCP client hands it. Codex CLI hands it almost
+nothing, by design rather than by accident - `create_env_for_mcp_server`
+(`codex-rs/rmcp-client/src/utils.rs:16`, reference checkout) builds a stdio MCP
+server's environment from the `DEFAULT_ENV_VARS` ALLOWLIST (same file, `:163`:
+HOME, LOGNAME, PATH, SHELL, USER, `__CF_USER_TEXT_ENCODING`, LANG, LC_ALL,
+TERM, TMPDIR, TZ) plus that server's own config `env` map, and
+`codex-rs/core/src/spawn.rs:83` calls `env_clear()` before applying it.
+`XDG_RUNTIME_DIR` is not on that list. MEASURED with the built bridge: with the
+developer's own environment it derived `/run/user/1000/...`; with an
+environment carrying only HOME and PATH it derived `/tmp/vex-studio-1000/...`
+and exited 2 before answering `initialize`, and the client reported a broken
+pipe. Row 2 is a FILESYSTEM fact rather than an environment one, so both sides
+read it identically whatever their parent forwarded.
+
+Vex's Codex installer dialect could instead write `env = { XDG_RUNTIME_DIR =
+... }` into the client's config. That is NOT the fix and is not done: it would
+freeze one login session's value into a file that outlives the session, and it
+would leave every other environment-scrubbing client broken. It is also
+structurally impossible today - the per-dialect key allowlist in
+`installer/render/entry.ts` carries no `env` key at all, which is what makes
+"Vex never writes an environment for the bridge child" a property rather than a
+promise.
+
+VS CODE, AND WHERE VEX DIVERGES. `createStaticIPCHandle`
+(`src/vs/base/parts/ipc/node/ipc.net.ts`, reference checkout) prefers
+`XDG_RUNTIME_DIR` and otherwise falls back to a caller-supplied directory, with
+no middle rung and no ownership or mode check. Vex needs row 2 because VS
+Code's two sides are one process tree sharing an environment and ours are not,
+and it keeps rows 1 and 2 behind the privacy gate because this listener fronts
+a self-custodial wallet's MCP host rather than an editor's window.
+
+**Linux fallback (row 3) and macOS.**
 
 ```
 <tmpdir>/vex-studio-<uid>/vex-studio-<hash>.sock
@@ -391,6 +434,34 @@ endpoint_ancestor_changed: The Vex Studio endpoint ancestor <absolute-path> chan
 The `endpointAncestorIdentity.changed` golden vector supplies one path and the
 complete expected sentence. The TypeScript host and Go bridge independently
 format and test that same vector, so code or sentence drift is a red test.
+
+AN ABSENT DIRECTORY IS NOT A CHANGED ONE. Capturing the chain for a directory
+that does not exist is not a replacement and is not reported as one:
+
+| requirement | refusal code |
+| --- | --- |
+| the endpoint directory exists when the chain is captured | `endpoint_directory_missing` |
+
+It is the same failure class, and therefore the same exit code (2), as every
+other local refusal. It is BRIDGE-SIDE ONLY: the host creates its own parent
+directory (section 1.2, row 3) and never reaches this state, which is why the
+sentence is not in the shared vector table. The bridge completes it with the
+one clause the endpoint planner cannot know - whether THIS process was given an
+`XDG_RUNTIME_DIR` at all - so a client that forwarded the variable is not told
+it did not:
+
+```
+endpoint_directory_missing: The Vex Studio endpoint directory <absolute-path> does not exist. Vex is not running for this configuration.
+endpoint_directory_missing: The Vex Studio endpoint directory <absolute-path> does not exist. Vex is not running for this configuration, or it is listening under XDG_RUNTIME_DIR, which this client did not forward to the bridge.
+```
+
+The defect this replaced was measured, not imagined: a scrubbed-environment
+client derived `/tmp/vex-studio-1000` while the app listened under
+`/run/user/1000`, and the bridge reported that the ancestor of a directory
+which had never existed "changed before use" - a sentence describing a swap
+attack, printed for an ordinary "Vex is somewhere else". Section 1.2 row 2 is
+what stops the divergence; this is what the user is told when a directory is
+absent anyway.
 
 ACCEPTED RESIDUAL, STATED PLAINLY. These checks are path-based because Node has
 no descriptor-relative socket bind/unlink API, and Go has no matching
@@ -854,7 +925,7 @@ not fit is REPORTED with its exact omitted byte count, never silently dropped.
 | --- | --- | --- |
 | 0 | the session ended cleanly | client stdin EOF after the drain, or peer EOF |
 | 1 | usage | no project id, a non-UUID project id, an unknown argument |
-| 2 | endpoint refused locally | every `RefusalCode` in sections 1.4 and 1.5.1, including `override_pipe_on_unix` and `endpoint_ancestor_changed`, plus `windows_host_not_current_user` from the host authentication in 1.6. `windows_probe_pending` was REMOVED with the Windows adoption in section 1.2, and `windows_pending_platform_proof` was REMOVED with the section 1.6 gate it belonged to; neither is a code either side emits |
+| 2 | endpoint refused locally | every `RefusalCode` in sections 1.4 and 1.5.1, including `override_pipe_on_unix`, `endpoint_ancestor_changed` and the bridge-only `endpoint_directory_missing`, plus `windows_host_not_current_user` from the host authentication in 1.6. `windows_probe_pending` was REMOVED with the Windows adoption in section 1.2, and `windows_pending_platform_proof` was REMOVED with the section 1.6 gate it belonged to; neither is a code either side emits |
 | 3 | dial failed | ENOENT, ECONNREFUSED, EACCES, or the dial timeout |
 | 4 | handshake failed | write failure, ack deadline, ack over the bound, or an ack that fails the strict parse |
 | 5 | refused `unknown_project` | ack |

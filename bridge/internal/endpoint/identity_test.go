@@ -3,8 +3,10 @@
 package endpoint_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Vex-Foundation/vex/bridge/internal/endpoint"
@@ -87,5 +89,62 @@ func TestDirectoryChainIdentityPinsIntermediateSymlinkTargetChain(t *testing.T) 
 		t.Fatal("replacement behind a stable intermediate symlink passed verification")
 	} else if want := endpoint.EndpointAncestorChangedRefusal(targetRoot); err.Error() != want {
 		t.Fatalf("refusal %q, want %q", err.Error(), want)
+	}
+}
+
+// AN ABSENT ENDPOINT DIRECTORY IS NOT A SWAPPED ONE.
+//
+// The measured defect: a client that scrubs XDG_RUNTIME_DIR derives the tmpdir
+// form while the app listens under /run/user/<uid>, so the bridge captured the
+// chain for a directory that had never existed and printed "the endpoint
+// ancestor /tmp/vex-studio-1000 changed before use" - a sentence about a swap
+// attack, for an ordinary "Vex is somewhere else". The derivation rung is the
+// fix; this is the sentence for the case that remains.
+func TestCaptureDirectoryChainNamesAnAbsentDirectoryAsAbsent(t *testing.T) {
+	missing := filepath.Join(resolvedTempDir(t), "vex-studio-absent")
+	if _, err := os.Lstat(missing); !os.IsNotExist(err) {
+		t.Fatalf("the fixture path exists: %v", err)
+	}
+
+	identity, err := endpoint.CaptureDirectoryChain(missing)
+	if err == nil {
+		t.Fatalf("an absent directory captured a chain: %+v", identity)
+	}
+	var absent *endpoint.DirectoryMissingError
+	if !errors.As(err, &absent) {
+		t.Fatalf("refusal %q is not a DirectoryMissingError", err)
+	}
+	if absent.Path != missing {
+		t.Fatalf("the refusal names %q, want the endpoint directory %q", absent.Path, missing)
+	}
+	if strings.Contains(err.Error(), string(endpoint.RefuseEndpointAncestorChanged)) {
+		t.Fatalf("an absent directory still reports an ancestor change: %q", err)
+	}
+}
+
+// The two sentences, and the clause that separates them. Naming a cause that
+// does not apply ("your client did not forward XDG_RUNTIME_DIR") to a client
+// that DID forward it is the same defect this test's neighbour closes.
+func TestEndpointDirectoryMissingRefusalNamesTheForwardingCauseOnlyWhenItApplies(t *testing.T) {
+	const dir = "/tmp/vex-studio-1000"
+	forwarded := endpoint.EndpointDirectoryMissingRefusal(dir, true)
+	scrubbed := endpoint.EndpointDirectoryMissingRefusal(dir, false)
+
+	for _, sentence := range []string{forwarded, scrubbed} {
+		if !strings.HasPrefix(sentence, string(endpoint.RefuseEndpointDirectoryMissing)+": ") {
+			t.Fatalf("refusal %q does not carry its code prefix", sentence)
+		}
+		if !strings.Contains(sentence, dir) {
+			t.Fatalf("refusal %q does not name the directory", sentence)
+		}
+		if !strings.Contains(sentence, "does not exist") {
+			t.Fatalf("refusal %q does not say the directory is absent", sentence)
+		}
+	}
+	if strings.Contains(forwarded, "XDG_RUNTIME_DIR") {
+		t.Fatalf("a client that forwarded the variable is told it did not: %q", forwarded)
+	}
+	if !strings.Contains(scrubbed, "XDG_RUNTIME_DIR") {
+		t.Fatalf("a scrubbed environment is not told the actionable cause: %q", scrubbed)
 	}
 }

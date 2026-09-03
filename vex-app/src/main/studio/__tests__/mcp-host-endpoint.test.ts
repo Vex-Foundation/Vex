@@ -22,6 +22,7 @@ import { describe, expect, it } from "vitest";
 import {
   ENDPOINT_ANCESTOR_CHANGED_CODE,
   isWindowsPipePath,
+  LINUX_RUNTIME_DIR_ROOT,
   planStudioEndpoint,
   WINDOWS_TRANSPORT_PROVEN,
   studioEndpointFileName,
@@ -208,6 +209,94 @@ describe("studio endpoint golden vectors", () => {
 
   it.each(vectors.override)("override - $name", (testCase) => {
     expect(runPlan(testCase)).toMatchObject(testCase.expect);
+  });
+
+  /**
+   * THE DEFECT THE `/run/user/<uid>` RUNG CLOSES, stated as a property rather
+   * than as one vector row.
+   *
+   * `XDG_RUNTIME_DIR` is an ENVIRONMENT variable and the two sides of this wire
+   * are spawned by different parents. Codex CLI builds a stdio MCP server's
+   * environment from an allowlist that does not carry it
+   * (`create_env_for_mcp_server`, codex-rs/rmcp-client/src/utils.rs:16, over
+   * `DEFAULT_ENV_VARS` at :163, after `env_clear()` in
+   * codex-rs/core/src/spawn.rs:83), so the app derived `/run/user/<uid>` from
+   * the variable it could see while the bridge derived the tmpdir form and the
+   * client reported a broken pipe.
+   *
+   * What must hold is AGREEMENT: the same uid, config directory and filesystem
+   * must produce ONE endpoint whether or not the variable survived the spawn.
+   */
+  it("derives ONE endpoint whether or not the client forwarded XDG_RUNTIME_DIR", () => {
+    const configDirRealPath = "/home/alice/.config/vex";
+    const runtimeDir = `${LINUX_RUNTIME_DIR_ROOT}/1000`;
+    const plan = (env: Record<string, string>) =>
+      planStudioEndpoint({
+        platform: "linux",
+        configDirRealPath,
+        env,
+        tmpdir: "/tmp",
+        uid: 1000,
+        probeDirectory: (dir) =>
+          dir === runtimeDir ? { isDirectory: true, uid: 1000, mode: 0o700 } : null,
+      });
+
+    const forwarded = plan({ XDG_RUNTIME_DIR: runtimeDir });
+    const scrubbed = plan({});
+    expect(scrubbed).toEqual(forwarded);
+    expect(scrubbed).toMatchObject({
+      kind: "unix",
+      parentDir: runtimeDir,
+      // The system created it; Vex only verified it, exactly as for the
+      // variable's own directory.
+      createParent: false,
+    });
+  });
+
+  /**
+   * The rung is a systemd fact, and it is HELD TO THE SAME PRIVACY GATE as the
+   * variable. A `/run/user/<uid>` that is not a directory, not ours, or
+   * readable by anyone else is not a runtime directory, and the tmpdir form -
+   * whose parent Vex creates and re-verifies at 0700 - is where the plan lands.
+   */
+  it.each([
+    { name: "absent", facts: null },
+    { name: "not a directory", facts: { isDirectory: false, uid: 1000, mode: 0o700 } },
+    { name: "owned by another user", facts: { isDirectory: true, uid: 0, mode: 0o700 } },
+    { name: "readable by the group", facts: { isDirectory: true, uid: 1000, mode: 0o750 } },
+  ])("falls back to the tmpdir form when /run/user/<uid> is $name", ({ facts }) => {
+    const runtimeDir = `${LINUX_RUNTIME_DIR_ROOT}/1000`;
+    const plan = planStudioEndpoint({
+      platform: "linux",
+      configDirRealPath: "/home/alice/.config/vex",
+      env: {},
+      tmpdir: "/tmp",
+      uid: 1000,
+      probeDirectory: (dir) => (dir === runtimeDir ? facts : null),
+    });
+    expect(plan).toMatchObject({
+      kind: "unix",
+      parentDir: "/tmp/vex-studio-1000",
+      createParent: true,
+    });
+  });
+
+  it("never consults /run/user/<uid> on macOS", () => {
+    // macOS follows the platform convention, not XDG, and has no systemd
+    // runtime root. A probe answering for one must change nothing there.
+    const plan = planStudioEndpoint({
+      platform: "darwin",
+      configDirRealPath: "/Users/alice/Library/Application Support/vex",
+      env: {},
+      tmpdir: "/var/folders/ab/T",
+      uid: 501,
+      probeDirectory: () => ({ isDirectory: true, uid: 501, mode: 0o700 }),
+    });
+    expect(plan).toMatchObject({
+      kind: "unix",
+      parentDir: "/var/folders/ab/T/vex-studio-501",
+      createParent: true,
+    });
   });
 
   it("every refused plan carries a sentence that names the remedy", () => {

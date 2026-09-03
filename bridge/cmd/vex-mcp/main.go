@@ -102,6 +102,16 @@ func run() int {
 	if plan.Kind == endpoint.KindUnix {
 		directoryIdentity, err = endpoint.CaptureDirectoryChain(plan.ParentDir)
 		if err != nil {
+			// AN ABSENT DIRECTORY IS NOT A SWAPPED ONE. Its sentence is
+			// completed here rather than in the endpoint package, because only
+			// this process knows whether its client forwarded the variable the
+			// other derivation reads.
+			var missing *endpoint.DirectoryMissingError
+			if errors.As(err, &missing) {
+				_, forwarded := os.LookupEnv("XDG_RUNTIME_DIR")
+				return fail(exitEndpointRefused,
+					endpoint.EndpointDirectoryMissingRefusal(missing.Path, forwarded))
+			}
 			return fail(exitEndpointRefused, err.Error())
 		}
 	}

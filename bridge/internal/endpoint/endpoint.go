@@ -48,6 +48,34 @@ const SunPathMaxBytes = 103
 // endpoint. Validated before any dial; never silently ignored.
 const OverrideEnv = "VEX_STUDIO_SOCKET"
 
+// LinuxRuntimeDirRoot is the systemd per-user runtime root, PROBED rather than
+// assumed.
+//
+// It is the rung that keeps this binary and the app from disagreeing.
+// XDG_RUNTIME_DIR is an environment variable, and an MCP client is free to
+// spawn this bridge with an environment that does not carry it. Codex CLI does
+// exactly that, by design rather than by accident: create_env_for_mcp_server
+// (codex-rs/rmcp-client/src/utils.rs:16) builds a stdio MCP server's
+// environment from the DEFAULT_ENV_VARS ALLOWLIST (same file, :163 - HOME,
+// LOGNAME, PATH, SHELL, USER, __CF_USER_TEXT_ENCODING, LANG, LC_ALL, TERM,
+// TMPDIR, TZ, and no XDG_RUNTIME_DIR) plus that server's own config env map,
+// and
+// codex-rs/core/src/spawn.rs:83 env_clear()s before applying it. So the app
+// derived /run/user/<uid> from the variable IT could see while this bridge
+// fell through to <tmpdir>/vex-studio-<uid>, and the client saw a broken pipe.
+//
+// The derivation is therefore a pure function of (uid, config directory,
+// XDG_RUNTIME_DIR, and the FILESYSTEM facts of /run/user/<uid>). That last
+// term is the one both sides read identically whatever their environment says,
+// and it is held to the SAME isPrivateDirectory gate as the variable's own
+// directory: a directory, owned by this uid, with no group or other bits,
+// which is the systemd guarantee that makes it a safe socket home.
+//
+// The Codex dialect could also carry `env = { XDG_RUNTIME_DIR = ... }` in the
+// config Vex writes, and that is NOT the fix: it would freeze one login
+// session's value into a file that outlives the session.
+const LinuxRuntimeDirRoot = "/run/user"
+
 // DialTimeout bounds the connect attempt to the endpoint this package planned.
 //
 // Short on purpose: the socket is local, so anything slower than this is a
@@ -71,6 +99,16 @@ const (
 	RefuseOverrideParentMode      RefusalCode = "override_parent_mode"
 	RefusePathTooLong             RefusalCode = "path_too_long"
 	RefuseEndpointAncestorChanged RefusalCode = "endpoint_ancestor_changed"
+
+	// RefuseEndpointDirectoryMissing is the BRIDGE-SIDE half of the ancestor
+	// check, split out because the old code lied about the commonest case: a
+	// client that reached CaptureDirectoryChain for a directory that was never
+	// there was told the ancestor "changed before use". The host never emits
+	// it - it CREATES its parent directory (contract 1.2) - so unlike the
+	// changed-sentence it is this side's own vocabulary, exercised by
+	// TestEndpointDirectoryMissingRefusal. Same failure class and therefore
+	// the same exit code as every other local refusal.
+	RefuseEndpointDirectoryMissing RefusalCode = "endpoint_directory_missing"
 
 	// `windows_pending_platform_proof` was the section 1.6 runtime gate's
 	// code and left this set when the gate opened: no path can produce it,
@@ -256,11 +294,17 @@ func Derive(in Input) Plan {
 		runtimeDir := in.Env["XDG_RUNTIME_DIR"]
 		if runtimeDir != "" && strings.HasPrefix(runtimeDir, "/") &&
 			isPrivateDirectory(in.ProbeDirectory(runtimeDir), in.UID) {
-			candidate := configdir.JoinPosix(runtimeDir, name)
-			if !withinSunPath(candidate) {
-				return refuse(RefusePathTooLong, sunPathMessage(candidate))
-			}
-			return Plan{Kind: KindUnix, Path: candidate, ParentDir: runtimeDir}
+			return planPrivateRuntimeDir(runtimeDir, name)
+		}
+
+		// THE VARIABLE IS ABSENT OR UNUSABLE, BUT THE DIRECTORY MAY STILL BE
+		// THERE. This is the rung that makes an environment-scrubbing client
+		// agree with the app about one endpoint (see LinuxRuntimeDirRoot). It
+		// is a filesystem fact, read under the same privacy gate as the
+		// variable's own directory.
+		systemdRuntimeDir := configdir.JoinPosix(LinuxRuntimeDirRoot, fmt.Sprintf("%d", in.UID))
+		if isPrivateDirectory(in.ProbeDirectory(systemdRuntimeDir), in.UID) {
+			return planPrivateRuntimeDir(systemdRuntimeDir, name)
 		}
 	}
 
@@ -272,6 +316,17 @@ func Derive(in Input) Plan {
 		return refuse(RefusePathTooLong, sunPathMessage(candidate))
 	}
 	return Plan{Kind: KindUnix, Path: candidate, ParentDir: parent, CreateParent: true}
+}
+
+// planPrivateRuntimeDir plans inside a system-owned private runtime directory.
+// CreateParent stays false for both callers: the system created these and the
+// planner only verified them.
+func planPrivateRuntimeDir(runtimeDir string, name string) Plan {
+	candidate := configdir.JoinPosix(runtimeDir, name)
+	if !withinSunPath(candidate) {
+		return refuse(RefusePathTooLong, sunPathMessage(candidate))
+	}
+	return Plan{Kind: KindUnix, Path: candidate, ParentDir: runtimeDir}
 }
 
 func planOverride(value string, in Input) Plan {

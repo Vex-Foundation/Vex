@@ -1,6 +1,7 @@
 package endpoint_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -356,8 +357,16 @@ func TestProbeFilesystemDoesNotFollowASymlink(t *testing.T) {
 }
 
 // The refusal the symlink probe produces, through the planner rather than the
-// probe alone: a symlinked XDG_RUNTIME_DIR is not private, so the plan falls
-// through to the tmpdir form instead of binding inside the link.
+// probe alone: a symlinked XDG_RUNTIME_DIR is not private, so the plan leaves
+// it for the next rung instead of binding inside the link.
+//
+// WHICH RUNG IT LANDS ON IS THE MACHINE'S ANSWER, NOT THIS TEST'S SUBJECT. The
+// derivation now probes /run/user/<uid> when the variable is unusable, and this
+// case runs against the REAL filesystem with the REAL uid, so a developer
+// machine with a systemd session lands there and a container without one lands
+// on the tmpdir form. The invariant asserted is the one the case exists for -
+// the plan never binds inside the link - plus the plan being exactly the rung
+// the same real probe says it should be.
 func TestSymlinkedRuntimeDirIsNotPrivate(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "run")
@@ -383,9 +392,29 @@ func TestSymlinkedRuntimeDirIsNotPrivate(t *testing.T) {
 	if plan.ParentDir == link {
 		t.Fatal("the plan bound inside the SYMLINK; a link is not a private runtime directory")
 	}
-	if !plan.CreateParent {
-		t.Fatal("the plan did not fall through to the host-owned tmpdir form")
+	if plan.ParentDir == target {
+		t.Fatal("the plan bound inside the link's TARGET; the probe followed the link")
 	}
+
+	systemdDir := fmt.Sprintf("%s/%d", endpoint.LinuxRuntimeDirRoot, os.Getuid())
+	if isPrivateOnThisMachine(systemdDir) {
+		if plan.ParentDir != systemdDir || plan.CreateParent {
+			t.Fatalf("this machine has a private %s; the plan is %+v", systemdDir, plan)
+		}
+		return
+	}
+	if !plan.CreateParent {
+		t.Fatalf("no private %s here, so the plan must be the host-owned tmpdir form; got %+v",
+			systemdDir, plan)
+	}
+}
+
+// isPrivateOnThisMachine answers the same question the planner asks about
+// /run/user/<uid>, through the same probe, so a test expectation cannot drift
+// from the rule it is predicting.
+func isPrivateOnThisMachine(dir string) bool {
+	facts := endpoint.ProbeFilesystem(dir)
+	return facts != nil && facts.IsDirectory && facts.UID == os.Getuid() && facts.Mode&0o077 == 0
 }
 
 // The same rule at the OVERRIDE's parent, where the refusal is named rather

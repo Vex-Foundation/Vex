@@ -44,11 +44,40 @@ import { createHash } from "node:crypto";
 
 import { flavour } from "../../paths/config-dir.js";
 
+/** The target-flavoured path module every join and dirname below goes through. */
+type PathFlavour = ReturnType<typeof flavour>;
+
 /** `sun_path` is ~104 bytes INCLUDING the terminator on Linux and macOS. */
 export const STUDIO_SUN_PATH_MAX_BYTES = 103;
 
 /** The env name that overrides the derived endpoint. */
 export const STUDIO_SOCKET_OVERRIDE_ENV = "VEX_STUDIO_SOCKET";
+
+/**
+ * The systemd per-user runtime root on Linux, PROBED rather than assumed.
+ *
+ * It is the rung that keeps the two owners from disagreeing.
+ * `XDG_RUNTIME_DIR` is an environment variable, and an MCP client is free to
+ * spawn the bridge with an environment that does not carry it: Codex CLI does
+ * exactly that, so the app derived `/run/user/<uid>` from the variable IT
+ * could see while the bridge fell all the way through to
+ * `<tmpdir>/vex-studio-<uid>`, and the client saw a broken pipe. The
+ * derivation is a pure function of (uid, config directory, `XDG_RUNTIME_DIR`,
+ * and the FILESYSTEM facts of `/run/user/<uid>`), and that last term is the
+ * one both sides read identically whatever their environment says.
+ *
+ * The directory is held to the SAME `isPrivateDirectory` gate the variable is
+ * held to - a directory, owned by this uid, with no group or other bits -
+ * which is the systemd guarantee that makes it a safe socket home. When it
+ * does not hold, the tmpdir fallback is exactly what it was.
+ *
+ * VS Code's `createStaticIPCHandle` (`src/vs/base/parts/ipc/node/ipc.net.ts`
+ * in the reference checkout) prefers `XDG_RUNTIME_DIR` and otherwise falls
+ * back to a caller-supplied directory, with no middle rung. Vex needs one
+ * because VS Code's two sides are one process tree sharing an environment and
+ * ours are not: our client half is spawned by somebody else's agent.
+ */
+export const LINUX_RUNTIME_DIR_ROOT = "/run/user";
 
 /** What one directory looks like to the planner. `null` means it is absent. */
 export interface EndpointDirectoryFacts {
@@ -249,11 +278,16 @@ export function planStudioEndpoint(input: EndpointPlanInput): StudioEndpointPlan
       && target.isAbsolute(runtimeDir)
       && isPrivateDirectory(input.probeDirectory(runtimeDir), input.uid)
     ) {
-      const candidate = target.join(runtimeDir, fileName);
-      if (!withinSunPath(candidate)) {
-        return refuse("path_too_long", sunPathMessage(candidate));
-      }
-      return { kind: "unix", path: candidate, parentDir: runtimeDir, createParent: false };
+      return planPrivateRuntimeDir(runtimeDir, fileName, target);
+    }
+
+    // THE VARIABLE IS ABSENT OR UNUSABLE, BUT THE DIRECTORY MAY STILL BE
+    // THERE. This is the rung that makes an environment-scrubbing client agree
+    // with the app about one endpoint. It is a filesystem fact both sides
+    // read, held to the same privacy gate as the variable's own directory.
+    const systemdRuntimeDir = target.join(LINUX_RUNTIME_DIR_ROOT, String(input.uid));
+    if (isPrivateDirectory(input.probeDirectory(systemdRuntimeDir), input.uid)) {
+      return planPrivateRuntimeDir(systemdRuntimeDir, fileName, target);
     }
   }
 
@@ -265,6 +299,22 @@ export function planStudioEndpoint(input: EndpointPlanInput): StudioEndpointPlan
     return refuse("path_too_long", sunPathMessage(candidate));
   }
   return { kind: "unix", path: candidate, parentDir, createParent: true };
+}
+
+/**
+ * A system-owned private runtime directory, planned. `createParent` is false
+ * for both callers: the system created these and Vex only verified them.
+ */
+function planPrivateRuntimeDir(
+  runtimeDir: string,
+  fileName: string,
+  target: PathFlavour,
+): StudioEndpointPlan {
+  const candidate = target.join(runtimeDir, fileName);
+  if (!withinSunPath(candidate)) {
+    return refuse("path_too_long", sunPathMessage(candidate));
+  }
+  return { kind: "unix", path: candidate, parentDir: runtimeDir, createParent: false };
 }
 
 function planOverride(value: string, input: EndpointPlanInput): StudioEndpointPlan {
