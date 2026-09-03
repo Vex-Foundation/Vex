@@ -14,6 +14,7 @@
 
 import type { StudioWritableAgent } from "@vex-agent/studio/agents.js";
 import type {
+  StudioInstallationEnvironment,
   StudioProjectBrief,
   StudioProjectFacts,
 } from "@vex-agent/studio/installer/render/index.js";
@@ -61,6 +62,21 @@ export const STUDIO_TEST_BRIEF: StudioProjectBrief = {
     { version: "0.9.4", date: "2026-08-25", summary: "updated the wallet selection" },
     { version: "0.9.3", date: "2026-08-12", summary: "added the codex config" },
   ],
+};
+
+/**
+ * Deterministic INSTALLATION environment for the goldens.
+ *
+ * The shipped block reports which provider keys this machine actually has
+ * (`resolveStudioInstallationEnvironment`), which is a real fact an agent needs
+ * before its first call and a real reason for the block to change. The goldens
+ * must not depend on the machine that ran them, so every render test states the
+ * environment instead: one key configured and one missing, which exercises both
+ * branches of every protocol block's availability line.
+ */
+export const STUDIO_TEST_ENVIRONMENT: StudioInstallationEnvironment = {
+  configuredKeys: ["TAVILY_API_KEY"],
+  missingKeys: ["JUPITER_API_KEY", "RETTIWT_API_KEY"],
 };
 
 /**

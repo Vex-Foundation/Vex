@@ -13,6 +13,15 @@
  *      exceeding it fails a test rather than silently truncating what a client
  *      reads.
  *
+ * WHAT THE BUDGET DECIDED, 2026-09-03. The clarity review asked for more in the
+ * handshake than 2,000 bytes can hold: the reworded approval contract, the
+ * client-name mapping, the truncation remedy, the whole outcome table and the
+ * fee line. The rules an agent needs BEFORE its first call won, the two tables
+ * did not fit, and the handshake now points at `AGENTS.md` for them
+ * (`STUDIO_ONE_SOURCE_IN_HANDSHAKE`) instead of carrying a shortened copy that
+ * would be a second, weaker source. Both sides render from
+ * `studio/instructions/shared-usage.ts`, so what they do share is one text.
+ *
  * GENERIC, with no per-project or per-permission content. That is a correctness
  * property, not brevity: `instructions` are delivered once at handshake, while
  * a project's permission and wallet selection can change at any moment
@@ -24,37 +33,32 @@
 
 import {
   STUDIO_INSTRUCTIONS_SEPARATOR,
+  STUDIO_SAFETY_RULES,
   STUDIO_USAGE_NOTES,
 } from "../studio/instructions/shared-usage.js";
 
 /**
  * The first 512 characters: what an agent must know before it calls anything.
  *
- * Written as one string so the character bound is a property of the text a
- * reader sees, not of an assembly step that could reorder it.
+ * AUTHORED IN `shared-usage.ts` and re-exported here under the name the server
+ * and the managed block already use. It was one string in this module until the
+ * managed block needed the SAME rules; a copy would have been a second source
+ * for the three sentences that decide whether real funds move.
  */
-export const STUDIO_SAFETY_PREFIX =
-  "Vex moves REAL funds from the user's wallet. Nothing here is a simulation.\n"
-  + "1. APPROVAL: in a restricted project a fund-moving call pauses for the "
-  + "user's decision in Vex and may be declined or expire. Never retry a call "
-  + "that reports an unknown or indeterminate outcome.\n"
-  + "2. QUOTE FIRST: run the quote or preview tool before any swap, bridge, "
-  + "trade or lend call, and show the user what it returned.\n"
-  + "3. AMOUNTS: units are PER FIELD - human decimals or raw smallest units. "
-  + "Read the field's description; never guess.";
+export const STUDIO_SAFETY_PREFIX = STUDIO_SAFETY_RULES;
 
 /**
  * The complete `instructions` value.
  *
- * The tail - how to find tools, what an unavailable tool looks like, and what
- * the four failure words mean - was EXTRACTED to
- * `../studio/instructions/shared-usage.ts` because the `AGENTS.md` managed block
- * the Studio installer writes must say the SAME words. Two copies would be two
- * sources of truth for text a model acts on. Everything there is still a fact
- * about THIS SERVER that does not change between projects, so none of it can go
- * stale between the handshake and a call.
+ * The tail - how tools are named and found, what a truncated description means,
+ * units, project scope, what an unavailable tool looks like and how to bucket a
+ * failure word - lives in `../studio/instructions/shared-usage.ts` because the
+ * `AGENTS.md` managed block the Studio installer writes must say the SAME words.
+ * Two copies would be two sources of truth for text a model acts on. Everything
+ * there is still a fact about THIS SERVER that does not change between projects,
+ * so none of it can go stale between the handshake and a call.
  *
- * The composed bytes are unchanged by that extraction and pinned by
+ * The composed bytes are pinned by
  * `__tests__/vex-agent/studio/instructions-extraction.test.ts`.
  */
 export const STUDIO_MCP_INSTRUCTIONS =
