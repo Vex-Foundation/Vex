@@ -180,6 +180,7 @@ beforeEach(async () => {
     // capability is still named rather than defaulted, so a delete added here
     // later fails loudly instead of quietly doing nothing.
     trashItem: () => Promise.reject(new Error("no trash in this suite")),
+    revealItem: () => undefined,
   });
 });
 
@@ -454,6 +455,7 @@ describe("a read that is still working when the project closes underneath it", (
       // filesystem without Electron, so a suite that never deletes still has
       // to name the capability it is not using.
       trashItem: () => Promise.reject(new Error("no trash in this suite")),
+      revealItem: () => undefined,
     });
 
     try {
@@ -506,6 +508,7 @@ describe("a read in flight when a delete begins", () => {
       // filesystem without Electron, so a suite that never deletes still has
       // to name the capability it is not using.
       trashItem: () => Promise.reject(new Error("no trash in this suite")),
+      revealItem: () => undefined,
     });
 
     try {

@@ -125,6 +125,16 @@ let trashDirectory = "";
 let trashed: string[] = [];
 /** Make the next `trashItem` reject, as a platform with no trash does. */
 let trashFails = false;
+/**
+ * Absolute paths the domain asked the DESKTOP to show, in order.
+ *
+ * `shell.showItemInFolder` needs a desktop session this runtime does not have,
+ * so the capability is faked at the same seam production injects it - exactly
+ * as `trashItem` is. What the fake preserves is the only thing worth asserting:
+ * WHICH path left this process, which is the whole security property of the
+ * reveal path.
+ */
+let revealed: string[] = [];
 
 /**
  * The one place this suite waits on the real world.
@@ -179,6 +189,7 @@ beforeEach(async () => {
   trashDirectory = await realpath(await mkdtemp(path.join(tmpdir(), "vex-files-trash-")));
   trashed = [];
   trashFails = false;
+  revealed = [];
   domain = new FilesDomain({
     // The ANCHOR and the directory, as production supplies them: the projects
     // root is the realpath'd parent, and the project directory is the lexical
@@ -208,6 +219,9 @@ beforeEach(async () => {
      * take is recorded so a test can assert what was trashed, and a refusal is
      * a rejection, which is the only shape the real API's failure has.
      */
+    revealItem: (absolutePath) => {
+      revealed.push(absolutePath);
+    },
     trashItem: async (absolutePath) => {
       if (trashFails) throw new Error("EPERM: no trash on this platform");
       trashed.push(absolutePath);
@@ -309,6 +323,7 @@ describe("containment against a real filesystem", () => {
       // filesystem without Electron, so a suite that never deletes still has
       // to name the capability it is not using.
       trashItem: () => Promise.reject(new Error("no trash in this suite")),
+      revealItem: () => undefined,
     });
 
     try {
@@ -355,6 +370,7 @@ describe("containment against a real filesystem", () => {
       // filesystem without Electron, so a suite that never deletes still has
       // to name the capability it is not using.
       trashItem: () => Promise.reject(new Error("no trash in this suite")),
+      revealItem: () => undefined,
     });
     try {
       expect(
@@ -375,6 +391,115 @@ describe("containment against a real filesystem", () => {
     expect(listed.ok).toBe(true);
     if (!listed.ok) return;
     expect(listed.value.children.map((c) => c.name)).toContain("ok.txt");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Reveal in the file manager (audit A14)
+ * ------------------------------------------------------------------ */
+
+describe("revealing a node in the file manager", () => {
+  it("hands the DESKTOP a path THIS process derived, and nothing else", async () => {
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "src", "a.ts"), "const a = 1;\n", "utf8");
+
+    const outcome = await domain.revealInFileManager({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, "src/a.ts"),
+    });
+
+    expect(outcome).toEqual({ ok: true, value: null });
+    // The resolved absolute path, inside the project, exactly once.
+    expect(revealed).toEqual([path.join(root, "src", "a.ts")]);
+  });
+
+  it("reveals a DIRECTORY too, which is what a tree row often is", async () => {
+    await mkdir(path.join(root, "docs"), { recursive: true });
+    const outcome = await domain.revealInFileManager({
+      projectId: PROJECT,
+      nodeId: mintFileNodeId(PROJECT, "docs"),
+    });
+    expect(outcome).toEqual({ ok: true, value: null });
+    expect(revealed).toEqual([path.join(root, "docs")]);
+  });
+
+  it("REFUSES a forged token that traverses out of the project", async () => {
+    const forged = `f1.${Buffer.from(
+      `0 ${PROJECT} ../../etc/passwd`,
+      "utf8",
+    ).toString("base64url")}.AAAAAAAAAAAAAAAAAAAAAA`;
+
+    expect(
+      await domain.revealInFileManager({ projectId: PROJECT, nodeId: forged }),
+    ).toEqual({ ok: false, code: "invalid_node" });
+    // THE EFFECT THAT MUST NOT HAPPEN: nothing was shown to anyone.
+    expect(revealed).toEqual([]);
+  });
+
+  it("REFUSES a path that leaves the project through a symlinked directory", async () => {
+    // The same attack the read path refuses, on the surface whose effect is
+    // OUTSIDE this app: revealing `/etc` in the user's file manager would be
+    // the escape succeeding in the most visible way possible.
+    await symlink("/etc", path.join(root, "escape"), "dir");
+
+    expect(
+      await domain.revealInFileManager({
+        projectId: PROJECT,
+        nodeId: mintFileNodeId(PROJECT, "escape/hosts"),
+      }),
+    ).toEqual({ ok: false, code: "symlinked_path" });
+    expect(revealed).toEqual([]);
+  });
+
+  it("REVEALS a symlink ENTRY, which it refuses to READ", async () => {
+    // The final component is allowed to be a link: revealing selects the link
+    // itself in a parent the walk proved link-free, so nothing outside the
+    // project is displayed. Reading it is still refused, because reading would
+    // follow it.
+    await writeFile(path.join(root, "real.txt"), "hello", "utf8");
+    await symlink(path.join(root, "real.txt"), path.join(root, "link.txt"));
+    const nodeId = mintFileNodeId(PROJECT, "link.txt");
+
+    expect(await domain.revealInFileManager({ projectId: PROJECT, nodeId })).toEqual({
+      ok: true,
+      value: null,
+    });
+    expect(revealed).toEqual([path.join(root, "link.txt")]);
+    expect(await domain.readFile({ projectId: PROJECT, nodeId })).toEqual({
+      ok: false,
+      code: "symlinked_path",
+    });
+  });
+
+  it("REFUSES a node that is no longer on disk", async () => {
+    const nodeId = mintFileNodeId(PROJECT, "gone.txt");
+    expect(await domain.revealInFileManager({ projectId: PROJECT, nodeId })).toEqual({
+      ok: false,
+      code: "not_found",
+    });
+    expect(revealed).toEqual([]);
+  });
+
+  it("REFUSES every reveal for a project with no active row", async () => {
+    expect(
+      await domain.revealInFileManager({
+        projectId: "not-a-project",
+        nodeId: mintFileNodeId("not-a-project", "a.txt"),
+      }),
+    ).toEqual({ ok: false, code: "project_closed" });
+    expect(revealed).toEqual([]);
+  });
+
+  it("REFUSES to open a file manager on a project that closed underneath it", async () => {
+    await writeFile(path.join(root, "a.txt"), "x", "utf8");
+    const nodeId = mintFileNodeId(PROJECT, "a.txt");
+    await domain.closeProject(PROJECT);
+
+    expect(await domain.revealInFileManager({ projectId: PROJECT, nodeId })).toEqual({
+      ok: false,
+      code: "invalid_node",
+    });
+    expect(revealed).toEqual([]);
   });
 });
 
@@ -1554,6 +1679,7 @@ describe("write serialisation and cancellation", () => {
       rootExists: projectRootExists,
       publish: () => undefined,
       trashItem: () => gate.held,
+      revealItem: () => undefined,
       mutationTimeoutMs: 10,
     });
     await writeFile(at("parked.txt"), "x", "utf8");
@@ -1596,6 +1722,7 @@ describe("write serialisation and cancellation", () => {
       rootExists: projectRootExists,
       publish: () => undefined,
       trashItem: () => gate.held,
+      revealItem: () => undefined,
     });
     await writeFile(at("blocking.txt"), "x", "utf8");
 
@@ -1669,6 +1796,7 @@ describe("a mutation of a project that closed underneath it", () => {
         await gate.held;
         await rename(absolutePath, path.join(trashDirectory, path.basename(absolutePath)));
       },
+      revealItem: () => undefined,
     });
     await writeFile(at("inflight.txt"), "x", "utf8");
 

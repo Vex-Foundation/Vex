@@ -971,6 +971,25 @@ export const fileDeleteResultSchema = z
   .strict();
 export type FileDeleteResult = z.infer<typeof fileDeleteResultSchema>;
 
+/**
+ * SHOW THIS NODE IN THE OPERATING SYSTEM'S FILE MANAGER.
+ *
+ * The same addressing every other channel on this surface uses - a project and
+ * an opaque node token, never a path - so main re-derives and re-checks the
+ * real location on this call as it does on a read. The renderer neither sends
+ * nor learns an absolute path; what it asks for is "reveal the thing I am
+ * already looking at".
+ *
+ * READ-ONLY. Nothing on disk changes, no bytes are returned, and the only
+ * effect is a window the user opened by asking for it.
+ */
+export const filesRevealInFileManagerInputSchema = z
+  .object({ projectId: filesProjectIdSchema, nodeId: fileNodeIdSchema })
+  .strict();
+export type FilesRevealInFileManagerInput = z.infer<
+  typeof filesRevealInFileManagerInputSchema
+>;
+
 export const filesCreateResultSchema = filesOutcomeSchema(fileNodeSchema);
 export const filesRenameResultSchema = filesOutcomeSchema(fileNodeSchema);
 export const filesDeleteResultSchema = filesOutcomeSchema(fileDeleteResultSchema);
@@ -978,5 +997,16 @@ export const filesDeleteResultSchema = filesOutcomeSchema(fileDeleteResultSchema
 export const filesListChildrenResultSchema = filesOutcomeSchema(fileListingSchema);
 export const filesReadFileResultSchema = filesOutcomeSchema(fileContentSchema);
 export const filesWatchResultSchema = filesOutcomeSchema(filesSubscriptionSchema);
+/**
+ * What a reveal answers.
+ *
+ * `null` on success, because there is nothing to hand back: the desktop either
+ * has a file manager or it does not, and the platform API reports neither. A
+ * successful outcome therefore means MAIN RESOLVED THE NODE AND ASKED THE
+ * OPERATING SYSTEM - never that a window appeared - and the refusal codes are
+ * the ones the resolution itself can produce.
+ */
+export const filesRevealInFileManagerResultSchema = filesOutcomeSchema(z.null());
+
 export const filesAckResultSchema = filesOutcomeSchema(z.null());
 export type FilesAckResult = FilesOutcome<null>;

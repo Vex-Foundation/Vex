@@ -11,7 +11,7 @@
  * The same shape `terminal-domain.ts` uses, for the same reason.
  */
 
-import { BrowserWindow } from "electron";
+import { BrowserWindow, shell } from "electron";
 
 import { EV } from "@shared/ipc/channels.js";
 import type { FilesEvent } from "@shared/schemas/files.js";
@@ -82,6 +82,15 @@ export function filesDomain(): FilesDomain {
     // Two ways for this app to move a user's files to the trash would be two
     // places to get "did it actually go to the trash" wrong.
     trashItem: trashItemToOsTrash,
+    // THE DESKTOP'S OWN "show me this file". Wired here rather than in
+    // `native-adapters.ts` because that module is deliberately Electron-free -
+    // the real-filesystem suite drives it directly - and this is the one place
+    // in the feature that already imports `electron`. The guard is not here:
+    // the path handed over is the one the domain resolved through the token
+    // chain, and it is the domain that proves it.
+    revealItem: (absolutePath) => {
+      shell.showItemInFolder(absolutePath);
+    },
   });
   return instance;
 }

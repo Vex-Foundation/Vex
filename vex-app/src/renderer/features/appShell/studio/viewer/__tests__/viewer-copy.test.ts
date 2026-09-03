@@ -17,12 +17,16 @@
 
 import { describe, expect, it } from "vitest";
 import { VIEWER_LINE_TIME_BUDGET_MS } from "../file-viewer-session.js";
+import { HOT_LANGUAGES, PLAIN_LANGUAGE } from "../highlight/language-of-path.js";
 import {
   highlightBudgetNote,
+  languageHasNoGrammar,
   longLinesText,
   partlyHighlightedText,
-  plainReasonIsExpected,
   plainReasonText,
+  refusalKindLabel,
+  revealRefusalText,
+  viewerKindLabel,
   type PlainReason,
 } from "../viewer-copy.js";
 
@@ -86,12 +90,22 @@ describe("highlightBudgetNote", () => {
 
 describe("the two registers stay separable", () => {
   /**
-   * Only the language having no grammar is the ORDINARY state of a file. Every
-   * other reason is a bound Vex hit or a failure it had, and the chip exists
-   * for those - if the expected case joined them, the announced row would fire
-   * on every `.txt` and stop meaning anything (audit A11).
+   * AUDIT A11, second pass. The first fix demoted the no-grammar sentence from
+   * an announced chip to quiet copy and the audit measured it AGAIN, because a
+   * grammar sentence on a file that has no grammar is noise in either register.
+   * The predicate now reads the LANGUAGE RESOLUTION: `text` is what
+   * `language-of-path.ts` returns when nothing was ever going to run, and every
+   * hot language is a file the highlighter really does work on - so a plain
+   * state there is a bound Vex hit or a failure it had, and it keeps its chip.
    */
-  it("treats no-grammar as expected and every other reason as not", () => {
+  it("treats a grammarless kind as silent and every hot language as reportable", () => {
+    expect(languageHasNoGrammar(PLAIN_LANGUAGE)).toBe(true);
+    for (const language of HOT_LANGUAGES) {
+      expect(languageHasNoGrammar(language), language).toBe(false);
+    }
+  });
+
+  it("keeps a sentence of its own for every plain reason", () => {
     const reasons: PlainReason[] = [
       "plain_language",
       "too_large_to_highlight",
@@ -102,12 +116,8 @@ describe("the two registers stay separable", () => {
       "malformed_result",
       "too_many_tokens",
     ];
-    expect(reasons.filter((reason) => plainReasonIsExpected(reason))).toEqual([
-      "plain_language",
-    ]);
-    // And every one of them has a sentence of its own: a reason that fell
-    // through to a shared "not highlighted" would be a code the user cannot act
-    // on.
+    // A reason that fell through to a shared "not highlighted" would be a code
+    // the user cannot act on.
     const sentences = reasons.map((reason) => plainReasonText(reason, 1_024, 512 * 1_024));
     expect(new Set(sentences).size).toBe(reasons.length);
     for (const sentence of sentences) expect(sentence.startsWith("Not highlighted: ")).toBe(true);
@@ -122,5 +132,78 @@ describe("the two registers stay separable", () => {
     expect(longLinesText(1, 20_000)).toBe(
       "1 line is over 20,000 characters and not highlighted.",
     );
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The kind label (audit A13)
+ * ------------------------------------------------------------------ */
+
+describe("viewerKindLabel", () => {
+  /**
+   * The measured defect: `assets/image.png` was refused as `invalid_utf8` and
+   * the header still read `Plain text`, because `.png` is an extension no
+   * grammar claims. The header now takes the kind from the refusal, which is
+   * the only one of the two answers that was established by reading bytes.
+   */
+  it.each([
+    ["binary", "Binary"],
+    ["invalid_utf8", "Not UTF-8"],
+    ["too_large", "Too large"],
+    ["symlinked_path", "Symbolic link"],
+    ["not_a_file", "Not a file"],
+    ["not_found", "Missing"],
+  ] as const)("labels a %s refusal as %s, never the path's language", (code, label) => {
+    expect(viewerKindLabel(PLAIN_LANGUAGE, code)).toBe(label);
+    // ...and it OVERRIDES a confident path-derived language too: a `.ts` file
+    // whose bytes are not UTF-8 is not TypeScript on screen, it is bytes.
+    expect(viewerKindLabel("typescript", code)).toBe(label);
+  });
+
+  it("keeps the path-derived language when the refusal names no kind", () => {
+    // These say something about the environment, not about the file: calling a
+    // TypeScript file in a closed project anything but TypeScript would be
+    // inventing a detection nobody made.
+    for (const code of ["project_closed", "root_unavailable", "io_error", "invalid_node", "path_changed"] as const) {
+      expect(refusalKindLabel(code)).toBeNull();
+      expect(viewerKindLabel("typescript", code)).toBe("TypeScript");
+    }
+  });
+
+  it("uses the language when there is no refusal at all", () => {
+    expect(viewerKindLabel("typescript", null)).toBe("TypeScript");
+    expect(viewerKindLabel(PLAIN_LANGUAGE, null)).toBe("Plain text");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Reveal (audit A14)
+ * ------------------------------------------------------------------ */
+
+describe("revealRefusalText", () => {
+  it("says what happened for every refusal the resolution can produce", () => {
+    const codes = [
+      "not_found",
+      "symlinked_path",
+      "outside_project",
+      "project_closed",
+      "invalid_node",
+      "root_unavailable",
+      "io_error",
+    ] as const;
+    const sentences = codes.map((code) => revealRefusalText(code));
+    expect(new Set(sentences).size).toBe(codes.length);
+    // None of them blames Vex for a failure it did not have, and none of them
+    // claims to know what the desktop did.
+    for (const sentence of sentences) {
+      expect(sentence.endsWith(".")).toBe(true);
+      expect(sentence).not.toContain("file manager did not");
+    }
+  });
+
+  it("names the code rather than pretending to know an unreachable one", () => {
+    // `watcher_limit` belongs to the subscription surface and cannot reach a
+    // reveal. An honest fallback beats a reassuring sentence.
+    expect(revealRefusalText("watcher_limit")).toContain("watcher_limit");
   });
 });

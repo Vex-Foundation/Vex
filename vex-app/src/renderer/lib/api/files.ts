@@ -69,6 +69,21 @@ export function unwatchProjectFiles(
 }
 
 /**
+ * Show one node in the operating system's file manager.
+ *
+ * The renderer never learns where the project is on disk: it names the node it
+ * is already displaying and main resolves the rest. A refusal is a statement
+ * about that node - it is gone, its path leaves the project, the project was
+ * closed - and the caller says so rather than retrying.
+ */
+export function revealProjectNodeInFileManager(input: {
+  projectId: string;
+  nodeId: string;
+}): Promise<Result<FilesOutcome<null>>> {
+  return window.vex.files.revealInFileManager(input);
+}
+
+/**
  * Create one entry in a directory. `parentNodeId: null` is the project root.
  *
  * DELIBERATELY NOT A MUTATION HOOK. The explorer session already owns this

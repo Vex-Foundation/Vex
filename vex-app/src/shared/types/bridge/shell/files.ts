@@ -92,6 +92,25 @@ export interface FilesBridge {
   }) => Promise<Result<FilesOutcome<null>>>;
 
   /**
+   * Show this node in the operating system's file manager, selected.
+   *
+   * READ-ONLY: nothing is written, no bytes come back, and the renderer neither
+   * sends nor learns an absolute path - main resolves the token through the
+   * same authority chain a read uses and hands the resolved path to the
+   * desktop. It raises no approval because it discloses a location the user is
+   * already looking at, to the user.
+   *
+   * A successful outcome means MAIN ASKED THE OPERATING SYSTEM. The platform
+   * API answers nothing back, so no stronger claim is available: a desktop with
+   * no file manager produces the same success as one that opened a window.
+   * `not_found` and the other refusals are the resolution's, and they are real.
+   */
+  readonly revealInFileManager: (input: {
+    projectId: string;
+    nodeId: string;
+  }) => Promise<Result<FilesOutcome<null>>>;
+
+  /**
    * Create one entry inside a directory. `parentNodeId: null` is the root.
    *
    * `name` is a SINGLE entry name: a separator in it is refused rather than

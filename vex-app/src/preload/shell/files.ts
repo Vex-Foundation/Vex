@@ -51,6 +51,7 @@ import {
   filesListChildrenInputSchema,
   filesReadFileInputSchema,
   filesRenameInputSchema,
+  filesRevealInFileManagerInputSchema,
   filesUnwatchInputSchema,
   filesWatchInputSchema,
   type FilesEvent,
@@ -135,6 +136,17 @@ export const files = {
 
   unwatchFile(input) {
     return invokeWithSchema(CH.files.unwatchFile, input, filesUnwatchInputSchema);
+  },
+
+  // READ-ONLY, and validated here like every other input: a node token of the
+  // wrong shape is refused in the process that produced it rather than reaching
+  // the privileged one.
+  revealInFileManager(input) {
+    return invokeWithSchema(
+      CH.files.revealInFileManager,
+      input,
+      filesRevealInFileManagerInputSchema,
+    );
   },
 
   // THE WRITES. Validated here with the same schemas main parses them with, so

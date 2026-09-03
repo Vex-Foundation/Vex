@@ -692,6 +692,11 @@ export const CH = {
     create: "vex:files:create",
     rename: "vex:files:rename",
     delete: "vex:files:delete",
+    // READ-ONLY, and the only channel here whose effect is outside this app:
+    // main resolves the node through the same authority chain a read uses and
+    // asks the desktop to show it. It discloses a path the user is already
+    // looking at, to the user, so it raises no approval of its own.
+    revealInFileManager: "vex:files:revealInFileManager",
   },
 
   /**

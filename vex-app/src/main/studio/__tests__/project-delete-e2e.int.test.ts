@@ -2477,6 +2477,10 @@ describe("deleteProject: the file watcher", () => {
       // delete path (`deps.trashItem` above): this suite never deletes a FILE
       // from the tree, and naming the capability keeps that explicit.
       trashItem: () => Promise.reject(new Error("no file trash in this suite")),
+      // Same reasoning as the trash above: this suite reveals nothing, and the
+      // capability is named rather than defaulted so a reveal added here later
+      // fails loudly instead of quietly doing nothing.
+      revealItem: () => undefined,
       publish: (_windowId, event) => {
         events.push(event);
       },
@@ -2617,6 +2621,7 @@ describe("deleteProject: the file watcher", () => {
       pollForRoot: pollForRootReturn,
       rootExists: projectRootExists,
       trashItem: () => Promise.reject(new Error("no file trash in this suite")),
+      revealItem: () => undefined,
       publish: () => undefined,
     });
 

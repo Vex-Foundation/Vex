@@ -149,6 +149,16 @@ export interface ProjectFilesLocation {
   readonly projectDirectory: string;
 }
 
+/**
+ * Show an absolute path in the operating system's file manager, selecting it.
+ *
+ * Synchronous and reportless, which is the platform's own shape
+ * (`shell.showItemInFolder` returns `void` and tells no one whether a file
+ * manager exists). The caller therefore promises only that it asked; see
+ * `revealInFileManager`.
+ */
+export type RevealItem = (absolutePath: string) => void;
+
 export interface FilesDomainDependencies {
   /**
    * Where the project's files are as the DATABASE says, or `null` when the
@@ -168,6 +178,13 @@ export interface FilesDomainDependencies {
    * this module's own real-filesystem suite must run without it.
    */
   readonly trashItem: TrashItem;
+  /**
+   * Show one absolute path in the desktop's file manager. INJECTED for the
+   * same reason `trashItem` is: the production capability is Electron's
+   * `shell.showItemInFolder`, and this module's real-filesystem suite must run
+   * without Electron.
+   */
+  readonly revealItem: RevealItem;
   /** Test seam: how long a mutation waits for this project's write lock. */
   readonly mutationTimeoutMs?: number;
 }
@@ -437,6 +454,54 @@ export class FilesDomain {
       return { ok: false, code: "project_closed" };
     }
     return content;
+  }
+
+  /**
+   * SHOW ONE NODE IN THE DESKTOP'S FILE MANAGER.
+   *
+   * A read-only operation whose effect is outside this application, and the
+   * whole of its safety is that it reaches the operating system with a path
+   * THIS process derived: the renderer sends a project and a node token, and
+   * `locate` re-establishes the same authority chain a read uses - active row,
+   * anchored realpath, token verification, symlink-free walk, containment -
+   * before anything is handed to the desktop. No caller can name a path here,
+   * so no caller can reveal one outside the project.
+   *
+   * NO APPROVAL, stated rather than assumed. It writes nothing, returns no
+   * bytes, and discloses a path the user is already looking at, to the user
+   * whose window asked for it. The actor is the person, not a model: nothing on
+   * the agent surface reaches this channel.
+   *
+   * THE FINAL COMPONENT MAY BE A SYMLINK, unlike a read. A read is refused
+   * because opening a link would serve bytes from wherever it points; revealing
+   * selects the LINK ITSELF in its own parent directory, and every parent above
+   * it was proven link-free by the walk. Nothing outside the project is
+   * displayed by showing an entry that is inside it.
+   *
+   * A SUCCESSFUL OUTCOME MEANS THE ASK WENT OUT. The platform API reports
+   * nothing back - not whether a file manager exists, not whether it opened -
+   * so claiming more would be inventing a fact this process cannot have.
+   */
+  async revealInFileManager(input: {
+    readonly projectId: string;
+    readonly nodeId: string;
+  }): Promise<FilesOutcome<null>> {
+    const leased = acquireProjectLease(input.projectId, "fileOperation");
+    if (!leased.ok) return { ok: false, code: "project_closed" };
+    try {
+      const located = await this.locate(input.projectId, input.nodeId);
+      if (!located.ok) return { ok: false, code: located.code };
+      // THE FENCE, and here it guards a SIDE EFFECT rather than a payload: a
+      // project deleted while this request was walking the filesystem must not
+      // have one of its paths opened in a file manager afterwards.
+      if (!this.stillAuthorised(input.projectId, located.epoch)) {
+        return { ok: false, code: "project_closed" };
+      }
+      this.deps.revealItem(located.absolutePath);
+      return { ok: true, value: null };
+    } finally {
+      leased.lease.release();
+    }
   }
 
   /* ---------------------------------------------------------------- *

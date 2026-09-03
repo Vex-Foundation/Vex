@@ -1,7 +1,7 @@
 /**
  * `vex.files.*` - the Vex Studio project-file surface (stage B3a).
  *
- * Five handlers, all through `registerHandler`, so each one gets sender and
+ * Nine handlers, all through `registerHandler`, so each one gets sender and
  * subframe validation, a strict input schema, output validation and a redacted
  * `Result` for free. What is specific to this surface:
  *
@@ -16,11 +16,11 @@
  *    "That file is binary" and "the project was deleted" are answers the UI
  *    renders as statements about the file or the project, not as errors.
  *    Genuine infrastructure failure still travels as `Result.error`.
- *  - ONE OF THE FIVE IS NOT A RENDERER CAPABILITY. `ackEvent` is the files
+ *  - ONE OF THE NINE IS NOT A RENDERER CAPABILITY. `ackEvent` is the files
  *    surface's flow control and is sent by PRELOAD; `FilesBridge` exposes no
  *    method for it, so renderer code has nothing to call and cannot inflate its
  *    own credit.
- *  - THREE OF THE EIGHT WRITE (stage EXP-1). `create`, `rename` and `delete`
+ *  - THREE OF THE NINE WRITE (stage EXP-1). `create`, `rename` and `delete`
  *    replaced the "read-only, mutating a user's repository is an approval-gated
  *    action that does not yet have an approval" note this block used to carry.
  *    The approval exists now and it is the USER, in their own window: these are
@@ -51,6 +51,8 @@ import {
   filesListChildrenResultSchema,
   filesReadFileInputSchema,
   filesReadFileResultSchema,
+  filesRevealInFileManagerInputSchema,
+  filesRevealInFileManagerResultSchema,
   filesUnwatchInputSchema,
   filesWatchInputSchema,
   filesWatchResultSchema,
@@ -115,6 +117,23 @@ export function registerStudioFilesHandlers(): Array<() => void> {
       outputSchema: filesAckResultSchema,
       handle: async (input, ctx) =>
         ok(await filesDomain().unwatchFile(windowIdOf(ctx), input.subscriptionId)),
+    }),
+
+    // REVEAL. Read-only, and the only handler whose effect leaves this app:
+    // main resolves the node through the domain's own authority chain and asks
+    // the desktop to show the resolved path. It takes no path, writes nothing
+    // and returns no bytes, so it raises no approval - what it discloses is a
+    // location the user is already looking at, to the window that asked.
+    //
+    // NO SIGNAL IS PASSED, deliberately. The work is one resolution followed by
+    // a synchronous platform call with no cancellable window, and handing it a
+    // signal would advertise a cancellation that could never be honoured.
+    registerHandler({
+      channel: CH.files.revealInFileManager,
+      domain: "studio",
+      inputSchema: filesRevealInFileManagerInputSchema,
+      outputSchema: filesRevealInFileManagerResultSchema,
+      handle: async (input) => ok(await filesDomain().revealInFileManager(input)),
     }),
 
     /* ---------------- writes ---------------- */

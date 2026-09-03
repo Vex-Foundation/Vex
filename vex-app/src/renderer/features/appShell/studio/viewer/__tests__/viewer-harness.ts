@@ -221,8 +221,17 @@ export function refused(
   };
 }
 
-/** A read that never got an answer. Distinct from a refusal: retry is real. */
-export function transportFailure(): Result<FilesOutcome<FileContent>> {
+/**
+ * A call that never got an answer. Distinct from a refusal: retry is real.
+ *
+ * GENERIC BECAUSE THE FAILURE BRANCH CARRIES NO PAYLOAD. `Result<T>` mentions
+ * `T` only on its `ok: true` side, so one envelope is the honest answer for
+ * every channel on this surface: the read channel takes the default, and the
+ * reveal channel names `FilesOutcome<null>` at the call site. The alternative
+ * was a cast at the second caller, which would have asserted a shape rather
+ * than stating one.
+ */
+export function transportFailure<T = FilesOutcome<FileContent>>(): Result<T> {
   return {
     ok: false,
     error: {

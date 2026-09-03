@@ -153,6 +153,39 @@ describe("vex.files input validation", () => {
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(invoke.mock.calls[0]?.[0]).toBe(CH.files.listChildren);
   });
+
+  /**
+   * THE REVEAL, which is the one operation on this surface whose effect is
+   * outside the app. Its addressing is the same as every other channel's - a
+   * project and a node token - and that is exactly what has to be enforced
+   * here: a caller that appends a path to the request must be refused in the
+   * process that wrote it, not have the field quietly stripped on the way to a
+   * privileged process that could later start reading it.
+   */
+  it("REFUSES a reveal that carries a path beside the node", async () => {
+    const withPath: { projectId: string; nodeId: string } = JSON.parse(
+      '{"projectId":"project-1","nodeId":"f1.A.B","absolutePath":"/etc/passwd"}',
+    );
+    const result = await files.revealInFileManager(withPath);
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error.code).toBe("validation.invalid_input");
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("REFUSES a reveal with no node, so nothing defaults to the project root", async () => {
+    const noNode: { projectId: string; nodeId: string } = JSON.parse(
+      '{"projectId":"project-1"}',
+    );
+    const result = await files.revealInFileManager(noNode);
+    expect(result.ok).toBe(false);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("sends a well-formed reveal on the reveal channel", async () => {
+    await files.revealInFileManager({ projectId: "project-1", nodeId: "f1.A.B" });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls[0]?.[0]).toBe(CH.files.revealInFileManager);
+  });
 });
 
 describe("vex.files.onFilesEvent", () => {

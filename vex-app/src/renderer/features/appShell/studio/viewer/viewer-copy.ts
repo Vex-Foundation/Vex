@@ -25,7 +25,11 @@
  */
 
 import { FILE_READ_MAX_BYTES, type FilesErrorCode } from "@shared/schemas/files.js";
-import { languageLabel, type ViewerLanguageId } from "./highlight/language-of-path.js";
+import {
+  PLAIN_LANGUAGE,
+  languageLabel,
+  type ViewerLanguageId,
+} from "./highlight/language-of-path.js";
 
 /** Header labels and actions. */
 export const COPY_FILE_LABEL = "Copy file contents";
@@ -98,24 +102,108 @@ export function refusalText(code: FilesErrorCode, size: number | undefined): str
 /**
  * WHAT THE HEADER CALLS THIS FILE.
  *
- * Normally the language the path implies. On a REFUSED read it is the kind MAIN
- * DETECTED, when the refusal names one: a file main declined because its first
- * bytes hold a NUL is a binary, and labelling it `Plain text` - which is what
- * the path-derived language says for an extension no grammar claims - is the
- * header contradicting the body of the same panel (audit A13). Only `binary`
- * carries a detected kind; every other refusal is about the path, the size or
- * the filesystem and says nothing about what the file IS, so those keep the
- * path-derived label.
+ * Normally the language the path implies. ON A REFUSED READ IT IS THE KIND THE
+ * REFUSAL NAMES, because the path-derived language is a claim about content
+ * that was never shown: a `.png` main declined as `invalid_utf8` has no
+ * extension any grammar claims, so the header read `Plain text` directly above
+ * a body saying the bytes are not text at all (audit A13, measured on
+ * `assets/image.png`). One panel, two answers, and the wrong one on top.
+ *
+ * The table covers exactly the refusals that SAY WHAT THE THING IS - what it
+ * contains, how big it is, what kind of entry it is - and each word is the
+ * refusal sentence's own word, so the header and the body agree. Every other
+ * refusal is about the environment (a closed project, an unavailable root, a
+ * filesystem error, an expired token, a file replaced mid-read) and says
+ * nothing about the file, so those keep the path-derived label rather than
+ * inventing a detection nobody made.
  */
-export const BINARY_KIND_LABEL = "Binary";
+const REFUSAL_KIND_LABELS: Partial<Record<FilesErrorCode, string>> = {
+  // Main read the first bytes and found a NUL. This is a detection.
+  binary: "Binary",
+  // Main decoded the bytes and they are not text. Not the same statement as
+  // `binary` and deliberately not spelled as one: no NUL was found, so calling
+  // it binary would report evidence that was never collected.
+  invalid_utf8: "Not UTF-8",
+  // A fact about the size, which is the only thing this read established.
+  too_large: "Too large",
+  symlinked_path: "Symbolic link",
+  not_a_file: "Not a file",
+  not_found: "Missing",
+};
+
+/** The kind word for a refusal, or `null` when the refusal names no kind. */
+export function refusalKindLabel(code: FilesErrorCode): string | null {
+  return REFUSAL_KIND_LABELS[code] ?? null;
+}
 
 export function viewerKindLabel(
   language: ViewerLanguageId,
   refusalCode: FilesErrorCode | null,
 ): string {
-  if (refusalCode === "binary") return BINARY_KIND_LABEL;
+  if (refusalCode !== null) {
+    const kind = refusalKindLabel(refusalCode);
+    if (kind !== null) return kind;
+  }
   return languageLabel(language);
 }
+
+/* ------------------------------------------------------------------ *
+ * Reveal in the file manager
+ * ------------------------------------------------------------------ */
+
+/**
+ * The one action the header's kind menu offers.
+ *
+ * PLATFORM-NEUTRAL WORDING, and a deliberate departure from the reference. VS
+ * Code switches this label per platform - "Reveal in File Explorer", "Reveal in
+ * Finder", "Open Containing Folder"
+ * (`files/electron-browser/fileActions.contribution.ts:28`) - which it can do
+ * because its label is built in the process that knows the platform. This
+ * string is renderer copy in a product whose Studio surface names no platform
+ * anywhere else, and one sentence that is true on all three beats three
+ * sentences kept in step by hand. It is EXPORTED so the explorer's row menu can
+ * import the same string rather than spell a second one; until that row exists,
+ * this is the only place the sentence is written.
+ */
+export const REVEAL_IN_FILE_MANAGER_LABEL = "Reveal in file manager";
+
+/** The accessible name of the header's kind button, which opens that menu. */
+export const KIND_MENU_LABEL = "File actions";
+
+/**
+ * Why a reveal did not happen.
+ *
+ * Only the resolution can refuse: main either resolved the node and asked the
+ * desktop, or it did not get that far. There is deliberately no sentence for
+ * "the file manager did not open" - the platform reports nothing back, and a
+ * message claiming to know would be invented.
+ */
+export function revealRefusalText(code: FilesErrorCode): string {
+  switch (code) {
+    case "not_found":
+      return "This file is no longer on disk, so there is nothing to show.";
+    case "symlinked_path":
+      return "Part of this path is a symbolic link, so Vex will not point the file manager at it.";
+    case "outside_project":
+      return "This path resolves outside the project folder, so Vex will not show it.";
+    case "project_closed":
+      return "This project is closed, so its files cannot be shown.";
+    case "invalid_node":
+      return "This file reference has expired. Open the file again from the explorer.";
+    case "root_unavailable":
+      return "The projects folder is unavailable, so this file cannot be shown.";
+    case "io_error":
+      return "The filesystem refused to resolve this file.";
+    default:
+      // Naming the code beats a sentence that pretends to know which refusal
+      // this was; the remaining members belong to other surfaces.
+      return `Vex could not show this file in the file manager (${code}).`;
+  }
+}
+
+/** A reveal the file service never answered. Distinct from a refusal. */
+export const REVEAL_TRANSPORT_FAILED =
+  "Vex could not reach the file service to show this file.";
 
 /** A read that never got an answer. Distinct from a refusal: retry is real. */
 export const TRANSPORT_FAILED =
@@ -143,18 +231,23 @@ export type PlainReason =
   | "too_many_tokens";
 
 /**
- * Whether this reason is the ORDINARY state of the file rather than a bound
- * Vex hit or a failure it had.
+ * Does this file's kind have a grammar at all?
  *
- * Only `plain_language`, and the difference decides how loudly it is said. A
- * `.txt`, a `.env` or a Makefile has no grammar BY NATURE - there is nothing
- * that could have gone better - so announcing it as a status chip on every
- * plain file trains the user to ignore the row that also carries "the
- * highlighter stopped" (audit A11). The expected case becomes quiet secondary
- * copy under the header; everything else keeps the chip and its announcement.
+ * THE PREDICATE READS THE LANGUAGE RESOLUTION, not the highlighter's report,
+ * because it is answering a question about the FILE: `language-of-path.ts`
+ * resolved a `.txt`, a `.env` or a Makefile to {@link PLAIN_LANGUAGE}, which
+ * means no grammar was ever going to run. Nothing happened, nothing was cut and
+ * nothing is bounded, so there is no state to report - and the header already
+ * says `Plain text`, which is the whole answer.
+ *
+ * Announcing "Not highlighted: no grammar for this file type" on every plain
+ * file is the noise audit A11 measured twice: first as a status chip, then as
+ * quiet copy that still put a grammar sentence on a file with no grammar. The
+ * viewer now says NOTHING there. Every reason that is a bound Vex hit or a
+ * failure it had keeps its chip, which is what the chip is for.
  */
-export function plainReasonIsExpected(reason: PlainReason): boolean {
-  return reason === "plain_language";
+export function languageHasNoGrammar(language: ViewerLanguageId): boolean {
+  return language === PLAIN_LANGUAGE;
 }
 
 export function plainReasonText(reason: PlainReason, size: number, bound: number): string {

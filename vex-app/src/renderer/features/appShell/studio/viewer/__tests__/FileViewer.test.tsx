@@ -16,6 +16,8 @@
  */
 
 import { StrictMode, type JSX } from "react";
+import type { Result } from "@shared/ipc/result.js";
+import type { FilesOutcome } from "@shared/schemas/files.js";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceFileTab } from "../../workspace/types.js";
@@ -42,9 +44,30 @@ let tree: FilesApiFake;
 let highlighter: FakeHighlighterPort;
 let registry: FileViewerRegistry;
 let clipboard: { writeText: ReturnType<typeof vi.fn> };
+/**
+ * The reveal channel, as this suite drives it.
+ *
+ * A fake at the RENDERER's own seam (`lib/api/files.ts`), because what the
+ * component owns is the ask and what it does with the answer; the boundary and
+ * the resolution are proved in `main/ipc/__tests__/studio-files-reveal-ipc.test.ts`
+ * and `main/studio/files/__tests__/files-real-fs.test.ts`.
+ */
+let reveal: RevealFake;
+
+class RevealFake {
+  readonly asks: { projectId: string; nodeId: string }[] = [];
+  answer: Result<FilesOutcome<null>> = { ok: true, data: { ok: true, value: null } };
+
+  call(input: { projectId: string; nodeId: string }): Promise<Result<FilesOutcome<null>>> {
+    this.asks.push(input);
+    return Promise.resolve(this.answer);
+  }
+}
 
 vi.mock("../../../../../lib/api/files.js", () => ({
   readProjectFile: (projectId: string, nodeId: string) => files.readFile(projectId, nodeId),
+  revealProjectNodeInFileManager: (input: { projectId: string; nodeId: string }) =>
+    reveal.call(input),
   listProjectChildren: (input: Parameters<FilesApiFake["listChildren"]>[0]) =>
     tree.listChildren(input),
   watchProjectFiles: (input: Parameters<FilesApiFake["watchFile"]>[0]) => tree.watchFile(input),
@@ -73,6 +96,7 @@ beforeEach(() => {
     createHighlighter: () => highlighter,
     explorers: new ExplorerRegistry(),
   });
+  reveal = new RevealFake();
   clipboard = { writeText: vi.fn(() => Promise.resolve()) };
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
@@ -151,25 +175,45 @@ describe("the header strip", () => {
   });
 
   /**
-   * AUDIT A13. `data/blob.bin` has no extension any grammar claims, so the
-   * path-derived language is `text` and the header used to read `Plain text`
-   * directly above a body saying the file is binary. The header now states the
-   * kind MAIN DETECTED, which is the only one of the two that was measured.
+   * AUDIT A13, measured twice. `data/blob.bin` and `assets/image.png` have no
+   * extension any grammar claims, so the path-derived language is `text` and
+   * the header read `Plain text` directly above a body saying the bytes are not
+   * text at all. The first fix covered only `binary`; the walk that measured it
+   * again hit `invalid_utf8`, which is a different refusal with the same lie on
+   * top. The header now takes its word from the refusal whenever the refusal
+   * establishes what the thing IS.
    */
-  it("labels a refused binary by its detected kind, never Plain text", async () => {
-    files.responder = () => refused("binary");
-    await mount({ tab: { ...TAB, relativePath: "data/blob.bin", title: "blob.bin" } });
-    expect(screen.getByText("Binary")).toBeTruthy();
-    expect(screen.queryByText("Plain text")).toBeNull();
-  });
+  it.each([
+    ["binary", "data/blob.bin", "Binary"],
+    ["invalid_utf8", "assets/image.png", "Not UTF-8"],
+    ["not_a_file", "dev/pipe", "Not a file"],
+  ] as const)(
+    "labels a %s refusal by its detected kind, never Plain text",
+    async (code, relativePath, label) => {
+      files.responder = () => refused(code);
+      await mount({ tab: { ...TAB, relativePath, title: "x" } });
+      expect(screen.getByText(label)).toBeTruthy();
+      expect(screen.queryByText("Plain text")).toBeNull();
+    },
+  );
 
   /**
-   * A refusal that says nothing about WHAT the file is keeps the path-derived
-   * label: `too_large` is a fact about the size, and calling a 3 MiB
-   * TypeScript file anything but TypeScript would be inventing a detection.
+   * A SIZE IS A KIND HERE TOO, and this is the contract change from the first
+   * pass. A 3 MiB file main refused unread is `Too large` in the header: the
+   * viewer never saw a byte of it, so `TypeScript` would be the path's guess
+   * printed above a body that says the file was not read.
    */
-  it("keeps the path-derived language on a refusal with no detected kind", async () => {
+  it("names the size refusal in the kind slot rather than guessing from the path", async () => {
     files.responder = () => refused("too_large", 3_145_728);
+    await mount();
+    expect(screen.getByText("Too large")).toBeTruthy();
+    expect(screen.queryByText("TypeScript")).toBeNull();
+  });
+
+  it("keeps the path-derived language on a refusal about the environment", async () => {
+    // `project_closed` says nothing about the file; the header keeps the only
+    // honest answer it has.
+    files.responder = () => refused("project_closed");
     await mount();
     expect(screen.getByText("TypeScript")).toBeTruthy();
   });
@@ -244,22 +288,26 @@ describe("refusals are answers about the file", () => {
 
 describe("the chip names every bound", () => {
   /**
-   * CONTRACT CHANGE (audit A11): a file whose language has no grammar BY
-   * NATURE is the ordinary state of that file, not a bound Vex hit, so it says
-   * so quietly under the header instead of raising an announced status chip on
-   * every `.txt`, `.env` and Makefile. The sentence is unchanged; the register
-   * is. The chip keeps its meaning for the rows that are real - a dead
-   * highlighter, the size limit, long lines - which is what it was losing.
+   * CONTRACT CHANGE (audit A11, second pass): a file whose language has no
+   * grammar reports NOTHING. The first pass demoted the sentence to quiet copy
+   * and the audit measured it again on `generated/file-005.txt`, because a
+   * grammar sentence on a file with no grammar is noise in either register.
+   * The chip keeps its meaning for the rows that are real - a dead highlighter,
+   * the size limit, long lines - which is what it was losing.
    */
-  it("says why a file with no grammar has no colour, as quiet secondary copy", async () => {
+  it("says NOTHING about grammar on a file whose kind has none", async () => {
     files.responder = () => ok(contentOf("plain words\n"));
     await mount({ tab: { ...TAB, relativePath: "notes.txt" } });
-    expect(screen.getByTestId("file-viewer-secondary-note").textContent).toContain(
-      "no grammar",
-    );
+    // Not a chip, not quiet copy, not a live region: nothing ran, nothing was
+    // bounded, and the header already says `Plain text`.
     expect(screen.queryByTestId("file-viewer-chip")).toBeNull();
-    // Quiet means unannounced: nothing here claims a live region.
+    expect(screen.queryByTestId("file-viewer-secondary-note")).toBeNull();
+    expect(screen.queryByText(/no grammar/)).toBeNull();
     expect(screen.queryByRole("status")).toBeNull();
+    // The content is still there in full. Silence is about the state, never
+    // about the file.
+    // The trailing newline's empty last line included: nothing was trimmed.
+    expect(lineTexts()).toEqual(["plain words", ""]);
   });
 
   it("names the size AND the limit when the file is too large to highlight", async () => {
@@ -504,5 +552,98 @@ describe("mounting", () => {
     });
     expect(registry.consumerCount(TAB.tabId)).toBe(0);
     expect(registry.sessionCount()).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Reveal in the file manager (audit A14)
+ * ------------------------------------------------------------------ */
+
+describe("the kind menu reveals the file", () => {
+  /** Open the header's kind menu and hand back its one row. */
+  async function openMenu(): Promise<HTMLElement> {
+    const trigger = screen.getByTestId("file-viewer-kind");
+    await act(async () => {
+      fireEvent.click(trigger);
+      await Promise.resolve();
+    });
+    return screen.getByText("Reveal in file manager");
+  }
+
+  it("asks main for the TAB'S NODE, and never for a path", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+
+    const row = await openMenu();
+    await act(async () => {
+      fireEvent.click(row);
+      await Promise.resolve();
+    });
+
+    // The node token and the project, which is everything the renderer has.
+    expect(reveal.asks).toEqual([{ projectId: "p1", nodeId: "node-1" }]);
+    // A reveal that worked says nothing: the user watched a window appear.
+    expect(screen.queryByTestId("file-viewer-reveal-note")).toBeNull();
+  });
+
+  /**
+   * THE STATE THE ACTION EXISTS FOR. A file too large to open in the viewer is
+   * exactly the one a person wants to open somewhere else, so the row is there
+   * on a refusal rather than disabled with the body's apology.
+   */
+  it("offers the row on a refused read", async () => {
+    files.responder = () => refused("too_large", 3_145_728);
+    await mount();
+    const row = await openMenu();
+    await act(async () => {
+      fireEvent.click(row);
+      await Promise.resolve();
+    });
+    expect(reveal.asks).toEqual([{ projectId: "p1", nodeId: "node-1" }]);
+  });
+
+  it("says what happened when main refuses, in the file's own terms", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    reveal.answer = { ok: true, data: { ok: false, code: "not_found" } };
+
+    const row = await openMenu();
+    await act(async () => {
+      fireEvent.click(row);
+      await Promise.resolve();
+    });
+
+    const note = screen.getByTestId("file-viewer-reveal-note");
+    expect(note.textContent).toContain("no longer on disk");
+    // ANNOUNCED: the user pressed something and it did not happen.
+    expect(note.getAttribute("role")).toBe("alert");
+  });
+
+  it("distinguishes a service it could not reach from a refusal", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    reveal.answer = transportFailure<FilesOutcome<null>>();
+
+    const row = await openMenu();
+    await act(async () => {
+      fireEvent.click(row);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("file-viewer-reveal-note").textContent).toContain(
+      "could not reach the file service",
+    );
+  });
+
+  it("names the trigger for a screen reader and reports whether it is open", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    const trigger = screen.getByRole("button", { name: "File actions" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => {
+      fireEvent.click(trigger);
+      await Promise.resolve();
+    });
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
   });
 });
