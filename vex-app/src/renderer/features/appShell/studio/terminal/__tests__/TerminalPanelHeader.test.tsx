@@ -72,6 +72,33 @@ describe("what the header shows", () => {
     expect(document.querySelector("[data-vex-terminal-shell]")?.textContent).toBe("bash");
   });
 
+  /**
+   * N4: the same shell, spelled one way.
+   *
+   * The host polls node-pty's `process`, which reports the shell as the path it
+   * was launched from, so the line read `bash` from the create reply and then
+   * `/bin/bash` a fifth of a second later - and `/bin/bash` for every restored
+   * terminal. VS Code titles a terminal with the process name; so does this.
+   */
+  it("shows the PROCESS NAME when the host reports a path", () => {
+    renderHeader({ shellLabel: "/bin/bash" });
+    expect(document.querySelector("[data-vex-terminal-shell]")?.textContent).toBe("bash");
+  });
+
+  it("leaves a foreground process that is already a name alone", () => {
+    // The poll is the FOREGROUND process, so this line says `vim` while vim
+    // runs. Reducing a path must not reduce that to something else.
+    renderHeader({ shellLabel: "vim" });
+    expect(document.querySelector("[data-vex-terminal-shell]")?.textContent).toBe("vim");
+  });
+
+  it("shows a Windows launch path as its executable", () => {
+    renderHeader({ shellLabel: "C:\\Windows\\System32\\cmd.exe" });
+    expect(document.querySelector("[data-vex-terminal-shell]")?.textContent).toBe(
+      "cmd.exe",
+    );
+  });
+
   it("names the unreported shell rather than leaving the line blank", () => {
     renderHeader({ shellLabel: null });
     expect(document.querySelector("[data-vex-terminal-shell]")?.textContent).toBe(
@@ -104,7 +131,7 @@ describe("what the header shows", () => {
 
   it("shows the SELECTED shell on the picker button", () => {
     renderHeader({ shellId: "zsh" });
-    expect(screen.getByRole("button", { name: "Shell for new terminals" }).textContent)
+    expect(screen.getByRole("button", { name: "Shell for the next terminal" }).textContent)
       .toContain("zsh");
   });
 });
@@ -112,22 +139,22 @@ describe("what the header shows", () => {
 describe("the shell picker is operable without a pointer", () => {
   it("opens, and reports its expanded state to assistive technology", () => {
     renderHeader();
-    const button = screen.getByRole("button", { name: "Shell for new terminals" });
+    const button = screen.getByRole("button", { name: "Shell for the next terminal" });
     expect(button.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(button);
     expect(button.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("listbox", { name: "Shell for new terminals" })).toBeTruthy();
+    expect(screen.getByRole("listbox", { name: "Shell for the next terminal" })).toBeTruthy();
   });
 
   it("opens with the CURRENT shell focused, not the first row", () => {
     renderHeader({ shellId: "zsh" });
-    fireEvent.click(screen.getByRole("button", { name: "Shell for new terminals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Shell for the next terminal" }));
     expect(document.activeElement?.getAttribute("aria-label")).toBe("zsh");
   });
 
   it("moves with ArrowDown, ArrowUp, Home and End", () => {
     renderHeader({ shellId: "system_default" });
-    const button = screen.getByRole("button", { name: "Shell for new terminals" });
+    const button = screen.getByRole("button", { name: "Shell for the next terminal" });
     fireEvent.click(button);
     const list = screen.getByRole("listbox");
 
@@ -146,7 +173,7 @@ describe("the shell picker is operable without a pointer", () => {
 
   it("chooses with Enter and reports the ID, never a path or a label", () => {
     const { onSelectShell } = renderHeader({ shellId: "system_default" });
-    fireEvent.click(screen.getByRole("button", { name: "Shell for new terminals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Shell for the next terminal" }));
     const list = screen.getByRole("listbox");
     fireEvent.keyDown(list, { key: "ArrowDown" });
     fireEvent.keyDown(list, { key: "Enter" });
@@ -155,7 +182,7 @@ describe("the shell picker is operable without a pointer", () => {
 
   it("RESTORES focus to the button on Escape, so Tab does not restart at the top", () => {
     renderHeader();
-    const button = screen.getByRole("button", { name: "Shell for new terminals" });
+    const button = screen.getByRole("button", { name: "Shell for the next terminal" });
     fireEvent.click(button);
     fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
     expect(screen.queryByRole("listbox")).toBeNull();
@@ -164,7 +191,7 @@ describe("the shell picker is operable without a pointer", () => {
 
   it("marks the selected row, so a screen reader can say which one is current", () => {
     renderHeader({ shellId: "zsh" });
-    fireEvent.click(screen.getByRole("button", { name: "Shell for new terminals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Shell for the next terminal" }));
     const selected = screen
       .getAllByRole("option")
       .filter((option) => option.getAttribute("aria-selected") === "true");
@@ -175,7 +202,7 @@ describe("the shell picker is operable without a pointer", () => {
 describe("a shell this machine does not have", () => {
   it("is LISTED and reachable by keyboard, so the user learns it exists", () => {
     renderHeader();
-    fireEvent.click(screen.getByRole("button", { name: "Shell for new terminals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Shell for the next terminal" }));
     const fish = screen.getByRole("option", { name: "fish (not installed)" });
     expect(fish.getAttribute("aria-disabled")).toBe("true");
     // `aria-disabled` rather than `disabled`: still in the keyboard order.
@@ -184,7 +211,7 @@ describe("a shell this machine does not have", () => {
 
   it("cannot be chosen, and choosing it does not close the list", () => {
     const { onSelectShell } = renderHeader();
-    fireEvent.click(screen.getByRole("button", { name: "Shell for new terminals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Shell for the next terminal" }));
     fireEvent.click(screen.getByRole("option", { name: "fish (not installed)" }));
     expect(onSelectShell).not.toHaveBeenCalled();
     // Closing would read as "it worked" for an action that did nothing.
@@ -283,7 +310,7 @@ describe("renaming from the header", () => {
 describe("the picker's popup has a surface under it", () => {
   it("uses a surface utility the theme actually defines", () => {
     renderHeader();
-    fireEvent.click(screen.getByRole("button", { name: "Shell for new terminals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Shell for the next terminal" }));
     const list = screen.getByRole("listbox");
     expect(list.className).not.toContain("surface-raised");
     expect(list.className).toContain("bg-surface-2");
@@ -291,7 +318,7 @@ describe("the picker's popup has a surface under it", () => {
 
   it("marks the current row with a glyph, not by fill alone", () => {
     renderHeader({ shellId: "zsh" });
-    fireEvent.click(screen.getByRole("button", { name: "Shell for new terminals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Shell for the next terminal" }));
     const selected = screen.getByRole("option", { name: "zsh" });
     expect(selected.querySelector("svg")).not.toBeNull();
     expect(screen.getByRole("option", { name: "bash" }).querySelector("svg")).toBeNull();

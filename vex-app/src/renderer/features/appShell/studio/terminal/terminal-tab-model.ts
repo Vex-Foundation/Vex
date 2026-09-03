@@ -39,7 +39,11 @@ import type {
   WorkspaceTab,
   WorkspaceTerminalGroup,
 } from "../workspace/types.js";
-import { TERMINAL_TITLE_PATTERN, terminalTabTitle } from "./terminal-copy.js";
+import {
+  TERMINAL_TITLE_PATTERN,
+  shellProcessName,
+  terminalTabTitle,
+} from "./terminal-copy.js";
 
 /** How a terminal ended, as the pane reported it. */
 export interface TerminalExit {
@@ -117,6 +121,16 @@ export function renumberTerminalTabs(state: WorkspaceState): WorkspaceState {
  * The host's own title when it has one, the shell's name when it does not -
  * the same preference `fromSnapshot` used to build the tab's name from, kept
  * here because the fact is still worth showing, just not as the tab's name.
+ * The title WINS where there is one because it is the live foreground process:
+ * a restored terminal sitting in `vim` says `vim`, and the shell it was
+ * launched with would be the wrong answer for it.
+ *
+ * AS A PROCESS NAME. The title arrives as node-pty reports it, which for the
+ * shell itself is the launch path (`/bin/bash`), so it is reduced here for the
+ * same reason and by the same rule the created terminal's label follows - see
+ * `shellProcessName`. Normalised on the way IN rather than at each of the two
+ * places that render it, so the map holds one spelling and a third consumer
+ * cannot reintroduce the path.
  */
 export function shellLabelsOf(
   restore: TerminalWorkspaceRestore,
@@ -124,7 +138,7 @@ export function shellLabelsOf(
   return new Map(
     restore.terminals.map((entry) => [
       entry.terminalId,
-      entry.title === "" ? entry.shellName : entry.title,
+      shellProcessName(entry.title === "" ? entry.shellName : entry.title),
     ]),
   );
 }

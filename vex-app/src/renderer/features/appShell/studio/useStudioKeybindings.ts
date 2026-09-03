@@ -45,6 +45,17 @@
  * the table (the chord is reserved and proved against the menu) and out of the
  * watermark until a panel exists to toggle.
  *
+ * ## WHERE THIS IS MOUNTED decides which half of the toggle can be heard
+ *
+ * `StudioCenter` mounts it, and `AppShell` renders `StudioCenter` only while
+ * `runtimeMode === "studio"`. So the Studio-to-Agent half of
+ * `toggleStudioAgent` is reachable today and the Agent-to-Studio half is not:
+ * the listener is gone by the time the user is in an Agent session. The
+ * handler answers both directions - it reads the mode rather than assuming one,
+ * and its suite drives both - so the return direction needs no further rule,
+ * only a mount in a seat that survives the mode switch. That seat is
+ * `AppShell`'s, not this module's.
+ *
  * ## Bubble phase, and never over a handled event
  *
  * The listener sits on `document` in the BUBBLE phase, so a surface that
@@ -126,14 +137,24 @@ const DEFAULT_HANDLERS: StudioKeybindingHandlers = {
   keepTabOpen: () => onActiveWorkspace((commands) => commands.pinActiveTab()),
   nextTab: () => onActiveWorkspace((commands) => commands.selectTabAtOffset(1)),
   previousTab: () => onActiveWorkspace((commands) => commands.selectTabAtOffset(-1)),
-  agentMode: () => {
-    useUiStore.getState().setRuntimeMode("agent");
-    // AND FOCUS LANDS. The chord removes the whole Studio column, so without
-    // this the user who pressed it arrives in the Agent shell with focus on
-    // `document.body` - measured on the built app. The composer is not mounted
-    // yet at this instant; the seam latches the request and the composer
-    // consumes it when it mounts. See `focusAgentComposer`.
-    focusAgentComposer();
+  toggleStudioAgent: () => {
+    const store = useUiStore.getState();
+    if (store.runtimeMode === "studio") {
+      store.setRuntimeMode("agent");
+      // AND FOCUS LANDS. The chord removes the whole Studio column, so without
+      // this the user who pressed it arrives in the Agent shell with focus on
+      // `document.body` - measured on the built app. The composer is not
+      // mounted yet at this instant; the seam latches the request and the
+      // composer consumes it when it mounts. See `focusAgentComposer`.
+      focusAgentComposer();
+      return true;
+    }
+    // THE RETURN DIRECTION. Nothing is focused for it here: the Studio column
+    // is not mounted yet at this instant, and every Studio surface that lands
+    // focus after a mount does it under `studioFocusPermission` - the workspace
+    // through its armed landing, the welcome through `focusStudioWelcome` -
+    // which is the owner of that question and needs no help from a keystroke.
+    store.setRuntimeMode("studio");
     return true;
   },
   newProject: () => {

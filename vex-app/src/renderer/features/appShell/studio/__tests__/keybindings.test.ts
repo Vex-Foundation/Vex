@@ -20,9 +20,11 @@ import { describe, expect, it } from "vitest";
 import { buildMacMenuTemplate } from "../../../../../main/menu-template.js";
 import {
   STUDIO_KEYBINDINGS,
+  isStudioTerminalChord,
   resolveStudioKeybinding,
   studioChordsFor,
   studioPrimaryChord,
+  studioTerminalSkipChords,
   type StudioChord,
   type StudioIntent,
   type StudioKeyEvent,
@@ -176,6 +178,66 @@ describe("STUDIO_KEYBINDINGS: the table itself", () => {
       }
     }
   });
+});
+
+/**
+ * THE SKIP-SHELL LIST, against the table it is a projection of.
+ *
+ * VS Code proves the same property by listing its command IDs and asserting
+ * membership (`terminalInstance.test.ts:421`, `DEFAULT_COMMANDS_TO_SKIP_SHELL`).
+ * Ours is derived rather than listed, so the assertion is the derivation's own
+ * invariant: exactly the chords a keypress made in a terminal could resolve to,
+ * on every platform, and nothing else.
+ */
+describe("studioTerminalSkipChords: what xterm must not send to the shell", () => {
+  for (const platform of PLATFORMS) {
+    it(`equals the workspace and terminal chords on ${platform}`, () => {
+      const expected = STUDIO_KEYBINDINGS.filter((binding) => {
+        const surfaces = surfacesOf(binding);
+        return surfaces.includes("terminal") || surfaces.includes("workspace");
+      }).flatMap((binding) => studioChordsFor(binding, platform).map(chordKey));
+      expect([...studioTerminalSkipChords(platform)].map(chordKey).sort()).toEqual(
+        [...expected].sort(),
+      );
+    });
+
+    /**
+     * The other half, and the one that matters to a person: every chord the
+     * resolver WOULD answer with the caret in a shell is refused, and a
+     * keystroke the resolver has no row for is left to the shell. `Ctrl+C`,
+     * `Ctrl+D`, `Ctrl+R` and `Ctrl+L` are named explicitly because taking any
+     * of them would break the terminal to gain a shortcut.
+     */
+    it(`refuses exactly what the terminal surface resolves on ${platform}`, () => {
+      for (const binding of STUDIO_KEYBINDINGS) {
+        for (const chord of studioChordsFor(binding, platform)) {
+          const event = press(chord, platform);
+          const resolved = resolveStudioKeybinding(event, {
+            surface: "terminal",
+            dialogOpen: false,
+            platform,
+          });
+          expect(
+            isStudioTerminalChord(event, platform),
+            `${binding.intent} on ${platform}`,
+          ).toBe(resolved !== null);
+        }
+      }
+    });
+
+    it(`leaves the shell's own control keys alone on ${platform}`, () => {
+      for (const code of ["KeyC", "KeyD", "KeyR", "KeyL", "KeyZ", "KeyU"]) {
+        const event: StudioKeyEvent = {
+          code,
+          ctrlKey: true,
+          metaKey: false,
+          shiftKey: false,
+          altKey: false,
+        };
+        expect(isStudioTerminalChord(event, platform), code).toBe(false);
+      }
+    });
+  }
 });
 
 describe("resolveStudioKeybinding: every row, every platform", () => {
@@ -439,7 +501,7 @@ describe("studioKeybindingLabel: the labels a user reads", () => {
     keepTabOpen: { darwin: "⌘Enter", win32: "Ctrl+Enter", linux: "Ctrl+Enter" },
     nextTab: { darwin: "⌃Tab", win32: "Ctrl+Tab", linux: "Ctrl+Tab" },
     previousTab: { darwin: "⌃⇧Tab", win32: "Ctrl+Shift+Tab", linux: "Ctrl+Shift+Tab" },
-    agentMode: { darwin: "⇧⌘A", win32: "Ctrl+Shift+A", linux: "Ctrl+Shift+A" },
+    toggleStudioAgent: { darwin: "⇧⌘A", win32: "Ctrl+Shift+A", linux: "Ctrl+Shift+A" },
     newProject: { darwin: "⇧⌘N", win32: "Ctrl+Shift+N", linux: "Ctrl+Shift+N" },
   };
 
@@ -721,16 +783,16 @@ describe("the shipped menu cannot shadow a Studio shortcut", () => {
 
   /**
    * The near miss that makes the proof worth having: Select All is Cmd+A and
-   * `Back to Agent mode` is Cmd+Shift+A. One Shift apart, and a table that
+   * `Switch Agent and Studio` is Cmd+Shift+A. One Shift apart, and a table that
    * compared keys without modifiers would have called them the same.
    */
-  it("distinguishes Cmd+A (Select All) from Cmd+Shift+A (Back to Agent mode)", () => {
+  it("distinguishes Cmd+A (Select All) from Cmd+Shift+A (the mode toggle)", () => {
     const accelerator = ROLE_ACCELERATORS["selectAll"];
     expect(typeof accelerator).toBe("string");
     const selectAll = parseAccelerator(accelerator ?? "");
     expect(codeOfAcceleratorKey(selectAll.key)).toBe("KeyA");
     expect(selectAll.shift).toBe(false);
-    expect(bindingFor("agentMode").chord).toEqual({
+    expect(bindingFor("toggleStudioAgent").chord).toEqual({
       code: "KeyA",
       ctrlOrCmd: true,
       shift: true,

@@ -641,6 +641,59 @@ describe("focus lands in a workspace that was just opened", () => {
   });
 });
 
+/**
+ * THE CARET FOLLOWS THE TERMINAL A GESTURE OPENED.
+ *
+ * A different landing from the one above, with a different permission, and the
+ * measured defect says why it has to be: the new-terminal chord created
+ * `Terminal 2` and `Terminal 3` on the built app with focus left on
+ * `document.body` each time, so the chord a user pressed twice worked once and
+ * then resolved against no surface at all. The open-time landing could not fix
+ * it - it may only take focus NOBODY holds, and after the first terminal the
+ * caret is in a shell.
+ */
+describe("focus lands in the terminal a gesture opened", () => {
+  it("puts the caret in the terminal the strip's + opened", async () => {
+    await renderOpened();
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute("aria-label")).toBe("Terminal input");
+    });
+    const first = document.activeElement;
+
+    await openTerminals(1);
+
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute("aria-label")).toBe("Terminal input");
+      // The NEW one, not the one the open-time landing had already claimed.
+      expect(document.activeElement).not.toBe(first);
+    });
+    // And it is the pane of the tab that is now selected.
+    const active = document.activeElement?.closest("[data-terminal-id]");
+    expect(active?.getAttribute("data-terminal-id")).toBe("t0");
+  });
+
+  it("does not land on a terminal that left the workspace before it attached", async () => {
+    await renderOpened();
+    const held = document.createElement("input");
+    document.body.appendChild(held);
+
+    // A create whose pane never arrives: the workspace is torn down under it.
+    bridge.nextCreate = { ok: false, code: "host_unavailable" };
+    await act(async () => {
+      screen.getByRole("button", { name: "New terminal" }).click();
+      await Promise.resolve();
+    });
+
+    held.focus();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // A refused create arms nothing, so the caret the user moved stays put.
+    expect(document.activeElement).toBe(held);
+    held.remove();
+  });
+});
+
 describe("StudioWorkspaceController refusals", () => {
   it(`REFUSES past ${String(WORKSPACE_TERMINAL_GROUPS_MAX)} live groups instead of evicting one`, async () => {
     // The project's own auto-opened terminal is the FIRST of the bound, so the

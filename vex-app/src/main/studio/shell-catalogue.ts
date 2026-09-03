@@ -151,10 +151,31 @@ function candidatesFor(
   return platform === "win32" ? definition.win32 : definition.posix;
 }
 
-/** How a shell is named in the picker. */
-function labelFor(id: TerminalShellId, env: NodeJS.ProcessEnv): string {
-  if (id === "system_default") return "Default shell";
-  return shellDefinitions(env)[id].label;
+/**
+ * How a shell is named in the picker.
+ *
+ * `system_default` is named after the shell it RESOLVED TO - `bash (default)`,
+ * `zsh (default)` - because "Default shell" told the user nothing they could
+ * check against the header, which names the running process (N4). Only the
+ * last path segment is used, split on both separators so a Windows `ComSpec`
+ * reads `cmd.exe (default)`; the renderer reduces the reported process the
+ * same way (`terminal-copy.ts`, `shellProcessName`), so the picker and the
+ * header spell one fact one way. The answer NEVER carries the path itself:
+ * main knows where the shell lives, the renderer does not need to. When the
+ * default does not resolve, or a name would break the 64-character label
+ * contract, the row keeps its generic name and `available` says the rest.
+ */
+function labelFor(
+  id: TerminalShellId,
+  env: NodeJS.ProcessEnv,
+  resolved: string | null,
+): string {
+  if (id !== "system_default") return shellDefinitions(env)[id].label;
+  if (resolved === null) return "Default shell";
+  const segments = resolved.split(/[/\\]/);
+  const name = segments[segments.length - 1] ?? "";
+  const label = `${name} (default)`;
+  return name === "" || label.length > 64 ? "Default shell" : label;
 }
 
 /**
@@ -224,7 +245,7 @@ export async function readShellCatalogue(
   const shells: TerminalShellOption[] = [];
   for (const id of terminalShellIdSchema.options) {
     const resolved = await resolveFirst(candidatesFor(id, deps.platform, deps.env), deps);
-    shells.push({ id, label: labelFor(id, deps.env), available: resolved !== null });
+    shells.push({ id, label: labelFor(id, deps.env, resolved), available: resolved !== null });
   }
   return { shells, defaultShellId: "system_default" };
 }

@@ -34,7 +34,11 @@ import {
 import { ExplorerRegistry } from "../explorer/index.js";
 import { TerminalRegistry } from "../terminal/index.js";
 import { EmptyWorkspaceWatermark } from "../terminal/TerminalTabs.js";
-import { studioBoundIntents, studioSurfaceOf } from "../useStudioKeybindings.js";
+import {
+  studioBoundIntents,
+  studioSurfaceOf,
+  useStudioKeybindings,
+} from "../useStudioKeybindings.js";
 import { studioWatermarkRows } from "../keybindings-labels.js";
 import { publishProjectWorkspaceCommands } from "../workspace/workspace-handles.js";
 import { installStudioDomStubs, makeProject } from "./studio-fixtures.js";
@@ -214,7 +218,7 @@ describe("the mounted table dispatches through the owners", () => {
     expect(useUiStore.getState().sidebarOpen).toBe(true);
   });
 
-  it("Ctrl+Shift+A returns to Agent mode AND lands focus in the composer", async () => {
+  it("Ctrl+Shift+A leaves Studio for Agent mode AND lands focus in the composer", async () => {
     renderCenter();
     await screen.findByRole("heading", { name: "Vex Studio" });
 
@@ -231,6 +235,38 @@ describe("the mounted table dispatches through the owners", () => {
     expect(focus).not.toHaveBeenCalled();
     publishComposerFocus(focus);
     expect(focus).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * THE RETURN DIRECTION of the same chord.
+   *
+   * It is one row and one handler that reads the mode, rather than two rows:
+   * the user thinks of it as "the other mode", and a second chord would be a
+   * second thing to learn for one gesture. What this proves is that the
+   * handler does not assume the mode it was written in - the half the product
+   * cannot exercise yet, because the only listener is mounted by
+   * `StudioCenter` and `AppShell` renders that only in Studio (see the hook's
+   * module note). The hook is mounted DIRECTLY here for exactly that reason.
+   */
+  it("Ctrl+Shift+A comes back INTO Studio when the mode is agent", () => {
+    useUiStore.setState({ runtimeMode: "agent" });
+    function OnlyTheTable(): null {
+      useStudioKeybindings(undefined, "linux");
+      return null;
+    }
+    render(<OnlyTheTable />);
+
+    act(() => {
+      expect(press("KeyA", { ctrl: true, shift: true })).toBe(false);
+    });
+    expect(useUiStore.getState().runtimeMode).toBe("studio");
+
+    // And once more, back out: it is a toggle, not a one-way door with two
+    // names.
+    act(() => {
+      press("KeyA", { ctrl: true, shift: true });
+    });
+    expect(useUiStore.getState().runtimeMode).toBe("agent");
   });
 
   it("Ctrl+Shift+N opens the project creator through its intent publisher", async () => {
@@ -557,7 +593,7 @@ describe("the watermark rows come from the table", () => {
       { action: "Keep tab open", keys: "Ctrl+Enter" },
       { action: "Next tab", keys: "Ctrl+Tab" },
       { action: "Previous tab", keys: "Ctrl+Shift+Tab" },
-      { action: "Back to Agent mode", keys: "Ctrl+Shift+A" },
+      { action: "Switch Agent and Studio", keys: "Ctrl+Shift+A" },
       { action: "New project", keys: "Ctrl+Shift+N" },
     ]);
   });

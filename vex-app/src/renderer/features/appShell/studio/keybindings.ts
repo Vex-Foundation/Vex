@@ -90,7 +90,7 @@ export type StudioIntent =
   | "keepTabOpen"
   | "nextTab"
   | "previousTab"
-  | "agentMode"
+  | "toggleStudioAgent"
   | "newProject";
 
 /**
@@ -256,10 +256,23 @@ export const STUDIO_KEYBINDINGS: readonly StudioKeybinding[] = [
     action: "Previous tab",
   },
   {
-    intent: "agentMode",
+    // THE DOOR BOTH WAYS, and it is deliberately ONE chord rather than two.
+    //
+    // It was `Back to Agent mode`, a one-way trip: a user in an Agent session
+    // had no chord into Studio at all (measured in the after-audit, N1). The
+    // second chord that would have fixed it is a second thing to learn for a
+    // gesture the user already thinks of as one - "the other mode" - so this
+    // row keeps its chord and its labels (every UX-5b platform spelling is
+    // unchanged) and gains the return direction. That is VS Code's own grammar
+    // for a pair of surfaces the user moves between: `Ctrl+\`` toggles the
+    // panel, it does not open it and leave you to find the way out.
+    //
+    // The row applies `anywhere` because the surface it returns FROM is not a
+    // Studio surface at all.
+    intent: "toggleStudioAgent",
     chord: { code: "KeyA", ctrlOrCmd: true, shift: true },
     when: "anywhere",
-    action: "Back to Agent mode",
+    action: "Switch Agent and Studio",
   },
   {
     intent: "newProject",
@@ -380,4 +393,75 @@ export function resolveStudioKeybinding(
     }
   }
   return null;
+}
+
+/* ------------------------------------------------------------------ *
+ * The skip-shell list
+ * ------------------------------------------------------------------ */
+
+/**
+ * The surfaces whose chords a terminal must NOT swallow.
+ *
+ * A terminal pane sits inside a workspace, so both answers apply to a keypress
+ * made with the caret in xterm: `terminal` covers Split, and `workspace` covers
+ * the tab chords. `rail`, `viewer` and `none` are surfaces the caret cannot be
+ * on while it is in a shell, so a row bound only to those is left to the shell.
+ */
+const SKIP_SHELL_SURFACES: readonly StudioSurface[] = ["workspace", "terminal"];
+
+/**
+ * THE CHORDS XTERM MUST REFUSE TO SEND TO THE SHELL, derived from the table.
+ *
+ * This is VS Code's `commandsToSkipShell`
+ * (`terminalConfigurationService.ts:57`, consulted by the custom key event
+ * handler in `terminalInstance.ts:1167`) with the one difference our smaller
+ * model allows: VS Code needs a hand-maintained list of command IDs because its
+ * table is open - users and extensions add rules to it - so it cannot derive
+ * "which commands are the workbench's" from the keybindings. Ours is closed and
+ * carries its own `when`, so the list is a PROJECTION of the table and cannot
+ * drift from it. `DEFAULT_COMMANDS_TO_SKIP_SHELL` and its test
+ * (`terminalInstance.test.ts:421`) are the shape this replaces.
+ *
+ * What is NOT here is the point of it: `Ctrl+C`, `Ctrl+D`, `Ctrl+R`, `Ctrl+L`
+ * and every other control character belong to the shell, and a Studio that took
+ * them would have broken the terminal to gain a shortcut.
+ *
+ * MEMOISED per platform, not rebuilt per keystroke: this is consulted on the
+ * input path, once per key the user presses into a shell, and the table is a
+ * module constant so the projection of it is one too.
+ */
+const skipChordsByPlatform = new Map<StudioPlatform, readonly StudioChord[]>();
+
+export function studioTerminalSkipChords(
+  platform: StudioPlatform,
+): readonly StudioChord[] {
+  const cached = skipChordsByPlatform.get(platform);
+  if (cached !== undefined) return cached;
+  const chords: StudioChord[] = [];
+  for (const binding of STUDIO_KEYBINDINGS) {
+    if (!SKIP_SHELL_SURFACES.some((surface) => appliesOn(binding, surface))) continue;
+    chords.push(...studioChordsFor(binding, platform));
+  }
+  const frozen: readonly StudioChord[] = chords;
+  skipChordsByPlatform.set(platform, frozen);
+  return frozen;
+}
+
+/**
+ * Is this keypress one Studio takes from a terminal?
+ *
+ * The predicate `XtermHost` hands to `attachCustomKeyEventHandler`. It answers
+ * from the same chords {@link resolveStudioKeybinding} would resolve on the
+ * `terminal` surface, so a chord cannot be refused by one and ignored by the
+ * other - which is the drift the derivation exists to make impossible.
+ */
+export function isStudioTerminalChord(
+  event: StudioKeyEvent,
+  platform: StudioPlatform,
+): boolean {
+  for (const chord of studioTerminalSkipChords(platform)) {
+    if (chord.code !== event.code) continue;
+    if (modifiersMatch(chord, event, platform)) return true;
+  }
+  return false;
 }

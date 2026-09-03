@@ -319,3 +319,113 @@ describe("XtermHost lifecycle", () => {
     expect(mark?.getAttribute("aria-hidden")).toBe("true");
   });
 });
+
+/**
+ * THE SKIP-SHELL HANDLER, against a real xterm.
+ *
+ * This is the one assertion that could not be made anywhere else. The table's
+ * suite proves which chords Studio owns and the hook's suite proves what it
+ * does with them, and both were green while `Ctrl+W` in a terminal reached the
+ * shell as `0x17` and never reached the document at all: the missing step was
+ * xterm's own key handling, which is why the terminal here is real and only the
+ * bridge is a double.
+ *
+ * The pattern is VS Code's own (`terminalInstance.test.ts:370`, "custom key
+ * event handler should handle commands in DEFAULT_COMMANDS_TO_SKIP_SHELL"),
+ * with one deliberate difference: theirs captures the handler and calls it,
+ * while this dispatches a real `keydown` at xterm's textarea, so what is
+ * asserted is what xterm DID with the key rather than what our callback
+ * returned.
+ */
+describe("XtermHost and the chords Studio owns", () => {
+  /** xterm's own input element, by the class xterm gives it. */
+  function textarea(): HTMLTextAreaElement {
+    const node = document.querySelector<HTMLTextAreaElement>("textarea.xterm-helper-textarea");
+    if (node === null) throw new Error("xterm rendered no textarea");
+    return node;
+  }
+
+  function typeChord(init: KeyboardEventInit): KeyboardEvent {
+    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+    textarea().dispatchEvent(event);
+    return event;
+  }
+
+  function sentToShell(): string {
+    return bridge.writes.map((write) => write.data).join("");
+  }
+
+  it("does not send a Studio chord to the shell, and does not cancel it either", () => {
+    render(<XtermHost terminalId="t1" visible registry={registry} platform="linux" />);
+    sizeThePane();
+
+    // Ctrl+W. The shell's own meaning for it is "erase the last word", which is
+    // exactly what the user got instead of the tab closing.
+    const closeTab = typeChord({ key: "w", code: "KeyW", keyCode: 87, ctrlKey: true });
+    // Ctrl+Tab and Ctrl+Shift+Tab, the two the strip never saw at all.
+    const nextTab = typeChord({ key: "Tab", code: "Tab", keyCode: 9, ctrlKey: true });
+    const previousTab = typeChord({
+      key: "Tab",
+      code: "Tab",
+      keyCode: 9,
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    // The new-terminal chord.
+    const newTerminal = typeChord({
+      key: "`",
+      code: "Backquote",
+      keyCode: 192,
+      ctrlKey: true,
+      shiftKey: true,
+    });
+
+    // NOTHING REACHED THE PTY.
+    expect(sentToShell()).toBe("");
+    // AND NOTHING WAS CANCELLED. The hook that owns the table is a bubble-phase
+    // listener on `document` and returns early on a defaultPrevented event, so
+    // a refusal that also cancelled would swallow the chord it just protected.
+    for (const event of [closeTab, nextTab, previousTab, newTerminal]) {
+      expect(event.defaultPrevented, event.code).toBe(false);
+    }
+  });
+
+  it("still sends the shell its own control keys", () => {
+    render(<XtermHost terminalId="t1" visible registry={registry} platform="linux" />);
+    sizeThePane();
+
+    // Ctrl+C, and it must arrive as the interrupt byte. A terminal that could
+    // not interrupt a runaway command would be a broken terminal, whatever the
+    // shortcut table gained.
+    typeChord({ key: "c", code: "KeyC", keyCode: 67, ctrlKey: true });
+
+    expect(sentToShell()).toBe("\u0003");
+  });
+
+  it("withdraws the refusal when the pane unmounts", () => {
+    const view = render(
+      <XtermHost terminalId="t1" visible registry={registry} platform="linux" />,
+    );
+    sizeThePane();
+    const entry = registry.acquire("t1");
+    registry.release("t1");
+    view.unmount();
+
+    // The terminal outlives the component (the registry owns it), so a policy
+    // left attached would be applied by a host that is no longer driving it.
+    // XTERM'S OWN ANSWER IS THE EVIDENCE: it cancels a key it handles, and the
+    // three tests above turn on a refused chord NOT being cancelled. The pty
+    // is not the evidence here - the input subscription went with the unmount,
+    // so nothing would be written whatever xterm decided.
+    const event = new KeyboardEvent("keydown", {
+      key: "w",
+      code: "KeyW",
+      keyCode: 87,
+      ctrlKey: true,
+      cancelable: true,
+    });
+    expect(entry.terminal.textarea).not.toBeNull();
+    entry.terminal.textarea?.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+  });
+});

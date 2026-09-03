@@ -26,8 +26,23 @@ import type { WorkspaceRefusalReason } from "../workspace/types.js";
  * The panel header
  * ------------------------------------------------------------------ */
 
-/** The shell picker's accessible name, on the button and on the listbox. */
-export const SHELL_PICKER_LABEL = "Shell for new terminals";
+/**
+ * The shell picker's accessible name, on the button and on the listbox.
+ *
+ * "THE NEXT TERMINAL", never "new terminals", and the difference is not style.
+ * An accessible name is matched by SUBSTRING by every tool that looks a control
+ * up by name - the UX walk's own `getByRole("button", { name: "New terminal" })`
+ * included - so "Shell for new terminals" made this picker a second answer to
+ * "New terminal" beside the strip's `+`. The walk measured two controls of that
+ * name in the centre with one project open, in both themes on both runs (N2),
+ * while the source had exactly one `aria-label="New terminal"`: the duplicate
+ * was this name overlapping that one, not a second button.
+ *
+ * Rule 08's floor is that two controls a user must tell apart cannot share a
+ * name; a name that CONTAINS another control's whole name fails it the same
+ * way, because neither the user nor the tool can say which was meant.
+ */
+export const SHELL_PICKER_LABEL = "Shell for the next terminal";
 
 /* ------------------------------------------------------------------ *
  * Tab identity and state
@@ -79,7 +94,11 @@ export function terminalTabTooltip(
   state: keyof typeof TERMINAL_STATE_COPY,
 ): string {
   const parts = [title];
-  if (shellLabel !== null && shellLabel !== "") parts.push(shellLabel);
+  // The same process NAME the header's second line shows, and for the same
+  // reason: the tooltip and the header describe one fact, so a tab reading
+  // `Terminal 1 - /bin/bash - Running` over a header reading `bash` would be
+  // two spellings of it. See `shellProcessName`.
+  if (shellLabel !== null && shellLabel !== "") parts.push(shellProcessName(shellLabel));
   parts.push(TERMINAL_STATE_COPY[state]);
   return parts.join(" - ");
 }
@@ -178,9 +197,42 @@ export function killTerminalLabel(title: string): string {
   return `Kill the shell in ${title}`;
 }
 
+/**
+ * WHAT IS RUNNING, as a process NAME rather than as a path.
+ *
+ * The pty host reports this by polling node-pty's `process`
+ * (`pty-host/terminal-process.ts:780`), which is the FOREGROUND process - `vim`
+ * while vim runs, the shell otherwise - and which reports the shell as the
+ * launch path it was started from. So the header's second line read `/bin/bash`
+ * for every restored terminal and for a created one as soon as the first poll
+ * landed (N4), while the create reply's own `shellName` is already a basename
+ * and read `bash`. One fact, two spellings, decided by which message arrived
+ * last.
+ *
+ * This is the one place that decides, and it decides for the NAME: VS Code
+ * titles a terminal with the process name and not with its path, and a header
+ * that changes from `bash` to `/bin/bash` a fifth of a second after the
+ * terminal opens is telling the user something changed when nothing did.
+ *
+ * A LAST SEGMENT, split on both separators, because the value can be a Windows
+ * path: on Windows the poll runs exactly once (node-pty does not update
+ * `process` there, so the host polls and stops) and what it reports is the
+ * ConPTY launch path. A value with no separator - `vim`, `bash` - is returned
+ * unchanged, and a value that is nothing but separators keeps its original
+ * text rather than becoming empty, because an unreadable name still says more
+ * than none.
+ */
+export function shellProcessName(reported: string): string {
+  const segments = reported.split(/[/\\]/);
+  const last = segments[segments.length - 1] ?? "";
+  return last === "" ? reported : last;
+}
+
 /** The header's second line: what is running, and where it is. */
 export function terminalShellLabel(shellLabel: string | null): string {
-  return shellLabel === null || shellLabel === "" ? "Shell not reported yet" : shellLabel;
+  return shellLabel === null || shellLabel === ""
+    ? "Shell not reported yet"
+    : shellProcessName(shellLabel);
 }
 
 /* ------------------------------------------------------------------ *

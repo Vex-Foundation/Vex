@@ -61,6 +61,34 @@ describe("readShellCatalogue", () => {
       .toBe(true);
   });
 
+  it("names system_default after the shell it resolves to, never after its path", async () => {
+    // N4's picker half: the header names the running process (`bash`), so a
+    // picker row reading "Default shell" made the user work out that the two
+    // are the same thing. The row now says which shell the default IS, and
+    // still says nothing about where it lives.
+    const zsh = await readShellCatalogue(deps(["/bin/zsh"]));
+    expect(zsh.shells.find((shell) => shell.id === "system_default")?.label).toBe("zsh (default)");
+
+    const windows = await readShellCatalogue(
+      deps(["C:\\Windows\\System32\\cmd.exe"], {
+        platform: "win32",
+        env: { ComSpec: "C:\\Windows\\System32\\cmd.exe" },
+      }),
+    );
+    expect(windows.shells.find((shell) => shell.id === "system_default")?.label)
+      .toBe("cmd.exe (default)");
+  });
+
+  it("keeps the generic name when the default does not resolve", async () => {
+    // $SHELL points at something this machine does not have: the row is still
+    // there (the picker never hides a member), `available` is false, and the
+    // label does not name a shell that is not installed.
+    const catalogue = await readShellCatalogue(deps(["/bin/bash", "/bin/sh"]));
+    const row = catalogue.shells.find((shell) => shell.id === "system_default");
+    expect(row?.available).toBe(false);
+    expect(row?.label).toBe("Default shell");
+  });
+
   it("names system_default as the default, so the default has ONE owner", async () => {
     const catalogue = await readShellCatalogue(deps(["/bin/bash", "/bin/sh"]));
     expect(catalogue.defaultShellId).toBe("system_default");

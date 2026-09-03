@@ -132,6 +132,7 @@ import {
   MUTATION_REFUSAL_COPY,
   REFUSAL_COPY,
   RESTORE_FAILED_COPY,
+  shellProcessName,
 } from "./terminal-copy.js";
 
 /**
@@ -273,6 +274,22 @@ export function StudioWorkspaceController({
    */
   const [shells, setShells] = useState<readonly TerminalShellOption[]>([]);
   const [shellId, setShellId] = useState<TerminalShellId>("system_default");
+  /**
+   * THE TERMINAL A GESTURE ASKED TO LAND IN, or `null`.
+   *
+   * Distinct from the open-time landing below it, and the difference is the
+   * permission. The open landing may only take focus that NOBODY holds
+   * (`studioFocusPermission`), because it fires on a restore the user did not
+   * ask for at that instant. This one is the answer to an explicit request -
+   * the `+` button, the new-terminal chord - so it moves the caret even when
+   * the caret is somewhere else in this workspace, which is what "open me a
+   * shell" means and what VS Code's own create does.
+   *
+   * A REF AND NOT STATE: nothing renders from it, and a state write here would
+   * commit a render whose only purpose was to run an effect.
+   */
+  const landingTerminalRef = useRef<string | null>(null);
+
   // The registry a closed tab's terminals are DISPOSED through. The prop exists
   // so a test can supply its own; the shared one is the window's.
   const activeRegistry = registry ?? terminalRegistry;
@@ -1261,6 +1278,16 @@ export function StudioWorkspaceController({
   const openTerminal = useCallback(
     async (
       into: { readonly kind: "tab" } | { readonly kind: "pane"; readonly tabId: string },
+      /**
+       * Whether the caret lands in the shell this call opens.
+       *
+       * A GESTURE'S PROPERTY, not a mode's: the `+` button and the new-terminal
+       * chord are a user asking for a shell to type in, while the bootstrap
+       * create on restore is the workspace producing one for the open-focus
+       * landing to find. The bootstrap therefore passes nothing and the armed
+       * landing decides, under its "only when nobody holds focus" permission.
+       */
+      landFocus = false,
     ): Promise<void> => {
       const generation = generationRef.current;
 
@@ -1362,6 +1389,13 @@ export function StudioWorkspaceController({
       // no longer the tab's NAME: a strip of three tabs all called `bash` told
       // the user nothing about which terminal they were switching to.
       setShellLabelById((current) => new Map(current).set(terminalId, shellName));
+      // ARMED FOR THE PANE THAT DOES NOT EXIST YET. The tab is added by the
+      // `apply` below and its `XtermHost` acquires the instance and parents
+      // xterm's textarea on a LATER commit, so there is nothing to focus on
+      // this turn; the landing effect asks again after each commit until there
+      // is. Set after the staleness fence, so a create that is about to kill
+      // its own pty never arms a landing on it.
+      if (landFocus) landingTerminalRef.current = terminalId;
       const paneId = newId("pane");
       if (into.kind === "tab") {
         apply((current) =>
@@ -1395,7 +1429,12 @@ export function StudioWorkspaceController({
   );
 
   const handleNewTerminal = useCallback((): void => {
-    void openTerminal({ kind: "tab" });
+    // THE USER ASKED FOR A SHELL, so the caret ends up in it. Both routes to
+    // this handler - the strip's `+` and the new-terminal chord - are that
+    // request, and before this the chord created `Terminal 2` and `Terminal 3`
+    // with focus left on `document.body` each time (measured on the built app),
+    // so the next chord resolved against no surface at all.
+    void openTerminal({ kind: "tab" }, true);
   }, [openTerminal]);
 
   /**
@@ -1819,6 +1858,41 @@ export function StudioWorkspaceController({
   });
 
   /**
+   * FOCUS LANDS IN THE TERMINAL THE USER JUST ASKED FOR.
+   *
+   * `openTerminal` arms this with the id it published; the pane's `XtermHost`
+   * acquires the instance and parents xterm's textarea on a later commit, so
+   * this effect - which has no dependency array, exactly like the two above it
+   * - asks `focusActiveTerminal` after each commit until the textarea is
+   * there. That is the same "stay armed until it is attached" shape the open
+   * landing uses, and it goes through the same seam rather than a bare
+   * `focus()`: the element to focus is xterm's own textarea by its own
+   * accessible name, which this component has no business selecting for itself.
+   *
+   * IT DISARMS ON THE TERMINAL LEAVING THE WORKSPACE, not only on success. A
+   * shell closed or lost between the create and the attach would otherwise
+   * leave the request standing, and the next commit that happened to mount an
+   * unrelated pane with that id - a revive hands ids back - would move the
+   * caret for a gesture the user made minutes ago.
+   */
+  useEffect(() => {
+    const terminalId = landingTerminalRef.current;
+    if (terminalId === null) return;
+    const card = cardRef.current;
+    if (card === null) return;
+    const stillOpen = stateRef.current.tabs.some(
+      (tab) =>
+        tab.kind === "terminalGroup"
+        && tab.panes.some((pane) => pane.terminalId === terminalId),
+    );
+    if (!stillOpen) {
+      landingTerminalRef.current = null;
+      return;
+    }
+    if (focusActiveTerminal(card, terminalId)) landingTerminalRef.current = null;
+  });
+
+  /**
    * FOCUS LANDS IN A WORKSPACE THAT WAS JUST OPENED.
    *
    * The measured defect: `Enter` on the welcome's "Open <project>" opened the
@@ -1941,10 +2015,17 @@ export function StudioWorkspaceController({
         // running, which is a fact about the terminal rather than a name for
         // it, so it feeds the tooltip and the panel header's second line and
         // leaves `Terminal n` (or the user's own name) alone.
+        // AS A PROCESS NAME, normalised here rather than at each place that
+        // renders it: the poll reports the shell as the path it was launched
+        // from (`/bin/bash`), and the restore path already stores the reduced
+        // spelling (`shellLabelsOf`), so writing the raw value here would put
+        // two spellings of one fact in the same map and make the equality
+        // check below miss a no-op update. See `shellProcessName`.
         onShellTitle={(terminalId, title) => {
+          const name = shellProcessName(title);
           setShellLabelById((current) => {
-            if (current.get(terminalId) === title) return current;
-            return new Map(current).set(terminalId, title);
+            if (current.get(terminalId) === name) return current;
+            return new Map(current).set(terminalId, name);
           });
         }}
         shellId={shellId}
