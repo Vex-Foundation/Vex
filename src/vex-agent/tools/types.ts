@@ -1,5 +1,5 @@
 /**
- * Tool system types — shared between internal tools and protocol tools.
+ * Tool system types - shared between internal tools and protocol tools.
  *
  * This module defines what a tool looks like to the LLM (ToolDef),
  * what a tool call looks like from the engine (ToolCallRequest),
@@ -16,11 +16,11 @@ import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupi
 /**
  * Session-aware visibility rules for a tool. Orthogonal to `requiresEnv`
  * and `proactive` (those stay as-is). When omitted, the tool
- * is visible under the existing filter chain only — no session-context gating.
+ * is visible under the existing filter chain only - no session-context gating.
  *
  * Evaluated inside `getOpenAITools` against a `ToolVisibilityContext`. Handler
  * code SHOULD still defense-in-depth its own preconditions in `InternalToolContext`
- * (PR-3 extended that too with `sessionKind` + `contextUsageBand`) — the
+ * (PR-3 extended that too with `sessionKind` + `contextUsageBand`) - the
  * visibility filter only controls what the LLM sees, not what it can be made
  * to attempt.
  */
@@ -46,9 +46,9 @@ export interface ToolVisibility {
    * only tool wearing this gate is `LoopDefer`, and the incident was exactly
    * its absence: a Full-Autonomous agent session waiting for a bridge to fill
    * had no way to sleep, so it burned iterations re-reading state that could
-   * not have changed yet. The substrate always supported the shape — the wake
+   * not have changed yet. The substrate always supported the shape - the wake
    * row's `mission_run_id` is nullable and the executor has an agent-session
-   * branch — only the agent-facing tool was withheld.
+   * branch - only the agent-facing tool was withheld.
    *
    * RESTRICTED agent sessions stay excluded on purpose: a human is in the loop
    * there, so parking removes the user's turn and buys no autonomy.
@@ -67,7 +67,7 @@ export interface ToolVisibility {
    * (`ToolVisibilityContext.hasSessionMemory === true`). Used by
    * `SessionMemorySearch` / `SessionMemoryResolve` so they never appear in a
    * fresh session with nothing to recall (chunks are produced by Track-2
-   * compaction). The handler still short-circuits as defense-in-depth — this
+   * compaction). The handler still short-circuits as defense-in-depth - this
    * gate only controls what the LLM sees, not what it can be made to attempt.
    */
   requiresSessionMemory?: boolean;
@@ -78,7 +78,7 @@ export interface ToolVisibility {
    * Combined with `hiddenInMissionSetup` it yields: visible in agent sessions
    * and active mission runs (plan-mode on), hidden during mission setup and
    * whenever plan-mode is off. The handler also re-checks DB state as
-   * defense-in-depth — this gate only controls what the LLM sees.
+   * defense-in-depth - this gate only controls what the LLM sees.
    */
   requiresPlanMode?: boolean;
   /**
@@ -96,7 +96,7 @@ export interface ToolVisibility {
 }
 
 /**
- * Pressure-safety classification — orthogonal to `mutating`.
+ * Pressure-safety classification - orthogonal to `mutating`.
  *
  * `mutating` is permission-gated (restricted vs full session permission)
  * and tells the approval queue whether the call needs explicit user
@@ -112,8 +112,38 @@ export type PressureSafety =
   | "read_only"
   | "mutating";
 
+/**
+ * What VEX'S OWN FEE does on one tool, as a machine-readable fact.
+ *
+ * It exists because the fee lived exclusively in prose: `vex_ToolDescribe`
+ * could answer a question about the user's money only with `known: false`, and
+ * an agent whose client had cut the description's tail had nowhere left to read
+ * it. A rate is NEVER written as a literal on a tool - it is imported from the
+ * constant the executor charges from (`./vex-fee-notes.ts`), and
+ * `__tests__/vex-agent/tools/tool-contract-fields.test.ts` cross-checks every
+ * authored entry against those constants, so the stated fee and the charged fee
+ * cannot drift.
+ *
+ * Two arms, because "no fee" is a claim that needs its own reason. An ABSENT
+ * field is a third state meaning "not authored", which `vex_ToolDescribe`
+ * reports as absent rather than as free - silence must never read as zero on a
+ * money path.
+ */
+export type ToolVexFee =
+  | {
+    /** Whole basis points of the INPUT asset, from the venue's own constant. */
+    readonly bps: number;
+    /** WHEN it is charged, on what base, and how it is collected. */
+    readonly when: string;
+  }
+  | {
+    readonly none: true;
+    /** WHY nothing is charged. Read by an agent asked what an action cost. */
+    readonly reason: string;
+  };
+
 export interface ToolDef {
-  /** Unique tool name — used by LLM in tool_calls */
+  /** Unique tool name - used by LLM in tool_calls */
   name: string;
   /** Human-readable description for LLM context */
   description: string;
@@ -124,13 +154,13 @@ export interface ToolDef {
   /** Whether this tool modifies state (trades, transfers, posts). Permission-gated. */
   mutating: boolean;
   /**
-   * Pressure-safety classification. REQUIRED — every tool MUST be deliberately
+   * Pressure-safety classification. REQUIRED - every tool MUST be deliberately
    * classified so the dispatcher knows whether to block at barrier/critical.
    */
   pressureSafety: PressureSafety;
   /**
-   * Action taxonomy — explicit side-effect classification (see `./taxonomy.ts`).
-   * REQUIRED — every tool MUST be deliberately classified so puzzle 5 phase 2+
+   * Action taxonomy - explicit side-effect classification (see `./taxonomy.ts`).
+   * REQUIRED - every tool MUST be deliberately classified so puzzle 5 phase 2+
    * (approval intents, wallet intents, audit) can make policy decisions
    * without re-deriving from the loose `mutating` boolean. Mirrors the
    * `pressureSafety` invariant: the compiler enforces classification at
@@ -149,10 +179,34 @@ export interface ToolDef {
    * See `ToolVisibility` for the individual gates.
    */
   visibility?: ToolVisibility;
+  /**
+   * THE RESULT SHAPE, in the tool's own words, as a field rather than a
+   * sentence buried in {@link ToolDef.description}.
+   *
+   * Nine always-loaded descriptions had to give up their field-by-field RETURNS
+   * list to fit the 2048 characters a client shows
+   * (`mcp/inventory/types.ts`), and they end "Full contract:
+   * vex_ToolDescribe." This field is WHERE THAT TEXT WENT: the pointer is only
+   * honest if the reader it names can serve the text, and a tool RESULT is the
+   * one surface no client truncates.
+   *
+   * For a tool whose description still carries its RETURNS sentence inline the
+   * value is that SAME sentence, and
+   * `__tests__/vex-agent/tools/tool-contract-fields.test.ts` asserts the
+   * description contains it verbatim, so the two cannot drift apart. For a
+   * moved one the same suite asserts the text equals what the description used
+   * to say, byte for byte.
+   *
+   * Absent means "not authored", which `vex_ToolDescribe` reports as absent.
+   * It never means "returns nothing".
+   */
+  returns?: string;
+  /** Vex's own fee on this tool. See {@link ToolVexFee}. */
+  vexFee?: ToolVexFee;
 }
 
 /**
- * Property value within a JsonSchema. Recursive — supports nested objects
+ * Property value within a JsonSchema. Recursive - supports nested objects
  * (`properties`/`required`/`additionalProperties`) and arrays (`items`).
  *
  * Phase 0 widened this from the original 3-field shape (`{type, description?, enum?}`)
@@ -191,7 +245,7 @@ interface JsonSchemaPropertyShape {
   minLength?: number;
 }
 
-/** The ordinary single-`type` property — what almost every param compiles to. */
+/** The ordinary single-`type` property - what almost every param compiles to. */
 export interface JsonSchemaTypedProperty extends JsonSchemaPropertyShape {
   type: string;
   anyOf?: never;
@@ -203,7 +257,7 @@ export interface JsonSchemaTypedProperty extends JsonSchemaPropertyShape {
  *
  * `type` is ABSENT here by construction. JSON Schema conjoins sibling keywords,
  * so emitting `type: "string"` beside an `anyOf` carrying an array branch makes
- * the array branch unsatisfiable — the model would be shown a union it can never
+ * the array branch unsatisfiable - the model would be shown a union it can never
  * validly fill. The two variants are split so that mistake cannot be typed.
  */
 export interface JsonSchemaUnionProperty extends JsonSchemaPropertyShape {
@@ -224,11 +278,11 @@ export interface JsonSchema {
 // ── Tool call (from engine to dispatcher) ────────────────────────
 
 export interface ToolCallRequest {
-  /** Tool name — matches ToolDef.name */
+  /** Tool name - matches ToolDef.name */
   name: string;
   /** Parsed arguments from LLM */
   args: Record<string, unknown>;
-  /** Tool call ID from provider — must be preserved for round-trip */
+  /** Tool call ID from provider - must be preserved for round-trip */
   toolCallId: string;
 }
 
@@ -249,7 +303,7 @@ export interface ToolResult {
   success: boolean;
   /** Output text to show to LLM */
   output: string;
-  /** Structured data (optional — for trade capture, UI enrichment) */
+  /** Structured data (optional - for trade capture, UI enrichment) */
   data?: Record<string, unknown>;
   /** If true, tool queued for approval instead of executing */
   pendingApproval?: boolean;
@@ -276,7 +330,7 @@ export interface ToolResult {
   failure?: ToolFailure;
   /**
    * Set by a handler that PARKED the turn on a human form instead of producing
-   * an answer (§C3b — `trench.launch_request_form`). Sibling of
+   * an answer (§C3b - `trench.launch_request_form`). Sibling of
    * `pendingApproval` and handled the same way by the tool batch: the call is
    * recorded WITHOUT a result, the rest of the batch is not dispatched, and the
    * ONE result is appended later by the resume that observes the human's answer.
@@ -351,7 +405,7 @@ export interface ToolResult {
       readonly safetyDetail: Record<string, unknown>;
     };
   };
-  /** Engine signal — structured command from tool to engine (e.g. stop_mission) */
+  /** Engine signal - structured command from tool to engine (e.g. stop_mission) */
   engineSignal?: EngineSignal;
   /**
    * Wall-clock milliseconds the dispatch took, stamped by `dispatchTool` on
@@ -364,13 +418,13 @@ export interface ToolResult {
    * approvals, calls that were never dispatched). A `0` would be rendered by
    * the app as "took 0 ms", which would be a lie.
    *
-   * An approval-resumed dispatch measures the POST-approval run only — the
+   * An approval-resumed dispatch measures the POST-approval run only - the
    * clock lives inside `dispatchTool`, so the time an intent spent waiting on
    * the user is deliberately not counted.
    */
   durationMs?: number;
   /**
-   * Action taxonomy stamp — what kind of action this dispatch actually performed
+   * Action taxonomy stamp - what kind of action this dispatch actually performed
    * (see `./taxonomy.ts`). Stamped by:
    *  - `dispatchTool` as a fallback from `getActionKind(toolName)` for internal
    *    tools when the handler did not set it,
@@ -389,7 +443,7 @@ export interface ToolResult {
   /**
    * Stage-7 prequote-gate binding. Set ONLY by `executeProtocolTool` when the
    * execute-time prequote gate ALLOWS a swap execute and the call still needs
-   * restricted-mode approval — it carries the matched prequote's safety
+   * restricted-mode approval - it carries the matched prequote's safety
    * `verdict` (`pass` or `unknown`; a `fail` blocks at the gate and never
    * reaches here) onto the `pendingApproval` result. The turn-loop passes this
    * TYPED field into `buildIntentPreview` so the human sees the safety verdict
@@ -402,24 +456,24 @@ export interface ToolResult {
    * (percent) across the matched prequote's EVM legs when any leg is a
    * fee-on-transfer token. Because FoT is no longer a verdict `fail` (only a
    * CONFIRMED honeypot blocks), a restricted human would otherwise see "safety:
-   * pass" and miss a high tax — so the gate threads this through the same TYPED
+   * pass" and miss a high tax - so the gate threads this through the same TYPED
    * channel (never raw args) for the preview to disclose. Bounded number,
    * EVM-only, omitted when there is no fee-on-transfer leg.
    */
   prequote?: {
     /**
-     * REQUIRED (reverted in card B3 — Codex batch-5 blocker on B1's
+     * REQUIRED (reverted in card B3 - Codex batch-5 blocker on B1's
      * required→optional widening): every caller that sets `prequote` has a
      * matched swap/bridge safety verdict. `solana.lend.borrowOperate` has NO
      * matched swap/bridge prequote at all (it is not a swap-gated tool), so
      * its LTV/health disclosure rides its OWN top-level `riskPreview` sibling
-     * field below instead of living inside `prequote` — see `runtime/gates.ts`'s
+     * field below instead of living inside `prequote` - see `runtime/gates.ts`'s
      * `evaluateRiskPreview`.
      */
     readonly verdict: SafetyVerdict;
     readonly fotTax?: number;
     /**
-     * Pendle term-lock (Wave 5) — the maturity date of a PT being bought. Sourced
+     * Pendle term-lock (Wave 5) - the maturity date of a PT being bought. Sourced
      * from the matched prequote's persisted `safetyDetail` (NOT raw args), it
      * rides this typed channel into `buildIntentPreview`, which renders the FIXED
      * "funds locked until <date>" warning so a restricted human sees the lock
@@ -451,7 +505,7 @@ export interface ToolResult {
       readonly expiresAt: string;
     };
     /**
-     * Jupiter fee-bearing swap disclosure (W5 design §6 R4) — the 25bps fee,
+     * Jupiter fee-bearing swap disclosure (W5 design §6 R4) - the 25bps fee,
      * fee mint + treasury ATA, ATA rent (if the account does not yet exist),
      * tip, and priority-fee strategy for a `solana.swap.execute`. Sourced from
      * the matched prequote's persisted `safetyDetail` (NOT raw args), it rides
@@ -464,12 +518,12 @@ export interface ToolResult {
    * Jupiter Lend Borrow LTV/health disclosure (Agent Scan Phase 3 Batch 5,
    * card B1 owner decision: "Approval preview MUST show LTV/health risk
    * semantics before approval") for a `solana.lend.borrowOperate` call. A
-   * SIBLING of `prequote` (card B3 — `solana.lend.borrowOperate` has no
+   * SIBLING of `prequote` (card B3 - `solana.lend.borrowOperate` has no
    * matched swap/bridge verdict, so `prequote.verdict` stays required for
    * every OTHER caller instead of being widened to accommodate this one).
    * Computed fresh (never persisted) by `runtime/gates.ts`'s
-   * `evaluateRiskPreview`, sourced from a live vault/position/price read —
-   * NOT from raw args — so it rides this unspoofable typed channel into
+   * `evaluateRiskPreview`, sourced from a live vault/position/price read -
+   * NOT from raw args - so it rides this unspoofable typed channel into
    * `buildIntentPreview`.
    */
   riskPreview?: LendBorrowRiskPreview;

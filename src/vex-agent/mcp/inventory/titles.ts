@@ -27,6 +27,7 @@
 export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   // ── Internal tools ────────────────────────────────────────────────────────
   vex_ToolSearch: "Search the protocol tool catalog",
+  vex_ToolDescribe: "Read one tool's whole contract",
   TokenFind: "Find a token's address and decimals",
   SwapQuote: "Quote a token swap",
   SwapExecute: "Execute a token swap",

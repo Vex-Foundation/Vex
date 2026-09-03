@@ -2,10 +2,10 @@ import type { ProtocolToolManifest } from "../../types.js";
 import { TRENCH_TOKENS_DISCOVERY } from "../../embeddings/trench/tokens.js";
 import { TRENCH_TOKENS_PARAMS } from "./tokens-params.js";
 
-// Trench Express token browser — READ-ONLY. Lists bonding-curve and graduated
+// Trench Express token browser - READ-ONLY. Lists bonding-curve and graduated
 // tokens on Robinhood Chain (4663) from the launchpad REST API. Server-side
 // status/sort/limit/page; client-side creator + rug-flag filters. ETH curve
-// only — there is no token/VEX pair on-chain today.
+// only - there is no token/VEX pair on-chain today.
 
 export const TRENCH_TOKENS_TOOLS: readonly ProtocolToolManifest[] = [
   {

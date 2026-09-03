@@ -8,14 +8,14 @@
  * ("trench") exactly as the other swap venues do. A BUY passes `tokenIn:"ETH"`
  * and the token address as `tokenOut`; a SELL passes the token address as
  * `tokenIn` and `tokenOut:"ETH"`. `min`, `deadline`, `recipient` and any fee
- * parameter are NEVER accepted from the caller — Vex derives them.
+ * parameter are NEVER accepted from the caller - Vex derives them.
  */
 
 import type { ProtocolToolManifest } from "../../types.js";
 import { TRENCH_TRADE_DISCOVERY } from "../../embeddings/trench/trade.js";
 
 const TRADE_PARAMS = [
-  { key: "chain", type: "string" as const, required: false, description: 'Chain — Robinhood Chain / "robinhood" (the only chain; defaults to robinhood).' },
+  { key: "chain", type: "string" as const, required: false, description: 'Chain - Robinhood Chain / "robinhood" (the only chain; defaults to robinhood).' },
   { key: "tokenIn", type: "string" as const, required: true, description: 'Input token: "ETH" for a BUY, or the curve token address for a SELL.' },
   { key: "tokenOut", type: "string" as const, required: true, description: 'Output token: the curve token address for a BUY, or "ETH" for a SELL.' },
   { key: "amountIn", type: "string" as const, required: true, description: "Human amount of the input token (ETH for a buy, tokens for a sell), e.g. \"0.01\"." },

@@ -1,6 +1,7 @@
 import type { ProtocolToolManifest } from "../../types.js";
 import { KYBERSWAP_SWAP_DISCOVERY } from "../../embeddings/kyberswap/swap.js";
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
+import { KYBERSWAP_SWAP_VEX_FEE } from "../../../vex-fee-notes.js";
 
 const SWAP_EXECUTE_PARAMS = [
   { key: "chain", type: "string" as const, required: true, description: "Chain slug or alias." },
@@ -94,6 +95,8 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       + "automatically, and the reply names the read you can perform yourself to check it.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
+    returns: "RETURNS `summary`, `chain`, `chainId`, `txHash`, `tokenIn`, `tokenOut`, `amountIn`, `amountOut`, `status`, `_executionId`, `_explorerRefs`, and, when they apply, `additionalCostUsd` with `additionalCostMessage`, `deliveryCheck`, and `safetyCheckUnavailable` naming any leg whose honeypot audit could not run. READ `status` BEFORE CONCLUDING ANYTHING: `confirmed` is settled and recorded; `confirmed_unrecorded` settled on-chain but Vex's own record did not persist; `confirmed_pending_amounts` settled but the executed amounts were not decodable yet and finalize automatically; `reverted` mined and failed, and the gas WAS spent; `not_attempted` was refused before signing, spent nothing, and carries `retryable` and a `failureCode`; and `pending` means the outcome is UNKNOWN and may still settle, so DO NOT retry or re-broadcast, the attempt is recorded and resolves automatically, and the reply names the read you can perform yourself to check it.",
+    vexFee: KYBERSWAP_SWAP_VEX_FEE,
     params: SWAP_EXECUTE_PARAMS,
     // tokenOut is the real Base USDC contract, not the symbol "USDC": this
     // manifest REJECTS symbols on both token params, so a symbol here taught

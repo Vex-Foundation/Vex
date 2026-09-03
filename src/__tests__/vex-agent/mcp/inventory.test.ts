@@ -29,6 +29,8 @@ import {
   DESTRUCTIVE_ACTION_KINDS,
   studioToolAnnotations,
 } from "@vex-agent/mcp/inventory/index.js";
+import { ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS } from "@vex-agent/mcp/inventory/types.js";
+import { EXPORTED_TOOL_DESCRIBE_PUBLIC_NAME } from "@vex-agent/mcp/tool-describe-export.js";
 import { listExportedTools } from "@vex-agent/mcp/export-scope.js";
 import { EXPORTED_TOOL_SEARCH_PUBLIC_NAME } from "@vex-agent/mcp/tool-search-export.js";
 import { ACTION_KINDS } from "@vex-agent/tools/taxonomy.js";
@@ -48,9 +50,13 @@ function head(value: string, limit: number): string {
 }
 
 describe("the exported inventory covers exactly the export scope", () => {
-  it("produces one record per exported tool and nothing else", () => {
-    expect(inventory).toHaveLength(listExportedTools().length);
+  it("produces one record per exported tool, plus the MCP-only contract reader", () => {
+    // `vex_ToolDescribe` has no in-app `ToolDef`, so `listExportedTools()` -
+    // which answers only for tools the registry knows - cannot list it. It is
+    // the inventory's own row, and this is the one deliberate difference.
+    expect(inventory).toHaveLength(listExportedTools().length + 1);
     const names = inventory.map((t) => t.publicName);
+    expect(names).toContain(EXPORTED_TOOL_DESCRIBE_PUBLIC_NAME);
     expect(new Set(names).size).toBe(names.length);
   });
 
@@ -64,8 +70,10 @@ describe("the exported inventory covers exactly the export scope", () => {
     // with the 18-tool website-API surface (S10).
     // 165 -> 167: the native <-> wrapped-native pair, exported by default like
     // every other wallet tool and recorded in `mcp-export-scope.md`.
-    expect(inventory).toHaveLength(167);
-    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
+    // 167 -> 168: `vex_ToolDescribe`, the MCP-only whole-contract reader that
+    // exists because a client truncates a description and never a result.
+    expect(inventory).toHaveLength(168);
+    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(28);
     expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(140);
   });
 
@@ -156,8 +164,12 @@ describe("titles are authored, complete and distinct (O6)", () => {
 describe("annotations are pinned to O7, literally", () => {
   it("sets readOnlyHint exactly when the action kind is `read`", () => {
     for (const tool of inventory) {
+      // `vex_ToolDescribe` has no `ToolDef`: it is the MCP-only contract
+      // reader, classified `read` at its one assembly point in the inventory.
       const actionKind =
-        tool.kind === "internal"
+        tool.publicName === EXPORTED_TOOL_DESCRIBE_PUBLIC_NAME
+          ? "read"
+          : tool.kind === "internal"
           ? getToolDef(
               tool.publicName === EXPORTED_TOOL_SEARCH_PUBLIC_NAME
                 ? "ToolSearch"
@@ -242,6 +254,13 @@ describe("the hot set is exactly the internal tools plus vex_ToolSearch (O20)", 
       expect(loaded.has(tool.publicName)).toBe(tool.kind === "internal");
     }
     expect(loaded.has(EXPORTED_TOOL_SEARCH_PUBLIC_NAME)).toBe(true);
+    expect(loaded.has(EXPORTED_TOOL_DESCRIBE_PUBLIC_NAME)).toBe(true);
+  });
+
+  it("marks the MCP-only contract reader always-loaded", () => {
+    // It is useless deferred: a client reaches for it precisely when a
+    // description it already holds arrived cut.
+    expect(studioAlwaysLoadNames()).toContain(EXPORTED_TOOL_DESCRIBE_PUBLIC_NAME);
   });
 
   it("keeps the hot set small enough to be a hot set", () => {
@@ -313,6 +332,39 @@ describe("the description budget (O23)", () => {
     // is worth noticing in review rather than discovering in a client.
     const over = inventory.filter((t) => byteLength(t.description) > 2000);
     expect(over.length).toBeLessThan(inventory.length / 2);
+  });
+
+  /**
+   * THE WHOLE-TEXT BOUND on the hot set, enumerated tool by tool.
+   *
+   * MEASURED (clarity review 2026-09-03, prompt 4): Claude Code cuts an MCP
+   * tool description at exactly 2048 characters and appends a marker, and six
+   * always-loaded descriptions were arriving at the model mid-word with their
+   * RETURNS sections gone. The head lints above prove the SAFETY facts lead;
+   * this one proves nothing is lost at all, which is the property the owner
+   * decree on silent cutting actually asks for: the budget belongs to the
+   * consumer, so Vex authors to it instead of shipping text to be cut.
+   *
+   * A table, one row per hot-set tool, because the useful failure names the
+   * tool and its length rather than reporting that "something" is too long.
+   */
+  it.each(
+    buildStudioInventory()
+      .filter((tool) => tool.alwaysLoad)
+      .map((tool) => [tool.publicName, [...tool.description].length] as const),
+  )("%s fits the always-loaded description bound whole (%i characters)", (_name, characters) => {
+    expect(characters).toBeLessThanOrEqual(ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS);
+  });
+
+  it("bounds every always-loaded description and no protocol one", () => {
+    // The bound is the HOT SET's, deliberately: a protocol description is
+    // loaded through a client's own tool-search step, which does not re-cut it.
+    const overLoaded = inventory
+      .filter((t) => t.alwaysLoad)
+      .filter((t) => [...t.description].length > ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS)
+      .map((t) => t.publicName);
+    expect(overLoaded).toEqual([]);
+    expect(ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS).toBe(2048);
   });
 });
 

@@ -40,6 +40,10 @@ import {
   EXPORTED_TOOL_SEARCH_PUBLIC_NAME,
   searchExportedTools,
 } from "./tool-search-export.js";
+import {
+  EXPORTED_TOOL_DESCRIBE_PUBLIC_NAME,
+  describeExportedTool,
+} from "./tool-describe-export.js";
 
 /**
  * What admission did with a call.
@@ -101,6 +105,19 @@ async function runExportedToolSearch(args: Record<string, unknown>): Promise<Too
 }
 
 /**
+ * The `vex_ToolDescribe` answer, serialized the way every tool result is.
+ *
+ * Synchronous and side-effect free: it reads the inventory and the two gate
+ * registries and returns. Nothing is dispatched, so nothing can be approved,
+ * recorded or charged by it.
+ */
+function runExportedToolDescribe(args: Record<string, unknown>): ToolResult {
+  const outcome = describeExportedTool(args);
+  if (!outcome.ok) return { success: false, output: outcome.message, actionKind: "read" };
+  return { success: true, output: JSON.stringify(outcome.contract), actionKind: "read" };
+}
+
+/**
  * Route one external call and return its whole `ToolResult`.
  *
  * Four outcomes, in the order they are decided:
@@ -127,6 +144,12 @@ export async function admitStudioCall(
 
   if (name === EXPORTED_TOOL_SEARCH_PUBLIC_NAME || name === EXPORTED_TOOL_SEARCH_NAME) {
     return { result: await runExportedToolSearch(call.args), dispatched: true };
+  }
+
+  // `vex_ToolDescribe` has no `ToolDef` at all, so it is answered here before
+  // any registry lookup, exactly like the search adapter above.
+  if (name === EXPORTED_TOOL_DESCRIBE_PUBLIC_NAME) {
+    return { result: runExportedToolDescribe(call.args), dispatched: true };
   }
 
   if (name === EXECUTE_TOOL_ENVELOPE_NAME) {
