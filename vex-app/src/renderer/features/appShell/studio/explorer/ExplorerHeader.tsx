@@ -38,10 +38,15 @@ export interface ExplorerHeaderProps {
   readonly onRefresh: () => void;
   readonly onCollapseAll: () => void;
   /**
-   * Create at the PROJECT ROOT. Optional, and omitted rather than disabled
-   * where a mount has no write path: a button that is always there and never
-   * works is worse than no button, and the row menu offers the same two
-   * actions scoped to a folder.
+   * Create WHERE THE TREE'S SELECTION POINTS: inside the selected folder,
+   * beside the selected file, and at the project root only when nothing is
+   * selected. The caller resolves that target - this header holds no tree
+   * state - and VS Code's view-title command resolves the same one
+   * (`fileActions.ts:931-938`).
+   *
+   * Optional, and omitted rather than disabled where a mount has no write
+   * path: a button that is always there and never works is worse than no
+   * button, and the row menu offers the same two actions scoped to a folder.
    *
    * VS Code puts the same two actions in the same place
    * (`explorer.newFile`/`explorer.newFolder` as view-title actions), and they

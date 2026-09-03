@@ -18,8 +18,10 @@
  * directly - the boundary check skips `__tests__` directories, so a test may
  * reach where product code may not - and asserts, for every id in the roster,
  * that this file's `displayName`, its supported/unsupported verdict, its
- * `reason`, its `supportReturnsWhen` and its `launchInstruction` are EQUAL to
- * the engine's. A registry edit that does not reach this file is a red test,
+ * `reason` and its `supportReturnsWhen` are EQUAL to the engine's, and that
+ * its `launchInstruction` is the engine's command with the engine's own
+ * `configPath` substituted for the placeholder - the same substitution main
+ * performs for its installer warning, asserted rather than retyped. A registry edit that does not reach this file is a red test,
  * not a picker that quietly lies about what Vex will do to someone's
  * repository.
  *
@@ -155,7 +157,17 @@ interface SelectableAgentPresentation {
   readonly id: StudioAgentId;
   readonly displayName: string;
   readonly supported: true;
-  /** The exact command, `{configPath}` included, or null for a project agent. */
+  /**
+   * The exact command to run, WITH THE PATH ALREADY IN IT, or `null` for an
+   * agent that reads a project config on its own.
+   *
+   * The engine registry carries `{configPath}` as a placeholder and the path
+   * beside it (`studio/agents.ts`); a surface that printed the template
+   * unresolved showed the user a literal `{configPath}` to type (live test
+   * 2026-09-03, NAMES-1). The path is PROJECT-RELATIVE, which is what makes
+   * one string true for every project, and the sentence around it says to run
+   * the command in the project folder.
+   */
   readonly launchInstruction: string | null;
 }
 
@@ -220,7 +232,10 @@ const PRESENTATION_BY_ID: Readonly<
     id: "kimi",
     displayName: "Kimi CLI",
     supported: true,
-    launchInstruction: "kimi --mcp-config-file {configPath}",
+    // `.vex/mcp/kimi.json` is the engine registry's `configPath` for this
+    // agent, substituted here the way main substitutes it in its own warning
+    // (`installer/warnings.ts:86`), so both surfaces print one command.
+    launchInstruction: "kimi --mcp-config-file .vex/mcp/kimi.json",
   },
   "qwen-code": {
     id: "qwen-code",

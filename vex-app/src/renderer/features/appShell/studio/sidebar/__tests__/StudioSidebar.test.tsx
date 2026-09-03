@@ -356,13 +356,16 @@ describe("the other sections", () => {
    * was also, until this wiring, the shipped state: the only route to a create
    * was the row context menu, so a user looking at an empty project had no
    * visible way to make the first file. VS Code puts the same two actions in
-   * the same place, and they create AT THE ROOT.
+   * the same place.
+   *
+   * WITH NOTHING SELECTED they create at the ROOT, which is the same answer
+   * `explorer.newFile` gives an empty context (`fileActions.ts:936-938`).
    *
    * The session is acquired here because the tree is mocked in this suite:
    * production acquires it by rendering the real tree, and the header reads it
    * with `peek` rather than taking a reference of its own.
    */
-  it("the header's New file and New folder create at the project ROOT", async () => {
+  it("the header's New file and New folder create at the ROOT with nothing selected", async () => {
     const project = makeProject({ name: "vex-core" });
     projectsListMock.mockResolvedValue({ ok: true, data: [project] });
     const registry = new ExplorerRegistry();
@@ -377,14 +380,59 @@ describe("the other sections", () => {
       fireEvent.click(screen.getByLabelText("New file"));
       fireEvent.click(screen.getByLabelText("New folder"));
 
-      // `null` is the root parent, which is what these two promise; the row
-      // menu is the scoped route and passes a directory.
+      // `null` is the root parent: an empty tree has no selection, and the
+      // session's own rule answers the root for one.
       expect(beginCreate.mock.calls).toEqual([
         [null, "file"],
         [null, "directory"],
       ]);
     } finally {
       beginCreate.mockRestore();
+      registry.release(project.id);
+    }
+  });
+
+  /**
+   * AND WITH A ROW SELECTED THEY CREATE THERE, which is the defect this test
+   * exists for: with `src` selected, the header put `inner.ts` at the project
+   * root while the row menu put it inside (live test 2026-09-03, I-4).
+   *
+   * The RULE (a directory takes the entry, a file gives it to its parent) is
+   * the session's and is asserted against a real model in
+   * `explorer/__tests__/explorer-session.test.ts`. What belongs HERE is the
+   * wiring: that the header asks the session about the SELECTED row rather
+   * than passing the root, which is what it used to do. So the rule is stubbed
+   * and its input and output are the assertion.
+   */
+  it("the header's New file creates in the SELECTED row's directory", async () => {
+    const project = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    const registry = new ExplorerRegistry();
+    const session = registry.acquire(project.id);
+    session.setFocusedRowId("id:src");
+    const createParentId = vi
+      .spyOn(session, "createParentId")
+      .mockReturnValue("id:src");
+    const beginCreate = vi
+      .spyOn(session, "beginCreate")
+      .mockResolvedValue(true);
+    try {
+      renderSidebar({ activeProjectId: project.id, registry });
+      await screen.findByTestId("explorer-tree");
+
+      fireEvent.click(screen.getByLabelText("New file"));
+      fireEvent.click(screen.getByLabelText("New folder"));
+
+      // The SELECTION is what it asked about ...
+      expect(createParentId.mock.calls).toEqual([["id:src"], ["id:src"]]);
+      // ... and the answer is what it created in.
+      expect(beginCreate.mock.calls).toEqual([
+        ["id:src", "file"],
+        ["id:src", "directory"],
+      ]);
+    } finally {
+      beginCreate.mockRestore();
+      createParentId.mockRestore();
       registry.release(project.id);
     }
   });

@@ -239,11 +239,20 @@ describe("the agent picker", () => {
     expect(createMock.mock.calls[0]?.[0].agents).toEqual([]);
   });
 
-  it("shows Kimi's launch command on its card", () => {
+  /**
+   * THE COMMAND AS TYPED, not as templated. The card used to print the
+   * registry's `{configPath}` placeholder verbatim, so the one agent whose
+   * whole point is that the user launches it themselves showed a command that
+   * cannot be run (live test 2026-09-03, NAMES-1).
+   */
+  it("shows Kimi's launch command with the real config path on its card", () => {
     renderCreator();
     expect(
-      screen.getByText(/Launch it with: kimi --mcp-config-file \{configPath\}/),
+      screen.getByText(
+        "Launch it from the project folder with: kimi --mcp-config-file .vex/mcp/kimi.json",
+      ),
     ).not.toBeNull();
+    expect(screen.queryByText(/\{configPath\}/)).toBeNull();
   });
 });
 

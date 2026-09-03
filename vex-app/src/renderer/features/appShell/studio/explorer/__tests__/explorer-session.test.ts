@@ -111,6 +111,61 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
+/**
+ * WHERE A NEW ENTRY GOES, which is one rule with two callers.
+ *
+ * The row menu passes the row it was opened on and the explorer header passes
+ * the selection; before this rule had one home the header created at the ROOT
+ * whatever was selected, so `inner.ts` landed beside `src` for a user who had
+ * just clicked `src` (live test 2026-09-03, I-4). The rule is VS Code's
+ * (`fileActions.ts:931-938`), and it is asserted here, at its owner, against a
+ * REAL model rather than at either caller with a stub.
+ */
+describe("the create target", () => {
+  async function treeSession(): Promise<ExplorerSession> {
+    api.listResponder = (call) =>
+      call.nodeId === null
+        ? {
+            ok: true,
+            data: {
+              ok: true,
+              value: listingOf([
+                directoryNode("src", "src"),
+                fileNode("readme.md", "readme.md"),
+              ]),
+            },
+          }
+        : {
+            ok: true,
+            data: { ok: true, value: listingOf([fileNode("alpha.ts", "src/alpha.ts")]) },
+          };
+    const session = makeSession();
+    await session.activate();
+    await flush();
+    session.expand("id:src");
+    await flush();
+    return session;
+  }
+
+  it("gives a DIRECTORY the new entry", async () => {
+    const session = await treeSession();
+    expect(session.createParentId("id:src")).toBe("id:src");
+  });
+
+  it("gives a FILE's entry to the file's parent", async () => {
+    const session = await treeSession();
+    expect(session.createParentId("id:src/alpha.ts")).toBe("id:src");
+    // A file at the top level answers the ROOT, which is `null` rather than a
+    // row id: the root has no row.
+    expect(session.createParentId("id:readme.md")).toBeNull();
+  });
+
+  it("answers the ROOT with nothing selected", async () => {
+    const session = await treeSession();
+    expect(session.createParentId(null)).toBeNull();
+  });
+});
+
 describe("activation", () => {
   it("watches, THEN listens, THEN lists", async () => {
     const session = makeSession();

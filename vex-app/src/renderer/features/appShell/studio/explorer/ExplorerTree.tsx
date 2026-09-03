@@ -133,6 +133,13 @@ export function ExplorerTree({
    */
   const treeRef = useRef<HTMLDivElement>(null);
   const typeAheadRef = useRef<{ prefix: string; atMs: number } | null>(null);
+  /**
+   * A PREVIEW open just published a file, so focus belongs here until the user
+   * asks for the editor. Read and cleared by the repair effect below.
+   */
+  const keepFocusRef = useRef(false);
+  /** Cancels the one frame the repair owns, so unmount leaves nothing pending. */
+  const repairFrameRef = useRef<(() => void) | null>(null);
   const [session, setSession] = useState<ExplorerSession | null>(null);
   /** The open context menu, or `null`. Owned here: it is chrome over the tree. */
   const [menu, setMenu] = useState<ExplorerMenuRequest | null>(null);
@@ -161,6 +168,56 @@ export function ExplorerTree({
       activeRegistry.release(projectId);
     };
   }, [activeRegistry, projectId]);
+
+  /**
+   * KEEP FOCUS IN THE TREE ACROSS A PREVIEW OPEN.
+   *
+   * A single click opens a preview, and the preview mounts in a surface this
+   * component does not own. Measured on the built app (live test 2026-09-03,
+   * I-5): after that click `document.activeElement` was `body`, so F2, Delete
+   * and Shift+F10 went nowhere until the user refocused the tree.
+   *
+   * The permission is `studioFocusPermission`'s and VS Code's
+   * `EditorPart.shouldRestoreFocus`: take focus ONLY when nothing holds it. A
+   * user who clicked into the viewer, the terminal or the composer between the
+   * open and this repair keeps their focus, because the repair sees a real
+   * active element and does nothing.
+   *
+   * Twice, and no more: once on the commit that follows the open, and once on
+   * the next frame, because the surface that mounts can drop focus in a LATER
+   * effect than this one. The frame is owned - one handle, cancelled on
+   * unmount - so an unmounted tree never runs it.
+   */
+  useEffect(() => {
+    if (!keepFocusRef.current) return;
+    keepFocusRef.current = false;
+    const container = treeRef.current;
+    if (container === null) return;
+    const doc = container.ownerDocument;
+    const repair = (): void => {
+      const active = doc.activeElement;
+      if (active === null || active === doc.body) container.focus({ preventScroll: true });
+    };
+    repair();
+    const view = doc.defaultView;
+    if (view === null || typeof view.requestAnimationFrame !== "function") return;
+    repairFrameRef.current?.();
+    const frame = view.requestAnimationFrame(() => {
+      repairFrameRef.current = null;
+      repair();
+    });
+    repairFrameRef.current = () => {
+      repairFrameRef.current = null;
+      view.cancelAnimationFrame(frame);
+    };
+  });
+
+  useEffect(
+    () => () => {
+      repairFrameRef.current?.();
+    },
+    [],
+  );
 
   const subscribe = useCallback(
     (onChange: () => void) => {
@@ -191,7 +248,7 @@ export function ExplorerTree({
   });
 
   const focusedRowId = session?.getFocusedRowId() ?? null;
-  const selectedRowId = session?.getSelectedRowId() ?? null;
+  const openedRowId = session?.getOpenedRowId() ?? null;
   const focusedIndex =
     session === null || focusedRowId === null ? -1 : session.model.getIndexOf(focusedRowId);
 
@@ -221,12 +278,26 @@ export function ExplorerTree({
       // The name box owns its own keys and its own clicks; activating it from
       // the tree would commit or open something under a caret.
       if (row.kind === "edit") return;
-      session.setSelectedRowId(row.id);
       if (row.node.kind === "directory") {
         session.toggle(row.id);
         return;
       }
-      if (row.node.kind === "file") onOpenFile(row.node, mode);
+      if (row.node.kind !== "file") return;
+      // The open marker is the OPEN file's, so it moves only when a file is
+      // actually handed to the workspace. A directory toggled open is not an
+      // open file, and marking it as one would put the decoration on a row no
+      // tab corresponds to.
+      session.setOpenedRowId(row.id);
+      onOpenFile(row.node, mode);
+      // VS Code's split, verbatim in shape (`listService.ts:717-733`): a
+      // POINTER open passes `preserveFocus: true` and the explorer keeps
+      // focus, while a double click and Enter pass `preserveFocus: false` and
+      // hand it to the editor. Here the open is published to another owner and
+      // a surface mounting in that commit can leave focus on `body`, so the
+      // preview open re-asserts it - and only when NOTHING holds it, which is
+      // `workspace-focus.ts`'s own permission and VS Code's
+      // `EditorPart.shouldRestoreFocus`.
+      if (mode === "preview") keepFocusRef.current = true;
     },
     [onOpenFile, session],
   );
@@ -271,17 +342,9 @@ export function ExplorerTree({
   const requestCreate = useCallback(
     (rowId: string | null, kind: "file" | "directory") => {
       if (session === null) return;
-      // VS Code's rule (`fileActions.ts:931-938`): a directory takes the new
-      // entry, a FILE gives it to its parent. Creating "inside" a file is not a
-      // thing, and refusing the keystroke there would make the action feel
-      // arbitrary from a row the user has selected.
-      let parentId: string | null = null;
-      if (rowId !== null) {
-        const node = session.model.nodeOf(rowId);
-        parentId =
-          node !== null && node.kind === "directory" ? rowId : session.model.parentOf(rowId);
-      }
-      void session.beginCreate(parentId, kind);
+      // The rule is the SESSION's, so this route and the header's cannot drift
+      // apart: a directory takes the new entry, a file gives it to its parent.
+      void session.beginCreate(session.createParentId(rowId), kind);
     },
     [session],
   );
@@ -604,7 +667,7 @@ export function ExplorerTree({
                 loading={presentation.loading}
                 errored={presentation.errored}
                 focused={focusedRowId === row.id}
-                selected={selectedRowId === row.id}
+                open={openedRowId === row.id}
                 describedById={descriptionId}
                 description={presentation.description}
                 driftLabel={

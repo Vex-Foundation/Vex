@@ -65,9 +65,17 @@ describe("the renderer catalogue matches the engine registry", () => {
     }
 
     if (!renderer.supported) throw new Error("narrowing failed");
+    // THE PATH IS SUBSTITUTED, not carried as a template: the picker prints
+    // this string, and a `{configPath}` reaching the user is a command they
+    // cannot run (live test 2026-09-03, NAMES-1). The expected value is
+    // DERIVED from the engine record, so this cannot pass against a
+    // hand-typed path.
     expect(renderer.launchInstruction).toBe(
-      engine.configMode === "launch" ? engine.launchInstruction : null,
+      engine.configMode === "launch"
+        ? engine.launchInstruction.replace("{configPath}", engine.configPath)
+        : null,
     );
+    expect(renderer.launchInstruction ?? "").not.toContain("{configPath}");
   });
 
   it("marks exactly cline and warp as unsupported", () => {
@@ -90,6 +98,9 @@ describe("the renderer catalogue matches the engine registry", () => {
     const kimi = agentPresentation("kimi");
     if (!kimi.supported) throw new Error("kimi must be selectable");
     expect(kimi.launchInstruction).toContain("--mcp-config-file");
+    // The command is RUNNABLE as printed: a real relative path, no placeholder.
+    expect(kimi.launchInstruction).toContain(".vex/mcp/kimi.json");
+    expect(kimi.launchInstruction).not.toContain("{configPath}");
   });
 
   it("resolves a brand mark, or an explicit null, for every id", () => {

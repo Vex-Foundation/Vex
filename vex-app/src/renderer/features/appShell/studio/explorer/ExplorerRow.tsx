@@ -55,8 +55,24 @@ export interface ExplorerRowProps {
   readonly expanded: boolean | null;
   readonly loading: boolean;
   readonly errored: boolean;
+  /**
+   * THE SELECTED ROW, which in this single-select tree is also the keyboard
+   * cursor. It carries `aria-selected` and the selection fill.
+   *
+   * Both used to follow the OPEN FILE instead, so a user arrowing through the
+   * tree kept hearing one row announced as selected however far they moved
+   * (live test 2026-09-03, I-5).
+   */
   readonly focused: boolean;
-  readonly selected: boolean;
+  /**
+   * This row's file is the one the workspace has open.
+   *
+   * A DECORATION, never the selection: it marks the row with
+   * `data-vex-explorer-open` so the tab strip and the tree agree about which
+   * file is open, while what is ANNOUNCED as selected stays where the keyboard
+   * is.
+   */
+  readonly open: boolean;
   /** The id of the visually-hidden description, or `null` when there is none. */
   readonly describedById: string | null;
   /** The description's text. Rendered inside the row so the id resolves. */
@@ -149,7 +165,7 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
       aria-level={props.level + 1}
       aria-posinset={props.posInSet}
       aria-setsize={props.setSize}
-      aria-selected={props.selected}
+      aria-selected={props.focused}
       // Only expandable rows carry it; VS Code removes the attribute outright
       // rather than writing `aria-expanded="false"` on a leaf
       // (`abstractTree.ts:492-494`), because a false there announces a file as a
@@ -159,6 +175,7 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
       {...(props.rowKind === "node" ? {} : { "aria-label": props.label })}
       style={style}
       data-row-pending={props.pending ?? undefined}
+      data-vex-explorer-open={props.open ? "true" : undefined}
       onClick={() => {
         props.onSelect(props.rowId, "preview");
       }}
@@ -187,8 +204,12 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
         // ROW ID (`getItemKey` in ExplorerTree), so scrolling remounts rows
         // rather than repainting one element as a different file.
         "vex-tint",
-        props.selected ? "bg-interactive-hover" : "hover:bg-interactive-hover",
-        props.focused ? "ring-1 ring-inset ring-ring" : null,
+        // ONE ROW carries both marks, because one row is both: the selection
+        // fill and the focus ring belong to the keyboard cursor in a
+        // single-select tree.
+        props.focused
+          ? "bg-interactive-hover ring-1 ring-inset ring-ring"
+          : "hover:bg-interactive-hover",
         props.rowKind === "notice" ? "text-ink-tertiary" : "text-ink-primary",
       )}
     >

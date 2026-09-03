@@ -431,20 +431,27 @@ export function StudioSidebar({
   }, [activeRegistry, activeProjectId]);
 
   /**
-   * The header's New file / New folder, which create AT THE PROJECT ROOT.
+   * The header's New file / New folder, which create WHERE THE USER IS.
    *
-   * `null` is the root parent, which is what the header's own contract says
-   * these two do and what VS Code's view-title `explorer.newFile` does. The
-   * row menu is the scoped route: it passes the row's own directory.
+   * VS Code's `explorer.newFile` reads the explorer's context before it opens
+   * the name box (`fileActions.ts:931-938`): the selected directory takes the
+   * new entry, a selected file gives it to its parent, and only an empty
+   * selection means the root. Creating at the root with a folder selected -
+   * which is what these two used to do - put `inner.ts` beside `src` for a
+   * user who had just clicked `src` (live test 2026-09-03, I-4).
    *
-   * They go through `beginCreate` like every other create - the session opens
-   * the name box, validates against the siblings, and commits - so the header
-   * gains a route to the write and never a second way of performing it.
+   * The rule itself lives on the SESSION (`createParentId`), so the header and
+   * the row menu cannot answer it differently, and both go through
+   * `beginCreate` like every other create - the session opens the name box,
+   * validates against the siblings, and commits - so the header gains a route
+   * to the write and never a second way of performing it.
    */
   const createInExplorer = useCallback(
     (kind: "file" | "directory"): void => {
       if (activeProjectId === null) return;
-      void activeRegistry.peek(activeProjectId)?.beginCreate(null, kind);
+      const session = activeRegistry.peek(activeProjectId);
+      if (session === null) return;
+      void session.beginCreate(session.createParentId(session.getFocusedRowId()), kind);
     },
     [activeRegistry, activeProjectId],
   );

@@ -24,6 +24,7 @@ import type {
 } from "@shared/schemas/studio-installer.js";
 import { RenderOutcomePanel } from "../RenderOutcomePanel.js";
 import {
+  AGENT_CLIENT_STEP_SENTENCES,
   PROJECT_FILES_TITLE,
   PROJECT_REFRESH_FAILURE_SENTENCES,
   RENDER_INCOMPLETE_NOTICES,
@@ -246,5 +247,77 @@ describe("its heading (audit I3)", () => {
     // the reader no way to tell which vocabulary they were in.
     expect(screen.getByRole("heading", { name: RENDER_OUTCOME_TITLE })).not.toBeNull();
     expect(RENDER_OUTCOME_TITLE).not.toBe(PROJECT_FILES_TITLE);
+  });
+});
+
+/**
+ * THE STEP THE CLIENT STILL ASKS FOR.
+ *
+ * Claude Code's project-MCP prompt defaults to "Continue without using this
+ * MCP server", so a user who reads a report full of green rows and presses
+ * Enter at that prompt gets an agent with no Vex tools (live test 2026-09-03,
+ * A-5). The report is the only place Vex can say so before it happens.
+ */
+describe("the client's own next step", () => {
+  const CLAUDE_STEP = AGENT_CLIENT_STEP_SENTENCES["claude-code"] ?? "";
+
+  const WRITTEN_CONFIG: StudioArtifactOutcome = {
+    status: "written",
+    kind: "agent-config",
+    agentId: "claude-code",
+    path: ".mcp.json",
+    change: "created",
+  };
+  const UNCHANGED_CONFIG: StudioArtifactOutcome = {
+    status: "unchanged",
+    kind: "agent-config",
+    agentId: "claude-code",
+    path: ".mcp.json",
+  };
+  const REMOVED_CONFIG: StudioArtifactOutcome = {
+    status: "removed",
+    kind: "agent-config",
+    agentId: "claude-code",
+    path: ".mcp.json",
+  };
+  const OTHER_AGENT_CONFIG: StudioArtifactOutcome = {
+    ...WRITTEN_CONFIG,
+    agentId: "codex",
+    path: ".codex/config.toml",
+  };
+
+  it("tells the user to accept the MCP server under a config Vex wrote", () => {
+    render(<RenderOutcomePanel render={outcome({ artifacts: [WRITTEN_CONFIG] })} />);
+    expect(CLAUDE_STEP).not.toBe("");
+    expect(screen.getByText(CLAUDE_STEP)).not.toBeNull();
+  });
+
+  it("says it for an UNCHANGED config too: the prompt is about the folder, not the write", () => {
+    render(
+      <RenderOutcomePanel
+        render={outcome({ artifacts: [UNCHANGED_CONFIG] })}
+      />,
+    );
+    expect(screen.getByText(CLAUDE_STEP)).not.toBeNull();
+  });
+
+  it("says NOTHING under a config Vex did not leave in place", () => {
+    const { unmount } = render(
+      <RenderOutcomePanel
+        render={outcome({ artifacts: [REMOVED_CONFIG] })}
+      />,
+    );
+    expect(screen.queryByText(CLAUDE_STEP)).toBeNull();
+    unmount();
+
+    // And nothing for an agent with no out-of-band step, rather than a filler
+    // line under every row.
+    render(
+      <RenderOutcomePanel
+        render={outcome({ artifacts: [OTHER_AGENT_CONFIG] })}
+      />,
+    );
+    expect(screen.queryByText(CLAUDE_STEP)).toBeNull();
+    expect(document.querySelector("[data-vex-client-step]")).toBeNull();
   });
 });

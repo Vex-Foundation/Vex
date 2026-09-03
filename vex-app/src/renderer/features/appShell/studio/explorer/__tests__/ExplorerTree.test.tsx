@@ -320,6 +320,65 @@ describe("aria", () => {
     expect(rowFor("readme.md").getAttribute("aria-selected")).toBe("true");
     expect(rowFor("src").getAttribute("aria-selected")).toBe("false");
   });
+
+  /**
+   * `aria-selected` FOLLOWS THE KEYBOARD, and the open file is a decoration.
+   *
+   * Measured on the built app (live test 2026-09-03, I-5): the attribute
+   * marked the OPEN FILE, so a user arrowing down the tree heard one row
+   * announced as selected however far they moved, while `aria-activedescendant`
+   * named a different row entirely. A single-select tree has one selection and
+   * it is where the keyboard is (`listWidget.ts:203-218` renders the attribute
+   * off the selection trait, which its mouse controller and its keyboard both
+   * move).
+   *
+   * The open file keeps its own marker, so "which file is open" is still on
+   * the row without being announced as the selection.
+   */
+  it("moves aria-selected with the KEYBOARD and marks the open file separately", async () => {
+    standardTree();
+    const opened: string[] = [];
+    await mountTree((node) => opened.push(node.path));
+
+    fireEvent.click(rowFor("readme.md"));
+    await flush();
+    expect(opened).toEqual(["readme.md"]);
+    expect(rowFor("readme.md").getAttribute("data-vex-explorer-open")).toBe("true");
+
+    fireEvent.keyDown(tree(), { key: "ArrowDown" });
+    await flush();
+
+    // The selection moved with the key; nothing else was opened.
+    expect(rowFor("tsconfig.json").getAttribute("aria-selected")).toBe("true");
+    expect(rowFor("readme.md").getAttribute("aria-selected")).toBe("false");
+    expect(opened).toEqual(["readme.md"]);
+    // ... and the open file is still marked as the open file.
+    expect(rowFor("readme.md").getAttribute("data-vex-explorer-open")).toBe("true");
+    expect(rowFor("tsconfig.json").hasAttribute("data-vex-explorer-open")).toBe(false);
+  });
+
+  /**
+   * END MOVES THE SELECTION, not only the active descendant (live test
+   * 2026-09-03, A-1: "the tree's End key does nothing; Home works"). The
+   * keystroke always reached `moveFocus:last` - `explorer-keys.test.ts` has
+   * proved that mapping since the table was written - so the report is about
+   * what the tree SHOWED and ANNOUNCED, which was the open file. This asserts
+   * the announced row, which is the half that was wrong.
+   */
+  it("End selects the LAST row and Home the first", async () => {
+    standardTree();
+    await mountTree();
+
+    fireEvent.keyDown(tree(), { key: "End" });
+    await flush();
+    expect(rowFor("tsconfig.json").getAttribute("aria-selected")).toBe("true");
+    expect(rowFor("src").getAttribute("aria-selected")).toBe("false");
+
+    fireEvent.keyDown(tree(), { key: "Home" });
+    await flush();
+    expect(rowFor("src").getAttribute("aria-selected")).toBe("true");
+    expect(rowFor("tsconfig.json").getAttribute("aria-selected")).toBe("false");
+  });
 });
 
 describe("keyboard", () => {
@@ -549,6 +608,69 @@ describe("mouse", () => {
     await flush();
 
     expect(opened).toEqual([{ path: "src/alpha.ts", mode: "pinned" }]);
+  });
+
+  /**
+   * A PREVIEW OPEN LEAVES FOCUS IN THE TREE, even when the surface that mounts
+   * for it drops focus on the floor.
+   *
+   * Measured on the built app (live test 2026-09-03, I-5): after a single
+   * click on a file row `document.activeElement` was `body`, so F2, Delete and
+   * Shift+F10 did nothing at all until the user pressed Ctrl+Shift+E to get
+   * back. The steal happens OUTSIDE this component - the preview mounts
+   * elsewhere - so the open callback here blurs the tree the way that surface
+   * did, which is the only honest way to reproduce a foreign steal in jsdom.
+   *
+   * The rule is VS Code's split (`listService.ts:717-733`): a pointer open
+   * passes `preserveFocus: true`, a double click and Enter pass `false`.
+   */
+  it("keeps focus in the tree when a preview open drops it", async () => {
+    standardTree();
+    await mountTree(() => {
+      // What the built app did: focus ends up on `body`.
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+
+    fireEvent.click(rowFor("src"));
+    await flush();
+    const row = rowFor("alpha.ts");
+    fireEvent.mouseDown(row);
+    fireEvent.click(row);
+    await flush();
+
+    expect(document.activeElement).toBe(tree());
+    // The proof that this focus is the useful kind: the write keys work from
+    // it, which is exactly what the live pass found broken.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "F2" });
+    await flush();
+    expect(screen.getByRole("textbox")).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" });
+    await flush();
+  });
+
+  /**
+   * AND IT NEVER STEALS. The repair's permission is `studioFocusPermission`'s
+   * and VS Code's `EditorPart.shouldRestoreFocus`: take focus only when
+   * NOTHING holds it. A user who clicked straight on into another surface
+   * keeps their focus there.
+   */
+  it("does NOT take focus back from a surface that claimed it", async () => {
+    standardTree();
+    const elsewhere = document.createElement("button");
+    document.body.append(elsewhere);
+    await mountTree(() => {
+      elsewhere.focus();
+    });
+
+    fireEvent.click(rowFor("src"));
+    await flush();
+    const row = rowFor("alpha.ts");
+    fireEvent.mouseDown(row);
+    fireEvent.click(row);
+    await flush();
+
+    expect(document.activeElement).toBe(elsewhere);
+    elsewhere.remove();
   });
 });
 

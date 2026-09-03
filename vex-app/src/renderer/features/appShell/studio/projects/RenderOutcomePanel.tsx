@@ -49,6 +49,7 @@ import {
 } from "../../../../components/ui/state-dot.js";
 import { agentPresentation } from "./studio-agent-catalogue.js";
 import {
+  AGENT_CLIENT_STEP_SENTENCES,
   ARTIFACT_KIND_LABELS,
   ARTIFACT_STATUS_LABELS,
   DRIFT_BLOCKED_SENTENCE,
@@ -263,6 +264,12 @@ function ArtifactRow({
   readonly artifact: StudioArtifactOutcome;
 }): JSX.Element {
   const declined = isDeclined(artifact);
+  const clientStep =
+    artifact.kind === "agent-config"
+    && artifact.agentId !== null
+    && (artifact.status === "written" || artifact.status === "unchanged")
+      ? AGENT_CLIENT_STEP_SENTENCES[artifact.agentId] ?? null
+      : null;
   const agentName =
     artifact.agentId === null
       ? null
@@ -325,6 +332,17 @@ function ArtifactRow({
           <span>{agentSupportReturnsSentence(artifact.supportReturnsWhen)}</span>
         </span>
       ) : null}
+
+      {/* THE STEP THAT IS STILL THE USER'S. Only under a config Vex actually
+        * left in place: a refused, drift-blocked, unsupported or REMOVED row
+        * has no server for the client to be pointed at, and telling the reader
+        * to accept one there would be an instruction about a file that is not
+        * there. */}
+      {clientStep === null ? null : (
+        <span className="text-xs text-ink-tertiary" data-vex-client-step={artifact.agentId}>
+          {clientStep}
+        </span>
+      )}
     </li>
   );
 }

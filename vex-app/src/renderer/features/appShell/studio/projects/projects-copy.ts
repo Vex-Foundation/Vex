@@ -22,6 +22,7 @@ import type {
   ProjectDeleteResult,
   ProjectTrashOutcome,
 } from "@shared/schemas/projects.js";
+import type { StudioAgentId } from "@shared/schemas/studio-agent-ids.js";
 import type {
   StudioArtifactKind,
   StudioArtifactStatus,
@@ -243,9 +244,15 @@ export function agentSupportReturnsSentence(condition: string): string {
   return `Support returns when ${condition}.`;
 }
 
-/** How the picker shows a launch-mode agent's required command. */
+/**
+ * How the picker shows a launch-mode agent's required command.
+ *
+ * "From the project folder" is part of the instruction, not decoration: the
+ * config path in the command is PROJECT-RELATIVE (the catalogue substitutes
+ * the engine's own `configPath`), so the command only resolves from there.
+ */
 export function agentLaunchSentence(instruction: string): string {
-  return `Launch it with: ${instruction}`;
+  return `Launch it from the project folder with: ${instruction}`;
 }
 
 /* -------------------------------- settings -------------------------------- */
@@ -598,6 +605,26 @@ export const ARTIFACT_STATUS_LABELS: Readonly<
 export function artifactChangeLabel(change: "created" | "updated"): string {
   return change === "created" ? "Created" : "Updated";
 }
+
+/**
+ * WHAT THE USER STILL HAS TO DO IN THE CLIENT, once Vex has written the config.
+ *
+ * A written file is not a connected server. Claude Code asks about a project's
+ * MCP server the first time it opens the folder, and that prompt DEFAULTS to
+ * "Continue without using this MCP server" - so a user who presses Enter ends
+ * up with every file correct and an agent that sees no Vex tools at all.
+ * Measured on the built app (live test 2026-09-03, A-5): the report said what
+ * Vex had written and never said this.
+ *
+ * `Partial` rather than an exhaustive record, and deliberately so: this is not
+ * a wire enum every member of which owes a sentence, it is the short list of
+ * clients with an out-of-band step. An agent with none prints nothing rather
+ * than a filler line.
+ */
+export const AGENT_CLIENT_STEP_SENTENCES: Partial<Record<StudioAgentId, string>> = {
+  "claude-code":
+    "When Claude Code asks about this project's MCP server, choose Use this MCP server.",
+};
 
 /**
  * WHY a write was refused, one sentence per closed wire reason.

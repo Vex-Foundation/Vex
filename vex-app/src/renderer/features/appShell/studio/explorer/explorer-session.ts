@@ -245,8 +245,25 @@ export class ExplorerSession {
 
   readonly #reportedDuplicates = new Set<string>();
 
+  /**
+   * THE SELECTION, which in this tree is also the keyboard cursor.
+   *
+   * One row, because the tree is single-select: the ring marks it,
+   * `aria-selected` announces it, F2 renames it, and the header's New file
+   * creates in it. VS Code keeps focus and selection as two traits
+   * (`listWidget.ts:1411` and `:1503`) because its lists are multi-select;
+   * collapsing them is the honest model for a tree that can never hold two.
+   */
   #focusedRowId: string | null = null;
-  #selectedRowId: string | null = null;
+  /**
+   * The row whose FILE the workspace has open, or `null`.
+   *
+   * NOT the selection. An open file stays open while the user arrows somewhere
+   * else, and announcing it as the selected row told an assistive reader about
+   * a row the keyboard was not on (live test 2026-09-03, I-5). It is a
+   * decoration, and the tree marks it with an attribute of its own.
+   */
+  #openedRowId: string | null = null;
 
   /**
    * ONE counter over everything a consumer renders from: the model's rows AND
@@ -444,8 +461,8 @@ export class ExplorerSession {
     return this.#focusedRowId;
   }
 
-  getSelectedRowId(): string | null {
-    return this.#selectedRowId;
+  getOpenedRowId(): string | null {
+    return this.#openedRowId;
   }
 
   setFocusedRowId(rowId: string | null): void {
@@ -454,10 +471,30 @@ export class ExplorerSession {
     this.#emitState();
   }
 
-  setSelectedRowId(rowId: string | null): void {
-    if (this.#selectedRowId === rowId) return;
-    this.#selectedRowId = rowId;
+  setOpenedRowId(rowId: string | null): void {
+    if (this.#openedRowId === rowId) return;
+    this.#openedRowId = rowId;
     this.#emitState();
+  }
+
+  /**
+   * WHERE A NEW ENTRY GOES when it is created from `rowId`.
+   *
+   * VS Code's rule, in the one place both routes read it from
+   * (`fileActions.ts:931-938`): the selected DIRECTORY takes the new entry, a
+   * FILE gives it to its parent, and nothing selected means the project root.
+   * Creating "inside" a file is not a thing, and refusing the action on a file
+   * row would make it feel arbitrary from a row the user has just selected.
+   *
+   * Both callers are covered: the row menu passes the row it was opened on,
+   * and the explorer header passes {@link getFocusedRowId}. A row that is not a
+   * filesystem entry (a notice, a load-more, the name box) answers `null` here
+   * through `parentOf`, which is the root - the same answer as no selection.
+   */
+  createParentId(rowId: string | null): string | null {
+    if (rowId === null) return null;
+    const node = this.model.nodeOf(rowId);
+    return node !== null && node.kind === "directory" ? rowId : this.model.parentOf(rowId);
   }
 
   /* ----------------------- lifecycle ----------------------- */
@@ -863,7 +900,10 @@ export class ExplorerSession {
   #applyMutatedNode(parentId: string | null, targetId: string | null, node: FileNode): void {
     if (targetId !== null) this.model.removeNode(targetId);
     const applied = this.model.applyCreatedNode(parentId, node);
-    if (applied) this.setSelectedRowId(node.nodeId);
+    // THE NEW ROW BECOMES THE SELECTION, which is VS Code's answer too
+    // (`fileActions.ts:961`: a created folder is `select`ed). The keyboard is
+    // then already on what the user just made, so the next key acts on it.
+    if (applied) this.setFocusedRowId(node.nodeId);
     // ALWAYS, even when the row was applied: this model never sorts (order is
     // main's), so the row it just appended is in the right folder and the wrong
     // place until the re-list arrives.
