@@ -726,6 +726,13 @@ describe("LighterClient URL selection", () => {
 });
 
 describe("LighterClient validation", () => {
+  it("accepts the null spot list returned by a live RHC perpetual-only query", async () => {
+    mockOk({ code: 200, order_book_details: [{ ...MARKET, last_trade_price: 3000 }], spot_order_book_details: null });
+    const details = await client.getMarketDetails("rhc", { marketId: 0, filter: "perp" });
+    expect(details.spot_order_book_details).toEqual([]);
+    expect(details.order_book_details).toHaveLength(1);
+  });
+
   it("validates market details including spot detail defaults", async () => {
     mockOk({ code: 200, order_book_details: [{ ...MARKET, last_trade_price: 3000 }] });
     const details = await client.getMarketDetails("core", { marketId: 0 });

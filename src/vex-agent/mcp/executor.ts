@@ -54,7 +54,7 @@ export async function executeStudioTool(
     const source = resolveInjectedProtocolTool(call.name)?.toolId ?? call.name;
     const validated = admission.result.success ? validatePreparedActionFollowUp(source, candidate) : null;
     if (!validated?.ok || validated.followUp.toolName !== "execute_tool"
-      || validated.followUp.args.toolId !== "lighter.order.create") {
+      || !validated.followUp.args.toolId.startsWith("lighter.")) {
       admission = { dispatched: admission.dispatched, result: { success: false, output: "This prepared action could not be handed to Studio approval. No approval card was created and nothing was executed." } };
     } else if (signal?.aborted) {
       admission = { dispatched: true, result: { success: false, output: "The request was canceled before approval. Nothing was executed." } };
@@ -67,7 +67,7 @@ export async function executeStudioTool(
       if (admission.result.pendingApproval === true && (!admission.preparedApproval
         || admission.preparedApproval.expiresAt !== validated.followUp.expiresAt
         || !durableApprovalCardMatches(validated.followUp.approvalPreview, admission.preparedApproval.approvalPreview))) {
-        admission = { dispatched: true, result: { success: false, output: "The prepared order changed before approval. No approval card was created. Prepare a fresh order." } };
+        admission = { dispatched: true, result: { success: false, output: "The prepared action changed before approval. No approval card was created. Prepare a fresh action." } };
       }
     }
   }

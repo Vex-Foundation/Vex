@@ -55,7 +55,7 @@ import { readEnvironment } from "../params.js";
 
 const INTENT_TTL_MS = 15 * 60 * 1000;
 
-function buildDepositApprovalFollowUp(intent: LighterOnboardingIntentRow): PreparedActionFollowUp {
+export function buildDepositApprovalFollowUp(intent: LighterOnboardingIntentRow): PreparedActionFollowUp {
   const disclosure = buildLighterDepositApprovalDisclosure(intent);
   const criticalArgs: Record<string, ApprovalPreviewScalar> = {
     toolId: "lighter.deposit",
@@ -293,7 +293,7 @@ function canRenewConfirmedApprovalDeposit(input: {
     && fresh.settlementTokenDecimals === intent.settlementTokenDecimals;
 }
 
-function isConfirmedApprovalRecoveryPending(intent: LighterOnboardingIntentRow): boolean {
+export function isConfirmedApprovalRecoveryPending(intent: LighterOnboardingIntentRow): boolean {
   return intent.capability === "deposit"
     && intent.approvalStatus === "approval_pending"
     && intent.executionState === "approve_confirmed"

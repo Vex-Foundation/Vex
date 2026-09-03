@@ -70,7 +70,7 @@ import {
   buildWithdrawalSubmittedPresentation,
 } from "../withdrawal-presentation.js";
 
-function buildApprovalFollowUp(intent: LighterWithdrawalIntentRow): PreparedActionFollowUp {
+export function buildApprovalFollowUp(intent: LighterWithdrawalIntentRow): PreparedActionFollowUp {
   return {
     toolName: "execute_tool",
     args: { toolId: "lighter.withdraw", params: { intentId: intent.intentId } },
@@ -83,7 +83,7 @@ function buildApprovalFollowUp(intent: LighterWithdrawalIntentRow): PreparedActi
   };
 }
 
-function buildClaimApprovalFollowUp(
+export function buildClaimApprovalFollowUp(
   attempt: withdrawalClaimsRepo.LighterWithdrawalClaimAttemptRow,
 ): PreparedActionFollowUp {
   return {

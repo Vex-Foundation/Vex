@@ -627,7 +627,7 @@ function lifecycleIdentity(intent: LighterOrderLifecycleIntentRow): {
   };
 }
 
-function cancelFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
+export function cancelFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
   const snapshot = intent.providerSnapshotJson;
   const criticalArgs: Record<string, ApprovalPreviewScalar> = {
     toolId: "lighter.order.cancel",
@@ -657,7 +657,7 @@ function cancelFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionF
   };
 }
 
-function modifyFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
+export function modifyFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
   const snapshot = intent.providerSnapshotJson;
   const requestedBaseAmount = scalarString(snapshot.requestedBaseAmount);
   const requestedPrice = scalarString(snapshot.requestedPrice);
@@ -693,7 +693,7 @@ function modifyFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionF
   };
 }
 
-function cancelAllFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
+export function cancelAllFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
   const orders = Array.isArray(intent.providerSnapshotJson.orders)
     ? intent.providerSnapshotJson.orders as Record<string, unknown>[] : [];
   const orderIdentities = orders.map((order) => `${order.marketIndex}:${order.orderId}`).join(",");
@@ -719,7 +719,7 @@ function cancelAllFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActi
   };
 }
 
-function closePositionFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
+export function closePositionFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
   const snapshot = intent.providerSnapshotJson;
   const position = snapshot.position !== null && typeof snapshot.position === "object" && !Array.isArray(snapshot.position)
     ? snapshot.position as Record<string, unknown> : {};

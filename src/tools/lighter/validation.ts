@@ -525,7 +525,7 @@ const marketDetailsResponseSchema = z
     code: int,
     message,
     order_book_details: z.array(marketDetailSchema),
-    spot_order_book_details: z.array(marketDetailSchema).optional().default([]),
+    spot_order_book_details: z.array(marketDetailSchema).nullish().transform((rows) => rows ?? []),
   })
   .passthrough();
 

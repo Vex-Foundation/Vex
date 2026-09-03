@@ -157,13 +157,14 @@ export async function admitStudioCall(
     { toolId: manifest.toolId, params: call.args },
     toProtocolExecutionContext(call, context, "studio_mcp"),
   );
-  if (result.pendingApproval === true && manifest.toolId === "lighter.order.create") {
+  if (result.pendingApproval === true && manifest.toolId.startsWith("lighter.")) {
     try {
       const { readStudioPreparedApproval } = await import("./prepared-approval.js");
       const preparedApproval = await readStudioPreparedApproval(context.sessionId, call);
+      if (!preparedApproval) throw new Error("Unsupported Lighter approval target.");
       return { result, dispatched: true, preparedApproval };
     } catch {
-      return { dispatched: true, result: { success: false, output: "The saved Lighter order is missing, expired, or inconsistent. No approval was created. Prepare a fresh order." } };
+      return { dispatched: true, result: { success: false, output: "The saved Lighter action is missing, expired, or inconsistent. No approval was created. Prepare a fresh action." } };
     }
   }
   return { result, dispatched: true };
