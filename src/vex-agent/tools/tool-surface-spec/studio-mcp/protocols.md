@@ -48,8 +48,8 @@ shapes.
 
 ## Totals
 
-- tools: 168
-- Vex tools: 28
+- tools: 167
+- Vex tools: 27
 - protocol tools: 140 across 11 protocols
 - destructive: 50
 
@@ -82,7 +82,6 @@ shapes.
 | WalletTrackToken | Track a token in the local wallet view | mutating | no | - |
 | WalletWrapConfirm | Broadcast a prepared wrap or unwrap | mutating | yes | - |
 | WalletWrapPrepare | Prepare a native / wrapped-native conversion | mutating | no | - |
-| WebResearch | Search and read the web | read-only | no | TAVILY_API_KEY |
 | vex_ToolDescribe | Read one tool's whole contract | read-only | no | - |
 | vex_ToolSearch | Search the protocol tool catalog | read-only | no | - |
 

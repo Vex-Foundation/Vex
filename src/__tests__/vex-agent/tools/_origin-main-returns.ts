@@ -18,11 +18,11 @@
  * is CONTIGUOUS in the original text - no transcription step sits between the
  * commit and the assertion. Do not edit by hand.
  *
- * WebResearch is the ONE tool in the nine-pointer set absent here, and
- * deliberately: its description on origin/main carried NO RETURNS list, so
- * nothing was moved out of it. Its `returns` is authored from the result
- * builder instead (`internal/web-research/result-shape.ts`), and the suite
- * states that exception by name rather than leaving a silent hole.
+ * WebResearch used to be the ninth pointer and was deliberately absent here:
+ * its description on origin/main carried NO RETURNS list, so nothing was moved
+ * out of it. It left the MCP export on 2026-09-03 (its `returns` is still
+ * authored from the result builder, `internal/web-research/result-shape.ts`,
+ * for the in-app agent), so the eight entries below are now the whole set.
  */
 
 export const ORIGIN_MAIN_RETURNS: Readonly<Record<string, string>> = {

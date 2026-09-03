@@ -2,7 +2,7 @@
  * WHICH PROVIDER KEYS THIS INSTALLATION ACTUALLY HAS.
  *
  * The measured failure this exists for: `.vex/protocols.md` tells an agent that
- * TwitterAccount, WebResearch and all 34 solana tools need a key, and nothing
+ * TwitterAccount and all 34 solana tools need a key, and nothing
  * tells it WHICH keys are present here, so the first call to an unconfigured
  * tool is always a wasted one (clarity review A17, t1 #16, p1 #27). The managed
  * block can answer that, because it is written by the app that owns the

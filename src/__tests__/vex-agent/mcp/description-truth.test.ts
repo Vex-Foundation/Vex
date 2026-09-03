@@ -182,13 +182,14 @@ describe("the advisories the review raised", () => {
 });
 
 describe("the moved RETURNS tails point at the tool that carries them", () => {
-  // The six descriptions the client was cutting, plus the two that grew past
-  // the bound while gaining the approval sentence. Each ends its result
-  // sentence with the reader whose RESULT no client truncates.
+  // The descriptions the client was cutting, plus the two that grew past the
+  // bound while gaining the approval sentence. Each ends its result sentence
+  // with the reader whose RESULT no client truncates. WebResearch was one of
+  // them until it left the export entirely (owner decision 2026-09-03); its
+  // in-app description is unchanged and is not this surface's concern.
   const POINTS_AT_DESCRIBE = [
     "AgentScan",
     "TwitterAccount",
-    "WebResearch",
     "BridgeExecute",
     "SwapExecute",
     "WalletEvmTransactionPrepare",

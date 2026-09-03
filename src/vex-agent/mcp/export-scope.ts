@@ -3,7 +3,8 @@
  *
  * Encodes the owner decision recorded in
  * `tool-surface-spec/mcp-export-scope.md`: the whole agent tool surface EXCEPT
- * the session-bound groups. Memory and engine/runtime tools are agent-session
+ * the session-bound groups and the few tools an MCP client already carries
+ * itself. Memory and engine/runtime tools are agent-session
  * concerns (missions, plan mode, session memory, compaction) bound to the
  * in-app session lifecycle; an external coding agent brings its own planning
  * and memory, and MCP 2026-07-28 requires a `tools/list` that does not vary by
@@ -56,6 +57,12 @@ export const NON_EXPORTED_INTERNAL_TOOLS: ReadonlySet<string> = new Set([
   // external agent could only stage boards nobody can see (merge decision
   // 2026-08-25).
   "BoardCompose",
+  // Research: every MCP client that connects (Claude Code, Codex CLI, Gemini
+  // CLI) carries its own web search and fetch; exporting a Tavily-keyed
+  // duplicate costs a key the user does not need and 2 KB of every session's
+  // context. The tool itself is UNCHANGED for the in-app Vex agent, which has
+  // no client search of its own (owner decision 2026-09-03).
+  "WebResearch",
 ]);
 
 /** The read-only catalog-search tool, exported through its own adapter. */

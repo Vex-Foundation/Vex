@@ -18,6 +18,7 @@
 
 import { describe, it, expect } from "vitest";
 
+import { buildStudioInventory } from "@vex-agent/mcp/inventory/index.js";
 import { renderStudioProtocolBlocks } from "@vex-agent/studio/instructions/protocol-blocks.js";
 import {
   resolveStudioInstallationEnvironment,
@@ -74,7 +75,7 @@ describe("the protocol blocks", () => {
     const withKeys = renderStudioProtocolBlocks(environment);
     expect(withKeys).not.toContain("s3cret-value");
     // Only the keys a NAMESPACE requires appear here; an internal tool's key
-    // (TwitterAccount, WebResearch) has no protocol block to sit in.
+    // (TwitterAccount) has no protocol block to sit in.
     const named = environment.configuredKeys.filter((key) => withKeys.includes(key));
     expect(named.length).toBeGreaterThan(0);
   });
@@ -87,6 +88,18 @@ describe("the protocol blocks", () => {
     expect(none).toContain("NOT configured here");
     expect(all).not.toContain("NOT configured here");
     expect(all).toContain("IS configured in this installation");
+  });
+
+  it("declares only keys the EXPORTED surface needs, so TAVILY_API_KEY is gone", () => {
+    // The declared list is DERIVED from the exported inventory, which is why
+    // dropping WebResearch from the export also stops the managed block telling
+    // a coding agent to configure a Tavily key it has no tool for. The in-app
+    // tool still needs that key; the block speaks only for the MCP surface.
+    const declared = studioDeclaredEnvironmentKeys();
+    expect(declared).not.toContain("TAVILY_API_KEY");
+    expect(declared).toEqual([...new Set(
+      buildStudioInventory().flatMap((tool) => (tool.requiresEnv ? [tool.requiresEnv] : [])),
+    )].sort());
   });
 
   it("treats a whitespace-only variable as missing, exactly as the tools do", () => {

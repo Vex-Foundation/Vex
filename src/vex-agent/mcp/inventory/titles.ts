@@ -39,7 +39,6 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   BridgeQuote: "Quote a cross-chain bridge",
   BridgeQuoteRelay: "Quote a Relay bridge",
   BridgeExecuteRelay: "Execute a Relay bridge",
-  WebResearch: "Search and read the web",
   TwitterAccount: "Read Twitter accounts and posts",
   AgentScan: "Review this wallet's recorded activity",
   ChainRead: "Read raw EVM chain data",

@@ -1,5 +1,5 @@
 {
-  "toolCount": 168,
+  "toolCount": 167,
   "tools": [
     {
       "alwaysLoad": true,
@@ -1246,67 +1246,6 @@
       "readOnlyHint": false,
       "requiresEnv": null,
       "title": "Prepare a native / wrapped-native conversion"
-    },
-    {
-      "alwaysLoad": true,
-      "descriptionBytes": 2048,
-      "destructiveHint": false,
-      "inputSchema": {
-        "properties": {
-          "chunksPerSource": {
-            "description": "Search-only, and REQUIRES searchDepth: \"advanced\" - measured live, basic depth ignores it. Passages Tavily selects per source, 1-5. This is provider-side selection, not truncation of what we received: at advanced depth chunksPerSource: 1 held every row to 720-755 B against 646-2,203 B without it.",
-            "type": "number"
-          },
-          "fetchTop": {
-            "description": "Search-only. How many of the top hits to read in full, 0-10 (default 3); 0 = snippets only. Budget: each page read costs ~2.1 KB (max observed 2,508 B), so fetchTop: 10 is ~21 KB of page text alone. The default shape measures ~12 KB.",
-            "type": "number"
-          },
-          "maxResults": {
-            "description": "Search-only. Hits to request from Tavily, 1-10 (default 6). This changes the provider request, not a local trim. Budget: a hit you do not read costs ~1.0 KB of snippet (measured 466-1,891 B).",
-            "type": "number"
-          },
-          "query": {
-            "description": "Search query. Pass this OR `url`, not both.",
-            "type": "string"
-          },
-          "searchDepth": {
-            "description": "Search-only. `advanced` improves recall and costs 2 Tavily credits instead of 1 (measured). Default: `basic`.",
-            "enum": [
-              "basic",
-              "advanced"
-            ],
-            "type": "string"
-          },
-          "timeRange": {
-            "description": "Search-only. Restrict hits to the last day/week/month/year. Verified live on `topic: \"news\"` (with `day`, all 5 rows were published that day against a 5-day spread without it). On `topic: \"general\"` the provider accepts it but returns no dates, so its effect cannot be verified from the payload.",
-            "enum": [
-              "day",
-              "week",
-              "month",
-              "year"
-            ],
-            "type": "string"
-          },
-          "topic": {
-            "description": "Search-only. `news` is the ONLY way to get publication dates (measured: 10/10 news rows carried one, 0/9 general rows did) and is the right choice for \"why is this token moving today\". Scores are NOT comparable across topics - measured 0.53-0.71 on general vs 0.02-0.33 on news for the same query. Default: `general`.",
-            "enum": [
-              "general",
-              "news"
-            ],
-            "type": "string"
-          },
-          "url": {
-            "description": "Absolute http:// or https:// URL to read as markdown. Unlike a search page read this is NOT query-targeted - you get the whole document, measured at 21,319 B for one documentation page, and no parameter bounds it. Other schemes (ftp, file, mailto, data) rejected. Pass this OR `query`, not both.",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "kind": "internal",
-      "publicName": "WebResearch",
-      "readOnlyHint": true,
-      "requiresEnv": "TAVILY_API_KEY",
-      "title": "Search and read the web"
     },
     {
       "alwaysLoad": true,

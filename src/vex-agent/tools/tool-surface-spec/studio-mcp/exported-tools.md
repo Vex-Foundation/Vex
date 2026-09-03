@@ -40,11 +40,11 @@ unauthored fee as unknown, never as free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 168
-- internal: 28
+- exported tools: 167
+- internal: 27
 - protocol: 140 across 11 namespaces
-- always loaded: 28
-- read-only: 110
+- always loaded: 27
+- read-only: 109
 - destructive: 50
 
 ## Internal tools
@@ -76,7 +76,6 @@ unauthored fee as unknown, never as free. Both texts live on the tool
 | WalletTrackToken | Track a token in the local wallet view | internal | no | no | yes | - | 1044 | yes | none |
 | WalletWrapConfirm | Broadcast a prepared wrap or unwrap | internal | no | yes | yes | - | 2041 | yes | none |
 | WalletWrapPrepare | Prepare a native / wrapped-native conversion | internal | no | no | yes | - | 2016 | yes | none |
-| WebResearch | Search and read the web | internal | yes | no | yes | TAVILY_API_KEY | 2048 | yes | none |
 | vex_ToolDescribe | Read one tool's whole contract | internal | yes | no | yes | - | 1589 | yes | none |
 | vex_ToolSearch | Search the protocol tool catalog | internal | yes | no | yes | - | 1500 | yes | none |
 

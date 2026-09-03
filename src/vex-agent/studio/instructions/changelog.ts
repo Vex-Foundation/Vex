@@ -87,6 +87,17 @@ export const STUDIO_CHANGELOG: readonly StudioChangelogEntry[] = [
   },
   {
     version: "0.2.7",
+    kind: "removed",
+    target: "tool",
+    subject: "WebResearch",
+    text:
+      "WebResearch is no longer on the Vex MCP surface - your client has its own "
+      + "web search, so Vex stopped shipping a second one that needed a provider "
+      + "key of its own. Use your client's web search and fetch for anything "
+      + "off-chain; every on-chain and market tool is unchanged.",
+  },
+  {
+    version: "0.2.7",
     kind: "changed",
     target: "rule",
     subject: "How to work with Vex MCP",

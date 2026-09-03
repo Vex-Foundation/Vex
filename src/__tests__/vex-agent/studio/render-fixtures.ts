@@ -75,8 +75,8 @@ export const STUDIO_TEST_BRIEF: StudioProjectBrief = {
  * branches of every protocol block's availability line.
  */
 export const STUDIO_TEST_ENVIRONMENT: StudioInstallationEnvironment = {
-  configuredKeys: ["TAVILY_API_KEY"],
-  missingKeys: ["JUPITER_API_KEY", "RETTIWT_API_KEY"],
+  configuredKeys: ["RETTIWT_API_KEY"],
+  missingKeys: ["JUPITER_API_KEY"],
 };
 
 /**

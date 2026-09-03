@@ -1,4 +1,4 @@
-<!-- vex:studio:begin vex=0.2.6 hash=1c73d0a19db91fbc -->
+<!-- vex:studio:begin vex=0.2.6 hash=5c8e3060f8d3dc36 -->
 # Vex Studio - project "acme-trading"
 
 This repository is connected to Vex, a self-custodial crypto agent. The Vex
@@ -14,6 +14,7 @@ its version beside its own heading.
 
 - **Vex 0.2.7, added** `vex_ToolDescribe`: vex_ToolDescribe returns one tool's whole contract - full description, input schema, risk class, whether it raises the approval card, the Vex fee and what it returns - so a description your client truncated is one call away rather than lost.
 - **Vex 0.2.7, removed** `BridgeExecute`: BridgeExecute no longer accepts a `recipient` override. The destination is derived from the source wallet, which is what the description already claimed; the parameter that contradicted it is gone.
+- **Vex 0.2.7, removed** `WebResearch`: WebResearch is no longer on the Vex MCP surface - your client has its own web search, so Vex stopped shipping a second one that needed a provider key of its own. Use your client's web search and fetch for anything off-chain; every on-chain and market tool is unchanged.
 - **Vex 0.2.7, changed** `How to work with Vex MCP`: The APPROVAL rule now says what actually happens over MCP: a destructive call BLOCKS until the user answers the card in Vex and the result you receive is the settled outcome. It never returns a pending status to poll, so a second call is always wrong.
 - **Vex 0.2.7, added** `This project`: The permission level is now stated in full, including that a full-access project executes a destructive call directly with no approval card and that you must not add a confirmation step of your own.
 - **Vex 0.2.7, added** `Protocols available to this project`: Every protocol this server exposes now has its own block here - chains, read tools, executing tools, the quote/execute pair and whether its required key is configured in this installation.
@@ -460,8 +461,8 @@ Discord with the link to their pull request or issue.
 ASK FIRST, ALWAYS. Never open a report, never send a diagnostic anywhere, and
 never publish anything about this project on your own initiative. No
 diagnostic, log, wallet address or project detail leaves this machine without
-the user's word; ordinary research queries through `WebResearch` and
-`TwitterAccount` are not diagnostics and are not covered by that sentence.
+the user's word; ordinary research queries - your own client's web search, or
+`TwitterAccount` - are not diagnostics and are not covered by that sentence.
 
 ---
 

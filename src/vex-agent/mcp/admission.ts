@@ -75,7 +75,8 @@ function notExportedRefusal(name: string): ToolResult {
     success: false,
     output:
       `${name} is not exported by Vex Studio. Memory and engine/runtime tools are bound to a `
-      + "Vex agent session and have no meaning outside it, and "
+      + "Vex agent session and have no meaning outside it, WebResearch is not exported because "
+      + "your own client already has web search and fetch, and "
       + `${EXECUTE_TOOL_ENVELOPE_NAME} is an internal approval-resume envelope, never a callable `
       + `tool. Use ${EXPORTED_TOOL_SEARCH_PUBLIC_NAME} to find an exported tool for this task. `
       + "Nothing was executed.",

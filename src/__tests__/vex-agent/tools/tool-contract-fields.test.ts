@@ -1,7 +1,7 @@
 /**
  * THE TWO CONTRACT FIELDS - `returns` and `vexFee` - and the promise they keep.
  *
- * Nine always-loaded descriptions gave up their field-by-field RETURNS list to
+ * Eight always-loaded descriptions gave up their field-by-field RETURNS list to
  * fit the 2048 characters a client shows and now end "Full contract:
  * vex_ToolDescribe." That pointer was a promise the reader could not keep:
  * `vex_ToolDescribe` answered `known: false` for both the result shape and the
@@ -66,7 +66,6 @@ function descriptionOf(name: string): string {
 const MOVED = [
   "AgentScan",
   "TwitterAccount",
-  "WebResearch",
   "BridgeExecute",
   "SwapExecute",
   "WalletEvmTransactionPrepare",
@@ -110,16 +109,14 @@ describe("2 - the moved texts equal what the description used to say, byte for b
     expect(returnsTextOf(name)).toBe(ORIGIN_MAIN_RETURNS[name]);
   });
 
-  it("covers every moved tool except the one that never had a RETURNS list", () => {
-    // WebResearch is the declared exception: origin/main's description carried
-    // no field list, so its `returns` is authored from the result builder
-    // rather than moved. Naming it here is what keeps the exception a decision
-    // instead of a gap.
+  it("covers every moved tool, with no unproven name left over", () => {
+    // The exception this used to carry was WebResearch, whose origin/main
+    // description had no field list. It left the MCP export on 2026-09-03, so
+    // every remaining moved tool is proven byte for byte and the list of
+    // unproven names is empty. A name appearing here again means a RETURNS
+    // section was moved without recording what it used to say.
     const proven = new Set(Object.keys(ORIGIN_MAIN_RETURNS));
-    const unproven = MOVED.filter((name) => !proven.has(name));
-    expect(unproven).toEqual(["WebResearch"]);
-    expect(returnsTextOf("WebResearch")).toContain("externalContentWarning");
-    expect(returnsTextOf("WebResearch")).toContain("pageRead");
+    expect(MOVED.filter((name) => !proven.has(name))).toEqual([]);
   });
 
   it.each(MOVED)("%s points the reader at the tool that now carries it", (name) => {

@@ -581,6 +581,6 @@ export const STUDIO_BUG_REPORT_NOTE = [
   "ASK FIRST, ALWAYS. Never open a report, never send a diagnostic anywhere, and",
   "never publish anything about this project on your own initiative. No",
   "diagnostic, log, wallet address or project detail leaves this machine without",
-  "the user's word; ordinary research queries through `WebResearch` and",
-  "`TwitterAccount` are not diagnostics and are not covered by that sentence.",
+  "the user's word; ordinary research queries - your own client's web search, or",
+  "`TwitterAccount` - are not diagnostics and are not covered by that sentence.",
 ].join("\n");

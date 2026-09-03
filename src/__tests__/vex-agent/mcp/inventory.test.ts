@@ -72,9 +72,30 @@ describe("the exported inventory covers exactly the export scope", () => {
     // every other wallet tool and recorded in `mcp-export-scope.md`.
     // 167 -> 168: `vex_ToolDescribe`, the MCP-only whole-contract reader that
     // exists because a client truncates a description and never a result.
-    expect(inventory).toHaveLength(168);
-    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(28);
+    // 168 -> 167: `WebResearch` left the export (owner decision 2026-09-03).
+    // Every client that connects has its own web search, so the exported copy
+    // was a duplicate that cost a provider key and 2 KB of context.
+    expect(inventory).toHaveLength(167);
+    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
     expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(140);
+  });
+
+  it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {
+    // The two lanes diverge ON PURPOSE. An external client brings its own web
+    // search, so exporting a Tavily-keyed second one buys nothing; the in-app
+    // Vex agent has no such client and still needs the tool. If this ever fails
+    // by finding the tool exported again, the decision - not the test - is what
+    // changed.
+    expect(inventory.map((t) => t.publicName)).not.toContain("WebResearch");
+    expect(studioAlwaysLoadNames()).not.toContain("WebResearch");
+    const inApp = getToolDef("WebResearch");
+    expect(inApp, "WebResearch must stay registered for the in-app agent").toBeDefined();
+    expect(inApp?.requiresEnv).toBe("TAVILY_API_KEY");
+    // And the key it needs is no longer something the MCP surface declares, so
+    // the managed block stops telling a coding agent to configure it.
+    expect(
+      inventory.flatMap((t) => (t.requiresEnv === undefined ? [] : [t.requiresEnv])),
+    ).not.toContain("TAVILY_API_KEY");
   });
 
   it("exports ToolSearch under its own public name and no other spelling", () => {
