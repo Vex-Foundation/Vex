@@ -7,7 +7,7 @@
  * rather than a component's self-report:
  *
  *   1. the shell is reached and reports `data-vex-runtime-mode="agent"`;
- *   2. the hero's Studio radio flips the mode on the SAME DOM node that
+ *   2. the rail header's Studio radio flips the mode on the SAME DOM node that
  *      carries `data-vex-screen="appShell"`, and the Studio sidebar and
  *      welcome mount;
  *   3. the sidebar's New project key opens `ProjectCreator`, whose wallet
@@ -212,7 +212,7 @@ test("Studio journey: the shell switches to Studio and opens the project creator
   expect(shellNodeBeforeSwitch).not.toBeNull();
   await shot(page, testInfo, screenshots, "01-app-shell-agent");
 
-  /* ---- 2. the hero radio switches the whole shell to Studio ---------- */
+  /* ---- 2. the rail header's radio switches the whole shell to Studio -- */
 
   const modeGroup = page.getByRole("radiogroup", { name: "Runtime mode" });
   await expect(modeGroup.getByRole("radio", { name: "Agent" })).toHaveAttribute(
@@ -224,8 +224,8 @@ test("Studio journey: the shell switches to Studio and opens the project creator
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
   // Studio is NOT a one-way door, and the capsule has exactly ONE home: the
   // rail header, visible on every Studio screen. The invariant is "exactly one
-  // capsule on the page, showing Studio as checked" - a stale hero capsule
-  // orphaned behind the Studio columns, or a second one on the welcome, would
+  // capsule on the page, showing Studio as checked" - a stale agent-rail
+  // capsule orphaned behind the Studio columns, or a second one on the welcome, would
   // double the count and fail here (the welcome carries a plain button back).
   await expect(modeGroup).toHaveCount(1);
   const studioWelcome = page.locator('[data-vex-area="studio-welcome"]');

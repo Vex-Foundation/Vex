@@ -47,7 +47,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { Page, TestInfo } from "@playwright/test";
+import type { Locator, Page, TestInfo } from "@playwright/test";
 import { test, expect, type VexDatabaseFixture } from "./fixtures/vex-app-with-database.js";
 import { APP_DIR, relaunchApp } from "./fixtures/electron-app.js";
 
@@ -83,6 +83,16 @@ async function enterStudio(page: Page): Promise<boolean> {
   if ((await page.locator("[data-vex-setup-tour]").count()) === 0) return false;
   await tourTo(page, "appShell");
   const shell = page.locator('[data-vex-screen="appShell"]');
+  //
+  // THE RETURN LEG IS A POINTER, and that is a measured gap rather than a
+  // preference. `Ctrl+Shift+A` is a TOGGLE in the table and its handler answers
+  // both directions (`useStudioKeybindings.test.tsx` drives the return), but
+  // the only listener for it is mounted by `StudioCenter`, which `AppShell`
+  // renders only while the mode is `studio`. So there is nothing listening in
+  // an Agent session yet: the chord into Studio needs the hook mounted in a
+  // seat that survives the mode switch, which belongs to `AppShell` and not to
+  // the keyboard module. When that mount lands, the two lines below become
+  // `await page.keyboard.press("Control+Shift+A")`.
   await page
     .getByRole("radiogroup", { name: "Runtime mode" })
     .getByRole("radio", { name: "Studio" })
@@ -480,8 +490,8 @@ test("UX-1 terminal surface: the card, the tab, the cluster and the picker", asy
 
   /* ---- 17: the picker, and the surface B5 was missing ----------------- */
 
-  await centre.getByRole("button", { name: "Shell for new terminals" }).first().click();
-  const listbox = page.getByRole("listbox", { name: "Shell for new terminals" });
+  await centre.getByRole("button", { name: "Shell for the next terminal" }).first().click();
+  const listbox = page.getByRole("listbox", { name: "Shell for the next terminal" });
   await expect(listbox).toBeVisible();
   // THE B5 ASSERTION. A popup with no background is a popup whose rows are read
   // against whatever is behind them, which is how the light theme ended up with
@@ -1000,7 +1010,7 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   await page.keyboard.press("Control+b");
   await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
 
-  /* ---- 43: Ctrl+Shift+A is the way back to Agent mode ----------------- */
+  /* ---- 43: Ctrl+Shift+A switches Agent and Studio -------------------- */
 
   // The finding this closes (I9): before it, the ONLY route out of Studio was
   // the welcome screen's capsule, so a user standing in a project had no way
@@ -1065,6 +1075,78 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
     "aria-selected",
     "true",
   );
+
+  /* ---- N2: exactly one control in the centre is called "New terminal" - */
+
+  // An accessible name is matched by SUBSTRING by every tool that looks a
+  // control up by one, so this counts NAME COLLISIONS and not just duplicate
+  // labels. It measured 2 with one project open, in both themes on both walks
+  // of the after-audit, while the source had a single
+  // `aria-label="New terminal"`: the shell picker's own name contained it.
+  await expect(centre.getByRole("button", { name: "New terminal" })).toHaveCount(1);
+
+  /* ---- 44b: the same chords, with the caret INSIDE the shell ---------- */
+
+  // THE DEFECT THIS SECTION USED TO WALK PAST (I-3). Every chord above is
+  // pressed with focus on the tab strip, and from there they all worked; with
+  // the caret in xterm's textarea, `Ctrl+Tab`, `Ctrl+Shift+Tab` and `Ctrl+W`
+  // did nothing at all, because xterm encoded them for the pty before any
+  // document listener saw them. That is the one state a user actually spends
+  // their time in, so it is now the one this section proves.
+  //
+  // THE CARET IS RE-TAKEN BEFORE EACH CHORD, and not because the chord loses
+  // it: switching tabs hides the old pane, and focus on an element inside a
+  // `display: none` subtree falls to the document body. Re-focusing is what a
+  // user's own next click does; it is not a workaround for the chord.
+  //
+  // AND IT IS ASSERTED EVERY TIME, not only the first. Without that, a focus
+  // that silently did nothing would leave the chord being pressed at the body
+  // - which is the state the section already passed in before this block
+  // existed - so the assertions that follow would prove nothing new. The
+  // caret's position is the whole subject here, so it is measured before each
+  // keystroke rather than assumed to have survived the last one.
+  const terminalInput = (): Locator =>
+    centre
+      .locator('[role="tabpanel"]:not([hidden])')
+      .locator('textarea[aria-label="Terminal input"]')
+      .first();
+
+  await terminalInput().focus();
+  await expect(terminalInput()).toBeFocused();
+
+  // Ctrl+Tab wraps from the third terminal to the first, from inside the shell.
+  await page.keyboard.press("Control+Tab");
+  await expect(tabs.getByRole("tab", { name: /Terminal 1/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
+  await terminalInput().focus();
+  await expect(terminalInput()).toBeFocused();
+  await page.keyboard.press("Control+Shift+Tab");
+  await expect(tabs.getByRole("tab", { name: /Terminal 3/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
+  // Ctrl+W closes the tab the caret is in. That the keystroke did not ALSO
+  // reach the shell as `0x17` (erase word) is proven where the bytes are
+  // visible - `XtermHost.test.tsx` asserts the bridge received nothing - since
+  // an empty prompt looks identical either way.
+  await terminalInput().focus();
+  await expect(terminalInput()).toBeFocused();
+  await page.keyboard.press("Control+w");
+  await expect(tabs.getByRole("tab")).toHaveCount(2, { timeout: 60_000 });
+
+  // And the new-terminal chord LANDS THE CARET in the shell it opened. Before
+  // this it created the terminal and left focus on the body, so the chord a
+  // user pressed twice in a row worked once.
+  await terminalInput().focus();
+  await expect(terminalInput()).toBeFocused();
+  await page.keyboard.press("Control+Shift+`");
+  await expect(tabs.getByRole("tab")).toHaveCount(3, { timeout: 60_000 });
+  await expect(terminalInput()).toBeFocused({ timeout: 60_000 });
+  await shot(page, `${theme}-44b-keyboard-inside-terminal`);
 
   // Ctrl+Shift+E hands focus to the project tree, which is a `role="tree"` and
   // the explorer pane's ONE tab stop.
@@ -1480,6 +1562,51 @@ test("EXP-1 explorer actions: create, rename and delete a file from the tree", a
   await expect(createdRow).toBeVisible({ timeout: 60_000 });
   await shot(page, "exp1-03-file-created");
 
+  /* ---- HEADER CREATE: where the SELECTION points, not the root --------- */
+
+  // THE DEFECT THIS CLOSES (live test 2026-09-03, I-4). The pane header's New
+  // file and New folder created at the PROJECT ROOT whatever the tree had
+  // selected, so a user who clicked a folder and pressed New file got the file
+  // beside that folder while the row menu put it inside. The two routes now
+  // read one rule (`ExplorerSession.createParentId`), and this is the only
+  // place where the answer is checked against the DISK rather than a stub.
+  //
+  // A folder of this walk's own making, because a fresh project's root holds
+  // nothing but Vex's managed artifacts and creating inside `.vex/` is refused
+  // by name.
+  const folder = `exp1-dir-${stamp}`;
+  const headerNewFile = explorerPane.getByRole("button", { name: "New file" });
+  const headerNewFolder = explorerPane.getByRole("button", { name: "New folder" });
+
+  // The selection here is the file the create above left behind, and a FILE
+  // gives its new sibling to its parent: the root.
+  await headerNewFolder.click();
+  await tree.getByRole("textbox").fill(folder);
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() => fs.existsSync(path.join(projectDir, folder)), { timeout: 60_000 })
+    .toBe(true);
+
+  // Now SELECT that folder, which is the state the defect was measured in.
+  const folderRow = tree.getByRole("treeitem", { name: folder }).first();
+  await expect(folderRow).toBeVisible({ timeout: 60_000 });
+  await folderRow.click();
+  await expect(folderRow).toHaveAttribute("aria-selected", "true");
+  await shot(page, "exp1-03b-folder-selected");
+
+  const inner = `exp1-inner-${stamp}.ts`;
+  await headerNewFile.click();
+  await tree.getByRole("textbox").fill(inner);
+  await page.keyboard.press("Enter");
+
+  // THE WORLD: inside the selected folder ...
+  await expect
+    .poll(() => fs.existsSync(path.join(projectDir, folder, inner)), { timeout: 60_000 })
+    .toBe(true);
+  // ... and NOT beside it, which is where it used to land.
+  expect(fs.existsSync(path.join(projectDir, inner))).toBe(false);
+  await shot(page, "exp1-03c-created-in-selected-folder");
+
   /* ---- RENAME: F2 on the focused row, committed with Enter -------------- */
 
   // RENAMED THROUGH THE MENU, not by clicking the row first: a click on a file
@@ -1522,6 +1649,62 @@ test("EXP-1 explorer actions: create, rename and delete a file from the tree", a
   // The bytes are still written, because the delete below has to remove a file
   // with contents rather than an empty one.
   fs.writeFileSync(path.join(projectDir, renamed), "# exp1\n");
+
+  /* ---- FOCUS: a single click OPENS, and leaves the caret in the tree ---- */
+
+  // THE DEFECT THIS GUARDS (live test 2026-09-03, I-5). A single click on a
+  // file row opens the preview, and the surface that mounted for it left
+  // `document.activeElement` on `body`: F2, Delete and Shift+F10 then did
+  // nothing at all until the user pressed Ctrl+Shift+E to get back into the
+  // tree. VS Code's split is the rule (`listService.ts:717-733`): a POINTER
+  // open preserves focus in the explorer, a double click and Enter hand it to
+  // the editor.
+  //
+  // WHAT THIS IS NOT: the reproducer. Measured on this build with the tree's
+  // focus repair deliberately reverted, `document.activeElement` stayed on the
+  // tree for the two seconds after the click, so the steal the live pass saw
+  // does not arise from this walk's own state and this section stays green
+  // without the repair. The reproducer is `ExplorerTree.test.tsx` ("keeps focus
+  // in the tree when a preview open drops it"), which blurs the way the built
+  // surface did and IS red without it. This is the assembled guard: whatever
+  // owner steals focus next, a real click through a real viewer has to leave
+  // the write keys working.
+  await renamedRow.click();
+  // THE OPEN HAS LANDED before focus is read: the tab is the workspace's own
+  // acknowledgement that the file reached it, so this asserts focus after the
+  // surface mounted rather than in the gap before it.
+  const centre = page.locator('[data-vex-area="studio-center"]');
+  await expect(centre.getByRole("tab", { name: new RegExp(renamed) })).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(tree).toBeFocused({ timeout: 60_000 });
+
+  // aria-selected FOLLOWS THE KEYBOARD, and the open file keeps a marker of its
+  // own. Before this, the attribute marked the open file, so a user arrowing
+  // down the tree heard one row announced however far they moved - which is
+  // also why End looked like it did nothing (A-1): the keystroke always reached
+  // `moveFocus:last`, and what the tree showed and announced did not move.
+  await expect(renamedRow).toHaveAttribute("aria-selected", "true");
+  await expect(renamedRow).toHaveAttribute("data-vex-explorer-open", "true");
+
+  await page.keyboard.press("End");
+  const lastRow = tree.locator('[role="treeitem"]').last();
+  await expect(lastRow).toHaveAttribute("aria-selected", "true");
+  await expect(tree.locator('[role="treeitem"][aria-selected="true"]')).toHaveCount(1);
+  // The open file is still marked as open, and no longer as selected.
+  await expect(renamedRow).toHaveAttribute("data-vex-explorer-open", "true");
+  await shot(page, "exp1-06-focus-stays-in-tree");
+
+  // AND THE FOCUS IS THE USEFUL KIND: the write keys work from it, which is
+  // exactly what the live pass found broken. F2 opens the name box on the row
+  // the keyboard is on, with no click in between.
+  await renamedRow.click();
+  await page.keyboard.press("F2");
+  const focusRenameBox = tree.getByRole("textbox");
+  await expect(focusRenameBox).toBeFocused({ timeout: 60_000 });
+  await expect(focusRenameBox).toHaveValue(renamed);
+  await page.keyboard.press("Escape");
+  await expect(tree.getByRole("textbox")).toHaveCount(0);
 
   /* ---- VEX-MANAGED: the installer's own file refuses to be renamed ------ */
 
