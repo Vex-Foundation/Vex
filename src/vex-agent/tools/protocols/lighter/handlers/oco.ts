@@ -39,7 +39,7 @@ import {
   resolvePreviewMarketId,
 } from "./read.js";
 
-function followUp(
+export function buildOcoApprovalFollowUp(
   intent: LighterOcoExecutionIntentRow,
   stopLoss: Parameters<typeof buildLighterOcoApprovalDisclosure>[1],
   takeProfit: Parameters<typeof buildLighterOcoApprovalDisclosure>[2],
@@ -105,7 +105,7 @@ async function prepareOco(
   if (stopLoss === null || takeProfit === null) {
     throw new Error("The exact OCO child previews are no longer fresh.");
   }
-  return { intent, preparedActionFollowUp: followUp(intent, stopLoss, takeProfit) };
+  return { intent, preparedActionFollowUp: buildOcoApprovalFollowUp(intent, stopLoss, takeProfit) };
 }
 
 function executionGuidance(result: ExecuteApprovedLighterOcoResult): string {

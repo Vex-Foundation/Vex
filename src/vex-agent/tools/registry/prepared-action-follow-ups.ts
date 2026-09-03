@@ -354,6 +354,10 @@ export function validatePreparedActionFollowUp(
   sourceToolName: string,
   candidate: PreparedActionFollowUp,
 ): PreparedActionFollowUpValidation {
+  if (sourceToolName === "lighter.position.protect"
+    && candidate.toolName === "execute_tool" && candidate.args.toolId === "lighter.order.create") {
+    return validateLighterOcoFollowUp(candidate);
+  }
   if (
     LIGHTER_ORDER_CREATE_PREPARE_SOURCES.has(sourceToolName)
     && candidate.toolName === "execute_tool"
@@ -1395,4 +1399,56 @@ function validateLighterWithdrawalClaimFollowUp(
 
 function safeNonNegativeInt(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+const LIGHTER_OCO_PREVIEW_KEYS = [
+  "orderSummary", "marketSymbol", "marketType", "baseAmountDisplay",
+  "stopLossTriggerDisplay", "stopLossBoundDisplay", "takeProfitTriggerDisplay", "takeProfitBoundDisplay",
+  "orderExpiryIso", "toolId", "intentId", "environment", "accountIndex", "apiKeyIndex", "marketIndex", "side",
+  "baseAmountInteger", "stopLossPreviewId", "stopLossPriceInteger", "stopLossTriggerPriceInteger",
+  "takeProfitPreviewId", "takeProfitPriceInteger", "takeProfitTriggerPriceInteger", "matchHash", "groupingType", "reduceOnly",
+] as const;
+
+function validateLighterOcoFollowUp(candidate: PreparedActionFollowUp): PreparedActionFollowUpValidation {
+  const invalid = { ok: false, reason: "invalid_contract" } as const;
+  const params = candidate.args.params;
+  if (Object.keys(candidate.args).sort().join(",") !== "params,toolId"
+    || !params || typeof params !== "object" || Array.isArray(params)
+    || Object.keys(params).join(",") !== "intentId") return invalid;
+  const intentId = (params as Record<string, unknown>).intentId;
+  if (typeof intentId !== "string"
+    || !/^lighter-oco-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(intentId)
+    || !Number.isFinite(Date.parse(candidate.expiresAt))) return invalid;
+  const preview = candidate.approvalPreview;
+  if (preview.toolName !== "order.create" || preview.namespace !== "lighter"
+    || Object.keys(preview.criticalArgs).sort().join(",") !== [...LIGHTER_OCO_PREVIEW_KEYS].sort().join(",")) return invalid;
+  const criticalArgs: Record<string, ApprovalPreviewScalar> = {};
+  for (const key of LIGHTER_OCO_PREVIEW_KEYS) {
+    const value = preview.criticalArgs[key];
+    if (!isScalar(value)) return invalid;
+    criticalArgs[key] = value;
+  }
+  const c = criticalArgs;
+  if (c.toolId !== "lighter.order.create" || c.intentId !== intentId || c.marketType !== "perp"
+    || c.groupingType !== "one-cancels-the-other" || c.reduceOnly !== true
+    || (c.environment !== "core" && c.environment !== "rhc") || (c.side !== "buy" && c.side !== "sell")
+    || typeof c.accountIndex !== "number" || !Number.isSafeInteger(c.accountIndex) || c.accountIndex < 0
+    || typeof c.apiKeyIndex !== "number" || !Number.isSafeInteger(c.apiKeyIndex) || c.apiKeyIndex < 4 || c.apiKeyIndex > 254
+    || typeof c.marketIndex !== "number" || !Number.isSafeInteger(c.marketIndex) || c.marketIndex < 0 || c.marketIndex > 254
+    || typeof c.orderExpiryIso !== "string" || !Number.isFinite(Date.parse(c.orderExpiryIso))
+    || typeof c.orderSummary !== "string" || !c.orderSummary.trim() || c.orderSummary.length > 1000
+    || typeof c.marketSymbol !== "string" || !c.marketSymbol.trim() || c.marketSymbol.length > 32
+    || typeof c.matchHash !== "string" || !/^[0-9a-f]{64}$/.test(c.matchHash)
+    || !isBoundedText(c.stopLossPreviewId) || !isBoundedText(c.takeProfitPreviewId)
+    || c.stopLossPreviewId === c.takeProfitPreviewId) return invalid;
+  for (const key of ["baseAmountInteger", "stopLossPriceInteger", "stopLossTriggerPriceInteger", "takeProfitPriceInteger", "takeProfitTriggerPriceInteger"]) {
+    if (!isPositiveIntegerString(c[key])) return invalid;
+  }
+  for (const key of ["baseAmountDisplay", "stopLossTriggerDisplay", "stopLossBoundDisplay", "takeProfitTriggerDisplay", "takeProfitBoundDisplay"]) {
+    if (typeof c[key] !== "string" || !LIGHTER_DISPLAY_AMOUNT_RE.test(c[key]) || Number(c[key]) <= 0) return invalid;
+  }
+  return { ok: true, followUp: {
+    toolName: "execute_tool", args: { toolId: "lighter.order.create", params: { intentId } },
+    expiresAt: candidate.expiresAt, approvalPreview: { toolName: "order.create", namespace: "lighter", criticalArgs },
+  } };
 }

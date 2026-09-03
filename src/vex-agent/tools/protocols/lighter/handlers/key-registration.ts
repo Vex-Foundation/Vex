@@ -64,7 +64,7 @@ async function resolveOrAdoptExistingAccount(
   throw new Error("The Lighter onboarding workflow changed while adopting the owned account.");
 }
 
-function buildKeyRegistrationApprovalFollowUp(
+export function buildKeyRegistrationApprovalFollowUp(
   intent: keyIntentsRepo.LighterKeyRegistrationReservationRow,
 ): PreparedActionFollowUp {
   const disclosure = buildLighterKeyRegistrationApprovalDisclosure(intent);
