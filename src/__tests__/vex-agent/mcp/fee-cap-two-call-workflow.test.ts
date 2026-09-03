@@ -91,14 +91,29 @@ describe("the fee caps are optional in the schema and required in effect", () =>
     }
   });
 
-  it("says in the description that the caps are optional in the schema", () => {
+  it("documents the two-call workflow on the surface an external agent reads", () => {
+    // WHERE the sentence lives moved and the assertion moved with it. The
+    // description states the WORKFLOW ("TWO CALLS: call once WITHOUT the
+    // caps..."); the per-parameter descriptions carry the reason it is shaped
+    // that way ("REQUIRED IN EFFECT, optional in the schema"), which is where a
+    // caller looking at one cap actually reads it. Both travel in `tools/list`,
+    // so an agent that never calls `vex_ToolDescribe` still gets both halves.
     for (const name of [
       "WalletEvmTransactionPrepare",
       "WalletWrapPrepare",
       "WalletSolanaTransactionPrepare",
     ]) {
-      const description = inventory.find((t) => t.publicName === name)?.description ?? "";
-      expect(description).toContain("optional in the schema");
+      const tool = inventory.find((t) => t.publicName === name);
+      expect(tool?.description).toContain("TWO CALLS");
+      const properties = (tool?.inputSchema as {
+        properties: Record<string, { description?: string }>;
+      }).properties;
+      const capDescriptions = CAP_PARAMS
+        .flatMap((cap) => (properties[cap] === undefined ? [] : [properties[cap].description ?? ""]));
+      expect(capDescriptions.length).toBeGreaterThan(0);
+      for (const text of capDescriptions) {
+        expect(text).toContain("optional in the schema");
+      }
     }
   });
 });

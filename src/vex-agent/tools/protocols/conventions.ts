@@ -643,13 +643,58 @@ export const CANONICAL_HUMAN_AMOUNT_SENTENCE =
  * indeterminate outcome - are the two this sentence exists to prevent.
  *
  * The outcome words are the broker's own, so the vocabulary the agent reads
- * here is the vocabulary the wire uses.
+ * here is the vocabulary the wire uses. "executed" was NOT one of them, which is
+ * the drift the pass-2 agent found (`transcripts/p1.txt:23-25`): the broker's
+ * settled arms are `completed`, `declined`, `expired`, `refused`,
+ * `dispatch_failed`, `indeterminate` and `not_queued` (`mcp/outcome.ts`), and a
+ * COMPLETED call carries the tool's OWN status word - `confirmed` or
+ * `confirmed_unrecorded` on every venue that settles one. The list below is the
+ * rewrite that transcript proposed, so this sentence and the instructions block
+ * (`studio/instructions/**`) name one vocabulary.
+ *
+ * The card clause answers the second measured confusion: two sessions read their
+ * own harness rule ("confirm before an irreversible action") against a card they
+ * had already been told about, and hesitated (pass 2, A-8). The card IS the
+ * confirmation, and saying it here says it on every tool that raises one.
  */
 export const CANONICAL_MCP_APPROVAL_SENTENCE =
-  "APPROVAL: over MCP in a restricted project the call WAITS until the user answers the card in Vex "
-  + "and returns the settled outcome (executed, declined, expired, refused, dispatch_failed or "
-  + "indeterminate); never call it twice while you wait and never retry an indeterminate one. In a "
-  + "full project it executes directly under the user's standing permission.";
+  "APPROVAL: over MCP in a restricted project the call WAITS until the user answers the card in Vex, "
+  + "and that card IS the confirmation - do not ask for another in chat. It returns the settled "
+  + "outcome: executed (reported as this tool's own status, confirmed or confirmed_unrecorded), "
+  + "declined, expired, refused, dispatch_failed or indeterminate; never call it twice while you wait "
+  + "and never retry an indeterminate one. In a full project it executes directly under the user's "
+  + "standing permission.";
+
+/**
+ * WHO BROADCASTS, on a prepare -> confirm pair. The measured defect I-1.
+ *
+ * `WalletSendPrepare` over MCP returned "Transfer prepared; Vex will confirm it
+ * automatically." and nothing followed: that automatic follow-up is the IN-APP
+ * turn loop's trusted handoff (`engine/core/turn-loop-tool-batch/
+ * prepared-follow-up.ts`), and the MCP lane has no turn loop to run it. An agent
+ * that believes the sentence waits forever; the only path that works is calling
+ * the confirm tool itself, which is where the approval card is raised (pass 2,
+ * `transcripts/i12.txt`, and the same question asked in `p2.txt:11` and
+ * `p3.txt:89`).
+ *
+ * All four pairs (send, wrap, generic EVM, generic Solana) state the SAME rule,
+ * because an agent that learns it on one pair must not have to re-derive it on
+ * the next. Only the send pair has an in-app auto-dispatch at all, and its own
+ * prepare RESULT says which lane ran it, so no description promises a follow-up
+ * the reader cannot observe.
+ */
+export function canonicalPrepareHandoffSentence(confirmToolName: string): string {
+  return (
+    "WHO BROADCASTS: preparing sends nothing and raises no card. Only "
+    + `\`${confirmToolName}\`, run with this intentId, moves funds, and THAT call raises the card. `
+    + "Over MCP nothing dispatches it for you: you call it yourself before the intent expires."
+  );
+}
+
+/** The confirm half of {@link canonicalPrepareHandoffSentence}. */
+export const CANONICAL_CONFIRM_HANDOFF_SENTENCE =
+  "WHO CALLS THIS: you do, with the intentId prepare returned - over MCP Vex dispatches nothing on "
+  + "your behalf.";
 
 /**
  * THE BRIDGE-DESTINATION SENTENCE, shared by all four bridge tools (the Khalani

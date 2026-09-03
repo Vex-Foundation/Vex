@@ -37,7 +37,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { buildStudioInventory } from "../mcp/inventory/index.js";
-import { authoredContractFields } from "../mcp/tool-describe-export.js";
+import { authoredContractFields, resolveVexFee } from "../mcp/tool-describe-export.js";
 import type { StudioTool } from "../mcp/inventory/types.js";
 
 const DOC_PATH = join(
@@ -53,13 +53,18 @@ function cell(value: string): string {
 
 /**
  * The fee cell: the RATE when one is charged, `none` for an authored free path,
- * and `-` for a tool that has authored nothing. The three are deliberately
- * distinguishable, because `-` and `none` are different facts about money.
+ * `none (read)` for the read lane's derived answer, and `-` for a tool that has
+ * authored nothing and can spend. The four are deliberately distinguishable,
+ * because `-`, `none` and a derived `none` are different facts about money.
+ *
+ * Read through `resolveVexFee`, the same function `vex_ToolDescribe` answers
+ * from, so this table cannot drift from what the tool tells an agent.
  */
 function feeCell(tool: StudioTool): string {
-  const { vexFee } = authoredContractFields(tool);
-  if (vexFee === undefined) return "-";
-  return "none" in vexFee ? "none" : `${String(vexFee.bps)} bps`;
+  const { fee, derived } = resolveVexFee(tool);
+  if (fee === undefined) return "-";
+  if ("none" in fee) return derived ? "none (read)" : "none";
+  return `${String(fee.bps)} bps`;
 }
 
 function row(tool: StudioTool): string {
@@ -119,10 +124,13 @@ export function renderExportedToolsDoc(): string {
     "tool's whole contract in a RESULT, which no client truncates.",
     "",
     "`returns` says whether the tool authored a machine-readable result shape,",
-    "and `vex fee` is its authored fee: the RATE when Vex charges, `none` for a",
-    "path authored as free, and `-` when nothing is authored. Those last two are",
-    "DIFFERENT FACTS and are never collapsed: `vex_ToolDescribe` reports an",
-    "unauthored fee as unknown, never as free. Both texts live on the tool",
+    "and `vex fee` is the fee `vex_ToolDescribe` answers with: the RATE when Vex",
+    "charges, `none` for a path authored as free, `none (read)` for a read-only",
+    "tool, whose free answer is DERIVED from its action classification rather",
+    "than authored, and `-` when nothing is authored on a tool that can spend.",
+    "Those last two are DIFFERENT FACTS and are never collapsed: on a spending",
+    "tool `vex_ToolDescribe` reports an unauthored fee as unknown, never as",
+    "free. Both texts live on the tool",
     "(`ToolDef` and `ProtocolToolManifest`) and are read whole from",
     "`vex_ToolDescribe`, not reproduced here.",
     "",

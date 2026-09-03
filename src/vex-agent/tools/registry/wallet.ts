@@ -8,8 +8,10 @@
 import type { ToolDef } from "../types.js";
 import { READ_ONLY_NO_VEX_FEE, SEND_NO_VEX_FEE } from "../vex-fee-notes.js";
 import {
+  CANONICAL_CONFIRM_HANDOFF_SENTENCE,
   CANONICAL_HUMAN_AMOUNT_SENTENCE,
   CANONICAL_MCP_APPROVAL_SENTENCE,
+  canonicalPrepareHandoffSentence,
 } from "../protocols/conventions.js";
 import { responseFormatParam } from "@vex-agent/response-format.js";
 
@@ -19,6 +21,9 @@ import { responseFormatParam } from "@vex-agent/response-format.js";
  */
 const WALLET_FAMILY_DESCRIPTION =
   "Which wallet FAMILY to act on - 'eip155' for your EVM wallet or 'solana' for your Solana wallet. This is a wallet family, not a chain: the EVM chain goes in `chain`.";
+
+/** The send pair's half of the one prepare -> confirm rule all four pairs state. */
+const PREPARE_HANDOFF = canonicalPrepareHandoffSentence("WalletSendConfirm");
 
 export const WALLET_TOOLS: readonly ToolDef[] = [
   {
@@ -58,7 +63,7 @@ export const WALLET_TOOLS: readonly ToolDef[] = [
   },
   {
     name: "WalletSendPrepare", kind: "internal", mutating: false, pressureSafety: "mutating", actionKind: "approval_prepare",
-    description: "Prepare a wallet-to-wallet transfer for approval. It SPENDS NOTHING and signs nothing: it writes one durable transfer intent and hands back its id. THE INTENT IS WHAT GETS APPROVED - Vex passes it straight to `WalletSendConfirm` as a trusted follow-up, and the chain, recipient, amount and token recorded here are exactly what the user is shown and confirms, so a mistake at this step is a mistake the approval carries. Use this when the user asks to send native coin, an ERC-20, an NFT or SPL tokens to an address, and before any call to `WalletSendConfirm` - confirm has no other way to obtain an intentId. Covers native coin and ERC-20 on any EVM chain, and ERC-721 through token 'nft:{contract}:{tokenId}'; on Solana, SOL and SPL tokens only, with no pNFT or cNFT. `amountIn` is a HUMAN decimal STRING (\"1.5\", never the number 1.5, never wei or lamports), and `chain` is required for eip155 and ignored for solana; each is refused BY NAME rather than guessed. VEX CHARGES NO FEE on this path: the only cost is the network fee of the transfer itself. RETURNS intentId, network, chain, to, amount, token, status 'prepared' and expiresAt. The intent expires 10 minutes after this call, is scoped to this session, and binds the wallet selected right now - if the selection changes, confirm refuses instead of sending from a different address.",
+    description: "Prepare a wallet-to-wallet transfer for approval. It SPENDS NOTHING and signs nothing: it writes one durable transfer intent and hands back its id. THE INTENT IS WHAT GETS APPROVED - the chain, recipient, amount and token recorded here are exactly what the user is shown and confirms, so a mistake at this step is a mistake the approval carries. " + PREPARE_HANDOFF + " Inside the Vex app the agent's own turn loop dispatches that confirm for you; this result's `message` says which of the two happened and names the call when it is yours. Use this when the user asks to send native coin, an ERC-20, an NFT or SPL tokens to an address, and before any call to `WalletSendConfirm` - confirm has no other way to obtain an intentId. Covers native coin and ERC-20 on any EVM chain, and ERC-721 through token 'nft:{contract}:{tokenId}'; on Solana, SOL and SPL tokens only, with no pNFT or cNFT. `amountIn` is a HUMAN decimal STRING (\"1.5\", never the number 1.5, never wei or lamports), and `chain` is required for eip155 and ignored for solana; each is refused BY NAME rather than guessed. VEX CHARGES NO FEE on this path: the only cost is the network fee of the transfer itself. RETURNS intentId, network, chain, to, amount, token, status 'prepared' and expiresAt. The intent expires 10 minutes after this call, is scoped to this session, and binds the wallet selected right now - if the selection changes, confirm refuses instead of sending from a different address.",
     returns: "RETURNS intentId, network, chain, to, amount, token, status 'prepared' and expiresAt.",
     vexFee: SEND_NO_VEX_FEE,
     parameters: { type: "object", properties: {
@@ -71,7 +76,7 @@ export const WALLET_TOOLS: readonly ToolDef[] = [
   },
   {
     name: "WalletSendConfirm", kind: "internal", mutating: true, pressureSafety: "mutating", actionKind: "user_wallet_broadcast",
-    description: "Broadcast the transfer that `WalletSendPrepare` already prepared. SPENDS REAL FUNDS AND IS IRREVERSIBLE: this is the call that signs the transaction with the user's wallet and sends it. " + CANONICAL_MCP_APPROVAL_SENTENCE + " The intent is consumed only when the call is authorized. Vex charges NO fee on this path. Vex normally dispatches this itself as the trusted follow-up to `WalletSendPrepare`, so call it by hand only when that follow-up did not run. PRECONDITIONS, each refused BY NAME rather than guessed: the intentId must belong to THIS session, still be pending, and be inside its 10-minute expiry; `walletFamily` must match the one the intent recorded; and the session's currently selected wallet must be the exact wallet the intent bound, or it refuses and asks you to re-prepare rather than signing from a different address. The intent is consumed atomically, so one prepared transfer can be broadcast at most once. RETURNS txHash, chain and status, plus blockNumber on EVM and explorerUrl on Solana. Every other outcome is a sentence, and they do not mean the same thing: reverted on-chain (a real transaction, no transfer), broadcast but confirmation UNKNOWN (the transaction exists and may still settle - do NOT retry, read it yourself with `ChainRead` action tx_receipt), and failed before broadcast (nothing was sent). Only the last is safe to prepare again.",
+    description: "Broadcast the transfer that `WalletSendPrepare` already prepared. SPENDS REAL FUNDS AND IS IRREVERSIBLE: this is the call that signs the transaction with the user's wallet and sends it. " + CANONICAL_MCP_APPROVAL_SENTENCE + " The intent is consumed only when the call is authorized. Vex charges NO fee on this path. " + CANONICAL_CONFIRM_HANDOFF_SENTENCE + " Inside the Vex app the turn loop dispatches it for you instead; the prepare result says which lane ran. PRECONDITIONS, each refused BY NAME rather than guessed: the intentId must belong to THIS session, still be pending, and be inside its 10-minute expiry; `walletFamily` must match the one the intent recorded; and the session's currently selected wallet must be the exact wallet the intent bound, or it refuses and asks you to re-prepare rather than signing from a different address. The intent is consumed atomically, so one prepared transfer can be broadcast at most once. RETURNS txHash, chain and status, plus blockNumber on EVM and explorerUrl on Solana. Every other outcome is a sentence, and they do not mean the same thing: reverted on-chain (a real transaction, no transfer), broadcast but confirmation UNKNOWN (the transaction exists and may still settle - do NOT retry, read it yourself with `ChainRead` action tx_receipt), and failed before broadcast (nothing was sent). Only the last is safe to prepare again.",
     returns: "RETURNS txHash, chain and status, plus blockNumber on EVM and explorerUrl on Solana. Every other outcome is a sentence, and they do not mean the same thing: reverted on-chain (a real transaction, no transfer), broadcast but confirmation UNKNOWN (the transaction exists and may still settle - do NOT retry, read it yourself with `ChainRead` action tx_receipt), and failed before broadcast (nothing was sent). Only the last is safe to prepare again.",
     vexFee: SEND_NO_VEX_FEE,
     parameters: { type: "object", properties: {

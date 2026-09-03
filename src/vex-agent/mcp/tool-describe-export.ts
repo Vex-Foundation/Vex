@@ -80,13 +80,15 @@ export const EXPORTED_TOOL_DESCRIBE_DESCRIPTION =
   + "unknown name is answered with the nearest names in the catalogue rather than a guess. RETURNS "
   + "the tool's name, title, lane, whole description and whole inputSchema, its actionKind, risk "
   + "level and MCP annotations, `approvalCard` saying whether a restricted project blocks the call "
-  + "on a human decision, `requiresEnv` when it needs a provider key, and `quoteGate` naming the "
-  + "quote tools that can authorize it. It also RETURNS `returns`, the field-by-field result shape "
-  + "the always-loaded descriptions had to give up to fit the client's cut, and `vexFee`, saying "
-  + "whether Vex charges for this tool, at what rate in basis points and when it is collected, or "
-  + "why nothing is charged. A fact no Vex artifact carries is reported as `known: false` with the "
-  + "reason and is never invented here - on the fee that means an unauthored field reads as unknown, "
-  + "never as free.";
+  + "on a human decision, `requiresEnv` when it needs a provider key, and `quoteGate`, ONE shape "
+  + "whose `status` is `gated` (with the quote tools that authorize it), `ungated`, or "
+  + "`venue_resolved_per_call` for an internal tool that picks its venue per call. It also RETURNS "
+  + "`returns`, the field-by-field result shape the always-loaded descriptions had to give up to fit "
+  + "the client's cut, and `vexFee`, saying whether Vex charges for this tool, at what rate in basis "
+  + "points and when it is collected, or why nothing is charged. A read-only tool answers "
+  + "`charged: false` because a read moves no funds. Every other fact no Vex artifact carries is "
+  + "reported as `known: false` with the reason and is never invented here - on the fee of a tool "
+  + "that CAN spend, an unauthored field reads as unknown, never as free.";
 
 export const EXPORTED_TOOL_DESCRIBE_INPUT_SCHEMA: JsonSchema = {
   type: "object",
@@ -120,13 +122,26 @@ type KnownVexFee =
   | { readonly known: true; readonly charged: true; readonly bps: number; readonly when: string }
   | { readonly known: true; readonly charged: false; readonly reason: string };
 
-/** The quote tools whose fresh quote can authorize this execute. */
-interface QuoteGate {
-  readonly gated: true;
-  readonly prequoteKind: string;
-  readonly authorizedBy: readonly string[];
-  readonly freshnessNote: string;
-}
+/**
+ * WHICH QUOTE can authorize this call - ONE shape with one discriminant.
+ *
+ * It used to be two shapes that shared no field: `{gated}` for a protocol tool
+ * and `{known:false, reason}` for an internal one, so a caller had to know
+ * which lane it had asked about before it could read the answer (live-test
+ * pass 2, finding A-2). Every arm now carries `status` and a `note`, and the
+ * third arm is a POSITIVE answer rather than an absence: an internal alias
+ * picks its venue per call, so the registries cannot name one and its own
+ * description names its quote pair instead.
+ */
+type QuoteGate =
+  | {
+      readonly status: "gated";
+      readonly prequoteKind: string;
+      readonly authorizedBy: readonly string[];
+      readonly note: string;
+    }
+  | { readonly status: "ungated"; readonly note: string }
+  | { readonly status: "venue_resolved_per_call"; readonly note: string };
 
 export interface ExportedToolContract {
   readonly name: string;
@@ -148,11 +163,13 @@ export interface ExportedToolContract {
     readonly note: string;
   };
   readonly requiresEnv?: string;
-  readonly quoteGate: QuoteGate | AbsentFact | { readonly gated: false; readonly note: string };
+  readonly quoteGate: QuoteGate;
   /**
-   * VEX'S OWN FEE, from the tool's authored `vexFee` field. `charged: false`
-   * is a positive claim with a reason; an unauthored field is `known: false`,
-   * which is NOT the same answer and must never be read as free.
+   * VEX'S OWN FEE, from the tool's authored `vexFee` field, or from the read
+   * lane's derivation when a `read` tool authored none ({@link resolveVexFee}).
+   * `charged: false` is a positive claim with a reason; an unauthored field on
+   * a tool that CAN spend is `known: false`, which is NOT the same answer and
+   * must never be read as free.
    */
   readonly vexFee: KnownVexFee | AbsentFact;
   /**
@@ -271,31 +288,36 @@ function approvalCardFor(tool: StudioTool): { raised: boolean; note: string } {
  * The quote tools whose fresh quote can authorize this execute.
  *
  * Both registries are keyed by the dotted `toolId`, so this answers for the
- * protocol lane and reports ABSENT for an internal alias, whose venue is
- * resolved per call from the chain and whose own description names its pair.
+ * protocol lane and answers `venue_resolved_per_call` for an internal alias,
+ * whose venue is resolved per call from the chain and whose own description
+ * names its pair. That is a positive answer, not an absence, which is why every
+ * arm carries the same `status` discriminant.
  */
-function quoteGateFor(tool: StudioTool): ExportedToolContract["quoteGate"] {
+function quoteGateFor(tool: StudioTool): QuoteGate {
   if (tool.kind !== "protocol" || tool.toolId === undefined) {
     return {
-      known: false,
-      reason:
+      status: "venue_resolved_per_call",
+      note:
         "The prequote registries are keyed by protocol toolId. An internal tool resolves its venue "
         + "per call, and its own description names the quote that authorizes it.",
     };
   }
   const gate = EXECUTE_GATE_TOOLS[tool.toolId];
   if (gate === undefined) {
-    return { gated: false, note: "No quote gate: this tool is not registered as a gated execute." };
+    return {
+      status: "ungated",
+      note: "No quote gate: this tool is not registered as a gated execute.",
+    };
   }
   const authorizedBy = Object.entries(PREQUOTE_QUOTE_TOOLS)
     .filter(([, registration]) => registration.provider === gate.provider)
     .map(([quoteToolId]) => getProtocolManifest(quoteToolId)?.publicName ?? quoteToolId)
     .sort();
   return {
-    gated: true,
+    status: "gated",
     prequoteKind: gate.kind,
     authorizedBy,
-    freshnessNote:
+    note:
       "The quote must be fresh (15 minutes), from the SAME provider, and match this call's "
       + "parameters exactly; a quote authorizes exactly one execute and is consumed by it.",
   };
@@ -313,11 +335,13 @@ const EXPORTED_TOOL_DESCRIBE_RETURNS =
   + "tool, `alwaysLoad`, the WHOLE `description` with its `descriptionCharacters` count, the WHOLE "
   + "`inputSchema`, `actionKind` and `riskLevel`, the MCP `annotations`, `approvalCard` "
   + "(raisedInRestrictedProject plus a note), `requiresEnv` when the tool needs a provider key, "
-  + "`quoteGate` (gated with the prequote kind and the quote tools that authorize it, ungated, or "
-  + "absent with the reason), `returns` and `vexFee`. `returns` and `vexFee` are each either "
-  + "`known: true` with the fact or `known: false` with the reason nothing carries it; an unknown "
-  + "fee means UNAUTHORED, never free. An unknown tool name is not a contract at all: it comes back "
-  + "as a refusal naming the nearest names in the catalogue, and nothing is executed.";
+  + "`quoteGate` (one shape: `status` gated with the prequote kind and the quote tools that "
+  + "authorize it, ungated, or venue_resolved_per_call with the reason), `returns` and `vexFee`. "
+  + "`returns` and `vexFee` are each either `known: true` with the fact or `known: false` with the "
+  + "reason nothing carries it; a `read` tool always answers `charged: false`, derived from its "
+  + "action classification, and on a spending tool an unknown fee means UNAUTHORED, never free. An "
+  + "unknown tool name is not a contract at all: it comes back as a refusal naming the nearest "
+  + "names in the catalogue, and nothing is executed.";
 
 /**
  * `vex_ToolSearch`'s result shape.
@@ -360,6 +384,48 @@ const MCP_LANE_CONTRACTS: Readonly<
     vexFee: CATALOGUE_NO_VEX_FEE,
   },
 };
+
+/**
+ * THE READ LANE'S FEE, derived from the action classification rather than
+ * authored per tool.
+ *
+ * A `read` tool moves no funds by definition (`tools/taxonomy.ts`: "no side
+ * effect outside the read path"), so there is nothing for a fee to be a
+ * percentage of. Reporting 95 such tools as `known: false` made the honest
+ * answer to "does this cost me anything?" read as "Vex will not say", which is
+ * what the pass-2 agent found (finding A-2). This is a DERIVATION from a fact
+ * the surface already publishes - the same `actionKind` the risk class and the
+ * `readOnlyHint` annotation come from - not an invented number: it can only
+ * ever say "nothing", and only for the class that spends nothing.
+ *
+ * Every other unauthored kind stays `known: false`. A `user_wallet_broadcast`
+ * with no authored fee is a fact nobody wrote down, and on a money path silence
+ * must never read as free.
+ */
+const READ_ONLY_DERIVED_VEX_FEE: ToolVexFee = {
+  none: true,
+  reason:
+    "READ-ONLY: this tool is classified `read`, so it moves no funds and Vex charges nothing for "
+    + "it. Derived from the tool's action classification, not authored on the tool. Where a fee "
+    + "applies at all it belongs to the execute that spends, and that tool states it.",
+};
+
+/**
+ * The fee behind one exported row: the authored one when there is one, the
+ * read-lane derivation when there is not, and nothing at all otherwise.
+ *
+ * EXPORTED so the generated documentation and `vex_ToolDescribe` answer the fee
+ * question with one function. Two walks that could disagree about money is
+ * exactly the drift this module exists to prevent.
+ */
+export function resolveVexFee(
+  tool: StudioTool,
+): { readonly fee?: ToolVexFee; readonly derived: boolean } {
+  const authored = authoredContractFields(tool).vexFee;
+  if (authored !== undefined) return { fee: authored, derived: false };
+  if (actionKindFor(tool) === "read") return { fee: READ_ONLY_DERIVED_VEX_FEE, derived: true };
+  return { derived: false };
+}
 
 /**
  * The authored contract fields behind one exported row, or nothing.
@@ -469,7 +535,7 @@ export function describeExportedTool(
       approvalCard: { raisedInRestrictedProject: card.raised, note: card.note },
       ...(tool.requiresEnv === undefined ? {} : { requiresEnv: tool.requiresEnv }),
       quoteGate: quoteGateFor(tool),
-      vexFee: vexFeeFor(authored.vexFee),
+      vexFee: vexFeeFor(resolveVexFee(tool).fee),
       returns: returnsFor(authored.returns),
     },
   };

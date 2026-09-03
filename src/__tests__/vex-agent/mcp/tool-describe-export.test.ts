@@ -64,8 +64,8 @@ describe("vex_ToolDescribe returns one tool's whole contract", () => {
 
   it("names the quotes that authorize a gated protocol execute", () => {
     const gate = contractOf("kyberswap__swap_execute").quoteGate;
-    expect(gate).toMatchObject({ gated: true, prequoteKind: "swap" });
-    if ("authorizedBy" in gate) {
+    expect(gate).toMatchObject({ status: "gated", prequoteKind: "swap" });
+    if (gate.status === "gated") {
       expect(gate.authorizedBy).toContain("kyberswap__swap_quote");
       // A quote from another provider can never authorize this execute.
       expect(gate.authorizedBy).not.toContain("uniswap__swap_quote");
@@ -73,7 +73,27 @@ describe("vex_ToolDescribe returns one tool's whole contract", () => {
   });
 
   it("reports an ungated protocol tool as ungated rather than unknown", () => {
-    expect(contractOf("kyberswap__swap_quote").quoteGate).toMatchObject({ gated: false });
+    expect(contractOf("kyberswap__swap_quote").quoteGate).toMatchObject({ status: "ungated" });
+  });
+
+  it("answers the quote-gate question in ONE shape, whichever lane is asked", () => {
+    // The finding this pins (pass 2, A-2): the answer used to arrive as
+    // `{gated}` for a protocol tool and `{known:false, reason}` for an internal
+    // one, two shapes with NO field in common, so a caller had to know the lane
+    // before it could read the answer. Every arm now carries `status` and a
+    // `note`, and every exported tool is checked, not a chosen three.
+    const statuses = new Set<string>();
+    for (const row of buildStudioInventory()) {
+      const outcome = describeExportedTool({ name: row.publicName });
+      expect(outcome.ok).toBe(true);
+      if (!outcome.ok) continue;
+      const gate = outcome.contract.quoteGate;
+      expect(typeof gate.status).toBe("string");
+      expect(gate.note.length).toBeGreaterThan(0);
+      statuses.add(gate.status);
+    }
+    // All three arms are live, so the assertion above is not vacuous.
+    expect([...statuses].sort()).toEqual(["gated", "ungated", "venue_resolved_per_call"]);
   });
 
   it("serves the result shape and the fee the description gave up", () => {
@@ -93,7 +113,30 @@ describe("vex_ToolDescribe returns one tool's whole contract", () => {
     }
     // The internal alias resolves its venue per call, so the registries cannot
     // answer for it - and it says so instead of naming a venue.
-    expect(contract.quoteGate).toMatchObject({ known: false });
+    expect(contract.quoteGate).toMatchObject({ status: "venue_resolved_per_call" });
+  });
+
+  it("answers a read-only tool `charged: false`, derived from its action kind", () => {
+    // The second half of A-2: a protocol read moves nothing, yet answered "Vex
+    // will not say" because no `vexFee` was authored on it - 95 of the exported
+    // tools were in that state. The derivation can only ever say "nothing", and
+    // only for the class that spends nothing.
+    const contract = contractOf("dexscreener__pairs_search");
+    expect(contract.actionKind).toBe("read");
+    expect(contract.vexFee.known).toBe(true);
+    if (contract.vexFee.known) {
+      expect(contract.vexFee.charged).toBe(false);
+      if (!contract.vexFee.charged) expect(contract.vexFee.reason).toContain("READ-ONLY");
+    }
+  });
+
+  it("does NOT derive a fee for a tool that can spend", () => {
+    // The line the derivation must not cross. A `user_wallet_broadcast` with no
+    // authored fee is a fact nobody wrote down, and reading silence as free on
+    // that lane would be an invented answer about the user's money.
+    const contract = contractOf("morpho__market_borrow");
+    expect(contract.actionKind).toBe("user_wallet_broadcast");
+    expect(contract.vexFee.known).toBe(false);
   });
 
   it("still reports an UNAUTHORED fact as absent, and never as free", () => {

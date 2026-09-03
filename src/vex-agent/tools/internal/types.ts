@@ -85,6 +85,26 @@ export interface InternalToolContext {
    */
   modelOriginated?: true;
   /**
+   * WHICH SURFACE this dispatch came from, for the one thing that legitimately
+   * differs between them: whether a prepared action has a trusted follow-up
+   * dispatcher behind it.
+   *
+   * The in-app lane has the turn loop, which dispatches a prepare's
+   * `preparedActionFollowUp` itself
+   * (`engine/core/turn-loop-tool-batch/prepared-follow-up.ts`). The MCP lane has
+   * no turn loop and no other consumer of that field, so over MCP the confirm
+   * call is the CALLER's - and a prepare that told an external agent "Vex will
+   * confirm it automatically" left it waiting for a dispatch that never comes
+   * (live-test pass 2, finding I-1).
+   *
+   * ABSENT means `"in_app"`. Every in-app context builder legitimately omits it;
+   * the ONE producer of `"mcp"` is `mcp/project-context.ts`, the single builder
+   * of the MCP lane's context. It is host-side evidence, never derived from tool
+   * arguments or model output, and it grants nothing: no gate, no approval and
+   * no authority reads it.
+   */
+  toolLane?: "in_app" | "mcp";
+  /**
    * Session kind - propagated from EngineContext. Lets handlers defense-in-depth
    * their own preconditions without relying solely on the registry visibility
    * filter (e.g. `LoopDefer` handler rejects non-mission calls even if the

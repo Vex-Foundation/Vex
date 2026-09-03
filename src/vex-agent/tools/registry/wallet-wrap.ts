@@ -18,7 +18,9 @@
 import type { ToolDef } from "../types.js";
 import {
   CANONICAL_CHAIN_SENTENCE,
+  CANONICAL_CONFIRM_HANDOFF_SENTENCE,
   CANONICAL_MCP_APPROVAL_SENTENCE,
+  canonicalPrepareHandoffSentence,
 } from "../protocols/conventions.js";
 import { WRAP_NO_VEX_FEE } from "../vex-fee-notes.js";
 
@@ -47,24 +49,23 @@ export const WALLET_WRAP_TOOLS: readonly ToolDef[] = [
     description:
       "Prepare a conversion between a chain's NATIVE currency and its WRAPPED-NATIVE ERC-20 form (ETH "
       + "<-> WETH, BNB <-> WBNB, POL <-> WPOL, AVAX <-> WAVAX). It SPENDS NOTHING and signs nothing: it "
-      + "derives the transaction, simulates it, records one durable intent and hands back its id. "
-      + "THE INTENT IS WHAT THE USER APPROVES, so the direction, amount, contract and fee caps recorded "
-      + "here are exactly what is shown and confirmed. Use this when the user wants native currency "
-      + "in its wrapped ERC-20 form or back, and when a swap venue REFUSES a native <-> "
-      + "wrapped-native pair - that pair is not a trade, it is this conversion, and no router quotes "
-      + "it. Call this before any call to `WalletWrapConfirm`, which has no other way to obtain an "
-      + "intentId. TWO CALLS: the gas caps are required in effect and optional in the schema, so call "
-      + "once WITHOUT them for the refusal that names them and carries the current network estimate as "
-      + "a labelled hint, then again with the caps `gasLimit` documents. THE CONVERSION IS "
-      + "EXACTLY 1:1, with NO slippage, NO route, NO price and NO quote, because the wrapped-native "
-      + "contract mints and burns at par. The recipient is ALWAYS the signer - the contract credits "
-      + "the sender, so there is no recipient parameter. VEX CHARGES NO FEE on this path: "
-      + "the only cost is the network gas you cap below. REAL FAILURE MODES, each refused BY NAME "
-      + "with nothing prepared: a chain on which Vex has not verified a wrapped-native contract, and "
-      + "the refusal LISTS the verified set; a balance too small on the side the direction spends, "
-      + "reported with the balance and the amount (a `wrap` must also leave room for the gas ceiling, "
-      + "since both come out of the same native balance); a failing simulation, refused "
-      + "with the decoded revert reason. RETURNS the intent id, its status and the fields named in "
+      + "derives the transaction, simulates it, records one durable intent and returns its id. "
+      + "THE INTENT IS WHAT THE USER APPROVES: the direction, amount, contract and fee caps recorded here "
+      + "are exactly what is shown and confirmed. Use this when the user wants native currency "
+      + "in its wrapped form or back, and when a swap venue REFUSES a native <-> "
+      + "wrapped-native pair: that pair is not a trade, it is this conversion, and no router quotes it. "
+      + canonicalPrepareHandoffSentence("WalletWrapConfirm")
+      + " TWO CALLS: call "
+      + "once WITHOUT the gas caps for the refusal that names them and carries the network estimate "
+      + "as a labelled hint, then again with the caps. THE CONVERSION IS "
+      + "EXACTLY 1:1, with NO slippage, route, price or quote: the wrapped-native contract mints and "
+      + "burns at par. The recipient is ALWAYS the signer, because the contract credits the sender, "
+      + "so there is no recipient parameter. VEX CHARGES NO FEE on this path: "
+      + "the only cost is the network gas you cap below. FAILURE MODES, each refused BY NAME "
+      + "with nothing prepared: a chain where Vex has not verified a wrapped-native contract (the "
+      + "refusal LISTS the verified set); a balance too small on the side the direction spends, "
+      + "reported with the balance and the amount (a `wrap` must also leave room for the gas ceiling, out "
+      + "of the same native balance); a failing simulation, refused with the decoded revert reason. RETURNS the intent id, its status and the fields named in "
       + "the result. The intent is scoped to this session, expires in 10 minutes, and binds the "
       + "wallet selected now; if that selection changes, confirm refuses rather than signing from "
       + "another address. Full contract: vex_ToolDescribe.",
@@ -138,26 +139,26 @@ export const WALLET_WRAP_TOOLS: readonly ToolDef[] = [
     pressureSafety: "mutating",
     actionKind: "user_wallet_broadcast",
     description:
-      "Broadcast the native <-> wrapped-native conversion `WalletWrapPrepare` prepared. This is the "
+      "Broadcast the conversion `WalletWrapPrepare` prepared. This is the "
       + "call that SPENDS REAL FUNDS: it signs with the user's wallet and sends an IRREVERSIBLE "
-      + "transaction. Call it once the user has agreed to the prepared conversion, with an intentId "
-      + "prepare returned. "
+      + "transaction. "
+      + CANONICAL_CONFIRM_HANDOFF_SENTENCE
+      + " "
       + CANONICAL_MCP_APPROVAL_SENTENCE
-      + " Nothing is signed, decrypted or consumed until it is authorized, bound to the exact "
-      + "conversion the user read and to this intent's expiry. BEFORE IT SIGNS it re-reads the "
-      + "selected wallet, requires the chain and the verified wrapped-native contract to still be the "
-      + "ones bound into the intent, RE-DERIVES the whole `{to, data, value}` triple from the approved "
-      + "direction, contract and amount, compares all three byte for byte, and re-simulates. FAILURE "
+      + " Nothing is signed, decrypted or consumed until it is authorized. BEFORE IT SIGNS it re-reads "
+      + "the selected wallet, requires the chain and the verified wrapped-native contract to be the "
+      + "ones the intent bound, RE-DERIVES the whole `{to, data, value}` triple from the approved "
+      + "direction, contract and amount, compares it byte for byte, and re-simulates. FAILURE "
       + "MODES, each leaving NOTHING SIGNED and no funds moved: a "
       + "proposal digest that does not match the row, an approval bound to another proposal, an "
-      + "EXPIRED intent, an ALREADY-CONSUMED or cancelled intent (an approval is never reusable), and "
+      + "EXPIRED, ALREADY-CONSUMED or cancelled intent (an approval is never reusable), and "
       + "a re-derived transaction that differs in any field. The approved gas caps are enforced on "
-      + "what is actually signed: a limit or price above them refuses before signing. THE CONVERSION "
+      + "what is signed: a limit or price above them refuses. THE CONVERSION "
       + "IS EXACTLY 1:1, the recipient is always the signer, and VEX CHARGES NO FEE - only network "
-      + "gas inside the approved caps. RETURNS the outcome and the fields named in the result, with a "
-      + "DISTINCT outcome for confirmed, reverted on-chain, broadcast with confirmation UNKNOWN, and "
-      + "failed before broadcast. Only the last is safe to prepare again: a reverted "
-      + "transaction is real and paid a network fee, and an unknown one may still be settling - Vex "
+      + "gas inside the approved caps. RETURNS the outcome and the fields named in the result: "
+      + "confirmed, reverted on-chain, broadcast with confirmation UNKNOWN, or failed before "
+      + "broadcast - and only the last is safe to prepare again, because a reverted "
+      + "transaction is real and paid a network fee and an unknown one may still be settling: Vex "
       + "tracks it and NEVER re-sends it, and neither should you. Full contract: vex_ToolDescribe.",
     returns:
       "RETURNS the outcome, txHash, chain, chainId, direction, amountRaw, amountHuman, "
